@@ -59,17 +59,23 @@ class RiskCaseMigrationTest {
                 .contains("CHECK (queue IN (" + list(CaseQueue.values()) + "))")
                 .contains("disposition IN (" + list(Disposition.values()) + ")")
                 .contains("CHECK (kind IN (" + list(CaseActionKind.values()) + "))")
-                .contains("CHECK (kind IN (" + list(CaseEventKind.values()) + "))")
+                .contains("CHECK (kind IN (" + v012(CaseEventKind.values(), kind -> true) + "))")
                 .contains("actor_type IN (" + list(com.finapp.platform.security.ActorType.values()) + ")");
         String escalationQueues = Arrays.stream(CaseQueue.values()).filter(CaseQueue::escalationTarget)
                 .map(queue -> "'" + queue.name() + "'").collect(Collectors.joining(", "));
         assertThat(sql).contains("queue IN (" + escalationQueues + ")");
-        String texted = Arrays.stream(CaseActionKind.values()).filter(CaseActionKind::texted)
-                .map(kind -> "'" + kind.name() + "'").collect(Collectors.joining(", "));
-        assertThat(sql).contains("(kind NOT IN (" + texted + ") OR text IS NOT NULL)");
-        String persons = Arrays.stream(CaseEventKind.values()).filter(CaseEventKind::persons)
-                .map(kind -> "'" + kind.name() + "'").collect(Collectors.joining(", "));
-        assertThat(sql).contains("(kind IN (" + persons + ")) = (action_id IS NOT NULL)");
+        // V012's lists as it wrote them: P13-TSK-017's V013 re-made the texted, history-kind and persons' CHECKs by name
+        // for its three ACTION_* acts (RiskActionMigrationTest holds V013's to the whole enums).
+        assertThat(sql).contains("(kind NOT IN (" + v012(CaseActionKind.values(), CaseActionKind::texted)
+                + ") OR text IS NOT NULL)");
+        assertThat(sql).contains("(kind IN (" + v012(CaseEventKind.values(), CaseEventKind::persons)
+                + ")) = (action_id IS NOT NULL)");
+    }
+
+    /** The members of {@code values} {@code kept} as V012 listed them - every one but `-017`'s {@code ACTION_*}. */
+    private static <E extends Enum<E>> String v012(E[] values, java.util.function.Predicate<E> kept) {
+        return Arrays.stream(values).filter(kept).filter(value -> !value.name().startsWith("ACTION_"))
+                .map(value -> "'" + value.name() + "'").collect(Collectors.joining(", "));
     }
 
     @Test

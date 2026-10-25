@@ -8,7 +8,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.sql.Types;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,40 +17,34 @@ import java.util.UUID;
 
 /**
  * {@link DecisionOverrideStore} over {@code risk V007}'s {@code decision_override} and {@code risk V009}'s machine
- * (`P13-TSK-012`): the birth {@code ON CONFLICT DO NOTHING} against the two partial uniques (one live proposal, one
- * standing override per assessment); every edge one conditional {@code UPDATE … RETURNING}, the trigger judging it again
- * and stamping the instants on the database clock; the re-drive's claim one statement, {@code FOR UPDATE SKIP LOCKED},
- * the permit re-stamped in the same statement. Risk's own table only - no other schema is named ({@code INV-RSK-02}). A
- * failure is named by its operation and SQLSTATE only, never the driver's message.
+ * (`P13-TSK-012`), folded by {@code risk V013} (`P13-TSK-017`): the birth {@code ON CONFLICT DO NOTHING} against the two
+ * partial uniques (one live proposal, one standing override per assessment); every edge one conditional {@code UPDATE},
+ * the trigger judging it again and stamping the instants on the database clock. The issued action's permit, attempts and
+ * outcome are its {@code risk_action} row's (the override's own id), read beside the override by a left join. Risk's own
+ * tables only - no other schema is named ({@code INV-RSK-02}). A failure is named by its operation and SQLSTATE only,
+ * never the driver's message.
  */
 public final class JdbcDecisionOverrideStore implements DecisionOverrideStore {
 
-    static final String COLUMNS = "id, assessment_id, status, effect, target_id, reason_code, reason,"
-            + " requires_second_person, proposed_by, proposed_by_type, proposed_at, decided_by, decided_by_type,"
-            + " decided_at, decision_reason, action, action_outcome, action_due_at, action_attempts, action_concluded_at,"
-            + " correlation_id";
+    /** The override and its issued action's state - the action machine's row under the override's id. */
+    static final String SELECT = "SELECT o.id, o.assessment_id, o.status, o.effect, o.target_id, o.reason_code,"
+            + " o.reason, o.requires_second_person, o.proposed_by, o.proposed_by_type, o.proposed_at, o.decided_by,"
+            + " o.decided_by_type, o.decided_at, o.decision_reason, o.action, a.outcome AS action_outcome,"
+            + " a.next_attempt_at AS action_due_at, COALESCE(a.attempts, 0) AS action_attempts,"
+            + " a.concluded_at AS action_concluded_at, o.correlation_id"
+            + " FROM risk.decision_override o LEFT JOIN risk.risk_action a ON a.override_id = o.id";
 
     static final String INSERT = "INSERT INTO risk.decision_override (id, assessment_id, status, effect, target_id,"
             + " reason_code, reason, requires_second_person, proposed_by, proposed_by_type, proposed_at, correlation_id)"
             + " VALUES (?, ?, 'PROPOSED', ?, ?, ?, ?, ?, ?, ?, clock_timestamp(), ?) ON CONFLICT DO NOTHING RETURNING id";
 
+    /** The approval names the effect as its action; the action itself is the machine's row, issued by the caller. */
     static final String APPROVE = "UPDATE risk.decision_override SET status = 'APPROVED', decided_by = ?,"
-            + " decided_by_type = ?, decision_reason = ?, action = effect,"
-            + " action_due_at = CASE WHEN effect = 'RESUBMISSION' THEN NULL"
-            + " ELSE clock_timestamp() + ? * interval '1 millisecond' END,"
-            + " action_attempts = CASE WHEN effect = 'RESUBMISSION' THEN 0 ELSE 1 END"
-            + " WHERE id = ? AND status = 'PROPOSED' RETURNING " + COLUMNS;
+            + " decided_by_type = ?, decision_reason = ?, action = effect"
+            + " WHERE id = ? AND status = 'PROPOSED' RETURNING id";
 
     static final String REJECT = "UPDATE risk.decision_override SET status = 'REJECTED', decided_by = ?,"
-            + " decided_by_type = ?, decision_reason = ? WHERE id = ? AND status = 'PROPOSED' RETURNING " + COLUMNS;
-
-    static final String CLAIM_DUE = "UPDATE risk.decision_override SET action_due_at = clock_timestamp()"
-            + " + ? * interval '1 millisecond', action_attempts = action_attempts + 1"
-            + " WHERE id = (SELECT id FROM risk.decision_override WHERE action_due_at <= clock_timestamp()"
-            + " ORDER BY action_due_at, id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING " + COLUMNS;
-
-    static final String CONCLUDE = "UPDATE risk.decision_override SET action_outcome = ?, action_due_at = NULL"
-            + " WHERE id = ? AND status = 'APPROVED' AND action_outcome IS NULL AND action_due_at IS NOT NULL";
+            + " decided_by_type = ?, decision_reason = ? WHERE id = ? AND status = 'PROPOSED' RETURNING id";
 
     @Override
     public boolean insert(Connection unitOfWork, NewOverride proposal) {
@@ -82,7 +75,7 @@ public final class JdbcDecisionOverrideStore implements DecisionOverrideStore {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(id, "id");
         try (PreparedStatement select = unitOfWork.prepareStatement(
-                "SELECT " + COLUMNS + " FROM risk.decision_override WHERE id = ?")) {
+                SELECT + " WHERE o.id = ?")) {
             select.setObject(1, id.value());
             return single(select);
         } catch (SQLException failure) {
@@ -95,7 +88,7 @@ public final class JdbcDecisionOverrideStore implements DecisionOverrideStore {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(id, "id");
         try (PreparedStatement select = unitOfWork.prepareStatement(
-                "SELECT " + COLUMNS + " FROM risk.decision_override WHERE id = ? FOR UPDATE")) {
+                SELECT + " WHERE o.id = ? FOR UPDATE OF o")) {
             select.setObject(1, id.value());
             return single(select);
         } catch (SQLException failure) {
@@ -107,8 +100,8 @@ public final class JdbcDecisionOverrideStore implements DecisionOverrideStore {
     public List<DecisionOverride> ofAssessment(Connection unitOfWork, RiskAssessmentId assessment) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(assessment, "assessment");
-        try (PreparedStatement select = unitOfWork.prepareStatement("SELECT " + COLUMNS
-                + " FROM risk.decision_override WHERE assessment_id = ? ORDER BY proposed_at, id")) {
+        try (PreparedStatement select = unitOfWork.prepareStatement(SELECT
+                + " WHERE o.assessment_id = ? ORDER BY o.proposed_at, o.id")) {
             select.setObject(1, assessment.value());
             List<DecisionOverride> found = new ArrayList<>();
             try (ResultSet rows = select.executeQuery()) {
@@ -124,19 +117,17 @@ public final class JdbcDecisionOverrideStore implements DecisionOverrideStore {
 
     @Override
     public Optional<DecisionOverride> approve(Connection unitOfWork, DecisionOverrideId id, Actor approver,
-            String reason, Duration lease) {
+            String reason) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(approver, "approver");
         Objects.requireNonNull(reason, "reason");
-        Objects.requireNonNull(lease, "lease");
         try (PreparedStatement update = unitOfWork.prepareStatement(APPROVE)) {
             update.setString(1, approver.id());
             update.setString(2, approver.type().name());
             update.setString(3, reason);
-            update.setLong(4, millis(lease));
-            update.setObject(5, id.value());
-            return single(update);
+            update.setObject(4, id.value());
+            return moved(unitOfWork, update, id);
         } catch (SQLException failure) {
             throw failed("approving a decision override", failure);
         }
@@ -154,39 +145,24 @@ public final class JdbcDecisionOverrideStore implements DecisionOverrideStore {
             update.setString(2, rejecter.type().name());
             update.setString(3, reason);
             update.setObject(4, id.value());
-            return single(update);
+            return moved(unitOfWork, update, id);
         } catch (SQLException failure) {
             throw failed("rejecting a decision override", failure);
         }
     }
 
-    @Override
-    public Optional<DecisionOverride> claimDue(Connection unitOfWork, Duration lease) {
-        Objects.requireNonNull(unitOfWork, "unitOfWork");
-        Objects.requireNonNull(lease, "lease");
-        try (PreparedStatement claim = unitOfWork.prepareStatement(CLAIM_DUE)) {
-            claim.setLong(1, millis(lease));
-            return single(claim);
-        } catch (SQLException failure) {
-            throw failed("claiming a due override action", failure);
-        }
-    }
-
-    @Override
-    public boolean conclude(Connection unitOfWork, DecisionOverrideId id, ActionOutcome outcome) {
-        Objects.requireNonNull(unitOfWork, "unitOfWork");
-        Objects.requireNonNull(id, "id");
-        Objects.requireNonNull(outcome, "outcome");
-        try (PreparedStatement update = unitOfWork.prepareStatement(CONCLUDE)) {
-            update.setString(1, outcome.name());
-            update.setObject(2, id.value());
-            return update.executeUpdate() == 1;
-        } catch (SQLException failure) {
-            throw failed("recording an override action's outcome", failure);
-        }
-    }
-
     // ------------------------------------------------------------------ plumbing
+
+    /** A conditional edge's row, read back with its action's state - empty when the edge did not apply. */
+    private Optional<DecisionOverride> moved(Connection unitOfWork, PreparedStatement update, DecisionOverrideId id)
+            throws SQLException {
+        try (ResultSet row = update.executeQuery()) {
+            if (!row.next()) {
+                return Optional.empty();
+            }
+        }
+        return find(unitOfWork, id);
+    }
 
     private static Optional<DecisionOverride> single(PreparedStatement statement) throws SQLException {
         try (ResultSet row = statement.executeQuery()) {
@@ -222,14 +198,6 @@ public final class JdbcDecisionOverrideStore implements DecisionOverrideStore {
     private static Optional<Instant> instant(ResultSet row, String column) throws SQLException {
         Timestamp at = row.getTimestamp(column);
         return Optional.ofNullable(at).map(Timestamp::toInstant);
-    }
-
-    /** The lease in whole milliseconds - an integer to the database, never a floating-point interval. */
-    private static long millis(Duration lease) {
-        if (lease.isNegative() || lease.isZero()) {
-            throw new IllegalArgumentException("an action's lease is positive");
-        }
-        return lease.toMillis();
     }
 
     private static RiskStorageException failed(String operation, SQLException failure) {

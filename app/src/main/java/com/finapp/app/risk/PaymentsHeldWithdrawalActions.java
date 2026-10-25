@@ -15,15 +15,15 @@ import java.util.function.Supplier;
  * each in payments' own transactions under the withdrawal row's lock, keyed by the action's key and audited by payments
  * as the caller's act. Risk records the outcome; payments owns the effect.
  *
- * <p><strong>Called by risk since `P13-TSK-012`</strong>: {@code OverrideActions.dispatch} - an approved override's
- * release or denial, from the approval door after its commit ({@code RiskOverrideDesk}) and from the re-drive leg
- * ({@code OverrideActionDriver} on {@code RiskMonitoringSchedule}), each on no risk transaction; `-017`'s action schedule
- * next.
+ * <p><strong>Called by risk</strong> (`P13-TSK-012`; folded into the action machine by `P13-TSK-017`): T-act's dispatch,
+ * {@code ActionDispatch} through {@code RiskActions.dispatch} - an approved override's or a case's release or denial,
+ * driven by {@code RiskActionDriver} after the approval's commit and by {@code RiskActionSchedule}'s re-drive, on no risk
+ * transaction and as the platform ({@code SystemActor}), never under the approving person's session.
  *
  * <p><strong>The mapping</strong>: payments' {@code DONE}, {@code ALREADY} and {@code REFUSED} are risk's, word for word.
  * An id that is no platform identifier names no withdrawal: {@code REFUSED}. Everything else payments throws - a key
- * reused for another withdrawal, a flight still holding the key, a malformed reason, a storage failure - propagates, for
- * the action machine to record {@code FAILED} and re-drive under the same key.
+ * reused for another withdrawal, a flight still holding the key, a malformed reason, a storage failure - propagates: the
+ * action machine records nothing and re-drives under the same key when its permit falls due.
  */
 public final class PaymentsHeldWithdrawalActions implements HeldWithdrawalActions {
 

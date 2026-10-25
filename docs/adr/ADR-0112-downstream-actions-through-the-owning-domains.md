@@ -175,7 +175,29 @@ keyed command through its door), `INV-RSK-07` (every downstream action is two pe
 ## Follow-up
 
 - `P13-TSK-017` — the action machine, the ports per owning domain, `RiskActionSchedule`, T-act and the two re-drive
-  tests (`risk V010`); `P13-TSK-012` — the override's `RELEASE_HELD_WITHDRAWAL` / `DENY_HELD_WITHDRAWAL`
+  tests (`risk V010`) *(built 2026-10-25, `risk V013` - the next free number: `risk_action` with decision 1's machine,
+  `RiskActions`, `ActionRules`, `ActionDispatch`, `app`'s `RiskActionController` / `RiskActionDesk`, `RiskActionDriver`,
+  `RiskActionSchedule`, `IdentityRiskActions`, `MerchantRiskActions`. **Dated amendments, 2026-10-25:** (a) decision 2's
+  table - accounts has **no suspension command** and crossborder **no beneficiary block**, so `SUSPEND_ACCOUNT`,
+  `REINSTATE_ACCOUNT` and `BLOCK_BENEFICIARY` are declared unavailable (`ActionKind.available()`), never proposed and
+  never dispatched, their ports `AccountActions` / `BeneficiaryActions` unimplemented - a kind becomes available with its
+  owner's command and a row here, never by a mutation `risk` adds to the owner; and **no disposition issues an action**
+  (the table's "a disposition the void"; `DESIGN-017` D11): every case action is proposed on the case and decided by a
+  second person on its own row, a disposition waiting while one stands `PROPOSED`. (b) Decision 4's "the actor the port
+  carries" is **the platform** - T-act runs the owner's command under `SecurityContext.enterSystem()`
+  (`RiskActionDriver.asThePlatform`, enumerated in `SystemActorCallSitesAreEnumeratedTest`), the deciding persons
+  recorded on the action, in risk's audit and, for identity's not-self rule, as the decider; `P13-TSK-016`'s gate found
+  the override door's dispatch under an operator's `CUSTOMER`-typed session refused by payments, and the fix is this,
+  not a wider payments door. (c) Decision 4's claim is **committed before** the owner's command: one statement on R6
+  `FOR UPDATE SKIP LOCKED` moves the row `DISPATCHED` with a lease-long permit and an attempt counted, so no risk row at
+  all is held while the owner works; the conclusion is a second, conditional edge - `DONE` for the owner's `DONE` or
+  `ALREADY` (`DONE(ALREADY)`), `FAILED` for its `REFUSED` (the outcome code, the owner having no reason code to hand
+  back). (d) Identity's and merchant's commands are keyed by `app`'s adapters through the platform's `IdempotentExecutor`
+  in the owner's own transaction (scopes `identity.risk-action`, `merchant.risk-action`) - their doors had no key - so a
+  re-drive replays the first answer, as payments' own claims do. (e) `-012`'s issued action is **folded**: the
+  override's approval issues it into `risk_action` under the override's own id, born `APPROVED` (decision 3, as
+  written), its pending keys `risk.action:<override id>` kept by `V013`'s copy, the leg on `RiskMonitoringSchedule`
+  moved to `RiskActionSchedule`.)*; `P13-TSK-012` — the override's `RELEASE_HELD_WITHDRAWAL` / `DENY_HELD_WITHDRAWAL`
   through payments; `P13-TSK-009` — payments' `HELD` state and its release and denial commands (payments `V033`);
   *(built 2026-10-24: `Withdrawals.releaseHeld(key, id, reasonCode)` — the claim `payments.withdrawal.release`, the
   withdrawal row `FOR UPDATE`, `HELD → DISPATCHED` within `held_until` on the database clock, the send after the commit,

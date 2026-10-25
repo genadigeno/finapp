@@ -136,11 +136,18 @@ class DecisionOverrideMigrationTest {
                 .allMatch(name -> name.startsWith("decision_override_"));
         String unquoted = statements(RESOURCE).replaceAll("'(?:[^']|'')*'", "''");
         assertThat(ANOTHER_SCHEMA.matcher(unquoted).find()).isFalse();
+        // Since P13-TSK-017 the store reads the override (o: V007's and V009's columns) beside its issued action (a:
+        // V013's risk_action - the four action columns V013 moved there).
         String tables = collapsed(statements(EARLIER.get(6)) + statements(RESOURCE));
-        for (String column : JdbcDecisionOverrideStore.COLUMNS.split(",")) {
-            assertThat(tables).as(column.strip()).containsPattern("\\b" + column.strip()
-                    + "\\s+(uuid|text|boolean|integer|timestamptz)");
+        String actionTable = collapsed(statements("db/migration/risk/V013__downstream_risk_actions.sql"));
+        Matcher selected = Pattern.compile("\\b([oa])\\.([a-z_]+)").matcher(JdbcDecisionOverrideStore.SELECT);
+        int read = 0;
+        while (selected.find()) {
+            read++;
+            assertThat(selected.group(1).equals("o") ? tables : actionTable).as(selected.group())
+                    .containsPattern("\\b" + selected.group(2) + "\\s+(uuid|text|boolean|integer|timestamptz)");
         }
+        assertThat(read).as("the guard is not vacuous").isGreaterThanOrEqualTo(20);
     }
 
     // -----------------------------------------------------------------

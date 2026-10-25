@@ -475,16 +475,27 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " (P13-TSK-007) likewise: nobody commands a customer risk profile's recompute - the sweep claims"
                         + " a head whose permit came and the MONITORING policy rates the party as the system, its version"
                         + " row and risk.CustomerRiskRatingChanged the trail; PROHIBITED is a person's disposition (-016)."
-                        + " Its override action leg (P13-TSK-012) likewise: nobody commands the re-drive of an approved"
-                        + " override's issued action - the officers' approval is the person's act, recorded"
-                        + " risk.OverrideApproved under their own actor at the door; when the approving instance died"
-                        + " between its commit and its dispatch, the sweep claims the due permit on the database clock and"
-                        + " re-presents payments' keyed door the same key as the platform, the outcome recorded"
-                        + " risk.ActionConcluded with actor SYSTEM. Its case leg (P13-TSK-016) likewise: nobody commands"
+                        + " (Its override action leg, P13-TSK-012's, moved to RiskActionDriver below with the action"
+                        + " machine, P13-TSK-017.) Its case leg (P13-TSK-016) likewise: nobody commands"
                         + " the folding of an alert born before cases existed - the sweep attaches each queued alert to"
                         + " its subject's open case (or opens one, risk.CaseOpened under SYSTEM, exactly as T-mon's own"
                         + " folds do), and re-applies to the profile the PROHIBITED that two persons' approved"
                         + " disposition decided (risk.DispositionApproved under the approver's own actor at the door)."),
+                    Map.entry(
+                            "com.finapp.app.risk.RiskActionDriver.asThePlatform",
+                    "T-act, the execution of an approved risk action (P13-TSK-017, PHASE_13_PLAN.md section 7.1 T-act,"
+                        + " ADR-0112 decisions 3-4): a PERSON decided it - one RISK_INVESTIGATE holder proposed and a"
+                        + " different RISK_CASE_APPROVE holder approved it (or two officers an override, C7), each recorded"
+                        + " under their own actor at the door (risk.ActionProposed, risk.ActionApproved; the action row's"
+                        + " proposed_by and decided_by) - and the PLATFORM executes it: the claim, the owning domain's"
+                        + " keyed command (risk.action:<id>, the action's reason code) and the record, from the approval"
+                        + " door after its commit and from RiskActionSchedule's re-drive alike. The owner's audit names the"
+                        + " system as the executor, the correlation ties it to the decision. This is deliberate and the"
+                        + " fix of the defect P13-TSK-016's gate routed here: dispatching under the approver's session"
+                        + " actor - CUSTOMER-typed, as the session interceptor establishes every identity - was refused by"
+                        + " payments' held doors (they admit the platform or an employee), so the first attempt always"
+                        + " threw; widening payments' door to CUSTOMER would have let any customer session reach it. No"
+                        + " door that holds a Session calls this: the desk calls the driver after its keyed act."),
                     Map.entry(
                             "com.finapp.app.lending.LoanOriginationSchedule.sweepOnce",
                     "The loan origination sweep (P11-TSK-011, PHASE_11_PLAN.md section 11: origination is never a"

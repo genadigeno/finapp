@@ -16,14 +16,14 @@ import java.util.function.Supplier;
  * by the action's key and audited by payments as the caller's act, then handing the money to payments' capture or void
  * command. Risk records the outcome; payments owns the effect. {@code PaymentsHeldWithdrawalActions}' shape.
  *
- * <p><strong>Called by risk since `P13-TSK-012`</strong>: {@code OverrideActions.dispatch} - an approved override's
- * capture or void of a held card payment, from the approval door after its commit and from the re-drive leg, each on no
- * risk transaction; `-017`'s action schedule next.
+ * <p><strong>Called by risk</strong> (`P13-TSK-012`; folded into the action machine by `P13-TSK-017`): T-act's dispatch -
+ * an approved override's or a case's capture or void of a held card payment, driven after the approval's commit and by
+ * {@code RiskActionSchedule}'s re-drive, on no risk transaction and as the platform.
  *
  * <p><strong>The mapping</strong>: payments' {@code DONE}, {@code ALREADY} and {@code REFUSED} are risk's, word for word.
  * An id that is no platform identifier names no payment: {@code REFUSED}. Everything else payments throws - an
- * authorisation still in flight, a key reused for another payment, a malformed reason, a storage failure - propagates,
- * for the action machine to record {@code FAILED} and re-drive under the same key.
+ * authorisation still in flight, a key reused for another payment, a malformed reason, a storage failure - propagates:
+ * the action machine records nothing and re-drives under the same key when its permit falls due.
  */
 public final class PaymentsHeldPaymentActions implements HeldPaymentActions {
 

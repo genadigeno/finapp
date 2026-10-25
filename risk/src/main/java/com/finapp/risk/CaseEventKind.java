@@ -35,7 +35,16 @@ public enum CaseEventKind {
     DISPOSITION_REJECTED(true),
 
     /** The case reached its disposition - a one-person close, or a second person's approval. */
-    DISPOSED(true);
+    DISPOSED(true),
+
+    /** A person proposed a downstream action on the case (`P13-TSK-017`; {@code risk V013}). */
+    ACTION_PROPOSED(true),
+
+    /** A second person approved the case's standing action - dispatched by T-act after the commit (`P13-TSK-017`). */
+    ACTION_APPROVED(true),
+
+    /** A person rejected (or withdrew) the case's standing action (`P13-TSK-017`). */
+    ACTION_REJECTED(true);
 
     private final boolean persons;
 

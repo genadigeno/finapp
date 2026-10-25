@@ -63,9 +63,13 @@ class DecisionOverrideTest {
         assertThat(approved.replayed()).isFalse();
         assertThat(row.status()).isEqualTo(OverrideStatus.APPROVED);
         assertThat(row.action()).contains(OverrideEffect.RELEASE_HELD_WITHDRAWAL);
-        assertThat(row.actionDueAt()).as("the permit, the lease ahead").contains(world.overrides.now.plus(
-                OverrideWorld.LEASE));
-        assertThat(row.actionAttempts()).isEqualTo(1);
+        assertThat(row.actionDueAt()).as("issued into the action machine, due at once (P13-TSK-017)")
+                .contains(world.now());
+        assertThat(row.actionAttempts()).as("nothing claimed yet").isZero();
+        assertThat(world.issuedFor(row).status()).isEqualTo(ActionStatus.APPROVED);
+        assertThat(world.issuedFor(row).id().value()).as("the action is the override's own id - its key kept")
+                .isEqualTo(row.id().value());
+        assertThat(row.actionKey()).isEqualTo("risk.action:" + row.id().value());
         assertThat(row.actionOutcome()).as("issued, not attempted - the dispatch is after the commit").isEmpty();
         assertThat(world.payments.calls).as("nothing is dispatched inside the approval").isEmpty();
         assertThat(world.audited("risk.OverrideApproved")).singleElement().satisfies(record -> {
@@ -75,7 +79,7 @@ class DecisionOverrideTest {
         });
         assertThat(world.events).singleElement().satisfies(event -> {
             assertThat(event.eventType()).isEqualTo("risk.RiskActionRequested");
-            assertThat(event.aggregateType()).isEqualTo("decision_override");
+            assertThat(event.aggregateType()).isEqualTo("risk_action");
         });
         assertThat(world.payloads.get(0)).containsEntry("kind", "RELEASE_HELD_WITHDRAWAL")
                 .containsEntry("targetKind", "WITHDRAWAL").containsEntry("source", "OVERRIDE")
@@ -101,6 +105,7 @@ class DecisionOverrideTest {
         assertThat(approved.actionDueAt()).isEmpty();
         assertThat(approved.actionAttempts()).isZero();
         assertThat(approved.awaitsOutcome()).isFalse();
+        assertThat(world.actionStore.all()).as("a resubmission issues no action").isEmpty();
         assertThat(world.events).as("a resubmission requests no action").isEmpty();
     }
 
@@ -270,7 +275,7 @@ class DecisionOverrideTest {
         }
         DecisionOverride proposed = world.propose(held, OverrideResolution.PROCEED, officer);
         assertThatThrownBy(() -> world.machine.approve(EvaluationWorld.UOW, held.id(), proposed.id(), "",
-                world.officer(), OverrideWorld.correlation(), OverrideWorld.LEASE))
+                world.officer(), OverrideWorld.correlation()))
                 .isInstanceOf(RiskReasons.ReasonRequired.class);
         assertThat(world.overrides.all()).singleElement()
                 .satisfies(row -> assertThat(row.status()).isEqualTo(OverrideStatus.PROPOSED));

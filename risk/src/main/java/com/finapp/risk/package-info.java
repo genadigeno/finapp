@@ -169,10 +169,9 @@
  * {@code requiresSecondPerson}, failing closed; self-dealing fail closed on every act and read; the sealed assessment
  * never written) over {@link com.finapp.risk.DecisionOverrideStore} ({@code JdbcDecisionOverrideStore}); the
  * {@link com.finapp.risk.OverrideEffect} an approval issues - a held withdrawal released or denied, a held card payment
- * captured or voided, a refusal's {@code RESUBMISSION} that dispatches nothing - and
- * {@link com.finapp.risk.OverrideActions} (T-act's shape: the dispatch through {@link com.finapp.risk.HeldWithdrawalActions}
- * and {@link com.finapp.risk.HeldPaymentActions} on no transaction, keyed {@code risk.action:<override id>}, the outcome
- * recorded once; the re-drive's claim on the row's permit), until `-017` folds it into the action machine.
+ * captured or voided, a refusal's {@code RESUBMISSION} that dispatches nothing - issued since `P13-TSK-017` into the
+ * action machine through {@link com.finapp.risk.ActionIssuer} (the {@code risk_action} row under the override's own id,
+ * so its key stays {@code risk.action:<override id>}); `-012`'s {@code OverrideActions} and its leg are folded away.
  *
  * <p><strong>The born-once alert</strong> (`P13-TSK-015`, {@code risk V010}): {@link com.finapp.risk.Alerts} - the
  * raise ({@code raise} / {@code raiseAll}, S, on the caller's unit of work in T-eval or T-mon): one
@@ -241,5 +240,22 @@
  * {@link com.finapp.risk.ProfileRecompute#applyDisposition} applies it after the case commits, in a transaction of its
  * own (R8 alone - never R8 under R4), one version per disposition. {@link com.finapp.risk.CaseObserver} is the meters' port. The downstream actions are
  * `-017`'s; the queues and the case read `-018`'s.
+ *
+ * <p><strong>The downstream action</strong> (`P13-TSK-017`, {@code risk V013}; ADR-0112): {@link com.finapp.risk.RiskActions}
+ * over {@link com.finapp.risk.RiskActionStore} ({@code JdbcRiskActionStore}) - the record in risk of an effect the owning
+ * domain performs ({@code INV-RSK-02}). {@link com.finapp.risk.RiskAction} runs {@link com.finapp.risk.ActionStatus}'s
+ * machine ({@code PROPOSED → APPROVED → DISPATCHED → DONE | FAILED}, {@code REJECTED} beside; {@code FAILED} re-proposable,
+ * never re-dispatched by itself), its id the proposing {@code ACTION_PROPOSED} investigator action's or the issuing
+ * override's, so the key {@code risk.action:<id>} is fixed at birth. T-case: propose, approve, reject under the case row
+ * (R4) then the action row (R6), {@link com.finapp.risk.ActionRules} judging the kind against the case's kind and subject
+ * and the target against the case's own party, merchant or a held movement it holds; four eyes in the domain and in
+ * {@code risk_action_four_eyes}; a disposition waits while an action stands {@code PROPOSED}. T-ovr:
+ * {@link com.finapp.risk.ActionIssuer} - an approved override's action born {@code APPROVED}. T-act: the claim ONE
+ * statement {@code FOR UPDATE SKIP LOCKED} on a due permit, committed; {@link com.finapp.risk.ActionDispatch} - the kind
+ * to its port ({@link com.finapp.risk.IdentityActions}, {@link com.finapp.risk.MerchantActions},
+ * {@link com.finapp.risk.HeldWithdrawalActions}, {@link com.finapp.risk.HeldPaymentActions}) on no transaction, the
+ * caller entering the platform's actor; the outcome recorded once by a conditional edge. {@code SUSPEND_ACCOUNT},
+ * {@code REINSTATE_ACCOUNT} and {@code BLOCK_BENEFICIARY} have no owning command and are unavailable
+ * ({@link com.finapp.risk.ActionKind#available()}); {@code RESCREEN_PARTY} is the rescreening sweep's (`-022`).
  */
 package com.finapp.risk;

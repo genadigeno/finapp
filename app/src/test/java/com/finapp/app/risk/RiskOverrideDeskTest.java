@@ -30,7 +30,11 @@ import com.finapp.risk.DecisionOverrideId;
 import com.finapp.risk.DecisionOverrides;
 import com.finapp.risk.HeldPaymentActions;
 import com.finapp.risk.HeldWithdrawalActions;
-import com.finapp.risk.OverrideActions;
+import com.finapp.risk.ActionDispatch;
+import com.finapp.risk.CaseObserver;
+import com.finapp.risk.Cases;
+import com.finapp.risk.RiskActionId;
+import com.finapp.risk.RiskActions;
 import com.finapp.risk.RiskAssessment;
 import com.finapp.risk.RiskDecision;
 import com.finapp.risk.RiskErrorCode;
@@ -41,6 +45,9 @@ import com.finapp.risk.RiskPolicies;
 import com.finapp.risk.RiskPolicy;
 import com.finapp.risk.ScoreBand;
 import com.finapp.risk.testing.InMemoryDecisionOverrideStore;
+import com.finapp.risk.testing.InMemoryRiskActionStore;
+import com.finapp.risk.testing.InMemoryRiskAlertStore;
+import com.finapp.risk.testing.InMemoryRiskCaseStore;
 import com.finapp.risk.testing.RiskPolicyFixtures;
 import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.Correlation;
@@ -66,10 +73,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The override doors, hermetic (`P13-TSK-012`; {@code PHASE_13_PLAN.md} sections 9, 11): every route
- * {@code RISK_OVERRIDE}, the approval {@code MULTI_FACTOR}, every act keyed; the approval's action dispatched through
- * payments' door <strong>after</strong> its transaction commits - with no transaction open - and re-driven by the key's
- * replay when the first dispatch threw, one effect; the act audited; the refusals on the error contract - the
+ * The override doors, hermetic (`P13-TSK-012`; folded into the action machine by `P13-TSK-017`; {@code PHASE_13_PLAN.md}
+ * sections 9, 11): every route {@code RISK_OVERRIDE}, the approval {@code MULTI_FACTOR}, every act keyed; the approval's
+ * action - a {@code risk_action} row under the override's id - dispatched through payments' door <strong>after</strong>
+ * its transaction commits, with no transaction open and <strong>as the platform</strong> (the officers are
+ * {@code CUSTOMER}-typed, as the session interceptor builds every identity, and the fake door refuses any caller payments
+ * refuses - `-016`'s routed finding: the first attempt now succeeds), and re-driven by the key's replay or the
+ * schedule's drive when the first dispatch threw, one effect; the act audited; the refusals on the error contract - the
  * proposer's approval {@code 403 risk.SelfApprovalRefused} and the officer's own party {@code 403
  * risk.SelfDealingRefused}, each recorded {@code FAILED} in a transaction of its own, an {@code ALLOW} {@code 409
  * risk.ActionNotProposable}, a decided override {@code 409 risk.OverrideStale}, a blank reason {@code 422
@@ -86,6 +96,8 @@ class RiskOverrideDeskTest {
 
     private final RiskEvaluationWorld world = new RiskEvaluationWorld();
     private final InMemoryDecisionOverrideStore store = new InMemoryDecisionOverrideStore();
+    private final InMemoryRiskActionStore actionStore = new InMemoryRiskActionStore();
+    private final InMemoryRiskCaseStore caseStore = new InMemoryRiskCaseStore();
     private final List<AuditRecord> audit = new ArrayList<>();
     private final List<String> events = new ArrayList<>();
     private final Map<String, UUID> partyOf = new HashMap<>();
@@ -98,6 +110,7 @@ class RiskOverrideDeskTest {
         @Override
         public <R> R inTransaction(Function<Connection, R> work) {
             Map<DecisionOverrideId, DecisionOverride> overrides = store.snapshot();
+            Map<RiskActionId, com.finapp.risk.RiskAction> actionRows = actionStore.snapshot();
             Map<IdempotencyKey, IdempotencyRecord> keys = new LinkedHashMap<>(claims);
             int audited = audit.size();
             depth++;
@@ -105,6 +118,7 @@ class RiskOverrideDeskTest {
                 return work.apply(RiskEvaluationWorld.UNTOUCHABLE);
             } catch (RuntimeException rolledBack) {
                 store.restore(overrides);
+                actionStore.restore(actionRows);
                 claims.clear();
                 claims.putAll(keys);
                 audit.subList(audited, audit.size()).clear();
@@ -122,13 +136,25 @@ class RiskOverrideDeskTest {
 
     private final OutboxWriter<Connection> outbox =
             (unitOfWork, envelope, payload, mediaType) -> events.add(envelope.eventType());
+    private final Cases cases = new Cases(caseStore, new InMemoryRiskAlertStore(),
+            (unitOfWork, actor) -> Optional.ofNullable(partyOf.get(actor.id())), (unitOfWork, subject) -> Optional.empty(),
+            (unitOfWork, record) -> audit.add(record), outbox, RiskEvaluationWorld.IDS, RiskEvaluationWorld.CLOCK,
+            CaseObserver.NONE);
+    private final RiskActions actions = new RiskActions(actionStore, cases, caseStore, world.assessmentStore,
+            new ActionDispatch(RiskActionDispatchTest.NO_IDENTITY, RiskActionDispatchTest.NO_MERCHANT, payments,
+                    payments),
+            (unitOfWork, record) -> audit.add(record), outbox, RiskEvaluationWorld.IDS, RiskEvaluationWorld.CLOCK);
     private final DecisionOverrides machine = new DecisionOverrides(store, world.assessmentStore,
             new RiskPolicies(world.policyStore), (unitOfWork, actor) -> Optional.ofNullable(partyOf.get(actor.id())),
-            (unitOfWork, record) -> audit.add(record), outbox, RiskEvaluationWorld.IDS, RiskEvaluationWorld.CLOCK);
+            (unitOfWork, record) -> audit.add(record), actions, RiskEvaluationWorld.IDS, RiskEvaluationWorld.CLOCK);
     private final RiskOverrideMetrics metrics = new RiskOverrideMetrics(registry);
-    private final OverrideActionDriver driver = new OverrideActionDriver(new OverrideActions(store, payments, payments,
-            (unitOfWork, record) -> audit.add(record), outbox, RiskEvaluationWorld.IDS, RiskEvaluationWorld.CLOCK),
-            transactions, metrics, RiskFlowScope.NONE, Duration.ofMinutes(2), 5);
+    private final RiskActionMetrics actionMetrics = new RiskActionMetrics(registry);
+    private final RiskActionDriver driver = new RiskActionDriver(actions, transactions, actionMetrics,
+            RiskFlowScope.NONE, Duration.ofMinutes(2), 5);
+
+    {
+        store.actionOf = actionStore::ofOverride;
+    }
     private final RiskOverrideDesk desk = new RiskOverrideDesk(machine, driver,
             new IdempotentExecutor(new Claims(), RiskEvaluationWorld.CLOCK, Duration.ofDays(1), Duration.ofMinutes(1)),
             transactions, RiskFlowScope.NONE, metrics);
@@ -161,8 +187,8 @@ class RiskOverrideDeskTest {
 
     @Test
     @DisplayName("proposed, then approved by a second officer: the release is dispatched once through payments' door"
-            + " AFTER the approval committed - no transaction open - under risk.action:<id>, its DONE in the answer;"
-            + " the acts audited and counted")
+            + " AFTER the approval committed - no transaction open, as the platform, on its FIRST attempt (the routed"
+            + " CUSTOMER-actor finding) - under risk.action:<id>, its DONE in the answer; the acts audited and counted")
     void theReleaseIsDispatchedAfterTheCommit() {
         RiskAssessment held = sealed(RiskOperation.WITHDRAWAL, RiskDecision.HOLD, THRESHOLD);
         RiskOverrideDesk.RiskOverrideView proposed = as(officer(), () -> desk.propose("key-1", id(held),
@@ -180,14 +206,17 @@ class RiskOverrideDeskTest {
         assertThat(approved.action()).isEqualTo("RELEASE_HELD_WITHDRAWAL");
         assertThat(approved.actionOutcome()).isEqualTo("DONE");
         assertThat(approved.actionDueAt()).isNull();
+        assertThat(approved.actionAttempts()).as("the first attempt succeeded").isEqualTo(1);
         assertThat(payments.calls).containsExactly("release|" + held.commandRef().value() + "|risk.action:"
-                + proposed.overrideId() + "|FALSE_POSITIVE|depth=0");
+                + proposed.overrideId() + "|FALSE_POSITIVE|depth=0|SYSTEM");
         assertThat(audit).extracting(record -> record.operation().code()).containsExactly("risk.OverrideProposed",
-                "risk.OverrideApproved", "risk.ActionConcluded");
+                "risk.OverrideApproved", "risk.ActionDispatched", "risk.ActionConcluded");
+        assertThat(audited("risk.ActionConcluded")).singleElement().satisfies(record ->
+                assertThat(record.actor()).as("the platform executed; the officers decided").isEqualTo(Actor.SYSTEM));
         assertThat(events).containsExactly("risk.RiskActionRequested", "risk.RiskActionCompleted");
         assertThat(count(RiskOverrideMetrics.OVERRIDE, "outcome", "proposed")).isEqualTo(1);
         assertThat(count(RiskOverrideMetrics.OVERRIDE, "outcome", "approved")).isEqualTo(1);
-        assertThat(registry.get(RiskOverrideMetrics.ACTION).tag("kind", "RELEASE_HELD_WITHDRAWAL")
+        assertThat(registry.get(RiskActionMetrics.ACTION).tag("kind", "RELEASE_HELD_WITHDRAWAL")
                 .tag("outcome", "done").counter().count()).isEqualTo(1);
     }
 
@@ -207,23 +236,26 @@ class RiskOverrideDeskTest {
         assertThat(first.status()).isEqualTo("APPROVED");
         assertThat(first.actionOutcome()).isNull();
         assertThat(first.actionDueAt()).isNotNull();
-        assertThat(registry.get(RiskOverrideMetrics.ACTION_FAILED).tag("kind", "CAPTURE_HELD_PAYMENT").counter()
+        assertThat(registry.get(RiskActionMetrics.ACTION_FAILED).tag("kind", "CAPTURE_HELD_PAYMENT").counter()
                 .count()).isEqualTo(1);
 
+        // The claim moved the permit a lease ahead: the approver's retry within it replays the approval and finds the
+        // action held by its lease - past it, the retry's own drive claims it again under the same key.
+        actionStore.now = actionStore.now.plus(Duration.ofMinutes(3));
         RiskOverrideDesk.RiskOverrideView again = as(approver, () -> desk.approve("a", id(held), overrideId, "ok"));
         assertThat(again.actionOutcome()).isEqualTo("DONE");
         assertThat(payments.calls).hasSize(2).allSatisfy(call -> assertThat(call)
                 .startsWith("capture|" + held.commandRef().value() + "|risk.action:" + overrideId + "|").endsWith(
-                        "|depth=0"));
+                        "|depth=0|SYSTEM"));
         assertThat(payments.effects).isEqualTo(1);
         assertThat(audit).filteredOn(record -> record.operation().code().equals("risk.OverrideApproved")).hasSize(1);
         assertThat(count(RiskOverrideMetrics.OVERRIDE, "outcome", "approved")).as("the replay counts nothing").isEqualTo(1);
     }
 
     @Test
-    @DisplayName("the re-drive leg: an approval whose dispatch threw is due once its lease passes; the leg claims it,"
-            + " dispatches the same key with no transaction open and records DONE as the platform under the override's"
-            + " correlation - once; the next tick finds nothing due")
+    @DisplayName("the re-drive: an approval whose dispatch threw is due once its lease passes; RiskActionSchedule's"
+            + " drive claims it, dispatches the same key with no transaction open and records DONE as the platform under"
+            + " the override's correlation - once; the next tick finds nothing due")
     void theLegReDrivesAsThePlatform() {
         RiskAssessment held = sealed(RiskOperation.WITHDRAWAL, RiskDecision.HOLD, 100_00);
         String overrideId = as(officer(), () -> desk.propose("p", id(held),
@@ -234,16 +266,16 @@ class RiskOverrideDeskTest {
         Actor platform = new Actor("risk-monitoring", ActorType.SYSTEM);
         assertThat(as(platform, driver::driveDue)).as("within the lease the permit is not due").isZero();
 
-        store.now = store.now.plus(Duration.ofMinutes(3));
+        actionStore.now = actionStore.now.plus(Duration.ofMinutes(3));
         assertThat(as(platform, driver::driveDue)).isEqualTo(1);
         assertThat(payments.calls).hasSize(2).last().asString()
                 .isEqualTo("release|" + held.commandRef().value() + "|risk.action:" + overrideId
-                        + "|FALSE_POSITIVE|depth=0");
+                        + "|FALSE_POSITIVE|depth=0|SYSTEM");
         assertThat(audited("risk.ActionConcluded")).singleElement().satisfies(record -> {
             assertThat(record.actor().type()).isEqualTo(ActorType.SYSTEM);
             assertThat(record.changeSummary().orElseThrow()).contains("outcome=DONE", "attempts=2");
         });
-        store.now = store.now.plus(Duration.ofMinutes(10));
+        actionStore.now = actionStore.now.plus(Duration.ofMinutes(10));
         assertThat(as(platform, driver::driveDue)).as("concluded: nothing due again").isZero();
         assertThat(payments.effects).isEqualTo(1);
     }
@@ -356,8 +388,9 @@ class RiskOverrideDeskTest {
         return assessment.id().value().toString();
     }
 
+    /** A risk officer as the session interceptor establishes every identity: {@code CUSTOMER}-typed, an identity id. */
     private Actor officer() {
-        Actor actor = new Actor("officer-" + UUID.randomUUID(), ActorType.EMPLOYEE);
+        Actor actor = new Actor(RiskEvaluationWorld.IDS.next().toString(), ActorType.CUSTOMER);
         partyOf.put(actor.id(), UUID.randomUUID());
         return actor;
     }
@@ -412,7 +445,12 @@ class RiskOverrideDeskTest {
         }
 
         private ActionOutcome door(String door, UUID target, String key, String reason) {
-            calls.add(door + "|" + target + "|" + key + "|" + reason + "|depth=" + depth);
+            ActorType acting = SecurityContext.require().type();
+            calls.add(door + "|" + target + "|" + key + "|" + reason + "|depth=" + depth + "|" + acting);
+            if (acting != ActorType.SYSTEM && acting != ActorType.EMPLOYEE) {
+                // Payments' held doors admit the platform or an employee - never a CUSTOMER-typed session (-009/-010).
+                throw new IllegalStateException("payments refuses a " + acting + " caller at a held door");
+            }
             if (!failures.isEmpty()) {
                 throw failures.pop();
             }

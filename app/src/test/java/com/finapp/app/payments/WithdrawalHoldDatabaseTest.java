@@ -39,7 +39,9 @@ import com.finapp.risk.DecisionOverrides;
 import com.finapp.risk.EvaluationInputs;
 import com.finapp.risk.HeldPaymentActions;
 import com.finapp.risk.HeldWithdrawalActions;
-import com.finapp.risk.OverrideActions;
+import com.finapp.risk.RiskAction;
+import com.finapp.risk.RiskActionId;
+import com.finapp.risk.RiskActions;
 import com.finapp.risk.OverrideResolution;
 import com.finapp.risk.RiskAssessment;
 import com.finapp.risk.RiskAssessmentId;
@@ -93,7 +95,8 @@ import org.springframework.test.context.DynamicPropertySource;
  * payments engine, outcomes, resolution and ledger holds of the composition root, judged by a scripted seam that
  * answers {@code HOLD} - so no risk version is activated and the suite shares the container. Ten releases of one held
  * withdrawal dispatch it once; a release racing the expiry leaves exactly one outcome on the row lock - payments' door alone (the
- * expiry half, `-009`) and an approved override's issued release through risk's {@code OverrideActions} and the
+ * expiry half, `-009`) and an approved override's issued release through risk's action machine ({@code RiskActions}
+ * - the {@code risk_action} row under the override's id since `P13-TSK-017`, dispatched as the platform) and the
  * composition's {@code HeldWithdrawalActions} (the override half, `P13-TSK-012`: the override's recorded outcome is
  * {@code DONE} exactly when the release won, {@code ALREADY} or {@code REFUSED} when the expiry did), and an approved
  * override's release and denial each take effect once however often their one key is re-driven (scenario 10); the expiry
@@ -134,6 +137,7 @@ class WithdrawalHoldDatabaseTest {
     @Autowired private RiskAssessmentStore riskAssessmentStore;
     @Autowired private DecisionOverrideStore decisionOverrideStore;
     @Autowired private OutboxWriter<Connection> outboxWriter;
+    @Autowired private RiskActions riskActions;
 
     private HeldWithdrawalFixtures fixtures;
 
@@ -226,17 +230,19 @@ class WithdrawalHoldDatabaseTest {
                 assertThat(fixtures.sends()).isEqualTo(sendsBefore);
             }
 
-            // The override half (P13-TSK-012): an approved override's issued release - risk's OverrideActions over the
-            // composition's HeldWithdrawalActions, keyed risk.action:<override id> - racing the expiry.
+            // The override half (P13-TSK-012, folded by P13-TSK-017): an approved override's issued release - the action
+            // machine's row under the override's id, dispatched as the platform through the composition's
+            // HeldWithdrawalActions, keyed risk.action:<override id> - racing the expiry.
             UUID overridden = held(customer, 10_00, Duration.ofSeconds(1));
-            OverrideActions.Issued issued = approvedOverrideOf(overridden, OverrideResolution.PROCEED);
+            RiskAction issued = approvedOverrideOf(overridden, OverrideResolution.PROCEED);
             Thread.sleep(950 + round * 20L);
             int overrideSendsBefore = fixtures.sends();
             List<Object> raced = race(List.<Callable<Object>>of(
-                    () -> asOperatorDo(() -> {
-                        ActionOutcome outcome = overrideActions().dispatch(issued);
-                        transactionsDo(uow -> overrideActions().conclude(uow, issued, outcome, operator(),
-                                CorrelationId.of(issued.correlationId())));
+                    () -> asSystem(() -> {
+                        RiskAction claimed = claimed(issued);
+                        ActionOutcome outcome = riskActions.dispatch(claimed);
+                        transactionsDo(uow -> riskActions.conclude(uow, claimed, outcome,
+                                CorrelationId.of(claimed.correlationId())));
                         return outcome;
                     }),
                     () -> asPlatform(() -> resolution.expireHolds())));
@@ -246,8 +252,8 @@ class WithdrawalHoldDatabaseTest {
             assertThat(count("SELECT count(*) FROM payments.withdrawal_event WHERE withdrawal_id = ?"
                     + " AND from_status = 'HELD'", overridden)).as("round %d, the override: one edge out of HELD", round)
                     .isEqualTo(1);
-            assertThat(column("SELECT action_outcome FROM risk.decision_override WHERE target_id = ?", overridden))
-                    .as("the override records payments' answer once").containsExactly(overrideOutcome.name());
+            assertThat(column(ACTION_OUTCOME, overridden))
+                    .as("the override's action records payments' answer once").containsExactly(overrideOutcome.name());
             if (overrideOutcome == ActionOutcome.DONE) {
                 assertThat(fixtures.sends()).isEqualTo(overrideSendsBefore + 1);
                 assertThat(column("SELECT failure_detail FROM payments.withdrawal WHERE id = ?", overridden))
@@ -272,13 +278,14 @@ class WithdrawalHoldDatabaseTest {
     void anOverridesReleaseDispatchesOnce() throws Exception {
         Customer customer = fixtures.funded(1_000_00);
         UUID held = held(customer, 50_00, Duration.ofHours(72));
-        OverrideActions.Issued issued = approvedOverrideOf(held, com.finapp.risk.OverrideResolution.PROCEED);
+        RiskAction claimed = asSystem(() -> claimed(approvedOverrideOf(held,
+                com.finapp.risk.OverrideResolution.PROCEED)));
         List<ActionOutcome> answers = race(java.util.stream.IntStream.range(0, 10)
-                .<Callable<ActionOutcome>>mapToObj(i -> () -> asOperatorDo(() -> {
+                .<Callable<ActionOutcome>>mapToObj(i -> () -> asSystem(() -> {
                     try {
-                        ActionOutcome outcome = overrideActions().dispatch(issued);
-                        transactionsDo(uow -> overrideActions().conclude(uow, issued, outcome, operator(),
-                                CorrelationId.of(issued.correlationId())));
+                        ActionOutcome outcome = riskActions.dispatch(claimed);
+                        transactionsDo(uow -> riskActions.conclude(uow, claimed, outcome,
+                                CorrelationId.of(claimed.correlationId())));
                         return outcome;
                     } catch (RuntimeException inFlight) {
                         return null; // another flight held the key - nothing recorded, re-driven later
@@ -289,8 +296,7 @@ class WithdrawalHoldDatabaseTest {
         assertThat(count("SELECT count(*) FROM payments.withdrawal_event WHERE withdrawal_id = ?"
                 + " AND from_status = 'HELD' AND to_status = 'DISPATCHED'", held)).isEqualTo(1);
         assertThat(fixtures.sends()).as("one send of our reference").isEqualTo(1);
-        assertThat(column("SELECT action_outcome FROM risk.decision_override WHERE target_id = ?", held))
-                .containsExactly("DONE");
+        assertThat(column(ACTION_OUTCOME, held)).containsExactly("DONE");
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'risk.ActionConcluded'"
                 + " AND target_id = (SELECT id::text FROM risk.decision_override WHERE target_id = ?)", held))
                 .isEqualTo(1);
@@ -303,10 +309,11 @@ class WithdrawalHoldDatabaseTest {
     void anOverridesDenialReleasesTheHoldOnce() throws Exception {
         Customer customer = fixtures.funded(1_000_00);
         UUID held = held(customer, 40_00, Duration.ofHours(72));
-        OverrideActions.Issued issued = approvedOverrideOf(held, com.finapp.risk.OverrideResolution.REFUSE);
+        RiskAction claimed = asSystem(() -> claimed(approvedOverrideOf(held,
+                com.finapp.risk.OverrideResolution.REFUSE)));
         int sendsBefore = fixtures.sends();
-        ActionOutcome first = asOperatorDo(() -> overrideActions().dispatch(issued));
-        ActionOutcome again = asOperatorDo(() -> overrideActions().dispatch(issued));
+        ActionOutcome first = asSystem(() -> riskActions.dispatch(claimed));
+        ActionOutcome again = asSystem(() -> riskActions.dispatch(claimed));
         assertThat(first).isEqualTo(ActionOutcome.DONE);
         assertThat(again).as("the key's answer replayed").isEqualTo(ActionOutcome.DONE);
         assertThat(column("SELECT status || ',' || failure_reason FROM payments.withdrawal WHERE id = ?", held))
@@ -372,9 +379,10 @@ class WithdrawalHoldDatabaseTest {
     /**
      * An approved override of a HOLD sealed for {@code withdrawal} - under a WITHDRAWAL version PROPOSED for it (never
      * activated, so nothing else in the shared container is judged by it) whose one band holds, below the C7 threshold so
-     * one officer completes it - and its issued release, awaiting its dispatch.
+     * one officer completes it - and its issued action (the action machine's row under the override's id, APPROVED and
+     * due), awaiting its claim.
      */
-    private OverrideActions.Issued approvedOverrideOf(UUID withdrawal, OverrideResolution resolution) {
+    private RiskAction approvedOverrideOf(UUID withdrawal, OverrideResolution resolution) {
         RiskPolicy v1 = RiskPolicyFixtures.v1(RiskOperation.WITHDRAWAL);
         RiskPolicy holding = new RiskPolicy(RiskOperation.WITHDRAWAL, v1.engine(), v1.currency(), v1.rules(),
                 List.of(new ScoreBand(0, 1000, RiskDecision.HOLD)), v1.ratingBands(), v1.failSafeBands(),
@@ -398,19 +406,24 @@ class WithdrawalHoldDatabaseTest {
                 request.correlation().value(), "hold-suite", Optional.empty());
         transactionsDo(uow -> riskAssessmentStore.insert(uow, assessment));
         DecisionOverrides machine = new DecisionOverrides(decisionOverrideStore, riskAssessmentStore, riskPolicies,
-                (unitOfWork, actor) -> Optional.of(UUID.randomUUID()), auditWriter, outboxWriter, IDS, CLOCK);
+                (unitOfWork, actor) -> Optional.of(UUID.randomUUID()), auditWriter, riskActions, IDS, CLOCK);
         DecisionOverride proposed = transactionsDo(uow -> machine.propose(uow, assessment.id(), resolution,
                 resolution == OverrideResolution.PROCEED ? "FALSE_POSITIVE" : "RISK_CONFIRMED",
                 "the hold suite's override", officer, CorrelationId.generate(IDS)));
         transactionsDo(uow -> machine.approve(uow, assessment.id(), proposed.id(), "below the threshold, one holder",
-                officer, CorrelationId.generate(IDS), Duration.ofMinutes(2)));
-        return transactionsDo(uow -> overrideActions().pending(uow, proposed.id())).orElseThrow();
+                officer, CorrelationId.generate(IDS)));
+        return transactionsDo(uow -> riskActions.current(uow, RiskActionId.ofOverride(proposed.id()))).orElseThrow();
     }
 
-    private OverrideActions overrideActions() {
-        return new OverrideActions(decisionOverrideStore, heldWithdrawalActions, heldPaymentActions, auditWriter,
-                outboxWriter, IDS, CLOCK);
+    /** {@code issued} claimed in a committed transaction of its own - T-act's first step, as the platform. */
+    private RiskAction claimed(RiskAction issued) {
+        return transactionsDo(uow -> riskActions.claim(uow, issued.id(), Duration.ofMinutes(2))).orElseThrow(() ->
+                new IllegalStateException("an approved override's action is due at once"));
     }
+
+    /** The outcome an override's action recorded - the action machine's row under the override's id. */
+    private static final String ACTION_OUTCOME = "SELECT a.outcome FROM risk.risk_action a"
+            + " JOIN risk.decision_override o ON o.id = a.override_id WHERE o.target_id = ?";
 
     private static Actor operator() {
         return new Actor("employee-" + UUID.randomUUID(), ActorType.EMPLOYEE);
@@ -475,6 +488,19 @@ class WithdrawalHoldDatabaseTest {
                 CorrelationContext.Scope flow = CorrelationContext.enter(
                         Correlation.startingWith(CorrelationId.generate(IDS)))) {
             return door.open(engine(WithdrawalVerdict.permit()));
+        }
+    }
+
+    /**
+     * {@code work} as T-act runs it (`P13-TSK-017`): the platform the acting principal - a person decided the action, the
+     * platform executes it - inside a correlation.
+     */
+    @SuppressWarnings("try") // The Scopes are used for their close side effect (the established idiom).
+    private static <T> T asSystem(java.util.function.Supplier<T> work) {
+        try (SecurityContext.Scope platform = SecurityContext.enterSystem();
+                CorrelationContext.Scope flow = CorrelationContext.enter(
+                        Correlation.startingWith(CorrelationId.generate(IDS)))) {
+            return work.get();
         }
     }
 

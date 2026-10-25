@@ -43,6 +43,9 @@ public final class InMemoryRiskCaseStore implements RiskCaseStore {
     /** Whether a disposition already has its profile version - the prohibitions' census; the suite wires it. */
     public Predicate<UUID> applied = disposition -> false;
 
+    /** Whether an action proposed on a case stands {@code PROPOSED} - `P13-TSK-017`'s; the suite wires its action store. */
+    public Predicate<RiskCaseId> actionStands = caseId -> false;
+
     private final Map<RiskCaseId, RiskCase> rows = new LinkedHashMap<>();
     private final List<CaseAction> actions = new ArrayList<>();
     private final List<CaseEvent> events = new ArrayList<>();
@@ -183,6 +186,12 @@ public final class InMemoryRiskCaseStore implements RiskCaseStore {
                         .stream())
                 .limit(limit)
                 .toList();
+    }
+
+    @Override
+    public boolean actionProposalStands(Connection unitOfWork, RiskCaseId id) {
+        log.add("actionProposalStands");
+        return actionStands.test(id);
     }
 
     private Optional<RiskCase> openOf(SignalSubject subject, CaseKind kind) {

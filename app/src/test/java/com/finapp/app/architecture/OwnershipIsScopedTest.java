@@ -1875,14 +1875,6 @@ class OwnershipIsScopedTest {
                                         + " (lock(id), the named assessment's, after the not-self rule), the move"
                                         + " conditional on PROPOSED; behind RISK_OVERRIDE; it issues nothing.")),
                     Map.entry(
-                            "com.finapp.risk.JdbcDecisionOverrideStore.conclude",
-                            new Entry(
-                                    Scope.ADMINISTERED,
-                                    "P13-TSK-012. The id is an issued action's - one the approval door's own approval"
-                                        + " committed, or the re-drive leg's claim returned - and the write is"
-                                        + " conditional on an outcome not yet recorded; it records payments' answer"
-                                        + " and moves nothing of anyone's.")),
-                    Map.entry(
                             "com.finapp.risk.JdbcRiskAlertStore.insert",
                             new Entry(
                                     Scope.NOT_OWNED,
@@ -1980,6 +1972,73 @@ class OwnershipIsScopedTest {
                                     "P13-TSK-016. A case's history by its id - the suites' reading and -018's case"
                                         + " read (behind RISK_INVESTIGATE, self-dealing judged first); no door serves"
                                         + " it in this task.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskCaseStore.actionProposalStands",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-017. Whether an action proposed on a case stands - read by a disposition"
+                                        + " act under the case row this transaction holds FOR UPDATE (lock(id), after"
+                                        + " the not-self rule); a count of risk's own rows, nothing served.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskActionStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-017. A risk action read by id: the receipt of an act the action desk just"
+                                        + " performed (or its key replayed) behind RISK_INVESTIGATE / RISK_CASE_APPROVE,"
+                                        + " on a case the act's own lock judged for self-dealing; the override desk's"
+                                        + " receipt of its issued action. No customer or merchant surface reaches it.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskActionStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-017. R6: the action row FOR UPDATE for its approval or rejection, under"
+                                        + " the case row this transaction already holds (R4, after the not-self rule);"
+                                        + " the act proceeds only when the action is that case's, and four eyes hold"
+                                        + " by the domain and by risk_action_four_eyes.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskActionStore.findLive",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-017. The live twin of a proposal - (case, kind, target) on the case this"
+                                        + " transaction holds FOR UPDATE after the not-self rule; the one-live unique"
+                                        + " is the arbiter beneath it.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskActionStore.ofCase",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-017. A case's actions by its id - the suites' reading and -018's case"
+                                        + " read (behind RISK_INVESTIGATE, self-dealing judged first); no door serves"
+                                        + " it in this task.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskActionStore.approve",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-017. The id comes only from the row this transaction locked FOR UPDATE"
+                                        + " (lock(id), its case's, under the case's lock after the not-self rule), the"
+                                        + " move conditional on PROPOSED; behind RISK_CASE_APPROVE and MULTI_FACTOR,"
+                                        + " four eyes by the domain and by risk_action_four_eyes.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskActionStore.reject",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-017. The id comes only from the row this transaction locked FOR UPDATE"
+                                        + " (lock(id), its case's, after the not-self rule), the move conditional on"
+                                        + " PROPOSED; behind RISK_CASE_APPROVE; it dispatches nothing.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskActionStore.claim",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-017. T-act's claim of the action an approval just committed - the id is"
+                                        + " the approved action's own (the desk's act, after the not-self rule; an"
+                                        + " override's under its own id) - FOR UPDATE SKIP LOCKED on a permit that"
+                                        + " has come; the platform executes it. No request names it afresh.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskActionStore.conclude",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-017. The id is a claimed action's - one this drive's claim returned - and"
+                                        + " the write is conditional on DISPATCHED; it records the owning domain's"
+                                        + " answer and moves nothing of anyone's.")),
                     Map.entry(
                             "com.finapp.lending.JdbcLoanTermsStore.insertTerms",
                             new Entry(

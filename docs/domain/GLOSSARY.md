@@ -2299,7 +2299,12 @@ second person) `| REJECTED`; `APPROVED → DISPATCHED → DONE | FAILED` — of 
 live per (case, kind, target); dispatched by `RiskActionSchedule` in its own transaction as a keyed command
 (`risk.action:<id>`) through the owning domain's **existing** door on that domain's lock order, its outcome recorded —
 a domain's refusal (already suspended) a recorded `DONE`, never an error; a `FAILED` action re-proposable, never
-re-dispatched by itself.
+re-dispatched by itself. *(As built by `P13-TSK-017`, 2026-10-25, `risk V013`: the id is the proposing investigator
+action's or the issuing override's, so the key is fixed at birth; the effect already in place (an identity already
+suspended) is `DONE(ALREADY)` and an owner's refusal `FAILED(REFUSED)`, each recorded once and never retried; the
+owner's command runs as the platform, the deciding persons recorded on the action; `SUSPEND_ACCOUNT`,
+`REINSTATE_ACCOUNT` and `BLOCK_BENEFICIARY` have no owning command and are unavailable; no disposition issues one -
+every case action is proposed on the case and approved by a second person; an approved override's is born `APPROVED`.)*
 **Not:** the effect — the suspension, the block, the release are the owning domain's own commands, audited by their
 owner; `risk` never writes another module's row, never posts and never reverses a transaction (ADR-0112). Nor an
 Investigator Action (the case's record of proposing it).

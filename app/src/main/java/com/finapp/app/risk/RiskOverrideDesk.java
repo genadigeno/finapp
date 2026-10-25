@@ -13,6 +13,7 @@ import com.finapp.risk.DecisionOverride;
 import com.finapp.risk.DecisionOverrideId;
 import com.finapp.risk.DecisionOverrides;
 import com.finapp.risk.OverrideResolution;
+import com.finapp.risk.RiskActionId;
 import com.finapp.risk.RiskAssessmentId;
 import com.finapp.risk.RiskAssessments;
 import com.finapp.risk.RiskErrorCode;
@@ -33,8 +34,11 @@ import java.util.function.Supplier;
  * principal ({@code risk.override:<type>:<id>}) and run in one transaction under its span; the domain's refusals
  * translated onto the error contract - a refused self-approval or self-dealing recorded {@code FAILED} in a transaction
  * of its own first; and, after an approval's transaction has committed - and again on every retry of it - the action it
- * issued driven through payments' door ({@link OverrideActionDriver}), on no transaction. The four-eyes rule, the
- * machine, the effect and C7 are the domain's and {@code risk V009}'s; nothing here decides them.
+ * issued driven through payments' door ({@link RiskActionDriver#driveIfDue}: the {@code risk_action} row under the
+ * override's id claimed, payments' keyed door on no transaction <strong>as the platform</strong>, the outcome recorded -
+ * `P13-TSK-017`'s fold, which also fixed `-016`'s finding that this door dispatched under the officer's
+ * {@code CUSTOMER}-typed session actor, which payments refuses). The four-eyes rule, the machine, the effect and C7 are
+ * the domain's and {@code risk V009}'s; nothing here decides them.
  *
  * <p><strong>The key's answer</strong> is the override's id: a replayed act answers the override as it stands now -
  * its issued action's outcome included, which a re-drive may since have recorded. A read is not keyed: a repeated read
@@ -46,13 +50,13 @@ public final class RiskOverrideDesk {
     static final String SCOPE = "risk.override:";
 
     private final DecisionOverrides overrides;
-    private final OverrideActionDriver driver;
+    private final RiskActionDriver driver;
     private final IdempotentExecutor executor;
     private final RiskTransactions transactions;
     private final RiskFlowScope flow;
     private final RiskOverrideMetrics metrics;
 
-    public RiskOverrideDesk(DecisionOverrides overrides, OverrideActionDriver driver, IdempotentExecutor executor,
+    public RiskOverrideDesk(DecisionOverrides overrides, RiskActionDriver driver, IdempotentExecutor executor,
             RiskTransactions transactions, RiskFlowScope flow, RiskOverrideMetrics metrics) {
         this.overrides = Objects.requireNonNull(overrides, "overrides");
         this.driver = Objects.requireNonNull(driver, "driver");
@@ -123,12 +127,12 @@ public final class RiskOverrideDesk {
         CorrelationId correlation = correlation();
         Keyed act = flow.door(RiskSpans.OVERRIDE_DECIDE, () -> keyed(actor, assessmentId, idempotencyKey,
                 "approve|" + assessmentId.value() + "|" + overrideId.value() + "|" + reason,
-                uow -> overrides.approve(uow, assessmentId, overrideId, reason, actor, correlation, driver.lease())
-                        .override().id()));
+                uow -> overrides.approve(uow, assessmentId, overrideId, reason, actor, correlation).override().id()));
         act.count(metrics, RiskOverrideMetrics.Act.APPROVED);
-        // The approval has committed (or its key replayed it): now, outside every transaction, the action it issued -
-        // again on every retry, so a crash between the commit and the dispatch is re-driven by the door's own retry.
-        driver.driveIfPending(act.id(), actor, correlation);
+        // The approval has committed (or its key replayed it): now, outside every transaction and as the platform, the
+        // action it issued - again on every retry, so a crash between the commit and the dispatch is re-driven by the
+        // door's own retry as well as by RiskActionSchedule. A resubmission issued none: nothing is due.
+        driver.driveIfDue(RiskActionId.ofOverride(act.id()));
         return receipt(act.id());
     }
 

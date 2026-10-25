@@ -173,21 +173,30 @@ class RiskVocabulariesTest {
     }
 
     @Test
-    @DisplayName("twelve action kinds, each naming its target and its owning domain, every one available since the two"
-            + " held-payment kinds landed with -010's second slice; the platform never resets a credential")
+    @DisplayName("twelve action kinds, each naming its target and its owning domain; the three with no owning command"
+            + " unavailable (P13-TSK-017: accounts' suspension, crossborder's block); the platform never resets a"
+            + " credential")
     void theActionKinds() {
         assertThat(names(ActionKind.values())).containsExactly("SUSPEND_IDENTITY", "REINSTATE_IDENTITY",
                 "REVOKE_SESSIONS", "SUSPEND_ACCOUNT", "REINSTATE_ACCOUNT", "SUSPEND_MERCHANT", "BLOCK_BENEFICIARY",
                 "RELEASE_HELD_WITHDRAWAL", "DENY_HELD_WITHDRAWAL", "CAPTURE_HELD_PAYMENT", "VOID_HELD_PAYMENT",
                 "RESCREEN_PARTY");
         assertThat(Arrays.stream(ActionKind.values()).filter(kind -> !kind.available()))
-                .as("the held-payment kinds became available beside payments' doors (P13-TSK-010)").isEmpty();
+                .as("no owning command: accounts has no suspension, crossborder no block (P13-TSK-017)")
+                .containsExactly(ActionKind.SUSPEND_ACCOUNT, ActionKind.REINSTATE_ACCOUNT, ActionKind.BLOCK_BENEFICIARY);
         assertThat(ActionKind.CAPTURE_HELD_PAYMENT.domain()).isEqualTo(ActionKind.Domain.PAYMENTS);
         assertThat(ActionKind.VOID_HELD_PAYMENT.domain()).isEqualTo(ActionKind.Domain.PAYMENTS);
         assertThat(ActionKind.SUSPEND_IDENTITY.domain()).isEqualTo(ActionKind.Domain.IDENTITY);
-        assertThat(ActionKind.SUSPEND_IDENTITY.target()).isEqualTo(SubjectKind.PARTY);
+        assertThat(ActionKind.SUSPEND_IDENTITY.target()).isEqualTo(ActionTarget.PARTY);
+        assertThat(ActionKind.RELEASE_HELD_WITHDRAWAL.target()).as("the judged movement itself")
+                .isEqualTo(ActionTarget.WITHDRAWAL);
+        assertThat(ActionKind.VOID_HELD_PAYMENT.target()).isEqualTo(ActionTarget.PAYMENT_INTENT);
+        for (OverrideEffect effect : OverrideEffect.values()) {
+            effect.action().ifPresent(kind -> assertThat(effect.targetKind()).as(effect.name())
+                    .contains(kind.target().name()));
+        }
         assertThat(ActionKind.RELEASE_HELD_WITHDRAWAL.domain()).isEqualTo(ActionKind.Domain.PAYMENTS);
-        assertThat(ActionKind.BLOCK_BENEFICIARY.target()).isEqualTo(SubjectKind.BENEFICIARY);
+        assertThat(ActionKind.BLOCK_BENEFICIARY.target()).isEqualTo(ActionTarget.BENEFICIARY);
         assertThat(ActionKind.RESCREEN_PARTY.domain()).isEqualTo(ActionKind.Domain.KYC);
         assertThat(names(ActionKind.Domain.values()))
                 .containsExactly("IDENTITY", "ACCOUNTS", "MERCHANT", "CROSSBORDER", "PAYMENTS", "KYC");
@@ -240,7 +249,8 @@ class RiskVocabulariesTest {
     @DisplayName("the error codes and audit actions declared so far - the role split's three and two (-001), the policy"
             + " doors' four and four (-002), the reprocessing door's one and one (-019), the profile read's act (-007), the"
             + " override doors' two and four (-012), the alert machine's two and three (-015), the case's five and eight"
-            + " (-016) - namespaced risk., the refusals 403, the policy codes the register's statuses")
+            + " (-016), the action machine's none and four (-017) - namespaced risk., the refusals 403, the policy codes"
+            + " the register's statuses")
     void theCodesAndActions() {
         // Each task adds its own codes and acts here, keeping the others' (the wave's rule).
         assertThat(Arrays.stream(RiskErrorCode.values()).map(RiskErrorCode::code))
@@ -285,7 +295,13 @@ class RiskVocabulariesTest {
                         "risk.AlertSuppressionProposed", "risk.AlertSuppressed", "risk.AlertSuppressionRejected",
                         // P13-TSK-016: the case's five acts and the disposition's three.
                         "risk.CaseOpened", "risk.CaseTaken", "risk.CaseNoted", "risk.CaseEscalated", "risk.CaseDisposed",
-                        "risk.DispositionProposed", "risk.DispositionApproved", "risk.DispositionRejected");
+                        "risk.DispositionProposed", "risk.DispositionApproved", "risk.DispositionRejected",
+                        // P13-TSK-017: the action machine's three acts and the platform's dispatch.
+                        "risk.ActionProposed", "risk.ActionApproved", "risk.ActionRejected", "risk.ActionDispatched");
+        assertThat(RiskAuditAction.ACTION_PROPOSED.requiresReason()).isTrue();
+        assertThat(RiskAuditAction.ACTION_APPROVED.requiresReason()).isTrue();
+        assertThat(RiskAuditAction.ACTION_REJECTED.requiresReason()).isTrue();
+        assertThat(RiskAuditAction.ACTION_DISPATCHED.requiresReason()).as("the platform's act").isFalse();
         for (RiskAuditAction action : RiskAuditAction.values()) {
             assertThat(action.description()).as(action.name()).isNotBlank();
         }
@@ -338,7 +354,7 @@ class RiskVocabulariesTest {
         for (String span : List.of(RiskSpans.EVALUATE, RiskSpans.ADVISE, RiskSpans.POLICY_ACTIVATE,
                 RiskSpans.MONITORING_INTAKE, RiskSpans.CASE_DISPOSE, RiskSpans.ACTION_DISPATCH, RiskSpans.REPORT,
                 RiskSpans.VELOCITY_PROOF, RiskSpans.PROFILE_RECOMPUTE, RiskSpans.PROFILE_READ, RiskSpans.ALERT_RAISE,
-                RiskSpans.ALERT_SUPPRESS)) {
+                RiskSpans.ALERT_SUPPRESS, RiskSpans.ACTION_PROPOSE, RiskSpans.ACTION_DECIDE)) {
             assertThat(span).startsWith("risk.").matches("[a-z]+(\\.[a-z]+)+");
         }
         assertThat(EnumSet.allOf(RiskOperation.class)).hasSize(7);
