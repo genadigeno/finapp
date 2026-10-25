@@ -54,8 +54,13 @@ class RiskAlertMetricsTest {
     }
 
     @Test
-    @DisplayName("the composition folds nothing until P13-TSK-016: its AlertFolding bean is NONE")
-    void theFoldingIsNoneUntilTheCase() {
-        assertThat(new RiskAlertBeans().alertFolding()).isSameAs(AlertFolding.NONE);
+    @DisplayName("P13-TSK-016: the composition's AlertFolding bean is the case's folding, NONE no longer")
+    void theFoldingIsTheCases() {
+        com.finapp.risk.Cases cases = new com.finapp.risk.Cases(new com.finapp.risk.testing.InMemoryRiskCaseStore(),
+                new com.finapp.risk.testing.InMemoryRiskAlertStore(), (uow, actor) -> java.util.Optional.empty(),
+                com.finapp.risk.RiskSubjectParties.NONE, (uow, record) -> { }, (uow, envelope, payload, type) -> { },
+                new com.finapp.sharedkernel.id.IdGenerator(java.time.Clock.systemUTC(), new java.security.SecureRandom()),
+                java.time.Clock.systemUTC(), com.finapp.risk.CaseObserver.NONE);
+        assertThat(new RiskAlertBeans().alertFolding(cases)).isNotSameAs(AlertFolding.NONE);
     }
 }

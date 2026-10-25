@@ -463,6 +463,17 @@ class OpenApiContractTest {
                                 + "/operator/risk/assessments/{assessmentId}/overrides/{overrideId}/approval",
                         ApiVersion.CURRENT_PREFIX
                                 + "/operator/risk/assessments/{assessmentId}/overrides/{overrideId}/rejection",
+                        // P13-TSK-016: the analyst's case doors - open by hand, the investigator's acts (the revision
+                        // in the body) and a disposition proposed under RISK_INVESTIGATE; its approval (a second
+                        // holder, MULTI_FACTOR) and rejection under RISK_CASE_APPROVE; every act keyed, own party 403
+                        // risk.SelfDealingRefused. The queue and the case read are P13-TSK-018's.
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/cases",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/actions",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/dispositions",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/risk/cases/{caseId}/dispositions/{dispositionId}/approval",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/risk/cases/{caseId}/dispositions/{dispositionId}/rejection",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",

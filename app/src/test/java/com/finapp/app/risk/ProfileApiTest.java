@@ -121,10 +121,16 @@ class ProfileApiTest {
         try (Connection app = DatabaseRoles.application()) {
             app.setAutoCommit(false);
             int version = STORE.lockOrCreate(app, party).currentVersion();
+            // P13-TSK-016 (risk V012): each disposition version names a real disposition - its proposal's action.
+            List<UUID> dispositions = com.finapp.risk.testing.RiskCaseFixtures.dispositions(app,
+                    new com.finapp.sharedkernel.id.IdGenerator(java.time.Clock.systemUTC(),
+                            new java.security.SecureRandom()), party, ratings.length);
+            int index = 0;
             for (RiskRating rating : ratings) {
                 version++;
                 STORE.insertVersion(app, new CustomerRiskProfileVersion(party, version, rating, ProfileCause.DISPOSITION,
-                        List.of(), Optional.empty(), Optional.of(UUID.randomUUID()), "profile-api", Optional.empty()));
+                        List.of(), Optional.empty(), Optional.of(dispositions.get(index++)), "profile-api",
+                        Optional.empty()));
                 STORE.advance(app, party, version - 1, version, rating, Duration.ofDays(1));
             }
             app.commit();

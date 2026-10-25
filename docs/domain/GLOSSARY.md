@@ -2243,7 +2243,13 @@ and the only case a Regulatory Report is drafted from.
 at a credit decision) or reconciliation's Investigation (a break's case file, with no machine of its own) — four
 states with four owners, never one shared store (`MODULE_ARCHITECTURE.md` §5). Nor the Regulatory Report: the case is
 the platform's own and the report a filing to an authority — different aggregates, lifecycles, permissions and
-retention. Nor a collections operation: the `COLLECTIONS` case holds facts only.
+retention. Nor a collections operation: the `COLLECTIONS` case holds facts only. *(As built, `P13-TSK-016`, 2026-10-25,
+`risk V012`: one open per (subject, kind) by the partial unique `risk_case_one_open`; a `revision` that every step - a
+person's act or the system's attach of an alert or an assessment - moves by exactly one, each with its history row; a
+level (`L1`-`L3`) and a queue an escalation raises; the SLA in hours per kind (`SlaDeadlines`) stamped on the database
+clock; opened by T-eval's `REVIEW` or `HOLD` (`ATO` when the sealed hits show the account-takeover anchors, else `FRAUD`
+- an anchor rule's hold and its alert one case), by an alert's folding, or by hand; a merchant's `MERCHANT_ABUSE` case
+judged for self-dealing on the merchant's organisation party.)*
 **Owned by:** `risk`
 
 ### Investigator Action
@@ -2254,7 +2260,11 @@ case's `revision` it was made against, so two investigators' concurrent actions 
 `409 risk.CaseRevisionStale`.
 **Not:** a Risk Action — the investigator's act records; the risk action is the downstream command through an owning
 domain's door. Nor a case state: an action never edits or deletes an earlier one. Notes are bounded, screened for
-instrument shapes and classified `CONFIDENTIAL`.
+instrument shapes and classified `CONFIDENTIAL`. *(As built, `P13-TSK-016`: `risk_case_action`, `INSERT`-only for every
+writer, its `ordinal` the case revision it produced; the kinds this task writes - `NOTE`, `EVIDENCE_ATTACHED`, `TAKEN`,
+`ESCALATED`, `DISPOSITION_PROPOSED` (whose id is the disposition's), `DISPOSITION_APPROVED`, `DISPOSITION_REJECTED` - and
+`ACTION_*` (`-017`) and `REPORT_DRAFTED` (`-021`) admitted; every one but the take carries its person's text, which is
+classified `RESTRICTED-PII` (`DESIGN-016` D13, the override's and suppression's level).)*
 **Owned by:** `risk`
 
 ### Disposition
@@ -2265,11 +2275,18 @@ Actions; the act that may set a Customer Risk Profile to `PROHIBITED` and that p
 (`CONFIRMED_SUSPICIOUS`).
 **Not:** a Risk Decision (made by the engine on a command, before any person) nor a Decision Override (a person's act
 on one decision). Nor a reversal: `REFERRED` recommends the owning domain's four-eyes act and performs nothing.
+*(As built, `P13-TSK-016`: a slot on the case - a standing proposal or the decision; `CLOSED_FALSE_POSITIVE` and
+`CLOSED_NO_ACTION` decided by their proposal, from `OPEN` too; `CONFIRMED_*`, `REFERRED` and any that sets
+`PROHIBITED` proposed on a taken case and approved by a second person - `risk_case_disposition_four_eyes`;
+`PROHIBITED` asked by the proposal (`prohibit`), never implied, of a confirming disposition of a party's case alone, and
+written to the profile after the case commits; an action-issuing disposition joins the four-eyes set with `-017`.)*
 **Owned by:** `risk`
 
 ### Escalation
 **Is:** the case transition `IN_INVESTIGATION → ESCALATED` — the case's level and queue raised by an investigator,
-reasoned and recorded as an Investigator Action, published as `CaseEscalated`; the case goes on.
+reasoned and recorded as an Investigator Action, published as `CaseEscalated`; the case goes on. *(As built,
+`P13-TSK-016`: one level a step, `L1` to `L3`, to a queue named (`SECOND_LINE`, `SENIOR_REVIEW`, `SPECIALIST`); an
+escalated case may be escalated again until `L3`.)*
 **Not:** a Disposition (an escalated case is still open) nor a Risk Action (nothing leaves `risk`). Nor
 reconciliation's break escalation, which is a severity's forward-only step on a break.
 **Owned by:** `risk`

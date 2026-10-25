@@ -480,7 +480,11 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " risk.OverrideApproved under their own actor at the door; when the approving instance died"
                         + " between its commit and its dispatch, the sweep claims the due permit on the database clock and"
                         + " re-presents payments' keyed door the same key as the platform, the outcome recorded"
-                        + " risk.ActionConcluded with actor SYSTEM."),
+                        + " risk.ActionConcluded with actor SYSTEM. Its case leg (P13-TSK-016) likewise: nobody commands"
+                        + " the folding of an alert born before cases existed - the sweep attaches each queued alert to"
+                        + " its subject's open case (or opens one, risk.CaseOpened under SYSTEM, exactly as T-mon's own"
+                        + " folds do), and re-applies to the profile the PROHIBITED that two persons' approved"
+                        + " disposition decided (risk.DispositionApproved under the approver's own actor at the door)."),
                     Map.entry(
                             "com.finapp.app.lending.LoanOriginationSchedule.sweepOnce",
                     "The loan origination sweep (P11-TSK-011, PHASE_11_PLAN.md section 11: origination is never a"

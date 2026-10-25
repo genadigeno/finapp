@@ -53,4 +53,10 @@ public interface CustomerRiskProfileStore {
 
     /** Every version of the party's profile, oldest first. */
     List<CustomerRiskProfileVersion> versions(Connection unitOfWork, UUID partyId);
+
+    /**
+     * The version {@code dispositionId} wrote, if any (`P13-TSK-016`) - at most one, by
+     * {@code customer_risk_profile_version_one_per_disposition}; the prohibition's idempotency under the head's lock.
+     */
+    Optional<CustomerRiskProfileVersion> versionOfDisposition(Connection unitOfWork, UUID dispositionId);
 }

@@ -28,7 +28,8 @@ import org.junit.jupiter.api.Test;
 /**
  * Risk's party join (`P13-TSK-007`; `DESIGN-007` D5): a party is itself, an identity's party is identity's, every other
  * kind is placed in no party yet - and an identity never registered, or a reference that cannot be an identity's,
- * places nothing rather than throwing into the inbox.
+ * places nothing rather than throwing into the inbox. `P13-TSK-016`: the case's accountable party places a merchant's
+ * organisation too (`DESIGN-016` D6), never through the hint's {@code partyOf}.
  */
 @DisplayName("risk's party join over identity (P13-TSK-007)")
 class IdentitySubjectPartiesTest {
@@ -47,7 +48,7 @@ class IdentitySubjectPartiesTest {
     void thePartyBehindEachSubject() {
         UUID party = IDS.next();
         Identity identity = Identity.create(IDS, CLOCK, party, new LoginIdentifier("profile.join"));
-        IdentitySubjectParties join = new IdentitySubjectParties(identities(Map.of(identity.id(), identity)));
+        IdentitySubjectParties join = new IdentitySubjectParties(identities(Map.of(identity.id(), identity)), merchants(Map.of()));
 
         assertThat(join.partyOf(UOW, SignalSubject.of(SubjectKind.PARTY, party))).contains(party);
         assertThat(join.partyOf(UOW, SignalSubject.of(SubjectKind.IDENTITY, identity.id().value()))).contains(party);
@@ -71,11 +72,53 @@ class IdentitySubjectPartiesTest {
         Identity stranger = Identity.create(IDS, CLOCK, IDS.next(), new LoginIdentifier("profile.stranger"));
         List<Integer> limits = new ArrayList<>();
         IdentitySubjectParties join = new IdentitySubjectParties(identities(Map.of(first.id(), first,
-                second.id(), second, stranger.id(), stranger), limits));
+                second.id(), second, stranger.id(), stranger), limits), merchants(Map.of()));
 
         assertThat(join.identitiesOf(UOW, party)).containsExactlyInAnyOrder(first.id().value(), second.id().value());
         assertThat(join.identitiesOf(UOW, IDS.next())).isEmpty();
         assertThat(limits).as("always bounded by the port's bound").containsOnly(RiskPartyIdentities.BOUND);
+    }
+
+    @Test
+    @DisplayName("P13-TSK-016, the accountable party: a merchant's organisation party for a case act's self-dealing"
+            + " judgement - never through partyOf (the profile hint's join), an unknown merchant placing nothing; every"
+            + " other kind as partyOf places it")
+    void theAccountablePartyPlacesAMerchant() {
+        UUID organisation = IDS.next();
+        UUID merchant = IDS.next();
+        UUID party = IDS.next();
+        Identity identity = Identity.create(IDS, CLOCK, party, new LoginIdentifier("profile.accountable"));
+        IdentitySubjectParties join = new IdentitySubjectParties(identities(Map.of(identity.id(), identity)),
+                merchants(Map.of(merchant, organisation)));
+
+        SignalSubject merchantSubject = SignalSubject.of(SubjectKind.MERCHANT, merchant);
+        assertThat(join.accountablePartyOf(UOW, merchantSubject)).contains(organisation);
+        assertThat(join.partyOf(UOW, merchantSubject)).as("never the profile hint's join").isEmpty();
+        assertThat(join.accountablePartyOf(UOW, SignalSubject.of(SubjectKind.MERCHANT, IDS.next()))).isEmpty();
+        assertThat(join.accountablePartyOf(UOW, SignalSubject.of(SubjectKind.PARTY, party))).contains(party);
+        assertThat(join.accountablePartyOf(UOW, SignalSubject.of(SubjectKind.IDENTITY, identity.id().value())))
+                .contains(party);
+        assertThat(join.accountablePartyOf(UOW, SignalSubject.of(SubjectKind.ACCOUNT, IDS.next()))).isEmpty();
+    }
+
+    /** Merchant's store answering {@code findById} with a merchant whose organisation party is the map's. */
+    @SuppressWarnings("unchecked")
+    private static com.finapp.merchant.MerchantStore<Connection> merchants(Map<UUID, UUID> organisations) {
+        return (com.finapp.merchant.MerchantStore<Connection>) Proxy.newProxyInstance(
+                IdentitySubjectPartiesTest.class.getClassLoader(),
+                new Class<?>[] {com.finapp.merchant.MerchantStore.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("findById")) {
+                        UUID id = ((com.finapp.merchant.MerchantId) args[1]).value();
+                        return Optional.ofNullable(organisations.get(id)).map(organisation -> merchant(id, organisation));
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                });
+    }
+
+    private static com.finapp.merchant.Merchant merchant(UUID id, UUID organisation) {
+        return com.finapp.merchant.Merchant.rehydrate(com.finapp.merchant.MerchantId.of(id), organisation, "Acme Ltd",
+                "Acme", com.finapp.sharedkernel.money.CurrencyCode.of("EUR"), com.finapp.merchant.MerchantStatus.ACTIVE,
+                CLOCK.instant(), CLOCK.instant());
     }
 
     private static IdentityStore<Connection> identities(Map<IdentityId, Identity> known) {

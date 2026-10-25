@@ -2,6 +2,9 @@ package com.finapp.app.risk;
 
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.IdentityStore;
+import com.finapp.merchant.Merchant;
+import com.finapp.merchant.MerchantId;
+import com.finapp.merchant.MerchantStore;
 import com.finapp.risk.RiskPartyIdentities;
 import com.finapp.risk.RiskSubjectParties;
 import com.finapp.risk.SignalSubject;
@@ -26,13 +29,33 @@ import java.util.UUID;
  *
  * <p><strong>The reverse</strong> (`P13-TSK-013`): {@link RiskPartyIdentities} - the identities a party holds, for the
  * profile leg's account-takeover anchors (the signals name the identity; the leg judges the party).
+ *
+ * <p><strong>The accountable party</strong> (`P13-TSK-016`, {@code DESIGN-016} D6): a case act's self-dealing judgement
+ * also places a {@link SubjectKind#MERCHANT} - its organisation party, merchant's {@code partyRef} read by id - so a
+ * {@code MERCHANT_ABUSE} case is workable. Deliberately <em>not</em> {@link #partyOf}: that join drives `-007`'s profile
+ * hint, and a merchant placed there would enrol every onboarded merchant's organisation in the profile sweep. The
+ * merchant's people are not known to the platform (merchant access is by API key), so an analyst is refused only an
+ * organisation's case that is their own party's - recorded for the owner.
  */
 public final class IdentitySubjectParties implements RiskSubjectParties, RiskPartyIdentities {
 
     private final IdentityStore<Connection> identities;
+    private final MerchantStore<Connection> merchants;
 
-    public IdentitySubjectParties(IdentityStore<Connection> identities) {
+    public IdentitySubjectParties(IdentityStore<Connection> identities, MerchantStore<Connection> merchants) {
         this.identities = Objects.requireNonNull(identities, "identities");
+        this.merchants = Objects.requireNonNull(merchants, "merchants");
+    }
+
+    @Override
+    public Optional<UUID> accountablePartyOf(Connection unitOfWork, SignalSubject subject) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(subject, "subject");
+        if (subject.kind() == SubjectKind.MERCHANT) {
+            return merchants.findById(unitOfWork, MerchantId.of(UUID.fromString(subject.ref())))
+                    .map(Merchant::partyRef);
+        }
+        return partyOf(unitOfWork, subject);
     }
 
     @Override

@@ -24,4 +24,15 @@ public interface RiskSubjectParties {
 
     /** The party {@code subject} belongs to - empty when it is no party's this build can place. */
     Optional<UUID> partyOf(Connection unitOfWork, SignalSubject subject);
+
+    /**
+     * The party accountable for {@code subject} when a person's act on it is judged for self-dealing (`P13-TSK-016`,
+     * {@code DESIGN-016} D6) - {@link #partyOf} by default, and in {@code app} also a {@link SubjectKind#MERCHANT}'s
+     * organisation party, so a merchant's case is workable. Deliberately a separate join from {@link #partyOf}: that one
+     * drives `-007`'s profile hint, and placing a merchant there would enrol every onboarded merchant's organisation in
+     * the profile sweep. Empty when no party can be placed - the caller fails closed.
+     */
+    default Optional<UUID> accountablePartyOf(Connection unitOfWork, SignalSubject subject) {
+        return partyOf(unitOfWork, subject);
+    }
 }

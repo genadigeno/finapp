@@ -172,6 +172,38 @@ class RiskMonitoringScheduleTest {
     }
 
     @Test
+    @DisplayName("the case leg (P13-TSK-016) runs as the platform after the profiles and before the override actions;"
+            + " a case leg that throws is counted claim.failed{kind=monitoring} and the action leg still runs")
+    void theCaseLegRunsBetweenTheProfilesAndTheActions() {
+        World world = new World(1);
+        ScriptedLeg profiles = new ScriptedLeg(1);
+        List<String> driven = new ArrayList<>();
+        RiskMonitoringSchedule schedule = new RiskMonitoringSchedule(world.intake(2), profiles, 3, () -> {
+            driven.add("cases as " + com.finapp.platform.security.SecurityContext.require().type().name() + " after "
+                    + profiles.recomputed);
+            return 2;
+        }, () -> {
+            driven.add("actions");
+            return 0;
+        }, world.transactions.real, world.metrics, RiskFlowScope.NONE, Duration.ofSeconds(5), 10);
+        schedule.sweepOnce();
+        assertThat(driven).containsExactly("cases as SYSTEM after 1", "actions");
+
+        List<String> after = new ArrayList<>();
+        RiskMonitoringSchedule failing = new RiskMonitoringSchedule(world.intake(2),
+                RiskMonitoringSchedule.ProfileLeg.NONE, 0, () -> {
+                    throw new IllegalStateException("the queue read failed");
+                }, () -> {
+                    after.add("actions");
+                    return 0;
+                }, world.transactions.real, world.metrics, RiskFlowScope.NONE, Duration.ofSeconds(5), 10);
+        failing.sweepOnce();
+        assertThat(after).containsExactly("actions");
+        assertThat(world.registry.get(RiskMonitoringMetrics.CLAIM_FAILED).tag("kind", "monitoring").counter().count())
+                .isEqualTo(1.0);
+    }
+
+    @Test
     @DisplayName("the meters are registered eagerly, with bounded tags and no id")
     void metersAreEager() {
         World world = new World(0);

@@ -153,8 +153,10 @@ class ProfileDatabaseTest {
         UUID party = IDS.next();
         inOneTransaction(uow -> {
             STORE.lockOrCreate(uow, party);
+            // P13-TSK-016 (risk V012): a disposition version names a real disposition - its proposal's action.
+            UUID disposition = com.finapp.risk.testing.RiskCaseFixtures.dispositions(uow, IDS, party, 1).get(0);
             STORE.insertVersion(uow, new CustomerRiskProfileVersion(party, 1, RiskRating.PROHIBITED,
-                    ProfileCause.DISPOSITION, List.of(), Optional.empty(), Optional.of(UUID.randomUUID()), "disposition",
+                    ProfileCause.DISPOSITION, List.of(), Optional.empty(), Optional.of(disposition), "disposition",
                     Optional.empty()));
             STORE.advance(uow, party, 0, 1, RiskRating.PROHIBITED, Duration.ZERO);
             return null;

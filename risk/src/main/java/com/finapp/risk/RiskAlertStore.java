@@ -2,6 +2,7 @@ package com.finapp.risk;
 
 import com.finapp.platform.security.Actor;
 import java.sql.Connection;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -30,6 +31,13 @@ public interface RiskAlertStore {
 
     /** {@code OPEN → ATTACHED} to {@code caseId}; empty when the alert was no longer {@code OPEN}. */
     Optional<RiskAlert> attach(Connection unitOfWork, RiskAlertId id, RiskCaseId caseId);
+
+    /**
+     * Up to {@code limit} alerts still {@code OPEN} of a kind that opens a case and with no suppression proposal standing,
+     * oldest first ({@code risk_alert_open_queue}) - no lock: `-016`'s drain folds each in a transaction of its own, the
+     * case (R4) before the alert (R5), the attach conditional on {@code OPEN}.
+     */
+    List<RiskAlert> queued(Connection unitOfWork, int limit);
 
     /**
      * The proposal onto an {@code OPEN} alert with none: the code, the text and the proposer; empty when the alert was

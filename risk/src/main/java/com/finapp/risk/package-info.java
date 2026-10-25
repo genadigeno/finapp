@@ -218,5 +218,28 @@
  * existing {@code raiseAll}); {@link com.finapp.risk.VelocityDimension#SESSION} - the confirming identity session,
  * sealed on the assessment ({@code session_id}) - for "a session confirming many checkouts". Nothing of it reaches a
  * customer or merchant surface, an event payload beyond ids and codes, a log or a metric tag.
+ *
+ * <p><strong>The case</strong> (`P13-TSK-016`, {@code risk V012}): {@link com.finapp.risk.Cases} - T-case over
+ * {@link com.finapp.risk.RiskCaseStore} ({@code JdbcRiskCaseStore}): {@link com.finapp.risk.RiskCase} (one open per
+ * (subject, kind) by the partial unique {@code risk_case_one_open}; {@code OPEN → IN_INVESTIGATION → ESCALATED →
+ * DISPOSED}, a one-person close from {@code OPEN} too; never re-opened - a new case names its predecessor; a
+ * {@code revision} every step moves by one, each with its {@link com.finapp.risk.CaseEvent} row; the disposition slot),
+ * the append-only {@link com.finapp.risk.CaseAction} ({@link com.finapp.risk.CaseActionKind}), the
+ * {@link com.finapp.risk.CaseLevel} and {@link com.finapp.risk.CaseQueue} of an escalation, the
+ * {@link com.finapp.risk.SlaDeadlines} per kind stamped on the database clock, and {@link com.finapp.risk.DispositionRules}
+ * (four eyes for {@code CONFIRMED_*}, {@code REFERRED} and a prohibiting disposition, each on a taken case). Every
+ * person's act takes the case row {@code FOR UPDATE} (R4), judges self-dealing on the subject's accountable party
+ * ({@link com.finapp.risk.RiskSubjectParties#accountablePartyOf} - a merchant's organisation placed since this task,
+ * fail closed) and compares the revision the analyst's screen read; the proposer's approval is refused and
+ * {@code risk_case_disposition_four_eyes} holds every writer alone. The two seams it implements: `-015`'s
+ * {@link com.finapp.risk.AlertFolding} ({@code Cases::fold} - (R4) the subject's open case of the kind or a case opened
+ * for the alert, then (R5) the alert's attach through the store) and `-004`'s {@link com.finapp.risk.CaseOpener}
+ * ({@code Cases::openFor} - T-eval's {@code REVIEW} or {@code HOLD} opens or joins the party's case of the kind its sealed
+ * hits call for, {@code ATO} when the account-takeover anchors show, so an anchor rule's hold and its alert are one
+ * case); the drain of the alerts born {@code OPEN} before it ({@link com.finapp.risk.Cases#drain}, `app`'s case leg). A
+ * prohibiting disposition's {@code PROHIBITED} is never written by {@code Cases}:
+ * {@link com.finapp.risk.ProfileRecompute#applyDisposition} applies it after the case commits, in a transaction of its
+ * own (R8 alone - never R8 under R4), one version per disposition. {@link com.finapp.risk.CaseObserver} is the meters' port. The downstream actions are
+ * `-017`'s; the queues and the case read `-018`'s.
  */
 package com.finapp.risk;

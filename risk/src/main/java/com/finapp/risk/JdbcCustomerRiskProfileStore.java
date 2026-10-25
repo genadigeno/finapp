@@ -191,6 +191,21 @@ public final class JdbcCustomerRiskProfileStore implements CustomerRiskProfileSt
         }
     }
 
+    @Override
+    public Optional<CustomerRiskProfileVersion> versionOfDisposition(Connection unitOfWork, UUID dispositionId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(dispositionId, "dispositionId");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT " + VERSION_COLUMNS + " FROM " + VERSIONS + " WHERE disposition_id = ?")) {
+            select.setObject(1, dispositionId);
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(version(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw JdbcMonitoredTransactionStore.failed("reading a disposition's customer risk profile version", failure);
+        }
+    }
+
     private static Optional<CustomerRiskProfile> select(Connection unitOfWork, UUID partyId, String sql,
             String operation) {
         try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {

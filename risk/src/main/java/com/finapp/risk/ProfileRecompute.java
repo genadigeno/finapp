@@ -101,7 +101,11 @@ public final class ProfileRecompute {
         /** The party is {@code PROHIBITED}: nothing evaluated, only the permit moved. */
         PROHIBITED_STANDS,
         /** No {@code MONITORING} version is {@code ACTIVE}: nothing judged, only the permit moved. */
-        NOT_JUDGED
+        NOT_JUDGED,
+        /** An approved disposition's {@code PROHIBITED} version was born (`P13-TSK-016`). */
+        PROHIBITED_SET,
+        /** The approved disposition's version already stood: nothing written (`P13-TSK-016`). */
+        ALREADY_APPLIED
     }
 
     /**
@@ -196,6 +200,38 @@ public final class ProfileRecompute {
         } catch (RuntimeException failure) {
             throw new RecomputeFailed(party, failure);
         }
+    }
+
+    /**
+     * An approved disposition's {@code PROHIBITED} applied to {@code partyId}'s profile (`P13-TSK-016`;
+     * {@code INV-RSK-10}, {@code INV-RSK-07}; {@code DESIGN-016} D3) - <strong>in a transaction of the caller's own,
+     * after the case's commits</strong>: the head (R8) locked waiting, born unassessed if missing - and <em>no case row
+     * held</em> (the profile leg takes R8 before its folds' R4, so a case act holding R4 must never wait on R8) - then,
+     * unless a version already names {@code dispositionId} (the door's retry, the case leg's re-drive, a second instance:
+     * nothing written), version {@code n + 1} born {@link ProfileCause#DISPOSITION} {@link RiskRating#PROHIBITED} naming
+     * the disposition, the head advanced beside it, and {@code risk.CustomerRiskRatingChanged} when the rating moved (a
+     * party already prohibited by another disposition gains the version, not an announcement). One version per
+     * disposition: the head's lock and {@code customer_risk_profile_version_one_per_disposition}. The four eyes are the
+     * case's ({@code risk_case_disposition_four_eyes}); this act only applies what two persons decided.
+     */
+    public Outcome applyDisposition(Connection unitOfWork, UUID partyId, UUID dispositionId, CorrelationId correlation) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(partyId, "partyId");
+        Objects.requireNonNull(dispositionId, "dispositionId");
+        Objects.requireNonNull(correlation, "correlation");
+        CustomerRiskProfile head = store.lockOrCreate(unitOfWork, partyId);
+        if (store.versionOfDisposition(unitOfWork, dispositionId).isPresent()) {
+            return new Outcome(partyId, Kind.ALREADY_APPLIED, head.currentVersion(), head.rating());
+        }
+        int next = head.currentVersion() + 1;
+        store.insertVersion(unitOfWork, new CustomerRiskProfileVersion(partyId, next, RiskRating.PROHIBITED,
+                ProfileCause.DISPOSITION, List.of(), Optional.empty(), Optional.of(dispositionId), correlation.value(),
+                Optional.empty()));
+        store.advance(unitOfWork, partyId, head.currentVersion(), next, RiskRating.PROHIBITED, cadence);
+        if (!head.prohibited()) {
+            announce(unitOfWork, partyId, RiskRating.PROHIBITED, next, correlation);
+        }
+        return new Outcome(partyId, Kind.PROHIBITED_SET, next, Optional.of(RiskRating.PROHIBITED));
     }
 
     /**

@@ -7,6 +7,7 @@ import com.finapp.platform.telemetry.Spans;
 import com.finapp.risk.AlertFolding;
 import com.finapp.risk.AlertRaiser;
 import com.finapp.risk.Alerts;
+import com.finapp.risk.Cases;
 import com.finapp.risk.JdbcRiskAlertStore;
 import com.finapp.risk.RiskAlertStore;
 import com.finapp.risk.RiskSubjectParties;
@@ -18,8 +19,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Wiring for the born-once alert (`P13-TSK-015`): the alert's store, the folding - {@link AlertFolding#NONE} until
- * `P13-TSK-016` replaces this bean with its case folding, so every alert born today stays {@code OPEN}, queued - the
+ * Wiring for the born-once alert (`P13-TSK-015`): the alert's store, the folding - since `P13-TSK-016` the case's
+ * ({@code Cases::fold}, {@code RiskCaseBeans}' {@link Cases}: a born alert attaches to its subject's open case of the
+ * kind, or opens one, in the raising transaction; the alerts born {@code OPEN} before it are the case leg's drain) - the
  * meters, and the machine, whose analysts' party is read through credit's {@code IdentityActingParty} (the one read of
  * it the platform has) and whose subjects' party through {@link RiskSubjectParties} ({@code RiskProfileBeans}'
  * {@code IdentitySubjectParties}: a party and an identity placed today). The rules raise through {@link AlertRaiser}
@@ -34,10 +36,14 @@ public class RiskAlertBeans {
         return new JdbcRiskAlertStore();
     }
 
-    /** No case exists yet: an alert stays OPEN, queued - `P13-TSK-016` replaces this bean. */
+    /**
+     * `P13-TSK-016`'s folding in place of {@code AlertFolding.NONE}: the case (R4), then the alert's attach (R5), on the
+     * raising transaction's unit of work. {@code Cases} holds the alert store, never {@code Alerts}, so the composition
+     * has no cycle.
+     */
     @Bean
-    AlertFolding alertFolding() {
-        return AlertFolding.NONE;
+    AlertFolding alertFolding(Cases cases) {
+        return cases::fold;
     }
 
     /** {@code finapp.risk.alert{kind,severity}}, {@code .alert.suppressed{reason_code}} - eager. */

@@ -192,6 +192,89 @@ public enum RiskAuditAction implements AuditableAction {
                     + " proposer withdrew it.",
             true),
 
+    /** A case was opened - by T-eval's decision, an alert's folding, or by hand (`P13-TSK-016`). */
+    CASE_OPENED(
+            "risk.CaseOpened",
+            "A case was opened (P13-TSK-016; ADR-0110 decision 2): by T-eval on a REVIEW or HOLD decision in the judged"
+                    + " command's transaction (the acting principal of that command the actor), by an alert's folding with"
+                    + " no open case of its kind (T-eval's or the profile leg's principal, or the case leg's SYSTEM), or by"
+                    + " hand by a holder of RISK_INVESTIGATE (POST /v1/operator/risk/cases, keyed risk.case:<actor>, a"
+                    + " reason required at the door, never on the operator's own party). One open per (subject, kind) -"
+                    + " risk_case_one_open; a disposed case is never re-opened, a new one names it as predecessor. The"
+                    + " summary names the kind, what opened it (alert, assessment, hand) and whether a predecessor"
+                    + " exists - never the subject.",
+            false),
+
+    /** An investigator took a case, or took it over (`P13-TSK-016`). */
+    CASE_TAKEN(
+            "risk.CaseTaken",
+            "A holder of RISK_INVESTIGATE took a case (POST /v1/operator/risk/cases/{id}/actions, act TAKE, the body"
+                    + " carrying the revision; OPEN -> IN_INVESTIGATION) or took over a taken one from another"
+                    + " investigator (P13-TSK-016; DESIGN-016 D12) - one person's act under the case row's lock and the"
+                    + " revision compare-and-set. The summary names the kind and the status after.",
+            false),
+
+    /** An investigator noted a case or attached evidence by reference (`P13-TSK-016`). */
+    CASE_NOTED(
+            "risk.CaseNoted",
+            "A holder of RISK_INVESTIGATE appended a note, or attached evidence by reference (signal, assessment and"
+                    + " journal entry ids - resolved through audited reads, never copied), to an open case"
+                    + " (POST /v1/operator/risk/cases/{id}/actions, acts NOTE and ATTACH_EVIDENCE, P13-TSK-016); the text"
+                    + " is the record's reason, bounded and screened by InstrumentShapes. The summary names the kind, the"
+                    + " act and the references' counts - never the text or a reference.",
+            true),
+
+    /** An investigator escalated a case with a reason (`P13-TSK-016`). */
+    CASE_ESCALATED(
+            "risk.CaseEscalated",
+            "A holder of RISK_INVESTIGATE escalated a taken case with a reason (act ESCALATE, P13-TSK-016:"
+                    + " IN_INVESTIGATION | ESCALATED -> ESCALATED), raising its level one step (L1 to L3) and routing it"
+                    + " to the queue named; announced risk.CaseEscalated. The summary names the kind, the level and the"
+                    + " queue.",
+            true),
+
+    /** A case reached its disposition (`P13-TSK-016`). */
+    CASE_DISPOSED(
+            "risk.CaseDisposed",
+            "A case reached its disposition (-> DISPOSED, P13-TSK-016): a one-person close (CLOSED_FALSE_POSITIVE or"
+                    + " CLOSED_NO_ACTION, from OPEN too, decided by its proposal - its proposer the actor) or a second"
+                    + " person's approval of a CONFIRMED_*, REFERRED or prohibiting disposition (the approver the actor);"
+                    + " announced risk.CaseDisposed. A case never re-opens; a new case references it. The summary names"
+                    + " the kind, the disposition code and whether it sets PROHIBITED.",
+            false),
+
+    /** An investigator proposed a case's disposition (`P13-TSK-016`). */
+    DISPOSITION_PROPOSED(
+            "risk.DispositionProposed",
+            "A holder of RISK_INVESTIGATE proposed a case's disposition with a reason"
+                    + " (POST /v1/operator/risk/cases/{id}/dispositions, the body carrying the revision, P13-TSK-016):"
+                    + " CLOSED_FALSE_POSITIVE and CLOSED_NO_ACTION are decided by this act (one person, from OPEN too);"
+                    + " every CONFIRMED_*, every REFERRED and any that sets the profile PROHIBITED (asked, never implied -"
+                    + " a confirming disposition of a party's case alone) needs the case taken and awaits a DIFFERENT"
+                    + " holder of RISK_CASE_APPROVE. The summary names the kind, the disposition, whether a second person"
+                    + " is required and whether it prohibits.",
+            true),
+
+    /** A second person approved a case's disposition (`P13-TSK-016`). */
+    DISPOSITION_APPROVED(
+            "risk.DispositionApproved",
+            "A holder of RISK_CASE_APPROVE other than its proposer approved a case's standing disposition from a"
+                    + " MULTI_FACTOR session (POST .../dispositions/{dispositionId}/approval, the body carrying the"
+                    + " revision, P13-TSK-016; INV-RSK-07, INV-AUD-04 - risk_case_disposition_four_eyes beneath); the case"
+                    + " DISPOSED in the same transaction; a prohibiting disposition's PROHIBITED profile version written"
+                    + " after the case commits, in a transaction of its own (never R8 under R4). The summary names the"
+                    + " kind, the disposition and whether it prohibits.",
+            true),
+
+    /** A case's disposition was rejected, or withdrawn by its proposer (`P13-TSK-016`). */
+    DISPOSITION_REJECTED(
+            "risk.DispositionRejected",
+            "A standing disposition was rejected with a reason - or withdrawn by its proposer"
+                    + " (POST .../dispositions/{dispositionId}/rejection, P13-TSK-016); the case stays open and its slot"
+                    + " is cleared, this record and the investigator actions keeping both acts. The summary names the"
+                    + " kind, the disposition and whether the proposer withdrew it.",
+            true),
+
     /** An officer ordered the monitoring intake reprocessed from an earlier watermark. */
     REPROCESSING_ORDERED(
             "risk.ReprocessingOrdered",

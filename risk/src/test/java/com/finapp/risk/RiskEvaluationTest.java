@@ -110,6 +110,8 @@ class RiskEvaluationTest {
         assertThat(reviewed.decision()).as("the eleventh: ten already counted today").isEqualTo(RiskDecision.REVIEW);
         assertThat(reviewed.reasons()).containsExactly(ReasonCode.VELOCITY_COUNT, ReasonCode.NEW_PAYEE);
         assertThat(world.cases).extracting(CaseOpener.Decided::assessment).containsExactly(reviewed.assessmentId());
+        // P13-TSK-016: the case of the kind the sealed hits call for - no account-takeover anchor, so FRAUD.
+        assertThat(world.cases).extracting(CaseOpener.Decided::kind).containsExactly(CaseKind.FRAUD);
         assertThat(world.windowStore.count(VelocityDimension.SOURCE_ACCOUNT, source.toString(), WindowKind.D1))
                 .as("ten counted, the refused eleventh not").isEqualTo(10);
     }

@@ -239,8 +239,8 @@ class RiskVocabulariesTest {
     @Test
     @DisplayName("the error codes and audit actions declared so far - the role split's three and two (-001), the policy"
             + " doors' four and four (-002), the reprocessing door's one and one (-019), the profile read's act (-007), the"
-            + " override doors' two and four (-012), the alert machine's two and three (-015) - namespaced risk., the"
-            + " refusals 403, the policy codes the register's statuses")
+            + " override doors' two and four (-012), the alert machine's two and three (-015), the case's five and eight"
+            + " (-016) - namespaced risk., the refusals 403, the policy codes the register's statuses")
     void theCodesAndActions() {
         // Each task adds its own codes and acts here, keeping the others' (the wave's rule).
         assertThat(Arrays.stream(RiskErrorCode.values()).map(RiskErrorCode::code))
@@ -251,7 +251,10 @@ class RiskVocabulariesTest {
                         // P13-TSK-012: the override doors' two.
                         "risk.ActionNotProposable", "risk.OverrideStale",
                         // P13-TSK-015: the alert's machine's two.
-                        "risk.AlertNotOpen", "risk.SuppressionStale");
+                        "risk.AlertNotOpen", "risk.SuppressionStale",
+                        // P13-TSK-016: the case's two planned and DESIGN-016 D10's three.
+                        "risk.CaseRevisionStale", "risk.CaseNotOpen", "risk.CaseActNotAdmitted", "risk.CaseNotTaken",
+                        "risk.CaseRequestInvalid");
         assertThat(RiskErrorCode.NOT_FOUND.status()).isEqualTo(404);
         assertThat(RiskErrorCode.SELF_APPROVAL_REFUSED.status()).isEqualTo(403);
         assertThat(RiskErrorCode.SELF_DEALING_REFUSED.status()).isEqualTo(403);
@@ -264,6 +267,11 @@ class RiskVocabulariesTest {
         assertThat(RiskErrorCode.OVERRIDE_STALE.status()).isEqualTo(409);
         assertThat(RiskErrorCode.ALERT_NOT_OPEN.status()).isEqualTo(409);
         assertThat(RiskErrorCode.SUPPRESSION_STALE.status()).isEqualTo(409);
+        assertThat(RiskErrorCode.CASE_REVISION_STALE.status()).isEqualTo(409);
+        assertThat(RiskErrorCode.CASE_NOT_OPEN.status()).isEqualTo(409);
+        assertThat(RiskErrorCode.CASE_ACT_NOT_ADMITTED.status()).isEqualTo(409);
+        assertThat(RiskErrorCode.CASE_NOT_TAKEN.status()).isEqualTo(422);
+        assertThat(RiskErrorCode.CASE_REQUEST_INVALID.status()).isEqualTo(422);
         assertThat(Arrays.stream(RiskAuditAction.values()).map(RiskAuditAction::code))
                 .containsExactlyInAnyOrder("risk.PolicyProposed", "risk.PolicyActivated", "risk.PolicyRejected",
                         "risk.PolicyRetired", "risk.SelfApprovalRefused", "risk.SelfDealingRefused",
@@ -274,14 +282,18 @@ class RiskVocabulariesTest {
                         "risk.OverrideProposed", "risk.OverrideApproved", "risk.OverrideRejected",
                         "risk.ActionConcluded",
                         // P13-TSK-015: the suppression's three acts.
-                        "risk.AlertSuppressionProposed", "risk.AlertSuppressed", "risk.AlertSuppressionRejected");
+                        "risk.AlertSuppressionProposed", "risk.AlertSuppressed", "risk.AlertSuppressionRejected",
+                        // P13-TSK-016: the case's five acts and the disposition's three.
+                        "risk.CaseOpened", "risk.CaseTaken", "risk.CaseNoted", "risk.CaseEscalated", "risk.CaseDisposed",
+                        "risk.DispositionProposed", "risk.DispositionApproved", "risk.DispositionRejected");
         for (RiskAuditAction action : RiskAuditAction.values()) {
             assertThat(action.description()).as(action.name()).isNotBlank();
         }
         // The platform's acts are reasoned by the act they follow; a person's discretionary act requires a reason.
         for (RiskAuditAction action : List.of(RiskAuditAction.SELF_APPROVAL_REFUSED, RiskAuditAction.SELF_DEALING_REFUSED,
                 RiskAuditAction.POLICY_RETIRED, RiskAuditAction.PROFILE_READ, RiskAuditAction.ASSESSMENT_READ,
-                RiskAuditAction.ACTION_CONCLUDED)) {
+                RiskAuditAction.ACTION_CONCLUDED, RiskAuditAction.CASE_OPENED, RiskAuditAction.CASE_TAKEN,
+                RiskAuditAction.CASE_DISPOSED)) {
             assertThat(action.requiresReason()).as("%s is the platform's act, reasoned by the act it follows", action)
                     .isFalse();
         }
@@ -289,7 +301,9 @@ class RiskVocabulariesTest {
                 RiskAuditAction.POLICY_REJECTED, RiskAuditAction.REPROCESSING_ORDERED, RiskAuditAction.REPLAYED,
                 RiskAuditAction.OVERRIDE_PROPOSED, RiskAuditAction.OVERRIDE_APPROVED, RiskAuditAction.OVERRIDE_REJECTED,
                 RiskAuditAction.ALERT_SUPPRESSION_PROPOSED, RiskAuditAction.ALERT_SUPPRESSED,
-                RiskAuditAction.ALERT_SUPPRESSION_REJECTED)) {
+                RiskAuditAction.ALERT_SUPPRESSION_REJECTED, RiskAuditAction.CASE_NOTED, RiskAuditAction.CASE_ESCALATED,
+                RiskAuditAction.DISPOSITION_PROPOSED, RiskAuditAction.DISPOSITION_APPROVED,
+                RiskAuditAction.DISPOSITION_REJECTED)) {
             assertThat(action.requiresReason()).as("%s is a person's discretionary act", action).isTrue();
         }
     }

@@ -105,7 +105,7 @@ class RiskMigrationTest {
             + " functions its migrations created: V001 the floor alone, V002 the policy versions (P13-TSK-002), V003 the"
             + " signal (P13-TSK-005), V004 the monitored transactions and the watermark (P13-TSK-019), V005 the velocity"
             + " windows (P13-TSK-006), V006 the customer risk profile (P13-TSK-007), V007 the sealed assessment and the"
-            + " override's table (P13-TSK-004), V010 the born-once alert (P13-TSK-015)")
+            + " override's table (P13-TSK-004), V010 the born-once alert (P13-TSK-015), V012 the case (P13-TSK-016)")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. Each later task rewrites
@@ -126,6 +126,10 @@ class RiskMigrationTest {
                 // V007 (P13-TSK-004): the sealed assessment's head and its inputs.
                 "risk_assessment",
                 "risk_assessment_input",
+                // V012 (P13-TSK-016): the case, its investigator actions and its history.
+                "risk_case",
+                "risk_case_action",
+                "risk_case_event",
                 // V002 (P13-TSK-002): the machine row, the content, the rules and their parameters, the bands, the history.
                 "risk_policy",
                 "risk_policy_band",
@@ -169,6 +173,11 @@ class RiskMigrationTest {
                 "risk_assessment_has_its_inputs",
                 "risk_assessment_is_born_stamped",
                 "risk_assessment_is_sealed",
+                // V012 (P13-TSK-016): the actions and the history append-only, every step its history row, the machine.
+                "risk_case_action_is_append_only",
+                "risk_case_event_is_append_only",
+                "risk_case_has_its_history",
+                "risk_case_permits_only_machine_edges",
                 // V002 (P13-TSK-002), continued.
                 "risk_policy_content_is_born_once",
                 "risk_policy_is_never_truncated",
@@ -377,6 +386,36 @@ class RiskMigrationTest {
                 + " date_bin(interval '1 hour', clock_timestamp(), TIMESTAMPTZ '1970-01-05 00:00:00+00'), 1, 100, 'EUR', 2)",
                 party)).as("SESSION is a dimension").doesNotThrowAnyException();
         application.rollback();
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
+                + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
+    }
+
+    // ------------------------------------------------------------------ V012 (P13-TSK-016)
+
+    @Test
+    @DisplayName("V012: the case's grants - SELECT, INSERT and an UPDATE of the machine's columns alone on risk_case"
+            + " (never a fact or a stamp), SELECT and INSERT alone on the actions and the history; no DELETE; the"
+            + " one-open partial unique live; the two foreign keys the earlier tasks left; every constraint name unique")
+    void theCaseGrants() throws SQLException {
+        assertThat(grantsOn("risk_case")).containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
+        assertThat(grantsOn("risk_case_action")).containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
+        assertThat(grantsOn("risk_case_event")).containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
+        assertThat(column("SELECT column_name FROM information_schema.column_privileges"
+                + " WHERE table_schema = 'risk' AND table_name = 'risk_case' AND grantee = 'finapp_app'"
+                + " AND privilege_type = 'UPDATE' ORDER BY column_name"))
+                .containsExactly("disposition", "disposition_approved_by", "disposition_approved_by_type",
+                        "disposition_id", "disposition_prohibits", "disposition_proposed_by",
+                        "disposition_proposed_by_type", "level", "queue", "revision", "status", "taken_by",
+                        "taken_by_type");
+        String statements = statementsOf(migration("V012__the_case.sql"));
+        assertThat(statements).doesNotContainPattern("GRANT[^;]*(DELETE|TRUNCATE)").doesNotContain("GRANT ALL");
+        assertThat(scalar("SELECT indexdef FROM pg_indexes WHERE indexname = 'risk_case_one_open'"))
+                .contains("UNIQUE INDEX").contains("(subject_ref, kind)").contains("WHERE (status <> 'DISPOSED'::text)");
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
+                + " AND conname IN ('risk_alert_attached_case_fk', 'customer_risk_profile_version_disposition_fk',"
+                + " 'risk_case_disposition_four_eyes', 'risk_case_disposition_fk') ORDER BY conname"))
+                .containsExactly("customer_risk_profile_version_disposition_fk", "risk_alert_attached_case_fk",
+                        "risk_case_disposition_fk", "risk_case_disposition_four_eyes");
         assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
                 + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
     }
