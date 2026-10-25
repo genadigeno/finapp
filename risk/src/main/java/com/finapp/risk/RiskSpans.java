@@ -57,6 +57,10 @@ public final class RiskSpans {
     public static final String CASE_DISPOSE = "risk.case.dispose";
     /** T-act - an approved action dispatched through its owning domain. */
     public static final String ACTION_DISPATCH = "risk.action.dispatch";
+    /** T-case - a downstream action proposed on a case (`P13-TSK-017`). */
+    public static final String ACTION_PROPOSE = "risk.action.propose";
+    /** T-case - a case's downstream action approved or rejected (`P13-TSK-017`). */
+    public static final String ACTION_DECIDE = "risk.action.decide";
     /** T-rep - a regulatory report drafted, approved or filed. */
     public static final String REPORT = "risk.report";
     /** T-list - a screening list version recorded or activated. */

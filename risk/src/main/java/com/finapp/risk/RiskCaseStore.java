@@ -122,4 +122,10 @@ public interface RiskCaseStore {
 
     /** Up to {@code limit} approved prohibiting dispositions with no profile version naming them, oldest first. */
     List<PendingProhibition> prohibitionsDue(Connection unitOfWork, int limit);
+
+    /**
+     * Whether an action proposed on {@code id} stands {@code PROPOSED} - a disposition is not decided past it
+     * (`P13-TSK-017`; {@code risk V013}'s {@code risk_case_disposes_no_standing_action}). Read under the case's lock.
+     */
+    boolean actionProposalStands(Connection unitOfWork, RiskCaseId id);
 }

@@ -409,6 +409,17 @@ partial batch never advances. One tick takes batches while they come back full, 
 watermark's permit is also pulled forward by the hint `MonitoringWatermarkStore.hint`, declared here for `-005`'s
 completion handlers.)*
 
+*(As built by `P13-TSK-017`, 2026-10-25: `RiskActionSchedule` created in `app` - the 31st `LEASE_PROTECTED_SCHEDULERS`
+entry, every instance, no leader, `finapp.risk.action.sweeper.enabled` (off in test contexts), poll
+`finapp.risk.action.poll` (5 s), `finapp.risk.action.actions-per-tick` (20); `finapp.risk.sweeper.enabled{kind=action}`
+and `finapp.risk.sweeper.claim.failed{kind=action}`, a failed claim ending the tick. One leg claims both rows of the
+table above: ONE statement takes the oldest due action (`APPROVED`, or `DISPATCHED` past its lease) `FOR UPDATE SKIP
+LOCKED` on `next_attempt_at <= clock_timestamp()`, moves it `DISPATCHED` with the permit a lease ahead
+(`finapp.risk.action.lease`, 2 min) and an attempt counted, and **commits** - the owner's command then runs on no
+transaction as the platform and the outcome is a second conditional edge. `-012`'s override action leg on
+`RiskMonitoringSchedule` is moved here (the override's action is a `risk_action` row); `RiskMonitoringSchedule` keeps
+the intake, profile and case legs.)*
+
 ### 7.6 The latency budget and what a breach becomes
 
 T-eval runs in-lock, so its cost is paid by every money movement. Budget: **p99 ≤ 50 ms** for the reads and upserts
@@ -453,7 +464,7 @@ Phase 12 wave-D lesson — so a task's number is below every number of a later w
 | `risk_assessment`, `risk_policy` CHECKs regenerated for the card `HOLD` | `V008` (`-010` slice 2) | *added 2026-10-24: `-010` landed first in merge order and took the next free number; the rows below take the next free numbers at their builds (Flyway out-of-order off) - the coordinator's renumbering* |
 | `risk_alert` | `V010` (`-015`) — *as built 2026-10-25, the next free at its build (`-010` took `V008`, `-012` `V009`)* | born-once alerts: `UNIQUE (subject_ref, rule_code, window_start)`; the window aligned by `CHECK`; the suppression's four eyes by `CHECK`; no `DELETE` |
 | `risk_case`, `risk_case_action`, `risk_case_event` | `V012` (`-016`) — *as built 2026-10-25, the next free at its build (`-012` took `V009`, `-015` `V010`, `-014` `V011`); `-022`'s screening lists take the next free number at theirs* | the case machine with `revision`; one open per (subject, kind) by the partial unique `risk_case_one_open`; the four-eyes `CHECK`; the alert's and the profile version's foreign keys |
-| `risk_action` | `V010` (`-017`) | the action machine; `UNIQUE (case_id, kind, target_ref)` live |
+| `risk_action` | `V010` (`-017`) — *as built 2026-10-25 as `V013`, the next free at its build (`-016` took `V012`); `V013` also folds `-012`'s issued actions out of `decision_override` - copied first, keys kept, the four action columns dropped* | the action machine; `UNIQUE (case_id, kind, target_ref)` live (`risk_action_one_live`); the four-eyes `CHECK` for a case's action; one per override, its id the override's |
 | `monitored_transaction`, `monitoring_watermark` | `V004` (`-019`) | `UNIQUE (journal_entry_id)`; one watermark per source |
 | `risk_signal` widened (three abuse kinds, `merchant_subject_ref`, `intent_ref`, `risk_signal_by_merchant`), `velocity_window` and `risk_rule_parameter` (`SESSION`), `risk_assessment.session_id` | `V011` (`-014`) — *as built 2026-10-25, the next free at its build; the entry planned no migration* | the kinds' `CHECK`s re-made by name; a guard refusing a stored ratio rule without `threshold_count`; no grant, no row |
 | `regulatory_report`, `regulatory_report_event` | `V011` (`-021`) *(taken by `-014`: the next free at `-021`'s build)* | the filing artefact |

@@ -4,14 +4,12 @@ import com.finapp.platform.audit.AuditId;
 import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.audit.AuditWriter;
-import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.time.Clock;
-import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -34,9 +32,11 @@ import java.util.UUID;
  *   <li><strong>{@link #approve}</strong> - the row under its lock (R4), {@code PROPOSED} only; the proposer refused
  *       where a second person is required ({@link SelfApprovalRefused} - the caller records it {@code FAILED} in a
  *       transaction of its own; {@code risk V007}'s four-eyes {@code CHECK} holds every writer alone); below the
- *       threshold the proposer's own reasoned approval completes it, audited as such. The approval <em>records</em> the
- *       action it issues - with its permit - and announces it, in its own transaction; the dispatch is
- *       {@link OverrideActions}', after the commit, never here.</li>
+ *       threshold the proposer's own reasoned approval completes it, audited as such. The approval <em>issues</em> the
+ *       action into the action machine in its own transaction ({@link ActionIssuer} - {@link RiskActions#issued}: the
+ *       {@code risk_action} row under the override's own id, so its key is {@code risk.action:<override id>}, announced
+ *       {@code risk.RiskActionRequested}; `P13-TSK-017`'s fold); the dispatch is T-act's, after the commit, never
+ *       here.</li>
  *   <li><strong>{@link #reject}</strong> - anyone, the proposer's withdrawal included; issues nothing - the decision
  *       stands.</li>
  *   <li><strong>{@link #read}</strong> / {@link #readOne} - the assessment the officer overrides and its overrides,
@@ -61,19 +61,19 @@ public final class DecisionOverrides {
     private final RiskPolicies policies;
     private final RiskActingParty actingParties;
     private final AuditWriter<Connection> audit;
-    private final OutboxWriter<Connection> outbox;
+    private final ActionIssuer issuer;
     private final IdGenerator ids;
     private final Clock clock;
 
     public DecisionOverrides(DecisionOverrideStore store, RiskAssessmentStore assessments, RiskPolicies policies,
-            RiskActingParty actingParties, AuditWriter<Connection> audit, OutboxWriter<Connection> outbox,
-            IdGenerator ids, Clock clock) {
+            RiskActingParty actingParties, AuditWriter<Connection> audit, ActionIssuer issuer, IdGenerator ids,
+            Clock clock) {
         this.store = Objects.requireNonNull(store, "store");
         this.assessments = Objects.requireNonNull(assessments, "assessments");
         this.policies = Objects.requireNonNull(policies, "policies");
         this.actingParties = Objects.requireNonNull(actingParties, "actingParties");
         this.audit = Objects.requireNonNull(audit, "audit");
-        this.outbox = Objects.requireNonNull(outbox, "outbox");
+        this.issuer = Objects.requireNonNull(issuer, "issuer");
         this.ids = Objects.requireNonNull(ids, "ids");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
@@ -204,8 +204,9 @@ public final class DecisionOverrides {
     /**
      * Approves {@code overrideId} by {@code actor} with {@code reason}: under the row's lock, {@code PROPOSED} only, the
      * proposer refused where C7 requires a second holder; the approval issues the proposed effect - a dispatchable one
-     * under a permit due {@code lease} from now - audited {@code risk.OverrideApproved} and, for a dispatchable effect,
-     * announced {@code risk.RiskActionRequested}. Nothing is dispatched here. The same person's retry converges.
+     * into the action machine through {@link ActionIssuer} (born {@code APPROVED} under this override's id, due at once,
+     * announced {@code risk.RiskActionRequested}; `P13-TSK-017`) - audited {@code risk.OverrideApproved}. Nothing is
+     * dispatched here. The same person's retry converges.
      *
      * @throws RiskReasons.ReasonRequired for a missing, unbounded or instrument-bearing reason
      * @throws RiskAssessments.SelfDealingRefused the officer's own party's assessment, or an officer placed in no party
@@ -214,8 +215,7 @@ public final class DecisionOverrides {
      * @throws SelfApprovalRefused the proposer approving where a second holder is required
      */
     public Decided approve(Connection unitOfWork, RiskAssessmentId assessmentId, DecisionOverrideId overrideId,
-            String reason, Actor actor, CorrelationId correlation, Duration lease) {
-        Objects.requireNonNull(lease, "lease");
+            String reason, Actor actor, CorrelationId correlation) {
         String reasoned = RiskReasons.reasoned(reason);
         DecisionOverride row = lockedFor(unitOfWork, assessmentId, overrideId, actor, "override-approve");
         if (row.status() == OverrideStatus.APPROVED && row.decidedBy().filter(actor.id()::equals).isPresent()) {
@@ -228,18 +228,17 @@ public final class DecisionOverrides {
         if (byProposer && row.requiresSecondPerson()) {
             throw new SelfApprovalRefused(row);
         }
-        DecisionOverride approved = store.approve(unitOfWork, overrideId, actor, reasoned, lease)
+        DecisionOverride decided = store.approve(unitOfWork, overrideId, actor, reasoned)
                 .orElseThrow(() -> new IllegalStateException(
                         "the locked proposal was decided by another writer: the FOR UPDATE protocol was bypassed"));
-        append(unitOfWork, actor, RiskAuditAction.OVERRIDE_APPROVED, approved, Optional.of(reasoned),
-                "assessment=" + assessmentId.value() + ", effect=" + approved.effect().name() + ", secondPerson="
-                        + (approved.requiresSecondPerson() ? "REQUIRED" : "NOT_REQUIRED") + ", byProposer=" + byProposer,
+        append(unitOfWork, actor, RiskAuditAction.OVERRIDE_APPROVED, decided, Optional.of(reasoned),
+                "assessment=" + assessmentId.value() + ", effect=" + decided.effect().name() + ", secondPerson="
+                        + (decided.requiresSecondPerson() ? "REQUIRED" : "NOT_REQUIRED") + ", byProposer=" + byProposer,
                 correlation);
-        if (approved.effect().dispatches()) {
-            OverrideActions.announce(outbox, ids, clock, unitOfWork, OverrideActions.REQUESTED_EVENT, approved.id(),
-                    approved.assessment(), approved.effect(), approved.target().orElseThrow(), Optional.empty(),
-                    correlation);
-        }
+        // The issued action, into the machine in this same transaction - decision_override_issues_its_action holds it.
+        issuer.issue(unitOfWork, decided, correlation);
+        DecisionOverride approved = store.find(unitOfWork, overrideId).orElseThrow(() -> new IllegalStateException(
+                "an override approved in this transaction is not found in it"));
         return new Decided(approved, false);
     }
 

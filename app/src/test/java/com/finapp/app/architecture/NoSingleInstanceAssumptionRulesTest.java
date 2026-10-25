@@ -384,12 +384,22 @@ class NoSingleInstanceAssumptionRulesTest {
                     // unique. The permit is re-stamped by the database (now after a full batch, the idle cadence after
                     // a short one); a completion hint only pulls it forward; the reprocessing door moves the position
                     // back under FOR UPDATE, waiting for a running batch. Register row: DISTRIBUTED_EXECUTION.md section
-                    // 3; the ten-sweeper race is MonitoringIntakeDatabaseTest#tenSweepersIngestOnce. P13-TSK-012 adds
-                    // the override action leg, no new scheduler: one due permit per transaction claimed FOR UPDATE SKIP
-                    // LOCKED and re-stamped a lease ahead before payments' keyed door is called on no transaction under
-                    // risk.action:<override id> - ten sweepers, one claim per lease, one effect by payments' key
-                    // (DecisionOverrideDatabaseTest#aCrashBetweenApprovalAndReleaseReDrivesOnce).
-                    "com.finapp.app.risk.RiskMonitoringSchedule");
+                    // 3; the ten-sweeper race is MonitoringIntakeDatabaseTest#tenSweepersIngestOnce. (P13-TSK-012's
+                    // override action leg rode this schedule until P13-TSK-017 moved it to RiskActionSchedule below.)
+                    "com.finapp.app.risk.RiskMonitoringSchedule",
+                    // P13-TSK-017: the same half for the risk action schedule - the 31st entry. DESIGN: no money row is
+                    // taken by risk and no risk row is held while an owner works. Each claim is ONE statement on the
+                    // database clock: the oldest risk_action whose next_attempt_at has come, APPROVED or DISPATCHED,
+                    // FOR UPDATE SKIP LOCKED (the Phase 13 lock order's R6), moved DISPATCHED with its permit a lease
+                    // ahead and one attempt counted, and COMMITTED before the owning domain's keyed door is called on
+                    // no transaction as the platform under risk.action:<id> - so ten sweepers over one approved action
+                    // claim it once per lease (nine skip the locked row or find the permit moved), and any overlap past
+                    // a lease presents the SAME key, which the owner replays (payments' claim; identity's and merchant's
+                    // adapter's IdempotentExecutor) - one effect. The record is a conditional DISPATCHED -> DONE|FAILED,
+                    // once, whoever records first. A failed claim is counted claim.failed{kind=action} (N5). Register
+                    // row: DISTRIBUTED_EXECUTION.md section 3; the ten-sweeper race is
+                    // RiskActionDatabaseTest#tenSweepersDispatchOnce.
+                    "com.finapp.app.risk.RiskActionSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

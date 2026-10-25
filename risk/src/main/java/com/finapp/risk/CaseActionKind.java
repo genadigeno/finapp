@@ -4,8 +4,8 @@ package com.finapp.risk;
  * The kinds of investigator action (`P13-TSK-016`; {@code PHASE_13_PLAN.md} section 3.1 "Investigator Action";
  * ADR-0110 decision 4; {@code risk V012}'s {@code risk_case_action}) - every one append-only, a person's, audited. The
  * vocabulary is the plan's whole list so the table's {@code CHECK} need not be re-made later: the three
- * {@code ACTION_*} kinds are `-017`'s (a downstream action proposed, approved or rejected against the case) and
- * {@link #REPORT_DRAFTED} is `-021`'s; this task writes none of those four.
+ * {@code ACTION_*} kinds are `-017`'s (a downstream action proposed, approved or rejected against the case - written by
+ * {@link RiskActions}, `P13-TSK-017`) and {@link #REPORT_DRAFTED} is `-021`'s.
  */
 public enum CaseActionKind {
 
@@ -43,11 +43,13 @@ public enum CaseActionKind {
     REPORT_DRAFTED;
 
     /**
-     * True when this kind carries a person's text, which is then required - every act this task writes but the take
-     * (the evidence's text says why it was attached).
+     * True when this kind carries a person's text, which is then required - every act `-016` writes but the take (the
+     * evidence's text says why it was attached), and `-017`'s three action acts (their reasons; {@code risk V013}
+     * re-made {@code risk_case_action_texted} by name).
      */
     public boolean texted() {
-        return this == NOTE || this == EVIDENCE_ATTACHED || this == ESCALATED || this == DISPOSITION_PROPOSED
+        return this == NOTE || this == EVIDENCE_ATTACHED || this == ESCALATED || this == ACTION_PROPOSED
+                || this == ACTION_APPROVED || this == ACTION_REJECTED || this == DISPOSITION_PROPOSED
                 || this == DISPOSITION_APPROVED || this == DISPOSITION_REJECTED;
     }
 }

@@ -148,15 +148,61 @@ public enum RiskAuditAction implements AuditableAction {
                     + " withdrew it.",
             true),
 
-    /** The outcome of an override's issued action was recorded (`P13-TSK-012`; `-017` raises it for its actions). */
+    /** The owning domain's answer to a risk action was recorded (`P13-TSK-012`; the action machine's, `P13-TSK-017`). */
     ACTION_CONCLUDED(
             "risk.ActionConcluded",
-            "The outcome payments answered to an action an approved override issued was recorded on the override,"
-                    + " once (P13-TSK-012; ADR-0112 decision 4; P13-TSK-017's risk_action rows raise it too): DONE,"
-                    + " ALREADY (the movement had left its hold by another hand - its expiry among them; an outcome, not"
-                    + " an error) or REFUSED (the hold's validity had lapsed, or no such movement). The actor is the"
-                    + " approver whose door dispatched it, or the platform whose re-drive leg did; the effect itself is"
-                    + " payments' act, audited by payments. The summary names the kind, the outcome and the attempts.",
+            "The answer the owning domain gave a dispatched risk action was recorded on its risk_action row, once,"
+                    + " by a conditional edge (P13-TSK-017's T-act; first raised by P13-TSK-012 for an override's issued"
+                    + " action, now folded into the same machine; ADR-0112 decisions 4-6): DONE, ALREADY (the state"
+                    + " already held - an identity already suspended, a movement already out of its hold by another hand;"
+                    + " concluded DONE) or REFUSED (the owner's own rule said no - a lapsed hold, a closed identity;"
+                    + " concluded FAILED, never retried, re-proposable). The actor is the platform, which executes every"
+                    + " action (the person decided it - risk.ActionApproved); the effect itself is the owner's act,"
+                    + " audited by the owner. The summary names the kind, the source, the outcome and the attempts.",
+            false),
+
+    /** An investigator proposed a downstream action on a case (`P13-TSK-017`). */
+    ACTION_PROPOSED(
+            "risk.ActionProposed",
+            "A holder of RISK_INVESTIGATE proposed a downstream action on a case they hold taken, with a reason"
+                    + " (POST /v1/operator/risk/cases/{caseId}/risk-actions, the body carrying the revision, P13-TSK-017;"
+                    + " ADR-0112 decision 3): a kind the case admits (ActionRules - identity's three on a party's case's own"
+                    + " party, SUSPEND_MERCHANT on a merchant-abuse case's merchant, a held movement's resolution on a"
+                    + " movement the case holds), one live per (case, kind, target); it awaits a DIFFERENT holder of"
+                    + " RISK_CASE_APPROVE. Its target the risk_action row; the summary names the case, the kind and the"
+                    + " target's kind - never the target's subject or the reason's text.",
+            true),
+
+    /** A second person approved a case's downstream action (`P13-TSK-017`). */
+    ACTION_APPROVED(
+            "risk.ActionApproved",
+            "A holder of RISK_CASE_APPROVE other than its proposer approved a case's standing action from a"
+                    + " MULTI_FACTOR session (POST .../risk-actions/{actionId}/approval, the body carrying the revision,"
+                    + " P13-TSK-017; INV-RSK-07, INV-AUD-04 - risk_action_four_eyes beneath): the action APPROVED under a"
+                    + " permit due at once, announced risk.RiskActionRequested; nothing is dispatched in this"
+                    + " transaction - the platform dispatches it after the commit (risk.ActionDispatched). The summary"
+                    + " names the case and the kind.",
+            true),
+
+    /** A case's downstream action was rejected, or withdrawn by its proposer (`P13-TSK-017`). */
+    ACTION_REJECTED(
+            "risk.ActionRejected",
+            "A standing action was rejected with a reason - or withdrawn by its proposer"
+                    + " (POST .../risk-actions/{actionId}/rejection, P13-TSK-017); nothing is dispatched, the case stays as"
+                    + " it was, and the live unique is released (the action may be proposed again). The summary names the"
+                    + " case, the kind and whether the proposer withdrew it.",
+            true),
+
+    /** The platform dispatched an approved risk action to its owning domain (`P13-TSK-017`). */
+    ACTION_DISPATCHED(
+            "risk.ActionDispatched",
+            "The platform claimed an approved risk action - T-act's first attempt: the action row FOR UPDATE SKIP"
+                    + " LOCKED on its due permit, moved DISPATCHED with the permit a lease ahead, committed before the"
+                    + " owning domain's command is called under the system actor with the key risk.action:<id> and the"
+                    + " action's reason code (P13-TSK-017; ADR-0112 decision 4) - by the approval door after its commit"
+                    + " or by RiskActionSchedule. A re-claim past the lease presents the same key and is not audited again"
+                    + " (the attempts are counted on the row). The summary names the kind, the source and the target's"
+                    + " kind.",
             false),
 
     /** An analyst proposed to suppress an open alert (`P13-TSK-015`'s machine; the door `-018`'s). */

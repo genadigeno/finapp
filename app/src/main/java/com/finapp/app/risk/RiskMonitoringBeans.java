@@ -107,8 +107,8 @@ public class RiskMonitoringBeans {
      * The monitoring sweep - every instance, no lease, off in test contexts: the intake leg (`P13-TSK-019`), the
      * customer risk profile leg (`P13-TSK-007`, {@code finapp.risk.profile.claims-per-tick} heads a tick at most), the
      * case leg (`P13-TSK-016`, {@code finapp.risk.case.folds-per-tick} queued alerts and
-     * {@code finapp.risk.case.prohibitions-per-tick} approved prohibitions a tick at most) and the override action leg
-     * (`P13-TSK-012`, {@code finapp.risk.override.actions-per-tick} due actions a tick at most).
+     * {@code finapp.risk.case.prohibitions-per-tick} approved prohibitions a tick at most). `-012`'s override action
+     * leg moved to {@code RiskActionSchedule} with the action machine (`P13-TSK-017`).
      */
     @Bean
     @ConditionalOnProperty(name = "finapp.risk.monitoring.sweeper.enabled", havingValue = "true", matchIfMissing = true)
@@ -117,7 +117,6 @@ public class RiskMonitoringBeans {
             com.finapp.risk.ProfileRecompute profileRecompute,
             com.finapp.risk.Cases cases,
             CaseProhibitionDriver caseProhibitionDriver,
-            OverrideActionDriver overrideActionDriver,
             RiskTransactions riskTransactions,
             RiskMonitoringMetrics riskMonitoringMetrics,
             RiskFlowScope riskFlowScope,
@@ -129,8 +128,7 @@ public class RiskMonitoringBeans {
                 riskMonitoringMetrics, riskFlowScope, foldsPerTick);
         return new RiskMonitoringSchedule(monitoringIntake,
                 RiskMonitoringSchedule.ProfileLeg.over(profileRecompute), profileClaimsPerTick, caseLeg::driveDue,
-                overrideActionDriver::driveDue, riskTransactions, riskMonitoringMetrics, riskFlowScope, pollInterval,
-                batchesPerTick);
+                riskTransactions, riskMonitoringMetrics, riskFlowScope, pollInterval, batchesPerTick);
     }
 
     /** Whether this instance runs the monitoring sweep - eager either way (`P1-TSK-029`'s rule). */

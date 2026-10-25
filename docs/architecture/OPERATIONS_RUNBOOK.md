@@ -968,7 +968,15 @@ Each is `PHASE_13_PLAN.md` §15's; `-024` names the ones the plan does not.
   answers. A count that keeps rising for one kind is payments' door failing - the push rail, a card authorisation still
   in flight - read `GET /v1/operator/risk/assessments/{id}/overrides/{overrideId}` (`actionAttempts`, `actionDueAt`);
   the money is never at risk meanwhile: a held withdrawal not released is failed by its own expiry, a capture hold not
-  captured voided by payments' deadline.)*
+  captured voided by payments' deadline.)* *(Since `P13-TSK-017`: every action - a case's or an override's - is a
+  `risk_action` row re-driven by `RiskActionSchedule` (every instance, `finapp.risk.action.sweeper.enabled`, each due or
+  lapsed action claimed `SKIP LOCKED` and dispatched as the platform under `risk.action:<id>`), no longer by the
+  monitoring sweep; the series counts a dispatch that **threw** - nothing recorded, the permit standing - while an owner's
+  refusal is a recorded `FAILED` in `finapp.risk.action{kind,outcome="refused"}`, never re-driven. The override's read
+  still answers `actionAttempts` and `actionDueAt`, now from its action row; a case's action has no read door until
+  `-018`'s case read - its row is `risk.risk_action` (`attempts`, `next_attempt_at`, `outcome`). `SUSPEND_ACCOUNT`, `REINSTATE_ACCOUNT` and
+  `BLOCK_BENEFICIARY` have no owning command and never appear; `finapp.risk.sweeper.claim.failed{kind=action}` rising is
+  the schedule's own claim failing (the database), not an owner.)*
 - **A filing unknown** (`finapp.risk.report{status="FILED"}` with no acknowledgement past the provider's deadline): §9.4.
 
 ### 9.3 Reprocessing the monitoring from an earlier watermark - the order

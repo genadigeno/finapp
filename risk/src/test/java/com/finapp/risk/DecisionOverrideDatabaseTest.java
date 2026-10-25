@@ -45,8 +45,10 @@ import org.junit.jupiter.api.Test;
  * {@code CHECK} refusing it alone; below the threshold one holder with a reason; an {@code ALLOW} never overridden by any
  * writer; the assessment never edited; a crash between the approval's commit and the release re-driven by ten legs to
  * one dispatch and one outcome; every other edge refused by the machine. Payments' doors are a counting fake keyed as
- * payments keys them ({@link OverrideWorld.Payments}) - the real doors are {@code WithdrawalHoldDatabaseTest}'s.
- * <strong>Written and owed</strong> (owner decision C5).
+ * payments keys them ({@link OverrideWorld.Owners}) - the real doors are {@code WithdrawalHoldDatabaseTest}'s. Since
+ * `P13-TSK-017` ({@code risk V013}) the approval issues its action into {@code risk_action} under the override's own id,
+ * and T-act - the claim, the dispatch as the platform, the record - is {@link RiskActions}'. <strong>Written and
+ * owed</strong> (owner decision C5).
  *
  * <p>No policy version is activated: each case PROPOSES the version it judges under (a row the pin's foreign key and
  * the birth trigger's C7 read) and seals its assessments directly through the store, so the suite judges nothing of
@@ -65,31 +67,32 @@ class DecisionOverrideDatabaseTest {
     private static final JdbcRiskAssessmentStore ASSESSMENTS = new JdbcRiskAssessmentStore();
     private static final JdbcDecisionOverrideStore OVERRIDES = new JdbcDecisionOverrideStore();
     private static final Map<String, UUID> PARTY_OF = new java.util.concurrent.ConcurrentHashMap<>();
-    private static final DecisionOverrides MACHINE = new DecisionOverrides(OVERRIDES, ASSESSMENTS,
-            new RiskPolicies(POLICY_STORE), (uow, actor) -> Optional.ofNullable(PARTY_OF.get(actor.id())),
-            new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, CLOCK);
+    private static final JdbcRiskCaseStore CASES = new JdbcRiskCaseStore();
 
-    private final OverrideWorld.Payments payments = new OverrideWorld.Payments();
-    private final OverrideActions actions = new OverrideActions(OVERRIDES, payments, payments, new JdbcAuditWriter(),
-            new JdbcOutboxWriter(), IDS, CLOCK);
+    private final OverrideWorld.Owners payments = new OverrideWorld.Owners();
+    private final RiskActions actions = new RiskActions(new JdbcRiskActionStore(), new Cases(CASES,
+            new JdbcRiskAlertStore(), (uow, actor) -> Optional.ofNullable(PARTY_OF.get(actor.id())),
+            (uow, subject) -> Optional.empty(), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, CLOCK,
+            CaseObserver.NONE), CASES, ASSESSMENTS, new ActionDispatch(payments, payments, payments, payments),
+            new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, CLOCK);
+    private final DecisionOverrides machine = new DecisionOverrides(OVERRIDES, ASSESSMENTS,
+            new RiskPolicies(POLICY_STORE), (uow, actor) -> Optional.ofNullable(PARTY_OF.get(actor.id())),
+            new JdbcAuditWriter(), actions, IDS, CLOCK);
 
     @Test
     @DisplayName("ten approvers of one override, each in its own transaction: one PROPOSED -> APPROVED edge, nine"
             + " OverrideStale; the winner's dispatch after its commit - one release, one DONE, one risk.ActionConcluded")
     void tenApproversOneRelease() throws Exception {
         RiskAssessment held = sealed(RiskOperation.WITHDRAWAL, RiskDecision.HOLD, THRESHOLD);
-        DecisionOverride proposed = inOneTransaction(uow -> MACHINE.propose(uow, held.id(), OverrideResolution.PROCEED,
+        DecisionOverride proposed = inOneTransaction(uow -> machine.propose(uow, held.id(), OverrideResolution.PROCEED,
                 "FALSE_POSITIVE", "verified with the customer", officer(), correlation()));
         List<Object> answers = race(10, () -> {
             Actor approver = officer();
             try {
-                DecisionOverrides.Decided decided = inOneTransaction(uow -> MACHINE.approve(uow, held.id(),
-                        proposed.id(), "four eyes", approver, correlation(), Duration.ofMinutes(2)));
-                // Committed: now, and only now, the action - no transaction open.
-                OverrideActions.Issued issued = inOneTransaction(uow -> actions.pending(uow, proposed.id()))
-                        .orElseThrow();
-                ActionOutcome outcome = actions.dispatch(issued);
-                inOneTransaction(uow -> actions.conclude(uow, issued, outcome, approver, correlation()));
+                DecisionOverrides.Decided decided = inOneTransaction(uow -> machine.approve(uow, held.id(),
+                        proposed.id(), "four eyes", approver, correlation()));
+                // Committed: now, and only now, the action - T-act, no transaction open across the door.
+                drive(RiskActionId.ofOverride(proposed.id()));
                 return decided;
             } catch (DecisionOverrides.OverrideStale stale) {
                 return stale;
@@ -97,9 +100,10 @@ class DecisionOverrideDatabaseTest {
         });
         assertThat(answers).filteredOn(DecisionOverrides.Decided.class::isInstance).hasSize(1);
         assertThat(answers).filteredOn(DecisionOverrides.OverrideStale.class::isInstance).hasSize(9);
-        assertThat(column("SELECT status || ',' || action || ',' || action_outcome || ',' || (action_due_at IS NULL)"
-                + " FROM risk.decision_override WHERE id = '" + proposed.id().value() + "'"))
-                .containsExactly("APPROVED,RELEASE_HELD_WITHDRAWAL,DONE,true");
+        assertThat(column("SELECT o.status || ',' || o.action || ',' || a.status || ',' || a.outcome || ','"
+                + " || (a.next_attempt_at IS NULL) FROM risk.decision_override o JOIN risk.risk_action a"
+                + " ON a.override_id = o.id WHERE o.id = '" + proposed.id().value() + "'"))
+                .containsExactly("APPROVED,RELEASE_HELD_WITHDRAWAL,DONE,DONE,true");
         assertThat(payments.calls).hasSize(1);
         assertThat(payments.effects()).isEqualTo(1);
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'risk.OverrideApproved'"
@@ -117,11 +121,11 @@ class DecisionOverrideDatabaseTest {
     void theProposerCannotApprove() throws Exception {
         RiskAssessment held = sealed(RiskOperation.WITHDRAWAL, RiskDecision.HOLD, THRESHOLD);
         Actor proposer = officer();
-        DecisionOverride proposed = inOneTransaction(uow -> MACHINE.propose(uow, held.id(), OverrideResolution.PROCEED,
+        DecisionOverride proposed = inOneTransaction(uow -> machine.propose(uow, held.id(), OverrideResolution.PROCEED,
                 "FALSE_POSITIVE", "verified", proposer, correlation()));
         assertThat(proposed.requiresSecondPerson()).isTrue();
-        assertThatThrownBy(() -> inOneTransaction(uow -> MACHINE.approve(uow, held.id(), proposed.id(), "mine",
-                proposer, correlation(), Duration.ofMinutes(2))))
+        assertThatThrownBy(() -> inOneTransaction(uow -> machine.approve(uow, held.id(), proposed.id(), "mine",
+                proposer, correlation())))
                 .isInstanceOf(DecisionOverrides.SelfApprovalRefused.class);
 
         // The domain bypassed: the statement the store issues, with the proposer as approver.
@@ -132,8 +136,7 @@ class DecisionOverrideDatabaseTest {
                     update.setString(1, proposer.id());
                     update.setString(2, proposer.type().name());
                     update.setString(3, "the CHECK alone");
-                    update.setLong(4, 120_000L);
-                    update.setObject(5, proposed.id().value());
+                    update.setObject(4, proposed.id().value());
                     update.executeQuery().close();
                 }
             });
@@ -162,11 +165,11 @@ class DecisionOverrideDatabaseTest {
     void belowTheThresholdOneHolderWithAReason() throws Exception {
         RiskAssessment held = sealed(RiskOperation.WITHDRAWAL, RiskDecision.HOLD, THRESHOLD - 1);
         Actor proposer = officer();
-        DecisionOverride proposed = inOneTransaction(uow -> MACHINE.propose(uow, held.id(), OverrideResolution.PROCEED,
+        DecisionOverride proposed = inOneTransaction(uow -> machine.propose(uow, held.id(), OverrideResolution.PROCEED,
                 "CUSTOMER_VERIFIED", "verified", proposer, correlation()));
         assertThat(proposed.requiresSecondPerson()).isFalse();
-        DecisionOverrides.Decided decided = inOneTransaction(uow -> MACHINE.approve(uow, held.id(), proposed.id(),
-                "one holder, reasoned", proposer, correlation(), Duration.ofMinutes(2)));
+        DecisionOverrides.Decided decided = inOneTransaction(uow -> machine.approve(uow, held.id(), proposed.id(),
+                "one holder, reasoned", proposer, correlation()));
         assertThat(decided.override().decidedByProposer()).isTrue();
         assertThat(column("SELECT (decided_by = proposed_by)::text || ',' || decision_reason FROM risk.decision_override"
                 + " WHERE id = '" + proposed.id().value() + "'")).containsExactly("true,one holder, reasoned");
@@ -180,7 +183,7 @@ class DecisionOverrideDatabaseTest {
             + " domain is refused by the birth trigger (23514)")
     void anAllowIsNeverOverridden() throws Exception {
         RiskAssessment allowed = sealed(RiskOperation.TRANSFER, RiskDecision.ALLOW, 10_00);
-        assertThatThrownBy(() -> inOneTransaction(uow -> MACHINE.propose(uow, allowed.id(), OverrideResolution.PROCEED,
+        assertThatThrownBy(() -> inOneTransaction(uow -> machine.propose(uow, allowed.id(), OverrideResolution.PROCEED,
                 "FALSE_POSITIVE", "x", officer(), correlation())))
                 .isInstanceOf(DecisionOverrides.ActionNotProposable.class);
         try (Connection app = DatabaseRoles.application()) {
@@ -202,14 +205,11 @@ class DecisionOverrideDatabaseTest {
         RiskAssessment held = sealed(RiskOperation.WITHDRAWAL, RiskDecision.HOLD, 2_000_00);
         String before = String.join("|", column("SELECT decision || ',' || verdict_sha256 || ',' || inputs_sha256"
                 + " || ',' || assessed_at FROM risk.risk_assessment WHERE id = '" + held.id().value() + "'"));
-        DecisionOverride proposed = inOneTransaction(uow -> MACHINE.propose(uow, held.id(), OverrideResolution.PROCEED,
+        DecisionOverride proposed = inOneTransaction(uow -> machine.propose(uow, held.id(), OverrideResolution.PROCEED,
                 "FALSE_POSITIVE", "verified", officer(), correlation()));
         Actor approver = officer();
-        inOneTransaction(uow -> MACHINE.approve(uow, held.id(), proposed.id(), "approved", approver, correlation(),
-                Duration.ofMinutes(2)));
-        OverrideActions.Issued issued = inOneTransaction(uow -> actions.pending(uow, proposed.id())).orElseThrow();
-        ActionOutcome outcome = actions.dispatch(issued);
-        inOneTransaction(uow -> actions.conclude(uow, issued, outcome, approver, correlation()));
+        inOneTransaction(uow -> machine.approve(uow, held.id(), proposed.id(), "approved", approver, correlation()));
+        drive(RiskActionId.ofOverride(proposed.id()));
 
         assertThat(String.join("|", column("SELECT decision || ',' || verdict_sha256 || ',' || inputs_sha256 || ','"
                 + " || assessed_at FROM risk.risk_assessment WHERE id = '" + held.id().value() + "'")))
@@ -224,33 +224,21 @@ class DecisionOverrideDatabaseTest {
     }
 
     @Test
-    @DisplayName("scenario 10's crash: the approval commits and the instance dies before the release; past the lease"
-            + " ten re-drive legs race - one claim, one release under risk.action:<id>, one DONE, one"
-            + " risk.ActionConcluded")
+    @DisplayName("scenario 10's crash: the approval commits and the instance dies before the release; its action is due"
+            + " at once and ten schedules race - one claim, one release under risk.action:<override id>, one DONE, one"
+            + " risk.ActionConcluded as the platform")
     void aCrashBetweenApprovalAndReleaseReDrivesOnce() throws Exception {
         RiskAssessment held = sealed(RiskOperation.WITHDRAWAL, RiskDecision.HOLD, 100_00);
-        DecisionOverride proposed = inOneTransaction(uow -> MACHINE.propose(uow, held.id(), OverrideResolution.PROCEED,
+        DecisionOverride proposed = inOneTransaction(uow -> machine.propose(uow, held.id(), OverrideResolution.PROCEED,
                 "FALSE_POSITIVE", "verified", officer(), correlation()));
-        inOneTransaction(uow -> MACHINE.approve(uow, held.id(), proposed.id(), "approved", officer(), correlation(),
-                Duration.ofMillis(300)));
-        // ...the approving instance died here: no dispatch, no record.
-        Thread.sleep(600);
-        Actor platform = new Actor("risk-monitoring", ActorType.SYSTEM);
-        List<Optional<ActionOutcome>> legs = race(10, () -> {
-            Optional<OverrideActions.Issued> claimed = inOneTransaction(uow -> actions.claimNextDue(uow,
-                    Duration.ofMinutes(2)));
-            if (claimed.isEmpty() || !claimed.get().override().equals(proposed.id())) {
-                return Optional.empty();
-            }
-            ActionOutcome outcome = actions.dispatch(claimed.get());
-            inOneTransaction(uow -> actions.conclude(uow, claimed.get(), outcome, platform, correlation()));
-            return Optional.of(outcome);
-        });
+        inOneTransaction(uow -> machine.approve(uow, held.id(), proposed.id(), "approved", officer(), correlation()));
+        // ...the approving instance died here: no claim, no dispatch, no record - the permit is due at once.
+        List<Optional<ActionOutcome>> legs = race(10, () -> drive(RiskActionId.ofOverride(proposed.id())));
         assertThat(legs).filteredOn(Optional::isPresent).hasSize(1);
         assertThat(payments.calls).singleElement().asString().contains("risk.action:" + proposed.id().value());
-        assertThat(column("SELECT action_outcome || ',' || action_attempts || ',' || (action_due_at IS NULL)"
-                + " FROM risk.decision_override WHERE id = '" + proposed.id().value() + "'"))
-                .containsExactly("DONE,2,true");
+        assertThat(column("SELECT outcome || ',' || attempts || ',' || (next_attempt_at IS NULL)"
+                + " FROM risk.risk_action WHERE id = '" + proposed.id().value() + "'"))
+                .containsExactly("DONE,1,true");
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'risk.ActionConcluded'"
                 + " AND target_id = '" + proposed.id().value() + "' AND actor_type = 'SYSTEM'")).isEqualTo(1);
     }
@@ -261,7 +249,7 @@ class DecisionOverrideDatabaseTest {
         RiskAssessment held = sealed(RiskOperation.WITHDRAWAL, RiskDecision.HOLD, 100_00);
         List<Object> answers = race(10, () -> {
             try {
-                return inOneTransaction(uow -> MACHINE.propose(uow, held.id(), OverrideResolution.PROCEED,
+                return inOneTransaction(uow -> machine.propose(uow, held.id(), OverrideResolution.PROCEED,
                         "FALSE_POSITIVE", "verified", officer(), correlation()));
             } catch (DecisionOverrides.ActionNotProposable refused) {
                 return refused;
@@ -277,44 +265,63 @@ class DecisionOverrideDatabaseTest {
             + " outcome recorded twice, an approval issuing another effect; no role deletes")
     void theMachineRefusesEveryOtherEdge() throws Exception {
         RiskAssessment held = sealed(RiskOperation.WITHDRAWAL, RiskDecision.HOLD, 100_00);
-        DecisionOverride first = inOneTransaction(uow -> MACHINE.propose(uow, held.id(), OverrideResolution.PROCEED,
+        DecisionOverride first = inOneTransaction(uow -> machine.propose(uow, held.id(), OverrideResolution.PROCEED,
                 "FALSE_POSITIVE", "verified", officer(), correlation()));
         String id = first.id().value().toString();
         try (Connection app = DatabaseRoles.application()) {
             app.setAutoCommit(false);
             refused(app, "UPDATE risk.decision_override SET status = 'APPROVED', decided_by = 'x', decided_by_type ="
-                    + " 'EMPLOYEE', decision_reason = 'r', action = 'DENY_HELD_WITHDRAWAL', action_due_at ="
-                    + " clock_timestamp(), action_attempts = 1 WHERE id = '" + id + "'", "23514");
+                    + " 'EMPLOYEE', decision_reason = 'r', action = 'DENY_HELD_WITHDRAWAL' WHERE id = '" + id + "'",
+                    "23514");
             app.rollback();
             refused(app, "DELETE FROM risk.decision_override WHERE id = '" + id + "'", "42501");
             app.rollback();
             refused(app, "UPDATE risk.decision_override SET reason = 'edited' WHERE id = '" + id + "'", "42501");
             app.rollback();
         }
-        inOneTransaction(uow -> MACHINE.reject(uow, held.id(), first.id(), "no", officer(), correlation()));
+        inOneTransaction(uow -> machine.reject(uow, held.id(), first.id(), "no", officer(), correlation()));
         try (Connection app = DatabaseRoles.application()) {
             app.setAutoCommit(false);
             refused(app, "UPDATE risk.decision_override SET status = 'APPROVED', decided_by = 'x' WHERE id = '" + id
                     + "'", "23514");
             app.rollback();
         }
-        DecisionOverride second = inOneTransaction(uow -> MACHINE.propose(uow, held.id(), OverrideResolution.PROCEED,
+        DecisionOverride second = inOneTransaction(uow -> machine.propose(uow, held.id(), OverrideResolution.PROCEED,
                 "FALSE_POSITIVE", "again", officer(), correlation()));
-        inOneTransaction(uow -> MACHINE.approve(uow, held.id(), second.id(), "approved", officer(), correlation(),
-                Duration.ofMinutes(2)));
-        boolean recorded = inOneTransaction(uow -> OVERRIDES.conclude(uow, second.id(), ActionOutcome.DONE));
-        boolean twice = inOneTransaction(uow -> OVERRIDES.conclude(uow, second.id(), ActionOutcome.ALREADY));
-        assertThat(recorded).isTrue();
-        assertThat(twice).as("an outcome is recorded once").isFalse();
+        inOneTransaction(uow -> machine.approve(uow, held.id(), second.id(), "approved", officer(), correlation()));
+        assertThat(drive(RiskActionId.ofOverride(second.id()))).contains(ActionOutcome.DONE);
+        assertThat(drive(RiskActionId.ofOverride(second.id()))).as("an outcome is recorded once").isEmpty();
         try (Connection app = DatabaseRoles.application()) {
             app.setAutoCommit(false);
-            refused(app, "UPDATE risk.decision_override SET action_outcome = 'REFUSED' WHERE id = '"
+            refused(app, "UPDATE risk.decision_override SET reason = 'x', status = 'REJECTED' WHERE id = '"
+                    + second.id().value() + "'", "42501");
+            app.rollback();
+            refused(app, "UPDATE risk.decision_override SET status = 'REJECTED', decided_by = 'y' WHERE id = '"
                     + second.id().value() + "'", "23514");
             app.rollback();
         }
     }
 
     // -----------------------------------------------------------------
+
+    /**
+     * T-act for {@code id} as the driver runs it: the claim committed, the owner's door on no transaction as the
+     * platform, the record in a transaction of its own - the outcome recorded by this drive, or empty.
+     */
+    @SuppressWarnings("try") // The Scope is used for its close side effect (the established idiom).
+    private Optional<ActionOutcome> drive(RiskActionId id) {
+        try (com.finapp.platform.security.SecurityContext.Scope platform =
+                com.finapp.platform.security.SecurityContext.enterSystem()) {
+            Optional<RiskAction> claimed = inOneTransaction(uow -> actions.claim(uow, id, Duration.ofMinutes(2)));
+            if (claimed.isEmpty()) {
+                return Optional.empty();
+            }
+            ActionOutcome outcome = actions.dispatch(claimed.get());
+            Optional<RiskAction> recorded = inOneTransaction(uow -> actions.conclude(uow, claimed.get(), outcome,
+                    correlation()));
+            return recorded.map(ignored -> outcome);
+        }
+    }
 
     /**
      * A {@code decision} of {@code operation} for {@code minor} EUR cents of a fresh party, sealed through the store

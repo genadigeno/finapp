@@ -4317,7 +4317,7 @@ identity's hash, never the description (OQ-4, the `CHECK`). No customer or merch
 
 ### `risk.risk_assessment`, `risk_assessment_input`, `risk_rule_hit`, `risk_reason` and `decision_override` - the sealed assessment - *added by `P13-TSK-004`*
 
-`risk V007`: one assessment per (operation, command ref), born `DECIDED` by T-eval in the judged command's own transaction and sealed for every writer (`INV-RSK-01`, `INV-RSK-04`). The assessment's inputs and rule hits are `CONFIDENTIAL` (`PHASE_13_PLAN.md` section 8): who was judged, on what readings, how - the Transaction Risk Profile; so are the score, the decision and the reasons - what the control said of a party's movement, never a customer's surface (`INV-RSK-08`, C6). The judged amount is `RESTRICTED-FINANCIAL` by rule 0, on an `INSERT`-only row, never a balance. Identifiers of the platform's own aggregates, closed codes, digests and stamps are `INTERNAL` (the note above); the subjects - the party, the accounts, the device's hash, the merchant - `CONFIDENTIAL`, as the velocity windows' `subject_ref`. `decision_override` is the override's table (its machine `P13-TSK-012`'s): the person-written reasons `RESTRICTED-PII`, the people `CONFIDENTIAL`. *(`risk V009`, `P13-TSK-012`, adds five columns: the effect and the issued action's permit, attempts and conclusion are closed codes, counts and the database's stamps - `INTERNAL`; the target is the judged command's own id - a withdrawal's or a payment intent's, an identifier of the platform's own aggregate and the assessment's `command_ref` again - `INTERNAL` by the note above. The reasons are served on the override desk alone, to `RISK_OVERRIDE` holders, never logged.)*
+`risk V007`: one assessment per (operation, command ref), born `DECIDED` by T-eval in the judged command's own transaction and sealed for every writer (`INV-RSK-01`, `INV-RSK-04`). The assessment's inputs and rule hits are `CONFIDENTIAL` (`PHASE_13_PLAN.md` section 8): who was judged, on what readings, how - the Transaction Risk Profile; so are the score, the decision and the reasons - what the control said of a party's movement, never a customer's surface (`INV-RSK-08`, C6). The judged amount is `RESTRICTED-FINANCIAL` by rule 0, on an `INSERT`-only row, never a balance. Identifiers of the platform's own aggregates, closed codes, digests and stamps are `INTERNAL` (the note above); the subjects - the party, the accounts, the device's hash, the merchant - `CONFIDENTIAL`, as the velocity windows' `subject_ref`. `decision_override` is the override's table (its machine `P13-TSK-012`'s): the person-written reasons `RESTRICTED-PII`, the people `CONFIDENTIAL`. *(`risk V009`, `P13-TSK-012`, adds five columns: the effect and the issued action's permit, attempts and conclusion are closed codes, counts and the database's stamps - `INTERNAL`; the target is the judged command's own id - a withdrawal's or a payment intent's, an identifier of the platform's own aggregate and the assessment's `command_ref` again - `INTERNAL` by the note above. The reasons are served on the override desk alone, to `RISK_OVERRIDE` holders, never logged.)* *(`risk V013`, `P13-TSK-017`, folds the issued action into `risk_action` - the section below - and drops `action_outcome`, `action_due_at`, `action_attempts` and `action_concluded_at` here, their values copied first; `action` stays, the kind the approval issued.)*
 
 | Table | Column | Level | Note |
 |---|---|---|---|
@@ -4373,7 +4373,6 @@ identity's hash, never the description (OQ-4, the `CHECK`). No customer or merch
 | `decision_override` | `reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served beyond the override desk |
 | `decision_override` | `requires_second_person` | `INTERNAL` | Whether C7's four eyes apply - fixed at the proposal |
 | `decision_override` | `action` | `INTERNAL` | A closed code - the action the approval issued |
-| `decision_override` | `action_outcome` | `INTERNAL` | A closed code - the action's outcome |
 | `decision_override` | `proposed_by` | `CONFIDENTIAL` | The officer who proposed it |
 | `decision_override` | `proposed_by_type` | `INTERNAL` | A closed actor type |
 | `decision_override` | `proposed_at` | `INTERNAL` | The database's stamp |
@@ -4384,9 +4383,6 @@ identity's hash, never the description (OQ-4, the `CHECK`). No customer or merch
 | `decision_override` | `correlation_id` | `INTERNAL` | The proposing request's correlation |
 | `decision_override` | `effect` | `INTERNAL` | A closed code - the effect the approval will issue (`OverrideEffect`), frozen at the proposal (`P13-TSK-012`, `risk V009`) |
 | `decision_override` | `target_id` | `INTERNAL` | The judged command's id - the held withdrawal's or payment intent's; none for a `RESUBMISSION` |
-| `decision_override` | `action_due_at` | `INTERNAL` | The issued action's re-drive permit - the database's clock plus the lease; none once concluded |
-| `decision_override` | `action_attempts` | `INTERNAL` | A count - the permits issued to the action's dispatch |
-| `decision_override` | `action_concluded_at` | `INTERNAL` | The database's stamp of the outcome's record |
 
 ### `risk.risk_alert` - the born-once alert - *added by `P13-TSK-015`*
 
@@ -4500,6 +4496,44 @@ database's stamps `INTERNAL`.
 | `risk_case_event` | `assessment_id` | `INTERNAL` | The assessment the system attached, or opened from - risk's own row |
 | `risk_case_event` | `recorded_at` | `INTERNAL` | The database's stamp |
 | `risk_case_event` | `correlation_id` | `INTERNAL` | The step's correlation |
+
+### `risk.risk_action` - the downstream action - *added by `P13-TSK-017`*
+
+`risk V013`: the record in risk of an effect the owning domain performs through its existing command keyed
+`risk.action:<id>` (ADR-0112; `INV-RSK-02`) - `PROPOSED → APPROVED → DISPATCHED → DONE | FAILED`, `REJECTED` beside; one
+live per (case, kind, target) by `risk_action_one_live`; four eyes by `risk_action_four_eyes`; no `DELETE` for any role.
+**No money, no score, no text** - the reasons are the case's investigator actions' (`risk_case_action.text`,
+`RESTRICTED-PII`), never this row's. The **target** is a subject - the case's own party or merchant - or a judged
+movement's id (a held withdrawal, a held card payment intent): that a party or merchant is the object of a risk action is
+what the tipping-off rule protects, so `target_ref` is `CONFIDENTIAL` as a case's subject is (`INV-RSK-08` - no customer
+or merchant route reads this table, `NoCustomerSurfaceReadsRiskTest`); the people who proposed and decided
+`CONFIDENTIAL`; closed codes, the platform's own identifiers, counters and the database's stamps `INTERNAL`. An
+override's action carries the override's own id and its officers.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `risk_action` | `id` | `INTERNAL` | A case's `ACTION_PROPOSED` investigator action's id, or the override's - the key `risk.action:<id>` |
+| `risk_action` | `source` | `INTERNAL` | A closed code - `CASE` or `OVERRIDE` |
+| `risk_action` | `case_id` | `INTERNAL` | The case it was proposed on - risk's own row |
+| `risk_action` | `override_id` | `INTERNAL` | The approved override that issued it - risk's own row, the same id |
+| `risk_action` | `kind` | `INTERNAL` | A closed code (`ActionKind`) |
+| `risk_action` | `target_kind` | `INTERNAL` | A closed code (`ActionTarget`) |
+| `risk_action` | `target_ref` | `CONFIDENTIAL` | The subject acted on - a party, a merchant - or the held movement's id; never served to a customer or merchant |
+| `risk_action` | `reason_code` | `INTERNAL` | A closed code the owner records - `RISK_CASE_<kind>` or the override's `OverrideReason` |
+| `risk_action` | `status` | `INTERNAL` | The machine's state |
+| `risk_action` | `proposed_by` | `CONFIDENTIAL` | The analyst (or officer) who proposed it |
+| `risk_action` | `proposed_by_type` | `INTERNAL` | A closed actor type |
+| `risk_action` | `proposed_at` | `INTERNAL` | The database's stamp |
+| `risk_action` | `decided_by` | `CONFIDENTIAL` | The second person who approved or rejected it |
+| `risk_action` | `decided_by_type` | `INTERNAL` | A closed actor type |
+| `risk_action` | `decided_at` | `INTERNAL` | The database's stamp |
+| `risk_action` | `decision_action_id` | `INTERNAL` | The case's `ACTION_APPROVED` / `ACTION_REJECTED` investigator action - risk's own row |
+| `risk_action` | `next_attempt_at` | `INTERNAL` | T-act's permit - the database's clock plus the lease |
+| `risk_action` | `attempts` | `INTERNAL` | A count - T-act's claims |
+| `risk_action` | `dispatched_at` | `INTERNAL` | The database's stamp of the first claim |
+| `risk_action` | `outcome` | `INTERNAL` | A closed code (`ActionOutcome`) - the owning domain's answer |
+| `risk_action` | `concluded_at` | `INTERNAL` | The database's stamp of the record |
+| `risk_action` | `correlation_id` | `INTERNAL` | The proposing (or issuing) flow's correlation |
 
 ### Free text, classified at its ceiling
 

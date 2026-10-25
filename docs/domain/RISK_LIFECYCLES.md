@@ -309,6 +309,17 @@ override records `DONE` exactly when its release won, `ALREADY` or `REFUSED` whe
 in the velocity windows (`DESIGN-012` D5, an owner item). Counted by `DecisionOverrideDatabaseTest` (written, owed -
 C5) and proven hermetically by `DecisionOverrideTest`, `OverrideActionTest`, `RiskOverrideDeskTest`.)*
 
+*(Folded by `P13-TSK-017`, 2026-10-25, `risk V013`: the approval issues its action into `risk_action` (§4.7) under the
+**override's own id**, born `APPROVED` and due at once in the approval's transaction (`decision_override_issues_its_action`,
+deferred, for every writer) - so the key stays `risk.action:<override id>`; every action `V009` had issued was copied
+first (awaiting - `DISPATCHED` with its permit and attempts; concluded - `DONE` or `FAILED` with its outcome) and the four
+columns `action_outcome`, `action_due_at`, `action_attempts`, `action_concluded_at` dropped, the override's read keeping
+its shape through a join on the action. `OverrideActions`, `OverrideActionDriver`, the leg on `RiskMonitoringSchedule`
+and `OverrideActionTest` are gone - the proofs moved to `ActionDispatchTest` and `RiskActionDispatchTest`. The dispatch
+now runs **as the platform** (T-act, §4.7), never under the approving officer's session: `P13-TSK-016`'s gate found the
+door's first dispatch under an operator's `CUSTOMER`-typed session refused by payments' held doors and left to the leg's
+re-drive - fixed here without widening payments' door (`RiskOverrideDeskTest`, `RiskActionDispatchTest#anApprovalsDispatchSucceedsOnTheFirstAttempt`).)*
+
 ### 4.3 Velocity window (`risk.velocity_window`) — `P13-TSK-006` (`risk V005`) — not a machine
 
 A velocity window has no status and no edges: it is a durable counter per primary key (dimension, subject_ref,
@@ -494,7 +505,10 @@ the case leg's re-drive - one version per disposition (`customer_risk_profile_ve
 `PROHIBITED` is **asked** by the proposal (`prohibit`), admitted for a `CONFIRMED_*` of a `PARTY`'s case alone (D3: an
 `ATO` case's confirmed takeover names the victim; a confirmed suspicion that refused the customer everywhere would tip
 them off); lifting it has no door yet; (3) no disposition issues a risk action until `-017` - the four-eyes set is
-`CONFIRMED_*`, `REFERRED` and a prohibiting one, `-017` widens it; (4) the take admits a take-over by another
+`CONFIRMED_*`, `REFERRED` and a prohibiting one, `-017` widens it *(as built by `-017`: **no disposition issues an
+action** - an action is the case's own four-eyes act on its own row (§4.7), so the set is not widened; a disposition is
+refused `409 risk.CaseActNotAdmitted` while an action proposed on the case awaits its decision, the domain under (R4) and
+`risk_case_disposes_no_standing_action` for every writer)*; (4) the take admits a take-over by another
 investigator (a reassignment, D12); every act, the approval and rejection included, carries the revision; (5) the codes
 `409 risk.CaseActNotAdmitted` (a standing proposal; a decision on another; the top level), `422 risk.CaseNotTaken` and
 `422 risk.CaseRequestInvalid` beside the planned two (D10); (6) the queue and the case read are `-018`'s - the acts answer
@@ -502,7 +516,7 @@ the case's head; (7) the system's opening is audited `risk.CaseOpened` under the
 leg's `SYSTEM`), an attach recorded by its history row alone; the alerts born `OPEN` before this task are drained by the
 case leg on `RiskMonitoringSchedule`.
 
-### 4.7 Risk action (`risk.risk_action`) — `P13-TSK-017` (`risk V010`); the override's release runs in this shape from `-012`'s approval door until `-017` folds it in
+### 4.7 Risk action (`risk.risk_action`) — `P13-TSK-017` (`risk V013` - planned `V010`, the next free at its build); the override's release ran in this shape from `-012`'s approval door until `-017` folded it in
 
 ```
  (proposed from a case, or issued by an approved override | disposition) PROPOSED ──★ a second person approves──> APPROVED ──RiskActionSchedule claims and dispatches──> DISPATCHED ──the owning domain's outcome──> DONE
@@ -529,6 +543,46 @@ the decision leaves the decision standing and the outcome recorded. **Invalid:**
 `REJECTED`; `APPROVED → PROPOSED`; `DISPATCHED → APPROVED`; a dispatch holding (R4) or any money row before entering
 the domain; a direct write to any other module's table; a reversal kind (a reversal is the owning domain's four-eyes
 act; a case may only recommend it — `REFERRED`); approval by the proposer (`CHECK`).
+
+*(As built by `P13-TSK-017`, 2026-10-25 - `risk V013`, `RiskActions`, `ActionRules`, `ActionDispatch`,
+`JdbcRiskActionStore`; `app`'s `RiskActionController` / `RiskActionDesk`, `RiskActionDriver`, `RiskActionSchedule`,
+`IdentityRiskActions`, `MerchantRiskActions`. **The key is the id**: a case's action takes the id of its `ACTION_PROPOSED`
+investigator action (a foreign key on (id, case)), an override's the override's, so `risk.action:<id>` is fixed at birth
+and every re-drive presents it. **What a case proposes** (`ActionRules`, judged under (R4) and again by the row's
+trigger): the case not `DISPOSED` and taken (`422 risk.CaseNotTaken` while `OPEN` - an action has an accountable
+investigator), the revision compared; a party's case (`FRAUD`, `ATO`, `AML`) - `SUSPEND_IDENTITY`, `REINSTATE_IDENTITY`,
+`REVOKE_SESSIONS` on **its own party**; a `MERCHANT_ABUSE` case - `SUSPEND_MERCHANT` on **its own merchant**; any case
+but `COLLECTIONS` - `RELEASE_HELD_WITHDRAWAL`, `DENY_HELD_WITHDRAWAL`, `CAPTURE_HELD_PAYMENT`, `VOID_HELD_PAYMENT` on a
+movement **the case holds** (its opening assessment or an attached one, sealed `HOLD` for that operation); the reason
+code handed to the owner `RISK_CASE_<case kind>` (an override's its `OverrideReason`), never the analyst's text.
+**No owning command, no kind**: accounts has no suspension command and crossborder no beneficiary block, so
+`SUSPEND_ACCOUNT`, `REINSTATE_ACCOUNT` and `BLOCK_BENEFICIARY` are unavailable (`ActionKind.available()`), refused `409
+risk.ActionNotProposable` and refused by the row's trigger - their ports stay unimplemented and nothing is added to their
+owners; `RESCREEN_PARTY` is `-022`'s sweep, never a case's; no credential reset exists (`RiskVocabulariesTest`).
+**Four eyes**: the approval `RISK_CASE_APPROVE` from a `MULTI_FACTOR` session by a person other than the proposer -
+`403 risk.SelfApprovalRefused` recorded `FAILED` (`INV-RSK-07`, `INV-AUD-04`) and `risk_action_four_eyes` for every
+writer; the rejection open to any `RISK_CASE_APPROVE` holder, the proposer's withdrawal included; a decided action is
+`409 risk.CaseActNotAdmitted` to another person and converges for the same one. The approval's permit is due at once
+(`clock_timestamp()`), `risk.RiskActionRequested` in its transaction. **T-act in three steps**: (1) the claim - one
+statement, (R6) `FOR UPDATE SKIP LOCKED` where the permit is due and the status `APPROVED` or `DISPATCHED`, moved
+`DISPATCHED`, the permit a lease ahead (2 min) and one attempt counted, **committed**; (2) the owner's existing command
+on no transaction **as the platform** (`SecurityContext.enterSystem()` in `RiskActionDriver.asThePlatform` - a person
+decided, the platform executes) under `risk.action:<id>`; (3) the record - `DONE` for the owner's `DONE` or `ALREADY`,
+`FAILED` for its `REFUSED`, conditional on `DISPATCHED`, once. **The owner's refusal is `FAILED(REFUSED)`**: the
+table's "a domain's refusal (an identity already suspended) is `DONE(ALREADY)`" is read as *the effect already in
+place* - an identity already suspended, a merchant already suspended, no live session answers `ALREADY`; no identity,
+identity's not-self rule (the approver's identity the decider) or a closed merchant answers `REFUSED`, recorded and never
+retried (re-proposable). A thrown dispatch - or a record that fails to commit after the owner answered - records nothing
+and keeps its permit - re-driven under the same key, the owner replaying it: payments by its own claim, identity and merchant through `app`'s adapters keying the command with the
+platform's `IdempotentExecutor` in the owner's own `REQUIRES_NEW` transaction (scopes `identity.risk-action`,
+`merchant.risk-action`). Identity's three act on every identity of the party (a bounded read). The approval door drives
+its action after the commit; `RiskActionSchedule` (every instance, no leader) re-drives the due and the lapsed. **No
+disposition issues an action** (`DESIGN-017` D11, §4.6 (3)). Doors `POST /v1/operator/risk/cases/{caseId}/risk-actions`
+(`201`, `RISK_INVESTIGATE`), `…/risk-actions/{actionId}/approval` (`202`) and `…/rejection` (`200`), each keyed under
+the case desk's scope with a closed body carrying the case's revision; every answer is the action with the case's
+revision. Counted by `RiskActionDatabaseTest` (risk) and `RiskActionApiTest` (`app`) - written, owed (C5); proven
+hermetically by `RiskActionTest`, `ActionDispatchTest`, `RiskActionMigrationTest`, `RiskActionDispatchTest`,
+`RiskActionDeskTest`, `RiskActionScheduleTest`, `IdentityRiskActionsTest`, `MerchantRiskActionsTest`.)*
 
 ### 4.8 Regulatory report (`risk.regulatory_report`, `regulatory_report_event`) — `P13-TSK-021` (`risk V011`)
 
@@ -675,7 +729,7 @@ transaction before the offer is accepted; a refusal consumes nothing (`422 cross
 |---|---|---|---|---|---|
 | (birth) → `HELD` | S, the withdrawal's own transaction, `HOLD` read from T-eval | the wallet account's lock (`INV-BAL-04`); the hold kept; `held_until` stamped = held at + the pinned policy version's hold validity (default 72 h); a case opened in the same transaction (R4) | — | payments' own (the withdrawal's birth with `HELD`) and `RiskDecisionMade` | payments' own |
 | (birth) → `FAILED(RISK_REFUSED)` | S, the same transaction, `DENY` | the wallet lock; the hold released | the operation's generic answer | payments' own; `RiskDecisionMade` | payments' own |
-| `HELD → DISPATCHED` | S — the approved override's release in T-act's shape from the approval door, keyed `risk.action:<override id>` (`-012`), or T-act dispatching `RELEASE_HELD_WITHDRAWAL` (`-017`) — through payments' existing door (keyed, audited by payments) | the withdrawal row lock **in payments' order**; conditional `HELD` with `held_until` not reached — release and expiry leave exactly one, the first committed edge winning (`WithdrawalHoldDatabaseTest#releaseAndExpiryLeaveExactlyOne`); then the dispatch as today (`DISPATCHED` with the send permit, the send after the commit) | the domain's refusal (already moved or expired) is the action's `DONE(ALREADY)` | payments' own | payments' own; `risk.ActionConcluded` |
+| `HELD → DISPATCHED` | S — the approved override's release in T-act's shape from the approval door, keyed `risk.action:<override id>` (`-012`), or T-act dispatching `RELEASE_HELD_WITHDRAWAL` (`-017`) *(as built by `-017`: both are T-act - the override's action folded into `risk_action`, every dispatch as the platform)* — through payments' existing door (keyed, audited by payments) | the withdrawal row lock **in payments' order**; conditional `HELD` with `held_until` not reached — release and expiry leave exactly one, the first committed edge winning (`WithdrawalHoldDatabaseTest#releaseAndExpiryLeaveExactlyOne`); then the dispatch as today (`DISPATCHED` with the send permit, the send after the commit) | the domain's refusal (already moved or expired) is the action's `DONE(ALREADY)` | payments' own | payments' own; `risk.ActionConcluded` |
 | `HELD → FAILED(RISK_REFUSED)` | S — T-act dispatching `DENY_HELD_WITHDRAWAL` (an approved disposition's denial); or **the expiry**: a new leg of payments' existing `WithdrawalResolutionSchedule` (no new scheduler) finding `held_until` reached on the database clock, reason detail `HOLD_EXPIRED` (`-009`) | the row lock in payments' order; conditional `HELD`; the hold released once; the case stays open and its age alerts | — | payments' own | payments' own |
 
 A customer whose withdrawal is `HELD` cannot close the wallet while the hold is `ACTIVE` (accounts' existing rule,
@@ -761,7 +815,7 @@ rows changes and every earlier decision replays as it was sealed.
 | Profile | `customer_risk_profile`, `_version` (`-007`, `V006`) | the versions | `UNIQUE (party_id, version)`; `PROHIBITED` only beside an approved disposition (deferred) |
 | Alert | `risk_alert` (`-015`, `V008` - *built as `V010`, the next free*) | — | `UNIQUE (subject_ref, rule_code, window_start)`; `ATTACHED` only naming a case; never deleted *(built: the window aligned by `CHECK`, four eyes and persons by `CHECK`, the facts frozen and `DELETE`/`TRUNCATE` refused for every writer by `risk_alert_permits_only_machine_edges`)* |
 | Case | `risk_case`, `risk_case_action`, `risk_case_event` (`-016`, `V009`) | `risk_case_event`; actions append-only | partial unique one open per (subject, kind); `revision` monotonic; four-eyes `CHECK` on `CONFIRMED_*`; no action on `DISPOSED` |
-| Risk action | `risk_action` (`-017`, `V010`) | the row's stamps | `UNIQUE (case_id, kind, target_ref)` over live; four-eyes `CHECK`; the `next_attempt_at` permit |
+| Risk action | `risk_action` (`-017`, `V010` - *built as `V013`, the next free*) | the row's stamps | `UNIQUE (case_id, kind, target_ref)` over live; four-eyes `CHECK`; the `next_attempt_at` permit *(built: `risk_action_one_live`, `risk_action_four_eyes` for a case's action, an override's action one per override and its id the override's, the kind's target and availability by `CHECK` and trigger, `DELETE`/`TRUNCATE` refused for every writer by `risk_action_permits_only_machine_edges`; a disposition refused beside a `PROPOSED` action by `risk_case_disposes_no_standing_action`)* |
 | Monitored transaction · watermark | `monitored_transaction`, `monitoring_watermark` (`-019`, `V004`) | — | `UNIQUE (journal_entry_id)`; one watermark per source; `next_sweep_at` |
 | Regulatory report | `regulatory_report`, `_event` (`-021`, `V011`) | `regulatory_report_event` | `UNIQUE (case_id)` over an open draft; four-eyes `CHECK`; `FILED` columns frozen (trigger) |
 | List version · permit | `screening_list_version`, `rescreening_permit` (`-022`, `V012`) | — | `UNIQUE (list, version)`; one permit per (list version, party) |
@@ -773,7 +827,8 @@ migration test asserts constraint-name uniqueness per table (the Phase 12 `V012`
 edges are refused for every role in each task's database tests. Migration numbers are assigned in the waves' landing
 order, Flyway `outOfOrder` off (plan §8, §17): `-001` `V001`, `-002` `V002`, `-005` `V003`, `-019` `V004`, `-006` `V005`,
 `-007` `V006`, `-004` `V007`, `-015` `V008`, `-016` `V009`, `-017` `V010`, `-021` `V011`, `-022` `V012`. *(As
-landed: `-010` `V008`, `-012` `V009`, `-015` `V010` - each the next free at its build; the later rows take theirs.)*
+landed: `-010` `V008`, `-012` `V009`, `-015` `V010` - each the next free at its build; the later rows take theirs.
+Then `-014` `V011`, `-016` `V012`, `-017` `V013`.)*
 
 ---
 
@@ -844,7 +899,9 @@ them.*
   command ref" is an assessment input, not an action (§4.2a, §4.7). *(Built by `P13-TSK-012`, 2026-10-24, as settled -
   the release, and the denial, capture and void beside it, in T-act's shape from the approval door with the re-drive leg
   on `RiskMonitoringSchedule`; **the allowance is not built** - for neither transfers nor cross-border - and an approved
-  override of a refusal records `RESUBMISSION`, an owner item (§4.2a's as-built note).)*
+  override of a refusal records `RESUBMISSION`, an owner item (§4.2a's as-built note). Folded by `P13-TSK-017`,
+  2026-10-25, as settled: the issued action is a `risk_action` row under the override's id - its key kept - driven by
+  `RiskActionSchedule`, the leg on `RiskMonitoringSchedule` gone (§4.2a's fold note).)*
 - **Operational alerts versus alert rows** (`-004`, `-006`, `-019`) — **settled** (plan §15's alert table):
   `RiskEvaluationUnavailable` and `RiskPolicyNoneActive` are `infra/prometheus/rules/risk.yml` alerts on
   `finapp.risk.evaluation.unavailable`, and the velocity proof's difference and an `UNCLASSIFIED` entry alert on their
@@ -885,7 +942,9 @@ them.*
   a second live override and for a second live action of one (case, kind, target), `409 risk.ReportNotFileable` for a
   second open report draft — the tasks assign them. *(The override's half settled by `P13-TSK-012`, 2026-10-24: `409
   risk.ActionNotProposable` for a live proposal or an approved override of the assessment, an `ALLOW`, a `CHALLENGE` and a
-  `REFUSE` of a refusal; `409 risk.OverrideStale` - new - for a decided override.)*
+  `REFUSE` of a refusal; `409 risk.OverrideStale` - new - for a decided override. The action's half settled by
+  `P13-TSK-017`, 2026-10-25: `409 risk.ActionNotProposable` for a live twin of (case, kind, target) -
+  `risk_action_one_live` - as for a kind or target the case does not admit; a decided action `409 risk.CaseActNotAdmitted`.)*
 - **The rescreening permit's states and the superseded list** (`-022`) — still this document's reading: the permit
   `PENDING → REQUESTED → DONE` keyed (list version, party); the predecessor list version keeps `ACTIVE` until `-022`
   decides whether a `SUPERSEDED` state is wanted.

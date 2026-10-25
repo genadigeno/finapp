@@ -523,6 +523,9 @@ public final class Cases {
         locked.judgeRevision(revision);
         locked.judgeProposal(code, prohibit);
         boolean secondPerson = DispositionRules.needsSecondPerson(code, prohibit);
+        if (!secondPerson) {
+            judgeNoStandingAction(unitOfWork, locked);
+        }
         UUID dispositionId = ids.next();
         RiskCase.Person proposer = RiskCase.Person.of(actor);
         RiskCase.DispositionSlot slot = new RiskCase.DispositionSlot(dispositionId, code, prohibit, proposer,
@@ -571,6 +574,7 @@ public final class Cases {
         if (proposal.proposedBy().is(actor)) {
             throw new SelfApprovalRefused(locked, proposal);
         }
+        judgeNoStandingAction(unitOfWork, locked);
         RiskCase.DispositionSlot approved = new RiskCase.DispositionSlot(proposal.id(), proposal.disposition(),
                 proposal.prohibits(), proposal.proposedBy(), proposal.proposedAt(), Optional.of(RiskCase.Person.of(
                         actor)), Optional.empty());
@@ -640,6 +644,42 @@ public final class Cases {
         audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, clock.instant(),
                 RiskAuditAction.SELF_DEALING_REFUSED, TARGET_TYPE, target, Optional.empty(), AuditOutcome.FAILED,
                 correlation, Optional.of("act=" + refused.act() + ", cause=" + refused.refusal().name() + " refused")));
+    }
+
+    // ================================================================== the action machine's hooks (`P13-TSK-017`)
+
+    /**
+     * A person's act on {@code caseId} for {@link RiskActions} - the same judgement every case act takes: a person placed
+     * in a party, then (R4) the case row {@code FOR UPDATE}, its subject's accountable party placed and not the actor's.
+     * The caller judges the case open and the revision.
+     */
+    RiskCase lockForAct(Connection unitOfWork, RiskCaseId caseId, Actor actor, String act) {
+        return judged(unitOfWork, caseId, actor, act);
+    }
+
+    /**
+     * An action act's step of {@code locked} for {@link RiskActions}: the investigator action {@code actionId} of
+     * {@code kind} with the person's reasoned text, the conditional step (the revision + 1, the state unchanged) and its
+     * history row - the protocol every person's act takes ({@link #written}).
+     */
+    RiskCase stepWith(Connection unitOfWork, RiskCase locked, UUID actionId, CaseActionKind kind,
+            CaseEventKind eventKind, Actor actor, String reasoned, CorrelationId correlation) {
+        return written(unitOfWork, locked, RiskCaseStore.Step.of(locked), actionId, kind, eventKind, actor,
+                Optional.of(reasoned), AlertEvidence.NONE, Optional.empty(), false, Optional.empty(), correlation);
+    }
+
+    /**
+     * Refuses deciding {@code locked}'s disposition while an action proposed on it awaits its decision - under R4, which
+     * every action act also takes, so the answer cannot change under the caller; {@code risk V013}'s
+     * {@code risk_case_disposes_no_standing_action} holds every writer.
+     *
+     * @throws CaseActNotAdmitted an action stands {@code PROPOSED}
+     */
+    private void judgeNoStandingAction(Connection unitOfWork, RiskCase locked) {
+        if (store.actionProposalStands(unitOfWork, locked.id())) {
+            throw new CaseActNotAdmitted("an action proposed on this case awaits its decision; approve or reject it"
+                    + " before the case is disposed");
+        }
     }
 
     // ================================================================== plumbing

@@ -148,33 +148,10 @@ class RiskMonitoringScheduleTest {
     }
 
     @Test
-    @DisplayName("the override action leg (P13-TSK-012) runs last, as the platform, after the intake and the profiles;"
-            + " a leg that throws is counted claim.failed{kind=monitoring} and the tick's earlier work stands")
-    void theOverrideActionLegRunsLastAsThePlatform() {
-        World world = new World(1);
-        ScriptedLeg profiles = new ScriptedLeg(1);
-        List<String> driven = new ArrayList<>();
-        RiskMonitoringSchedule schedule = new RiskMonitoringSchedule(world.intake(2), profiles, 3, () -> {
-            driven.add(com.finapp.platform.security.SecurityContext.require().type().name() + " after "
-                    + profiles.recomputed);
-            return 1;
-        }, world.transactions.real, world.metrics, RiskFlowScope.NONE, Duration.ofSeconds(5), 10);
-        assertThat(schedule.sweepOnce()).isEqualTo(1);
-        assertThat(driven).containsExactly("SYSTEM after 1");
-
-        RiskMonitoringSchedule failing = new RiskMonitoringSchedule(world.intake(2), RiskMonitoringSchedule.ProfileLeg.NONE,
-                0, () -> {
-                    throw new IllegalStateException("the claim failed");
-                }, world.transactions.real, world.metrics, RiskFlowScope.NONE, Duration.ofSeconds(5), 10);
-        failing.sweepOnce();
-        assertThat(world.registry.get(RiskMonitoringMetrics.CLAIM_FAILED).tag("kind", "monitoring").counter().count())
-                .isEqualTo(1.0);
-    }
-
-    @Test
-    @DisplayName("the case leg (P13-TSK-016) runs as the platform after the profiles and before the override actions;"
-            + " a case leg that throws is counted claim.failed{kind=monitoring} and the action leg still runs")
-    void theCaseLegRunsBetweenTheProfilesAndTheActions() {
+    @DisplayName("the case leg (P13-TSK-016) runs last, as the platform, after the profiles; a case leg that throws is"
+            + " counted claim.failed{kind=monitoring} and the tick's earlier work stands - the override action leg is"
+            + " gone (P13-TSK-017 moved it to RiskActionSchedule)")
+    void theCaseLegRunsLastAsThePlatform() {
         World world = new World(1);
         ScriptedLeg profiles = new ScriptedLeg(1);
         List<String> driven = new ArrayList<>();
@@ -182,25 +159,19 @@ class RiskMonitoringScheduleTest {
             driven.add("cases as " + com.finapp.platform.security.SecurityContext.require().type().name() + " after "
                     + profiles.recomputed);
             return 2;
-        }, () -> {
-            driven.add("actions");
-            return 0;
         }, world.transactions.real, world.metrics, RiskFlowScope.NONE, Duration.ofSeconds(5), 10);
-        schedule.sweepOnce();
-        assertThat(driven).containsExactly("cases as SYSTEM after 1", "actions");
+        assertThat(schedule.sweepOnce()).isEqualTo(1);
+        assertThat(driven).containsExactly("cases as SYSTEM after 1");
 
-        List<String> after = new ArrayList<>();
         RiskMonitoringSchedule failing = new RiskMonitoringSchedule(world.intake(2),
                 RiskMonitoringSchedule.ProfileLeg.NONE, 0, () -> {
                     throw new IllegalStateException("the queue read failed");
-                }, () -> {
-                    after.add("actions");
-                    return 0;
                 }, world.transactions.real, world.metrics, RiskFlowScope.NONE, Duration.ofSeconds(5), 10);
         failing.sweepOnce();
-        assertThat(after).containsExactly("actions");
         assertThat(world.registry.get(RiskMonitoringMetrics.CLAIM_FAILED).tag("kind", "monitoring").counter().count())
                 .isEqualTo(1.0);
+        assertThat(java.util.Arrays.stream(RiskMonitoringSchedule.class.getDeclaredClasses()).map(Class::getSimpleName))
+                .as("no action leg rides the monitoring sweep").doesNotContain("ActionLeg");
     }
 
     @Test

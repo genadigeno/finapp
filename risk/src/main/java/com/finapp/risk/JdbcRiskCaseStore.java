@@ -74,6 +74,10 @@ public final class JdbcRiskCaseStore implements RiskCaseStore {
             + "SELECT 1 FROM risk.customer_risk_profile_version v WHERE v.disposition_id = c.disposition_id)"
             + " ORDER BY c.disposed_at, c.id LIMIT ?";
 
+    /** A disposition waits for a standing action proposal (`P13-TSK-017`) - read under the case's lock. */
+    static final String ACTION_PROPOSAL_STANDS = "SELECT EXISTS (SELECT 1 FROM risk.risk_action"
+            + " WHERE case_id = ? AND status = 'PROPOSED')";
+
     @Override
     public Optional<RiskCase> lockOpen(Connection unitOfWork, SignalSubject subject, CaseKind kind) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
@@ -284,6 +288,20 @@ public final class JdbcRiskCaseStore implements RiskCaseStore {
             return List.copyOf(due);
         } catch (SQLException failure) {
             throw failed("reading the prohibitions due", failure);
+        }
+    }
+
+    @Override
+    public boolean actionProposalStands(Connection unitOfWork, RiskCaseId id) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(id, "id");
+        try (PreparedStatement select = unitOfWork.prepareStatement(ACTION_PROPOSAL_STANDS)) {
+            select.setObject(1, id.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() && row.getBoolean(1);
+            }
+        } catch (SQLException failure) {
+            throw failed("reading a case's standing action proposals", failure);
         }
     }
 

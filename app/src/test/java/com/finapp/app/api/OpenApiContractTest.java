@@ -474,6 +474,11 @@ class OpenApiContractTest {
                                 + "/operator/risk/cases/{caseId}/dispositions/{dispositionId}/approval",
                         ApiVersion.CURRENT_PREFIX
                                 + "/operator/risk/cases/{caseId}/dispositions/{dispositionId}/rejection",
+                        // P13-TSK-017: the action doors - proposed under RISK_INVESTIGATE (201), approved by a second
+                        // holder from MULTI_FACTOR (202, the platform dispatches it) or rejected under RISK_CASE_APPROVE.
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/risk-actions",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/risk-actions/{actionId}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/risk-actions/{actionId}/rejection",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",

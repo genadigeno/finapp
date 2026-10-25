@@ -12,8 +12,9 @@ import java.util.UUID;
  * its state, the effect proposed (frozen), the effect's target (the judged command - a withdrawal's or a payment
  * intent's id; none for a {@link OverrideEffect#RESUBMISSION}), the reason code and the proposer's text
  * ({@code RESTRICTED-PII}), whether C7 requires a second holder (fixed at the proposal), the proposer and the decider,
- * the decision's reason, and the action the approval issued with its permit, attempts and the owning domain's outcome.
- * A value: the store reads it whole.
+ * the decision's reason, and the action the approval issued with its permit, attempts and the owning domain's outcome -
+ * since `P13-TSK-017` ({@code risk V013}) those four are the action machine's {@code risk_action} row under this
+ * override's id, read beside it. A value: the store reads it whole.
  */
 public record DecisionOverride(
         DecisionOverrideId id,
@@ -75,9 +76,12 @@ public record DecisionOverride(
         }
     }
 
-    /** The key payments' door is called under for this override's action - every re-drive's the same. */
+    /**
+     * The key payments' door is called under for this override's action - every re-drive's the same: the action
+     * machine's {@code risk.action:<id>} of the action under this override's own id (`P13-TSK-017`'s fold kept it).
+     */
     public String actionKey() {
-        return OverrideActions.keyOf(id);
+        return RiskActions.keyOf(RiskActionId.ofOverride(id));
     }
 
     /** True while the approved action has been issued through payments and its outcome is not yet recorded. */

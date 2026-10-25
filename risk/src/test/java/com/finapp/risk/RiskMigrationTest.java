@@ -105,7 +105,8 @@ class RiskMigrationTest {
             + " functions its migrations created: V001 the floor alone, V002 the policy versions (P13-TSK-002), V003 the"
             + " signal (P13-TSK-005), V004 the monitored transactions and the watermark (P13-TSK-019), V005 the velocity"
             + " windows (P13-TSK-006), V006 the customer risk profile (P13-TSK-007), V007 the sealed assessment and the"
-            + " override's table (P13-TSK-004), V010 the born-once alert (P13-TSK-015), V012 the case (P13-TSK-016)")
+            + " override's table (P13-TSK-004), V010 the born-once alert (P13-TSK-015), V012 the case (P13-TSK-016),"
+            + " V013 the downstream action (P13-TSK-017)")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. Each later task rewrites
@@ -121,6 +122,8 @@ class RiskMigrationTest {
                 // V004 (P13-TSK-019): the born-once record and the intake's position per source.
                 "monitored_transaction",
                 "monitoring_watermark",
+                // V013 (P13-TSK-017): the downstream action.
+                "risk_action",
                 // V010 (P13-TSK-015): the born-once alert.
                 "risk_alert",
                 // V007 (P13-TSK-004): the sealed assessment's head and its inputs.
@@ -154,8 +157,10 @@ class RiskMigrationTest {
                 "customer_risk_profile_moves_with_its_versions",
                 "customer_risk_profile_version_is_append_only",
                 "customer_risk_profile_version_is_born_in_sequence",
+                // V013 (P13-TSK-017): an approved dispatchable override has its risk_action (deferred).
+                "decision_override_issues_its_action",
                 // V007 (P13-TSK-004): the override born PROPOSED over a refusal - its body replaced by name by V009
-                // (P13-TSK-012) with the machine, the same function.
+                // (P13-TSK-012) with the machine, and again by V013 (P13-TSK-017) for the fold, the same function.
                 "decision_override_permits_only_machine_edges",
                 // V002 (P13-TSK-002): the reason screen's twin and the policy machine's triggers.
                 "holds_account_identifier_shape",
@@ -167,6 +172,8 @@ class RiskMigrationTest {
                 "monitored_transaction_is_append_only",
                 "monitored_transaction_is_stamped_by_the_database",
                 "monitoring_watermark_derives_its_sequence",
+                // V013 (P13-TSK-017): the action's machine.
+                "risk_action_permits_only_machine_edges",
                 // V010 (P13-TSK-015): the alert's machine - born OPEN, facts frozen, four edges, never deleted.
                 "risk_alert_permits_only_machine_edges",
                 // V007 (P13-TSK-004): born with its inputs, stamped by the database, sealed for every writer.
@@ -175,6 +182,8 @@ class RiskMigrationTest {
                 "risk_assessment_is_sealed",
                 // V012 (P13-TSK-016): the actions and the history append-only, every step its history row, the machine.
                 "risk_case_action_is_append_only",
+                // V013 (P13-TSK-017): a disposition waits for a standing action proposal.
+                "risk_case_disposes_no_standing_action",
                 "risk_case_event_is_append_only",
                 "risk_case_has_its_history",
                 "risk_case_permits_only_machine_edges",
@@ -390,6 +399,34 @@ class RiskMigrationTest {
                 + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
     }
 
+    // ------------------------------------------------------------------ V013 (P13-TSK-017)
+
+    @Test
+    @DisplayName("V013: the action's grants - SELECT, INSERT and an UPDATE of the machine's columns alone (never the"
+            + " proposal, the target or a stamp); no DELETE; the one-live partial unique and the four-eyes CHECK live;"
+            + " the case's re-made CHECKs and the disposition's guard live; every constraint name unique")
+    void theActionGrants() throws SQLException {
+        assertThat(grantsOn("risk_action")).containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
+        assertThat(column("SELECT column_name FROM information_schema.column_privileges"
+                + " WHERE table_schema = 'risk' AND table_name = 'risk_action' AND grantee = 'finapp_app'"
+                + " AND privilege_type = 'UPDATE' ORDER BY column_name"))
+                .containsExactly("attempts", "decided_by", "decided_by_type", "decision_action_id", "next_attempt_at",
+                        "outcome", "status");
+        String statements = statementsOf(migration("V013__downstream_risk_actions.sql"));
+        assertThat(statements).doesNotContainPattern("GRANT[^;]*(DELETE|TRUNCATE)").doesNotContain("GRANT ALL");
+        assertThat(scalar("SELECT indexdef FROM pg_indexes WHERE indexname = 'risk_action_one_live'"))
+                .contains("UNIQUE INDEX").contains("(case_id, kind, target_ref)");
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
+                + " AND conname IN ('risk_action_four_eyes', 'risk_action_proposed_on_its_case',"
+                + " 'risk_case_action_texted', 'risk_case_event_kind_is_known', 'risk_case_event_names_its_act')"
+                + " ORDER BY conname")).containsExactly("risk_action_four_eyes", "risk_action_proposed_on_its_case",
+                "risk_case_action_texted", "risk_case_event_kind_is_known", "risk_case_event_names_its_act");
+        assertThat(scalar("SELECT pg_get_constraintdef(oid) FROM pg_constraint"
+                + " WHERE conname = 'risk_case_event_kind_is_known'")).contains("ACTION_APPROVED");
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
+                + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
+    }
+
     // ------------------------------------------------------------------ V012 (P13-TSK-016)
 
     @Test
@@ -454,29 +491,30 @@ class RiskMigrationTest {
     // ------------------------------------------------------------------ V009 (P13-TSK-012)
 
     @Test
-    @DisplayName("V009: the override's grants - SELECT, INSERT and an UPDATE of the decision and the action's columns"
-            + " alone (never the proposal, the effect or the instants); no DELETE; the new constraints live and every"
-            + " constraint name unique in the schema")
+    @DisplayName("V009, folded by V013: the override's grants - SELECT, INSERT and an UPDATE of the decision and the"
+            + " action's kind alone (never the proposal, the effect or the instants; the moved columns gone); no DELETE;"
+            + " the constraints that stand live and every constraint name unique in the schema")
     void theOverrideGrants() throws SQLException {
         assertThat(grantsOn("decision_override")).containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
         assertThat(column("SELECT column_name FROM information_schema.column_privileges"
                 + " WHERE table_schema = 'risk' AND table_name = 'decision_override' AND grantee = 'finapp_app'"
                 + " AND privilege_type = 'UPDATE' ORDER BY column_name"))
-                .containsExactly("action", "action_attempts", "action_due_at", "action_outcome", "decided_by",
-                        "decided_by_type", "decision_reason", "status");
+                .containsExactly("action", "decided_by", "decided_by_type", "decision_reason", "status");
+        assertThat(column("SELECT column_name FROM information_schema.columns WHERE table_schema = 'risk'"
+                + " AND table_name = 'decision_override' AND column_name LIKE 'action%' ORDER BY column_name"))
+                .as("V013 moved the issued action's state to risk_action").containsExactly("action");
         String statements = statementsOf(migration("V009__the_decision_override_machine.sql"));
         assertThat(statements).doesNotContain("DELETE ON").doesNotContain("GRANT ALL").doesNotContain("CREATE TABLE");
         assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
                 + " AND conname LIKE 'decision_override_%' ORDER BY conname")).contains(
-                "decision_override_action_is_the_effect", "decision_override_attempts_bounded",
-                "decision_override_conclusion_coherent", "decision_override_effect_is_known",
-                "decision_override_four_eyes", "decision_override_issued_awaits_or_concludes",
-                "decision_override_outcome_is_known", "decision_override_permit_coherent",
-                "decision_override_target_coherent");
+                "decision_override_action_is_the_effect", "decision_override_action_shape",
+                "decision_override_effect_is_known", "decision_override_four_eyes",
+                "decision_override_target_coherent").doesNotContain("decision_override_attempts_bounded",
+                "decision_override_conclusion_coherent", "decision_override_issued_awaits_or_concludes",
+                "decision_override_outcome_is_known", "decision_override_permit_coherent");
         assertThat(column("SELECT indexname FROM pg_indexes WHERE schemaname = 'risk'"
                 + " AND tablename = 'decision_override' ORDER BY indexname")).containsExactly(
-                "decision_override_action_due", "decision_override_one_live", "decision_override_one_standing",
-                "decision_override_pk");
+                "decision_override_one_live", "decision_override_one_standing", "decision_override_pk");
         assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
                 + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
     }

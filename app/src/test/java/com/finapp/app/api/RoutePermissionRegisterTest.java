@@ -391,6 +391,14 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/risk/cases/{caseId}/dispositions/{dispositionId}/approval",
                             PermissionName.RISK_CASE_APPROVE),
                     entry("POST /v1/operator/risk/cases/{caseId}/dispositions/{dispositionId}/rejection",
+                            PermissionName.RISK_CASE_APPROVE),
+                    // P13-TSK-017: a downstream action proposed on a taken case under RISK_INVESTIGATE; its approval
+                    // (a second holder, MULTI_FACTOR, 202 - the platform dispatches it through the owning domain's
+                    // keyed door) and rejection under RISK_CASE_APPROVE; the negatives are RiskActionApiTest's.
+                    entry("POST /v1/operator/risk/cases/{caseId}/risk-actions", PermissionName.RISK_INVESTIGATE),
+                    entry("POST /v1/operator/risk/cases/{caseId}/risk-actions/{actionId}/approval",
+                            PermissionName.RISK_CASE_APPROVE),
+                    entry("POST /v1/operator/risk/cases/{caseId}/risk-actions/{actionId}/rejection",
                             PermissionName.RISK_CASE_APPROVE)));
 
     /**
