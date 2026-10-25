@@ -14,8 +14,9 @@ import java.util.regex.Pattern;
  * cross-border beneficiary: where the money goes, whichever kind of thing receives it.
  *
  * <p>Declared in the order the windows are locked and upserted (R2a, R2): a reordering is a reviewed change to the
- * lock order, the canonical evaluation text's velocity order and {@code RiskVocabulariesTest}. `-014` may add a
- * {@code SESSION} dimension and says so.
+ * lock order, the canonical evaluation text's velocity order and {@code RiskVocabulariesTest}. {@link #SESSION} was
+ * appended by `P13-TSK-014` (last, so no existing order moved): {@link #DEVICE} could not count "a session confirming
+ * many checkouts" - no seam carries a device, identity holding no per-device identifier (`-008`, `-010`).
  */
 public enum VelocityDimension {
 
@@ -32,7 +33,14 @@ public enum VelocityDimension {
     DEVICE,
 
     /** The merchant paid. */
-    MERCHANT;
+    MERCHANT,
+
+    /**
+     * The identity session that confirmed the movement (`P13-TSK-014`) - one login of one person, by the session's id
+     * (never its token): a session confirming many checkouts is card testing's tell. Only the checkout payment seam
+     * carries it today ({@code PaymentRiskJudgement}, from the request's own authenticated session).
+     */
+    SESSION;
 
     /** A canonical {@code UUID.toString()}. */
     private static final Pattern UUID_SHAPE =

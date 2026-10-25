@@ -19,12 +19,15 @@ import com.finapp.risk.Alerts;
 import com.finapp.risk.CaseOpener;
 import com.finapp.risk.CustomerRiskProfiles;
 import com.finapp.risk.EvaluationBudget;
+import com.finapp.risk.ProfileInputs;
+import com.finapp.risk.ProfileRecompute;
 import com.finapp.risk.Reading;
 import com.finapp.risk.RiskAssessmentId;
 import com.finapp.risk.RiskEvaluation;
 import com.finapp.risk.RiskEvaluationObserver;
 import com.finapp.risk.RiskInputs;
 import com.finapp.risk.RiskOperation;
+import com.finapp.risk.RiskPartyIdentities;
 import com.finapp.risk.RiskPolicies;
 import com.finapp.risk.RiskPolicy;
 import com.finapp.risk.RiskPolicyStore;
@@ -202,6 +205,28 @@ public final class RiskEvaluationWorld {
                 new SignalReadings(signalStore), delegating, assessmentStore, budget,
                 (unitOfWork, decided) -> cases.add(decided), raiser, outbox, observer,
                 Spans.NONE, IDS, CLOCK);
+    }
+
+    /**
+     * T-mon's profile leg over the same stores (`P13-TSK-014`): the real {@link ProfileRecompute} and
+     * {@link ProfileInputs} - the party's signals and its committed windows, no screening, no identity placed - raising
+     * through {@link #alerts} as T-eval does, {@link #failRaise} scripted alike.
+     */
+    public ProfileRecompute profileLeg() {
+        ProfileInputs read = new ProfileInputs((unitOfWork, party) -> Optional.empty(), new SignalReadings(signalStore),
+                RiskPartyIdentities.NONE, new VelocityWindows(windowStore));
+        OutboxWriter<Connection> outbox = (unitOfWork, envelope, payload, mediaType) -> {
+            envelopes.add(envelope);
+            payloads.add(EventPayload.fields(payload));
+        };
+        AlertRaiser raiser = (unitOfWork, raised) -> {
+            if (!failRaise.isEmpty()) {
+                throw failRaise.pop();
+            }
+            return alerts.raiseAll(unitOfWork, raised);
+        };
+        return new ProfileRecompute(new RiskPolicies(policyStore), profileStore, read, raiser, outbox, IDS, CLOCK,
+                Duration.ofHours(24));
     }
 
     /** The {@code risk.AlertRaised} events announced. */
@@ -458,6 +483,12 @@ public final class RiskEvaluationWorld {
         @Override
         public int countSince(Connection unitOfWork, SignalSubject subject, SignalKind kind, Instant since) {
             return (int) of(subject, kind).filter(row -> !row.observedAt().isBefore(since)).count();
+        }
+
+        @Override
+        public int countByMerchantSince(Connection unitOfWork, UUID merchant, SignalKind kind, Instant since) {
+            return (int) rows.stream().filter(row -> row.kind() == kind && !row.observedAt().isBefore(since)
+                    && row.attributes().get("merchant_subject_ref").filter(merchant.toString()::equals).isPresent()).count();
         }
 
         @Override

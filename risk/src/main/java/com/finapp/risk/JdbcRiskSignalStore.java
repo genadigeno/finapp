@@ -20,7 +20,8 @@ import java.util.UUID;
 /**
  * {@link RiskSignalStore} over {@code risk.risk_signal} ({@code risk V003}; `P13-TSK-005`): explicit SQL on the
  * caller's connection (ADR-0033). One insert, born-once by the unique beneath the inbox's dedupe; four reads, each one
- * range scan on {@code risk_signal_by_subject (subject_kind, subject_ref, kind, observed_at DESC)}. Every attribute is
+ * range scan on {@code risk_signal_by_subject (subject_kind, subject_ref, kind, observed_at DESC)}, and the merchant's
+ * count on {@code risk V011}'s {@code risk_signal_by_merchant} (`P13-TSK-014`). Every attribute is
  * bound to its typed column by the kind's declared type, and read back into the canonical text the domain validates -
  * so what comes out is exactly what a {@link RiskSignal} admitted on the way in.
  */
@@ -30,7 +31,7 @@ public final class JdbcRiskSignalStore implements RiskSignalStore {
             "id, kind, subject_kind, subject_ref, source_event_id, source_event_type, source_event_version, producer,"
                     + " observed_at, correlation_id, causation_id, product, status, previous_status, bucket,"
                     + " previous_bucket, country, currency, business_date, days_past_due, defaulted, agreement_version,"
-                    + " channel_ref, request_ref";
+                    + " channel_ref, request_ref, merchant_subject_ref, intent_ref";
 
     @Override
     public boolean insert(Connection unitOfWork, RiskSignal signal) {
@@ -40,7 +41,7 @@ public final class JdbcRiskSignalStore implements RiskSignalStore {
                 // Born once: the unique on source_event_id arbitrates beneath the inbox's dedupe, so a replay past the
                 // dedupe's retention inserts nothing (INV-RSK-06). recorded_at is the trigger's: the database's clock.
                 "INSERT INTO risk.risk_signal (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
-                        + " ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (source_event_id) DO NOTHING")) {
+                        + " ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (source_event_id) DO NOTHING")) {
             int i = 0;
             insert.setObject(++i, signal.id().value());
             insert.setString(++i, signal.kind().name());
@@ -76,6 +77,26 @@ public final class JdbcRiskSignalStore implements RiskSignalStore {
             }
         } catch (SQLException failure) {
             throw failed("counting risk signals", failure);
+        }
+    }
+
+    @Override
+    public int countByMerchantSince(Connection unitOfWork, UUID merchant, SignalKind kind, Instant since) {
+        Objects.requireNonNull(merchant, "merchant");
+        Objects.requireNonNull(kind, "kind");
+        Objects.requireNonNull(since, "since");
+        // One range scan on risk V011's risk_signal_by_merchant (merchant_subject_ref, kind, observed_at DESC).
+        try (PreparedStatement count = unitOfWork.prepareStatement(
+                "SELECT count(*) FROM risk.risk_signal WHERE merchant_subject_ref = ? AND kind = ? AND observed_at >= ?")) {
+            count.setObject(1, merchant);
+            count.setString(2, kind.name());
+            count.setTimestamp(3, Timestamp.from(since));
+            try (ResultSet row = count.executeQuery()) {
+                row.next();
+                return row.getInt(1);
+            }
+        } catch (SQLException failure) {
+            throw failed("counting a merchant's risk signals", failure);
         }
     }
 
@@ -159,7 +180,7 @@ public final class JdbcRiskSignalStore implements RiskSignalStore {
                     statement.setBoolean(index, Boolean.parseBoolean(value));
                 }
             }
-            case "channel_ref", "request_ref" -> {
+            case "channel_ref", "request_ref", "merchant_subject_ref", "intent_ref" -> {
                 if (value == null) {
                     statement.setNull(index, Types.OTHER);
                 } else {

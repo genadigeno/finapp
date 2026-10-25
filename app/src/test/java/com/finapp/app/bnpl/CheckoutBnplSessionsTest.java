@@ -258,7 +258,9 @@ class CheckoutBnplSessionsTest {
         assertThat(found).hasValueSatisfying(view -> {
             assertThat(view.sessionRef()).isEqualTo(session.id().value());
             assertThat(view.open()).isTrue();
-            assertThat(view.toString()).doesNotContain("120");
+            // The gross never - as a decimal or in minor units; not the bare digits "120", which the random UUIDs in
+            // the view can carry (P13-TSK-014's filtered run found this flake; the audit's assertion above, likewise).
+            assertThat(view.toString()).doesNotContain("120.00").doesNotContain("12000");
         });
         assertThat(port.read(bnplsConnection, Sensitive.of("not-a-token"))).isEmpty();
     }

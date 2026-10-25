@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.platform.inbox.InboxEventHandler;
 import com.finapp.risk.MonitoringHints;
+import com.finapp.risk.RiskAssessmentStore;
 import com.finapp.risk.RiskSignals;
+import com.finapp.risk.testing.InMemoryRiskAssessmentStore;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.lang.reflect.Method;
 import java.security.SecureRandom;
@@ -14,6 +16,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.Bean;
@@ -35,13 +38,21 @@ class RiskBeansTest {
         IdGenerator ids = new IdGenerator(clock, new SecureRandom());
         RiskSignals signals = new RiskSignals(new RiskSignalIntakeTest.RecordingStore(),
                 new RiskSignalIntakeTest.RecordingOutbox(), ids, clock);
+        // Each bean's collaborators by type - the attributed sources (P13-TSK-014) take risk's assessment store too.
+        Map<Class<?>, Object> collaborators = Map.of(RiskSignals.class, signals, MonitoringHints.class,
+                MonitoringHints.NONE, IdGenerator.class, ids, RiskFlowScope.class, RiskFlowScope.NONE,
+                RiskAssessmentStore.class, new InMemoryRiskAssessmentStore());
         List<RiskSignalIntake.Source> composed = new ArrayList<>();
         for (Method method : RiskBeans.class.getDeclaredMethods()) {
             if (method.isAnnotationPresent(Bean.class) && InboxEventHandler.class.isAssignableFrom(method.getReturnType())) {
                 method.setAccessible(true);
-                RiskSignalIntake intake = (RiskSignalIntake) method.invoke(
-                        beans, signals, MonitoringHints.NONE, ids, RiskFlowScope.NONE);
+                Object[] arguments = Arrays.stream(method.getParameterTypes())
+                        .map(type -> java.util.Objects.requireNonNull(collaborators.get(type), type.getName()))
+                        .toArray();
+                RiskSignalIntake intake = (RiskSignalIntake) method.invoke(beans, arguments);
                 composed.add(intake.source());
+                assertThat(method.getParameterCount()).as("%s takes the assessment store only if attributed",
+                        intake.source()).isEqualTo(intake.source().isAttributed() ? 5 : 4);
             }
         }
         assertThat(composed).containsExactlyInAnyOrder(RiskSignalIntake.Source.values());

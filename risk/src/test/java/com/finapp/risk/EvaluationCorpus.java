@@ -117,7 +117,9 @@ final class EvaluationCorpus {
         if (present(random, everyReading)) {
             builder.corridor(CORRIDORS.get(random.nextInt(CORRIDORS.size())));
         }
-        if (operation == RiskOperation.MONITORING) {
+        if (operation == RiskOperation.MONITORING || operation == RiskOperation.CARD_PAYMENT
+                || operation == RiskOperation.WALLET_PAYMENT) {
+            // P13-TSK-014: a checkout payment seals its merchant's ratios too (the other monitoring readings never).
             builder.monitoring(monitoring(random, everyReading));
         }
         return builder.build();

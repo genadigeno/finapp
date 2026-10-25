@@ -120,7 +120,11 @@ M3 and M6 (fraud and AML share one module, case management is in it). Rests on `
    payload — the first consumer to — through `EventPayload.fields`, the writer's exact inverse, and records what the
    event said and nothing read from the producer's tables; the events name their own aggregate, never the party, so
    `SubjectKind` gained `IDENTITY` and `CREDIT_AGREEMENT`. `RiskSignalRecorded` carries the signal id, kind, subject
-   kind and reference, caused by the consumed event. The plan's §10 erratum records what it named that does not exist.)*
+   kind and reference, caused by the consumed event. The plan's §10 erratum records what it named that does not exist.)* *(Extended by `P13-TSK-014`, 2026-10-25:
+`payments.RefundCompleted`, `payments.ChargebackReceived` and `bnpl.BnplApplicationSubmitted` consumed as signals about the
+`PARTY`; payments' two name only the refund or the dispute and the intent, so their payer and merchant are attributed
+from risk's **own** sealed assessment of that payment - still nothing read from the producer's tables - and a payment
+risk never judged records none. `RiskSignalRecorded` unchanged: it names the party, never the merchant or the intent.)*
 
 9. **Data classification** (plan §8). Assessment inputs and rule hits `CONFIDENTIAL`; signal attributes at their
    source's level (`device` `RESTRICTED-PII` — only identity's hash of the device description is ever received, OQ-4);

@@ -455,7 +455,8 @@ Phase 12 wave-D lesson — so a task's number is below every number of a later w
 | `risk_case`, `risk_case_action`, `risk_case_event` | `V009` (`-016`) | the case machine with `revision`; one open per (subject, kind) |
 | `risk_action` | `V010` (`-017`) | the action machine; `UNIQUE (case_id, kind, target_ref)` live |
 | `monitored_transaction`, `monitoring_watermark` | `V004` (`-019`) | `UNIQUE (journal_entry_id)`; one watermark per source |
-| `regulatory_report`, `regulatory_report_event` | `V011` (`-021`) | the filing artefact |
+| `risk_signal` widened (three abuse kinds, `merchant_subject_ref`, `intent_ref`, `risk_signal_by_merchant`), `velocity_window` and `risk_rule_parameter` (`SESSION`), `risk_assessment.session_id` | `V011` (`-014`) — *as built 2026-10-25, the next free at its build; the entry planned no migration* | the kinds' `CHECK`s re-made by name; a guard refusing a stored ratio rule without `threshold_count`; no grant, no row |
+| `regulatory_report`, `regulatory_report_event` | `V011` (`-021`) *(taken by `-014`: the next free at `-021`'s build)* | the filing artefact |
 | `screening_list_version`, `rescreening_permit` | `V012` (`-022`) | list facts; permits |
 | payments `withdrawal` `HELD`; `WithdrawalFailureReason.RISK_REFUSED` | payments `V033` (`-009`) | payments' own machine |
 | payments `PaymentFailureReason.RISK_REFUSED` and the intent's refused-by-risk decision row | payments `V034` (`-010`) | payments' own *(as built: the intent's `failure_reason`, the fifth intent edge, and slice 2's `payment_capture_hold`)* |
@@ -550,6 +551,17 @@ otherwise, and `-004` may read identity's `authentication_failure` through a por
 convention; merchant enablement and suspension (audit actions only). The handler reads the payload — the first
 consumer to do so — through `EventPayload.fields`, the writer's exact inverse; an unknown version or an unreadable
 payload is thrown, never acknowledged: the inbox has no "parking", the loud stall is its mechanism.)*
+
+*(Erratum, `P13-TSK-014`, 2026-10-25 — the abuse sources, consumed under `risk.signals` at event version 1:
+`payments.RefundCompleted`, `payments.ChargebackReceived` (the dispute at `CHARGED_BACK`) and
+`bnpl.BnplApplicationSubmitted`; the payments events attributed from risk's own sealed assessment of the payment (a
+payment risk never judged records no signal). **Exist, not consumed**: `payments.DisputeOpened` (an inquiry is not a
+chargeback), `payments.DisputeResolved` (a won representment does not erase the chargeback the schemes count),
+`payments.RefundInitiated` / `RefundFailed` (a refund counts when it completes), `bnpl.BnplApplicationClosed` (a
+withdrawn application still counts - stacking is the act of applying), `bnpl.BnplRefundApplied` (a BNPL purchase is in
+no payments window: a numerator with no denominator). **Named by `-014`'s entry, not existing**: a merchant refund
+outcome of merchant's own (the merchant's refund is payments' `RefundCompleted`), a checkout confirmation event per
+session (the session is read from the confirming request instead).)*
 
 ---
 
@@ -823,6 +835,22 @@ live; `RECENT_AUTH_FAILURES` `ABSENT` (no source); an account payee's novelty it
 registration, a withdrawal's `ABSENT` (no destination); a device's `ABSENT` (no seam carries one). No case or action yet
 (`-016`, `-017`).
 
+*(As built, `P13-TSK-014`, 2026-10-25 - payment, merchant and BNPL abuse; risk `V011`.)* **The ratios** - the subject's
+refund (chargeback) signals observed in the rule window's bucket over its velocity window's count for the same bucket,
+in basis points by cross-multiplication, `ABSENT` for a zero denominator, and never firing below the rule's new
+`threshold_count` (the schemes' count condition; without it every tumbling bucket's first payments would alert every
+merchant with one early refund). **Whose ratio is the operation's**: in `CARD_PAYMENT`/`WALLET_PAYMENT` (the kinds
+widened, scope only) the merchant's - judged in T-eval, the alert `MERCHANT_ABUSE` on the merchant; in `MONITORING` the
+party's - judged in the profile leg, the alert `FRAUD` on the party (no `dimension` parameter: each path reads exactly
+one subject). **BNPL across merchants** - the party's `BNPL_APPLICATION_SUBMITTED` signals within the window's length,
+`MONITORING` only: its weight moves the rating credit's signal answers, never a seam; the alert `FRAUD`. **A session
+confirming many checkouts** - `VELOCITY_COUNT` over the new `SESSION` dimension (the acting identity session; `DEVICE`
+insufficient - no seam carries one), the C8 payment fixtures' 5 per hour weighing 300 (`CHALLENGE`). The fixtures'
+merchant ratios weigh 100 each - never refusing a customer for the merchant; the entry's "`CHARGEBACK_RATIO` → `REVIEW`"
+is the case the alert opens (a payment admits no `REVIEW`). **Not built**: "a merchant's refunds to new accounts" (no
+kind in §12.2 names it; the refund event names no account - an owner item); a merchant retrospective sweep (a merchant
+is judged at each of its payments). `SUSPEND_MERCHANT` stays `-017`'s.
+
 ### 12.7 AML transaction monitoring (ADR-0111)
 
 The monitoring intake reads the **ledger journal** — the one financial truth — through `MonitoredLedger`, a port
@@ -1040,7 +1068,7 @@ wave-D lesson), so a task's number is below every number of a later wave; the wa
 | `P13-TSK-011` | The cross-border seams implemented | M13.3 | `-004`, `-007` | none | `DOD-FIN`, `DOD-API` |
 | `P13-TSK-012` | Decision override under four eyes, and the held withdrawal's release | M13.3 | `-009` | none (`V007`'s table; the release runs in T-act's shape from the approval door, keyed `risk.action:<override id>`, until `-017` folds it into the action machine) | `DOD-SEC`, `DOD-API`, `DOD-FIN` |
 | `P13-TSK-013` | Account-takeover detection | M13.4 | `-005`, `-009`, `-015` | none | `DOD-DOMAIN`, `DOD-SEC` |
-| `P13-TSK-014` | Payment, merchant and BNPL abuse rules | M13.4 | `-004`, `-010`, `-015` | none | `DOD-DOMAIN` |
+| `P13-TSK-014` | Payment, merchant and BNPL abuse rules | M13.4 | `-004`, `-010`, `-015` | `risk V011` *(planned none - built: the signal kinds' `CHECK`s, two reference columns, the merchant index, `SESSION`, `session_id`)* | `DOD-DOMAIN` |
 | `P13-TSK-015` | Alerts born once: the alert table, raise, dedupe and suppression | M13.4 | `-001` | `risk V008` | `DOD-DOMAIN`, `DOD-EVENT` |
 | `P13-TSK-016` | The case: lifecycle, the folding of alerts, investigator actions, concurrent updates, escalation, four-eyes dispositions | M13.5 | `-015` | `risk V009` | `DOD-DOMAIN`, `DOD-API`, `DOD-SEC` |
 | `P13-TSK-017` | Downstream actions through the owning domains | M13.5 | `-016` | `risk V010` | `DOD-SEC`, `DOD-EVENT`, `DOD-API` |

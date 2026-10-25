@@ -35,6 +35,9 @@ class RiskPolicyMigrationTest {
     /** risk V008 (P13-TSK-010): the knobs CHECK re-made for the card payment's hold validity. */
     private static final String HELD_CARD_PAYMENT_RESOURCE = "db/migration/risk/V008__the_held_card_payment.sql";
 
+    /** risk V011 (P13-TSK-014): the parameter value CHECK re-made for the SESSION dimension. */
+    private static final String ABUSE_RESOURCE = "db/migration/risk/V011__payment_merchant_and_bnpl_abuse.sql";
+
     @Test
     @DisplayName("the status, operation, engine, kind, decision, parameter type, window, subject, assurance and rating"
             + " lists are exactly the enums' members")
@@ -55,7 +58,11 @@ class RiskPolicyMigrationTest {
                 "ALTER TABLE risk.risk_rule_parameter DROP CONSTRAINT risk_rule_parameter_value_typed;");
         assertThat(collapsed(VELOCITY_RESOURCE, "risk_rule_parameter_type_is_known"))
                 .contains("type IN (" + list(RuleKind.ParameterType.values()) + ")");
-        String typed = collapsed(VELOCITY_RESOURCE, "risk_rule_parameter_value_typed");
+        // ...and risk V011 (P13-TSK-014) re-made the value CHECK once more, for the SESSION dimension: its effective
+        // definition is V011's.
+        assertThat(statements(ABUSE_RESOURCE)).contains(
+                "ALTER TABLE risk.risk_rule_parameter DROP CONSTRAINT risk_rule_parameter_value_typed;");
+        String typed = collapsed(ABUSE_RESOURCE, "risk_rule_parameter_value_typed");
         assertThat(typed).contains("value_window IN (" + list(WindowKind.values()) + ")")
                 .contains("value_velocity_dimension IN (" + list(VelocityDimension.values()) + ")")
                 .contains("value_assurance IN (" + list(RiskAssurance.values()) + ")")

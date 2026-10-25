@@ -12,7 +12,8 @@ import java.util.Objects;
  * ({@link RuleKind#RAPID_IN_OUT}), the movement amounts per window ({@link RuleKind#STRUCTURING}), the refund and
  * chargeback shares per window ({@link RuleKind#REFUND_RATIO}, {@link RuleKind#CHARGEBACK_RATIO}) and the BNPL
  * applications per window ({@link RuleKind#BNPL_MULTI_APPLICATION}). A window a map does not hold is {@code ABSENT}
- * for the rule naming it. {@link #none()} for a judged operation, which carries none of these.
+ * for the rule naming it. {@link #none()} for a judged operation, which carries none of these - but a checkout payment,
+ * whose ratios are its merchant's (`P13-TSK-014`, {@link PaymentAbuse#merchant}: only the two ratio maps filled).
  *
  * <p>Every map is copied into an {@link EnumMap} - declaration order, the same in any JVM - never a
  * {@code Map.copyOf}, whose iteration order is salted per process.

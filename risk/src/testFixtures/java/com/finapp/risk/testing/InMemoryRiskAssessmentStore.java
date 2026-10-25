@@ -86,6 +86,18 @@ public final class InMemoryRiskAssessmentStore implements RiskAssessmentStore {
                 .toList();
     }
 
+    @Override
+    public Optional<JudgedPayment> judgedPayment(Connection unitOfWork, CommandRef commandRef) {
+        log.add("judgedPayment");
+        Objects.requireNonNull(commandRef, "commandRef");
+        return rows.values().stream()
+                .filter(row -> (row.operation() == RiskOperation.CARD_PAYMENT
+                        || row.operation() == RiskOperation.WALLET_PAYMENT) && row.commandRef().equals(commandRef)
+                        && row.subjects().merchant().isPresent())
+                .reduce((first, later) -> later)
+                .map(row -> new JudgedPayment(row.subjects().party(), row.subjects().merchant().orElseThrow()));
+    }
+
     private RiskAssessment stamped(RiskAssessment assessment) {
         return new RiskAssessment(assessment.id(), assessment.operation(), assessment.commandRef(),
                 assessment.subjects(), assessment.amount(), assessment.pin(), assessment.engine(), assessment.score(),

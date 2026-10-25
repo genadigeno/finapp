@@ -2,7 +2,9 @@ package com.finapp.app.risk;
 
 import com.finapp.platform.inbox.InboxEventHandler;
 import com.finapp.platform.inbox.ReceivedEvent;
+import com.finapp.risk.CommandRef;
 import com.finapp.risk.MonitoringHints;
+import com.finapp.risk.RiskAssessmentStore;
 import com.finapp.risk.RiskSignal;
 import com.finapp.risk.RiskSignals;
 import com.finapp.risk.RiskSpans;
@@ -11,6 +13,7 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -41,6 +44,15 @@ import lombok.extern.slf4j.Slf4j;
  * event-derived copy of the journal's born-once {@code monitored_transaction} ({@code INV-RSK-09}) - Kafka is not
  * truth. Until `-019`, {@link MonitoringHints#NONE} lets the hint fall: the sweep's own permit converges.
  *
+ * <p><strong>The abuse sources</strong> (`P13-TSK-014`): payments' {@code RefundCompleted} and {@code ChargebackReceived}
+ * and bnpl's {@code BnplApplicationSubmitted}. The two payments events name the refund or the dispute and the intent,
+ * never the payer or the merchant, and nothing is read from payments' tables: the handler asks <em>risk's own</em>
+ * sealed assessment of that intent ({@link Attributions}, {@link RiskAssessmentStore#judgedPayment}) whose payment it
+ * was and whom it paid. A refund or chargeback of a payment risk never judged - before Phase 13, a pay-by-bank checkout,
+ * a top-up - is in no ratio's denominator (the windows count judged payments), so it records no signal and is
+ * acknowledged, at debug, ids only: never thrown, because stalling the partition on a legitimate event would stop every
+ * later one. The sealed assessment always commits before its payment can be captured, refunded or disputed.
+ *
  * <p>No actor is entered: a signal names no actor, and the inbox's own record is the trail (plan section 11: audit -
  * none, machine acts). The span is {@link RiskSpans#SIGNAL_RECORD}, with no attribute.
  */
@@ -69,6 +81,12 @@ public final class RiskSignalIntake implements InboxEventHandler {
         LOAN_DEFAULTED("finapp.lending", SignalKind.LOAN_DEFAULTED),
         BNPL_DELINQUENCY_CHANGED("finapp.bnpl", SignalKind.BNPL_DELINQUENCY_CHANGED),
         BNPL_DEFAULTED("finapp.bnpl", SignalKind.BNPL_DEFAULTED),
+        /** {@code payments.RefundCompleted} - attributed from risk's assessment of the payment (`P13-TSK-014`). */
+        REFUND_COMPLETED("finapp.payments", SignalKind.REFUND_COMPLETED),
+        /** {@code payments.ChargebackReceived} - attributed as the refund is. */
+        CHARGEBACK_RECEIVED("finapp.payments", SignalKind.CHARGEBACK_RECEIVED),
+        /** {@code bnpl.BnplApplicationSubmitted} - the applicant names itself. */
+        BNPL_APPLICATION_SUBMITTED("finapp.bnpl", SignalKind.BNPL_APPLICATION_SUBMITTED),
         /** {@code transfers.TransferCompleted} - a hint. */
         TRANSFER_COMPLETED("finapp.transfers", "transfers.TransferCompleted"),
         /** {@code payments.PaymentCaptured} - a card capture, a hint. */
@@ -117,6 +135,33 @@ public final class RiskSignalIntake implements InboxEventHandler {
         public boolean isHint() {
             return kind == null;
         }
+
+        /** Whether this source's subject is attributed from risk's record of a payment (`P13-TSK-014`). */
+        public boolean isAttributed() {
+            return kind != null && SignalMappings.ATTRIBUTED.contains(kind);
+        }
+    }
+
+    /**
+     * Whose checkout payment an intent was, and whom it paid - from risk's own sealed {@code CARD_PAYMENT} or
+     * {@code WALLET_PAYMENT} assessment of it, never from payments' tables (`P13-TSK-014`). Empty when risk never judged
+     * the payment.
+     */
+    @FunctionalInterface
+    public interface Attributions {
+
+        /** For the sources that attribute nothing: asked, it is a wiring fault. */
+        Attributions NONE = (unitOfWork, intent) -> {
+            throw new IllegalStateException("this risk signal source attributes no payment");
+        };
+
+        Optional<RiskAssessmentStore.JudgedPayment> of(Connection unitOfWork, UUID intent);
+
+        /** Over the assessment store: the intent's id is the payment's command reference (`-010`). */
+        static Attributions over(RiskAssessmentStore assessments) {
+            Objects.requireNonNull(assessments, "assessments");
+            return (unitOfWork, intent) -> assessments.judgedPayment(unitOfWork, CommandRef.of(intent));
+        }
     }
 
     private final Source source;
@@ -124,14 +169,25 @@ public final class RiskSignalIntake implements InboxEventHandler {
     private final MonitoringHints hints;
     private final IdGenerator ids;
     private final RiskFlowScope scope;
+    private final Attributions attributions;
 
+    /** A source that attributes nothing - every source but the refund and the chargeback. */
     public RiskSignalIntake(
             Source source, RiskSignals signals, MonitoringHints hints, IdGenerator ids, RiskFlowScope scope) {
+        this(source, signals, hints, ids, scope, Attributions.NONE);
+    }
+
+    public RiskSignalIntake(Source source, RiskSignals signals, MonitoringHints hints, IdGenerator ids,
+            RiskFlowScope scope, Attributions attributions) {
         this.source = Objects.requireNonNull(source, "source");
         this.signals = Objects.requireNonNull(signals, "signals");
         this.hints = Objects.requireNonNull(hints, "hints");
         this.ids = Objects.requireNonNull(ids, "ids");
         this.scope = Objects.requireNonNull(scope, "scope");
+        this.attributions = Objects.requireNonNull(attributions, "attributions");
+        if (source.isAttributed() && attributions == Attributions.NONE) {
+            throw new IllegalArgumentException(source + " is attributed from risk's assessments: wire them");
+        }
     }
 
     public Source source() {
@@ -174,7 +230,20 @@ public final class RiskSignalIntake implements InboxEventHandler {
                         event.producer(), event.eventType(), event.aggregateId(), event.occurredAt()));
                 return;
             }
-            RiskSignal signal = SignalMappings.map(source.kind, event, ids);
+            RiskSignal signal;
+            if (source.isAttributed()) {
+                Optional<RiskAssessmentStore.JudgedPayment> judged =
+                        attributions.of(unitOfWork, SignalMappings.intentOf(source.kind, event));
+                if (judged.isEmpty()) {
+                    // A payment risk never judged is in no ratio's denominator: no signal, acknowledged. Ids only.
+                    log.debug("No risk signal from {} {}: its payment was never judged", event.eventType(),
+                            event.eventId().value());
+                    return;
+                }
+                signal = SignalMappings.attributed(source.kind, event, ids, judged.get());
+            } else {
+                signal = SignalMappings.map(source.kind, event, ids);
+            }
             RiskSignals.Outcome outcome = signals.record(unitOfWork, signal);
             // Debug: an ALREADY is the arbiter working beneath the dedupe, not a fault. Ids and codes only.
             log.debug("Risk signal {} from {} {}: {}", signal.kind(), event.eventType(), event.eventId().value(), outcome);

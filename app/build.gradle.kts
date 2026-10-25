@@ -377,6 +377,9 @@ extra["ownContainerSuites"] =
         "com.finapp.app.reconciliation.ResolutionBatteryDatabaseTest",
         "com.finapp.app.reconciliation.SettlementReconciliationStormDatabaseTest",
         "com.finapp.app.reconciliation.UnmatchedConfirmationSuspenseDatabaseTest",
+        // P13-TSK-014: it activates EUR CARD_PAYMENT, WALLET_PAYMENT and MONITORING risk versions carrying the abuse
+        // rules - a shared container's merchants with refunds would be alerted, its sessions' sixth checkout challenged.
+        "com.finapp.app.risk.MerchantAbuseDatabaseTest",
         // P13-TSK-008: each activates a EUR TRANSFER risk version, after which every transfer in the database is
         // judged by it - a shared container's USD transfers would be refused by the open-ended fail-safe band.
         "com.finapp.app.risk.RiskPolicyEndpointDatabaseTest",

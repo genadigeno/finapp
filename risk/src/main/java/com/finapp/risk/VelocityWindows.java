@@ -148,6 +148,23 @@ public final class VelocityWindows {
     }
 
     /**
+     * The committed count of {@code subjectRef}'s {@code window} window in {@code dimension} containing {@code at} - 0
+     * when it never opened (`P13-TSK-014`: the profile leg's ratio denominator). No lock and no currency: a count is a
+     * count whatever the window's money, and the reader counts nothing - a retrospective read of committed figures.
+     */
+    public long counted(Connection unitOfWork, VelocityDimension dimension, String subjectRef, WindowKind window,
+            java.time.Instant at) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        VelocityWindowKey key = new VelocityWindowKey(dimension, subjectRef, window, WindowStarts.start(window, at));
+        for (VelocityWindow found : store.find(unitOfWork, List.of(key))) {
+            if (found.key().equals(key)) {
+                return found.reading().count();
+            }
+        }
+        return 0;
+    }
+
+    /**
      * (R2) counts the movement {@code cut} holds in every window it falls in - each dimension it carries, each window
      * kind - one upsert per window in sorted key order, <strong>only when {@code decision} permits the movement</strong>;
      * answers the windows after the movement, or nothing when it was refused. Call at most once per cut, after the
@@ -178,7 +195,8 @@ public final class VelocityWindows {
 
     /**
      * The readings {@code policy}'s rules judge - each {@code VELOCITY_COUNT}'s and {@code VELOCITY_SUM}'s (dimension,
-     * window), and {@code DORMANT_THEN_ACTIVE}'s party sum - what T-eval passes to {@link #read}.
+     * window), {@code DORMANT_THEN_ACTIVE}'s party sum, and in a payment version each ratio rule's {@code MERCHANT}
+     * window - its denominator (`P13-TSK-014`, {@link PaymentAbuse}) - what T-eval passes to {@link #read}.
      */
     public static Set<VelocityKey> keysRead(RiskPolicy policy) {
         Objects.requireNonNull(policy, "policy");
@@ -190,10 +208,11 @@ public final class VelocityWindows {
                 case DORMANT_THEN_ACTIVE -> keys.add(new VelocityKey(VelocityDimension.PARTY,
                         rule.parameters().window("window")));
                 default -> {
-                    // No other kind reads a velocity window.
+                    // No other kind reads a velocity window but the ratios' denominators, below.
                 }
             }
         }
+        keys.addAll(PaymentAbuse.denominatorKeys(policy));
         return Collections.unmodifiableSet(keys);
     }
 

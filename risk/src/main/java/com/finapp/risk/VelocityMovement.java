@@ -11,8 +11,8 @@ import java.util.UUID;
 /**
  * One judged movement as the velocity windows see it (`P13-TSK-006`; {@code PHASE_13_PLAN.md} section 12.4): the
  * subject it carries in each {@link VelocityDimension} - each optional, because not every operation has every role
- * (a withdrawal has no destination account, a transfer no merchant, a system actor no device) - and the amount it
- * moves. Built by `-004`'s T-eval from what the seam adapter passes; nothing here is read from another module.
+ * (a withdrawal has no destination account, a transfer no merchant, a system actor no device or session) - and the
+ * amount it moves. Built by `-004`'s T-eval from what the seam adapter passes; nothing here is read from another module.
  *
  * <p><strong>Judged whole at construction.</strong> Each reference has its dimension's shape (a canonical UUID; a
  * device only ever by {@link DeviceHash}); the amount is non-negative, at most {@link EvaluationInputs#MAX_MINOR}
@@ -98,6 +98,11 @@ public record VelocityMovement(Map<VelocityDimension, String> subjects, Money am
 
         public Builder merchant(UUID merchant) {
             return put(VelocityDimension.MERCHANT, merchant);
+        }
+
+        /** The identity session that confirmed it, by the session's id (`P13-TSK-014`). */
+        public Builder session(UUID session) {
+            return put(VelocityDimension.SESSION, session);
         }
 
         public VelocityMovement build() {

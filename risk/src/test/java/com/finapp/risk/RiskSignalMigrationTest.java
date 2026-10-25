@@ -26,12 +26,20 @@ class RiskSignalMigrationTest {
 
     private static final String MIGRATION = "db/migration/risk/V003__risk_signal.sql";
 
-    private final String sql = statementsOf(migration());
+    /**
+     * risk V011 (P13-TSK-014): the kind, subject-match and attribute-shape CHECKs dropped and re-made for the three abuse
+     * kinds and the two reference columns - V003 is merged and never edited, so their effective definition is V011's.
+     */
+    private static final String ABUSE = "db/migration/risk/V011__payment_merchant_and_bnpl_abuse.sql";
+
+    private final String sql = statementsOf(migration(MIGRATION));
+
+    private final String effective = statementsOf(migration(ABUSE));
 
     @Test
     @DisplayName("the kind CHECK admits exactly SignalKind, and the subject-kind CHECK exactly SubjectKind")
     void theVocabulariesAreTheCode() {
-        assertThat(quotedList(sql, "risk_signal_kind_is_known CHECK \\(kind IN \\(([^)]*)\\)"))
+        assertThat(quotedList(effective, "risk_signal_kind_is_known CHECK \\(kind IN \\(([^)]*)\\)"))
                 .containsExactlyElementsOf(names(SignalKind.values()));
         assertThat(quotedList(sql, "risk_signal_subject_kind_is_known CHECK \\(subject_kind IN \\(([^)]*)\\)"))
                 .containsExactlyElementsOf(names(SubjectKind.values()));
@@ -40,8 +48,9 @@ class RiskSignalMigrationTest {
     @Test
     @DisplayName("each kind's subject in the SQL is its subject in the code")
     void eachKindsSubjectIsTheCodes() {
+        assertThat(effective).contains("DROP CONSTRAINT risk_signal_subject_matches_kind");
         for (SignalKind kind : SignalKind.values()) {
-            assertThat(sql)
+            assertThat(effective)
                     .as("%s is about a %s", kind, kind.subject())
                     .containsPattern("WHEN '" + kind.name() + "'\\s+THEN '" + kind.subject().name() + "'");
         }
@@ -51,7 +60,7 @@ class RiskSignalMigrationTest {
     @DisplayName("each kind's attribute shape in the SQL names exactly the code's attributes, non-null, and counts them")
     void eachKindsShapeIsTheCodes() {
         Matcher shape = Pattern.compile(
-                "risk_signal_attributes_match_kind CHECK \\(CASE kind(.*?)ELSE false", Pattern.DOTALL).matcher(sql);
+                "risk_signal_attributes_match_kind CHECK \\(CASE kind(.*?)ELSE false", Pattern.DOTALL).matcher(effective);
         assertThat(shape.find()).as("the shape CHECK exists").isTrue();
         String cases = shape.group(1);
         for (SignalKind kind : SignalKind.values()) {
@@ -137,10 +146,10 @@ class RiskSignalMigrationTest {
                 .collect(java.util.stream.Collectors.joining(System.lineSeparator()));
     }
 
-    private static String migration() {
-        try (InputStream stream = RiskSignalMigrationTest.class.getClassLoader().getResourceAsStream(MIGRATION)) {
+    private static String migration(String resource) {
+        try (InputStream stream = RiskSignalMigrationTest.class.getClassLoader().getResourceAsStream(resource)) {
             if (stream == null) {
-                throw new IllegalStateException("Migration not on the test classpath: " + MIGRATION);
+                throw new IllegalStateException("Migration not on the test classpath: " + resource);
             }
             return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {

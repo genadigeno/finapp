@@ -26,17 +26,19 @@ import java.util.UUID;
 public final class JdbcRiskAssessmentStore implements RiskAssessmentStore {
 
     static final String HEAD_COLUMNS = "id, operation, command_ref, party_id, identity_id, source_account_id,"
-            + " destination_kind, destination_id, device_hash, merchant_subject_id, amount_minor, currency, scale,"
+            + " destination_kind, destination_id, device_hash, merchant_subject_id, session_id, amount_minor, currency,"
+            + " scale,"
             + " policy_version_id, policy_version, engine, score, decision, unavailable_cause, challenge_satisfied,"
             + " velocity_outcome, velocity_cut_at, inputs_sha256, verdict_sha256, latency_micros, correlation_id,"
             + " causation_id, assessed_at";
 
     static final String INSERT_HEAD = "INSERT INTO risk.risk_assessment (id, operation, command_ref, party_id,"
             + " identity_id, source_account_id, destination_kind, destination_id, device_hash, merchant_subject_id,"
-            + " amount_minor, currency, scale, policy_version_id, policy_operation, policy_version, engine, score, decision,"
-            + " fail_safe_reason, unavailable_cause, challenge_satisfied, velocity_outcome, velocity_cut_at,"
-            + " canonical_format, inputs_sha256, verdict_sha256, latency_micros, correlation_id, causation_id, assessed_at)"
-            + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+            + " session_id, amount_minor, currency, scale, policy_version_id, policy_operation, policy_version, engine,"
+            + " score, decision, fail_safe_reason, unavailable_cause, challenge_satisfied, velocity_outcome,"
+            + " velocity_cut_at, canonical_format, inputs_sha256, verdict_sha256, latency_micros, correlation_id,"
+            + " causation_id, assessed_at)"
+            + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
             + " clock_timestamp())"
             + " ON CONFLICT (operation, command_ref) DO NOTHING RETURNING id";
 
@@ -50,8 +52,12 @@ public final class JdbcRiskAssessmentStore implements RiskAssessmentStore {
 
     static final String COUNTED = "SELECT party_id, identity_id, source_account_id, destination_kind, destination_id,"
             + " device_hash,"
-            + " merchant_subject_id, amount_minor, currency, scale, velocity_cut_at FROM risk.risk_assessment"
+            + " merchant_subject_id, session_id, amount_minor, currency, scale, velocity_cut_at FROM risk.risk_assessment"
             + " WHERE velocity_outcome = 'COUNTED' AND velocity_cut_at >= ? ORDER BY velocity_cut_at, id";
+
+    static final String JUDGED_PAYMENT = "SELECT party_id, merchant_subject_id FROM risk.risk_assessment"
+            + " WHERE operation IN ('CARD_PAYMENT', 'WALLET_PAYMENT') AND command_ref = ?"
+            + " AND merchant_subject_id IS NOT NULL ORDER BY assessed_at DESC, id DESC LIMIT 1";
 
     @Override
     public Optional<RiskAssessment> find(Connection unitOfWork, RiskOperation operation, CommandRef commandRef) {
@@ -88,6 +94,7 @@ public final class JdbcRiskAssessmentStore implements RiskAssessmentStore {
                     Types.OTHER);
             head.setString(++i, subjects.device().map(DeviceHash::value).orElse(null));
             head.setObject(++i, subjects.merchant().orElse(null), Types.OTHER);
+            head.setObject(++i, subjects.session().orElse(null), Types.OTHER);
             head.setLong(++i, assessment.amount().minorUnits());
             head.setString(++i, assessment.amount().currency().code());
             head.setInt(++i, assessment.amount().scale());
@@ -189,6 +196,25 @@ public final class JdbcRiskAssessmentStore implements RiskAssessmentStore {
         return counted;
     }
 
+    @Override
+    public Optional<JudgedPayment> judgedPayment(Connection unitOfWork, CommandRef commandRef) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(commandRef, "commandRef");
+        // Two probes of UNIQUE (operation, command_ref); risk's own table only (INV-RSK-02).
+        try (PreparedStatement select = unitOfWork.prepareStatement(JUDGED_PAYMENT)) {
+            select.setString(1, commandRef.value());
+            try (ResultSet row = select.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(new JudgedPayment(row.getObject("party_id", UUID.class),
+                        row.getObject("merchant_subject_id", UUID.class)));
+            }
+        } catch (SQLException failure) {
+            throw failed("reading a judged payment's subjects", failure);
+        }
+    }
+
     // ------------------------------------------------------------------ the reads
 
     private Optional<RiskAssessment> head(Connection unitOfWork, String sql, Object... arguments) {
@@ -257,7 +283,8 @@ public final class JdbcRiskAssessmentStore implements RiskAssessmentStore {
                 Optional.ofNullable(row.getObject("source_account_id", UUID.class)),
                 destination,
                 Optional.ofNullable(row.getString("device_hash")).map(DeviceHash::parse),
-                Optional.ofNullable(row.getObject("merchant_subject_id", UUID.class)));
+                Optional.ofNullable(row.getObject("merchant_subject_id", UUID.class)),
+                Optional.ofNullable(row.getObject("session_id", UUID.class)));
     }
 
     private static String inputs(Connection unitOfWork, UUID id) throws SQLException {

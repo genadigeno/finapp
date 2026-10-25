@@ -32,7 +32,8 @@ class VelocityMovementTest {
                 VelocityDimension.SOURCE_ACCOUNT, b -> b.sourceAccount(ID),
                 VelocityDimension.DESTINATION, b -> b.destinationAccount(ID),
                 VelocityDimension.DEVICE, b -> b.device(DEVICE),
-                VelocityDimension.MERCHANT, b -> b.merchant(ID));
+                VelocityDimension.MERCHANT, b -> b.merchant(ID),
+                VelocityDimension.SESSION, b -> b.session(ID));
         assertThat(roles.keySet()).isEqualTo(EnumSet.allOf(VelocityDimension.class));
         for (Map.Entry<VelocityDimension, UnaryOperator<VelocityMovement.Builder>> role : roles.entrySet()) {
             VelocityMovement movement = role.getValue().apply(VelocityMovement.of(eur(1))).build();
@@ -85,7 +86,7 @@ class VelocityMovementTest {
         WindowCut cut = new WindowCut(movement, WindowStarts.ANCHOR);
         assertThat(cut.keys()).allSatisfy(key -> assertThat(key.toString()).doesNotContain(ID.toString(),
                 DEVICE.value()));
-        assertThat(Set.of(VelocityDimension.values())).hasSize(5);
+        assertThat(Set.of(VelocityDimension.values())).hasSize(6);
     }
 
     private static Money eur(long minor) {

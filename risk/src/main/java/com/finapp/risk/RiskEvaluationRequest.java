@@ -23,8 +23,9 @@ import java.util.UUID;
  *   <li><strong>The acting identity and actor</strong> - the identity whose credential change or recovery the signals
  *       record, and the actor whose session's assurance answers a {@code CHALLENGE} ({@link SessionAssurance} through
  *       {@link RiskInputs}); both absent for a system-initiated movement, which no challenge is satisfied for.</li>
- *   <li><strong>The device</strong> only ever by identity's hash (OQ-4); <strong>the corridor</strong> a cross-border
- *       payment's {@code SRC-DST-CC}.</li>
+ *   <li><strong>The device</strong> only ever by identity's hash (OQ-4); <strong>the session</strong> the identity
+ *       session that confirmed - by its id, never its token - the {@code SESSION} windows' subject (`P13-TSK-014`: the
+ *       checkout payment seam's alone); <strong>the corridor</strong> a cross-border payment's {@code SRC-DST-CC}.</li>
  * </ul>
  *
  * Its {@code toString} names the operation and the command only - never a subject or the amount ({@code INV-RSK-08}).
@@ -40,6 +41,7 @@ public record RiskEvaluationRequest(
         Optional<Destination> destination,
         Optional<DeviceHash> device,
         Optional<UUID> merchant,
+        Optional<UUID> session,
         Optional<String> corridor,
         CorrelationId correlation,
         CausationId causation) {
@@ -71,6 +73,7 @@ public record RiskEvaluationRequest(
         Objects.requireNonNull(destination, "destination");
         Objects.requireNonNull(device, "device");
         Objects.requireNonNull(merchant, "merchant");
+        Objects.requireNonNull(session, "session");
         Objects.requireNonNull(corridor, "corridor");
         Objects.requireNonNull(correlation, "correlation");
         Objects.requireNonNull(causation, "causation");
@@ -95,7 +98,7 @@ public record RiskEvaluationRequest(
 
     /**
      * The movement the windows count - every subject in its velocity role: the party, the source account, the
-     * destination (an account or a beneficiary - one role), the device, the merchant.
+     * destination (an account or a beneficiary - one role), the device, the merchant, the session.
      */
     public VelocityMovement movement() {
         return RiskAssessment.Subjects.of(this).movement(amount);
@@ -103,8 +106,8 @@ public record RiskEvaluationRequest(
 
     /**
      * The inputs every evaluation of this request seals, whatever else is read: the operation, the subjects (the party,
-     * the identity, the source account, a beneficiary destination, the device, the merchant - by reference; no rule
-     * reads them), the amount and the corridor. A fail-safe seals exactly these.
+     * the identity, the source account, a beneficiary destination, the device, the merchant, the session - by reference;
+     * no rule reads them), the amount and the corridor. A fail-safe seals exactly these.
      */
     public EvaluationInputs.Builder judged() {
         EvaluationInputs.Builder inputs = EvaluationInputs.builder(operation)
@@ -116,6 +119,7 @@ public record RiskEvaluationRequest(
                 .ifPresent(to -> inputs.subject(SignalSubject.of(SubjectKind.BENEFICIARY, to.id())));
         device.ifPresent(hash -> inputs.subject(SignalSubject.device(hash)));
         merchant.ifPresent(id -> inputs.subject(SignalSubject.of(SubjectKind.MERCHANT, id)));
+        session.ifPresent(id -> inputs.subject(SignalSubject.of(SubjectKind.SESSION, id)));
         corridor.ifPresent(inputs::corridor);
         return inputs;
     }
@@ -140,6 +144,7 @@ public record RiskEvaluationRequest(
         private Optional<Destination> destination = Optional.empty();
         private Optional<DeviceHash> device = Optional.empty();
         private Optional<UUID> merchant = Optional.empty();
+        private Optional<UUID> session = Optional.empty();
         private Optional<String> corridor = Optional.empty();
 
         private Builder(RiskOperation operation, CommandRef commandRef, Money amount, UUID party,
@@ -187,6 +192,12 @@ public record RiskEvaluationRequest(
             return this;
         }
 
+        /** The identity session that confirmed - its id, never its token (`P13-TSK-014`). */
+        public Builder session(UUID session) {
+            this.session = Optional.of(Objects.requireNonNull(session, "session"));
+            return this;
+        }
+
         public Builder corridor(String corridor) {
             this.corridor = Optional.of(Objects.requireNonNull(corridor, "corridor"));
             return this;
@@ -194,7 +205,7 @@ public record RiskEvaluationRequest(
 
         public RiskEvaluationRequest build() {
             return new RiskEvaluationRequest(operation, commandRef, amount, party, identity, actor, sourceAccount,
-                    destination, device, merchant, corridor, correlation, causation);
+                    destination, device, merchant, session, corridor, correlation, causation);
         }
     }
 }

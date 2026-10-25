@@ -1,6 +1,7 @@
 package com.finapp.risk;
 
 import java.sql.Connection;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -20,15 +21,22 @@ import java.util.UUID;
  * rule's hit - because its source is another task's to read for a party: `-006`'s velocity windows and the monitoring
  * readings over the party's movements, both `-020`'s, which extends this reader. Only the two anchors among the
  * {@code MONITORING} kinds read a signal ({@link RuleKind}'s scopes); every other signal reaches the profile as the hint
- * that pulls its permit forward ({@link ProfileHints}).
+ * that pulls its permit forward ({@link ProfileHints}). <strong>The abuse readings</strong> (`P13-TSK-014`,
+ * {@link PaymentAbuse#party}) - the party's refund and chargeback ratios (its signals over its {@code PARTY} window's
+ * committed count, the bucket containing the database's instant) and its BNPL applications within the window - are read
+ * when the pinned version carries those kinds; their signals pull the permit forward as every party signal does.
  */
 public final class ProfileInputs {
 
-    /** One party's reading: the sealed inputs, and the anchors they were taken from - the retrospective alert's. */
-    public record Read(EvaluationInputs inputs, AccountTakeover.Anchors anchors) {
+    /**
+     * One party's reading: the sealed inputs, and what they were taken from that a retrospective alert names - the
+     * account-takeover anchors (`-013`) and the abuse readings' evidence (`-014`).
+     */
+    public record Read(EvaluationInputs inputs, AccountTakeover.Anchors anchors, PaymentAbuse.PartyRead abuse) {
         public Read {
             Objects.requireNonNull(inputs, "inputs");
             Objects.requireNonNull(anchors, "anchors");
+            Objects.requireNonNull(abuse, "abuse");
         }
     }
 
@@ -50,8 +58,29 @@ public final class ProfileInputs {
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
-    /** The sealed inputs of {@code partyId}'s {@code MONITORING} evaluation, reading only what {@code judged} needs. */
+    /**
+     * The sealed inputs of {@code partyId}'s {@code MONITORING} evaluation under {@code policy} - what
+     * {@link #read(Connection, UUID, Set)} reads, and the abuse readings its rules' windows name ({@link PaymentAbuse#party}:
+     * the party's refund and chargeback ratios, its BNPL applications - `P13-TSK-014`), judged at the database's instant.
+     */
+    public Read read(Connection unitOfWork, UUID partyId, RiskPolicy policy) {
+        Objects.requireNonNull(policy, "policy");
+        Set<RuleKind> judged = EnumSet.noneOf(RuleKind.class);
+        for (RiskRule rule : policy.rules()) {
+            judged.add(rule.kind());
+        }
+        return read(unitOfWork, partyId, judged, policy);
+    }
+
+    /**
+     * The sealed inputs of {@code partyId}'s {@code MONITORING} evaluation, reading only what {@code judged} needs - the
+     * kinds alone, so no abuse reading (its windows are the rules'): {@link #read(Connection, UUID, RiskPolicy)} reads it.
+     */
     public Read read(Connection unitOfWork, UUID partyId, Set<RuleKind> judged) {
+        return read(unitOfWork, partyId, judged, null);
+    }
+
+    private Read read(Connection unitOfWork, UUID partyId, Set<RuleKind> judged, RiskPolicy policy) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(partyId, "partyId");
         Objects.requireNonNull(judged, "judged");
@@ -69,6 +98,11 @@ public final class ProfileInputs {
                 anchors.applyTo(inputs, clock.now(unitOfWork));
             }
         }
-        return new Read(inputs.build(), anchors);
+        PaymentAbuse.PartyRead abuse = PaymentAbuse.PartyRead.none();
+        if (policy != null && judged.stream().anyMatch(PaymentAbuse.KINDS::contains)) {
+            abuse = PaymentAbuse.party(unitOfWork, signals, clock, policy, partyId, clock.now(unitOfWork));
+            inputs.monitoring(abuse.readings());
+        }
+        return new Read(inputs.build(), anchors, abuse);
     }
 }
