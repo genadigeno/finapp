@@ -23,9 +23,11 @@ import java.util.UUID;
  *
  * <p><strong>The other kinds answer empty</strong> (`DESIGN-007` D5): an account, a credit agreement, a merchant, a
  * beneficiary has no read by its own id without its owner in its module today, and a device or a session names no
- * party at all; their signals are recorded and pull no permit. The account's and the merchant's joins arrive with
- * `-020` (which must place a monitored transaction's subject anyway); a reference that is not an identity's shape
- * (never a UUIDv7) places nothing rather than stalling the inbox.
+ * party at all; their signals are recorded and pull no permit. `-020` built the account's join for the monitoring rules
+ * - {@link AccountMonitoredParties}, over accounts' system read of an agreement's customer - and deliberately did not
+ * wire it here: every AML alert's subject is the {@code PARTY}, which this join already places, and an {@code ACCOUNT}
+ * placed here would make every account signal pull its party's profile permit (an owner's choice, recorded); a
+ * reference that is not an identity's shape (never a UUIDv7) places nothing rather than stalling the inbox.
  *
  * <p><strong>The reverse</strong> (`P13-TSK-013`): {@link RiskPartyIdentities} - the identities a party holds, for the
  * profile leg's account-takeover anchors (the signals name the identity; the leg judges the party).

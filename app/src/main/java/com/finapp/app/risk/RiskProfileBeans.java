@@ -7,6 +7,10 @@ import com.finapp.risk.AlertRaiser;
 import com.finapp.risk.CustomerRiskProfileStore;
 import com.finapp.risk.CustomerRiskProfiles;
 import com.finapp.risk.JdbcCustomerRiskProfileStore;
+import com.finapp.risk.MonitoredMovementStore;
+import com.finapp.risk.MonitoredMovements;
+import com.finapp.risk.MonitoredParties;
+import com.finapp.risk.MonitoringObserver;
 import com.finapp.risk.ProfileHints;
 import com.finapp.risk.ProfileInputs;
 import com.finapp.risk.ProfileRecompute;
@@ -57,13 +61,22 @@ public class RiskProfileBeans {
         return ProfileHints.over(riskSubjectParties, customerRiskProfileStore);
     }
 
+    /**
+     * The profile's inputs - since `P13-TSK-020` with the journal's readings over the party's movements
+     * ({@link MonitoredMovements}: the monitored transactions by the party's accounts and `-006`'s committed windows).
+     */
     @Bean
     ProfileInputs profileInputs(ScreeningClearances screeningClearances, SignalReadings signalReadings,
-            RiskPartyIdentities riskPartyIdentities, VelocityWindows velocityWindows) {
-        return new ProfileInputs(screeningClearances, signalReadings, riskPartyIdentities, velocityWindows);
+            RiskPartyIdentities riskPartyIdentities, VelocityWindows velocityWindows,
+            MonitoredMovementStore monitoredMovementStore, MonitoredParties monitoredParties) {
+        return new ProfileInputs(screeningClearances, signalReadings, riskPartyIdentities, velocityWindows,
+                new MonitoredMovements(monitoredMovementStore, monitoredParties, velocityWindows));
     }
 
-    /** T-mon's profile leg: the pin, the head (R8), the engine over the MONITORING version, a version per change. */
+    /**
+     * T-mon's profile leg: the pin, the head (R8), the engine over the MONITORING version, a version per change - and
+     * since `P13-TSK-020` the rule leg's per-party step ({@code ProfileRecompute.monitor}), its rule hits metered.
+     */
     @Bean
     ProfileRecompute profileRecompute(
             RiskPolicies riskPolicies,
@@ -73,9 +86,10 @@ public class RiskProfileBeans {
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
             Clock clock,
+            MonitoringObserver monitoringObserver,
             @Value("${finapp.risk.profile.cadence:P1D}") Duration cadence) {
         return new ProfileRecompute(riskPolicies, customerRiskProfileStore, profileInputs, alertRaiser, outboxWriter,
-                idGenerator, clock, cadence);
+                idGenerator, clock, cadence, monitoringObserver);
     }
 
     @Bean

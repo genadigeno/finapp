@@ -3285,6 +3285,12 @@ journal entries = monitored transactions, amounts equal, no orphan — at every 
 from the committed watermark (`P13-TST-001`).
 **Phase:** 13
 
+*(As built by `P13-TSK-020`, 2026-10-25: reprocessing re-judges as well as re-reads - the monitoring rules run on every
+row a claim reads, born or absorbed, inside the claim's own transaction, and every AML alert's key is the bucket of the
+evidence's value date, never a run's clock, so a re-run from any watermark raises no alert, opens no case and writes no
+profile version anew (`MonitoringRulesTest#reprocessingRaisesNoSecondAlert`; owed
+`MonitoringRulesDatabaseTest#reprocessingRaisesNoSecondAlert`). Probe: `MUTATION_TESTING.md` §2.)*
+
 ### INV-RSK-10 — The customer risk profile is versioned and append-only, credit's snapshot records the rating it was given, and a rating change never rewrites a decision
 **Statement:** A party's customer risk profile is a head row and append-only versions, `UNIQUE
 (party_id, version)`, each version recording the rating (`LOW | MEDIUM | HIGH | PROHIBITED`), the

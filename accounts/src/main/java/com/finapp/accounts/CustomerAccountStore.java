@@ -14,7 +14,8 @@ import java.util.UUID;
  * needs one and its design decides the conditional (the {@code LedgerAccountStore} precedent).
  * And no bare {@code findById}: the read by identifier is {@link #findOwnedBy}, which carries the
  * owner in its {@code WHERE} clause — `P3-TSK-013`'s ownership design, taken when the first
- * caller arrived rather than guessed before it ({@code P1-TSK-013}).
+ * caller arrived rather than guessed before it ({@code P1-TSK-013}). The one read by identifier
+ * alone, {@link #customerOf} (`P13-TSK-020`), answers only the owner, for the system's own join.
  *
  * @param <T> the transactional unit of work — a JDBC {@code Connection}, fixed by ADR-0033
  */
@@ -71,6 +72,19 @@ public interface CustomerAccountStore<T> {
      */
     Optional<CustomerAccount> findOwnedBy(
             T unitOfWork, CustomerAccountId accountId, UUID customerId);
+
+    /**
+     * The customer an agreement belongs to, by the agreement's identifier alone (`P13-TSK-020`) —
+     * <strong>the system's join, never a person's read</strong>: the identifier is one the
+     * platform recorded itself (a ledger account's opaque {@code owner_ref}, which risk's
+     * monitored transactions carry from the journal), and the answer is the owner's identifier
+     * and nothing of the agreement — no product, status or date — so no surface could serve it
+     * as an account read even by mistake. Every read acting for a person stays
+     * {@link #findOwnedBy}, the owner in its statement; the one production caller of this one is
+     * {@code app}'s risk monitoring join, held there by {@code OwnershipIsScopedTest}'s
+     * {@code SYSTEM_JOIN} classification. Empty for an unknown agreement.
+     */
+    Optional<UUID> customerOf(T unitOfWork, CustomerAccountId accountId);
 
     /**
      * {@link #findOwnedBy}, read {@code FOR UPDATE} — the closer's serialization point

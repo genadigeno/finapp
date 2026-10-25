@@ -2,18 +2,25 @@ package com.finapp.app.risk;
 
 import com.finapp.risk.MonitoredLedger;
 import com.finapp.risk.MonitoredTransactionStore;
+import com.finapp.risk.MonitoringObserver;
 import com.finapp.risk.MonitoringWatermark;
 import com.finapp.risk.MonitoringWatermarkStore;
+import com.finapp.risk.RiskOperation;
+import com.finapp.risk.RuleKind;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 
@@ -32,9 +39,26 @@ import lombok.extern.slf4j.Slf4j;
  *       12 to 13 gate's N5: every claim failure metered from the first task); the permit is untouched and a later tick
  *       claims again. Alert on any increase.</li>
  * </ul>
+ *
+ * <p><strong>The rule leg's</strong> (`P13-TSK-020`, {@link MonitoringObserver}): {@code finapp.risk.monitoring.subject
+ * {outcome}} - every party a run met, {@code judged}, {@code failed} (its leg rolled back alone; alert on any increase)
+ * or {@code not_judged} (no {@code MONITORING} version {@code ACTIVE}); {@code finapp.risk.monitoring.unplaced} -
+ * customer accounts no party could be placed behind, unjudged; {@code finapp.risk.monitoring.latency} - one party's
+ * leg, its head already held (the claim locks every head first), beside {@code evaluation.latency} (M3's split trigger, measured by the storm);
+ * {@code finapp.risk.rule.hit{operation=MONITORING,rule}} - each fired kind once per profile recompute. A failed leg
+ * writes one line: the cause's class, never the party.
  */
 @Slf4j
-public final class RiskMonitoringMetrics {
+public final class RiskMonitoringMetrics implements MonitoringObserver {
+
+    /** Exported as {@code finapp_risk_monitoring_subject_total}. */
+    public static final String SUBJECT = "finapp.risk.monitoring.subject";
+
+    /** Exported as {@code finapp_risk_monitoring_unplaced_total}. */
+    public static final String UNPLACED = "finapp.risk.monitoring.unplaced";
+
+    /** Exported as {@code finapp_risk_monitoring_latency_seconds}. */
+    public static final String LATENCY = "finapp.risk.monitoring.latency";
 
     /** Exported as {@code finapp_risk_monitoring_lag}. */
     public static final String LAG = "finapp.risk.monitoring.lag";
@@ -65,6 +89,10 @@ public final class RiskMonitoringMetrics {
     private final Connections connections;
     private final Clock clock;
     private final Counter claimFailures;
+    private final Map<SubjectOutcome, Counter> subjects = new EnumMap<>(SubjectOutcome.class);
+    private final Counter unplaced;
+    private final Timer latency;
+    private final Map<RuleKind, Counter> hits = new EnumMap<>(RuleKind.class);
     private final AtomicReference<Cached> cached = new AtomicReference<>(new Cached(Instant.EPOCH, Optional.empty()));
 
     private record Figures(long lag, long unclassified) {}
@@ -97,11 +125,68 @@ public final class RiskMonitoringMetrics {
                         + " tick claims again. Alert on any increase")
                 .tag("kind", KIND)
                 .register(registry);
+        for (SubjectOutcome outcome : SubjectOutcome.values()) {
+            subjects.put(outcome, Counter.builder(SUBJECT)
+                    .description("Parties the monitoring rule leg met, by what became of each: judged, failed (rolled"
+                            + " back alone - alert on any increase) or not_judged (no MONITORING version ACTIVE)")
+                    .tag("outcome", outcome.name().toLowerCase(java.util.Locale.ROOT))
+                    .register(registry));
+        }
+        this.unplaced = Counter.builder(UNPLACED)
+                .description("Customer accounts the monitoring rule leg could place behind no party - unjudged")
+                .register(registry);
+        this.latency = Timer.builder(LATENCY)
+                .description("One party's monitoring rule leg, its profile head already held - beside"
+                        + " evaluation.latency (M3's split trigger)")
+                // Buckets in the T-eval budget's neighbourhood: p50/p99 by histogram_quantile, max the timer's own.
+                .serviceLevelObjectives(Duration.ofMillis(10), Duration.ofMillis(50), Duration.ofMillis(100),
+                        Duration.ofMillis(250), Duration.ofMillis(1_000), Duration.ofMillis(5_000))
+                .register(registry);
+        for (RuleKind kind : RuleKind.values()) {
+            if (kind.appliesTo(RiskOperation.MONITORING)) {
+                hits.put(kind, Counter.builder(RiskEvaluationMetrics.RULE_HIT)
+                        .description("Fired risk rules, by operation and rule kind")
+                        .tags("operation", RiskOperation.MONITORING.name(), "rule", kind.name())
+                        .register(registry));
+            }
+        }
     }
 
     /** One batch that failed and rolled back. */
     public void claimFailed() {
         claimFailures.increment();
+    }
+
+    @Override
+    public void subject(SubjectOutcome outcome) {
+        subjects.get(outcome).increment();
+    }
+
+    @Override
+    public void subjectFailed(Class<? extends Throwable> failed) {
+        // The cause's class name only - never its message (a storage failure's can quote a row), never the party.
+        String cause = failed.getSimpleName();
+        log.warn("Risk monitoring subject failed: {}", cause);
+    }
+
+    @Override
+    public void unplaced(int accounts) {
+        unplaced.increment(accounts);
+    }
+
+    @Override
+    public void judged(Duration leg) {
+        latency.record(leg);
+    }
+
+    @Override
+    public void fired(Set<RuleKind> fired) {
+        for (RuleKind kind : fired) {
+            Counter counter = hits.get(kind);
+            if (counter != null) {
+                counter.increment();
+            }
+        }
     }
 
     private Cached refreshed() {

@@ -705,6 +705,14 @@ register later learns its namespace; the remedy is the register knowing every na
 (`PostingKeyNamespaceRegisterTest`), the owner's open question a later reclassification fact. The reprocessing door
 refuses a point ahead of the watermark (`422 risk.ReprocessingNotBehind`) and restarts at the millisecond's floor.)*
 
+*(As built by `P13-TSK-020`, 2026-10-25 — "then, per subject" is **inside** the claim: after the batch's inserts and
+before the advance, every touched **party**'s head (its customer accounts placed through `MonitoredParties`) locked first,
+ascending (R8), then each party under a savepoint - each touched movement judged over its value date's windows, the profile's own evaluation, every alert born
+once and folded into the party's open `AML` case in one `raiseAll`, the profile's version; a party that throws is rolled
+back alone and counted `finapp.risk.monitoring.subject{outcome=failed}`. With no `ACTIVE` `MONITORING` version nothing is
+raised and no head enrolled. A reprocessing re-judges the same rows into the same keys - nothing new
+(`MonitoringRulesDatabaseTest#reprocessingRaisesNoSecondAlert`, owed).)*
+
 ### 4.12 The consumers' machines, as Phase 13 changes them
 
 **Transfers (`transfers.transfer`) — unchanged.** `TransferExecution` consults both seams after `lockBothInFixedOrder`

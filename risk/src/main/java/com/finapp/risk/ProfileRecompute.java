@@ -12,9 +12,13 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 
 /**
@@ -52,6 +56,11 @@ import java.util.UUID;
  * alerts</em> (`P13-TSK-014`, {@link PaymentAbuse#party}): a fired {@code REFUND_RATIO}, {@code CHARGEBACK_RATIO} or
  * {@code BNPL_MULTI_APPLICATION} over the party's signals raises its {@code FRAUD} alert in the same list - keyed by the
  * window's bucket - and its weight moves the rating, which credit's signal answers.
+ *
+ * <p><strong>The AML monitoring rules</strong> (`P13-TSK-020`; {@link MonitoringRules}): the profile's own evaluation now
+ * reads the journal's readings for the day the database's instant falls on, and its fired AML kinds raise their alerts in
+ * the same list; and {@link #monitor} is T-mon's rule leg per party - each movement a claim's batch touched judged over
+ * its value date's windows first, its alerts joining the same one {@code raiseAll}. A key raised by both is one alert.
  *
  * <p>So ten sweepers on one party write one version ({@code ProfileDatabaseTest#tenRecomputesOneVersion}): the claim
  * skips a held head; a waiting recompute re-reads the head after the winner's commit, evaluates the same committed
@@ -135,6 +144,7 @@ public final class ProfileRecompute {
     private final IdGenerator ids;
     private final Clock clock;
     private final Duration cadence;
+    private final MonitoringObserver observer;
 
     /**
      * @param alerts the retrospective alerts' raise (`P13-TSK-013`) - {@code alerts::raiseAll} in production
@@ -143,6 +153,16 @@ public final class ProfileRecompute {
      */
     public ProfileRecompute(RiskPolicies policies, CustomerRiskProfileStore store, ProfileInputs inputs,
             AlertRaiser alerts, OutboxWriter<Connection> outbox, IdGenerator ids, Clock clock, Duration cadence) {
+        this(policies, store, inputs, alerts, outbox, ids, clock, cadence, MonitoringObserver.NONE);
+    }
+
+    /**
+     * @param observer the rule hits' meter (`P13-TSK-020`: {@code finapp.risk.rule.hit{operation=MONITORING,rule}})
+     */
+    public ProfileRecompute(RiskPolicies policies, CustomerRiskProfileStore store, ProfileInputs inputs,
+            AlertRaiser alerts, OutboxWriter<Connection> outbox, IdGenerator ids, Clock clock, Duration cadence,
+            MonitoringObserver observer) {
+        this.observer = Objects.requireNonNull(observer, "observer");
         this.policies = Objects.requireNonNull(policies, "policies");
         this.store = Objects.requireNonNull(store, "store");
         this.inputs = Objects.requireNonNull(inputs, "inputs");
@@ -196,10 +216,91 @@ public final class ProfileRecompute {
             return new Outcome(party, Kind.NOT_JUDGED, head.currentVersion(), head.rating());
         }
         try {
-            return evaluated(unitOfWork, head, pinned.get(), correlation);
+            return evaluated(unitOfWork, head, pinned.get(), correlation, List.of(), EnumSet.noneOf(RuleKind.class));
         } catch (RuntimeException failure) {
             throw new RecomputeFailed(party, failure);
         }
+    }
+
+    /**
+     * The rule leg's first step for a party (`P13-TSK-020`; R8): its head locked {@code FOR UPDATE} - waiting on a
+     * holder, born unassessed if missing. {@link MonitoringRun} locks every touched party's head this way, in ascending
+     * order, <strong>before</strong> any party's alert or case row - so the claim never takes a head (R8) while it holds
+     * a case (R4), the lock order's rule.
+     */
+    public CustomerRiskProfile lockHead(Connection unitOfWork, UUID partyId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(partyId, "partyId");
+        return store.lockOrCreate(unitOfWork, partyId);
+    }
+
+    /**
+     * T-mon's rule leg for one party (`P13-TSK-020`; {@code PHASE_13_PLAN.md} sections 7.1 T-mon, 7.2 R8, 12.7;
+     * ADR-0111 decision 3; {@code DESIGN-020} D2, D5, D8, D13, D14) - on the claim's unit of work, under
+     * {@code pinned} (the run's R1), over {@code head} - the party's head the claim already holds ({@link #lockHead}):
+     * each of {@code touched} - the party's movements the claim's batch read - judged by {@link RiskEngineV1} over the
+     * windows of its value date ({@link MonitoredMovements#readDay}, read once per day) with its own amount sealed, each
+     * fired AML rule an alert ({@link MonitoringRules}); then the profile's own evaluation as of the database's instant
+     * (today's windows among its readings) and its rating's branch - and every alert of the party, the movements' and the
+     * profile's, raised in ONE {@link AlertRaiser#raiseAll} (`-015`'s contract: births in key order, then the folds into
+     * the party's open case, R4 then R5). A {@code PROHIBITED} party is still judged and alerted - monitoring never goes
+     * blind on a prohibited customer - and its rating stands.
+     *
+     * @throws RecomputeFailed for anything that throws - nothing of the party written; the run rolls its savepoint back
+     */
+    public Outcome monitor(Connection unitOfWork, CustomerRiskProfile head, List<MonitoredMovement> touched,
+            RiskPolicyVersion pinned, CorrelationId correlation) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(head, "head");
+        Objects.requireNonNull(touched, "touched");
+        Objects.requireNonNull(pinned, "pinned");
+        Objects.requireNonNull(correlation, "correlation");
+        if (pinned.operation() != RiskOperation.MONITORING) {
+            throw new IllegalArgumentException("the rule leg judges under the MONITORING version");
+        }
+        UUID partyId = head.partyId();
+        try {
+            Set<RuleKind> fired = EnumSet.noneOf(RuleKind.class);
+            List<NewAlert> movementAlerts = movementAlerts(unitOfWork, partyId, touched, pinned, correlation, fired);
+            if (head.prohibited()) {
+                if (!movementAlerts.isEmpty()) {
+                    alerts.raiseAll(unitOfWork, movementAlerts);
+                }
+                observer.fired(fired);
+                store.restamp(unitOfWork, partyId, cadence, false);
+                return new Outcome(partyId, Kind.PROHIBITED_STANDS, head.currentVersion(), head.rating());
+            }
+            return evaluated(unitOfWork, head, pinned, correlation, movementAlerts, fired);
+        } catch (RuntimeException failure) {
+            throw new RecomputeFailed(partyId, failure);
+        }
+    }
+
+    /** Each touched movement judged over its day's windows; the AML alerts its fired rules raise (unraised yet). */
+    private List<NewAlert> movementAlerts(Connection unitOfWork, UUID party, List<MonitoredMovement> touched,
+            RiskPolicyVersion pinned, CorrelationId correlation, Set<RuleKind> fired) {
+        if (touched.isEmpty() || !MonitoredMovements.judgesTheJournal(pinned.policy())) {
+            return List.of();
+        }
+        MonitoredMovements journal = inputs.journal();
+        MonitoredParties.Accounts accounts = journal.accountsOf(unitOfWork, party);
+        Map<java.time.LocalDate, MonitoredMovements.Read> days = new TreeMap<>();
+        List<NewAlert> raised = new ArrayList<>();
+        List<MonitoredMovement> ordered = new ArrayList<>(touched);
+        ordered.sort(MonitoredMovement.ORDER);
+        for (MonitoredMovement movement : ordered) {
+            MonitoredMovements.Read day = days.get(movement.valueDate());
+            if (day == null) {
+                day = journal.readDay(unitOfWork, party, accounts, pinned.policy(), movement.valueDate());
+                days.put(movement.valueDate(), day);
+            }
+            Verdict verdict = RiskEngineV1.evaluate(pinned.policy(),
+                    day.inputs(party, pinned.policy(), Optional.of(movement)));
+            verdict.fired().forEach(hit -> fired.add(hit.kind()));
+            raised.addAll(MonitoringRules.alerts(verdict, pinned.policy(), day, Optional.of(movement), party,
+                    pinned.id(), correlation));
+        }
+        return List.copyOf(raised);
     }
 
     /**
@@ -246,11 +347,13 @@ public final class ProfileRecompute {
     }
 
     private Outcome evaluated(Connection unitOfWork, CustomerRiskProfile head, RiskPolicyVersion version,
-            CorrelationId correlation) {
+            CorrelationId correlation, List<NewAlert> movementAlerts, Set<RuleKind> fired) {
         UUID party = head.partyId();
         ProfileInputs.Read read = inputs.read(unitOfWork, party, version.policy());
         EvaluationInputs sealed = read.inputs();
         Verdict verdict = RiskEngineV1.evaluate(version.policy(), sealed);
+        verdict.fired().forEach(hit -> fired.add(hit.kind()));
+        observer.fired(fired);
         RiskRating rating = verdict.rating()
                 .orElseThrow(() -> new IllegalStateException("the monitoring verdict is a rating"));
         if (rating.onlyByDisposition()) {
@@ -267,6 +370,11 @@ public final class ProfileRecompute {
                 version.id(), Optional.empty(), correlation, Optional.empty()));
         retrospective.addAll(PaymentAbuse.party(verdict, version.policy(), read.abuse(), party, version.id(),
                 correlation));
+        // P13-TSK-020: the AML alerts - today's windows over the profile's own readings, and the rule leg's touched
+        // movements' - in the same list: one raiseAll for the transaction. A key raised by both is one alert.
+        retrospective.addAll(MonitoringRules.alerts(verdict, version.policy(), read.journal(), Optional.empty(), party,
+                version.id(), correlation));
+        retrospective.addAll(movementAlerts);
         if (!retrospective.isEmpty()) {
             alerts.raiseAll(unitOfWork, List.copyOf(retrospective));
         }

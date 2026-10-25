@@ -29,6 +29,13 @@ import org.springframework.context.SmartLifecycle;
  * Completion events only pull the permit forward (`-005`'s hint). Off in test contexts
  * ({@code finapp.risk.monitoring.sweeper.enabled}); the suites drive {@link #sweepOnce()}.
  *
+ * <p><strong>The rule leg</strong> (`P13-TSK-020`; {@code MonitoringRun}; ADR-0111 decision 3): inside each batch's own
+ * transaction, after its rows are inserted and before the watermark advances - the {@code MONITORING} pin (R1), then
+ * every touched party's head locked, ascending (R8), then each party under a savepoint of its own, its movements judged,
+ * its AML alerts born once and folded into its open case, its profile recomputed. A party whose leg throws is rolled back alone
+ * and counted ({@code finapp.risk.monitoring.subject{outcome=failed}}); the batch goes on. So the rows, what was judged
+ * of them and the advance commit together, and a crash leaves the committed watermark for the next claim to redo.
+ *
  * <p><strong>The profile leg</strong> (`P13-TSK-007`; {@code INV-RSK-10}): after the intake, each tick claims customer
  * risk profiles whose permit has come - one head per transaction, {@code FOR UPDATE SKIP LOCKED} after the
  * {@code MONITORING} pin (R1, then R8), recomputed by {@link ProfileRecompute}, at most {@code profileClaimsPerTick} -
@@ -104,6 +111,7 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
     }
 
     private final MonitoringIntake intake;
+    private final MonitoringIntake.BatchLeg rules;
     private final ProfileLeg profiles;
     private final CaseLeg cases;
     private final int profileClaimsPerTick;
@@ -142,6 +150,18 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
     public RiskMonitoringSchedule(MonitoringIntake intake, ProfileLeg profiles, int profileClaimsPerTick,
             CaseLeg cases, RiskTransactions transactions, RiskMonitoringMetrics metrics,
             RiskFlowScope flow, Duration pollInterval, int batchesPerTick) {
+        this(intake, MonitoringIntake.BatchLeg.NONE, profiles, profileClaimsPerTick, cases, transactions, metrics, flow,
+                pollInterval, batchesPerTick);
+    }
+
+    /**
+     * @param rules the rule leg - {@code MonitoringRun} in production (`P13-TSK-020`): run on each batch's rows inside the
+     *     claim's own transaction, after the inserts and before the advance
+     */
+    public RiskMonitoringSchedule(MonitoringIntake intake, MonitoringIntake.BatchLeg rules, ProfileLeg profiles,
+            int profileClaimsPerTick, CaseLeg cases, RiskTransactions transactions, RiskMonitoringMetrics metrics,
+            RiskFlowScope flow, Duration pollInterval, int batchesPerTick) {
+        this.rules = Objects.requireNonNull(rules, "rules");
         // The configuration judged first - a misconfigured instance refuses to start whatever it was handed.
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval");
         if (pollInterval.isNegative() || pollInterval.isZero()) {
@@ -179,7 +199,7 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
                 MonitoringIntake.Batch batch;
                 try {
                     batch = flow.sweep(RiskSpans.MONITORING_INTAKE, () -> transactions.inTransaction(
-                            uow -> intake.sweepBatch(uow, MonitoringWatermark.LEDGER_JOURNAL)));
+                            uow -> intake.sweepBatch(uow, MonitoringWatermark.LEDGER_JOURNAL, rules)));
                 } catch (RuntimeException failure) {
                     // The batch rolled back whole; the permit is untouched and a later tick claims again. The class
                     // name only - never a position, an entry or a subject.
