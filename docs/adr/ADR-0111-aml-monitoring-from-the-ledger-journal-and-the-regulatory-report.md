@@ -77,12 +77,33 @@ answer. Rests on `PHASE_13_PLAN.md` §1.1, §2.1, §2.2 (C4), §3.1, §4, §5, �
    grounds for suspicion (the case's reason codes and the approved narrative, `RESTRICTED-PII`, readable only by
    `AML_REPORT_*` holders), the attachments' references and the filing's acknowledgement. Approval and filing need a
    `MULTI_FACTOR` session; the proposer never approves (`INV-RSK-07`); self-dealing fails closed.
+   *(As built by `P13-TSK-021`, 2026-10-25 - **`risk V016`**, `V011` having gone to `-014`; `DESIGN-021`: drafted from an
+   **`AML`** case of a party alone; the transactions, accounts and grounds **drawn from the case** - the monitored
+   transactions born from the journal entries its alerts and evidence name, touching the party's accounts; the party's
+   accounts; the alerts' rule codes - the drafter writing the narrative, the jurisdiction and the attachments' references;
+   the report's id its `REPORT_DRAFTED` investigator action's, written on the disposed case in the same transaction (an
+   investigator action, never a risk action: no owning domain executes a report); **one live or accepted report per
+   case** - `UNIQUE (case_id) WHERE status <> 'REJECTED'`, the decision's "while a draft is open" widened, since a draft
+   beside a filed or acknowledged report is a second filing; the content frozen **from birth** for every writer and in no
+   `UPDATE` grant; a read door `GET …/reports/{reportId}` (`AML_REPORT_APPROVE`, audited `risk.RegulatoryReportRead`)
+   added so the second person reads what they approve; persons `CUSTOMER` or `EMPLOYEE`.)*
 
 6. **Filing goes through `RegulatoryFilingProvider`, a port whose Phase 13 implementation is a simulated FIU
    endpoint** (the `ScreeningAdapter` precedent). T-rep commits `FILED` with the provider's reference pending
    **before** the call; the call holds no connection; the acknowledgement or rejection applies by a conditional edge
    in a second transaction; an `UNKNOWN` answer is reconciled by inquiry and **never re-filed** (the payout
    precedent). `RegulatoryReportFiled` carries the report id and the jurisdiction — never the subject.
+   *(As built by `P13-TSK-021`, 2026-10-25: the port refined - `declared(jurisdiction)` (adapter data, never a call),
+   `file(request)` and `inquire(filingReference)`, outcomes `ACKNOWLEDGED | REJECTED | UNKNOWN | NOT_RECEIVED`; **the filing
+   reference is the report's id**, known before the call and deduplicated on by the provider, so a lost answer is inquired
+   by it. The drive is T-act's three steps - the claim `FOR UPDATE SKIP LOCKED` on the `FILED` row's due permit (one
+   attempt, a lease ahead) committed, the call on no connection as the platform, the conditional record - and its **first
+   attempt submits while every later one inquires**, submitting under the same reference only when the authority answers
+   `NOT_RECEIVED` (nothing arrived: the filing is still owed, never a second); `UNKNOWN` keeps `FILED` with the permit an
+   inquiry interval ahead. The filing door drives after its commit; the re-drive is the **second leg of
+   `RiskActionSchedule`** (no new scheduler). The simulated FIU (`app`'s `SimulatedFilingProvider`) is stateless and
+   deterministic by `finapp.risk.filing.simulation`, its references derived from the filing reference so every instance
+   agrees; the EU reference's additions - the report type, the legal basis "to be verified" - are its rendering's.)*
 
 7. **What was researched for the EU reference, to be verified when a jurisdiction is chosen** (C4; plan §12.9).
    Regulation (EU) 2024/1624 (the AMLR) Article 69 is understood to place the duty to report suspicions to the

@@ -731,7 +731,13 @@ class CredentialReachesNoEmittedSinkTest {
                         "RiskCaseDecisionRequest",
                         "RiskActionProposalRequest",
                         "RiskSuppressionProposalRequest",
-                        "RiskSuppressionDecisionRequest");
+                        "RiskSuppressionDecisionRequest",
+                        // P13-TSK-021: the AML desk's report bodies. No secret: a jurisdiction code, attachments'
+                        // identifiers and a REASON - and the draft's NARRATIVE, a person's RESTRICTED-PII text of the
+                        // grounds, screened for card-number and account shapes at the domain (ReportContent.narrated)
+                        // and by risk V016's CHECK; the approval's and the filing's body a REASON alone.
+                        "RiskReportDraftRequest",
+                        "RiskReportDecisionRequest");
     }
 
     @Test

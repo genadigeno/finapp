@@ -63,6 +63,8 @@ public final class RiskSpans {
     public static final String ACTION_DECIDE = "risk.action.decide";
     /** T-rep - a regulatory report drafted, approved or filed. */
     public static final String REPORT = "risk.report";
+    /** T-rep's drive - a FILED report submitted or inquired through the filing port, on no connection (`P13-TSK-021`). */
+    public static final String REPORT_INQUIRE = "risk.report.inquire";
     /** T-list - a screening list version recorded or activated. */
     public static final String LIST = "risk.list";
     /** The explanation door - an assessment read or replayed. */

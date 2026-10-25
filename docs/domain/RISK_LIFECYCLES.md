@@ -619,6 +619,40 @@ The narrative is readable only by `AML_REPORT_*` holders. **Invalid:** anything 
 the drafter (`CHECK`); a filing without `AML_REPORT_FILE`; a second filing of one report; the subject in any event or
 log; a customer or merchant surface that can tell a report exists.
 
+*(As built by `P13-TSK-021`, 2026-10-25 - `risk V016` (the heading's `V011` went to `-014`), `RegulatoryReports`,
+`RegulatoryReport`, `ReportContent`, `FilingOutcome`, `FilingInquiry`, `JdbcRegulatoryReportStore`; `app`'s
+`SimulatedFilingProvider`, `RegulatoryFilingDriver`, `RiskReportDesk` / `RiskReportController`, the report leg of
+`RiskActionSchedule`; `DESIGN-021`. **Drafted only from an `AML` case of a party** disposed `CONFIRMED_SUSPICIOUS` (D12 -
+an `ATO` case's subject is the victim; a fraud suspicion to report is opened as an AML case), under the case row's lock
+(R4, `Cases.lockForAct` - the case's own protocol, self-dealing fail closed), its content **drawn from the case** (D5):
+the grounds the attached alerts' rule codes, the transactions the monitored transactions born from the journal entries
+the case's alerts and evidence acts name and touching one of the party's accounts (the first 100; the rest counted
+`unreferenced` in the audit summary), the accounts the party's (`MonitoredParties`), the jurisdiction's format and the
+reporting entity's reference the adapter's declaration; the drafter writes the narrative, names the jurisdiction and the
+attachments' references. **The case's act** (D2): an investigator action `REPORT_DRAFTED` - never a `-017` risk action
+(no owning domain executes a report; `-017`'s D11 stands) - written in the draft's transaction, its ordinal past the
+case's last revision (a disposed case never steps: no revision, no case history row), its id the report's;
+`risk_case_action_report_drafted_coherent` and `_has_its_report` bind the two both ways, and the analyst's case file
+withholds it (`CaseWorklist.read`). **One live or accepted report per case** (D3): `UNIQUE (case_id) WHERE status <>
+'REJECTED'` - the heading's "open draft" widened, since a draft beside a `FILED` or `ACKNOWLEDGED` report would be a second
+filing; read "a live draft exists" as "the case has a report that is not `REJECTED`". **Immutable by both shapes** (D4):
+no content column in the application's `UPDATE` grant, and the trigger freezing the content and the drafter from birth
+for every writer - so a draft is not edited either (no door edits one; a draft its second person will not approve has no
+exit - owner item). The approval and the filing take the report row (R4′) alone, never the case. **The drive** (D6, D7) -
+T-act's three steps: `FILED` commits the permit due at once with no attempt; the claim (`FOR UPDATE SKIP LOCKED` on a due
+permit, one attempt, the permit a lease ahead) commits; the call on no connection as the platform - the first attempt
+files under the **filing reference, the report's id** (the provider deduplicates on it), every later one inquires by it
+and files under the same reference only on `NOT_RECEIVED` (nothing arrived - the filing still owed, never a second);
+the record conditional on `FILED` and the claimed attempt: `ACKNOWLEDGED` (the authority's reference, `risk.ReportAcknowledged`
+as `SYSTEM`) `| REJECTED` (its code, `risk.ReportRejected`) or `FILED` kept with the permit an inquiry interval ahead
+(`finapp.risk.filing.inquiry-interval`, 15 min) and the authority's reference recorded once. The filing door drives after
+its commit (`202`); the report leg of `RiskActionSchedule` re-drives. **A read door added** (D9): `GET
+…/reports/{reportId}` under `AML_REPORT_APPROVE`, audited `risk.RegulatoryReportRead` before the answer - the second
+person reads what they approve. Persons `CUSTOMER` or `EMPLOYEE` throughout (`regulatory_report_by_persons`); the history
+`regulatory_report_event`, one row per status reached (`PRIMARY KEY (report_id, status)`). Counted by
+`RegulatoryReportDatabaseTest` (written, owed - C5); proven hermetically by `RegulatoryReportTest`, `ReportContentTest`,
+`RegulatoryReportMigrationTest`, `RiskReportDeskTest`, `SimulatedFilingProviderTest`, `RiskActionScheduleTest`.)*
+
 ### 4.9 Customer risk profile (`risk.customer_risk_profile`, `customer_risk_profile_version`) — `P13-TSK-007` (`risk V006`) — versioned ratings, no machine
 
 The head row per party (`customer_risk_profile`, locked `FOR UPDATE` at (R8), carrying the current version and
@@ -839,7 +873,7 @@ rows changes and every earlier decision replays as it was sealed.
 | Case | `risk_case`, `risk_case_action`, `risk_case_event` (`-016`, `V009`) | `risk_case_event`; actions append-only | partial unique one open per (subject, kind); `revision` monotonic; four-eyes `CHECK` on `CONFIRMED_*`; no action on `DISPOSED` |
 | Risk action | `risk_action` (`-017`, `V010` - *built as `V013`, the next free*) | the row's stamps | `UNIQUE (case_id, kind, target_ref)` over live; four-eyes `CHECK`; the `next_attempt_at` permit *(built: `risk_action_one_live`, `risk_action_four_eyes` for a case's action, an override's action one per override and its id the override's, the kind's target and availability by `CHECK` and trigger, `DELETE`/`TRUNCATE` refused for every writer by `risk_action_permits_only_machine_edges`; a disposition refused beside a `PROPOSED` action by `risk_case_disposes_no_standing_action`)* |
 | Monitored transaction · watermark | `monitored_transaction`, `monitoring_watermark` (`-019`, `V004`) | — | `UNIQUE (journal_entry_id)`; one watermark per source; `next_sweep_at` |
-| Regulatory report | `regulatory_report`, `_event` (`-021`, `V011`) | `regulatory_report_event` | `UNIQUE (case_id)` over an open draft; four-eyes `CHECK`; `FILED` columns frozen (trigger) |
+| Regulatory report | `regulatory_report`, `_event` (`-021`, `V011` - *built as `V016`, the next free*) | `regulatory_report_event` | `UNIQUE (case_id)` over an open draft; four-eyes `CHECK`; `FILED` columns frozen (trigger) *(built: `regulatory_report_one_live_per_case` over every status but `REJECTED`; `regulatory_report_four_eyes` and the persons `CHECK`; the content frozen from birth by the trigger and in no `UPDATE` grant; one history row per status, `PRIMARY KEY (report_id, status)`, deferred; the `REPORT_DRAFTED` act bound both ways)* |
 | List version · permit | `screening_list_version`, `rescreening_permit` (`-022`, `V012`) | — | `UNIQUE (list, version)`; one permit per (list version, party) |
 | Withdrawal (payments') | `withdrawal` (payments `V033`, `-009`) | payments' | `HELD` in the status `CHECK` and the edge trigger; `RISK_REFUSED` in the reason list, with the `HOLD_EXPIRED` detail; `held_until` stamped at the hold *(built: the judged births by trigger, `held_at`/`held_until` frozen and stamped by the database, `held_resolution_key`, the expiry's partial index `withdrawal_hold_expiry`)* |
 | Payment intent (payments') | the refused-by-risk decision row (payments `V034`, `-010`) | payments' | `RISK_REFUSED` in `PaymentFailureReason`'s list; the refusal terminal for the intent — no edge back to `REQUIRES_CONFIRMATION` |
@@ -951,7 +985,8 @@ them.*
 - **Migration numbers** — **settled** (plan §8, §17): assigned in the waves' landing order, Flyway `outOfOrder` off —
   `-001` `V001`, `-002` `V002`, `-005` `V003`, `-019` `V004`, `-006` `V005`, `-007` `V006`, `-004` `V007` (the
   assessment tables and `decision_override`), `-015` `V008`, `-016` `V009`, `-017` `V010`, `-021` `V011`, `-022` `V012`
-  (the headings of §4 and the table of §5).
+  (the headings of §4 and the table of §5). *(As landed: `-021`'s is `V016` - the next free number at its build, after
+  `-014` `V011`, `-016` `V012`, `-017` `V013`, `-018` `V014`, `-020` `V015`.)*
 - **One `PROPOSED` per operation** (`-002`) — **settled by the build** (`P13-TSK-002`, 2026-10-23): several `PROPOSED`
   per operation, numbered without a gap under the advisory lock (the backlog entry's "ten proposals leave ten
   versions"); activation monotonic in version number, a proposal below the version in force superseded; the loser of a
@@ -967,6 +1002,10 @@ them.*
   `REFUSE` of a refusal; `409 risk.OverrideStale` - new - for a decided override. The action's half settled by
   `P13-TSK-017`, 2026-10-25: `409 risk.ActionNotProposable` for a live twin of (case, kind, target) -
   `risk_action_one_live` - as for a kind or target the case does not admit; a decided action `409 risk.CaseActNotAdmitted`.)*
+  *(The report's half settled by `P13-TSK-021`, 2026-10-25: `409 risk.ReportNotFileable` for a second report of a case
+  while one is `DRAFT`, `APPROVED`, `FILED` or `ACKNOWLEDGED` - `regulatory_report_one_live_per_case`, wider than "a
+  second open draft" so that no case is filed twice - and for every other state conflict of a report (a case not so
+  disposed, a report not awaiting the act); a draft not taken as asked `422 risk.ReportRequestInvalid` - new.)*
 - **The rescreening permit's states and the superseded list** (`-022`) — still this document's reading: the permit
   `PENDING → REQUESTED → DONE` keyed (list version, party); the predecessor list version keeps `ACTIVE` until `-022`
   decides whether a `SUPERSEDED` state is wanted.

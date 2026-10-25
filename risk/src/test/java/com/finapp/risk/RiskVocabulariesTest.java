@@ -249,7 +249,8 @@ class RiskVocabulariesTest {
     @DisplayName("the error codes and audit actions declared so far - the role split's three and two (-001), the policy"
             + " doors' four and four (-002), the reprocessing door's one and one (-019), the profile read's act (-007), the"
             + " override doors' two and four (-012), the alert machine's two and three (-015), the case's five and eight"
-            + " (-016), the action machine's none and four (-017), the queues' one and two (-018) - namespaced risk., the"
+            + " (-016), the action machine's none and four (-017), the queues' one and two (-018), the regulatory report's"
+            + " two and six (-021) - namespaced risk., the"
             + " refusals 403, the policy codes"
             + " the register's statuses")
     void theCodesAndActions() {
@@ -267,7 +268,9 @@ class RiskVocabulariesTest {
                         "risk.CaseRevisionStale", "risk.CaseNotOpen", "risk.CaseActNotAdmitted", "risk.CaseNotTaken",
                         "risk.CaseRequestInvalid",
                         // P13-TSK-018: the queues' refusal of a read they cannot take as asked (DESIGN-018 D12).
-                        "risk.QueueRequestInvalid");
+                        "risk.QueueRequestInvalid",
+                        // P13-TSK-021: the report's state conflicts and the draft it cannot take (DESIGN-021 D10).
+                        "risk.ReportNotFileable", "risk.ReportRequestInvalid");
         assertThat(RiskErrorCode.NOT_FOUND.status()).isEqualTo(404);
         assertThat(RiskErrorCode.SELF_APPROVAL_REFUSED.status()).isEqualTo(403);
         assertThat(RiskErrorCode.SELF_DEALING_REFUSED.status()).isEqualTo(403);
@@ -286,6 +289,8 @@ class RiskVocabulariesTest {
         assertThat(RiskErrorCode.CASE_NOT_TAKEN.status()).isEqualTo(422);
         assertThat(RiskErrorCode.CASE_REQUEST_INVALID.status()).isEqualTo(422);
         assertThat(RiskErrorCode.QUEUE_REQUEST_INVALID.status()).isEqualTo(422);
+        assertThat(RiskErrorCode.REPORT_NOT_FILEABLE.status()).as("the register's planned status").isEqualTo(409);
+        assertThat(RiskErrorCode.REPORT_REQUEST_INVALID.status()).isEqualTo(422);
         assertThat(Arrays.stream(RiskAuditAction.values()).map(RiskAuditAction::code))
                 .containsExactlyInAnyOrder("risk.PolicyProposed", "risk.PolicyActivated", "risk.PolicyRejected",
                         "risk.PolicyRetired", "risk.SelfApprovalRefused", "risk.SelfDealingRefused",
@@ -303,7 +308,10 @@ class RiskVocabulariesTest {
                         // P13-TSK-017: the action machine's three acts and the platform's dispatch.
                         "risk.ActionProposed", "risk.ActionApproved", "risk.ActionRejected", "risk.ActionDispatched",
                         // P13-TSK-018: the queues' and the case file's audited reads.
-                        "risk.AlertRead", "risk.CaseRead");
+                        "risk.AlertRead", "risk.CaseRead",
+                        // P13-TSK-021: the report's three acts, the authority's two answers, the AML desk's read.
+                        "risk.ReportDrafted", "risk.ReportApproved", "risk.ReportFiled", "risk.ReportAcknowledged",
+                        "risk.ReportRejected", "risk.RegulatoryReportRead");
         assertThat(RiskAuditAction.ACTION_PROPOSED.requiresReason()).isTrue();
         assertThat(RiskAuditAction.ACTION_APPROVED.requiresReason()).isTrue();
         assertThat(RiskAuditAction.ACTION_REJECTED.requiresReason()).isTrue();
@@ -315,7 +323,9 @@ class RiskVocabulariesTest {
         for (RiskAuditAction action : List.of(RiskAuditAction.SELF_APPROVAL_REFUSED, RiskAuditAction.SELF_DEALING_REFUSED,
                 RiskAuditAction.POLICY_RETIRED, RiskAuditAction.PROFILE_READ, RiskAuditAction.ASSESSMENT_READ,
                 RiskAuditAction.ACTION_CONCLUDED, RiskAuditAction.CASE_OPENED, RiskAuditAction.CASE_TAKEN,
-                RiskAuditAction.CASE_DISPOSED, RiskAuditAction.ALERT_READ, RiskAuditAction.CASE_READ)) {
+                RiskAuditAction.CASE_DISPOSED, RiskAuditAction.ALERT_READ, RiskAuditAction.CASE_READ,
+                RiskAuditAction.REPORT_ACKNOWLEDGED, RiskAuditAction.REPORT_REJECTED,
+                RiskAuditAction.REGULATORY_REPORT_READ)) {
             assertThat(action.requiresReason()).as("%s is the platform's act, reasoned by the act it follows", action)
                     .isFalse();
         }
@@ -325,7 +335,8 @@ class RiskVocabulariesTest {
                 RiskAuditAction.ALERT_SUPPRESSION_PROPOSED, RiskAuditAction.ALERT_SUPPRESSED,
                 RiskAuditAction.ALERT_SUPPRESSION_REJECTED, RiskAuditAction.CASE_NOTED, RiskAuditAction.CASE_ESCALATED,
                 RiskAuditAction.DISPOSITION_PROPOSED, RiskAuditAction.DISPOSITION_APPROVED,
-                RiskAuditAction.DISPOSITION_REJECTED)) {
+                RiskAuditAction.DISPOSITION_REJECTED, RiskAuditAction.REPORT_DRAFTED, RiskAuditAction.REPORT_APPROVED,
+                RiskAuditAction.REPORT_FILED)) {
             assertThat(action.requiresReason()).as("%s is a person's discretionary act", action).isTrue();
         }
     }
@@ -361,7 +372,7 @@ class RiskVocabulariesTest {
                 RiskSpans.MONITORING_INTAKE, RiskSpans.CASE_DISPOSE, RiskSpans.ACTION_DISPATCH, RiskSpans.REPORT,
                 RiskSpans.VELOCITY_PROOF, RiskSpans.PROFILE_RECOMPUTE, RiskSpans.PROFILE_READ, RiskSpans.ALERT_RAISE,
                 RiskSpans.ALERT_SUPPRESS, RiskSpans.ACTION_PROPOSE, RiskSpans.ACTION_DECIDE, RiskSpans.QUEUE,
-                RiskSpans.CASE_READ)) {
+                RiskSpans.CASE_READ, RiskSpans.REPORT_INQUIRE)) {
             assertThat(span).startsWith("risk.").matches("[a-z]+(\\.[a-z]+)+");
         }
         assertThat(EnumSet.allOf(RiskOperation.class)).hasSize(7);

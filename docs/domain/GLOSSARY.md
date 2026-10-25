@@ -2289,7 +2289,9 @@ instrument shapes and classified `CONFIDENTIAL`. *(As built, `P13-TSK-016`: `ris
 writer, its `ordinal` the case revision it produced; the kinds this task writes - `NOTE`, `EVIDENCE_ATTACHED`, `TAKEN`,
 `ESCALATED`, `DISPOSITION_PROPOSED` (whose id is the disposition's), `DISPOSITION_APPROVED`, `DISPOSITION_REJECTED` - and
 `ACTION_*` (`-017`) and `REPORT_DRAFTED` (`-021`) admitted; every one but the take carries its person's text, which is
-classified `RESTRICTED-PII` (`DESIGN-016` D13, the override's and suppression's level).)*
+classified `RESTRICTED-PII` (`DESIGN-016` D13, the override's and suppression's level). `REPORT_DRAFTED` as built by
+`P13-TSK-021`: written on the disposed AML case beside the report it names (its id the report's), untexted, its ordinal
+past the case's last revision - a disposed case never steps - and withheld from the analyst's case file.)*
 **Owned by:** `risk`
 
 ### Disposition
@@ -2358,7 +2360,12 @@ permit on the `FILED` row, never re-filed.
 jurisdiction names the report, and every field a real jurisdiction adds is the adapter's data (owner decision C4,
 ADR-0111). Nor an audit record, nor a report in the operator-reports sense (`GET /v1/operator/reports/…`). Its event
 carries the report id and jurisdiction and never the subject; its existence is never derivable from a customer or
-merchant surface (tipping-off).
+merchant surface (tipping-off). *(As built, `P13-TSK-021`: `risk V016`'s `regulatory_report`; drafted from an `AML`
+case of a party alone, its transactions, accounts and grounds drawn from the case; its id its `REPORT_DRAFTED`
+investigator action's and its filing reference; one live or accepted report per case (only a `REJECTED` filing frees the
+case); the content frozen from birth; filed through `app`'s simulated FIU, the first attempt submitting and every later
+one inquiring by the filing reference; never in the analyst's case file - the narrative is served by the AML desk's
+doors alone.)*
 **Owned by:** `risk`
 
 ### Fraud Detection

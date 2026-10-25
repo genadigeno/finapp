@@ -106,7 +106,7 @@ class RiskMigrationTest {
             + " signal (P13-TSK-005), V004 the monitored transactions and the watermark (P13-TSK-019), V005 the velocity"
             + " windows (P13-TSK-006), V006 the customer risk profile (P13-TSK-007), V007 the sealed assessment and the"
             + " override's table (P13-TSK-004), V010 the born-once alert (P13-TSK-015), V012 the case (P13-TSK-016),"
-            + " V013 the downstream action (P13-TSK-017)")
+            + " V013 the downstream action (P13-TSK-017), V016 the regulatory report (P13-TSK-021)")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. Each later task rewrites
@@ -122,6 +122,9 @@ class RiskMigrationTest {
                 // V004 (P13-TSK-019): the born-once record and the intake's position per source.
                 "monitored_transaction",
                 "monitoring_watermark",
+                // V016 (P13-TSK-021): the regulatory report and its history.
+                "regulatory_report",
+                "regulatory_report_event",
                 // V013 (P13-TSK-017): the downstream action.
                 "risk_action",
                 // V010 (P13-TSK-015): the born-once alert.
@@ -172,6 +175,10 @@ class RiskMigrationTest {
                 "monitored_transaction_is_append_only",
                 "monitored_transaction_is_stamped_by_the_database",
                 "monitoring_watermark_derives_its_sequence",
+                // V016 (P13-TSK-021): the report's history append-only, every status its history row, the machine.
+                "regulatory_report_event_is_append_only",
+                "regulatory_report_has_its_history",
+                "regulatory_report_permits_only_machine_edges",
                 // V013 (P13-TSK-017): the action's machine.
                 "risk_action_permits_only_machine_edges",
                 // V010 (P13-TSK-015): the alert's machine - born OPEN, facts frozen, four edges, never deleted.
@@ -182,6 +189,9 @@ class RiskMigrationTest {
                 "risk_assessment_is_sealed",
                 // V012 (P13-TSK-016): the actions and the history append-only, every step its history row, the machine.
                 "risk_case_action_is_append_only",
+                // V016 (P13-TSK-021): the case's REPORT_DRAFTED act only on a confirmed-suspicious AML case, with its report.
+                "risk_case_action_report_drafted_coherent",
+                "risk_case_action_report_drafted_has_its_report",
                 // V013 (P13-TSK-017): a disposition waits for a standing action proposal.
                 "risk_case_disposes_no_standing_action",
                 "risk_case_event_is_append_only",
@@ -395,6 +405,35 @@ class RiskMigrationTest {
                 + " date_bin(interval '1 hour', clock_timestamp(), TIMESTAMPTZ '1970-01-05 00:00:00+00'), 1, 100, 'EUR', 2)",
                 party)).as("SESSION is a dimension").doesNotThrowAnyException();
         application.rollback();
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
+                + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
+    }
+
+    // ------------------------------------------------------------------ V016 (P13-TSK-021)
+
+    @Test
+    @DisplayName("V016: the report's grants - SELECT, INSERT and an UPDATE of the machine's columns alone (never a content"
+            + " column, a person's stamp or the conclusion); the history SELECT and INSERT alone; no DELETE; the one-live"
+            + " partial unique over every status but REJECTED, four eyes and the persons CHECK live; every constraint"
+            + " name unique")
+    void theReportGrants() throws SQLException {
+        assertThat(grantsOn("regulatory_report")).containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
+        assertThat(column("SELECT column_name FROM information_schema.column_privileges"
+                + " WHERE table_schema = 'risk' AND table_name = 'regulatory_report' AND grantee = 'finapp_app'"
+                + " AND privilege_type = 'UPDATE' ORDER BY column_name"))
+                .containsExactly("approved_by", "approved_by_type", "attempts", "filed_by", "filed_by_type",
+                        "next_inquiry_at", "provider_reference", "rejection_code", "status");
+        assertThat(grantsOn("regulatory_report_event")).containsExactlyInAnyOrder("finapp_app:INSERT",
+                "finapp_app:SELECT");
+        String statements = statementsOf(migration("V016__the_regulatory_report.sql"));
+        assertThat(statements).doesNotContainPattern("GRANT[^;]*(DELETE|TRUNCATE)").doesNotContain("GRANT ALL");
+        assertThat(scalar("SELECT indexdef FROM pg_indexes WHERE indexname = 'regulatory_report_one_live_per_case'"))
+                .contains("UNIQUE INDEX").contains("(case_id)").contains("<> 'REJECTED'");
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
+                + " AND conname IN ('regulatory_report_four_eyes', 'regulatory_report_by_persons',"
+                + " 'regulatory_report_drafted_on_its_case', 'regulatory_report_event_pk') ORDER BY conname"))
+                .containsExactly("regulatory_report_by_persons", "regulatory_report_drafted_on_its_case",
+                        "regulatory_report_event_pk", "regulatory_report_four_eyes");
         assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
                 + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
     }

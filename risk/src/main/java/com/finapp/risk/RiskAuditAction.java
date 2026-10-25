@@ -348,6 +348,68 @@ public enum RiskAuditAction implements AuditableAction {
                     + " filter, cursor, ids served and withheld count - never a note, a subject or a reason.",
             false),
 
+    /** An AML officer drafted a regulatory report from a confirmed-suspicious AML case (`P13-TSK-021`). */
+    REPORT_DRAFTED(
+            "risk.ReportDrafted",
+            "A holder of AML_REPORT_APPROVE drafted a regulatory report from an AML case disposed CONFIRMED_SUSPICIOUS"
+                    + " (POST /v1/operator/risk/cases/{caseId}/reports, keyed risk.report:<actor>, P13-TSK-021; ADR-0111"
+                    + " decision 5) under the case row's lock: the jurisdiction and format version its adapter declares,"
+                    + " the reporting entity's reference, the subject and its accounts, the transactions the case's"
+                    + " evidence names, the grounds (the case's alerts' rule codes) and the narrative (RESTRICTED-PII,"
+                    + " screened), the attachments' references - one live or accepted report per case, its REPORT_DRAFTED"
+                    + " investigator action in the same transaction. Its target the report (regulatory_report); the reason"
+                    + " the drafter's; the summary the case, the jurisdiction, the format version and counts - never the"
+                    + " subject or the narrative.",
+            true),
+
+    /** A second AML officer approved a drafted regulatory report (`P13-TSK-021`). */
+    REPORT_APPROVED(
+            "risk.ReportApproved",
+            "A holder of AML_REPORT_APPROVE other than its drafter approved a regulatory report from a MULTI_FACTOR"
+                    + " session (POST .../reports/{reportId}/approval, P13-TSK-021; INV-RSK-07, regulatory_report_four_eyes"
+                    + " beneath) - DRAFT -> APPROVED under the report row's lock. The reason the approver's; the summary"
+                    + " the case and the jurisdiction.",
+            true),
+
+    /** An AML officer filed an approved regulatory report (`P13-TSK-021`). */
+    REPORT_FILED(
+            "risk.ReportFiled",
+            "A holder of AML_REPORT_FILE filed an approved regulatory report from a MULTI_FACTOR session (POST"
+                    + " .../reports/{reportId}/filing, 202, P13-TSK-021; ADR-0111 decision 6): APPROVED -> FILED committed"
+                    + " BEFORE the provider is called, with risk.RegulatoryReportFiled (report id and jurisdiction) in the"
+                    + " same transaction; the platform then submits it under the filing reference on no connection, and"
+                    + " the authority's answer is recorded by the filing's drive (risk.ReportAcknowledged /"
+                    + " risk.ReportRejected) - an unknown answer inquired, never re-filed. The reason the filer's; the"
+                    + " summary the case and the jurisdiction - never the subject.",
+            true),
+
+    /** The authority acknowledged a filed report, recorded by the platform's drive (`P13-TSK-021`). */
+    REPORT_ACKNOWLEDGED(
+            "risk.ReportAcknowledged",
+            "The filing's drive - the platform, from the filing door after its commit or RiskActionSchedule's report"
+                    + " leg (P13-TSK-021) - recorded the authority's acknowledgement of a filed report: FILED ->"
+                    + " ACKNOWLEDGED, conditional on the claimed attempt, once. The summary the jurisdiction, the"
+                    + " authority's reference and the attempts - never the subject.",
+            false),
+
+    /** The authority rejected a filed report, recorded by the platform's drive (`P13-TSK-021`). */
+    REPORT_REJECTED(
+            "risk.ReportRejected",
+            "The filing's drive (the platform, P13-TSK-021) recorded the authority's rejection of a filed report:"
+                    + " FILED -> REJECTED with the authority's closed code, once; the case may be reported again by a new"
+                    + " draft. The summary the jurisdiction, the rejection code and the attempts.",
+            false),
+
+    /** An AML officer read a regulatory report (`P13-TSK-021`, DESIGN-021 D9). */
+    REGULATORY_REPORT_READ(
+            "risk.RegulatoryReportRead",
+            "A holder of AML_REPORT_APPROVE read a regulatory report - its content, the narrative among it (GET"
+                    + " /v1/operator/risk/cases/{caseId}/reports/{reportId}, P13-TSK-021, DESIGN-021 D9: the second person"
+                    + " reads what they approve) - after the self-dealing judgement, committed in a transaction of its own"
+                    + " before the answer, so the narrative is never served unrecorded. Its target the report; the"
+                    + " summary the case, the status and the jurisdiction - never the narrative.",
+            false),
+
     /** An officer ordered the monitoring intake reprocessed from an earlier watermark. */
     REPROCESSING_ORDERED(
             "risk.ReprocessingOrdered",

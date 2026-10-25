@@ -4535,6 +4535,57 @@ override's action carries the override's own id and its officers.
 | `risk_action` | `concluded_at` | `INTERNAL` | The database's stamp of the record |
 | `risk_action` | `correlation_id` | `INTERNAL` | The proposing (or issuing) flow's correlation |
 
+### `risk.regulatory_report` and `regulatory_report_event` - the regulatory report - *added by `P13-TSK-021`*
+
+`risk V016`: the filing artefact to an authority, distinct from the case (ADR-0111) - `DRAFT → APPROVED → FILED →
+ACKNOWLEDGED | REJECTED`; one live or accepted report per case (`regulatory_report_one_live_per_case`, `INV-RSK-06`);
+four eyes by `regulatory_report_four_eyes`; the content frozen from birth for every writer and in no `UPDATE` grant; no
+`DELETE` for any role. **No money, no score.** The **narrative** is a person's text of the grounds - `RESTRICTED-PII`,
+screened for instrument shapes (`risk.holds_instrument_shape`), served only by the AML desk's doors (`AML_REPORT_*`),
+never logged, audited, announced or read by the case file (`INV-RSK-08`); the **subject**, its accounts, the
+transactions referenced and the grounds name a party under a suspicion reported to an authority - the tipping-off rule's
+very object - so they are `CONFIDENTIAL` as a case's subject is (no customer or merchant route reads these tables,
+`NoCustomerSurfaceReadsRiskTest`); the attachments' references `CONFIDENTIAL`; the persons `CONFIDENTIAL`; the
+authority's reference and rejection code `CONFIDENTIAL` (they are evidence of a filing); closed codes, the platform's own
+identifiers, counters and the database's stamps `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `regulatory_report` | `id` | `INTERNAL` | The report's identity - its `REPORT_DRAFTED` investigator action's id, and the filing reference sent to the authority |
+| `regulatory_report` | `case_id` | `INTERNAL` | The case it was drafted from - risk's own row |
+| `regulatory_report` | `jurisdiction` | `INTERNAL` | A jurisdiction code - `EU-REF`, the adapter's declaration |
+| `regulatory_report` | `format_version` | `INTERNAL` | The format version the adapter renders |
+| `regulatory_report` | `reporting_entity_ref` | `INTERNAL` | The platform's own reference with the authority - configuration |
+| `regulatory_report` | `subject_kind` | `INTERNAL` | A closed code - `PARTY` |
+| `regulatory_report` | `subject_ref` | `CONFIDENTIAL` | The party reported, by identifier |
+| `regulatory_report` | `account_refs` | `CONFIDENTIAL` | The party's customer accounts, by identifier (at most 50) |
+| `regulatory_report` | `transaction_ids` | `CONFIDENTIAL` | The monitored transactions referenced - risk's own rows, the case's evidence (at most 100) |
+| `regulatory_report` | `ground_codes` | `CONFIDENTIAL` | The grounds' closed codes - the case's alerts' rule codes |
+| `regulatory_report` | `narrative` | `RESTRICTED-PII` | Person-written - the approved narrative of the grounds; screened for instrument shapes; served by the AML desk's doors alone, never logged, audited or announced |
+| `regulatory_report` | `attachment_refs` | `CONFIDENTIAL` | Documents held outside the platform, by reference (at most 20) |
+| `regulatory_report` | `status` | `INTERNAL` | The machine's state |
+| `regulatory_report` | `drafted_by` | `CONFIDENTIAL` | The AML officer who drafted it |
+| `regulatory_report` | `drafted_by_type` | `INTERNAL` | A closed actor type - a person's, `CUSTOMER` (the session establishes every identity so) or `EMPLOYEE`, by `CHECK` |
+| `regulatory_report` | `drafted_at` | `INTERNAL` | The database's stamp |
+| `regulatory_report` | `approved_by` | `CONFIDENTIAL` | The second AML officer - never the drafter, by `CHECK` |
+| `regulatory_report` | `approved_by_type` | `INTERNAL` | A closed actor type - a person's, by `CHECK` |
+| `regulatory_report` | `approved_at` | `INTERNAL` | The database's stamp |
+| `regulatory_report` | `filed_by` | `CONFIDENTIAL` | The AML officer who filed it |
+| `regulatory_report` | `filed_by_type` | `INTERNAL` | A closed actor type - a person's, by `CHECK` |
+| `regulatory_report` | `filed_at` | `INTERNAL` | The database's stamp - committed before the authority was called |
+| `regulatory_report` | `provider_reference` | `CONFIDENTIAL` | The authority's own reference for the filing, recorded once |
+| `regulatory_report` | `rejection_code` | `CONFIDENTIAL` | The authority's closed code for a refused filing |
+| `regulatory_report` | `concluded_at` | `INTERNAL` | The database's stamp of the authority's answer |
+| `regulatory_report` | `next_inquiry_at` | `INTERNAL` | The drive's permit while `FILED` - the database's clock plus the lease or the inquiry interval |
+| `regulatory_report` | `attempts` | `INTERNAL` | A count - the drive's claims |
+| `regulatory_report` | `correlation_id` | `INTERNAL` | The drafting flow's correlation |
+| `regulatory_report_event` | `report_id` | `INTERNAL` | The report - risk's own row |
+| `regulatory_report_event` | `status` | `INTERNAL` | The status reached |
+| `regulatory_report_event` | `actor_id` | `CONFIDENTIAL` | Who moved it there - an AML officer, or the platform for the authority's answer |
+| `regulatory_report_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `regulatory_report_event` | `recorded_at` | `INTERNAL` | The database's stamp |
+| `regulatory_report_event` | `correlation_id` | `INTERNAL` | The step's correlation |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

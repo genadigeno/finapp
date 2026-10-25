@@ -488,6 +488,13 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/alerts/{alertId}/suppression",
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/alerts/{alertId}/suppression/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/alerts/{alertId}/suppression/rejection",
+                        // P13-TSK-021: the AML desk's regulatory report - drafted (201) and approved by a second holder
+                        // from MULTI_FACTOR under AML_REPORT_APPROVE, filed from MULTI_FACTOR (202) under
+                        // AML_REPORT_FILE, and read under AML_REPORT_APPROVE (audited).
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/reports",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/reports/{reportId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/reports/{reportId}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/reports/{reportId}/filing",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",

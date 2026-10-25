@@ -420,6 +420,17 @@ transaction as the platform and the outcome is a second conditional edge. `-012`
 `RiskMonitoringSchedule` is moved here (the override's action is a `risk_action` row); `RiskMonitoringSchedule` keeps
 the intake, profile and case legs.)*
 
+*(As built by `P13-TSK-021`, 2026-10-25: **`RiskActionSchedule`'s second leg** - the table's "`FILED` reports due an
+inquiry", landed with `-021` because `-017` merged first: after the action leg, each tick drives up to
+`finapp.risk.filing.reports-per-tick` (10) `FILED` regulatory reports whose permit `next_inquiry_at` has come
+(`RegulatoryFilingDriver.inquireDue`): ONE statement claims the oldest `FOR UPDATE SKIP LOCKED`, counts an attempt and
+moves the permit a lease ahead (`finapp.risk.filing.lease`, 2 min), committed; the authority is asked on no transaction as
+the platform - the first attempt submits under the filing reference (the report's id), every later one inquires by it -
+and the answer recorded conditionally on `FILED` and the claimed attempt; an unknown standing re-permits
+`finapp.risk.filing.inquiry-interval` (15 min) ahead. Its claim failures `finapp.risk.sweeper.claim.failed{kind=report}`;
+the leg never throws, so a failing action claim ends only the action leg and vice versa. No new scheduler:
+`LEASE_PROTECTED_SCHEDULERS` stays 31.)*
+
 *(As built by `P13-TSK-020`, 2026-10-25: the rule leg runs **inside** the intake leg's claim (`MonitoringIntake.BatchLeg`,
 `MonitoringRun`) - one transaction per batch as before, R7 → R1 → every touched head (R8, ascending) → per party R5 →
 R4 → R5, each party under a savepoint; no new schedule and no new `LEASE_PROTECTED_SCHEDULERS` entry; `finapp.risk.monitoring.subject{outcome}`,
@@ -472,7 +483,7 @@ Phase 12 wave-D lesson — so a task's number is below every number of a later w
 | `risk_action` | `V010` (`-017`) — *as built 2026-10-25 as `V013`, the next free at its build (`-016` took `V012`); `V013` also folds `-012`'s issued actions out of `decision_override` - copied first, keys kept, the four action columns dropped* | the action machine; `UNIQUE (case_id, kind, target_ref)` live (`risk_action_one_live`); the four-eyes `CHECK` for a case's action; one per override, its id the override's |
 | `monitored_transaction`, `monitoring_watermark` | `V004` (`-019`) | `UNIQUE (journal_entry_id)`; one watermark per source |
 | `risk_signal` widened (three abuse kinds, `merchant_subject_ref`, `intent_ref`, `risk_signal_by_merchant`), `velocity_window` and `risk_rule_parameter` (`SESSION`), `risk_assessment.session_id` | `V011` (`-014`) — *as built 2026-10-25, the next free at its build; the entry planned no migration* | the kinds' `CHECK`s re-made by name; a guard refusing a stored ratio rule without `threshold_count`; no grant, no row |
-| `regulatory_report`, `regulatory_report_event` | `V011` (`-021`) *(taken by `-014`: the next free at `-021`'s build)* | the filing artefact |
+| `regulatory_report`, `regulatory_report_event` | `V011` (`-021`) *(taken by `-014`: the next free at `-021`'s build)* *(as built by `P13-TSK-021`, 2026-10-25: `V016`)* | the filing artefact |
 | `screening_list_version`, `rescreening_permit` | `V012` (`-022`) | list facts; permits |
 | payments `withdrawal` `HELD`; `WithdrawalFailureReason.RISK_REFUSED` | payments `V033` (`-009`) | payments' own machine |
 | payments `PaymentFailureReason.RISK_REFUSED` and the intent's refused-by-risk decision row | payments `V034` (`-010`) | payments' own *(as built: the intent's `failure_reason`, the fifth intent edge, and slice 2's `payment_capture_hold`)* |
@@ -528,6 +539,17 @@ reader's own party's, recorded. The suppression door's approval is stepped up (`
 approval in risk since `-016`, beyond §11's list; `risk.AlertNotOpen` stays the register's `409`. The persons of a
 suppression are `CUSTOMER`- or `EMPLOYEE`-typed (`risk V014`, the routed defect). No signal or monitored-transaction read
 door exists in this table, so those evidence references are named and not resolvable yet (owner item).)*
+
+*(As built by `P13-TSK-021`, 2026-10-25 (`DESIGN-021`): the report's three routes as the table names them - `POST
+…/cases/{caseId}/reports` `201` (`AML_REPORT_APPROVE`), `…/reports/{reportId}/approval` `200` (`AML_REPORT_APPROVE`,
+`MULTI_FACTOR`, a second holder), `…/reports/{reportId}/filing` `202` (`AML_REPORT_FILE`, `MULTI_FACTOR`; the answer the
+report as it stands after the door's own drive) - each keyed `risk.report:<type>:<id>`, and **a fourth, a read** (D9):
+`GET …/cases/{caseId}/reports/{reportId}` under `AML_REPORT_APPROVE`, recorded `risk.RegulatoryReportRead` in a
+transaction of its own before the answer - the narrative's only read door, so the second person reads what they approve.
+Errors `409 risk.ReportNotFileable` (the register's status, every report state conflict), `422 risk.ReportRequestInvalid`
+(new: an undeclared jurisdiction, too many attachments, a malformed reference), `422 risk.ReasonRequired` (the reason or
+the narrative), `403 risk.SelfApprovalRefused` / `risk.SelfDealingRefused` (each recorded `FAILED`), `404 risk.NotFound`.
+No AML evidence read door (amounts of the referenced transactions, `-018`'s D9) - owner item, routed to `-023`.)*
 
 ---
 
@@ -971,6 +993,20 @@ Recommendation 21 protects good-faith reporters and prohibits tipping-off. Sourc
 shaped as an abstraction: a jurisdiction code, a format version, the content categories above, and an adapter; the
 German minimum-content rules (GwGMeldV) are an example of what an adapter adds, not a platform rule.
 
+*(As built by `P13-TSK-021`, 2026-10-25 (`DESIGN-021`; `risk V016` - the entry's `V011` went to `-014`): the report is
+drafted from an **`AML`** case of a party disposed `CONFIRMED_SUSPICIOUS` (D12), under the case row's lock; its
+transactions, accounts and grounds are **drawn from the case** (D5) - the monitored transactions born from the journal
+entries its alerts and evidence acts name, touching the party's accounts, the party's accounts (`MonitoredParties`), the
+attached alerts' rule codes - and the drafter writes the narrative (1-8000 characters, screened), names the jurisdiction
+(`EU-REF`, the one an adapter declares) and the attachments' references (no document store: references only). The case
+records the act as an investigator action `REPORT_DRAFTED` whose id is the report's (D2; a disposed case never steps, so
+it carries no revision; withheld from the analyst's case file); one live or accepted report per case (D3,
+`WHERE status <> 'REJECTED'`); the content immutable from birth by trigger and grant (D4); the filing reference is the
+report's id and the drive inquires by it (D6, D7); the AML desk reads a report by `GET …/reports/{reportId}` (D9, audited
+`risk.RegulatoryReportRead`). The EU reference's additions - `reportType`, the legal basis "to be verified" - live in
+`app`'s `SimulatedFilingProvider`'s rendering, never in `ReportContent`. The AML case's kind, SLA (720 h) and queue (born
+`FIRST_LINE`, the queue's `kind=AML` filter) are `-016`'s and `-018`'s as built - unchanged (D12).)*
+
 ### 12.10 Rescreening on list updates (`-022`)
 
 `risk` records a screening list version (sanctions, PEP) as an operator fact under `RISK_POLICY_ADMINISTER`; its
@@ -1067,6 +1103,7 @@ the two the plan names are `RiskEvaluationUnavailable` and `RiskPolicyNoneActive
 | `finapp.risk.action` | counter | kind, outcome | — |
 | `finapp.risk.action.failed` | counter | kind | any increase |
 | `finapp.risk.report` | counter | status | a filing `UNKNOWN` for longer than the inquiry interval (runbook §9.4) |
+| `finapp.risk.report.filing` | counter (`P13-TSK-021`: every answer the authority gave a submission or an inquiry, and every call that threw) | outcome (`acknowledged`, `rejected`, `unknown`, `not_received`, `failed`) | any sustained `unknown` or `failed` - the "filing `UNKNOWN`" alert's input (`-024`) |
 | `finapp.risk.policy.active` | gauge (1 per operation with an `ACTIVE` version) | operation, policy_version | 0 for an operation production judges |
 | `finapp.risk.monitoring.lag` | gauge (journal head − watermark, entries) | source | lag growing for an hour |
 | `finapp.risk.monitoring.unclassified` | gauge (`UNCLASSIFIED` monitored transactions) | — | above 0 |
@@ -1076,7 +1113,7 @@ the two the plan names are `RiskEvaluationUnavailable` and `RiskPolicyNoneActive
 | `finapp.risk.velocity.proof` | counter | verdict | any `DIVERGED` |
 | `finapp.risk.profile.rating` | gauge (parties per rating) | bucket | — |
 | `finapp.risk.sweeper.enabled` | gauge (1 / 0) per schedule | kind (`monitoring`, `action`) | 0 in production |
-| `finapp.risk.sweeper.claim.failed` | counter (N5 applied forward: every claim failure metered from the first task) | kind | any increase |
+| `finapp.risk.sweeper.claim.failed` | counter (N5 applied forward: every claim failure metered from the first task; `kind=report` the filing's drive, `P13-TSK-021`) | kind | any increase |
 
 Spans: `RiskFlowScope` per step, no attributes. Reports (`GET /v1/operator/reports/risk/...`): decisions, alerts, cases,
 velocity — audited reads, never a customer surface.
@@ -1131,7 +1168,7 @@ wave-D lesson), so a task's number is below every number of a later wave; the wa
 | `P13-TSK-018` | Case and alert queues, reads, and the tipping-off control | M13.5 | `-016` | none *(as built: `risk V014` - the suppression's persons widened by name, the keyset indexes)* | `DOD-API`, `DOD-SEC` |
 | `P13-TSK-019` | Monitored transactions: the journal intake, the watermark, reprocessing | M13.6 | `-001` | `risk V004` | `DOD-DOMAIN`, `DOD-FIN` |
 | `P13-TSK-020` | Monitoring rules and AML alerts | M13.6 | `-019`, `-015` | none *(as built: `risk V015` - the counterparty index the design found missing)* | `DOD-DOMAIN` |
-| `P13-TSK-021` | The AML case and the regulatory report artefact | M13.6 | `-016`, `-020` | `risk V011` | `DOD-DOMAIN`, `DOD-API`, `DOD-SEC` |
+| `P13-TSK-021` | The AML case and the regulatory report artefact | M13.6 | `-016`, `-020` | `risk V011` *(as built: `risk V016` - the next free number)* | `DOD-DOMAIN`, `DOD-API`, `DOD-SEC` |
 | `P13-TSK-022` | Rescreening on screening-list updates | M13.6 | `-005`, `-016` | `risk V012` | `DOD-DOMAIN`, `DOD-SEC` |
 | `P13-TSK-023` | The risk proofs, the explanation door and replay | M13.7 | `-006`, `-019`, `-016` | none | `DOD-FIN`, `DOD-API` |
 | `P13-TSK-024` | Operating risk: meters, alerts, reports, runbook §9, the activation gate | M13.7 | `-023` | none | `DOD-OBS`, `DOD-DOC` |

@@ -50,18 +50,23 @@ class RiskMetricTagsAreBoundedTest {
 
     /** Each tag key a risk meter carries, and the closed vocabulary its value is from. */
     static final Map<String, Set<String>> VOCABULARIES = Map.of(
-            // An alert's, a case's or an action's kind - and the two sweepers' own kinds.
+            // An alert's, a case's or an action's kind - and the sweepers' own kinds (the filing's drive, P13-TSK-021).
             "kind", union(List.of(names(AlertKind.values()), names(CaseKind.values()), names(ActionKind.values()),
-                    Set.of(RiskMonitoringMetrics.KIND, RiskActionMetrics.KIND))),
+                    Set.of(RiskMonitoringMetrics.KIND, RiskActionMetrics.KIND, RegulatoryReportMetrics.KIND))),
             "severity", names(AlertSeverity.values()),
             // A suppression's reason code; the fail-safe's two reason codes.
             "reason_code", union(List.of(names(SuppressionReason.values()), names(ReasonCode.values()))),
-            "status", names(CaseStatus.values()),
+            // A case's status; a regulatory report's (P13-TSK-021).
+            "status", union(List.of(names(CaseStatus.values()),
+                    names(com.finapp.risk.RegulatoryReportStatus.values()))),
             // An action's outcome and an override's act, lower-cased; a challenge's two outcomes; what became of a party
-            // the monitoring rule leg met (P13-TSK-020), lower-cased.
+            // the monitoring rule leg met (P13-TSK-020), lower-cased; the authority's answer to a filing and a call that
+            // threw (P13-TSK-021), lower-cased.
             "outcome", union(List.of(lower(names(ActionOutcome.values())), lower(names(RiskOverrideMetrics.Act.values())),
                     Set.of("satisfied", "refused"),
-                    lower(names(com.finapp.risk.MonitoringObserver.SubjectOutcome.values())))),
+                    lower(names(com.finapp.risk.MonitoringObserver.SubjectOutcome.values())),
+                    lower(names(com.finapp.risk.RegulatoryFilingProvider.Outcome.values())),
+                    Set.of(RegulatoryReportMetrics.FAILED))),
             "operation", names(RiskOperation.values()),
             "verdict", names(RiskDecision.values()),
             "rule", names(RuleKind.values()),

@@ -3124,6 +3124,14 @@ and 12 (the structuring sequence alerted once per window, the case folding every
 tasks and in the storm; each born-once arbiter probed alone with the lock or conditional above it
 bypassed (`MUTATION_TESTING.md` §2); the storm's census at every round — alerts born once, cases one
 open per subject and kind (`P13-TST-001`).
+*(As built by `P13-TSK-021`, 2026-10-25, `risk V016`: the report's arbiter is wider than "one open draft" -
+`regulatory_report_one_live_per_case UNIQUE (case_id) WHERE status <> 'REJECTED'`, at most one live **or accepted**
+report per case (`DRAFT`, `APPROVED`, `FILED`, `ACKNOWLEDGED`), since a draft beside a filed or acknowledged report would
+be the second filing this invariant forbids; a `REJECTED` filing frees the case for a new draft. "No second filing" of
+one report is the drive's: `FILED` once (`regulatory_report_event`'s key), the first attempt submits and every later one
+inquires by the filing reference - a lost answer asked for, never filed again. Verified hermetically by
+`RegulatoryReportTest#oneOpenDraftPerCase`, `#aLostFilingResponseIsInquiredNeverReFiled`, `#tenFilersFileOnce` and
+`RegulatoryReportMigrationTest#oneLiveReportPerCase`; on the database by `RegulatoryReportDatabaseTest`, owed (C5).)*
 **Phase:** 13
 
 ### INV-RSK-07 — Every consequential risk act is two persons' acts, and a refused self-approval is recorded `FAILED`

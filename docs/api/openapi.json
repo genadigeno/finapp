@@ -9467,6 +9467,76 @@
           }
         }
       },
+      "risk.ReportNotFileable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.ReportNotFileable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.ReportNotFileable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The regulatory report cannot take this act now: its case is not an AML case disposed CONFIRMED_SUSPICIOUS, the case already has a live or accepted report, or the report is not awaiting this act.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "risk.ReportRequestInvalid": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.ReportRequestInvalid"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.ReportRequestInvalid"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The regulatory report is not drafted as asked: a jurisdiction no filing adapter declares, too many attachments, or a reference that is no identifier; nothing was drafted.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "risk.ReprocessingNotBehind": {
         "content": {
           "application/problem+json": {
@@ -23158,6 +23228,128 @@
         },
         "type": "object"
       },
+      "RiskReportDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskReportDraftRequest": {
+        "properties": {
+          "attachments": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 0,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 0,
+            "type": "array"
+          },
+          "jurisdiction": {
+            "maxLength": 16,
+            "minLength": 0,
+            "type": "string"
+          },
+          "narrative": {
+            "maxLength": 8000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "jurisdiction"
+        ],
+        "type": "object"
+      },
+      "RiskReportView": {
+        "properties": {
+          "accountRefs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "approvedAt": {
+            "type": "string"
+          },
+          "attachmentRefs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "attempts": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "caseId": {
+            "type": "string"
+          },
+          "concludedAt": {
+            "type": "string"
+          },
+          "draftedAt": {
+            "type": "string"
+          },
+          "filedAt": {
+            "type": "string"
+          },
+          "formatVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "grounds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "jurisdiction": {
+            "type": "string"
+          },
+          "narrative": {
+            "type": "string"
+          },
+          "providerReference": {
+            "type": "string"
+          },
+          "rejectionCode": {
+            "type": "string"
+          },
+          "reportId": {
+            "type": "string"
+          },
+          "reportingEntityReference": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subjectKind": {
+            "type": "string"
+          },
+          "subjectRef": {
+            "type": "string"
+          },
+          "transactionIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "RiskRuleHitView": {
         "properties": {
           "contribution": {
@@ -35360,6 +35552,192 @@
               }
             },
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/cases/{caseId}/reports": {
+      "post": {
+        "operationId": "draftRegulatoryReport",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "caseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskReportDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskReportView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/cases/{caseId}/reports/{reportId}": {
+      "get": {
+        "operationId": "readRegulatoryReport",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "reportId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskReportView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/cases/{caseId}/reports/{reportId}/approval": {
+      "post": {
+        "operationId": "approveRegulatoryReport",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "caseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "reportId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskReportDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskReportView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/cases/{caseId}/reports/{reportId}/filing": {
+      "post": {
+        "operationId": "fileRegulatoryReport",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "caseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "reportId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskReportDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskReportView"
+                }
+              }
+            },
+            "description": "Accepted"
           }
         }
       }

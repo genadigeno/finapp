@@ -39,8 +39,9 @@ import java.util.stream.Collectors;
  *       by the caller). {@link #record(Connection, CaseFile, Actor, CorrelationId)} appends {@code risk.CaseRead}.</li>
  * </ul>
  *
- * Nothing here writes but the audit record; persons are in the rows and the desk withholds them; no report narrative is
- * ever part of a file (`-021`'s own permission).
+ * Nothing here writes but the audit record; persons are in the rows and the desk withholds them; no report is ever part
+ * of a file - its narrative is the AML desk's own permission, and the case's {@code REPORT_DRAFTED} act is withheld from
+ * the file's investigator actions (`P13-TSK-021`, {@code DESIGN-021} D2), so the analyst never learns that one exists.
  */
 public final class CaseWorklist {
 
@@ -221,7 +222,10 @@ public final class CaseWorklist {
             throw new RiskAssessments.SelfDealingRefused(RiskAssessments.SelfDealingRefused.Cause.OWN_PARTY, READ_ACT);
         }
         List<RiskAlert> attached = alerts.ofCase(snapshot, caseId);
-        List<CaseAction> investigated = cases.actions(snapshot, caseId);
+        // The AML desk's REPORT_DRAFTED act is withheld (`P13-TSK-021`, DESIGN-021 D2; -018's routed rule): the analyst's
+        // file never carries a report - not its narrative, its id, nor that one exists.
+        List<CaseAction> investigated = cases.actions(snapshot, caseId).stream()
+                .filter(action -> action.kind() != CaseActionKind.REPORT_DRAFTED).toList();
         List<CaseEvent> history = cases.events(snapshot, caseId);
         List<RiskAction> downstream = actions.ofCase(snapshot, caseId);
         return new CaseFile(riskCase, attached, investigated, history, downstream,

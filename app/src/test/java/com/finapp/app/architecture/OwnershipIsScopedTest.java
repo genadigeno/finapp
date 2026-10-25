@@ -2084,6 +2084,63 @@ class OwnershipIsScopedTest {
                                         + " the write is conditional on DISPATCHED; it records the owning domain's"
                                         + " answer and moves nothing of anyone's.")),
                     Map.entry(
+                            "com.finapp.risk.JdbcRegulatoryReportStore.liveOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-021. A case's live or accepted report by the case's id, read by the draft"
+                                        + " under the case row this transaction holds FOR UPDATE (Cases.lockForAct, after"
+                                        + " the not-self rule) behind @RequiresPermission(AML_REPORT_APPROVE); the"
+                                        + " one-live unique is the arbiter beneath it. A report is risk's record about a"
+                                        + " party, owned by no party; nothing is served.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRegulatoryReportStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-021. R4': the report row FOR UPDATE for an AML officer's approval or"
+                                        + " filing behind @RequiresPermission(AML_REPORT_APPROVE / AML_REPORT_FILE) and"
+                                        + " MULTI_FACTOR, after the officer is placed in a party; the act proceeds only"
+                                        + " when the report is the named case's and its subject is not the officer's"
+                                        + " party (fail closed, risk.SelfDealingRefused). Deliberately someone else's.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRegulatoryReportStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-021. A report read by id: the AML desk's read (GET .../reports/{reportId}"
+                                        + " behind AML_REPORT_APPROVE, on a snapshot after the officer is placed and the"
+                                        + " report's subject judged not the officer's party, recorded"
+                                        + " risk.RegulatoryReportRead before the answer) and the receipt of an act the"
+                                        + " desk just performed or replayed. No customer or merchant surface reaches it.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRegulatoryReportStore.decided",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-021. The approval's and the filing's edge: the id comes only from the row"
+                                        + " this transaction locked FOR UPDATE (lock(id), after the not-self rule), the"
+                                        + " move conditional on DRAFT or APPROVED; four eyes by the domain and by"
+                                        + " regulatory_report_four_eyes.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRegulatoryReportStore.event",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-021. The history row of the edge the same call just wrote - the id that"
+                                        + " edge's RETURNING gave; regulatory_report_event_is_append_only judges the"
+                                        + " status and the person against the row.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRegulatoryReportStore.claim",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-021. The drive's claim of the report a filing just committed - the id is"
+                                        + " the filed report's own (the filing door's act, after the not-self rule) -"
+                                        + " FOR UPDATE SKIP LOCKED on a permit that has come; the platform takes it to"
+                                        + " the authority. No request names it afresh.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRegulatoryReportStore.record",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-021. The id is a claimed report's - one this drive's claim returned - and"
+                                        + " the write is conditional on FILED and the claimed attempt; it records the"
+                                        + " authority's answer and moves nothing of anyone's.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanTermsStore.insertTerms",
                             new Entry(
                                     Scope.ADMINISTERED,

@@ -140,14 +140,18 @@ public class RiskActionBeans {
                 riskFlowScope);
     }
 
-    /** The action schedule - every instance, no lease, off in test contexts ({@code finapp.risk.action.poll}). */
+    /**
+     * The action schedule - every instance, no lease, off in test contexts ({@code finapp.risk.action.poll}); its second
+     * leg the filing's inquiry (`P13-TSK-021`, {@code RiskReportBeans}' driver).
+     */
     @Bean
     @ConditionalOnProperty(name = "finapp.risk.action.sweeper.enabled", havingValue = "true", matchIfMissing = true)
     RiskActionSchedule riskActionSchedule(
             RiskActionDriver riskActionDriver,
+            RegulatoryFilingDriver regulatoryFilingDriver,
             RiskActionMetrics riskActionMetrics,
             @Value("${finapp.risk.action.poll:PT5S}") Duration pollInterval) {
-        return new RiskActionSchedule(riskActionDriver, riskActionMetrics, pollInterval);
+        return new RiskActionSchedule(riskActionDriver, regulatoryFilingDriver, riskActionMetrics, pollInterval);
     }
 
     /** Whether this instance runs the action schedule - eager either way (`P1-TSK-029`'s rule). */

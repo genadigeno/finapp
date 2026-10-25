@@ -497,6 +497,18 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " threw; widening payments' door to CUSTOMER would have let any customer session reach it. No"
                         + " door that holds a Session calls this: the desk calls the driver after its keyed act."),
                     Map.entry(
+                            "com.finapp.app.risk.RegulatoryFilingDriver.asThePlatform",
+                    "The filing's drive of a regulatory report (P13-TSK-021, PHASE_13_PLAN.md section 7.1 T-rep, ADR-0111"
+                        + " decision 6): PERSONS decided it - an AML_REPORT_APPROVE holder drafted it, a different one"
+                        + " approved it and an AML_REPORT_FILE holder filed it, each recorded under their own actor at"
+                        + " the door (risk.ReportDrafted, risk.ReportApproved, risk.ReportFiled; the report's drafted_by,"
+                        + " approved_by and filed_by) - and the PLATFORM takes the FILED report to the authority and"
+                        + " records its answer: the claim, the submission or the inquiry by the filing reference, the"
+                        + " record (risk.ReportAcknowledged / risk.ReportRejected, the history's SYSTEM rows), from the"
+                        + " filing door after its commit and from RiskActionSchedule's report leg alike. Nobody commands"
+                        + " an inquiry: the permit came on the database clock. No door that holds a Session calls this:"
+                        + " the desk calls the driver after its keyed act."),
+                    Map.entry(
                             "com.finapp.app.lending.LoanOriginationSchedule.sweepOnce",
                     "The loan origination sweep (P11-TSK-011, PHASE_11_PLAN.md section 11: origination is never a"
                         + " person's act): nobody commands an application's offer, decline or undecided closure, nor an"

@@ -398,7 +398,14 @@ class NoSingleInstanceAssumptionRulesTest {
                     // adapter's IdempotentExecutor) - one effect. The record is a conditional DISPATCHED -> DONE|FAILED,
                     // once, whoever records first. A failed claim is counted claim.failed{kind=action} (N5). Register
                     // row: DISTRIBUTED_EXECUTION.md section 3; the ten-sweeper race is
-                    // RiskActionDatabaseTest#tenSweepersDispatchOnce.
+                    // RiskActionDatabaseTest#tenSweepersDispatchOnce. P13-TSK-021 adds its second leg, not a 32nd entry:
+                    // the FILED regulatory reports whose permit has come, each claimed in ONE statement FOR UPDATE SKIP
+                    // LOCKED on next_inquiry_at <= clock_timestamp() (one attempt counted, the permit a lease ahead) and
+                    // COMMITTED before the authority is called on no transaction as the platform - the first attempt
+                    // files under the filing reference (the report's id, which the provider deduplicates on), every
+                    // later one inquires by it - and the answer recorded conditionally on FILED and the claimed attempt,
+                    // once. Ten instances drive one report once per lease; a lost answer is asked for, never filed
+                    // again. Counted by RegulatoryReportDatabaseTest#tenInquirersAcknowledgeOnce (owed - C5).
                     "com.finapp.app.risk.RiskActionSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
