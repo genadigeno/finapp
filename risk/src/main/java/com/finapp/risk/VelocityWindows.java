@@ -165,6 +165,28 @@ public final class VelocityWindows {
     }
 
     /**
+     * The committed figures of {@code subjectRef}'s {@code window} window in {@code dimension} containing {@code at}, in
+     * {@code currency} at its present scale (`P13-TSK-020`: the monitoring rules' {@code VELOCITY_*} and
+     * {@code DORMANT_THEN_ACTIVE} reuse of these windows) - {@code PRESENT(0, 0)} when it never opened (read and found
+     * nothing), empty when the window holds another currency or scale (a sum that cannot be compared with the policy's
+     * thresholds is not read as one: the rule's reading is {@code ABSENT}). No lock: a retrospective read of committed
+     * figures, T-eval counting on.
+     */
+    public Optional<VelocityReading> committed(Connection unitOfWork, VelocityDimension dimension, String subjectRef,
+            WindowKind window, java.time.Instant at, com.finapp.sharedkernel.money.CurrencyCode currency) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(currency, "currency");
+        VelocityWindowKey key = new VelocityWindowKey(dimension, subjectRef, window, WindowStarts.start(window, at));
+        for (VelocityWindow found : store.find(unitOfWork, List.of(key))) {
+            if (found.key().equals(key)) {
+                return found.sum().currency().equals(currency) && found.sum().scale() == currency.minorUnits()
+                        ? Optional.of(found.reading()) : Optional.empty();
+            }
+        }
+        return Optional.of(new VelocityReading(0, 0));
+    }
+
+    /**
      * (R2) counts the movement {@code cut} holds in every window it falls in - each dimension it carries, each window
      * kind - one upsert per window in sorted key order, <strong>only when {@code decision} permits the movement</strong>;
      * answers the windows after the movement, or nothing when it was refused. Call at most once per cut, after the

@@ -162,6 +162,27 @@ public final class JdbcCustomerAccountStore implements CustomerAccountStore<Conn
     }
 
     @Override
+    public Optional<UUID> customerOf(Connection unitOfWork, CustomerAccountId accountId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(accountId, "accountId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // The system's join (P13-TSK-020): the owner and nothing else of the row.
+                        "SELECT customer_id FROM " + TABLE + " WHERE id = ?")) {
+            read.setObject(1, accountId.value());
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(row.getObject("customer_id", UUID.class));
+            }
+        } catch (SQLException failure) {
+            throw new AccountsStorageException(
+                    DatabaseFailure.describe("reading an agreement's customer", failure));
+        }
+    }
+
+    @Override
     public Optional<CustomerAccount> lockOwnedBy(
             Connection unitOfWork, CustomerAccountId accountId, UUID customerId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");

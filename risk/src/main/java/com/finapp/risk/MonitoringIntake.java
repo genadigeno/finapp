@@ -4,9 +4,11 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -25,6 +27,24 @@ import java.util.UUID;
  */
 public final class MonitoringIntake {
 
+    /**
+     * What runs on a batch's rows inside the claim's own transaction, after they are inserted and before the watermark
+     * advances (`P13-TSK-020`: T-mon's rule leg, {@link MonitoringRun}) - so the rows, what was judged of them and the
+     * advance commit together or not at all, and a crash leaves the committed watermark for the next claim to redo.
+     */
+    @FunctionalInterface
+    public interface BatchLeg {
+
+        /** Nothing runs on the rows - `-019`'s intake alone. */
+        BatchLeg NONE = (unitOfWork, rows) -> { };
+
+        /** Runs on {@code rows} - the batch's, born or absorbed - on the claim's unit of work. */
+        void onBatch(Connection unitOfWork, List<MonitoredTransaction> rows);
+    }
+
+    /** No bound on the customer accounts one claim touches - `-019`'s shape. */
+    public static final int UNBOUNDED = Integer.MAX_VALUE;
+
     private final MonitoredLedger ledger;
     private final MonitoringWatermarkStore watermarks;
     private final MonitoredTransactionStore transactions;
@@ -32,6 +52,7 @@ public final class MonitoringIntake {
     private final Duration settleHorizon;
     private final int batch;
     private final Duration idleCadence;
+    private final int subjectsPerClaim;
 
     /**
      * @param settleHorizon how long after its minting millisecond an entry is read - over the longest money transaction
@@ -42,6 +63,22 @@ public final class MonitoringIntake {
     public MonitoringIntake(MonitoredLedger ledger, MonitoringWatermarkStore watermarks,
             MonitoredTransactionStore transactions, IdGenerator ids, Duration settleHorizon, int batch,
             Duration idleCadence) {
+        this(ledger, watermarks, transactions, ids, settleHorizon, batch, idleCadence, UNBOUNDED);
+    }
+
+    /**
+     * @param subjectsPerClaim the most customer accounts one claim's batch may touch (`P13-TSK-020`: the rule leg's
+     *     subject loop bounded per claim) - the batch is cut before the entry that would exceed it, never below one
+     *     entry, and the rest is read by the next claim at once (a cut batch leaves the permit due now)
+     */
+    public MonitoringIntake(MonitoredLedger ledger, MonitoringWatermarkStore watermarks,
+            MonitoredTransactionStore transactions, IdGenerator ids, Duration settleHorizon, int batch,
+            Duration idleCadence, int subjectsPerClaim) {
+        if (subjectsPerClaim < 2) {
+            throw new IllegalArgumentException("a claim touches at least the two accounts one entry may name: "
+                    + subjectsPerClaim);
+        }
+        this.subjectsPerClaim = subjectsPerClaim;
         this.ledger = Objects.requireNonNull(ledger, "ledger");
         this.watermarks = Objects.requireNonNull(watermarks, "watermarks");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
@@ -73,8 +110,17 @@ public final class MonitoringIntake {
 
     /** One batch for {@code source} on {@code unitOfWork} - the caller's one transaction, committed by the caller. */
     public Batch sweepBatch(Connection unitOfWork, String source) {
+        return sweepBatch(unitOfWork, source, BatchLeg.NONE);
+    }
+
+    /**
+     * One batch for {@code source} on {@code unitOfWork}, {@code leg} run on its rows after their inserts and before the
+     * advance (`P13-TSK-020`) - the caller's one transaction, committed by the caller.
+     */
+    public Batch sweepBatch(Connection unitOfWork, String source, BatchLeg leg) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(leg, "leg");
         Optional<MonitoringWatermark> claimed = watermarks.claimDue(unitOfWork, source);
         if (claimed.isEmpty()) {
             return Batch.SKIPPED;
@@ -84,20 +130,30 @@ public final class MonitoringIntake {
         requireAscendingAfter(entries, watermark.lastEntryId());
 
         List<MonitoredTransaction> rows = new ArrayList<>(entries.size());
-        int unclassified = 0;
+        Set<UUID> touched = new HashSet<>();
+        boolean cut = false;
         for (MonitoredEntry entry : entries) {
             MonitoredTransaction row = MonitoringClassification.classify(MonitoredTransactionId.next(ids), entry);
-            if (row.kind() == MonitoredKind.UNCLASSIFIED) {
-                unclassified++;
+            Set<UUID> next = new HashSet<>(touched);
+            MonitoredMovement.subjectAccount(row).ifPresent(next::add);
+            MonitoredMovement.counterpartyAccount(row).ifPresent(next::add);
+            if (next.size() > subjectsPerClaim && !rows.isEmpty()) {
+                // The subject loop's bound (P13-TSK-020): the rest is the next claim's, read at once.
+                cut = true;
+                break;
             }
+            touched = next;
             rows.add(row);
         }
+        int unclassified = (int) rows.stream().filter(row -> row.kind() == MonitoredKind.UNCLASSIFIED).count();
         int born = transactions.insertAbsent(unitOfWork, rows);
-        boolean full = entries.size() >= batch;
-        UUID position = entries.isEmpty() ? watermark.lastEntryId() : entries.getLast().journalEntryId();
-        // The advance, in the batch's own transaction, after its inserts: a partial batch never advances.
+        leg.onBatch(unitOfWork, List.copyOf(rows));
+        boolean full = cut || entries.size() >= batch;
+        UUID position = rows.isEmpty() ? watermark.lastEntryId() : rows.getLast().journalEntryId();
+        // The advance, in the batch's own transaction, after its inserts and its rule leg: a partial batch never
+        // advances.
         watermarks.move(unitOfWork, source, position, full ? Duration.ZERO : idleCadence);
-        return new Batch(true, entries.size(), born, unclassified, full);
+        return new Batch(true, rows.size(), born, unclassified, full);
     }
 
     private static void requireAscendingAfter(List<MonitoredEntry> entries, UUID after) {

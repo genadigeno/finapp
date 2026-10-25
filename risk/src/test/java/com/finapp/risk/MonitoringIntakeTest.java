@@ -172,6 +172,47 @@ class MonitoringIntakeTest {
     }
 
     @Test
+    @DisplayName("P13-TSK-020: the rule leg runs on the batch's rows after their inserts and before the advance; the"
+            + " batch is cut before the entry whose customer accounts would pass the claim's bound - the rest due now")
+    void theLegAndTheSubjectBound() {
+        List<MonitoredEntry> entries = ledger.plant(5);
+        MonitoringIntake bounded = new MonitoringIntake(ledger, watermarks, transactions, IDS, Duration.ofSeconds(60),
+                10, Duration.ofSeconds(5), 3);
+        List<String> order = new ArrayList<>();
+        List<MonitoredTransaction> judged = new ArrayList<>();
+        MonitoringIntake.Batch first = bounded.sweepBatch(NO_CONNECTION, SOURCE, (unitOfWork, rows) -> {
+            order.add("leg after " + transactions.born.size() + " born, " + watermarks.moves + " moves");
+            judged.addAll(rows);
+        });
+        assertThat(first).as("three entries, three accounts: the fourth would be a fourth account")
+                .isEqualTo(new MonitoringIntake.Batch(true, 3, 3, 0, true));
+        assertThat(order).containsExactly("leg after 3 born, 0 moves");
+        assertThat(judged).extracting(MonitoredTransaction::journalEntryId).containsExactlyElementsOf(
+                entries.subList(0, 3).stream().map(MonitoredEntry::journalEntryId).toList());
+        assertThat(watermarks.row.lastEntryId()).isEqualTo(entries.get(2).journalEntryId());
+        assertThat(watermarks.lastPermitDelay).as("cut: the rest is due now").isEqualTo(Duration.ZERO);
+
+        MonitoringIntake.Batch second = bounded.sweepBatch(NO_CONNECTION, SOURCE, MonitoringIntake.BatchLeg.NONE);
+        assertThat(second).isEqualTo(new MonitoringIntake.Batch(true, 2, 2, 0, false));
+        assertThat(transactions.born).hasSize(5);
+
+        assertThatExceptionOfType(IllegalArgumentException.class).as("one entry may name two accounts")
+                .isThrownBy(() -> new MonitoringIntake(ledger, watermarks, transactions, IDS, Duration.ofSeconds(60),
+                        10, Duration.ofSeconds(5), 1));
+    }
+
+    @Test
+    @DisplayName("P13-TSK-020: a leg that throws fails the batch whole - the watermark where it stood")
+    void aFailingLegMovesNothing() {
+        ledger.plant(2);
+        assertThatExceptionOfType(IllegalStateException.class).isThrownBy(() -> intake(10).sweepBatch(NO_CONNECTION,
+                SOURCE, (unitOfWork, rows) -> {
+                    throw new IllegalStateException("the claim failed");
+                }));
+        assertThat(watermarks.moves).isZero();
+    }
+
+    @Test
     @DisplayName("uuid order is bytewise, PostgreSQL's - the floor sorts before every id, and ids by their millisecond")
     void uuidOrderIsBytewise() {
         UUID early = MonitoringWatermark.positionAt(1_000);

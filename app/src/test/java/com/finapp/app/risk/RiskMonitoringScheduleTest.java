@@ -8,10 +8,12 @@ import com.finapp.risk.MonitoredLedger;
 import com.finapp.risk.MonitoredTransaction;
 import com.finapp.risk.MonitoredTransactionStore;
 import com.finapp.risk.MonitoringIntake;
+import com.finapp.risk.MonitoringObserver;
 import com.finapp.risk.MonitoringWatermark;
 import com.finapp.risk.MonitoringWatermarkStore;
 import com.finapp.risk.ProfileRecompute;
 import com.finapp.risk.RiskRating;
+import com.finapp.risk.RuleKind;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -69,6 +71,57 @@ class RiskMonitoringScheduleTest {
         assertThat(world.transactions.began).isEqualTo(4);
         assertThat(schedule.sweepOnce()).as("nothing left: one empty batch").isZero();
         assertThat(world.born).hasSize(7);
+    }
+
+    @Test
+    @DisplayName("P13-TSK-020: the rule leg runs on each batch's rows inside the batch's own transaction - one"
+            + " transaction per batch, as before; a leg that throws fails its batch whole, counted, the tick ended")
+    void theRuleLegRunsInTheBatchsTransaction() {
+        World world = new World(5);
+        List<String> legs = new ArrayList<>();
+        MonitoringIntake.BatchLeg rules = (unitOfWork, rows) -> legs.add(rows.size() + " rows in transaction "
+                + world.transactions.began);
+        RiskMonitoringSchedule schedule = new RiskMonitoringSchedule(world.intake(2), rules,
+                RiskMonitoringSchedule.ProfileLeg.NONE, 0, RiskMonitoringSchedule.CaseLeg.NONE, world.transactions.real,
+                world.metrics, RiskFlowScope.NONE, Duration.ofSeconds(5), 10);
+        assertThat(schedule.sweepOnce()).isEqualTo(5);
+        assertThat(legs).containsExactly("2 rows in transaction 1", "2 rows in transaction 2", "1 rows in transaction 3");
+        assertThat(world.transactions.began).isEqualTo(3);
+
+        World failing = new World(3);
+        RiskMonitoringSchedule poisoned = new RiskMonitoringSchedule(failing.intake(2), (unitOfWork, rows) -> {
+            throw new IllegalStateException("the claim failed");
+        }, RiskMonitoringSchedule.ProfileLeg.NONE, 0, RiskMonitoringSchedule.CaseLeg.NONE, failing.transactions.real,
+                failing.metrics, RiskFlowScope.NONE, Duration.ofSeconds(5), 10);
+        assertThat(poisoned.sweepOnce()).isZero();
+        assertThat(failing.registry.get(RiskMonitoringMetrics.CLAIM_FAILED).tag("kind", "monitoring").counter().count())
+                .isEqualTo(1.0);
+        assertThat(failing.watermarks.row.lastEntryId()).as("the watermark where it stood")
+                .isEqualTo(MonitoringWatermark.FLOOR);
+    }
+
+    @Test
+    @DisplayName("P13-TSK-020: the rule leg's meters - subject{outcome}, unplaced, latency, rule.hit{operation=MONITORING}"
+            + " - registered from startup, bounded tags only")
+    void theRuleLegsMeters() {
+        World world = new World(0);
+        for (MonitoringObserver.SubjectOutcome outcome : MonitoringObserver.SubjectOutcome.values()) {
+            assertThat(world.registry.get(RiskMonitoringMetrics.SUBJECT)
+                    .tag("outcome", outcome.name().toLowerCase(java.util.Locale.ROOT)).counter().count()).isZero();
+        }
+        world.metrics.subject(MonitoringObserver.SubjectOutcome.FAILED);
+        world.metrics.subjectFailed(IllegalStateException.class);
+        world.metrics.unplaced(2);
+        world.metrics.judged(Duration.ofMillis(12));
+        world.metrics.fired(java.util.EnumSet.of(RuleKind.STRUCTURING, RuleKind.ROUND_AMOUNT));
+        assertThat(world.registry.get(RiskMonitoringMetrics.SUBJECT).tag("outcome", "failed").counter().count())
+                .isEqualTo(1.0);
+        assertThat(world.registry.get(RiskMonitoringMetrics.UNPLACED).counter().count()).isEqualTo(2.0);
+        assertThat(world.registry.get(RiskMonitoringMetrics.LATENCY).timer().count()).isEqualTo(1);
+        assertThat(world.registry.get(RiskEvaluationMetrics.RULE_HIT).tag("operation", "MONITORING")
+                .tag("rule", "STRUCTURING").counter().count()).isEqualTo(1.0);
+        assertThat(world.registry.find(RiskEvaluationMetrics.RULE_HIT).tag("operation", "MONITORING")
+                .tag("rule", "AMOUNT_BAND").counter()).as("a judged-only kind has no MONITORING series").isNull();
     }
 
     @Test

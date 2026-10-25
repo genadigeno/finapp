@@ -192,7 +192,22 @@ class OwnershipIsScopedTest {
          * presents is a check id we gave it; and every write the callback can trigger is a
          * conditional transition whose losing branch appends evidence and changes nothing.
          */
-        SIGNED_CALLBACK
+        SIGNED_CALLBACK,
+
+        /**
+         * The system resolves a reference it recorded itself, for no person's request.
+         *
+         * <p>Added by {@code P13-TSK-020} for the monitoring rules' account &rarr; party join, and a new
+         * class because each existing label would say something false: not {@link #NOT_OWNED} (a customer
+         * agreement is owned), not {@link #AUTHORITATIVE_ID} (the identifier comes from the ledger chart's
+         * {@code owner_ref} through risk's monitored transaction, a read scoped by nothing but a key - this
+         * rule's own provenance check would rightly refuse it), not {@link #ADMINISTERED} (no person and no
+         * permission names the subject). What stands in for the ownership predicate is <strong>who may
+         * call it</strong>: the entry names the one production class that does, and
+         * {@link #systemJoinsHaveTheirOneCaller} fails the build when any other class calls it - so the read
+         * by identifier alone cannot drift into a request path without somebody writing a second sentence.
+         */
+        SYSTEM_JOIN
     }
 
     /**
@@ -252,6 +267,19 @@ class OwnershipIsScopedTest {
                                         + " knows only an opaque owner_ref (ADR-0042). The"
                                         + " surfaces that control disclosure remain the"
                                         + " product's.")),
+                    Map.entry(
+                            "com.finapp.accounts.JdbcCustomerAccountStore.customerOf",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.app.risk.AccountMonitoredParties",
+                                    "P13-TSK-020. The monitoring rules' account -> party join: the identifier is a"
+                                        + " ledger account's owner_ref the platform recorded (the journal's chart,"
+                                        + " carried by risk's monitored transaction), never a request's; the statement"
+                                        + " answers the owner's identifier and nothing of the agreement (no product,"
+                                        + " status or date), on the monitoring claim's own connection as the system."
+                                        + " AccountMonitoredParties alone calls it, and that class depends on risk, so"
+                                        + " NoCustomerSurfaceReadsRiskTest refuses any customer or merchant surface"
+                                        + " reaching it.")),
                     Map.entry(
                             "com.finapp.accounts.JdbcCustomerAccountStore.findOwnedBy",
                             new Entry(
@@ -4821,6 +4849,52 @@ class OwnershipIsScopedTest {
                 .as("the method-body extraction must find the statement it claims to read")
                 .contains("UPDATE")
                 .contains(OWNER_PREDICATE);
+    }
+
+    /**
+     * A {@code SYSTEM_JOIN} read is called by exactly the production class its entry names.
+     *
+     * <p>That is the whole control for a read by identifier alone, and the part a build rule can
+     * check: the calls are read from the bytecode, so a second caller - a desk, a controller, another
+     * adapter - fails here before it can serve the read to anybody. The store's own class and its
+     * interfaces are the call's possible targets; the implementation calling itself is not a caller.
+     */
+    @Test
+    @DisplayName("a SYSTEM_JOIN read is called by the one production class its entry names, and by nothing else")
+    void systemJoinsHaveTheirOneCaller() {
+        JavaClasses production = productionClasses();
+        List<String> joins = new ArrayList<>();
+        REGISTER.forEach(
+                (method, entry) -> {
+                    if (entry.scope() == Scope.SYSTEM_JOIN) {
+                        joins.add(method);
+                    }
+                });
+        assertThat(joins)
+                .as("the classification exists for the monitoring join; an empty set checks nothing")
+                .isNotEmpty();
+        for (String method : joins) {
+            String caller = REGISTER.get(method).authoritativeRead();
+            assertThat(production.contain(caller)).as("%s does not exist", caller).isTrue();
+            String owner = method.substring(0, method.lastIndexOf('.'));
+            String name = method.substring(method.lastIndexOf('.') + 1);
+            Set<String> targets = new TreeSet<>();
+            targets.add(owner);
+            production.get(owner).getAllRawInterfaces().forEach(type -> targets.add(type.getName()));
+            Set<String> callers = new TreeSet<>();
+            for (JavaClass type : production) {
+                for (JavaMethodCall call : type.getMethodCallsFromSelf()) {
+                    if (call.getName().equals(name) && targets.contains(call.getTargetOwner().getName())) {
+                        callers.add(call.getOriginOwner().getName());
+                    }
+                }
+            }
+            callers.remove(owner);
+            assertThat(callers)
+                    .as("%s is a read by identifier alone: only %s may call it - a second caller is a"
+                            + " second classification, argued here", method, caller)
+                    .containsExactly(caller);
+        }
     }
 
     /**

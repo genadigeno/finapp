@@ -57,9 +57,11 @@ class RiskMetricTagsAreBoundedTest {
             // A suppression's reason code; the fail-safe's two reason codes.
             "reason_code", union(List.of(names(SuppressionReason.values()), names(ReasonCode.values()))),
             "status", names(CaseStatus.values()),
-            // An action's outcome and an override's act, lower-cased; a challenge's two outcomes.
+            // An action's outcome and an override's act, lower-cased; a challenge's two outcomes; what became of a party
+            // the monitoring rule leg met (P13-TSK-020), lower-cased.
             "outcome", union(List.of(lower(names(ActionOutcome.values())), lower(names(RiskOverrideMetrics.Act.values())),
-                    Set.of("satisfied", "refused"))),
+                    Set.of("satisfied", "refused"),
+                    lower(names(com.finapp.risk.MonitoringObserver.SubjectOutcome.values())))),
             "operation", names(RiskOperation.values()),
             "verdict", names(RiskDecision.values()),
             "rule", names(RuleKind.values()),

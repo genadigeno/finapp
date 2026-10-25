@@ -72,6 +72,8 @@ class RiskLogSitesAreEnumeratedTest {
                     + " cause={}\"|assessment.value()|operation.name()|cause",
             "RiskMonitoringMetrics.java|\"The monitoring figures could not be read: {}\""
                     + "|unreadable.getClass().getSimpleName()",
+            // P13-TSK-020: a party's rule leg rolled back alone - the cause's class name, never the party or a message.
+            "RiskMonitoringMetrics.java|\"Risk monitoring subject failed: {}\"|cause",
             "RiskCaseBacklogMetrics.java|\"The risk case backlog could not be read: {}\""
                     + "|unreadable.getClass().getSimpleName()",
             "RiskMonitoringSchedule.java|\"Risk monitoring intake batch failed: {}\"|failure.getClass().getSimpleName()",

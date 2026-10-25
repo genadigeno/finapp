@@ -32,11 +32,13 @@ public final class ProfileInputs {
      * One party's reading: the sealed inputs, and what they were taken from that a retrospective alert names - the
      * account-takeover anchors (`-013`) and the abuse readings' evidence (`-014`).
      */
-    public record Read(EvaluationInputs inputs, AccountTakeover.Anchors anchors, PaymentAbuse.PartyRead abuse) {
+    public record Read(EvaluationInputs inputs, AccountTakeover.Anchors anchors, PaymentAbuse.PartyRead abuse,
+            MonitoredMovements.Read journal) {
         public Read {
             Objects.requireNonNull(inputs, "inputs");
             Objects.requireNonNull(anchors, "anchors");
             Objects.requireNonNull(abuse, "abuse");
+            Objects.requireNonNull(journal, "journal");
         }
     }
 
@@ -44,6 +46,7 @@ public final class ProfileInputs {
     private final SignalReadings signals;
     private final RiskPartyIdentities identities;
     private final VelocityWindows clock;
+    private final MonitoredMovements journal;
 
     /**
      * @param signals the anchors' signals
@@ -52,10 +55,25 @@ public final class ProfileInputs {
      */
     public ProfileInputs(ScreeningClearances clearances, SignalReadings signals, RiskPartyIdentities identities,
             VelocityWindows clock) {
+        this(clearances, signals, identities, clock, MonitoredMovements.none());
+    }
+
+    /**
+     * @param journal the monitoring readings over the party's movements (`P13-TSK-020`) - {@link MonitoredMovements#none()}
+     *     leaves every journal and velocity reading {@code ABSENT}, as the earlier tasks built it
+     */
+    public ProfileInputs(ScreeningClearances clearances, SignalReadings signals, RiskPartyIdentities identities,
+            VelocityWindows clock, MonitoredMovements journal) {
         this.clearances = Objects.requireNonNull(clearances, "clearances");
         this.signals = Objects.requireNonNull(signals, "signals");
         this.identities = Objects.requireNonNull(identities, "identities");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.journal = Objects.requireNonNull(journal, "journal");
+    }
+
+    /** The journal's reader - the rule leg reads each touched day's windows through it (`P13-TSK-020`). */
+    MonitoredMovements journal() {
+        return journal;
     }
 
     /**
@@ -101,8 +119,16 @@ public final class ProfileInputs {
         PaymentAbuse.PartyRead abuse = PaymentAbuse.PartyRead.none();
         if (policy != null && judged.stream().anyMatch(PaymentAbuse.KINDS::contains)) {
             abuse = PaymentAbuse.party(unitOfWork, signals, clock, policy, partyId, clock.now(unitOfWork));
-            inputs.monitoring(abuse.readings());
         }
-        return new Read(inputs.build(), anchors, abuse);
+        // P13-TSK-020: the journal's readings - the dormancy, the flows, the amounts, `-006`'s PARTY windows - as of the
+        // database's instant, MERGED into the abuse readings' one value (never replacing a field -014 sealed).
+        MonitoredMovements.Read movements = MonitoredMovements.Read.empty(java.time.LocalDate.EPOCH,
+                java.time.Instant.EPOCH);
+        if (policy != null && judged.stream().anyMatch(MonitoringRules.KINDS::contains)) {
+            movements = journal.readAt(unitOfWork, partyId, policy, clock.now(unitOfWork));
+            movements.velocity().forEach(inputs::velocity);
+        }
+        inputs.monitoring(abuse.readings().withJournal(movements.readings()));
+        return new Read(inputs.build(), anchors, abuse, movements);
     }
 }

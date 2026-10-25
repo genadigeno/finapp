@@ -6,11 +6,17 @@ import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.risk.JdbcMonitoredTransactionStore;
 import com.finapp.risk.JdbcMonitoringWatermarkStore;
+import com.finapp.platform.telemetry.Spans;
 import com.finapp.risk.MonitoredLedger;
+import com.finapp.risk.MonitoredMovementStore;
+import com.finapp.risk.MonitoredParties;
 import com.finapp.risk.MonitoredTransactionStore;
 import com.finapp.risk.MonitoringIntake;
 import com.finapp.risk.MonitoringReprocessing;
+import com.finapp.risk.MonitoringRun;
 import com.finapp.risk.MonitoringWatermarkStore;
+import com.finapp.risk.ProfileRecompute;
+import com.finapp.risk.RiskPolicies;
 import com.finapp.sharedkernel.id.IdGenerator;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -54,6 +60,22 @@ public class RiskMonitoringBeans {
         return new JdbcMonitoredTransactionStore();
     }
 
+    /** The monitoring rules' reads of the monitored transactions (`P13-TSK-020`) - the same stateless store's other face. */
+    @Bean
+    MonitoredMovementStore monitoredMovementStore() {
+        return new JdbcMonitoredTransactionStore();
+    }
+
+    /**
+     * The account -> party join the monitoring rules read (`P13-TSK-020`): accounts' system read of an agreement's
+     * customer and party's {@code partyOfCustomer}; the reverse over the live customer's agreements.
+     */
+    @Bean
+    MonitoredParties monitoredParties(com.finapp.party.PartyStore<Connection> partyStore,
+            com.finapp.accounts.CustomerAccountStore<Connection> customerAccountStore) {
+        return new AccountMonitoredParties(partyStore, customerAccountStore);
+    }
+
     /**
      * T-mon's intake leg. The settle horizon ({@code finapp.risk.monitoring.horizon}) must exceed the longest money
      * transaction plus the instances' clock skew ({@code DESIGN-019} section 0); the batch and the idle cadence pace
@@ -67,9 +89,28 @@ public class RiskMonitoringBeans {
             IdGenerator idGenerator,
             @Value("${finapp.risk.monitoring.horizon:PT60S}") Duration settleHorizon,
             @Value("${finapp.risk.monitoring.batch:200}") int batch,
-            @Value("${finapp.risk.monitoring.idle:PT5S}") Duration idleCadence) {
+            @Value("${finapp.risk.monitoring.idle:PT5S}") Duration idleCadence,
+            @Value("${finapp.risk.monitoring.subjects-per-claim:100}") int subjectsPerClaim) {
         return new MonitoringIntake(monitoredLedger, monitoringWatermarkStore, monitoredTransactionStore, idGenerator,
-                settleHorizon, batch, idleCadence);
+                settleHorizon, batch, idleCadence, subjectsPerClaim);
+    }
+
+    /**
+     * T-mon's rule leg (`P13-TSK-020`; ADR-0111 decision 3): run on each batch's rows in the claim's own transaction -
+     * the MONITORING pin, then every touched party under a savepoint of its own, its head (R8), its AML alerts and its
+     * profile. {@code finapp.risk.monitoring.subjects-per-claim} (100) bounds the customer accounts one claim touches.
+     */
+    @Bean
+    MonitoringRun monitoringRun(
+            RiskPolicies riskPolicies,
+            MonitoredParties monitoredParties,
+            ProfileRecompute profileRecompute,
+            IdGenerator idGenerator,
+            Clock clock,
+            Spans domainSpans,
+            RiskMonitoringMetrics riskMonitoringMetrics) {
+        return new MonitoringRun(riskPolicies, monitoredParties, profileRecompute, idGenerator, clock, domainSpans,
+                riskMonitoringMetrics);
     }
 
     @Bean
@@ -104,7 +145,8 @@ public class RiskMonitoringBeans {
     }
 
     /**
-     * The monitoring sweep - every instance, no lease, off in test contexts: the intake leg (`P13-TSK-019`), the
+     * The monitoring sweep - every instance, no lease, off in test contexts: the intake leg (`P13-TSK-019`) with the
+     * rule leg inside each batch's transaction (`P13-TSK-020`, {@link MonitoringRun}), the
      * customer risk profile leg (`P13-TSK-007`, {@code finapp.risk.profile.claims-per-tick} heads a tick at most), the
      * case leg (`P13-TSK-016`, {@code finapp.risk.case.folds-per-tick} queued alerts and
      * {@code finapp.risk.case.prohibitions-per-tick} approved prohibitions a tick at most). `-012`'s override action
@@ -114,6 +156,7 @@ public class RiskMonitoringBeans {
     @ConditionalOnProperty(name = "finapp.risk.monitoring.sweeper.enabled", havingValue = "true", matchIfMissing = true)
     RiskMonitoringSchedule riskMonitoringSchedule(
             MonitoringIntake monitoringIntake,
+            MonitoringRun monitoringRun,
             com.finapp.risk.ProfileRecompute profileRecompute,
             com.finapp.risk.Cases cases,
             CaseProhibitionDriver caseProhibitionDriver,
@@ -126,7 +169,7 @@ public class RiskMonitoringBeans {
             @Value("${finapp.risk.case.folds-per-tick:50}") int foldsPerTick) {
         CaseLegDriver caseLeg = new CaseLegDriver(cases, caseProhibitionDriver, riskTransactions,
                 riskMonitoringMetrics, riskFlowScope, foldsPerTick);
-        return new RiskMonitoringSchedule(monitoringIntake,
+        return new RiskMonitoringSchedule(monitoringIntake, monitoringRun,
                 RiskMonitoringSchedule.ProfileLeg.over(profileRecompute), profileClaimsPerTick, caseLeg::driveDue,
                 riskTransactions, riskMonitoringMetrics, riskFlowScope, pollInterval, batchesPerTick);
     }

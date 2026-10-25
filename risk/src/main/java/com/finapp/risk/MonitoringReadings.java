@@ -50,6 +50,36 @@ public record MonitoringReadings(
         return new MonitoringReadings(Reading.absent(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
     }
 
+    /** The journal's readings alone (`P13-TSK-020`, {@link MonitoredMovements}): the dormancy, the flows, the amounts. */
+    public static MonitoringReadings journal(Reading<Integer> dormantDays, Map<WindowKind, Flow> flows,
+            Map<WindowKind, Amounts> amounts) {
+        return new MonitoringReadings(dormantDays, flows, amounts, Map.of(), Map.of(), Map.of());
+    }
+
+    /**
+     * This value with {@code journal}'s readings merged in (`P13-TSK-020`; `-014`'s routed rule): the profile leg seals
+     * ONE {@code MonitoringReadings} - `-014`'s ratio and BNPL maps ({@link PaymentAbuse#party}) beside the journal's
+     * dormancy, flows and amounts ({@link MonitoredMovements}) - and neither side may replace a reading the other holds:
+     * a field both carry is a defect in a reader, refused rather than silently overwritten.
+     *
+     * @throws IllegalArgumentException when both carry the same reading
+     */
+    public MonitoringReadings withJournal(MonitoringReadings journal) {
+        Objects.requireNonNull(journal, "journal");
+        if (journal.dormantDays.isPresent() && dormantDays.isPresent()
+                || !journal.flows.isEmpty() && !flows.isEmpty()
+                || !journal.amounts.isEmpty() && !amounts.isEmpty()
+                || !journal.refunds.isEmpty() && !refunds.isEmpty()
+                || !journal.chargebacks.isEmpty() && !chargebacks.isEmpty()
+                || !journal.bnplApplications.isEmpty() && !bnplApplications.isEmpty()) {
+            throw new IllegalArgumentException("a monitoring reading is sealed by one reader: the merge never replaces");
+        }
+        return new MonitoringReadings(dormantDays.isPresent() ? dormantDays : journal.dormantDays,
+                flows.isEmpty() ? journal.flows : flows, amounts.isEmpty() ? journal.amounts : amounts,
+                refunds.isEmpty() ? journal.refunds : refunds, chargebacks.isEmpty() ? journal.chargebacks : chargebacks,
+                bnplApplications.isEmpty() ? journal.bnplApplications : bnplApplications);
+    }
+
     static <V> Map<WindowKind, V> ordered(Map<WindowKind, V> map, String name) {
         Objects.requireNonNull(map, name);
         EnumMap<WindowKind, V> ordered = new EnumMap<>(WindowKind.class);
