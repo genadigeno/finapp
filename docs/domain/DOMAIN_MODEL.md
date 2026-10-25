@@ -189,6 +189,8 @@ Investigator Action
 Disposition
 Escalation
 Risk Action
+Risk Queue
+Case File
 Screening List Version
 Regulatory Report
 Fraud Detection
@@ -303,7 +305,10 @@ not a report, a risk action is not the owning domain's effect, a velocity window
 transaction is not the journal entry. Screening Result was added after KYB Case: `kyc` has owned it since
 `P0-TSK-006` and Phase 13 reads it through a port, so the list names it. Nothing of Phase 13 is built: each is the
 planned design, defined in the glossary's §8a with the same guard, and the machines are in
-[`RISK_LIFECYCLES.md`](RISK_LIFECYCLES.md).)*
+[`RISK_LIFECYCLES.md`](RISK_LIFECYCLES.md).)* *(`P13-TSK-018`, 2026-10-25, added two terms after Risk Action, each
+built as a read of its own and defined in the glossary: Risk Queue (the investigator's ordered, audited, self-dealing-
+withheld read of alerts or cases - not a projection, and not `CaseQueue`, the routing vocabulary) and Case File (one
+case read whole, its evidence by reference - not the evidence, and never a report's narrative).)*
 
 ---
 

@@ -432,7 +432,15 @@ class NoFloatingPointMoneyRulesTest {
                     // module and is never summed into a meter.
                     "com.finapp.app.risk.RiskMonitoringMetrics",
                     "com.finapp.app.risk.RiskMonitoringMetrics$Cached",
-                    "com.finapp.app.risk.RiskMonitoringMetrics$Figures");
+                    "com.finapp.app.risk.RiskMonitoringMetrics$Figures",
+                    // P13-TSK-018. The SAME case again, for the case queue: per case kind two
+                    // counts - the open cases, and the seconds since the oldest opened
+                    // (RiskCaseStore.backlog answers longs) - published through the
+                    // ToDoubleFunction Micrometer's Gauge imposes, NaN when unreadable. A
+                    // count and a duration, never an amount: a case carries none.
+                    "com.finapp.app.risk.RiskCaseBacklogMetrics",
+                    "com.finapp.app.risk.RiskCaseBacklogMetrics$Cached",
+                    "com.finapp.app.risk.RiskCaseBacklogMetrics$Figures");
 
     // ---------------------------------------------------------------------
     // Guard: the rules must actually see the code they claim to protect.

@@ -22,7 +22,7 @@ import java.util.Objects;
  *   <li>{@code finapp.risk.case.resolution{kind}} - opened to disposed, on the database's two stamps.</li>
  * </ul>
  *
- * The gauges {@code finapp.risk.case.age{kind}} and {@code .case.backlog{kind}} are `-018`'s, read from its queues. No
+ * The gauges {@code finapp.risk.case.age{kind}} and {@code .case.backlog{kind}} are `-018`'s ({@link RiskCaseBacklogMetrics}), read from the queue. No
  * tag carries an id, a subject, a person or a disposition's reason ({@code INV-RSK-08}; {@code kind} and {@code status}
  * are {@code MetricNames.ALLOWED_TAG_KEYS}'). Counted inside the act's transaction: a caller that rolls back after a
  * move has been counted - a counter's tolerance, never an audit's (`-015`'s {@code RiskAlertMetrics} shape).

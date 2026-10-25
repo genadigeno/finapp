@@ -4,6 +4,7 @@ import com.finapp.platform.security.Actor;
 import java.sql.Connection;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Storage for alerts (`P13-TSK-015`; {@code risk V010}; ADR-0033) - a port on the caller's unit of work. The arbiters
@@ -54,4 +55,17 @@ public interface RiskAlertStore {
 
     /** The standing proposal cleared, the alert {@code OPEN} again; empty when none stood or the alert was not open. */
     Optional<RiskAlert> reject(Connection unitOfWork, RiskAlertId id);
+
+    /**
+     * Up to {@code limit} alerts of {@code status} (and of {@code kind}, when named), oldest first by
+     * {@code (raised_at, id)}, after the key of the alert {@code after} names (`P13-TSK-018`'s queue; {@code risk V014}'s
+     * {@code risk_alert_queue}, {@code V010}'s {@code risk_alert_open_queue}) - no lock. {@code excludingParty}'s own
+     * {@code PARTY}-subject alerts are left out by the statement (the reader's party; every other subject's party is the
+     * domain's judgement). The cursor's row need not match the filter: its key is immutable.
+     */
+    List<RiskAlert> queue(Connection unitOfWork, AlertStatus status, Optional<AlertKind> kind, Optional<RiskAlertId> after,
+            UUID excludingParty, int limit);
+
+    /** The alerts attached to {@code caseId}, oldest first ({@code risk V014}'s {@code risk_alert_of_case}) - no lock. */
+    List<RiskAlert> ofCase(Connection unitOfWork, RiskCaseId caseId);
 }

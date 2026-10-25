@@ -10,6 +10,7 @@ import com.finapp.risk.RiskCase;
 import com.finapp.risk.RiskCaseId;
 import com.finapp.risk.RiskCaseStore;
 import com.finapp.risk.SignalSubject;
+import com.finapp.risk.SubjectKind;
 import java.sql.Connection;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -192,6 +193,40 @@ public final class InMemoryRiskCaseStore implements RiskCaseStore {
     public boolean actionProposalStands(Connection unitOfWork, RiskCaseId id) {
         log.add("actionProposalStands");
         return actionStands.test(id);
+    }
+
+    @Override
+    public List<RiskCase> queue(Connection unitOfWork, Optional<CaseStatus> status, Optional<CaseKind> kind,
+            Optional<RiskCaseId> after, UUID excludingParty, int limit) {
+        log.add("queue " + status.map(Enum::name).orElse("OPEN_ANY"));
+        if (limit < 1) {
+            throw new IllegalArgumentException("a queue page reads at least one case: " + limit);
+        }
+        Comparator<RiskCase> oldestFirst = Comparator.comparing(RiskCase::openedAt)
+                .thenComparing(row -> row.id().value());
+        Optional<RiskCase> cursor = after.map(rows::get);
+        return rows.values().stream()
+                .filter(row -> status.isPresent() ? row.status() == status.get() : row.open())
+                .filter(row -> kind.isEmpty() || row.kind() == kind.get())
+                .filter(row -> !(row.subject().kind() == SubjectKind.PARTY
+                        && row.subject().ref().equals(excludingParty.toString())))
+                .filter(row -> cursor.isEmpty() || oldestFirst.compare(row, cursor.get()) > 0)
+                .sorted(oldestFirst)
+                .limit(limit)
+                .toList();
+    }
+
+    @Override
+    public List<Backlog> backlog(Connection unitOfWork) {
+        log.add("backlog");
+        Map<CaseKind, List<RiskCase>> open = new java.util.EnumMap<>(CaseKind.class);
+        rows.values().stream().filter(RiskCase::open)
+                .forEach(row -> open.computeIfAbsent(row.kind(), k -> new ArrayList<>()).add(row));
+        return open.entrySet().stream()
+                .map(entry -> new Backlog(entry.getKey(), entry.getValue().size(), Math.max(0, java.time.Duration
+                        .between(entry.getValue().stream().map(RiskCase::openedAt).min(Comparator.naturalOrder())
+                                .orElseThrow(), now).toSeconds())))
+                .toList();
     }
 
     private Optional<RiskCase> openOf(SignalSubject subject, CaseKind kind) {

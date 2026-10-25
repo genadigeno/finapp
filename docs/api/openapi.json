@@ -9397,6 +9397,41 @@
           }
         }
       },
+      "risk.QueueRequestInvalid": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.QueueRequestInvalid"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.QueueRequestInvalid"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The queue read is not admitted as asked: a status or kind outside the queue's vocabulary, a page of fewer than one row, or a cursor that names no row of the queue; nothing was served.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "risk.ReasonRequired": {
         "content": {
           "application/problem+json": {
@@ -22112,6 +22147,85 @@
         },
         "type": "object"
       },
+      "RiskAlertPageView": {
+        "properties": {
+          "alerts": {
+            "items": {
+              "$ref": "#/components/schemas/RiskAlertView"
+            },
+            "type": "array"
+          },
+          "next": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskAlertView": {
+        "properties": {
+          "alertId": {
+            "type": "string"
+          },
+          "assessmentIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "attachedAt": {
+            "type": "string"
+          },
+          "caseId": {
+            "type": "string"
+          },
+          "journalEntryIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "policyVersionId": {
+            "type": "string"
+          },
+          "raisedAt": {
+            "type": "string"
+          },
+          "ruleCode": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "signalIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subjectKind": {
+            "type": "string"
+          },
+          "subjectRef": {
+            "type": "string"
+          },
+          "suppression": {
+            "$ref": "#/components/schemas/RiskSuppressionView"
+          },
+          "windowKind": {
+            "type": "string"
+          },
+          "windowStart": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RiskAssessmentView": {
         "properties": {
           "amount": {
@@ -22300,6 +22414,51 @@
         ],
         "type": "object"
       },
+      "RiskCaseActionView": {
+        "properties": {
+          "assessmentIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "disposition": {
+            "type": "string"
+          },
+          "journalEntryIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "ordinal": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "prohibits": {
+            "type": "boolean"
+          },
+          "queue": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string"
+          },
+          "signalIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RiskCaseDecisionRequest": {
         "properties": {
           "reason": {
@@ -22344,6 +22503,77 @@
         ],
         "type": "object"
       },
+      "RiskCaseEventView": {
+        "properties": {
+          "actionId": {
+            "type": "string"
+          },
+          "alertId": {
+            "type": "string"
+          },
+          "assessmentId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "queue": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskCaseFileView": {
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/RiskCaseActionView"
+            },
+            "type": "array"
+          },
+          "alerts": {
+            "items": {
+              "$ref": "#/components/schemas/RiskAlertView"
+            },
+            "type": "array"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/RiskEvidenceView"
+            },
+            "type": "array"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/RiskCaseEventView"
+            },
+            "type": "array"
+          },
+          "riskActions": {
+            "items": {
+              "$ref": "#/components/schemas/RiskActionView"
+            },
+            "type": "array"
+          },
+          "riskCase": {
+            "$ref": "#/components/schemas/RiskCaseView"
+          }
+        },
+        "type": "object"
+      },
       "RiskCaseOpenRequest": {
         "properties": {
           "alertId": {
@@ -22367,6 +22597,20 @@
           "subjectRef": {
             "maxLength": 64,
             "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskCasePageView": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/RiskCaseView"
+            },
+            "type": "array"
+          },
+          "next": {
             "type": "string"
           }
         },
@@ -22451,6 +22695,17 @@
             "type": "boolean"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskEvidenceView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
             "type": "string"
           }
         },
@@ -22998,6 +23253,54 @@
           "from",
           "to"
         ],
+        "type": "object"
+      },
+      "RiskSuppressionDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskSuppressionProposalRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reasonCode": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskSuppressionView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "RoleAssignmentRequest": {
@@ -34289,6 +34592,193 @@
         }
       }
     },
+    "/v1/operator/risk/alerts": {
+      "get": {
+        "operationId": "readRiskAlertQueue",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskAlertPageView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/alerts/{alertId}/suppression": {
+      "post": {
+        "operationId": "proposeRiskAlertSuppression",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "alertId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskSuppressionProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskAlertView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/alerts/{alertId}/suppression/approval": {
+      "post": {
+        "operationId": "approveRiskAlertSuppression",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "alertId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskSuppressionDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskAlertView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/alerts/{alertId}/suppression/rejection": {
+      "post": {
+        "operationId": "rejectRiskAlertSuppression",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "alertId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskSuppressionDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskAlertView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/risk/assessments/{assessmentId}": {
       "get": {
         "operationId": "readRiskAssessment",
@@ -34565,6 +35055,56 @@
       }
     },
     "/v1/operator/risk/cases": {
+      "get": {
+        "operationId": "readRiskCaseQueue",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskCasePageView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
       "post": {
         "operationId": "openRiskCase",
         "parameters": [
@@ -34597,6 +35137,33 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/cases/{caseId}": {
+      "get": {
+        "operationId": "readRiskCase",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskCaseFileView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

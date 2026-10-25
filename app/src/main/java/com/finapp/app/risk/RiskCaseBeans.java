@@ -4,10 +4,13 @@ import com.finapp.identity.IdentityStore;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.outbox.OutboxWriter;
+import com.finapp.risk.AlertQueue;
 import com.finapp.risk.CaseOpener;
+import com.finapp.risk.CaseWorklist;
 import com.finapp.risk.Cases;
 import com.finapp.risk.JdbcRiskCaseStore;
 import com.finapp.risk.ProfileRecompute;
+import com.finapp.risk.RiskActions;
 import com.finapp.risk.RiskAlertStore;
 import com.finapp.risk.RiskCaseStore;
 import com.finapp.risk.RiskSubjectParties;
@@ -15,6 +18,7 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.Connection;
 import java.time.Clock;
+import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -72,6 +76,45 @@ public class RiskCaseBeans {
             IdGenerator idGenerator,
             @Value("${finapp.risk.case.prohibitions-per-tick:20}") int prohibitionsPerTick) {
         return new CaseProhibitionDriver(cases, profileRecompute, riskTransactions, idGenerator, prohibitionsPerTick);
+    }
+
+    /**
+     * The case queue and the case file (`P13-TSK-018`): a read model over the case's tables, the alerts and
+     * {@code RiskActionBeans}' {@link RiskActions} ({@code ofCase}), its readers and subjects placed as {@link Cases}'.
+     */
+    @Bean
+    CaseWorklist caseWorklist(
+            RiskCaseStore riskCaseStore,
+            RiskAlertStore riskAlertStore,
+            RiskActions riskActions,
+            IdentityStore<Connection> identityStore,
+            RiskSubjectParties riskSubjectParties,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new CaseWorklist(riskCaseStore, riskAlertStore, riskActions,
+                new com.finapp.app.credit.IdentityActingParty(identityStore), riskSubjectParties, auditWriter,
+                idGenerator, clock);
+    }
+
+    /** The investigator's reads (`P13-TSK-018`): the two queues and the case file. */
+    @Bean
+    RiskQueueDesk riskQueueDesk(
+            AlertQueue alertQueue,
+            CaseWorklist caseWorklist,
+            RiskTransactions riskTransactions,
+            RiskFlowScope riskFlowScope) {
+        return new RiskQueueDesk(alertQueue, caseWorklist, riskTransactions, riskFlowScope);
+    }
+
+    /** {@code finapp.risk.case.backlog{kind}}, {@code .case.age{kind}} - eager, read behind a 15 s floor. */
+    @Bean
+    RiskCaseBacklogMetrics riskCaseBacklogMetrics(
+            RiskCaseStore riskCaseStore,
+            DataSource dataSource,
+            Clock clock,
+            MeterRegistry meterRegistry) {
+        return new RiskCaseBacklogMetrics(riskCaseStore, dataSource::getConnection, clock, meterRegistry);
     }
 
     @Bean

@@ -17,11 +17,13 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -34,8 +36,9 @@ import org.springframework.web.bind.annotation.RestController;
  * four eyes is two holders of the role), each keyed per principal ({@code risk.case:<type>:<id>}). A stale revision is
  * {@code 409 risk.CaseRevisionStale}, a disposed case {@code 409 risk.CaseNotOpen}, the proposer's approval
  * {@code 403 risk.SelfApprovalRefused} and the analyst's own party's case {@code 403 risk.SelfDealingRefused} - each
- * refusal recorded {@code FAILED}. Every answer is the case's head with its revision; the queue and the case read are
- * `-018`'s. No customer or merchant route reads any of this ({@code INV-RSK-08}).
+ * refusal recorded {@code FAILED}. Every act's answer is the case's head with its revision. Since `P13-TSK-018` the case
+ * queue and the case's file are read here too ({@link RiskQueueDesk}), audited {@code risk.CaseRead}. No customer or
+ * merchant route reads any of this ({@code INV-RSK-08}).
  */
 @RestController
 @RequestMapping(path = "/operator/risk/cases", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -43,6 +46,33 @@ import org.springframework.web.bind.annotation.RestController;
 public class RiskCaseController {
 
     @NonNull private final RiskCaseDesk desk;
+    @NonNull private final RiskQueueDesk queue;
+
+    /**
+     * A page of the case queue (`P13-TSK-018`): {@code status} one {@code CaseStatus} (every open one unless named),
+     * {@code kind} one {@code CaseKind}, {@code after} the last case of the previous page, {@code limit} the page's size
+     * (20 unless named, at most 50) - oldest first by opening; the analyst's own party's cases withheld; audited
+     * {@code risk.CaseRead}.
+     */
+    @GetMapping
+    @RequiresPermission(PermissionName.RISK_INVESTIGATE)
+    public RiskQueueDesk.RiskCasePageView readRiskCaseQueue(
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "kind", required = false) String kind,
+            @RequestParam(name = "after", required = false) String after,
+            @RequestParam(name = "limit", required = false) Integer limit) {
+        return queue.cases(status, kind, after, limit);
+    }
+
+    /**
+     * One case's file (`P13-TSK-018`): its head, its alerts, its investigator actions and history, its downstream
+     * actions and its evidence by reference; never the analyst's own party's (fail closed); audited {@code risk.CaseRead}.
+     */
+    @GetMapping(path = "/{caseId}")
+    @RequiresPermission(PermissionName.RISK_INVESTIGATE)
+    public RiskQueueDesk.RiskCaseFileView readRiskCase(@PathVariable("caseId") String caseId) {
+        return queue.file(caseId);
+    }
 
     /** Opens a case by hand - or answers the subject's open case of the kind; never on the analyst's own party. */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)

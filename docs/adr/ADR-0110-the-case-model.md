@@ -203,6 +203,25 @@ Financial impact: none — a case moves no money; its only effects are keyed act
   organisation party placed for a `MERCHANT_ABUSE` case (`RiskSubjectParties.accountablePartyOf`). **The SLA per kind**
   (the follow-up's "default is the task's"): `ATO` 4 h, `FRAUD` 24 h, `MERCHANT_ABUSE` 72 h, `AML` 720 h, `COLLECTIONS`
   168 h (`SlaDeadlines`), stamped by the trigger on the database clock - owner item to set per kind. The queues and reads
-  (decision 8) stay `P13-TSK-018`'s.
+  (decision 8) stay `P13-TSK-018`'s - built, below.
+- **Built by `P13-TSK-018` (2026-10-25) - decision 8, and decision 1's persons corrected.** `risk V014` (the next free
+  number): **decision 1, corrected (dated note):** the suppression's "two `EMPLOYEE`s" above read so until this task -
+  the platform's session establishes every operator `CUSTOMER`-typed, so the door would have refused every analyst;
+  `risk_alert_suppression_by_persons` is re-made by name over `CUSTOMER` and `EMPLOYEE` (an authenticated human, the
+  meaning `-016` and `-017` adopted; never `SYSTEM`, `SERVICE`, `MERCHANT`), the domain's check `Cases.person`, and the
+  door built - `POST /v1/operator/risk/alerts/{alertId}/suppression` (`RISK_INVESTIGATE`), `…/approval`
+  (`RISK_CASE_APPROVE`, `MULTI_FACTOR`), `…/rejection`, keyed `risk.alert:<type>:<id>`; a merchant's alert placed through
+  the accountable join. **Decision 8** as written, with three readings made precise: "never the operator's own party's"
+  is **withheld** from a page (never refused - a page is what the reader may see; an unplaceable subject withheld too,
+  fail closed; the reader unplaced refused), the cursor always the last row served, the scan bounded at 1,000 rows a
+  page; "every page audited" is `risk.AlertRead` / `risk.CaseRead` committed before the answer, the page one read-only
+  snapshot; "a case's read" is the case file - the case, its alerts, investigator actions, history and risk actions, its
+  evidence by reference only - `403 risk.SelfDealingRefused` for the reader's own party's. The keyset is the immutable
+  `(raised_at | opened_at, id)`; the indexes `risk_alert_queue`, `risk_alert_of_case`, `risk_case_queue`,
+  `risk_case_open_queue`. The tipping-off control made whole by four guards (`NoCustomerSurfaceReadsRiskTest`'s whole
+  reach and risk-table rule, `RiskEventsCarryOnlyCodesTest`, `RiskLogSitesAreEnumeratedTest`,
+  `RiskMetricTagsAreBoundedTest`) and the owed `CustomerAnswerIsIndifferentToACaseTest`. The gauges
+  `finapp.risk.case.backlog{kind}` and `.case.age{kind}` read the queue. A signal's and a monitored transaction's read
+  door - the resolution of those evidence references - is in no route table yet (owner item).
 - **Acceptance.** `Proposed` at the Phase 12 → 13 transition (2026-10-22); the Phase 13 review (`P13-DOC-001`) reads
   this ADR against the code, corrects it in place with dated notes, and accepts it.

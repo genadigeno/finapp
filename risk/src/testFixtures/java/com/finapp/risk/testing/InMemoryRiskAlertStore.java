@@ -2,21 +2,25 @@ package com.finapp.risk.testing;
 
 import com.finapp.platform.security.Actor;
 import com.finapp.risk.AlertKey;
+import com.finapp.risk.AlertKind;
 import com.finapp.risk.AlertStatus;
 import com.finapp.risk.NewAlert;
 import com.finapp.risk.RiskAlert;
 import com.finapp.risk.RiskAlertId;
 import com.finapp.risk.RiskAlertStore;
 import com.finapp.risk.RiskCaseId;
+import com.finapp.risk.SubjectKind;
 import com.finapp.risk.SuppressionReason;
 import java.sql.Connection;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * A {@link RiskAlertStore} in memory for the hermetic suites (`P13-TSK-015`) - {@code risk V010}'s arbiters as the
@@ -147,6 +151,36 @@ public final class InMemoryRiskAlertStore implements RiskAlertStore {
         return put(new RiskAlert(row.id(), row.kind(), row.severity(), row.subject(), row.rule(), row.window(),
                 row.policyVersion(), row.evidence(), AlertStatus.OPEN, Optional.empty(), Optional.empty(),
                 Optional.empty(), Optional.empty(), row.raisedAt(), row.correlationId(), row.causationId()));
+    }
+
+    @Override
+    public List<RiskAlert> queue(Connection unitOfWork, AlertStatus status, Optional<AlertKind> kind,
+            Optional<RiskAlertId> after, UUID excludingParty, int limit) {
+        log.add("queue " + status);
+        if (limit < 1) {
+            throw new IllegalArgumentException("a queue page reads at least one alert: " + limit);
+        }
+        Comparator<RiskAlert> oldestFirst = Comparator.comparing(RiskAlert::raisedAt)
+                .thenComparing(row -> row.id().value());
+        Optional<RiskAlert> cursor = after.map(rows::get);
+        return rows.values().stream()
+                .filter(row -> row.status() == status)
+                .filter(row -> kind.isEmpty() || row.kind() == kind.get())
+                .filter(row -> !(row.subject().kind() == SubjectKind.PARTY
+                        && row.subject().ref().equals(excludingParty.toString())))
+                .filter(row -> cursor.isEmpty() || oldestFirst.compare(row, cursor.get()) > 0)
+                .sorted(oldestFirst)
+                .limit(limit)
+                .toList();
+    }
+
+    @Override
+    public List<RiskAlert> ofCase(Connection unitOfWork, RiskCaseId caseId) {
+        log.add("ofCase");
+        return rows.values().stream()
+                .filter(row -> row.attachedCase().filter(caseId::equals).isPresent())
+                .sorted(Comparator.comparing(RiskAlert::raisedAt).thenComparing(row -> row.id().value()))
+                .toList();
     }
 
     private Optional<RiskAlert> byKey(AlertKey key) {

@@ -68,6 +68,26 @@ public final class JdbcRiskAlertStore implements RiskAlertStore {
             + " suppression_proposed_by = NULL, suppression_proposed_by_type = NULL"
             + " WHERE id = ? AND status = 'OPEN' AND suppression_proposed_by IS NOT NULL RETURNING " + COLUMNS;
 
+    /**
+     * `P13-TSK-018`'s queue: one status, oldest first by the immutable key, the reader's own {@code PARTY}-subject alerts
+     * left out; the kind and the cursor appended by {@link #queueStatement} - this class's constant text only, never
+     * input.
+     */
+    static final String QUEUE = "SELECT " + COLUMNS + " FROM risk.risk_alert WHERE status = ?"
+            + " AND NOT (subject_kind = 'PARTY' AND subject_ref = ?)";
+
+    static final String QUEUE_KIND = " AND kind = ?";
+
+    /** After the cursor's key - read from the cursor's own row, so the instant is never round-tripped through Java. */
+    static final String QUEUE_AFTER = " AND (raised_at, id) > (SELECT a.raised_at, a.id FROM risk.risk_alert a"
+            + " WHERE a.id = ?)";
+
+    static final String QUEUE_ORDER = " ORDER BY raised_at, id LIMIT ?";
+
+    /** A case file's alerts, oldest first - on {@code risk V014}'s {@code risk_alert_of_case}. */
+    static final String OF_CASE = "SELECT " + COLUMNS + " FROM risk.risk_alert WHERE attached_case_id = ?"
+            + " ORDER BY raised_at, id";
+
     @Override
     public Optional<RiskAlert> insert(Connection unitOfWork, RiskAlertId id, NewAlert alert) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
@@ -218,7 +238,63 @@ public final class JdbcRiskAlertStore implements RiskAlertStore {
         }
     }
 
+    @Override
+    public List<RiskAlert> queue(Connection unitOfWork, AlertStatus status, Optional<AlertKind> kind,
+            Optional<RiskAlertId> after, UUID excludingParty, int limit) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(status, "status");
+        Objects.requireNonNull(kind, "kind");
+        Objects.requireNonNull(after, "after");
+        Objects.requireNonNull(excludingParty, "excludingParty");
+        if (limit < 1) {
+            throw new IllegalArgumentException("a queue page reads at least one alert: " + limit);
+        }
+        try (PreparedStatement select = unitOfWork.prepareStatement(queueStatement(kind.isPresent(),
+                after.isPresent()))) {
+            int i = 0;
+            select.setString(++i, status.name());
+            select.setString(++i, excludingParty.toString());
+            if (kind.isPresent()) {
+                select.setString(++i, kind.get().name());
+            }
+            if (after.isPresent()) {
+                select.setObject(++i, after.get().value());
+            }
+            select.setInt(++i, limit);
+            return many(select);
+        } catch (SQLException failure) {
+            throw failed("reading the risk alert queue", failure);
+        }
+    }
+
+    /** The queue's statement - {@link #QUEUE} with the kind and the cursor's predicates as asked, then the order. */
+    static String queueStatement(boolean kind, boolean after) {
+        return QUEUE + (kind ? QUEUE_KIND : "") + (after ? QUEUE_AFTER : "") + QUEUE_ORDER;
+    }
+
+    @Override
+    public List<RiskAlert> ofCase(Connection unitOfWork, RiskCaseId caseId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(caseId, "caseId");
+        try (PreparedStatement select = unitOfWork.prepareStatement(OF_CASE)) {
+            select.setObject(1, caseId.value());
+            return many(select);
+        } catch (SQLException failure) {
+            throw failed("reading a risk case's alerts", failure);
+        }
+    }
+
     // -----------------------------------------------------------------
+
+    private static List<RiskAlert> many(PreparedStatement statement) throws SQLException {
+        List<RiskAlert> alerts = new ArrayList<>();
+        try (ResultSet row = statement.executeQuery()) {
+            while (row.next()) {
+                alerts.add(alert(row));
+            }
+        }
+        return List.copyOf(alerts);
+    }
 
     private static <T> Array uuids(Connection unitOfWork, List<T> references, Function<T, UUID> value)
             throws SQLException {

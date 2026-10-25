@@ -71,6 +71,19 @@ public interface RiskCaseStore {
         }
     }
 
+    /**
+     * The open cases of one kind, as the backlog gauges read them (`P13-TSK-018`): how many are open, and how long ago the
+     * oldest opened, in whole seconds on the database clock ({@code 0} when none is open).
+     */
+    record Backlog(CaseKind kind, long open, long oldestAgeSeconds) {
+        public Backlog {
+            Objects.requireNonNull(kind, "kind");
+            if (open < 0 || oldestAgeSeconds < 0) {
+                throw new IllegalArgumentException("a backlog is counted, never negative");
+            }
+        }
+    }
+
     /** A disposed case whose approved disposition sets {@code PROHIBITED} and has no profile version yet. */
     record PendingProhibition(RiskCaseId caseId, UUID partyId, UUID dispositionId) {
         public PendingProhibition {
@@ -128,4 +141,18 @@ public interface RiskCaseStore {
      * (`P13-TSK-017`; {@code risk V013}'s {@code risk_case_disposes_no_standing_action}). Read under the case's lock.
      */
     boolean actionProposalStands(Connection unitOfWork, RiskCaseId id);
+
+    /**
+     * Up to {@code limit} cases of {@code status} - every open status ({@code OPEN}, {@code IN_INVESTIGATION},
+     * {@code ESCALATED}) when none is named - and of {@code kind} when named, oldest first by {@code (opened_at, id)},
+     * after the key of the case {@code after} names (`P13-TSK-018`'s queue; {@code risk V014}'s {@code risk_case_queue}
+     * and {@code risk_case_open_queue}) - no lock. {@code excludingParty}'s own {@code PARTY}-subject cases are left out
+     * by the statement; every other subject's party is the domain's judgement. The cursor's row need not match the
+     * filter: its key is immutable.
+     */
+    List<RiskCase> queue(Connection unitOfWork, Optional<CaseStatus> status, Optional<CaseKind> kind,
+            Optional<RiskCaseId> after, UUID excludingParty, int limit);
+
+    /** The open cases per kind - one grouped statement; a kind with none open is absent. */
+    List<Backlog> backlog(Connection unitOfWork);
 }

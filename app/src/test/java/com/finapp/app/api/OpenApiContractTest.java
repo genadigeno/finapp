@@ -479,6 +479,15 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/risk-actions",
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/risk-actions/{actionId}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/risk-actions/{actionId}/rejection",
+                        // P13-TSK-018: the investigator's reads - the case queue (beside the opening, above), a case's
+                        // file and the alert queue under RISK_INVESTIGATE, each audited - and the suppression door
+                        // (proposed under RISK_INVESTIGATE, 201; approved by a second holder from MULTI_FACTOR or
+                        // rejected under RISK_CASE_APPROVE).
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/alerts",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/alerts/{alertId}/suppression",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/alerts/{alertId}/suppression/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/alerts/{alertId}/suppression/rejection",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",

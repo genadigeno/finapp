@@ -78,6 +78,34 @@ public final class JdbcRiskCaseStore implements RiskCaseStore {
     static final String ACTION_PROPOSAL_STANDS = "SELECT EXISTS (SELECT 1 FROM risk.risk_action"
             + " WHERE case_id = ? AND status = 'PROPOSED')";
 
+    /**
+     * `P13-TSK-018`'s queue: the reader's own {@code PARTY}-subject cases left out; the status (a named one, or the open
+     * three on {@code risk_case_open_queue}), the kind and the cursor appended by {@link #queueStatement} - this class's
+     * constant text only, never input.
+     */
+    static final String QUEUE = "SELECT " + COLUMNS + " FROM risk.risk_case"
+            + " WHERE NOT (subject_kind = 'PARTY' AND subject_ref = ?)";
+
+    static final String QUEUE_STATUS = " AND status = ?";
+
+    static final String QUEUE_OPEN = " AND status <> 'DISPOSED'";
+
+    static final String QUEUE_KIND = " AND kind = ?";
+
+    /** After the cursor's key - read from the cursor's own row, so the instant is never round-tripped through Java. */
+    static final String QUEUE_AFTER = " AND (opened_at, id) > (SELECT c.opened_at, c.id FROM risk.risk_case c"
+            + " WHERE c.id = ?)";
+
+    static final String QUEUE_ORDER = " ORDER BY opened_at, id LIMIT ?";
+
+    /**
+     * The backlog gauges' read: the open cases per kind and the oldest's age in whole seconds on the database clock - on
+     * {@code risk_case_open_queue}.
+     */
+    static final String BACKLOG = "SELECT kind, count(*) AS open_cases,"
+            + " GREATEST(0, floor(extract(epoch FROM statement_timestamp() - min(opened_at))))::bigint AS oldest_seconds"
+            + " FROM risk.risk_case WHERE status <> 'DISPOSED' GROUP BY kind";
+
     @Override
     public Optional<RiskCase> lockOpen(Connection unitOfWork, SignalSubject subject, CaseKind kind) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
@@ -302,6 +330,66 @@ public final class JdbcRiskCaseStore implements RiskCaseStore {
             }
         } catch (SQLException failure) {
             throw failed("reading a case's standing action proposals", failure);
+        }
+    }
+
+    @Override
+    public List<RiskCase> queue(Connection unitOfWork, Optional<CaseStatus> status, Optional<CaseKind> kind,
+            Optional<RiskCaseId> after, UUID excludingParty, int limit) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(status, "status");
+        Objects.requireNonNull(kind, "kind");
+        Objects.requireNonNull(after, "after");
+        Objects.requireNonNull(excludingParty, "excludingParty");
+        if (limit < 1) {
+            throw new IllegalArgumentException("a queue page reads at least one case: " + limit);
+        }
+        try (PreparedStatement select = unitOfWork.prepareStatement(queueStatement(status.isPresent(),
+                kind.isPresent(), after.isPresent()))) {
+            int i = 0;
+            select.setString(++i, excludingParty.toString());
+            if (status.isPresent()) {
+                select.setString(++i, status.get().name());
+            }
+            if (kind.isPresent()) {
+                select.setString(++i, kind.get().name());
+            }
+            if (after.isPresent()) {
+                select.setObject(++i, after.get().value());
+            }
+            select.setInt(++i, limit);
+            List<RiskCase> page = new ArrayList<>();
+            try (ResultSet row = select.executeQuery()) {
+                while (row.next()) {
+                    page.add(riskCase(row));
+                }
+            }
+            return List.copyOf(page);
+        } catch (SQLException failure) {
+            throw failed("reading the risk case queue", failure);
+        }
+    }
+
+    /** The queue's statement - {@link #QUEUE} with the status, kind and cursor predicates as asked, then the order. */
+    static String queueStatement(boolean status, boolean kind, boolean after) {
+        return QUEUE + (status ? QUEUE_STATUS : QUEUE_OPEN) + (kind ? QUEUE_KIND : "") + (after ? QUEUE_AFTER : "")
+                + QUEUE_ORDER;
+    }
+
+    @Override
+    public List<Backlog> backlog(Connection unitOfWork) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        try (PreparedStatement select = unitOfWork.prepareStatement(BACKLOG)) {
+            List<Backlog> backlog = new ArrayList<>();
+            try (ResultSet row = select.executeQuery()) {
+                while (row.next()) {
+                    backlog.add(new Backlog(CaseKind.valueOf(row.getString("kind")), row.getLong("open_cases"),
+                            row.getLong("oldest_seconds")));
+                }
+            }
+            return List.copyOf(backlog);
+        } catch (SQLException failure) {
+            throw failed("reading the risk case backlog", failure);
         }
     }
 

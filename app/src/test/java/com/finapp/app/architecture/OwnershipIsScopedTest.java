@@ -1889,8 +1889,9 @@ class OwnershipIsScopedTest {
                                     "P13-TSK-015. An alert read by id: the id an attach names - -016's folding, from"
                                         + " the alert this transaction raised, or its case door behind"
                                         + " @RequiresPermission(RISK_INVESTIGATE) - or the receipt of an analyst's act"
-                                        + " on -018's suppression door; deliberately someone else's subject, the"
-                                        + " not-self rule judged by Alerts on every person's act.")),
+                                        + " on -018's suppression door, or -018's queue cursor (its key only - the row"
+                                        + " is never served); deliberately someone else's subject, the not-self rule"
+                                        + " judged by Alerts on every person's act and by the queue on every row.")),
                     Map.entry(
                             "com.finapp.risk.JdbcRiskAlertStore.lock",
                             new Entry(
@@ -1914,8 +1915,9 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P13-TSK-015. The id comes only from the row this transaction locked FOR UPDATE"
                                         + " (lock(id), after the not-self rule), the write conditional on OPEN with no"
-                                        + " standing proposal; behind RISK_INVESTIGATE (-018's door), EMPLOYEE actors"
-                                        + " only by the domain and by CHECK.")),
+                                        + " standing proposal; behind RISK_INVESTIGATE (-018's door), persons only -"
+                                        + " CUSTOMER- or EMPLOYEE-typed since risk V014 - by the domain and by"
+                                        + " CHECK.")),
                     Map.entry(
                             "com.finapp.risk.JdbcRiskAlertStore.approve",
                             new Entry(
@@ -1931,6 +1933,16 @@ class OwnershipIsScopedTest {
                                     "P13-TSK-015. The id comes only from the row this transaction locked FOR UPDATE"
                                         + " (lock(id), after the not-self rule), the clearing conditional on OPEN over a"
                                         + " standing proposal; behind -018's door; it suppresses nothing.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskAlertStore.ofCase",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-018. A case file's alerts by the case's id, on the file's read-only"
+                                        + " snapshot behind @RequiresPermission(RISK_INVESTIGATE), only after"
+                                        + " CaseWorklist.read placed the reader and judged the case's subject's"
+                                        + " accountable party not the reader's (fail closed, risk.SelfDealingRefused);"
+                                        + " recorded risk.CaseRead before it is answered. Risk's own rows about a"
+                                        + " subject, owned by no party.")),
                     Map.entry(
                             "com.finapp.risk.JdbcRiskCaseStore.lock",
                             new Entry(
@@ -1949,7 +1961,9 @@ class OwnershipIsScopedTest {
                                         + " (or its key replayed) behind RISK_INVESTIGATE / RISK_CASE_APPROVE, the case"
                                         + " the act's own lock already judged for self-dealing; the prohibition's"
                                         + " follow-up after an approval; the drain's attach of an alert to the case the"
-                                        + " same transaction holds. No customer or merchant surface reaches it.")),
+                                        + " same transaction holds; and P13-TSK-018's file (its subject's party judged"
+                                        + " before anything else is read) and queue cursor (its key only - the row is"
+                                        + " never served). No customer or merchant surface reaches it.")),
                     Map.entry(
                             "com.finapp.risk.JdbcRiskCaseStore.advance",
                             new Entry(
@@ -1963,15 +1977,16 @@ class OwnershipIsScopedTest {
                             new Entry(
                                     Scope.ADMINISTERED,
                                     "P13-TSK-016. A case's investigator actions by its id - the suites' reading and"
-                                        + " -018's case read (behind RISK_INVESTIGATE, self-dealing judged first);"
-                                        + " no door serves it in this task.")),
+                                        + " P13-TSK-018's case file (GET /v1/operator/risk/cases/{caseId} behind"
+                                        + " RISK_INVESTIGATE, on the file's snapshot after CaseWorklist.read judged"
+                                        + " self-dealing, recorded risk.CaseRead).")),
                     Map.entry(
                             "com.finapp.risk.JdbcRiskCaseStore.events",
                             new Entry(
                                     Scope.ADMINISTERED,
-                                    "P13-TSK-016. A case's history by its id - the suites' reading and -018's case"
-                                        + " read (behind RISK_INVESTIGATE, self-dealing judged first); no door serves"
-                                        + " it in this task.")),
+                                    "P13-TSK-016. A case's history by its id - the suites' reading and P13-TSK-018's"
+                                        + " case file (behind RISK_INVESTIGATE, on the file's snapshot after"
+                                        + " CaseWorklist.read judged self-dealing, recorded risk.CaseRead).")),
                     Map.entry(
                             "com.finapp.risk.JdbcRiskCaseStore.actionProposalStands",
                             new Entry(
@@ -2006,9 +2021,10 @@ class OwnershipIsScopedTest {
                             "com.finapp.risk.JdbcRiskActionStore.ofCase",
                             new Entry(
                                     Scope.ADMINISTERED,
-                                    "P13-TSK-017. A case's actions by its id - the suites' reading and -018's case"
-                                        + " read (behind RISK_INVESTIGATE, self-dealing judged first); no door serves"
-                                        + " it in this task.")),
+                                    "P13-TSK-017. A case's actions by its id - the suites' reading and P13-TSK-018's"
+                                        + " case file (RiskActions.ofCase behind RISK_INVESTIGATE, on the file's"
+                                        + " snapshot after CaseWorklist.read judged self-dealing, recorded"
+                                        + " risk.CaseRead).")),
                     Map.entry(
                             "com.finapp.risk.JdbcRiskActionStore.approve",
                             new Entry(
