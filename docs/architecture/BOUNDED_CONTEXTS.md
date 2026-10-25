@@ -449,7 +449,9 @@ Its relationships, every one through a port `app` implements or a seam the consu
   generic refusal (OQ-9).
 - **Lending (18), BNPL (19)** — upstream for signals (`LoanDelinquencyChanged` / `LoanDefaulted`,
   `BnplDelinquencyChanged` / `BnplDefaulted`); `P13-TSK-025` opens a `COLLECTIONS` case on default, facts only (C3);
-  contact strategy, promises to pay, placement and write-off stay out.
+  contact strategy, promises to pay, placement and write-off stay out. *(Built 2026-10-26: the borrower is placed for the
+  case through the two modules' published definer views (`party_principal_exposure`, read by id in `app`), neither module
+  changed; nothing of the case reaches either.)*
 - **Consent (4)** — nothing new: the evaluation is a platform control over the platform's own records; no consent
   purpose is created (`P13-TSK-001` confirms).
 - **Audit (26)** — every act in `AUDITABLE_ACTIONS.md`'s planned `risk.*` set with actor, time, target, reason where

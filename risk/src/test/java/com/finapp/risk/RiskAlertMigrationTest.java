@@ -44,16 +44,25 @@ class RiskAlertMigrationTest {
             + "|identity|accounts|payments|paymentmethods|bnpl|kyc|party|transfers|crossborder|settlement"
             + "|reconciliation|fx|consent|public)\\.[a-z_]+");
 
+    /**
+     * risk V019 (P13-TSK-025): the kind and rule-code CHECKs, and the two that pair the own-code kinds with no policy,
+     * dropped and re-made for the fact kind OBLIGATION_DEFAULTED - V010 is merged and never edited, so their effective
+     * definition is V019's ({@code RiskCollectionsMigrationTest} holds it).
+     */
+    private static final String COLLECTIONS = "db/migration/risk/V019__the_collections_case.sql";
+
     @Test
     @DisplayName("the vocabularies are the enums': kind, severity, subject kind, rule code, window kind, status and the"
             + " suppression's reason code - and the operational kinds the CHECKs name are AlertKind's operational ones")
     void theListsAreTheEnums() {
         String sql = collapsed(statements(RESOURCE));
-        assertThat(sql)
+        String effective = collapsed(statements(COLLECTIONS));
+        assertThat(effective)
                 .contains("CHECK (kind IN (" + list(AlertKind.values()) + "))")
+                .contains("CHECK (rule_code IN (" + quoted(AlertRule.codes()) + "))");
+        assertThat(sql)
                 .contains("CHECK (severity IN (" + list(AlertSeverity.values()) + "))")
                 .contains("CHECK (subject_kind IN (" + list(SubjectKind.values()) + "))")
-                .contains("CHECK (rule_code IN (" + quoted(AlertRule.codes()) + "))")
                 .contains("CHECK (window_kind IN (" + list(WindowKind.values()) + "))")
                 .contains("CHECK (status IN (" + list(AlertStatus.values()) + "))")
                 .contains("suppression_reason_code IN (" + list(SuppressionReason.values()) + ")");

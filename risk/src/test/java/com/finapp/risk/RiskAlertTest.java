@@ -131,6 +131,8 @@ class RiskAlertTest {
         List<String> expected = new ArrayList<>(Arrays.stream(RuleKind.values()).map(Enum::name).toList());
         expected.add("UNCLASSIFIED_TRANSACTION");
         expected.add("VELOCITY_DIVERGENCE");
+        // P13-TSK-025: the one fact kind's own code - a default's alert (CollectionsCaseRulesTest's third shape).
+        expected.add("OBLIGATION_DEFAULTED");
         assertThat(AlertRule.codes()).containsExactlyElementsOf(expected);
         assertThat(AlertRule.named("NOT_A_RULE")).isEmpty();
         assertThat(AlertRule.of(RuleKind.STRUCTURING).ruleKind()).contains(RuleKind.STRUCTURING);

@@ -965,6 +965,14 @@ the owning domain's lock order with key `risk.action:<id>`, and its outcome reco
 already suspended) is a recorded outcome, not an error. **Risk never reverses a transaction**: a reversal is the
 owning domain's four-eyes act, and a case may only recommend it (an investigator action of kind `REFERRED`).
 
+*(As built, `P13-TSK-025`, 2026-10-26, owner decision C3 - the collections case: a default recorded by `-005`'s handler
+(`LOAN_DEFAULTED`, `BNPL_DEFAULTED`) raises in T-sig, under the platform's actor and on every delivery, one
+`OBLIGATION_DEFAULTED` alert - a **fact**, its own code its rule, no policy - about the agreement, born once per default
+(the `D1` bucket of its business date), folded into **the agreement's party's** `COLLECTIONS` case: one open per party, a
+second default attaching. The case is worked by facts and disposed `CLOSED_NO_ACTION` or `REFERRED` only (a referral to
+the owning domain's restructuring or write-off path), proposes no action, is never opened by hand; the borrower is placed
+through `app`'s join over lending's and bnpl's published views, neither module changed. `risk V019`.)*
+
 ### 12.9 The regulatory report — internal investigation versus filing (ADR-0111)
 
 An internal alert or case is the platform's own; a **regulatory report** is a filing to an authority, and the two are
@@ -1172,7 +1180,7 @@ wave-D lesson), so a task's number is below every number of a later wave; the wa
 | `P13-TSK-022` | Rescreening on screening-list updates | M13.6 | `-005`, `-016` | `risk V012` | `DOD-DOMAIN`, `DOD-SEC` |
 | `P13-TSK-023` | The risk proofs, the explanation door and replay | M13.7 | `-006`, `-019`, `-016` | none | `DOD-FIN`, `DOD-API` |
 | `P13-TSK-024` | Operating risk: meters, alerts, reports, runbook §9, the activation gate | M13.7 | `-023` | none | `DOD-OBS`, `DOD-DOC` |
-| `P13-TSK-025` | A collections case opened on default (C3, cut candidate) | M13.8 | `-016` | none | `DOD-DOMAIN` |
+| `P13-TSK-025` | A collections case opened on default (C3, cut candidate) | M13.8 | `-016` | none *(as built: `risk V019` - V010's four alert CHECKs re-made for the fact kind `OBLIGATION_DEFAULTED`, the fact's shape and the collections case's three; held `V019` in the parallel wave, the next free number at its merge)* | `DOD-DOMAIN` |
 | `P13-TST-001` | The risk storm | M13.9 | `-001`…`-024` | none | `DOD-TEST` |
 | `P13-TST-002` | The policy battery | M13.9 | `-003`, `-004` | none | `DOD-TEST` |
 | `P13-DOC-001` | The Phase 13 exit review | M13.9 | `P13-TST-001`, `-002` | none | `DOD-DOC` |

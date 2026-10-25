@@ -337,6 +337,30 @@ class RiskEventsCarryOnlyCodesTest {
             emitted.add(Map.entry(cases.events.get(i).eventType(), cases.payloads.get(i)));
         }
 
+        // P13-TSK-025: a default recorded in T-sig - its signal, its OBLIGATION_DEFAULTED alert about the agreement and
+        // the borrower's COLLECTIONS case opened (RiskSignalRecorded, AlertRaised, CaseOpened).
+        CaseWorld collections = new CaseWorld();
+        UUID loan = EvaluationWorld.IDS.next();
+        collections.partyOfSubject.put(SignalSubject.of(SubjectKind.CREDIT_AGREEMENT, loan), EvaluationWorld.IDS.next());
+        RiskSignals defaults = new RiskSignals(new CollectionsCaseRulesTest.BornOnceSignals(), recording,
+                EvaluationWorld.IDS, EvaluationWorld.CLOCK, ProfileHints.NONE,
+                new CollectionsCases(collections.alerts::raiseAll));
+        Map<String, String> condition = new LinkedHashMap<>();
+        condition.put("product", "INSTALMENT");
+        condition.put("business_date", "2026-10-24");
+        condition.put("days_past_due", "91");
+        condition.put("bucket", "DPD_90_PLUS");
+        condition.put("defaulted", "true");
+        condition.put("agreement_version", "1");
+        CaseWorld.asSystem(() -> defaults.record(CaseWorld.UOW, new RiskSignal(RiskSignalId.next(EvaluationWorld.IDS),
+                SignalKind.LOAN_DEFAULTED, SignalSubject.of(SubjectKind.CREDIT_AGREEMENT, loan),
+                new RiskSignal.SourceEvent(EventId.next(EvaluationWorld.IDS), "lending.LoanDefaulted", 1, "lending",
+                        CorrelationId.of("events-suite"), CausationId.of("events-suite")),
+                Instant.parse("2026-10-24T21:00:00Z"), SignalAttributes.of(SignalKind.LOAN_DEFAULTED, condition))));
+        for (int i = 0; i < collections.events.size(); i++) {
+            emitted.add(Map.entry(collections.events.get(i).eventType(), collections.payloads.get(i)));
+        }
+
         // The action requested on its approval and concluded by T-act.
         OverrideWorld actions = new OverrideWorld();
         OverrideWorld.Taken partyCase = actions.partyCase(CaseKind.FRAUD);

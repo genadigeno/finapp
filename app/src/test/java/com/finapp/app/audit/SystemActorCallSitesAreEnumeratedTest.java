@@ -509,6 +509,17 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " an inquiry: the permit came on the database clock. No door that holds a Session calls this:"
                         + " the desk calls the driver after its keyed act."),
                     Map.entry(
+                            "com.finapp.app.risk.RiskSignalIntake.asThePlatform",
+                    "A default recorded as a risk signal opens or joins the borrower's COLLECTIONS case (P13-TSK-025,"
+                        + " owner decision C3; the CustomerOpenedOpensCase.handle class of site): an inbox delivery of"
+                        + " lending.LoanDefaulted or bnpl.BnplDefaulted has no authenticated caller - the servicing step"
+                        + " that recorded the default was the platform's own, and its audit names it - so the case's"
+                        + " opening is the platform's policy act, risk.CaseOpened under SYSTEM; the CORRELATION (the"
+                        + " producing flow's) ties it to the default and the TARGET names the case. The scope wraps only"
+                        + " the recording of a kind whose signal raises a case (RiskSignals.raises); every other signal"
+                        + " records with no actor at all, as since P13-TSK-005. A person's acts on the case are theirs,"
+                        + " at the case doors."),
+                    Map.entry(
                             "com.finapp.app.lending.LoanOriginationSchedule.sweepOnce",
                     "The loan origination sweep (P11-TSK-011, PHASE_11_PLAN.md section 11: origination is never a"
                         + " person's act): nobody commands an application's offer, decline or undecided closure, nor an"

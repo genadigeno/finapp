@@ -138,10 +138,11 @@ class RiskVocabulariesTest {
     }
 
     @Test
-    @DisplayName("seven alert kinds, each investigative one folding into a case kind, the two operational ones into none")
+    @DisplayName("eight alert kinds, each investigative one folding into a case kind, the two operational ones into none,"
+            + " the one fact (P13-TSK-025) into COLLECTIONS")
     void theAlertKinds() {
         assertThat(names(AlertKind.values())).containsExactly("FRAUD", "ACCOUNT_TAKEOVER", "MERCHANT_ABUSE", "AML",
-                "SCREENING_HIT", "UNCLASSIFIED_TRANSACTION", "VELOCITY_DIVERGENCE");
+                "SCREENING_HIT", "UNCLASSIFIED_TRANSACTION", "VELOCITY_DIVERGENCE", "OBLIGATION_DEFAULTED");
         assertThat(AlertKind.FRAUD.caseKind()).contains(CaseKind.FRAUD);
         assertThat(AlertKind.ACCOUNT_TAKEOVER.caseKind()).contains(CaseKind.ATO);
         assertThat(AlertKind.MERCHANT_ABUSE.caseKind()).contains(CaseKind.MERCHANT_ABUSE);
@@ -150,9 +151,13 @@ class RiskVocabulariesTest {
         assertThat(AlertKind.UNCLASSIFIED_TRANSACTION.operational()).isTrue();
         assertThat(AlertKind.VELOCITY_DIVERGENCE.operational()).isTrue();
         assertThat(AlertKind.firstFor(CaseKind.AML)).isEqualTo(AlertKind.AML);
-        assertThatThrownBy(() -> AlertKind.firstFor(CaseKind.COLLECTIONS))
-                .as("a collections case opens on a default event, never on an alert (C3)")
-                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(AlertKind.firstFor(CaseKind.COLLECTIONS))
+                .as("a collections case opens on its default's alert, a fact (C3, P13-TSK-025)")
+                .isEqualTo(AlertKind.OBLIGATION_DEFAULTED);
+        assertThat(java.util.Arrays.stream(AlertKind.values()).filter(AlertKind::fact))
+                .containsExactly(AlertKind.OBLIGATION_DEFAULTED);
+        assertThat(java.util.Arrays.stream(AlertKind.values()).filter(AlertKind::ownCode)).containsExactly(
+                AlertKind.UNCLASSIFIED_TRANSACTION, AlertKind.VELOCITY_DIVERGENCE, AlertKind.OBLIGATION_DEFAULTED);
         assertThat(names(AlertSeverity.values())).containsExactly("LOW", "MEDIUM", "HIGH", "CRITICAL");
     }
 
