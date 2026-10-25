@@ -104,8 +104,16 @@ class RiskVocabulariesTest {
             }
         }
         for (RuleKind monitoringOnly : List.of(RuleKind.DORMANT_THEN_ACTIVE, RuleKind.RAPID_IN_OUT,
-                RuleKind.STRUCTURING, RuleKind.REFUND_RATIO, RuleKind.CHARGEBACK_RATIO, RuleKind.BNPL_MULTI_APPLICATION)) {
+                RuleKind.STRUCTURING, RuleKind.BNPL_MULTI_APPLICATION)) {
             assertThat(monitoringOnly.operations()).as(monitoringOnly.name()).containsExactly(RiskOperation.MONITORING);
+        }
+        // P13-TSK-014: the ratios widened to the payments for T-eval (the merchant's), scope only - and given their
+        // count floor; BNPL stays the sweep's alone (it feeds credit's signal, never a seam).
+        for (RuleKind ratio : List.of(RuleKind.REFUND_RATIO, RuleKind.CHARGEBACK_RATIO)) {
+            assertThat(ratio.operations()).as(ratio.name()).containsExactlyInAnyOrder(RiskOperation.CARD_PAYMENT,
+                    RiskOperation.WALLET_PAYMENT, RiskOperation.MONITORING);
+            assertThat(ratio.parameters()).extracting(RuleKind.Parameter::name)
+                    .containsExactly("window", "ratio_bps", "threshold_count");
         }
         assertThat(RuleKind.MERCHANT_SUSPENDED.operations())
                 .containsExactlyInAnyOrder(RiskOperation.CARD_PAYMENT, RiskOperation.WALLET_PAYMENT);
@@ -197,8 +205,9 @@ class RiskVocabulariesTest {
                         "CREDIT_AGREEMENT");
         assertThat(names(WindowKind.values())).containsExactly("H1", "D1", "D7", "D30");
         // P13-TSK-006 (the coordinator's decision at wave C): the velocity dimensions, in the order R2a and R2 lock them.
+        // P13-TSK-014 appended SESSION - last, so no existing lock or canonical order moved.
         assertThat(names(VelocityDimension.values()))
-                .containsExactly("PARTY", "SOURCE_ACCOUNT", "DESTINATION", "DEVICE", "MERCHANT");
+                .containsExactly("PARTY", "SOURCE_ACCOUNT", "DESTINATION", "DEVICE", "MERCHANT", "SESSION");
         assertThat(WindowKind.H1.length()).isEqualTo(Duration.ofHours(1));
         assertThat(WindowKind.D1.length()).isEqualTo(Duration.ofDays(1));
         assertThat(WindowKind.D7.length()).isEqualTo(Duration.ofDays(7));

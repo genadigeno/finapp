@@ -335,6 +335,52 @@ class RiskMigrationTest {
         }
     }
 
+    // ------------------------------------------------------------------ V011 (P13-TSK-014)
+
+    @Test
+    @DisplayName("V011: the signal's two reference columns and the merchant's index live; the abuse kinds admitted with"
+            + " exactly their attributes and an older kind refused one; SESSION admitted on the windows; the assessment's"
+            + " session_id; no grant changed, every constraint name unique")
+    void thePaymentAbuseWidenings() throws SQLException {
+        assertThat(column("SELECT column_name FROM information_schema.columns WHERE table_schema = 'risk'"
+                + " AND table_name = 'risk_signal' AND column_name IN ('merchant_subject_ref', 'intent_ref') ORDER BY column_name"))
+                .containsExactly("intent_ref", "merchant_subject_ref");
+        assertThat(scalar("SELECT data_type FROM information_schema.columns WHERE table_schema = 'risk'"
+                + " AND table_name = 'risk_assessment' AND column_name = 'session_id'")).isEqualTo("uuid");
+        assertThat(column("SELECT indexname FROM pg_indexes WHERE schemaname = 'risk' AND tablename = 'risk_signal'"
+                + " ORDER BY indexname")).contains("risk_signal_by_merchant", "risk_signal_by_subject");
+        assertThat(grantsOn("risk_signal")).containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
+
+        String row = "INSERT INTO " + SCHEMA + ".risk_signal (id, kind, subject_kind, subject_ref, source_event_id,"
+                + " source_event_type, source_event_version, producer, observed_at, correlation_id, causation_id,"
+                + " merchant_subject_ref, intent_ref) VALUES (gen_random_uuid(), ?, 'PARTY', ?, gen_random_uuid(), ?, 1, 'x',"
+                + " now(), 'flow', 'cause', ?::uuid, ?::uuid)";
+        String party = UUID.randomUUID().toString();
+        assertThatCode(() -> asApplication(row, "REFUND_COMPLETED", party, "payments.RefundCompleted",
+                UUID.randomUUID().toString(), UUID.randomUUID().toString())).doesNotThrowAnyException();
+        application.rollback();
+        assertThatExceptionOfType(SQLException.class).as("a refund names its merchant")
+                .isThrownBy(() -> asApplication(row, "CHARGEBACK_RECEIVED", party, "payments.ChargebackReceived",
+                        null, UUID.randomUUID().toString()))
+                .matches(e -> CHECK_VIOLATION.equals(e.getSQLState()));
+        application.rollback();
+        assertThatExceptionOfType(SQLException.class).as("an older kind never carries the new columns")
+                .isThrownBy(() -> asApplication("INSERT INTO " + SCHEMA + ".risk_signal (id, kind, subject_kind,"
+                        + " subject_ref, source_event_id, source_event_type, source_event_version, producer, observed_at,"
+                        + " correlation_id, causation_id, merchant_subject_ref) VALUES (gen_random_uuid(), 'CREDENTIAL_CHANGED',"
+                        + " 'IDENTITY', ?, gen_random_uuid(), 'identity.CredentialChanged', 1, 'x', now(), 'flow',"
+                        + " 'cause', gen_random_uuid())", party))
+                .matches(e -> CHECK_VIOLATION.equals(e.getSQLState()));
+        application.rollback();
+        assertThatCode(() -> asApplication("INSERT INTO " + SCHEMA + ".velocity_window (dimension, subject_ref,"
+                + " window_kind, window_start, count, sum_minor, currency, scale) VALUES ('SESSION', ?, 'H1',"
+                + " date_bin(interval '1 hour', clock_timestamp(), TIMESTAMPTZ '1970-01-05 00:00:00+00'), 1, 100, 'EUR', 2)",
+                party)).as("SESSION is a dimension").doesNotThrowAnyException();
+        application.rollback();
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
+                + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
+    }
+
     // ------------------------------------------------------------------ V010 (P13-TSK-015)
 
     @Test

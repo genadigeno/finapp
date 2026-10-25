@@ -7,6 +7,7 @@ import com.finapp.platform.inbox.ReceivedEvent;
 import com.finapp.platform.outbox.EventPayload;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.risk.MonitoringHints;
+import com.finapp.risk.RiskAssessmentStore;
 import com.finapp.risk.RiskSignal;
 import com.finapp.risk.RiskSignalStore;
 import com.finapp.risk.RiskSignals;
@@ -61,7 +62,10 @@ class RiskSignalIntakeTest {
             assertThat(intake.eventType()).isEqualTo(source.eventType());
             source.kind().ifPresent(kind -> assertThat(kind.sourceEventType()).isEqualTo(source.eventType()));
         }
-        assertThat(RiskSignalIntake.Source.values()).hasSize(18);
+        assertThat(RiskSignalIntake.Source.values()).hasSize(21);
+        assertThat(java.util.Arrays.stream(RiskSignalIntake.Source.values()).filter(RiskSignalIntake.Source::isAttributed))
+                .as("P13-TSK-014: the refund and the chargeback, attributed from risk's assessments")
+                .containsExactly(RiskSignalIntake.Source.REFUND_COMPLETED, RiskSignalIntake.Source.CHARGEBACK_RECEIVED);
         assertThat(java.util.Arrays.stream(RiskSignalIntake.Source.values()).filter(RiskSignalIntake.Source::isHint))
                 .hasSize(5);
         assertThat(java.util.Arrays.stream(RiskSignalIntake.Source.values()).map(RiskSignalIntake.Source::kind)
@@ -280,9 +284,154 @@ class RiskSignalIntakeTest {
         assertThat(store.inserted).isEmpty();
     }
 
+    // ------------------------------------------------------------------ P13-TSK-014: the abuse sources
+
+    @Test
+    @DisplayName("payments.RefundCompleted: about the payer risk judged, naming the merchant it judged and the intent - the"
+            + " event's own instant; the announcement names the party, never the merchant, the intent or an amount")
+    void refundCompleted() {
+        UUID intent = UUID.randomUUID();
+        UUID party = UUID.randomUUID();
+        UUID merchant = UUID.randomUUID();
+        judged.put(intent, new RiskAssessmentStore.JudgedPayment(party, merchant));
+        UUID refund = UUID.randomUUID();
+        handle(RiskSignalIntake.Source.REFUND_COMPLETED, event("payments.RefundCompleted", refund, "payments",
+                refundPayload(intent, "COMPLETED")));
+        RiskSignal signal = only();
+        assertThat(signal.kind()).isEqualTo(SignalKind.REFUND_COMPLETED);
+        assertThat(signal.subject()).isEqualTo(SignalSubject.of(SubjectKind.PARTY, party));
+        assertThat(signal.attributes().get("merchant_subject_ref")).contains(merchant.toString());
+        assertThat(signal.attributes().get("intent_ref")).contains(intent.toString());
+        assertThat(signal.observedAt()).isEqualTo(OBSERVED);
+        assertThat(attributionsAsked).containsExactly(intent);
+        assertThat(outbox.envelopes).singleElement().extracting(EventEnvelope::eventType)
+                .isEqualTo(RiskSignals.EVENT_TYPE);
+        Map<String, String> announced = EventPayload.fields(outbox.payloads.get(0));
+        assertThat(announced).containsOnlyKeys("signalId", "kind", "subjectKind", "subjectRef")
+                .containsEntry("subjectRef", party.toString());
+        assertThat(announced.values()).doesNotContain(merchant.toString(), intent.toString(), refund.toString());
+    }
+
+    @Test
+    @DisplayName("payments.ChargebackReceived: the dispute's chargeback attributed as the refund is; the envelope's dispute"
+            + " and the payload's must agree, and the stage must be CHARGED_BACK")
+    void chargebackReceived() {
+        UUID intent = UUID.randomUUID();
+        UUID party = UUID.randomUUID();
+        UUID merchant = UUID.randomUUID();
+        judged.put(intent, new RiskAssessmentStore.JudgedPayment(party, merchant));
+        UUID dispute = UUID.randomUUID();
+        handle(RiskSignalIntake.Source.CHARGEBACK_RECEIVED, event("payments.ChargebackReceived", dispute, "payments",
+                chargebackPayload(dispute, intent, "CHARGED_BACK")));
+        RiskSignal signal = only();
+        assertThat(signal.kind()).isEqualTo(SignalKind.CHARGEBACK_RECEIVED);
+        assertThat(signal.subject()).isEqualTo(SignalSubject.of(SubjectKind.PARTY, party));
+        assertThat(signal.attributes().get("merchant_subject_ref")).contains(merchant.toString());
+
+        assertThatThrownBy(() -> handle(RiskSignalIntake.Source.CHARGEBACK_RECEIVED, event(
+                "payments.ChargebackReceived", UUID.randomUUID(), "payments", chargebackPayload(dispute, intent,
+                        "CHARGED_BACK")))).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("one dispute in its envelope and another");
+        assertThatThrownBy(() -> handle(RiskSignalIntake.Source.CHARGEBACK_RECEIVED, event(
+                "payments.ChargebackReceived", dispute, "payments", chargebackPayload(dispute, intent, "WON"))))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("stage is not CHARGED_BACK")
+                .hasMessageNotContaining("WON");
+        assertThat(store.inserted).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("bnpl.BnplApplicationSubmitted: about the applicant the event names, its product; the application in"
+            + " the envelope and the payload must agree; nothing of risk's assessments is asked")
+    void bnplApplicationSubmitted() {
+        UUID application = UUID.randomUUID();
+        UUID party = UUID.randomUUID();
+        handle(RiskSignalIntake.Source.BNPL_APPLICATION_SUBMITTED, event("bnpl.BnplApplicationSubmitted", application,
+                "bnpl", applicationPayload(application, party)));
+        RiskSignal signal = only();
+        assertThat(signal.kind()).isEqualTo(SignalKind.BNPL_APPLICATION_SUBMITTED);
+        assertThat(signal.subject()).isEqualTo(SignalSubject.of(SubjectKind.PARTY, party));
+        assertThat(signal.attributes().get("product")).contains("BNPL_PAY_IN_N");
+        assertThat(attributionsAsked).isEmpty();
+        assertThatThrownBy(() -> handle(RiskSignalIntake.Source.BNPL_APPLICATION_SUBMITTED, event(
+                "bnpl.BnplApplicationSubmitted", UUID.randomUUID(), "bnpl", applicationPayload(application, party))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("one application in its envelope and another");
+    }
+
+    @Test
+    @DisplayName("each abuse event once is one signal; the same event again - past the dedupe - records nothing and"
+            + " announces nothing (the unique beneath); an event of version 2 is refused loudly, nothing recorded")
+    void aDuplicateIsNoneAndAnUnknownVersionIsRefused() {
+        UUID intent = UUID.randomUUID();
+        judged.put(intent, new RiskAssessmentStore.JudgedPayment(UUID.randomUUID(), UUID.randomUUID()));
+        ReceivedEvent refund = event("payments.RefundCompleted", UUID.randomUUID(), "payments",
+                refundPayload(intent, "COMPLETED"));
+        handle(RiskSignalIntake.Source.REFUND_COMPLETED, refund);
+        handle(RiskSignalIntake.Source.REFUND_COMPLETED, refund);
+        assertThat(store.inserted).as("offered twice").hasSize(2);
+        assertThat(store.inserted.get(1).source().id()).isEqualTo(store.inserted.get(0).source().id());
+        assertThat(outbox.envelopes).as("born once, announced once").hasSize(1);
+
+        for (RiskSignalIntake.Source source : java.util.List.of(RiskSignalIntake.Source.REFUND_COMPLETED,
+                RiskSignalIntake.Source.CHARGEBACK_RECEIVED, RiskSignalIntake.Source.BNPL_APPLICATION_SUBMITTED)) {
+            ReceivedEvent v2 = new ReceivedEvent(EventId.next(IDS), source.eventType(), 2, 1, UUID.randomUUID(),
+                    "aggregate", OBSERVED, "payments", CorrelationId.of("flow"), CausationId.of("cause"),
+                    "application/json", refundPayload(intent, "COMPLETED").toBytes());
+            assertThatThrownBy(() -> intake(source).handle(null, v2)).as(source.name())
+                    .isInstanceOf(IllegalStateException.class).hasMessageContaining("version 2");
+        }
+        assertThat(store.inserted).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("a refund of a payment risk never judged records no signal and is acknowledged - in no ratio's"
+            + " denominator, never a stall; a refund not COMPLETED is a contract the build cannot read, refused")
+    void anUnjudgedPaymentsRefundRecordsNothing() {
+        UUID intent = UUID.randomUUID();
+        handle(RiskSignalIntake.Source.REFUND_COMPLETED, event("payments.RefundCompleted", UUID.randomUUID(),
+                "payments", refundPayload(intent, "COMPLETED")));
+        assertThat(attributionsAsked).containsExactly(intent);
+        assertThat(store.inserted).isEmpty();
+        assertThat(outbox.envelopes).isEmpty();
+        assertThatThrownBy(() -> handle(RiskSignalIntake.Source.REFUND_COMPLETED, event("payments.RefundCompleted",
+                UUID.randomUUID(), "payments", refundPayload(intent, "FAILED"))))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("status is not COMPLETED");
+        assertThatThrownBy(() -> new RiskSignalIntake(RiskSignalIntake.Source.CHARGEBACK_RECEIVED, signals, hints, IDS,
+                RiskFlowScope.NONE)).as("an attributed source wired without risk's assessments")
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private static EventPayload refundPayload(UUID intent, String status) {
+        return EventPayload.of().with("status", status).with("intentId", intent.toString())
+                .with("attemptId", UUID.randomUUID().toString());
+    }
+
+    private static EventPayload chargebackPayload(UUID dispute, UUID intent, String stage) {
+        return EventPayload.of().with("stage", stage).with("disputeId", dispute.toString())
+                .with("attemptId", UUID.randomUUID().toString()).with("intentId", intent.toString());
+    }
+
+    private static EventPayload applicationPayload(UUID application, UUID party) {
+        return EventPayload.of().with("applicationId", application.toString()).with("partyId", party.toString())
+                .with("product", "BNPL_PAY_IN_N").with("plan", "PAY_IN_3")
+                .with("checkoutSessionId", UUID.randomUUID().toString())
+                .with("decisionRequestId", UUID.randomUUID().toString())
+                .with("termsVersionId", UUID.randomUUID().toString()).with("termsVersion", "1");
+    }
+
     // -----------------------------------------------------------------
 
+    /** Risk's own judged payments, by intent, as the suite plants them; every intent asked, in order. */
+    private final Map<UUID, RiskAssessmentStore.JudgedPayment> judged = new java.util.HashMap<>();
+    private final List<UUID> attributionsAsked = new ArrayList<>();
+
     private RiskSignalIntake intake(RiskSignalIntake.Source source) {
+        if (source.isAttributed()) {
+            return new RiskSignalIntake(source, signals, hints, IDS, RiskFlowScope.NONE, (unitOfWork, intent) -> {
+                attributionsAsked.add(intent);
+                return Optional.ofNullable(judged.get(intent));
+            });
+        }
         return new RiskSignalIntake(source, signals, hints, IDS, RiskFlowScope.NONE);
     }
 
@@ -337,6 +486,11 @@ class RiskSignalIntakeTest {
         }
 
         @Override
+        public int countByMerchantSince(Connection unitOfWork, UUID merchant, SignalKind kind, Instant since) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public Optional<RiskSignal> latest(Connection unitOfWork, SignalSubject subject, SignalKind kind) {
             throw new UnsupportedOperationException();
         }
@@ -354,10 +508,12 @@ class RiskSignalIntakeTest {
 
     static final class RecordingOutbox implements OutboxWriter<Connection> {
         final List<EventEnvelope> envelopes = new ArrayList<>();
+        final List<byte[]> payloads = new ArrayList<>();
 
         @Override
         public void write(Connection unitOfWork, EventEnvelope envelope, byte[] payload, String payloadMediaType) {
             envelopes.add(envelope);
+            payloads.add(payload);
         }
     }
 

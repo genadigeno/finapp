@@ -4255,7 +4255,8 @@ there is no free-text column, no amount and no description. **The device rule (O
 `subject_ref` is identity's SHA-256 of the device description as 64 lowercase hex, the only shape the `CHECK`
 admits, so the `RESTRICTED-PII` description identity holds can never be stored here by any writer; the hash is
 classified `CONFIDENTIAL` as a stable per-device identifier. Every subject reference names a row of another module
-by identifier (an identity, an account, a merchant, a beneficiary, a loan or a BNPL obligation) and is
+by identifier (an identity, an account, a merchant, a beneficiary, a loan or a BNPL obligation - and since
+`P13-TSK-014` a party, the payer of a refunded or charged-back payment or a BNPL applicant) and is
 `CONFIDENTIAL` as those identifiers are in their own registers; the codes and dates copied from the events are
 `INTERNAL`, as they are at their sources (`PHASE_13_PLAN.md` §8: signal attributes at the source's level). No
 customer or merchant route reads this table (`INV-RSK-08`, `NoCustomerSurfaceReadsRiskTest`).
@@ -4287,6 +4288,8 @@ customer or merchant route reads this table (`INV-RSK-08`, `NoCustomerSurfaceRea
 | `risk_signal` | `agreement_version` | `INTERNAL` | The agreement version that judged the condition |
 | `risk_signal` | `channel_ref` | `CONFIDENTIAL` | The contact channel a recovery went to, by identifier (`RECOVERY_*`) - the channel's address stays identity's |
 | `risk_signal` | `request_ref` | `CONFIDENTIAL` | The recovery request, by identifier (`RECOVERY_*`) |
+| `risk_signal` | `merchant_subject_ref` | `CONFIDENTIAL` | *(`P13-TSK-014`, `risk V011`)* The merchant a refunded or charged-back payment credited, by identifier, as risk's own sealed assessment of that payment named it (`REFUND_COMPLETED`, `CHARGEBACK_RECEIVED`) - with the subject, whom the payer paid; never an amount |
+| `risk_signal` | `intent_ref` | `CONFIDENTIAL` | *(`P13-TSK-014`, `risk V011`)* The payment intent a refund or chargeback was of, by identifier, as the event named it |
 
 ### `risk.velocity_window` - the durable velocity windows - *added by `P13-TSK-006`*
 
@@ -4303,7 +4306,7 @@ identity's hash, never the description (OQ-4, the `CHECK`). No customer or merch
 | Table | Column | Level | Note |
 |---|---|---|---|
 | `velocity_window` | `dimension` | `INTERNAL` | A closed `VelocityDimension` code |
-| `velocity_window` | `subject_ref` | `CONFIDENTIAL` | The party, account, beneficiary or merchant by identifier, or a device by identity's hash - as `risk_signal.subject_ref` |
+| `velocity_window` | `subject_ref` | `CONFIDENTIAL` | The party, account, beneficiary, merchant or (since `P13-TSK-014`) confirming identity session by identifier, or a device by identity's hash - as `risk_signal.subject_ref` |
 | `velocity_window` | `window_kind` | `INTERNAL` | A closed `WindowKind` code |
 | `velocity_window` | `window_start` | `CONFIDENTIAL` | Dates the subject's activity to the window - with `subject_ref`, when a subject moved money |
 | `velocity_window` | `count` | `CONFIDENTIAL` | How many permitted movements the subject made in the window - the Transaction Risk Profile's input |
@@ -4328,6 +4331,7 @@ identity's hash, never the description (OQ-4, the `CHECK`). No customer or merch
 | `risk_assessment` | `destination_id` | `CONFIDENTIAL` | The customer account or beneficiary the money went to, by identifier |
 | `risk_assessment` | `device_hash` | `CONFIDENTIAL` | Identity's hash of the device, never the description (OQ-4, the `CHECK`) - as `velocity_window.subject_ref` |
 | `risk_assessment` | `merchant_subject_id` | `CONFIDENTIAL` | The merchant as a judged subject (the `MERCHANT` velocity role), by identifier - never a tenant scope, so named apart from the tenant column `merchant_id` |
+| `risk_assessment` | `session_id` | `CONFIDENTIAL` | *(`P13-TSK-014`, `risk V011`)* The identity session that confirmed the judged checkout payment - the `SESSION` velocity role - by its id, never its token or its label |
 | `risk_assessment` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The amount** - the judged amount in minor units, on an `INSERT`-only row; never a balance (`INV-RSK-02`) |
 | `risk_assessment` | `currency` | `INTERNAL` | An ISO 4217 code; the fact lives in the pairing with the amount |
 | `risk_assessment` | `scale` | `INTERNAL` | Precision metadata of the amount |

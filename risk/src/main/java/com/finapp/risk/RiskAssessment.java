@@ -53,10 +53,13 @@ public record RiskAssessment(
         }
     }
 
-    /** The movement's subjects - exactly the windows' (`RiskEvaluationRequest#movement`). */
+    /**
+     * The movement's subjects - exactly the windows' (`RiskEvaluationRequest#movement`); the confirming identity session
+     * since `P13-TSK-014` (risk V011's {@code session_id}).
+     */
     public record Subjects(UUID party, Optional<UUID> identity, Optional<UUID> sourceAccount,
             Optional<RiskEvaluationRequest.Destination> destination, Optional<DeviceHash> device,
-            Optional<UUID> merchant) {
+            Optional<UUID> merchant, Optional<UUID> session) {
         public Subjects {
             Objects.requireNonNull(party, "party");
             Objects.requireNonNull(identity, "identity");
@@ -64,12 +67,20 @@ public record RiskAssessment(
             Objects.requireNonNull(destination, "destination");
             Objects.requireNonNull(device, "device");
             Objects.requireNonNull(merchant, "merchant");
+            Objects.requireNonNull(session, "session");
+        }
+
+        /** The subjects of a movement no session confirmed - every seam but the checkout payment's. */
+        public Subjects(UUID party, Optional<UUID> identity, Optional<UUID> sourceAccount,
+                Optional<RiskEvaluationRequest.Destination> destination, Optional<DeviceHash> device,
+                Optional<UUID> merchant) {
+            this(party, identity, sourceAccount, destination, device, merchant, Optional.empty());
         }
 
         /** {@code request}'s subjects. */
         public static Subjects of(RiskEvaluationRequest request) {
             return new Subjects(request.party(), request.identity(), request.sourceAccount(), request.destination(),
-                    request.device(), request.merchant());
+                    request.device(), request.merchant(), request.session());
         }
 
         /** The velocity movement of {@code amount} these subjects make. */
@@ -85,6 +96,7 @@ public record RiskAssessment(
             });
             device.ifPresent(movement::device);
             merchant.ifPresent(movement::merchant);
+            session.ifPresent(movement::session);
             return movement.build();
         }
 

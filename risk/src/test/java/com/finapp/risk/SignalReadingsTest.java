@@ -146,6 +146,13 @@ class SignalReadingsTest {
         }
 
         @Override
+        public int countByMerchantSince(Connection unitOfWork, UUID merchant, SignalKind kind, Instant since) {
+            return (int) rows.stream().filter(row -> row.kind() == kind
+                    && row.attributes().get("merchant_subject_ref").filter(merchant.toString()::equals).isPresent()
+                    && !row.observedAt().isBefore(since)).count();
+        }
+
+        @Override
         public Optional<RiskSignal> latest(Connection unitOfWork, SignalSubject subject, SignalKind kind) {
             return of(subject, kind).max(Comparator.comparing(RiskSignal::observedAt));
         }

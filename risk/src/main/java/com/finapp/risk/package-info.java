@@ -203,5 +203,20 @@
  * profile leg reads the anchors through; the anchors admitted for {@code MONITORING}; the payee's and the device's
  * novelty read from their earliest counted window ({@link com.finapp.risk.VelocityWindows#firstCounted}). No case and no
  * action yet - `-016` folds, `-017` proposes.
+ *
+ * <p><strong>Payment, merchant and BNPL abuse</strong> (`P13-TSK-014`, {@code risk V011}): three signal kinds from the
+ * events that exist - {@code REFUND_COMPLETED} and {@code CHARGEBACK_RECEIVED} (payments' events name the refund or the
+ * dispute and the intent; the payer and the merchant are attributed from risk's own sealed assessment of that payment,
+ * {@link com.finapp.risk.RiskAssessmentStore#judgedPayment}, the merchant riding as {@code merchant_subject_ref}; a payment risk
+ * never judged records none) and {@code BNPL_APPLICATION_SUBMITTED} (the applicant); {@code REFUND_RATIO} and
+ * {@code CHARGEBACK_RATIO} widened to the payments (scope only) with a count floor ({@code threshold_count}) - the
+ * merchant's in a payment version, judged in T-eval over its signals in the window's bucket and its {@code MERCHANT}
+ * window, the party's in the {@code MONITORING} version, judged in the profile leg; {@code BNPL_MULTI_APPLICATION} the
+ * sweep's alone, feeding the rating and so credit's signal; {@link com.finapp.risk.AbuseRatios} (the arithmetic, pure)
+ * and {@link com.finapp.risk.PaymentAbuse} (the readings and the alerts: {@code MERCHANT_ABUSE} on the merchant from
+ * T-eval, {@code FRAUD} on the party from the profile leg, each born once per (subject, rule, the window's bucket) in the
+ * existing {@code raiseAll}); {@link com.finapp.risk.VelocityDimension#SESSION} - the confirming identity session,
+ * sealed on the assessment ({@code session_id}) - for "a session confirming many checkouts". Nothing of it reaches a
+ * customer or merchant surface, an event payload beyond ids and codes, a log or a metric tag.
  */
 package com.finapp.risk;

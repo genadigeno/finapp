@@ -31,7 +31,9 @@ import java.util.stream.Collectors;
  * event names its subject only inside crossborder's request-reference convention - the screening's outcome reaches
  * risk as crossborder's own committed {@link #BENEFICIARY_ACTIVATED} and {@link #BENEFICIARY_BLOCKED}; merchant
  * publishes no enablement or suspension event, so {@link #MERCHANT_ONBOARDED} is its one lifecycle signal. Each
- * arrives as a kind here with the task that first records it - never before.
+ * arrives as a kind here with the task that first records it - never before. `P13-TSK-014` added the three abuse
+ * kinds ({@link #REFUND_COMPLETED}, {@link #CHARGEBACK_RECEIVED}, {@link #BNPL_APPLICATION_SUBMITTED}, {@code risk
+ * V011}); merchant publishes no refund outcome of its own - the merchant's refund is payments' {@code RefundCompleted}.
  */
 public enum SignalKind {
 
@@ -93,7 +95,31 @@ public enum SignalKind {
     BNPL_DEFAULTED(SubjectKind.CREDIT_AGREEMENT, "bnpl.BnplDefaulted",
             Attribute.of("product", AttributeType.CODE), Attribute.of("business_date", AttributeType.DATE),
             Attribute.of("days_past_due", AttributeType.DAYS), Attribute.of("bucket", AttributeType.CODE),
-            Attribute.of("defaulted", AttributeType.FLAG), Attribute.of("agreement_version", AttributeType.VERSION));
+            Attribute.of("defaulted", AttributeType.FLAG), Attribute.of("agreement_version", AttributeType.VERSION)),
+
+    /**
+     * A checkout payment's refund settled (`P13-TSK-014`) - the refund ratio's numerator. About the payer's
+     * {@link SubjectKind#PARTY}: payments' event names the refund and the intent, never the party or the merchant, so
+     * the handler attributes it from risk's own sealed assessment of that intent ({@link RiskAssessmentStore#judgedPayment});
+     * the merchant the payment credited rides as {@code merchant_subject_ref} (the merchant's numerator), the intent as
+     * {@code intent_ref}. A refund of a payment risk never judged records no signal: it is in no ratio's denominator.
+     */
+    REFUND_COMPLETED(SubjectKind.PARTY, "payments.RefundCompleted",
+            Attribute.of("merchant_subject_ref", AttributeType.REF), Attribute.of("intent_ref", AttributeType.REF)),
+
+    /**
+     * A checkout payment was charged back - the dispute reached {@code CHARGED_BACK}, the network took the funds
+     * (`P13-TSK-014`) - the chargeback ratio's numerator; attributed as {@link #REFUND_COMPLETED} is.
+     */
+    CHARGEBACK_RECEIVED(SubjectKind.PARTY, "payments.ChargebackReceived",
+            Attribute.of("merchant_subject_ref", AttributeType.REF), Attribute.of("intent_ref", AttributeType.REF)),
+
+    /**
+     * A party applied for BNPL at a checkout (`P13-TSK-014`) - {@link RuleKind#BNPL_MULTI_APPLICATION}'s count; bnpl's
+     * event names the applying party itself. Its product.
+     */
+    BNPL_APPLICATION_SUBMITTED(SubjectKind.PARTY, "bnpl.BnplApplicationSubmitted",
+            Attribute.of("product", AttributeType.CODE));
 
     /**
      * An attribute's type - each a bound the database carries as a typed column and a {@code CHECK}, and this enum
@@ -154,7 +180,8 @@ public enum SignalKind {
         /** Every attribute column the table has - the union of every kind's schema, in the table's order. */
         public static final List<String> COLUMNS = List.of(
                 "product", "status", "previous_status", "bucket", "previous_bucket", "country", "currency",
-                "business_date", "days_past_due", "defaulted", "agreement_version", "channel_ref", "request_ref");
+                "business_date", "days_past_due", "defaulted", "agreement_version", "channel_ref", "request_ref",
+                "merchant_subject_ref", "intent_ref");
 
         private static final Pattern NAME = Pattern.compile("^[a-z][a-z0-9_]{0,30}$");
 

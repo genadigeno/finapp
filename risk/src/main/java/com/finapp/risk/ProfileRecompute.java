@@ -11,11 +11,10 @@ import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.EnumSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -49,7 +48,10 @@ import java.util.UUID;
  * anchor kind ({@code RECENT_CREDENTIAL_CHANGE}, {@code RECENT_RECOVERY}) and it fired over the party's identities'
  * signals, its {@code ACCOUNT_TAKEOVER} alert is raised in this transaction, under the head's lock, before the rating's
  * branch - whether or not the rating moves ({@link AccountTakeover}: keyed by the anchor's own day, so every later
- * recompute, any other sweeper and T-eval's raise of the same sequence meet it as {@code ALREADY}).
+ * recompute, any other sweeper and T-eval's raise of the same sequence meet it as {@code ALREADY}). <em>The abuse
+ * alerts</em> (`P13-TSK-014`, {@link PaymentAbuse#party}): a fired {@code REFUND_RATIO}, {@code CHARGEBACK_RATIO} or
+ * {@code BNPL_MULTI_APPLICATION} over the party's signals raises its {@code FRAUD} alert in the same list - keyed by the
+ * window's bucket - and its weight moves the rating, which credit's signal answers.
  *
  * <p>So ten sweepers on one party write one version ({@code ProfileDatabaseTest#tenRecomputesOneVersion}): the claim
  * skips a held head; a waiting recompute re-reads the head after the winner's commit, evaluates the same committed
@@ -210,7 +212,7 @@ public final class ProfileRecompute {
     private Outcome evaluated(Connection unitOfWork, CustomerRiskProfile head, RiskPolicyVersion version,
             CorrelationId correlation) {
         UUID party = head.partyId();
-        ProfileInputs.Read read = inputs.read(unitOfWork, party, kinds(version.policy()));
+        ProfileInputs.Read read = inputs.read(unitOfWork, party, version.policy());
         EvaluationInputs sealed = read.inputs();
         Verdict verdict = RiskEngineV1.evaluate(version.policy(), sealed);
         RiskRating rating = verdict.rating()
@@ -223,10 +225,14 @@ public final class ProfileRecompute {
         // keyed by the anchor's own day - a later recompute, a second sweeper or T-eval's raise of the same sequence
         // answers ALREADY. A failed raise fails the recompute whole (RecomputeFailed): the rating and its alert commit
         // together or not at all, and the deferred party is retried.
-        List<NewAlert> retrospective = AccountTakeover.alerts(verdict, read.anchors(), party, version.id(),
-                Optional.empty(), correlation, Optional.empty());
+        // P13-TSK-014: the party's abuse alerts (FRAUD - its refund and chargeback ratios, its BNPL applications) in the
+        // same list: one raiseAll for the transaction (-015's contract).
+        List<NewAlert> retrospective = new ArrayList<>(AccountTakeover.alerts(verdict, read.anchors(), party,
+                version.id(), Optional.empty(), correlation, Optional.empty()));
+        retrospective.addAll(PaymentAbuse.party(verdict, version.policy(), read.abuse(), party, version.id(),
+                correlation));
         if (!retrospective.isEmpty()) {
-            alerts.raiseAll(unitOfWork, retrospective);
+            alerts.raiseAll(unitOfWork, List.copyOf(retrospective));
         }
         if (head.rating().equals(Optional.of(rating))) {
             store.restamp(unitOfWork, party, cadence, true);
@@ -241,14 +247,6 @@ public final class ProfileRecompute {
         store.advance(unitOfWork, party, head.currentVersion(), next, rating, cadence);
         announce(unitOfWork, party, rating, next, correlation);
         return new Outcome(party, Kind.CHANGED, next, Optional.of(rating));
-    }
-
-    private static Set<RuleKind> kinds(RiskPolicy policy) {
-        Set<RuleKind> kinds = EnumSet.noneOf(RuleKind.class);
-        for (RiskRule rule : policy.rules()) {
-            kinds.add(rule.kind());
-        }
-        return kinds;
     }
 
     private void announce(Connection unitOfWork, UUID party, RiskRating rating, int version, CorrelationId correlation) {

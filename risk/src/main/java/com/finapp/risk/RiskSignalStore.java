@@ -3,9 +3,10 @@ package com.finapp.risk;
 import java.sql.Connection;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
- * Where risk signals rest (`P13-TSK-005`; {@code risk V003}) - one born-once insert and four bounded reads, every one
+ * Where risk signals rest (`P13-TSK-005`; {@code risk V003}) - one born-once insert and five bounded reads, every one
  * on the caller's unit of work (ADR-0033): the insert joins the inbox handler's transaction (T-sig), the reads join
  * T-eval's (`-004`) or the sweep's (`-007`). No update, no delete: none exists in the contract, the grant or the
  * table's trigger.
@@ -26,6 +27,13 @@ public interface RiskSignalStore {
 
     /** How many signals of {@code kind} about {@code subject} were observed at or after {@code since}. */
     int countSince(Connection unitOfWork, SignalSubject subject, SignalKind kind, Instant since);
+
+    /**
+     * How many signals of {@code kind} name {@code merchant} as their {@code merchant_subject_ref} and were observed at or after
+     * {@code since} - a merchant's refunds or chargebacks (`P13-TSK-014`; one range scan on {@code
+     * risk_signal_by_merchant}).
+     */
+    int countByMerchantSince(Connection unitOfWork, UUID merchant, SignalKind kind, Instant since);
 
     /** The latest signal of {@code kind} about {@code subject}, by {@code observed_at}. */
     Optional<RiskSignal> latest(Connection unitOfWork, SignalSubject subject, SignalKind kind);

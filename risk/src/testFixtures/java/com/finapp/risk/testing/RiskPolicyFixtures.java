@@ -41,7 +41,10 @@ import java.util.Set;
  * rules (`P13-TSK-013`): the withdrawal's {@code RECENT_CREDENTIAL_CHANGE} (24 h) {@code HOLD} and
  * {@code RECENT_RECOVERY} (72 h) weight, confirmed; the transfer's {@code NEW_PAYEE} + {@code NEW_DEVICE} +
  * {@code RECENT_RECOVERY} composite reaching {@code REVIEW}; the monitoring version's {@code RECENT_RECOVERY}, the
- * retrospective anchor.
+ * retrospective anchor. The abuse rules (`P13-TSK-014`): the payments' {@code VELOCITY_COUNT} per {@code SESSION}
+ * (5 per hour, 300 - {@code CHALLENGE}) and the merchant's {@code CHARGEBACK_RATIO} (1 %, at least 10) and
+ * {@code REFUND_RATIO} (20 %, at least 20), 100 each; the monitoring version's party ratios given their count floors
+ * (3 refunds, 2 chargebacks); {@code BNPL_MULTI_APPLICATION} (3 in 7 days, 200) unchanged.
  *
  * <p><strong>Production activates none</strong>: no migration seeds a version; these are the suites', the engine's,
  * the battery's and the storm's input, proposed through the domain and activated by two test persons. This class
@@ -151,6 +154,16 @@ public final class RiskPolicyFixtures {
                 count(3)), 300);
         rules.deciding(RuleKind.SCREENING_HIT, Map.of(), RiskDecision.DENY);
         rules.deciding(RuleKind.PROFILE_RATING, Map.of("rating", rating(RiskRating.PROHIBITED)), RiskDecision.DENY);
+        // P13-TSK-014 (appended - the ordinals above unchanged). A session confirming five checkouts within the hour is
+        // card testing's tell: 300 reaches CHALLENGE alone (a satisfied step-up permits it, an unsatisfied one refuses).
+        rules.weighted(RuleKind.VELOCITY_COUNT, velocity(VelocityDimension.SESSION, WindowKind.H1, "threshold_count",
+                count(5)), 300);
+        // The merchant's ratios (the schemes' shape - a share AND a count): never a refusal of this customer's purchase
+        // alone (100 each, both together 200 - ALLOW); the response is the MERCHANT_ABUSE alert, its case (-016) and,
+        // under four eyes, merchant's own suspension (-017). The entry's "CHARGEBACK_RATIO -> REVIEW": a payment admits
+        // no REVIEW (section 12.1) - the review is the case the alert opens.
+        rules.weighted(RuleKind.CHARGEBACK_RATIO, ratio(WindowKind.D30, 100, 10), 100);
+        rules.weighted(RuleKind.REFUND_RATIO, ratio(WindowKind.D30, 2_000, 20), 100);
         return judged(operation, rules,
                 List.of(new ScoreBand(0, 299, RiskDecision.ALLOW), new ScoreBand(300, 699, RiskDecision.CHALLENGE),
                         new ScoreBand(700, 1000, RiskDecision.DENY)),
@@ -191,8 +204,9 @@ public final class RiskPolicyFixtures {
                 minor(50_000_00)), 200);
         rules.weighted(RuleKind.VELOCITY_COUNT, velocity(VelocityDimension.PARTY, WindowKind.D30, "threshold_count",
                 count(100)), 200);
-        rules.weighted(RuleKind.REFUND_RATIO, Map.of("window", window(WindowKind.D30), "ratio_bps", bps(2_000)), 200);
-        rules.weighted(RuleKind.CHARGEBACK_RATIO, Map.of("window", window(WindowKind.D30), "ratio_bps", bps(100)), 300);
+        // The party's own ratios (P13-TSK-014 gave them their count floor: at least 3 refunds, at least 2 chargebacks).
+        rules.weighted(RuleKind.REFUND_RATIO, ratio(WindowKind.D30, 2_000, 3), 200);
+        rules.weighted(RuleKind.CHARGEBACK_RATIO, ratio(WindowKind.D30, 100, 2), 300);
         rules.weighted(RuleKind.BNPL_MULTI_APPLICATION, Map.of("window", window(WindowKind.D7), "threshold_count",
                 count(3)), 200);
         // P13-TSK-013, the retrospective account-takeover anchor (appended): a recovery completed within 72 h fires the
@@ -229,6 +243,11 @@ public final class RiskPolicyFixtures {
     /** C1: one decision at every band. */
     public static List<FailSafeBand> failSafe(RiskDecision everywhere) {
         return List.of(new FailSafeBand(0, OptionalLong.empty(), everywhere));
+    }
+
+    /** A ratio rule's parameters: the window, the share in basis points, the least count of its numerator. */
+    public static Map<String, ParameterValue> ratio(WindowKind window, int ratioBps, long thresholdCount) {
+        return Map.of("window", window(window), "ratio_bps", bps(ratioBps), "threshold_count", count(thresholdCount));
     }
 
     private static Map<String, ParameterValue> velocity(VelocityDimension dimension, WindowKind window,

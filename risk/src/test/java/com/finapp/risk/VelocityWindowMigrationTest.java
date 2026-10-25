@@ -26,14 +26,24 @@ class VelocityWindowMigrationTest {
 
     private static final String RESOURCE = "db/migration/risk/V005__velocity_windows.sql";
 
+    /** risk V011 (P13-TSK-014): the two dimension CHECKs re-made with {@code SESSION}. */
+    private static final String ABUSE = "db/migration/risk/V011__payment_merchant_and_bnpl_abuse.sql";
+
     @Test
     @DisplayName("the dimension and window lists are exactly VelocityDimension's and WindowKind's, on the table and on the"
             + " parameter table; the bounds are the engine's")
     void theListsAreTheEnums() {
         String sql = collapsed(statements());
-        assertThat(sql).contains("CHECK (dimension IN (" + list(VelocityDimension.values()) + "))")
-                .contains("CHECK (window_kind IN (" + list(WindowKind.values()) + "))")
-                .contains("value_velocity_dimension IN (" + list(VelocityDimension.values()) + ")")
+        // The dimension lists' effective definition is risk V011's (P13-TSK-014 appended SESSION; V005 is merged and
+        // never edited): V005 held the first five, V011 drops and re-makes both CHECKs with all six.
+        String widened = collapsed(statements(ABUSE));
+        List<VelocityDimension> first = Arrays.asList(VelocityDimension.values()).subList(0, 5);
+        assertThat(sql).contains("CHECK (dimension IN (" + list(first.toArray(new VelocityDimension[0])) + "))")
+                .contains("value_velocity_dimension IN (" + list(first.toArray(new VelocityDimension[0])) + ")");
+        assertThat(widened).contains("DROP CONSTRAINT velocity_window_dimension_is_known")
+                .contains("CHECK (dimension IN (" + list(VelocityDimension.values()) + "))")
+                .contains("value_velocity_dimension IN (" + list(VelocityDimension.values()) + ")");
+        assertThat(sql).contains("CHECK (window_kind IN (" + list(WindowKind.values()) + "))")
                 .contains("CHECK (count BETWEEN 1 AND " + EvaluationInputs.MAX_COUNT + ")")
                 .contains("CHECK (sum_minor BETWEEN 0 AND " + EvaluationInputs.MAX_MINOR + ")");
         for (WindowKind kind : WindowKind.values()) {
@@ -141,14 +151,19 @@ class VelocityWindowMigrationTest {
 
     /** The migration with its comment lines removed - what actually executes. */
     static String statements() {
-        return migration().lines()
+        return statements(RESOURCE);
+    }
+
+    /** {@code resource} with its comment lines removed. */
+    static String statements(String resource) {
+        return migration(resource).lines()
                 .filter(line -> !line.strip().startsWith("--"))
                 .collect(Collectors.joining("\n"));
     }
 
-    private static String migration() {
-        try (InputStream in = VelocityWindowMigrationTest.class.getClassLoader().getResourceAsStream(RESOURCE)) {
-            assertThat(in).as(RESOURCE + " on the classpath").isNotNull();
+    private static String migration(String resource) {
+        try (InputStream in = VelocityWindowMigrationTest.class.getClassLoader().getResourceAsStream(resource)) {
+            assertThat(in).as(resource + " on the classpath").isNotNull();
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException unreadable) {
             throw new IllegalStateException(unreadable);

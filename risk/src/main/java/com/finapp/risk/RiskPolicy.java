@@ -67,6 +67,10 @@ public record RiskPolicy(
     }
 
     /** The version is not complete, a parameter is outside its kind's schema, or a band maps to an unadmitted decision. */
+    /** The abuse kinds whose {@code threshold_count} is at least one (`P13-TSK-014`). */
+    static final Set<RuleKind> ABUSE_COUNTS = java.util.EnumSet.of(RuleKind.REFUND_RATIO, RuleKind.CHARGEBACK_RATIO,
+            RuleKind.BNPL_MULTI_APPLICATION);
+
     public static final class PolicyInvalid extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
@@ -192,6 +196,12 @@ public record RiskPolicy(
             if (rule.kind() == RuleKind.ROUND_AMOUNT && rule.parameters().minorAmount("modulus_minor") < 1) {
                 throw new PolicyInvalid("rule " + rule.ordinal() + " (ROUND_AMOUNT) names a modulus of at least one"
                         + " minor unit");
+            }
+            // P13-TSK-014: an abuse rule fires over evidence - a ratio over at least one refund or chargeback, a count of
+            // at least one application - so its alert always names a signal; a floor of 0 would fire over none.
+            if (ABUSE_COUNTS.contains(rule.kind()) && rule.parameters().count("threshold_count") < 1) {
+                throw new PolicyInvalid("rule " + rule.ordinal() + " (" + rule.kind() + ") names a threshold count of at"
+                        + " least one");
             }
             expected++;
         }

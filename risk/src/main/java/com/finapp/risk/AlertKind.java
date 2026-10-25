@@ -18,13 +18,21 @@ import java.util.Optional;
  */
 public enum AlertKind {
 
-    /** A synchronous fraud rule fired (`-013`, `-014`): a payment, transfer or withdrawal pattern. */
+    /**
+     * A fraud rule fired on a customer (`-013`, `-014`): a payment, transfer or withdrawal pattern - since `P13-TSK-014`
+     * the party's own refund and chargeback ratios and its BNPL applications across merchants, raised by the profile
+     * leg on the {@code PARTY}.
+     */
     FRAUD(CaseKind.FRAUD),
 
     /** An account-takeover sequence - a credential change or recovery, then a new payee, a new device, a withdrawal (`-013`). */
     ACCOUNT_TAKEOVER(CaseKind.ATO),
 
-    /** A merchant's or customer's abuse ratio - refunds, chargebacks, BNPL applications across merchants (`-014`). */
+    /**
+     * A merchant's abuse ratio - its refunds or chargebacks over its payments (`P13-TSK-014`), raised by T-eval of a
+     * payment to it, on the {@code MERCHANT}. A customer's abuse (its own ratios, BNPL stacking) is {@link #FRAUD}: the
+     * case of a merchant is not the case of a customer.
+     */
     MERCHANT_ABUSE(CaseKind.MERCHANT_ABUSE),
 
     /** A monitoring rule fired over the ledger's journal (`-020`). */

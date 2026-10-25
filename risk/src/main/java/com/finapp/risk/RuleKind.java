@@ -98,17 +98,36 @@ public enum RuleKind {
     /** The amount is a multiple of the named modulus. */
     ROUND_AMOUNT(Scope.JUDGED_AND_MONITORING, Parameter.of("modulus_minor", ParameterType.MINOR_AMOUNT)),
 
-    /** A merchant's or customer's refund ratio in a window at or above the named share (`-014`). */
-    REFUND_RATIO(Scope.MONITORING,
+    /**
+     * A merchant's or customer's refund ratio in a window at or above the named share, over at least the named count of
+     * refunds (`P13-TSK-014`). <strong>Whose ratio is the operation's</strong>: in a {@code CARD_PAYMENT} or
+     * {@code WALLET_PAYMENT} version the <em>merchant</em> the payment pays (a merchant has no profile - its payments
+     * are where it is judged, T-eval); in the {@code MONITORING} version the <em>party</em> the profile is (the
+     * retrospective leg). The share is the subject's {@code REFUND_COMPLETED} signals in the window's bucket over its
+     * velocity window count for the same bucket, compared in basis points by cross-multiplication; a zero denominator
+     * seals nothing ({@code ABSENT}). {@code threshold_count} is the schemes' count condition - a ratio over a handful
+     * of payments is noise, and every tumbling bucket begins with a handful. Widened to the payments by `-014` (scope
+     * only - the database has no (operation, kind) {@code CHECK}, `-013`'s precedent).
+     */
+    REFUND_RATIO(Scope.PAYMENTS_AND_MONITORING,
             Parameter.of("window", ParameterType.WINDOW),
-            Parameter.of("ratio_bps", ParameterType.BASIS_POINTS)),
+            Parameter.of("ratio_bps", ParameterType.BASIS_POINTS),
+            Parameter.of("threshold_count", ParameterType.COUNT)),
 
-    /** A merchant's or customer's chargeback ratio in a window at or above the named share. */
-    CHARGEBACK_RATIO(Scope.MONITORING,
+    /**
+     * A merchant's or customer's chargeback ratio in a window at or above the named share, over at least the named count
+     * of chargebacks - {@link #REFUND_RATIO}'s shape over {@code CHARGEBACK_RECEIVED} signals (`P13-TSK-014`).
+     */
+    CHARGEBACK_RATIO(Scope.PAYMENTS_AND_MONITORING,
             Parameter.of("window", ParameterType.WINDOW),
-            Parameter.of("ratio_bps", ParameterType.BASIS_POINTS)),
+            Parameter.of("ratio_bps", ParameterType.BASIS_POINTS),
+            Parameter.of("threshold_count", ParameterType.COUNT)),
 
-    /** BNPL applications across merchants within the window at or above a count. */
+    /**
+     * A party's BNPL applications within the window at or above a count - whatever the merchants, the applications
+     * across them (`P13-TSK-014`): judged retrospectively only ({@code MONITORING}), so it moves the party's rating and
+     * so credit's signal (BNPL is judged through credit, plan section 12.1) - never a seam.
+     */
     BNPL_MULTI_APPLICATION(Scope.MONITORING,
             Parameter.of("window", ParameterType.WINDOW),
             Parameter.of("threshold_count", ParameterType.COUNT));
@@ -162,6 +181,8 @@ public enum RuleKind {
         JUDGED_AND_MONITORING(EnumSet.of(RiskOperation.TRANSFER, RiskOperation.WITHDRAWAL, RiskOperation.CARD_PAYMENT,
                 RiskOperation.WALLET_PAYMENT, RiskOperation.CROSS_BORDER, RiskOperation.MONITORING)),
         PAYMENTS(EnumSet.of(RiskOperation.CARD_PAYMENT, RiskOperation.WALLET_PAYMENT)),
+        PAYMENTS_AND_MONITORING(EnumSet.of(RiskOperation.CARD_PAYMENT, RiskOperation.WALLET_PAYMENT,
+                RiskOperation.MONITORING)),
         CROSS_BORDER_AND_MONITORING(EnumSet.of(RiskOperation.CROSS_BORDER, RiskOperation.MONITORING)),
         MONITORING(EnumSet.of(RiskOperation.MONITORING));
 

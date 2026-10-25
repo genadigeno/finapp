@@ -224,6 +224,75 @@ class SignalIntakeDatabaseTest {
         }
     }
 
+    // ------------------------------------------------------------------ P13-TSK-014: the abuse sources
+
+    @Test
+    @DisplayName("bnpl.BnplApplicationSubmitted twice records once - the second absorbed by the inbox, a third past the"
+            + " dedupe by the unique - about the applicant, its product")
+    void aBnplApplicationTwiceRecordsOnce() throws SQLException {
+        UUID party = UUID.randomUUID();
+        UUID application = UUID.randomUUID();
+        ReceivedEvent event = new ReceivedEvent(EventId.next(IDS), "bnpl.BnplApplicationSubmitted", 1, 1, application,
+                "bnpl_application", Instant.now(CLOCK), "bnpl", CorrelationId.of(UUID.randomUUID().toString()),
+                CausationId.of("p13-tsk-014"), "application/json", EventPayload.of()
+                        .with("applicationId", application.toString()).with("partyId", party.toString())
+                        .with("product", "BNPL_PAY_IN_N").with("plan", "PAY_IN_3")
+                        .with("checkoutSessionId", UUID.randomUUID().toString()).toBytes());
+        RiskSignalIntake intake = intake(RiskSignalIntake.Source.BNPL_APPLICATION_SUBMITTED);
+        try (SimulatedInstance a = SimulatedInstance.inAgreementWithTheServer();
+                SimulatedInstance b = SimulatedInstance.inAgreementWithTheServer()) {
+            assertThat(deliver(a, intake, event)).isEqualTo(InboxConsumer.Outcome.PROCESSED);
+            assertThat(deliver(b, intake, event)).isEqualTo(InboxConsumer.Outcome.SKIPPED_DUPLICATE);
+        }
+        forgetDedupe(event);
+        try (SimulatedInstance c = SimulatedInstance.inAgreementWithTheServer()) {
+            assertThat(deliver(c, intake, event)).isEqualTo(InboxConsumer.Outcome.PROCESSED);
+        }
+        assertThat(signalCount(event.eventId())).isEqualTo(1);
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement select = app.prepareStatement("SELECT subject_kind, subject_ref, product"
+                        + " FROM risk.risk_signal WHERE source_event_id = ?")) {
+            select.setObject(1, event.eventId().value());
+            try (ResultSet row = select.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                assertThat(row.getString(1)).isEqualTo("PARTY");
+                assertThat(row.getString(2)).isEqualTo(party.toString());
+                assertThat(row.getString(3)).isEqualTo("BNPL_PAY_IN_N");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("a refund of a payment risk never judged: the live attribution finds no assessment, nothing is recorded,"
+            + " the delivery is acknowledged (never a stall); the merchant's numerator is one scan of its index")
+    void anUnjudgedPaymentsRefundRecordsNothing() throws SQLException {
+        RiskSignalIntake refunds = new RiskSignalIntake(RiskSignalIntake.Source.REFUND_COMPLETED, signals,
+                MonitoringHints.NONE, IDS, RiskFlowScope.NONE,
+                RiskSignalIntake.Attributions.over(new com.finapp.risk.JdbcRiskAssessmentStore()));
+        UUID refund = UUID.randomUUID();
+        ReceivedEvent event = new ReceivedEvent(EventId.next(IDS), "payments.RefundCompleted", 1, 1, refund, "refund",
+                Instant.now(CLOCK), "payments", CorrelationId.of(UUID.randomUUID().toString()),
+                CausationId.of("p13-tsk-014"), "application/json", EventPayload.of().with("status", "COMPLETED")
+                        .with("intentId", UUID.randomUUID().toString())
+                        .with("attemptId", UUID.randomUUID().toString()).toBytes());
+        try (SimulatedInstance a = SimulatedInstance.inAgreementWithTheServer()) {
+            assertThat(deliver(a, refunds, event)).isEqualTo(InboxConsumer.Outcome.PROCESSED);
+        }
+        assertThat(signalCount(event.eventId())).isZero();
+        try (Connection app = DatabaseRoles.application(); Statement explain = app.createStatement()) {
+            explain.execute("SET enable_seqscan = off");
+            StringBuilder plan = new StringBuilder();
+            try (ResultSet rows = explain.executeQuery("EXPLAIN SELECT count(*) FROM risk.risk_signal WHERE merchant_subject_ref"
+                    + " = '" + UUID.randomUUID() + "' AND kind = 'REFUND_COMPLETED' AND observed_at >= now() - interval"
+                    + " '30 days'")) {
+                while (rows.next()) {
+                    plan.append(rows.getString(1)).append('\n');
+                }
+            }
+            assertThat(plan.toString()).contains("risk_signal_by_merchant");
+        }
+    }
+
     // -----------------------------------------------------------------
 
     private RiskSignalIntake intake(RiskSignalIntake.Source source) {

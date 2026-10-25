@@ -166,10 +166,17 @@ enum RuleEvaluation {
         return reading == null ? Optional.empty() : Optional.of(new KeyedVelocity(key, reading));
     }
 
+    /**
+     * A share's judgement (`P13-TSK-014`): at least {@code threshold_count} in the numerator <em>and</em> the share at or
+     * above {@code ratio_bps}, both integer comparisons ({@link Ratio#atLeast}: cross-multiplied in {@code long}, never a
+     * quotient - {@code INV-MON-01}). A window the reader sealed no ratio for - a zero denominator - is {@code ABSENT}.
+     */
     private static Judgement ratio(Map<WindowKind, Ratio> ratios, RiskRule rule, String name) {
         WindowKind window = rule.parameters().window("window");
         Ratio ratio = ratios.get(window);
-        return ratio == null ? Judgement.ABSENT : judged(ratio.atLeast(rule.parameters().basisPoints("ratio_bps")),
+        return ratio == null ? Judgement.ABSENT : judged(
+                ratio.numerator() >= rule.parameters().count("threshold_count")
+                        && ratio.atLeast(rule.parameters().basisPoints("ratio_bps")),
                 name + ":" + window + ":num=" + ratio.numerator() + ",den=" + ratio.denominator());
     }
 }

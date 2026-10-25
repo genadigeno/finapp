@@ -10,6 +10,7 @@ import com.finapp.platform.telemetry.Spans;
 import com.finapp.risk.JdbcRiskPolicyStore;
 import com.finapp.risk.JdbcRiskSignalStore;
 import com.finapp.risk.MonitoringHints;
+import com.finapp.risk.RiskAssessmentStore;
 import com.finapp.risk.RiskPolicies;
 import com.finapp.risk.RiskPolicyAdministration;
 import com.finapp.risk.RiskPolicyStore;
@@ -130,7 +131,7 @@ public class RiskBeans {
         return new KycScreeningClearances(partyStore, kycCaseStore, checkStore);
     }
 
-    // The eighteen sources, one handler bean each - the shell filters a delivery to its handler by topic and type.
+    // The twenty-one sources, one handler bean each - the shell filters a delivery to its handler by topic and type.
 
     @Bean
     RiskSignalIntake riskSignalCredentialChanged(RiskSignals s, MonitoringHints h, IdGenerator ids, RiskFlowScope f) {
@@ -199,6 +200,28 @@ public class RiskBeans {
     @Bean
     RiskSignalIntake riskSignalBnplDefaulted(RiskSignals s, MonitoringHints h, IdGenerator ids, RiskFlowScope f) {
         return intake(RiskSignalIntake.Source.BNPL_DEFAULTED, s, h, ids, f);
+    }
+
+    // P13-TSK-014: the abuse sources - the refund and the chargeback attributed from risk's own assessments.
+
+    @Bean
+    RiskSignalIntake riskSignalRefundCompleted(RiskSignals s, MonitoringHints h, IdGenerator ids, RiskFlowScope f,
+            RiskAssessmentStore riskAssessmentStore) {
+        return new RiskSignalIntake(RiskSignalIntake.Source.REFUND_COMPLETED, s, h, ids, f,
+                RiskSignalIntake.Attributions.over(riskAssessmentStore));
+    }
+
+    @Bean
+    RiskSignalIntake riskSignalChargebackReceived(RiskSignals s, MonitoringHints h, IdGenerator ids, RiskFlowScope f,
+            RiskAssessmentStore riskAssessmentStore) {
+        return new RiskSignalIntake(RiskSignalIntake.Source.CHARGEBACK_RECEIVED, s, h, ids, f,
+                RiskSignalIntake.Attributions.over(riskAssessmentStore));
+    }
+
+    @Bean
+    RiskSignalIntake riskSignalBnplApplicationSubmitted(RiskSignals s, MonitoringHints h, IdGenerator ids,
+            RiskFlowScope f) {
+        return intake(RiskSignalIntake.Source.BNPL_APPLICATION_SUBMITTED, s, h, ids, f);
     }
 
     @Bean

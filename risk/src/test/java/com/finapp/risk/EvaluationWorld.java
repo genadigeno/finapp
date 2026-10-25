@@ -134,6 +134,11 @@ final class EvaluationWorld {
             public List<VelocityEvidence.Counted> countedSince(Connection unitOfWork, Instant from) {
                 return assessmentStore.countedSince(unitOfWork, from);
             }
+
+            @Override
+            public Optional<JudgedPayment> judgedPayment(Connection unitOfWork, CommandRef commandRef) {
+                return assessmentStore.judgedPayment(unitOfWork, commandRef);
+            }
         };
         AlertRaiser raiser = (unitOfWork, alerts) -> {
             journal.add("raise " + alerts.size());

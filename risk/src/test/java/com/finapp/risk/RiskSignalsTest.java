@@ -127,6 +127,11 @@ class RiskSignalsTest {
         }
 
         @Override
+        public int countByMerchantSince(Connection unitOfWork, UUID merchant, SignalKind kind, Instant since) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public Optional<RiskSignal> latest(Connection unitOfWork, SignalSubject subject, SignalKind kind) {
             throw new UnsupportedOperationException();
         }

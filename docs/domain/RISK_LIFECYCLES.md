@@ -362,6 +362,11 @@ writer by trigger, the grant `SELECT, INSERT`; an attribute outside its kind's s
 inbox seeks back and stalls loudly — never truncated, never acknowledged. The completions record no signal: they are
 hints to `MonitoringHints` (`-019`).)*
 
+*(As built, `P13-TSK-014`, 2026-10-25, `risk V011`: three kinds about the `PARTY` - `REFUND_COMPLETED`,
+`CHARGEBACK_RECEIVED` (attributed from risk's own sealed assessment of the payment: the payer the subject, the merchant
+`merchant_subject_ref`, the intent `intent_ref`; a payment risk never judged records none, acknowledged) and
+`BNPL_APPLICATION_SUBMITTED` (the applicant the event names). Still not a machine.)*
+
 ### 4.5 Alert (`risk.risk_alert`) — `P13-TSK-015` (`risk V010` - planned `V008`, the next free at its build: the table, raise, dedupe and suppression); the folding into a case `-016`; the monitoring rules `-020`; the fraud rules `-013`, `-014`
 
 ```
@@ -424,6 +429,15 @@ undone alone and reported, the decision and the money transaction standing; evid
 assessment. **T-mon's profile leg** (S, under the head's lock R8): the `MONITORING` version's anchors over the party's
 identities' signals; a fired anchor raises in the recompute's transaction, rating changed or not; a failed raise fails
 the recompute whole; evidence the anchor signal. Both born `OPEN` and queued until `-016`'s folding.
+
+*(As built, `P13-TSK-014`, 2026-10-25 - the abuse alerts, no edge added.)* **T-eval** raises `MERCHANT_ABUSE` (folding
+into a `MERCHANT_ABUSE` case) on the **merchant** a checkout payment pays when its `REFUND_RATIO` or `CHARGEBACK_RATIO`
+fired, keyed (the merchant, the rule, the rule window's bucket containing the cut), the sealed assessment its evidence,
+severity `MEDIUM` for refunds and `HIGH` for chargebacks; **the profile leg** raises `FRAUD` on the **party** for its own
+ratios and `BNPL_MULTI_APPLICATION`, keyed (the party, the rule, the ratio's bucket or the latest application's), the
+latest evidence signal its evidence - both in the existing one `raiseAll` per transaction, both born `OPEN`. A
+`MERCHANT_ABUSE` alert's subject is not yet placeable in a party, so its suppression fails closed until a merchant join
+exists (`-015`'s D6; `-018`'s door).
 
 ### 4.6 Case (`risk.risk_case`, `risk_case_action`, `risk_case_event`) — `P13-TSK-016` (`risk V009`; the folding of alerts into cases is this task's); the queues and the tipping-off control `-018`; the AML case `-021`; collections `-025` (C3)
 

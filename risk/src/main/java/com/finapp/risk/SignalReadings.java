@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * The readings an evaluation takes from the signals (`P13-TSK-005`; {@code PHASE_13_PLAN.md} section 12.5) - the
@@ -35,6 +36,23 @@ public final class SignalReadings {
     /** How many signals of {@code kind} about {@code subject} were observed within {@code lookback} before {@code now}. */
     public int countWithin(Connection unitOfWork, SignalSubject subject, SignalKind kind, Instant now, Duration lookback) {
         return store.countSince(unitOfWork, subject, kind, since(now, lookback));
+    }
+
+    /**
+     * How many signals of {@code kind} about {@code subject} were observed at or after {@code since} - a window bucket's
+     * start the caller computed from its database instant (`P13-TSK-014`: a party's refunds, chargebacks).
+     */
+    public int countSince(Connection unitOfWork, SignalSubject subject, SignalKind kind, Instant since) {
+        return store.countSince(unitOfWork, subject, kind, Objects.requireNonNull(since, "since"));
+    }
+
+    /**
+     * How many signals of {@code kind} name {@code merchant} and were observed at or after {@code since} - a merchant's
+     * refunds or chargebacks in a window bucket (`P13-TSK-014`).
+     */
+    public int countByMerchantSince(Connection unitOfWork, UUID merchant, SignalKind kind, Instant since) {
+        return store.countByMerchantSince(unitOfWork, Objects.requireNonNull(merchant, "merchant"), kind,
+                Objects.requireNonNull(since, "since"));
     }
 
     /** Whether a signal of {@code kind} about {@code subject} was observed within {@code lookback} before {@code now}. */

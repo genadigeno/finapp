@@ -32,19 +32,31 @@ class RiskSignalTest {
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
 
     @Test
-    @DisplayName("thirteen kinds - one per consumed signal-recording event that exists today - each from one event type")
+    @DisplayName("sixteen kinds - one per consumed signal-recording event that exists today (P13-TSK-014 added the"
+            + " refund, the chargeback and the BNPL application) - each from one event type")
     void theKindsAreClosedAndEachBornFromOneEvent() {
         assertThat(names(SignalKind.values())).containsExactly(
                 "CREDENTIAL_CHANGED", "RECOVERY_INITIATED", "RECOVERY_COMPLETED", "IDENTITY_SUSPENDED",
                 "ACCOUNT_OPENED", "BENEFICIARY_REGISTERED", "BENEFICIARY_ACTIVATED", "BENEFICIARY_BLOCKED",
                 "MERCHANT_ONBOARDED", "LOAN_DELINQUENCY_CHANGED", "LOAN_DEFAULTED", "BNPL_DELINQUENCY_CHANGED",
-                "BNPL_DEFAULTED");
+                "BNPL_DEFAULTED", "REFUND_COMPLETED", "CHARGEBACK_RECEIVED", "BNPL_APPLICATION_SUBMITTED");
         assertThat(Arrays.stream(SignalKind.values()).map(SignalKind::sourceEventType)).containsExactly(
                 "identity.CredentialChanged", "identity.RecoveryInitiated", "identity.RecoveryCompleted",
                 "identity.IdentitySuspended", "accounts.AccountOpened", "crossborder.BeneficiaryRegistered",
                 "crossborder.BeneficiaryActivated", "crossborder.BeneficiaryBlocked", "merchant.MerchantOnboarded",
                 "lending.LoanDelinquencyChanged", "lending.LoanDefaulted", "bnpl.BnplDelinquencyChanged",
-                "bnpl.BnplDefaulted");
+                "bnpl.BnplDefaulted", "payments.RefundCompleted", "payments.ChargebackReceived",
+                "bnpl.BnplApplicationSubmitted");
+        // P13-TSK-014: the abuse kinds are about the PARTY (the payer, the applicant), the merchant and intent by
+        // reference only; the dispute's inquiry, its resolution and a refund not yet completed are no kind.
+        assertThat(SignalKind.REFUND_COMPLETED.subject()).isEqualTo(SubjectKind.PARTY);
+        assertThat(SignalKind.CHARGEBACK_RECEIVED.attributes()).extracting(SignalKind.Attribute::name)
+                .containsExactly("merchant_subject_ref", "intent_ref");
+        assertThat(SignalKind.BNPL_APPLICATION_SUBMITTED.attributes()).extracting(SignalKind.Attribute::name)
+                .containsExactly("product");
+        assertThat(SignalKind.recordedFrom("payments.DisputeOpened")).isEmpty();
+        assertThat(SignalKind.recordedFrom("payments.DisputeResolved")).isEmpty();
+        assertThat(SignalKind.recordedFrom("payments.RefundInitiated")).isEmpty();
         // Each event type names exactly one kind, and nothing the plan listed that does not exist is a kind.
         assertThat(Arrays.stream(SignalKind.values()).map(SignalKind::sourceEventType).distinct())
                 .hasSize(SignalKind.values().length);

@@ -12,6 +12,7 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
@@ -41,7 +42,8 @@ import java.util.function.Supplier;
  *                                                     ALLOW; a permitted fail-safe counted behind a savepoint of its own
  *   (R3) seal                 the assessment born     UNIQUE (operation, command_ref); a lost race aborts the caller
  *   announce                  the outbox              risk.RiskDecisionMade; risk.LimitBreached per limit rule breached
- *   [savepoint, 250 ms]       the alerts              the sealed hits' account-takeover alerts, one raiseAll (-013)
+ *   [savepoint, 250 ms]       the alerts              the sealed hits' account-takeover (-013) and merchant-abuse
+ *                                                     (-014) alerts, one raiseAll
  *   case                      CaseOpener              REVIEW, HOLD (NONE until -016)
  * </pre>
  *
@@ -50,7 +52,10 @@ import java.util.function.Supplier;
  * through one {@link AlertRaiser#raiseAll}, behind a savepoint of their own under the read budget: a failed or
  * timed-out raise is undone alone and reported ({@link RiskEvaluationObserver#alertsUnraised}), the decision and the
  * caller's money transaction stand. A replay is answered from its seal and raises nothing; a fail-safe has no hits and
- * raises nothing.
+ * raises nothing. <em>`P13-TSK-014`</em>: a payment whose merchant's {@code REFUND_RATIO} or {@code CHARGEBACK_RATIO}
+ * fired raises its {@code MERCHANT_ABUSE} alerts in the same list ({@link PaymentAbuse}) - keyed (merchant, rule, the
+ * window's bucket containing the cut), so every payment to that merchant in the bucket meets one row; one merchant's
+ * payments are already serialised on (R2a)'s merchant lock, so the raise never waits on another's uncommitted birth.
  *
  * <p><strong>The pin runs outside the statement timeout</strong>, behind its own savepoint: an evaluation that meets an
  * activation in flight <em>waits</em> for it and pins the successor (ADR-0109 decision 6, the A3-I1 rule); a timeout
@@ -275,8 +280,9 @@ public final class RiskEvaluation {
     }
 
     /**
-     * The sealed assessment's alerts (`P13-TSK-013`) - today the account-takeover sequence's ({@link AccountTakeover});
-     * `-014`'s join this one list, so the transaction raises through one {@code raiseAll}. Behind a savepoint of its own
+     * The sealed assessment's alerts - the account-takeover sequence's ({@link AccountTakeover}, `P13-TSK-013`) and a
+     * payment's merchant-abuse ratios' ({@link PaymentAbuse}, `P13-TSK-014`), in one list, so the transaction raises
+     * through one {@code raiseAll}. Behind a savepoint of its own
      * under the read budget: a raise that fails or waits past it on another transaction's uncommitted birth of the same
      * key is undone alone and reported - the seal, the event and the caller's money transaction stand
      * ({@code -015}'s note on {@link Alerts}: a failed birth would otherwise abort the caller).
@@ -286,14 +292,26 @@ public final class RiskEvaluation {
         if (judgement.version().isEmpty() || judgement.cause().isPresent()) {
             return;
         }
-        if (AtoSequence.anchorsShown(assessment.operation(), assessment.hits()).isEmpty()) {
+        boolean takeover = !AtoSequence.anchorsShown(assessment.operation(), assessment.hits()).isEmpty();
+        boolean abuse = request.merchant().isPresent() && judgement.cutAt().isPresent()
+                && PaymentAbuse.merchantFired(assessment.operation(), assessment.hits());
+        if (!takeover && !abuse) {
             return;
         }
-        // The alerts are built inside the savepoint too: nothing of the raise may abort the money transaction.
-        Attempt<List<Alerts.Raised>> attempt = attempt(unitOfWork, Optional.of(EvaluationBudget.READ_TIMEOUT),
-                () -> alerts.raiseAll(unitOfWork, AccountTakeover.alerts(judgement.verdict(), judgement.anchors(),
-                        request.party(), judgement.version().get().id(), Optional.of(assessment.id()),
-                        request.correlation(), Optional.of(request.causation()))));
+        RiskPolicyVersion version = judgement.version().get();
+        // The alerts are built inside the savepoint too: nothing of the raise may abort the money transaction. One
+        // raiseAll for the transaction - the account-takeover alerts and the merchant's together (-015's contract).
+        Attempt<List<Alerts.Raised>> attempt = attempt(unitOfWork, Optional.of(EvaluationBudget.READ_TIMEOUT), () -> {
+            List<NewAlert> raised = new ArrayList<>(AccountTakeover.alerts(judgement.verdict(), judgement.anchors(),
+                    request.party(), version.id(), Optional.of(assessment.id()), request.correlation(),
+                    Optional.of(request.causation())));
+            if (abuse) {
+                raised.addAll(PaymentAbuse.merchant(judgement.verdict(), version.policy(), request.merchant().get(),
+                        version.id(), assessment.id(), judgement.cutAt().get(), request.correlation(),
+                        request.causation()));
+            }
+            return alerts.raiseAll(unitOfWork, List.copyOf(raised));
+        });
         if (attempt.failed()) {
             observer.alertsUnraised(assessment.id(), assessment.operation(), attempt.cause().name());
         }
@@ -461,6 +479,12 @@ public final class RiskEvaluation {
             request.sourceAccount().ifPresent(account -> signals.age(unitOfWork,
                     SignalSubject.of(SubjectKind.ACCOUNT, account), SignalKind.ACCOUNT_OPENED, now)
                     .ifPresent(age -> in.accountAgeDays(days(age))));
+        }
+        // P13-TSK-014: a payment's merchant ratios - the numerators after (R2a), which holds the merchant's lock; the
+        // denominators the MERCHANT figures read with the policy's keys, before this movement.
+        if (PaymentAbuse.PAYMENTS.contains(request.operation()) && request.merchant().isPresent()
+                && judged.stream().anyMatch(PaymentAbuse.RATIOS::contains)) {
+            in.monitoring(PaymentAbuse.merchant(unitOfWork, signals, policy, request.merchant().get(), figures, now));
         }
         RiskInputs.Readings external = inputs.read(unitOfWork, request, judged, now);
         external.sessionAssurance().value().ifPresent(in::sessionAssurance);

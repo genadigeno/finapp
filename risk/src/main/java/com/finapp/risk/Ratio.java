@@ -2,7 +2,8 @@ package com.finapp.risk;
 
 /**
  * A share as the two figures it is made of - refunds over payments, chargebacks over payments (`P13-TSK-003`;
- * {@link RuleKind#REFUND_RATIO}, {@link RuleKind#CHARGEBACK_RATIO}; `-014` says what each counts). Sealed as the
+ * {@link RuleKind#REFUND_RATIO}, {@link RuleKind#CHARGEBACK_RATIO}; `P13-TSK-014` counts them: the subject's refund or
+ * chargeback signals in a window's bucket over its velocity window's count for that bucket, {@link AbuseRatios}). Sealed as the
  * figures and never as a quotient, so the comparison with a policy's basis points is exact: cross-multiplied in
  * {@code long} under the {@link EvaluationInputs#MAX_MINOR} bound, no division, no rounding ({@code INV-MON-01}).
  */

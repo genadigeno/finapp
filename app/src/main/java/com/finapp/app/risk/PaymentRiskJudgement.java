@@ -31,6 +31,11 @@ import java.util.UUID;
  * session's label is a sanitised {@code User-Agent} shared by strangers, which `-008`'s gate refused as a subject. A card
  * is no account of the platform's, so a card payment carries no source account. The {@code DEVICE} and
  * {@code SOURCE_ACCOUNT} (card) windows stay {@code ABSENT}.
+ *
+ * <p><strong>The session</strong> (`P13-TSK-014`): the request's own authenticated session of the acting customer
+ * ({@link ActingSession}) - by its id, never its token or its label - is the {@code SESSION} dimension's subject, so a
+ * session confirming many checkouts (card testing) is counted, exactly, under R2a's lock on that one login. A system
+ * flow, or a call outside a request, carries none: the {@code SESSION} windows read {@code ABSENT}.
  */
 public final class PaymentRiskJudgement {
 
@@ -67,6 +72,8 @@ public final class PaymentRiskJudgement {
         SecurityContext.current().ifPresent(actor -> {
             request.actor(actor);
             identityOf(actor).ifPresent(request::identity);
+            // P13-TSK-014: the confirming session - its id, never its token - the SESSION windows' subject.
+            ActingSession.of(actor).ifPresent(session -> request.session(session.id().value()));
         });
         return request.build();
     }

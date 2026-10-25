@@ -34,6 +34,9 @@ class RiskAssessmentMigrationTest {
     /** risk V008 (P13-TSK-010): the decision admission and the policy knobs regenerated for CARD_PAYMENT's HOLD. */
     private static final String HELD_CARD_PAYMENT = "db/migration/risk/V008__the_held_card_payment.sql";
 
+    /** risk V011 (P13-TSK-014): the assessment's {@code session_id}, among its widenings. */
+    private static final String ABUSE = "db/migration/risk/V011__payment_merchant_and_bnpl_abuse.sql";
+
     private static final List<String> MIGRATIONS = List.of(
             "db/migration/risk/V001__initialise_risk_schema.sql",
             "db/migration/risk/V002__risk_policy_versions_as_data.sql",
@@ -179,9 +182,10 @@ class RiskAssessmentMigrationTest {
 
     @Test
     @DisplayName("the store's inserts name each column once with one value each, and every column the head names is one"
-            + " V007 declares - the seal's statements cannot drift from the table")
+            + " V007 declares or V011 adds (P13-TSK-014's session_id) - the seal's statements cannot drift from the table")
     void theStoresInsertsMatchTheTables() {
         String sql = collapsed(statements(RESOURCE));
+        String added = collapsed(statements(ABUSE));
         for (String insert : List.of(JdbcRiskAssessmentStore.INSERT_HEAD, JdbcRiskAssessmentStore.INSERT_INPUT,
                 JdbcRiskAssessmentStore.INSERT_HIT, JdbcRiskAssessmentStore.INSERT_REASON)) {
             Matcher shape = Pattern.compile("INSERT INTO risk\\.([a-z_]+) \\(([^)]*)\\) VALUES \\(([^)]*\\)?)\\)")
@@ -193,9 +197,11 @@ class RiskAssessmentMigrationTest {
             assertThat(values).as(insert).allMatch(value -> value.equals("?") || value.equals("clock_timestamp()"));
             String table = shape.group(1);
             for (String column : columns) {
-                assertThat(sql).as(table + "." + column).containsPattern(
-                        "CREATE TABLE risk\\." + table + " \\([^;]*\\b" + column + "\\s+(uuid|text|bigint|integer|boolean"
-                                + "|timestamptz)");
+                boolean declared = Pattern.compile("CREATE TABLE risk\\." + table + " \\([^;]*\\b" + column
+                        + "\\s+(uuid|text|bigint|integer|boolean|timestamptz)").matcher(sql).find();
+                boolean addedLater = Pattern.compile("ALTER TABLE risk\\." + table + " ADD COLUMN " + column
+                        + " (uuid|text|bigint|integer|boolean|timestamptz)").matcher(added).find();
+                assertThat(declared || addedLater).as(table + "." + column).isTrue();
             }
         }
     }

@@ -3,7 +3,9 @@ package com.finapp.risk;
 import java.sql.Connection;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Storage for the sealed assessments (`P13-TSK-004`; {@code risk V007}; ADR-0033) - a port whose one write is the
@@ -29,4 +31,27 @@ public interface RiskAssessmentStore {
      * the velocity proof's evidence ({@link AssessmentVelocityEvidence}); the head's columns only, no lock.
      */
     List<VelocityEvidence.Counted> countedSince(Connection unitOfWork, Instant from);
+
+    /**
+     * The payer and the merchant of the checkout payment judged under {@code commandRef} - the intent's id (`-010`) -
+     * as its sealed {@code CARD_PAYMENT} or {@code WALLET_PAYMENT} assessment names them; empty when risk never judged
+     * that payment (`P13-TSK-014`: a refund's and a chargeback's attribution, read from risk's own record, never from
+     * payments'). No lock: a sealed row never changes. An intent judged under both operations (a re-confirmation with
+     * another instrument) names one payer and one merchant either way - the latest is answered.
+     */
+    Optional<JudgedPayment> judgedPayment(Connection unitOfWork, CommandRef commandRef);
+
+    /** Whose checkout payment it was, and whom it paid - identifiers only. */
+    record JudgedPayment(UUID party, UUID merchant) {
+        public JudgedPayment {
+            Objects.requireNonNull(party, "party");
+            Objects.requireNonNull(merchant, "merchant");
+        }
+
+        @Override
+        public String toString() {
+            // Never the references: who paid whom is CONFIDENTIAL.
+            return "JudgedPayment";
+        }
+    }
 }
