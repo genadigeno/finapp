@@ -44,7 +44,7 @@ import java.util.function.Supplier;
  *   announce                  the outbox              risk.RiskDecisionMade; risk.LimitBreached per limit rule breached
  *   [savepoint, 250 ms]       the alerts              the sealed hits' account-takeover (-013) and merchant-abuse
  *                                                     (-014) alerts, one raiseAll
- *   case                      CaseOpener              REVIEW, HOLD (NONE until -016)
+ *   case                      CaseOpener              REVIEW, HOLD - the case of the kind the hits call for (-016)
  * </pre>
  *
  * <p><strong>The alerts</strong> (`P13-TSK-013`; {@link AccountTakeover}, {@link AtoSequence}): when the sealed hits show
@@ -65,9 +65,10 @@ import java.util.function.Supplier;
  * band is read from a version that cannot retire before the caller commits.
  *
  * <p><strong>Never an aborted caller for risk's trouble</strong>: a failed or timed-out read, a refusing engine and an
- * absent policy are each a recorded decision ({@code INV-RSK-04}). Two failures do abort the caller, deliberately: the
- * idempotency lookup (without it a retry could count twice) and the seal (a judged command is never committed without
- * its assessment, {@code INV-RSK-01}).
+ * absent policy are each a recorded decision ({@code INV-RSK-04}). Three failures do abort the caller, deliberately: the
+ * idempotency lookup (without it a retry could count twice), the seal (a judged command is never committed without
+ * its assessment, {@code INV-RSK-01}) and - `P13-TSK-016` - the case a {@code REVIEW} or {@code HOLD} opens
+ * ({@link CaseOpener}: a held or refused movement is never committed without its investigation; fail closed).
  *
  * <p><strong>T-advise ({@link #advise})</strong> is the same evaluation with {@link VelocityWindows#peek} - no lock on a
  * subject, no count, no row, no event - for a door's step-up answer before the command exists. Never authoritative:
@@ -267,8 +268,12 @@ public final class RiskEvaluation {
         announce(unitOfWork, request, assessment);
         raiseAlerts(unitOfWork, request, assessment, judgement);
         if (assessment.decision() == RiskDecision.REVIEW || assessment.decision() == RiskDecision.HOLD) {
+            // P13-TSK-016: the case of the kind the sealed hits call for - ATO when they show the account-takeover
+            // anchors (the alerts above folded first, so the anchor's alert and this decision are one case), else FRAUD.
+            // Not behind a savepoint: a REVIEW or HOLD never commits without its case (fail closed).
             cases.open(unitOfWork, new CaseOpener.Decided(assessment.id(), assessment.operation(),
-                    assessment.commandRef(), request.party(), assessment.decision()));
+                    assessment.commandRef(), request.party(), assessment.decision(),
+                    CaseOpener.Decided.kindFor(assessment.operation(), assessment.hits()), request.correlation()));
         }
         observer.evaluated(new RiskEvaluationObserver.Report(assessment.id(), assessment.operation(),
                 assessment.decision(), assessment.unavailable(),

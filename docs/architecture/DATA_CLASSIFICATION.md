@@ -4431,6 +4431,76 @@ are; the people `CONFIDENTIAL`; closed codes, the platform's own identifiers and
 | `risk_alert` | `correlation_id` | `INTERNAL` | The raising flow's correlation |
 | `risk_alert` | `causation_id` | `INTERNAL` | The raising flow's cause |
 
+### `risk.risk_case`, `risk_case_action` and `risk_case_event` - the case - *added by `P13-TSK-016`*
+
+`risk V012`: one open case per (subject, kind) - `risk_case_one_open`, `INV-RSK-06` - its machine `OPEN →
+IN_INVESTIGATION → ESCALATED → DISPOSED` (a one-person close from `OPEN` too), never re-opened; every step one revision
+and one history row; the investigator actions and the history `INSERT`-only for every writer; no `DELETE` for any role.
+**No money, no score, no rule parameter.** That a subject has a case is what the tipping-off rule protects
+(`INV-RSK-08` - no customer or merchant route reads these tables, `NoCustomerSurfaceReadsRiskTest`), so the subject
+is `CONFIDENTIAL` as the alert's is; the evidence references `CONFIDENTIAL` (`PHASE_13_PLAN.md` §8, §11); the people
+who took, proposed and approved `CONFIDENTIAL`; an action's text is person-written, screened for instrument shapes
+(`risk.holds_instrument_shape`) and `RESTRICTED-PII` - the plan's "case notes `CONFIDENTIAL`" raised to the override's
+and the suppression's level (`DESIGN-016` D13); closed codes, the platform's own identifiers, counters and the
+database's stamps `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `risk_case` | `id` | `INTERNAL` | Generated - the case's identity, what an attached alert and the doors name |
+| `risk_case` | `kind` | `INTERNAL` | A closed `CaseKind` code |
+| `risk_case` | `subject_kind` | `INTERNAL` | A closed `SubjectKind` code |
+| `risk_case` | `subject_ref` | `CONFIDENTIAL` | The subject by identifier - a party's or a merchant's id as text (a device only as identity's hash, by `CHECK`) |
+| `risk_case` | `status` | `INTERNAL` | The machine's state - `OPEN`, `IN_INVESTIGATION`, `ESCALATED`, `DISPOSED` |
+| `risk_case` | `revision` | `INTERNAL` | A counter - one per step; the compare-and-set's |
+| `risk_case` | `level` | `INTERNAL` | A closed `CaseLevel` code - `L1` to `L3` |
+| `risk_case` | `queue` | `INTERNAL` | A closed `CaseQueue` code |
+| `risk_case` | `taken_by` | `CONFIDENTIAL` | The investigator who took it |
+| `risk_case` | `taken_by_type` | `INTERNAL` | A closed actor type - a person's, `CUSTOMER` (the session establishes every identity so) or `EMPLOYEE`, by `CHECK` |
+| `risk_case` | `sla_hours` | `INTERNAL` | The kind's SLA, a whole number of hours (`SlaDeadlines`) |
+| `risk_case` | `sla_deadline` | `INTERNAL` | `opened_at` plus the SLA, the database's |
+| `risk_case` | `opening_alert_id` | `INTERNAL` | The alert it was opened from - risk's own row |
+| `risk_case` | `opening_assessment_id` | `INTERNAL` | The sealed assessment it was opened from - risk's own row |
+| `risk_case` | `predecessor_case_id` | `INTERNAL` | The disposed case of the same subject and kind it follows - risk's own row |
+| `risk_case` | `opened_at` | `INTERNAL` | The database's stamp of the opening |
+| `risk_case` | `disposition` | `INTERNAL` | A closed `Disposition` code - standing or decided |
+| `risk_case` | `disposition_id` | `INTERNAL` | The disposition's identity - its `DISPOSITION_PROPOSED` action's id |
+| `risk_case` | `disposition_prohibits` | `INTERNAL` | Whether the disposition sets the party's profile `PROHIBITED` |
+| `risk_case` | `disposition_proposed_by` | `CONFIDENTIAL` | The analyst who proposed the disposition |
+| `risk_case` | `disposition_proposed_by_type` | `INTERNAL` | A closed actor type - a person's, `CUSTOMER` (the session establishes every identity so) or `EMPLOYEE`, by `CHECK` |
+| `risk_case` | `disposition_proposed_at` | `INTERNAL` | The database's stamp of the proposal |
+| `risk_case` | `disposition_approved_by` | `CONFIDENTIAL` | The analyst who decided it - never the proposer of a two persons' disposition, by `CHECK` |
+| `risk_case` | `disposition_approved_by_type` | `INTERNAL` | A closed actor type - a person's, `CUSTOMER` (the session establishes every identity so) or `EMPLOYEE`, by `CHECK` |
+| `risk_case` | `disposed_at` | `INTERNAL` | The database's stamp of the decision |
+| `risk_case` | `correlation_id` | `INTERNAL` | The opening flow's correlation |
+| `risk_case_action` | `id` | `INTERNAL` | Generated - the action's identity; a proposal's is the disposition's |
+| `risk_case_action` | `case_id` | `INTERNAL` | The case - risk's own row |
+| `risk_case_action` | `ordinal` | `INTERNAL` | The case revision the act produced |
+| `risk_case_action` | `kind` | `INTERNAL` | A closed `CaseActionKind` code |
+| `risk_case_action` | `actor_id` | `CONFIDENTIAL` | The investigator who acted |
+| `risk_case_action` | `actor_type` | `INTERNAL` | A closed actor type - a person's, `CUSTOMER` (the session establishes every identity so) or `EMPLOYEE`, by `CHECK` |
+| `risk_case_action` | `text` | `RESTRICTED-PII` | Person-written - a note, an escalation's or a disposition's reason; screened for instrument shapes; served on the analyst's desk alone, never logged |
+| `risk_case_action` | `evidence_signal_ids` | `CONFIDENTIAL` | Evidence by reference - signals (at most 100) |
+| `risk_case_action` | `evidence_assessment_ids` | `CONFIDENTIAL` | Evidence by reference - sealed assessments (at most 100) |
+| `risk_case_action` | `evidence_journal_entry_ids` | `CONFIDENTIAL` | Evidence by reference - the ledger's journal entries (at most 100) |
+| `risk_case_action` | `disposition` | `INTERNAL` | A closed `Disposition` code - a proposal's |
+| `risk_case_action` | `prohibits` | `INTERNAL` | Whether the proposal sets `PROHIBITED` |
+| `risk_case_action` | `queue` | `INTERNAL` | A closed `CaseQueue` code - an escalation's |
+| `risk_case_action` | `recorded_at` | `INTERNAL` | The database's stamp |
+| `risk_case_action` | `correlation_id` | `INTERNAL` | The act's correlation |
+| `risk_case_event` | `case_id` | `INTERNAL` | The case - risk's own row |
+| `risk_case_event` | `revision` | `INTERNAL` | The revision the step reached |
+| `risk_case_event` | `kind` | `INTERNAL` | A closed `CaseEventKind` code |
+| `risk_case_event` | `status` | `INTERNAL` | The state after the step |
+| `risk_case_event` | `level` | `INTERNAL` | The level after the step |
+| `risk_case_event` | `queue` | `INTERNAL` | The queue after the step |
+| `risk_case_event` | `actor_id` | `CONFIDENTIAL` | Who acted - a person, or the acting principal of the system's opening or attach |
+| `risk_case_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `risk_case_event` | `action_id` | `INTERNAL` | The person's action of this step - risk's own row |
+| `risk_case_event` | `alert_id` | `INTERNAL` | The alert the system attached, or opened from - risk's own row |
+| `risk_case_event` | `assessment_id` | `INTERNAL` | The assessment the system attached, or opened from - risk's own row |
+| `risk_case_event` | `recorded_at` | `INTERNAL` | The database's stamp |
+| `risk_case_event` | `correlation_id` | `INTERNAL` | The step's correlation |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

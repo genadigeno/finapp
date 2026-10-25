@@ -379,7 +379,19 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/risk/assessments/{assessmentId}/overrides/{overrideId}/approval",
                             PermissionName.RISK_OVERRIDE),
                     entry("POST /v1/operator/risk/assessments/{assessmentId}/overrides/{overrideId}/rejection",
-                            PermissionName.RISK_OVERRIDE)));
+                            PermissionName.RISK_OVERRIDE),
+                    // P13-TSK-016: the analyst's case doors - a case opened by hand, the investigator's acts (take,
+                    // note, evidence, escalate; the body carrying the revision) and a disposition proposed under
+                    // RISK_INVESTIGATE; its approval (a second holder, MULTI_FACTOR; the proposer refused
+                    // risk.SelfApprovalRefused) and rejection under RISK_CASE_APPROVE - both held by RISK_ANALYST; the
+                    // queue and the case read are P13-TSK-018's; the negatives are RiskCaseApiTest's.
+                    entry("POST /v1/operator/risk/cases", PermissionName.RISK_INVESTIGATE),
+                    entry("POST /v1/operator/risk/cases/{caseId}/actions", PermissionName.RISK_INVESTIGATE),
+                    entry("POST /v1/operator/risk/cases/{caseId}/dispositions", PermissionName.RISK_INVESTIGATE),
+                    entry("POST /v1/operator/risk/cases/{caseId}/dispositions/{dispositionId}/approval",
+                            PermissionName.RISK_CASE_APPROVE),
+                    entry("POST /v1/operator/risk/cases/{caseId}/dispositions/{dispositionId}/rejection",
+                            PermissionName.RISK_CASE_APPROVE)));
 
     /**
      * The CONDITIONAL half (the Phase 12 -> 13 gate's A5-F1): a permission a route asks BESIDE its declared one when the

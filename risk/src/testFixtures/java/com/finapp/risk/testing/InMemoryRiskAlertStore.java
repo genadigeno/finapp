@@ -99,6 +99,18 @@ public final class InMemoryRiskAlertStore implements RiskAlertStore {
     }
 
     @Override
+    public List<RiskAlert> queued(Connection unitOfWork, int limit) {
+        log.add("queued");
+        return rows.values().stream()
+                .filter(row -> row.status() == AlertStatus.OPEN && !row.kind().operational()
+                        && row.suppression().isEmpty())
+                .sorted(java.util.Comparator.comparing(RiskAlert::raisedAt)
+                        .thenComparing(row -> row.id().value()))
+                .limit(limit)
+                .toList();
+    }
+
+    @Override
     public Optional<RiskAlert> propose(Connection unitOfWork, RiskAlertId id, SuppressionReason reasonCode,
             String reason, Actor proposer) {
         log.add("propose");

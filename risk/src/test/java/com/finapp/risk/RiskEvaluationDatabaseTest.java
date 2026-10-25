@@ -64,6 +64,16 @@ class RiskEvaluationDatabaseTest {
     private static final JdbcVelocityWindowStore WINDOW_STORE = new JdbcVelocityWindowStore();
     private static final JdbcRiskAssessmentStore ASSESSMENT_STORE = new JdbcRiskAssessmentStore();
     private static final RiskEvaluation EVALUATION = evaluation(new RiskPolicies(POLICY_STORE));
+    /** P13-TSK-016: the composition's case opener - a REVIEW or HOLD opens its case in the money transaction. */
+    private static final Cases CASES = new Cases(new JdbcRiskCaseStore(), new JdbcRiskAlertStore(),
+            (uow, actor) -> Optional.empty(), RiskSubjectParties.NONE, new JdbcAuditWriter(), new JdbcOutboxWriter(),
+            IDS, CLOCK, CaseObserver.NONE);
+    private static final RiskEvaluation CASED = new RiskEvaluation(new RiskPolicies(POLICY_STORE),
+            new VelocityWindows(WINDOW_STORE), new CustomerRiskProfiles(new JdbcCustomerRiskProfileStore(),
+                    (uow, actor) -> Optional.empty(), new JdbcAuditWriter(), IDS, CLOCK),
+            new SignalReadings(new JdbcRiskSignalStore()), RiskInputs.NONE, ASSESSMENT_STORE,
+            new JdbcEvaluationBudget(), CASES::openFor, AlertRaiser.NONE, new JdbcOutboxWriter(),
+            RiskEvaluationObserver.NONE, Spans.NONE, IDS, CLOCK);
 
     @Test
     @DisplayName("ten retries of one command, each behind the caller's lock on its own connection: one assessment, the"
@@ -303,6 +313,47 @@ class RiskEvaluationDatabaseTest {
             assertThat(counted.movement().subject(VelocityDimension.MERCHANT)).isPresent();
             assertThat(counted.at()).isEqualTo(row.cutAt().orElseThrow());
         });
+    }
+
+    @Test
+    @DisplayName("P13-TSK-016: a REVIEW decision opens its FRAUD case in the money transaction, the assessment its"
+            + " opening, under the caller's lock - and a caller that rolls back leaves neither the assessment nor the case")
+    void aReviewDecisionOpensItsCaseInTheMoneyTransaction() throws Exception {
+        activate(RiskOperation.TRANSFER);
+        UUID party = IDS.next();
+        UUID source = IDS.next();
+        Actor customer = new Actor("customer-" + party, ActorType.CUSTOMER);
+        for (int i = 0; i < 10; i++) {
+            asCustomer(customer, () -> inOneTransaction(uow -> CASED.evaluate(uow, transfer(eur(1_00), party,
+                    source))));
+        }
+        RiskEvaluationRequest eleventh = transfer(eur(1_00), party, source);
+        try (Connection uow = DatabaseRoles.application()) {
+            uow.setAutoCommit(false);
+            callersLock(uow, eleventh);
+            RiskEvaluation.Assessed rolledBack = asCustomer(customer, () -> CASED.evaluate(uow, eleventh));
+            assertThat(rolledBack.decision()).isEqualTo(RiskDecision.REVIEW);
+            uow.rollback();
+        }
+        assertThat(count("SELECT count(*) FROM risk.risk_case WHERE subject_ref = '" + party + "'")).isZero();
+
+        RiskEvaluation.Assessed reviewed = asCustomer(customer, () -> inOneTransaction(uow -> {
+            callersLock(uow, eleventh);
+            return CASED.evaluate(uow, eleventh);
+        }));
+        assertThat(reviewed.decision()).isEqualTo(RiskDecision.REVIEW);
+        assertThat(column("SELECT kind || '/' || status || '/' || opening_assessment_id::text FROM risk.risk_case"
+                + " WHERE subject_ref = '" + party + "'")).containsExactly("FRAUD/OPEN/" + reviewed.assessmentId().value());
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'risk.CaseOpened'"
+                + " AND actor_id = '" + customer.id() + "'")).isEqualTo(1);
+    }
+
+    @SuppressWarnings("try") // The Scope is used for its close side effect (the established idiom).
+    private static <T> T asCustomer(Actor customer, java.util.function.Supplier<T> work) {
+        try (com.finapp.platform.security.SecurityContext.Scope ignored =
+                com.finapp.platform.security.SecurityContext.enter(customer)) {
+            return work.get();
+        }
     }
 
     // -----------------------------------------------------------------

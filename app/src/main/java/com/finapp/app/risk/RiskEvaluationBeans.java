@@ -44,9 +44,9 @@ import org.springframework.context.annotation.Configuration;
  * until `-009`…`-011` wire their adapters over {@link RiskEvaluation}.
  *
  * <p><strong>The session's assurance</strong> is identity's, read live ({@link IdentitySessionAssurance}, `-008`), so a
- * {@code CHALLENGE} the acting session satisfies permits. <strong>Wired as declared, not yet implemented:</strong>
- * {@link CaseOpener#NONE} - a {@code REVIEW} or {@code HOLD} opens no case until `-016` implements the opener (the
- * sealed assessment is the record its folding starts from). <strong>The alerts</strong> (`P13-TSK-013`): the sealed
+ * {@code CHALLENGE} the acting session satisfies permits. <strong>The case opener</strong> (`P13-TSK-016`):
+ * {@code RiskCaseBeans}' {@link CaseOpener} - a {@code REVIEW} or {@code HOLD} opens or joins the party's case of the kind
+ * the sealed hits call for, in the money transaction, the assessment its evidence. <strong>The alerts</strong> (`P13-TSK-013`): the sealed
  * hits' account-takeover alerts raised through {@code RiskAlertBeans}' {@link AlertRaiser} - {@code Alerts.raiseAll},
  * behind T-eval's own savepoint. The velocity proof's evidence of record is
  * {@link AssessmentVelocityEvidence} - the counted assessments, every dimension provable (`-006`'s finding closed);
@@ -108,6 +108,7 @@ public class RiskEvaluationBeans {
             RiskInputs riskInputs,
             RiskAssessmentStore riskAssessmentStore,
             EvaluationBudget evaluationBudget,
+            CaseOpener caseOpener,
             AlertRaiser alertRaiser,
             OutboxWriter<Connection> outboxWriter,
             RiskEvaluationMetrics riskEvaluationMetrics,
@@ -115,7 +116,7 @@ public class RiskEvaluationBeans {
             IdGenerator idGenerator,
             Clock clock) {
         return new RiskEvaluation(riskPolicies, velocityWindows, customerRiskProfiles, signalReadings, riskInputs,
-                riskAssessmentStore, evaluationBudget, CaseOpener.NONE, alertRaiser, outboxWriter, riskEvaluationMetrics,
+                riskAssessmentStore, evaluationBudget, caseOpener, alertRaiser, outboxWriter, riskEvaluationMetrics,
                 domainSpans, idGenerator, clock);
     }
 

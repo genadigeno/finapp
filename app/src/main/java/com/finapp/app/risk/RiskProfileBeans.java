@@ -43,11 +43,12 @@ public class RiskProfileBeans {
 
     /**
      * The party behind a signal's subject - an identity's party; the other kinds placed by later tasks - and the reverse,
-     * the identities a party holds ({@link RiskPartyIdentities}, `P13-TSK-013`): one bean, both joins.
+     * the identities a party holds ({@link RiskPartyIdentities}, `P13-TSK-013`): one bean, both joins - and the case's
+     * accountable party, a merchant's organisation over merchant's store (`P13-TSK-016`, {@code DESIGN-016} D6).
      */
     @Bean
     IdentitySubjectParties riskSubjectParties(IdentityStore<Connection> identityStore) {
-        return new IdentitySubjectParties(identityStore);
+        return new IdentitySubjectParties(identityStore, new com.finapp.merchant.JdbcMerchantStore());
     }
 
     /** T-sig's permit pull: a signal born about a placeable party pulls its profile permit to now. */

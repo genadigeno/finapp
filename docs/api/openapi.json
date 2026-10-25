@@ -9047,6 +9047,181 @@
           }
         }
       },
+      "risk.CaseActNotAdmitted": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.CaseActNotAdmitted"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.CaseActNotAdmitted"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The case's state does not admit this act now: a disposition already awaits a second person, the disposition named is not awaiting a decision, or the case is at its top level.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "risk.CaseNotOpen": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.CaseNotOpen"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.CaseNotOpen"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The case is disposed; a new case may reference it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "risk.CaseNotTaken": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.CaseNotTaken"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.CaseNotTaken"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The act needs the case taken by an investigator first: an escalation, or a disposition that is two persons' act.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "risk.CaseRequestInvalid": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.CaseRequestInvalid"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.CaseRequestInvalid"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The case act is not admitted as asked: a kind, subject, queue or disposition outside what the case takes, or PROHIBITED asked of a disposition that does not confirm a party's case; nothing was done.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "risk.CaseRevisionStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "risk.CaseRevisionStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/risk.CaseRevisionStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The case changed since it was read; read it again and resend with its current revision.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "risk.NotFound": {
         "content": {
           "application/problem+json": {
@@ -21992,6 +22167,220 @@
         },
         "type": "object"
       },
+      "RiskCaseActionRequest": {
+        "properties": {
+          "act": {
+            "pattern": "TAKE|NOTE|ATTACH_EVIDENCE|ESCALATE",
+            "type": "string"
+          },
+          "assessmentIds": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 0,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 0,
+            "type": "array"
+          },
+          "journalEntryIds": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 0,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 0,
+            "type": "array"
+          },
+          "queue": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "revision": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "signalIds": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 0,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 0,
+            "type": "array"
+          },
+          "text": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "act",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "RiskCaseDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "revision": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "type": "object"
+      },
+      "RiskCaseDispositionRequest": {
+        "properties": {
+          "disposition": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "prohibit": {
+            "type": "boolean"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "revision": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "type": "object"
+      },
+      "RiskCaseOpenRequest": {
+        "properties": {
+          "alertId": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "kind": {
+            "pattern": "FRAUD|ATO|MERCHANT_ABUSE|AML|COLLECTIONS",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "subjectKind": {
+            "pattern": "PARTY|MERCHANT",
+            "type": "string"
+          },
+          "subjectRef": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskCaseView": {
+        "properties": {
+          "caseId": {
+            "type": "string"
+          },
+          "disposition": {
+            "$ref": "#/components/schemas/RiskDispositionView"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "opened": {
+            "type": "boolean"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "openingAlertId": {
+            "type": "string"
+          },
+          "openingAssessmentId": {
+            "type": "string"
+          },
+          "predecessorCaseId": {
+            "type": "string"
+          },
+          "queue": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "slaDeadline": {
+            "type": "string"
+          },
+          "slaHours": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subjectKind": {
+            "type": "string"
+          },
+          "subjectRef": {
+            "type": "string"
+          },
+          "taken": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "RiskDispositionView": {
+        "properties": {
+          "disposedAt": {
+            "type": "string"
+          },
+          "disposition": {
+            "type": "string"
+          },
+          "dispositionId": {
+            "type": "string"
+          },
+          "prohibits": {
+            "type": "boolean"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "requiresSecondPerson": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RiskFailSafeBandRequest": {
         "properties": {
           "decision": {
@@ -34092,6 +34481,239 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RiskReplayView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/cases": {
+      "post": {
+        "operationId": "openRiskCase",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskCaseOpenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskCaseView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/cases/{caseId}/actions": {
+      "post": {
+        "operationId": "actOnRiskCase",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "caseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskCaseActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskCaseView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/cases/{caseId}/dispositions": {
+      "post": {
+        "operationId": "proposeRiskCaseDisposition",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "caseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskCaseDispositionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskCaseView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/cases/{caseId}/dispositions/{dispositionId}/approval": {
+      "post": {
+        "operationId": "approveRiskCaseDisposition",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "caseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dispositionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskCaseDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskCaseView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/cases/{caseId}/dispositions/{dispositionId}/rejection": {
+      "post": {
+        "operationId": "rejectRiskCaseDisposition",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "caseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dispositionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskCaseDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskCaseView"
                 }
               }
             },

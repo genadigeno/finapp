@@ -88,7 +88,8 @@ import org.springframework.test.context.DynamicPropertySource;
  * {@code PHASE_13_PLAN.md} sections 7.1, 12.6, scenario 11; ADR-0108, ADR-0110; {@code INV-RSK-06}, {@code INV-RSK-04},
  * {@code INV-RSK-08}): identity's events through risk's real inbox handlers on two instances, delayed, duplicated and
  * reordered; payments' real withdrawal engine judged in-lock by risk's real adapter; the profile leg's real recompute.
- * The sequence is held and alerted exactly once - one {@code ACCOUNT_TAKEOVER} alert {@code OPEN}, whatever the
+ * The sequence is held and alerted exactly once - one {@code ACCOUNT_TAKEOVER} alert, attached to the party's ONE
+ * {@code ATO} case since `P13-TSK-016` (the alert's folding and the hold's {@code CaseOpener} meet on it), whatever the
  * retries, the redeliveries, the ten concurrent withdrawals and the sweeps; outside the lookback nothing is held; a
  * recovery with no movement is alerted once by the sweep; a raise blocked past the budget is undone behind its
  * savepoint and the withdrawal stands. <strong>Written and owed</strong> (owner decision C5: the database tiers are
@@ -154,7 +155,8 @@ class AccountTakeoverDatabaseTest {
     @Order(1)
     @DisplayName("scenario 11: a credential change - delivered on two instances at once, again later, reordered behind"
             + " another event - then a new payee, then a withdrawal: HELD with its hold kept, and ONE ACCOUNT_TAKEOVER"
-            + " alert OPEN on the party; the retry replays, a second withdrawal holds again - still one alert")
+            + " alert on the party, ATTACHED to its one ATO case (P13-TSK-016); the retry replays, a second withdrawal"
+            + " holds again - still one alert, one case")
     void aCredentialChangeThenNewPayeeThenWithdrawalIsHeldAndCased() throws Exception {
         Customer customer = fixtures.funded(1_000_00);
         Instant changedAt = Instant.now(CLOCK).minus(Duration.ofHours(2)).truncatedTo(ChronoUnit.SECONDS);
@@ -179,7 +181,13 @@ class AccountTakeoverDatabaseTest {
 
         assertThat(column("SELECT kind || ',' || status || ',' || subject_kind || ',' || rule_code || ',' || severity"
                 + " FROM risk.risk_alert WHERE subject_ref = ?", customer.party().toString()))
-                .containsExactly("ACCOUNT_TAKEOVER,OPEN,PARTY,RECENT_CREDENTIAL_CHANGE,HIGH");
+                .containsExactly("ACCOUNT_TAKEOVER,ATTACHED,PARTY,RECENT_CREDENTIAL_CHANGE,HIGH");
+        // P13-TSK-016: one ATO case - opened by the alert's folding, the hold's assessment attached by CaseOpener.
+        assertThat(column("SELECT kind || ',' || status FROM risk.risk_case WHERE subject_ref = ?",
+                customer.party().toString())).containsExactly("ATO,OPEN");
+        assertThat(count("SELECT count(*) FROM risk.risk_case_event e JOIN risk.risk_case c ON c.id = e.case_id"
+                + " WHERE c.subject_ref = ? AND e.assessment_id = ?", customer.party().toString(), assessment))
+                .as("the hold's assessment is the case's evidence").isEqualTo(1);
         assertThat(count("SELECT count(*) FROM risk.risk_alert WHERE subject_ref = ? AND window_kind = 'D1'"
                 + " AND window_start = ? AND ? = ANY (evidence_assessment_ids)", customer.party().toString(),
                 java.sql.Timestamp.from(WindowStarts.start(WindowKind.D1, changedAt)), assessment))
@@ -194,6 +202,8 @@ class AccountTakeoverDatabaseTest {
         Withdrawals.Initiated again = withdraw(customer, 20_00, someKey());
         assertThat(again.status()).isEqualTo(WithdrawalStatus.HELD);
         assertThat(alerts(customer)).as("one sequence, one alert (INV-RSK-06)").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM risk.risk_case WHERE subject_ref = ?", customer.party().toString()))
+                .as("one sequence, one ATO case (P13-TSK-016)").isEqualTo(1);
         assertThat(alertsRaised(customer)).isEqualTo(1);
     }
 
@@ -250,7 +260,7 @@ class AccountTakeoverDatabaseTest {
         sweep(customer.party());
         assertThat(column("SELECT kind || ',' || status || ',' || rule_code || ',' || cardinality(evidence_assessment_ids)"
                 + " FROM risk.risk_alert WHERE subject_ref = ?", customer.party().toString()))
-                .containsExactly("ACCOUNT_TAKEOVER,OPEN,RECENT_RECOVERY,0");
+                .containsExactly("ACCOUNT_TAKEOVER,ATTACHED,RECENT_RECOVERY,0");
         assertThat(count("SELECT count(*) FROM risk.risk_alert a JOIN risk.risk_signal s"
                 + " ON s.id = ANY (a.evidence_signal_ids) WHERE a.subject_ref = ? AND s.source_event_id = ?",
                 customer.party().toString(), recovered.eventId().value())).isEqualTo(1);
@@ -343,7 +353,10 @@ class AccountTakeoverDatabaseTest {
 
     /** The profile leg for {@code party}, in a transaction of its own - as a sweeper on another instance runs it. */
     private void sweep(UUID party) {
-        inOneTransaction(uow -> profileRecompute.recompute(uow, party, CorrelationId.generate(IDS)));
+        // As the schedule runs it: the platform's scope (P13-TSK-016 - the leg's folds open cases under SYSTEM).
+        try (SecurityContext.Scope system = SecurityContext.enterSystem()) {
+            inOneTransaction(uow -> profileRecompute.recompute(uow, party, CorrelationId.generate(IDS)));
+        }
     }
 
     private static ReceivedEvent credentialChangedEvent(UUID identity, Instant occurredAt) {

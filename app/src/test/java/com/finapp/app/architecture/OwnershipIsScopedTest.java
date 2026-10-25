@@ -1940,6 +1940,47 @@ class OwnershipIsScopedTest {
                                         + " (lock(id), after the not-self rule), the clearing conditional on OPEN over a"
                                         + " standing proposal; behind -018's door; it suppresses nothing.")),
                     Map.entry(
+                            "com.finapp.risk.JdbcRiskCaseStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-016. R4: the case row FOR UPDATE for an analyst's act behind"
+                                        + " @RequiresPermission(RISK_INVESTIGATE / RISK_CASE_APPROVE), after the analyst"
+                                        + " is placed in a party; the act proceeds only when the case's subject's"
+                                        + " accountable party is placed and is not the analyst's (fail closed,"
+                                        + " risk.SelfDealingRefused). A case is risk's record about a subject, owned by"
+                                        + " no party; deliberately someone else's.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskCaseStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-016. A case read by id: the receipt of an act this door just performed"
+                                        + " (or its key replayed) behind RISK_INVESTIGATE / RISK_CASE_APPROVE, the case"
+                                        + " the act's own lock already judged for self-dealing; the prohibition's"
+                                        + " follow-up after an approval; the drain's attach of an alert to the case the"
+                                        + " same transaction holds. No customer or merchant surface reaches it.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskCaseStore.advance",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-016. The step, conditional on the revision: the id comes only from the"
+                                        + " row this transaction holds FOR UPDATE (lock(id) after the not-self rule, or"
+                                        + " lockOpen / the insert of the system's opening); the trigger judges the edge"
+                                        + " again and the four-eyes CHECK holds every writer.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskCaseStore.actions",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-016. A case's investigator actions by its id - the suites' reading and"
+                                        + " -018's case read (behind RISK_INVESTIGATE, self-dealing judged first);"
+                                        + " no door serves it in this task.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskCaseStore.events",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-016. A case's history by its id - the suites' reading and -018's case"
+                                        + " read (behind RISK_INVESTIGATE, self-dealing judged first); no door serves"
+                                        + " it in this task.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanTermsStore.insertTerms",
                             new Entry(
                                     Scope.ADMINISTERED,

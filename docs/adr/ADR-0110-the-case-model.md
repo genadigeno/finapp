@@ -187,5 +187,22 @@ Financial impact: none — a case moves no money; its only effects are keyed act
   `P13-TSK-016` (`NONE` wired: every alert stays `OPEN`, queued); the order is a birth at (R3)'s position, then the
   case (R4), then the alert's attach (R5), and a transaction raises through one `raiseAll` - its alerts in key order,
   every birth before any fold. The door and the queue stay `P13-TSK-018`'s.
+- **Built by `P13-TSK-016` (2026-10-25) - decisions 2-7.** `risk V012` (the next free number; planned `V009`):
+  `risk_case` one open per (subject, kind) by the partial unique `risk_case_one_open`, its machine judged by the domain
+  and the trigger, never re-opened (a new case names its predecessor); `risk_case_action` append-only; `risk_case_event`
+  one history row per revision. **Decision 3** implemented as `Cases::fold` (the case R4, then the alert's attach R5,
+  through the alert store) with the backlog born before it drained by the case leg on `RiskMonitoringSchedule`; `-004`'s
+  `CaseOpener` as `Cases::openFor` (`ATO` when the sealed hits show the account-takeover anchors, else `FRAUD`, so an
+  anchor rule's hold and its alert are one case). **Decision 5** as written: the row lock and the revision, compared in
+  the domain, the `UPDATE` conditional on it and the trigger refusing any step but one. **Decision 6, corrected (dated
+  note):** "a `CONFIRMED_*` disposition may set the customer risk profile's rating" is built as an explicit `prohibit` on
+  the proposal - admitted for a confirming disposition of a party's case alone - and written by the profile in a
+  transaction of its own after the case commits (never R8 under R4, `P13-TSK-013`'s lock-order finding), one version per
+  disposition; "any disposition that issues an action" joins the four-eyes set with `-017`; the approval is stepped up
+  for every four-eyes disposition (`REFERRED` and a prohibiting one too). **Decision 7** as written, with the merchant's
+  organisation party placed for a `MERCHANT_ABUSE` case (`RiskSubjectParties.accountablePartyOf`). **The SLA per kind**
+  (the follow-up's "default is the task's"): `ATO` 4 h, `FRAUD` 24 h, `MERCHANT_ABUSE` 72 h, `AML` 720 h, `COLLECTIONS`
+  168 h (`SlaDeadlines`), stamped by the trigger on the database clock - owner item to set per kind. The queues and reads
+  (decision 8) stay `P13-TSK-018`'s.
 - **Acceptance.** `Proposed` at the Phase 12 → 13 transition (2026-10-22); the Phase 13 review (`P13-DOC-001`) reads
   this ADR against the code, corrects it in place with dated notes, and accepts it.

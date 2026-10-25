@@ -38,6 +38,13 @@ import org.springframework.context.SmartLifecycle;
  * leg - and the leg goes on; any other failure (the claim itself, the pin) is counted and ends the leg for the tick. Ten
  * instances sweeping together write one version per rating change ({@code ProfileDatabaseTest#tenRecomputesOneVersion}).
  *
+ * <p><strong>The case leg</strong> (`P13-TSK-016`; {@code DESIGN-016} D7; {@link CaseLegDriver}): after the profiles, the
+ * drain of the alerts born {@code OPEN} before the folding was wired - each folded in a transaction of its own, the case
+ * (R4) before the alert (R5), bounded by {@code finapp.risk.case.folds-per-tick} - and the re-drive of approved
+ * prohibitions whose profile version a door's crash left unwritten ({@code finapp.risk.case.prohibitions-per-tick}). A
+ * failed fold is counted {@code claim.failed{kind=monitoring}} and the leg goes on; a leg that throws is counted and ends
+ * for the tick.
+ *
  * <p><strong>The override action leg</strong> (`P13-TSK-012`; {@code DESIGN-012} D1; ADR-0112 decisions 4-5): last, the
  * at-least-once re-drive of the actions approved overrides issued - a held withdrawal's release or denial, a held card
  * payment's capture or void - whose outcome is not yet recorded because the approving instance died between its commit
@@ -101,8 +108,20 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
         int driveDue();
     }
 
+    /** The case leg's step - {@link CaseLegDriver#driveDue}, in production (`P13-TSK-016`). */
+    @FunctionalInterface
+    public interface CaseLeg {
+
+        /** No case leg - the earlier tasks' shape, kept for their suites. */
+        CaseLeg NONE = () -> 0;
+
+        /** The queued alerts folded and the approved prohibitions applied, bounded per tick; how many were done. */
+        int driveDue();
+    }
+
     private final MonitoringIntake intake;
     private final ProfileLeg profiles;
+    private final CaseLeg cases;
     private final ActionLeg actions;
     private final int profileClaimsPerTick;
     private final RiskTransactions transactions;
@@ -139,6 +158,17 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
     public RiskMonitoringSchedule(MonitoringIntake intake, ProfileLeg profiles, int profileClaimsPerTick,
             ActionLeg actions, RiskTransactions transactions, RiskMonitoringMetrics metrics, RiskFlowScope flow,
             Duration pollInterval, int batchesPerTick) {
+        this(intake, profiles, profileClaimsPerTick, CaseLeg.NONE, actions, transactions, metrics, flow, pollInterval,
+                batchesPerTick);
+    }
+
+    /**
+     * @param cases the case leg - {@code caseLegDriver::driveDue} in production (`P13-TSK-016`): the drain of the
+     *     queued alerts and the approved prohibitions' re-drive, after the profiles and before the override actions
+     */
+    public RiskMonitoringSchedule(MonitoringIntake intake, ProfileLeg profiles, int profileClaimsPerTick,
+            CaseLeg cases, ActionLeg actions, RiskTransactions transactions, RiskMonitoringMetrics metrics,
+            RiskFlowScope flow, Duration pollInterval, int batchesPerTick) {
         // The configuration judged first - a misconfigured instance refuses to start whatever it was handed.
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval");
         if (pollInterval.isNegative() || pollInterval.isZero()) {
@@ -152,6 +182,7 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
             throw new IllegalArgumentException("profileClaimsPerTick must be positive: " + profileClaimsPerTick);
         }
         this.profileClaimsPerTick = profileClaimsPerTick;
+        this.cases = Objects.requireNonNull(cases, "cases");
         this.actions = Objects.requireNonNull(actions, "actions");
         this.batchesPerTick = batchesPerTick;
         this.intake = Objects.requireNonNull(intake, "intake");
@@ -193,8 +224,22 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
                 }
             }
             recomputeDueProfiles();
+            driveCaseLeg();
             driveDueActions();
             return born;
+        }
+    }
+
+    /** The case leg, inside {@link #sweepOnce}'s system scope: the drain and the prohibitions, each act its own tx. */
+    private void driveCaseLeg() {
+        try {
+            int done = cases.driveDue();
+            if (done > 0) {
+                log.debug("Risk case leg acts: {}", done);
+            }
+        } catch (RuntimeException failure) {
+            metrics.claimFailed();
+            log.warn("Risk case leg failed: {}", failure.getClass().getSimpleName());
         }
     }
 

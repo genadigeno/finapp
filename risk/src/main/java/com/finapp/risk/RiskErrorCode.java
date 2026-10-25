@@ -60,6 +60,33 @@ public enum RiskErrorCode implements ErrorCode {
             409,
             "The alert's suppression is not awaiting this act: a proposal already awaits a decision, or none does."),
 
+    // The case's doors (P13-TSK-016): the two the plan names and the three DESIGN-016 D10 names - the state conflicts
+    // 409 (the register's precedent), the requests the case cannot take as asked 422.
+    CASE_REVISION_STALE(
+            "risk.CaseRevisionStale",
+            409,
+            "The case changed since it was read; read it again and resend with its current revision."),
+
+    CASE_NOT_OPEN("risk.CaseNotOpen", 409, "The case is disposed; a new case may reference it."),
+
+    CASE_ACT_NOT_ADMITTED(
+            "risk.CaseActNotAdmitted",
+            409,
+            "The case's state does not admit this act now: a disposition already awaits a second person, the"
+                    + " disposition named is not awaiting a decision, or the case is at its top level."),
+
+    CASE_NOT_TAKEN(
+            "risk.CaseNotTaken",
+            422,
+            "The act needs the case taken by an investigator first: an escalation, or a disposition that is two"
+                    + " persons' act."),
+
+    CASE_REQUEST_INVALID(
+            "risk.CaseRequestInvalid",
+            422,
+            "The case act is not admitted as asked: a kind, subject, queue or disposition outside what the case takes,"
+                    + " or PROHIBITED asked of a disposition that does not confirm a party's case; nothing was done."),
+
     // The reprocessing door's refusal of a point ahead of the watermark (P13-TSK-019).
     REPROCESSING_NOT_BEHIND(
             "risk.ReprocessingNotBehind",

@@ -439,7 +439,7 @@ latest evidence signal its evidence - both in the existing one `raiseAll` per tr
 `MERCHANT_ABUSE` alert's subject is not yet placeable in a party, so its suppression fails closed until a merchant join
 exists (`-015`'s D6; `-018`'s door).
 
-### 4.6 Case (`risk.risk_case`, `risk_case_action`, `risk_case_event`) — `P13-TSK-016` (`risk V009`; the folding of alerts into cases is this task's); the queues and the tipping-off control `-018`; the AML case `-021`; collections `-025` (C3)
+### 4.6 Case (`risk.risk_case`, `risk_case_action`, `risk_case_event`) — `P13-TSK-016` (`risk V012` - planned `V009`, the next free at its build; the folding of alerts into cases is this task's); the queues and the tipping-off control `-018`; the AML case `-021`; collections `-025` (C3)
 
 ```
  (opened — T-eval on REVIEW | HOLD | a policy-flagged DENY; the sweep on an alert with no open case; by hand; -025 on LoanDefaulted | BnplDefaulted)
@@ -477,6 +477,30 @@ log line or metric tag carries a note, a reason text, a score or a name. **Inval
 a `DISPOSED` case (`409 risk.CaseNotOpen`); an update without the current `revision`; a `CONFIRMED_*` disposition by
 one person (`CHECK`); a `PROHIBITED` rating from anywhere but an approved disposition; a case whose subject is the
 actor's own party; a case row written by any module but `risk`.
+
+*As built (`P13-TSK-016`, 2026-10-25, `risk V012`; `DESIGN-016`):* the machine as drawn, every edge judged by the domain
+(`RiskCase`, `Cases`) and again by `risk_case_permits_only_machine_edges` - born `OPEN` at revision 0, `L1`,
+`FIRST_LINE`; the facts frozen; the revision exactly one up a step; nothing out of `DISPOSED`; an escalation one level up
+to a queue above the first line; a two persons' proposal only on a taken case; a close from `OPEN` only as a one-person
+`CLOSED_*`; the stamps the database's - and every revision its `risk_case_event` row (the deferred
+`risk_case_has_its_history`). **Read differently from the table above, recorded:** (1) a one-person close is decided by
+its own proposal (`POST …/dispositions` answers `DISPOSED`), so the approval door serves only the two persons'
+dispositions and is stepped up `MULTI_FACTOR` for every one - `REFERRED` and a prohibiting one as well as every
+`CONFIRMED_*` (D2, D14 of the design); (2) **the profile's `PROHIBITED` is not written in the approval's transaction** -
+the profile leg takes the head (R8) before its folds take a case (R4), so a case act must never take R8 under R4
+(`P13-TSK-013`'s finding): the approval disposes the case alone and `ProfileRecompute.applyDisposition` writes the
+`DISPOSITION` version in a transaction of its own after the commit - the door's follow-up, again on the key's replay, and
+the case leg's re-drive - one version per disposition (`customer_risk_profile_version_one_per_disposition`);
+`PROHIBITED` is **asked** by the proposal (`prohibit`), admitted for a `CONFIRMED_*` of a `PARTY`'s case alone (D3: an
+`ATO` case's confirmed takeover names the victim; a confirmed suspicion that refused the customer everywhere would tip
+them off); lifting it has no door yet; (3) no disposition issues a risk action until `-017` - the four-eyes set is
+`CONFIRMED_*`, `REFERRED` and a prohibiting one, `-017` widens it; (4) the take admits a take-over by another
+investigator (a reassignment, D12); every act, the approval and rejection included, carries the revision; (5) the codes
+`409 risk.CaseActNotAdmitted` (a standing proposal; a decision on another; the top level), `422 risk.CaseNotTaken` and
+`422 risk.CaseRequestInvalid` beside the planned two (D10); (6) the queue and the case read are `-018`'s - the acts answer
+the case's head; (7) the system's opening is audited `risk.CaseOpened` under the acting principal (T-eval's caller, the
+leg's `SYSTEM`), an attach recorded by its history row alone; the alerts born `OPEN` before this task are drained by the
+case leg on `RiskMonitoringSchedule`.
 
 ### 4.7 Risk action (`risk.risk_action`) — `P13-TSK-017` (`risk V010`); the override's release runs in this shape from `-012`'s approval door until `-017` folds it in
 

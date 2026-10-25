@@ -118,7 +118,8 @@ class MerchantAbuseDatabaseTest {
 
     @Test
     @DisplayName("a merchant's refund ratio crossing its threshold raises ONE MERCHANT_ABUSE alert: 25 refunds of its 30"
-            + " judged payments, attributed from their sealed assessments, then its next payment - the alert OPEN, the"
+            + " judged payments, attributed from their sealed assessments, then its next payment - the alert ATTACHED to"
+            + " the merchant's MERCHANT_ABUSE case (P13-TSK-016), the"
             + " merchant, REFUND_RATIO, the D30 bucket, the payment permitted")
     void aRefundRatioOverTheThresholdRaisesOneMerchantAbuseAlert() throws Exception {
         UUID merchant = UUID.randomUUID();
@@ -133,7 +134,10 @@ class MerchantAbuseDatabaseTest {
         assertThat(next.permits()).as("the merchant's ratio refuses no customer").isTrue();
         assertThat(column("SELECT kind || ',' || status || ',' || subject_kind || ',' || rule_code || ',' || window_kind"
                 + " FROM risk.risk_alert WHERE subject_ref = ?", merchant.toString()))
-                .containsExactly("MERCHANT_ABUSE,OPEN,MERCHANT,REFUND_RATIO,D30");
+                .containsExactly("MERCHANT_ABUSE,ATTACHED,MERCHANT,REFUND_RATIO,D30");
+        assertThat(column("SELECT kind || ',' || subject_kind || ',' || status FROM risk.risk_case WHERE subject_ref = ?",
+                merchant.toString())).as("the merchant's case (P13-TSK-016)")
+                .containsExactly("MERCHANT_ABUSE,MERCHANT,OPEN");
         assertThat(count("SELECT count(*) FROM risk.risk_alert WHERE subject_ref = ? AND window_start = ?"
                 + " AND ? = ANY (evidence_assessment_ids)", merchant.toString(),
                 java.sql.Timestamp.from(WindowStarts.start(WindowKind.D30, Instant.now(CLOCK))),
@@ -295,7 +299,13 @@ class MerchantAbuseDatabaseTest {
             if (session != null) {
                 request.session(session);
             }
-            RiskEvaluation.Assessed assessed = evaluation.evaluate(app, request.build());
+            // The seam's caller's principal (P13-TSK-016: the folding opens a case under the acting principal).
+            RiskEvaluation.Assessed assessed;
+            try (com.finapp.platform.security.SecurityContext.Scope payer =
+                    com.finapp.platform.security.SecurityContext.enter(new com.finapp.platform.security.Actor(
+                            "customer-" + intent, com.finapp.platform.security.ActorType.CUSTOMER))) {
+                assessed = evaluation.evaluate(app, request.build());
+            }
             app.commit();
             return assessed;
         }
@@ -317,7 +327,11 @@ class MerchantAbuseDatabaseTest {
     }
 
     private void sweep(UUID party) {
-        inOneTransaction(uow -> profileRecompute.recompute(uow, party, CorrelationId.generate(IDS)));
+        // As the schedule runs it: the platform's scope (P13-TSK-016 - the leg's folds open cases under SYSTEM).
+        try (com.finapp.platform.security.SecurityContext.Scope system =
+                com.finapp.platform.security.SecurityContext.enterSystem()) {
+            inOneTransaction(uow -> profileRecompute.recompute(uow, party, CorrelationId.generate(IDS)));
+        }
     }
 
     private static ReceivedEvent refund(UUID intent) {

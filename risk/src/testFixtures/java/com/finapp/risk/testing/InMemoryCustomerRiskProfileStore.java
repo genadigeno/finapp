@@ -98,6 +98,11 @@ public final class InMemoryCustomerRiskProfileStore implements CustomerRiskProfi
                 && version.cause() != ProfileCause.DISPOSITION) {
             throw new IllegalStateException("a recompute never follows a PROHIBITED version");
         }
+        if (version.dispositionId().isPresent()
+                && versionOfDisposition(unitOfWork, version.dispositionId().get()).isPresent()) {
+            // risk V012's customer_risk_profile_version_one_per_disposition.
+            throw new IllegalStateException("customer_risk_profile_version_one_per_disposition");
+        }
         history.add(new CustomerRiskProfileVersion(version.partyId(), version.version(), version.rating(),
                 version.cause(), version.reasons(), version.evaluation(), version.dispositionId(),
                 version.correlationId(), Optional.of(now)));
@@ -131,6 +136,14 @@ public final class InMemoryCustomerRiskProfileStore implements CustomerRiskProfi
     public List<CustomerRiskProfileVersion> versions(Connection unitOfWork, UUID partyId) {
         log.add("versions " + partyId);
         return List.copyOf(versions.getOrDefault(partyId, List.of()));
+    }
+
+    @Override
+    public Optional<CustomerRiskProfileVersion> versionOfDisposition(Connection unitOfWork, UUID dispositionId) {
+        Objects.requireNonNull(dispositionId, "dispositionId");
+        return versions.values().stream().flatMap(List::stream)
+                .filter(version -> version.dispositionId().filter(dispositionId::equals).isPresent())
+                .findFirst();
     }
 
     private CustomerRiskProfile unassessed(UUID partyId) {

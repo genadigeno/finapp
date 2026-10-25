@@ -47,6 +47,14 @@ public final class JdbcRiskAlertStore implements RiskAlertStore {
     static final String ATTACH = "UPDATE risk.risk_alert SET status = 'ATTACHED', attached_case_id = ?"
             + " WHERE id = ? AND status = 'OPEN' RETURNING " + COLUMNS;
 
+    /**
+     * `-016`'s drain: the open alerts of a case-opening kind with no standing proposal, oldest first - on the queue's
+     * partial index, no lock (the fold takes the case, then the alert).
+     */
+    static final String QUEUED = "SELECT " + COLUMNS + " FROM risk.risk_alert WHERE status = 'OPEN'"
+            + " AND kind NOT IN ('UNCLASSIFIED_TRANSACTION', 'VELOCITY_DIVERGENCE')"
+            + " AND suppression_proposed_by IS NULL ORDER BY raised_at, id LIMIT ?";
+
     static final String PROPOSE = "UPDATE risk.risk_alert SET suppression_reason_code = ?, suppression_reason = ?,"
             + " suppression_proposed_by = ?, suppression_proposed_by_type = ?"
             + " WHERE id = ? AND status = 'OPEN' AND suppression_proposed_by IS NULL RETURNING " + COLUMNS;
@@ -138,6 +146,26 @@ public final class JdbcRiskAlertStore implements RiskAlertStore {
             return single(update);
         } catch (SQLException failure) {
             throw failed("attaching a risk alert", failure);
+        }
+    }
+
+    @Override
+    public List<RiskAlert> queued(Connection unitOfWork, int limit) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        if (limit < 1) {
+            throw new IllegalArgumentException("a drain reads at least one alert: " + limit);
+        }
+        try (PreparedStatement select = unitOfWork.prepareStatement(QUEUED)) {
+            select.setInt(1, limit);
+            List<RiskAlert> queued = new ArrayList<>();
+            try (ResultSet row = select.executeQuery()) {
+                while (row.next()) {
+                    queued.add(alert(row));
+                }
+            }
+            return List.copyOf(queued);
+        } catch (SQLException failure) {
+            throw failed("reading the queued risk alerts", failure);
         }
     }
 
