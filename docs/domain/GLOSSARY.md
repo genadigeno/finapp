@@ -2227,7 +2227,32 @@ reprocessed history raises no second alert, and no alert reaches a customer or m
 metric tag. *(As built, `P13-TSK-015`: the window is a bucket of its kind - `H1`, `D1`, `D7`, `D30` on the velocity
 windows' anchor - from a database instant that is the evidence's own; a **suppression** is closing an alert without a
 case, two persons' act with a closed `SuppressionReason` - never `DUPLICATE`, which attaches; the operational kinds
-`UNCLASSIFIED_TRANSACTION` and `VELOCITY_DIVERGENCE` are declared but no writer raises them as rows.)*
+`UNCLASSIFIED_TRANSACTION` and `VELOCITY_DIVERGENCE` are declared but no writer raises them as rows. As built by
+`P13-TSK-018`, 2026-10-25: suppressed through the analyst's door - proposed under `RISK_INVESTIGATE`, approved by a
+second `RISK_CASE_APPROVE` holder from a `MULTI_FACTOR` session - its two persons authenticated humans, `CUSTOMER`- or
+`EMPLOYEE`-typed, `risk V014`.)*
+**Owned by:** `risk`
+
+### Risk Queue
+**Is:** the investigator's ordered read of risk's alerts or cases (`P13-TSK-018`) — oldest first by the immutable key
+(`raised_at` or `opened_at`, then id), filtered by one status and optionally one kind, keyset-paged after the last row
+served, one read-only snapshot a page, every page audited (`risk.AlertRead`, `risk.CaseRead`) before it is answered;
+every row whose subject's accountable party is the reader's own, or cannot be placed, **withheld** — never served,
+never named by a cursor.
+**Not:** a projection or a store of its own — it reads the tables (`AlertQueue`, `CaseWorklist`). Nor `CaseQueue`, the
+routing vocabulary of which desk works a case (`FIRST_LINE` … `SPECIALIST`); nor kyc's review queue or bnpl's dispute
+queue, each its own module's read of its own rows. Nor a work assignment: reading a case takes nothing; the take is an
+Investigator Action.
+**Owned by:** `risk`
+
+### Case File
+**Is:** one Case read whole (`P13-TSK-018`, `GET /v1/operator/risk/cases/{caseId}`) — its head, the Alerts attached
+to it, its Investigator Actions and history, its Risk Actions, and every evidence reference it holds (an assessment, a
+signal or a journal entry, each a kind and an id) — on one snapshot, audited `risk.CaseRead`, refused for the reader's
+own party's subject or one the platform cannot place.
+**Not:** the evidence itself — every reference is resolved by its own audited read (an assessment through the
+assessment door, `risk.AssessmentRead`), never embedded. Nor a Regulatory Report: no narrative is ever part of a file
+(`-021`'s own permission). Nor anything a person did by name: who proposed, approved or took is withheld.
 **Owned by:** `risk`
 
 ### Case

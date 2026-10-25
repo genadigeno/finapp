@@ -973,10 +973,20 @@ Each is `PHASE_13_PLAN.md` §15's; `-024` names the ones the plan does not.
   lapsed action claimed `SKIP LOCKED` and dispatched as the platform under `risk.action:<id>`), no longer by the
   monitoring sweep; the series counts a dispatch that **threw** - nothing recorded, the permit standing - while an owner's
   refusal is a recorded `FAILED` in `finapp.risk.action{kind,outcome="refused"}`, never re-driven. The override's read
-  still answers `actionAttempts` and `actionDueAt`, now from its action row; a case's action has no read door until
-  `-018`'s case read - its row is `risk.risk_action` (`attempts`, `next_attempt_at`, `outcome`). `SUSPEND_ACCOUNT`, `REINSTATE_ACCOUNT` and
+  still answers `actionAttempts` and `actionDueAt`, now from its action row; a case's action is read in its case's
+  file since `P13-TSK-018` - `GET /v1/operator/risk/cases/{caseId}`, `riskActions` (`attempts`, `status`, `outcome`, the
+  stamps), audited `risk.CaseRead` - its row `risk.risk_action`. `SUSPEND_ACCOUNT`, `REINSTATE_ACCOUNT` and
   `BLOCK_BENEFICIARY` have no owning command and never appear; `finapp.risk.sweeper.claim.failed{kind=action}` rising is
   the schedule's own claim failing (the database), not an owner.)*
+- **The case queue backs up** (`finapp.risk.case.backlog{kind}` above the desk's staffed capacity, or
+  `finapp.risk.case.age{kind}` past the kind's SLA - `SlaDeadlines`; `P13-TSK-018`, aggregate with `max()`, NaN when the
+  read fails): the analysts read the queue oldest first - `GET /v1/operator/risk/cases?status=&kind=&after=&limit=`,
+  each page audited `risk.CaseRead` - and a case's file at `…/cases/{caseId}`; an analyst never sees their own party's
+  case (withheld from the page, the file `403 risk.SelfDealingRefused`), so a backlog only one desk member can see is
+  reassigned, never self-served. The alerts waiting for a person are `GET /v1/operator/risk/alerts` (`OPEN` by default;
+  a false positive is suppressed through `…/alerts/{alertId}/suppression` by two analysts, the approval stepped up). A
+  page that ends `bounded` in its `risk.AlertRead` / `risk.CaseRead` summary met more than a thousand withheld rows -
+  the reader's own party's or unplaceable subjects' - and is an owner item, not a fault.
 - **A filing unknown** (`finapp.risk.report{status="FILED"}` with no acknowledgement past the provider's deadline): §9.4.
 
 ### 9.3 Reprocessing the monitoring from an earlier watermark - the order

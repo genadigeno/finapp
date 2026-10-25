@@ -384,7 +384,7 @@ class RoutePermissionRegisterTest {
                     // note, evidence, escalate; the body carrying the revision) and a disposition proposed under
                     // RISK_INVESTIGATE; its approval (a second holder, MULTI_FACTOR; the proposer refused
                     // risk.SelfApprovalRefused) and rejection under RISK_CASE_APPROVE - both held by RISK_ANALYST; the
-                    // queue and the case read are P13-TSK-018's; the negatives are RiskCaseApiTest's.
+                    // queue and the case read are P13-TSK-018's (below); the negatives are RiskCaseApiTest's.
                     entry("POST /v1/operator/risk/cases", PermissionName.RISK_INVESTIGATE),
                     entry("POST /v1/operator/risk/cases/{caseId}/actions", PermissionName.RISK_INVESTIGATE),
                     entry("POST /v1/operator/risk/cases/{caseId}/dispositions", PermissionName.RISK_INVESTIGATE),
@@ -399,6 +399,19 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/risk/cases/{caseId}/risk-actions/{actionId}/approval",
                             PermissionName.RISK_CASE_APPROVE),
                     entry("POST /v1/operator/risk/cases/{caseId}/risk-actions/{actionId}/rejection",
+                            PermissionName.RISK_CASE_APPROVE),
+                    // P13-TSK-018: the investigator's reads - the case queue, a case's file, the alert queue - under
+                    // RISK_INVESTIGATE, each audited and self-dealing withheld or refused; the suppression door over
+                    // P13-TSK-015's machine - the proposal under RISK_INVESTIGATE, the approval (a second holder,
+                    // MULTI_FACTOR; the proposer refused risk.SelfApprovalRefused) and the rejection under
+                    // RISK_CASE_APPROVE; the negatives are QueueApiTest's and AlertSuppressionApiTest's.
+                    entry("GET /v1/operator/risk/cases", PermissionName.RISK_INVESTIGATE),
+                    entry("GET /v1/operator/risk/cases/{caseId}", PermissionName.RISK_INVESTIGATE),
+                    entry("GET /v1/operator/risk/alerts", PermissionName.RISK_INVESTIGATE),
+                    entry("POST /v1/operator/risk/alerts/{alertId}/suppression", PermissionName.RISK_INVESTIGATE),
+                    entry("POST /v1/operator/risk/alerts/{alertId}/suppression/approval",
+                            PermissionName.RISK_CASE_APPROVE),
+                    entry("POST /v1/operator/risk/alerts/{alertId}/suppression/rejection",
                             PermissionName.RISK_CASE_APPROVE)));
 
     /**

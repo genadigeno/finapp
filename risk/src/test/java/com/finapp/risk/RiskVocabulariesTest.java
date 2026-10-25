@@ -249,7 +249,8 @@ class RiskVocabulariesTest {
     @DisplayName("the error codes and audit actions declared so far - the role split's three and two (-001), the policy"
             + " doors' four and four (-002), the reprocessing door's one and one (-019), the profile read's act (-007), the"
             + " override doors' two and four (-012), the alert machine's two and three (-015), the case's five and eight"
-            + " (-016), the action machine's none and four (-017) - namespaced risk., the refusals 403, the policy codes"
+            + " (-016), the action machine's none and four (-017), the queues' one and two (-018) - namespaced risk., the"
+            + " refusals 403, the policy codes"
             + " the register's statuses")
     void theCodesAndActions() {
         // Each task adds its own codes and acts here, keeping the others' (the wave's rule).
@@ -264,7 +265,9 @@ class RiskVocabulariesTest {
                         "risk.AlertNotOpen", "risk.SuppressionStale",
                         // P13-TSK-016: the case's two planned and DESIGN-016 D10's three.
                         "risk.CaseRevisionStale", "risk.CaseNotOpen", "risk.CaseActNotAdmitted", "risk.CaseNotTaken",
-                        "risk.CaseRequestInvalid");
+                        "risk.CaseRequestInvalid",
+                        // P13-TSK-018: the queues' refusal of a read they cannot take as asked (DESIGN-018 D12).
+                        "risk.QueueRequestInvalid");
         assertThat(RiskErrorCode.NOT_FOUND.status()).isEqualTo(404);
         assertThat(RiskErrorCode.SELF_APPROVAL_REFUSED.status()).isEqualTo(403);
         assertThat(RiskErrorCode.SELF_DEALING_REFUSED.status()).isEqualTo(403);
@@ -282,6 +285,7 @@ class RiskVocabulariesTest {
         assertThat(RiskErrorCode.CASE_ACT_NOT_ADMITTED.status()).isEqualTo(409);
         assertThat(RiskErrorCode.CASE_NOT_TAKEN.status()).isEqualTo(422);
         assertThat(RiskErrorCode.CASE_REQUEST_INVALID.status()).isEqualTo(422);
+        assertThat(RiskErrorCode.QUEUE_REQUEST_INVALID.status()).isEqualTo(422);
         assertThat(Arrays.stream(RiskAuditAction.values()).map(RiskAuditAction::code))
                 .containsExactlyInAnyOrder("risk.PolicyProposed", "risk.PolicyActivated", "risk.PolicyRejected",
                         "risk.PolicyRetired", "risk.SelfApprovalRefused", "risk.SelfDealingRefused",
@@ -297,7 +301,9 @@ class RiskVocabulariesTest {
                         "risk.CaseOpened", "risk.CaseTaken", "risk.CaseNoted", "risk.CaseEscalated", "risk.CaseDisposed",
                         "risk.DispositionProposed", "risk.DispositionApproved", "risk.DispositionRejected",
                         // P13-TSK-017: the action machine's three acts and the platform's dispatch.
-                        "risk.ActionProposed", "risk.ActionApproved", "risk.ActionRejected", "risk.ActionDispatched");
+                        "risk.ActionProposed", "risk.ActionApproved", "risk.ActionRejected", "risk.ActionDispatched",
+                        // P13-TSK-018: the queues' and the case file's audited reads.
+                        "risk.AlertRead", "risk.CaseRead");
         assertThat(RiskAuditAction.ACTION_PROPOSED.requiresReason()).isTrue();
         assertThat(RiskAuditAction.ACTION_APPROVED.requiresReason()).isTrue();
         assertThat(RiskAuditAction.ACTION_REJECTED.requiresReason()).isTrue();
@@ -309,7 +315,7 @@ class RiskVocabulariesTest {
         for (RiskAuditAction action : List.of(RiskAuditAction.SELF_APPROVAL_REFUSED, RiskAuditAction.SELF_DEALING_REFUSED,
                 RiskAuditAction.POLICY_RETIRED, RiskAuditAction.PROFILE_READ, RiskAuditAction.ASSESSMENT_READ,
                 RiskAuditAction.ACTION_CONCLUDED, RiskAuditAction.CASE_OPENED, RiskAuditAction.CASE_TAKEN,
-                RiskAuditAction.CASE_DISPOSED)) {
+                RiskAuditAction.CASE_DISPOSED, RiskAuditAction.ALERT_READ, RiskAuditAction.CASE_READ)) {
             assertThat(action.requiresReason()).as("%s is the platform's act, reasoned by the act it follows", action)
                     .isFalse();
         }
@@ -354,7 +360,8 @@ class RiskVocabulariesTest {
         for (String span : List.of(RiskSpans.EVALUATE, RiskSpans.ADVISE, RiskSpans.POLICY_ACTIVATE,
                 RiskSpans.MONITORING_INTAKE, RiskSpans.CASE_DISPOSE, RiskSpans.ACTION_DISPATCH, RiskSpans.REPORT,
                 RiskSpans.VELOCITY_PROOF, RiskSpans.PROFILE_RECOMPUTE, RiskSpans.PROFILE_READ, RiskSpans.ALERT_RAISE,
-                RiskSpans.ALERT_SUPPRESS, RiskSpans.ACTION_PROPOSE, RiskSpans.ACTION_DECIDE)) {
+                RiskSpans.ALERT_SUPPRESS, RiskSpans.ACTION_PROPOSE, RiskSpans.ACTION_DECIDE, RiskSpans.QUEUE,
+                RiskSpans.CASE_READ)) {
             assertThat(span).startsWith("risk.").matches("[a-z]+(\\.[a-z]+)+");
         }
         assertThat(EnumSet.allOf(RiskOperation.class)).hasSize(7);

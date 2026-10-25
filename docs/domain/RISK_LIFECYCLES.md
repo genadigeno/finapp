@@ -450,6 +450,20 @@ latest evidence signal its evidence - both in the existing one `raiseAll` per tr
 `MERCHANT_ABUSE` alert's subject is not yet placeable in a party, so its suppression fails closed until a merchant join
 exists (`-015`'s D6; `-018`'s door).
 
+*(As built, `P13-TSK-018`, 2026-10-25 - the door, the persons, the queue; `risk V014`.)* **The suppression's persons
+are authenticated humans** - `CUSTOMER`-typed as the platform's session establishes every operator, or `EMPLOYEE`; never
+`SYSTEM`, `SERVICE` or `MERCHANT` - by the domain (`Cases.person`) and by `risk_alert_suppression_by_persons`, re-made by
+name in `V014` (the "`EMPLOYEE` by domain and `CHECK`" above read so until then, and would have refused every analyst).
+**The door**: `POST /v1/operator/risk/alerts/{alertId}/suppression` (`RISK_INVESTIGATE`, `201`), `…/approval`
+(`RISK_CASE_APPROVE` from a `MULTI_FACTOR` session, `200`), `…/rejection` (`RISK_CASE_APPROVE`, `200`), each keyed
+`risk.alert:<type>:<id>`, the answer the alert as it stands. **The merchant's alert is now placeable**: the subject's
+party is the accountable join `-016` built for the case (`RiskSubjectParties.accountablePartyOf` - a merchant's
+organisation), so a `MERCHANT_ABUSE` alert is suppressible by any analyst but one of its organisation's party
+(`DESIGN-018` D6: needed and resolved by reuse - no port added, nothing enrolled in the profile sweep). **The queue**
+(`GET /v1/operator/risk/alerts`): oldest first by `(raised_at, id)` of one status (`OPEN` unless named), keyset-paged,
+one snapshot a page, audited `risk.AlertRead`, every alert of the reader's own party - or whose party cannot be placed -
+withheld.
+
 ### 4.6 Case (`risk.risk_case`, `risk_case_action`, `risk_case_event`) — `P13-TSK-016` (`risk V012` - planned `V009`, the next free at its build; the folding of alerts into cases is this task's); the queues and the tipping-off control `-018`; the AML case `-021`; collections `-025` (C3)
 
 ```

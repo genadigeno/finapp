@@ -7,7 +7,6 @@ import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.outbox.EventPayload;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.security.Actor;
-import com.finapp.platform.security.ActorType;
 import com.finapp.platform.telemetry.Spans;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.event.EventEnvelope;
@@ -48,8 +47,9 @@ import java.util.UUID;
  *       never an operational one, never one found standing; {@link AlertFolding#NONE} until `-016`, the alert queued
  *       {@code OPEN}. {@link #attach} is the alert's own edge the folding (and `-016`'s case door) calls:
  *       {@code OPEN → ATTACHED}. <strong>The system never suppresses</strong>: a duplicate attaches.</li>
- *   <li><strong>The suppression machine</strong> - P only, an {@code EMPLOYEE}, four eyes, reasons required (the door
- *       is `-018`'s: {@code RISK_INVESTIGATE} proposes, {@code RISK_CASE_APPROVE} approves): {@link #proposeSuppression}
+ *   <li><strong>The suppression machine</strong> - P only, a person ({@code CUSTOMER}- or {@code EMPLOYEE}-typed since
+ *       `P13-TSK-018`, {@code risk V014}), four eyes, reasons required (the door is `-018`'s: {@code RISK_INVESTIGATE}
+ *       proposes, {@code RISK_CASE_APPROVE} approves from a {@code MULTI_FACTOR} session): {@link #proposeSuppression}
  *       ({@code OPEN}, no live proposal, a closed {@link SuppressionReason} and a screened text),
  *       {@link #approveSuppression} (a holder other than the proposer → {@code SUPPRESSED}; the proposer refused
  *       {@link SelfApprovalRefused}, recorded {@code FAILED} by {@link #recordRefusal(Connection, SelfApprovalRefused,
@@ -61,8 +61,9 @@ import java.util.UUID;
  *
  * <p><strong>Self-dealing fails closed on every person's act</strong> ({@code PHASE_13_PLAN.md} section 11): an actor
  * the platform cannot place in a party is refused before anything is read; then, under the row's lock, an alert whose
- * subject's party cannot be placed ({@link RiskSubjectParties} - a {@code PARTY} subject is its own) or is the actor's
- * own is refused before anything is written ({@link RiskAssessments.SelfDealingRefused}, recorded {@code FAILED}).
+ * subject's accountable party cannot be placed ({@link RiskSubjectParties#accountablePartyOf} - a {@code PARTY} subject
+ * is its own, a merchant its organisation's) or is the actor's own is refused before anything is written
+ * ({@link RiskAssessments.SelfDealingRefused}, recorded {@code FAILED}).
  * Nothing here logs; the event, the audit summaries and the meters carry ids and closed codes only - never a reason, a
  * score, a rule's parameters or the evidence ({@code INV-RSK-08}).
  */
@@ -454,15 +455,18 @@ public final class Alerts {
     // ------------------------------------------------------------------ plumbing
 
     /**
-     * A person's act, judged: an {@code EMPLOYEE} (never the system), placed in a party (fail closed), then the alert
-     * under its lock (R5) and its subject's party - placed (fail closed) and not the actor's.
+     * A person's act, judged: a person - an authenticated human, {@code CUSTOMER}-typed as the platform's session
+     * establishes every identity, or {@code EMPLOYEE}; never the system, a service or a merchant ({@link Cases#person},
+     * `P13-TSK-018`'s widening, {@code risk V014}) - placed in a party (fail closed), then the alert under its lock (R5)
+     * and its subject's accountable party - placed (fail closed) and not the actor's.
      */
     private RiskAlert judged(Connection unitOfWork, RiskAlertId alertId, Actor actor, String act) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(alertId, "alertId");
         Objects.requireNonNull(actor, "actor");
-        if (actor.type() != ActorType.EMPLOYEE) {
-            throw new IllegalArgumentException("an alert's suppression is a person's act - never the system's");
+        if (!Cases.person(actor)) {
+            throw new IllegalArgumentException("an alert's suppression is a person's act - never the platform's, a"
+                    + " service's or a merchant's");
         }
         Optional<UUID> own = actingParties.partyOf(unitOfWork, actor);
         if (own.isEmpty()) {
@@ -480,12 +484,16 @@ public final class Alerts {
         return row;
     }
 
-    /** The party behind {@code subject} - a party is its own; every other kind through the join. */
+    /**
+     * The party accountable for {@code subject} - a party is its own; every other kind through the accountable join
+     * ({@link RiskSubjectParties#accountablePartyOf}: since `P13-TSK-018` a merchant's organisation party too, the join
+     * `-016` built for the case - so a {@code MERCHANT_ABUSE} alert is suppressible, `DESIGN-018` D6).
+     */
     private Optional<UUID> partyOf(Connection unitOfWork, SignalSubject subject) {
         if (subject.kind() == SubjectKind.PARTY) {
             return Optional.of(UUID.fromString(subject.ref()));
         }
-        return subjectParties.partyOf(unitOfWork, subject);
+        return subjectParties.accountablePartyOf(unitOfWork, subject);
     }
 
     private void append(Connection unitOfWork, Actor actor, RiskAuditAction action, RiskAlert alert, String reason,

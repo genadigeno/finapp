@@ -2,9 +2,11 @@ package com.finapp.app.risk;
 
 import com.finapp.identity.IdentityStore;
 import com.finapp.platform.audit.AuditWriter;
+import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.telemetry.Spans;
 import com.finapp.risk.AlertFolding;
+import com.finapp.risk.AlertQueue;
 import com.finapp.risk.AlertRaiser;
 import com.finapp.risk.Alerts;
 import com.finapp.risk.Cases;
@@ -26,7 +28,7 @@ import org.springframework.context.annotation.Configuration;
  * it the platform has) and whose subjects' party through {@link RiskSubjectParties} ({@code RiskProfileBeans}'
  * {@code IdentitySubjectParties}: a party and an identity placed today). The rules raise through {@link AlertRaiser}
  * ({@code alerts::raiseAll}): `-013`'s account-takeover rules in T-eval and the profile leg; `-014`'s and `-020`'s
- * next; the suppression door is `-018`'s.
+ * next; the suppression door is `-018`'s ({@link RiskAlertDesk}), the alert queue its {@link com.finapp.risk.AlertQueue}.
  */
 @Configuration(proxyBeanMethods = false)
 public class RiskAlertBeans {
@@ -75,5 +77,31 @@ public class RiskAlertBeans {
     @Bean
     AlertRaiser alertRaiser(Alerts alerts) {
         return alerts::raiseAll;
+    }
+
+    /**
+     * The alert queue (`P13-TSK-018`): a read model over the alert table, its readers placed through credit's
+     * {@code IdentityActingParty} and every row's subject through the accountable join (a merchant's organisation too).
+     */
+    @Bean
+    AlertQueue alertQueue(
+            RiskAlertStore riskAlertStore,
+            IdentityStore<Connection> identityStore,
+            RiskSubjectParties riskSubjectParties,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new AlertQueue(riskAlertStore, new com.finapp.app.credit.IdentityActingParty(identityStore),
+                riskSubjectParties, auditWriter, idGenerator, clock);
+    }
+
+    /** The suppression door (`P13-TSK-018`) over `-015`'s machine. */
+    @Bean
+    RiskAlertDesk riskAlertDesk(
+            Alerts alerts,
+            IdempotentExecutor idempotentExecutor,
+            RiskTransactions riskTransactions,
+            RiskFlowScope riskFlowScope) {
+        return new RiskAlertDesk(alerts, idempotentExecutor, riskTransactions, riskFlowScope);
     }
 }

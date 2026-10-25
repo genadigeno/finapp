@@ -67,6 +67,10 @@ public final class RiskSpans {
     public static final String LIST = "risk.list";
     /** The explanation door - an assessment read or replayed. */
     public static final String EXPLAIN = "risk.explain";
+    /** The investigator's queues - a page of alerts or of cases (`P13-TSK-018`). */
+    public static final String QUEUE = "risk.queue";
+    /** The case read - one case's file (`P13-TSK-018`). */
+    public static final String CASE_READ = "risk.case.read";
 
     private RiskSpans() {
     }

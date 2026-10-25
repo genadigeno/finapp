@@ -210,7 +210,7 @@ public enum RiskAuditAction implements AuditableAction {
             "risk.AlertSuppressionProposed",
             "A holder of RISK_INVESTIGATE proposed, with a reason code (SuppressionReason) and a text, to suppress an"
                     + " open alert - to close it without a case (P13-TSK-015's machine, Alerts.proposeSuppression; the door"
-                    + " POST /v1/operator/risk/alerts/{id}/suppression is P13-TSK-018's): one live proposal per alert,"
+                    + " POST /v1/operator/risk/alerts/{alertId}/suppression, P13-TSK-018's): one live proposal per alert,"
                     + " awaiting a DIFFERENT holder of RISK_CASE_APPROVE; never on the proposer's own party's alert, nor"
                     + " on an alert whose subject the platform cannot place (risk.SelfDealingRefused, fail closed). The"
                     + " text is the record's reason; the summary names the alert's kind and the reason code - never the"
@@ -220,9 +220,10 @@ public enum RiskAuditAction implements AuditableAction {
     /** An alert was suppressed - a second analyst approving another's proposal (`P13-TSK-015`; the door `-018`'s). */
     ALERT_SUPPRESSED(
             "risk.AlertSuppressed",
-            "A holder of RISK_CASE_APPROVE other than its proposer approved, with a reason, the proposal to suppress an"
-                    + " open alert (OPEN -> SUPPRESSED; P13-TSK-015's machine, Alerts.approveSuppression; the door"
-                    + " .../suppression/approval is P13-TSK-018's; INV-RSK-07, INV-AUD-04 - risk_alert_suppression_four_eyes"
+            "A holder of RISK_CASE_APPROVE other than its proposer approved, with a reason and from a MULTI_FACTOR"
+                    + " session, the proposal to suppress an open alert (OPEN -> SUPPRESSED; P13-TSK-015's machine,"
+                    + " Alerts.approveSuppression; the door .../suppression/approval, P13-TSK-018's - both persons"
+                    + " CUSTOMER- or EMPLOYEE-typed, risk V014; INV-RSK-07, INV-AUD-04 - risk_alert_suppression_four_eyes"
                     + " beneath): the alert leaves investigation without a case. Never the system's act - the sweep's"
                     + " deduplication of an alert into an open case is ATTACHED, its own fact, not audited. The summary"
                     + " names the alert's kind and the reason code - never the subject.",
@@ -320,6 +321,32 @@ public enum RiskAuditAction implements AuditableAction {
                     + " is cleared, this record and the investigator actions keeping both acts. The summary names the"
                     + " kind, the disposition and whether the proposer withdrew it.",
             true),
+
+    /** An analyst was served a page of the alert queue (`P13-TSK-018`). */
+    ALERT_READ(
+            "risk.AlertRead",
+            "A holder of RISK_INVESTIGATE was served a page of the alert queue (GET /v1/operator/risk/alerts?status=&kind="
+                    + "&after=&limit=, P13-TSK-018; INV-RSK-08): oldest first on one read-only snapshot, every alert"
+                    + " whose subject's party is the reader's own or cannot be placed withheld (self-dealing, fail"
+                    + " closed), committed in a transaction of its own before the page is answered so nothing is served"
+                    + " unrecorded. Its target the queue (risk_alert_queue, the status read); the summary the count, the"
+                    + " filter, the cursor, the ids served, how many were withheld and whether more remain - never a"
+                    + " subject, an evidence reference or a reason.",
+            false),
+
+    /** An analyst read a case's file, or was served a page of the case queue (`P13-TSK-018`). */
+    CASE_READ(
+            "risk.CaseRead",
+            "A holder of RISK_INVESTIGATE read a case's file (GET /v1/operator/risk/cases/{caseId} - the case, its"
+                    + " attached alerts, investigator actions, history and downstream actions, its evidence by reference"
+                    + " only) or was served a page of the case queue (GET /v1/operator/risk/cases?status=&kind=&after="
+                    + "&limit=), P13-TSK-018; INV-RSK-08: on one read-only snapshot after the self-dealing judgement (a"
+                    + " file of the reader's own party's subject, or one the platform cannot place, refused"
+                    + " risk.SelfDealingRefused; such a case withheld from a page), committed in a transaction of its own"
+                    + " before the answer. Its target the case (risk_case) or the queue (risk_case_queue, the status"
+                    + " read); the summary the kind, status and counts of what the file held, or the page's count,"
+                    + " filter, cursor, ids served and withheld count - never a note, a subject or a reason.",
+            false),
 
     /** An officer ordered the monitoring intake reprocessed from an earlier watermark. */
     REPROCESSING_ORDERED(

@@ -7,7 +7,7 @@ import java.time.Duration;
  * {@code RiskCaseMetrics}: {@code finapp.risk.case{kind,status}} per move into a status (the birth's {@code OPEN}
  * included) and {@code finapp.risk.case.resolution{kind}} per disposal, on the database's stamps. Codes only - never a
  * subject, a person or a disposition's reason ({@code INV-RSK-08}). The gauges ({@code case.age}, {@code case.backlog})
- * are `-018`'s, read from its queues.
+ * are `-018`'s - `app`'s {@code RiskCaseBacklogMetrics} over {@link RiskCaseStore#backlog}, read from the queue.
  */
 public interface CaseObserver {
 

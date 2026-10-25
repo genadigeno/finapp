@@ -511,6 +511,19 @@ Errors (`ERROR_CONTRACT.md`, planned): `risk.PolicyNotActive`, `risk.PolicyStale
 and in the consumers: payments `RISK_REFUSED` as a failure reason on withdrawals and payment intents (their own
 contracts), transfers' and crossborder's existing reserved codes unchanged.
 
+*(As built by `P13-TSK-018`, 2026-10-25 (`DESIGN-018`): the two queues `GET /v1/operator/risk/alerts` and
+`GET /v1/operator/risk/cases` take `status` (one name; `OPEN` / every open status unless named), `kind`, `after` (the
+last row served) and `limit` (20 unless named, 50 at most - a larger one answered with 50); each page one read-only
+snapshot, recorded `risk.AlertRead` / `risk.CaseRead` in a transaction of its own **before** the answer; every row whose
+subject's accountable party is the reader's own, or cannot be placed, withheld - never refused, never a cursor; a
+filter outside the vocabulary, a page below one row or a cursor naming no row `422 risk.QueueRequestInvalid` (a new
+code - the list above names none for these). `GET …/cases/{caseId}` serves the case's file - head, attached alerts, investigator actions,
+history, downstream actions (`RiskActions.ofCase`) and evidence by reference - `403 risk.SelfDealingRefused` for the
+reader's own party's, recorded. The suppression door's approval is stepped up (`MULTI_FACTOR`) like every four-eyes
+approval in risk since `-016`, beyond §11's list; `risk.AlertNotOpen` stays the register's `409`. The persons of a
+suppression are `CUSTOMER`- or `EMPLOYEE`-typed (`risk V014`, the routed defect). No signal or monitored-transaction read
+door exists in this table, so those evidence references are named and not resolvable yet (owner item).)*
+
 ---
 
 ## 10. Event architecture
@@ -1083,7 +1096,7 @@ wave-D lesson), so a task's number is below every number of a later wave; the wa
 | `P13-TSK-015` | Alerts born once: the alert table, raise, dedupe and suppression | M13.4 | `-001` | `risk V008` | `DOD-DOMAIN`, `DOD-EVENT` |
 | `P13-TSK-016` | The case: lifecycle, the folding of alerts, investigator actions, concurrent updates, escalation, four-eyes dispositions | M13.5 | `-015` | `risk V009` | `DOD-DOMAIN`, `DOD-API`, `DOD-SEC` |
 | `P13-TSK-017` | Downstream actions through the owning domains | M13.5 | `-016` | `risk V010` | `DOD-SEC`, `DOD-EVENT`, `DOD-API` |
-| `P13-TSK-018` | Case and alert queues, reads, and the tipping-off control | M13.5 | `-016` | none | `DOD-API`, `DOD-SEC` |
+| `P13-TSK-018` | Case and alert queues, reads, and the tipping-off control | M13.5 | `-016` | none *(as built: `risk V014` - the suppression's persons widened by name, the keyset indexes)* | `DOD-API`, `DOD-SEC` |
 | `P13-TSK-019` | Monitored transactions: the journal intake, the watermark, reprocessing | M13.6 | `-001` | `risk V004` | `DOD-DOMAIN`, `DOD-FIN` |
 | `P13-TSK-020` | Monitoring rules and AML alerts | M13.6 | `-019`, `-015` | none | `DOD-DOMAIN` |
 | `P13-TSK-021` | The AML case and the regulatory report artefact | M13.6 | `-016`, `-020` | `risk V011` | `DOD-DOMAIN`, `DOD-API`, `DOD-SEC` |

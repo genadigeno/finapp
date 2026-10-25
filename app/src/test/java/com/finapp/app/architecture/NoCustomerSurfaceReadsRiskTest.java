@@ -20,6 +20,7 @@ import com.tngtech.archunit.junit.ArchTag;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.EvaluationResult;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
@@ -173,6 +174,172 @@ class NoCustomerSurfaceReadsRiskTest {
         assertThat(String.join("\n", result.getFailureReport().getDetails())).contains("PlantedPaymentController");
     }
 
+    // ------------------------------------------------------------------ the reach, made whole (P13-TSK-018)
+
+    /**
+     * The seams through which a customer's or merchant's request may reach {@code risk} (`P13-TSK-018`;
+     * {@code DESIGN-018} D13) - each an {@code app} class implementing a consumer's own port and answering the
+     * consumer's own vocabulary (a verdict, a boolean, a rating code), never a risk record: the transfer seams
+     * (`-008`), the withdrawal seam (`-009`), the checkout payment seam (`-010`), the cross-border seams (`-011`), each
+     * with its door's step-up advice; credit's risk signal (`-007`); and the one read of whose party an operator is,
+     * which implements risk's acting-party port beside credit's, lending's and bnpl's (`IdentityActingParty`). Nothing
+     * else on the surface's whole reach may depend on a risk type.
+     */
+    static final Set<String> SEAMS = Set.of(
+            "com.finapp.app.risk.RiskTransferLimitCheck",
+            "com.finapp.app.risk.RiskTransferRiskDecision",
+            "com.finapp.app.risk.RiskTransferStepUpAdvice",
+            "com.finapp.app.risk.RiskWithdrawalRiskDecision",
+            "com.finapp.app.risk.RiskWithdrawalStepUpAdvice",
+            "com.finapp.app.risk.RiskPaymentRiskDecision",
+            "com.finapp.app.risk.RiskCheckoutStepUpAdvice",
+            "com.finapp.app.risk.RiskCrossBorderRiskDecision",
+            "com.finapp.app.risk.RiskCrossBorderLimitCheck",
+            "com.finapp.app.risk.RiskCrossBorderStepUpAdvice",
+            "com.finapp.app.risk.RiskCreditRiskSignal",
+            "com.finapp.app.credit.IdentityActingParty");
+
+    /**
+     * <strong>The whole reach</strong> (`P13-TSK-018`; the entry's "every route, desk and repository reachable from a
+     * customer or merchant principal"): from every surface class, every {@code com.finapp} class it depends on, and on
+     * from those - and, for an interface or an abstract class reached, every implementation the build has, which is how
+     * a desk reaches the adapter Spring gives it. The reach stops at {@code risk} (what is judged) and at an enumerated
+     * seam (the boundary itself). No class on it but a seam may depend on a risk type.
+     */
+    @ArchTest
+    static void theSurfacesWholeReachTouchesRiskOnlyThroughTheSeams(JavaClasses imported) {
+        Reach reach = reach(imported);
+        assertThat(reach.violations())
+                .as("a class on a customer's or merchant's reach that depends on risk outside the enumerated seams")
+                .isEmpty();
+        assertThat(reach.seamsReached())
+                .as("every enumerated seam is on the reach - a seam no surface reaches is a stale entry")
+                .containsExactlyInAnyOrderElementsOf(SEAMS);
+    }
+
+    /** The reach's census - not vacuous: the surface's desks, its repositories and its seams are on it. */
+    @ArchTest
+    static void theWholeReachIsNotEmpty(JavaClasses imported) {
+        Reach reach = reach(imported);
+        assertThat(reach.reached())
+                .as("the reach follows a desk to its repository and a port to its adapter")
+                .contains("com.finapp.app.risk.RiskWithdrawalRiskDecision")
+                .anyMatch(name -> name.endsWith(".JdbcWithdrawalStore"))
+                .hasSizeGreaterThan(200);
+    }
+
+    @Test
+    @DisplayName("P13-TSK-018: a /me route whose desk reaches risk two hops away, through a port's implementation, is"
+            + " refused; an enumerated seam is the boundary")
+    void theReachRefusesASecondHop() {
+        JavaClasses planted = imported(PlantedMeControllerWithService.class, PlantedService.class, PlantedPort.class,
+                PlantedPortAdapter.class, RiskRating.class);
+        Reach reach = reach(planted);
+        assertThat(reach.violations()).singleElement().asString().contains("PlantedPortAdapter");
+    }
+
+    /**
+     * {@code risk}'s tables are read by {@code risk}'s stores alone (`P13-TSK-018`; {@code INV-RSK-08}): no production
+     * source outside the module names one - so no route, desk or repository anywhere reads a risk table by its own SQL,
+     * around the types the reach rule follows. The tables are read from risk's own migrations.
+     */
+    @Test
+    @DisplayName("P13-TSK-018: no production source outside risk names a risk table - its tables are read through its"
+            + " own stores alone")
+    void noSourceOutsideRiskNamesARiskTable() throws java.io.IOException {
+        java.nio.file.Path root = repositoryRoot();
+        Set<String> tables = new TreeSet<>();
+        try (Stream<java.nio.file.Path> migrations = java.nio.file.Files.list(
+                root.resolve("risk/src/main/resources/db/migration/risk"))) {
+            for (java.nio.file.Path migration : migrations.toList()) {
+                java.util.regex.Matcher created = java.util.regex.Pattern.compile("CREATE TABLE risk\\.([a-z_]+)")
+                        .matcher(java.nio.file.Files.readString(migration));
+                while (created.find()) {
+                    tables.add(created.group(1));
+                }
+            }
+        }
+        assertThat(tables).as("risk's tables are read").contains("risk_case", "risk_alert", "risk_assessment")
+                .hasSizeGreaterThanOrEqualTo(20);
+        java.util.regex.Pattern named = java.util.regex.Pattern.compile("\\brisk\\.(" + String.join("|", tables)
+                + ")\\b");
+        Set<String> naming = new TreeSet<>();
+        try (Stream<java.nio.file.Path> modules = java.nio.file.Files.list(root)) {
+            for (java.nio.file.Path module : modules.filter(path -> !path.getFileName().toString().equals("risk"))
+                    .map(path -> path.resolve("src/main/java")).filter(java.nio.file.Files::isDirectory).toList()) {
+                try (Stream<java.nio.file.Path> sources = java.nio.file.Files.walk(module)) {
+                    for (java.nio.file.Path source : sources.filter(path -> path.toString().endsWith(".java"))
+                            .toList()) {
+                        if (named.matcher(java.nio.file.Files.readString(source)).find()) {
+                            naming.add(root.relativize(source).toString());
+                        }
+                    }
+                }
+            }
+        }
+        assertThat(naming).as("a production source outside risk that names a risk table").isEmpty();
+    }
+
+    /** What the reach found: every class on it, the seams it met, and the classes that reach risk outside them. */
+    record Reach(Set<String> reached, Set<String> seamsReached, Set<String> violations) {}
+
+    static Reach reach(JavaClasses classes) {
+        Set<String> reached = new TreeSet<>();
+        Set<String> seams = new TreeSet<>();
+        Set<String> violations = new TreeSet<>();
+        java.util.Deque<JavaClass> pending = new java.util.ArrayDeque<>();
+        for (JavaClass candidate : classes) {
+            if (isSurface(candidate)) {
+                pending.add(candidate);
+            }
+        }
+        while (!pending.isEmpty()) {
+            JavaClass current = pending.pop();
+            if (!reached.add(current.getName())) {
+                continue;
+            }
+            if (SEAMS.contains(current.getName())) {
+                seams.add(current.getName());
+                continue;
+            }
+            List<String> riskTargets = current.getDirectDependenciesFromSelf().stream()
+                    .map(Dependency::getTargetClass)
+                    .filter(target -> target.getPackageName().startsWith("com.finapp.risk"))
+                    .map(JavaClass::getName).distinct().toList();
+            if (!riskTargets.isEmpty()) {
+                violations.add(current.getName() + " -> " + riskTargets);
+            }
+            current.getDirectDependenciesFromSelf().stream()
+                    .map(Dependency::getTargetClass)
+                    .filter(RiskReachable::onTheReach)
+                    .forEach(pending::add);
+            if (current.isInterface() || current.getModifiers().contains(com.tngtech.archunit.core.domain.JavaModifier
+                    .ABSTRACT)) {
+                current.getAllSubclasses().stream().filter(RiskReachable::onTheReach).forEach(pending::add);
+            }
+        }
+        return new Reach(reached, seams, violations);
+    }
+
+    /** The reach follows the platform's own classes, never into risk (what it judges) nor beyond com.finapp. */
+    private static final class RiskReachable {
+        static boolean onTheReach(JavaClass target) {
+            String pkg = target.getPackageName();
+            return pkg.startsWith("com.finapp") && !pkg.startsWith("com.finapp.risk");
+        }
+    }
+
+    private static java.nio.file.Path repositoryRoot() {
+        java.nio.file.Path directory = java.nio.file.Path.of("").toAbsolutePath();
+        while (directory != null) {
+            if (java.nio.file.Files.isRegularFile(directory.resolve("settings.gradle.kts"))) {
+                return directory;
+            }
+            directory = directory.getParent();
+        }
+        throw new IllegalStateException("No settings.gradle.kts above " + java.nio.file.Path.of("").toAbsolutePath());
+    }
+
     // ------------------------------------------------------------------ the rule
 
     static ArchRule intentReasonRule(JavaClasses classes) {
@@ -308,6 +475,39 @@ class NoCustomerSurfaceReadsRiskTest {
     static class PlantedPaymentController {
         String reason(PaymentIntent intent) {
             return intent.failureReason().map(Enum::name).orElse(null);
+        }
+    }
+
+    /** A customer route whose service reaches risk only through a port's implementation - two hops (P13-TSK-018). */
+    @RestController
+    @RequestMapping(path = "/me/planted-reach")
+    static class PlantedMeControllerWithService {
+        PlantedService service() {
+            return new PlantedService(null);
+        }
+    }
+
+    static class PlantedService {
+        private final PlantedPort port;
+
+        PlantedService(PlantedPort port) {
+            this.port = port;
+        }
+
+        boolean refused() {
+            return port.refused();
+        }
+    }
+
+    interface PlantedPort {
+        boolean refused();
+    }
+
+    /** The adapter Spring would give the service - not an enumerated seam, and it reads a risk type. */
+    static class PlantedPortAdapter implements PlantedPort {
+        @Override
+        public boolean refused() {
+            return RiskRating.HIGH.ordinal() > 0;
         }
     }
 

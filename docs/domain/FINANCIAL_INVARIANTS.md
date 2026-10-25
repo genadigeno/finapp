@@ -3234,6 +3234,20 @@ second rule `#noSurfaceReadsTheIntentsRiskRefusal` refuses any surface class rea
 (planted-probe `#theRuleRefusesARenderedIntentReason`). Negative tests: `CheckoutDoorAdviceTest#theStepUpNamesNoRiskWord`; owed `PaymentRiskSeamDatabaseTest#aMerchantSeesOnlyTheGenericRefusal`,
 `#aRiskRefusedIntentCannotBeReconfirmed` and `#theDoorsStepUpWritesNothing`.)*
 
+*(Made whole by `P13-TSK-018`, 2026-10-25 - the four guards, each proven by its probe (`MUTATION_TESTING.md` §2):
+**the surface** - `NoCustomerSurfaceReadsRiskTest#theSurfacesWholeReachTouchesRiskOnlyThroughTheSeams` follows every
+customer and merchant route to every `com.finapp` class it reaches, an interface to every implementation, and admits
+`risk` only through twelve enumerated seams (the transfer, withdrawal, checkout and cross-border adapters and their
+step-up advices, credit's risk signal, the acting-party read), `#noSourceOutsideRiskNamesARiskTable` holds every risk
+table to risk's own stores; **the events** - `RiskEventsCarryOnlyCodesTest` holds every `risk` event type, read from
+risk's classes and each emitted by its real producer, to a schema of ids, codes, statuses, kinds and counts; **the logs**
+- `RiskLogSitesAreEnumeratedTest`: risk's domain logs nothing, every `app` risk log site enumerated with its arguments,
+each an exception's class name, an id, a closed code or a count; **the tags** - `RiskMetricTagsAreBoundedTest` holds
+every `finapp.risk.*` tag value of the composed registry to its key's bounded vocabulary. The investigator's queues and
+case file are the operator's only reads of cases and alerts, each audited (`risk.AlertRead`, `risk.CaseRead`) and
+self-dealing withheld or refused; evidence served by reference. The customer's answer with and without an open case is
+the owed `CustomerAnswerIsIndifferentToACaseTest` (C5).)*
+
 ### INV-RSK-09 — Every monitored transaction is born once from a ledger journal entry, never diverges from it, and reprocessing is idempotent
 **Statement:** The monitoring intake reads the ledger's journal — the one financial truth — through
 `MonitoredLedger` in the journal's own sequence from a durable watermark, and records exactly one

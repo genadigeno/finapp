@@ -133,15 +133,62 @@ class AlertSuppressionTest {
     }
 
     @Test
-    @DisplayName("never the system: a SYSTEM or a CUSTOMER actor is refused before anything is read")
+    @DisplayName("never the system: a SYSTEM, a SERVICE or a MERCHANT actor is refused before anything is read - at"
+            + " every act (P13-TSK-018: a person is an authenticated human, CUSTOMER- or EMPLOYEE-typed)")
     void neverTheSystem() {
         RiskAlert alert = world.openAlert();
+        RiskAlert proposed = world.proposed(world.openAlert(), world.analyst());
         world.store.log.clear();
-        for (Actor actor : List.of(Actor.SYSTEM, new Actor("customer-1", ActorType.CUSTOMER))) {
+        for (Actor actor : List.of(Actor.SYSTEM, new Actor("service-1", ActorType.SERVICE),
+                new Actor("merchant-1", ActorType.MERCHANT))) {
+            world.partyOfActor.put(actor.id(), UUID.randomUUID());
             assertThatThrownBy(() -> world.alerts.proposeSuppression(AlertWorld.UOW, alert.id(), "FALSE_POSITIVE",
                     "the system dedupes", actor, AlertWorld.correlation())).isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> world.alerts.approveSuppression(AlertWorld.UOW, proposed.id(), "the system agrees",
+                    actor, AlertWorld.correlation())).isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> world.alerts.rejectSuppression(AlertWorld.UOW, proposed.id(), "the system rejects",
+                    actor, AlertWorld.correlation())).isInstanceOf(IllegalArgumentException.class);
         }
         assertThat(world.store.log).isEmpty();
+    }
+
+    @Test
+    @DisplayName("P13-TSK-018's routed defect: a CUSTOMER-typed operator - as the platform's session establishes every"
+            + " identity - proposes, and a second CUSTOMER-typed operator approves: SUPPRESSED, both persons recorded"
+            + " CUSTOMER")
+    void aCustomerTypedOperatorSuppresses() {
+        RiskAlert alert = world.openAlert();
+        Actor proposer = new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER);
+        Actor approver = new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER);
+        world.partyOfActor.put(proposer.id(), UUID.randomUUID());
+        world.partyOfActor.put(approver.id(), UUID.randomUUID());
+
+        RiskAlert proposed = world.proposed(alert, proposer);
+        assertThat(proposed.suppression().orElseThrow().proposedByType()).isEqualTo(ActorType.CUSTOMER);
+        Alerts.Decided decided = world.alerts.approveSuppression(AlertWorld.UOW, alert.id(), "agreed", approver,
+                AlertWorld.correlation());
+        assertThat(decided.alert().status()).isEqualTo(AlertStatus.SUPPRESSED);
+        assertThat(decided.alert().decision().orElseThrow().decidedByType()).isEqualTo(ActorType.CUSTOMER);
+        assertThat(world.audited("risk.AlertSuppressed")).singleElement()
+                .satisfies(record -> assertThat(record.actor()).isEqualTo(approver));
+    }
+
+    @Test
+    @DisplayName("D6: a merchant's alert is placed through its organisation party (the accountable join) - suppressible"
+            + " by another analyst, refused to an analyst of the merchant's own party")
+    void aMerchantsAlertIsJudgedByItsOrganisation() {
+        SignalSubject merchant = SignalSubject.of(SubjectKind.MERCHANT, UUID.randomUUID());
+        UUID organisation = UUID.randomUUID();
+        world.partyOfSubject.put(merchant, organisation);
+        RiskAlert alert = world.born(NewAlert.ofRule(AlertKind.MERCHANT_ABUSE, AlertSeverity.HIGH, merchant,
+                RuleKind.REFUND_RATIO, AlertWorld.day(), AlertWorld.policy(),
+                AlertEvidence.assessment(RiskAssessmentId.of(EvaluationWorld.IDS.next())), AlertWorld.correlation(),
+                com.finapp.sharedkernel.correlation.CausationId.of("merchant-suite")));
+        assertThatThrownBy(() -> world.proposed(alert, world.analystOf(organisation)))
+                .isInstanceOf(RiskAssessments.SelfDealingRefused.class)
+                .extracting(refused -> ((RiskAssessments.SelfDealingRefused) refused).refusal())
+                .isEqualTo(RiskAssessments.SelfDealingRefused.Cause.OWN_PARTY);
+        assertThat(world.proposed(alert, world.analyst()).suppressionAwaitsDecision()).isTrue();
     }
 
     @Test

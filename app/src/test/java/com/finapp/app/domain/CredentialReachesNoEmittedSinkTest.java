@@ -710,7 +710,28 @@ class CredentialReachesNoEmittedSinkTest {
                         // P7-TSK-003: the routing surface's bodies - operator matchers, rail
                         // names and required reasons, no credential-shaped member anywhere.
                         "CreateRoutingPolicyVersionRequest",
-                        "SetRailAvailabilityRequest");
+                        "SetRailAvailabilityRequest",
+                        // P13-TSK-018 (the tipping-off control made whole; this guard had gone red over the
+                        // first ten since P13-TSK-002, because no Phase 13 task ran it): the risk desks' bodies.
+                        // No secret in any of them, and no subject's text: a policy proposal is policy - an
+                        // operation, an engine, a currency code, rules of closed kinds with typed parameters,
+                        // integer bands and minor units, in nested schemas this list does not name - with a
+                        // REASON; the replay, the override's, the case's, the action's and the suppression's
+                        // bodies carry closed codes, identifiers (an alert, a subject, a target, evidence
+                        // references), a revision and a REASON or a NOTE. Every reason and note is screened for
+                        // card-number and account shapes at the domain (RiskReasons) and by risk's CHECKs.
+                        "RiskPolicyProposalRequest",
+                        "RiskPolicyDecisionRequest",
+                        "RiskReplayRequest",
+                        "RiskOverrideProposalRequest",
+                        "RiskOverrideDecisionRequest",
+                        "RiskCaseOpenRequest",
+                        "RiskCaseActionRequest",
+                        "RiskCaseDispositionRequest",
+                        "RiskCaseDecisionRequest",
+                        "RiskActionProposalRequest",
+                        "RiskSuppressionProposalRequest",
+                        "RiskSuppressionDecisionRequest");
     }
 
     @Test

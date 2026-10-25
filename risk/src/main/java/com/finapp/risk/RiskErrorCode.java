@@ -87,6 +87,14 @@ public enum RiskErrorCode implements ErrorCode {
             "The case act is not admitted as asked: a kind, subject, queue or disposition outside what the case takes,"
                     + " or PROHIBITED asked of a disposition that does not confirm a party's case; nothing was done."),
 
+    // The queues' refusal of a read they cannot answer as asked (P13-TSK-018, DESIGN-018 D12): a filter outside the
+    // vocabulary, a page below one row, or a cursor naming no row - 422, the request the queue cannot take.
+    QUEUE_REQUEST_INVALID(
+            "risk.QueueRequestInvalid",
+            422,
+            "The queue read is not admitted as asked: a status or kind outside the queue's vocabulary, a page of fewer"
+                    + " than one row, or a cursor that names no row of the queue; nothing was served."),
+
     // The reprocessing door's refusal of a point ahead of the watermark (P13-TSK-019).
     REPROCESSING_NOT_BEHIND(
             "risk.ReprocessingNotBehind",
