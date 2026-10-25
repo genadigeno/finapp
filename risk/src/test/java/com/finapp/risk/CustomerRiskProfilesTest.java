@@ -134,7 +134,7 @@ class CustomerRiskProfilesTest {
         policies.activate(RiskPolicyFixtures.v1(RiskOperation.MONITORING));
         CustomerRiskProfileTest.Screening screening = new CustomerRiskProfileTest.Screening();
         screening.hit = Optional.of(screeningHit);
-        new ProfileRecompute(new RiskPolicies(policies), store, new ProfileInputs(screening),
-                new RiskSignalsTest.RecordingOutbox(), IDS, CLOCK, Duration.ofDays(1)).recompute(UOW, party, FLOW);
+        new ProfileRecompute(new RiskPolicies(policies), store, CustomerRiskProfileTest.inputs(screening),
+                AlertRaiser.NONE, new RiskSignalsTest.RecordingOutbox(), IDS, CLOCK, Duration.ofDays(1)).recompute(UOW, party, FLOW);
     }
 }

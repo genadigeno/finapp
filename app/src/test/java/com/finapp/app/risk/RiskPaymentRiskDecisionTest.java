@@ -169,7 +169,7 @@ class RiskPaymentRiskDecisionTest {
                     readings.kycApproved(),
                     request.merchant().filter(suspended.id()::equals).map(m -> Reading.of(true))
                             .orElseGet(Reading::absent),
-                    readings.accountPayeeFirstSeen(), readings.authFailures());
+                    readings.authFailures());
         };
         Payer payer = payer();
         assertThat(judged(payer, byCard(payer, suspended, eur(10_00)))).isEqualTo(PaymentVerdict.refuse());

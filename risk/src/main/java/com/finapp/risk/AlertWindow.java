@@ -15,7 +15,8 @@ import java.util.Objects;
  * <p><strong>From a database instant that is the evidence's own</strong> - so a replayed event or a reprocessed history
  * recomputes the same start rather than "now"'s bucket: {@link #of(WindowKind, WindowCut)} in T-eval (the database
  * instant read after the caller's locks), {@link #of(VelocityWindowKey)} for a velocity window's own start, and - for
- * risk's own raisers over a born-once row's database stamp (a monitored transaction's or a signal's {@code recorded_at})
+ * risk's own raisers over a born-once row's stored instant (a monitored transaction's or a signal's {@code recorded_at},
+ * or, for the account-takeover alert, the anchor signal's {@code observed_at}: `P13-TSK-013`, {@link AccountTakeover})
  * - the package's {@link #containing(WindowKind, Instant)}. No factory reads a clock.
  */
 public final class AlertWindow {
@@ -44,8 +45,9 @@ public final class AlertWindow {
     }
 
     /**
-     * The {@code kind} window containing {@code databaseInstant} - a stamp the database wrote on a born-once row of the
-     * evidence (never an instance's clock, never a request's timestamp): risk's own raisers only.
+     * The {@code kind} window containing {@code databaseInstant} - an instant a born-once row of the evidence holds as
+     * its own, written once and read identically by every reader (the database's stamp, or a signal's stored
+     * {@code observed_at}; never an instance's clock, never a request's timestamp): risk's own raisers only.
      */
     static AlertWindow containing(WindowKind kind, Instant databaseInstant) {
         Objects.requireNonNull(kind, "kind");

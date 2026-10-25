@@ -413,6 +413,18 @@ reading settled in §8 stands - their alert is the Prometheus rule on `monitorin
 Meters `finapp.risk.alert{kind,severity}` and `.alert.suppressed{reason_code}` (`app`'s `RiskAlertMetrics`); span
 `risk.alert.raise`.
 
+*(As built, `P13-TSK-013`, 2026-10-25 - the first births, the account-takeover alert.)* **Two raisers, one key.**
+`ACCOUNT_TAKEOVER` (severity `HIGH`, constant) is keyed (the `PARTY`, the anchor rule - `RECENT_CREDENTIAL_CHANGE` or
+`RECENT_RECOVERY` -, the `D1` bucket of the anchor signal's own `observed_at`), so the synchronous and the retrospective
+raise of one sequence meet on one row. **T-eval** (S, inside the judged movement's transaction): after the seal and
+`risk.RiskDecisionMade`, before `CaseOpener`, when the sealed hits show the sequence (`AtoSequence` - an anchor fired, no
+judged continuation refuting it, the movement a transfer, withdrawal or cross-border payment), one `raiseAll` through
+`AlertRaiser` **behind a savepoint of its own under the 250 ms budget** - a birth that fails or waits past the budget is
+undone alone and reported, the decision and the money transaction standing; evidence the anchor signal and the
+assessment. **T-mon's profile leg** (S, under the head's lock R8): the `MONITORING` version's anchors over the party's
+identities' signals; a fired anchor raises in the recompute's transaction, rating changed or not; a failed raise fails
+the recompute whole; evidence the anchor signal. Both born `OPEN` and queued until `-016`'s folding.
+
 ### 4.6 Case (`risk.risk_case`, `risk_case_action`, `risk_case_event`) — `P13-TSK-016` (`risk V009`; the folding of alerts into cases is this task's); the queues and the tipping-off control `-018`; the AML case `-021`; collections `-025` (C3)
 
 ```

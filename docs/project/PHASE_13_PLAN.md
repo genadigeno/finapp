@@ -811,6 +811,18 @@ credential change or recovery followed within the lookback by a new payee, a new
 new accounts, BNPL applications across merchants within a window, a session confirming many checkouts (`-014`); each a
 `RuleKind` with parameters, each firing an alert born once (`-015`) and folding into a case of the matching kind (`-016`).
 
+*(As built, `P13-TSK-013`, 2026-10-25 - account takeover.)* The sequence is judged from the sealed hits (`AtoSequence`):
+an anchor (`RECENT_CREDENTIAL_CHANGE`, `RECENT_RECOVERY`) fired, each continuation (`NEW_PAYEE`, `NEW_DEVICE`) fired or
+unjudged (`ABSENT`, not carried) - a judged not-fired one breaks it -, the movement a transfer, withdrawal or cross-border
+payment; the policy decides the movement (the WITHDRAWAL fixture's 24 h credential change holds). One alert
+`ACCOUNT_TAKEOVER` per (party, anchor rule, the anchor signal's `D1` day), raised by T-eval behind its own savepoint and
+by the profile leg over the party's identities' signals (the anchors admitted for `MONITORING`; there the anchor alone,
+the payee, device and movement unobservable from signals today). Readings: the anchors live; `SESSION_ASSURANCE_BELOW`
+live; `RECENT_AUTH_FAILURES` `ABSENT` (no source); an account payee's novelty its earliest counted `DESTINATION` window
+(not "`D30` count = 0": a tumbling bucket on one anchor would call every payee new at each boundary), a beneficiary's its
+registration, a withdrawal's `ABSENT` (no destination); a device's `ABSENT` (no seam carries one). No case or action yet
+(`-016`, `-017`).
+
 ### 12.7 AML transaction monitoring (ADR-0111)
 
 The monitoring intake reads the **ledger journal** — the one financial truth — through `MonitoredLedger`, a port

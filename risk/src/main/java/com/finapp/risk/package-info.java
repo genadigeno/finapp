@@ -187,8 +187,21 @@
  * bucket of its kind from a database instant that is the evidence's own), {@link com.finapp.risk.AlertEvidence}
  * (references only, bounded), {@link com.finapp.risk.AlertRule}, {@link com.finapp.risk.AlertStatus},
  * {@link com.finapp.risk.SuppressionReason}, {@link com.finapp.risk.RiskAlertStore} ({@code JdbcRiskAlertStore}) and
- * {@link com.finapp.risk.AlertObserver} (the meters, {@code app}'s {@code RiskAlertMetrics}). Nothing raises yet - the
- * rules are `-013`, `-014` and `-020`'s - and the operational kinds are raised by no writer (their alerts are the
- * Prometheus rules on their gauges).
+ * {@link com.finapp.risk.AlertObserver} (the meters, {@code app}'s {@code RiskAlertMetrics}). The operational kinds are
+ * raised by no writer (their alerts are the Prometheus rules on their gauges); the rules raise from `-013` on.
+ *
+ * <p><strong>Account-takeover detection</strong> (`P13-TSK-013`, no migration): {@link com.finapp.risk.AtoSequence} - the
+ * sequence judged from a verdict's sealed hits (an anchor, {@code RECENT_CREDENTIAL_CHANGE} or {@code RECENT_RECOVERY},
+ * fired; no judged continuation, {@code NEW_PAYEE} or {@code NEW_DEVICE}, refuting it; the movement a transfer, withdrawal
+ * or cross-border payment - the anchor alone for {@code MONITORING}); {@link com.finapp.risk.AccountTakeover} - the
+ * anchors' reading over a set of identities and the {@code ACCOUNT_TAKEOVER} alert, keyed (the party, the anchor rule, the
+ * anchor signal's own day) so the synchronous and the retrospective raise of one sequence are one row; the port
+ * {@link com.finapp.risk.AlertRaiser} ({@code alerts::raiseAll}) through which T-eval raises after the seal behind a
+ * savepoint of its own (a failure undone alone, reported to {@link com.finapp.risk.RiskEvaluationObserver#alertsUnraised})
+ * and {@link com.finapp.risk.ProfileRecompute} raises under the head's lock; the port
+ * {@link com.finapp.risk.RiskPartyIdentities} (the party's identities, {@code app}'s {@code IdentitySubjectParties}) the
+ * profile leg reads the anchors through; the anchors admitted for {@code MONITORING}; the payee's and the device's
+ * novelty read from their earliest counted window ({@link com.finapp.risk.VelocityWindows#firstCounted}). No case and no
+ * action yet - `-016` folds, `-017` proposes.
  */
 package com.finapp.risk;

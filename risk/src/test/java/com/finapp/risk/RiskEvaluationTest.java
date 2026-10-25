@@ -46,8 +46,9 @@ class RiskEvaluationTest {
         RiskEvaluation.Assessed assessed = world.evaluation.evaluate(UOW, EvaluationWorld.transfer(eur(100_00)));
 
         assertThat(assessed.decision()).isEqualTo(RiskDecision.ALLOW);
+        // The payee's first sighting (P13-TSK-013): the destination's earliest counted window, after the inputs.
         List<String> expected = new ArrayList<>(List.of("find", "open -", "pin", "keep", "open 250ms",
-                "serialise", "serialise", "serialise", "now", "windows", "inputs"));
+                "serialise", "serialise", "serialise", "now", "windows", "inputs", "first DESTINATION"));
         for (int i = 0; i < 12; i++) {
             expected.add("upsert"); // three dimensions (party, source, destination) times four window kinds
         }
@@ -68,7 +69,8 @@ class RiskEvaluationTest {
         assertThat(allow.decision()).isEqualTo(RiskDecision.ALLOW);
         assertThat(allow.permits()).isTrue();
         assertThat(allow.velocity()).isEqualTo(VelocityOutcome.COUNTED);
-        assertThat(allow.reasons()).isEmpty();
+        // A never-paid destination is a new payee (P13-TSK-013): its 250 alone stays in the ALLOW band.
+        assertThat(allow.reasons()).containsExactly(ReasonCode.NEW_PAYEE);
 
         RiskEvaluation.Assessed challenged = world.evaluation.evaluate(UOW, EvaluationWorld.transfer(eur(600_00)));
         assertThat(challenged.decision()).isEqualTo(RiskDecision.CHALLENGE);
@@ -78,7 +80,7 @@ class RiskEvaluationTest {
         assertThat(challenged.velocity()).as("an unsatisfied challenge counts nothing").isEqualTo(VelocityOutcome.NOT_PERMITTED);
 
         world.external = new RiskInputs.Readings(Reading.of(RiskAssurance.MULTI_FACTOR), Reading.absent(),
-                Reading.absent(), Reading.absent(), Reading.absent(), Map.of());
+                Reading.absent(), Reading.absent(), Map.of());
         RiskEvaluation.Assessed satisfied = world.evaluation.evaluate(UOW, EvaluationWorld.transfer(eur(600_00)));
         assertThat(satisfied.decision()).isEqualTo(RiskDecision.CHALLENGE);
         assertThat(satisfied.challengeSatisfied()).contains(true);
@@ -106,7 +108,7 @@ class RiskEvaluationTest {
         RiskEvaluation.Assessed reviewed = world.evaluation.evaluate(UOW, EvaluationWorld.request(
                 RiskOperation.TRANSFER, eur(1_00), party).sourceAccount(source).destinationAccount(IDS.next()).build());
         assertThat(reviewed.decision()).as("the eleventh: ten already counted today").isEqualTo(RiskDecision.REVIEW);
-        assertThat(reviewed.reasons()).containsExactly(ReasonCode.VELOCITY_COUNT);
+        assertThat(reviewed.reasons()).containsExactly(ReasonCode.VELOCITY_COUNT, ReasonCode.NEW_PAYEE);
         assertThat(world.cases).extracting(CaseOpener.Decided::assessment).containsExactly(reviewed.assessmentId());
         assertThat(world.windowStore.count(VelocityDimension.SOURCE_ACCOUNT, source.toString(), WindowKind.D1))
                 .as("ten counted, the refused eleventh not").isEqualTo(10);
@@ -138,7 +140,7 @@ class RiskEvaluationTest {
         assertThat(sealed(world, changed).inputsCanonical()).contains("NEVER").contains("\"3\"");
 
         world.external = new RiskInputs.Readings(Reading.absent(), Reading.absent(), Reading.of(false),
-                Reading.absent(), Reading.absent(), Map.of());
+                Reading.absent(), Map.of());
         RiskEvaluation.Assessed refused = world.evaluation.evaluate(UOW,
                 EvaluationWorld.request(RiskOperation.WITHDRAWAL, eur(10_00), IDS.next()).sourceAccount(IDS.next())
                         .build());
@@ -204,7 +206,7 @@ class RiskEvaluationTest {
                     .sourceAccount(IDS.next()).merchant(merchant).build()).decision())
                     .isEqualTo(RiskDecision.CHALLENGE);
             world.external = new RiskInputs.Readings(Reading.absent(), Reading.absent(), Reading.absent(),
-                    Reading.of(true), Reading.absent(), Map.of());
+                    Reading.of(true), Map.of());
             assertThat(world.evaluation.evaluate(UOW, EvaluationWorld.request(payment, eur(20_00), IDS.next())
                     .sourceAccount(IDS.next()).merchant(merchant).build()).reasons())
                     .containsExactly(ReasonCode.MERCHANT_SUSPENDED);
@@ -230,7 +232,7 @@ class RiskEvaluationTest {
         assertThat(newPayee.reasons()).containsExactly(ReasonCode.NEW_PAYEE);
 
         world.external = new RiskInputs.Readings(Reading.absent(), Reading.of(true), Reading.absent(),
-                Reading.absent(), Reading.absent(), Map.of());
+                Reading.absent(), Map.of());
         assertThat(world.evaluation.evaluate(UOW, EvaluationWorld.request(RiskOperation.CROSS_BORDER, eur(20_00),
                 IDS.next()).sourceAccount(IDS.next()).build()).decision()).isEqualTo(RiskDecision.DENY);
     }
@@ -312,7 +314,7 @@ class RiskEvaluationTest {
         assertThat(reviewed.limitDecided()).as("VELOCITY_COUNT's own REVIEW").isTrue();
 
         world.external = new RiskInputs.Readings(Reading.absent(), Reading.of(true), Reading.absent(),
-                Reading.absent(), Reading.absent(), Map.of());
+                Reading.absent(), Map.of());
         RiskEvaluation.Assessed screened = world.evaluation.evaluate(UOW, EvaluationWorld.transfer(eur(100_00)));
         assertThat(screened.decision()).isEqualTo(RiskDecision.DENY);
         assertThat(screened.limitDecided()).as("a screening DENY is risk's").isFalse();
@@ -504,7 +506,8 @@ class RiskEvaluationTest {
         assertThat(twice.get(1).inputsSha256()).isEqualTo(sealed.inputsSha256());
         assertThat(twice.get(1).verdictSha256()).isEqualTo(sealed.verdictSha256());
         assertThat(sealed.hits()).hasSize(RiskPolicyFixtures.v1(RiskOperation.TRANSFER).rules().size());
-        assertThat(sealed.reasons()).containsExactly(ReasonCode.AMOUNT_BAND, ReasonCode.AMOUNT_BAND);
+        // The never-paid destination is a new payee since P13-TSK-013 (its first counted window): the composite's 250.
+        assertThat(sealed.reasons()).containsExactly(ReasonCode.AMOUNT_BAND, ReasonCode.NEW_PAYEE, ReasonCode.AMOUNT_BAND);
     }
 
     @Test
@@ -517,10 +520,10 @@ class RiskEvaluationTest {
         RiskEvaluation.Assessed assessed = world.evaluation.evaluate(UOW, request);
         assertThat(world.payloads).singleElement().satisfies(payload -> {
             assertThat(payload).containsOnlyKeys("assessmentId", "operation", "commandRef", "decision", "reasonCount",
-                    "reason1", "reason2");
+                    "reason1", "reason2", "reason3");
             assertThat(payload).containsEntry("assessmentId", assessed.assessmentId().value().toString())
                     .containsEntry("commandRef", request.commandRef().value()).containsEntry("decision", "CHALLENGE")
-                    .containsEntry("reason1", "AMOUNT_BAND").containsEntry("reasonCount", "2");
+                    .containsEntry("reason1", "AMOUNT_BAND").containsEntry("reason2", "NEW_PAYEE").containsEntry("reasonCount", "3");
             assertThat(payload.values()).doesNotContain(request.party().toString(), "120000");
         });
         assertThat(world.envelopes).singleElement().satisfies(envelope -> {

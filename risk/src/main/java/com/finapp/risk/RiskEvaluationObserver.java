@@ -23,6 +23,17 @@ public interface RiskEvaluationObserver {
     void evaluated(Report report);
 
     /**
+     * The sealed {@code assessment}'s alerts could not be raised (`P13-TSK-013`): the raise failed or timed out behind
+     * its own savepoint, which was undone - the assessment, the decision and the caller's transaction stand. Reported for
+     * the one log line (the assessment, the operation, the cause's code - {@code TIMEOUT} or {@code READ_FAILED}; never a
+     * subject, a rule or a reading); the profile leg re-raises an alert its version's anchors detect. A no-op by default,
+     * so the suites' lambdas stand.
+     */
+    default void alertsUnraised(RiskAssessmentId assessment, RiskOperation operation, String cause) {
+        // Nothing by default.
+    }
+
+    /**
      * One sealed assessment's codes - and its id and the unavailability's cause, for the one structured log line a
      * fail-safe writes until `-015`'s alert model raises {@code RiskEvaluationUnavailable} (ids and codes only); never a
      * tag.

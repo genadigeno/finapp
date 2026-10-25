@@ -65,8 +65,10 @@ class ProfileDatabaseTest {
     private static final Map<UUID, Boolean> SCREENED = new ConcurrentHashMap<>();
     private static final ProfileRecompute RECOMPUTE = new ProfileRecompute(new RiskPolicies(POLICY_STORE), STORE,
             new ProfileInputs((unitOfWork, party) -> Optional.ofNullable(SCREENED.get(party))
-                    .map(hit -> new ScreeningClearances.Clearance(UUID.randomUUID(), hit, Instant.now()))),
-            new JdbcOutboxWriter(), IDS, CLOCK, Duration.ofDays(1));
+                    .map(hit -> new ScreeningClearances.Clearance(UUID.randomUUID(), hit, Instant.now())),
+                    new SignalReadings(new JdbcRiskSignalStore()), RiskPartyIdentities.NONE,
+                    new VelocityWindows(new JdbcVelocityWindowStore())),
+            AlertRaiser.NONE, new JdbcOutboxWriter(), IDS, CLOCK, Duration.ofDays(1));
 
     private static RiskPolicyVersionId monitoring;
 

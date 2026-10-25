@@ -245,7 +245,9 @@ class TransferRiskSeamDatabaseTest {
         activateTransferPolicy();
         Customer payer = customer();
         UUID source = fundedWallet(payer, 1_000_00);
-        HttpResponse<String> posted = transfer(payer.token(), source, wallet(customer()), "50.00", someKey());
+        // A MULTI_FACTOR session: since P13-TSK-013 a never-paid payee is NEW_PAYEE (250), which with a password
+        // session's SESSION_ASSURANCE_BELOW (100) reaches the CHALLENGE band and the door steps up.
+        HttpResponse<String> posted = transfer(multiFactor(payer), source, wallet(customer()), "50.00", someKey());
         assertThat(field(posted.body(), "status")).isEqualTo("COMPLETED");
         String transferId = field(posted.body(), "id");
         List<String> assessments = column("SELECT id::text FROM risk.risk_assessment WHERE operation = 'TRANSFER'"
@@ -268,13 +270,14 @@ class TransferRiskSeamDatabaseTest {
         UUID source = fundedWallet(payer, 2_000_00);
         UUID destination = wallet(customer());
         String key = someKey();
-        HttpResponse<String> first = transfer(payer.token(), source, destination, "50.00", key);
-        HttpResponse<String> retry = transfer(payer.token(), source, destination, "50.00", key);
+        // MULTI_FACTOR from the start: a new payee from a password session is a CHALLENGE since P13-TSK-013.
+        String stepped = multiFactor(payer);
+        HttpResponse<String> first = transfer(stepped, source, destination, "50.00", key);
+        HttpResponse<String> retry = transfer(stepped, source, destination, "50.00", key);
         assertThat(normalized(retry.body())).isEqualTo(normalized(first.body()));
         assertThat(count("SELECT count(*) FROM risk.risk_assessment WHERE party_id = ?", payer.party())).isEqualTo(1);
         assertThat(windowCount("PARTY", payer.party(), "D1")).isEqualTo(1);
 
-        String stepped = multiFactor(payer);
         String challengedKey = someKey();
         HttpResponse<String> challenged = transfer(stepped, source, destination, "600.00", challengedKey);
         assertThat(field(challenged.body(), "status")).isEqualTo("COMPLETED");
@@ -300,8 +303,9 @@ class TransferRiskSeamDatabaseTest {
             sources.add(fundedWallet(payer, 100_00));
         }
         UUID destination = wallet(customer());
+        String stepped = multiFactor(payer); // a new payee from a password session is a CHALLENGE (P13-TSK-013)
         List<HttpResponse<String>> responses = race(sources.stream()
-                .<Callable<HttpResponse<String>>>map(source -> () -> transfer(payer.token(), source, destination,
+                .<Callable<HttpResponse<String>>>map(source -> () -> transfer(stepped, source, destination,
                         "10.00", someKey()))
                 .toList());
         assertThat(responses).allSatisfy(r -> {
@@ -329,10 +333,13 @@ class TransferRiskSeamDatabaseTest {
         Customer bob = customer();
         UUID a = fundedWallet(alice, 1_000_00);
         UUID b = fundedWallet(bob, 1_000_00);
+        // MULTI_FACTOR sessions: a new payee from a password session is a CHALLENGE since P13-TSK-013.
+        String aliceStepped = multiFactor(alice);
+        String bobStepped = multiFactor(bob);
         List<Callable<HttpResponse<String>>> both = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
-            both.add(() -> transfer(alice.token(), a, b, "10.00", someKey()));
-            both.add(() -> transfer(bob.token(), b, a, "10.00", someKey()));
+            both.add(() -> transfer(aliceStepped, a, b, "10.00", someKey()));
+            both.add(() -> transfer(bobStepped, b, a, "10.00", someKey()));
         }
         List<HttpResponse<String>> responses = race(both);
         assertThat(responses).allSatisfy(r -> assertThat(r.statusCode()).as(r.body()).isEqualTo(201));

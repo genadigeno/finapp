@@ -8,6 +8,7 @@ import com.finapp.party.PartyStore;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.telemetry.Spans;
+import com.finapp.risk.AlertRaiser;
 import com.finapp.risk.AssessmentVelocityEvidence;
 import com.finapp.risk.CaseOpener;
 import com.finapp.risk.CustomerRiskProfiles;
@@ -45,7 +46,9 @@ import org.springframework.context.annotation.Configuration;
  * <p><strong>The session's assurance</strong> is identity's, read live ({@link IdentitySessionAssurance}, `-008`), so a
  * {@code CHALLENGE} the acting session satisfies permits. <strong>Wired as declared, not yet implemented:</strong>
  * {@link CaseOpener#NONE} - a {@code REVIEW} or {@code HOLD} opens no case until `-016` implements the opener (the
- * sealed assessment is the record its folding starts from). The velocity proof's evidence of record is
+ * sealed assessment is the record its folding starts from). <strong>The alerts</strong> (`P13-TSK-013`): the sealed
+ * hits' account-takeover alerts raised through {@code RiskAlertBeans}' {@link AlertRaiser} - {@code Alerts.raiseAll},
+ * behind T-eval's own savepoint. The velocity proof's evidence of record is
  * {@link AssessmentVelocityEvidence} - the counted assessments, every dimension provable (`-006`'s finding closed);
  * `-023` runs the proof on its schedule.
  */
@@ -105,14 +108,15 @@ public class RiskEvaluationBeans {
             RiskInputs riskInputs,
             RiskAssessmentStore riskAssessmentStore,
             EvaluationBudget evaluationBudget,
+            AlertRaiser alertRaiser,
             OutboxWriter<Connection> outboxWriter,
             RiskEvaluationMetrics riskEvaluationMetrics,
             Spans domainSpans,
             IdGenerator idGenerator,
             Clock clock) {
         return new RiskEvaluation(riskPolicies, velocityWindows, customerRiskProfiles, signalReadings, riskInputs,
-                riskAssessmentStore, evaluationBudget, CaseOpener.NONE, outboxWriter, riskEvaluationMetrics, domainSpans,
-                idGenerator, clock);
+                riskAssessmentStore, evaluationBudget, CaseOpener.NONE, alertRaiser, outboxWriter, riskEvaluationMetrics,
+                domainSpans, idGenerator, clock);
     }
 
     /** The velocity proof's evidence of record: the counted assessments (`-023` runs the proof). */

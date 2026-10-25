@@ -11,8 +11,11 @@ import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.EnumSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -40,6 +43,13 @@ import java.util.UUID;
  *       platform has not chosen to judge, and a rating nobody judged would reach credit's snapshots as an
  *       assessment.</li>
  * </ul>
+ *
+ * <p><strong>The retrospective account-takeover alerts</strong> (`P13-TSK-013`; {@code PHASE_13_PLAN.md} section 7.1
+ * T-mon: "evaluate the monitoring policy …, raise alerts, … recompute the profile"): when the pinned version carries an
+ * anchor kind ({@code RECENT_CREDENTIAL_CHANGE}, {@code RECENT_RECOVERY}) and it fired over the party's identities'
+ * signals, its {@code ACCOUNT_TAKEOVER} alert is raised in this transaction, under the head's lock, before the rating's
+ * branch - whether or not the rating moves ({@link AccountTakeover}: keyed by the anchor's own day, so every later
+ * recompute, any other sweeper and T-eval's raise of the same sequence meet it as {@code ALREADY}).
  *
  * <p>So ten sweepers on one party write one version ({@code ProfileDatabaseTest#tenRecomputesOneVersion}): the claim
  * skips a held head; a waiting recompute re-reads the head after the winner's commit, evaluates the same committed
@@ -114,20 +124,23 @@ public final class ProfileRecompute {
     private final RiskPolicies policies;
     private final CustomerRiskProfileStore store;
     private final ProfileInputs inputs;
+    private final AlertRaiser alerts;
     private final OutboxWriter<Connection> outbox;
     private final IdGenerator ids;
     private final Clock clock;
     private final Duration cadence;
 
     /**
+     * @param alerts the retrospective alerts' raise (`P13-TSK-013`) - {@code alerts::raiseAll} in production
      * @param cadence how long after a recompute the party is due again - the re-assessment interval; a signal's hint
      *     pulls it forward
      */
     public ProfileRecompute(RiskPolicies policies, CustomerRiskProfileStore store, ProfileInputs inputs,
-            OutboxWriter<Connection> outbox, IdGenerator ids, Clock clock, Duration cadence) {
+            AlertRaiser alerts, OutboxWriter<Connection> outbox, IdGenerator ids, Clock clock, Duration cadence) {
         this.policies = Objects.requireNonNull(policies, "policies");
         this.store = Objects.requireNonNull(store, "store");
         this.inputs = Objects.requireNonNull(inputs, "inputs");
+        this.alerts = Objects.requireNonNull(alerts, "alerts");
         this.outbox = Objects.requireNonNull(outbox, "outbox");
         this.ids = Objects.requireNonNull(ids, "ids");
         this.clock = Objects.requireNonNull(clock, "clock");
@@ -197,13 +210,23 @@ public final class ProfileRecompute {
     private Outcome evaluated(Connection unitOfWork, CustomerRiskProfile head, RiskPolicyVersion version,
             CorrelationId correlation) {
         UUID party = head.partyId();
-        EvaluationInputs sealed = inputs.of(unitOfWork, party);
+        ProfileInputs.Read read = inputs.read(unitOfWork, party, kinds(version.policy()));
+        EvaluationInputs sealed = read.inputs();
         Verdict verdict = RiskEngineV1.evaluate(version.policy(), sealed);
         RiskRating rating = verdict.rating()
                 .orElseThrow(() -> new IllegalStateException("the monitoring verdict is a rating"));
         if (rating.onlyByDisposition()) {
             // INV-RSK-07: the bands cannot produce it (RatingBand, Verdict refuse it); asserted where it would matter.
             throw new IllegalStateException("a recompute never sets " + rating + ": only a disposition does");
+        }
+        // The retrospective account-takeover alerts (P13-TSK-013): born under the head's lock (R8) in this transaction,
+        // keyed by the anchor's own day - a later recompute, a second sweeper or T-eval's raise of the same sequence
+        // answers ALREADY. A failed raise fails the recompute whole (RecomputeFailed): the rating and its alert commit
+        // together or not at all, and the deferred party is retried.
+        List<NewAlert> retrospective = AccountTakeover.alerts(verdict, read.anchors(), party, version.id(),
+                Optional.empty(), correlation, Optional.empty());
+        if (!retrospective.isEmpty()) {
+            alerts.raiseAll(unitOfWork, retrospective);
         }
         if (head.rating().equals(Optional.of(rating))) {
             store.restamp(unitOfWork, party, cadence, true);
@@ -218,6 +241,14 @@ public final class ProfileRecompute {
         store.advance(unitOfWork, party, head.currentVersion(), next, rating, cadence);
         announce(unitOfWork, party, rating, next, correlation);
         return new Outcome(party, Kind.CHANGED, next, Optional.of(rating));
+    }
+
+    private static Set<RuleKind> kinds(RiskPolicy policy) {
+        Set<RuleKind> kinds = EnumSet.noneOf(RuleKind.class);
+        for (RiskRule rule : policy.rules()) {
+            kinds.add(rule.kind());
+        }
+        return kinds;
     }
 
     private void announce(Connection unitOfWork, UUID party, RiskRating rating, int version, CorrelationId correlation) {

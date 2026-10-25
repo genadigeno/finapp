@@ -73,7 +73,8 @@ class PlatformRiskInputsTest {
 
     @Test
     @DisplayName("every source answering: the session's assurance, the screening hit, KYC approved, the merchant"
-            + " suspended - and the account payee and the authentication failures ABSENT")
+            + " suspended - and the authentication failures ABSENT (the account payee is risk's own reading since"
+            + " P13-TSK-013, from its velocity windows)")
     void everySourceAnswers() {
         PlatformRiskInputs inputs = inputs(Optional.of((unitOfWork, actor) -> Optional.of(RiskAssurance.MULTI_FACTOR)),
                 Optional.of(new ScreeningClearances.Clearance(IDS.next(), true, CLOCK.instant())),
@@ -83,7 +84,6 @@ class PlatformRiskInputsTest {
         assertThat(readings.screeningHit()).isEqualTo(Reading.of(true));
         assertThat(readings.kycApproved()).isEqualTo(Reading.of(true));
         assertThat(readings.merchantSuspended()).isEqualTo(Reading.of(true));
-        assertThat(readings.accountPayeeFirstSeen().isPresent()).isFalse();
         assertThat(readings.authFailures()).isEmpty();
     }
 

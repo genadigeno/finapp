@@ -38,4 +38,11 @@ public interface VelocityWindowStore {
 
     /** Every live window - its end after the database clock now - for the proof; no lock taken. */
     List<VelocityWindow> live(Connection unitOfWork);
+
+    /**
+     * When {@code subjectRef} was first counted in {@code dimension} (`P13-TSK-013`): the start of its earliest
+     * {@code H1} window - the first permitted movement it took part in, to the hour - or empty when it never was. No
+     * lock taken. The novelty readings ({@code NEW_PAYEE}'s account destination, {@code NEW_DEVICE}) read it.
+     */
+    Optional<Instant> firstCounted(Connection unitOfWork, VelocityDimension dimension, String subjectRef);
 }

@@ -89,6 +89,16 @@ final class FakeVelocityWindowStore implements VelocityWindowStore {
         return live;
     }
 
+    @Override
+    public Optional<Instant> firstCounted(Connection unitOfWork, VelocityDimension dimension, String subjectRef) {
+        calls.add("first " + dimension);
+        return rows.keySet().stream()
+                .filter(key -> key.dimension() == dimension && key.subjectRef().equals(subjectRef)
+                        && key.windowKind() == WindowKind.H1)
+                .map(VelocityWindowKey::windowStart)
+                .min(Instant::compareTo);
+    }
+
     /** Plants a row as it stands - a drifted window for the proof, or another currency's for the refusal. */
     void plant(VelocityWindow row) {
         rows.put(row.key(), row);

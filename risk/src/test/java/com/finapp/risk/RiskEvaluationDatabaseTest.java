@@ -312,7 +312,7 @@ class RiskEvaluationDatabaseTest {
                 new CustomerRiskProfiles(new JdbcCustomerRiskProfileStore(), (uow, actor) -> Optional.empty(),
                         new JdbcAuditWriter(), IDS, CLOCK),
                 new SignalReadings(new JdbcRiskSignalStore()), RiskInputs.NONE, ASSESSMENT_STORE,
-                new JdbcEvaluationBudget(), CaseOpener.NONE, new JdbcOutboxWriter(), RiskEvaluationObserver.NONE,
+                new JdbcEvaluationBudget(), CaseOpener.NONE, AlertRaiser.NONE, new JdbcOutboxWriter(), RiskEvaluationObserver.NONE,
                 Spans.NONE, IDS, CLOCK);
     }
 

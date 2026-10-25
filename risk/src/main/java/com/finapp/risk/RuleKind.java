@@ -49,11 +49,15 @@ public enum RuleKind {
             Parameter.of("window", ParameterType.WINDOW),
             Parameter.of("threshold_count", ParameterType.COUNT)),
 
-    /** A credential changed within the lookback (an account-takeover signal, `-013`). */
-    RECENT_CREDENTIAL_CHANGE(Scope.JUDGED, Parameter.of("lookback_hours", ParameterType.HOURS)),
+    /**
+     * A credential changed within the lookback - an account-takeover sequence's anchor ({@link AtoSequence}). Admitted
+     * for {@code MONITORING} too (`P13-TSK-013`): the profile leg reads it over the party's identities and raises the
+     * retrospective {@code ACCOUNT_TAKEOVER} alert when it fires.
+     */
+    RECENT_CREDENTIAL_CHANGE(Scope.JUDGED_AND_MONITORING, Parameter.of("lookback_hours", ParameterType.HOURS)),
 
-    /** An account recovery completed within the lookback. */
-    RECENT_RECOVERY(Scope.JUDGED, Parameter.of("lookback_hours", ParameterType.HOURS)),
+    /** An account recovery completed within the lookback - the other anchor; judged and monitored alike (`-013`). */
+    RECENT_RECOVERY(Scope.JUDGED_AND_MONITORING, Parameter.of("lookback_hours", ParameterType.HOURS)),
 
     /** The account is younger than the named age. */
     ACCOUNT_AGE_BELOW(Scope.JUDGED, Parameter.of("days", ParameterType.DAYS)),
