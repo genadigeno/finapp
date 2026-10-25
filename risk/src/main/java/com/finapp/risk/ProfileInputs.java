@@ -17,9 +17,12 @@ import java.util.UUID;
  * screened). <strong>The account-takeover anchors</strong> (`P13-TSK-013`) - the credential change and the completed
  * recovery, when the pinned version judges them - are the latest such signals over the party's identities
  * ({@link RiskPartyIdentities}), judged at the database's instant ({@link VelocityWindows#now}); a party with no placeable
- * identity leaves them {@code ABSENT}. Every other reading is {@code ABSENT} - "we did not look", recorded on each
- * rule's hit - because its source is another task's to read for a party: `-006`'s velocity windows and the monitoring
- * readings over the party's movements, both `-020`'s, which extends this reader. Only the two anchors among the
+ * identity leaves them {@code ABSENT}. <strong>The journal's readings</strong> (`P13-TSK-020`,
+ * {@link MonitoredMovements}) - the dormancy, the flows and the amounts of the party's movements over all its accounts,
+ * cut on the value date the database's instant falls on, and `-006`'s committed {@code PARTY} windows - are read when the
+ * pinned version carries a kind they feed, and MERGED into the abuse readings' one value
+ * ({@link MonitoringReadings#withJournal}); a party whose accounts cannot be placed reads them {@code ABSENT}. Every other
+ * reading is {@code ABSENT} - "we did not look", recorded on each rule's hit. Only the two anchors among the
  * {@code MONITORING} kinds read a signal ({@link RuleKind}'s scopes); every other signal reaches the profile as the hint
  * that pulls its permit forward ({@link ProfileHints}). <strong>The abuse readings</strong> (`P13-TSK-014`,
  * {@link PaymentAbuse#party}) - the party's refund and chargeback ratios (its signals over its {@code PARTY} window's

@@ -44,7 +44,7 @@ import lombok.extern.slf4j.Slf4j;
  * {outcome}} - every party a run met, {@code judged}, {@code failed} (its leg rolled back alone; alert on any increase)
  * or {@code not_judged} (no {@code MONITORING} version {@code ACTIVE}); {@code finapp.risk.monitoring.unplaced} -
  * customer accounts no party could be placed behind, unjudged; {@code finapp.risk.monitoring.latency} - one party's
- * leg, the head's lock wait included, beside {@code evaluation.latency} (M3's split trigger, measured by the storm);
+ * leg, its head already held (the claim locks every head first), beside {@code evaluation.latency} (M3's split trigger, measured by the storm);
  * {@code finapp.risk.rule.hit{operation=MONITORING,rule}} - each fired kind once per profile recompute. A failed leg
  * writes one line: the cause's class, never the party.
  */
@@ -136,7 +136,7 @@ public final class RiskMonitoringMetrics implements MonitoringObserver {
                 .description("Customer accounts the monitoring rule leg could place behind no party - unjudged")
                 .register(registry);
         this.latency = Timer.builder(LATENCY)
-                .description("One party's monitoring rule leg, the profile head's lock wait included - beside"
+                .description("One party's monitoring rule leg, its profile head already held - beside"
                         + " evaluation.latency (M3's split trigger)")
                 // Buckets in the T-eval budget's neighbourhood: p50/p99 by histogram_quantile, max the timer's own.
                 .serviceLevelObjectives(Duration.ofMillis(10), Duration.ofMillis(50), Duration.ofMillis(100),

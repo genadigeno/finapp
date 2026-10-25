@@ -44,7 +44,7 @@ public interface MonitoringObserver {
         // Nothing by default.
     }
 
-    /** One judged party's leg, its savepoint released - the head's lock wait included. */
+    /** One judged party's leg, its savepoint released - its head already held (the claim locks every head first). */
     default void judged(Duration latency) {
         // Nothing by default.
     }

@@ -57,6 +57,11 @@ import java.util.UUID;
  * {@code BNPL_MULTI_APPLICATION} over the party's signals raises its {@code FRAUD} alert in the same list - keyed by the
  * window's bucket - and its weight moves the rating, which credit's signal answers.
  *
+ * <p><strong>The AML monitoring rules</strong> (`P13-TSK-020`; {@link MonitoringRules}): the profile's own evaluation now
+ * reads the journal's readings for the day the database's instant falls on, and its fired AML kinds raise their alerts in
+ * the same list; and {@link #monitor} is T-mon's rule leg per party - each movement a claim's batch touched judged over
+ * its value date's windows first, its alerts joining the same one {@code raiseAll}. A key raised by both is one alert.
+ *
  * <p>So ten sweepers on one party write one version ({@code ProfileDatabaseTest#tenRecomputesOneVersion}): the claim
  * skips a held head; a waiting recompute re-reads the head after the winner's commit, evaluates the same committed
  * inputs, finds the rating unchanged and writes nothing. Every stamp is the database's ({@code clock_timestamp()}); the
@@ -218,9 +223,21 @@ public final class ProfileRecompute {
     }
 
     /**
+     * The rule leg's first step for a party (`P13-TSK-020`; R8): its head locked {@code FOR UPDATE} - waiting on a
+     * holder, born unassessed if missing. {@link MonitoringRun} locks every touched party's head this way, in ascending
+     * order, <strong>before</strong> any party's alert or case row - so the claim never takes a head (R8) while it holds
+     * a case (R4), the lock order's rule.
+     */
+    public CustomerRiskProfile lockHead(Connection unitOfWork, UUID partyId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(partyId, "partyId");
+        return store.lockOrCreate(unitOfWork, partyId);
+    }
+
+    /**
      * T-mon's rule leg for one party (`P13-TSK-020`; {@code PHASE_13_PLAN.md} sections 7.1 T-mon, 7.2 R8, 12.7;
      * ADR-0111 decision 3; {@code DESIGN-020} D2, D5, D8, D13, D14) - on the claim's unit of work, under
-     * {@code pinned} (the run's R1): the head locked {@code FOR UPDATE} - waiting, born unassessed if missing (R8); then
+     * {@code pinned} (the run's R1), over {@code head} - the party's head the claim already holds ({@link #lockHead}):
      * each of {@code touched} - the party's movements the claim's batch read - judged by {@link RiskEngineV1} over the
      * windows of its value date ({@link MonitoredMovements#readDay}, read once per day) with its own amount sealed, each
      * fired AML rule an alert ({@link MonitoringRules}); then the profile's own evaluation as of the database's instant
@@ -231,17 +248,17 @@ public final class ProfileRecompute {
      *
      * @throws RecomputeFailed for anything that throws - nothing of the party written; the run rolls its savepoint back
      */
-    public Outcome monitor(Connection unitOfWork, UUID partyId, List<MonitoredMovement> touched,
+    public Outcome monitor(Connection unitOfWork, CustomerRiskProfile head, List<MonitoredMovement> touched,
             RiskPolicyVersion pinned, CorrelationId correlation) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
-        Objects.requireNonNull(partyId, "partyId");
+        Objects.requireNonNull(head, "head");
         Objects.requireNonNull(touched, "touched");
         Objects.requireNonNull(pinned, "pinned");
         Objects.requireNonNull(correlation, "correlation");
         if (pinned.operation() != RiskOperation.MONITORING) {
             throw new IllegalArgumentException("the rule leg judges under the MONITORING version");
         }
-        CustomerRiskProfile head = store.lockOrCreate(unitOfWork, partyId);
+        UUID partyId = head.partyId();
         try {
             Set<RuleKind> fired = EnumSet.noneOf(RuleKind.class);
             List<NewAlert> movementAlerts = movementAlerts(unitOfWork, partyId, touched, pinned, correlation, fired);

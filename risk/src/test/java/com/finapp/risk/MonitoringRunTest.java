@@ -57,6 +57,9 @@ class MonitoringRunTest {
         order.sort(UUID::compareTo);
         assertThat(world.profiles.log).filteredOn(line -> line.startsWith("lock ")).as("R8, ascending")
                 .containsExactly("lock " + order.get(0), "lock " + order.get(1), "lock " + order.get(2));
+        assertThat(world.profiles.log.subList(0, 3)).as("every head first - before any party's alert, case or version:"
+                + " never R8 under R4").containsExactly("lock " + order.get(0), "lock " + order.get(1),
+                "lock " + order.get(2));
         assertThat(world.outcome(MonitoringObserver.SubjectOutcome.JUDGED)).isEqualTo(3);
         assertThat(world.latencies).hasSize(3);
     }

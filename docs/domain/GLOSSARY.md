@@ -2380,7 +2380,10 @@ ledger journal — the one financial truth — through a port from a watermark, 
 Transaction, evaluating the monitoring policy's rules per subject over durable aggregates (`STRUCTURING`,
 `RAPID_IN_OUT`, `DORMANT_THEN_ACTIVE`, `ROUND_AMOUNT`, `CORRIDOR_HIGH_RISK`, `VELOCITY_*`), raising Alerts born once,
 folding them into the subject's open AML Case, recomputing the Customer Risk Profile, and keeping the internal
-investigation physically distinct from the Regulatory Report; idempotent under reprocessing from any watermark.
+investigation physically distinct from the Regulatory Report; idempotent under reprocessing from any watermark. *(As
+built by `P13-TSK-020`: "per subject" is per **party** - the customer over all its accounts, its movements read from
+the journal's record by its accounts as subject or customer counterparty, its windows cut on the value date, its AML
+alerts the party's; the rules run inside the intake's claim.)*
 **Not:** Fraud Detection (synchronous, in the money transaction, never from the journal), nor kyc's onboarding
 screening or Counterparty Screening (a decision at a moment about a party; monitoring is ongoing and about patterns —
 rescreening on list updates is requested through kyc), nor reconciliation (which compares the platform's records with

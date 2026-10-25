@@ -272,10 +272,13 @@ class MonitoringRulesDatabaseTest {
         sweepers.add(() -> asSystem(() -> inTransaction(uow -> recompute.recompute(uow, holder.party(),
                 CorrelationId.generate(IDS)))));
         List<Object> outcomes = atOnce(sweepers);
-        assertThat(outcomes).hasSize(2);
+        assertThat(outcomes).as("both sweepers completed - the second waited on the head, never failed").hasSize(2);
         assertThat(alerts(holder.party(), "STRUCTURING")).isEqualTo(1);
         assertThat(count("SELECT count(*) FROM risk.risk_case WHERE subject_ref = ? AND kind = 'AML'",
                 holder.party().toString())).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM risk.customer_risk_profile_version WHERE party_id = ?",
+                holder.party())).as("one rating, one version: the second judge re-read the head after the first")
+                .isEqualTo(1);
     }
 
     // ------------------------------------------------------------------ the composition

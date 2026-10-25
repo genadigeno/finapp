@@ -52,6 +52,13 @@ answer. Rests on `PHASE_13_PLAN.md` §1.1, §2.1, §2.2 (C4), §3.1, §4, §5, �
    from transfers, payments and crossborder are hints that pull the permit forward; the sweep reads rows. A crash
    mid-claim lapses the permit; the next claim re-reads from the committed watermark and the born-once rows absorb the
    overlap (plan §14).
+   *(As built by `P13-TSK-020`, 2026-10-25: the per-subject leg runs **inside** the intake's claim - after the inserts,
+   before the advance, each subject under a savepoint - because the claim's commit is the only durable record that its
+   movements were seen; "per subject" is per **party** (a monitored transaction's subject is a customer account, joined
+   to its party through `MonitoredParties`; every AML alert is the party's, so `-018`'s queue serves it); the windows are
+   cut on the movement's value date and every alert's key is that date's bucket, never a run's clock;
+   `CORRIDOR_HIGH_RISK` reads `ABSENT` (the journal carries no corridor) and merchant subjects are not judged - both
+   owner items. `PHASE_13_PLAN.md` §12.7's as-built note.)*
 
 4. **Reprocessing is idempotent by construction** (`INV-RSK-09`). An operator under `RISK_POLICY_ADMINISTER` orders a
    re-run from an earlier watermark, audited; monitored transactions, alerts, cases, actions and filings are all

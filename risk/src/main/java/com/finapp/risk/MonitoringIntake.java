@@ -22,6 +22,11 @@ import java.util.UUID;
  * partial batch never advances and a crash mid-batch leaves the committed watermark for the next claim to re-read
  * from (plan section 14). Ten sweepers ingest once by the row lock and the unique.
  *
+ * <p><strong>The rule leg rides the claim</strong> (`P13-TSK-020`, {@link BatchLeg}, {@link MonitoringRun}): after the
+ * inserts and before the advance, the batch's rows - born or absorbed - are judged on the claim's own unit of work, so
+ * the rows, what was judged of them and the advance commit together; and the batch is cut before the entry whose
+ * customer accounts would exceed the claim's bound ({@code subjectsPerClaim}), the rest read by the next claim at once.
+ *
  * <p>The port's contract is checked, never trusted: entries must sort strictly after the watermark and ascend, or the
  * batch is refused whole - an adapter that returned an entry at or before the position would advance over it.
  */
@@ -98,7 +103,8 @@ public final class MonitoringIntake {
      * One batch's outcome.
      *
      * @param claimed whether this call held the watermark; false means another sweeper does, or the permit is not due
-     * @param read how many entries the port served
+     * @param read how many entries this claim consumed - the port's page, or its part before the subject bound's cut
+     *     (`P13-TSK-020`)
      * @param born how many rows were born - fewer than {@code read} when earlier rows absorbed them
      * @param unclassified how many of the read entries classified {@code UNCLASSIFIED}
      * @param full whether the batch was full, so the permit was left due now and the next claim continues at once

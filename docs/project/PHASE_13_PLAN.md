@@ -420,6 +420,11 @@ transaction as the platform and the outcome is a second conditional edge. `-012`
 `RiskMonitoringSchedule` is moved here (the override's action is a `risk_action` row); `RiskMonitoringSchedule` keeps
 the intake, profile and case legs.)*
 
+*(As built by `P13-TSK-020`, 2026-10-25: the rule leg runs **inside** the intake leg's claim (`MonitoringIntake.BatchLeg`,
+`MonitoringRun`) - one transaction per batch as before, R7 → R1 → every touched head (R8, ascending) → per party R5 →
+R4 → R5, each party under a savepoint; no new schedule and no new `LEASE_PROTECTED_SCHEDULERS` entry; `finapp.risk.monitoring.subject{outcome}`,
+`.unplaced` and `.latency` its meters.)*
+
 ### 7.6 The latency budget and what a breach becomes
 
 T-eval runs in-lock, so its cost is paid by every money movement. Budget: **p99 ≤ 50 ms** for the reads and upserts
@@ -900,6 +905,30 @@ production source. `UNCLASSIFIED` is recorded and gauged here; the alert row is 
 {source, fromSequence, previousSequence}`, refuses a point ahead of the watermark `422 risk.ReprocessingNotBehind`
 and a missing reason `422 risk.ReasonRequired`, and restarts the intake at the millisecond's floor.)*
 
+*(As built by `P13-TSK-020`, 2026-10-25 — **the rule leg rides the intake's claim** (`DESIGN-020` F7: the claim's
+commit is the only durable record that its movements were seen): inside the batch's own transaction, after its rows are
+inserted and before the watermark advances, `MonitoringRun` pins the `MONITORING` version (R1; none `ACTIVE` → each
+touched party counted `not_judged`, nothing raised, no head enrolled), places every touched customer account - each
+row's subject and customer counterparty - behind its party (`MonitoredParties`; `app`'s `AccountMonitoredParties` over
+accounts' new system read `customerOf` and party's `partyOfCustomer`), locks every touched party's head first, ascending
+(R8 - never under a case row), and then judges each party under a savepoint of its own: each touched movement evaluated
+over its **value date's** windows with its own amount sealed, the profile's own evaluation as of the database's instant, every alert in one `raiseAll`, the profile's version;
+a party that throws is rolled back alone and counted. So the rows, what was judged of them and the advance commit
+together, and a reprocessing or a crash re-judges into the same keys. **The subject is the party** (F1): a monitored
+transaction's subject is a customer account, which no join places, and every AML alert is the `PARTY`'s - placed by the
+existing join and served by `-018`'s queue. **The readings** (`MonitoredMovements`): the party's movements over all its
+accounts as it sees them (an internal transfer's receiver read from the payer's row by its customer counterparty,
+inverted - `risk V015`'s index; its own internal moves and the record's corrections not movements of it), cut on the
+value date (`D1`, `D7`, `D30` from the velocity windows' anchor; `H1` `ABSENT`), the amounts and flows in the policy's
+currency only and exact, the dormancy since the last movement or the earliest account opening, `VELOCITY_*` and
+`DORMANT_THEN_ACTIVE`'s sum `-006`'s committed `PARTY` windows (another currency or dimension `ABSENT`) - all merged into
+`-014`'s one `MonitoringReadings`. **The alerts** (`MonitoringRules`): `AML` on the party, keyed by the rule window's
+bucket (`D1` for `ROUND_AMOUNT` and `CORRIDOR_HIGH_RISK`), constant severity per kind, the evidence the journal entries the
+rule judged; a hit with no journal entry yet raises nothing until a run reads one. **Not built:** `CORRIDOR_HIGH_RISK`
+reads `ABSENT` - the journal carries no corridor (owner item); merchant subjects are not judged (owner item). The subject
+loop is bounded per claim: the intake cuts a batch where its customer accounts would exceed
+`finapp.risk.monitoring.subjects-per-claim` (100).)*
+
 ### 12.8 Cases, actions and the owning domains (ADR-0110, ADR-0112)
 
 A case is the unit of a person's judgement: opened by T-eval (`REVIEW`, `HOLD`, a policy-flagged `DENY`), by the
@@ -1041,6 +1070,9 @@ the two the plan names are `RiskEvaluationUnavailable` and `RiskPolicyNoneActive
 | `finapp.risk.policy.active` | gauge (1 per operation with an `ACTIVE` version) | operation, policy_version | 0 for an operation production judges |
 | `finapp.risk.monitoring.lag` | gauge (journal head − watermark, entries) | source | lag growing for an hour |
 | `finapp.risk.monitoring.unclassified` | gauge (`UNCLASSIFIED` monitored transactions) | — | above 0 |
+| `finapp.risk.monitoring.subject` | counter (`P13-TSK-020`: every party the rule leg met) | outcome (`judged`, `failed`, `not_judged`) | any `failed` increase |
+| `finapp.risk.monitoring.unplaced` | counter (`P13-TSK-020`: customer accounts no party could be placed behind) | — | any increase |
+| `finapp.risk.monitoring.latency` | timer (`P13-TSK-020`: one party's rule leg, its head already held - the claim locks every head first) | — | beside `evaluation.latency` - M3's split trigger, measured by the storm |
 | `finapp.risk.velocity.proof` | counter | verdict | any `DIVERGED` |
 | `finapp.risk.profile.rating` | gauge (parties per rating) | bucket | — |
 | `finapp.risk.sweeper.enabled` | gauge (1 / 0) per schedule | kind (`monitoring`, `action`) | 0 in production |
@@ -1098,7 +1130,7 @@ wave-D lesson), so a task's number is below every number of a later wave; the wa
 | `P13-TSK-017` | Downstream actions through the owning domains | M13.5 | `-016` | `risk V010` | `DOD-SEC`, `DOD-EVENT`, `DOD-API` |
 | `P13-TSK-018` | Case and alert queues, reads, and the tipping-off control | M13.5 | `-016` | none *(as built: `risk V014` - the suppression's persons widened by name, the keyset indexes)* | `DOD-API`, `DOD-SEC` |
 | `P13-TSK-019` | Monitored transactions: the journal intake, the watermark, reprocessing | M13.6 | `-001` | `risk V004` | `DOD-DOMAIN`, `DOD-FIN` |
-| `P13-TSK-020` | Monitoring rules and AML alerts | M13.6 | `-019`, `-015` | none | `DOD-DOMAIN` |
+| `P13-TSK-020` | Monitoring rules and AML alerts | M13.6 | `-019`, `-015` | none *(as built: `risk V015` - the counterparty index the design found missing)* | `DOD-DOMAIN` |
 | `P13-TSK-021` | The AML case and the regulatory report artefact | M13.6 | `-016`, `-020` | `risk V011` | `DOD-DOMAIN`, `DOD-API`, `DOD-SEC` |
 | `P13-TSK-022` | Rescreening on screening-list updates | M13.6 | `-005`, `-016` | `risk V012` | `DOD-DOMAIN`, `DOD-SEC` |
 | `P13-TSK-023` | The risk proofs, the explanation door and replay | M13.7 | `-006`, `-019`, `-016` | none | `DOD-FIN`, `DOD-API` |

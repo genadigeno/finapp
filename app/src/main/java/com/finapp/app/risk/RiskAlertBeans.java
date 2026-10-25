@@ -27,8 +27,9 @@ import org.springframework.context.annotation.Configuration;
  * meters, and the machine, whose analysts' party is read through credit's {@code IdentityActingParty} (the one read of
  * it the platform has) and whose subjects' party through {@link RiskSubjectParties} ({@code RiskProfileBeans}'
  * {@code IdentitySubjectParties}: a party and an identity placed today). The rules raise through {@link AlertRaiser}
- * ({@code alerts::raiseAll}): `-013`'s account-takeover rules in T-eval and the profile leg; `-014`'s and `-020`'s
- * next; the suppression door is `-018`'s ({@link RiskAlertDesk}), the alert queue its {@link com.finapp.risk.AlertQueue}.
+ * ({@code alerts::raiseAll}): `-013`'s account-takeover rules in T-eval and the profile leg; `-014`'s abuse rules; and
+ * `-020`'s AML monitoring rules in the profile leg and T-mon's rule leg (one call per party, on the PARTY subject this
+ * join places); the suppression door is `-018`'s ({@link RiskAlertDesk}), the alert queue its {@link com.finapp.risk.AlertQueue}.
  */
 @Configuration(proxyBeanMethods = false)
 public class RiskAlertBeans {

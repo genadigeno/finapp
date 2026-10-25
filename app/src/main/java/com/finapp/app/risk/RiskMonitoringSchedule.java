@@ -31,8 +31,8 @@ import org.springframework.context.SmartLifecycle;
  *
  * <p><strong>The rule leg</strong> (`P13-TSK-020`; {@code MonitoringRun}; ADR-0111 decision 3): inside each batch's own
  * transaction, after its rows are inserted and before the watermark advances - the {@code MONITORING} pin (R1), then
- * every party the rows touch, each under a savepoint of its own, its head locked (R8), its movements judged, its AML
- * alerts born once and folded into its open case, its profile recomputed. A party whose leg throws is rolled back alone
+ * every touched party's head locked, ascending (R8), then each party under a savepoint of its own, its movements judged,
+ * its AML alerts born once and folded into its open case, its profile recomputed. A party whose leg throws is rolled back alone
  * and counted ({@code finapp.risk.monitoring.subject{outcome=failed}}); the batch goes on. So the rows, what was judged
  * of them and the advance commit together, and a crash leaves the committed watermark for the next claim to redo.
  *
