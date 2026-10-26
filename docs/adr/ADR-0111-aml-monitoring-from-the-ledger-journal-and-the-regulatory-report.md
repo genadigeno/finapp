@@ -229,5 +229,6 @@ ADR-0107, ADR-0109, ADR-0110.
   compliance" stays open until then.
 - `RISK_LIFECYCLES.md` §Regulatory report and §Monitored transaction are the machines' record; the classification
   register is `P13-TSK-019`'s and is corrected here as built.
+- *(As built, `P13-TSK-023`, 2026-10-26 - decision 1's census.)* `MonitoringCensus` proves monitored = journal by sequence one UTC day at a time: the journal's entry ids of the day through `MonitoredLedger.entryIds` (`app`, the journal's primary key) against the monitored rows' `journal_entry_id`s, as sets - a lost entry and a phantom row never cancel out - bounded by the watermark (pending behind it, ahead of a reprocessing). Decision 6's filing has its census too: `FILED` reports over `regulatory_report_due`, a report whose permit came more than one inquiry interval ago overdue. Both name a difference; nothing is corrected.
 - **Acceptance.** `Proposed` at the Phase 12 → 13 transition (2026-10-22); the Phase 13 review (`P13-DOC-001`) reads
   this ADR against the code, corrects it in place with dated notes, and accepts it.

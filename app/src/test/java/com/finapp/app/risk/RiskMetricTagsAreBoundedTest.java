@@ -54,7 +54,9 @@ class RiskMetricTagsAreBoundedTest {
             // rescreening leg, P13-TSK-022).
             "kind", union(List.of(names(AlertKind.values()), names(CaseKind.values()), names(ActionKind.values()),
                     Set.of(RiskMonitoringMetrics.KIND, RiskActionMetrics.KIND, RegulatoryReportMetrics.KIND,
-                            RescreeningMetrics.KIND))),
+                            RescreeningMetrics.KIND),
+                    // P13-TSK-023: the censuses' kinds (finapp.risk.census).
+                    names(com.finapp.risk.CensusKind.values()))),
             "severity", names(AlertSeverity.values()),
             // A suppression's reason code; the fail-safe's two reason codes.
             "reason_code", union(List.of(names(SuppressionReason.values()), names(ReasonCode.values()))),
@@ -70,9 +72,14 @@ class RiskMetricTagsAreBoundedTest {
                     lower(names(com.finapp.risk.RegulatoryFilingProvider.Outcome.values())),
                     Set.of(RegulatoryReportMetrics.FAILED),
                     // What became of a claimed rescreening permit (P13-TSK-022), lower-cased.
-                    lower(names(com.finapp.risk.RescreeningObserver.Conclusion.values())))),
+                    lower(names(com.finapp.risk.RescreeningObserver.Conclusion.values())),
+                    // P13-TSK-023 (the review's I1): a reading of the proofs completed or failed.
+                    Set.of(RiskProofMetrics.COMPLETED, RiskProofMetrics.FAILED))),
             "operation", names(RiskOperation.values()),
-            "verdict", names(RiskDecision.values()),
+            // A decision; the velocity proof's and the censuses' verdicts (P13-TSK-023).
+            "verdict", union(List.of(names(RiskDecision.values()),
+                    names(com.finapp.risk.VelocityProof.Verdict.values()),
+                    names(com.finapp.risk.ProofVerdict.values()))),
             "rule", names(RuleKind.values()),
             "source", Set.of(MonitoringWatermark.LEDGER_JOURNAL));
 

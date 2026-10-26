@@ -21520,15 +21520,17 @@
       },
       "ReprocessingReceipt": {
         "properties": {
-          "fromSequence": {
-            "format": "int64",
+          "itemCount": {
+            "format": "int32",
             "type": "integer"
           },
-          "previousSequence": {
-            "format": "int64",
-            "type": "integer"
+          "ruleSetId": {
+            "type": "string"
           },
-          "source": {
+          "runId": {
+            "type": "string"
+          },
+          "sourceCode": {
             "type": "string"
           }
         },
@@ -21536,18 +21538,14 @@
       },
       "ReprocessingRequest": {
         "properties": {
-          "fromSequence": {
-            "format": "int64",
-            "type": "integer"
-          },
           "reason": {
             "maxLength": 1000,
-            "minLength": 0,
+            "minLength": 1,
             "type": "string"
           }
         },
         "required": [
-          "fromSequence"
+          "reason"
         ],
         "type": "object"
       },
@@ -22217,6 +22215,24 @@
         },
         "type": "object"
       },
+      "RiskAlertCountView": {
+        "properties": {
+          "alerts": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RiskAlertPageView": {
         "properties": {
           "alerts": {
@@ -22226,6 +22242,21 @@
             "type": "array"
           },
           "next": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskAlertRuleCountView": {
+        "properties": {
+          "alerts": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "ruleCode": {
             "type": "string"
           }
         },
@@ -22296,6 +22327,100 @@
         },
         "type": "object"
       },
+      "RiskAlertsReportView": {
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "census": {
+            "$ref": "#/components/schemas/RiskBornOnceCensusView"
+          },
+          "date": {
+            "type": "string"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/RiskAlertCountView"
+            },
+            "type": "array"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/RiskAlertRuleCountView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "RiskAssessmentCensusRowView": {
+        "properties": {
+          "assessments": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "commands": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "matched": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "missingCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "orphaned": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "orphanedCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reconciled": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "unrecordable": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskAssessmentCensusView": {
+        "properties": {
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/RiskAssessmentCensusRowView"
+            },
+            "type": "array"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RiskAssessmentView": {
         "properties": {
           "amount": {
@@ -22337,6 +22462,9 @@
           },
           "engine": {
             "type": "string"
+          },
+          "explanation": {
+            "$ref": "#/components/schemas/RiskExplanationView"
           },
           "failSafeReason": {
             "type": "string"
@@ -22422,6 +22550,55 @@
           "to": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RiskBornOnceCensusView": {
+        "properties": {
+          "duplicates": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "raised": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/RiskBornOnceRowView"
+            },
+            "type": "array"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskBornOnceRowView": {
+        "properties": {
+          "duplicates": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "held": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "keys": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "raised": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "window": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -22524,6 +22701,21 @@
             "type": "array"
           },
           "text": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskCaseCountView": {
+        "properties": {
+          "cases": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "status": {
             "type": "string"
           }
         },
@@ -22744,6 +22936,216 @@
         },
         "type": "object"
       },
+      "RiskCasesReportView": {
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "disposed": {
+            "items": {
+              "$ref": "#/components/schemas/RiskDispositionCountView"
+            },
+            "type": "array"
+          },
+          "filings": {
+            "$ref": "#/components/schemas/RiskFilingCensusView"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "oneOpen": {
+            "$ref": "#/components/schemas/RiskOneOpenCensusView"
+          },
+          "opened": {
+            "items": {
+              "$ref": "#/components/schemas/RiskCaseCountView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "RiskDayReplayFirstView": {
+        "properties": {
+          "assessmentId": {
+            "type": "string"
+          },
+          "diverged": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "firstDivergedRule": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "operation": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskDayReplayOperationView": {
+        "properties": {
+          "diverged": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "identical": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "replayed": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RiskDayReplayView": {
+        "properties": {
+          "after": {
+            "type": "string"
+          },
+          "closed": {
+            "type": "boolean"
+          },
+          "date": {
+            "type": "string"
+          },
+          "diverged": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "firstDiverged": {
+            "$ref": "#/components/schemas/RiskDayReplayFirstView"
+          },
+          "identical": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "next": {
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/RiskDayReplayOperationView"
+            },
+            "type": "array"
+          },
+          "replayed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "verdict": {
+            "type": "string"
+          },
+          "withheld": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RiskDecisionRowView": {
+        "properties": {
+          "assessments": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "challengeSatisfied": {
+            "type": "boolean"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "failSafeCause": {
+            "type": "string"
+          },
+          "judgedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "velocityOutcome": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskDecisionsReportView": {
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "census": {
+            "$ref": "#/components/schemas/RiskAssessmentCensusView"
+          },
+          "date": {
+            "type": "string"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/RiskReasonCountView"
+            },
+            "type": "array"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/RiskDecisionRowView"
+            },
+            "type": "array"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/RiskVersionCountView"
+            },
+            "type": "array"
+          },
+          "withheld": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RiskDispositionCountView": {
+        "properties": {
+          "cases": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "disposition": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RiskDispositionView": {
         "properties": {
           "disposedAt": {
@@ -22770,12 +23172,113 @@
         },
         "type": "object"
       },
+      "RiskEvidenceItemView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "signal": {
+            "$ref": "#/components/schemas/RiskSignalEvidenceView"
+          },
+          "transaction": {
+            "$ref": "#/components/schemas/RiskTransactionEvidenceView"
+          }
+        },
+        "type": "object"
+      },
       "RiskEvidenceView": {
         "properties": {
           "id": {
             "type": "string"
           },
           "kind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskExplainedBandView": {
+        "properties": {
+          "decision": {
+            "type": "string"
+          },
+          "of": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "position": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RiskExplainedRuleView": {
+        "properties": {
+          "contribution": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "hardDecision": {
+            "type": "string"
+          },
+          "judged": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "ordinal": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "outcome": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskExplanationView": {
+        "properties": {
+          "band": {
+            "$ref": "#/components/schemas/RiskExplainedBandView"
+          },
+          "challengeSatisfied": {
+            "type": "boolean"
+          },
+          "decidingRules": {
+            "items": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "failSafe": {
+            "$ref": "#/components/schemas/RiskFailSafeView"
+          },
+          "permits": {
+            "type": "boolean"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/RiskExplainedRuleView"
+            },
+            "type": "array"
+          },
+          "score": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "step": {
+            "type": "string"
+          },
+          "velocityOutcome": {
             "type": "string"
           }
         },
@@ -22813,6 +23316,127 @@
             "type": "integer"
           },
           "toMinor": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RiskFailSafeView": {
+        "properties": {
+          "band": {
+            "$ref": "#/components/schemas/RiskExplainedBandView"
+          },
+          "cause": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskFilingCensusView": {
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "due": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "filed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "overdue": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskMonitoringCensusView": {
+        "properties": {
+          "ahead": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "entries": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "missingCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "monitored": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pending": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "phantom": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "phantomCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "verdict": {
+            "type": "string"
+          },
+          "watermarkThrough": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskOneOpenCensusView": {
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/RiskOneOpenRowView"
+            },
+            "type": "array"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskOneOpenRowView": {
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "open": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "subjects": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "subjectsOverOne": {
             "format": "int64",
             "type": "integer"
           }
@@ -23197,6 +23821,21 @@
         ],
         "type": "object"
       },
+      "RiskReasonCountView": {
+        "properties": {
+          "assessments": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RiskReplayRequest": {
         "properties": {
           "reason": {
@@ -23348,6 +23987,39 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "RiskReprocessingReceipt": {
+        "properties": {
+          "fromSequence": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "previousSequence": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskReprocessingRequest": {
+        "properties": {
+          "fromSequence": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "fromSequence"
+        ],
         "type": "object"
       },
       "RiskRuleHitView": {
@@ -23506,6 +24178,42 @@
         ],
         "type": "object"
       },
+      "RiskSignalEvidenceView": {
+        "properties": {
+          "attributes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "observedAt": {
+            "type": "string"
+          },
+          "producer": {
+            "type": "string"
+          },
+          "signalId": {
+            "type": "string"
+          },
+          "sourceEventType": {
+            "type": "string"
+          },
+          "sourceEventVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "subjectKind": {
+            "type": "string"
+          },
+          "subjectRef": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RiskSuppressionDecisionRequest": {
         "properties": {
           "reason": {
@@ -23550,6 +24258,206 @@
           },
           "status": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskTransactionEvidenceView": {
+        "properties": {
+          "amountMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "counterpartyKind": {
+            "type": "string"
+          },
+          "counterpartyPurpose": {
+            "type": "string"
+          },
+          "counterpartyRef": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "entryType": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "journalSequence": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "postedAt": {
+            "type": "string"
+          },
+          "postingNamespace": {
+            "type": "string"
+          },
+          "reversesJournalEntryId": {
+            "type": "string"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "subjectKind": {
+            "type": "string"
+          },
+          "subjectRef": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskVelocityDivergenceView": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "dimension": {
+            "type": "string"
+          },
+          "fromCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "fromSumMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "recordedCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "recordedSumMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "subjectRef": {
+            "type": "string"
+          },
+          "toCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "toSumMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "windowKind": {
+            "type": "string"
+          },
+          "windowStart": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskVelocityLinkView": {
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "beforeFloor": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "divergedCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "divergences": {
+            "items": {
+              "$ref": "#/components/schemas/RiskVelocityDivergenceView"
+            },
+            "type": "array"
+          },
+          "evidenceThrough": {
+            "type": "string"
+          },
+          "explained": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "judged": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "pending": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "unprovable": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskVelocityReportView": {
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "journal": {
+            "$ref": "#/components/schemas/RiskVelocityLinkView"
+          },
+          "known": {
+            "type": "boolean"
+          },
+          "monitoring": {
+            "$ref": "#/components/schemas/RiskMonitoringCensusView"
+          },
+          "proofAsOf": {
+            "type": "string"
+          },
+          "record": {
+            "$ref": "#/components/schemas/RiskVelocityLinkView"
+          },
+          "verdict": {
+            "type": "string"
+          },
+          "withheld": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RiskVersionCountView": {
+        "properties": {
+          "assessments": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "policyVersion": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -34843,6 +35751,114 @@
         }
       }
     },
+    "/v1/operator/reports/risk/alerts": {
+      "get": {
+        "operationId": "readRiskAlertsReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskAlertsReportView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/risk/cases": {
+      "get": {
+        "operationId": "readRiskCasesReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskCasesReportView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/risk/decisions": {
+      "get": {
+        "operationId": "readRiskDecisionsReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskDecisionsReportView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/risk/velocity": {
+      "get": {
+        "operationId": "readRiskVelocityReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskVelocityReportView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/risk/alerts": {
       "get": {
         "operationId": "readRiskAlertQueue",
@@ -35022,6 +36038,59 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RiskAlertView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/assessments/replay": {
+      "post": {
+        "operationId": "replayRiskAssessmentsOfDay",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskReplayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskDayReplayView"
                 }
               }
             },
@@ -35615,6 +36684,49 @@
         }
       }
     },
+    "/v1/operator/risk/cases/{caseId}/evidence/{evidenceKind}/{evidenceId}": {
+      "get": {
+        "operationId": "readRiskCaseEvidence",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "caseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "evidenceKind",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "evidenceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskEvidenceItemView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/risk/cases/{caseId}/reports": {
       "post": {
         "operationId": "draftRegulatoryReport",
@@ -35969,7 +37081,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ReprocessingRequest"
+                "$ref": "#/components/schemas/RiskReprocessingRequest"
               }
             }
           },
@@ -35980,7 +37092,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ReprocessingReceipt"
+                  "$ref": "#/components/schemas/RiskReprocessingReceipt"
                 }
               }
             },

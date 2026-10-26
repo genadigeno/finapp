@@ -136,6 +136,16 @@ final class EvaluationWorld {
             }
 
             @Override
+            public List<VelocityEvidence.Counted> uncountedSince(Connection unitOfWork, Instant from) {
+                return assessmentStore.uncountedSince(unitOfWork, from);
+            }
+
+            @Override
+            public Optional<Instant> firstTransferAt(Connection unitOfWork) {
+                return assessmentStore.firstTransferAt(unitOfWork);
+            }
+
+            @Override
             public Optional<JudgedPayment> judgedPayment(Connection unitOfWork, CommandRef commandRef) {
                 return assessmentStore.judgedPayment(unitOfWork, commandRef);
             }

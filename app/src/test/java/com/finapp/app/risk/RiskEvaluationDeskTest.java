@@ -85,6 +85,13 @@ class RiskEvaluationDeskTest {
     private final RiskAssessmentDesk desk = new RiskAssessmentDesk(
             new RiskAssessments(store, new RiskPolicies(policyStore()),
                     (unitOfWork, actor) -> Optional.ofNullable(partyOfActor.get(actor.id())), recording(), IDS, CLOCK),
+            // The day's replay is P13-TSK-023's, judged by DailyReplayTest and RiskProofDesksTest; unused here.
+            new com.finapp.risk.DailyReplay((com.finapp.risk.RiskProofReads) Proxy.newProxyInstance(
+                    RiskEvaluationDeskTest.class.getClassLoader(), new Class<?>[] {com.finapp.risk.RiskProofReads.class},
+                    (proxy, method, args) -> {
+                        throw new UnsupportedOperationException("the day's replay is not this suite's");
+                    }), new RiskPolicies(policyStore()),
+                    (unitOfWork, actor) -> Optional.ofNullable(partyOfActor.get(actor.id())), recording(), IDS, CLOCK),
             new RiskTransactions() {
                 @Override
                 public <R> R inTransaction(Function<Connection, R> work) {

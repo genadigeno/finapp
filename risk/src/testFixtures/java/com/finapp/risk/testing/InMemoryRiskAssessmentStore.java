@@ -82,8 +82,28 @@ public final class InMemoryRiskAssessmentStore implements RiskAssessmentStore {
         return rows.values().stream()
                 .filter(row -> row.velocity() == VelocityOutcome.COUNTED && !row.cutAt().orElseThrow().isBefore(from))
                 .sorted(Comparator.comparing(row -> row.cutAt().orElseThrow()))
-                .map(row -> new VelocityEvidence.Counted(row.movement(), row.cutAt().orElseThrow()))
+                .map(row -> new VelocityEvidence.Counted(row.movement(), row.cutAt().orElseThrow(),
+                        Optional.of(row.operation())))
                 .toList();
+    }
+
+    @Override
+    public List<VelocityEvidence.Counted> uncountedSince(Connection unitOfWork, Instant from) {
+        log.add("uncounted");
+        return rows.values().stream()
+                .filter(row -> row.velocity() == VelocityOutcome.UNCOUNTED
+                        && !row.cutAt().or(row::assessedAt).orElse(Instant.EPOCH).isBefore(from))
+                .sorted(Comparator.comparing(row -> row.cutAt().or(row::assessedAt).orElse(Instant.EPOCH)))
+                .map(row -> new VelocityEvidence.Counted(row.movement(), row.cutAt().or(row::assessedAt).orElseThrow(),
+                        Optional.of(row.operation())))
+                .toList();
+    }
+
+    @Override
+    public Optional<Instant> firstTransferAt(Connection unitOfWork) {
+        log.add("firstTransfer");
+        return rows.values().stream().filter(row -> row.operation() == RiskOperation.TRANSFER)
+                .map(row -> row.cutAt().or(row::assessedAt).orElse(Instant.EPOCH)).min(Comparator.naturalOrder());
     }
 
     @Override

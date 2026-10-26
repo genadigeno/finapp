@@ -2279,6 +2279,16 @@ class OwnershipIsScopedTest {
                                     "P13-TSK-022. As conclude: a claimed permit's id, locked in this transaction, the"
                                         + " permit moved a backoff ahead conditionally on PENDING and the claimed attempt.")),
                     Map.entry(
+                            "com.finapp.risk.JdbcRiskProofReads.signal",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-023. The evidence door's signal read: the id is served only when the"
+                                        + " case's file - read first on the same snapshot behind"
+                                        + " @RequiresPermission(RISK_INVESTIGATE), after the reader is placed and the"
+                                        + " case's subject judged not the reader's party (fail closed,"
+                                        + " risk.SelfDealingRefused) - holds that very reference; recorded risk.CaseRead"
+                                        + " before the answer. Risk's own row about a subject, owned by no party.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanTermsStore.insertTerms",
                             new Entry(
                                     Scope.ADMINISTERED,

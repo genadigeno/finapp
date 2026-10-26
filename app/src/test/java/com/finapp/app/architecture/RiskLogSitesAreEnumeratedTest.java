@@ -102,6 +102,15 @@ class RiskLogSitesAreEnumeratedTest {
             "RiskMonitoringSchedule.java|\"Risk profile recompute: {}\"|outcome.get().kind()",
             "RiskMonitoringSchedule.java|\"Risk monitoring sweep failed: {}\"|failure.getClass().getSimpleName()",
             "RiskPolicyMetrics.java|\"risk policy gauge unreadable: {}\"|unreadable.getClass().getSimpleName()",
+            // P13-TSK-023: the proofs' gauges - a diverged proof's verdict and a census's kind, both closed vocabularies;
+            // an unreadable reading's exception class. Never a window's subject, an id, an amount or a party.
+            "RiskProofMetrics.java|\"CRITICAL: the velocity proof diverged (INV-RSK-03): {}\"|reading.velocity().name()",
+            "RiskProofMetrics.java|\"CRITICAL: a risk census diverged: {} {}\"|kind.name()|verdict.name()",
+            "RiskProofMetrics.java|\"Could not read the risk proofs; their gauges report absent rather than clean: {}\""
+                    + "|unreadable.getClass().getSimpleName()",
+            // The review's I1: a refresher that refused the reading - its exception class only.
+            "RiskProofMetrics.java|\"Could not start a reading of the risk proofs; their gauges keep the last: {}\""
+                    + "|refused.getClass().getSimpleName()",
             "RiskSignalIntake.java|\"No risk signal from {} {}: its payment was never judged\"|event.eventType()"
                     + "|event.eventId().value()",
             "RiskSignalIntake.java|\"Risk signal {} from {} {}: {}\"|signal.kind()|event.eventType()"

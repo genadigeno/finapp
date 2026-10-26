@@ -114,6 +114,17 @@ public final class RiskAssessments {
     }
 
     /**
+     * {@code assessment} explained (`P13-TSK-023`; {@link Explanation}) on the read's own unit of work: its sealed rows
+     * and its pinned version's band list - the version read by id, immutable; never the engine. A version that cannot be
+     * read leaves the bands unnamed.
+     */
+    public Explanation explanation(Connection unitOfWork, RiskAssessment assessment) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(assessment, "assessment");
+        return Explanation.of(assessment, pinned(unitOfWork, assessment));
+    }
+
+    /**
      * {@code id} replayed for {@code actor} on the caller's read-only snapshot - nothing recorded here.
      *
      * @throws SelfDealingRefused the assessment is the reader's own party's, or the reader is placed in no party
@@ -121,14 +132,18 @@ public final class RiskAssessments {
      */
     public AssessmentReplay.Replay replay(Connection snapshot, RiskAssessmentId id, Actor actor) {
         RiskAssessment assessment = judged(snapshot, id, actor, "assessment-replay");
-        Optional<RiskPolicy> pinned = assessment.pin().flatMap(pin -> {
+        return AssessmentReplay.replay(assessment, pinned(snapshot, assessment));
+    }
+
+    /** The content of the version {@code assessment} pinned, when it pinned one and it can be read. */
+    private Optional<RiskPolicy> pinned(Connection unitOfWork, RiskAssessment assessment) {
+        return assessment.pin().flatMap(pin -> {
             try {
-                return Optional.of(policies.version(snapshot, pin.id()).policy());
+                return Optional.of(policies.version(unitOfWork, pin.id()).policy());
             } catch (RiskPolicyAdministration.PolicyNotFound absent) {
                 return Optional.empty();
             }
         });
-        return AssessmentReplay.replay(assessment, pinned);
     }
 
     /** Records {@code replay} - its verdict and the kinds that diverged, never a figure - with the analyst's reason. */

@@ -47,6 +47,19 @@ public class RiskCaseController {
 
     @NonNull private final RiskCaseDesk desk;
     @NonNull private final RiskQueueDesk queue;
+    @NonNull private final RiskEvidenceDesk evidence;
+
+    /**
+     * One piece of the case's evidence resolved (`P13-TSK-023`): {@code evidenceKind} {@code signals} or
+     * {@code journal-entries}, {@code evidenceId} a reference the case's file holds - after the file's own self-dealing
+     * judgement; audited {@code risk.CaseRead} ({@code act=evidence}).
+     */
+    @GetMapping(path = "/{caseId}/evidence/{evidenceKind}/{evidenceId}")
+    @RequiresPermission(PermissionName.RISK_INVESTIGATE)
+    public RiskEvidenceDesk.RiskEvidenceItemView readRiskCaseEvidence(@PathVariable("caseId") String caseId,
+            @PathVariable("evidenceKind") String evidenceKind, @PathVariable("evidenceId") String evidenceId) {
+        return evidence.read(caseId, evidenceKind, evidenceId);
+    }
 
     /**
      * A page of the case queue (`P13-TSK-018`): {@code status} one {@code CaseStatus} (every open one unless named),

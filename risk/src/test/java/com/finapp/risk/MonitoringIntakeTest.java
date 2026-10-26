@@ -276,6 +276,14 @@ class MonitoringIntakeTest {
         public long entriesBeyond(Connection unitOfWork, UUID afterEntryId, long cap) {
             return journal.stream().filter(e -> MonitoringIntake.compare(e.journalEntryId(), afterEntryId) > 0).count();
         }
+
+        @Override
+        public List<UUID> entryIds(Connection snapshot, UUID fromInclusive, UUID toExclusive) {
+            return journal.stream().map(MonitoredEntry::journalEntryId)
+                    .filter(id -> MonitoringIntake.compare(id, fromInclusive) >= 0
+                            && MonitoringIntake.compare(id, toExclusive) < 0)
+                    .toList();
+        }
     }
 
     private static final class FakeWatermarks implements MonitoringWatermarkStore {

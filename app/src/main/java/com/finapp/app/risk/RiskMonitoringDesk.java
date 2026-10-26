@@ -43,10 +43,10 @@ public final class RiskMonitoringDesk {
     }
 
     /** The receipt: the source, the sequence restarted from and where the watermark stood. Never the reason. */
-    public record ReprocessingReceipt(String source, long fromSequence, long previousSequence) {}
+    public record RiskReprocessingReceipt(String source, long fromSequence, long previousSequence) {}
 
     /** Orders the re-run of the ledger journal's intake from {@code fromSequence} (a millisecond of the journal's ids). */
-    public ReprocessingReceipt reprocess(String idempotencyKey, long fromSequence, String reason) {
+    public RiskReprocessingReceipt reprocess(String idempotencyKey, long fromSequence, String reason) {
         Objects.requireNonNull(idempotencyKey, "idempotencyKey");
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
@@ -65,7 +65,7 @@ public final class RiskMonitoringDesk {
                         outcome.body().orElseThrow(() -> new IllegalStateException("a reprocessing stores its receipt")),
                         StandardCharsets.UTF_8)
                 .split("\\|", -1);
-        return new ReprocessingReceipt(stored[0], Long.parseLong(stored[1]), Long.parseLong(stored[2]));
+        return new RiskReprocessingReceipt(stored[0], Long.parseLong(stored[1]), Long.parseLong(stored[2]));
     }
 
     /** The domain's refusals, in the API's words. */

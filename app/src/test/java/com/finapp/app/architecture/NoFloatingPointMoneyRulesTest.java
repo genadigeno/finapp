@@ -440,7 +440,14 @@ class NoFloatingPointMoneyRulesTest {
                     // count and a duration, never an amount: a case carries none.
                     "com.finapp.app.risk.RiskCaseBacklogMetrics",
                     "com.finapp.app.risk.RiskCaseBacklogMetrics$Cached",
-                    "com.finapp.app.risk.RiskCaseBacklogMetrics$Figures");
+                    "com.finapp.app.risk.RiskCaseBacklogMetrics$Figures",
+                    // P13-TSK-023. The SAME case again, for the risk proofs (bnpl's
+                    // BnplProofMetrics above): a verdict published as 1 or 0 per verdict tag through
+                    // the ToDoubleFunction Micrometer's Gauge imposes, NaN when unreadable. A flag of
+                    // which verdict a census reached, never an amount: the proofs' figures stay
+                    // longs in the risk module and reach no meter.
+                    "com.finapp.app.risk.RiskProofMetrics",
+                    "com.finapp.app.risk.RiskProofMetrics$Cached");
 
     // ---------------------------------------------------------------------
     // Guard: the rules must actually see the code they claim to protect.
