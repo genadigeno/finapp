@@ -383,6 +383,12 @@ class RiskMonitoringScheduleTest {
             return journal.stream().filter(entry -> after(entry.journalEntryId(), afterEntryId)).count();
         }
 
+        @Override
+        public List<UUID> entryIds(Connection snapshot, UUID fromInclusive, UUID toExclusive) {
+            return journal.stream().map(MonitoredEntry::journalEntryId)
+                    .filter(id -> !after(fromInclusive, id) && after(toExclusive, id)).toList();
+        }
+
         private static boolean after(UUID id, UUID position) {
             int most = Long.compareUnsigned(id.getMostSignificantBits(), position.getMostSignificantBits());
             return most != 0 ? most > 0

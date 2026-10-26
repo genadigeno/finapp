@@ -34,4 +34,11 @@ public interface MonitoredLedger {
      * reports; saturating, because a gauge behind a year's outage must not scan a year's journal.
      */
     long entriesBeyond(Connection unitOfWork, UUID afterEntryId, long cap);
+
+    /**
+     * The ids of every journal entry in {@code [fromInclusive, toExclusive)}, ascending - one day of the journal by
+     * sequence, the monitoring census's side of the ledger (`P13-TSK-023`; {@code INV-RSK-09}): a primary-key range, no
+     * lock, no line read.
+     */
+    List<UUID> entryIds(Connection snapshot, UUID fromInclusive, UUID toExclusive);
 }

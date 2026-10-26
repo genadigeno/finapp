@@ -100,7 +100,9 @@ public enum RiskAuditAction implements AuditableAction {
                     + " seal holds - never an amount, a subject, a score or a rule's parameters (INV-RSK-08). Raised too"
                     + " by the risk officer's override desk under RISK_OVERRIDE (GET .../assessments/{id}/overrides,"
                     + " P13-TSK-012): the overridden assessment served with its overrides, the summary door=override and"
-                    + " the overrides' count.",
+                    + " the overrides' count. Since P13-TSK-023 the read serves the explanation beside it - the rules in"
+                    + " order, each reading and contribution, the band reached by position, the step that decided, the"
+                    + " fail-safe - from the sealed rows and the pinned version, never a re-evaluation.",
             false),
 
     /** An analyst replayed a sealed risk assessment from its sealed inputs under its pinned policy and engine. */
@@ -110,7 +112,11 @@ public enum RiskAuditAction implements AuditableAction {
                     + " policy version and engine (POST /v1/operator/risk/assessments/{id}/replay, a reason required,"
                     + " P13-TSK-004; INV-RSK-01): IDENTICAL or DIVERGED, recorded in a transaction of its own before the"
                     + " verdict is answered (bnpl.Replayed's shape). Its target the assessment; the reason the analyst's;"
-                    + " the summary the verdict and the kinds that diverged - never a figure.",
+                    + " the summary the verdict and the kinds that diverged - never a figure. Raised too by the daily"
+                    + " replay (POST /v1/operator/risk/assessments/replay?date=, P13-TSK-023): every assessment of the"
+                    + " UTC day replayed under its own pinned pair on one snapshot; its target the day"
+                    + " (risk_assessment_day, the date), the summary the counts and the first divergent's id - never one"
+                    + " of the reader's own party.",
             true),
 
     /** An officer proposed an override of a DENY, HOLD or REVIEW decision (`P13-TSK-012`). */
@@ -345,7 +351,11 @@ public enum RiskAuditAction implements AuditableAction {
                     + " risk.SelfDealingRefused; such a case withheld from a page), committed in a transaction of its own"
                     + " before the answer. Its target the case (risk_case) or the queue (risk_case_queue, the status"
                     + " read); the summary the kind, status and counts of what the file held, or the page's count,"
-                    + " filter, cursor, ids served and withheld count - never a note, a subject or a reason.",
+                    + " filter, cursor, ids served and withheld count - never a note, a subject or a reason. Raised too"
+                    + " by the evidence door (GET .../cases/{caseId}/evidence/{signals|journal-entries}/{id},"
+                    + " P13-TSK-023): one reference the file holds resolved - a signal's codes or a monitored"
+                    + " transaction's amount - after the file's own judgement; the summary act=evidence, the kind and the"
+                    + " reference.",
             false),
 
     /** An AML officer drafted a regulatory report from a confirmed-suspicious AML case (`P13-TSK-021`). */
@@ -420,7 +430,20 @@ public enum RiskAuditAction implements AuditableAction {
                     + " the watermark row (monitoring_watermark, the source its id); the reason the officer's; the"
                     + " summary the sequence restarted from and where the watermark stood - never the reason, an"
                     + " amount or a party.",
-            true);
+            true),
+
+    /** An analyst was served a risk operations report (`P13-TSK-023`). */
+    REPORT_READ(
+            "risk.ReportRead",
+            "A holder of RISK_INVESTIGATE was served a risk operations report as of a UTC date (GET"
+                    + " /v1/operator/reports/risk/{decisions,alerts,cases,velocity}?date=, P13-TSK-023; F8): read on one"
+                    + " read-only REPEATABLE READ snapshot with the census it carries - the assessment census, the"
+                    + " born-once census, the one-open and filing censuses, the velocity proof made whole and the"
+                    + " monitoring census - committed in a transaction of its own before the answer (bnpl.ReportRead's"
+                    + " shape), so no report is served unrecorded. Its target the report (risk_report, the report's"
+                    + " name); the summary the report, the date, whether the platform had it, the rows and the verdict -"
+                    + " counts and codes, never an amount, a party or a subject (INV-RSK-08).",
+            false);
 
     private final String code;
     private final String description;

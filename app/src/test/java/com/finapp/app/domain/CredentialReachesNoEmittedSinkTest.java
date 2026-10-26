@@ -737,7 +737,12 @@ class CredentialReachesNoEmittedSinkTest {
                         // grounds, screened for card-number and account shapes at the domain (ReportContent.narrated)
                         // and by risk V016's CHECK; the approval's and the filing's body a REASON alone.
                         "RiskReportDraftRequest",
-                        "RiskReportDecisionRequest");
+                        "RiskReportDecisionRequest",
+                        // P13-TSK-023: the risk monitoring reprocessing's body (P13-TSK-019's), renamed from
+                        // ReprocessingRequest - which it shared with reconciliation's, so the contract published one
+                        // schema for two doors (ApiSchemaNamesAreUniqueTest). No secret: a sequence and a REASON.
+                        // The day's replay reuses RiskReplayRequest above.
+                        "RiskReprocessingRequest");
     }
 
     @Test

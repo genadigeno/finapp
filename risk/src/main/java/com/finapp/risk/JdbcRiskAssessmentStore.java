@@ -50,12 +50,25 @@ public final class JdbcRiskAssessmentStore implements RiskAssessmentStore {
 
     static final String INSERT_REASON = "INSERT INTO risk.risk_reason (assessment_id, position, code) VALUES (?, ?, ?)";
 
-    static final String COUNTED = "SELECT party_id, identity_id, source_account_id, destination_kind, destination_id,"
+    static final String COUNTED = "SELECT operation, party_id, identity_id, source_account_id, destination_kind, destination_id,"
             + " device_hash,"
             + " merchant_subject_id, session_id, amount_minor, currency, scale, velocity_cut_at FROM risk.risk_assessment"
             + " WHERE velocity_outcome = 'COUNTED' AND velocity_cut_at >= ? ORDER BY velocity_cut_at, id";
 
-    static final String JUDGED_PAYMENT = "SELECT party_id, merchant_subject_id FROM risk.risk_assessment"
+    /** The permitted, uncounted movements since an id position - the primary key's range (`P13-TSK-023`). */
+    static final String UNCOUNTED = "SELECT operation, party_id, identity_id, source_account_id, destination_kind,"
+            + " destination_id, device_hash, merchant_subject_id, session_id, amount_minor, currency, scale,"
+            + " coalesce(velocity_cut_at, assessed_at) AS counted_at FROM risk.risk_assessment"
+            + " WHERE id >= ? AND velocity_outcome = 'UNCOUNTED' ORDER BY id";
+
+    /**
+     * The first transfer ever judged - the primary key in minting order, the first {@code TRANSFER} row met
+     * (`P13-TSK-023`, the velocity proof's fixed floor).
+     */
+    static final String FIRST_TRANSFER = "SELECT coalesce(velocity_cut_at, assessed_at) AS judged_at"
+            + " FROM risk.risk_assessment WHERE operation = 'TRANSFER' ORDER BY id LIMIT 1";
+
+    static final String JUDGED_PAYMENT ="SELECT party_id, merchant_subject_id FROM risk.risk_assessment"
             + " WHERE operation IN ('CARD_PAYMENT', 'WALLET_PAYMENT') AND command_ref = ?"
             + " AND merchant_subject_id IS NOT NULL ORDER BY assessed_at DESC, id DESC LIMIT 1";
 
@@ -178,20 +191,52 @@ public final class JdbcRiskAssessmentStore implements RiskAssessmentStore {
     public List<VelocityEvidence.Counted> countedSince(Connection unitOfWork, Instant from) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(from, "from");
-        List<VelocityEvidence.Counted> counted = new ArrayList<>();
         try (PreparedStatement select = unitOfWork.prepareStatement(COUNTED)) {
             select.setObject(1, OffsetDateTime.ofInstant(from, ZoneOffset.UTC));
-            try (ResultSet row = select.executeQuery()) {
-                while (row.next()) {
-                    RiskAssessment.Subjects subjects = subjects(row);
-                    Money amount = Money.ofPersisted(row.getLong("amount_minor"),
-                            CurrencyCode.of(row.getString("currency")), row.getInt("scale"));
-                    counted.add(new VelocityEvidence.Counted(subjects.movement(amount),
-                            row.getObject("velocity_cut_at", OffsetDateTime.class).toInstant()));
-                }
-            }
+            return movements(select, "velocity_cut_at");
         } catch (SQLException failure) {
             throw failed("reading the counted assessments", failure);
+        }
+    }
+
+    @Override
+    public List<VelocityEvidence.Counted> uncountedSince(Connection unitOfWork, Instant from) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(from, "from");
+        try (PreparedStatement select = unitOfWork.prepareStatement(UNCOUNTED)) {
+            select.setObject(1, MonitoringWatermark.positionAt(from.toEpochMilli()));
+            return movements(select, "counted_at");
+        } catch (SQLException failure) {
+            throw failed("reading the uncounted assessments", failure);
+        }
+    }
+
+    @Override
+    public Optional<Instant> firstTransferAt(Connection unitOfWork) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        try (PreparedStatement select = unitOfWork.prepareStatement(FIRST_TRANSFER);
+                ResultSet row = select.executeQuery()) {
+            if (!row.next()) {
+                return Optional.empty();
+            }
+            return Optional.ofNullable(row.getObject("judged_at", OffsetDateTime.class)).map(OffsetDateTime::toInstant);
+        } catch (SQLException failure) {
+            throw failed("reading the first judged transfer", failure);
+        }
+    }
+
+    private static List<VelocityEvidence.Counted> movements(PreparedStatement select, String instant)
+            throws SQLException {
+        List<VelocityEvidence.Counted> counted = new ArrayList<>();
+        try (ResultSet row = select.executeQuery()) {
+            while (row.next()) {
+                RiskAssessment.Subjects subjects = subjects(row);
+                Money amount = Money.ofPersisted(row.getLong("amount_minor"),
+                        CurrencyCode.of(row.getString("currency")), row.getInt("scale"));
+                counted.add(new VelocityEvidence.Counted(subjects.movement(amount),
+                        row.getObject(instant, OffsetDateTime.class).toInstant(),
+                        Optional.of(RiskOperation.valueOf(row.getString("operation")))));
+            }
         }
         return counted;
     }
@@ -237,7 +282,7 @@ public final class JdbcRiskAssessmentStore implements RiskAssessmentStore {
         }
     }
 
-    private static RiskAssessment assessment(ResultSet row, String inputs, List<RuleHit> hits, List<ReasonCode> reasons)
+    static RiskAssessment assessment(ResultSet row, String inputs, List<RuleHit> hits, List<ReasonCode> reasons)
             throws SQLException {
         RiskOperation operation = RiskOperation.valueOf(row.getString("operation"));
         UUID policyVersionId = row.getObject("policy_version_id", UUID.class);

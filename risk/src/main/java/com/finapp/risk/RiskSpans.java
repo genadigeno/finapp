@@ -39,7 +39,8 @@ public final class RiskSpans {
     public static final String RESCREEN = "risk.rescreen";
     /**
      * The velocity proof - every live window recomputed from its evidence in one snapshot (`P13-TSK-006` reserves it;
-     * `-023`'s schedule records it). T-eval's own velocity steps run inside {@link #EVALUATE}.
+     * as built by `-023` no schedule runs it: the velocity report's door records it). T-eval's own velocity steps run
+     * inside {@link #EVALUATE}.
      */
     public static final String VELOCITY_PROOF = "risk.velocity.proof";
     /**
@@ -71,8 +72,10 @@ public final class RiskSpans {
     public static final String EXPLAIN = "risk.explain";
     /** The investigator's queues - a page of alerts or of cases (`P13-TSK-018`). */
     public static final String QUEUE = "risk.queue";
-    /** The case read - one case's file (`P13-TSK-018`). */
+    /** The case read - one case's file (`P13-TSK-018`); and one piece of its evidence resolved (`P13-TSK-023`). */
     public static final String CASE_READ = "risk.case.read";
+    /** The proofs' doors - the decisions, alerts and cases reports and their censuses (`P13-TSK-023`). */
+    public static final String PROOF = "risk.proof";
 
     private RiskSpans() {
     }

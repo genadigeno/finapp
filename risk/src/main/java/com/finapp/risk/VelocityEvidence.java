@@ -35,24 +35,72 @@ public interface VelocityEvidence {
     /** Every counted movement since {@code from} and the instant the record is complete through - one snapshot's read. */
     Record read(Connection snapshot, Instant from);
 
-    /** One movement the windows should have counted, and the instant it was counted at. */
-    record Counted(VelocityMovement movement, Instant at) {
+    /**
+     * One movement the windows should have counted, the instant it was counted at, and - when the evidence knows it - the
+     * judged operation it was (`P13-TSK-023`: the record names it, so the journal's cross-check can tell a window of
+     * transfers alone from one that also counts what posts later or never).
+     */
+    record Counted(VelocityMovement movement, Instant at, Optional<RiskOperation> operation) {
         public Counted {
             Objects.requireNonNull(movement, "movement");
             Objects.requireNonNull(at, "at");
+            Objects.requireNonNull(operation, "operation");
+        }
+
+        /** A movement whose operation the evidence does not name. */
+        public Counted(VelocityMovement movement, Instant at) {
+            this(movement, at, Optional.empty());
         }
 
         @Override
         public String toString() {
-            return "Counted[" + movement + " at " + at + "]";
+            return "Counted[" + movement + " at " + at + operation.map(named -> ", " + named).orElse("") + "]";
         }
     }
 
-    /** The evidence: the counted movements, and the instant through which no counted movement is missing from them. */
-    record Record(List<Counted> movements, Instant completeThrough) {
+    /**
+     * The evidence: the counted movements, the instant through which no counted movement is missing from them, and -
+     * the record's own account (`P13-TSK-023`) - the movements it <em>permitted without counting</em>
+     * ({@link VelocityOutcome#UNCOUNTED}: the fail-safe's "the money moves uncounted"), at their assessment's instant
+     * (an uncounted transfer posts and is rightly absent from every window, so a link judging windows against postings
+     * subtracts its figures from what the postings expect), and {@code firstTransferAt} - the instant of the first
+     * transfer the record <em>ever</em> holds, whatever its decision: the transfer seam's first judgement, its go-live,
+     * fixed however far back the read reaches (the review's second round: a floor taken from the read itself slid with
+     * it). Empty when the record has never held a transfer.
+     */
+    record Record(List<Counted> movements, Instant completeThrough, List<Counted> uncounted,
+            Optional<Instant> firstTransferAt) {
         public Record {
             movements = List.copyOf(Objects.requireNonNull(movements, "movements"));
             Objects.requireNonNull(completeThrough, "completeThrough");
+            uncounted = List.copyOf(Objects.requireNonNull(uncounted, "uncounted"));
+            Objects.requireNonNull(firstTransferAt, "firstTransferAt");
+        }
+
+        /**
+         * A record whose read is its whole history - the suites' worlds: the first transfer is the earliest among
+         * {@code movements} and {@code uncounted}.
+         */
+        public Record(List<Counted> movements, Instant completeThrough, List<Counted> uncounted) {
+            this(movements, completeThrough, uncounted, earliestTransfer(movements, uncounted));
+        }
+
+        /** Evidence that names no uncounted movement - the journal's, and every evidence before `-023`. */
+        public Record(List<Counted> movements, Instant completeThrough) {
+            this(movements, completeThrough, List.of());
+        }
+
+        private static Optional<Instant> earliestTransfer(List<Counted> movements, List<Counted> uncounted) {
+            Instant earliest = null;
+            for (List<Counted> each : List.of(movements, uncounted)) {
+                for (Counted counted : each) {
+                    if (counted.operation().filter(operation -> operation == RiskOperation.TRANSFER).isPresent()
+                            && (earliest == null || counted.at().isBefore(earliest))) {
+                        earliest = counted.at();
+                    }
+                }
+            }
+            return Optional.ofNullable(earliest);
         }
     }
 
@@ -80,6 +128,6 @@ public interface VelocityEvidence {
             movement.destinationAccount(subject);
             counterparty.ifPresent(movement::sourceAccount);
         }
-        return Optional.of(new Counted(movement.build(), row.postedAt()));
+        return Optional.of(new Counted(movement.build(), row.postedAt(), Optional.of(RiskOperation.TRANSFER)));
     }
 }

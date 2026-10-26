@@ -33,6 +33,26 @@ public interface RiskAssessmentStore {
     List<VelocityEvidence.Counted> countedSince(Connection unitOfWork, Instant from);
 
     /**
+     * The movement of every assessment that permitted its movement <em>without counting it</em>
+     * ({@link VelocityOutcome#UNCOUNTED}) minted at or after {@code from}, at its cut or else its seal (`P13-TSK-023`) -
+     * the velocity proof's journal link subtracts the transfers among them: such a transfer posts and is rightly absent
+     * from its windows (an uncounted withdrawal or payment never posts as a journal transfer). Entered by the
+     * primary key over the id's minting millisecond; no lock. Every store of record answers it; a suite's fake that
+     * never seals an uncounted movement may leave the default.
+     */
+    default List<VelocityEvidence.Counted> uncountedSince(Connection unitOfWork, Instant from) {
+        return List.of();
+    }
+
+    /**
+     * The instant of the first {@link RiskOperation#TRANSFER} assessment ever sealed, whatever its decision - the
+     * transfer seam's first judgement, its go-live (`P13-TSK-023`, the review's second round): the velocity proof's
+     * journal floor, fixed however far back a read reaches. Empty when no transfer was ever judged. Entered by the
+     * primary key in minting order; no lock.
+     */
+    Optional<Instant> firstTransferAt(Connection unitOfWork);
+
+    /**
      * The payer and the merchant of the checkout payment judged under {@code commandRef} - the intent's id (`-010`) -
      * as its sealed {@code CARD_PAYMENT} or {@code WALLET_PAYMENT} assessment names them; empty when risk never judged
      * that payment (`P13-TSK-014`: a refund's and a chargeback's attribution, read from risk's own record, never from

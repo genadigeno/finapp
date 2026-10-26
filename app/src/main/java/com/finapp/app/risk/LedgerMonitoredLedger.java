@@ -34,8 +34,16 @@ import java.util.UUID;
  * <p>Every statement this adapter causes is a {@code SELECT} under the application role's existing grant: it locks no
  * journal row, writes nothing of the ledger's and reads no balance - the "read-only principal" the task asks for, as
  * the platform's single application role can provide it ({@code DESIGN-019} section 17).
+ *
+ * <p>{@link #entryIds} (`P13-TSK-023`, the monitoring census's side of the journal) is this adapter's own statement over
+ * {@code ledger.journal_entry}'s primary key - ids only, the {@code LendingCreditExposure} precedent of an {@code app}
+ * read over another schema - because the ledger's store has no range read and a census is no reason to grow the
+ * ledger's port.
  */
 public final class LedgerMonitoredLedger implements MonitoredLedger {
+
+    /** One day of the journal by sequence: the entry ids of a primary-key range, ascending. */
+    static final String ENTRY_IDS = "SELECT id FROM ledger.journal_entry WHERE id >= ? AND id < ? ORDER BY id";
 
     private static final String POSTING_PREFIX = PostingService.IDEMPOTENCY_SCOPE + ":";
     private static final String REVERSAL_PREFIX = ReversalService.IDEMPOTENCY_SCOPE + ":";
@@ -97,6 +105,25 @@ public final class LedgerMonitoredLedger implements MonitoredLedger {
     @Override
     public long entriesBeyond(Connection unitOfWork, UUID afterEntryId, long cap) {
         return journal.countBeyond(unitOfWork, afterEntryId, cap);
+    }
+
+    @Override
+    public List<UUID> entryIds(Connection snapshot, UUID fromInclusive, UUID toExclusive) {
+        Objects.requireNonNull(snapshot, "snapshot");
+        List<UUID> ids = new ArrayList<>();
+        try (java.sql.PreparedStatement select = snapshot.prepareStatement(ENTRY_IDS)) {
+            select.setObject(1, Objects.requireNonNull(fromInclusive, "fromInclusive"));
+            select.setObject(2, Objects.requireNonNull(toExclusive, "toExclusive"));
+            try (java.sql.ResultSet row = select.executeQuery()) {
+                while (row.next()) {
+                    ids.add(row.getObject(1, UUID.class));
+                }
+            }
+        } catch (java.sql.SQLException failure) {
+            throw new com.finapp.risk.RiskStorageException(
+                    "the journal's day could not be read: SQLSTATE " + failure.getSQLState());
+        }
+        return ids;
     }
 
     /** The command key behind the ledger's scope-and-key pair; a scope of another shape is served as it is. */

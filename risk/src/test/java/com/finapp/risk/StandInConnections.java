@@ -30,4 +30,22 @@ final class StandInConnections {
                     throw new UnsupportedOperationException("a stand-in connection is never used: " + method.getName());
                 });
     }
+
+    /** A read-only {@code REPEATABLE READ} snapshot in a transaction (`P13-TSK-023`) - the proofs' connection. */
+    static Connection snapshot() {
+        return declaring(true, false, Connection.TRANSACTION_REPEATABLE_READ);
+    }
+
+    /** A connection declaring {@code readOnly}, {@code autoCommit} and {@code isolation}, refusing everything else. */
+    static Connection declaring(boolean readOnly, boolean autoCommit, int isolation) {
+        return (Connection) Proxy.newProxyInstance(StandInConnections.class.getClassLoader(),
+                new Class<?>[] {Connection.class}, (proxy, method, arguments) -> switch (method.getName()) {
+                    case "isReadOnly" -> readOnly;
+                    case "getAutoCommit" -> autoCommit;
+                    case "getTransactionIsolation" -> isolation;
+                    case "toString" -> "StandInSnapshot";
+                    default -> throw new UnsupportedOperationException(
+                            "a stand-in snapshot is never used: " + method.getName());
+                });
+    }
 }

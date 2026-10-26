@@ -28,7 +28,7 @@ import java.util.UUID;
  */
 public final class JdbcRiskSignalStore implements RiskSignalStore {
 
-    private static final String COLUMNS =
+    static final String COLUMNS =
             "id, kind, subject_kind, subject_ref, source_event_id, source_event_type, source_event_version, producer,"
                     + " observed_at, correlation_id, causation_id, product, status, previous_status, bucket,"
                     + " previous_bucket, country, currency, business_date, days_past_due, defaulted, agreement_version,"
@@ -214,7 +214,7 @@ public final class JdbcRiskSignalStore implements RiskSignalStore {
         }
     }
 
-    private static RiskSignal read(ResultSet row) throws SQLException {
+    static RiskSignal read(ResultSet row) throws SQLException {
         SignalKind kind = SignalKind.valueOf(row.getString("kind"));
         Map<String, String> attributes = new LinkedHashMap<>();
         for (SignalKind.Attribute attribute : kind.attributes()) {

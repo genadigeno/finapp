@@ -41,9 +41,9 @@ public class RiskMonitoringController {
     @RequiresPermission(PermissionName.RISK_POLICY_ADMINISTER)
     @RequiresIdempotencyKey
     @ResponseStatus(HttpStatus.ACCEPTED)
-    public RiskMonitoringDesk.ReprocessingReceipt orderReprocessing(
+    public RiskMonitoringDesk.RiskReprocessingReceipt orderReprocessing(
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
-            @Valid @RequestBody ReprocessingRequest body) {
+            @Valid @RequestBody RiskReprocessingRequest body) {
         return desk.reprocess(idempotencyKey, body.fromSequence(), body.reason());
     }
 
@@ -52,5 +52,5 @@ public class RiskMonitoringController {
      * {@code risk.ReprocessingNotBehind} for a point ahead of the watermark).
      */
     @ClosedBody
-    public record ReprocessingRequest(@NotNull Long fromSequence, @Size(max = 1000) String reason) {}
+    public record RiskReprocessingRequest(@NotNull Long fromSequence, @Size(max = 1000) String reason) {}
 }
