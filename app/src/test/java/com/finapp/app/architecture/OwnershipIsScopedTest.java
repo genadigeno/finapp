@@ -2279,6 +2279,19 @@ class OwnershipIsScopedTest {
                                     "P13-TSK-022. As conclude: a claimed permit's id, locked in this transaction, the"
                                         + " permit moved a backoff ahead conditionally on PENDING and the claimed attempt.")),
                     Map.entry(
+                            "com.finapp.risk.JdbcRiskProofReads.assessmentsOfDay",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-023 (classified at P13-TSK-022's integration, when its widened detector"
+                                        + " saw the Optional cursor): the day replay's keyset page on a read-only"
+                                        + " snapshot behind @RequiresPermission(RISK_INVESTIGATE) - POST"
+                                        + " /v1/operator/risk/assessments/replay, reasoned and recorded risk.Replayed."
+                                        + " The cursor is the request's, refused unless it is an assessment of the day"
+                                        + " replayed (DailyReplay), the reader placed in a party first (Queues.reader)"
+                                        + " and the reader's own party's assessments counted but never named (withheld);"
+                                        + " the rows are risk's own sealed assessments, replayed and never served - the"
+                                        + " answer counts and names the first divergent by its id alone.")),
+                    Map.entry(
                             "com.finapp.risk.JdbcRiskProofReads.signal",
                             new Entry(
                                     Scope.ADMINISTERED,
