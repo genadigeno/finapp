@@ -24558,7 +24558,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   then the contract and doc guards and the two proof suites re-run 75 across 15 classes, 0 failed; `:app:architectureTest`
   not run (the coordinator's); `RiskProofsDatabaseTest` (11) and `RiskReportsApiTest` (4) written and owed (C5).
 
-**P13-TSK-024 — Operating risk: meters, alerts, reports, runbook §9, the activation gate** — `PLANNED`
+**P13-TSK-024 — Operating risk: meters, alerts, reports, runbook §9, the activation gate** — `READY` (2026-10-26; marked by the coordinator at `P13-TSK-023`'s merge, master `f11bc5cd`; every dependency `COMPLETE`)
 - **Objective**: the phase operable — every `PHASE_13_PLAN.md` §15 series registered eagerly and guarded, the
   Prometheus rules, the spans, `OPERATIONS_RUNBOOK.md` §9 with the **activation gate** (the preconditions for the first
   policy activation in production) and the risk operations procedures (a case backlog, a filing unknown, a velocity
