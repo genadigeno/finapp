@@ -2354,10 +2354,11 @@ Risk Signal and raises an Alert on a hit.
 **Not:** a Screening Result — kyc screens and owns the result and its evidence; `risk` asks, and owns only the list
 fact, the permits and what it records from the answer (`ROADMAP.md` Refinement 3). Nor a Risk Policy Version: no rule
 reads the list itself. *(As built by `P13-TSK-022`, `risk V018`, 2026-10-26: `RECORDED → ACTIVE → RETIRED`, recorded and
-activated by two persons, the predecessor retired beside the activation; each permit (one per party and version) records
-kyc's case-bound screening of the list's type only when kyc was asked it after the activation - by the ask, never
-the answer (`P13-TSK-022`'s review); an older screening is not a rescreening, and the permit waits and fails at its bound, counted. kyc has no door yet that re-screens a decided
-party, so the permits of parties screened before the activation fail until it does - an owner item.)*
+activated by two persons, the predecessor retired beside the activation; each permit (one per `ACTIVE` or `PENDING`
+party and version) asks kyc's re-screening door (the owner's decision O1, kyc `V011`) for a post-decision `RESCREEN`
+check of the list's type under the permit's key - evidence beside the KYC decision, never a re-decision - and records
+that keyed answer, asked after the activation on the database's clock; a hit is the `SCREENING_HIT` fact alert in the
+party's `AML` case. A version whose permits failed is re-driven by a successor version, never by hand.)*
 **Owned by:** `risk`
 
 ### Regulatory Report

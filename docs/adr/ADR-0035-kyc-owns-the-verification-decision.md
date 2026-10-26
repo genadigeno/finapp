@@ -71,3 +71,29 @@ Financial impact: none in Phase 2; Phase 3 inherits a queryable onboarding gate.
 
 When the projection moves behind events (first phase that needs it), the staleness bound must be
 stated and monitored (`INV-BAL-05`'s shape).
+
+## Amendment — a list update re-screens beside the decision (`P13-TSK-022`, 2026-10-26)
+
+*The owner's decision O1, "add the kyc door"; the coordinator's default for its semantics, to be ratified by the owner at
+`P13-DOC-001`.* When a sanctions or PEP list changes, kyc's decided party must be screened against it - and kyc never
+re-asks an answered question, while a new case would re-run identity and documents, need fresh consent, be visible to the
+customer and could not be decided for an `ACTIVE` customer. So the decision this ADR places in `kyc` gains one
+neighbour, never a rival:
+
+- **A post-decision check.** `CheckPurpose.RESCREEN` (kyc `V011`): a `SANCTIONS` or `PEP` check asked on the customer's
+  latest case under risk's permit key (`verification_check_rescreen_once`: one key, one question), its ask stamped on the
+  database's clock, dispatched and answered by the run's own choreography (`VerificationRunService.rescreen`: the
+  dispatch committed, the provider asked holding no connection, the outcome with its evidence and its trail).
+- **Evidence beside the decision, never a re-decision.** The case's status, the decision and the customer's relationship
+  do not move; no review task opens. kyc's onboarding readers name `purpose = 'ONBOARDING'` (`CheckStore.forCase`, the
+  run's convergence, the budget's count), `ChecksAssessment` reads onboarding checks only, the one-in-flight index holds
+  onboarding checks only, and the callback door assesses only on an onboarding check - on both the run's path and the
+  provider's late callback. The purpose and the key are frozen (`UPDATE` narrowed to the machine's two columns).
+- **The hit is risk's to work.** Risk's rescreening records it as a `SCREENING_HIT` signal and raises the `SCREENING_HIT`
+  fact alert, folded into the party's `AML` case - the person who works it is risk's investigator, not kyc's reviewer.
+  Whether a sanctions match should also open kyc work is the owner's to ratify at `P13-DOC-001`.
+- **Read where it matters.** `CheckStore.allForCase` - onboarding and rescreen alike - is the one read beside the
+  onboarding ones, for risk's screening-hit reading (`KycScreeningClearances`, judged per type), so T-eval judges a party
+  a list update found as a hit from the moment kyc decided it.
+
+`INV-LIFE-04` and `INV-KYC-02` carry the amendment; a changed circumstance of the *person* still opens a new case.

@@ -16,7 +16,7 @@ import java.util.UUID;
  * The rescreening leg's steps (`P13-TSK-022`; {@code PHASE_13_PLAN.md} sections 7.1 T-list, 7.5, 12.10;
  * {@code RISK_LIFECYCLES.md} section 4.10; {@code INV-RSK-06}, {@code INV-RSK-02}, {@code INV-RSK-08}) - the enqueue of an
  * activated list version's permits, and each permit's three steps; {@code app}'s {@code RescreeningDriver} runs them on
- * {@code RiskMonitoringSchedule}, every instance, no leader.
+ * {@code RiskActionSchedule} (its third leg since kyc's door made it a provider caller), every instance, no leader.
  *
  * <h2>The enqueue - one batch, one transaction</h2>
  *
@@ -39,40 +39,38 @@ import java.util.UUID;
  *   <li>{@link #conclude} - in one transaction: the permit {@code FOR UPDATE} (R9), acted on only while {@code PENDING}
  *       at the claimed attempt (a slower conclusion of an earlier claim records nothing), then judged:
  *       <ul>
- *         <li>a screening kyc was <strong>asked after the version's activation</strong> (by {@link #REQUEST_SKEW}) and
- *             has decided is the party's rescreening under it: the {@code MONITORING} pin for a hit (R1), the signal
- *             {@code SCREENING_CLEARED} or
- *             {@code SCREENING_HIT} born once - its source the permit (R3) - the permit {@code DONE}, and for a hit the
- *             {@code SCREENING_HIT} alert born once and folded into the party's {@code AML} case (R5 → R4 → R5);</li>
+ *         <li>a screening kyc was <strong>asked at or after the version's activation</strong> - the permit's own keyed
+ *             check, both instants the database's - and has decided is the party's rescreening under it: the signal
+ *             {@code SCREENING_CLEARED} or {@code SCREENING_HIT} born once - its source the permit (R3) - the permit
+ *             {@code DONE}, and for a hit the {@code SCREENING_HIT} fact alert born once and folded into the party's
+ *             {@code AML} case (R5 → R4 → R5);</li>
  *         <li>an older screening ({@code STALE} - kyc has not screened the party under this version), one in flight, none,
  *             or kyc unavailable: the permit re-permitted, backed off - {@code FAILED} with the cause at the bound;</li>
- *         <li>no {@code ACTIVE} customer relationship any more: {@code DONE(SKIPPED)}.</li>
+ *         <li>no {@code ACTIVE} or {@code PENDING} customer relationship any more: {@code DONE(SKIPPED)}.</li>
  *       </ul></li>
  * </ol>
  *
  * <p><strong>Risk asks, kyc screens</strong> ({@code INV-RSK-02}): nothing here screens, and a stale, pending or
  * unavailable answer is never recorded as a clearance - the census of a version counts only what kyc decided under it.
  *
- * <p><strong>The hit's alert</strong> ({@code DESIGN-022} D9): kind {@code SCREENING_HIT}, rule {@code SCREENING_HIT} of the
- * {@code MONITORING} version in force - raised only when that version carries the rule (an alert names the policy rule that
- * raised it, ADR-0109); its window the {@code H1} bucket holding the version's activation (a database stamp on a born-once
- * fact, so every raiser of the version computes the same key); severity {@code CRITICAL}; evidence the hit's signal. With
- * no such rule the hit is recorded and counted {@code hit_not_alerted} - never silently.
+ * <p><strong>The hit's alert</strong> (the review's IMPORTANT 2, replacing {@code DESIGN-022} D9): a <em>fact</em>
+ * ({@link AlertKind#SCREENING_HIT}, {@code risk V018}) - its own code its rule, no policy naming it, so no policy in
+ * force (or one without a screening rule) can leave a sanctions hit unalerted; about the {@code PARTY}, its window the
+ * {@code D1} bucket holding the version's activation (a database stamp on a born-once fact, so every raiser of the
+ * version computes the same key); severity {@code CRITICAL}; evidence exactly the hit's signal. Two lists' or versions'
+ * hits of one party whose activations share a day meet one alert (the second signal recorded and its permit naming it
+ * - owner item).
+ * <p><strong>The answer is kyc's door's</strong> (the owner's decision O1): kyc re-asks a decided party under the
+ * permit's key, so "asked at or after the activation" is true by construction for a permit's own check and judged here
+ * on one clock - kept as the rule, never assumed.
  */
 public final class RescreeningRun {
 
     /** A hit's alert severity - constant, so two raisers of one key agree. */
     public static final AlertSeverity HIT_SEVERITY = AlertSeverity.CRITICAL;
 
-    /** The bucket a hit's alert speaks for: the hour its list version came into force. */
-    public static final WindowKind HIT_WINDOW = WindowKind.H1;
-
-    /**
-     * How far after the activation kyc's ask must be to count under it - the instances' clock skew the plan admits
-     * ({@code PHASE_13_PLAN.md} section 7.4, {@link VelocityProof#SKEW}), because kyc stamps its ask on an instance's
-     * clock and the activation is the database's.
-     */
-    public static final Duration REQUEST_SKEW = VelocityProof.SKEW;
+    /** The bucket a hit's alert speaks for: the day its list version came into force - a fact's window ({@code D1}). */
+    public static final WindowKind HIT_WINDOW = WindowKind.D1;
 
     /** The leg's bounds: how many claims a permit takes before it fails, and the backoff between them. */
     public record Bounds(int maxAttempts, Duration firstBackoff, Duration maxBackoff) {
@@ -121,21 +119,19 @@ public final class RescreeningRun {
     private final ActiveParties activeParties;
     private final PartyRescreening kyc;
     private final RiskSignals signals;
-    private final RiskPolicies policies;
     private final AlertRaiser alerts;
     private final IdGenerator ids;
     private final RescreeningObserver observer;
     private final Bounds bounds;
 
     public RescreeningRun(ScreeningListStore lists, RescreeningPermitStore permits, ActiveParties activeParties,
-            PartyRescreening kyc, RiskSignals signals, RiskPolicies policies, AlertRaiser alerts, IdGenerator ids,
-            RescreeningObserver observer, Bounds bounds) {
+            PartyRescreening kyc, RiskSignals signals, AlertRaiser alerts, IdGenerator ids, RescreeningObserver observer,
+            Bounds bounds) {
         this.lists = Objects.requireNonNull(lists, "lists");
         this.permits = Objects.requireNonNull(permits, "permits");
         this.activeParties = Objects.requireNonNull(activeParties, "activeParties");
         this.kyc = Objects.requireNonNull(kyc, "kyc");
         this.signals = Objects.requireNonNull(signals, "signals");
-        this.policies = Objects.requireNonNull(policies, "policies");
         this.alerts = Objects.requireNonNull(alerts, "alerts");
         this.ids = Objects.requireNonNull(ids, "ids");
         this.observer = Objects.requireNonNull(observer, "observer");
@@ -283,15 +279,16 @@ public final class RescreeningRun {
     // ------------------------------------------------------------------ the judgements
 
     /**
-     * True when kyc was <strong>asked</strong> {@code screened} after the version came into force - a rescreening under
-     * it (`P13-TSK-022`'s review). Judged by the ask, never the answer: a check dispatched before the activation and
-     * decided after it screened the list before this one, and counting it would record a clearance the version never
-     * gave - a false clearance. The two instants are two clocks (kyc stamps {@code requested_at} on the requesting
-     * instance's, the activation is the database's), so the ask must clear the activation by {@link #REQUEST_SKEW}: a
-     * check asked within it is judged stale - the conservative side, costing at most a re-ask.
+     * True when kyc was <strong>asked</strong> {@code screened} at or after the version came into force - a rescreening
+     * under it (`P13-TSK-022`'s review, IMPORTANT 3). Judged by the ask, never the answer: a check dispatched before the
+     * activation and decided after it screened the list before this one, and counting it would record a clearance the
+     * version never gave - a false clearance. <strong>One clock</strong>: kyc's door stamps a rescreen's ask with the
+     * database's {@code clock_timestamp()} ({@code kyc V011}), the clock the activation is stamped on - so the review's
+     * interim ±5 s allowance is gone. A permit's own keyed check is asked after its activation by construction (the
+     * permit exists only once the version is in force); the rule is kept, never assumed.
      */
     static boolean current(PartyRescreening.Screened screened, RescreeningPermit permit) {
-        return !screened.requestedAt().isBefore(permit.listActivatedAt().plus(REQUEST_SKEW));
+        return !screened.requestedAt().isBefore(permit.listActivatedAt());
     }
 
     /**
@@ -313,9 +310,6 @@ public final class RescreeningRun {
         SignalKind kind = screened.hit() ? SignalKind.SCREENING_HIT : SignalKind.SCREENING_CLEARED;
         CorrelationId correlation = CorrelationId.of(locked.correlationId());
         CausationId cause = CausationId.of(locked.id().value().toString());
-        // (R1) before (R3): the hit's alert names the MONITORING version's rule, pinned FOR SHARE to this commit.
-        Optional<RiskPolicyVersion> pinned = screened.hit()
-                ? policies.active(unitOfWork, RiskOperation.MONITORING) : Optional.empty();
         RiskSignal signal = new RiskSignal(
                 RiskSignalId.next(ids),
                 kind,
@@ -336,24 +330,20 @@ public final class RescreeningRun {
         if (!screened.hit()) {
             return new Concluded(locked, RescreeningObserver.Conclusion.CLEARED, Optional.of(signal.id()));
         }
-        Optional<RiskPolicyVersion> naming = pinned.filter(version -> version.policy().rules().stream()
-                .anyMatch(rule -> rule.kind() == RuleKind.SCREENING_HIT));
-        if (naming.isEmpty()) {
-            return new Concluded(locked, RescreeningObserver.Conclusion.HIT_NOT_ALERTED, Optional.of(signal.id()));
-        }
-        alerts.raiseAll(unitOfWork, List.of(hitAlert(locked, naming.get().id(), signal.id(), correlation, cause)));
+        // A fact's alert (risk V018): no policy is read, so none - in force or missing - can leave a hit unalerted.
+        alerts.raiseAll(unitOfWork, List.of(hitAlert(locked, signal.id(), correlation, cause)));
         return new Concluded(locked, RescreeningObserver.Conclusion.HIT, Optional.of(signal.id()));
     }
 
     /**
-     * The hit's alert - born once per (party, {@code SCREENING_HIT}, the hour the version came into force), whoever raises
-     * it and whenever ({@code INV-RSK-06}).
+     * The hit's fact alert - born once per (party, {@code SCREENING_HIT}, the day the version came into force), whoever
+     * raises it and whenever ({@code INV-RSK-06}); its evidence exactly the signal born of the permit.
      */
-    static NewAlert hitAlert(RescreeningPermit permit, RiskPolicyVersionId version, RiskSignalId signal,
-            CorrelationId correlation, CausationId cause) {
-        return NewAlert.ofRule(AlertKind.SCREENING_HIT, HIT_SEVERITY, SignalSubject.of(SubjectKind.PARTY,
-                        permit.partyId()), RuleKind.SCREENING_HIT, AlertWindow.containing(HIT_WINDOW,
-                        permit.listActivatedAt()), version, AlertEvidence.signals(List.of(signal)), correlation, cause);
+    static NewAlert hitAlert(RescreeningPermit permit, RiskSignalId signal, CorrelationId correlation,
+            CausationId cause) {
+        return NewAlert.ofFact(AlertKind.SCREENING_HIT, HIT_SEVERITY, SignalSubject.of(SubjectKind.PARTY,
+                permit.partyId()), AlertWindow.containing(HIT_WINDOW, permit.listActivatedAt()), signal, correlation,
+                cause);
     }
 
     private Concluded waits(Connection unitOfWork, RescreeningPermit locked, RescreeningPermit.Cause cause) {

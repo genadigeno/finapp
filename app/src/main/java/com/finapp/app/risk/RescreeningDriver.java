@@ -15,7 +15,8 @@ import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * The rescreening leg of {@code RiskMonitoringSchedule} (`P13-TSK-022`; {@code PHASE_13_PLAN.md} sections 7.1 T-list, 7.5,
+ * The rescreening leg of {@code RiskActionSchedule} (`P13-TSK-022`; moved from {@code RiskMonitoringSchedule} with kyc's
+ * re-screening door, the leg now making kyc's provider calls; {@code PHASE_13_PLAN.md} sections 7.1 T-list, 7.5,
  * 12.10; {@code DESIGN-022} D3; {@code INV-RSK-06}, {@code INV-RSK-02}) - every instance, no lease, no leader, and the
  * platform the actor ({@link #asThePlatform}, the one enumerated site): a person activated the list version; the
  * platform rescreens.
@@ -38,7 +39,7 @@ import lombok.extern.slf4j.Slf4j;
  * asking, so a conclusion that always fails is bounded like an answer that never comes.
  */
 @Slf4j
-public final class RescreeningDriver {
+public final class RescreeningDriver implements RiskActionSchedule.RescreeningLeg {
 
     /** What one tick did. */
     public record Tick(int enqueued, int concluded) {
@@ -83,6 +84,18 @@ public final class RescreeningDriver {
     /** One tick of the leg, as the platform: the enqueue's batches, then the due permits. Never throws. */
     public Tick driveDue() {
         return asThePlatform(() -> new Tick(enqueue(), conclude()));
+    }
+
+    /** {@code RiskActionSchedule}'s step: one tick, how many permits it concluded. */
+    @Override
+    public int rescreen() {
+        return driveDue().concluded();
+    }
+
+    /** A defect that escaped the leg, counted as its own: {@code claim.failed{kind=rescreening}}. */
+    @Override
+    public void failed() {
+        metrics.claimFailed();
     }
 
     private int enqueue() {

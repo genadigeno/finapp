@@ -12,7 +12,6 @@ import com.finapp.risk.JdbcScreeningListStore;
 import com.finapp.risk.PartyRescreening;
 import com.finapp.risk.RescreeningPermitStore;
 import com.finapp.risk.RescreeningRun;
-import com.finapp.risk.RiskPolicies;
 import com.finapp.risk.RiskSignals;
 import com.finapp.risk.ScreeningListStore;
 import com.finapp.risk.ScreeningListVersions;
@@ -30,9 +29,9 @@ import org.springframework.context.annotation.Configuration;
 /**
  * Wiring for the rescreening on screening-list updates (`P13-TSK-022`; {@code PHASE_13_PLAN.md} section 12.10): the two
  * stores, T-list ({@link ScreeningListVersions}) and its doors, the ports {@code app} implements - {@link ActiveParties}
- * over party's store and {@link PartyRescreening} over kyc's case-bound screening - the leg's domain
- * ({@link RescreeningRun}) and its driver, which {@code RiskMonitoringBeans} hands {@code RiskMonitoringSchedule} as its
- * rescreening leg, and the meters - the leg's gauge eager either way.
+ * over party's store and {@link PartyRescreening} through kyc's re-screening door ({@code VerificationRunService::rescreen},
+ * the owner's decision O1) - the leg's domain ({@link RescreeningRun}) and its driver, which {@code RiskActionBeans}
+ * hands {@code RiskActionSchedule} as its third leg, and the meters - the leg's gauge eager either way.
  */
 @Configuration(proxyBeanMethods = false)
 public class RiskRescreeningBeans {
@@ -59,17 +58,25 @@ public class RiskRescreeningBeans {
         return new RiskScreeningListDesk(screeningListVersions, idempotentExecutor, riskTransactions, riskFlowScope);
     }
 
-    /** The census's parties: every {@code ACTIVE} customer relationship's, a keyset page of party's store. */
+    /** The census's parties: every {@code ACTIVE} or {@code PENDING} customer relationship's, a keyset page of party's store. */
     @Bean
     ActiveParties activeParties(PartyStore<Connection> partyStore) {
         return new PartyActiveParties(partyStore);
     }
 
-    /** risk asks, kyc screens: the case-bound screening as {@code app} reaches it today, on a snapshot of its own. */
+    /**
+     * risk asks, kyc screens: kyc's re-screening door ({@code VerificationRunService::rescreen}) where a verification
+     * provider is configured; where none is, {@link KycPartyRescreening.Door#UNAVAILABLE} - every ask unavailable, the
+     * permits backed off and failed at their bound, counted.
+     */
     @Bean
     PartyRescreening partyRescreening(PartyStore<Connection> partyStore, KycCaseStore<Connection> kycCaseStore,
-            CheckStore<Connection> checkStore, RiskTransactions riskTransactions) {
-        return new KycPartyRescreening(partyStore, kycCaseStore, checkStore, riskTransactions);
+            CheckStore<Connection> checkStore,
+            org.springframework.beans.factory.ObjectProvider<com.finapp.app.kyc.VerificationRunService> verificationRuns,
+            RiskTransactions riskTransactions) {
+        com.finapp.app.kyc.VerificationRunService runs = verificationRuns.getIfAvailable();
+        KycPartyRescreening.Door door = runs == null ? KycPartyRescreening.Door.UNAVAILABLE : runs::rescreen;
+        return new KycPartyRescreening(partyStore, kycCaseStore, checkStore, door, riskTransactions);
     }
 
     /** {@code finapp.risk.rescreening{outcome}}, {@code .rescreening.backlog}, {@code claim.failed{kind=rescreening}}. */
@@ -90,7 +97,6 @@ public class RiskRescreeningBeans {
             ActiveParties activeParties,
             PartyRescreening partyRescreening,
             RiskSignals riskSignals,
-            RiskPolicies riskPolicies,
             AlertRaiser alertRaiser,
             IdGenerator idGenerator,
             RescreeningMetrics rescreeningMetrics,
@@ -98,14 +104,15 @@ public class RiskRescreeningBeans {
             @Value("${finapp.risk.rescreening.first-backoff:PT5M}") Duration firstBackoff,
             @Value("${finapp.risk.rescreening.max-backoff:PT6H}") Duration maxBackoff) {
         return new RescreeningRun(screeningListStore, rescreeningPermitStore, activeParties, partyRescreening,
-                riskSignals, riskPolicies, alertRaiser, idGenerator, rescreeningMetrics,
+                riskSignals, alertRaiser, idGenerator, rescreeningMetrics,
                 new RescreeningRun.Bounds(maxAttempts, firstBackoff, maxBackoff));
     }
 
     /**
-     * The rescreening leg's driver - {@code RiskMonitoringSchedule}'s last leg: {@code finapp.risk.rescreening.lease}
-     * (2 min), {@code .enqueue-batch} (500 parties a transaction), {@code .enqueue-batches-per-tick} (4),
-     * {@code .permits-per-tick} (50).
+     * The rescreening leg's driver - {@code RiskActionSchedule}'s third leg: {@code finapp.risk.rescreening.lease}
+     * (2 min - longer than kyc's bounded provider call and its outcome's commit), {@code .enqueue-batch} (500 parties a
+     * transaction), {@code .enqueue-batches-per-tick} (4), {@code .permits-per-tick} (20 - each one kyc provider call at
+     * most, so a tick's provider time is bounded by twenty bounded calls).
      */
     @Bean
     RescreeningDriver rescreeningDriver(
@@ -116,21 +123,21 @@ public class RiskRescreeningBeans {
             @Value("${finapp.risk.rescreening.lease:PT2M}") Duration lease,
             @Value("${finapp.risk.rescreening.enqueue-batch:500}") int enqueueBatch,
             @Value("${finapp.risk.rescreening.enqueue-batches-per-tick:4}") int enqueueBatchesPerTick,
-            @Value("${finapp.risk.rescreening.permits-per-tick:50}") int permitsPerTick) {
+            @Value("${finapp.risk.rescreening.permits-per-tick:20}") int permitsPerTick) {
         return new RescreeningDriver(rescreeningRun, riskTransactions, rescreeningMetrics, riskFlowScope, lease,
                 enqueueBatch, enqueueBatchesPerTick, permitsPerTick);
     }
 
     /**
-     * Whether this instance runs the rescreening leg - a leg of the monitoring sweep, so the sweep's property decides it;
-     * eager either way (`P1-TSK-029`'s rule).
+     * Whether this instance runs the rescreening leg - a leg of the action schedule, so its property decides it; eager
+     * either way (`P1-TSK-029`'s rule).
      */
     @Bean
     Gauge riskRescreeningSweeperEnabled(
-            @Value("${finapp.risk.monitoring.sweeper.enabled:true}") boolean enabled, MeterRegistry meterRegistry) {
+            @Value("${finapp.risk.action.sweeper.enabled:true}") boolean enabled, MeterRegistry meterRegistry) {
         return Gauge.builder("finapp.risk.sweeper.enabled", () -> enabled ? 1 : 0)
                 .tag("kind", RescreeningMetrics.KIND)
-                .description("Whether this instance runs the risk rescreening leg (RiskMonitoringSchedule's)")
+                .description("Whether this instance runs the risk rescreening leg (RiskActionSchedule's)")
                 .register(meterRegistry);
     }
 }

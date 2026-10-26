@@ -48,7 +48,8 @@ class ScreeningListMigrationTest {
             "db/migration/risk/V013__downstream_risk_actions.sql",
             "db/migration/risk/V014__the_queues_and_the_suppression_persons.sql",
             "db/migration/risk/V015__monitored_transaction_by_counterparty.sql",
-            "db/migration/risk/V016__the_regulatory_report.sql");
+            "db/migration/risk/V016__the_regulatory_report.sql",
+            "db/migration/risk/V017__the_collections_case.sql");
 
     /** The list version's machine columns - exactly the application role's column-scoped UPDATE. */
     static final List<String> VERSION_MACHINE = List.of("status", "activated_by", "activated_by_type", "enqueue_next_at",
@@ -219,8 +220,31 @@ class ScreeningListMigrationTest {
     }
 
     @Test
-    @DisplayName("nothing else: every name new across V001 to V016 but the three re-made signal constraints, each dropped"
-            + " first under its own name; no other schema named; no row written")
+    @DisplayName("the review's IMPORTANT 2: the hit's alert is a fact - V017's two pairing CHECKs re-made with AlertKind's"
+            + " own-code kinds, SCREENING_HIT among them, and its shape held: the party, the activation's day, its one"
+            + " signal; the kind and rule-code lists left as V017 made them")
+    void theHitsAlertIsAFact() {
+        String own = Arrays.stream(AlertKind.values()).filter(AlertKind::ownCode).map(kind -> "'" + kind.name() + "'")
+                .collect(java.util.stream.Collectors.joining(", "));
+        assertThat(own).isEqualTo(
+                "'SCREENING_HIT', 'UNCLASSIFIED_TRANSACTION', 'VELOCITY_DIVERGENCE', 'OBLIGATION_DEFAULTED'");
+        assertThat(sql)
+                .contains("ADD CONSTRAINT risk_alert_rule_matches_kind CHECK ((kind IN (" + own + ")) = (rule_code IN ("
+                        + own + ")) AND (kind NOT IN (" + own + ") OR rule_code = kind));")
+                .contains("ADD CONSTRAINT risk_alert_policy_named CHECK ((kind IN (" + own
+                        + ")) = (policy_version_id IS NULL));")
+                .contains("ADD CONSTRAINT risk_alert_screening_hit_names_its_party CHECK (kind <> 'SCREENING_HIT' OR"
+                        + " (subject_kind = 'PARTY' AND window_kind = 'D1' AND cardinality(evidence_signal_ids) = 1"
+                        + " AND cardinality(evidence_assessment_ids) = 0 AND cardinality(evidence_journal_entry_ids) = 0));")
+                .doesNotContain("risk_alert_kind_is_known").doesNotContain("risk_alert_rule_code_is_known")
+                .doesNotContain("CONSTRAINT risk_alert_born_once");
+        assertThat(AlertKind.SCREENING_HIT.factSubject()).contains(SubjectKind.PARTY);
+        assertThat(RescreeningRun.HIT_WINDOW).isEqualTo(WindowKind.D1);
+    }
+
+    @Test
+    @DisplayName("nothing else: every name new across V001 to V017 but the three re-made signal constraints and the two"
+            + " re-made alert pairings, each dropped first under its own name; no other schema named; no row written")
     void everyNameNewAndNoOtherSchema() {
         String raw = statements(RESOURCE);
         Set<String> earlier = new HashSet<>();
@@ -233,7 +257,7 @@ class ScreeningListMigrationTest {
                 "rescreening_permit_signal_is_its_own", "rescreening_permit_permits_only_machine_edges");
         List<String> remade = made.stream().filter(earlier::contains).toList();
         assertThat(remade).containsExactlyInAnyOrder("risk_signal_kind_is_known", "risk_signal_subject_matches_kind",
-                "risk_signal_attributes_match_kind");
+                "risk_signal_attributes_match_kind", "risk_alert_rule_matches_kind", "risk_alert_policy_named");
         for (String name : remade) {
             assertThat(raw).as("%s dropped before it is made again", name).contains("DROP CONSTRAINT " + name + ";");
         }

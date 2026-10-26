@@ -27,7 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
  * The risk officer's screening list doors (`P13-TSK-022`; {@code PHASE_13_PLAN.md} sections 9, 11, 12.10;
  * {@code RISK_LIFECYCLES.md} section 4.10): a sanctions or PEP list version recorded by one person and activated by a
  * second from a {@code MULTI_FACTOR} session ({@code 202}: the rescreening of every {@code ACTIVE} party is enqueued by
- * {@code RiskMonitoringSchedule}'s rescreening leg, never in the door's transaction), each act keyed per principal
+ * {@code RiskActionSchedule}'s rescreening leg, never in the door's transaction), each act keyed per principal
  * ({@code risk.list:<type>:<id>}) and reasoned, both behind {@code RISK_POLICY_ADMINISTER}, held by {@code RISK_OFFICER}.
  * A person's doors: the operator the session types {@code CUSTOMER} is a person here. No list content crosses them - the
  * list is the provider's, kyc's - and no customer or merchant route reads a list version ({@code INV-RSK-08}).

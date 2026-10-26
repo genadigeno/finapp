@@ -66,9 +66,9 @@ public enum ChecksAssessment {
      *     assessing as clear-to-proceed would decide a case by absence of evidence
      */
     public static ChecksAssessment of(
-            Set<CheckType> requiredTypes, Collection<VerificationCheck> checks) {
+            Set<CheckType> requiredTypes, Collection<VerificationCheck> all) {
         Objects.requireNonNull(requiredTypes, "requiredTypes must not be null");
-        Objects.requireNonNull(checks, "checks must not be null");
+        Collection<VerificationCheck> checks = onboarding(all);
         if (requiredTypes.isEmpty()) {
             // No requirement can never mean "proceed": it means nobody has said what a run is.
             throw new IllegalArgumentException("a verification run requires at least one type");
@@ -107,7 +107,8 @@ public enum ChecksAssessment {
      * from; its predecessors stay true beside it (ADR-0038).
      */
     public static List<VerificationCheck> needingReview(
-            Set<CheckType> requiredTypes, Collection<VerificationCheck> checks) {
+            Set<CheckType> requiredTypes, Collection<VerificationCheck> all) {
+        Collection<VerificationCheck> checks = onboarding(all);
         if (of(requiredTypes, checks) != BLOCKED) {
             return List.of();
         }
@@ -128,6 +129,17 @@ public enum ChecksAssessment {
                     .ifPresent(needing::add);
         }
         return List.copyOf(needing);
+    }
+
+    /**
+     * The case's onboarding checks alone (`P13-TSK-022`): a {@link CheckPurpose#RESCREEN} check is
+     * evidence beside the decision, never part of it - a rescreen hit routes no case to review and
+     * a rescreen clear proceeds none. The store's {@code forCase} already reads onboarding checks
+     * only; this holds the rule for every caller, whatever it read.
+     */
+    private static Collection<VerificationCheck> onboarding(Collection<VerificationCheck> all) {
+        Objects.requireNonNull(all, "checks must not be null");
+        return all.stream().filter(VerificationCheck::onboarding).toList();
     }
 
     /** The store's {@code ORDER BY requested_at DESC, id DESC}, in memory. */

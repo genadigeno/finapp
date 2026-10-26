@@ -77,8 +77,8 @@ class RiskLogSitesAreEnumeratedTest {
             "RescreeningMetrics.java|\"Rescreening kyc ask failed: {}\"|cause",
             "RescreeningMetrics.java|\"The rescreening backlog could not be read: {}\""
                     + "|unreadable.getClass().getSimpleName()",
-            "RiskMonitoringSchedule.java|\"Rescreening permits concluded: {}\"|done",
-            "RiskMonitoringSchedule.java|\"Rescreening leg failed: {}\"|failure.getClass().getSimpleName()",
+            "RiskActionSchedule.java|\"Rescreening permits concluded: {}\"|done",
+            "RiskActionSchedule.java|\"Rescreening leg failed: {}\"|failure.getClass().getSimpleName()",
             "RiskActionSchedule.java|\"Risk action claim failed: {}\"|failure.getClass().getSimpleName()",
             "RiskActionSchedule.java|\"Risk action sweep failed: {}\"|failure.getClass().getSimpleName()",
             "RiskEvaluationMetrics.java|\"risk evaluation fail-safe recorded: assessment={} operation={} cause={}\""

@@ -264,10 +264,10 @@
  * second ({@code RECORDED → ACTIVE → RETIRED}, the predecessor retired beside it), its enqueue left due; the leg -
  * {@link com.finapp.risk.RescreeningRun}: the enqueue in bounded batches over {@link com.finapp.risk.ActiveParties} (one
  * {@link com.finapp.risk.RescreeningPermit} per party and version, {@link com.finapp.risk.RescreeningPermitStore}), then
- * each permit's three steps - the claim committed, kyc asked through {@link com.finapp.risk.PartyRescreening} on no risk
- * transaction, the conclusion at the claimed attempt: kyc's screening recorded as {@code SCREENING_CLEARED} or
- * {@code SCREENING_HIT} only when kyc was asked it after the activation (risk's own signal kinds,
- * {@link com.finapp.risk.SignalKind.Origin#RISK}), a hit alerted once and folded; otherwise deferred and failed at the
- * bound. {@link com.finapp.risk.RescreeningObserver} is the meters' port.
+ * each permit's three steps - the claim committed, kyc's re-screening door asked through
+ * {@link com.finapp.risk.PartyRescreening} on no risk transaction (a post-decision check keyed by the permit, the owner's
+ * decision O1), the conclusion at the claimed attempt: kyc's keyed answer recorded as {@code SCREENING_CLEARED} or
+ * {@code SCREENING_HIT} (risk's own signal kinds, {@link com.finapp.risk.SignalKind.Origin#RISK}), a hit's fact alert
+ * raised once and folded; otherwise deferred and failed at the bound - the leg {@code RiskActionSchedule}'s third. {@link com.finapp.risk.RescreeningObserver} is the meters' port.
  */
 package com.finapp.risk;

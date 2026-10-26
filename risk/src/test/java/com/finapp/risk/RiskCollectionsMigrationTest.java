@@ -63,7 +63,10 @@ class RiskCollectionsMigrationTest {
                 .contains("ADD CONSTRAINT risk_alert_kind_is_known CHECK (kind IN (" + list(AlertKind.values()) + "));")
                 .contains("ADD CONSTRAINT risk_alert_rule_code_is_known CHECK (rule_code IN ("
                         + quoted(AlertRule.codes()) + "));");
-        String own = quoted(Arrays.stream(AlertKind.values()).filter(AlertKind::ownCode).map(Enum::name).toList());
+        // The own-code kinds as at V017: risk V018 (P13-TSK-022) made SCREENING_HIT a fact too and re-made the two pairing
+        // CHECKs by name - ScreeningListMigrationTest holds that effective definition.
+        String own = quoted(Arrays.stream(AlertKind.values()).filter(AlertKind::ownCode)
+                .filter(kind -> kind != AlertKind.SCREENING_HIT).map(Enum::name).toList());
         assertThat(own).isEqualTo("'UNCLASSIFIED_TRANSACTION', 'VELOCITY_DIVERGENCE', 'OBLIGATION_DEFAULTED'");
         assertThat(sql)
                 .contains("ADD CONSTRAINT risk_alert_rule_matches_kind CHECK ((kind IN (" + own + ")) = (rule_code IN ("

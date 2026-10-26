@@ -294,12 +294,13 @@ class OwnershipIsScopedTest {
                                         + " NoCustomerSurfaceReadsRiskTest refuses any customer or merchant surface"
                                         + " reaching it.")),
                     Map.entry(
-                            "com.finapp.party.JdbcPartyStore.activeCustomerPartiesAfter",
+                            "com.finapp.party.JdbcPartyStore.customerPartiesAfter",
                             new Entry(
                                     Scope.SYSTEM_ENUMERATION,
                                     "com.finapp.app.risk.PartyActiveParties",
                                     "P13-TSK-022. The rescreening's census of a list version: a keyset page of"
-                                        + " the parties whose live customer relationship is ACTIVE, after a cursor"
+                                        + " the parties whose live customer relationship is ACTIVE or PENDING, after a"
+                                        + " cursor"
                                         + " that is the last party the platform's own enqueue paged (risk's"
                                         + " screening_list_version.enqueue_cursor), never a request's. It answers"
                                         + " party identifiers alone - no name, no customer, no status - on the"
@@ -4474,6 +4475,32 @@ class OwnershipIsScopedTest {
                                         + " this being a read whose rows a reviewer is entitled"
                                         + " to see.")),
                     Map.entry(
+                            "com.finapp.kyc.JdbcCheckStore.allForCase",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.app.risk.KycScreeningClearances",
+                                    "P13-TSK-022. Every check of a case, onboarding and rescreen alike - risk's"
+                                        + " screening-hit reading for T-eval, so a party a list update found is a hit:"
+                                        + " the KycCaseId is the latest case of the party's live customer, resolved by"
+                                        + " the system (findLiveCustomerFor, findLatestFor) on the evaluation's own"
+                                        + " connection, never a request's; three bounded facts leave, never the row."
+                                        + " KycScreeningClearances alone calls it, and that class depends on risk, so"
+                                        + " NoCustomerSurfaceReadsRiskTest refuses any customer or merchant surface"
+                                        + " reaching it.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcCheckStore.requestRescreen",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.app.kyc.VerificationRunService",
+                                    "P13-TSK-022 (kyc V011, the owner's decision O1). A list update's keyed"
+                                        + " re-screening of a decided party: the KycCaseId is the latest case of the"
+                                        + " party's live customer, resolved by the system for risk's permit"
+                                        + " (KycPartyRescreening's snapshot), never a request's; the key is risk's"
+                                        + " permit key, unique, so a second ask is the same row. It writes a RESCREEN"
+                                        + " check only - evidence beside the decision, read by no onboarding reader."
+                                        + " VerificationRunService.rescreen alone calls it, on the platform's"
+                                        + " rescreening leg.")),
+                    Map.entry(
                             "com.finapp.kyc.JdbcCheckStore.move",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,
@@ -5423,7 +5450,7 @@ class OwnershipIsScopedTest {
      * or credentials — is the ordinary one and stays excluded.
      *
      * <p>An {@code Optional} of one is one too (`P13-TSK-022`'s review): a raw-type sweep read
-     * {@code Optional<PartyId>} as {@code Optional} and missed {@code activeCustomerPartiesAfter},
+     * {@code Optional<PartyId>} as {@code Optional} and missed party's {@code customerPartiesAfter},
      * whose keyset cursor is a party's identifier. The widening is that one wrapper - an optional
      * identifier is still a single resource named by the caller; a collection is a different shape,
      * left to the day one exists.

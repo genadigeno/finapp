@@ -27,6 +27,10 @@ public interface CheckStore<T> {
      * {@code INDETERMINATE} under the retry budget invites a <em>new</em> check, and one at the
      * budget is converged on because the assessment routes the type to a person (`P2-TSK-010`,
      * correcting this doc's earlier "any state": an unknown is not an answer, ADR-0038).
+     *
+     * <p>An {@link CheckPurpose#ONBOARDING} check, always: since `P13-TSK-022` a rescreen of the
+     * case is neither converged on, counted against the budget nor held by the one-in-flight
+     * index ({@code kyc V011}) - a list update's question is not the run's.
      */
     Requested requestOrConverge(T unitOfWork, VerificationCheck fresh);
 
@@ -56,8 +60,48 @@ public interface CheckStore<T> {
      */
     boolean complete(T unitOfWork, CheckId checkId, CheckOutcome outcome, Instant at);
 
-    /** Every check of a case, evidence excluded. */
+    /**
+     * The case's <strong>onboarding</strong> checks, evidence excluded - the evidence its
+     * assessment, its review tasks and its decision rest on.
+     *
+     * <p>`P13-TSK-022` ({@code kyc V011}): a {@link CheckPurpose#RESCREEN} check is not one of
+     * them. Every reader that existed before it - the assessment, the review door, the decision
+     * recording - keeps the meaning it was written for, and a list update's screening can never
+     * route a decided case to review or reach a customer surface through them.
+     */
     List<VerificationCheck> forCase(T unitOfWork, KycCaseId caseId);
+
+    /**
+     * Every check of a case, onboarding and rescreen alike, evidence excluded (`P13-TSK-022`) -
+     * for readers outside the onboarding decision that must see a list update's answer: risk's
+     * screening-hit reading, so a party a rescreen found on a list is judged a hit by T-eval.
+     */
+    List<VerificationCheck> allForCase(T unitOfWork, KycCaseId caseId);
+
+    /**
+     * Requests a {@link CheckPurpose#RESCREEN} screening of {@code type} on {@code caseId} under
+     * {@code rescreenKey}, or converges on the check that key already asked (`P13-TSK-022`, the
+     * owner's decision O1; {@code kyc V011}).
+     *
+     * <p><strong>Keyed, never converged on an answer of another question.</strong> The key -
+     * risk's permit key and its retry ordinal - is unique ({@code
+     * verification_check_rescreen_once}): a second ask under it, from any instance, a lease lost
+     * mid-call or a replay, lands on the same row, so one key is one question and one provider
+     * effect (the dispatch below is still conditional). It never converges on an answered
+     * onboarding check (that is the point: the list changed), and onboarding's one-in-flight
+     * index does not hold it - a rescreen and an onboarding run are two questions. The ask's
+     * instant is the <strong>database's</strong> ({@code clock_timestamp()}), the clock the
+     * list version's activation is stamped on, so "asked after the activation" is one clock.
+     *
+     * @param fresh the identifier a created row takes - ignored when the key already asked
+     * @throws IllegalArgumentException for a type that is not a screening
+     * @throws IllegalStateException when the key already asked another case or another type
+     */
+    Requested requestRescreen(
+            T unitOfWork, KycCaseId caseId, CheckType type, CheckId fresh, String rescreenKey);
+
+    /** The check {@code rescreenKey} asked, if it asked one (`P13-TSK-022`). */
+    Optional<VerificationCheck> findRescreen(T unitOfWork, String rescreenKey);
 
     /**
      * Appends the raw bytes a provider answered with, verbatim ({@code INV-HIST-02}).

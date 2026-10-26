@@ -504,6 +504,13 @@ class RiskMigrationTest {
                 .containsExactly("rescreening_permit_once", "rescreening_permit_signal_is_its_own", "risk_signal_id_and_source",
                         "screening_list_version_by_persons", "screening_list_version_four_eyes",
                         "screening_list_version_once");
+        // The review's IMPORTANT 2: the hit's alert a fact - both pairing CHECKs carry SCREENING_HIT and V017's fact.
+        for (String pairing : List.of("risk_alert_rule_matches_kind", "risk_alert_policy_named")) {
+            assertThat(scalar("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = '" + pairing + "'"))
+                    .as(pairing).contains("'SCREENING_HIT'").contains("'OBLIGATION_DEFAULTED'");
+        }
+        assertThat(scalar("SELECT count(*)::text FROM pg_constraint WHERE conname = 'risk_alert_screening_hit_names_its_party'"))
+                .isEqualTo("1");
         assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
                 + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
     }

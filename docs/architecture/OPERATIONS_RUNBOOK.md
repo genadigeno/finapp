@@ -1037,3 +1037,38 @@ A release and the hold's expiry (`held_until`: the policy's hold validity, defau
 a re-drive replays payments' stored answer. Never release a hold by hand and never edit the withdrawal: the action's
 outcome is recorded on both sides. A customer who closes the wallet meanwhile is refused while the hold is `ACTIVE`
 (accounts' existing rule).
+
+### 9.6 A screening list update - activating it, reading its census, re-driving a burnt version
+
+*(Written by `P13-TSK-022`, 2026-10-26, with the owner's decision O1; the alert rule is `-024`'s - routed.)* A new edition
+of the sanctions or PEP list is an operator's fact: a `RISK_POLICY_ADMINISTER` holder records it
+(`POST /v1/operator/risk/screening-lists`, a label unique per list), a **second** holder activates it from a
+`MULTI_FACTOR` session (`POST …/{listVersionId}/activation`, `202`; the recorder is refused `403 risk.SelfApprovalRefused`);
+the activation retires the list's previous version in the same transaction. From then `RiskActionSchedule`'s rescreening
+leg enqueues one permit per party whose customer relationship is `ACTIVE` or `PENDING`, in batches, and asks kyc's
+re-screening door for each: a post-decision `RESCREEN` check on the party's latest case under the permit's key - the
+case, the customer and kyc's review queue untouched; a hit is a `SCREENING_HIT` alert in the party's `AML` case.
+
+**The census of a version** - `rescreening_permit` by `list_version_id` and `status` (`rescreening_permit_of_version`),
+beside `screening_list_version.enqueued`: every permit `DONE` (`CLEARED`, `HIT`, or `SKIPPED` for a relationship gone) is a
+party rescreened under the version; `PENDING` is still being asked; `FAILED` - counted
+`finapp.risk.rescreening{outcome=failed}` - is a party **not** rescreened under it, with its cause: `UNAVAILABLE` (no
+provider configured, or kyc unreachable for the whole bound - about 34 h by default), `IN_FLIGHT` (a check left
+dispatched past the bound - a provider that never answered), `NOT_SCREENED` (the provider said "we do not know" through
+kyc's budget of three asks), `UNCONCLUDED` (every conclusion failed - a defect: read the
+`claim.failed{kind=rescreening}` warn lines), or `STALE` (an answer asked before the activation - impossible for a
+permit's own keyed check, so a `STALE` failure is a defect to report, never an exposure to accept).
+
+**A burnt version - re-drive by a successor, never by hand.** A permit that has `FAILED` is terminal and a version is
+activated once (`409 risk.PolicyStale`), so its failed parties are never asked again under it. When the cause is fixed (the
+provider configured, kyc reachable), **record and activate a successor version of the same list** under a new label
+(e.g. `2026-10-edition-r2`), under four eyes as any activation: its enqueue reaches every party again - those already
+cleared under the burnt version are asked once more (a cost, not an error), the burnt version's census stays as the
+record of the exposure. There is no door that moves a `FAILED` permit back to `PENDING`, by design (the owner's decision,
+2026-10-26). **Never** write a permit, a signal or a kyc check by hand: the leg's record is the evidence.
+
+**Deploy-time locks.** risk `V018` (the rescreening's tables, the signal's two references, the alert's pairing CHECKs)
+and kyc `V011` (the check's purpose and key) hold `risk.risk_signal`, `risk.risk_alert` and `kyc.verification_check`
+under `ACCESS EXCLUSIVE` for one index build and a few validating scans each: deploy them when the signal intake and the
+kyc runs are quiet, with `lock_timeout` set so a long reader fails the migration (to retry) rather than queues every
+writer behind it.

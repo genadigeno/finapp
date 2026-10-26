@@ -132,6 +132,79 @@ public class VerificationRunService {
         return new RunReport(assessed.assessment(), assessed.checks());
     }
 
+    /**
+     * Re-screens a party on a list update: one {@code RESCREEN} check of {@code type} on
+     * {@code caseId}, asked under {@code rescreenKey} (`P13-TSK-022`, the owner's decision O1;
+     * {@code kyc V011}; {@code INV-LIFE-04} as amended).
+     *
+     * <p>The run's choreography, one check, <strong>and no assessment</strong>: the keyed request
+     * and its conditional dispatch in one transaction, committed; the provider asked holding no
+     * connection; the outcome, its evidence and its {@link CheckOutcomeTrail} together in a
+     * second. Then nothing more - the case is not assessed, not moved, no review task opened, the
+     * customer untouched: a rescreen is evidence beside the decision, never a re-decision. Its
+     * answer is the caller's (risk's rescreening) to act on.
+     *
+     * <p>Idempotent on the key: a key already asked is answered from its row - in flight
+     * ({@code REQUESTED} or {@code DISPATCHED}, another asker holding the call) or answered - and
+     * the provider is called only by the asker whose dispatch won. Ten instances, a lease lost
+     * mid-call, a replay: one row, one provider effect, one outcome.
+     *
+     * @return the keyed check as it stands after this call
+     * @throws IllegalStateException when no provider answers {@code type}
+     */
+    public VerificationCheck rescreen(
+            KycCaseId caseId, UUID customerId, CheckType type, String rescreenKey) {
+        Objects.requireNonNull(caseId, "caseId must not be null");
+        Objects.requireNonNull(customerId, "customerId must not be null");
+        Objects.requireNonNull(type, "type must not be null");
+        Objects.requireNonNull(rescreenKey, "rescreenKey must not be null");
+        VerificationProvider provider =
+                providers.stream()
+                        .filter(candidate -> candidate.checkType() == type)
+                        .findFirst()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "no provider answers a " + type + " screening"));
+        Optional<VerificationCheck> dispatched =
+                units.inTransaction(
+                        unitOfWork -> {
+                            VerificationCheck check =
+                                    checks.requestRescreen(
+                                                    unitOfWork,
+                                                    caseId,
+                                                    type,
+                                                    com.finapp.kyc.CheckId.next(ids),
+                                                    rescreenKey)
+                                            .check();
+                            if (check.status() != com.finapp.kyc.CheckStatus.REQUESTED
+                                    || !checks.dispatch(
+                                            unitOfWork, check.id(), Instant.now(clock))) {
+                                // In flight under another asker, or answered: never asked twice.
+                                return Optional.<VerificationCheck>empty();
+                            }
+                            // No case move: the case is decided (or its own run's), never this.
+                            return Optional.of(check.dispatch(clock));
+                        });
+        if (dispatched.isPresent()) {
+            // No connection is held here, as in the run.
+            VerificationProvider.ProviderResult result =
+                    providerLatency.record(
+                            () ->
+                                    provider.verify(
+                                            new VerificationProvider.VerificationSubject(
+                                                    caseId, customerId)));
+            recordOutcome(dispatched.get(), result);
+        }
+        return units.inTransaction(
+                unitOfWork ->
+                        checks.findRescreen(unitOfWork, rescreenKey)
+                                .orElseThrow(
+                                        () ->
+                                                new IllegalStateException(
+                                                        "a requested rescreen has its row")));
+    }
+
     /** Transaction one: the claim and the durable dispatch. */
     private Optional<VerificationCheck> dispatch(KycCaseId caseId, CheckType type) {
         return units.inTransaction(

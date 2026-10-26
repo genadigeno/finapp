@@ -14,8 +14,6 @@ import com.finapp.risk.AlertRaiser;
 import com.finapp.risk.PartyRescreening;
 import com.finapp.risk.RescreeningPermit;
 import com.finapp.risk.RescreeningRun;
-import com.finapp.risk.RiskPolicies;
-import com.finapp.risk.RiskPolicyStore;
 import com.finapp.risk.RiskSignal;
 import com.finapp.risk.RiskSignalStore;
 import com.finapp.risk.RiskSignals;
@@ -52,7 +50,7 @@ import org.junit.jupiter.api.Test;
  * version's permits in bounded batches and then concludes the due permits, each step its own transaction, kyc asked on no
  * transaction under the activation's correlation and <strong>as the platform</strong>; the bounds per tick hold; a failing
  * step is counted {@code claim.failed{kind=rescreening}} and never thrown into the monitoring sweep; the leg rides
- * {@code RiskMonitoringSchedule}, last in its tick. The counts under ten instances are {@code RescreeningDatabaseTest}'s
+ * {@code RiskActionSchedule}, last in its tick (moved from the monitoring schedule with kyc's door). The counts under ten instances are {@code RescreeningDatabaseTest}'s
  * (written, owed - C5); the domain's are {@code RescreeningRunTest}'s.
  */
 @DisplayName("the rescreening driver: enqueue then conclude, as the platform, bounded, never throwing (P13-TSK-022)")
@@ -89,7 +87,7 @@ class RescreeningDriverTest {
     private final RescreeningRun run = new RescreeningRun(lists, permits, this::page, kyc,
             new RiskSignals(new Signals(), (OutboxWriter<Connection>) (uow, envelope, payload, mediaType) -> { },
                     IDS, CLOCK),
-            new RiskPolicies(unusedPolicies()), AlertRaiser.NONE, IDS, metrics, RescreeningRun.Bounds.DEFAULT);
+            AlertRaiser.NONE, IDS, metrics, RescreeningRun.Bounds.DEFAULT);
 
     @Test
     @DisplayName("one tick: the enqueue's batches, then the due permits - each concluded once, kyc asked as the platform"
@@ -152,7 +150,7 @@ class RescreeningDriverTest {
         RescreeningRun once = new RescreeningRun(lists, permits, this::page, kyc,
                 new RiskSignals(new Signals(), (OutboxWriter<Connection>) (uow, envelope, payload, mediaType) -> { },
                         IDS, CLOCK),
-                new RiskPolicies(unusedPolicies()), AlertRaiser.NONE, IDS, metrics,
+                AlertRaiser.NONE, IDS, metrics,
                 new RescreeningRun.Bounds(1, Duration.ofMinutes(5), Duration.ofMinutes(5)));
         RescreeningDriver driver = new RescreeningDriver(once, transactions, metrics, RiskFlowScope.NONE,
                 Duration.ofMinutes(2), 10, 1, 10);
@@ -175,10 +173,16 @@ class RescreeningDriverTest {
     }
 
     @Test
-    @DisplayName("the leg rides RiskMonitoringSchedule: RescreeningLeg.NONE for the earlier suites, the driver in"
-            + " production - a leg, not a scheduler")
-    void theLegRidesTheMonitoringSchedule() {
-        assertThat(RiskMonitoringSchedule.RescreeningLeg.NONE.driveDue()).isZero();
+    @DisplayName("the leg rides RiskActionSchedule - moved from the monitoring schedule when kyc's door made it a provider"
+            + " caller: RescreeningLeg.NONE for the earlier suites, the driver itself in production - a leg, not a"
+            + " scheduler; a defect escaping it counted as its own")
+    void theLegRidesTheActionSchedule() {
+        assertThat(RiskActionSchedule.RescreeningLeg.NONE.rescreen()).isZero();
+        RiskActionSchedule.RescreeningLeg leg = driver(10, 1, 10);
+        assertThat(leg.rescreen()).as("nothing due").isZero();
+        leg.failed();
+        assertThat(registry.get(RescreeningMetrics.CLAIM_FAILED).tag("kind", RescreeningMetrics.KIND).counter().count())
+                .isEqualTo(1.0);
         assertThat(registry.find(RescreeningMetrics.BACKLOG).gauge()).isNotNull();
         assertThat(registry.get(RescreeningMetrics.BACKLOG).gauge().value()).as("unreadable is NaN, never zero").isNaN();
     }
@@ -205,13 +209,6 @@ class RescreeningDriverTest {
         // The database's order - each half unsigned - as PostgreSQL pages uuid.
         return active.stream().filter(party -> after.isEmpty() || RescreeningRun.databaseOrder(party, after.get()) > 0)
                 .limit(limit).toList();
-    }
-
-    private static RiskPolicyStore unusedPolicies() {
-        return (RiskPolicyStore) Proxy.newProxyInstance(RiskPolicyStore.class.getClassLoader(),
-                new Class<?>[] {RiskPolicyStore.class}, (proxy, method, args) -> {
-                    throw new UnsupportedOperationException("a clear pins no policy");
-                });
     }
 
     /** One transaction per step: the claims' row locks released at its end; a claim fails while asked to. */

@@ -156,12 +156,19 @@ public final class JdbcPartyStore implements PartyStore<Connection> {
     }
 
     @Override
-    public java.util.List<PartyId> activeCustomerPartiesAfter(
-            Connection unitOfWork, Optional<PartyId> after, int limit) {
+    public java.util.List<PartyId> customerPartiesAfter(
+            Connection unitOfWork,
+            java.util.Set<CustomerStatus> statuses,
+            Optional<PartyId> after,
+            int limit) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(statuses, "statuses must not be null");
         Objects.requireNonNull(after, "after must not be null");
+        if (statuses.isEmpty()) {
+            throw new IllegalArgumentException("a page of customers' parties names a status");
+        }
         if (limit < 1 || limit > 1000) {
-            throw new IllegalArgumentException("a page of active parties is 1..1000 rows: " + limit);
+            throw new IllegalArgumentException("a page of customers' parties is 1..1000 rows: " + limit);
         }
         // Two statements, not one "(? IS NULL OR party_id > ?)": under a generic plan that disjunction
         // is not sargable, so every batch after the first would rescan from the start (P13-TSK-022's
@@ -169,11 +176,15 @@ public final class JdbcPartyStore implements PartyStore<Connection> {
         try (PreparedStatement select =
                 unitOfWork.prepareStatement(
                         after.isEmpty()
-                                ? "SELECT party_id FROM party.customer WHERE status = 'ACTIVE'"
+                                ? "SELECT party_id FROM party.customer WHERE status = ANY (?)"
                                         + " ORDER BY party_id LIMIT ?"
-                                : "SELECT party_id FROM party.customer WHERE status = 'ACTIVE'"
+                                : "SELECT party_id FROM party.customer WHERE status = ANY (?)"
                                         + " AND party_id > ? ORDER BY party_id LIMIT ?")) {
             int index = 1;
+            select.setArray(
+                    index++,
+                    unitOfWork.createArrayOf(
+                            "text", statuses.stream().map(Enum::name).sorted().toArray()));
             if (after.isPresent()) {
                 select.setObject(index++, after.get().value());
             }
@@ -187,7 +198,7 @@ public final class JdbcPartyStore implements PartyStore<Connection> {
             return page;
         } catch (SQLException e) {
             throw new PartyStorageException(
-                    DatabaseFailure.describe("Could not read a page of active customers' parties", e));
+                    DatabaseFailure.describe("Could not read a page of customers' parties", e));
         }
     }
 

@@ -1,6 +1,7 @@
 package com.finapp.risk;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -47,7 +48,8 @@ class RiskAlertMigrationTest {
     /**
      * risk V017 (P13-TSK-025): the kind and rule-code CHECKs, and the two that pair the own-code kinds with no policy,
      * dropped and re-made for the fact kind OBLIGATION_DEFAULTED - V010 is merged and never edited, so their effective
-     * definition is V017's ({@code RiskCollectionsMigrationTest} holds it).
+     * definition is V017's ({@code RiskCollectionsMigrationTest} holds it) - and since risk V018 (P13-TSK-022) the two
+     * pairing CHECKs' is V018's, SCREENING_HIT a fact ({@code ScreeningListMigrationTest} holds it).
      */
     private static final String COLLECTIONS = "db/migration/risk/V017__the_collections_case.sql";
 
@@ -81,7 +83,9 @@ class RiskAlertMigrationTest {
         assertThat(sql).contains("CONSTRAINT risk_alert_rule_matches_kind CHECK ((kind IN ("
                 + operational + ")) = (rule_code IN (" + operational + ")) AND (kind NOT IN (" + operational
                 + ") OR rule_code = kind))");
-        assertThat(AlertRule.of(RuleKind.SCREENING_HIT).code()).isEqualTo(AlertKind.SCREENING_HIT.name());
+        // P13-TSK-022 (risk V018): the shared name is the rescreening fact's - a rule kind raises no alert under it.
+        assertThatThrownBy(() -> AlertRule.of(RuleKind.SCREENING_HIT)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(AlertRule.fact(AlertKind.SCREENING_HIT).code()).isEqualTo(RuleKind.SCREENING_HIT.name());
     }
 
     @Test

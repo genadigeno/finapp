@@ -51,7 +51,10 @@ class CaseFoldingTest {
         assertThat(merchantCase.subject()).isEqualTo(merchant);
 
         Alerts.Raised screening = CaseWorld.asSystem(() -> world.alerts.raise(CaseWorld.UOW,
-                rule(AlertKind.SCREENING_HIT, CaseWorld.party(party), RuleKind.SCREENING_HIT)));
+                // A fact since P13-TSK-022's review (risk V018): its own code, no policy, its one signal.
+                NewAlert.ofFact(AlertKind.SCREENING_HIT, AlertSeverity.CRITICAL, CaseWorld.party(party), AlertWorld.day(),
+                        RiskSignalId.next(EvaluationWorld.IDS), CaseWorld.correlation(),
+                        CausationId.of("folding-suite"))));
         RiskCase aml = world.caseStore.all().stream().filter(c -> c.kind() == CaseKind.AML).findFirst().orElseThrow();
         assertThat(screening.folded().caseId()).contains(aml.id());
         assertThat(world.cases.current(CaseWorld.UOW, aml.id()).orElseThrow().revision()).isEqualTo(1);

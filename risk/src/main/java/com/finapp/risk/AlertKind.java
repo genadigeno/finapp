@@ -43,8 +43,16 @@ public enum AlertKind {
     /** A monitoring rule fired over the ledger's journal (`-020`). */
     AML(CaseKind.AML),
 
-    /** A rescreening against an activated list version recorded a hit (`-022`). */
-    SCREENING_HIT(CaseKind.AML),
+    /**
+     * A rescreening against an activated list version recorded a hit (`-022`) - since its review (IMPORTANT 2,
+     * {@code risk V018}) a <em>fact</em>, never a policy rule's finding: raised from the permit's born-once
+     * {@code SCREENING_HIT} signal, its own code its rule and no policy naming it, about the {@code PARTY} on the
+     * {@code D1} window of the list version's activation, folded into the party's {@code AML} case - whatever policy
+     * is in force, so a sanctions hit can never go unalerted. {@link RuleKind#SCREENING_HIT} - the judged and
+     * monitoring rule over kyc's clearance - raises no alert of its own (no raiser names it), so the name the two
+     * vocabularies share is the fact's ({@link AlertRule#of} refuses it).
+     */
+    SCREENING_HIT(CaseKind.AML, SubjectKind.PARTY),
 
     /** A journal entry of a posting-key namespace the intake's register does not know (`-019`). Operational. */
     UNCLASSIFIED_TRANSACTION(null),

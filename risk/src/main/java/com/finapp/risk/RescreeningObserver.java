@@ -30,15 +30,13 @@ public interface RescreeningObserver {
     enum Conclusion {
         /** kyc's current screening cleared; the signal recorded. */
         CLEARED,
-        /** kyc's current screening hit; the signal recorded and the alert raised. */
+        /** kyc's current screening hit; the signal recorded and the fact alert raised (since the review: always). */
         HIT,
-        /** kyc's current screening hit; the signal recorded - no {@code MONITORING} rule names the alert. */
-        HIT_NOT_ALERTED,
-        /** The party is no longer active. */
+        /** The party's relationship is neither active nor onboarding any more. */
         SKIPPED,
         /** Not yet current, in flight, never screened or kyc unavailable - re-permitted. */
         DEFERRED,
-        /** The bound reached without a current screening - the exposure. */
+        /** The bound reached without a current screening, or passed with no conclusion - the exposure. */
         FAILED;
 
         /** The tag value. */

@@ -25,6 +25,7 @@ public final class VerificationCheck {
     private final CheckStatus status;
     private final Instant requestedAt;
     private final Instant statusChangedAt;
+    private final CheckPurpose purpose;
 
     private VerificationCheck(
             CheckId id,
@@ -32,7 +33,8 @@ public final class VerificationCheck {
             CheckType type,
             CheckStatus status,
             Instant requestedAt,
-            Instant statusChangedAt) {
+            Instant statusChangedAt,
+            CheckPurpose purpose) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.caseId = Objects.requireNonNull(caseId, "caseId must not be null");
         this.type = Objects.requireNonNull(type, "type must not be null");
@@ -40,6 +42,14 @@ public final class VerificationCheck {
         this.requestedAt = Objects.requireNonNull(requestedAt, "requestedAt must not be null");
         this.statusChangedAt =
                 Objects.requireNonNull(statusChangedAt, "statusChangedAt must not be null");
+        this.purpose = Objects.requireNonNull(purpose, "purpose must not be null");
+        if (purpose == CheckPurpose.RESCREEN
+                && type != CheckType.SANCTIONS
+                && type != CheckType.PEP) {
+            // kyc V011's verification_check_rescreen_is_a_screening, in the domain too.
+            throw new IllegalArgumentException(
+                    "a rescreen is a SANCTIONS or PEP screening, never " + type);
+        }
     }
 
     /** Requests a check: the question exists, nobody has asked the provider yet. */
@@ -49,10 +59,19 @@ public final class VerificationCheck {
         Objects.requireNonNull(clock, "clock must not be null");
         Instant now = Instant.now(clock);
         return new VerificationCheck(
-                CheckId.next(ids), caseId, type, CheckStatus.REQUESTED, now, now);
+                CheckId.next(ids),
+                caseId,
+                type,
+                CheckStatus.REQUESTED,
+                now,
+                now,
+                CheckPurpose.ONBOARDING);
     }
 
-    /** Reconstitutes from storage. Applies no transition rules: the row was already valid. */
+    /**
+     * Reconstitutes an onboarding check from storage. Applies no transition rules: the row was
+     * already valid.
+     */
     public static VerificationCheck rehydrate(
             CheckId id,
             KycCaseId caseId,
@@ -60,7 +79,24 @@ public final class VerificationCheck {
             CheckStatus status,
             Instant requestedAt,
             Instant statusChangedAt) {
-        return new VerificationCheck(id, caseId, type, status, requestedAt, statusChangedAt);
+        return rehydrate(
+                id, caseId, type, status, requestedAt, statusChangedAt, CheckPurpose.ONBOARDING);
+    }
+
+    /**
+     * Reconstitutes a check of either purpose from storage (`P13-TSK-022`, {@code kyc V011}).
+     * Applies no transition rules: the row was already valid.
+     */
+    public static VerificationCheck rehydrate(
+            CheckId id,
+            KycCaseId caseId,
+            CheckType type,
+            CheckStatus status,
+            Instant requestedAt,
+            Instant statusChangedAt,
+            CheckPurpose purpose) {
+        return new VerificationCheck(
+                id, caseId, type, status, requestedAt, statusChangedAt, purpose);
     }
 
     /** {@code REQUESTED → DISPATCHED}: the dispatch is about to be made durable. */
@@ -79,7 +115,8 @@ public final class VerificationCheck {
         if (!status.canTransitionTo(target)) {
             throw new IllegalCheckTransitionException(id, status, target);
         }
-        return new VerificationCheck(id, caseId, type, target, requestedAt, Instant.now(clock));
+        return new VerificationCheck(
+                id, caseId, type, target, requestedAt, Instant.now(clock), purpose);
     }
 
     public CheckId id() {
@@ -106,6 +143,16 @@ public final class VerificationCheck {
         return statusChangedAt;
     }
 
+    /** Why it was asked: the case's own onboarding, or a list update's rescreen beside it. */
+    public CheckPurpose purpose() {
+        return purpose;
+    }
+
+    /** True for an onboarding check - the evidence the case's assessment and decision rest on. */
+    public boolean onboarding() {
+        return purpose == CheckPurpose.ONBOARDING;
+    }
+
     @Override
     public boolean equals(Object other) {
         return other instanceof VerificationCheck check && id.equals(check.id);
@@ -119,6 +166,7 @@ public final class VerificationCheck {
     /** Identifiers, a type and a status — nothing about a person. */
     @Override
     public String toString() {
-        return "VerificationCheck[" + id + ", case=" + caseId + ", " + type + ", " + status + "]";
+        return "VerificationCheck["
+                + id + ", case=" + caseId + ", " + type + ", " + status + ", " + purpose + "]";
     }
 }

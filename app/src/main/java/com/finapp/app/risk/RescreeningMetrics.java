@@ -23,10 +23,9 @@ import lombok.extern.slf4j.Slf4j;
  * ({@code INV-RSK-08}, {@code MetricNames.ALLOWED_TAG_KEYS}):
  *
  * <ul>
- *   <li>{@code finapp.risk.rescreening{outcome}} - what became of each claimed permit: {@code cleared}, {@code hit},
- *       {@code hit_not_alerted} (no {@code MONITORING} rule names the alert), {@code skipped}, {@code deferred},
- *       {@code failed} - the exposure: alert on any {@code failed} or {@code hit_not_alerted} increase (`-024` writes the
- *       rules);</li>
+ *   <li>{@code finapp.risk.rescreening{outcome}} - what became of each claimed permit: {@code cleared}, {@code hit}
+ *       (always alerted since the review - a fact alert, `hit_not_alerted` retired), {@code skipped}, {@code deferred},
+ *       {@code failed} - the exposure: alert on any {@code failed} increase (`-024` writes the rules);</li>
  *   <li>{@code finapp.risk.rescreening.backlog} - the permits {@code PENDING}, counted up to a million (saturating); NaN
  *       when unreadable. Read from the database behind a 15 s floor, so every instance reports the same figure: aggregate
  *       with {@code max()};</li>
@@ -49,7 +48,7 @@ public final class RescreeningMetrics implements RescreeningObserver {
     /** Exported as {@code finapp_risk_sweeper_claim_failed_total}, beside the other risk sweepers'. */
     public static final String CLAIM_FAILED = RiskMonitoringMetrics.CLAIM_FAILED;
 
-    /** The {@code kind} tag of the rescreening leg - a leg of {@code RiskMonitoringSchedule}. */
+    /** The {@code kind} tag of the rescreening leg - a leg of {@code RiskActionSchedule}. */
     public static final String KIND = "rescreening";
 
     /** The backlog's saturation: beyond this the figure says "many", not how many. */
@@ -80,8 +79,8 @@ public final class RescreeningMetrics implements RescreeningObserver {
         Objects.requireNonNull(registry, "registry");
         for (Conclusion conclusion : Conclusion.values()) {
             outcomes.put(conclusion, Counter.builder(RESCREENING).tag("outcome", conclusion.tag())
-                    .description("Rescreening permits by what became of each claim: cleared, hit, hit_not_alerted, skipped,"
-                            + " deferred or failed - alert on any failed or hit_not_alerted increase")
+                    .description("Rescreening permits by what became of each claim: cleared, hit, skipped, deferred or"
+                            + " failed - alert on any failed increase")
                     .register(registry));
         }
         Gauge.builder(BACKLOG, this, self -> {

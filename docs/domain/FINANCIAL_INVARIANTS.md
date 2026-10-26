@@ -412,6 +412,17 @@ Subsequent economic changes are new operations (reversal, refund, chargeback).
 **Verify:** Transition tests from every terminal state.
 **Phase:** 4 onward
 
+*(Amended by `P13-TSK-022`, 2026-10-26 - the owner's decision O1 "add the kyc door"; ADR-0035's amendment; the
+coordinator's default, to be ratified by the owner at `P13-DOC-001`: **a list update is answered beside a decided KYC
+case, never by reopening it or by a new case.** When a sanctions or PEP list changes, kyc re-screens a decided party by a
+**post-decision `RESCREEN` check** on its latest case (kyc `V011`, keyed by risk's permit): evidence beside the decision,
+never a re-decision - the case stays `APPROVED` (or `REJECTED`), the customer's relationship does not move, no review task
+opens, and kyc's onboarding readers (the assessment, review, the decision) never see the check. A hit is risk's to act
+on: its `SCREENING_HIT` fact alert, folded into the party's `AML` case, which a person works. A changed circumstance *of
+the person* still opens a new case. Verified by `ChecksAssessmentTest#aRescreenIsNeverTheDecisionsEvidence`,
+`CheckStorePurposeTest`, `KycRescreenMigrationTest` and the owed `RescreeningDatabaseTest#aPostDecisionHitAlertsOnceAndCasesAndTheDecisionStands`,
+`#aLateCallbackForARescreenAssessesNothing`.)*
+
 ---
 
 # Reversal and Correction — `INV-REV`
@@ -3530,6 +3541,9 @@ longer `REQUESTED`), `..._basis_matches_the_outcome` (`REVIEWER` exactly for `RE
 (a reviewer, or the platform under a stated automatic policy), its reason, the policy version
 applied (`INV-HIST-04`) and the evidence it rested on. Changed circumstances produce a new case
 event, never an edit.
+*(`P13-TSK-022`, 2026-10-26: a sanctions or PEP list update is not a changed circumstance of the person - it is
+answered by a post-decision `RESCREEN` check beside the decision (kyc `V011`; `INV-LIFE-04`'s amendment), never by an
+edit and never by a new case; the decision and the evidence it rested on stand.)*
 **Why:** An onboarding decision is the record later financial phases gate on and the record a
 dispute replays. `INV-CRD-02`'s regime, three phases early, for the same reason.
 **Enforce:** `DB-PRIVILEGE` (no `UPDATE`/`DELETE` for the application role) + `DB-CONSTRAINT`

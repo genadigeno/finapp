@@ -160,7 +160,6 @@ public class RiskMonitoringBeans {
             com.finapp.risk.ProfileRecompute profileRecompute,
             com.finapp.risk.Cases cases,
             CaseProhibitionDriver caseProhibitionDriver,
-            RescreeningDriver rescreeningDriver,
             RiskTransactions riskTransactions,
             RiskMonitoringMetrics riskMonitoringMetrics,
             RiskFlowScope riskFlowScope,
@@ -170,11 +169,9 @@ public class RiskMonitoringBeans {
             @Value("${finapp.risk.case.folds-per-tick:50}") int foldsPerTick) {
         CaseLegDriver caseLeg = new CaseLegDriver(cases, caseProhibitionDriver, riskTransactions,
                 riskMonitoringMetrics, riskFlowScope, foldsPerTick);
-        // P13-TSK-022: the rescreening leg, last in each tick - a leg, not a new scheduler.
         return new RiskMonitoringSchedule(monitoringIntake, monitoringRun,
                 RiskMonitoringSchedule.ProfileLeg.over(profileRecompute), profileClaimsPerTick, caseLeg::driveDue,
-                () -> rescreeningDriver.driveDue().concluded(), riskTransactions, riskMonitoringMetrics, riskFlowScope,
-                pollInterval, batchesPerTick);
+                riskTransactions, riskMonitoringMetrics, riskFlowScope, pollInterval, batchesPerTick);
     }
 
     /** Whether this instance runs the monitoring sweep - eager either way (`P1-TSK-029`'s rule). */

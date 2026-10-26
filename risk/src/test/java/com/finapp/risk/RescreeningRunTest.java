@@ -10,7 +10,6 @@ import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
 import com.finapp.risk.testing.InMemoryRescreeningPermitStore;
 import com.finapp.risk.testing.InMemoryScreeningListStore;
-import com.finapp.risk.testing.RiskPolicyFixtures;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.event.EventEnvelope;
 import java.sql.Connection;
@@ -117,7 +116,7 @@ class RescreeningRunTest {
         Map<ScreeningListVersionId, ScreeningListVersion> listsBefore = lists.snapshot();
         Object permitsBefore = permits.snapshot();
         RescreeningRun crashing = new RescreeningRun(new CrashOnAdvance(lists), permits, this::page, kyc,
-                signals(), new RiskPolicies(world.policyStore), world.alerts::raiseAll, EvaluationWorld.IDS,
+                signals(), world.alerts::raiseAll, EvaluationWorld.IDS,
                 RescreeningObserver.NONE, RescreeningRun.Bounds.DEFAULT);
         assertThatThrownBy(() -> crashing.enqueueNextBatch(UOW, 5)).hasMessageContaining("crash");
         lists.restore(listsBefore);
@@ -168,7 +167,7 @@ class RescreeningRunTest {
 
         RescreeningRun disordered = new RescreeningRun(lists, permits,
                 (uow, after, limit) -> List.of(lowHalfAbove, belowTheSignBit), kyc, signals(),
-                new RiskPolicies(world.policyStore), world.alerts::raiseAll, EvaluationWorld.IDS,
+                world.alerts::raiseAll, EvaluationWorld.IDS,
                 RescreeningObserver.NONE, RescreeningRun.Bounds.DEFAULT);
         activated(ScreeningList.PEP, "p1");
         assertThatThrownBy(() -> disordered.enqueueNextBatch(UOW, 10)).hasMessageContaining("not ascending");
@@ -208,7 +207,6 @@ class RescreeningRunTest {
     void aLeaseLostMidAskRecordsOnce() {
         UUID party = oneEnqueued(ScreeningList.SANCTIONS, "v1");
         kyc.answers.put(party, screened(true, lists.now.plusSeconds(60)));
-        world.policyStore.activate(RiskPolicyFixtures.v1(RiskOperation.MONITORING));
         RescreeningPermit first = claimed(run.claimNextDue(UOW, LEASE)).orElseThrow();
         commit();
         PartyRescreening.Answer slow = run.ask(first);
@@ -227,11 +225,10 @@ class RescreeningRunTest {
     }
 
     @Test
-    @DisplayName("a hit alerts once and cases: SCREENING_HIT recorded born of the permit, the MONITORING version's"
-            + " SCREENING_HIT rule raises the CRITICAL alert of the activation's hour, folded into the party's AML case; a"
-            + " second list's hit that hour meets the standing alert")
+    @DisplayName("a hit alerts once and cases: SCREENING_HIT recorded born of the permit, the CRITICAL fact alert of the"
+            + " activation's day raised - its own code its rule, no policy - and folded into the party's AML case; a"
+            + " second list's hit that day meets the standing alert")
     void aHitAlertsOnceAndCases() {
-        RiskPolicyVersionId monitoring = world.policyStore.activate(RiskPolicyFixtures.v1(RiskOperation.MONITORING));
         UUID party = oneEnqueued(ScreeningList.SANCTIONS, "v1");
         Instant activatedAt = lists.all().getFirst().activatedAt().orElseThrow();
         UUID screening = UUID.randomUUID();
@@ -252,8 +249,9 @@ class RescreeningRunTest {
         assertThat(alert.kind()).isEqualTo(AlertKind.SCREENING_HIT);
         assertThat(alert.rule().code()).isEqualTo("SCREENING_HIT");
         assertThat(alert.severity()).isEqualTo(AlertSeverity.CRITICAL);
-        assertThat(alert.policyVersion()).contains(monitoring);
-        assertThat(alert.window()).isEqualTo(AlertWindow.containing(WindowKind.H1, activatedAt));
+        assertThat(alert.rule().ownCode()).as("a fact's own code").isTrue();
+        assertThat(alert.policyVersion()).as("no policy names a fact").isEmpty();
+        assertThat(alert.window()).isEqualTo(AlertWindow.containing(WindowKind.D1, activatedAt));
         assertThat(alert.evidence().signals()).containsExactly(signal.id());
         assertThat(alert.status()).isEqualTo(AlertStatus.ATTACHED);
         RiskCase aml = world.caseStore.all().getFirst();
@@ -261,14 +259,14 @@ class RescreeningRunTest {
         assertThat(aml.subject()).isEqualTo(SignalSubject.of(SubjectKind.PARTY, party));
         assertThat(alert.attachedCase()).contains(aml.id());
 
-        // A PEP version activated in the same hour hits the same party: its own signal, the alert standing - one alert,
-        // one case.
+        // A PEP version activated the same day hits the same party: its own signal, the alert standing - one alert, one
+        // case (the review's MINOR 7, an owner item: one key per (party, day) across lists).
         tick(Duration.ofMinutes(10));
         ScreeningListVersion pep = activated(ScreeningList.PEP, "p1");
         enqueueAll();
         kyc.answers.put(party, screened(true, pep.activatedAt().orElseThrow().plusSeconds(10)));
-        assertThat(AlertWindow.containing(WindowKind.H1, pep.activatedAt().orElseThrow()))
-                .isEqualTo(AlertWindow.containing(WindowKind.H1, activatedAt));
+        assertThat(AlertWindow.containing(WindowKind.D1, pep.activatedAt().orElseThrow()))
+                .isEqualTo(AlertWindow.containing(WindowKind.D1, activatedAt));
         assertThat(rescreenOnce().orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.HIT);
         assertThat(signalStore.rows).hasSize(2);
         assertThat(world.alertStore.all()).as("born once per (party, rule, window start)").hasSize(1);
@@ -335,8 +333,8 @@ class RescreeningRunTest {
 
     @Test
     @DisplayName("currency is judged by the ask, never the answer: a check kyc was asked BEFORE the activation and decided"
-            + " after it is STALE - never a clearance under the version; an ask inside the instances' clock skew is"
-            + " stale too; an ask past it is the rescreening")
+            + " after it is STALE - never a clearance under the version; one millisecond before is stale; an ask at the"
+            + " activation itself - one clock, the database's - is the rescreening")
     void aCheckAskedBeforeTheActivationIsStaleHoweverLateItsAnswer() {
         UUID party = oneEnqueued(ScreeningList.SANCTIONS, "v1");
         Instant activatedAt = lists.all().getFirst().activatedAt().orElseThrow();
@@ -347,16 +345,15 @@ class RescreeningRunTest {
         assertThat(permits.all().getFirst().cause()).contains(RescreeningPermit.Cause.STALE);
 
         tick(Duration.ofMinutes(6));
-        Instant insideTheSkew = activatedAt.plus(RescreeningRun.REQUEST_SKEW).minusMillis(1);
-        kyc.answers.put(party, new PartyRescreening.Screened(UUID.randomUUID(), false, insideTheSkew,
+        kyc.answers.put(party, new PartyRescreening.Screened(UUID.randomUUID(), false, activatedAt.minusMillis(1),
                 activatedAt.plus(Duration.ofHours(2))));
-        assertThat(rescreenOnce().orElseThrow().conclusion()).as("an ask the two clocks cannot place after the activation")
+        assertThat(rescreenOnce().orElseThrow().conclusion()).as("asked a millisecond before the version came into force")
                 .isEqualTo(RescreeningObserver.Conclusion.DEFERRED);
         assertThat(signalStore.rows).isEmpty();
 
         tick(Duration.ofMinutes(11));
-        kyc.answers.put(party, new PartyRescreening.Screened(UUID.randomUUID(), false,
-                activatedAt.plus(RescreeningRun.REQUEST_SKEW), activatedAt.plus(Duration.ofHours(3))));
+        kyc.answers.put(party, new PartyRescreening.Screened(UUID.randomUUID(), false, activatedAt,
+                activatedAt.plus(Duration.ofHours(3))));
         assertThat(rescreenOnce().orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.CLEARED);
         assertThat(signalStore.rows).hasSize(1);
         assertThatThrownBy(() -> new PartyRescreening.Screened(UUID.randomUUID(), false, activatedAt,
@@ -378,7 +375,7 @@ class RescreeningRunTest {
         run = new RescreeningRun(lists, permits, this::page, kyc,
                 new RiskSignals(refusing, (uow, envelope, payload, mediaType) -> { }, EvaluationWorld.IDS,
                         EvaluationWorld.CLOCK),
-                new RiskPolicies(world.policyStore), world.alerts::raiseAll, EvaluationWorld.IDS, observer(), BOUNDS);
+                world.alerts::raiseAll, EvaluationWorld.IDS, observer(), BOUNDS);
         for (int attempt = 1; attempt <= BOUNDS.maxAttempts(); attempt++) {
             RescreeningPermit permit = claimed(run.claimNextDue(UOW, LEASE)).orElseThrow();
             commit();
@@ -452,14 +449,16 @@ class RescreeningRunTest {
     }
 
     @Test
-    @DisplayName("a hit no MONITORING rule names - no version in force - is recorded and counted HIT_NOT_ALERTED: an alert"
-            + " names the policy rule that raised it, so none is invented; never silently")
-    void aHitNoRuleNamesIsRecordedNotAlerted() {
+    @DisplayName("the review's IMPORTANT 2: a hit is alerted whatever policy is in force - none here - because its alert is a"
+            + " fact, raised by no rule: the alert born, the AML case opened, the permit DONE(HIT)")
+    void aHitIsAlertedWhateverPolicyIsInForce() {
         UUID party = oneEnqueued(ScreeningList.SANCTIONS, "v1");
         kyc.answers.put(party, screened(true, lists.now.plusSeconds(60)));
-        assertThat(rescreenOnce().orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.HIT_NOT_ALERTED);
+        assertThat(rescreenOnce().orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.HIT);
         assertThat(signalStore.rows).extracting(RiskSignal::kind).containsExactly(SignalKind.SCREENING_HIT);
-        assertThat(world.alertStore.all()).isEmpty();
+        assertThat(world.alertStore.all()).as("no MONITORING version exists, and the hit is alerted").hasSize(1);
+        assertThat(world.alertStore.all().getFirst().policyVersion()).isEmpty();
+        assertThat(world.caseStore.all()).extracting(RiskCase::kind).containsExactly(CaseKind.AML);
         assertThat(permits.all().getFirst().outcome()).contains(RescreeningPermit.Outcome.HIT);
     }
 
@@ -485,8 +484,8 @@ class RescreeningRunTest {
     // ------------------------------------------------------------------ the world
 
     private RescreeningRun run(RescreeningRun.Bounds bounds) {
-        return new RescreeningRun(lists, permits, this::page, kyc, signals(), new RiskPolicies(world.policyStore),
-                world.alerts::raiseAll, EvaluationWorld.IDS, observer(), bounds);
+        return new RescreeningRun(lists, permits, this::page, kyc, signals(), world.alerts::raiseAll,
+                EvaluationWorld.IDS, observer(), bounds);
     }
 
     /** The meters' port, remembering what it was told. */

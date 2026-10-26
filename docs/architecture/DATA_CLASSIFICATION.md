@@ -1931,6 +1931,8 @@ door.
 | `verification_check` | `status` | `CONFIDENTIAL` | **The sharper tipping-off column.** `HIT` on a SANCTIONS check is precisely the disclosure that is an offence in some regimes; `INDETERMINATE` says a review is unresolved. The case's status is shaped to hide exactly this, so the underlying value gets at least the case's level |
 | `verification_check` | `requested_at` | `CONFIDENTIAL` | Dates a KYC event — `kyc_case.opened_at`'s reasoning |
 | `verification_check` | `status_changed_at` | `CONFIDENTIAL` | Dates the outcome, which with the status says *when* a hit landed — `kyc_case.status_changed_at`'s reasoning |
+| `verification_check` | `purpose` | `CONFIDENTIAL` | *(`P13-TSK-022`, kyc `V011`)* `ONBOARDING` or `RESCREEN`: a `RESCREEN` row says a list update screened this person again - with the status beside it, *that a list changed and found them*. `check_type`'s and `status`'s tipping-off reasoning; never on a customer surface (kyc's onboarding readers do not see a rescreen at all) |
+| `verification_check` | `rescreen_key` | `INTERNAL` | *(`P13-TSK-022`, kyc `V011`)* risk's permit key and its retry ordinal (`risk.rescreen:<permit id>#n`) - an identifier of a question, nothing about the person; unique |
 
 ### `kyc.verification_evidence` — *added by `P2-TSK-009`*
 

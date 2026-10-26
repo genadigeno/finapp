@@ -110,6 +110,42 @@ class CheckLifecycleTest {
      * <p>The tripwire: a target the machine permits but no method reaches would silently turn
      * the permitted half of the sweep vacuous, so it fails loudly instead.
      */
+    @Test
+    @DisplayName("P13-TSK-022: a check keeps its purpose through its machine - a request is ONBOARDING, a rescreen stays"
+            + " RESCREEN dispatched and answered; a rescreen is a SANCTIONS or PEP screening, never another type")
+    void thePurposeIsFrozen() {
+        VerificationCheck onboarding =
+                VerificationCheck.request(IDS, CLOCK, KycCaseId.next(IDS), CheckType.IDENTITY);
+        assertThat(onboarding.purpose()).isEqualTo(CheckPurpose.ONBOARDING);
+        assertThat(onboarding.onboarding()).isTrue();
+        Instant asked = Instant.now(CLOCK);
+        VerificationCheck rescreen =
+                VerificationCheck.rehydrate(
+                        CheckId.next(IDS),
+                        KycCaseId.next(IDS),
+                        CheckType.SANCTIONS,
+                        CheckStatus.REQUESTED,
+                        asked,
+                        asked,
+                        CheckPurpose.RESCREEN);
+        VerificationCheck answered = rescreen.dispatch(CLOCK).complete(CheckOutcome.HIT, CLOCK);
+        assertThat(answered.purpose()).isEqualTo(CheckPurpose.RESCREEN);
+        assertThat(answered.onboarding()).isFalse();
+        assertThat(answered.toString()).endsWith(", RESCREEN]");
+        assertThatThrownBy(
+                        () ->
+                                VerificationCheck.rehydrate(
+                                        CheckId.next(IDS),
+                                        KycCaseId.next(IDS),
+                                        CheckType.IDENTITY,
+                                        CheckStatus.REQUESTED,
+                                        asked,
+                                        asked,
+                                        CheckPurpose.RESCREEN))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(CheckPurpose.sqlValueList()).isEqualTo("'ONBOARDING', 'RESCREEN'");
+    }
+
     private static VerificationCheck move(VerificationCheck check, CheckStatus to) {
         return switch (to) {
             case DISPATCHED -> check.dispatch(CLOCK);

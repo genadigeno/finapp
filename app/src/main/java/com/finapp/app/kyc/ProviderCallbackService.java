@@ -183,7 +183,12 @@ public class ProviderCallbackService {
         // PROCESSED assesses because this delivery may have answered the last outstanding
         // question; a DUPLICATE re-assesses because the first delivery may have crashed between
         // its commit and its assessment - the same self-healing the run's re-assessment gives.
-        assessment.assess(delivered.check().caseId());
+        // P13-TSK-022: only an ONBOARDING check's answer is the case's evidence. A RESCREEN's late
+        // answer is recorded above - outcome, evidence, trail - and assesses nothing: a list
+        // update's screening never routes a decided case to review or moves it (kyc V011).
+        if (delivered.check().onboarding()) {
+            assessment.assess(delivered.check().caseId());
+        }
     }
 
     /** The one effect, inside the delivery's transaction — with the dedupe record, or not at all. */

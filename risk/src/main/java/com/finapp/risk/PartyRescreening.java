@@ -9,18 +9,18 @@ import java.util.UUID;
  * it; {@code PHASE_13_PLAN.md} section 12.10; ADR-0107 decision 3; {@code ROADMAP.md} Refinement 3; OQ-8; {@code
  * INV-RSK-02}) - <strong>risk asks, kyc screens</strong>. The rescreening leg calls it once per claimed permit, on
  * <strong>no risk transaction</strong> (the port's own, opened by its implementation), under the permit's key
- * ({@link #KEY_PREFIX} + the permit's id); {@code app} implements it over kyc's case-bound screening.
+ * ({@link #KEY_PREFIX} + the permit's id); {@code app} implements it through kyc's re-screening door.
  *
- * <p><strong>The answer is kyc's, as of now</strong> - never a verdict risk derives: kyc's latest decided screening of the
+ * <p><strong>The answer is kyc's</strong> - never a verdict risk derives: kyc's answer to the permit's keyed screening of the
  * list's type for the party ({@link Screened}: kyc's screening id, whether it hit, when kyc was asked it and decided it),
- * a screening not yet decided ({@link Pending}), or a party with no {@code ACTIVE} customer relationship
+ * a screening not yet decided ({@link Pending}), or a party with no {@code ACTIVE} or {@code PENDING} customer relationship
  * ({@link Inactive}). Whether the screened answer is a rescreening <em>under the list version</em> is risk's judgement of
  * currency ({@link RescreeningRun}): only a screening kyc was <em>asked</em> after the version came into force is one.
  *
- * <p><strong>The key is presented for kyc's door to come</strong> (`DESIGN-022` D1): kyc today has no door that screens a
- * decided party again - the case-bound check converges on an answered question, and a list update's re-verification is
- * a new case (`INV-LIFE-04`) that {@code app} does not open - so the implementation reads kyc's current screening and the
- * key binds nothing yet. A kyc re-screening door keyed by it slots in here and nowhere else.
+ * <p><strong>The key binds kyc's question</strong> (the owner's decision O1, kyc {@code V011}): kyc's re-screening door asks a
+ * post-decision {@code RESCREEN} check under it (and its retry ordinal), unique - so a re-driven permit, a lease lost
+ * mid-call or ten sweepers meet one question and one provider call, and the answer is that keyed check's, never another
+ * question's. Evidence beside kyc's decision, never a re-decision.
  */
 @FunctionalInterface
 public interface PartyRescreening {
@@ -83,7 +83,7 @@ public interface PartyRescreening {
         NOT_SCREENED
     }
 
-    /** The party has no {@code ACTIVE} customer relationship any more - nothing to rescreen. */
+    /** The party has no {@code ACTIVE} or {@code PENDING} customer relationship any more - nothing to rescreen. */
     record Inactive() implements Answer {}
 
     /** kyc could not be asked - the leg's own answer when the port throws; never kyc's. */

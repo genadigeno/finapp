@@ -183,6 +183,52 @@ class ChecksAssessmentTest {
         assertThat(ChecksAssessment.needingReview(REQUIRED, checks)).containsExactly(hit);
     }
 
+    @Test
+    @DisplayName("P13-TSK-022: a RESCREEN check is evidence beside the decision, never part of it - a rescreen HIT"
+            + " blocks nothing and needs no review, a rescreen in flight leaves nothing incomplete, a rescreen CLEAR"
+            + " answers no required type")
+    void aRescreenIsNeverTheDecisionsEvidence() {
+        Set<CheckType> screened = EnumSet.of(CheckType.IDENTITY, CheckType.SANCTIONS);
+        List<VerificationCheck> decided =
+                List.of(at(CheckType.IDENTITY, CheckStatus.CLEAR), at(CheckType.SANCTIONS, CheckStatus.CLEAR));
+        VerificationCheck rescreenHit = rescreen(CheckType.SANCTIONS, CheckStatus.HIT);
+        List<VerificationCheck> withHit =
+                List.of(decided.get(0), decided.get(1), rescreenHit);
+        assertThat(ChecksAssessment.of(screened, withHit))
+                .as("a list update's hit routes no decided case to review")
+                .isEqualTo(ChecksAssessment.CLEAR_TO_PROCEED);
+        assertThat(ChecksAssessment.needingReview(screened, withHit)).isEmpty();
+        assertThat(
+                        ChecksAssessment.of(
+                                screened,
+                                List.of(
+                                        decided.get(0),
+                                        decided.get(1),
+                                        rescreen(CheckType.PEP, CheckStatus.DISPATCHED))))
+                .as("a rescreen in flight leaves nothing incomplete")
+                .isEqualTo(ChecksAssessment.CLEAR_TO_PROCEED);
+        assertThat(
+                        ChecksAssessment.of(
+                                screened,
+                                List.of(
+                                        decided.get(0),
+                                        rescreen(CheckType.SANCTIONS, CheckStatus.CLEAR))))
+                .as("a rescreen's clear answers no required type of the run")
+                .isEqualTo(ChecksAssessment.INCOMPLETE);
+    }
+
+    private VerificationCheck rescreen(CheckType type, CheckStatus status) {
+        Instant asked = Instant.parse("2026-09-09T09:30:00Z");
+        return VerificationCheck.rehydrate(
+                CheckId.next(IDS),
+                caseId,
+                type,
+                status,
+                asked,
+                asked.plusSeconds(1),
+                CheckPurpose.RESCREEN);
+    }
+
     private VerificationCheck at(CheckType type, CheckStatus status) {
         return at(type, status, Instant.parse("2026-09-09T09:00:00Z"));
     }

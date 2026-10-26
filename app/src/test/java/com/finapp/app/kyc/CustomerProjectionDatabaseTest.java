@@ -492,9 +492,12 @@ class CustomerProjectionDatabaseTest {
         }
 
         @Override
-        public java.util.List<com.finapp.party.PartyId> activeCustomerPartiesAfter(
-                Connection unitOfWork, java.util.Optional<com.finapp.party.PartyId> after, int limit) {
-            return real.activeCustomerPartiesAfter(unitOfWork, after, limit);
+        public java.util.List<com.finapp.party.PartyId> customerPartiesAfter(
+                Connection unitOfWork,
+                java.util.Set<com.finapp.party.CustomerStatus> statuses,
+                java.util.Optional<com.finapp.party.PartyId> after,
+                int limit) {
+            return real.customerPartiesAfter(unitOfWork, statuses, after, limit);
         }
 
         @Override
