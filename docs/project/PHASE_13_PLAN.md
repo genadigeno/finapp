@@ -157,6 +157,9 @@ request) and OQ-1…OQ-10 (§24 - OQ-1 read for `HOLD` in item 2; OQ-8 widened b
     no alert of its own (runbook §9.5).
 69. `-024`: a policy version carries no content digest - the gate's record binds the battery's fingerprint to the
     version's id (immutable once proposed, `INV-RSK-05`), not to a hash of its content.
+70. `-024` (the coordinator's merge review): `RiskFilingUnknown` fires when the oldest `FILED` report is older than 1,800 s
+    (two inquiry intervals) - right for the simulated FIU, which answers at once; a real authority's acknowledgement may
+    take far longer, so the threshold is the jurisdiction's acknowledgement time, set with C4 at the activation gate.
 
 **Resolved, kept for the record**: `-007`'s "no `MONITORING` rule kind reads a signal" (`-013` admitted two); `-012` D1
 (the action re-drive moved to `RiskActionSchedule` by `-017`); `-014`/`-015` D6 (an unplaceable alert's suppression -
