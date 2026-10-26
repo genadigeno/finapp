@@ -1204,7 +1204,12 @@ owner-constrained provenance is admitted only as `SYSTEM_JOIN` - the system reso
 for no person's request - and its entry names the one production class allowed to call it, which
 `#systemJoinsHaveTheirOneCaller` checks from the bytecode, so the read cannot drift into a request path unargued. The
 first is accounts' `CustomerAccountStore.customerOf` (the owner of an agreement and nothing else of it), the monitoring
-rules' account → party join in `app` (`AccountMonitoredParties`). *(test: `OwnershipIsScopedTest`)*
+rules' account → party join in `app` (`AccountMonitoredParties`). Its sibling **`SYSTEM_ENUMERATION`** (`P13-TSK-022`'s
+review) is the system paging a whole population for no person's request - party's `activeCustomerPartiesAfter`, the
+rescreening's census of `ACTIVE` parties after a keyset cursor the platform's own enqueue recorded, called by
+`PartyActiveParties` alone and held by the same one-caller check. The review also taught the detector to see an
+`Optional` of an identifier (a raw-type sweep had read `Optional<PartyId>` as `Optional`), which classified the two risk
+queue pages it newly saw (`ADMINISTERED`). *(test: `OwnershipIsScopedTest`)*
 
 **The gap this closed.** Until `P1-TSK-001` this section forbade JPA and Hibernate in
 `sharedkernel` only — and `sharedkernel` is not where an ORM would ever be added. `platform`,

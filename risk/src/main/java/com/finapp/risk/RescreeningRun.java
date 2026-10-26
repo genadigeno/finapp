@@ -32,14 +32,16 @@ import java.util.UUID;
  *
  * <ol>
  *   <li>{@link #claimNextDue} - the oldest due permit {@code FOR UPDATE SKIP LOCKED}, its permit a lease ahead, one
- *       attempt counted, <strong>committed</strong>;</li>
+ *       attempt counted, <strong>committed</strong>; a claim past the bound with no conclusion behind it fails the permit
+ *       {@code UNCONCLUDED} instead - so a conclusion that always throws is bounded too;</li>
  *   <li>{@link #ask} - kyc asked through {@link PartyRescreening} under the permit's key, holding no risk row; a throw is
  *       {@link PartyRescreening.Unavailable};</li>
  *   <li>{@link #conclude} - in one transaction: the permit {@code FOR UPDATE} (R9), acted on only while {@code PENDING}
  *       at the claimed attempt (a slower conclusion of an earlier claim records nothing), then judged:
  *       <ul>
- *         <li>a screening kyc decided <strong>at or after the version's activation</strong> is the party's rescreening
- *             under it: the {@code MONITORING} pin for a hit (R1), the signal {@code SCREENING_CLEARED} or
+ *         <li>a screening kyc was <strong>asked after the version's activation</strong> (by {@link #REQUEST_SKEW}) and
+ *             has decided is the party's rescreening under it: the {@code MONITORING} pin for a hit (R1), the signal
+ *             {@code SCREENING_CLEARED} or
  *             {@code SCREENING_HIT} born once - its source the permit (R3) - the permit {@code DONE}, and for a hit the
  *             {@code SCREENING_HIT} alert born once and folded into the party's {@code AML} case (R5 → R4 → R5);</li>
  *         <li>an older screening ({@code STALE} - kyc has not screened the party under this version), one in flight, none,
@@ -64,6 +66,13 @@ public final class RescreeningRun {
 
     /** The bucket a hit's alert speaks for: the hour its list version came into force. */
     public static final WindowKind HIT_WINDOW = WindowKind.H1;
+
+    /**
+     * How far after the activation kyc's ask must be to count under it - the instances' clock skew the plan admits
+     * ({@code PHASE_13_PLAN.md} section 7.4, {@link VelocityProof#SKEW}), because kyc stamps its ask on an instance's
+     * clock and the activation is the database's.
+     */
+    public static final Duration REQUEST_SKEW = VelocityProof.SKEW;
 
     /** The leg's bounds: how many claims a permit takes before it fails, and the backoff between them. */
     public record Bounds(int maxAttempts, Duration firstBackoff, Duration maxBackoff) {
@@ -157,7 +166,7 @@ public final class RescreeningRun {
         Optional<UUID> cursor = version.enqueueCursor();
         int born = 0;
         for (UUID party : page) {
-            if (cursor.isPresent() && party.compareTo(cursor.get()) <= 0) {
+            if (cursor.isPresent() && databaseOrder(party, cursor.get()) <= 0) {
                 throw new IllegalStateException("the active parties' page is not ascending after its cursor");
             }
             cursor = Optional.of(party);
@@ -174,14 +183,57 @@ public final class RescreeningRun {
 
     // ------------------------------------------------------------------ a permit's three steps
 
-    /** Step 1, on its own transaction: the oldest due permit claimed a lease ahead - empty when none is due. */
-    public Optional<RescreeningPermit> claimNextDue(Connection unitOfWork, Duration lease) {
+    /**
+     * Step 1, on its own transaction: the oldest due permit claimed a lease ahead ({@link Claim.Claimed}), nothing due
+     * ({@link Claim#NOTHING}) - or a permit whose claims have passed the bound with none concluded, failed here
+     * {@code UNCONCLUDED} ({@link Claim.Exhausted}).
+     *
+     * <p>The bound is judged at the claim as well as at the conclusion (`P13-TSK-022`'s review): {@link #waits} fails a
+     * permit at its last attempt only when a conclusion runs, so a conclusion that throws every time - a defect, a row
+     * the store refuses - would be re-claimed every lease forever. A claim past the bound means every earlier conclusion
+     * failed or was overtaken; it is concluded without asking kyc again.
+     */
+    public Claim claimNextDue(Connection unitOfWork, Duration lease) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(lease, "lease");
         if (lease.isNegative() || lease.isZero()) {
             throw new IllegalArgumentException("a claim's lease is positive");
         }
-        return permits.claimNextDue(unitOfWork, lease);
+        Optional<RescreeningPermit> claimed = permits.claimNextDue(unitOfWork, lease);
+        if (claimed.isEmpty()) {
+            return Claim.NOTHING;
+        }
+        RescreeningPermit permit = claimed.get();
+        if (permit.attempts() > bounds.maxAttempts()) {
+            recorded(permits.fail(unitOfWork, permit.id(), permit.attempts(), RescreeningPermit.Cause.UNCONCLUDED));
+            observer.concluded(RescreeningObserver.Conclusion.FAILED);
+            return new Claim.Exhausted(permit);
+        }
+        return new Claim.Claimed(permit);
+    }
+
+    /** What a claim found. Closed, so the driver handles every case. */
+    public sealed interface Claim permits Claim.Nothing, Claim.Claimed, Claim.Exhausted {
+
+        /** No permit was due. */
+        Claim NOTHING = new Nothing();
+
+        /** No permit was due. */
+        record Nothing() implements Claim {}
+
+        /** A permit claimed for its ask and its conclusion - at an attempt within the bound. */
+        record Claimed(RescreeningPermit permit) implements Claim {
+            public Claimed {
+                Objects.requireNonNull(permit, "permit");
+            }
+        }
+
+        /** A permit claimed past the bound with no conclusion behind it - failed {@code UNCONCLUDED} by the claim. */
+        record Exhausted(RescreeningPermit permit) implements Claim {
+            public Exhausted {
+                Objects.requireNonNull(permit, "permit");
+            }
+        }
     }
 
     /** Step 2, on no risk transaction: kyc asked under the permit's key; a throw is {@code Unavailable}. */
@@ -230,9 +282,25 @@ public final class RescreeningRun {
 
     // ------------------------------------------------------------------ the judgements
 
-    /** True when kyc decided {@code screened} at or after the version came into force - a rescreening under it. */
+    /**
+     * True when kyc was <strong>asked</strong> {@code screened} after the version came into force - a rescreening under
+     * it (`P13-TSK-022`'s review). Judged by the ask, never the answer: a check dispatched before the activation and
+     * decided after it screened the list before this one, and counting it would record a clearance the version never
+     * gave - a false clearance. The two instants are two clocks (kyc stamps {@code requested_at} on the requesting
+     * instance's, the activation is the database's), so the ask must clear the activation by {@link #REQUEST_SKEW}: a
+     * check asked within it is judged stale - the conservative side, costing at most a re-ask.
+     */
     static boolean current(PartyRescreening.Screened screened, RescreeningPermit permit) {
-        return !screened.decidedAt().isBefore(permit.listActivatedAt());
+        return !screened.requestedAt().isBefore(permit.listActivatedAt().plus(REQUEST_SKEW));
+    }
+
+    /**
+     * Ascending as PostgreSQL orders {@code uuid} - bytewise, so each half unsigned; {@link UUID#compareTo} compares the
+     * halves signed and would call a page the database ordered descending wherever the top bit of a half differs.
+     */
+    public static int databaseOrder(UUID left, UUID right) {
+        int high = Long.compareUnsigned(left.getMostSignificantBits(), right.getMostSignificantBits());
+        return high != 0 ? high : Long.compareUnsigned(left.getLeastSignificantBits(), right.getLeastSignificantBits());
     }
 
     private Concluded skipped(Connection unitOfWork, RescreeningPermit locked) {

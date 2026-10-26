@@ -12,6 +12,7 @@ import com.finapp.platform.security.SecurityContext;
 import com.finapp.risk.ActiveParties;
 import com.finapp.risk.AlertRaiser;
 import com.finapp.risk.PartyRescreening;
+import com.finapp.risk.RescreeningPermit;
 import com.finapp.risk.RescreeningRun;
 import com.finapp.risk.RiskPolicies;
 import com.finapp.risk.RiskPolicyStore;
@@ -67,7 +68,7 @@ class RescreeningDriverTest {
 
     private final InMemoryScreeningListStore lists = new InMemoryScreeningListStore();
     private final InMemoryRescreeningPermitStore permits = new InMemoryRescreeningPermitStore(lists);
-    private final TreeSet<UUID> active = new TreeSet<>();
+    private final TreeSet<UUID> active = new TreeSet<>(RescreeningRun::databaseOrder);
     private final List<String> asked = new ArrayList<>();
     private final List<RiskSignal> signals = new ArrayList<>();
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
@@ -76,11 +77,13 @@ class RescreeningDriverTest {
     }, CLOCK, registry);
     private final Transactions transactions = new Transactions();
     private boolean failClaims;
+    private boolean refuseSignals;
 
     private final PartyRescreening kyc = (party, list, key) -> {
         Actor actor = SecurityContext.require();
         asked.add(actor.type() + "|" + CorrelationContext.current().orElseThrow().correlationId().value() + "|" + key);
-        return new PartyRescreening.Screened(UUID.randomUUID(), false, lists.now);
+        // Asked a minute after the activation - past the clock skew - so the screening is current.
+        return new PartyRescreening.Screened(UUID.randomUUID(), false, lists.now.plusSeconds(60), lists.now.plusSeconds(61));
     };
 
     private final RescreeningRun run = new RescreeningRun(lists, permits, this::page, kyc,
@@ -140,6 +143,38 @@ class RescreeningDriverTest {
     }
 
     @Test
+    @DisplayName("a conclusion that always fails is bounded through the driver: counted claim.failed each tick, then the"
+            + " claim past the bound fails the permit UNCONCLUDED - concluded, counted failed, kyc not asked - and the"
+            + " tick goes on (P13-TSK-022's review)")
+    void aClaimPastTheBoundFailsThePermitAndTheTickGoesOn() {
+        active.add(UUID.randomUUID());
+        activated();
+        RescreeningRun once = new RescreeningRun(lists, permits, this::page, kyc,
+                new RiskSignals(new Signals(), (OutboxWriter<Connection>) (uow, envelope, payload, mediaType) -> { },
+                        IDS, CLOCK),
+                new RiskPolicies(unusedPolicies()), AlertRaiser.NONE, IDS, metrics,
+                new RescreeningRun.Bounds(1, Duration.ofMinutes(5), Duration.ofMinutes(5)));
+        RescreeningDriver driver = new RescreeningDriver(once, transactions, metrics, RiskFlowScope.NONE,
+                Duration.ofMinutes(2), 10, 1, 10);
+        refuseSignals = true;
+        assertThat(driver.driveDue()).as("enqueued; the one claim's conclusion refused").isEqualTo(
+                new RescreeningDriver.Tick(1, 0));
+        assertThat(asked).hasSize(1);
+        assertThat(registry.get(RescreeningMetrics.CLAIM_FAILED).tag("kind", RescreeningMetrics.KIND).counter().count())
+                .isEqualTo(1.0);
+        lists.now = lists.now.plus(Duration.ofMinutes(3));
+        permits.now = permits.now.plus(Duration.ofMinutes(3));
+        assertThat(driver.driveDue()).as("the claim past the bound concludes the permit itself").isEqualTo(
+                new RescreeningDriver.Tick(0, 1));
+        assertThat(asked).as("kyc is not asked past the bound").hasSize(1);
+        assertThat(permits.all().getFirst().status()).isEqualTo(RescreeningPermit.Status.FAILED);
+        assertThat(permits.all().getFirst().cause()).contains(RescreeningPermit.Cause.UNCONCLUDED);
+        assertThat(registry.get(RescreeningMetrics.RESCREENING).tag("outcome", "failed").counter().count())
+                .isEqualTo(1.0);
+        assertThat(driver.driveDue()).isEqualTo(RescreeningDriver.Tick.NOTHING);
+    }
+
+    @Test
     @DisplayName("the leg rides RiskMonitoringSchedule: RescreeningLeg.NONE for the earlier suites, the driver in"
             + " production - a leg, not a scheduler")
     void theLegRidesTheMonitoringSchedule() {
@@ -167,7 +202,9 @@ class RescreeningDriverTest {
     }
 
     private List<UUID> page(Connection unitOfWork, Optional<UUID> after, int limit) {
-        return active.stream().filter(party -> after.isEmpty() || party.compareTo(after.get()) > 0).limit(limit).toList();
+        // The database's order - each half unsigned - as PostgreSQL pages uuid.
+        return active.stream().filter(party -> after.isEmpty() || RescreeningRun.databaseOrder(party, after.get()) > 0)
+                .limit(limit).toList();
     }
 
     private static RiskPolicyStore unusedPolicies() {
@@ -205,6 +242,9 @@ class RescreeningDriverTest {
 
         @Override
         public boolean insert(Connection unitOfWork, RiskSignal signal) {
+            if (refuseSignals) {
+                throw new IllegalStateException("the store refuses the row");
+            }
             if (signals.stream().anyMatch(born -> born.source().id().equals(signal.source().id()))) {
                 return false;
             }

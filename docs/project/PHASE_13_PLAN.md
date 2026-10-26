@@ -1034,12 +1034,15 @@ customer (`DecisionRecording` moves only `PENDING`). `CounterpartyScreenings` sc
 and payee check - facts a party does not have. So `PartyRescreening` (reshaped) asks kyc under the permit's key
 (`risk.rescreen:<permit id>`) and `app`'s `KycPartyRescreening` answers with **kyc's current case-bound screening** of
 the list's type (the latest decided check; in flight; none; the party no longer `ACTIVE`), on a read-only snapshot of its
-own; **risk judges currency** - only a screening kyc decided at or after the version's activation is recorded
+own; **risk judges currency** - only a screening kyc was *asked* after the version's activation (by the instances' ±5 s skew;
+judged by the ask, never the answer - the review's IMPORTANT 3) is recorded
 (`SCREENING_CLEARED` / `SCREENING_HIT`, about the party, born of the permit); an older one is `STALE`, backed off (5 min
 doubling to 6 h) and `FAILED` at 12 attempts, counted - never a clearance (`INV-RSK-02`). **Consequence, stated
 plainly:** until kyc grows a door that re-screens a decided party (owner item), a party kyc screened before the
-activation is never re-screened and its permit ends `FAILED(STALE)` - the leg is an honest exposure census, and any
-re-screening kyc performs (a successor case's checks) is recorded the moment it is decided. **The list fact:** recorded
+activation is never re-screened and its permit ends `FAILED(STALE)` - the leg is an honest exposure census; a check kyc
+is asked after the activation (a successor case's) is recorded at the permit's next claim while the permit is within its
+bound, and never after it has failed. A claim past the bound with no conclusion behind it fails the permit
+`UNCONCLUDED`. **The list fact:** recorded
 by a person (`CUSTOMER` or `EMPLOYEE`), numbered in the list's order under its advisory lock, a recorded label
 converging; activated by a **second** person from `MULTI_FACTOR` (§11's "under four eyes"; the recorder refused `403
 risk.SelfApprovalRefused`, recorded `FAILED`), the predecessor retired in the same transaction; a second activation, or a

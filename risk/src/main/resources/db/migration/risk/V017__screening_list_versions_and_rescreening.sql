@@ -23,10 +23,12 @@
 -- A PERMIT - ONE PER (party, list version)
 --   PENDING (born due at once) -> PENDING (the leg's claim: one attempt, the permit a lease ahead; or a deferral: kyc's
 --   screening not yet current under the version, in flight, never decided, or kyc unavailable - re-permitted with its
---   cause) -> DONE (CLEARED | HIT: kyc's screening decided at or after the version's activation, recorded as the signal
+--   cause) -> DONE (CLEARED | HIT: a screening kyc was ASKED after the version's activation - by the instances' clock
+--   skew, kyc stamping its ask on an instance's clock - and has decided, recorded as the signal
 --   SCREENING_CLEARED | SCREENING_HIT whose source_event_id IS the permit's id - rescreening_permit_signal_is_its_own;
---   SKIPPED: the party no longer ACTIVE) | FAILED (the bound reached, the cause kept). Risk asks and kyc screens (INV-RSK-02):
---   kyc's call is outside every risk transaction, the conclusion conditional on PENDING and the claimed attempt.
+--   SKIPPED: the party no longer ACTIVE) | FAILED (the bound reached, the cause kept; or UNCONCLUDED - a claim past the
+--   bound with no conclusion behind it). Risk asks and kyc screens (INV-RSK-02): kyc's call is outside every risk
+--   transaction, the conclusion conditional on PENDING and the claimed attempt.
 --
 -- THE SIGNAL GAINS TWO REFERENCES AND TWO KINDS
 --   list_version_ref (the version the clearance was judged under) and screening_ref (kyc's screening, by id - never kyc's
@@ -38,6 +40,18 @@
 -- Persons are authenticated humans - CUSTOMER-typed as the platform's session establishes every operator, or EMPLOYEE -
 -- never SYSTEM, SERVICE or MERCHANT (the meaning V012-V016 adopted). The stamps are the triggers' clock_timestamp(). No
 -- money column. No DELETE for any role. The migration names no other schema.
+--
+-- DEPLOY-TIME LOCKS ON risk.risk_signal (DATA_MIGRATIONS.md section 4.4; the P13-TSK-022 review)
+--   Section 2 holds risk_signal under ACCESS EXCLUSIVE for the migration's transaction: the two ADD COLUMNs are
+--   catalogue-only (nullable, no default - no rewrite); ADD CONSTRAINT risk_signal_id_and_source builds a unique index
+--   over every row; and the three re-made CHECKs validate every row. While it runs, the signal intake (T-sig, every
+--   consumed event's handler) and every T-eval read of signals wait on the lock - nothing fails: the inbox retries a
+--   delivery that times out, and the sweeps re-run their claims. The time is one index build plus three scans of the
+--   table, linear in its rows. Deploy it when the signal intake is quiet, and with lock_timeout set so a long-running
+--   reader makes the migration fail and retry rather than queue every writer behind it. The mechanism is kept (no
+--   NOT VALID and VALIDATE split, no CONCURRENTLY build): the table is risk's young evidence, the unique index is what
+--   the permit's composite foreign key needs, and a split would leave the CHECKs unproven for a window in which the new
+--   kinds are already written. The runbook line is routed to P13-TSK-024.
 
 -- ---------------------------------------------------------------------------------------------------------------------
 -- 1. The list version.
@@ -114,7 +128,7 @@ CREATE INDEX screening_list_version_enqueue_due ON risk.screening_list_version (
 COMMENT ON TABLE risk.screening_list_version IS
     'A screening list version: the operator''s fact that version V of the sanctions or PEP list is in force (PHASE_13_PLAN.md section 12.10). RECORDED (a person, with a reason) -> ACTIVE (a SECOND person, MULTI_FACTOR; screening_list_version_four_eyes) -> RETIRED (beside its successor''s activation). One per (list, label); one ACTIVE per list. The activation leaves its enqueue due; RiskMonitoringSchedule''s rescreening leg enqueues one rescreening permit per ACTIVE party in bounded batches. No list content. P13-TSK-022.';
 COMMENT ON COLUMN risk.screening_list_version.activated_at IS
-    'When the version came into force, on the database clock: the line a kyc screening is judged current against (decided at or after it), and the hour a hit''s SCREENING_HIT alert speaks for.';
+    'When the version came into force, on the database clock: the line a kyc screening is judged current against (asked after it, by the instances'' clock skew), and the hour a hit''s SCREENING_HIT alert speaks for.';
 COMMENT ON COLUMN risk.screening_list_version.enqueue_cursor IS
     'The last party the enqueue reached: a keyset over party ids, moved forward only, committed with the batch of permits it bore.';
 
@@ -411,7 +425,7 @@ CREATE TABLE risk.rescreening_permit (
     CONSTRAINT rescreening_permit_status_is_known CHECK (status IN ('PENDING', 'DONE', 'FAILED')),
     CONSTRAINT rescreening_permit_outcome_is_known CHECK (outcome IS NULL OR outcome IN ('CLEARED', 'HIT', 'SKIPPED')),
     CONSTRAINT rescreening_permit_cause_is_known CHECK (
-        cause IS NULL OR cause IN ('STALE', 'IN_FLIGHT', 'NOT_SCREENED', 'UNAVAILABLE')),
+        cause IS NULL OR cause IN ('STALE', 'IN_FLIGHT', 'NOT_SCREENED', 'UNAVAILABLE', 'UNCONCLUDED')),
 
     -- The permit exactly while PENDING; the outcome exactly when DONE; a cause when FAILED and none when DONE; the signal
     -- exactly for a clearance; concluded exactly when terminal; an attempt behind every conclusion.
@@ -435,9 +449,9 @@ CREATE INDEX rescreening_permit_due ON risk.rescreening_permit (next_attempt_at,
 CREATE INDEX rescreening_permit_of_version ON risk.rescreening_permit (list_version_id, status);
 
 COMMENT ON TABLE risk.rescreening_permit IS
-    'One party''s rescreening under one screening list version (PHASE_13_PLAN.md section 12.10): born PENDING by the activation''s enqueue, one per (party, version) (rescreening_permit_once); claimed by RiskMonitoringSchedule''s rescreening leg FOR UPDATE SKIP LOCKED (an attempt, the permit a lease ahead), kyc asked outside every risk transaction under the key risk.rescreen:<id>, concluded once at the claimed attempt: DONE (CLEARED | HIT - kyc''s screening decided at or after the version''s activation, recorded as the signal born of this permit; SKIPPED - the party no longer ACTIVE) or FAILED at the bound, the cause kept. Risk asks; kyc screens (INV-RSK-02). P13-TSK-022.';
+    'One party''s rescreening under one screening list version (PHASE_13_PLAN.md section 12.10): born PENDING by the activation''s enqueue, one per (party, version) (rescreening_permit_once); claimed by RiskMonitoringSchedule''s rescreening leg FOR UPDATE SKIP LOCKED (an attempt, the permit a lease ahead), kyc asked outside every risk transaction under the key risk.rescreen:<id>, concluded once at the claimed attempt: DONE (CLEARED | HIT - a kyc screening asked after the version''s activation and decided, recorded as the signal born of this permit; SKIPPED - the party no longer ACTIVE) or FAILED at the bound, the cause kept. Risk asks; kyc screens (INV-RSK-02). P13-TSK-022.';
 COMMENT ON COLUMN risk.rescreening_permit.cause IS
-    'Why the permit waits (the last deferral''s cause) or why it failed: STALE (kyc''s latest decided screening predates the version''s activation), IN_FLIGHT, NOT_SCREENED, UNAVAILABLE. NULL once DONE.';
+    'Why the permit waits (the last deferral''s cause) or why it failed: STALE (kyc''s latest decided screening was asked before the version''s activation), IN_FLIGHT, NOT_SCREENED, UNAVAILABLE, or - failing only - UNCONCLUDED (the bound passed with no conclusion recorded; failed by the next claim). NULL once DONE.';
 
 CREATE FUNCTION risk.rescreening_permit_permits_only_machine_edges() RETURNS trigger
     LANGUAGE plpgsql

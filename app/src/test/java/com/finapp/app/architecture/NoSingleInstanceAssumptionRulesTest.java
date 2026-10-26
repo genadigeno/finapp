@@ -386,6 +386,14 @@ class NoSingleInstanceAssumptionRulesTest {
                     // back under FOR UPDATE, waiting for a running batch. Register row: DISTRIBUTED_EXECUTION.md section
                     // 3; the ten-sweeper race is MonitoringIntakeDatabaseTest#tenSweepersIngestOnce. (P13-TSK-012's
                     // override action leg rode this schedule until P13-TSK-017 moved it to RiskActionSchedule below.)
+                    // P13-TSK-022: the rescreening leg rides the same tick, last - enqueue batches claimed FOR UPDATE
+                    // SKIP LOCKED on the list version (R9), permits claimed the same way and committed before kyc is
+                    // asked. "No external call" holds as built: KycPartyRescreening reads kyc's own rows on a snapshot of
+                    // its own. It stops holding when kyc's re-screening door exists (owner item O1): that door's provider
+                    // call would run inside this tick, after the claim's commit and on no risk transaction - correct under
+                    // N instances by the permit's claim, but slow work on the monitoring schedule's thread, so the leg is
+                    // to move beside RiskActionSchedule's owner calls when O1 is built (recorded in DISTRIBUTED_EXECUTION.md
+                    // section 3). Ten sweepers: RescreeningDatabaseTest#tenSweepersRescreenOnce (owed, C5).
                     "com.finapp.app.risk.RiskMonitoringSchedule",
                     // P13-TSK-017: the same half for the risk action schedule - the 31st entry. DESIGN: no money row is
                     // taken by risk and no risk row is held while an owner works. Each claim is ONE statement on the

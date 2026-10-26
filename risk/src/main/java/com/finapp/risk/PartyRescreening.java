@@ -12,10 +12,10 @@ import java.util.UUID;
  * ({@link #KEY_PREFIX} + the permit's id); {@code app} implements it over kyc's case-bound screening.
  *
  * <p><strong>The answer is kyc's, as of now</strong> - never a verdict risk derives: kyc's latest decided screening of the
- * list's type for the party ({@link Screened}: kyc's screening id, whether it hit, when kyc decided it), a screening not
- * yet decided ({@link Pending}), or a party with no {@code ACTIVE} customer relationship ({@link Inactive}). Whether the
- * screened answer is a rescreening <em>under the list version</em> is risk's judgement of currency
- * ({@link RescreeningRun}): only a screening kyc decided at or after the version's activation is one.
+ * list's type for the party ({@link Screened}: kyc's screening id, whether it hit, when kyc was asked it and decided it),
+ * a screening not yet decided ({@link Pending}), or a party with no {@code ACTIVE} customer relationship
+ * ({@link Inactive}). Whether the screened answer is a rescreening <em>under the list version</em> is risk's judgement of
+ * currency ({@link RescreeningRun}): only a screening kyc was <em>asked</em> after the version came into force is one.
  *
  * <p><strong>The key is presented for kyc's door to come</strong> (`DESIGN-022` D1): kyc today has no door that screens a
  * decided party again - the case-bound check converges on an answered question, and a list update's re-verification is
@@ -45,13 +45,21 @@ public interface PartyRescreening {
     sealed interface Answer permits Screened, Pending, Inactive, Unavailable {}
 
     /**
-     * kyc's latest decided screening of the list's type - its id, whether it hit, when kyc decided it. Three bounded facts:
-     * never kyc's row, never the provider's evidence, never a name.
+     * kyc's latest decided screening of the list's type - its id, whether it hit, when kyc was asked it and when kyc
+     * decided it. Four bounded facts: never kyc's row, never the provider's evidence, never a name.
+     *
+     * <p>{@code requestedAt} is what currency is judged by (`P13-TSK-022`'s review): a screening asked before a list
+     * version came into force was asked against the list before it, however late its answer came - so a check dispatched
+     * before the activation and decided after it is not a rescreening under the version.
      */
-    record Screened(UUID screeningRef, boolean hit, Instant decidedAt) implements Answer {
+    record Screened(UUID screeningRef, boolean hit, Instant requestedAt, Instant decidedAt) implements Answer {
         public Screened {
             Objects.requireNonNull(screeningRef, "screeningRef");
+            Objects.requireNonNull(requestedAt, "requestedAt");
             Objects.requireNonNull(decidedAt, "decidedAt");
+            if (decidedAt.isBefore(requestedAt)) {
+                throw new IllegalArgumentException("a screening is decided no earlier than it was asked");
+            }
         }
 
         @Override

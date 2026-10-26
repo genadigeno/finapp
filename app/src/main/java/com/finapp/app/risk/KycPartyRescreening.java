@@ -31,8 +31,9 @@ import java.util.UUID;
  *   <li>on the latest KYC case of that customer, the newest check of the list's type ({@code SANCTIONS} for the sanctions
  *       list, {@code PEP} for the PEP list) still {@code REQUESTED} or {@code DISPATCHED} - {@link Pending}
  *       {@code IN_FLIGHT};</li>
- *   <li>else the latest <em>decided</em> check of the type ({@code CLEAR} or {@code HIT}) - {@link Screened}: its id,
- *       whether it hit, when kyc decided it;</li>
+ *   <li>else the <em>decided</em> check of the type ({@code CLEAR} or {@code HIT}) asked last - {@link Screened}: its id,
+ *       whether it hit, when kyc was asked it (kyc's {@code requested_at}, what currency is judged by) and when kyc
+ *       decided it;</li>
  *   <li>else - no case, no check of the type, or only "we do not know" ({@code INDETERMINATE}) - {@link Pending}
  *       {@code NOT_SCREENED}.</li>
  * </ul>
@@ -41,10 +42,9 @@ import java.util.UUID;
  * case's answered check is converged on, never re-asked ({@code CheckStore#requestOrConverge}), and a list update's
  * re-verification is a <em>new</em> case ({@code INV-LIFE-04}) - consent-gated, re-running identity and documents,
  * customer-visible, and undecidable for an {@code ACTIVE} customer today. So the request key binds nothing yet: what kyc
- * holds is its answer, and risk's leg judges whether it is current under the list version (decided at or after the
- * activation) - a party kyc screened before the activation waits, and fails at the leg's bound, counted, until kyc
- * re-screens it (a successor case's checks are read here the moment they are decided). kyc's re-screening door is the
- * owner's item (O1); it slots in here and nowhere else. kyc's {@code CounterpartyScreenings} screens a payee abroad by name,
+ * holds is its answer, and risk's leg judges whether it is current under the list version (asked after the activation) -
+ * a party kyc screened before the activation waits, and fails at the leg's bound, counted, until kyc re-screens it. kyc's
+ * re-screening door is the owner's item (O1); it slots in here and nowhere else. kyc's {@code CounterpartyScreenings} screens a payee abroad by name,
  * country and payee check - facts a party does not have - and is not used.
  */
 public final class KycPartyRescreening implements PartyRescreening {
@@ -88,11 +88,13 @@ public final class KycPartyRescreening implements PartyRescreening {
         if (newest.isPresent() && !newest.get().status().isTerminal()) {
             return new Pending(Wait.IN_FLIGHT);
         }
+        // The newest decided ASK, not the latest answer: currency is judged by when kyc was asked (the review's
+        // IMPORTANT 3), so the screening offered is the one asked last.
         return ofType.stream()
                 .filter(check -> check.status() == CheckStatus.CLEAR || check.status() == CheckStatus.HIT)
-                .max(Comparator.comparing(VerificationCheck::statusChangedAt))
+                .max(Comparator.comparing(VerificationCheck::requestedAt).thenComparing(VerificationCheck::statusChangedAt))
                 .<Answer>map(check -> new Screened(check.id().value(), check.status() == CheckStatus.HIT,
-                        check.statusChangedAt()))
+                        check.requestedAt(), check.statusChangedAt()))
                 .orElseGet(() -> new Pending(Wait.NOT_SCREENED));
     }
 

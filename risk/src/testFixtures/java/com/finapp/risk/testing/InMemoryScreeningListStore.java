@@ -175,7 +175,9 @@ public final class InMemoryScreeningListStore implements ScreeningListStore {
         if (row == null || !row.enqueuing()) {
             throw new IllegalStateException("the claimed list version's enqueue moved under its own row lock");
         }
-        if (row.enqueueCursor().isPresent() && (cursor.isEmpty() || cursor.get().compareTo(row.enqueueCursor().get()) < 0)) {
+        // In the database's order - each half unsigned - as the real cursor moves.
+        if (row.enqueueCursor().isPresent() && (cursor.isEmpty()
+                || com.finapp.risk.RescreeningRun.databaseOrder(cursor.get(), row.enqueueCursor().get()) < 0)) {
             throw new IllegalStateException("a list version's enqueue only moves forward");
         }
         ScreeningListVersion advanced = new ScreeningListVersion(row.id(), row.list(), row.version(), row.ordinal(),

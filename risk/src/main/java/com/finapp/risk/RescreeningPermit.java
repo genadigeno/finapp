@@ -88,7 +88,12 @@ public record RescreeningPermit(
         /** kyc holds no decided screening of the list's type for the party. */
         NOT_SCREENED,
         /** kyc could not be asked. */
-        UNAVAILABLE;
+        UNAVAILABLE,
+        /**
+         * The bound passed with no conclusion recorded - every claim's conclusion failed or was overtaken; failed by the
+         * next claim, never re-claimed forever (`P13-TSK-022`'s review).
+         */
+        UNCONCLUDED;
 
         /** The quoted SQL list. */
         public static String sqlValueList() {

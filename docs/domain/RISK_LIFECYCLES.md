@@ -709,8 +709,11 @@ LOCKED`, a keyset page of `ACTIVE` parties, the cursor advanced). **The permit's
 HIT | SKIPPED) | FAILED(cause)` - no `REQUESTED` state: the claim (`SKIP LOCKED`, one attempt, a lease ahead) is
 committed before kyc is asked, kyc is asked on no risk transaction through `PartyRescreening`, and the conclusion is
 recorded at the claimed attempt; kyc's answer is **read**, not awaited by event (kyc publishes no case-check outcome) -
-its current case-bound screening, recorded only when decided at or after the activation, otherwise deferred (`STALE`,
-`IN_FLIGHT`, `NOT_SCREENED`, `UNAVAILABLE`) and `FAILED` at the bound. The clearance is the signal `SCREENING_CLEARED` or
+its current case-bound screening, recorded only when kyc was **asked** it after the activation (by the instances' ±5 s
+skew - kyc stamps its ask on an instance's clock; judged by the ask, never the answer, so a check dispatched before the
+activation and decided after it is not a clearance under the version - the review's IMPORTANT 3), otherwise deferred
+(`STALE`, `IN_FLIGHT`, `NOT_SCREENED`, `UNAVAILABLE`) and `FAILED` at the bound; a claim past the bound with no
+conclusion behind it fails the permit `UNCONCLUDED` (a conclusion that always throws is bounded too). The clearance is the signal `SCREENING_CLEARED` or
 `SCREENING_HIT` (`UNIQUE (source_event_id)` = the permit; the permit names it by `rescreening_permit_signal_is_its_own`);
 a hit's alert is the `MONITORING` version's `SCREENING_HIT` rule's, born once per (party, rule, the activation's `H1`
 bucket), folded into the party's `AML` case. A party deactivated meanwhile is `DONE(SKIPPED)`. Every invalid edge is

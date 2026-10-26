@@ -163,15 +163,21 @@ public final class JdbcPartyStore implements PartyStore<Connection> {
         if (limit < 1 || limit > 1000) {
             throw new IllegalArgumentException("a page of active parties is 1..1000 rows: " + limit);
         }
+        // Two statements, not one "(? IS NULL OR party_id > ?)": under a generic plan that disjunction
+        // is not sargable, so every batch after the first would rescan from the start (P13-TSK-022's
+        // review). Each statement here is one range scan of customer_by_party from its cursor.
         try (PreparedStatement select =
                 unitOfWork.prepareStatement(
-                        "SELECT party_id FROM party.customer"
-                                + " WHERE status = 'ACTIVE' AND (CAST(? AS uuid) IS NULL OR party_id > ?)"
-                                + " ORDER BY party_id LIMIT ?")) {
-            UUID cursor = after.map(PartyId::value).orElse(null);
-            select.setObject(1, cursor);
-            select.setObject(2, cursor);
-            select.setInt(3, limit);
+                        after.isEmpty()
+                                ? "SELECT party_id FROM party.customer WHERE status = 'ACTIVE'"
+                                        + " ORDER BY party_id LIMIT ?"
+                                : "SELECT party_id FROM party.customer WHERE status = 'ACTIVE'"
+                                        + " AND party_id > ? ORDER BY party_id LIMIT ?")) {
+            int index = 1;
+            if (after.isPresent()) {
+                select.setObject(index++, after.get().value());
+            }
+            select.setInt(index, limit);
             java.util.List<PartyId> page = new java.util.ArrayList<>();
             try (ResultSet rows = select.executeQuery()) {
                 while (rows.next()) {

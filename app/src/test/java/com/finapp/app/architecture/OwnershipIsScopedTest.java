@@ -207,7 +207,20 @@ class OwnershipIsScopedTest {
          * {@link #systemJoinsHaveTheirOneCaller} fails the build when any other class calls it - so the read
          * by identifier alone cannot drift into a request path without somebody writing a second sentence.
          */
-        SYSTEM_JOIN
+        SYSTEM_JOIN,
+
+        /**
+         * The system pages a whole population, for no person's request.
+         *
+         * <p>Added by {@code P13-TSK-022}'s review for the rescreening's census of {@code ACTIVE} parties,
+         * and not {@link #SYSTEM_JOIN}, because it resolves no reference: the identifier it takes is a
+         * keyset cursor - the last party the system's own enqueue paged, recorded on the list version -
+         * and it answers <em>every</em> party after it. No label that scopes a read to an owner can be
+         * true of a read whose purpose is all owners. The control is the same one as a join's, and held by
+         * the same rule ({@link #systemJoinsHaveTheirOneCaller}): the entry names the one production class
+         * that calls it, and a second caller fails the build.
+         */
+        SYSTEM_ENUMERATION
     }
 
     /**
@@ -278,6 +291,20 @@ class OwnershipIsScopedTest {
                                         + " answers the owner's identifier and nothing of the agreement (no product,"
                                         + " status or date), on the monitoring claim's own connection as the system."
                                         + " AccountMonitoredParties alone calls it, and that class depends on risk, so"
+                                        + " NoCustomerSurfaceReadsRiskTest refuses any customer or merchant surface"
+                                        + " reaching it.")),
+                    Map.entry(
+                            "com.finapp.party.JdbcPartyStore.activeCustomerPartiesAfter",
+                            new Entry(
+                                    Scope.SYSTEM_ENUMERATION,
+                                    "com.finapp.app.risk.PartyActiveParties",
+                                    "P13-TSK-022. The rescreening's census of a list version: a keyset page of"
+                                        + " the parties whose live customer relationship is ACTIVE, after a cursor"
+                                        + " that is the last party the platform's own enqueue paged (risk's"
+                                        + " screening_list_version.enqueue_cursor), never a request's. It answers"
+                                        + " party identifiers alone - no name, no customer, no status - on the"
+                                        + " enqueue batch's own connection as the system. PartyActiveParties alone"
+                                        + " calls it, and that class depends on risk, so"
                                         + " NoCustomerSurfaceReadsRiskTest refuses any customer or merchant surface"
                                         + " reaching it.")),
                     Map.entry(
@@ -1921,6 +1948,18 @@ class OwnershipIsScopedTest {
                                         + " is never served); deliberately someone else's subject, the not-self rule"
                                         + " judged by Alerts on every person's act and by the queue on every row.")),
                     Map.entry(
+                            "com.finapp.risk.JdbcRiskAlertStore.queue",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-018 (classified by P13-TSK-022's review, when the detector learned to"
+                                        + " see an Optional identifier): the alert queue's keyset page on the reader's"
+                                        + " read-only snapshot behind @RequiresPermission(RISK_INVESTIGATE). The"
+                                        + " cursor is the request's, its key only - AlertQueue.page has read it with"
+                                        + " find(after) and refused one that names no alert; the statement excludes"
+                                        + " the reader's own party (excludingParty), Queues.visibleTo withholds every"
+                                        + " row whose party is the reader's or cannot be placed, and the page is"
+                                        + " recorded risk.AlertRead before it is served.")),
+                    Map.entry(
                             "com.finapp.risk.JdbcRiskAlertStore.lock",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -1992,6 +2031,18 @@ class OwnershipIsScopedTest {
                                         + " same transaction holds; and P13-TSK-018's file (its subject's party judged"
                                         + " before anything else is read) and queue cursor (its key only - the row is"
                                         + " never served). No customer or merchant surface reaches it.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskCaseStore.queue",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-018 (classified by P13-TSK-022's review, when the detector learned to"
+                                        + " see an Optional identifier): the case worklist's keyset page on the"
+                                        + " reader's read-only snapshot behind @RequiresPermission(RISK_INVESTIGATE)."
+                                        + " The cursor is the request's, its key only - CaseWorklist reads it with"
+                                        + " find(after) first; the statement excludes the reader's own party"
+                                        + " (excludingParty), Queues.visibleTo withholds every row whose party is the"
+                                        + " reader's or cannot be placed, and the page is recorded risk.CaseRead"
+                                        + " before it is served.")),
                     Map.entry(
                             "com.finapp.risk.JdbcRiskCaseStore.advance",
                             new Entry(
@@ -4971,21 +5022,30 @@ class OwnershipIsScopedTest {
      * check: the calls are read from the bytecode, so a second caller - a desk, a controller, another
      * adapter - fails here before it can serve the read to anybody. The store's own class and its
      * interfaces are the call's possible targets; the implementation calling itself is not a caller.
+     * A {@code SYSTEM_ENUMERATION} is held the same way (`P13-TSK-022`).
      */
     @Test
-    @DisplayName("a SYSTEM_JOIN read is called by the one production class its entry names, and by nothing else")
+    @DisplayName("a SYSTEM_JOIN or SYSTEM_ENUMERATION read is called by the one production class its entry names,"
+            + " and by nothing else")
     void systemJoinsHaveTheirOneCaller() {
         JavaClasses production = productionClasses();
         List<String> joins = new ArrayList<>();
+        List<String> enumerations = new ArrayList<>();
         REGISTER.forEach(
                 (method, entry) -> {
                     if (entry.scope() == Scope.SYSTEM_JOIN) {
                         joins.add(method);
+                    } else if (entry.scope() == Scope.SYSTEM_ENUMERATION) {
+                        enumerations.add(method);
                     }
                 });
         assertThat(joins)
                 .as("the classification exists for the monitoring join; an empty set checks nothing")
                 .isNotEmpty();
+        assertThat(enumerations)
+                .as("the classification exists for the rescreening's census; an empty set checks nothing")
+                .isNotEmpty();
+        joins.addAll(enumerations);
         for (String method : joins) {
             String caller = REGISTER.get(method).authoritativeRead();
             assertThat(production.contain(caller)).as("%s does not exist", caller).isTrue();
@@ -5331,18 +5391,37 @@ class OwnershipIsScopedTest {
      * primary key is an operation <em>on</em> an identity, which is exactly the administrative
      * shape. Scoping <em>by</em> an identity — {@code WHERE identity_id = ?} on somebody's sessions
      * or credentials — is the ordinary one and stays excluded.
+     *
+     * <p>An {@code Optional} of one is one too (`P13-TSK-022`'s review): a raw-type sweep read
+     * {@code Optional<PartyId>} as {@code Optional} and missed {@code activeCustomerPartiesAfter},
+     * whose keyset cursor is a party's identifier. The widening is that one wrapper - an optional
+     * identifier is still a single resource named by the caller; a collection is a different shape,
+     * left to the day one exists.
      */
     private static boolean takesAResourceIdentifier(JavaMethod method, String qualified) {
         boolean nonIdentityResource =
                 method.getRawParameterTypes().stream()
-                        .anyMatch(
-                                parameter ->
-                                        parameter.isAssignableTo(
-                                                        com.finapp.sharedkernel.id.EntityId.class)
-                                                && !parameter
-                                                        .getName()
-                                                        .equals("com.finapp.identity.IdentityId"));
+                                .anyMatch(OwnershipIsScopedTest::isAResourceIdentifier)
+                        || method.getParameterTypes().stream()
+                                .anyMatch(OwnershipIsScopedTest::isAnOptionalResourceIdentifier);
         return nonIdentityResource || actsOnAnIdentityRow(method, qualified);
+    }
+
+    /** An {@code EntityId} other than the owner's {@code IdentityId}. */
+    private static boolean isAResourceIdentifier(JavaClass parameter) {
+        return parameter.isAssignableTo(com.finapp.sharedkernel.id.EntityId.class)
+                && !parameter.getName().equals("com.finapp.identity.IdentityId");
+    }
+
+    /** {@code Optional<X>} for a resource identifier {@code X}. */
+    private static boolean isAnOptionalResourceIdentifier(
+            com.tngtech.archunit.core.domain.JavaType parameter) {
+        if (!(parameter instanceof com.tngtech.archunit.core.domain.JavaParameterizedType generic)
+                || !generic.toErasure().getName().equals("java.util.Optional")) {
+            return false;
+        }
+        return generic.getActualTypeArguments().stream()
+                .anyMatch(argument -> isAResourceIdentifier(argument.toErasure()));
     }
 
     /** Takes an {@code IdentityId} and reaches {@code identity.identity} by primary key. */

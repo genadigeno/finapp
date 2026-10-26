@@ -266,7 +266,7 @@
  * {@link com.finapp.risk.RescreeningPermit} per party and version, {@link com.finapp.risk.RescreeningPermitStore}), then
  * each permit's three steps - the claim committed, kyc asked through {@link com.finapp.risk.PartyRescreening} on no risk
  * transaction, the conclusion at the claimed attempt: kyc's screening recorded as {@code SCREENING_CLEARED} or
- * {@code SCREENING_HIT} only when decided at or after the activation (risk's own signal kinds,
+ * {@code SCREENING_HIT} only when kyc was asked it after the activation (risk's own signal kinds,
  * {@link com.finapp.risk.SignalKind.Origin#RISK}), a hit alerted once and folded; otherwise deferred and failed at the
  * bound. {@link com.finapp.risk.RescreeningObserver} is the meters' port.
  */

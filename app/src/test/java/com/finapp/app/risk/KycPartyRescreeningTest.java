@@ -71,12 +71,30 @@ class KycPartyRescreeningTest {
                 check(CheckType.IDENTITY, CheckOutcome.CLEAR, CLOCK.instant())));
 
         assertThat(rescreening.ask(party, ScreeningList.SANCTIONS, KEY))
-                .isEqualTo(new PartyRescreening.Screened(sanctionsHit.id().value(), true, later));
+                .isEqualTo(new PartyRescreening.Screened(sanctionsHit.id().value(), true, later.minus(Duration.ofMinutes(1)),
+                        later));
         assertThat(rescreening.ask(party, ScreeningList.PEP, KEY))
-                .isEqualTo(new PartyRescreening.Screened(pepClear.id().value(), false, earlier));
+                .isEqualTo(new PartyRescreening.Screened(pepClear.id().value(), false, earlier.minus(Duration.ofMinutes(1)),
+                        earlier));
         assertThat(transactions.snapshots).as("each ask its own read-only snapshot, never a writing transaction")
                 .isEqualTo(2);
         assertThat(transactions.writes).isZero();
+    }
+
+    @Test
+    @DisplayName("the screening offered is the decided one ASKED last, carrying when it was asked - not the one answered"
+            + " last: currency is judged by the ask (P13-TSK-022's review)")
+    void theScreeningAskedLastIsOffered() {
+        Instant base = CLOCK.instant().minus(Duration.ofDays(2));
+        // Asked first, answered last - a slow provider.
+        VerificationCheck slow = check(CheckType.SANCTIONS, CheckOutcome.HIT, base, base.plus(Duration.ofHours(20)));
+        // Asked after it, answered quickly.
+        VerificationCheck quick = check(CheckType.SANCTIONS, CheckOutcome.CLEAR, base.plus(Duration.ofHours(1)),
+                base.plus(Duration.ofHours(2)));
+        checks.rows.addAll(List.of(slow, quick));
+        assertThat(rescreening.ask(party, ScreeningList.SANCTIONS, KEY))
+                .isEqualTo(new PartyRescreening.Screened(quick.id().value(), false, base.plus(Duration.ofHours(1)),
+                        base.plus(Duration.ofHours(2))));
     }
 
     @Test
@@ -133,8 +151,11 @@ class KycPartyRescreeningTest {
     // -----------------------------------------------------------------
 
     private VerificationCheck check(CheckType type, CheckOutcome outcome, Instant decidedAt) {
-        return VerificationCheck.rehydrate(CheckId.next(IDS), kycCase, type, outcome.toStatus(),
-                decidedAt.minus(Duration.ofMinutes(1)), decidedAt);
+        return check(type, outcome, decidedAt.minus(Duration.ofMinutes(1)), decidedAt);
+    }
+
+    private VerificationCheck check(CheckType type, CheckOutcome outcome, Instant requestedAt, Instant decidedAt) {
+        return VerificationCheck.rehydrate(CheckId.next(IDS), kycCase, type, outcome.toStatus(), requestedAt, decidedAt);
     }
 
     /** risk's unit of work, counted: snapshots and writes, each on no connection (the stores are scripted). */

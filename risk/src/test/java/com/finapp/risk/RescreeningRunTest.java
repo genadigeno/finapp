@@ -50,7 +50,7 @@ class RescreeningRunTest {
     private final CaseWorld world = new CaseWorld();
     private final InMemoryScreeningListStore lists = new InMemoryScreeningListStore();
     private final InMemoryRescreeningPermitStore permits = new InMemoryRescreeningPermitStore(lists);
-    private final TreeSet<UUID> active = new TreeSet<>();
+    private final TreeSet<UUID> active = new TreeSet<>(RescreeningRun::databaseOrder);
     private final Kyc kyc = new Kyc();
     private final MemorySignals signalStore = new MemorySignals();
     private final List<EventEnvelope> events = new ArrayList<>();
@@ -150,6 +150,30 @@ class RescreeningRunTest {
         assertThat(permits.all().stream().filter(p -> p.listVersionId().equals(v2.id()))).hasSize(8);
     }
 
+    @Test
+    @DisplayName("the page is checked in the database's order - each half unsigned, as PostgreSQL orders uuid: parties"
+            + " either side of a sign bit are ascending, and a page out of that order is refused")
+    void aPageInTheDatabasesOrderIsAscending() {
+        UUID belowTheSignBit = new UUID(0x7fff_ffff_ffff_ffffL, 0L);
+        UUID aboveTheSignBit = new UUID(0x8000_0000_0000_0000L, 0L);
+        UUID lowHalfAbove = new UUID(0x8000_0000_0000_0000L, 0x8000_0000_0000_0000L);
+        active.add(aboveTheSignBit);
+        active.add(lowHalfAbove);
+        active.add(belowTheSignBit);
+        assertThat(active).containsExactly(belowTheSignBit, aboveTheSignBit, lowHalfAbove);
+        activated(ScreeningList.SANCTIONS, "v1");
+        enqueueAll();
+        assertThat(permits.all()).extracting(RescreeningPermit::partyId)
+                .containsExactlyInAnyOrder(belowTheSignBit, aboveTheSignBit, lowHalfAbove);
+
+        RescreeningRun disordered = new RescreeningRun(lists, permits,
+                (uow, after, limit) -> List.of(lowHalfAbove, belowTheSignBit), kyc, signals(),
+                new RiskPolicies(world.policyStore), world.alerts::raiseAll, EvaluationWorld.IDS,
+                RescreeningObserver.NONE, RescreeningRun.Bounds.DEFAULT);
+        activated(ScreeningList.PEP, "p1");
+        assertThatThrownBy(() -> disordered.enqueueNextBatch(UOW, 10)).hasMessageContaining("not ascending");
+    }
+
     // ------------------------------------------------------------------ a permit
 
     @Test
@@ -157,10 +181,10 @@ class RescreeningRunTest {
             + " conclusion, one signal")
     void tenSweepersRescreenOnce() {
         UUID party = oneEnqueued(ScreeningList.SANCTIONS, "v1");
-        kyc.answers.put(party, screened(false, lists.now.plusSeconds(1)));
+        kyc.answers.put(party, screened(false, lists.now.plusSeconds(60)));
         List<RescreeningPermit> claimed = new ArrayList<>();
         for (int sweeper = 0; sweeper < 10; sweeper++) {
-            run.claimNextDue(UOW, LEASE).ifPresent(claimed::add);
+            claimed(run.claimNextDue(UOW, LEASE)).ifPresent(claimed::add);
         }
         assertThat(claimed).as("one claim of ten").hasSize(1);
         assertThat(claimed.getFirst().attempts()).isEqualTo(1);
@@ -171,7 +195,8 @@ class RescreeningRunTest {
         assertThat(done.orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.CLEARED);
         commit();
         for (int sweeper = 0; sweeper < 10; sweeper++) {
-            assertThat(run.claimNextDue(UOW, LEASE)).as("a concluded permit is never claimed again").isEmpty();
+            assertThat(run.claimNextDue(UOW, LEASE)).as("a concluded permit is never claimed again")
+                    .isEqualTo(RescreeningRun.Claim.NOTHING);
         }
         assertThat(signalStore.rows).hasSize(1);
         assertThat(permits.all().getFirst().status()).isEqualTo(RescreeningPermit.Status.DONE);
@@ -182,13 +207,13 @@ class RescreeningRunTest {
             + " nothing; the second claim (attempt 2) concludes - one signal, one alert, never two")
     void aLeaseLostMidAskRecordsOnce() {
         UUID party = oneEnqueued(ScreeningList.SANCTIONS, "v1");
-        kyc.answers.put(party, screened(true, lists.now.plusSeconds(1)));
+        kyc.answers.put(party, screened(true, lists.now.plusSeconds(60)));
         world.policyStore.activate(RiskPolicyFixtures.v1(RiskOperation.MONITORING));
-        RescreeningPermit first = run.claimNextDue(UOW, LEASE).orElseThrow();
+        RescreeningPermit first = claimed(run.claimNextDue(UOW, LEASE)).orElseThrow();
         commit();
         PartyRescreening.Answer slow = run.ask(first);
         tick(LEASE.plusSeconds(1));
-        RescreeningPermit second = run.claimNextDue(UOW, LEASE).orElseThrow();
+        RescreeningPermit second = claimed(run.claimNextDue(UOW, LEASE)).orElseThrow();
         commit();
         assertThat(second.attempts()).isEqualTo(2);
         assertThat(conclude(first, slow)).as("the earlier claim's conclusion, with the second claim standing").isEmpty();
@@ -210,7 +235,8 @@ class RescreeningRunTest {
         UUID party = oneEnqueued(ScreeningList.SANCTIONS, "v1");
         Instant activatedAt = lists.all().getFirst().activatedAt().orElseThrow();
         UUID screening = UUID.randomUUID();
-        kyc.answers.put(party, new PartyRescreening.Screened(screening, true, activatedAt.plusSeconds(30)));
+        kyc.answers.put(party, new PartyRescreening.Screened(screening, true, activatedAt.plusSeconds(30),
+                activatedAt.plusSeconds(31)));
 
         RescreeningRun.Concluded hit = rescreenOnce().orElseThrow();
         assertThat(hit.conclusion()).isEqualTo(RescreeningObserver.Conclusion.HIT);
@@ -240,8 +266,7 @@ class RescreeningRunTest {
         tick(Duration.ofMinutes(10));
         ScreeningListVersion pep = activated(ScreeningList.PEP, "p1");
         enqueueAll();
-        kyc.answers.put(party, new PartyRescreening.Screened(UUID.randomUUID(), true,
-                pep.activatedAt().orElseThrow().plusSeconds(5)));
+        kyc.answers.put(party, screened(true, pep.activatedAt().orElseThrow().plusSeconds(10)));
         assertThat(AlertWindow.containing(WindowKind.H1, pep.activatedAt().orElseThrow()))
                 .isEqualTo(AlertWindow.containing(WindowKind.H1, activatedAt));
         assertThat(rescreenOnce().orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.HIT);
@@ -258,7 +283,8 @@ class RescreeningRunTest {
         ScreeningListVersion version = lists.all().getFirst();
         Instant decided = version.activatedAt().orElseThrow().plus(Duration.ofHours(2));
         UUID screening = UUID.randomUUID();
-        kyc.answers.put(party, new PartyRescreening.Screened(screening, false, decided));
+        kyc.answers.put(party, new PartyRescreening.Screened(screening, false, decided.minus(Duration.ofHours(1)),
+                decided));
         RescreeningRun.Concluded cleared = rescreenOnce().orElseThrow();
         assertThat(cleared.conclusion()).isEqualTo(RescreeningObserver.Conclusion.CLEARED);
         RiskSignal signal = signalStore.rows.getFirst();
@@ -285,12 +311,14 @@ class RescreeningRunTest {
         run = run(BOUNDS);
         UUID party = oneEnqueued(ScreeningList.SANCTIONS, "v1");
         Instant activatedAt = lists.all().getFirst().activatedAt().orElseThrow();
-        kyc.answers.put(party, new PartyRescreening.Screened(UUID.randomUUID(), false, activatedAt.minusSeconds(1)));
+        kyc.answers.put(party, new PartyRescreening.Screened(UUID.randomUUID(), false, activatedAt.minusSeconds(2),
+                activatedAt.minusSeconds(1)));
         assertThat(rescreenOnce().orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.DEFERRED);
         RescreeningPermit waiting = permits.all().getFirst();
         assertThat(waiting.cause()).contains(RescreeningPermit.Cause.STALE);
         assertThat(waiting.nextAttemptAt()).contains(permits.now.plus(Duration.ofMinutes(5)));
-        assertThat(run.claimNextDue(UOW, LEASE)).as("not due before its backoff").isEmpty();
+        assertThat(run.claimNextDue(UOW, LEASE)).as("not due before its backoff")
+                .isEqualTo(RescreeningRun.Claim.NOTHING);
         tick(Duration.ofMinutes(6));
         assertThat(rescreenOnce().orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.DEFERRED);
         assertThat(permits.all().getFirst().nextAttemptAt()).as("the backoff doubles")
@@ -303,6 +331,75 @@ class RescreeningRunTest {
         assertThat(failed.attempts()).isEqualTo(3);
         assertThat(signalStore.rows).isEmpty();
         assertThat(world.alertStore.all()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("currency is judged by the ask, never the answer: a check kyc was asked BEFORE the activation and decided"
+            + " after it is STALE - never a clearance under the version; an ask inside the instances' clock skew is"
+            + " stale too; an ask past it is the rescreening")
+    void aCheckAskedBeforeTheActivationIsStaleHoweverLateItsAnswer() {
+        UUID party = oneEnqueued(ScreeningList.SANCTIONS, "v1");
+        Instant activatedAt = lists.all().getFirst().activatedAt().orElseThrow();
+        kyc.answers.put(party, new PartyRescreening.Screened(UUID.randomUUID(), false, activatedAt.minusSeconds(30),
+                activatedAt.plus(Duration.ofHours(1))));
+        assertThat(rescreenOnce().orElseThrow().conclusion()).as("dispatched before, decided after: a false clearance")
+                .isEqualTo(RescreeningObserver.Conclusion.DEFERRED);
+        assertThat(permits.all().getFirst().cause()).contains(RescreeningPermit.Cause.STALE);
+
+        tick(Duration.ofMinutes(6));
+        Instant insideTheSkew = activatedAt.plus(RescreeningRun.REQUEST_SKEW).minusMillis(1);
+        kyc.answers.put(party, new PartyRescreening.Screened(UUID.randomUUID(), false, insideTheSkew,
+                activatedAt.plus(Duration.ofHours(2))));
+        assertThat(rescreenOnce().orElseThrow().conclusion()).as("an ask the two clocks cannot place after the activation")
+                .isEqualTo(RescreeningObserver.Conclusion.DEFERRED);
+        assertThat(signalStore.rows).isEmpty();
+
+        tick(Duration.ofMinutes(11));
+        kyc.answers.put(party, new PartyRescreening.Screened(UUID.randomUUID(), false,
+                activatedAt.plus(RescreeningRun.REQUEST_SKEW), activatedAt.plus(Duration.ofHours(3))));
+        assertThat(rescreenOnce().orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.CLEARED);
+        assertThat(signalStore.rows).hasSize(1);
+        assertThatThrownBy(() -> new PartyRescreening.Screened(UUID.randomUUID(), false, activatedAt,
+                activatedAt.minusSeconds(1))).as("decided before it was asked").isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("a conclusion that always fails is bounded: each claim counts an attempt, and the claim past the bound fails"
+            + " the permit UNCONCLUDED without asking kyc again - never re-claimed every lease forever")
+    void aConclusionThatAlwaysFailsIsBounded() {
+        UUID party = oneEnqueued(ScreeningList.PEP, "v1");
+        kyc.answers.put(party, screened(false, lists.now.plusSeconds(60)));
+        RiskSignalStore refusing = new MemorySignals() {
+            @Override
+            public boolean insert(Connection unitOfWork, RiskSignal signal) {
+                throw new IllegalStateException("the store refuses the row");
+            }
+        };
+        run = new RescreeningRun(lists, permits, this::page, kyc,
+                new RiskSignals(refusing, (uow, envelope, payload, mediaType) -> { }, EvaluationWorld.IDS,
+                        EvaluationWorld.CLOCK),
+                new RiskPolicies(world.policyStore), world.alerts::raiseAll, EvaluationWorld.IDS, observer(), BOUNDS);
+        for (int attempt = 1; attempt <= BOUNDS.maxAttempts(); attempt++) {
+            RescreeningPermit permit = claimed(run.claimNextDue(UOW, LEASE)).orElseThrow();
+            commit();
+            assertThat(permit.attempts()).isEqualTo(attempt);
+            PartyRescreening.Answer answer = run.ask(permit);
+            assertThatThrownBy(() -> conclude(permit, answer)).hasMessageContaining("refuses");
+            commit();
+            tick(LEASE.plusSeconds(1));
+        }
+        assertThat(kyc.asked).hasSize(BOUNDS.maxAttempts());
+        RescreeningRun.Claim past = run.claimNextDue(UOW, LEASE);
+        commit();
+        assertThat(past).isInstanceOf(RescreeningRun.Claim.Exhausted.class);
+        RescreeningPermit failed = permits.all().getFirst();
+        assertThat(failed.status()).isEqualTo(RescreeningPermit.Status.FAILED);
+        assertThat(failed.cause()).contains(RescreeningPermit.Cause.UNCONCLUDED);
+        assertThat(failed.attempts()).isEqualTo(BOUNDS.maxAttempts() + 1);
+        assertThat(kyc.asked).as("kyc is not asked past the bound").hasSize(BOUNDS.maxAttempts());
+        assertThat(concluded).containsExactly(RescreeningObserver.Conclusion.FAILED);
+        tick(Duration.ofHours(7));
+        assertThat(run.claimNextDue(UOW, LEASE)).isEqualTo(RescreeningRun.Claim.NOTHING);
     }
 
     @Test
@@ -359,7 +456,7 @@ class RescreeningRunTest {
             + " names the policy rule that raised it, so none is invented; never silently")
     void aHitNoRuleNamesIsRecordedNotAlerted() {
         UUID party = oneEnqueued(ScreeningList.SANCTIONS, "v1");
-        kyc.answers.put(party, screened(true, lists.now.plusSeconds(1)));
+        kyc.answers.put(party, screened(true, lists.now.plusSeconds(60)));
         assertThat(rescreenOnce().orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.HIT_NOT_ALERTED);
         assertThat(signalStore.rows).extracting(RiskSignal::kind).containsExactly(SignalKind.SCREENING_HIT);
         assertThat(world.alertStore.all()).isEmpty();
@@ -388,7 +485,13 @@ class RescreeningRunTest {
     // ------------------------------------------------------------------ the world
 
     private RescreeningRun run(RescreeningRun.Bounds bounds) {
-        RescreeningObserver observer = new RescreeningObserver() {
+        return new RescreeningRun(lists, permits, this::page, kyc, signals(), new RiskPolicies(world.policyStore),
+                world.alerts::raiseAll, EvaluationWorld.IDS, observer(), bounds);
+    }
+
+    /** The meters' port, remembering what it was told. */
+    private RescreeningObserver observer() {
+        return new RescreeningObserver() {
             @Override
             public void concluded(Conclusion conclusion) {
                 concluded.add(conclusion);
@@ -404,8 +507,6 @@ class RescreeningRunTest {
                 askFailures.add(cause);
             }
         };
-        return new RescreeningRun(lists, permits, this::page, kyc, signals(), new RiskPolicies(world.policyStore),
-                world.alerts::raiseAll, EvaluationWorld.IDS, observer, bounds);
     }
 
     private RiskSignals signals() {
@@ -417,7 +518,9 @@ class RescreeningRunTest {
     }
 
     private List<UUID> page(Connection unitOfWork, Optional<UUID> after, int limit) {
-        return active.stream().filter(party -> after.isEmpty() || party.compareTo(after.get()) > 0).limit(limit).toList();
+        // The database's order - each half unsigned - as PostgreSQL pages uuid.
+        return active.stream().filter(party -> after.isEmpty() || RescreeningRun.databaseOrder(party, after.get()) > 0)
+                .limit(limit).toList();
     }
 
     /** A version recorded by one person and activated by another, at the stores' database clock. */
@@ -446,7 +549,7 @@ class RescreeningRunTest {
 
     /** One sweeper's three steps on the next due permit, each its own fake transaction. */
     private Optional<RescreeningRun.Concluded> rescreenOnce() {
-        Optional<RescreeningPermit> claimed = run.claimNextDue(UOW, LEASE);
+        Optional<RescreeningPermit> claimed = claimed(run.claimNextDue(UOW, LEASE));
         commit();
         if (claimed.isEmpty()) {
             return Optional.empty();
@@ -472,8 +575,14 @@ class RescreeningRunTest {
         permits.now = permits.now.plus(by);
     }
 
-    private static PartyRescreening.Screened screened(boolean hit, Instant decidedAt) {
-        return new PartyRescreening.Screened(UUID.randomUUID(), hit, decidedAt);
+    /** kyc's screening asked at {@code askedAt} and decided a second later. */
+    private static PartyRescreening.Screened screened(boolean hit, Instant askedAt) {
+        return new PartyRescreening.Screened(UUID.randomUUID(), hit, askedAt, askedAt.plusSeconds(1));
+    }
+
+    /** The permit a claim took for its ask - empty when nothing was due or the claim failed it past the bound. */
+    private static Optional<RescreeningPermit> claimed(RescreeningRun.Claim claim) {
+        return claim instanceof RescreeningRun.Claim.Claimed taken ? Optional.of(taken.permit()) : Optional.empty();
     }
 
     /** kyc's port, scripted: an answer per party, or a throw; every request remembered. */
@@ -493,7 +602,7 @@ class RescreeningRunTest {
     }
 
     /** risk_signal in memory: born once per source event. */
-    static final class MemorySignals implements RiskSignalStore {
+    static class MemorySignals implements RiskSignalStore {
         final List<RiskSignal> rows = new ArrayList<>();
         private final Map<UUID, RiskSignal> bySource = new LinkedHashMap<>();
 

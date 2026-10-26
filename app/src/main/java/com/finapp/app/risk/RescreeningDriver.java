@@ -34,7 +34,8 @@ import lombok.extern.slf4j.Slf4j;
  * <p>The leg never throws into the schedule: an enqueue batch, a claim or a conclusion that fails rolls back, is counted
  * ({@code finapp.risk.sweeper.claim.failed{kind=rescreening}}) and ends its loop for the tick with one warn line - the
  * exception's class, never a party, a list or a key. A conclusion that failed leaves the claimed permit to its lease: the
- * next claim asks again (a read) and records once.
+ * next claim asks again and records once - and a claim past the leg's bound fails the permit {@code UNCONCLUDED} without
+ * asking, so a conclusion that always fails is bounded like an answer that never comes.
  */
 @Slf4j
 public final class RescreeningDriver {
@@ -109,18 +110,26 @@ public final class RescreeningDriver {
     private int conclude() {
         int concluded = 0;
         for (int taken = 0; taken < permitsPerTick; taken++) {
-            Optional<RescreeningPermit> claimed;
+            RescreeningRun.Claim claim;
             try {
-                claimed = transactions.inTransaction(uow -> run.claimNextDue(uow, lease));
+                claim = transactions.inTransaction(uow -> run.claimNextDue(uow, lease));
             } catch (RuntimeException failure) {
                 metrics.claimFailed();
                 log.warn("Rescreening claim failed: {}", failure.getClass().getSimpleName());
                 return concluded;
             }
-            if (claimed.isEmpty()) {
-                return concluded;
+            RescreeningPermit permit;
+            switch (claim) {
+                case RescreeningRun.Claim.Nothing nothing -> {
+                    return concluded;
+                }
+                case RescreeningRun.Claim.Exhausted exhausted -> {
+                    // Failed UNCONCLUDED by the claim itself, committed: concluded, and kyc not asked again.
+                    concluded++;
+                    continue;
+                }
+                case RescreeningRun.Claim.Claimed claimed -> permit = claimed.permit();
             }
-            RescreeningPermit permit = claimed.get();
             try (CorrelationContext.Scope scope = CorrelationContext.enter(
                     Correlation.startingWith(CorrelationId.of(permit.correlationId())))) {
                 // kyc asked on no risk transaction - the claim has committed, no risk row is held.
