@@ -7,6 +7,7 @@ import com.finapp.kyc.CheckStore;
 import com.finapp.risk.PartyRescreening;
 import com.finapp.risk.RescreeningPermitId;
 import com.finapp.risk.RescreeningRun;
+import com.finapp.risk.RiskSpans;
 import java.sql.Connection;
 import java.util.Objects;
 import java.util.Optional;
@@ -26,8 +27,17 @@ public final class RescreeningHits implements RescreenHits {
     private final CheckStore<Connection> checks;
     private final RescreeningRun run;
     private final RiskTransactions transactions;
+    private final RiskFlowScope flow;
 
+    /** No spans ({@link RiskFlowScope#NONE}) - the suites' shape. */
     public RescreeningHits(CheckStore<Connection> checks, RescreeningRun run, RiskTransactions transactions) {
+        this(checks, run, transactions, RiskFlowScope.NONE);
+    }
+
+    /** @param flow the told hit's transaction recorded {@code risk.rescreen}, no attribute (`P13-TSK-024`) */
+    public RescreeningHits(CheckStore<Connection> checks, RescreeningRun run, RiskTransactions transactions,
+            RiskFlowScope flow) {
+        this.flow = Objects.requireNonNull(flow, "flow");
         this.checks = Objects.requireNonNull(checks, "checks");
         this.run = Objects.requireNonNull(run, "run");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
@@ -36,9 +46,10 @@ public final class RescreeningHits implements RescreenHits {
     @Override
     public void hit(CheckId checkId) {
         Objects.requireNonNull(checkId, "checkId");
-        Optional<Told> told = transactions.inSnapshot(unitOfWork -> told(unitOfWork, checkId));
-        told.ifPresent(hit -> RescreeningDriver.asThePlatform(
-                () -> transactions.inTransaction(unitOfWork -> run.hit(unitOfWork, hit.permit(), hit.screened()))));
+        Optional<Told> told = flow.sweep(RiskSpans.RESCREEN,
+                () -> transactions.inSnapshot(unitOfWork -> told(unitOfWork, checkId)));
+        told.ifPresent(hit -> RescreeningDriver.asThePlatform(() -> flow.sweep(RiskSpans.RESCREEN,
+                () -> transactions.inTransaction(unitOfWork -> run.hit(unitOfWork, hit.permit(), hit.screened())))));
     }
 
     /** The permit and kyc's hit, when {@code checkId} is a permit's question answered {@code HIT}. */

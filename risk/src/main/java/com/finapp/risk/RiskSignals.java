@@ -58,6 +58,7 @@ public final class RiskSignals {
     private final Clock clock;
     private final ProfileHints profileHints;
     private final SignalAlerts alerts;
+    private final SignalObserver observer;
 
     /** T-sig with no permit pull ({@link ProfileHints#NONE}) - the suites' shape. */
     public RiskSignals(RiskSignalStore store, OutboxWriter<Connection> outbox, IdGenerator ids, Clock clock) {
@@ -70,14 +71,22 @@ public final class RiskSignals {
         this(store, outbox, ids, clock, profileHints, SignalAlerts.NONE);
     }
 
+    /** T-sig with the permit pull and the fact's alert, counting nothing ({@link SignalObserver#NONE}). */
     public RiskSignals(RiskSignalStore store, OutboxWriter<Connection> outbox, IdGenerator ids, Clock clock,
             ProfileHints profileHints, SignalAlerts alerts) {
+        this(store, outbox, ids, clock, profileHints, alerts, SignalObserver.NONE);
+    }
+
+    /** T-sig as composed: every recording told to {@code observer} (`P13-TSK-024`, {@code finapp.risk.signal}). */
+    public RiskSignals(RiskSignalStore store, OutboxWriter<Connection> outbox, IdGenerator ids, Clock clock,
+            ProfileHints profileHints, SignalAlerts alerts, SignalObserver observer) {
         this.store = Objects.requireNonNull(store, "store");
         this.outbox = Objects.requireNonNull(outbox, "outbox");
         this.ids = Objects.requireNonNull(ids, "ids");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.profileHints = Objects.requireNonNull(profileHints, "profileHints");
         this.alerts = Objects.requireNonNull(alerts, "alerts");
+        this.observer = Objects.requireNonNull(observer, "observer");
     }
 
     /**
@@ -104,6 +113,7 @@ public final class RiskSignals {
                 }
                 alerts.raise(unitOfWork, standing);
             }
+            observer.recorded(signal.kind(), Outcome.ALREADY);
             return Outcome.ALREADY;
         }
         outbox.write(
@@ -130,6 +140,7 @@ public final class RiskSignals {
         if (alerts.raises(signal.kind())) {
             alerts.raise(unitOfWork, signal);
         }
+        observer.recorded(signal.kind(), Outcome.BORN);
         return Outcome.BORN;
     }
 }

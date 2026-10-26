@@ -223,6 +223,32 @@ class RescreeningDatabaseTest {
     }
 
     @Test
+    @DisplayName("the rescreening census over the live rows (P13-TSK-024, -022's routed row): a version's permits equal its"
+            + " enqueue's count, its DONE(CLEARED) permits its SCREENING_CLEARED signals - one read-only snapshot, HELD")
+    void theRescreeningCensusHoldsPerVersion() throws Exception {
+        List<UUID> parties = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            parties.add(onboarded("ACTIVE", "APPROVED").party());
+        }
+        ScreeningListVersion version = activated(ScreeningList.PEP);
+        enqueueAll();
+        driveUntil(() -> concludedOf(version, parties) == parties.size());
+        com.finapp.risk.RescreeningCensus census =
+                new com.finapp.risk.RescreeningCensus(new com.finapp.risk.JdbcRiskProofReads());
+        com.finapp.risk.RescreeningCensus.Result result = transactions.inSnapshot(census::run);
+        com.finapp.risk.RescreeningCensus.Row ours = result.rows().stream()
+                .filter(row -> row.figures().version().equals(version.id())).findFirst()
+                .orElseThrow(() -> new AssertionError("the version in force is in the census's window"));
+        assertThat(ours.figures().permits()).as("born = counted by the enqueue").isEqualTo(ours.figures().enqueued())
+                .isGreaterThanOrEqualTo(parties.size());
+        assertThat(ours.figures().cleared()).as("every clearance a signal naming the version")
+                .isEqualTo(ours.figures().clearedSignals()).isGreaterThanOrEqualTo(parties.size());
+        assertThat(ours.figures().hit()).isLessThanOrEqualTo(ours.figures().hitSignals());
+        assertThat(ours.holds()).isTrue();
+        assertThat(ours.figures().list()).isEqualTo(ScreeningList.PEP);
+    }
+
+    @Test
     @DisplayName("the acceptance criterion: ten sweepers rescreen every decided ACTIVE party exactly once THROUGH KYC -"
             + " one keyed RESCREEN check and one provider call each, asked after the activation on the database's"
             + " clock; every permit DONE CLEARED with one signal; every case still APPROVED, no review task")

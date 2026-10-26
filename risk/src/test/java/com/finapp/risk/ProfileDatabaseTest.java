@@ -121,6 +121,26 @@ class ProfileDatabaseTest {
     }
 
     @Test
+    @DisplayName("the ratings count the heads by their current rating, a head never rated UNRATED - the one grouped"
+            + " statement finapp.risk.profile.rating reads (P13-TSK-024)")
+    void theRatingsCountTheHeads() throws Exception {
+        CustomerRiskProfileStore.Ratings before = inOneTransaction(STORE::ratings);
+        UUID unrated = IDS.next();
+        inOneTransaction(uow -> {
+            STORE.pullForward(uow, unrated);
+            return null;
+        });
+        UUID rated = IDS.next();
+        ProfileRecompute.Outcome outcome = inOneTransaction(uow -> RECOMPUTE.recompute(uow, rated, correlation()));
+        RiskRating rating = outcome.rating().orElseThrow();
+        CustomerRiskProfileStore.Ratings after = inOneTransaction(STORE::ratings);
+        assertThat(after.unrated() - before.unrated()).as("a head born unassessed").isEqualTo(1);
+        assertThat(after.at(rating) - before.at(rating)).as("a head rated %s", rating).isEqualTo(1);
+        assertThat(after.rated().values().stream().mapToLong(Long::longValue).sum()
+                - before.rated().values().stream().mapToLong(Long::longValue).sum()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("an unchanged rating writes no version and no event - the permit moves a cadence ahead on the database's"
             + " clock; a changed one writes the next")
     void anUnchangedRatingWritesNoVersion() throws Exception {

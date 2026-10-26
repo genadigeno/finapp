@@ -127,6 +127,30 @@ public interface RiskProofReads {
 
     FilingRow filings(Connection snapshot, Duration overdueAfter);
 
+    /**
+     * `-022`'s routed row, read by `P13-TSK-024` over {@code risk V018}'s two census indexes: one screening list version
+     * in force, or retired at or after {@code retiredSince} - its list and ordinal, what its enqueue counted born
+     * ({@code screening_list_version.enqueued}), its permits ({@code rescreening_permit_of_version}), those concluded
+     * {@code DONE(CLEARED)} and {@code DONE(HIT)}, and the {@code SCREENING_CLEARED} / {@code SCREENING_HIT} signals
+     * naming the version ({@code risk_signal_by_list_version}). Codes and counts; the version's id is an operator's fact,
+     * never a party.
+     */
+    record RescreeningRow(ScreeningListVersionId version, ScreeningList list, int ordinal, long enqueued, long permits,
+            long cleared, long hit, long clearedSignals, long hitSignals) {
+        public RescreeningRow {
+            Objects.requireNonNull(version, "version");
+            Objects.requireNonNull(list, "list");
+        }
+    }
+
+    List<RescreeningRow> rescreenings(Connection snapshot, Instant retiredSince);
+
+    /**
+     * When the oldest report still {@code FILED} was filed - a filing the authority has not concluded (`P13-TSK-024`,
+     * {@code finapp.risk.report.unconcluded.age}); empty when none is.
+     */
+    Optional<Instant> oldestUnconcludedFiling(Connection snapshot);
+
     // ------------------------------------------------------------------ monitoring
 
     /** The journal entry ids of the monitored transactions in {@code [fromInclusive, toExclusive)}, ascending. */

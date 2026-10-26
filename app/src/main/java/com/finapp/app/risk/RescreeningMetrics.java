@@ -137,7 +137,8 @@ public final class RescreeningMetrics implements RescreeningObserver {
 
     @Override
     public void enqueued(int born) {
-        // No meter: a version's census is its own row's (screening_list_version.enqueued), read by -024's census.
+        // No meter: a version's census is its own row's (screening_list_version.enqueued), read by RescreeningCensus
+        // (P13-TSK-024) beside its permits - finapp.risk.census{kind=RESCREENING}.
     }
 
     @Override

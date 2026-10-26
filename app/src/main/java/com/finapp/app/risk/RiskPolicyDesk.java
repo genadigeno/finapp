@@ -153,13 +153,15 @@ public final class RiskPolicyDesk {
         } catch (IllegalArgumentException | NullPointerException unknown) {
             throw notFound();
         }
-        return guarded(() -> transactions.inTransaction(uow -> view(policies.inForce(uow, operation))));
+        return guarded(() -> flow.door(RiskSpans.POLICY_READ,
+                () -> transactions.inTransaction(uow -> view(policies.inForce(uow, operation)))));
     }
 
     /** One version by id, in any state - a read, unkeyed, in one transaction. */
     public RiskPolicyView version(String rawId) {
         RiskPolicyVersionId id = versionId(rawId);
-        return guarded(() -> transactions.inTransaction(uow -> view(policies.version(uow, id))));
+        return guarded(() -> flow.door(RiskSpans.POLICY_READ,
+                () -> transactions.inTransaction(uow -> view(policies.version(uow, id)))));
     }
 
     // ------------------------------------------------------------------ the policy in the domain's words

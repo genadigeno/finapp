@@ -91,6 +91,8 @@ class DashboardQueriesResolveTest {
                     "payout", "kind", "bucket",
                     // P12-TSK-026: the BNPL row groups by plan and servicing step too - labels, not series.
                     "plan", "step",
+                    // P13-TSK-024: the risk row groups fired rules by their kind's code - a label, not a series.
+                    "rule",
                     // P7-TSK-015: the rail and dispute row groups by rail, judged type and
                     // dispute stage - labels, not series.
                     "rail", "type", "stage",
@@ -265,6 +267,46 @@ class DashboardQueriesResolveTest {
                 "finapp_bnpl_threeway_proof", "finapp_bnpl_subledger_proof", "finapp_bnpl_replay",
                 "finapp_ledger_negative_positions", "finapp_bnpl_terms_active", "finapp_bnpl_origination_sweeper_enabled",
                 "finapp_bnpl_servicing_sweeper_enabled", "finapp_bnpl_dispute_sweeper_enabled");
+        assertThat(publishedSeriesNames()).containsAll(queried);
+    }
+
+    @Test
+    @DisplayName("the risk row: nine panels reading every risk series of PHASE_13_PLAN section 15, each published on a"
+            + " fresh instance (P13-TSK-024)")
+    void theRiskRowResolves() throws Exception {
+        JsonNode panels = JsonMapper.builder().build().readTree(RepositoryPaths.read(DASHBOARD)).path("panels");
+        List<String> rowQueries = new java.util.ArrayList<>();
+        int count = -1;
+        for (JsonNode panel : panels) {
+            boolean row = "row".equals(panel.path("type").asString());
+            if (row && panel.path("title").asString().startsWith("Risk")) {
+                count = 0;
+            } else if (row && count >= 0) {
+                break;
+            } else if (count >= 0) {
+                count++;
+                panel.path("targets").valueStream().map(target -> target.path("expr").stringValue()).forEach(rowQueries::add);
+            }
+        }
+        assertThat(count).as("the risk row's panels").isEqualTo(9);
+        Set<String> queried = rowQueries.stream().flatMap(DashboardQueriesResolveTest::seriesIn)
+                .collect(Collectors.toCollection(TreeSet::new));
+        // Every risk row of PHASE_13_PLAN.md section 15, in its published form.
+        assertThat(queried).containsExactlyInAnyOrder(
+                "finapp_risk_evaluation_total", "finapp_risk_evaluation_unavailable_total", "finapp_risk_challenge_total",
+                "finapp_risk_rule_hit_total", "finapp_risk_evaluation_latency_seconds_bucket",
+                "finapp_risk_evaluation_latency_seconds_max", "finapp_risk_monitoring_latency_seconds_bucket",
+                "finapp_risk_monitoring_latency_seconds_max", "finapp_risk_policy_active", "finapp_risk_sweeper_enabled",
+                "finapp_risk_sweeper_claim_failed_total", "finapp_risk_alert_total", "finapp_risk_alert_suppressed_total",
+                "finapp_risk_alert_unraised_total", "finapp_risk_signal_total", "finapp_risk_case_backlog",
+                "finapp_risk_case_age", "finapp_risk_case_total", "finapp_risk_case_resolution_seconds_sum",
+                "finapp_risk_case_resolution_seconds_count", "finapp_risk_action_total", "finapp_risk_action_failed_total",
+                "finapp_risk_override_total", "finapp_risk_report_total", "finapp_risk_report_filing_total",
+                "finapp_risk_monitoring_lag", "finapp_risk_monitoring_age", "finapp_risk_report_unconcluded_age",
+                "finapp_risk_monitoring_unclassified", "finapp_risk_monitoring_subject_total",
+                "finapp_risk_monitoring_unplaced_total", "finapp_risk_collections_unplaced_total",
+                "finapp_risk_velocity_proof", "finapp_risk_census", "finapp_risk_proof_reading_total",
+                "finapp_risk_profile_rating", "finapp_risk_rescreening_backlog", "finapp_risk_rescreening_total");
         assertThat(publishedSeriesNames()).containsAll(queried);
     }
 

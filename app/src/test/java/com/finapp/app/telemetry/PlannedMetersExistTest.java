@@ -451,6 +451,50 @@ class PlannedMetersExistTest {
         assertThat(registry.find("finapp.credit.replay").tag("verdict", "DIVERGED").gauges()).isNotEmpty();
     }
 
+    /**
+     * `P13-TSK-024`'s acceptance, armed ahead of the flip: every meter Phase 13's plan §15 names is registered in this
+     * context - nothing configured, no reachable database, no filing authority, no kyc provider - exactly the "freshly
+     * started instance" the criterion names. Read from §15 alone and counted EXACTLY: thirty-five rows; the series the
+     * alert rules read by a tag value are checked by it - the fail-safe's reason, a census's divergence, the rescreening
+     * census, each schedule's flag. {@code RiskMetersTest} holds the same table to the registry the other way too.
+     */
+    @Test
+    @DisplayName("Phase 13's planned meters are already published, ahead of the phase flip")
+    void phase13PlannedMetersAreAlreadyPublished() {
+        Set<String> planned = new TreeSet<>();
+        int rows = 0;
+        boolean inObservability = false;
+        for (String line : read(repositoryFile("docs/project/PHASE_13_PLAN.md"))) {
+            if (line.startsWith("## ")) {
+                inObservability = line.startsWith("## 15.");
+                continue;
+            }
+            if (!inObservability) {
+                continue;
+            }
+            Matcher row = PLANNED_METER.matcher(line);
+            if (row.find()) {
+                rows++;
+                planned.add(row.group(1));
+            }
+        }
+        assertThat(rows).as("the Phase 13 plan's section 15 table has exactly 35 meter rows").isEqualTo(35);
+        assertThat(planned).as("one series per row").hasSize(35)
+                .contains("finapp.risk.evaluation.unavailable", "finapp.risk.profile.rating", "finapp.risk.signal",
+                        "finapp.risk.monitoring.age", "finapp.risk.report.unconcluded.age");
+        assertThat(registeredMeters()).containsAll(planned);
+        assertThat(registry.find("finapp.risk.evaluation.unavailable").tag("operation", "TRANSFER")
+                .tag("reason_code", "RISK_UNAVAILABLE").counters()).isNotEmpty();
+        assertThat(registry.find("finapp.risk.census").tag("kind", "RESCREENING").tag("verdict", "DIVERGED").gauges())
+                .isNotEmpty();
+        assertThat(registry.find("finapp.risk.velocity.proof").tag("verdict", "DIVERGED").gauges()).isNotEmpty();
+        for (String kind : List.of("monitoring", "action", "rescreening")) {
+            assertThat(registry.find("finapp.risk.sweeper.enabled").tag("kind", kind).gauges()).as(kind).isNotEmpty();
+        }
+        assertThat(registry.find("finapp.inbox.consumption").tag("outcome", "failed").counters())
+                .as("the stalled-partition alert's series, eager whatever the consumer's flag").isNotEmpty();
+    }
+
     @Test
     @DisplayName("the guard is not vacuous: it reads a real plan and a real registry")
     void theGuardHasTeeth() {

@@ -33,7 +33,10 @@ import lombok.extern.slf4j.Slf4j;
  *   <li>{@code finapp.risk.rule.hit{operation,rule}} - every fired rule, by its kind's code (C9: {@code rule} is a
  *       bounded vocabulary of the policy's rule kinds, never a parameter);</li>
  *   <li>{@code finapp.risk.challenge{operation,outcome}} - every {@code CHALLENGE}, {@code satisfied} or
- *       {@code refused}.</li>
+ *       {@code refused};</li>
+ *   <li>{@code finapp.risk.alert.unraised{operation}} (`P13-TSK-024`, `-013`'s MINOR 6) - a sealed assessment whose
+ *       alerts were undone behind their savepoint ({@link #alertsUnraised}): the decision stands, its alerts and their
+ *       case were never born - the input of {@code RiskAlertsUnraised}.</li>
  * </ul>
  *
  * No tag carries an id, an amount, a score or a name. Counted inside the caller's transaction: a caller that rolls back
@@ -47,12 +50,14 @@ public final class RiskEvaluationMetrics implements RiskEvaluationObserver {
     public static final String UNAVAILABLE = "finapp.risk.evaluation.unavailable";
     public static final String RULE_HIT = "finapp.risk.rule.hit";
     public static final String CHALLENGE = "finapp.risk.challenge";
+    public static final String UNRAISED = "finapp.risk.alert.unraised";
 
     private final Map<RiskOperation, Map<RiskDecision, Counter>> evaluations = new EnumMap<>(RiskOperation.class);
     private final Map<RiskOperation, Timer> latencies = new EnumMap<>(RiskOperation.class);
     private final Map<RiskOperation, Map<ReasonCode, Counter>> unavailable = new EnumMap<>(RiskOperation.class);
     private final Map<RiskOperation, Map<ReasonCode, Counter>> hits = new EnumMap<>(RiskOperation.class);
     private final Map<RiskOperation, Map<Boolean, Counter>> challenges = new EnumMap<>(RiskOperation.class);
+    private final Map<RiskOperation, Counter> unraised = new EnumMap<>(RiskOperation.class);
 
     public RiskEvaluationMetrics(MeterRegistry registry) {
         Objects.requireNonNull(registry, "registry");
@@ -101,6 +106,11 @@ public final class RiskEvaluationMetrics implements RiskEvaluationObserver {
             byOutcome.put(false, Counter.builder(CHALLENGE).description("Risk challenges, by operation and outcome")
                     .tags("operation", operation.name(), "outcome", "refused").register(registry));
             challenges.put(operation, byOutcome);
+            unraised.put(operation, Counter.builder(UNRAISED)
+                    .description("Sealed assessments whose alerts were undone behind their savepoint - the decision"
+                            + " stands, its alerts and case were never born. Alert on any increase")
+                    .tags("operation", operation.name())
+                    .register(registry));
         }
     }
 
@@ -148,11 +158,15 @@ public final class RiskEvaluationMetrics implements RiskEvaluationObserver {
 
     /**
      * A sealed assessment's alerts went unraised (`P13-TSK-013`): its raise was undone behind its savepoint - one line,
-     * the assessment's id, the operation and the cause's code (never a subject, a rule or a reading, {@code INV-RSK-08});
-     * no series of its own (plan section 15 names none - `-024`'s if wanted).
+     * the assessment's id, the operation and the cause's code (never a subject, a rule or a reading, {@code INV-RSK-08}),
+     * and {@code finapp.risk.alert.unraised{operation}} counted (`P13-TSK-024`, plan section 15's row).
      */
     @Override
     public void alertsUnraised(RiskAssessmentId assessment, RiskOperation operation, String cause) {
+        Counter counter = unraised.get(operation);
+        if (counter != null) {
+            counter.increment();
+        }
         log.warn("risk alerts unraised behind their savepoint: assessment={} operation={} cause={}",
                 assessment.value(), operation.name(), cause);
     }

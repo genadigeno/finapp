@@ -125,7 +125,8 @@ public final class RescreeningDriver implements RiskActionSchedule.RescreeningLe
         for (int taken = 0; taken < permitsPerTick; taken++) {
             RescreeningRun.Claim claim;
             try {
-                claim = transactions.inTransaction(uow -> run.claimNextDue(uow, lease));
+                claim = flow.sweep(RiskSpans.RESCREEN,
+                        () -> transactions.inTransaction(uow -> run.claimNextDue(uow, lease)));
             } catch (RuntimeException failure) {
                 metrics.claimFailed();
                 log.warn("Rescreening claim failed: {}", failure.getClass().getSimpleName());
@@ -146,7 +147,7 @@ public final class RescreeningDriver implements RiskActionSchedule.RescreeningLe
             try (CorrelationContext.Scope scope = CorrelationContext.enter(
                     Correlation.startingWith(CorrelationId.of(permit.correlationId())))) {
                 // kyc asked on no risk transaction - the claim has committed, no risk row is held.
-                PartyRescreening.Answer answer = run.ask(permit, lease);
+                PartyRescreening.Answer answer = flow.sweep(RiskSpans.RESCREEN, () -> run.ask(permit, lease));
                 Optional<RescreeningRun.Concluded> done;
                 try {
                     done = flow.sweep(RiskSpans.RESCREEN,

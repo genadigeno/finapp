@@ -778,6 +778,11 @@ screened, nothing to rescreen; the second review's IMPORTANT 4). **A hit told af
 conclusion then records nothing); one concluded otherwise is told late - a second `SCREENING_HIT` signal born of kyc's
 check and its own alert, folded - the permit unmoved; one concluded `HIT` is left as it is; a burnt version is re-driven by a successor version
 (runbook §9.6). Every invalid edge is refused by `rescreening_permit_permits_only_machine_edges`.)*
+*(`P13-TSK-024`, 2026-10-26 - **the version's census**, the row `-022` routed: `RescreeningCensus`, read with the proofs on
+one snapshot, holds per version in force or retired since yesterday's start that the permits equal the enqueue's
+`enqueued`, the `DONE(CLEARED)` permits the `SCREENING_CLEARED` signals naming the version, and the `DONE(HIT)` permits at
+most its `SCREENING_HIT` signals (a hit told after the fact adds a signal, never a permit) -
+`finapp.risk.census{kind="RESCREENING"}`, alerted `RiskCensusDiverged`; a `FAILED` permit is `RiskRescreeningFailing`'s.)*
 
 ### 4.11 Monitored transaction and the watermark (`risk.monitored_transaction`, `monitoring_watermark`) — `P13-TSK-019` (`risk V004`) — born once; the watermark a claim, not a machine
 

@@ -23,6 +23,7 @@ import com.finapp.risk.MonitoredLedger;
 import com.finapp.risk.MonitoredParties;
 import com.finapp.risk.MonitoringCensus;
 import com.finapp.risk.MonitoringWatermarkStore;
+import com.finapp.risk.RescreeningCensus;
 import com.finapp.risk.RiskAuditAction;
 import com.finapp.risk.RiskErrorCode;
 import com.finapp.risk.RiskOperationsReports;
@@ -97,6 +98,7 @@ class RiskProofDesksTest {
             new AssessmentCensus(reads, empty(JudgedCommands.class)),
             new MonitoringCensus(empty(MonitoredLedger.class), empty(MonitoringWatermarkStore.class), reads),
             new AlertBornOnceCensus(reads), new CaseOneOpenCensus(reads), new FilingCensus(reads),
+            new RescreeningCensus(reads),
             new VelocityProof(empty(VelocityWindowStore.class), evidence(), evidence()),
             (unitOfWork, actor) -> Optional.ofNullable(partyOfActor.get(actor.id())), RiskSubjectParties.NONE,
             MonitoredParties.NONE, (unitOfWork, record) -> audit.add(record), IDS, CLOCK);

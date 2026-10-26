@@ -45,6 +45,9 @@ public final class LedgerMonitoredLedger implements MonitoredLedger {
     /** One day of the journal by sequence: the entry ids of a primary-key range, ascending. */
     static final String ENTRY_IDS = "SELECT id FROM ledger.journal_entry WHERE id >= ? AND id < ? ORDER BY id";
 
+    /** The first journal entry beyond a position, by id - the oldest one not yet monitored (`P13-TSK-024`). */
+    static final String FIRST_BEYOND = "SELECT id FROM ledger.journal_entry WHERE id > ? ORDER BY id LIMIT 1";
+
     private static final String POSTING_PREFIX = PostingService.IDEMPOTENCY_SCOPE + ":";
     private static final String REVERSAL_PREFIX = ReversalService.IDEMPOTENCY_SCOPE + ":";
     private static final String ADJUSTMENT_PREFIX = AdjustmentService.IDEMPOTENCY_SCOPE + ":";
@@ -124,6 +127,25 @@ public final class LedgerMonitoredLedger implements MonitoredLedger {
                     "the journal's day could not be read: SQLSTATE " + failure.getSQLState());
         }
         return ids;
+    }
+
+    /**
+     * The first journal entry beyond {@code afterEntryId} by id - the oldest entry the monitoring has not ingested; its
+     * UUIDv7 dates its posting (`P13-TSK-024`, {@code finapp.risk.monitoring.age}). One primary-key probe on the
+     * caller's read-only snapshot, {@code SELECT} only - this adapter's own statement over the ledger's journal, as
+     * {@link #ENTRY_IDS} is.
+     */
+    static java.util.Optional<UUID> firstBeyond(Connection snapshot, UUID afterEntryId) {
+        Objects.requireNonNull(snapshot, "snapshot");
+        try (java.sql.PreparedStatement select = snapshot.prepareStatement(FIRST_BEYOND)) {
+            select.setObject(1, Objects.requireNonNull(afterEntryId, "afterEntryId"));
+            try (java.sql.ResultSet row = select.executeQuery()) {
+                return row.next() ? java.util.Optional.of(row.getObject(1, UUID.class)) : java.util.Optional.empty();
+            }
+        } catch (java.sql.SQLException failure) {
+            throw new com.finapp.risk.RiskStorageException(
+                    "the journal's first unmonitored entry could not be read: SQLSTATE " + failure.getSQLState());
+        }
     }
 
     /** The command key behind the ledger's scope-and-key pair; a scope of another shape is served as it is. */

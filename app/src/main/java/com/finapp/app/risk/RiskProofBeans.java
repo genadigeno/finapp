@@ -16,6 +16,7 @@ import com.finapp.risk.MonitoredLedger;
 import com.finapp.risk.MonitoredParties;
 import com.finapp.risk.MonitoringCensus;
 import com.finapp.risk.MonitoringWatermarkStore;
+import com.finapp.risk.RescreeningCensus;
 import com.finapp.risk.RiskOperationsReports;
 import com.finapp.risk.RiskPolicies;
 import com.finapp.risk.RiskProofReads;
@@ -81,7 +82,7 @@ public class RiskProofBeans {
         return new RiskOperationsReports(riskProofReads, new AssessmentCensus(riskProofReads, judgedCommands),
                 new MonitoringCensus(monitoredLedger, monitoringWatermarkStore, riskProofReads),
                 new AlertBornOnceCensus(riskProofReads), new CaseOneOpenCensus(riskProofReads),
-                new FilingCensus(riskProofReads), velocityProof,
+                new FilingCensus(riskProofReads), new RescreeningCensus(riskProofReads), velocityProof,
                 new com.finapp.app.credit.IdentityActingParty(identityStore), riskSubjectParties, monitoredParties,
                 auditWriter, idGenerator, clock);
     }
@@ -130,6 +131,21 @@ public class RiskProofBeans {
      * (15 minutes by default, the reading's cost control) on a virtual thread of its own, single-flight, never the
      * scrape's - each statement bounded by {@code finapp.risk.proofs.statement-timeout} (5 s by default).
      */
+    /**
+     * {@code finapp.risk.monitoring.age{source}} and {@code finapp.risk.report.unconcluded.age} (`P13-TSK-024`, the
+     * review's IMPORTANT 1 and 2) - how long the monitoring and the filing have left work standing, on the database's
+     * clock; read off the scrape thread, single-flight, every statement bounded by
+     * {@code finapp.risk.proofs.statement-timeout}.
+     */
+    @Bean
+    RiskAgeMetrics riskAgeMetrics(MonitoringWatermarkStore monitoringWatermarkStore, RiskProofReads riskProofReads,
+            RiskTransactions riskTransactions, Clock clock, MeterRegistry meterRegistry,
+            @Value("${finapp.risk.proofs.statement-timeout:PT5S}") Duration statementTimeout) {
+        return new RiskAgeMetrics(RiskAgeMetrics.over(monitoringWatermarkStore, LedgerMonitoredLedger::firstBeyond,
+                riskProofReads, riskTransactions, statementTimeout), RiskAgeMetrics.virtualThreads(), clock,
+                meterRegistry);
+    }
+
     @Bean
     RiskProofMetrics riskProofMetrics(RiskOperationsReports riskOperationsReports, RiskTransactions riskTransactions,
             Clock clock, MeterRegistry meterRegistry,

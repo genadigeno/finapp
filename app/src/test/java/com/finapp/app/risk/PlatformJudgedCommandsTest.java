@@ -65,7 +65,8 @@ class PlatformJudgedCommandsTest {
                 PlatformJudgedCommands.WITHDRAWALS, PlatformJudgedCommands.WITHDRAWALS_RECORDED,
                 PlatformJudgedCommands.CARD_PAYMENTS, PlatformJudgedCommands.WALLET_PAYMENTS,
                 PlatformJudgedCommands.INTENTS_RECORDED, PlatformJudgedCommands.CROSS_BORDER,
-                PlatformJudgedCommands.CROSS_BORDER_RECORDED, LedgerMonitoredLedger.ENTRY_IDS)) {
+                PlatformJudgedCommands.CROSS_BORDER_RECORDED, LedgerMonitoredLedger.ENTRY_IDS,
+                LedgerMonitoredLedger.FIRST_BEYOND)) {
             assertThat(sql).doesNotContain("risk.").doesNotContainPattern("\\bmerchant_(id|ref)\\b");
         }
     }

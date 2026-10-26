@@ -55,8 +55,10 @@ class RiskMetricTagsAreBoundedTest {
             "kind", union(List.of(names(AlertKind.values()), names(CaseKind.values()), names(ActionKind.values()),
                     Set.of(RiskMonitoringMetrics.KIND, RiskActionMetrics.KIND, RegulatoryReportMetrics.KIND,
                             RescreeningMetrics.KIND),
-                    // P13-TSK-023: the censuses' kinds (finapp.risk.census).
-                    names(com.finapp.risk.CensusKind.values()))),
+                    // P13-TSK-023: the censuses' kinds (finapp.risk.census) - RESCREENING among them since P13-TSK-024.
+                    names(com.finapp.risk.CensusKind.values()),
+                    // P13-TSK-024: a recorded signal's kind (finapp.risk.signal).
+                    names(com.finapp.risk.SignalKind.values()))),
             "severity", names(AlertSeverity.values()),
             // A suppression's reason code; the fail-safe's two reason codes.
             "reason_code", union(List.of(names(SuppressionReason.values()), names(ReasonCode.values()))),
@@ -74,14 +76,18 @@ class RiskMetricTagsAreBoundedTest {
                     // What became of a claimed rescreening permit (P13-TSK-022), lower-cased.
                     lower(names(com.finapp.risk.RescreeningObserver.Conclusion.values())),
                     // P13-TSK-023 (the review's I1): a reading of the proofs completed or failed.
-                    Set.of(RiskProofMetrics.COMPLETED, RiskProofMetrics.FAILED))),
+                    Set.of(RiskProofMetrics.COMPLETED, RiskProofMetrics.FAILED),
+                    // P13-TSK-024: a signal recorded born or already (finapp.risk.signal), lower-cased.
+                    lower(names(com.finapp.risk.RiskSignals.Outcome.values())))),
             "operation", names(RiskOperation.values()),
             // A decision; the velocity proof's and the censuses' verdicts (P13-TSK-023).
             "verdict", union(List.of(names(RiskDecision.values()),
                     names(com.finapp.risk.VelocityProof.Verdict.values()),
                     names(com.finapp.risk.ProofVerdict.values()))),
             "rule", names(RuleKind.values()),
-            "source", Set.of(MonitoringWatermark.LEDGER_JOURNAL));
+            "source", Set.of(MonitoringWatermark.LEDGER_JOURNAL),
+            // P13-TSK-024: a customer risk rating, or a head never rated (finapp.risk.profile.rating).
+            "bucket", union(List.of(names(com.finapp.risk.RiskRating.values()), Set.of(RiskProfileMetrics.UNRATED))));
 
     @Autowired private MeterRegistry registry;
 

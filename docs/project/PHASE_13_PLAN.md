@@ -46,6 +46,137 @@ policy is active. The regulatory filing adapter is simulated: the platform's ref
 neutral EUR one (`DECISIONS.md` §Deferred), and §12.9 records what was researched for the EU and what must be verified
 when a real jurisdiction is chosen.
 
+### 1.2 The owner list carried forward, and the phase's debt (`P13-TSK-024`, 2026-10-26)
+
+*Gathered by `P13-TSK-024` from every Phase 13 record (`BACKLOG.md`, `history/TASK_HISTORY.md`, `CURRENT_STATE.md`) so
+`P13-DOC-001` ratifies or decides them in one place; each names the task that recorded it and its label there. Resolved
+items stay listed with how. `OPERATIONS_RUNBOOK.md` §9 cites the ones its procedures meet; the activation gate (§9.1 step
+8) names, in the owner's written allowance, those it does not wait on.*
+
+**The phase's accepted defaults, to ratify**: C1–C10 (§2.2 - C3's collections slice since built by `-025` at the owner's
+request) and OQ-1…OQ-10 (§24 - OQ-1 read for `HOLD` in item 2; OQ-8 widened by the kyc door, item 49).
+
+**Open items, by the task that recorded them**
+
+1. `-004` MINOR 3 (= `-008` (3)): every policy version is EUR, so a non-EUR movement meets the open-ended fail-safe band
+   and is `DENY`ed once a EUR version is active - decide before the activation gate (runbook §9.1 step 3).
+2. `-004` MINOR 2 (= `-009` (b), `-012` D5): a `HOLD` an override later releases is never counted in the velocity
+   windows (OQ-1 read for `HOLD`) - ratify, or count on `DONE` with the override as evidence.
+3. `-005` (= `-013` MINOR 2): `RECENT_AUTH_FAILURES` and `kycStatus` have no event source and read `ABSENT` - an
+   identity-keyed failure window is identity's to publish.
+4. `-008` (with `-009`…`-011`, `-013` MINOR 3): no per-device identifier - the device subject is `ABSENT` on every
+   movement (the seams never hash the User-Agent).
+5. `-009` (d): a `SYSTEM` withdrawal (a loan's payout) is not judged by risk.
+6. `-009` (with `-013` MINOR 3): a withdrawal has no destination subject (a third destination kind is a risk migration).
+7. `-010` MINOR 4: pay-by-bank checkout and wallet top-up are not judged - no operation in risk's vocabulary.
+8. `-010`: a held card payment's validity (up to 30 days) can outlive the issuer's authorisation.
+9. `-010` MINOR 5: one merchant's confirmations serialise on its `MERCHANT` subject lock - a throughput question for the
+   storm.
+10. `-011` MINOR 2: corridors with no EUR leg are always `DENY` under a EUR `CROSS_BORDER` version - a pinned EUR figure,
+    per-currency versions, or acceptance (related to 1).
+11. `-011` MINOR 3: a sealed refusal sticks to its quote - a transient fail-safe needs a new quote.
+12. `-011` MINOR 4: one currency per (dimension, subject, window) - a multi-currency wallet party reads `READ_FAILED` (the
+    fail-safe) until its windows roll.
+13. `-012` D4 (= `-008`): the one-time override allowance is built for neither transfers nor cross-border - a
+    movement-keyed allowance is the owner's to commission.
+14. `-012` D2: denying a held withdrawal or voiding a card `HOLD` is an approved override's `REFUSE`, not a rejection -
+    ratify.
+15. `-013` MINOR 4: payee novelty is per destination ("first paid by anyone"), not per payer.
+16. `-013` MINOR 5 (= `-014` MINOR 8; C8): ratify the fixtures' behaviour changes (the new-payee step-up for password
+    sessions, the checkout challenge, the merchant ratio alerts, ratios and BNPL applications moving the rating).
+17. `-014` MINOR 2: a party's refund/chargeback ratio is divided by its `PARTY` window (every judged movement).
+18. `-014` MINOR 5: "a merchant's refunds to new accounts" not built - a 23rd rule kind and the account's age on the
+    refund event.
+19. `-014` MINOR 7: `BNPL_MULTI_APPLICATION` counts applications at any merchant, not distinct merchants.
+20. `-015` D1 (with `-019`): operational alerts are Prometheus rules over meters, never alert rows - rows only if wanted
+    (built so by `-024`: `infra/prometheus/rules/risk.yml`).
+21. `-016` MINOR 4: a `PROHIBITED` disposition is set by the proposal and no door lifts it.
+22. `-016` MINOR 6: a merchant's accountable party is its organisation - self-dealing refuses the organisation only.
+23. `-016` MINOR 7 / D14 (ADR-0110; with `-025` MINOR 7): the SLA per case kind is a task default (`SlaDeadlines`: ATO
+    4 h, FRAUD 24 h, MERCHANT_ABUSE 72 h, AML 720 h, COLLECTIONS 168 h).
+24. `-017` MINOR 2: `SUSPEND_ACCOUNT`, `REINSTATE_ACCOUNT`, `BLOCK_BENEFICIARY` unavailable - no owning command.
+25. `-017` MINOR 5: `REINSTATE_IDENTITY` lifts every suspension of the party's identities (identity records no cause).
+26. `-017` D11 and MINOR 4: no disposition issues an action; the executor is the platform's `SYSTEM` actor - ratify both.
+27. `-018` (with `-023` M8): the AML desk's own evidence door under `AML_REPORT_APPROVE` (the case file's evidence door,
+    `-023`, serves the analyst).
+28. `-018` MINOR 4: a queue page meeting more than 1,000 withheld rows ends `bounded`.
+29. `-018` MINOR 5: a row stamped before the cursor and committed later is served by the next pass from the start.
+30. `-018` D10 / MINOR 6: the suppression approval stepped up to `MULTI_FACTOR`, beyond §11's list - ratify.
+31. `-018` MINOR 11: proposer, approver and taker are withheld from every view - a "mine" flag if wanted.
+32. `-019`: the journal adapter has no dedicated read-only database principal.
+33. `-019` (DESIGN-019 §23): a row born `UNCLASSIFIED` stays so after the register learns its namespace.
+34. `-020` MINOR 1: `CORRIDOR_HIGH_RISK` reads `ABSENT` - a corridor port over payments' and crossborder's records.
+35. `-020` MINOR 2: merchant subjects are not monitored - a merchant's own monitoring policy.
+36. `-020` MINOR 4: every fired AML kind alerts, so a weight-only `ROUND_AMOUNT` opens an AML case for every round-amount
+    payer - the production policy's choice or a per-rule alert flag (reviewed by `-024`: runbook §9.1 step 3, §9.8).
+37. `-020` MINOR 6: a head held by a stuck transaction holds the monitoring claim and the watermark - a `lock_timeout`
+    would trade it for skipped windows (runbook §9.10).
+38. `-020` MINOR 8: a profile version seals amounts whole - past ~20,000 movements the 256 KiB canonical bound fails the
+    party's recompute.
+39. `-020`: tumbling windows miss a straddling pattern; a D1 and a D7 rule of one kind collide on a Monday's start.
+40. `-020`: `AccountMonitoredParties` not wired into `IdentitySubjectParties.partyOf` (an account signal would pull its
+    party's permit) - the owner's choice.
+41. `-021` D3 / MINOR 7: one live or accepted report per case - no supplementary report on a case.
+42. `-021` D9: a fourth route, the report read (`AML_REPORT_APPROVE`) - ratify.
+43. `-021` D10: `REPORT_NOT_FILEABLE` the register's `409`, not the entry's `422` - ratify.
+44. `-021` D12 / MINOR 6: only an `AML` case's confirmed suspicion is reportable - ratify.
+45. `-021` MINOR 3: a draft the second person will not approve has no exit - a `DRAFT → WITHDRAWN` edge.
+46. `-021` MINOR 4 and MINOR 10 (routed to `-024`, reviewed, not built - APIs): the AML desk worklist; a door recording an
+    authority's answer received by another channel (runbook §9.4).
+47. `-021` MINOR 8: the report's bounds (100 transactions, 50 accounts - a party past 50 fails the draft, 20 attachments,
+    8,000 characters).
+48. `-021` MINOR 11: the filer may be the drafter or the approver - four eyes on the approval only; ratify.
+49. `-022`: ratify the kyc door's semantics - a rescreen on a decided case is evidence beside the decision; whether a hit
+    should also open kyc work; the fail-closed rule on an undecided case (the second review's IMPORTANT 1); four eyes on a
+    list version's activation.
+50. `-022` O2: `RESCREEN_PARTY` on demand from a case not built.
+51. `-022` O3: a list update does not rescreen registered cross-border beneficiaries.
+52. `-022` O4: no list version read door (it would serve the rescreening census's per-version rows, runbook §9.6).
+53. `-022` O5: `SUSPENDED` relationships are not rescreened.
+54. `-022` O6: the leg's bounds (12 attempts, 5 min doubling to 6 h, 500 parties a batch, the per-tick caps).
+55. `-022` MINOR 7: a PEP hit raised `CRITICAL` into an AML case - a lower-severity EDD kind for PEP.
+56. `-022` (8): no false-positive memory - a person kyc's reviewer cleared is alerted again by a rescreen hit.
+57. `-023` D1, D2, D4, D10: a day an identifier range; the assessment census with no floor; the journal link judged for
+    windows of transfers alone; the proofs as gauges with no schedule - ratify.
+58. `-023`: a transfer refused `DESTINATION_NOT_POSTABLE` after the seams keeps its velocity count - named, not corrected.
+59. `-023` M4: a payment intent's census day is its creation's (a payments index) - also a debt row.
+60. `-025`: ratify ADR-0110 decision 9's correction (a default's alert a policy-free fact) and "born once per (party,
+    obligation)" read as once per default.
+61. `-025` MINOR 7: the default alert's severity (MEDIUM) a task default.
+62. `-025` MINOR 4: a cure is not consumed - the `COLLECTIONS` case waits for a person.
+63. `-025` MINOR 5: defaults recorded before the build open a case only on a replay - no backfill.
+64. `-025` MINOR 6: the party join reads credit's exposure views - a status filter on one would stall a partition
+    (`RiskCollectionsUnplaced`, runbook §9.12).
+65. `-025` (= `-007`'s finding): a default pulls no profile permit - no `MONITORING` rule kind reads a default.
+66. `-024`: the queues' staffed capacity per case kind (`RiskObjectives.caseCapacity` - ATO 50, FRAUD 200,
+    MERCHANT_ABUSE 100, AML 200, COLLECTIONS 1,000) and the alert-flood objective (500 of a kind an hour) are defaults -
+    the owner's figures, reviewed at the gate (runbook §9.1 step 3, §9.8).
+67. `-024`: `risk_judging` is one target label for every operation - an environment activating operations one at a time is
+    unwatched by `RiskPolicyNoneActive` until the last; a per-operation label if production phases its activations.
+68. `-024`: payments' held-withdrawal expiry leg logs its counts and meters nothing - a hold whose expiry keeps failing has
+    no alert of its own (runbook §9.5).
+69. `-024`: a policy version carries no content digest - the gate's record binds the battery's fingerprint to the
+    version's id (immutable once proposed, `INV-RSK-05`), not to a hash of its content.
+
+**Resolved, kept for the record**: `-007`'s "no `MONITORING` rule kind reads a signal" (`-013` admitted two); `-012` D1
+(the action re-drive moved to `RiskActionSchedule` by `-017`); `-014`/`-015` D6 (an unplaceable alert's suppression -
+`-018`, `-020`); `-016` MINOR 3 (dispatch as the platform, `-017`) and MINOR 2 (suppression persons, `-018`); `-018` D9
+(the evidence door, `-023`); `-022` O1 (the kyc door, the owner's decision), D1/D9 (superseded by the door and the fact
+alert); `-022`'s kyc check purpose tag (`finapp.kyc.check{outcome,purpose}`, its second review); `-013` MINOR 6 and
+`-005`'s meter (`finapp.risk.alert.unraised`, `finapp.risk.signal` - built by `-024`); `-022`'s census row
+(`RescreeningCensus` - built by `-024`); `-017` MINOR 8's `DISPATCHED`-age alert (reviewed by `-024`, not built: the
+schedule off, its claim failing and the dispatch throwing are each alerted).
+
+**The debt rows the phase accrued** (`CURRENT_STATE.md` §Known Architectural Debt): the risk proofs read whole days
+(`-023` - a persisted, paged proof run at volume; Phase 15); the rescreening census counts each version whole (`-024`,
+the coordinator's review - at a population of millions its statement can pass the 5 s bound and fail the whole proofs
+reading, every gauge NaN, never a false `HELD`; Phase 15); the assessment census dates a payment intent by its creation
+(`-023` M4); regulatory report retention (`-021` - kept for ever until the record-keeping rules of a real jurisdiction,
+C4; Phase 15); collections operations (`-025`, partly paid - contact strategy, promises, placement, write-off; Phase 14) -
+five rows.
+And the owed database halves of every task's probes (C5), counted in `MUTATION_TESTING.md` §3 for the one owner-authorised
+database pass before the exit review.
+
 ---
 
 ## 2. Why this phase is shaped by decisions already taken
@@ -1170,47 +1301,63 @@ a policy version flip the verdict and name their row; a fingerprint committed; a
 
 Every series is `finapp.risk.*`; tags come from `MetricNames.ALLOWED_TAG_KEYS` plus `rule` (C9, added by `-004`, bounded by the
 policy's rule codes); no tag ever carries an id, an amount or a name (`INV-RSK-08`). The table is the register criterion 6 of
-`PHASE_GATES.md` §2 is assessed against at the exit (`PlannedMetersExistTest` reads it once Phase 13 is `COMPLETE`);
-`P13-TSK-024` registers the series, the builder of each flow emits it, and a `RiskMetersTest` counts this table's rows
-against the `app/.../risk/*Metrics` classes (the BNPL precedent). Alert rules live in `infra/prometheus/rules/risk.yml`;
-the two the plan names are `RiskEvaluationUnavailable` and `RiskPolicyNoneActive`; `-024` names the rest.
+`PHASE_GATES.md` §2 is assessed against at the exit (`PlannedMetersExistTest` reads it once Phase 13 is `COMPLETE`, and
+`#phase13PlannedMetersAreAlreadyPublished` reads it now); the builder of each flow emits its series, and `RiskMetersTest`
+counts this table's rows - exactly - against the composed application's `finapp.risk.*` registry **both ways** (a row
+without a meter, and a meter without a row, are each red), with each row's tag keys and every category's values from
+startup. Alert rules live in `infra/prometheus/rules/risk.yml` (`P13-TSK-024`, thirty rules, each naming the invariant it
+watches and its runbook section - `OPERATIONS_RUNBOOK.md` §9), every one evaluated over a fresh instance's scrape by
+`RiskAlertRulesTest` (it fires on its break and only then) and resolved against the live scrape by
+`AlertRulesResolveTest#theRiskRulesResolve`; their thresholds are the code's (`RiskObjectives`, `SlaDeadlines`).
+*(As built by `P13-TSK-024`, 2026-10-26: thirty-five rows - the transition's twenty-two, `-020`'s three, `-021`'s filing
+row, `-022`'s two, `-023`'s two, `-025`'s one, and `-024`'s four (`alert.unraised`, `signal`, and - after the coordinator's
+review - `monitoring.age` and `report.unconcluded.age`: "for longer than an hour / an interval" is a question of time, so
+those two alerts read ages on the database's clock, never a counter's increase or an entry count); `profile.rating` and the
+census's `RESCREENING` kind built by `-024`; the `policy_version` tag the plan named answered by the gauge's value; the
+inbox's `finapp.inbox.consumption{outcome}` registered eagerly whatever the consumer's flag, for `InboxConsumptionFailing`.)*
 
 | Series | Type | Tags | Alert |
 |---|---|---|---|
 | `finapp.risk.evaluation` | counter | operation, verdict | — |
-| `finapp.risk.evaluation.latency` | timer (p50 / p99 / max) | operation | p99 over the 50 ms budget for five minutes (M3's split trigger watched) |
-| `finapp.risk.evaluation.unavailable` | counter | operation, reason_code (`RISK_UNAVAILABLE`, `NO_POLICY_ACTIVE`) | `RiskEvaluationUnavailable`: any increase where a policy is active; `RiskPolicyNoneActive`: `NO_POLICY_ACTIVE` where production is meant to judge (runbook §9.1) |
+| `finapp.risk.evaluation.latency` | timer (p50 / p99 by `histogram_quantile` over its service-level buckets, 5 ms … 500 ms; max the timer's own) | operation | `RiskEvaluationLatencyOverBudget`: more than 1% of five minutes' evaluations above the 50 ms bucket, for five minutes (M3's split trigger watched) |
+| `finapp.risk.evaluation.unavailable` | counter | operation, reason_code (`RISK_UNAVAILABLE`, `NO_POLICY_ACTIVE`) | `RiskEvaluationUnavailable`: any `RISK_UNAVAILABLE` increase (a policy was meant to judge and could not); `NO_POLICY_ACTIVE` on a judging target is `RiskPolicyNoneActive`'s (runbook §9.1) |
 | `finapp.risk.rule.hit` | counter | operation, rule | — |
 | `finapp.risk.challenge` | counter | operation, outcome (`satisfied`, `refused`) | — |
 | `finapp.risk.override` | counter | outcome | — |
-| `finapp.risk.alert` | counter | kind, severity | a sustained rate far above the policy's baseline (flood) |
+| `finapp.risk.alert` | counter | kind, severity | `RiskAlertFlood`: a kind's hour above `RiskObjectives.ALERT_FLOOD_PER_HOUR` (500 - a default, the owner's to set from the production policy's baseline) |
 | `finapp.risk.alert.suppressed` | counter | reason_code | — |
+| `finapp.risk.alert.unraised` | counter (`P13-TSK-024`, `-013`'s hand-off: a sealed assessment whose alerts were undone behind their savepoint - the decision stands, its alerts and case never born) | operation | `RiskAlertsUnraised`: any increase |
 | `finapp.risk.case` | counter | kind, status | — |
-| `finapp.risk.collections.unplaced` | counter (`P13-TSK-025`: every default delivery whose agreement's party could not be placed - refused before any alert is born, so a stalled `risk.signals` partition's retries count here alone) | — | any increase (`-024`) |
-| `finapp.risk.case.backlog` | gauge (open cases) | kind | above the queue's staffed capacity |
-| `finapp.risk.case.age` | gauge (seconds, oldest open) | kind | older than the kind's SLA |
-| `finapp.risk.case.resolution` | timer (open → disposed) | kind | — |
-| `finapp.risk.action` | counter | kind, outcome | — |
-| `finapp.risk.action.failed` | counter | kind | any increase |
-| `finapp.risk.report` | counter | status | a filing `UNKNOWN` for longer than the inquiry interval (runbook §9.4) |
-| `finapp.risk.report.filing` | counter (`P13-TSK-021`: every answer the authority gave a submission or an inquiry, and every call that threw) | outcome (`acknowledged`, `rejected`, `unknown`, `not_received`, `failed`) | any sustained `unknown` or `failed` - the "filing `UNKNOWN`" alert's input (`-024`) |
-| `finapp.risk.policy.active` | gauge (1 per operation with an `ACTIVE` version) | operation, policy_version | 0 for an operation production judges |
-| `finapp.risk.monitoring.lag` | gauge (journal head − watermark, entries) | source | lag growing for an hour |
-| `finapp.risk.monitoring.unclassified` | gauge (`UNCLASSIFIED` monitored transactions) | — | above 0 |
-| `finapp.risk.monitoring.subject` | counter (`P13-TSK-020`: every party the rule leg met) | outcome (`judged`, `failed`, `not_judged`) | any `failed` increase |
-| `finapp.risk.monitoring.unplaced` | counter (`P13-TSK-020`: customer accounts no party could be placed behind) | — | any increase |
+| `finapp.risk.collections.unplaced` | counter (`P13-TSK-025`: every default delivery whose agreement's party could not be placed - refused before any alert is born, so a stalled `risk.signals` partition's retries count here alone) | — | `RiskCollectionsUnplaced`: any increase |
+| `finapp.risk.case.backlog` | gauge (open cases) | kind | `RiskCaseBacklogAboveCapacity`: above the kind's staffed capacity (`RiskObjectives.caseCapacity` - defaults pending the owner's staffing figures) |
+| `finapp.risk.case.age` | gauge (seconds, oldest open) | kind | `RiskCaseOverdue<Kind>`, one per kind: older than its SLA (`SlaDeadlines`) |
+| `finapp.risk.case.resolution` | timer (open → disposed; mean and max - no buckets) | kind | — |
+| `finapp.risk.action` | counter | kind, outcome | `RiskActionRefused`: any `refused` (an action `FAILED` by its owner) |
+| `finapp.risk.action.failed` | counter | kind | `RiskActionDispatchFailing`: a dispatch throwing in each quarter hour |
+| `finapp.risk.report` | counter | status | — (the filing's own rows below) |
+| `finapp.risk.report.filing` | counter (`P13-TSK-021`: every answer the authority gave a submission or an inquiry, and every call that threw) | outcome (`acknowledged`, `rejected`, `unknown`, `not_received`, `failed`) | `RiskFilingCallsFailing`: any `failed` in the hour (calls an inquiry interval apart); the `unknown` answers' alert is the age's, below |
+| `finapp.risk.report.unconcluded.age` | gauge (`P13-TSK-024`, the review's IMPORTANT 1: seconds since the oldest report still `FILED` was filed, on the database's clock, 0 when none; `RiskAgeMetrics`, off the scrape thread, single-flight, bounded; NaN unreadable or stale) | — | `RiskFilingUnknown`: past two inquiry intervals (30 min) - asked again and not concluded (runbook §9.4) |
+| `finapp.risk.policy.active` | gauge (the operation's `ACTIVE` version number, 0 for none) | operation | `RiskPolicyNoneActive`: 0 - or a `NO_POLICY_ACTIVE` recorded - on a target labelled `risk_judging="true"` |
+| `finapp.risk.monitoring.lag` | gauge (journal head − watermark, entries, saturating at a million) | source | — (the dashboard's; an entry count stands above zero on a busy ledger and near it on a quiet one however stalled the sweep - the alert is the age's, below) |
+| `finapp.risk.monitoring.age` | gauge (`P13-TSK-024`, the review's IMPORTANT 2: seconds since the oldest journal entry beyond the watermark was posted - its UUIDv7 dates it - on the database's clock, 0 when none; `RiskAgeMetrics`) | source | `RiskMonitoringLagging`: past an hour (the entry's "monitoring lag over an hour"), at any volume |
+| `finapp.risk.monitoring.unclassified` | gauge (`UNCLASSIFIED` monitored transactions - every one ever born; the rows are insert-only) | — | `RiskMonitoringUnclassified`: NEW rows in the hour (`delta`), never the level, which never falls |
+| `finapp.risk.monitoring.subject` | counter (`P13-TSK-020`: every party the rule leg met) | outcome (`judged`, `failed`, `not_judged`) | `RiskMonitoringSubjectFailing`: any `failed` in the hour (a party's leg re-runs at its next movement or permit, not each tick) |
+| `finapp.risk.monitoring.unplaced` | counter (`P13-TSK-020`: customer accounts no party could be placed behind) | — | `RiskMonitoringUnplaced`: any increase |
 | `finapp.risk.monitoring.latency` | timer (`P13-TSK-020`: one party's rule leg, its head already held - the claim locks every head first) | — | beside `evaluation.latency` - M3's split trigger, measured by the storm |
-| `finapp.risk.velocity.proof` | gauge (`P13-TSK-023`: 1 on the verdict the latest reading of the proof made whole reached - `HELD`, `DIVERGED`, `VACUOUS` - 0 on the others, NaN unreadable or older than two floors; behind `finapp.risk.proofs.refresh`, 15 min, a scrape past the floor *starts* one reading on a virtual thread - single-flight per instance - and answers the last meanwhile, every statement bounded by `finapp.risk.proofs.statement-timeout`, 5 s; the plan's "counter" corrected - no schedule counts runs) | verdict | any `DIVERGED` (`VelocityDiverged` - an unexplained difference only: the journal link subtracts the uncounted transfers and sets aside the postings before the go-live) |
-| `finapp.risk.census` | gauge (`P13-TSK-023`: per census, 1 on the latest reading's verdict over today and yesterday, UTC - assessments = judged commands, monitored = journal, alerts born once, one open case, no filing left undriven - the same reading, single-flight and bounded) | kind (`ASSESSMENT`, `MONITORING`, `ALERT_BORN_ONCE`, `CASE_ONE_OPEN`, `FILING`), verdict | any `DIVERGED` |
-| `finapp.risk.proof.reading` | counter (`P13-TSK-023`, the review's I1: the proofs' readings taken off the scrape thread - `completed`, or `failed` when a statement passed the bound, the connection was lost or the refresher refused; the gauges read NaN until one completes) | outcome (`completed`, `failed`) | any `failed` increase for two floors, and **no `completed` increase over two floors** - a reading stuck on a connection the network black-holed (the data source sets no socket timeout) or killed by an `Error` is counted by neither, and its NaN gauges fire no `> 0` rule (the review's second round; `-024`'s rules) |
-| `finapp.risk.profile.rating` | gauge (parties per rating) | bucket | — |
-| `finapp.risk.sweeper.enabled` | gauge (1 / 0) per schedule | kind (`monitoring`, `action`) | 0 in production |
-| `finapp.risk.sweeper.claim.failed` | counter (N5 applied forward: every claim failure metered from the first task; `kind=report` the filing's drive, `P13-TSK-021`) | kind | any increase |
-| `finapp.risk.rescreening` | counter (`P13-TSK-022`: every claimed rescreening permit, by what became of it; `sweeper.enabled` and `sweeper.claim.failed` carry `kind=rescreening` for the leg) | outcome (`cleared`, `hit`, `skipped`, `deferred`, `failed` - `hit_not_alerted` retired by the review: a hit's alert is a fact, always raised) | any `failed` increase (`-024`) |
-| `finapp.risk.rescreening.backlog` | gauge (`P13-TSK-022`: rescreening permits `PENDING`, saturating at a million, NaN when unreadable) | — | growing for a day after an activation |
+| `finapp.risk.velocity.proof` | gauge (`P13-TSK-023`: 1 on the verdict the latest reading of the proof made whole reached - `HELD`, `DIVERGED`, `VACUOUS` - 0 on the others, NaN unreadable or older than two floors; behind `finapp.risk.proofs.refresh`, 15 min, a scrape past the floor *starts* one reading on a virtual thread - single-flight per instance - and answers the last meanwhile, every statement bounded by `finapp.risk.proofs.statement-timeout`, 5 s; the plan's "counter" corrected - no schedule counts runs) | verdict | `VelocityDiverged`: any `DIVERGED` - an unexplained difference only (the journal link subtracts the uncounted transfers and sets aside the postings before the go-live) |
+| `finapp.risk.census` | gauge (`P13-TSK-023`: per census, 1 on the latest reading's verdict - assessments = judged commands, monitored = journal, alerts born once, one open case, no filing left undriven over today and yesterday, UTC; and `P13-TSK-024`'s rescreening census - per list version in force or retired since yesterday, permits = the enqueue's count, `DONE(CLEARED)` = clearance signals, `DONE(HIT)` ≤ hit signals - the same reading, single-flight and bounded) | kind (`ASSESSMENT`, `MONITORING`, `ALERT_BORN_ONCE`, `CASE_ONE_OPEN`, `FILING`, `RESCREENING`), verdict | `RiskCensusDiverged`, by kind: any `DIVERGED` |
+| `finapp.risk.proof.reading` | counter (`P13-TSK-023`, the review's I1: the proofs' readings taken off the scrape thread - `completed`, or `failed` when a statement passed the bound, the connection was lost or the refresher refused; the gauges read NaN until one completes) | outcome (`completed`, `failed`) | `RiskProofReadingsFailing`: one instance's `failed` at two floors in a row (`by (instance)`); `RiskProofReadingsStalled`: **no `completed` increase on an instance over two floors** - a reading stuck on a connection the network black-holed (the data source sets no socket timeout) or killed by an `Error` is counted by neither, and its NaN gauges fire no `> 0` rule |
+| `finapp.risk.profile.rating` | gauge (`P13-TSK-024`: parties per current rating, one grouped count of the profile heads read off the scrape thread behind a 5-minute floor, single-flight, bounded; NaN unreadable or stale) | bucket (`LOW`, `MEDIUM`, `HIGH`, `PROHIBITED`, `UNRATED`) | — (`RiskGaugesUnreadable` when NaN past 35 min - beyond the proofs' two floors) |
+| `finapp.risk.sweeper.enabled` | gauge (1 / 0) per schedule | kind (`monitoring`, `action`, `rescreening` - `RiskActionSchedule`'s third leg) | `RiskSweeperOff`: 0 on any instance |
+| `finapp.risk.sweeper.claim.failed` | counter (N5 applied forward: every claim failure metered from the first task; `kind=report` the filing's drive, `P13-TSK-021`; `kind=rescreening` the rescreening leg, `P13-TSK-022`) | kind (`monitoring`, `action`, `report`, `rescreening`) | `RiskSweeperClaimFailing`: a kind's claims failing in each quarter hour |
+| `finapp.risk.rescreening` | counter (`P13-TSK-022`: every claimed rescreening permit, by what became of it; `sweeper.enabled` and `sweeper.claim.failed` carry `kind=rescreening` for the leg) | outcome (`cleared`, `hit`, `skipped`, `not_onboarded`, `late_hit`, `deferred`, `failed` - `hit_not_alerted` retired by the review: a hit's alert is a fact, always raised) | `RiskRescreeningFailing`: any `failed` increase |
+| `finapp.risk.rescreening.backlog` | gauge (`P13-TSK-022`: rescreening permits `PENDING`, saturating at a million, NaN when unreadable) | — | `RiskRescreeningBacklogStanding`: above 0 for a day |
+| `finapp.risk.signal` | counter (`P13-TSK-024`, `-005`'s hand-off: every signal recorded through `RiskSignals` - the consumed events' and the rescreening leg's - born, or already recorded from its source event; counted inside the recording's transaction) | kind (a `SignalKind`), outcome (`born`, `already`) | — (the stall's own series is `collections.unplaced`; `InboxConsumptionFailing` reads `finapp.inbox.consumption{outcome="failed"}`) |
 
-Spans: `RiskFlowScope` per step, no attributes. Reports (`GET /v1/operator/reports/risk/...`): decisions, alerts, cases,
-velocity — audited reads, never a customer surface.
+Spans: `RiskFlowScope` per step in `app`, the platform `Spans` port in `risk` - every `RiskSpans` constant recorded in main
+code, with no attribute (`RiskSpansTest`). Reports (`GET /v1/operator/reports/risk/...`): decisions, alerts, cases, velocity
+— audited reads, never a customer surface. The dashboard's risk row (`infra/grafana/dashboards/finapp-platform.json`, nine
+panels) reads every row above (`RiskMetersTest`, `DashboardQueriesResolveTest#theRiskRowResolves`).
 
 ---
 

@@ -113,9 +113,17 @@ public class RiskBeans {
     @Bean
     RiskSignals riskSignals(RiskSignalStore riskSignalStore, OutboxWriter<Connection> outboxWriter, IdGenerator ids,
             Clock clock, com.finapp.risk.ProfileHints profileHints, com.finapp.risk.AlertRaiser alertRaiser,
-            com.finapp.risk.RiskSubjectParties riskSubjectParties, RiskCollectionsMetrics riskCollectionsMetrics) {
+            com.finapp.risk.RiskSubjectParties riskSubjectParties, RiskCollectionsMetrics riskCollectionsMetrics,
+            RiskSignalMetrics riskSignalMetrics) {
         return new RiskSignals(riskSignalStore, outboxWriter, ids, clock, profileHints,
-                new com.finapp.risk.CollectionsCases(alertRaiser, riskSubjectParties, riskCollectionsMetrics));
+                new com.finapp.risk.CollectionsCases(alertRaiser, riskSubjectParties, riskCollectionsMetrics),
+                riskSignalMetrics);
+    }
+
+    /** {@code finapp.risk.signal{kind,outcome}} - every recording by kind, born or already; eager (`P13-TSK-024`). */
+    @Bean
+    RiskSignalMetrics riskSignalMetrics(MeterRegistry meterRegistry) {
+        return new RiskSignalMetrics(meterRegistry);
     }
 
     /** {@code finapp.risk.collections.unplaced} - eager (`P13-TSK-025`). */

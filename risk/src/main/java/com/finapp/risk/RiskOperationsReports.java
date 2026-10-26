@@ -174,6 +174,7 @@ public final class RiskOperationsReports {
     private final AlertBornOnceCensus alerts;
     private final CaseOneOpenCensus cases;
     private final FilingCensus filings;
+    private final RescreeningCensus rescreenings;
     private final VelocityProof velocity;
     private final RiskActingParty actingParties;
     private final RiskSubjectParties subjectParties;
@@ -183,8 +184,8 @@ public final class RiskOperationsReports {
     private final Clock clock;
 
     public RiskOperationsReports(RiskProofReads reads, AssessmentCensus assessments, MonitoringCensus monitoring,
-            AlertBornOnceCensus alerts, CaseOneOpenCensus cases, FilingCensus filings, VelocityProof velocity,
-            RiskActingParty actingParties, RiskSubjectParties subjectParties, MonitoredParties parties,
+            AlertBornOnceCensus alerts, CaseOneOpenCensus cases, FilingCensus filings, RescreeningCensus rescreenings,
+            VelocityProof velocity, RiskActingParty actingParties, RiskSubjectParties subjectParties, MonitoredParties parties,
             AuditWriter<Connection> audit, IdGenerator ids, Clock clock) {
         this.reads = Objects.requireNonNull(reads, "reads");
         this.assessments = Objects.requireNonNull(assessments, "assessments");
@@ -192,6 +193,7 @@ public final class RiskOperationsReports {
         this.alerts = Objects.requireNonNull(alerts, "alerts");
         this.cases = Objects.requireNonNull(cases, "cases");
         this.filings = Objects.requireNonNull(filings, "filings");
+        this.rescreenings = Objects.requireNonNull(rescreenings, "rescreenings");
         this.velocity = Objects.requireNonNull(velocity, "velocity");
         this.actingParties = Objects.requireNonNull(actingParties, "actingParties");
         this.subjectParties = Objects.requireNonNull(subjectParties, "subjectParties");
@@ -277,7 +279,9 @@ public final class RiskOperationsReports {
 
     /**
      * The proofs' reading for the meters, on {@code snapshot}: the velocity proof made whole, and each census over today
-     * and yesterday (UTC, the database's clock) - the worse verdict of the two days.
+     * and yesterday (UTC, the database's clock) - the worse verdict of the two days; the one-open, filing and
+     * rescreening censuses at the snapshot (the last over the list versions in force or retired since yesterday's
+     * start, `P13-TSK-024`).
      */
     public Reading reading(Connection snapshot) {
         Instant asOf = asOf(snapshot);
@@ -292,6 +296,8 @@ public final class RiskOperationsReports {
                 alerts.run(snapshot, yesterday).verdict().and(alerts.run(snapshot, today).verdict()));
         censuses.put(CensusKind.CASE_ONE_OPEN, cases.run(snapshot).verdict());
         censuses.put(CensusKind.FILING, filings.run(snapshot).verdict());
+        // P13-TSK-024 (-022's routed row): the versions in force or retired since yesterday's start, on this snapshot.
+        censuses.put(CensusKind.RESCREENING, rescreenings.run(snapshot).verdict());
         return new Reading(asOf, velocity.prove(snapshot).verdict(), censuses);
     }
 

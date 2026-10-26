@@ -9,7 +9,9 @@ import java.sql.Types;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -204,6 +206,29 @@ public final class JdbcCustomerRiskProfileStore implements CustomerRiskProfileSt
         } catch (SQLException failure) {
             throw JdbcMonitoredTransactionStore.failed("reading a disposition's customer risk profile version", failure);
         }
+    }
+
+    /** {@link #ratings}: one grouped count of the heads - {@code NULL} the unrated ones. */
+    static final String RATINGS = "SELECT rating, count(*) AS parties FROM " + HEAD + " GROUP BY rating";
+
+    @Override
+    public Ratings ratings(Connection unitOfWork) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Map<RiskRating, Long> rated = new EnumMap<>(RiskRating.class);
+        long unrated = 0;
+        try (PreparedStatement select = unitOfWork.prepareStatement(RATINGS); ResultSet row = select.executeQuery()) {
+            while (row.next()) {
+                String rating = row.getString("rating");
+                if (rating == null) {
+                    unrated = row.getLong("parties");
+                } else {
+                    rated.put(RiskRating.valueOf(rating), row.getLong("parties"));
+                }
+            }
+        } catch (SQLException failure) {
+            throw JdbcMonitoredTransactionStore.failed("counting the customer risk profiles by rating", failure);
+        }
+        return new Ratings(rated, unrated);
     }
 
     private static Optional<CustomerRiskProfile> select(Connection unitOfWork, UUID partyId, String sql,

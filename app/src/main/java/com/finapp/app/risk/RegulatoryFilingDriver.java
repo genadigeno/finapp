@@ -84,7 +84,8 @@ public final class RegulatoryFilingDriver {
         return asThePlatform(() -> {
             Optional<RegulatoryReport> claimed;
             try {
-                claimed = transactions.inTransaction(uow -> reports.claim(uow, id, lease));
+                claimed = flow.sweep(RiskSpans.REPORT_INQUIRE,
+                        () -> transactions.inTransaction(uow -> reports.claim(uow, id, lease)));
             } catch (RuntimeException failure) {
                 metrics.claimFailed();
                 log.warn("Regulatory filing claim failed: {}", failure.getClass().getSimpleName());
@@ -108,7 +109,8 @@ public final class RegulatoryFilingDriver {
             for (int taken = 0; taken < perTick; taken++) {
                 Optional<RegulatoryReport> claimed;
                 try {
-                    claimed = transactions.inTransaction(uow -> reports.claimNextDue(uow, lease));
+                    claimed = flow.sweep(RiskSpans.REPORT_INQUIRE,
+                            () -> transactions.inTransaction(uow -> reports.claimNextDue(uow, lease)));
                 } catch (RuntimeException failure) {
                     metrics.claimFailed();
                     log.warn("Regulatory filing claim failed: {}", failure.getClass().getSimpleName());
@@ -147,8 +149,8 @@ public final class RegulatoryFilingDriver {
         CorrelationId correlation = CorrelationContext.current().map(Correlation::correlationId)
                 .orElseGet(() -> CorrelationId.of(claimed.correlationId()));
         try {
-            return transactions.inTransaction(uow -> reports.conclude(uow, claimed, outcome, inquiryInterval,
-                    correlation));
+            return flow.sweep(RiskSpans.REPORT_INQUIRE, () -> transactions.inTransaction(uow -> reports.conclude(uow,
+                    claimed, outcome, inquiryInterval, correlation)));
         } catch (RuntimeException failure) {
             // The authority answered but the record did not commit: the next claim asks again and records the same answer.
             metrics.failed();

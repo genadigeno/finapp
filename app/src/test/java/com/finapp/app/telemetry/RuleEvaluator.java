@@ -20,18 +20,24 @@ import java.util.regex.Pattern;
  *
  * <pre>
  * expr     := cmp ('or' cmp)*
- * cmp      := vector (OP number)?                         OP: &gt; &gt;= &lt; &lt;= == !=
+ * cmp      := arith (OP number)?                          OP: &gt; &gt;= &lt; &lt;= == !=
+ * arith    := term (('+' | '-') term)*
+ * term     := primary ('/' primary)*
+ * primary  := '(' arith ')'  |  vector
  * vector   := AGG ('by' '(' label (',' label)* ')')? '(' inner ')'  |  selector ('!=' selector)?
- * inner    := 'increase' '(' selector '[' duration ']' ')'  |  selector ('!=' selector)?
+ * inner    := ('increase' | 'delta') '(' selector '[' duration ']' ')'  |  selector ('!=' selector)?
  * selector := name ('{' label ('=' | '!=') "value" (',' ...)* '}')?          AGG: max | min | sum
  * </pre>
  *
  * <p>Semantics follow Prometheus for what the rules use: a comparison with a number FILTERS (NaN compares false, so a
  * threshold never sees an unreadable gauge); {@code x != x} on one selector keeps exactly the NaN samples; {@code max} and
  * {@code min} skip NaN unless every input is NaN; {@code increase} is the counter's difference between the two scrapes it
- * is given (a reset reads the later value); {@code or} adds the right side's series whose labels the left lacks. Target
- * labels a scrape configuration attaches - {@code job}, {@code instance}, static labels - are added to every sample by the
- * caller, as Prometheus does. A rule FIRES when its result is non-empty.
+ * is given (a reset reads the later value); {@code delta} is a gauge's difference between them (`P13-TSK-024`: the
+ * monitoring lag's growth); {@code or} adds the right side's series whose labels the left lacks; {@code +}, {@code -} and
+ * {@code /} between two vectors match their elements one to one on identical label sets, keep the left's labels and drop
+ * an element with no partner - so {@code 0 / 0} is NaN and fires no threshold (`P13-TSK-024`: the evaluation latency's
+ * share above its budget's bucket). Target labels a scrape configuration attaches - {@code job}, {@code instance}, static
+ * labels - are added to every sample by the caller, as Prometheus does. A rule FIRES when its result is non-empty.
  */
 final class RuleEvaluator {
 
@@ -54,8 +60,9 @@ final class RuleEvaluator {
     private static final Pattern LINE = Pattern.compile("^([a-zA-Z_:][a-zA-Z0-9_:]*)(\\{(.*)})?\\s+(\\S+)(\\s+\\S+)?$");
     private static final Pattern LABEL = Pattern.compile("([a-zA-Z_][a-zA-Z0-9_]*)=\"((?:[^\"\\\\]|\\\\.)*)\"");
     private static final Pattern TOKEN = Pattern.compile(
-            "\\s*(\"(?:[^\"\\\\]|\\\\.)*\"|[a-zA-Z_:][a-zA-Z0-9_:]*|[0-9]+(?:\\.[0-9]+)?[smhd]?|>=|<=|==|!=|[(){}\\[\\],<>=])");
+            "\\s*(\"(?:[^\"\\\\]|\\\\.)*\"|[a-zA-Z_:][a-zA-Z0-9_:]*|[0-9]+(?:\\.[0-9]+)?[smhd]?|>=|<=|==|!=|[(){}\\[\\],<>=+\\-/])");
     private static final Set<String> AGGREGATIONS = Set.of("max", "min", "sum");
+    private static final Set<String> RANGE_FUNCTIONS = Set.of("increase", "delta");
 
     private final List<String> tokens;
     private final List<Sample> before;
@@ -70,13 +77,23 @@ final class RuleEvaluator {
 
     /** Whether {@code expr} fires on {@code after} - {@code before} the scrape a window earlier, for {@code increase}. */
     static boolean fires(String expr, List<Sample> before, List<Sample> after) {
+        return !series(expr, before, after).isEmpty();
+    }
+
+    /**
+     * The label sets of the series {@code expr} yields on {@code after} - each an alert of its own, whose {@code for} runs
+     * apart from the others' (`P13-TSK-024`'s {@code RuleTimeline}, as Prometheus keys an alert by its labels).
+     */
+    static Set<Map<String, String>> series(String expr, List<Sample> before, List<Sample> after) {
         RuleEvaluator evaluator = new RuleEvaluator(expr, before, after);
         List<Element> result = evaluator.expression();
         if (evaluator.at != evaluator.tokens.size()) {
             throw new IllegalArgumentException("unparsed tail in " + expr + " at " + evaluator.tokens.subList(evaluator.at,
                     evaluator.tokens.size()));
         }
-        return !result.isEmpty();
+        Set<Map<String, String>> series = new java.util.LinkedHashSet<>();
+        result.forEach(element -> series.add(element.labels()));
+        return series;
     }
 
     /** A Prometheus text scrape's samples, each given {@code targetLabels}. */
@@ -128,13 +145,63 @@ final class RuleEvaluator {
     }
 
     private List<Element> comparison() {
-        List<Element> vector = vector();
+        List<Element> vector = arithmetic();
         if (peek(">") || peek(">=") || peek("<") || peek("<=") || peek("==") || peek("!=")) {
             String op = tokens.get(at++);
             double threshold = number(tokens.get(at++));
             return vector.stream().filter(element -> compare(element.value(), op, threshold)).toList();
         }
         return vector;
+    }
+
+    /** {@code term (('+' | '-') term)*} - one to one on identical label sets, the left's labels kept. */
+    private List<Element> arithmetic() {
+        List<Element> left = term();
+        while (peek("+") || peek("-")) {
+            String op = tokens.get(at++);
+            left = match(left, term(), op);
+        }
+        return left;
+    }
+
+    /** {@code primary ('/' primary)*}. */
+    private List<Element> term() {
+        List<Element> left = primary();
+        while (peek("/")) {
+            take("/");
+            left = match(left, primary(), "/");
+        }
+        return left;
+    }
+
+    /** {@code '(' arith ')'} or a vector. */
+    private List<Element> primary() {
+        if (peek("(")) {
+            take("(");
+            List<Element> inner = arithmetic();
+            take(")");
+            return inner;
+        }
+        return vector();
+    }
+
+    private static List<Element> match(List<Element> left, List<Element> right, String op) {
+        Map<Map<String, String>, Double> partners = new LinkedHashMap<>();
+        right.forEach(element -> partners.put(element.labels(), element.value()));
+        List<Element> out = new ArrayList<>();
+        for (Element element : left) {
+            Double partner = partners.get(element.labels());
+            if (partner != null) {
+                double value = switch (op) {
+                    case "+" -> element.value() + partner;
+                    case "-" -> element.value() - partner;
+                    case "/" -> element.value() / partner;
+                    default -> throw new IllegalArgumentException(op);
+                };
+                out.add(new Element(element.labels(), value));
+            }
+        }
+        return out;
     }
 
     private List<Element> vector() {
@@ -155,8 +222,8 @@ final class RuleEvaluator {
     }
 
     private List<Element> inner() {
-        if (peek("increase")) {
-            take("increase");
+        if (at < tokens.size() && RANGE_FUNCTIONS.contains(tokens.get(at))) {
+            boolean delta = tokens.get(at++).equals("delta");
             take("(");
             String[] selector = new String[1];
             List<Sample> later = selector(after, selector);
@@ -175,7 +242,9 @@ final class RuleEvaluator {
             for (Sample sample : later) {
                 Double was = earlier.get(sample.labels());
                 if (was != null) {
-                    increases.add(new Element(sample.labels(), sample.value() >= was ? sample.value() - was : sample.value()));
+                    double change = delta ? sample.value() - was : sample.value() >= was ? sample.value() - was
+                            : sample.value();
+                    increases.add(new Element(sample.labels(), change));
                 }
             }
             return increases;
@@ -206,7 +275,7 @@ final class RuleEvaluator {
     /** A selector's samples in {@code scrape}; its canonical spelling into {@code spelled[0]}. */
     private List<Sample> selector(List<Sample> scrape, String[] spelled) {
         String name = tokens.get(at++);
-        if (!name.matches("[a-zA-Z_:][a-zA-Z0-9_:]*") || AGGREGATIONS.contains(name) || name.equals("increase")
+        if (!name.matches("[a-zA-Z_:][a-zA-Z0-9_:]*") || AGGREGATIONS.contains(name) || RANGE_FUNCTIONS.contains(name)
                 || name.equals("or") || name.equals("by")) {
             throw new IllegalArgumentException("not a series name: " + name);
         }
@@ -353,7 +422,7 @@ final class RuleEvaluator {
             String token = tokens.get(i);
             boolean afterBrace = i > 0 && (tokens.get(i - 1).equals("{") || tokens.get(i - 1).equals(","));
             boolean label = afterBrace || (i > 1 && tokens.get(i - 2).equals("by")) || (i > 0 && tokens.get(i - 1).equals("by"));
-            if (token.matches("[a-zA-Z_:][a-zA-Z0-9_:]*") && !AGGREGATIONS.contains(token) && !token.equals("increase")
+            if (token.matches("[a-zA-Z_:][a-zA-Z0-9_:]*") && !AGGREGATIONS.contains(token) && !RANGE_FUNCTIONS.contains(token)
                     && !token.equals("or") && !token.equals("by") && !label && !(i + 1 < tokens.size()
                     && (tokens.get(i + 1).equals("=") || tokens.get(i + 1).equals("!=") && i + 2 < tokens.size()
                             && tokens.get(i + 2).startsWith("\"")))) {

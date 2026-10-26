@@ -119,8 +119,8 @@ public class RiskRescreeningBeans {
      */
     @Bean
     RescreeningHits rescreeningHits(CheckStore<Connection> checkStore, RescreeningRun rescreeningRun,
-            RiskTransactions riskTransactions) {
-        return new RescreeningHits(checkStore, rescreeningRun, riskTransactions);
+            RiskTransactions riskTransactions, RiskFlowScope riskFlowScope) {
+        return new RescreeningHits(checkStore, rescreeningRun, riskTransactions, riskFlowScope);
     }
 
     /**

@@ -53,7 +53,7 @@ class RiskOperationsReportsTest {
     private final java.util.concurrent.atomic.AtomicInteger placementCalls = new java.util.concurrent.atomic.AtomicInteger();
     private final RiskOperationsReports reports = new RiskOperationsReports(reads, new AssessmentCensus(reads, owners),
             new MonitoringCensus(emptyLedger(), noWatermark(), reads), new AlertBornOnceCensus(reads),
-            new CaseOneOpenCensus(reads), new FilingCensus(reads),
+            new CaseOneOpenCensus(reads), new FilingCensus(reads), new RescreeningCensus(reads),
             new VelocityProof(windows, evidence(EnumSet.allOf(VelocityDimension.class)),
                     evidence(EnumSet.of(VelocityDimension.SOURCE_ACCOUNT, VelocityDimension.DESTINATION))),
             (unitOfWork, actor) -> Optional.ofNullable(partyOfActor.get(actor.id())), RiskSubjectParties.NONE,
