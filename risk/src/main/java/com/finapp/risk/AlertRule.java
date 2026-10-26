@@ -10,7 +10,7 @@ import java.util.Optional;
  * The rule an alert speaks for - its {@code rule_code} (`P13-TSK-015`; {@code risk V010}'s
  * {@code risk_alert_rule_code_is_known}): a {@link RuleKind}'s name for an alert a policy's rule raised, or for an
  * operational {@link AlertKind} its own name ({@code UNCLASSIFIED_TRANSACTION}, {@code VELOCITY_DIVERGENCE}), which no
- * policy rule carries - and since `P13-TSK-025` ({@code risk V019}) a fact kind's own name
+ * policy rule carries - and since `P13-TSK-025` ({@code risk V017}) a fact kind's own name
  * ({@code OBLIGATION_DEFAULTED}). A closed vocabulary - the code is part of the alert's identity (subject, rule, window
  * start), so it is never a parameter, a free name or a rule's ordinal ({@code INV-RSK-08}: a rule's parameters never
  * leave the policy).

@@ -55,7 +55,7 @@ public final class DispositionRules {
      * {@link CaseKind#COLLECTIONS} (`P13-TSK-025`, owner decision C3), which takes {@code CLOSED_NO_ACTION} (worked, or
      * cured: nothing to do - one person, from {@code OPEN} too) and {@code REFERRED} (to the owning domain's own
      * restructuring or write-off path - a recommendation, never an action; two persons). A default is a fact: never a
-     * false positive, never a fraud or a suspicion confirmed - and so never {@code PROHIBITED}. {@code risk V019}'s
+     * false positive, never a fraud or a suspicion confirmed - and so never {@code PROHIBITED}. {@code risk V017}'s
      * {@code risk_case_collections_disposed_by_facts} holds the same for every writer.
      */
     public static boolean admitted(CaseKind kind, Disposition disposition) {

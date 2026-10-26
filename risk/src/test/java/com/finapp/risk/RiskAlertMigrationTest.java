@@ -45,11 +45,11 @@ class RiskAlertMigrationTest {
             + "|reconciliation|fx|consent|public)\\.[a-z_]+");
 
     /**
-     * risk V019 (P13-TSK-025): the kind and rule-code CHECKs, and the two that pair the own-code kinds with no policy,
+     * risk V017 (P13-TSK-025): the kind and rule-code CHECKs, and the two that pair the own-code kinds with no policy,
      * dropped and re-made for the fact kind OBLIGATION_DEFAULTED - V010 is merged and never edited, so their effective
-     * definition is V019's ({@code RiskCollectionsMigrationTest} holds it).
+     * definition is V017's ({@code RiskCollectionsMigrationTest} holds it).
      */
-    private static final String COLLECTIONS = "db/migration/risk/V019__the_collections_case.sql";
+    private static final String COLLECTIONS = "db/migration/risk/V017__the_collections_case.sql";
 
     @Test
     @DisplayName("the vocabularies are the enums': kind, severity, subject kind, rule code, window kind, status and the"

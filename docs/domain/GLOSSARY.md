@@ -2233,7 +2233,7 @@ case, two persons' act with a closed `SuppressionReason` - never `DUPLICATE`, wh
 `UNCLASSIFIED_TRANSACTION` and `VELOCITY_DIVERGENCE` are declared but no writer raises them as rows. As built by
 `P13-TSK-018`, 2026-10-25: suppressed through the analyst's door - proposed under `RISK_INVESTIGATE`, approved by a
 second `RISK_CASE_APPROVE` holder from a `MULTI_FACTOR` session - its two persons authenticated humans, `CUSTOMER`- or
-`EMPLOYEE`-typed, `risk V014`. As built by `P13-TSK-025`, 2026-10-26, `risk V019`: a **default's alert**,
+`EMPLOYEE`-typed, `risk V014`. As built by `P13-TSK-025`, 2026-10-26, `risk V017`: a **default's alert**,
 `OBLIGATION_DEFAULTED`, is a fact rather than a rule's observation - raised in T-sig from lending's or bnpl's default
 signal, its own code its rule and no policy, about the defaulted credit agreement, born once per default, folded into the
 agreement's party's `COLLECTIONS` case.)*
@@ -2280,7 +2280,7 @@ person's act or the system's attach of an alert or an assessment - moves by exac
 level (`L1`-`L3`) and a queue an escalation raises; the SLA in hours per kind (`SlaDeadlines`) stamped on the database
 clock; opened by T-eval's `REVIEW` or `HOLD` (`ATO` when the sealed hits show the account-takeover anchors, else `FRAUD`
 - an anchor rule's hold and its alert one case), by an alert's folding, or by hand; a merchant's `MERCHANT_ABUSE` case
-judged for self-dealing on the merchant's organisation party. As built by `P13-TSK-025`, 2026-10-26, `risk V019`: a
+judged for self-dealing on the merchant's organisation party. As built by `P13-TSK-025`, 2026-10-26, `risk V017`: a
 **collections case** is a case of kind `COLLECTIONS` about a defaulted agreement's party - one open per party, opened only
 by its default's alert, disposed `CLOSED_NO_ACTION` or `REFERRED` (a referral to the owning domain's own restructuring or
 write-off path, never an act), never `CONFIRMED_*`, proposing no Risk Action.)*

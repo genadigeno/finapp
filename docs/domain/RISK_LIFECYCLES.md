@@ -471,14 +471,14 @@ organisation), so a `MERCHANT_ABUSE` alert is suppressible by any analyst but on
 one snapshot a page, audited `risk.AlertRead`, every alert of the reader's own party - or whose party cannot be placed -
 withheld.
 
-*(As built, `P13-TSK-025`, 2026-10-26 - the fact's alert; `risk V019`.)* **A third origin beside the rule and the
+*(As built, `P13-TSK-025`, 2026-10-26 - the fact's alert; `risk V017`.)* **A third origin beside the rule and the
 operational kind: the fact.** `OBLIGATION_DEFAULTED` is raised in **T-sig** (S, the inbox handler's transaction, under
 the platform's actor) for each recorded default - `-005`'s `LOAN_DEFAULTED` / `BNPL_DEFAULTED` signal, on every delivery
 that reaches the handler (born now, or standing from an earlier one, read back by its source event) - by
 `CollectionsCases` through the one `raiseAll`: about the `CREDIT_AGREEMENT`, **its own code its rule and no policy**
 (a default alerts whether or not a `MONITORING` version is active), its evidence exactly its one signal, severity
 `MEDIUM`, keyed (the agreement, `OBLIGATION_DEFAULTED`, the `D1` bucket of the default's business date) - born once per
-default of an obligation, a re-default after a cure its own alert. `V019` re-makes `risk_alert_kind_is_known`,
+default of an obligation, a re-default after a cure its own alert. `V017` re-makes `risk_alert_kind_is_known`,
 `risk_alert_rule_code_is_known`, `risk_alert_rule_matches_kind` and `risk_alert_policy_named` by name over the own-code
 kinds and adds `risk_alert_default_names_its_agreement`. It folds into the **agreement's party's** `COLLECTIONS` case
 (§4.6), is placed for the queue and the self-dealing judgement through the accountable join (a loan's borrower, a BNPL
@@ -551,7 +551,7 @@ the case's head; (7) the system's opening is audited `risk.CaseOpened` under the
 leg's `SYSTEM`), an attach recorded by its history row alone; the alerts born `OPEN` before this task are drained by the
 case leg on `RiskMonitoringSchedule`.
 
-*As built (`P13-TSK-025`, 2026-10-26, `risk V019`; `DESIGN-025`) - the `COLLECTIONS` kind (owner decision C3, facts
+*As built (`P13-TSK-025`, 2026-10-26, `risk V017`; `DESIGN-025`) - the `COLLECTIONS` kind (owner decision C3, facts
 only):* **(birth) → `OPEN`** only by its default's alert (§4.5) folding in T-sig - `lending.LoanDefaulted` /
 `bnpl.BnplDefaulted` recorded by `-005`'s handler under the platform's actor, `risk.CaseOpened` audited `SYSTEM` - never by
 hand, never from an alert by hand (`422 risk.CaseRequestInvalid`), never by an assessment; **its subject is the defaulted
@@ -934,7 +934,7 @@ The owner's transition decisions (2026-10-22, `PHASE_13_PLAN.md` §2.2 and §24)
 |---|---|---|
 | C1 | Fail-safe per operation and value band: transfers below EUR 1,000 `ALLOW` recorded, at or above `DENY`; withdrawals and cross-border `DENY` at every band; checkout payments below EUR 250 `ALLOW` recorded, at or above `DENY` — a field of the policy version | §4.1 (the fail-safe bands); §4.2 (the recorded fail-safe) |
 | C2 | The vocabulary `ALLOW`, `CHALLENGE`, `DENY`, `HOLD`, `REVIEW`; `HOLD` only where the operation has a native hold-then-dispatch shape | §4.2; §4.12 |
-| C3 | Collections: a `COLLECTIONS` case opened on `LoanDefaulted` / `BnplDefaulted`, facts only; cut candidate | §4.6 (`-025`; built 2026-10-26, `risk V019` - §4.5's fact alert, §4.6's kind rules) |
+| C3 | Collections: a `COLLECTIONS` case opened on `LoanDefaulted` / `BnplDefaulted`, facts only; cut candidate | §4.6 (`-025`; built 2026-10-26, `risk V017` - §4.5's fact alert, §4.6's kind rules) |
 | C4 | The neutral EUR reference; the EU shape behind a simulated filing adapter | §4.8 |
 | C5 | Criterion 7: fleet tiers skipped per task; database suites written and owed; one owner-authorised database pass before the exit review | none in the machines — §5's ranks are proven by each task's own suites |
 | C6 | The customer sees the operation's generic answer; `HELD` reads `HELD` with no reason | §4.12; §3's actors |

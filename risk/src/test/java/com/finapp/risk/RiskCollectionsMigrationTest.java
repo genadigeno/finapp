@@ -18,17 +18,17 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@code risk V019}'s text held to the code (`P13-TSK-025`; the migration-test idiom, hermetic - the live constraints are
+ * {@code risk V017}'s text held to the code (`P13-TSK-025`; the migration-test idiom, hermetic - the live constraints are
  * {@code RiskMigrationTest#theCollectionsCase}'s and {@code CollectionsCaseDatabaseTest}'s, written and owed under C5):
  * the fact kind {@code OBLIGATION_DEFAULTED} admitted by re-making V010's four CHECKs by name over {@link AlertKind}'s
  * own-code kinds, the fact's shape held for every writer, the collections case's three rules - a party's, opened by its
  * default, disposed by facts only ({@link DispositionRules#COLLECTIONS}) - and nothing else: V010's born-once unique
  * and V012's one-open unique untouched, no table, grant or trigger, no other schema.
  */
-@DisplayName("risk V019 admits a default's alert and holds the collections case to facts (P13-TSK-025)")
+@DisplayName("risk V017 admits a default's alert and holds the collections case to facts (P13-TSK-025)")
 class RiskCollectionsMigrationTest {
 
-    private static final String RESOURCE = "db/migration/risk/V019__the_collections_case.sql";
+    private static final String RESOURCE = "db/migration/risk/V017__the_collections_case.sql";
 
     private static final List<String> EARLIER = List.of(
             "db/migration/risk/V001__initialise_risk_schema.sql",

@@ -229,7 +229,7 @@ Financial impact: none — a case moves no money; its only effects are keyed act
   OBLIGATION_DEFAULTED` (folding into `COLLECTIONS`) - its own code its rule, no policy (it alerts with no `MONITORING`
   version active), about the `CREDIT_AGREEMENT`, its evidence exactly the one default signal, keyed on the `D1` bucket of
   the default's business date - raised in T-sig by `CollectionsCases` on every delivery that reaches the handler (born or
-  standing), under the platform's actor (`RiskSignalIntake.asThePlatform`, enumerated). `risk V019` (persistence was
+  standing), under the platform's actor (`RiskSignalIntake.asThePlatform`, enumerated). `risk V017` (persistence was
   planned "none") re-makes the four CHECKs by name and adds the fact's shape and the kind's three CHECKs. **The case's
   subject is the agreement's party** (`Cases`' kind rule over the accountable join - `app`'s `JdbcCreditAgreementParties`
   over lending's and bnpl's published views, `SYSTEM_JOIN`), so one open per (party, `COLLECTIONS`) holds and a second

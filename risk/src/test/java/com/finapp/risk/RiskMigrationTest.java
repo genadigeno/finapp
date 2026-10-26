@@ -438,10 +438,10 @@ class RiskMigrationTest {
                 + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
     }
 
-    // ------------------------------------------------------------------ V019 (P13-TSK-025)
+    // ------------------------------------------------------------------ V017 (P13-TSK-025)
 
     @Test
-    @DisplayName("V019: the fact's alert admitted - its kind and its own code, no policy - and its shape held; the"
+    @DisplayName("V017: the fact's alert admitted - its kind and its own code, no policy - and its shape held; the"
             + " collections case a party's, opened by its default, disposed by facts only; no grant changed, every"
             + " constraint name unique")
     void theCollectionsCase() throws SQLException {

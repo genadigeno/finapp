@@ -96,7 +96,7 @@ public enum AlertKind {
 
     /**
      * True when the alert's rule is its own code and no policy version names it: an operational kind or a fact kind
-     * ({@code risk V019}'s {@code risk_alert_rule_matches_kind}, {@code risk_alert_policy_named}).
+     * ({@code risk V017}'s {@code risk_alert_rule_matches_kind}, {@code risk_alert_policy_named}).
      */
     public boolean ownCode() {
         return operational() || fact();

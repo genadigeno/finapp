@@ -19,7 +19,7 @@ import java.util.Optional;
  *       own code as the rule, no policy; it opens no case and is never folded;</li>
  *   <li>{@link #ofFact} (`P13-TSK-025`) - a fact kind ({@code OBLIGATION_DEFAULTED}): its own code as the rule, no
  *       policy, about its kind's {@link AlertKind#factSubject()}, its evidence exactly the one signal that recorded the
- *       fact; it folds into a case like a rule's alert ({@code risk V019}'s
+ *       fact; it folds into a case like a rule's alert ({@code risk V017}'s
  *       {@code risk_alert_default_names_its_agreement} holds the same for every writer).</li>
  * </ul>
  */
