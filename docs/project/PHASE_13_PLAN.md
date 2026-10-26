@@ -298,7 +298,10 @@ this section's two shapes, and a cycle with a transfer, withdrawal or wallet pay
 wallet and then the party's R2a. `app`'s judgement therefore takes those two rows first, in the Phase 9 order (the
 quote, then the wallet fx's acceptance resolves - `CrossBorderMovements.locked`), and only then (R1)–(R3); the
 acceptance and the hold re-lock rows already held. The argument in full: `DISTRIBUTED_EXECUTION.md` §3's Phase 13
-row.)*
+row.)* *(Added by `P13-TSK-022`, 2026-10-26 - **(R9)**: a `screening_list_version` row or a `rescreening_permit` row, taken
+first in a risk-only transaction that takes no money row - T-list (A0′, the list's advisory lock in namespace `13`, then
+the version row, then the list's `ACTIVE` row), the enqueue's claim, the permit's claim (committed alone) and its
+conclusion (R9 → R1 → R3 → R8 → R5 → R4 → R5). Nobody holding another risk row or a money row ever waits on R9.)*
 
 ### 7.3 Couplings read in the code
 
@@ -436,6 +439,15 @@ the leg never throws, so a failing action claim ends only the action leg and vic
 R4 → R5, each party under a savepoint; no new schedule and no new `LEASE_PROTECTED_SCHEDULERS` entry; `finapp.risk.monitoring.subject{outcome}`,
 `.unplaced` and `.latency` its meters.)*
 
+*(As built by `P13-TSK-022`, 2026-10-26: **the rescreening leg** - `RiskMonitoringSchedule`'s last leg (`RescreeningDriver`,
+as the platform), the table's "rescreening permits": the enqueue's bounded batches (`finapp.risk.rescreening.enqueue-batch`
+500, `.enqueue-batches-per-tick` 4; the version row `SKIP LOCKED`, its permit `enqueue_next_at`, the page and the advance
+one transaction), then the due permits (`.permits-per-tick` 50; the claim `SKIP LOCKED` on `next_attempt_at`, a lease
+`.lease` 2 min ahead, committed; kyc asked on no risk transaction; the conclusion conditional on the claimed attempt).
+`finapp.risk.sweeper.enabled{kind=rescreening}` mirrors the sweep's switch; `finapp.risk.sweeper.claim.failed{kind=rescreening}`
+counts a failed batch, claim or conclusion, ending its loop - the leg never throws into the sweep. No new scheduler:
+`LEASE_PROTECTED_SCHEDULERS` stays 31.)*
+
 ### 7.6 The latency budget and what a breach becomes
 
 T-eval runs in-lock, so its cost is paid by every money movement. Budget: **p99 ≤ 50 ms** for the reads and upserts
@@ -484,7 +496,7 @@ Phase 12 wave-D lesson — so a task's number is below every number of a later w
 | `monitored_transaction`, `monitoring_watermark` | `V004` (`-019`) | `UNIQUE (journal_entry_id)`; one watermark per source |
 | `risk_signal` widened (three abuse kinds, `merchant_subject_ref`, `intent_ref`, `risk_signal_by_merchant`), `velocity_window` and `risk_rule_parameter` (`SESSION`), `risk_assessment.session_id` | `V011` (`-014`) — *as built 2026-10-25, the next free at its build; the entry planned no migration* | the kinds' `CHECK`s re-made by name; a guard refusing a stored ratio rule without `threshold_count`; no grant, no row |
 | `regulatory_report`, `regulatory_report_event` | `V011` (`-021`) *(taken by `-014`: the next free at `-021`'s build)* *(as built by `P13-TSK-021`, 2026-10-25: `V016`)* | the filing artefact |
-| `screening_list_version`, `rescreening_permit` | `V012` (`-022`) | list facts; permits |
+| `screening_list_version`, `rescreening_permit`; `risk_signal` widened (`SCREENING_CLEARED`, `SCREENING_HIT`, `list_version_ref`, `screening_ref`) | `V012` (`-022`) *(as built by `P13-TSK-022`, 2026-10-26: `V017`, the next free number; `-023` and `-025` hold `V018`, `V019`)* | list facts (one per (list, label), one `ACTIVE` per list, four eyes by `CHECK`); permits (one per (party, version), the signal its own by a composite foreign key) |
 | payments `withdrawal` `HELD`; `WithdrawalFailureReason.RISK_REFUSED` | payments `V033` (`-009`) | payments' own machine |
 | payments `PaymentFailureReason.RISK_REFUSED` and the intent's refused-by-risk decision row | payments `V034` (`-010`) | payments' own *(as built: the intent's `failure_reason`, the fifth intent edge, and slice 2's `payment_capture_hold`)* |
 | identity roles | identity `V023` (`-001`) | `RISK_ANALYST`, `RISK_OFFICER`, `AML_OFFICER` |
@@ -1014,6 +1026,31 @@ activation enqueues one rescreening permit per `ACTIVE` party; the sweep's rescr
 through kyc's existing ports (`CounterpartyScreenings` for counterparties; the case-bound screening for parties),
 records the clearance as a signal, and raises an alert on a hit. kyc stays the screening owner (Refinement 3).
 
+*(As built by `P13-TSK-022`, 2026-10-26, `risk V017` - `DESIGN-022`.)* **What kyc's ports can do, unchanged (D1):** the
+case-bound screening is a `SANCTIONS`/`PEP` check on a KYC case, and kyc **never re-asks an answered question**
+(`CheckStore.requestOrConverge` converges on a `CLEAR`/`HIT`); a list update's re-verification is a *new* case
+(`INV-LIFE-04`) - consent-gated, re-running identity and documents, customer-visible, and undecidable for an `ACTIVE`
+customer (`DecisionRecording` moves only `PENDING`). `CounterpartyScreenings` screens a payee abroad by name, **country**
+and payee check - facts a party does not have. So `PartyRescreening` (reshaped) asks kyc under the permit's key
+(`risk.rescreen:<permit id>`) and `app`'s `KycPartyRescreening` answers with **kyc's current case-bound screening** of
+the list's type (the latest decided check; in flight; none; the party no longer `ACTIVE`), on a read-only snapshot of its
+own; **risk judges currency** - only a screening kyc decided at or after the version's activation is recorded
+(`SCREENING_CLEARED` / `SCREENING_HIT`, about the party, born of the permit); an older one is `STALE`, backed off (5 min
+doubling to 6 h) and `FAILED` at 12 attempts, counted - never a clearance (`INV-RSK-02`). **Consequence, stated
+plainly:** until kyc grows a door that re-screens a decided party (owner item), a party kyc screened before the
+activation is never re-screened and its permit ends `FAILED(STALE)` - the leg is an honest exposure census, and any
+re-screening kyc performs (a successor case's checks) is recorded the moment it is decided. **The list fact:** recorded
+by a person (`CUSTOMER` or `EMPLOYEE`), numbered in the list's order under its advisory lock, a recorded label
+converging; activated by a **second** person from `MULTI_FACTOR` (§11's "under four eyes"; the recorder refused `403
+risk.SelfApprovalRefused`, recorded `FAILED`), the predecessor retired in the same transaction; a second activation, or a
+version recorded before the one in force, `409 risk.PolicyStale`. **The enqueue** is the sweep's, never the
+activation's (the entry): bounded batches, each one transaction (the version row `SKIP LOCKED`, a keyset page of
+`ACTIVE` parties through `ActiveParties` over party's new store read, one permit each born once, the cursor advanced).
+**The hit's alert:** `SCREENING_HIT`, the rule of the `MONITORING` version in force (an alert names the rule that raised
+it - none is invented: a hit with no such rule is recorded and counted `hit_not_alerted`), the `H1` bucket of the
+version's activation, `CRITICAL`, folded into the party's `AML` case. **`RESCREEN_PARTY`** stays the sweep's, never a
+case's proposable action (the routing of `-017`'s as-built; the entry's "on demand, through `-017`" is an owner item).
+
 ---
 
 ## 13. Testing strategy
@@ -1114,6 +1151,8 @@ the two the plan names are `RiskEvaluationUnavailable` and `RiskPolicyNoneActive
 | `finapp.risk.profile.rating` | gauge (parties per rating) | bucket | — |
 | `finapp.risk.sweeper.enabled` | gauge (1 / 0) per schedule | kind (`monitoring`, `action`) | 0 in production |
 | `finapp.risk.sweeper.claim.failed` | counter (N5 applied forward: every claim failure metered from the first task; `kind=report` the filing's drive, `P13-TSK-021`) | kind | any increase |
+| `finapp.risk.rescreening` | counter (`P13-TSK-022`: every claimed rescreening permit, by what became of it; `sweeper.enabled` and `sweeper.claim.failed` carry `kind=rescreening` for the leg) | outcome (`cleared`, `hit`, `hit_not_alerted`, `skipped`, `deferred`, `failed`) | any `failed` or `hit_not_alerted` increase (`-024`) |
+| `finapp.risk.rescreening.backlog` | gauge (`P13-TSK-022`: rescreening permits `PENDING`, saturating at a million, NaN when unreadable) | — | growing for a day after an activation |
 
 Spans: `RiskFlowScope` per step, no attributes. Reports (`GET /v1/operator/reports/risk/...`): decisions, alerts, cases,
 velocity — audited reads, never a customer surface.
@@ -1169,7 +1208,7 @@ wave-D lesson), so a task's number is below every number of a later wave; the wa
 | `P13-TSK-019` | Monitored transactions: the journal intake, the watermark, reprocessing | M13.6 | `-001` | `risk V004` | `DOD-DOMAIN`, `DOD-FIN` |
 | `P13-TSK-020` | Monitoring rules and AML alerts | M13.6 | `-019`, `-015` | none *(as built: `risk V015` - the counterparty index the design found missing)* | `DOD-DOMAIN` |
 | `P13-TSK-021` | The AML case and the regulatory report artefact | M13.6 | `-016`, `-020` | `risk V011` *(as built: `risk V016` - the next free number)* | `DOD-DOMAIN`, `DOD-API`, `DOD-SEC` |
-| `P13-TSK-022` | Rescreening on screening-list updates | M13.6 | `-005`, `-016` | `risk V012` | `DOD-DOMAIN`, `DOD-SEC` |
+| `P13-TSK-022` | Rescreening on screening-list updates | M13.6 | `-005`, `-016` | `risk V012` *(as built: `risk V017` - the next free number)* | `DOD-DOMAIN`, `DOD-SEC` |
 | `P13-TSK-023` | The risk proofs, the explanation door and replay | M13.7 | `-006`, `-019`, `-016` | none | `DOD-FIN`, `DOD-API` |
 | `P13-TSK-024` | Operating risk: meters, alerts, reports, runbook §9, the activation gate | M13.7 | `-023` | none | `DOD-OBS`, `DOD-DOC` |
 | `P13-TSK-025` | A collections case opened on default (C3, cut candidate) | M13.8 | `-016` | none | `DOD-DOMAIN` |

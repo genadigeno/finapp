@@ -113,6 +113,17 @@ public interface PartyStore<T> {
     Optional<PartyId> partyOfCustomer(T unitOfWork, CustomerId customerId);
 
     /**
+     * Up to {@code limit} parties whose customer relationship is {@code ACTIVE}, ascending by party id, strictly after
+     * {@code after} when present (`P13-TSK-022`) - a keyset page over {@code customer_by_party}.
+     *
+     * <p>The rescreening's census: risk's {@code ActiveParties} port, read on the enqueue's own unit of work in bounded
+     * pages, so an activated screening list version reaches every {@code ACTIVE} party once. Identifiers only leave - no
+     * name, no status. Each party holds at most one live relationship (the one-live index), so a party appears once. The
+     * caller is the platform's sweep, never a request: no identifier here comes from outside.
+     */
+    java.util.List<PartyId> activeCustomerPartiesAfter(T unitOfWork, Optional<PartyId> after, int limit);
+
+    /**
      * Changes the display name, and reports what it replaced.
      *
      * <p><strong>One statement, and that is what makes the audit record true.</strong> A read

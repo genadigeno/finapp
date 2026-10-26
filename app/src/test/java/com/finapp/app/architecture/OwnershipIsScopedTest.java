@@ -2141,6 +2141,62 @@ class OwnershipIsScopedTest {
                                         + " the write is conditional on FILED and the claimed attempt; it records the"
                                         + " authority's answer and moves nothing of anyone's.")),
                     Map.entry(
+                            "com.finapp.risk.JdbcScreeningListStore.byId",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022. A screening list version read or locked by id (find, lock): the"
+                                        + " activation door's subject behind @RequiresPermission(RISK_POLICY_ADMINISTER)"
+                                        + " and MULTI_FACTOR, a person's act with four eyes by the domain and by"
+                                        + " screening_list_version_four_eyes. A list version is a platform-wide operator"
+                                        + " fact owned by no party; nothing of a party is served.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcScreeningListStore.retire",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022. The id comes only from the list's ACTIVE row this transaction locked"
+                                        + " FOR UPDATE (lockActive, under the list's advisory lock), the move conditional"
+                                        + " on ACTIVE - beside the activation's own edge.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcScreeningListStore.activate",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022. The id comes only from the row this transaction locked FOR UPDATE"
+                                        + " (lock(id), under the list's advisory lock, after the not-self rule), the move"
+                                        + " conditional on RECORDED; behind RISK_POLICY_ADMINISTER and MULTI_FACTOR.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcScreeningListStore.advanceEnqueue",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022. The id is the version this enqueue's claim returned (claimEnqueueDue,"
+                                        + " FOR UPDATE SKIP LOCKED, the same transaction), the write conditional on ACTIVE"
+                                        + " with its permit standing; the platform's sweep, no request names it.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRescreeningPermitStore.byId",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022. A rescreening permit read or locked by id (find, lock): the id is a"
+                                        + " permit the leg's own claim returned (claimNextDue, SKIP LOCKED, committed); the"
+                                        + " platform's sweep, no request names it, nothing is served.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRescreeningPermitStore.conclude",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022. The id is a claimed permit's, locked FOR UPDATE in this transaction,"
+                                        + " and the write is conditional on PENDING and the claimed attempt; it records"
+                                        + " kyc's answer and moves nothing of anyone's.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRescreeningPermitStore.fail",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022. As conclude: a claimed permit's id, locked in this transaction, the"
+                                        + " write conditional on PENDING and the claimed attempt.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRescreeningPermitStore.defer",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022. As conclude: a claimed permit's id, locked in this transaction, the"
+                                        + " permit moved a backoff ahead conditionally on PENDING and the claimed attempt.")),
+                    Map.entry(
                             "com.finapp.lending.JdbcLoanTermsStore.insertTerms",
                             new Entry(
                                     Scope.ADMINISTERED,

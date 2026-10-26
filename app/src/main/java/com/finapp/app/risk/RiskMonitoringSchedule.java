@@ -52,6 +52,13 @@ import org.springframework.context.SmartLifecycle;
  * failed fold is counted {@code claim.failed{kind=monitoring}} and the leg goes on; a leg that throws is counted and ends
  * for the tick.
  *
+ * <p><strong>The rescreening leg</strong> (`P13-TSK-022`; {@link RescreeningDriver}): last in each tick - an activated
+ * screening list version's enqueue in bounded batches (the version row {@code SKIP LOCKED}, a page of {@code ACTIVE}
+ * parties, one permit each born once, the cursor advanced, one transaction a batch), then the due rescreening permits in
+ * three steps (the claim committed, kyc asked on no risk transaction, the conclusion conditional on the claimed
+ * attempt), each bounded per tick; it counts its own failures ({@code claim.failed{kind=rescreening}}) and never throws.
+ * A leg, not a scheduler: {@code LEASE_PROTECTED_SCHEDULERS} is unchanged.
+ *
  * <p><strong>The override action leg moved</strong> (`P13-TSK-017`): `-012`'s at-least-once re-drive of an approved
  * override's issued action rode this schedule until the action machine landed; the action is a {@code risk_action} row
  * since {@code risk V013} (under the override's own id, its key unchanged) and {@code RiskActionSchedule} - its own
@@ -110,10 +117,25 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
         int driveDue();
     }
 
+    /**
+     * The rescreening leg's step - {@link RescreeningDriver#driveDue}, in production (`P13-TSK-022`): an activated
+     * screening list version's enqueue batches, then the due rescreening permits, bounded per tick; never throws.
+     */
+    @FunctionalInterface
+    public interface RescreeningLeg {
+
+        /** No rescreening leg - the earlier tasks' shape, kept for their suites. */
+        RescreeningLeg NONE = () -> 0;
+
+        /** The enqueue batches and the due permits driven, bounded per tick; how many permits were concluded. */
+        int driveDue();
+    }
+
     private final MonitoringIntake intake;
     private final MonitoringIntake.BatchLeg rules;
     private final ProfileLeg profiles;
     private final CaseLeg cases;
+    private final RescreeningLeg rescreening;
     private final int profileClaimsPerTick;
     private final RiskTransactions transactions;
     private final RiskMonitoringMetrics metrics;
@@ -161,6 +183,18 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
     public RiskMonitoringSchedule(MonitoringIntake intake, MonitoringIntake.BatchLeg rules, ProfileLeg profiles,
             int profileClaimsPerTick, CaseLeg cases, RiskTransactions transactions, RiskMonitoringMetrics metrics,
             RiskFlowScope flow, Duration pollInterval, int batchesPerTick) {
+        this(intake, rules, profiles, profileClaimsPerTick, cases, RescreeningLeg.NONE, transactions, metrics, flow,
+                pollInterval, batchesPerTick);
+    }
+
+    /**
+     * @param rescreening the rescreening leg - {@code rescreeningDriver::driveDue} in production (`P13-TSK-022`): last in
+     *     each tick, after the case leg
+     */
+    public RiskMonitoringSchedule(MonitoringIntake intake, MonitoringIntake.BatchLeg rules, ProfileLeg profiles,
+            int profileClaimsPerTick, CaseLeg cases, RescreeningLeg rescreening, RiskTransactions transactions,
+            RiskMonitoringMetrics metrics, RiskFlowScope flow, Duration pollInterval, int batchesPerTick) {
+        this.rescreening = Objects.requireNonNull(rescreening, "rescreening");
         this.rules = Objects.requireNonNull(rules, "rules");
         // The configuration judged first - a misconfigured instance refuses to start whatever it was handed.
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval");
@@ -217,7 +251,24 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
             }
             recomputeDueProfiles();
             driveCaseLeg();
+            driveRescreeningLeg();
             return born;
+        }
+    }
+
+    /**
+     * The rescreening leg, inside {@link #sweepOnce}'s system scope (`P13-TSK-022`): it counts its own failures
+     * ({@code claim.failed{kind=rescreening}}) and never throws; a defect that escapes it is counted here and ends it.
+     */
+    private void driveRescreeningLeg() {
+        try {
+            int done = rescreening.driveDue();
+            if (done > 0) {
+                log.debug("Rescreening permits concluded: {}", done);
+            }
+        } catch (RuntimeException failure) {
+            metrics.claimFailed();
+            log.warn("Rescreening leg failed: {}", failure.getClass().getSimpleName());
         }
     }
 

@@ -50,9 +50,11 @@ class RiskMetricTagsAreBoundedTest {
 
     /** Each tag key a risk meter carries, and the closed vocabulary its value is from. */
     static final Map<String, Set<String>> VOCABULARIES = Map.of(
-            // An alert's, a case's or an action's kind - and the sweepers' own kinds (the filing's drive, P13-TSK-021).
+            // An alert's, a case's or an action's kind - and the sweepers' own kinds (the filing's drive, P13-TSK-021; the
+            // rescreening leg, P13-TSK-022).
             "kind", union(List.of(names(AlertKind.values()), names(CaseKind.values()), names(ActionKind.values()),
-                    Set.of(RiskMonitoringMetrics.KIND, RiskActionMetrics.KIND, RegulatoryReportMetrics.KIND))),
+                    Set.of(RiskMonitoringMetrics.KIND, RiskActionMetrics.KIND, RegulatoryReportMetrics.KIND,
+                            RescreeningMetrics.KIND))),
             "severity", names(AlertSeverity.values()),
             // A suppression's reason code; the fail-safe's two reason codes.
             "reason_code", union(List.of(names(SuppressionReason.values()), names(ReasonCode.values()))),
@@ -66,7 +68,9 @@ class RiskMetricTagsAreBoundedTest {
                     Set.of("satisfied", "refused"),
                     lower(names(com.finapp.risk.MonitoringObserver.SubjectOutcome.values())),
                     lower(names(com.finapp.risk.RegulatoryFilingProvider.Outcome.values())),
-                    Set.of(RegulatoryReportMetrics.FAILED))),
+                    Set.of(RegulatoryReportMetrics.FAILED),
+                    // What became of a claimed rescreening permit (P13-TSK-022), lower-cased.
+                    lower(names(com.finapp.risk.RescreeningObserver.Conclusion.values())))),
             "operation", names(RiskOperation.values()),
             "verdict", names(RiskDecision.values()),
             "rule", names(RuleKind.values()),

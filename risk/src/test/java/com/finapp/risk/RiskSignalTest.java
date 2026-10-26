@@ -32,21 +32,33 @@ class RiskSignalTest {
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
 
     @Test
-    @DisplayName("sixteen kinds - one per consumed signal-recording event that exists today (P13-TSK-014 added the"
-            + " refund, the chargeback and the BNPL application) - each from one event type")
+    @DisplayName("eighteen kinds - sixteen, one per consumed signal-recording event that exists today (P13-TSK-014 added"
+            + " the refund, the chargeback and the BNPL application), and risk's own two the rescreening records (P13-TSK-022)"
+            + " - each from one source type")
     void theKindsAreClosedAndEachBornFromOneEvent() {
         assertThat(names(SignalKind.values())).containsExactly(
                 "CREDENTIAL_CHANGED", "RECOVERY_INITIATED", "RECOVERY_COMPLETED", "IDENTITY_SUSPENDED",
                 "ACCOUNT_OPENED", "BENEFICIARY_REGISTERED", "BENEFICIARY_ACTIVATED", "BENEFICIARY_BLOCKED",
                 "MERCHANT_ONBOARDED", "LOAN_DELINQUENCY_CHANGED", "LOAN_DEFAULTED", "BNPL_DELINQUENCY_CHANGED",
-                "BNPL_DEFAULTED", "REFUND_COMPLETED", "CHARGEBACK_RECEIVED", "BNPL_APPLICATION_SUBMITTED");
+                "BNPL_DEFAULTED", "REFUND_COMPLETED", "CHARGEBACK_RECEIVED", "BNPL_APPLICATION_SUBMITTED",
+                "SCREENING_CLEARED", "SCREENING_HIT");
         assertThat(Arrays.stream(SignalKind.values()).map(SignalKind::sourceEventType)).containsExactly(
                 "identity.CredentialChanged", "identity.RecoveryInitiated", "identity.RecoveryCompleted",
                 "identity.IdentitySuspended", "accounts.AccountOpened", "crossborder.BeneficiaryRegistered",
                 "crossborder.BeneficiaryActivated", "crossborder.BeneficiaryBlocked", "merchant.MerchantOnboarded",
                 "lending.LoanDelinquencyChanged", "lending.LoanDefaulted", "bnpl.BnplDelinquencyChanged",
                 "bnpl.BnplDefaulted", "payments.RefundCompleted", "payments.ChargebackReceived",
-                "bnpl.BnplApplicationSubmitted");
+                "bnpl.BnplApplicationSubmitted", "risk.RescreeningCleared", "risk.RescreeningHit");
+        // P13-TSK-022: the rescreening's two are risk's own - recorded by the leg from a permit, never consumed - so no event
+        // type, their own source names included, ever answers them; every other kind is consumed.
+        assertThat(Arrays.stream(SignalKind.values()).filter(kind -> !kind.consumed()))
+                .containsExactly(SignalKind.SCREENING_CLEARED, SignalKind.SCREENING_HIT);
+        assertThat(SignalKind.SCREENING_HIT.origin()).isEqualTo(SignalKind.Origin.RISK);
+        assertThat(SignalKind.recordedFrom("risk.RescreeningCleared")).isEmpty();
+        assertThat(SignalKind.recordedFrom("risk.RescreeningHit")).isEmpty();
+        assertThat(SignalKind.SCREENING_CLEARED.subject()).isEqualTo(SubjectKind.PARTY);
+        assertThat(SignalKind.SCREENING_HIT.attributes()).extracting(SignalKind.Attribute::name)
+                .containsExactly("list_version_ref", "screening_ref");
         // P13-TSK-014: the abuse kinds are about the PARTY (the payer, the applicant), the merchant and intent by
         // reference only; the dispute's inquiry, its resolution and a refund not yet completed are no kind.
         assertThat(SignalKind.REFUND_COMPLETED.subject()).isEqualTo(SubjectKind.PARTY);

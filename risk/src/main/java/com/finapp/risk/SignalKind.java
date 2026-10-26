@@ -119,7 +119,32 @@ public enum SignalKind {
      * event names the applying party itself. Its product.
      */
     BNPL_APPLICATION_SUBMITTED(SubjectKind.PARTY, "bnpl.BnplApplicationSubmitted",
-            Attribute.of("product", AttributeType.CODE));
+            Attribute.of("product", AttributeType.CODE)),
+
+    /**
+     * kyc's screening of the party, current under a list version, cleared (`P13-TSK-022`) - <strong>risk's own</strong>:
+     * recorded by the rescreening leg from a concluded permit, never consumed from an event. The source is the permit
+     * (its id the born-once key; the type names the conclusion); the attributes the list version it was judged under and
+     * kyc's screening, by reference - never kyc's result, a list entry or a name ({@code INV-RSK-08}).
+     */
+    SCREENING_CLEARED(SubjectKind.PARTY, "risk.RescreeningCleared", Origin.RISK,
+            Attribute.of("list_version_ref", AttributeType.REF), Attribute.of("screening_ref", AttributeType.REF)),
+
+    /** kyc's screening of the party, current under a list version, hit (`P13-TSK-022`) - risk's own, as above. */
+    SCREENING_HIT(SubjectKind.PARTY, "risk.RescreeningHit", Origin.RISK,
+            Attribute.of("list_version_ref", AttributeType.REF), Attribute.of("screening_ref", AttributeType.REF));
+
+    /**
+     * Who records a kind (`P13-TSK-022`): an inbox handler from the one event type it names ({@link #CONSUMED}), or
+     * risk's own sweep from a row of its own ({@link #RISK}) - whose "source event type" names the row's conclusion and
+     * is never an event any producer publishes or any handler consumes.
+     */
+    public enum Origin {
+        /** Consumed from a platform event by {@code app}'s {@code RiskSignalIntake}. */
+        CONSUMED,
+        /** Recorded by risk's own leg - the rescreening's conclusions. */
+        RISK
+    }
 
     /**
      * An attribute's type - each a bound the database carries as a typed column and a {@code CHECK}, and this enum
@@ -181,7 +206,7 @@ public enum SignalKind {
         public static final List<String> COLUMNS = List.of(
                 "product", "status", "previous_status", "bucket", "previous_bucket", "country", "currency",
                 "business_date", "days_past_due", "defaulted", "agreement_version", "channel_ref", "request_ref",
-                "merchant_subject_ref", "intent_ref");
+                "merchant_subject_ref", "intent_ref", "list_version_ref", "screening_ref");
 
         private static final Pattern NAME = Pattern.compile("^[a-z][a-z0-9_]{0,30}$");
 
@@ -203,11 +228,17 @@ public enum SignalKind {
 
     private final SubjectKind subject;
     private final String sourceEventType;
+    private final Origin origin;
     private final List<Attribute> attributes;
 
     SignalKind(SubjectKind subject, String sourceEventType, Attribute... attributes) {
+        this(subject, sourceEventType, Origin.CONSUMED, attributes);
+    }
+
+    SignalKind(SubjectKind subject, String sourceEventType, Origin origin, Attribute... attributes) {
         this.subject = subject;
         this.sourceEventType = sourceEventType;
+        this.origin = origin;
         this.attributes = List.of(attributes);
         for (Attribute attribute : attributes) {
             if (!Attribute.COLUMNS.contains(attribute.name())) {
@@ -224,9 +255,19 @@ public enum SignalKind {
         return subject;
     }
 
-    /** The one event type a signal of this kind is born from. */
+    /** The one event type a signal of this kind is born from - for a {@link Origin#RISK} kind, the row's conclusion. */
     public String sourceEventType() {
         return sourceEventType;
+    }
+
+    /** Who records this kind. */
+    public Origin origin() {
+        return origin;
+    }
+
+    /** True when an inbox handler records this kind from a consumed event. */
+    public boolean consumed() {
+        return origin == Origin.CONSUMED;
     }
 
     /** The attributes a signal of this kind carries - every one required, nothing else admitted. */
@@ -239,9 +280,13 @@ public enum SignalKind {
         return attributes.stream().filter(attribute -> attribute.name().equals(name)).findFirst();
     }
 
-    /** The kind born from {@code eventType}, if any - each event type is one kind's source. */
+    /**
+     * The consumed kind born from {@code eventType}, if any - each event type is one kind's source; risk's own kinds are
+     * never consumed, so no event type ever answers one.
+     */
     public static Optional<SignalKind> recordedFrom(String eventType) {
-        return Arrays.stream(values()).filter(kind -> kind.sourceEventType.equals(eventType)).findFirst();
+        return Arrays.stream(values()).filter(SignalKind::consumed)
+                .filter(kind -> kind.sourceEventType.equals(eventType)).findFirst();
     }
 
     /** The quoted, comma-separated value list the migration's {@code CHECK} constraint uses. */

@@ -737,7 +737,12 @@ class CredentialReachesNoEmittedSinkTest {
                         // grounds, screened for card-number and account shapes at the domain (ReportContent.narrated)
                         // and by risk V016's CHECK; the approval's and the filing's body a REASON alone.
                         "RiskReportDraftRequest",
-                        "RiskReportDecisionRequest");
+                        "RiskReportDecisionRequest",
+                        // P13-TSK-022: the screening list version's bodies. No secret: a list code, the provider's
+                        // label for its version (a bounded identifier, no text) and a REASON, screened at the domain
+                        // (RiskReasons); the activation's body a REASON alone.
+                        "RiskScreeningListVersionRequest",
+                        "RiskScreeningListActivationRequest");
     }
 
     @Test

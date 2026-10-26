@@ -696,6 +696,25 @@ a `PROHIBITED` head is never evaluated by the sweep. The recompute is `ProfileRe
 Whether the predecessor list version is marked superseded, and the permit's states, are `-022`'s to confirm (§8).
 **Invalid:** `ACTIVE → RECORDED`; a second activation; a permit for a party not `ACTIVE`; a screening performed by
 `risk` (it asks; kyc screens); a Screening Result written by `risk`.
+*(As built, `P13-TSK-022`, `risk V017`, 2026-10-26 - the planned table above read one way, now confirmed: **the list
+version** `RECORDED → ACTIVE → RETIRED` - recorded by a person (`CUSTOMER` or `EMPLOYEE`, `screening_list_version_by_persons`),
+numbered `ordinal` in the list's order under its advisory lock (namespace 13), a recorded label converging; activated by
+a **second** person from `MULTI_FACTOR` (`screening_list_version_four_eyes`; the recorder `403 risk.SelfApprovalRefused`,
+recorded `FAILED`), **the predecessor retired** in the same transaction (its enqueue stopped) - §8's "whether the
+predecessor is marked superseded" settled yes; a second activation or a version recorded before the one in force `409
+risk.PolicyStale`; every invalid edge refused by `screening_list_version_permits_only_machine_edges` for every writer.
+**The enqueue is not the activation's** (the entry): the activation leaves `enqueue_next_at` due and the rescreening leg
+of `RiskMonitoringSchedule` enqueues in bounded batches, one transaction each (§4.11's leg, the version row `SKIP
+LOCKED`, a keyset page of `ACTIVE` parties, the cursor advanced). **The permit's states** are `PENDING → DONE(CLEARED |
+HIT | SKIPPED) | FAILED(cause)` - no `REQUESTED` state: the claim (`SKIP LOCKED`, one attempt, a lease ahead) is
+committed before kyc is asked, kyc is asked on no risk transaction through `PartyRescreening`, and the conclusion is
+recorded at the claimed attempt; kyc's answer is **read**, not awaited by event (kyc publishes no case-check outcome) -
+its current case-bound screening, recorded only when decided at or after the activation, otherwise deferred (`STALE`,
+`IN_FLIGHT`, `NOT_SCREENED`, `UNAVAILABLE`) and `FAILED` at the bound. The clearance is the signal `SCREENING_CLEARED` or
+`SCREENING_HIT` (`UNIQUE (source_event_id)` = the permit; the permit names it by `rescreening_permit_signal_is_its_own`);
+a hit's alert is the `MONITORING` version's `SCREENING_HIT` rule's, born once per (party, rule, the activation's `H1`
+bucket), folded into the party's `AML` case. A party deactivated meanwhile is `DONE(SKIPPED)`. Every invalid edge is
+refused by `rescreening_permit_permits_only_machine_edges`.)*
 
 ### 4.11 Monitored transaction and the watermark (`risk.monitored_transaction`, `monitoring_watermark`) — `P13-TSK-019` (`risk V004`) — born once; the watermark a claim, not a machine
 

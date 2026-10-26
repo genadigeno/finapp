@@ -423,7 +423,13 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/risk/cases/{caseId}/reports/{reportId}/filing",
                             PermissionName.AML_REPORT_FILE),
                     entry("GET /v1/operator/risk/cases/{caseId}/reports/{reportId}",
-                            PermissionName.AML_REPORT_APPROVE)));
+                            PermissionName.AML_REPORT_APPROVE),
+                    // P13-TSK-022: the screening list version - recorded (201) and activated by a second holder from
+                    // MULTI_FACTOR (202, the rescreening enqueued by the sweep) under RISK_POLICY_ADMINISTER; the
+                    // negatives are ScreeningListApiTest's (an analyst 403, no session 401, the recorder's activation 403).
+                    entry("POST /v1/operator/risk/screening-lists", PermissionName.RISK_POLICY_ADMINISTER),
+                    entry("POST /v1/operator/risk/screening-lists/{listVersionId}/activation",
+                            PermissionName.RISK_POLICY_ADMINISTER)));
 
     /**
      * The CONDITIONAL half (the Phase 12 -> 13 gate's A5-F1): a permission a route asks BESIDE its declared one when the

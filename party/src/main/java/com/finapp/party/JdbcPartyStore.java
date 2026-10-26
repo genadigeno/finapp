@@ -156,6 +156,36 @@ public final class JdbcPartyStore implements PartyStore<Connection> {
     }
 
     @Override
+    public java.util.List<PartyId> activeCustomerPartiesAfter(
+            Connection unitOfWork, Optional<PartyId> after, int limit) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(after, "after must not be null");
+        if (limit < 1 || limit > 1000) {
+            throw new IllegalArgumentException("a page of active parties is 1..1000 rows: " + limit);
+        }
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT party_id FROM party.customer"
+                                + " WHERE status = 'ACTIVE' AND (CAST(? AS uuid) IS NULL OR party_id > ?)"
+                                + " ORDER BY party_id LIMIT ?")) {
+            UUID cursor = after.map(PartyId::value).orElse(null);
+            select.setObject(1, cursor);
+            select.setObject(2, cursor);
+            select.setInt(3, limit);
+            java.util.List<PartyId> page = new java.util.ArrayList<>();
+            try (ResultSet rows = select.executeQuery()) {
+                while (rows.next()) {
+                    page.add(PartyId.of(rows.getObject("party_id", UUID.class)));
+                }
+            }
+            return page;
+        } catch (SQLException e) {
+            throw new PartyStorageException(
+                    DatabaseFailure.describe("Could not read a page of active customers' parties", e));
+        }
+    }
+
+    @Override
     public Optional<PartyKind> kindOfCustomer(Connection unitOfWork, CustomerId customerId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(customerId, "customerId must not be null");

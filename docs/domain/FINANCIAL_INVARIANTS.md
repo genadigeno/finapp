@@ -2959,6 +2959,12 @@ stands, the domain's outcome is recorded, nothing is retried by risk (`P13-TSK-0
 domain's key (`P13-TSK-017`); `WithdrawalHoldDatabaseTest#releaseAndExpiryLeaveExactlyOne`
 (`P13-TSK-012`); the storm's census at every round — every refusal left the ledger as it was, every
 `HELD` withdrawal holds exactly its one hold, no `FAILED` withdrawal holds any (`P13-TST-001`).
+*(As built by `P13-TSK-022`, 2026-10-26: `RESCREEN_PARTY` is not a risk action - the rescreening is the sweep's, and
+**risk asks, kyc screens**: `PartyRescreening` reads kyc's case-bound screening through kyc's and party's own stores on a
+snapshot of its own and writes nothing of either; risk records kyc's answer as a signal only when kyc decided it at or
+after the list version's activation - a stale, pending or unavailable answer is never recorded as a clearance
+(`RescreeningRunTest#aStaleClearanceIsNotARescreen`, probed). kyc has no door yet that re-screens a decided party - an owner
+item.)*
 **Phase:** 13
 
 ### INV-RSK-03 — A velocity window is a durable row written in the judged command's transaction, equal to what it counts
@@ -3132,6 +3138,13 @@ one report is the drive's: `FILED` once (`regulatory_report_event`'s key), the f
 inquires by the filing reference - a lost answer asked for, never filed again. Verified hermetically by
 `RegulatoryReportTest#oneOpenDraftPerCase`, `#aLostFilingResponseIsInquiredNeverReFiled`, `#tenFilersFileOnce` and
 `RegulatoryReportMigrationTest#oneLiveReportPerCase`; on the database by `RegulatoryReportDatabaseTest`, owed (C5).)*
+*(As built by `P13-TSK-022`, 2026-10-26, `risk V017`: the rescreening's arbiters - one permit per (party, list version)
+(`rescreening_permit_once`, the enqueue's `ON CONFLICT`), one clearance signal per permit (its `source_event_id` the
+permit's id; `rescreening_permit_signal_is_its_own`), one `SCREENING_HIT` alert per (party, rule, the activation's `H1`
+bucket) (`risk_alert_born_once`); a permit concluded once, at the claimed attempt; a second activation of one list version
+refused. Verified hermetically by `RescreeningRunTest` (`#anActivationEnqueuesEveryActivePartyOnce`,
+`#tenSweepersRescreenOnce`, `#aLeaseLostMidAskRecordsOnce`, `#aHitAlertsOnceAndCases`), `ScreeningListVersionTest` and
+`ScreeningListMigrationTest#theArbiters`; on the database by `RescreeningDatabaseTest`, owed (C5).)*
 **Phase:** 13
 
 ### INV-RSK-07 — Every consequential risk act is two persons' acts, and a refused self-approval is recorded `FAILED`

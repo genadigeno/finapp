@@ -4290,6 +4290,8 @@ customer or merchant route reads this table (`INV-RSK-08`, `NoCustomerSurfaceRea
 | `risk_signal` | `request_ref` | `CONFIDENTIAL` | The recovery request, by identifier (`RECOVERY_*`) |
 | `risk_signal` | `merchant_subject_ref` | `CONFIDENTIAL` | *(`P13-TSK-014`, `risk V011`)* The merchant a refunded or charged-back payment credited, by identifier, as risk's own sealed assessment of that payment named it (`REFUND_COMPLETED`, `CHARGEBACK_RECEIVED`) - with the subject, whom the payer paid; never an amount |
 | `risk_signal` | `intent_ref` | `CONFIDENTIAL` | *(`P13-TSK-014`, `risk V011`)* The payment intent a refund or chargeback was of, by identifier, as the event named it |
+| `risk_signal` | `list_version_ref` | `INTERNAL` | *(`P13-TSK-022`, `risk V017`)* The screening list version a `SCREENING_CLEARED` or `SCREENING_HIT` clearance was judged current under - risk's own row |
+| `risk_signal` | `screening_ref` | `CONFIDENTIAL` | *(`P13-TSK-022`, `risk V017`)* kyc's screening a rescreening clearance records, by identifier - never kyc's row, its evidence or a name; with the subject, a party's screening |
 
 ### `risk.velocity_window` - the durable velocity windows - *added by `P13-TSK-006`*
 
@@ -4585,6 +4587,50 @@ identifiers, counters and the database's stamps `INTERNAL`.
 | `regulatory_report_event` | `actor_type` | `INTERNAL` | A closed actor type |
 | `regulatory_report_event` | `recorded_at` | `INTERNAL` | The database's stamp |
 | `regulatory_report_event` | `correlation_id` | `INTERNAL` | The step's correlation |
+
+### `risk.screening_list_version` and `rescreening_permit` - the rescreening - *added by `P13-TSK-022`*
+
+`risk V017`: the operator's fact that a sanctions or PEP list version is in force - `RECORDED → ACTIVE → RETIRED`, one
+per (list, label), one in force per list, four eyes by `screening_list_version_four_eyes` - and one rescreening permit per
+(party, version), `PENDING → DONE | FAILED`, born by the activation's enqueue and concluded once by the sweep's leg. **No
+list content, no screening result, no money, no text** - the list is kyc's provider's and the result kyc's (Refinement
+3); risk holds the label, the persons, the permit's codes and counters, and kyc's screening by reference on the signal.
+That a party is being rescreened is what the tipping-off rule protects, so the permit's `party_id` is `CONFIDENTIAL` as a
+case's subject is (`INV-RSK-08` - no customer or merchant route reads either table, `NoCustomerSurfaceReadsRiskTest`);
+the persons `CONFIDENTIAL`; a provider's version label, closed codes, the platform's identifiers, counters and the
+database's stamps `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `screening_list_version` | `id` | `INTERNAL` | Generated - the version's identity, the permits' and the signals' `list_version_ref` |
+| `screening_list_version` | `list` | `INTERNAL` | A closed code (`ScreeningList`) |
+| `screening_list_version` | `version` | `INTERNAL` | The provider's label for the list's edition - an identifier shape by `CHECK`, never text or content |
+| `screening_list_version` | `ordinal` | `INTERNAL` | The list's recording order |
+| `screening_list_version` | `status` | `INTERNAL` | The machine's state |
+| `screening_list_version` | `recorded_by` | `CONFIDENTIAL` | The officer who recorded it |
+| `screening_list_version` | `recorded_by_type` | `INTERNAL` | A closed actor type - a person's |
+| `screening_list_version` | `recorded_at` | `INTERNAL` | The database's stamp |
+| `screening_list_version` | `activated_by` | `CONFIDENTIAL` | The second officer who activated it |
+| `screening_list_version` | `activated_by_type` | `INTERNAL` | A closed actor type - a person's |
+| `screening_list_version` | `activated_at` | `INTERNAL` | The database's stamp - the rescreening's currency line |
+| `screening_list_version` | `retired_at` | `INTERNAL` | The database's stamp |
+| `screening_list_version` | `enqueue_next_at` | `INTERNAL` | The enqueue's permit - the database's clock |
+| `screening_list_version` | `enqueue_cursor` | `CONFIDENTIAL` | The last party the enqueue reached - a party's identifier, a keyset cursor |
+| `screening_list_version` | `enqueued` | `INTERNAL` | A count - the permits the enqueue bore |
+| `screening_list_version` | `enqueue_completed_at` | `INTERNAL` | The database's stamp |
+| `screening_list_version` | `correlation_id` | `INTERNAL` | The activation's correlation (the recording's until then) |
+| `rescreening_permit` | `id` | `INTERNAL` | Generated - the clearance signal's `source_event_id` and the request key `risk.rescreen:<id>` |
+| `rescreening_permit` | `party_id` | `CONFIDENTIAL` | The party rescreened - never served to a customer or merchant |
+| `rescreening_permit` | `list_version_id` | `INTERNAL` | The version it rescreens under - risk's own row |
+| `rescreening_permit` | `status` | `INTERNAL` | The machine's state |
+| `rescreening_permit` | `outcome` | `INTERNAL` | A closed code - `CLEARED`, `HIT`, `SKIPPED` |
+| `rescreening_permit` | `cause` | `INTERNAL` | A closed code - why it waits or failed |
+| `rescreening_permit` | `signal_id` | `INTERNAL` | The clearance signal born of it - risk's own row |
+| `rescreening_permit` | `next_attempt_at` | `INTERNAL` | The leg's permit - the database's clock plus the lease or the backoff |
+| `rescreening_permit` | `attempts` | `INTERNAL` | A count - the leg's claims |
+| `rescreening_permit` | `enqueued_at` | `INTERNAL` | The database's stamp |
+| `rescreening_permit` | `concluded_at` | `INTERNAL` | The database's stamp |
+| `rescreening_permit` | `correlation_id` | `INTERNAL` | The activation's correlation |
 
 ### Free text, classified at its ceiling
 

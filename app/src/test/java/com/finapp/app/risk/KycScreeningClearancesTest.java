@@ -161,6 +161,12 @@ class KycScreeningClearancesTest {
         }
 
         @Override
+        public java.util.List<PartyId> activeCustomerPartiesAfter(Connection unitOfWork, Optional<PartyId> after,
+                int limit) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public Optional<com.finapp.party.PartyName> rename(Connection unitOfWork, PartyId id,
                 com.finapp.party.PartyName newName) {
             throw new UnsupportedOperationException();

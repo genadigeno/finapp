@@ -68,8 +68,13 @@ class RiskSignalIntakeTest {
                 .containsExactly(RiskSignalIntake.Source.REFUND_COMPLETED, RiskSignalIntake.Source.CHARGEBACK_RECEIVED);
         assertThat(java.util.Arrays.stream(RiskSignalIntake.Source.values()).filter(RiskSignalIntake.Source::isHint))
                 .hasSize(5);
+        // Every consumed kind has its source; risk's own kinds (P13-TSK-022's rescreening clearances) are recorded by
+        // the sweep, never consumed - no source names them.
         assertThat(java.util.Arrays.stream(RiskSignalIntake.Source.values()).map(RiskSignalIntake.Source::kind)
-                .flatMap(Optional::stream)).containsExactlyInAnyOrder(SignalKind.values());
+                .flatMap(Optional::stream)).containsExactlyInAnyOrder(java.util.Arrays.stream(SignalKind.values())
+                        .filter(SignalKind::consumed).toArray(SignalKind[]::new));
+        assertThat(SignalKind.values()).filteredOn(kind -> !kind.consumed())
+                .containsExactly(SignalKind.SCREENING_CLEARED, SignalKind.SCREENING_HIT);
     }
 
     @Test

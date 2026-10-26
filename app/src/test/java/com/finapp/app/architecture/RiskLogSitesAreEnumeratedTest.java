@@ -69,6 +69,16 @@ class RiskLogSitesAreEnumeratedTest {
             "RegulatoryFilingDriver.java|\"Regulatory filing claim failed: {}\"|failure.getClass().getSimpleName()",
             "RegulatoryFilingDriver.java|\"Regulatory filing call failed: {}\"|failure.getClass().getSimpleName()",
             "RegulatoryFilingDriver.java|\"Regulatory filing record failed: {}\"|failure.getClass().getSimpleName()",
+            // P13-TSK-022: the rescreening leg - a batch, a claim, a kyc ask or a conclusion that failed: the exception's
+            // class alone, never a party, a list, a screening or a key; the leg's count of conclusions.
+            "RescreeningDriver.java|\"Rescreening enqueue batch failed: {}\"|failure.getClass().getSimpleName()",
+            "RescreeningDriver.java|\"Rescreening claim failed: {}\"|failure.getClass().getSimpleName()",
+            "RescreeningDriver.java|\"Rescreening conclusion failed: {}\"|failure.getClass().getSimpleName()",
+            "RescreeningMetrics.java|\"Rescreening kyc ask failed: {}\"|cause",
+            "RescreeningMetrics.java|\"The rescreening backlog could not be read: {}\""
+                    + "|unreadable.getClass().getSimpleName()",
+            "RiskMonitoringSchedule.java|\"Rescreening permits concluded: {}\"|done",
+            "RiskMonitoringSchedule.java|\"Rescreening leg failed: {}\"|failure.getClass().getSimpleName()",
             "RiskActionSchedule.java|\"Risk action claim failed: {}\"|failure.getClass().getSimpleName()",
             "RiskActionSchedule.java|\"Risk action sweep failed: {}\"|failure.getClass().getSimpleName()",
             "RiskEvaluationMetrics.java|\"risk evaluation fail-safe recorded: assessment={} operation={} cause={}\""
