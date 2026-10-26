@@ -327,6 +327,92 @@ class RescreeningRunTest {
     }
 
     @Test
+    @DisplayName("the last review's item 3: a hit told while the permit is PENDING concludes it HIT at once - the signal"
+            + " born of the permit, the alert, the case - and the claim's slower conclusion, computed from a clear read"
+            + " before the hit committed, records nothing")
+    void aHitToldWhilePendingConcludesItAndAStaleClearRecordsNothing() {
+        oneEnqueued(ScreeningList.SANCTIONS, "v1");
+        RescreeningPermit claimed = claimed(run.claimNextDue(UOW, LEASE)).orElseThrow();
+        commit();
+        PartyRescreening.Answer stale = screened(false, lists.now.plusSeconds(30));
+        PartyRescreening.Screened hit = screened(true, lists.now.plusSeconds(40));
+        Optional<RescreeningRun.Concluded> told = CaseWorld.asSystem(() -> run.hit(UOW, claimed.id(), hit));
+        commit();
+        assertThat(told.orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.HIT);
+        assertThat(conclude(claimed, stale)).as("the stale clear finds the permit DONE").isEmpty();
+        commit();
+        RescreeningPermit done = permits.all().getFirst();
+        assertThat(done.outcome()).contains(RescreeningPermit.Outcome.HIT);
+        assertThat(signalStore.rows).singleElement().satisfies(signal -> {
+            assertThat(signal.kind()).isEqualTo(SignalKind.SCREENING_HIT);
+            assertThat(signal.source().id().value()).as("born of the permit").isEqualTo(claimed.id().value());
+        });
+        assertThat(world.alertStore.all()).singleElement()
+                .satisfies(alert -> assertThat(alert.status()).isEqualTo(AlertStatus.ATTACHED));
+        assertThat(world.caseStore.all()).extracting(RiskCase::kind).containsExactly(CaseKind.AML);
+        assertThat(concluded).containsExactly(RescreeningObserver.Conclusion.HIT);
+        assertThat(CaseWorld.asSystem(() -> run.hit(UOW, claimed.id(), hit))).as("told twice: once").isEmpty();
+    }
+
+    @Test
+    @DisplayName("the last review's item 3: a hit told after the permit concluded CLEARED - a late callback for an"
+            + " abandoned question - is still told, once: its own SCREENING_HIT signal born of kyc's check, its own alert"
+            + " folded into the party's AML case; the permit stays as it concluded")
+    void aLateHitAfterAClearIsStillToldOnce() {
+        UUID party = oneEnqueued(ScreeningList.SANCTIONS, "v1");
+        kyc.answers.put(party, screened(false, lists.now.plusSeconds(30)));
+        assertThat(rescreenOnce().orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.CLEARED);
+        RescreeningPermit cleared = permits.all().getFirst();
+        UUID abandonedQuestion = EvaluationWorld.IDS.next();
+        PartyRescreening.Screened late = new PartyRescreening.Screened(abandonedQuestion, true,
+                lists.now.plusSeconds(20), lists.now.plusSeconds(90));
+
+        Optional<RescreeningRun.Concluded> told = CaseWorld.asSystem(() -> run.hit(UOW, cleared.id(), late));
+        commit();
+        assertThat(told.orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.LATE_HIT);
+        assertThat(permits.all().getFirst().outcome()).as("the permit as it concluded")
+                .contains(RescreeningPermit.Outcome.CLEARED);
+        assertThat(signalStore.rows).extracting(RiskSignal::kind)
+                .containsExactly(SignalKind.SCREENING_CLEARED, SignalKind.SCREENING_HIT);
+        RiskSignal lateSignal = signalStore.rows.get(1);
+        assertThat(lateSignal.source().id().value()).as("born of kyc's check, never the permit")
+                .isEqualTo(abandonedQuestion);
+        assertThat(lateSignal.attributes().get("screening_ref")).contains(abandonedQuestion.toString());
+        RiskAlert alert = world.alertStore.all().getFirst();
+        assertThat(world.alertStore.all()).hasSize(1);
+        assertThat(alert.key().factSignal()).contains(lateSignal.id().value());
+        assertThat(alert.status()).isEqualTo(AlertStatus.ATTACHED);
+        assertThat(world.caseStore.all()).extracting(RiskCase::kind).containsExactly(CaseKind.AML);
+
+        assertThat(CaseWorld.asSystem(() -> run.hit(UOW, cleared.id(), late))).as("a replay tells nothing more").isEmpty();
+        assertThat(signalStore.rows).hasSize(2);
+        assertThat(world.alertStore.all()).hasSize(1);
+        assertThat(concluded).containsExactly(RescreeningObserver.Conclusion.CLEARED,
+                RescreeningObserver.Conclusion.LATE_HIT);
+    }
+
+    @Test
+    @DisplayName("the last review's item 3: a hit told on a permit concluded HIT, on a permit no claim has asked, or asked"
+            + " before the version's activation records nothing")
+    void aHitToldWhereNothingIsOwedRecordsNothing() {
+        UUID party = oneEnqueued(ScreeningList.SANCTIONS, "v1");
+        RescreeningPermit unclaimed = permits.all().getFirst();
+        assertThat(CaseWorld.asSystem(() -> run.hit(UOW, unclaimed.id(), screened(true, lists.now.plusSeconds(5)))))
+                .as("no claim yet: the first claim reads the hit").isEmpty();
+        assertThat(CaseWorld.asSystem(() -> run.hit(UOW, unclaimed.id(), screened(true, lists.now.minusSeconds(5)))))
+                .as("asked before the activation").isEmpty();
+        commit();
+        kyc.answers.put(party, screened(true, lists.now.plusSeconds(30)));
+        assertThat(rescreenOnce().orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.HIT);
+        assertThat(CaseWorld.asSystem(() -> run.hit(UOW, unclaimed.id(), screened(true, lists.now.plusSeconds(60)))))
+                .as("concluded HIT: told already").isEmpty();
+        assertThat(signalStore.rows).hasSize(1);
+        assertThat(world.alertStore.all()).hasSize(1);
+        assertThatThrownBy(() -> run.hit(UOW, unclaimed.id(), screened(false, lists.now.plusSeconds(60))))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     @DisplayName("the review's IMPORTANT 4: an onboarding party with no KYC case is DONE(NOT_ONBOARDED) - counted on its"
             + " own, nothing recorded, never the exposure FAILED counts")
     void anOnboardingPartyWithNoCaseIsNotOnboarded() {

@@ -41,13 +41,18 @@ import java.util.UUID;
  *       next ordinal, its dispatch committed, the provider asked holding no connection, the outcome with its evidence
  *       and trail - and, for a hit on a case not yet decided, kyc's own assessment (fail-closed); a decided case stays
  *       as it was, the customer untouched.</li>
- *   <li><strong>Answered</strong> from the permit's own questions alone - never from another's: one of them answered
- *       {@code HIT} (first - fail-closed) or {@code CLEAR} is {@link Screened} (kyc's check id, whether it hit, when it
- *       was asked and decided - both on the database's clock, the one the list version's activation is stamped on);
- *       otherwise the newest question decides - in flight under its asker is {@link Pending} {@code IN_FLIGHT}; "we do
- *       not know" ({@code INDETERMINATE}), or in flight but asked before the question's abandonment line, is a new
- *       question under the next ordinal when the claim may ask one, else {@link Pending} ({@code NOT_SCREENED} or
- *       {@code IN_FLIGHT}) and the leg backs the permit off.</li>
+ *   <li><strong>Answered</strong> from the permit's own questions alone - never from another's: a {@code HIT} on any of
+ *       them wins (fail-closed) and is asked again under its own key - kyc answers from the row, no provider call, and
+ *       re-runs its routing of the hit, which heals a crash between the hit's commit and that routing (the last
+ *       review's item 2); a {@code CLEAR} answers only when no newer question is still its asker's (the last review's
+ *       item 3 - an older question's late clear never concludes the permit over a live newer one). Either is
+ *       {@link Screened} (kyc's check id, whether it hit, when it was asked and decided - both on the database's
+ *       clock, the one the list version's activation is stamped on). Otherwise the newest question decides - in flight
+ *       under its asker is {@link Pending} {@code IN_FLIGHT}; "we do not know" ({@code INDETERMINATE}), or in flight
+ *       but asked before the question's abandonment line, is a new question under the next ordinal when the claim may
+ *       ask one, else {@link Pending} ({@code NOT_SCREENED} or {@code IN_FLIGHT}) and the leg backs the permit off. A
+ *       hit kyc records on one of the permit's questions after the permit concluded otherwise - a late callback for an
+ *       abandoned question, a slow call that outlived its lease - is told to risk by {@code RescreeningHits}.</li>
  * </ol>
  *
  * <p><strong>The bound is the leg's</strong> (the review's IMPORTANT 2). A claim at attempt {@code n} may have asked the
@@ -109,8 +114,8 @@ public final class KycPartyRescreening implements PartyRescreening {
         return switch (placed) {
             case Placed.Gone gone -> gone.answer();
             case Placed.Keyed keyed -> answerOf(keyed.check());
-            case Placed.Unasked unasked -> answerOf(door.rescreen(unasked.caseId(), unasked.customerId(),
-                    typeOf(question.list()), unasked.rescreenKey()));
+            case Placed.Ask ask -> answerOf(door.rescreen(ask.caseId(), ask.customerId(), typeOf(question.list()),
+                    ask.rescreenKey()));
         };
     }
 
@@ -127,15 +132,32 @@ public final class KycPartyRescreening implements PartyRescreening {
                     : new Pending(Wait.NOT_SCREENED));
         }
         List<VerificationCheck> asked = askedBy(unitOfWork, question);
-        Optional<VerificationCheck> decided = asked.stream()
-                .filter(check -> check.status() == CheckStatus.HIT)
-                .findFirst()
-                .or(() -> asked.reversed().stream().filter(check -> check.status() == CheckStatus.CLEAR).findFirst());
-        if (decided.isPresent()) {
-            return new Placed.Keyed(decided.get());
+        UUID customerId = customer.get().id().value();
+        for (int ordinal = 0; ordinal < asked.size(); ordinal++) {
+            VerificationCheck check = asked.get(ordinal);
+            if (check.status() == CheckStatus.HIT) {
+                // A hit on ANY of the permit's questions wins (fail-closed) - and is asked again under its own key: kyc
+                // answers from the row (no provider call) and re-runs its routing of the hit, so a crash between the
+                // hit's commit and kyc's assessment of it is healed by the leg's next claim.
+                return new Placed.Ask(check.caseId(), customerId, keyed(question.requestKey(), ordinal));
+            }
         }
-        Placed.Unasked next = new Placed.Unasked(latest.get().id(), customer.get().id().value(),
-                keyed(question.requestKey(), asked.size()));
+        int newestClear = -1;
+        for (int ordinal = 0; ordinal < asked.size(); ordinal++) {
+            if (asked.get(ordinal).status() == CheckStatus.CLEAR) {
+                newestClear = ordinal;
+            }
+        }
+        if (newestClear >= 0) {
+            // A clear answers only when nothing newer is still its asker's: an older question's late clear never
+            // concludes the permit while a newer question is live (a newer abandoned or unknown one may: its late hit,
+            // if one comes, is told through RescreeningRun.hit).
+            Optional<VerificationCheck> newerLive = asked.subList(newestClear + 1, asked.size()).stream()
+                    .filter(check -> !check.status().isTerminal() && !abandoned(check, question.abandonedBefore()))
+                    .findFirst();
+            return new Placed.Keyed(newerLive.orElse(asked.get(newestClear)));
+        }
+        Placed.Ask next = new Placed.Ask(latest.get().id(), customerId, keyed(question.requestKey(), asked.size()));
         if (asked.isEmpty()) {
             return next;
         }
@@ -210,7 +232,10 @@ public final class KycPartyRescreening implements PartyRescreening {
         /** The permit's questions answer: one of its keyed checks. */
         record Keyed(VerificationCheck check) implements Placed {}
 
-        /** The claim asks a new question under {@code rescreenKey}: kyc is asked on that case. */
-        record Unasked(KycCaseId caseId, UUID customerId, String rescreenKey) implements Placed {}
+        /**
+         * kyc is asked under {@code rescreenKey} on that case: a new question, or a hit's own key asked again - kyc answers
+         * it from the row, never the provider, and re-runs its routing of the hit.
+         */
+        record Ask(KycCaseId caseId, UUID customerId, String rescreenKey) implements Placed {}
     }
 }

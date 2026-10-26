@@ -452,6 +452,13 @@ COMMENT ON CONSTRAINT risk_alert_screening_hit_names_its_party ON risk.risk_aler
 ALTER TABLE risk.risk_alert ADD COLUMN fact_signal_id uuid
     GENERATED ALWAYS AS (CASE WHEN kind = 'SCREENING_HIT' THEN evidence_signal_ids[1] END) STORED;
 
+-- A SCREENING_HIT alert always carries its signal in its identity. evidence_signal_ids[1] is the array's first element
+-- only under PostgreSQL's default lower bound of 1 - which every writer's array has (JDBC's createArrayOf, an ARRAY[...]
+-- constructor); one written with another bound ('[0:0]={...}') would generate NULL, and this CHECK refuses that row
+-- rather than let a hit's identity fall back to its day's (the last review's NIT).
+ALTER TABLE risk.risk_alert ADD CONSTRAINT risk_alert_screening_hit_is_keyed
+    CHECK (kind <> 'SCREENING_HIT' OR fact_signal_id IS NOT NULL);
+
 -- The born-once unique, re-made by name (ON CONFLICT ON CONSTRAINT risk_alert_born_once names it): V010's triple and the
 -- signal, NULLS NOT DISTINCT - every other kind's NULL is one value, its identity V010's unchanged.
 ALTER TABLE risk.risk_alert DROP CONSTRAINT risk_alert_born_once;

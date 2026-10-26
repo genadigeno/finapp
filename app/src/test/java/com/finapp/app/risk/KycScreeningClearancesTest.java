@@ -296,6 +296,11 @@ class KycScreeningClearancesTest {
         }
 
         @Override
+        public Optional<String> rescreenKeyOf(Connection unitOfWork, CheckId checkId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public Requested requestOrConverge(Connection unitOfWork, VerificationCheck fresh) {
             throw new UnsupportedOperationException();
         }

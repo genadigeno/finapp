@@ -761,7 +761,8 @@ decision, never a re-decision (§4's kyc case untouched: no review task, no move
 routes the case to kyc's review exactly as an onboarding hit (the second review's fail-closed rule, ADR-0035's
 amendment) - and the permit records **its own questions'** answer, never another question's: asked at or after the
 activation (one clock, the database's; judged by the ask, never the answer - the first review's IMPORTANT 3), decided
-`CLEAR` or `HIT` (a hit among them first). **One new question per claim** (the second review's IMPORTANT 2): while the
+`CLEAR` or `HIT` (a hit among them first, asked again under its own key so kyc re-runs its routing - the last review's
+item 2; a clear only when no newer question is still live - item 3). **One new question per claim** (the second review's IMPORTANT 2): while the
 last answered "we do not know" or was abandoned - unanswered and asked more than a lease before the claim, the asker
 lost mid-call - the claim asks the next ordinal, up to its attempt, so the leg's backoff and bound govern the asking; a
 question within its asker's lease is waited on. Deferred (`IN_FLIGHT`, `NOT_SCREENED`, `UNAVAILABLE`; `STALE` kept as the
@@ -772,7 +773,10 @@ a hit's alert is the `SCREENING_HIT` **fact** (§4.5's third origin; risk `V018`
 (party, `SCREENING_HIT`, the activation's `D1` bucket, **its one signal**) - one alert per (party, list version), the
 second review's IMPORTANT 3 - its evidence its one signal, folded into the party's open `AML` case or a new one. A party
 neither `ACTIVE` nor `PENDING` any more is `DONE(SKIPPED)`; a `PENDING` one with no KYC case `DONE(NOT_ONBOARDED)` (never
-screened, nothing to rescreen; the second review's IMPORTANT 4); a burnt version is re-driven by a successor version
+screened, nothing to rescreen; the second review's IMPORTANT 4). **A hit told after the fact** (the last review's item 3;
+`RescreeningRun.hit`, from kyc's `RescreenHits`): a `PENDING` permit is concluded `HIT` at once under its lock (a slower
+conclusion then records nothing); one concluded otherwise is told late - a second `SCREENING_HIT` signal born of kyc's
+check and its own alert, folded - the permit unmoved; one concluded `HIT` is left as it is; a burnt version is re-driven by a successor version
 (runbook §9.6). Every invalid edge is refused by `rescreening_permit_permits_only_machine_edges`.)*
 
 ### 4.11 Monitored transaction and the watermark (`risk.monitored_transaction`, `monitoring_watermark`) — `P13-TSK-019` (`risk V004`) — born once; the watermark a claim, not a machine

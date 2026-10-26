@@ -114,6 +114,16 @@ public class RiskRescreeningBeans {
     }
 
     /**
+     * A rescreen's hit told back to the permit that asked it (`P13-TSK-022`'s last review, item 3) - kyc's
+     * {@code RescreenHits}, reached by its door and its callback through an {@code ObjectProvider}.
+     */
+    @Bean
+    RescreeningHits rescreeningHits(CheckStore<Connection> checkStore, RescreeningRun rescreeningRun,
+            RiskTransactions riskTransactions) {
+        return new RescreeningHits(checkStore, rescreeningRun, riskTransactions);
+    }
+
+    /**
      * The rescreening leg's driver - {@code RiskActionSchedule}'s third leg: {@code finapp.risk.rescreening.lease}
      * (2 min - longer than kyc's bounded provider call and its outcome's commit), {@code .enqueue-batch} (500 parties a
      * transaction), {@code .enqueue-batches-per-tick} (4), {@code .permits-per-tick} (20 - each one kyc provider call at

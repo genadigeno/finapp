@@ -115,6 +115,12 @@ public interface CheckStore<T> {
     Optional<VerificationCheck> findRescreen(T unitOfWork, String rescreenKey);
 
     /**
+     * The key a {@code RESCREEN} check was asked under - empty for an onboarding check or none (`P13-TSK-022`'s last
+     * review): how a hit kyc recorded on a list update's question is told back to the permit that asked it.
+     */
+    Optional<String> rescreenKeyOf(T unitOfWork, CheckId checkId);
+
+    /**
      * Appends the raw bytes a provider answered with, verbatim ({@code INV-HIST-02}).
      *
      * <p>Encrypted at rest and checksummed by the adapter underneath — the

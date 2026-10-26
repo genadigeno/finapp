@@ -36,6 +36,11 @@ public interface RescreeningObserver {
         SKIPPED,
         /** The party is onboarding with no KYC case yet - never screened, nothing to rescreen; not an exposure. */
         NOT_ONBOARDED,
+        /**
+         * A hit kyc recorded on one of a permit's questions after the permit concluded otherwise - a late callback, a slow
+         * call - told after the fact: its own signal and alert, the permit as it concluded (the last review's item 3).
+         */
+        LATE_HIT,
         /** Not yet current, in flight, never screened or kyc unavailable - re-permitted. */
         DEFERRED,
         /** The bound reached without a current screening, or passed with no conclusion - the exposure. */

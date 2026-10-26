@@ -252,6 +252,8 @@ class ScreeningListMigrationTest {
         assertThat(sql)
                 .contains("ALTER TABLE risk.risk_alert ADD COLUMN fact_signal_id uuid GENERATED ALWAYS AS (CASE WHEN"
                         + " kind = " + keyed + " THEN evidence_signal_ids[1] END) STORED;")
+                .contains("ALTER TABLE risk.risk_alert ADD CONSTRAINT risk_alert_screening_hit_is_keyed CHECK (kind <> "
+                        + keyed + " OR fact_signal_id IS NOT NULL);")
                 .contains("ALTER TABLE risk.risk_alert DROP CONSTRAINT risk_alert_born_once;")
                 .contains("ALTER TABLE risk.risk_alert ADD CONSTRAINT risk_alert_born_once UNIQUE NULLS NOT DISTINCT"
                         + " (subject_ref, rule_code, window_start, fact_signal_id);");

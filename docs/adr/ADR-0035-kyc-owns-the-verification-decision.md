@@ -94,18 +94,26 @@ a rival:
   (`ChecksAssessment.of`, `needingReview`); the review door shows it with its purpose; the decision's evidence names
   every rescreen answered `CLEAR` or `HIT` before it (`ChecksAssessment.decisionEvidence`, `INV-KYC-02`). The rescreen
   path assesses after its outcome commits (`CaseAssessment.assessRescreened`, on the run's path and the provider's late
-  callback alike). On a `READY_FOR_DECISION` case - which cannot move back to review - the task opens and the
-  reviewer's decision names the hit, the late onboarding hit's precedent. A rescreen in flight or answered "we do not
-  know" neither holds nor proceeds the case: the HIT reaches a person whichever side of the decision it lands
-  (below), and holding on it would let a stranded rescreen deadlock an onboarding. A hit that commits while a concurrent
-  assessment decides the case is ordered after that decision - the decision rests on exactly what its own transaction
-  read - and lands beside it.
+  callback alike); a crash between the hit's commit and that assessment is healed by risk's leg, which asks a hit's own
+  key again on its next claim (kyc answers from the row). On a `READY_FOR_DECISION` case - which cannot move back to
+  review - the task opens and **the decision waits on it**: the decision's move never passes an `OPEN` review task
+  (`KycCaseStore.moveStatus`, the case row locked first - the task's last review, item 1), so the reviewer
+  resolves the hit before deciding, and the decision names it. The same guard closes the gap a late onboarding hit had
+  before this task. A rescreen in flight or answered "we do not know" neither holds nor proceeds the case: the HIT
+  reaches a person whichever side of the decision it lands (below), and holding on it would let a stranded rescreen
+  deadlock an onboarding. **The race, as it is:** a hit whose assessment runs while a concurrent decision is being
+  made is not in that decision's evidence (it rests on exactly what its own transaction read); the hit's review task,
+  opened by an assessment that read the case undecided, may then land `OPEN` on the just-decided case - resolvable,
+  moving nothing - and risk's alert tells a person regardless.
 - **On a decided case, evidence beside the decision, never a re-decision.** The case's status, the decision and the
-  customer's relationship do not move; no review task opens (`assessRescreened` assesses nothing on a terminal case,
-  and a decided case's re-assessment reads its onboarding checks, `CheckStore.forCase`, as it always has).
+  customer's relationship do not move; the rescreen's own assessment opens no review task (`assessRescreened`
+  assesses nothing on a case it reads decided, and a decided case's re-assessment reads its onboarding checks,
+  `CheckStore.forCase`, as it always has) - only the race above can leave one there.
 - **The hit is risk's to work.** Risk's rescreening records it as a `SCREENING_HIT` signal and raises the `SCREENING_HIT`
   fact alert - one per party and list version - folded into the party's `AML` case; on a decided case the person who
-  works it is risk's investigator, not kyc's reviewer. Whether a sanctions match on a decided party should also open kyc
+  works it is risk's investigator, not kyc's reviewer. A hit kyc records after the permit that asked concluded
+  otherwise (a late callback for an abandoned question, a slow call) is told back to it (`RescreenHits`, risk's
+  `RescreeningRun.hit`): its own signal and alert, once. Whether a sanctions match on a decided party should also open kyc
   work is the owner's to ratify at `P13-DOC-001`.
 - **Read where it matters.** `CheckStore.latestDecidedScreenings` - per screening type the decided check asked last,
   onboarding or rescreen, one index probe per type - is risk's screening-hit reading (`KycScreeningClearances`, judged

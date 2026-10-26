@@ -54,10 +54,14 @@ import org.springframework.transaction.support.TransactionTemplate;
  * ({@link ChecksAssessment#decisionEvidence}). A <em>decided</em> case is re-assessed over its
  * onboarding checks, as it always was, and a rescreen's answer on it assesses nothing
  * ({@link #assessRescreened}): evidence beside the decision, never a re-decision (ADR-0035's
- * amendment). A rescreen {@code HIT} that commits while a concurrent assessment is deciding
- * the case is ordered after that decision - the decision rests on exactly what its own
- * transaction read - and lands beside it; risk's {@code SCREENING_HIT} alert puts it in front of
- * a person on either side of the decision.
+ * amendment). <strong>The race, as it is:</strong> a rescreen {@code HIT} whose assessment
+ * runs while a concurrent assessment or reviewer is deciding the case is not in that
+ * decision's evidence - the decision rests on exactly what its own transaction read - and the
+ * rescreen's assessment, having read the case undecided, may still open the hit's review task,
+ * which then lands {@code OPEN} on the just-decided case: resolvable by a reviewer, moving
+ * nothing (a late onboarding hit's precedent). If the task commits first, the decision's move
+ * refuses ({@code KycCaseStore.moveStatus} never passes an open task). Either way risk's
+ * {@code SCREENING_HIT} alert puts the hit in front of a person.
  */
 public class CaseAssessment {
 

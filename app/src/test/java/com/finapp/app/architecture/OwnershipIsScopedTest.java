@@ -4512,6 +4512,32 @@ class OwnershipIsScopedTest {
                                         + " work, and these being rows a reviewer is entitled to see. Risk's T-eval"
                                         + " read moved to the bounded latestDecidedScreenings.")),
                     Map.entry(
+                            "com.finapp.kyc.JdbcKycCaseStore.lockRow",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022's last review (item 1). moveStatus's private helper: the case row"
+                                        + " FOR UPDATE before a decision's move, so its NOT EXISTS over OPEN review"
+                                        + " tasks runs on a snapshot taken after the lock - a decision never passes"
+                                        + " an open task (INV-KYC-04). The KycCaseId is the one the decision names:"
+                                        + " the assessment's own (findOpenFor, a check's case) or the reviewer's -"
+                                        + " DecisionRecording.byReviewer's URL-derived identifier, the weaker"
+                                        + " provenance and so the label (forCase's precedent): KYC_REVIEW at the"
+                                        + " boundary and the kyc.DecisionRecorded record stand in. A lock and a"
+                                        + " boolean leave, never a row.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcCheckStore.rescreenKeyOf",
+                            new Entry(
+                                    Scope.SIGNED_CALLBACK,
+                                    "P13-TSK-022's last review (item 3). The key a RESCREEN check was asked"
+                                        + " under, read by app's RescreeningHits to tell the permit that asked of a"
+                                        + " hit kyc recorded. The CheckId is one kyc itself just completed - on its"
+                                        + " door's path a system-resolved keyed check, on the provider's callback the"
+                                        + " check a signed callback named (findById's provenance, the weaker of the"
+                                        + " two, so the label): the HMAC verified at the boundary before any read,"
+                                        + " the identifier one the platform handed the provider. Only the key leaves"
+                                        + " - an identifier of a question - and the write it leads to is risk's own"
+                                        + " born-once signal and alert.")),
+                    Map.entry(
                             "com.finapp.kyc.JdbcCheckStore.latestDecidedScreenings",
                             new Entry(
                                     Scope.SYSTEM_JOIN,

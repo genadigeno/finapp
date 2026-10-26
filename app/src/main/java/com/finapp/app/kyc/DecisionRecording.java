@@ -147,7 +147,11 @@ public class DecisionRecording {
                     if (!won) {
                         // Disambiguate the lost conditional by what is checked, not by the
                         // commonest cause (the NOT_ACTIVE lesson): a terminal case is already
-                        // decided; anything else is not ready for a decision yet.
+                        // decided; anything else is not ready for a decision yet - among it,
+                        // since P13-TSK-022's last review, a READY_FOR_DECISION case with an OPEN
+                        // review task (a list update's rescreen hit, or a late onboarding hit,
+                        // that arrived after the review exit): the decision's move never passes
+                        // one (KycCaseStore.moveStatus), so the reviewer resolves it first.
                         return cases.findById(unitOfWork, caseId)
                                         .map(current -> current.status().isTerminal())
                                         .orElse(false)

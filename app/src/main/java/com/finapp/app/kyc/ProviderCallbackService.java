@@ -20,6 +20,7 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.ObjectMapper;
 
@@ -80,6 +81,7 @@ public class ProviderCallbackService {
     private final IdGenerator ids;
     private final Clock clock;
     private final KycUnitOfWork units;
+    private final ObjectProvider<RescreenHits> rescreenHits;
 
     public ProviderCallbackService(
             CheckStore<Connection> checkStore,
@@ -91,8 +93,10 @@ public class ProviderCallbackService {
             IdGenerator idGenerator,
             Clock clock,
             TransactionTemplate kycTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            ObjectProvider<RescreenHits> rescreenHits) {
         this.checks = Objects.requireNonNull(checkStore, "checkStore must not be null");
+        this.rescreenHits = Objects.requireNonNull(rescreenHits, "rescreenHits must not be null");
         this.signature =
                 Objects.requireNonNull(callbackSignature, "callbackSignature must not be null");
         this.inbox = Objects.requireNonNull(inboxConsumer, "inboxConsumer must not be null");
@@ -190,6 +194,12 @@ public class ProviderCallbackService {
             assessment.assess(delivered.check().caseId());
         } else {
             assessment.assessRescreened(delivered.check().caseId());
+            // The permit that asked is told of a hit (P13-TSK-022's last review, item 3) - a late
+            // callback for an abandoned question lands after the permit concluded; the teller reads
+            // the committed row, so a losing racer's hit over a recorded clear tells nothing.
+            if (outcome == CheckOutcome.HIT) {
+                rescreenHits.ifAvailable(hits -> hits.hit(delivered.check().id()));
+            }
         }
     }
 

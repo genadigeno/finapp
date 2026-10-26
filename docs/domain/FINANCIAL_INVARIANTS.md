@@ -417,15 +417,20 @@ coordinator's default and, from the task's second review, its fail-closed rule f
 ratified by the owner at `P13-DOC-001`: **a list update is answered beside a decided KYC case, never by reopening it or
 by a new case.** When a sanctions or PEP list changes, kyc re-screens a party by a **`RESCREEN` check** on its latest
 case (kyc `V011`, keyed by risk's permit and an ordinal). On a **decided** case it is evidence beside the decision, never
-a re-decision - the case stays `APPROVED` (or `REJECTED`), the customer's relationship does not move, no review task opens
-(`CaseAssessment.assessRescreened` assesses nothing on a terminal case). On a case **not yet decided** its `HIT` counts -
-it blocks the automatic approval and routes the case to review exactly as an onboarding hit does (`INV-KYC-04`); its
+a re-decision - the case stays `APPROVED` (or `REJECTED`), the customer's relationship does not move, and the rescreen's
+own assessment opens no review task (`CaseAssessment.assessRescreened` assesses nothing on a case it reads decided). The
+one exception is a race, recorded as it is: a hit whose assessment read the case undecided while a concurrent decision
+was being made may still open its review task on the just-decided case - `OPEN`, resolvable, moving nothing (a late
+onboarding hit's precedent) - and that decision's evidence does not name it. On a case **not yet decided** its `HIT`
+counts - it blocks the automatic approval and routes the case to review exactly as an onboarding hit does
+(`INV-KYC-04`), and the decision's move waits on its open task (`KycCaseStore.moveStatus`, the task's last review); its
 `CLEAR`, in flight or unknown it neither holds nor proceeds the case. Either way a hit is risk's to act on too: its
 `SCREENING_HIT` fact alert, one per party and list version, folded into the party's `AML` case, which a person works. A
 changed circumstance *of the person* still opens a new case. Verified by `ChecksAssessmentTest#aRescreenHitOfAnUndecidedCaseNeedsAPerson`
-(probed), `#theDecisionsEvidenceIsEveryAnsweredCheck`, `CheckStorePurposeTest`, `KycRescreenMigrationTest` and the owed
-`RescreeningDatabaseTest#aPostDecisionHitAlertsOnceAndCasesAndTheDecisionStands`, `#aLateCallbackForARescreenAssessesNothing`,
-`#aRescreenHitBeforeTheDecisionNeedsAPerson`, `#aRescreenHitOnACaseInReviewOpensItsTask`.)*
+(probed), `#theDecisionsEvidenceIsEveryAnsweredCheck`, `CheckStorePurposeTest`, `KycRescreenMigrationTest`,
+`RescreenRoutingTest` (probed) and the owed `RescreeningDatabaseTest#aPostDecisionHitAlertsOnceAndCasesAndTheDecisionStands`,
+`#aLateCallbackForARescreenAssessesNothing`, `#aRescreenHitBeforeTheDecisionNeedsAPerson`,
+`#aRescreenHitOnACaseInReviewOpensItsTask`, `#aRescreenHitOnACaseReadyForDecisionHoldsTheDecision`.)*
 
 ---
 
@@ -3621,7 +3626,11 @@ state without a recorded review decision.
 on an undecided case blocks its automatic approval, opens its review task and routes the case to `IN_REVIEW` exactly as
 an onboarding hit does (`ChecksAssessment.of`, `needingReview`; `CaseAssessment.assessRescreened` after the rescreen's
 outcome commits, on the run's path and the late callback alike); a `READY_FOR_DECISION` case, which cannot move back,
-gets the task and the reviewer's decision names the hit. On a decided case the hit is risk's `SCREENING_HIT` alert in the
+gets the task, and **no decision is recorded past an `OPEN` review task** (the task's last review, item 1:
+`KycCaseStore.moveStatus` to a terminal status locks the case row and requires none open - the decision waits, the
+reviewer resolves the hit first, and the decision names it; the same guard closes the gap a late onboarding hit had
+before this task - `DecisionMovePastOpenTasksTest`, probed; the owed
+`RescreeningDatabaseTest#aRescreenHitOnACaseReadyForDecisionHoldsTheDecision`). On a decided case the hit is risk's `SCREENING_HIT` alert in the
 party's `AML` case - a person still. Verified by `ChecksAssessmentTest#aRescreenHitOfAnUndecidedCaseNeedsAPerson`
 (probed) and the owed `RescreeningDatabaseTest#aRescreenHitBeforeTheDecisionNeedsAPerson`,
 `#aRescreenHitOnACaseInReviewOpensItsTask`.)*

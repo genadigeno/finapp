@@ -1070,7 +1070,13 @@ asked again, so a restart mid-call never fails a permit), `UNCONCLUDED` (every c
 `claim.failed{kind=rescreening}` warn lines), or `STALE` (an answer asked before the activation - impossible for a
 permit's own keyed check, so a `STALE` failure is a defect to report, never an exposure to accept). An abandoned
 question's row stays `DISPATCHED` in kyc - the record of the call that was lost; a late answer to it is still the
-permit's own, and its hit wins.
+permit's own, and its hit wins. A clear concludes a permit only when no newer question is still live. **A hit kyc records
+after its permit concluded otherwise** (a late callback for an abandoned question, a slow call that outlived its lease)
+is told back to the permit (kyc's `RescreenHits`, risk's `RescreeningRun.hit`): a second `SCREENING_HIT` signal, born of
+kyc's check, and its own alert in the party's `AML` case - counted `finapp.risk.rescreening{outcome=late_hit}`; the permit
+stays as it concluded, so a version's `SCREENING_HIT` signals may outnumber its `DONE(HIT)` permits (`-024`'s census reads
+the signals). On an **undecided** case the kyc reviewer's decision waits on the hit's open review task: `byReviewer`
+answers `NOT_READY` until it is resolved - for a late onboarding hit too.
 
 **A burnt version - re-drive by a successor, never by hand.** A permit that has `FAILED` is terminal and a version is
 activated once (`409 risk.PolicyStale`), so its failed parties are never asked again under it. When the cause is fixed (the

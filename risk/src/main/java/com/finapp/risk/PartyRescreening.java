@@ -2,6 +2,7 @@ package com.finapp.risk;
 
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -38,6 +39,29 @@ public interface PartyRescreening {
     /** The request key of {@code permit}. */
     static String keyOf(RescreeningPermitId permit) {
         return KEY_PREFIX + Objects.requireNonNull(permit, "permit").value();
+    }
+
+    /**
+     * The permit a rescreen key names - {@code risk.rescreen:<permit id>} and, as kyc stores it, its ordinal
+     * {@code #n} - or empty for a key that is not a permit's (`P13-TSK-022`'s last review: a late hit told back to
+     * risk by kyc's check, which carries the key).
+     */
+    static Optional<RescreeningPermitId> permitOf(String rescreenKey) {
+        if (rescreenKey == null || !rescreenKey.startsWith(KEY_PREFIX)) {
+            return Optional.empty();
+        }
+        String rest = rescreenKey.substring(KEY_PREFIX.length());
+        int ordinal = rest.indexOf('#');
+        String id = ordinal < 0 ? rest : rest.substring(0, ordinal);
+        if (ordinal >= 0 && !rest.substring(ordinal + 1).matches("[0-9]{1,6}")) {
+            return Optional.empty();
+        }
+        try {
+            UUID permit = UUID.fromString(id);
+            return permit.toString().equals(id) ? Optional.of(RescreeningPermitId.of(permit)) : Optional.empty();
+        } catch (IllegalArgumentException notAPermit) {
+            return Optional.empty();
+        }
     }
 
     /**

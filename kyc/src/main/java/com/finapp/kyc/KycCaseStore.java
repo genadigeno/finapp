@@ -59,6 +59,13 @@ public interface KycCaseStore<T> {
      * The aggregate's own {@code canTransitionTo} remains the machine's authority
      * ({@code INV-LIFE-02}); this is the write that makes one instance's application of it
      * stick.
+     *
+     * <p><strong>The decision's move</strong> - to a terminal status - also requires that no
+     * review task of the case is {@code OPEN} (`P13-TSK-022`'s last review, {@code INV-KYC-04}):
+     * a hit that opened its task after the case reached {@code READY_FOR_DECISION} - a list
+     * update's rescreen, or a late onboarding hit, the gap this closes for both - is resolved by
+     * a person before any decision is recorded. The case row is locked first, so a task
+     * committing meanwhile is seen; a lost move is then "not ready", never "decided".
      */
     boolean moveStatus(
             T unitOfWork, KycCaseId caseId, KycCaseStatus from, KycCaseStatus to, Instant at);

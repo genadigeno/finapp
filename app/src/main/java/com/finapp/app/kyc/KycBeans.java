@@ -326,7 +326,8 @@ public class KycBeans {
             Clock clock,
             TransactionTemplate kycTransactions,
             DataSource dataSource,
-            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+            io.micrometer.core.instrument.MeterRegistry meterRegistry,
+            org.springframework.beans.factory.ObjectProvider<RescreenHits> rescreenHits) {
         return new VerificationRunService(
                 kycCaseStore,
                 checkStore,
@@ -337,7 +338,8 @@ public class KycBeans {
                 clock,
                 kycTransactions,
                 dataSource,
-                meterRegistry);
+                meterRegistry,
+                rescreenHits);
     }
 
     /**
@@ -372,7 +374,8 @@ public class KycBeans {
             IdGenerator idGenerator,
             Clock clock,
             TransactionTemplate kycTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            org.springframework.beans.factory.ObjectProvider<RescreenHits> rescreenHits) {
         return new ProviderCallbackService(
                 checkStore,
                 callbackSignature,
@@ -383,7 +386,8 @@ public class KycBeans {
                 idGenerator,
                 clock,
                 kycTransactions,
-                dataSource);
+                dataSource,
+                rescreenHits);
     }
 
     /**

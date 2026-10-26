@@ -332,20 +332,85 @@ public final class RescreeningRun {
         return new Concluded(locked, conclusion, Optional.empty());
     }
 
-    private Concluded screened(Connection unitOfWork, RescreeningPermit locked, PartyRescreening.Screened screened) {
-        SignalKind kind = screened.hit() ? SignalKind.SCREENING_HIT : SignalKind.SCREENING_CLEARED;
-        CorrelationId correlation = CorrelationId.of(locked.correlationId());
-        CausationId cause = CausationId.of(locked.id().value().toString());
-        RiskSignal signal = new RiskSignal(
+    /**
+     * A hit kyc recorded on one of {@code permitId}'s questions, told by kyc's side after its commit (`P13-TSK-022`'s last
+     * review, item 3: "a HIT on any of the permit's ordinals wins - and a person is told"), on the caller's unit of work.
+     * The permit {@code FOR UPDATE} (R9), then by where it stands:
+     *
+     * <ul>
+     *   <li>{@code PENDING} - a claim asked, and its conclusion may be computing from an answer read before the hit
+     *       committed: concluded {@code HIT} here, under the lock - the signal born of the permit, the fact alert, the
+     *       fold, exactly as {@link #conclude} would - so the slower conclusion finds it {@code DONE} and records
+     *       nothing;</li>
+     *   <li>{@code DONE(HIT)} - told already: nothing;</li>
+     *   <li>concluded otherwise - {@code CLEARED} from a newer question, {@code SKIPPED}, {@code FAILED} - a <em>late</em>
+     *       {@code SCREENING_HIT} signal born of kyc's check (its source the check: the permit already names its one
+     *       signal, {@code rescreening_permit_signal_is_its_own}) and its own fact alert (its key carries that signal),
+     *       folded into the party's {@code AML} case; the permit stays as it concluded - its history is what it
+     *       knew.</li>
+     * </ul>
+     *
+     * <p>Born once whoever tells it and however often: the permit's signal or the check's is unique on its source, and a
+     * replay meets {@code ALREADY} and records nothing more. A screening asked before the version's activation is no
+     * rescreening under it - never for a permit's own key, kept as the rule. Empty when nothing was recorded.
+     */
+    public Optional<Concluded> hit(Connection unitOfWork, RescreeningPermitId permitId,
+            PartyRescreening.Screened screened) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(permitId, "permitId");
+        Objects.requireNonNull(screened, "screened");
+        if (!screened.hit()) {
+            throw new IllegalArgumentException("only a hit is told after the fact");
+        }
+        Optional<RescreeningPermit> found = permits.lock(unitOfWork, permitId);
+        if (found.isEmpty() || !current(screened, found.get())) {
+            return Optional.empty();
+        }
+        RescreeningPermit locked = found.get();
+        Concluded concluded;
+        if (locked.status() == RescreeningPermit.Status.PENDING) {
+            if (locked.attempts() < 1) {
+                // No claim has asked a question yet: the first claim reads the hit.
+                return Optional.empty();
+            }
+            concluded = screened(unitOfWork, locked, screened);
+        } else if (locked.outcome().filter(outcome -> outcome == RescreeningPermit.Outcome.HIT).isPresent()) {
+            return Optional.empty();
+        } else {
+            CorrelationId correlation = CorrelationId.of(locked.correlationId());
+            CausationId cause = CausationId.of(screened.screeningRef().toString());
+            RiskSignal signal = signal(SignalKind.SCREENING_HIT, locked, screened, EventId.of(screened.screeningRef()),
+                    correlation, cause);
+            if (signals.record(unitOfWork, signal) != RiskSignals.Outcome.BORN) {
+                // Told already - the late signal and its alert commit together.
+                return Optional.empty();
+            }
+            alerts.raiseAll(unitOfWork, List.of(hitAlert(locked, signal.id(), correlation, cause)));
+            concluded = new Concluded(locked, RescreeningObserver.Conclusion.LATE_HIT, Optional.of(signal.id()));
+        }
+        observer.concluded(concluded.conclusion());
+        return Optional.of(concluded);
+    }
+
+    /** A clearance signal about the permit's party under its version, naming kyc's screening; its source {@code source}. */
+    private RiskSignal signal(SignalKind kind, RescreeningPermit locked, PartyRescreening.Screened screened,
+            EventId source, CorrelationId correlation, CausationId cause) {
+        return new RiskSignal(
                 RiskSignalId.next(ids),
                 kind,
                 SignalSubject.of(SubjectKind.PARTY, locked.partyId()),
-                new RiskSignal.SourceEvent(EventId.of(locked.id().value()), kind.sourceEventType(), 1,
-                        RiskSignals.PRODUCER, correlation, cause),
+                new RiskSignal.SourceEvent(source, kind.sourceEventType(), 1, RiskSignals.PRODUCER, correlation, cause),
                 screened.decidedAt(),
                 SignalAttributes.of(kind, Map.of(
                         "list_version_ref", locked.listVersionId().value().toString(),
                         "screening_ref", screened.screeningRef().toString())));
+    }
+
+    private Concluded screened(Connection unitOfWork, RescreeningPermit locked, PartyRescreening.Screened screened) {
+        SignalKind kind = screened.hit() ? SignalKind.SCREENING_HIT : SignalKind.SCREENING_CLEARED;
+        CorrelationId correlation = CorrelationId.of(locked.correlationId());
+        CausationId cause = CausationId.of(locked.id().value().toString());
+        RiskSignal signal = signal(kind, locked, screened, EventId.of(locked.id().value()), correlation, cause);
         if (signals.record(unitOfWork, signal) != RiskSignals.Outcome.BORN) {
             throw new IllegalStateException(
                     "a permit's clearance was recorded before its conclusion: the permit's lock protocol was bypassed");

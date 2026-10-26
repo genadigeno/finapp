@@ -376,6 +376,23 @@ public final class JdbcCheckStore implements CheckStore<Connection> {
         }
     }
 
+    @Override
+    public Optional<String> rescreenKeyOf(Connection unitOfWork, CheckId checkId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(checkId, "checkId must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT rescreen_key FROM " + TABLE + " WHERE id = ? AND purpose = 'RESCREEN'")) {
+            select.setObject(1, checkId.value());
+            try (ResultSet rows = select.executeQuery()) {
+                return rows.next() ? Optional.ofNullable(rows.getString(1)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new KycStorageException(
+                    DatabaseFailure.describe("reading the key of check " + checkId, failure));
+        }
+    }
+
     private static void requireRescreenKey(String rescreenKey) {
         Objects.requireNonNull(rescreenKey, "rescreenKey must not be null");
         if (rescreenKey.isBlank() || rescreenKey.length() > RESCREEN_KEY_MAX) {

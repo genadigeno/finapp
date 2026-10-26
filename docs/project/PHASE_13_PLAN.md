@@ -1068,8 +1068,13 @@ ordinal `#n`), the claim's attempt and its abandonment line (the claim's instant
 and `app`'s `KycPartyRescreening` places the party on a read-only snapshot (its live customer `ACTIVE` or `PENDING` - an
 onboarding customer is rescreened too, the review's MINOR 9; its latest case - a `PENDING` customer with none is
 `NotOnboarded`, `DONE(NOT_ONBOARDED)`, counted on its own and never an exposure, the second review's IMPORTANT 4), asks the
-door when the claim may ask a new question, and answers from the permit's own questions alone - a hit among them first,
-else a clear; **risk judges currency on one clock** (the check's ask, stamped by the database, at or after the
+door when the claim may ask a new question, and answers from the permit's own questions alone - a hit among them first
+(asked again under its own key, so kyc re-runs its routing of it - a crash between the hit's commit and that routing is
+healed; the last review's item 2), else a clear only when no newer question is still live (item 3) - and a hit kyc
+records after the permit concluded otherwise is told back to it (`RescreenHits` → `RescreeningRun.hit`: its own
+`SCREENING_HIT` signal born of kyc's check and its own alert, the permit unmoved; a pending permit concluded `HIT` at
+once); on an undecided case kyc's decision never passes the hit's open review task (`KycCaseStore.moveStatus`, item 1 -
+which closes the same gap for a late onboarding hit); **risk judges currency on one clock** (the check's ask, stamped by the database, at or after the
 activation - true by construction for a permit's own check, kept as the rule): `SCREENING_CLEARED` / `SCREENING_HIT`,
 about the party, born of the permit. **The leg's bound governs the asking** (the second review's IMPORTANT 2): one new
 ordinal per claim while the last question answered "we do not know" or was abandoned (unanswered and asked before the

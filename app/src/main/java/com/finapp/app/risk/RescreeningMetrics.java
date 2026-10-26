@@ -28,8 +28,9 @@ import lombok.extern.slf4j.Slf4j;
  *   <li>{@code finapp.risk.rescreening{outcome}} - what became of each claimed permit: {@code cleared}, {@code hit}
  *       (always alerted since the review - a fact alert, `hit_not_alerted` retired), {@code skipped},
  *       {@code not_onboarded} (an onboarding party with no KYC case - never screened, nothing to rescreen; never an
- *       exposure), {@code deferred}, {@code failed} - the exposure: alert on any {@code failed} increase (`-024` writes
- *       the rules);</li>
+ *       exposure), {@code late_hit} (a hit kyc recorded after the permit concluded otherwise, told with its own signal and
+ *       alert - the last review's item 3), {@code deferred}, {@code failed} - the exposure: alert on any {@code failed}
+ *       increase (`-024` writes the rules);</li>
  *   <li>{@code finapp.risk.rescreening.backlog} - the permits {@code PENDING}, counted up to a million (saturating); NaN
  *       when unreadable or stale. Every instance reports the same figure: aggregate with {@code max()};</li>
  *   <li>{@code finapp.risk.sweeper.claim.failed{kind=rescreening}} - an enqueue batch, a claim or a conclusion that failed
@@ -111,7 +112,8 @@ public final class RescreeningMetrics implements RescreeningObserver {
         for (Conclusion conclusion : Conclusion.values()) {
             outcomes.put(conclusion, Counter.builder(RESCREENING).tag("outcome", conclusion.tag())
                     .description("Rescreening permits by what became of each claim: cleared, hit, skipped,"
-                            + " not_onboarded, deferred or failed - alert on any failed increase")
+                            + " not_onboarded, late_hit (a hit told after the permit concluded otherwise), deferred or"
+                            + " failed - alert on any failed increase")
                     .register(registry));
         }
         Gauge.builder(BACKLOG, this, self -> {

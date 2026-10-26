@@ -96,18 +96,46 @@ class KycPartyRescreeningTest {
     }
 
     @Test
-    @DisplayName("once asked, the keyed checks answer - the door is not called again: answered is Screened, in flight under"
-            + " its asker is IN_FLIGHT at any attempt")
+    @DisplayName("once asked, the keyed checks answer: a HIT is asked again under its OWN key - kyc answers from the row,"
+            + " no new question, and re-runs its routing of the hit (the last review's item 2); in flight under its asker"
+            + " is IN_FLIGHT at any attempt, nothing asked")
     void theKeyedCheckAnswersOnceAsked() {
         checks.add(rescreen(KEY + "#0", CheckType.SANCTIONS, CheckStatus.HIT));
+        int rows = checks.rows.size();
         assertThat(ask(party, ScreeningList.SANCTIONS, KEY, 3, LAPSED))
                 .isInstanceOfSatisfying(PartyRescreening.Screened.class, screened -> assertThat(screened.hit()).isTrue());
+        assertThat(door.asked).as("the hit's own key, on the hit's own case - the crash's healing")
+                .containsExactly(kycCase + "|" + customer + "|SANCTIONS|" + KEY + "#0");
+        assertThat(checks.rows).as("no new question").hasSize(rows);
+        door.asked.clear();
         checks.add(rescreen(KEY + "-b#0", CheckType.SANCTIONS, CheckStatus.DISPATCHED));
         for (int attempt = 1; attempt <= 3; attempt++) {
             assertThat(ask(party, ScreeningList.SANCTIONS, KEY + "-b", attempt, HELD)).as("attempt %d", attempt)
                     .isEqualTo(new PartyRescreening.Pending(PartyRescreening.Wait.IN_FLIGHT));
         }
         assertThat(door.asked).as("never a second question while the first is its asker's").isEmpty();
+    }
+
+    @Test
+    @DisplayName("the last review's item 3: a CLEAR answers only when no newer question is still its asker's - an older"
+            + " question's late clear waits on a live newer one; once the newer is unknown or abandoned, the clear stands;"
+            + " a hit on ANY question wins over a newer clear")
+    void aClearNeverConcludesOverALiveNewerQuestion() {
+        checks.add(rescreen(KEY + "#0", CheckType.SANCTIONS, CheckStatus.CLEAR));
+        checks.add(rescreen(KEY + "#1", CheckType.SANCTIONS, CheckStatus.DISPATCHED));
+        assertThat(ask(party, ScreeningList.SANCTIONS, KEY, 3, HELD)).as("#1 live within its lease")
+                .isEqualTo(new PartyRescreening.Pending(PartyRescreening.Wait.IN_FLIGHT));
+        assertThat(ask(party, ScreeningList.SANCTIONS, KEY, 3, LAPSED)).as("#1 abandoned: #0's clear stands")
+                .isEqualTo(new PartyRescreening.Screened(checks.byKey.get(KEY + "#0").id().value(), false, ASKED, ASKED));
+        checks.add(rescreen(KEY + "#1", CheckType.SANCTIONS, CheckStatus.INDETERMINATE));
+        assertThat(ask(party, ScreeningList.SANCTIONS, KEY, 3, HELD)).as("#1 unknown: #0's clear stands")
+                .isInstanceOfSatisfying(PartyRescreening.Screened.class, screened -> assertThat(screened.hit()).isFalse());
+        assertThat(door.asked).isEmpty();
+
+        checks.add(rescreen(KEY + "-h#0", CheckType.SANCTIONS, CheckStatus.HIT));
+        checks.add(rescreen(KEY + "-h#1", CheckType.SANCTIONS, CheckStatus.CLEAR));
+        assertThat(ask(party, ScreeningList.SANCTIONS, KEY + "-h", 3, HELD)).as("an older hit wins over a newer clear")
+                .isInstanceOfSatisfying(PartyRescreening.Screened.class, screened -> assertThat(screened.hit()).isTrue());
     }
 
     @Test
@@ -256,6 +284,10 @@ class KycPartyRescreeningTest {
         @Override
         public VerificationCheck rescreen(KycCaseId caseId, UUID customerId, CheckType type, String rescreenKey) {
             asked.add(caseId + "|" + customerId + "|" + type + "|" + rescreenKey);
+            if (checks.byKey.containsKey(rescreenKey)) {
+                // kyc's key unique: an asked key answers from its row - no provider call, no new row.
+                return checks.byKey.get(rescreenKey);
+            }
             VerificationCheck check = KycPartyRescreeningTest.this.rescreen(rescreenKey, type, answers);
             checks.add(check);
             return check;
@@ -411,6 +443,11 @@ class KycPartyRescreeningTest {
         @Override
         public Optional<VerificationCheck> findRescreen(Connection unitOfWork, String rescreenKey) {
             return Optional.ofNullable(byKey.get(rescreenKey));
+        }
+
+        @Override
+        public Optional<String> rescreenKeyOf(Connection unitOfWork, CheckId checkId) {
+            return Optional.ofNullable(keys.get(checkId));
         }
 
         @Override

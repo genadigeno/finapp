@@ -22,8 +22,10 @@
 --   HIT is what counts (P13-TSK-022's review, fail-closed): on a case not yet decided a rescreen
 --   HIT blocks the automatic approval, opens a review task and moves the case to IN_REVIEW exactly
 --   as an onboarding HIT does, and the decision's evidence names every rescreen answered CLEAR or
---   HIT; on a DECIDED case it is evidence beside the decision, never a re-decision - nothing
---   moves, no task opens, the customer is untouched. Its instants are the database's (the
+--   HIT, and no decision is recorded past its open task; on a DECIDED case it is evidence beside
+--   the decision, never a re-decision - nothing moves, the customer is untouched, and its own
+--   assessment opens no task (only a race with a concurrent decision can leave its task OPEN on the
+--   just-decided case - resolvable, moving nothing). Its instants are the database's (the
 --   insert's clock_timestamp()), the clock risk's list version is activated on: "asked after the
 --   activation" is one clock.
 --

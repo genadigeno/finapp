@@ -96,6 +96,9 @@ import org.springframework.test.context.DynamicPropertySource;
  *       claim, the provider's recovery the clearance;</li>
  *   <li>{@link #anOnboardingPartyWithNoCaseIsNotOnboarded} - IMPORTANT 4; {@link #theScreeningReadIsTheLatestDecidedPerType}
  *       - MINOR 6;</li>
+ *   <li>{@link #aRescreenHitOnACaseReadyForDecisionHoldsTheDecision} - the last review's item 1: no decision past the
+ *       hit's open task; {@link #aLateHitAfterAClearIsStillTold} - item 3: a late callback's hit on an abandoned
+ *       question, after the permit concluded CLEARED, still alerted once;</li>
  *   <li>{@link #aLateCallbackForARescreenAssessesNothing} - a rescreen stranded {@code DISPATCHED} (a crash mid-call),
  *       its provider's signed callback a hit: completed, its evidence kept, the case not assessed - no review task, still
  *       {@code APPROVED} - and the leg records it from the row with no provider call of its own;</li>
@@ -375,6 +378,78 @@ class RescreeningDatabaseTest {
                 "the PEP hit is a namesake too"));
         assertThat(scalarText("SELECT status FROM kyc.kyc_case WHERE id = ?", undecided.kycCase()))
                 .isEqualTo("READY_FOR_DECISION");
+    }
+
+    @Test
+    @DisplayName("the last review's item 1: a rescreen HIT on a READY_FOR_DECISION case opens its task and holds the"
+            + " decision - the reviewer's decision NOT_READY while the task is OPEN; resolved, the decision is recorded"
+            + " naming the hit")
+    void aRescreenHitOnACaseReadyForDecisionHoldsTheDecision() throws Exception {
+        Undecided undecided = undecided("READY_FOR_DECISION", null);
+        provider.succeedsWith(ScreeningAdapter.SANCTIONS_PATH, 200, "{\"status\":\"hit\"}");
+        VerificationCheck hit = inFlow(() -> runs.rescreen(KycCaseId.of(undecided.kycCase()), undecided.customer(),
+                CheckType.SANCTIONS, PartyRescreening.KEY_PREFIX + IDS.next() + "#0"));
+        assertThat(count("SELECT count(*) FROM kyc.review_task WHERE case_id = ? AND check_id = ? AND status = 'OPEN'",
+                undecided.kycCase(), hit.id().value())).isEqualTo(1);
+        assertThat(scalarText("SELECT status FROM kyc.kyc_case WHERE id = ?", undecided.kycCase()))
+                .as("READY_FOR_DECISION cannot move back").isEqualTo("READY_FOR_DECISION");
+
+        IdentityId reviewer = IdentityId.of(IDS.next());
+        assertThat(asReviewer(() -> decisions.byReviewer(KycCaseId.of(undecided.kycCase()), reviewer,
+                DecisionOutcome.APPROVED, "approved before the hit was seen")))
+                .as("never decided past an OPEN task (INV-KYC-04)").isEqualTo(DecisionRecording.Recording.NOT_READY);
+        assertThat(count("SELECT count(*) FROM kyc.kyc_decision WHERE case_id = ?", undecided.kycCase())).isZero();
+
+        UUID task = scalarUuid("SELECT id FROM kyc.review_task WHERE check_id = ?", hit.id().value());
+        asReviewer(() -> reviews.resolve(KycCaseId.of(undecided.kycCase()), ReviewTaskId.of(task), reviewer,
+                "a namesake: the date of birth differs"));
+        assertThat(asReviewer(() -> decisions.byReviewer(KycCaseId.of(undecided.kycCase()), reviewer,
+                DecisionOutcome.APPROVED, "the screening hit resolved as a namesake")))
+                .isEqualTo(DecisionRecording.Recording.RECORDED);
+        assertThat(count("SELECT count(*) FROM kyc.kyc_decision_check c JOIN kyc.kyc_decision d ON d.id = c.decision_id"
+                + " WHERE d.case_id = ? AND c.check_id = ?", undecided.kycCase(), hit.id().value())).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the last review's item 3: an abandoned question's HIT arriving by callback after the permit concluded"
+            + " CLEARED on a newer question is still told - a late SCREENING_HIT signal born of kyc's check, its own alert"
+            + " in the party's AML case; the permit stays CLEARED")
+    void aLateHitAfterAClearIsStillTold() throws Exception {
+        Onboarded onboarded = onboarded("ACTIVE", "APPROVED");
+        ScreeningListVersion version = activated(ScreeningList.SANCTIONS);
+        enqueueAll();
+        UUID permit = scalarUuid("SELECT id FROM risk.rescreening_permit WHERE party_id = ? AND list_version_id = ?",
+                onboarded.party(), version.id().value());
+        String key = PartyRescreening.KEY_PREFIX + permit;
+        UUID abandoned = IDS.next();
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            execute(migrator, "UPDATE risk.rescreening_permit SET attempts = 1,"
+                    + " next_attempt_at = clock_timestamp() + interval '1 millisecond' WHERE id = ?", permit);
+            execute(migrator, "INSERT INTO kyc.verification_check (id, case_id, check_type, status, requested_at,"
+                    + " status_changed_at, purpose, rescreen_key) VALUES (?, ?, 'SANCTIONS', 'DISPATCHED',"
+                    + " clock_timestamp() - interval '10 minute', clock_timestamp() - interval '10 minute', 'RESCREEN',"
+                    + " ?)", abandoned, onboarded.kycCase(), key + "#0");
+        }
+        Thread.sleep(20);
+        driveUntil(() -> concludedOf(version, List.of(onboarded.party())) == 1);
+        assertThat(scalarText("SELECT outcome FROM risk.rescreening_permit WHERE id = ?", permit)).isEqualTo("CLEARED");
+
+        String body = "{\"deliveryId\":\"late-" + UUID.randomUUID() + "\",\"checkId\":\"" + abandoned
+                + "\",\"status\":\"hit\"}";
+        assertThat(provider.deliverSignedCallback(URI.create("http://localhost:" + port + "/v1/providers/kyc/callbacks"),
+                body, KEY, 1)).isBetween(200, 299);
+        assertThat(count("SELECT count(*) FROM risk.risk_signal WHERE kind = 'SCREENING_HIT' AND source_event_id = ?",
+                abandoned)).as("born of kyc's check").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM risk.risk_alert WHERE subject_ref = ? AND kind = 'SCREENING_HIT'"
+                + " AND status = 'ATTACHED'", onboarded.party().toString())).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM risk.risk_case WHERE subject_ref = ? AND kind = 'AML'",
+                onboarded.party().toString())).isEqualTo(1);
+        assertThat(scalarText("SELECT outcome FROM risk.rescreening_permit WHERE id = ?", permit))
+                .as("the permit as it concluded").isEqualTo("CLEARED");
+        assertThat(provider.deliverSignedCallback(URI.create("http://localhost:" + port + "/v1/providers/kyc/callbacks"),
+                body, KEY, 1)).as("a redelivery").isBetween(200, 299);
+        assertThat(count("SELECT count(*) FROM risk.risk_alert WHERE subject_ref = ? AND kind = 'SCREENING_HIT'",
+                onboarded.party().toString())).as("told once").isEqualTo(1);
     }
 
     @Test
