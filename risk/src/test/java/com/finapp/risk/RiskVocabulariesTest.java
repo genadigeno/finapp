@@ -311,7 +311,9 @@ class RiskVocabulariesTest {
                         "risk.AlertRead", "risk.CaseRead",
                         // P13-TSK-021: the report's three acts, the authority's two answers, the AML desk's read.
                         "risk.ReportDrafted", "risk.ReportApproved", "risk.ReportFiled", "risk.ReportAcknowledged",
-                        "risk.ReportRejected", "risk.RegulatoryReportRead");
+                        "risk.ReportRejected", "risk.RegulatoryReportRead",
+                        // P13-TSK-023: the operations reports' audited read.
+                        "risk.ReportRead");
         assertThat(RiskAuditAction.ACTION_PROPOSED.requiresReason()).isTrue();
         assertThat(RiskAuditAction.ACTION_APPROVED.requiresReason()).isTrue();
         assertThat(RiskAuditAction.ACTION_REJECTED.requiresReason()).isTrue();
@@ -325,7 +327,7 @@ class RiskVocabulariesTest {
                 RiskAuditAction.ACTION_CONCLUDED, RiskAuditAction.CASE_OPENED, RiskAuditAction.CASE_TAKEN,
                 RiskAuditAction.CASE_DISPOSED, RiskAuditAction.ALERT_READ, RiskAuditAction.CASE_READ,
                 RiskAuditAction.REPORT_ACKNOWLEDGED, RiskAuditAction.REPORT_REJECTED,
-                RiskAuditAction.REGULATORY_REPORT_READ)) {
+                RiskAuditAction.REGULATORY_REPORT_READ, RiskAuditAction.REPORT_READ)) {
             assertThat(action.requiresReason()).as("%s is the platform's act, reasoned by the act it follows", action)
                     .isFalse();
         }
@@ -372,7 +374,7 @@ class RiskVocabulariesTest {
                 RiskSpans.MONITORING_INTAKE, RiskSpans.CASE_DISPOSE, RiskSpans.ACTION_DISPATCH, RiskSpans.REPORT,
                 RiskSpans.VELOCITY_PROOF, RiskSpans.PROFILE_RECOMPUTE, RiskSpans.PROFILE_READ, RiskSpans.ALERT_RAISE,
                 RiskSpans.ALERT_SUPPRESS, RiskSpans.ACTION_PROPOSE, RiskSpans.ACTION_DECIDE, RiskSpans.QUEUE,
-                RiskSpans.CASE_READ, RiskSpans.REPORT_INQUIRE)) {
+                RiskSpans.CASE_READ, RiskSpans.REPORT_INQUIRE, RiskSpans.PROOF)) {
             assertThat(span).startsWith("risk.").matches("[a-z]+(\\.[a-z]+)+");
         }
         assertThat(EnumSet.allOf(RiskOperation.class)).hasSize(7);

@@ -423,7 +423,18 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/risk/cases/{caseId}/reports/{reportId}/filing",
                             PermissionName.AML_REPORT_FILE),
                     entry("GET /v1/operator/risk/cases/{caseId}/reports/{reportId}",
-                            PermissionName.AML_REPORT_APPROVE)));
+                            PermissionName.AML_REPORT_APPROVE),
+                    // P13-TSK-023: the phase's proofs as operator-runnable, audited reads under RISK_INVESTIGATE - the
+                    // four operations reports with their censuses (audited risk.ReportRead), the day's replay (reasoned,
+                    // audited risk.Replayed) and the case's evidence door (audited risk.CaseRead, self-dealing refused);
+                    // the negatives are RiskReportsApiTest's (the risk officer 403, no session 401).
+                    entry("GET /v1/operator/reports/risk/decisions", PermissionName.RISK_INVESTIGATE),
+                    entry("GET /v1/operator/reports/risk/alerts", PermissionName.RISK_INVESTIGATE),
+                    entry("GET /v1/operator/reports/risk/cases", PermissionName.RISK_INVESTIGATE),
+                    entry("GET /v1/operator/reports/risk/velocity", PermissionName.RISK_INVESTIGATE),
+                    entry("POST /v1/operator/risk/assessments/replay", PermissionName.RISK_INVESTIGATE),
+                    entry("GET /v1/operator/risk/cases/{caseId}/evidence/{evidenceKind}/{evidenceId}",
+                            PermissionName.RISK_INVESTIGATE)));
 
     /**
      * The CONDITIONAL half (the Phase 12 -> 13 gate's A5-F1): a permission a route asks BESIDE its declared one when the

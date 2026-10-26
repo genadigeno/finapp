@@ -24323,7 +24323,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   the clearance, and alerts and cases a hit once.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
 
-**P13-TSK-023 — The risk proofs, the explanation door and replay** — `READY` (2026-10-25; marked by the coordinator at `P13-TSK-016`'s merge, master `e3f272fe`; every dependency `COMPLETE`)
+**P13-TSK-023 — The risk proofs, the explanation door and replay** — `COMPLETE` (2026-10-26; wave G beside `-022` and `-025`, branch `P13-TSK-023` from master `3d12e386`; no migration - the reserved `V018` released; **M13.7 at 1 of 2**; marks no task `READY` — the coordinator does (`-024` waits on it alone)) *(read "`READY` (2026-10-25; marked by the coordinator at `P13-TSK-016`'s merge, master `e3f272fe`; every dependency `COMPLETE`)" until its gate)*
 - **Objective**: the phase's proofs as operator-runnable, audited reads — `VelocityProof` made whole over the
   monitored transactions, the assessment census (assessments = judged commands per operation), the monitoring census
   (monitored transactions = journal entries since the floor), the born-once and one-open censuses — the explanation
@@ -24374,6 +24374,85 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   is read from the sealed rows; a day replays `IDENTICAL`.
 - **Definition of done**: `DOD-FIN` (F8 binding — the proofs; F2, F7 binding; F1, F3, F4, F5, F6 vacuous — reads only,
   with the snapshot test as the one counted case), `DOD-API`. **Risk**: Medium. **Cx**: M.
+- **As built (2026-10-26, the gate's record; `DESIGN-023`).** *No migration* (persistence none, as the entry says; the
+  reserved `V018` released - **D1, a day is a range of identifiers**: every row the proofs count is keyed by a UUIDv7
+  its writer minted (ADR-0013), so a UTC date is `[positionAt(00:00Z), positionAt(next 00:00Z))` - a primary-key range in
+  `risk_assessment`, `risk_alert`, `risk_case`, `monitored_transaction.journal_entry_id`, `ledger.journal_entry`,
+  `transfers.transfer`, `payments.withdrawal`, `payments.payment_intent`, `crossborder.payment`; `RiskDay`; a record's
+  day is its identifier's minting millisecond, within the skew of `assessed_at`, edges reconciled by lookup). *risk:*
+  `RiskProofs` (one read-only `REPEATABLE READ` snapshot per proof, refused otherwise; at most 20 references named a
+  list), `ProofVerdict`, `CensusKind`, `RiskProofReads` / `JdbcRiskProofReads` (every statement the proofs, reports,
+  replay and evidence door take - `SELECT` only, risk's schema only); **`AssessmentCensus`** (D2 - a *set* comparison by
+  command reference in both directions against **`JudgedCommands`**, the port `app` implements: *missing* a judged
+  command with no seal at any day, *orphaned* a seal whose command no owner holds at any day, *reconciled* the pairs
+  midnight or an ambiguous owner state splits, *unrecordable* a refused `CROSS_BORDER` seal - crossborder keeps no row of
+  it; no floor, owner item); **`MonitoringCensus`** (D3 - the day's journal ids through the new `MonitoredLedger.entryIds`
+  against the monitored rows' `journal_entry_id`s, as sets, bounded by the watermark: missing, phantom, pending, ahead;
+  "since the floor" is every day from it, one day a reading - a whole-journal sweep per reading refused for its cost);
+  **`AlertBornOnceCensus`** (per kind and window kind, the day's alerts against their keys and every row of those keys any
+  day - `-020`'s AML alerts per window among the rows); **`CaseOneOpenCensus`**; **`FilingCensus`** (`-021`'s row:
+  `FILED` over `regulatory_report_due`, overdue past one inquiry interval); **`VelocityProof` made whole** (D4 - `prove`:
+  one snapshot, the record's link over the counted assessments, every dimension, and the journal's over `-019`'s
+  monitored transfers, judged only for windows every counted movement of which is a transfer - `VelocityEvidence.Counted`
+  names its operation, `JdbcRiskAssessmentStore.COUNTED` reads it; `Divergence` names its currency and scale; a lost
+  count keyed by its currency; a window of other movements cannot equal the journal's transfers by construction, so the
+  entry's "every live window recomputed over the monitored transactions" is judged exactly where it can hold);
+  **`Explanation`** (D6 - from the sealed rows and the pinned version's band list, never the engine: the rules in order,
+  each reading and contribution, the band reached by position and decision - never its bounds, a threshold being the
+  policy's `CONFIDENTIAL` content -, the step `FAIL_SAFE` / `HARD_RULE` / `SCORE_BAND` with the rules that carried a hard
+  decision, the fail-safe's cause, reason and band; `RiskAssessments.explanation`); **`DailyReplay`** (D7 - every
+  assessment of the UTC day, paged 200 on one snapshot, each under its own pinned pair, the versions memoised; the first
+  divergent named by id and kinds, the reader's own party's counted and withheld; an unplaceable reader refused, fail
+  closed, recorded `FAILED`; `risk.Replayed` against `risk_assessment_day`); **`RiskOperationsReports`** (D8 - the four
+  reports with their censuses, `known=false` for a day the platform has not had, `risk.ReportRead` on `risk_report`; and
+  the meters' one `reading` - the day-based censuses over today and yesterday, the snapshot ones once, the whole proof);
+  **`CaseEvidence`** (D9 - the evidence door routed by `-018` (D9), `-020` and `-021`: the case's file read first, only a
+  reference it holds resolved - a signal's codes, a journal entry's monitored transaction with its amount, currency and
+  scale - `risk.CaseRead` with `act=evidence`, an assessment reference the assessment door's); `RiskAuditAction.REPORT_READ`
+  (activated - the register's planned row, which no longer names the queues since `-018`; `REPLAYED`, `CASE_READ`,
+  `ASSESSMENT_READ` widened); `RiskSpans.PROOF`. *app:* `PlatformJudgedCommands` (the owners' judged sets by their
+  primary keys - transfers `COMPLETED`/`REVERSED`/`LIMIT_REFUSED`/`RISK_REFUSED`, a person's withdrawal, a merchant-bound
+  card or wallet intent past its confirmation, a cross-border payment by its quote; the `LendingCreditExposure`
+  precedent), `LedgerMonitoredLedger.entryIds`, `RiskProofBeans`, `RiskOperationsReportController` /
+  `RiskOperationsReportDesk` (`GET /v1/operator/reports/risk/{decisions,alerts,cases,velocity}?date=`), `RiskReportDates`
+  (`422 api.ValidationFailed`), `RiskAssessmentController`/`Desk` (the explanation in the read; `POST
+  /v1/operator/risk/assessments/replay?date=`, the body `RiskReplayRequest`), `RiskCaseController` + `RiskEvidenceDesk`
+  (`GET …/cases/{caseId}/evidence/{signals|journal-entries}/{evidenceId}`), **`RiskProofMetrics`** (D10 -
+  `finapp.risk.velocity.proof{verdict}` and `finapp.risk.census{kind,verdict}`, gauges read on scrape behind
+  `finapp.risk.proofs.refresh` (15 min, ≥ 60 s), 1 on the reading's verdict, NaN unreadable, fleet `max()`; **no
+  schedule** - a proof writes nothing, so N instances reading is redundant cost only: no lease, no system actor,
+  `LEASE_PROTECTED_SCHEDULERS` stays 31, no `SystemActorCallSitesAreEnumeratedTest` entry). No new error code; no event
+  (`VelocityDiverged` is `-024`'s Prometheus rule over the gauge, the reading `RISK_LIFECYCLES.md` §8 settled). *Registers:*
+  `RoutePermissionRegisterTest` (+6), `OpenApiContractTest` (+6 paths; `docs/api/openapi.json` regenerated - every
+  difference an addition under a new path or a new field, **and one correction**: since `-019` the contract published ONE
+  `ReprocessingRequest` / `ReprocessingReceipt` schema for two doors - risk's had overwritten reconciliation's
+  (`ApiSchemaNamesAreUniqueTest` red on master); risk's renamed `RiskReprocessingRequest` / `RiskReprocessingReceipt`,
+  reconciliation's door now published with its own shape - a documented correction of a wrong contract, not a change of
+  any door), `CredentialReachesNoEmittedSinkTest` (+`RiskReprocessingRequest`), `AUDITABLE_ACTIONS.md` (`risk.ReportRead`
+  activated, three rows widened), `RiskVocabulariesTest`, `RiskLogSitesAreEnumeratedTest` (+3), `RiskMetricTagsAreBoundedTest`
+  (the census kinds, the two verdict vocabularies), `OwnershipIsScopedTest` (`JdbcRiskProofReads.signal`),
+  `NoFloatingPointMoneyRulesTest` (`RiskProofMetrics`, the gauges' precedent), `PHASE_13_PLAN.md` §9, §12.4, §13.3, §15
+  (`velocity.proof` a gauge, not the plan's counter; the `finapp.risk.census` row added - 27 rows), `DISTRIBUTED_EXECUTION.md`
+  (the proofs' row), `RISK_LIFECYCLES.md`, `GLOSSARY.md`, ADR-0108/-0109/-0111 notes. **Gate (2026-10-26): `COMPLETE`** -
+  no CRITICAL, no IMPORTANT; MINOR: the pre-existing schema collision above (found by running `ApiSchemaNamesAreUniqueTest`,
+  fixed here); `-008`'s `DESTINATION_NOT_POSTABLE` after the seams keeps its velocity count (`TransferExecution` rolls back
+  to a savepoint taken after the seams - the seal and the R2 upsert survive the posting's refusal): the journal link names
+  it, nothing corrects it (owner item); the AML desk's own evidence door under `AML_REPORT_APPROVE` not built - a route
+  carries one permission (owner item); a census holds a day's references in memory and the day's replay runs in one
+  request (owner item, debt row). Ten-instance `PASS`: reads only, one snapshot each, no lock, no schedule - counted by the
+  owed `RiskProofsDatabaseTest#aCensusUnderLoadIsOneSnapshot` (C5). **Tests, fresh:** risk `test` 471 across 75 classes, 0 failed (new: `AssessmentCensusTest` 6, `ExplanationTest` 5, `DailyReplayTest` 4, `RiskCensusesTest` 6, `RiskOperationsReportsTest` 4, `CaseEvidenceTest` 3; `VelocityProofTest` +3 - completed; `RiskVocabulariesTest` extended); `app` `test`
+  filtered to `com.finapp.app.risk.*` and the non-architecture guards by name 249 across 47 classes, 0 failed (new: `RiskProofMetricsTest` 4, `RiskProofDesksTest` 4, `PlatformJudgedCommandsTest` 4; `OpenApiContractTest`, `CredentialReachesNoEmittedSinkTest`, `RoutePermissionRegisterTest`, `ApiSchemaNamesAreUniqueTest`, `DomainGlossaryTest`, `PlannedMetersExistTest`, `RiskMetricTagsAreBoundedTest` green); `app` `architectureTest` once
+  192 across 35 classes, 0 failed (`MutationDemonstrationTest`, `TestTaxonomyTest`, `AuditCompletenessTest`, `AuditableActionRegistryTest`, `ErrorCodeRegistryTest`, `OwnershipIsScopedTest`, `NoCustomerSurfaceReadsRiskTest`, `RiskLogSitesAreEnumeratedTest`, `NoSingleInstanceAssumptionRulesTest` (31 stands), `SystemActorCallSitesAreEnumeratedTest`, `NoFloatingPointMoneyRulesTest`, `AdrRegistersAreReconciledTest`, `ArchitectureRulesAreDocumentedTest` among them). Database, written and owed (C5): `RiskProofsDatabaseTest` (the entry's three and one per census - 8),
+  `RiskReportsApiTest` (4). **Six probes performed** (`MUTATION_TESTING.md` §2): the proof upserting the corrected figure
+  (`VelocityProofTest`, the entry's), the explanation built by the engine (`ExplanationTest`, the entry's), the judged
+  commands counted from risk's own table (`AssessmentCensusTest`, the entry's), the replay under the active version
+  (`DailyReplayTest`), the monitoring census by count (`RiskCensusesTest`), the born-once census over the day's rows
+  alone (`RiskCensusesTest`) - each red on the first run, restored by its saved bytes, sha256 equal; the database halves
+  owed. **For `-024`:** the two gauges and their alerts (`VelocityDiverged`: `max(finapp_risk_velocity_proof{verdict="DIVERGED"}) > 0`;
+  a census alert per kind on `finapp_risk_census{verdict="DIVERGED"}`), `RiskMetersTest` counting §15's 27 rows, runbook
+  §9's "a `VelocityDiverged`" procedure reading `GET /v1/operator/reports/risk/velocity`. **For `P13-TST-001`:** the
+  censuses at every round are `RiskOperationsReports`' (one snapshot); the owed database suites. **For `P13-DOC-001`:**
+  ratify D1 (a day an identifier range), D2 (no floor), D4 (the journal link's scope), D10 (gauges, no schedule).
 
 **P13-TSK-024 — Operating risk: meters, alerts, reports, runbook §9, the activation gate** — `PLANNED`
 - **Objective**: the phase operable — every `PHASE_13_PLAN.md` §15 series registered eagerly and guarded, the

@@ -551,6 +551,8 @@ Errors `409 risk.ReportNotFileable` (the register's status, every report state c
 the narrative), `403 risk.SelfApprovalRefused` / `risk.SelfDealingRefused` (each recorded `FAILED`), `404 risk.NotFound`.
 No AML evidence read door (amounts of the referenced transactions, `-018`'s D9) - owner item, routed to `-023`.)*
 
+*(As built by `P13-TSK-023`, 2026-10-26 (`DESIGN-023`): the table's proof routes, all `RISK_INVESTIGATE`, all operator-only - `GET …/assessments/{assessmentId}` carries the **explanation** (the rules in order with each reading and contribution, the band reached by position and decision - never its bounds -, the step that decided `FAIL_SAFE` / `HARD_RULE` / `SCORE_BAND`, the fail-safe's cause, reason and band), from the sealed rows and the pinned version only; **`POST …/assessments/replay?date=`** (the entry's - beside the table's per-assessment replay) replays every assessment of the UTC day under its own pinned pair on one snapshot, a reason required (`422 risk.ReasonRequired`), the first divergent named and never one of the reader's own party (counted `withheld`), an unplaceable reader `403 risk.SelfDealingRefused`, audited `risk.Replayed` against the day (`risk_assessment_day`); the four reports `GET /v1/operator/reports/risk/{decisions,alerts,cases,velocity}?date=` each read with its census on one snapshot and audited `risk.ReportRead` (`risk_report`) before the answer; a date that is no calendar date `422 api.ValidationFailed`, a day the platform has not had `known=false`. **The evidence door** routed by `-018` (D9), `-020` and `-021`: `GET …/cases/{caseId}/evidence/{signals|journal-entries}/{evidenceId}` - one reference the case's file holds resolved after the file's own self-dealing judgement (a signal's codes; a journal entry's monitored transaction with its amount in minor units, currency and scale), audited `risk.CaseRead` (`act=evidence`), anything else `404 risk.NotFound`. The AML desk's own evidence door under `AML_REPORT_APPROVE` is not built - a route carries one permission, owner item. No new error code.)*
+
 ---
 
 ## 10. Event architecture
@@ -830,6 +832,8 @@ windows of transfers and reports the rest unprovable; a withdrawal, a payment an
 outcome, so before `-009`…`-011` wire their increments the evidence moves to the permitting assessments (`-004`'s
 sealed inputs) — recorded for the coordinator; "windows = monitored sums" (§4.11, `INV-RSK-09`) holds for transfers.)*
 
+*(As built, `P13-TSK-023`, 2026-10-26 - **the proof made whole** (`DESIGN-023` D4): ONE snapshot, two links. The **record** - every live window against the counted assessments (`AssessmentVelocityEvidence`, every dimension, the evidence of record since `-004`); the **journal** - the windows against `-019`'s monitored transfers (`JdbcVelocityEvidence`, the two account dimensions), judged only for the windows *every counted movement of which is a transfer* by the record's own account (`VelocityEvidence.Counted` now names its operation): a window that also counts a withdrawal, a payment or a cross-border movement - which post at their outcome, or never - is unprovable there by construction, so "windows = monitored sums" is judged exactly where it can hold. A window holding against the record and diverging against the journal is a seam that counted a transfer that never posted - `-008`'s `DESTINATION_NOT_POSTABLE` refused after the seams keeps its count (owner item, named, never corrected). A `Divergence` names its currency and scale; a lost count is keyed by its currency. No schedule runs the proof: the velocity report and the meters' reading do, read-only.)*
+
 ### 12.5 Signals and the customer risk profile
 
 Signals are recorded by inbox handlers (one `InboxEventHandler` per source module, consumer `risk.signals`), born once
@@ -1057,6 +1061,8 @@ per subject and kind; no customer route touching `risk`). `P13-TST-002` — ≥ 
 sequences replayed through `RISK_ENGINE_V1` in two JVMs, byte-identical; perturbations of an input, a rule parameter,
 a policy version flip the verdict and name their row; a fingerprint committed; a shrunk run fails the census.
 
+*(As built by `P13-TSK-023`, 2026-10-26 - the censuses the storm reads at every round exist as operator-runnable, audited reads and as meters, each ONE read-only `REPEATABLE READ` snapshot (`RiskProofs.requireSnapshot`), a day being a range of the writers' UUIDv7 identifiers (`RiskDay` - every table's primary key, no new index): **`AssessmentCensus`** - assessments = the owners' judged commands per operation and day, a *set* comparison by command reference in both directions through `JudgedCommands` (`app`'s `PlatformJudgedCommands` over transfers', payments', paymentmethods', ledger's and crossborder's own tables): missing, orphaned, reconciled across midnight, a refused cross-border seal unrecordable (crossborder keeps no row of it); **`MonitoringCensus`** - monitored = journal by sequence, the day's journal ids through `MonitoredLedger.entryIds` against the monitored rows' `journal_entry_id`s, bounded by the watermark (pending behind it, ahead of a reprocessing); **`AlertBornOnceCensus`** - the alerts raised that day per kind and window kind, rows against keys over every row of each key (`-020`'s AML alerts per window among them); **`CaseOneOpenCensus`** - open cases per kind and subject; **`FilingCensus`** - `-021`'s row, `FILED` reports over `regulatory_report_due`, overdue past one inquiry interval. A census names a difference (at most 20 references a list) and corrects nothing.)*
+
 ---
 
 ## 14. Failure scenarios
@@ -1110,7 +1116,8 @@ the two the plan names are `RiskEvaluationUnavailable` and `RiskPolicyNoneActive
 | `finapp.risk.monitoring.subject` | counter (`P13-TSK-020`: every party the rule leg met) | outcome (`judged`, `failed`, `not_judged`) | any `failed` increase |
 | `finapp.risk.monitoring.unplaced` | counter (`P13-TSK-020`: customer accounts no party could be placed behind) | — | any increase |
 | `finapp.risk.monitoring.latency` | timer (`P13-TSK-020`: one party's rule leg, its head already held - the claim locks every head first) | — | beside `evaluation.latency` - M3's split trigger, measured by the storm |
-| `finapp.risk.velocity.proof` | counter | verdict | any `DIVERGED` |
+| `finapp.risk.velocity.proof` | gauge (`P13-TSK-023`: 1 on the verdict the latest reading of the proof made whole reached - `HELD`, `DIVERGED`, `VACUOUS` - 0 on the others, NaN unreadable; read on scrape behind `finapp.risk.proofs.refresh`, 15 min; the plan's "counter" corrected - no schedule counts runs) | verdict | any `DIVERGED` (`VelocityDiverged`) |
+| `finapp.risk.census` | gauge (`P13-TSK-023`: per census, 1 on the latest reading's verdict over today and yesterday, UTC - assessments = judged commands, monitored = journal, alerts born once, one open case, no filing left undriven) | kind (`ASSESSMENT`, `MONITORING`, `ALERT_BORN_ONCE`, `CASE_ONE_OPEN`, `FILING`), verdict | any `DIVERGED` |
 | `finapp.risk.profile.rating` | gauge (parties per rating) | bucket | — |
 | `finapp.risk.sweeper.enabled` | gauge (1 / 0) per schedule | kind (`monitoring`, `action`) | 0 in production |
 | `finapp.risk.sweeper.claim.failed` | counter (N5 applied forward: every claim failure metered from the first task; `kind=report` the filing's drive, `P13-TSK-021`) | kind | any increase |

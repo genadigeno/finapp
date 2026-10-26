@@ -495,6 +495,14 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/reports/{reportId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/reports/{reportId}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/reports/{reportId}/filing",
+                        // P13-TSK-023: the proofs as audited reads - the four operations reports with their censuses,
+                        // the day's replay, and the case's evidence door (RISK_INVESTIGATE).
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/risk/decisions",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/risk/alerts",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/risk/cases",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/risk/velocity",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/assessments/replay",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/evidence/{evidenceKind}/{evidenceId}",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",

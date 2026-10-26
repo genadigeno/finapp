@@ -5,10 +5,13 @@ import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.risk.AssessmentReplay;
+import com.finapp.risk.DailyReplay;
+import com.finapp.risk.Explanation;
 import com.finapp.risk.ReasonCode;
 import com.finapp.risk.RiskAssessment;
 import com.finapp.risk.RiskAssessmentId;
 import com.finapp.risk.RiskAssessments;
+import com.finapp.risk.RiskDay;
 import com.finapp.risk.RiskDecision;
 import com.finapp.risk.RiskErrorCode;
 import com.finapp.risk.RiskReasons;
@@ -25,12 +28,18 @@ import java.util.UUID;
  * {@code RISK_INVESTIGATE}; bnpl's {@code BnplInvestigationDesk} and `-007`'s {@code RiskProfileDesk} shape).
  *
  * <ul>
- *   <li><strong>The read</strong> - one transaction: the self-dealing judgement, the assessment whole, and
+ *   <li><strong>The read</strong> - one transaction: the self-dealing judgement, the assessment whole, its explanation
+ *       (`P13-TSK-023`: from the sealed rows and the pinned version's band list, never the engine) and
  *       {@code risk.AssessmentRead} committed with it before the answer, so nothing is served unrecorded. A read, so no
  *       idempotency key: a repeated read is a second serving, recorded again.</li>
  *   <li><strong>The replay</strong> - a blank or instrument-shaped reason refused ({@code 422 risk.ReasonRequired}) before
  *       anything is read; the replay on one read-only {@code REPEATABLE READ} snapshot; then {@code risk.Replayed}
  *       committed in a transaction of its own - only then is the verdict answered. It writes nothing else.</li>
+ *   <li><strong>The day's replay</strong> (`P13-TSK-023`) - a date that is no calendar date {@code 422
+ *       api.ValidationFailed} and a blank reason {@code 422 risk.ReasonRequired} before anything is read; every
+ *       assessment of the UTC day replayed under its own pinned pair on one snapshot ({@link DailyReplay}); then
+ *       {@code risk.Replayed} for the day committed in a transaction of its own; a reader the platform cannot place
+ *       {@code 403 risk.SelfDealingRefused}, recorded {@code FAILED}.</li>
  * </ul>
  *
  * <p>An analyst of the assessment's own party - or one the platform cannot place in a party - is {@code 403
@@ -41,11 +50,14 @@ import java.util.UUID;
 public final class RiskAssessmentDesk {
 
     private final RiskAssessments assessments;
+    private final DailyReplay daily;
     private final RiskTransactions transactions;
     private final RiskFlowScope flow;
 
-    public RiskAssessmentDesk(RiskAssessments assessments, RiskTransactions transactions, RiskFlowScope flow) {
+    public RiskAssessmentDesk(RiskAssessments assessments, DailyReplay daily, RiskTransactions transactions,
+            RiskFlowScope flow) {
         this.assessments = Objects.requireNonNull(assessments, "assessments");
+        this.daily = Objects.requireNonNull(daily, "daily");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
         this.flow = Objects.requireNonNull(flow, "flow");
     }
@@ -64,30 +76,135 @@ public final class RiskAssessmentDesk {
             Boolean challengeSatisfied, String velocityOutcome, String velocityCutAt, int canonicalFormat,
             String inputsCanonical, String inputsSha256, String verdictSha256, boolean sealHolds,
             List<RiskRuleHitView> hits, List<String> reasonCodes, long latencyMicros, String correlationId,
-            String assessedAt) {}
+            String assessedAt, RiskExplanationView explanation) {}
 
     /** One rule of the pinned version as the assessment judged it - the reading it judged, never a threshold. */
     public record RiskRuleHitView(int ordinal, String kind, String outcome, int contribution, String hardDecision,
             String judged) {}
 
+    /**
+     * Why the sealed decision is what it is (`P13-TSK-023`; {@link Explanation}): the step that decided
+     * ({@code FAIL_SAFE}, {@code HARD_RULE}, {@code SCORE_BAND}), the rules that carried a hard decision, the band
+     * reached by position and decision (never its bounds), each rule in order with its reading and contribution, the
+     * fail-safe when it answered, the challenge's answer and whether the movement was permitted - from the sealed rows,
+     * never a re-evaluation. Absent on the override desk's read of the same assessment.
+     */
+    public record RiskExplanationView(String step, String decision, int score, RiskExplainedBandView band,
+            List<Integer> decidingRules, List<RiskExplainedRuleView> rules, RiskFailSafeView failSafe,
+            Boolean challengeSatisfied, boolean permits, String velocityOutcome) {}
+
+    /** A band by its position among its version's bands and its decision. */
+    public record RiskExplainedBandView(int position, int of, String decision) {}
+
+    /** One rule as it was judged. */
+    public record RiskExplainedRuleView(int ordinal, String kind, String outcome, String judged, int contribution,
+            String hardDecision) {}
+
+    /** The fail-safe that answered: its cause, its reason code and its band when a version was pinned. */
+    public record RiskFailSafeView(String cause, String reasonCode, RiskExplainedBandView band) {}
+
     /** A replay's verdict: what diverged, by kind, and the first rule that did - never a figure. */
     public record RiskReplayView(String assessmentId, String verdict, List<String> diverged, Integer firstDivergedRule) {}
 
-    /** {@code rawId}'s assessment, read and recorded. */
+    /**
+     * A day's replay (`P13-TSK-023`): the date, whether the platform had it, the day's verdict, the counts per
+     * operation, the reader's own party's divergent assessments counted and withheld, and the first divergent the reader
+     * may be shown - an id and kinds, never a figure.
+     */
+    public record RiskDayReplayView(String date, boolean known, String verdict, long replayed, long identical,
+            long diverged, long withheld, List<RiskDayReplayOperationView> operations,
+            RiskDayReplayFirstView firstDiverged) {}
+
+    /** One operation's replays of the day. */
+    public record RiskDayReplayOperationView(String operation, long replayed, long identical, long diverged) {}
+
+    /** The first divergent assessment of the day: its id, its operation, what diverged and the first rule that did. */
+    public record RiskDayReplayFirstView(String assessmentId, String operation, List<String> diverged,
+            Integer firstDivergedRule) {}
+
+    /** {@code rawId}'s assessment, read, explained and recorded - one transaction. */
     public RiskAssessmentView read(String rawId) {
         RiskAssessmentId id = assessmentId(rawId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        RiskAssessment assessment;
+        Explained explained;
         try {
-            assessment = flow.door(RiskSpans.EXPLAIN, () -> transactions.inTransaction(
-                    unitOfWork -> assessments.read(unitOfWork, id, actor, correlation)));
+            explained = flow.door(RiskSpans.EXPLAIN, () -> transactions.inTransaction(unitOfWork -> {
+                RiskAssessment assessment = assessments.read(unitOfWork, id, actor, correlation);
+                return new Explained(assessment, assessments.explanation(unitOfWork, assessment));
+            }));
         } catch (RiskAssessments.SelfDealingRefused refused) {
             throw refused(id, refused, actor, correlation);
         } catch (RiskAssessments.AssessmentNotFound none) {
             throw notFound();
         }
-        return view(assessment);
+        return view(explained.assessment(), explanation(explained.explanation()));
+    }
+
+    /**
+     * Every assessment of {@code rawDate} (UTC) replayed under its own pinned pair with {@code reason}, on one snapshot,
+     * the verdict answered once recorded ({@code risk.Replayed}, the day its target).
+     */
+    public RiskDayReplayView replayDay(String rawDate, String reason) {
+        RiskDay day = RiskReportDates.day(rawDate, "A risk day replay");
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        String reasoned;
+        try {
+            reasoned = RiskAssessments.reasoned(reason);
+        } catch (RiskReasons.ReasonRequired missing) {
+            throw new ApiException(RiskErrorCode.REASON_REQUIRED, "A risk day replay without a usable reason",
+                    "a replay is reasoned: 1 to " + RiskReasons.BOUND + " characters, no card or account number.");
+        }
+        DailyReplay.Result result;
+        try {
+            result = flow.door(RiskSpans.EXPLAIN, () -> transactions.inSnapshot(
+                    snapshot -> daily.replay(snapshot, day, actor)));
+        } catch (RiskAssessments.SelfDealingRefused refused) {
+            transactions.inTransaction(unitOfWork -> {
+                daily.recordRefusal(unitOfWork, day, refused, actor, correlation);
+                return null;
+            });
+            throw new ApiException(RiskErrorCode.SELF_DEALING_REFUSED, "A risk day replay was refused",
+                    "a holder the platform cannot place in a party replays nothing; nothing was served.");
+        }
+        transactions.inTransaction(unitOfWork -> {
+            daily.record(unitOfWork, result, reasoned, actor, correlation);
+            return null;
+        });
+        return new RiskDayReplayView(result.day().toString(), result.known(), result.verdict().name(),
+                result.replayed(), result.identical(), result.diverged(), result.withheld(),
+                result.operations().stream().map(operation -> new RiskDayReplayOperationView(
+                        operation.operation().name(), operation.replayed(), operation.identical(),
+                        operation.diverged())).toList(),
+                result.first().map(first -> new RiskDayReplayFirstView(first.assessment().value().toString(),
+                        first.operation().name(), first.diverged().stream().map(Enum::name).toList(),
+                        first.firstDivergedRule().isPresent() ? first.firstDivergedRule().getAsInt() : null))
+                        .orElse(null));
+    }
+
+    private record Explained(RiskAssessment assessment, Explanation explanation) {}
+
+    static RiskExplanationView explanation(Explanation explanation) {
+        return new RiskExplanationView(
+                explanation.step().name(),
+                explanation.decision().name(),
+                explanation.score(),
+                explanation.band().map(RiskAssessmentDesk::band).orElse(null),
+                explanation.decidingRules(),
+                explanation.rules().stream().map(rule -> new RiskExplainedRuleView(rule.ordinal(), rule.kind().name(),
+                        rule.outcome().name(), rule.judged(), rule.contribution(),
+                        rule.hardDecision().map(Enum::name).orElse(null))).toList(),
+                explanation.failSafe().map(failSafe -> new RiskFailSafeView(failSafe.cause().name(),
+                        failSafe.reason().name(), failSafe.band().map(RiskAssessmentDesk::band).orElse(null)))
+                        .orElse(null),
+                explanation.challengeSatisfied().orElse(null),
+                explanation.permits(),
+                explanation.velocity().name());
+    }
+
+    private static RiskExplainedBandView band(Explanation.Band band) {
+        return new RiskExplainedBandView(band.position(), band.of(), band.decision().name());
     }
 
     /** {@code rawId}'s assessment replayed with {@code reason}, the verdict answered once recorded. */
@@ -132,7 +249,12 @@ public final class RiskAssessmentDesk {
                 "a holder never reads a risk assessment of their own party; nothing was served.");
     }
 
+    /** {@code assessment} as served without its explanation - the override desk's read. */
     static RiskAssessmentView view(RiskAssessment assessment) {
+        return view(assessment, null);
+    }
+
+    static RiskAssessmentView view(RiskAssessment assessment, RiskExplanationView explanation) {
         RiskAssessment.Subjects subjects = assessment.subjects();
         return new RiskAssessmentView(
                 assessment.id().value().toString(),
@@ -166,7 +288,8 @@ public final class RiskAssessmentDesk {
                 assessment.reasons().stream().map(ReasonCode::name).toList(),
                 assessment.latencyMicros(),
                 assessment.correlationId(),
-                assessment.assessedAt().map(Instant::toString).orElse(null));
+                assessment.assessedAt().map(Instant::toString).orElse(null),
+                explanation);
     }
 
     private static RiskRuleHitView hit(RuleHit hit) {

@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -43,6 +44,17 @@ public class RiskAssessmentController {
     public RiskAssessmentDesk.RiskReplayView replayRiskAssessment(@PathVariable("assessmentId") String assessmentId,
             @Valid @RequestBody RiskReplayRequest body) {
         return desk.replay(assessmentId, body.reason());
+    }
+
+    /**
+     * Every assessment of a UTC day replayed under its own pinned pair (`P13-TSK-023`) - audited, a reason required,
+     * nothing changed; {@code IDENTICAL} or {@code DIVERGED}, the first divergent named.
+     */
+    @PostMapping(path = "/replay", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.RISK_INVESTIGATE)
+    public RiskAssessmentDesk.RiskDayReplayView replayRiskAssessmentsOfDay(
+            @RequestParam(value = "date", required = false) String date, @Valid @RequestBody RiskReplayRequest body) {
+        return desk.replayDay(date, body.reason());
     }
 
     /** Why the assessment is replayed - required, judged by the desk so a blank one carries its own code. */

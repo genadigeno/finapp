@@ -74,7 +74,7 @@ public final class JdbcVelocityEvidence implements VelocityEvidence {
         return new Record(movements, completeThrough);
     }
 
-    private static MonitoredTransaction monitored(ResultSet row) throws SQLException {
+    static MonitoredTransaction monitored(ResultSet row) throws SQLException {
         return new MonitoredTransaction(
                 MonitoredTransactionId.of(row.getObject("id", UUID.class)),
                 row.getObject("journal_entry_id", UUID.class),

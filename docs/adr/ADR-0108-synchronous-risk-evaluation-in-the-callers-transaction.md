@@ -311,5 +311,6 @@ score), ADR-0024, ADR-0062 §6, ADR-0084 §5.
 - `CURRENT_STATE.md` §Unresolved questions: #11 is answered by this ADR (C1) and moves to "Resolved since" when the
   owner ratifies it; `FINANCIAL_INVARIANTS.md` gains `INV-RSK-01`…`-04`; `ERROR_CONTRACT.md` and
   `AUDITABLE_ACTIONS.md` gain the planned entries.
+- *(As built, `P13-TSK-023`, 2026-10-26 - the explanation of decision 3's model.)* The analyst's read of an assessment explains it from the sealed rows and the pinned version's band list only (`Explanation`): the rules in declared order with each reading and contribution, the band reached by position and decision - never its bounds, a threshold being the policy's `CONFIDENTIAL` content -, the precedence step that decided (`FAIL_SAFE`; `HARD_RULE`, a fired rule's hard decision stricter than the band's, with the rules that carried it; `SCORE_BAND`) and, for a fail-safe, its cause, reason and band by position. The engine is never run again to explain: finding a difference between the rows and the engine is the replay's work.
 - **Acceptance.** `Proposed` at the Phase 12 → 13 transition (2026-10-22); the Phase 13 review (`P13-DOC-001`) reads
   this ADR against the code, corrects it in place with dated notes, and accepts it.

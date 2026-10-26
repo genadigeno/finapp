@@ -120,7 +120,7 @@ public class RiskEvaluationBeans {
                 domainSpans, idGenerator, clock);
     }
 
-    /** The velocity proof's evidence of record: the counted assessments (`-023` runs the proof). */
+    /** The velocity proof's evidence of record: the counted assessments (`-023`'s {@code RiskProofBeans} runs the proof). */
     @Bean
     VelocityEvidence velocityEvidence(RiskAssessmentStore riskAssessmentStore, VelocityWindowStore velocityWindowStore) {
         return new AssessmentVelocityEvidence(riskAssessmentStore, velocityWindowStore);
@@ -139,9 +139,10 @@ public class RiskEvaluationBeans {
                 new com.finapp.app.credit.IdentityActingParty(identityStore), auditWriter, idGenerator, clock);
     }
 
+    /** The analyst's assessment doors - the read with its explanation, the replay and the day's replay (`-023`). */
     @Bean
-    RiskAssessmentDesk riskAssessmentDesk(
-            RiskAssessments riskAssessments, RiskTransactions riskTransactions, RiskFlowScope riskFlowScope) {
-        return new RiskAssessmentDesk(riskAssessments, riskTransactions, riskFlowScope);
+    RiskAssessmentDesk riskAssessmentDesk(RiskAssessments riskAssessments, com.finapp.risk.DailyReplay dailyReplay,
+            RiskTransactions riskTransactions, RiskFlowScope riskFlowScope) {
+        return new RiskAssessmentDesk(riskAssessments, dailyReplay, riskTransactions, riskFlowScope);
     }
 }

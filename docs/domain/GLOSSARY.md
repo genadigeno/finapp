@@ -2137,6 +2137,7 @@ changed; replayable from its sealed inputs to `IDENTICAL` or `DIVERGED`.
 credit data), and not the outcome the caller commits — a transfer's `FAILED(RISK_REFUSED)`, a withdrawal's `HELD` —
 which is the owning domain's own row. Nor an Alert, which is an observation a rule made, not a judgement on a command.
 The assessment moves no money and is never read by a customer or merchant surface.
+*(As built by `P13-TSK-023`, 2026-10-26: explained from the sealed rows and the pinned version's band list - never the engine run again - the rules in order with each reading and contribution, the band reached by position and decision (never its bounds), the step that decided (`FAIL_SAFE`, `HARD_RULE`, `SCORE_BAND`); a whole UTC day replays at once, each assessment under its own pinned pair; and assessments = the owners' judged commands is a census, by command reference in both directions.)*
 **Owned by:** `risk`
 
 ### Risk Decision
@@ -2176,6 +2177,7 @@ counts (`INV-CON-03`).
 **Not:** a cache or a Redis counter — a counter that can be lost is not an authority, and one outside the money
 transaction can be passed twice. Nor a Balance (the ledger's), nor a limit: a limit is a Rule's parameter judged over
 the window. It has no lifecycle.
+*(As built by `P13-TSK-023`, 2026-10-26: the proof made whole - every live window against the counted assessments (every dimension, the evidence of record) and, for the windows every counted movement of which is a transfer, against the monitored journal; a difference named in its currency, never corrected.)*
 **Owned by:** `risk`
 
 ### Customer Risk Profile
@@ -2253,6 +2255,7 @@ own party's subject or one the platform cannot place.
 **Not:** the evidence itself — every reference is resolved by its own audited read (an assessment through the
 assessment door, `risk.AssessmentRead`), never embedded. Nor a Regulatory Report: no narrative is ever part of a file
 (`-021`'s own permission). Nor anything a person did by name: who proposed, approved or took is withheld.
+*(As built by `P13-TSK-023`, 2026-10-26: a signal or a journal entry the file holds is resolved by the evidence door - `GET .../cases/{caseId}/evidence/{signals|journal-entries}/{id}`, after the file's own judgement, audited `risk.CaseRead` (`act=evidence`) - a signal's codes, a monitored transaction's amount with its currency and scale; nothing is resolvable by its id alone.)*
 **Owned by:** `risk`
 
 ### Case

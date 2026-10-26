@@ -35,16 +35,26 @@ public interface VelocityEvidence {
     /** Every counted movement since {@code from} and the instant the record is complete through - one snapshot's read. */
     Record read(Connection snapshot, Instant from);
 
-    /** One movement the windows should have counted, and the instant it was counted at. */
-    record Counted(VelocityMovement movement, Instant at) {
+    /**
+     * One movement the windows should have counted, the instant it was counted at, and - when the evidence knows it - the
+     * judged operation it was (`P13-TSK-023`: the record names it, so the journal's cross-check can tell a window of
+     * transfers alone from one that also counts what posts later or never).
+     */
+    record Counted(VelocityMovement movement, Instant at, Optional<RiskOperation> operation) {
         public Counted {
             Objects.requireNonNull(movement, "movement");
             Objects.requireNonNull(at, "at");
+            Objects.requireNonNull(operation, "operation");
+        }
+
+        /** A movement whose operation the evidence does not name. */
+        public Counted(VelocityMovement movement, Instant at) {
+            this(movement, at, Optional.empty());
         }
 
         @Override
         public String toString() {
-            return "Counted[" + movement + " at " + at + "]";
+            return "Counted[" + movement + " at " + at + operation.map(named -> ", " + named).orElse("") + "]";
         }
     }
 
@@ -80,6 +90,6 @@ public interface VelocityEvidence {
             movement.destinationAccount(subject);
             counterparty.ifPresent(movement::sourceAccount);
         }
-        return Optional.of(new Counted(movement.build(), row.postedAt()));
+        return Optional.of(new Counted(movement.build(), row.postedAt(), Optional.of(RiskOperation.TRANSFER)));
     }
 }

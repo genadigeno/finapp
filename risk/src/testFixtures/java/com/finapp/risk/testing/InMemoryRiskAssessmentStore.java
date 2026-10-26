@@ -82,7 +82,8 @@ public final class InMemoryRiskAssessmentStore implements RiskAssessmentStore {
         return rows.values().stream()
                 .filter(row -> row.velocity() == VelocityOutcome.COUNTED && !row.cutAt().orElseThrow().isBefore(from))
                 .sorted(Comparator.comparing(row -> row.cutAt().orElseThrow()))
-                .map(row -> new VelocityEvidence.Counted(row.movement(), row.cutAt().orElseThrow()))
+                .map(row -> new VelocityEvidence.Counted(row.movement(), row.cutAt().orElseThrow(),
+                        Optional.of(row.operation())))
                 .toList();
     }
 

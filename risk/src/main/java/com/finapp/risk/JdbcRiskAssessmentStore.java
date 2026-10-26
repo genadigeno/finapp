@@ -50,7 +50,7 @@ public final class JdbcRiskAssessmentStore implements RiskAssessmentStore {
 
     static final String INSERT_REASON = "INSERT INTO risk.risk_reason (assessment_id, position, code) VALUES (?, ?, ?)";
 
-    static final String COUNTED = "SELECT party_id, identity_id, source_account_id, destination_kind, destination_id,"
+    static final String COUNTED = "SELECT operation, party_id, identity_id, source_account_id, destination_kind, destination_id,"
             + " device_hash,"
             + " merchant_subject_id, session_id, amount_minor, currency, scale, velocity_cut_at FROM risk.risk_assessment"
             + " WHERE velocity_outcome = 'COUNTED' AND velocity_cut_at >= ? ORDER BY velocity_cut_at, id";
@@ -187,7 +187,8 @@ public final class JdbcRiskAssessmentStore implements RiskAssessmentStore {
                     Money amount = Money.ofPersisted(row.getLong("amount_minor"),
                             CurrencyCode.of(row.getString("currency")), row.getInt("scale"));
                     counted.add(new VelocityEvidence.Counted(subjects.movement(amount),
-                            row.getObject("velocity_cut_at", OffsetDateTime.class).toInstant()));
+                            row.getObject("velocity_cut_at", OffsetDateTime.class).toInstant(),
+                            Optional.of(RiskOperation.valueOf(row.getString("operation")))));
                 }
             }
         } catch (SQLException failure) {
@@ -237,7 +238,7 @@ public final class JdbcRiskAssessmentStore implements RiskAssessmentStore {
         }
     }
 
-    private static RiskAssessment assessment(ResultSet row, String inputs, List<RuleHit> hits, List<ReasonCode> reasons)
+    static RiskAssessment assessment(ResultSet row, String inputs, List<RuleHit> hits, List<ReasonCode> reasons)
             throws SQLException {
         RiskOperation operation = RiskOperation.valueOf(row.getString("operation"));
         UUID policyVersionId = row.getObject("policy_version_id", UUID.class);

@@ -247,6 +247,8 @@ inputs, or the fail-safe the recorded cause names — and answers `IDENTICAL` or
 (`INPUTS`, `POLICY`, `EVALUATION`, `SEAL`, `DECISION`, `SCORE`, `HITS`, `REASONS`, `FAIL_SAFE`, `CHALLENGE`) and the
 first diverged rule.)*
 
+*(As built by `P13-TSK-023`, 2026-10-26: the read serves the explanation beside the sealed row - the rules, readings and contributions, the band reached by position and decision, the step that decided, the fail-safe - from the rows and the pinned version, never the engine; and a whole UTC day replays on one snapshot (`DailyReplay`), each assessment under its own pinned pair, audited `risk.Replayed` against the day. The assessment census proves exactly one seal per judged command against the owners' own rows, both directions.)*
+
 #### 4.2a Decision override (`risk.decision_override`) — `P13-TSK-012` (`risk V007`'s table)
 
 ```
@@ -350,6 +352,8 @@ grace after its end) — so "keyed on an instance clock" is refused by the table
 `SOURCE_ACCOUNT` and `DESTINATION`; `PARTY`, `DEVICE` and `MERCHANT` are reported unprovable — within a ±5 s edge
 skew, a window counted after the evidence is complete `PENDING`; see `PHASE_13_PLAN.md` §12.4's note for the evidence
 contract `-004`…`-011` inherit.)*
+
+*(As built by `P13-TSK-023`, 2026-10-26: `VelocityProof.prove` reads one snapshot and judges two links - the windows against the counted assessments (every dimension) and, for windows of transfers alone, against the monitored journal; a difference is named in its currency, never corrected; no schedule runs it - the velocity report and `finapp.risk.velocity.proof{verdict}` (a gauge read on scrape) do.)*
 
 ### 4.4 Risk signal (`risk.risk_signal`) — `P13-TSK-005` (`risk V003`) — not a machine
 
@@ -746,6 +750,8 @@ once and folded into the party's open `AML` case in one `raiseAll`, the profile'
 back alone and counted `finapp.risk.monitoring.subject{outcome=failed}`. With no `ACTIVE` `MONITORING` version nothing is
 raised and no head enrolled. A reprocessing re-judges the same rows into the same keys - nothing new
 (`MonitoringRulesDatabaseTest#reprocessingRaisesNoSecondAlert`, owed).)*
+
+*(As built by `P13-TSK-023`, 2026-10-26: `MonitoringCensus` - monitored = journal by sequence, one UTC day of entry ids at a time, as sets, bounded by the watermark: an entry behind it unmonitored is missing, a monitored row naming no entry a phantom, a row past it after a reprocessing ahead.)*
 
 ### 4.12 The consumers' machines, as Phase 13 changes them
 
