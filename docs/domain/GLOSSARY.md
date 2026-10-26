@@ -1492,7 +1492,10 @@ and IFRS 9 staging are `accounting`'s — lending owns the event, accounting its
 ### Collections
 **Is:** the operational pursuit of overdue amounts — contact strategy, promises to pay, placement
 and case management — consuming lending's delinquency and default events. **Deferred** to Phase 13's
-case management.
+case management. *(As built, `P13-TSK-025`, 2026-10-26, owner decision C3: only the case-management slice - a
+`COLLECTIONS` Case opened once per party on `lending.LoanDefaulted` / `bnpl.BnplDefaulted`, worked by facts and disposed
+`CLOSED_NO_ACTION` or `REFERRED`, proposing no action; contact strategy, promises to pay, placement, agencies, write-off
+and provisioning stay deferred - Phase 14 and a later collections context.)*
 **Not:** Delinquency, the contractual facts lending records, and not auto-collection, lending's own
 scheduled wallet debit on the due date (a source of Repayment). Collections never write lending's
 rows.
@@ -2137,7 +2140,7 @@ changed; replayable from its sealed inputs to `IDENTICAL` or `DIVERGED`.
 credit data), and not the outcome the caller commits — a transfer's `FAILED(RISK_REFUSED)`, a withdrawal's `HELD` —
 which is the owning domain's own row. Nor an Alert, which is an observation a rule made, not a judgement on a command.
 The assessment moves no money and is never read by a customer or merchant surface.
-*(As built by `P13-TSK-023`, 2026-10-26: explained from the sealed rows and the pinned version's band list - never the engine run again - the rules in order with each reading and contribution, the band reached by position and decision (never its bounds), the step that decided (`FAIL_SAFE`, `HARD_RULE`, `SCORE_BAND`); a UTC day replays a bounded page at a time (`after`, `limit`, `next` - the gate review's I3), each assessment under its own pinned pair; and assessments = the owners' judged commands is a census, by command reference in both directions.)*
+*(As built by `P13-TSK-023`, 2026-10-26: explained from the sealed rows and the pinned version's band list - never the engine run again - the rules in order with each reading and contribution, the band reached by position and decision (never its bounds), the step that decided (`FAIL_SAFE`, `HARD_RULE`, `SCORE_BAND`); a UTC day replays a bounded page at a time (`after`, `limit`, `next` - the gate review's I3; `closed=false` until the settle horizon past the day's end, when the pages may miss an assessment committed behind a cursor), each assessment under its own pinned pair; and assessments = the owners' judged commands is a census, by command reference in both directions.)*
 **Owned by:** `risk`
 
 ### Risk Decision
@@ -2177,7 +2180,7 @@ counts (`INV-CON-03`).
 **Not:** a cache or a Redis counter — a counter that can be lost is not an authority, and one outside the money
 transaction can be passed twice. Nor a Balance (the ledger's), nor a limit: a limit is a Rule's parameter judged over
 the window. It has no lifecycle.
-*(As built by `P13-TSK-023`, 2026-10-26: the proof made whole - every live window against the counted assessments (every dimension, the evidence of record) and, for the windows every counted movement of which is a transfer, against the monitored journal; a difference named in its currency, never corrected. The journal link sets aside, by name, the windows of a movement permitted uncounted (*explained*) and the postings older than the record's first transfer (*before the floor*), so a divergence is an unexplained difference only - located for an operator by the window's subject, never the reader's own party's.)*
+*(As built by `P13-TSK-023`, 2026-10-26: the proof made whole - every live window against the counted assessments (every dimension, the evidence of record) and, for the windows every counted movement of which is a transfer, against the monitored journal; a difference named in its currency, never corrected. The journal link accounts, by name, for a transfer permitted uncounted - its figures subtracted from what the postings expect (*explained*), the window still judged - and for the postings older than the first transfer the record ever holds, the seam's go-live (*before the floor*), so a divergence is an unexplained difference only - located for an operator by the window's subject, never the reader's own party's.)*
 **Owned by:** `risk`
 
 ### Customer Risk Profile
@@ -2232,7 +2235,10 @@ case, two persons' act with a closed `SuppressionReason` - never `DUPLICATE`, wh
 `UNCLASSIFIED_TRANSACTION` and `VELOCITY_DIVERGENCE` are declared but no writer raises them as rows. As built by
 `P13-TSK-018`, 2026-10-25: suppressed through the analyst's door - proposed under `RISK_INVESTIGATE`, approved by a
 second `RISK_CASE_APPROVE` holder from a `MULTI_FACTOR` session - its two persons authenticated humans, `CUSTOMER`- or
-`EMPLOYEE`-typed, `risk V014`.)*
+`EMPLOYEE`-typed, `risk V014`. As built by `P13-TSK-025`, 2026-10-26, `risk V017`: a **default's alert**,
+`OBLIGATION_DEFAULTED`, is a fact rather than a rule's observation - raised in T-sig from lending's or bnpl's default
+signal, its own code its rule and no policy, about the defaulted credit agreement, born once per default, folded into the
+agreement's party's `COLLECTIONS` case.)*
 **Owned by:** `risk`
 
 ### Risk Queue
@@ -2277,7 +2283,10 @@ person's act or the system's attach of an alert or an assessment - moves by exac
 level (`L1`-`L3`) and a queue an escalation raises; the SLA in hours per kind (`SlaDeadlines`) stamped on the database
 clock; opened by T-eval's `REVIEW` or `HOLD` (`ATO` when the sealed hits show the account-takeover anchors, else `FRAUD`
 - an anchor rule's hold and its alert one case), by an alert's folding, or by hand; a merchant's `MERCHANT_ABUSE` case
-judged for self-dealing on the merchant's organisation party.)*
+judged for self-dealing on the merchant's organisation party. As built by `P13-TSK-025`, 2026-10-26, `risk V017`: a
+**collections case** is a case of kind `COLLECTIONS` about a defaulted agreement's party - one open per party, opened only
+by its default's alert, disposed `CLOSED_NO_ACTION` or `REFERRED` (a referral to the owning domain's own restructuring or
+write-off path, never an act), never `CONFIRMED_*`, proposing no Risk Action.)*
 **Owned by:** `risk`
 
 ### Investigator Action

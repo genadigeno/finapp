@@ -112,7 +112,7 @@ class RiskReportsApiTest {
         HttpResponse<String> replay = http.post("/v1/operator/risk/assessments/replay?date=" + today,
                 "{\"reason\":\"the daily check\"}", analyst.token());
         assertThat(replay.statusCode()).as(replay.body()).isEqualTo(200);
-        assertThat(replay.body()).contains("\"known\":true").contains("\"verdict\":\"IDENTICAL\"")
+        assertThat(replay.body()).contains("\"known\":true").contains("\"closed\":false").contains("\"verdict\":\"IDENTICAL\"")
                 .contains("\"diverged\":0");
         assertThat(RiskOperatorSessions.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
                 + " 'risk.Replayed' AND target_type = 'risk_assessment_day' AND target_id = '" + today + "' AND reason"

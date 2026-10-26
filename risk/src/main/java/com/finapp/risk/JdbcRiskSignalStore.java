@@ -20,8 +20,9 @@ import java.util.UUID;
 /**
  * {@link RiskSignalStore} over {@code risk.risk_signal} ({@code risk V003}; `P13-TSK-005`): explicit SQL on the
  * caller's connection (ADR-0033). One insert, born-once by the unique beneath the inbox's dedupe; four reads, each one
- * range scan on {@code risk_signal_by_subject (subject_kind, subject_ref, kind, observed_at DESC)}, and the merchant's
- * count on {@code risk V011}'s {@code risk_signal_by_merchant} (`P13-TSK-014`). Every attribute is
+ * range scan on {@code risk_signal_by_subject (subject_kind, subject_ref, kind, observed_at DESC)}, the merchant's
+ * count on {@code risk V011}'s {@code risk_signal_by_merchant} (`P13-TSK-014`), and the standing row of a source event
+ * on its unique (`P13-TSK-025`). Every attribute is
  * bound to its typed column by the kind's declared type, and read back into the canonical text the domain validates -
  * so what comes out is exactly what a {@link RiskSignal} admitted on the way in.
  */
@@ -142,6 +143,22 @@ public final class JdbcRiskSignalStore implements RiskSignalStore {
             }
         } catch (SQLException failure) {
             throw failed("reading whether a subject has a risk signal", failure);
+        }
+    }
+
+    /** `P13-TSK-025`: the standing row of a source event - one probe of {@code UNIQUE (source_event_id)}. */
+    @Override
+    public Optional<RiskSignal> recordedFrom(Connection unitOfWork, EventId source) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(source, "source");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT " + COLUMNS + " FROM risk.risk_signal WHERE source_event_id = ?")) {
+            select.setObject(1, source.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(read(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw failed("reading a risk signal by its source event", failure);
         }
     }
 

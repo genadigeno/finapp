@@ -23014,6 +23014,9 @@
           "after": {
             "type": "string"
           },
+          "closed": {
+            "type": "boolean"
+          },
           "date": {
             "type": "string"
           },

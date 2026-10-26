@@ -18,8 +18,10 @@ import java.util.UUID;
  * <p><strong>Bounded</strong> (the review's I1, I3): a caller arms {@link #bound} on the snapshot first - PostgreSQL's
  * {@code statement_timeout}, {@code SET LOCAL} (gone with the transaction) - so no statement of a proof, a report or a
  * replay page outlives it; a cancelled statement is {@code 57014} ({@link RiskStorageException#QUERY_CANCELED}), the
- * read fails whole and nothing was served. A proof's statements are a fixed set and a replay page's at most a page's, so
- * the bound on a statement bounds the read.
+ * read fails whole and nothing was served. A proof's statements are a fixed set, a velocity report's that set plus at
+ * most {@link RiskOperationsReports#PLACED} memoised placements, and a replay page's at most a page's, so the bound on a
+ * statement bounds the read - in time; the rows a statement returns (thirty days of counted assessments for the velocity
+ * proof) are bounded by the timeout, not by a cap.
  */
 public final class RiskProofs {
 

@@ -12,6 +12,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -37,7 +38,11 @@ import java.util.UUID;
  * <ul>
  *   <li>a velocity divergence is <strong>located</strong> by its window's subject - the dimension, the subject reference,
  *       the window kind and start - unless the subject is the reader's own party's or cannot be placed (a device, a
- *       beneficiary): withheld and counted, the queues' rule for a subject;</li>
+ *       beneficiary): withheld and counted, the queues' rule for a subject. Each subject is placed once a request
+ *       (memoised) and at most {@link #PLACED} subjects are placed - a divergence past that bound is withheld, counted -
+ *       so a report's statements are the proof's fixed set plus a bounded number of placements (the review's second
+ *       round); the divergences are examined in order until {@link RiskProofs#NAMED} are shown, the rest counted in the
+ *       link's total;</li>
  *   <li>an orphaned assessment's command reference is withheld when the assessment judged the reader's own party; the
  *       other references a census names - a judged command missing its seal, a journal entry or a monitored row - name
  *       defects by id, their content readable only through the doors that judge self-dealing.</li>
@@ -50,6 +55,9 @@ public final class RiskOperationsReports {
     public static final String TARGET_TYPE = "risk_report";
 
     private static final String ACT = "report-read";
+
+    /** The most subjects one velocity report places - an account's or a merchant's party a lookup each. */
+    public static final int PLACED = 50;
 
     /** The four reports. */
     public enum Report {
@@ -259,8 +267,9 @@ public final class RiskOperationsReports {
         }
         VelocityProof.Whole whole = velocity.prove(snapshot);
         long[] withheld = {0};
-        List<Located> record = locate(snapshot, whole.record().divergences(), own, withheld);
-        List<Located> journal = whole.journal().map(link -> locate(snapshot, link.divergences(), own, withheld))
+        Placements placements = new Placements(snapshot);
+        List<Located> record = locate(placements, whole.record().divergences(), own, withheld);
+        List<Located> journal = whole.journal().map(link -> locate(placements, link.divergences(), own, withheld))
                 .orElse(List.of());
         return new VelocityReport(day, true, asOf, Optional.of(whole), record, journal, withheld[0],
                 Optional.of(monitoring.run(snapshot, day)));
@@ -307,19 +316,50 @@ public final class RiskOperationsReports {
                 correlation, Optional.of("act=" + refused.act() + ", cause=" + refused.refusal().name() + " refused")));
     }
 
-    /** {@code divergences} located for the reader of party {@code own}, at most {@link RiskProofs#NAMED} shown. */
-    private List<Located> locate(Connection snapshot, List<VelocityProof.Divergence> divergences, UUID own,
+    /**
+     * {@code divergences} located for the reader of party {@code own}, examined in order until {@link RiskProofs#NAMED}
+     * are shown: one of the reader's own party, one that cannot be placed and one past the placement bound withheld,
+     * counted.
+     */
+    private List<Located> locate(Placements placements, List<VelocityProof.Divergence> divergences, UUID own,
             long[] withheld) {
         List<Located> shown = new ArrayList<>();
         for (VelocityProof.Divergence divergence : divergences) {
-            Optional<UUID> party = partyOf(snapshot, divergence.key());
+            if (shown.size() >= RiskProofs.NAMED) {
+                break;
+            }
+            Optional<UUID> party = placements.partyOf(divergence.key());
             if (party.isEmpty() || party.get().equals(own)) {
                 withheld[0]++;
-            } else if (shown.size() < RiskProofs.NAMED) {
+            } else {
                 shown.add(new Located(divergence, divergence.key().subjectRef()));
             }
         }
         return shown;
+    }
+
+    /** One request's placements: each subject placed once, at most {@link #PLACED} of them - past it, unplaced. */
+    private final class Placements {
+        private final Connection snapshot;
+        private final Map<String, Optional<UUID>> placed = new HashMap<>();
+
+        Placements(Connection snapshot) {
+            this.snapshot = snapshot;
+        }
+
+        Optional<UUID> partyOf(VelocityWindowKey key) {
+            String subject = key.dimension().name() + ':' + key.subjectRef();
+            Optional<UUID> known = placed.get(subject);
+            if (known != null) {
+                return known;
+            }
+            if (placed.size() >= PLACED) {
+                return Optional.empty();
+            }
+            Optional<UUID> party = RiskOperationsReports.this.partyOf(snapshot, key);
+            placed.put(subject, party);
+            return party;
+        }
     }
 
     /** The party accountable for a window's subject - empty when this build cannot place it (fail closed). */

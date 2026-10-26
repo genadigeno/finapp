@@ -115,8 +115,9 @@ public final class RiskOperationsReportDesk {
             RiskMonitoringCensusView monitoring) {}
 
     /**
-     * One link of the velocity proof: what it judged, set aside as explained (a movement permitted uncounted) and before
-     * the floor (older than the record's first transfer), and each divergence the reader may locate.
+     * One link of the velocity proof: what it judged; {@code explained} the windows whose expected figures had a transfer
+     * permitted uncounted subtracted (still judged); {@code beforeFloor} the postings older than the first transfer the
+     * record ever holds; and each divergence the reader may locate.
      */
     public record RiskVelocityLinkView(String verdict, String asOf, String evidenceThrough, int judged, int pending,
             int unprovable, int explained, int beforeFloor, int divergedCount,

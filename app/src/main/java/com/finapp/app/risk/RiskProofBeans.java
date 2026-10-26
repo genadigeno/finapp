@@ -86,7 +86,10 @@ public class RiskProofBeans {
                 auditWriter, idGenerator, clock);
     }
 
-    /** The day's replay; whose party a reader is through credit's {@code IdentityActingParty}. */
+    /**
+     * The day's replay; whose party a reader is through credit's {@code IdentityActingParty}; a day closed the
+     * monitoring intake's settle horizon after its end ({@code finapp.risk.monitoring.horizon}, 60 s).
+     */
     @Bean
     DailyReplay dailyReplay(
             RiskProofReads riskProofReads,
@@ -94,9 +97,11 @@ public class RiskProofBeans {
             IdentityStore<Connection> identityStore,
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
-            Clock clock) {
+            Clock clock,
+            @Value("${finapp.risk.monitoring.horizon:PT60S}") Duration settleHorizon) {
         return new DailyReplay(riskProofReads, riskPolicies,
-                new com.finapp.app.credit.IdentityActingParty(identityStore), auditWriter, idGenerator, clock);
+                new com.finapp.app.credit.IdentityActingParty(identityStore), auditWriter, idGenerator, clock,
+                settleHorizon);
     }
 
     @Bean

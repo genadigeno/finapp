@@ -2973,8 +2973,9 @@ exactly once, a refused or rolled-back movement counts for nothing, and ten conc
 one subject count ten. No window lives in Redis, a cache or process memory. A window's count and sum
 equal the movements it counts, recomputed by `VelocityProof` on one read-only snapshot: the counted
 assessments of record, over every dimension; and - for a window every counted movement of which is a
-transfer - the monitored journal's transfers, from the record's first transfer on (the floor), a
-window of a movement the record permitted uncounted set aside as explained. A difference is an
+transfer - the monitored journal's transfers, from the first transfer the record ever holds (the
+transfer seam's go-live, the floor) on, less the transfers the record permitted uncounted, which
+post but count nowhere. A difference is an
 alert, never self-corrected.
 **Why:** A velocity limit enforced from a counter that can be lost, lag or be passed twice is not a
 limit (`INV-CON-03`; the Phase 4 seam contract: an authoritative check is anchored to durable state
@@ -3012,10 +3013,17 @@ the evidence moves to the permitting assessments (`PHASE_13_PLAN.md` §12.4's no
 evidence did move to the permitting assessments - every dimension is judged against the counted
 assessments, the journal judging only the windows of transfers alone (a window that also counts a
 withdrawal, a payment or a cross-border movement cannot equal the journal's transfers by construction and
-is unprovable there). The journal link sets two things aside, by design and by name, so its `DIVERGED` is
-an unexplained difference only: the windows of a movement the record permitted `UNCOUNTED` (the
-fail-safe's money moves uncounted - `explained`), and the postings older than the record's first transfer
-(the seams' go-live - `beforeFloor`). A divergence names its window - dimension, subject reference, kind,
+is unprovable there). The journal link accounts for two things, by design and by name, so its `DIVERGED`
+is an unexplained difference only: a transfer the record permitted `UNCOUNTED` (the fail-safe's money
+moves uncounted) posts but counts nowhere, so its figures are subtracted from what the postings expect of
+each window it falls in - the window still judged, a genuine divergence beside it still named; the
+windows so adjusted are counted `explained` (an uncounted withdrawal or payment never posts as a journal
+transfer and needs no account); and the postings older than the first transfer the record *ever* holds -
+the transfer seam's first judgement, its go-live, fixed whatever the 30-day read reaches - are
+`beforeFloor` *(the review's second round: the first round excused whole windows for an uncounted movement
+of any operation, and took the floor from the read's earliest transfer, which slid with it)*. The one way
+the accounting errs is toward the alarm: an uncounted transfer that never posted is still subtracted, its
+window then reading one short. A divergence names its window - dimension, subject reference, kind,
 start - its currency and scale; the velocity report locates it for an operator, withholding a subject of
 the reader's own party or one the platform cannot place (`INV-RSK-08`). The proof reads on a bounded
 snapshot (`statement_timeout`), off the scrape thread, single-flight per instance; it never gates a

@@ -9,6 +9,8 @@ import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -35,6 +37,13 @@ import java.util.UUID;
  * serving retries hold at most a page's read each - no lock, no write, nothing to stack. The whole day is the pages in
  * order; the day replays {@code IDENTICAL} when every page does.
  *
+ * <p><strong>A day not yet closed</strong> (the review's second round). Each page is a snapshot of its own, and an
+ * assessment's UUIDv7 is minted before its transaction commits; so while a day can still gain rows - until
+ * {@link #SETTLE} after its end, the longest money transaction and the instances' skew, the monitoring intake's settle
+ * horizon - an assessment minted below a page's cursor and committed after that page was read is skipped by the pages
+ * that follow. Such a page answers {@code closed=false}: what it replayed is replayed truly, but the day's pages are not
+ * yet the whole day - replay it again once it is closed. A closed day gains no row, so its pages are the day.
+ *
  * <p>The answer counts {@code IDENTICAL} and {@code DIVERGED} per operation and names <strong>the page's first
  * divergent</strong> (the earliest by identifier) with the kinds that diverged - never a figure. The reader must be a person
  * the platform can place in a party (fail closed - {@link RiskAssessments.SelfDealingRefused}); an assessment of the
@@ -59,6 +68,12 @@ public final class DailyReplay {
     /** The first day a risk assessment could have been sealed - an earlier date is answered unknown. */
     public static final LocalDate EARLIEST = LocalDate.of(2026, 1, 1);
 
+    /**
+     * How long after its end a day can still gain an assessment - the longest money transaction plus the instances'
+     * clock skew: the monitoring intake's settle horizon's default ({@code finapp.risk.monitoring.horizon}).
+     */
+    public static final Duration SETTLE = Duration.ofSeconds(60);
+
     private static final String ACT = "assessment-day-replay";
 
     /** One operation's replays. */
@@ -81,10 +96,12 @@ public final class DailyReplay {
 
     /**
      * One page of the day's replay: {@code known} false for a date the platform has not had - nothing replayed;
-     * {@code after} the cursor it continued from, {@code next} the cursor to continue with while more remain.
+     * {@code closed} false while the day can still gain an assessment ({@link #SETTLE} after its end) - the pages may
+     * then miss one; {@code after} the cursor it continued from, {@code next} the cursor to continue with while more
+     * remain.
      */
-    public record Result(RiskDay day, boolean known, List<Operation> operations, long withheld, Optional<First> first,
-            Optional<RiskAssessmentId> after, Optional<RiskAssessmentId> next) {
+    public record Result(RiskDay day, boolean known, boolean closed, List<Operation> operations, long withheld,
+            Optional<First> first, Optional<RiskAssessmentId> after, Optional<RiskAssessmentId> next) {
         public Result {
             Objects.requireNonNull(day, "day");
             operations = List.copyOf(operations);
@@ -117,15 +134,27 @@ public final class DailyReplay {
     private final AuditWriter<Connection> audit;
     private final IdGenerator ids;
     private final Clock clock;
+    private final Duration settle;
 
+    /** The replay, a day closed {@link #SETTLE} after its end. */
     public DailyReplay(RiskProofReads reads, RiskPolicies policies, RiskActingParty actingParties,
             AuditWriter<Connection> audit, IdGenerator ids, Clock clock) {
+        this(reads, policies, actingParties, audit, ids, clock, SETTLE);
+    }
+
+    /** The replay, a day closed {@code settle} after its end - the composition's settle horizon. */
+    public DailyReplay(RiskProofReads reads, RiskPolicies policies, RiskActingParty actingParties,
+            AuditWriter<Connection> audit, IdGenerator ids, Clock clock, Duration settle) {
         this.reads = Objects.requireNonNull(reads, "reads");
         this.policies = Objects.requireNonNull(policies, "policies");
         this.actingParties = Objects.requireNonNull(actingParties, "actingParties");
         this.audit = Objects.requireNonNull(audit, "audit");
         this.ids = Objects.requireNonNull(ids, "ids");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.settle = Objects.requireNonNull(settle, "settle");
+        if (settle.isNegative()) {
+            throw new IllegalArgumentException("a day's settle horizon is not negative");
+        }
     }
 
     /** The first page of {@code day} for {@code actor}, {@link #DEFAULT_LIMIT} assessments at most. */
@@ -152,8 +181,10 @@ public final class DailyReplay {
         }
         int bound = Math.min(limit, MAX_LIMIT);
         UUID own = Queues.reader(snapshot, actingParties, actor, ACT);
-        if (day.date().isBefore(EARLIEST) || day.start().isAfter(reads.databaseNow(snapshot))) {
-            return new Result(day, false, List.of(), 0, Optional.empty(), after, Optional.empty());
+        Instant now = reads.databaseNow(snapshot);
+        boolean closed = !now.isBefore(day.end().plus(settle));
+        if (day.date().isBefore(EARLIEST) || day.start().isAfter(now)) {
+            return new Result(day, false, closed, List.of(), 0, Optional.empty(), after, Optional.empty());
         }
         Map<RiskOperation, long[]> counts = new EnumMap<>(RiskOperation.class);
         Map<RiskPolicyVersionId, Optional<RiskPolicy>> pinned = new HashMap<>();
@@ -197,7 +228,7 @@ public final class DailyReplay {
         List<Operation> operations = new ArrayList<>();
         counts.forEach((operation, figures) -> operations.add(
                 new Operation(operation, figures[0], figures[1], figures[2])));
-        return new Result(day, true, operations, withheld, first, after, next);
+        return new Result(day, true, closed, operations, withheld, first, after, next);
     }
 
     /** Records {@code result} - {@code risk.Replayed} for the day, the analyst's reason, counts and ids only. */
@@ -206,7 +237,8 @@ public final class DailyReplay {
         Objects.requireNonNull(correlation, "correlation");
         audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, clock.instant(), RiskAuditAction.REPLAYED,
                 TARGET_TYPE, result.day().toString(), Optional.of(RiskReasons.reasoned(reason)), AuditOutcome.SUCCEEDED,
-                correlation, Optional.of("date=" + result.day() + ", known=" + result.known() + ", after="
+                correlation, Optional.of("date=" + result.day() + ", known=" + result.known() + ", closed="
+                        + result.closed() + ", after="
                         + result.after().map(id -> id.value().toString()).orElse("none") + ", replayed="
                         + result.replayed() + ", identical=" + result.identical() + ", diverged=" + result.diverged()
                         + ", withheld=" + result.withheld() + ", first="

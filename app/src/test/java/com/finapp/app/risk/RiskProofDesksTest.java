@@ -219,6 +219,7 @@ class RiskProofDesksTest {
         assertThat(view.firstDiverged()).isNull();
         assertThat(view.after()).isNull();
         assertThat(view.next()).as("an empty day is one page").isNull();
+        assertThat(view.closed()).as("today - its pages may yet miss an assessment").isFalse();
         assertThat(units).containsExactly("snapshot", "transaction");
         assertThat(armed).as("the page's snapshot bounded").containsExactly("4000ms");
         assertThat(audit).singleElement().satisfies(record -> {

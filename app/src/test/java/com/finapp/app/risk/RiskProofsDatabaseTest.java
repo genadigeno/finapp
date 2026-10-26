@@ -254,6 +254,26 @@ class RiskProofsDatabaseTest {
         assertThat(counted[0]).isGreaterThanOrEqualTo(2);
         assertThat(counted[1]).as("one snapshot: the pages are the day").isEqualTo(Math.min(counted[0],
                 DailyReplay.MAX_LIMIT));
+        boolean todayClosed = riskTransactions.inSnapshot(snapshot -> replay.replay(snapshot, today, analyst).closed());
+        assertThat(todayClosed).as("today is not closed - its pages may miss a row committed behind a cursor")
+                .isFalse();
+        boolean pastClosed = riskTransactions.inSnapshot(snapshot -> replay.replay(snapshot,
+                today.previous().previous(), analyst).closed());
+        assertThat(pastClosed).isTrue();
+    }
+
+    @Test
+    @DisplayName("the journal link's floor is fixed: the first transfer ever judged, read through the primary key, at or"
+            + " before every transfer seal - not the earliest of the 30-day read")
+    void theFloorIsTheFirstTransferEverJudged() {
+        java.util.Optional<Instant> before = riskTransactions.inSnapshot(riskAssessmentStore::firstTransferAt);
+        seal(IDS.next(), 15_00);
+        Instant sealed = Instant.now();
+        java.util.Optional<Instant> floor = riskTransactions.inSnapshot(riskAssessmentStore::firstTransferAt);
+        assertThat(floor).isPresent();
+        assertThat(floor.get()).as("no later than the transfer just judged").isBeforeOrEqualTo(
+                sealed.plus(VelocityProof.SKEW));
+        before.ifPresent(first -> assertThat(floor).as("fixed - a new seal never moves it").contains(first));
     }
 
     // ------------------------------------------------------------------ one per census

@@ -52,11 +52,17 @@ import java.util.TreeMap;
  * journal is a seam that counted a transfer that never posted - named, never corrected. Each {@link Divergence} names its
  * currency and scale: a window counts in one currency, and a lost count in a second currency is its own divergence.
  *
- * <p><strong>What the journal link sets aside, by design, and names as such</strong> (the review's I2): the windows of a
- * movement the record permitted <em>without counting</em> ({@link VelocityOutcome#UNCOUNTED} - the fail-safe's money
- * moves uncounted) are <em>explained</em>; the postings older than the record's first transfer are <em>before the
- * floor</em> - the seams judged nothing before they went live. So the link's {@code DIVERGED} - and the alert on it - is an
- * unexplained difference only.
+ * <p><strong>What the journal link accounts for, by design, and names as such</strong> (the review's I2 and its second
+ * round). A <em>transfer</em> the record permitted <em>without counting</em> ({@link VelocityOutcome#UNCOUNTED} - the
+ * fail-safe's money moves uncounted) posts but is rightly absent from its windows, so its figures are <em>subtracted</em>
+ * from what the postings expect of each window it falls in - never the whole window set aside, so a genuine divergence
+ * sharing the window is still named; a window so adjusted is counted {@code explained}. An uncounted movement of any
+ * other operation never posts as a journal transfer and needs no account. The postings older than the first transfer
+ * the record <em>ever</em> holds ({@link VelocityEvidence.Record#firstTransferAt} - the transfer seam's go-live, fixed
+ * however far back a read reaches) are <em>before the floor</em>: the seams judged nothing before they went live. So the
+ * link's {@code DIVERGED} - and the alert on it - is an unexplained difference only. The one way the accounting errs is
+ * toward the alarm: an uncounted transfer that never posted (refused after its seams) is still subtracted, so its
+ * window reads as one short - named, never hidden.
  */
 public final class VelocityProof {
 
@@ -95,10 +101,10 @@ public final class VelocityProof {
     }
 
     /**
-     * One run's outcome. {@code explained} counts the windows set aside because the record names a movement it permitted
-     * without counting there (`P13-TSK-023`: an {@code UNCOUNTED} fail-safe's money moves uncounted, by design);
-     * {@code beforeFloor} the evidence's movements older than the record's first movement of the link's operation - the
-     * platform judged nothing before its seams went live. Neither is ever a divergence.
+     * One run's outcome. {@code explained} counts the windows - judged, or lost - whose expected figures had a transfer
+     * the record permitted without counting subtracted (`P13-TSK-023`: an {@code UNCOUNTED} fail-safe's money moves
+     * uncounted, by design) - still judged, never set aside; {@code beforeFloor} the evidence's movements older than the
+     * first transfer the record ever holds - the platform judged nothing before its seams went live, never a divergence.
      */
     public record Result(Verdict verdict, Instant asOf, Instant evidenceThrough, int judged, int pending, int unprovable,
             List<Divergence> divergences, int explained, int beforeFloor) {
@@ -193,8 +199,9 @@ public final class VelocityProof {
     /**
      * The whole proof in the caller's read-only {@code REPEATABLE READ} transaction (`P13-TSK-023`): the database's clock,
      * the live windows and both evidences read once, the record's link judged over every dimension it names and the
-     * journal's over the windows of transfers alone - with the windows of a permitted, uncounted movement explained and
-     * the postings older than the record's first transfer before the floor. No lock, no write.
+     * journal's over the windows of transfers alone - the transfers the record permitted uncounted subtracted from what
+     * the postings expect, and the postings older than the first transfer the record ever holds before the floor. No lock,
+     * no write.
      */
     public Whole prove(Connection snapshot) {
         RiskProofs.requireSnapshot(snapshot);
@@ -220,7 +227,15 @@ public final class VelocityProof {
         }
         return new Whole(ofRecord, Optional.of(judge(asOf, live,
                 new VelocityEvidence.Record(judged, posted.completeThrough()), provable, SKEW,
-                notOnlyTransfers(record, provable), keysOf(record.uncounted(), provable), beforeFloor)));
+                notOnlyTransfers(record, provable), transfersOf(record.uncounted()), beforeFloor)));
+    }
+
+    /** The transfers among {@code movements} - the uncounted ones the journal's link must account for. */
+    static List<VelocityEvidence.Counted> transfersOf(List<VelocityEvidence.Counted> movements) {
+        return movements.stream()
+                .filter(counted -> counted.operation().filter(operation -> operation == RiskOperation.TRANSFER)
+                        .isPresent())
+                .toList();
     }
 
     /**
@@ -253,22 +268,15 @@ public final class VelocityProof {
     }
 
     /**
-     * The journal link's floor: the earliest transfer the record holds, counted or permitted uncounted - before it the
-     * platform's seams judged no transfer (the go-live), so a posting older than it is no evidence for any window.
-     * Empty when the record holds no transfer at all: then the link judges nothing, and the assessment census - not this
-     * proof - is what names a transfer committed without its seal.
+     * The journal link's floor: the first transfer the record ever holds, whatever its decision - the transfer seam's
+     * go-live ({@link VelocityEvidence.Record#firstTransferAt}), fixed however far back the read reaches (the review's
+     * second round: the earliest transfer of the 30-day read slid with it and let a posting after the go-live but before
+     * the read's first transfer leave the link unjudged). Before it the platform's seams judged no transfer, so a posting
+     * older than it is no evidence for any window. Empty when the record has never held a transfer: then the link judges
+     * nothing, and the assessment census - not this proof - is what names a transfer committed without its seal.
      */
     static Optional<Instant> transferFloor(VelocityEvidence.Record record) {
-        Instant floor = null;
-        for (List<VelocityEvidence.Counted> movements : List.of(record.movements(), record.uncounted())) {
-            for (VelocityEvidence.Counted counted : movements) {
-                if (counted.operation().filter(operation -> operation == RiskOperation.TRANSFER).isPresent()
-                        && (floor == null || counted.at().isBefore(floor))) {
-                    floor = counted.at();
-                }
-            }
-        }
-        return Optional.ofNullable(floor);
+        return record.firstTransferAt();
     }
 
     /** The pure judgement - {@link #run}'s, given its reads. */
@@ -283,50 +291,45 @@ public final class VelocityProof {
      */
     public static Result judge(Instant asOf, List<VelocityWindow> live, VelocityEvidence.Record record,
             Set<VelocityDimension> provable, Duration skew, Set<VelocityWindowKey> unprovable) {
-        return judge(asOf, live, record, provable, skew, unprovable, Set.of(), 0);
+        return judge(asOf, live, record, provable, skew, unprovable, List.of(), 0);
     }
 
     /**
-     * The pure judgement with {@code unprovable} windows and {@code explained} ones set aside - counted, never judged,
-     * never a lost count - and {@code beforeFloor} the evidence's movements already set aside by the caller. The
-     * evidence is grouped by subject once, so a run is linear in the windows plus the movements, never their product.
+     * The pure judgement with {@code unprovable} windows set aside - counted, never judged, never a lost count - the
+     * figures of {@code uncounted} (movements the record permitted without counting, which the evidence nevertheless
+     * holds) subtracted from what the evidence expects of each window they fall in, and {@code beforeFloor} the
+     * evidence's movements already set aside by the caller. The evidence is grouped by subject once, so a run is linear in
+     * the windows plus the movements, never their product.
      */
     public static Result judge(Instant asOf, List<VelocityWindow> live, VelocityEvidence.Record record,
             Set<VelocityDimension> provable, Duration skew, Set<VelocityWindowKey> unprovable,
-            Set<VelocityWindowKey> explained, int beforeFloor) {
+            List<VelocityEvidence.Counted> uncounted, int beforeFloor) {
         Objects.requireNonNull(asOf, "asOf");
         Objects.requireNonNull(live, "live");
         Objects.requireNonNull(record, "record");
         Objects.requireNonNull(provable, "provable");
         Objects.requireNonNull(skew, "skew");
         Objects.requireNonNull(unprovable, "unprovable");
-        Objects.requireNonNull(explained, "explained");
+        Objects.requireNonNull(uncounted, "uncounted");
         Instant judgeable = record.completeThrough().minus(skew);
-        Map<VelocityDimension, Map<String, List<VelocityEvidence.Counted>>> bySubject = new HashMap<>();
-        for (VelocityEvidence.Counted counted : record.movements()) {
-            for (VelocityDimension dimension : provable) {
-                counted.movement().subject(dimension).ifPresent(subject -> bySubject
-                        .computeIfAbsent(dimension, ignored -> new HashMap<>())
-                        .computeIfAbsent(subject, ignored -> new ArrayList<>()).add(counted));
-            }
-        }
+        Map<VelocityDimension, Map<String, List<VelocityEvidence.Counted>>> bySubject =
+                bySubject(record.movements(), provable);
+        Map<VelocityDimension, Map<String, List<VelocityEvidence.Counted>>> uncountedBySubject =
+                bySubject(uncounted, provable);
         Map<VelocityWindowKey, VelocityWindow> rows = new TreeMap<>();
         int judged = 0;
         int pending = 0;
         int unproven = 0;
-        int setAside = 0;
+        int explained = 0;
         List<Divergence> divergences = new ArrayList<>();
         for (VelocityWindow window : live) {
-            if (!window.key().windowEnd().isAfter(asOf)) {
+            VelocityWindowKey key = window.key();
+            if (!key.windowEnd().isAfter(asOf)) {
                 continue;
             }
-            rows.put(window.key(), window);
-            if (!provable.contains(window.key().dimension()) || unprovable.contains(window.key())) {
+            rows.put(key, window);
+            if (!provable.contains(key.dimension()) || unprovable.contains(key)) {
                 unproven++;
-                continue;
-            }
-            if (explained.contains(window.key())) {
-                setAside++;
                 continue;
             }
             if (window.lastCountedAt().isAfter(judgeable)) {
@@ -334,12 +337,15 @@ public final class VelocityProof {
                 continue;
             }
             judged++;
-            List<VelocityEvidence.Counted> ofSubject = bySubject
-                    .getOrDefault(window.key().dimension(), Map.of())
-                    .getOrDefault(window.key().subjectRef(), List.of());
-            Range range = range(window, ofSubject, skew);
-            if (!range.admits(window.count(), window.sum().minorUnits())) {
-                divergences.add(range.divergence(window.key(), window.sum().currency(), window.sum().scale(),
+            Range accounted = range(key, window.sum().currency(), window.sum().scale(), ofSubject(uncountedBySubject, key),
+                    skew);
+            if (accounted.toCount > 0) {
+                explained++;
+            }
+            Range expected = range(key, window.sum().currency(), window.sum().scale(), ofSubject(bySubject, key), skew)
+                    .less(accounted);
+            if (!expected.admits(window.count(), window.sum().minorUnits())) {
+                divergences.add(expected.divergence(key, window.sum().currency(), window.sum().scale(),
                         window.count(), window.sum().minorUnits()));
             }
         }
@@ -353,7 +359,7 @@ public final class VelocityProof {
                         VelocityWindow row = rows.get(key);
                         boolean counts = row != null && row.sameMoneyAs(counted.movement().amount());
                         if (key.windowEnd().isAfter(asOf) && certainlyInside(key, counted.at(), skew) && !counts
-                                && !unprovable.contains(key) && !explained.contains(key)) {
+                                && !unprovable.contains(key)) {
                             lost.computeIfAbsent(new LostKey(key, counted.movement().amount().currency().code(),
                                     counted.movement().amount().scale()), k -> new Range()).add(counted, true);
                         }
@@ -361,12 +367,41 @@ public final class VelocityProof {
                 }
             }
         }
-        lost.forEach((key, range) -> divergences.add(range.divergence(key.key(), CurrencyCode.of(key.currency()),
-                key.scale(), 0, 0)));
+        for (Map.Entry<LostKey, Range> entry : lost.entrySet()) {
+            LostKey key = entry.getKey();
+            CurrencyCode currency = CurrencyCode.of(key.currency());
+            Range accounted = range(key.key(), currency, key.scale(), ofSubject(uncountedBySubject, key.key()), skew);
+            if (accounted.toCount > 0) {
+                explained++;
+            }
+            Range expected = entry.getValue().less(accounted);
+            if (expected.fromCount > 0) {
+                divergences.add(expected.divergence(key.key(), currency, key.scale(), 0, 0));
+            }
+        }
         Verdict verdict = !divergences.isEmpty() ? Verdict.DIVERGED
                 : judged == 0 ? Verdict.VACUOUS : Verdict.HELD;
         return new Result(verdict, asOf, record.completeThrough(), judged, pending, unproven,
-                Collections.unmodifiableList(divergences), setAside, beforeFloor);
+                Collections.unmodifiableList(divergences), explained, beforeFloor);
+    }
+
+    /** {@code movements} by provable dimension and subject reference - each movement once per dimension it names. */
+    private static Map<VelocityDimension, Map<String, List<VelocityEvidence.Counted>>> bySubject(
+            List<VelocityEvidence.Counted> movements, Set<VelocityDimension> provable) {
+        Map<VelocityDimension, Map<String, List<VelocityEvidence.Counted>>> bySubject = new HashMap<>();
+        for (VelocityEvidence.Counted counted : movements) {
+            for (VelocityDimension dimension : provable) {
+                counted.movement().subject(dimension).ifPresent(subject -> bySubject
+                        .computeIfAbsent(dimension, ignored -> new HashMap<>())
+                        .computeIfAbsent(subject, ignored -> new ArrayList<>()).add(counted));
+            }
+        }
+        return bySubject;
+    }
+
+    private static List<VelocityEvidence.Counted> ofSubject(
+            Map<VelocityDimension, Map<String, List<VelocityEvidence.Counted>>> bySubject, VelocityWindowKey key) {
+        return bySubject.getOrDefault(key.dimension(), Map.of()).getOrDefault(key.subjectRef(), List.of());
     }
 
     /** A lost count's identity: the window it belongs to, in the movement's own currency and scale. */
@@ -382,15 +417,20 @@ public final class VelocityProof {
         }
     }
 
-    private static Range range(VelocityWindow window, List<VelocityEvidence.Counted> movements, Duration skew) {
+    /**
+     * The figures {@code movements} - of the window's subject - admit for the window {@code key} in {@code currency} at
+     * {@code scale}: those certainly inside it, and those within {@code skew} of either edge.
+     */
+    private static Range range(VelocityWindowKey key, CurrencyCode currency, int scale,
+            List<VelocityEvidence.Counted> movements, Duration skew) {
         Range range = new Range();
-        VelocityWindowKey key = window.key();
         Instant earliest = key.windowStart().minus(skew);
         Instant latest = key.windowEnd().plus(skew);
         for (VelocityEvidence.Counted counted : movements) {
             boolean sameSubject = counted.movement().subject(key.dimension()).filter(key.subjectRef()::equals).isPresent();
-            if (!sameSubject || !window.sameMoneyAs(counted.movement().amount())
-                    || counted.at().isBefore(earliest) || !counted.at().isBefore(latest)) {
+            boolean sameMoney = counted.movement().amount().currency().equals(currency)
+                    && counted.movement().amount().scale() == scale;
+            if (!sameSubject || !sameMoney || counted.at().isBefore(earliest) || !counted.at().isBefore(latest)) {
                 continue;
             }
             range.add(counted, certainlyInside(key, counted.at(), skew));
@@ -422,6 +462,20 @@ public final class VelocityProof {
 
         boolean admits(long count, long sum) {
             return count >= fromCount && count <= toCount && sum >= fromSum && sum <= toSum;
+        }
+
+        /**
+         * This range with {@code accounted}'s movements taken out - interval subtraction, every bound at least zero: at
+         * least what remains when every possibly-accounted movement is taken, at most what remains when only the
+         * certain ones are.
+         */
+        Range less(Range accounted) {
+            Range net = new Range();
+            net.fromCount = Math.max(0, Math.subtractExact(fromCount, accounted.toCount));
+            net.toCount = Math.max(0, Math.subtractExact(toCount, accounted.fromCount));
+            net.fromSum = Math.max(0, Math.subtractExact(fromSum, accounted.toSum));
+            net.toSum = Math.max(0, Math.subtractExact(toSum, accounted.fromSum));
+            return net;
         }
 
         Divergence divergence(VelocityWindowKey key, CurrencyCode currency, int scale, long count, long sum) {

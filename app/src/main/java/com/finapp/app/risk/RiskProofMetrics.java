@@ -14,7 +14,6 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Executor;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -46,6 +45,14 @@ import lombok.extern.slf4j.Slf4j;
  * each bounded. A failed reading leaves the gauges NaN until the next completes ("absent", never "clean"); a reading
  * older than {@link #staleAfter} - two floors, a refresher that never finished - is NaN too, so a stuck instance cannot
  * keep reporting an old {@code HELD}. Nothing here is on a money-moving path: the proofs read, they never gate.
+ *
+ * <p><strong>What this cannot see, and who does</strong> (the review's second round). The statement timeout bounds a
+ * statement the database is running; a connection the network black-holes is bounded by nothing here (the data source
+ * sets no socket timeout), so a reading stuck on one holds the in-flight flag with no {@code failed} counted, and an
+ * {@link Error} - an {@code OutOfMemoryError} starting the thread or reading - is neither caught nor counted. Both leave
+ * the gauges NaN at two floors, which no {@code > 0} rule fires on: `-024` alerts on <em>no increase</em> of
+ * {@code finapp.risk.proof.reading{outcome="completed"}} over two floors. The reading's rows - thirty days of counted
+ * assessments - are bounded in time by the timeout, not by a cap (the scale limit, a debt row).
  *
  * <p>A proof writes nothing, so every instance reading it is redundant cost only - no lease, no claim, no system actor.
  * This instance's cache of a derived reading, never truth and never an input to a decision. Fleet-wide {@code max()},
@@ -192,7 +199,10 @@ public final class RiskProofMetrics {
                     inFlight.set(false);
                 }
             });
-        } catch (RejectedExecutionException refused) {
+        } catch (RuntimeException refused) {
+            // A refused or failed start - RejectedExecutionException among them - releases the flag and is counted. An
+            // Error (an OutOfMemoryError starting the thread, or in read()) is neither caught nor counted: the gauges go
+            // NaN at two floors and -024 alerts on no `completed` increase, not on `failed`.
             inFlight.set(false);
             failed.increment();
             log.warn("Could not start a reading of the risk proofs; their gauges keep the last: {}",

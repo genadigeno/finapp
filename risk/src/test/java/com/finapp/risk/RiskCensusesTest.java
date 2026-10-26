@@ -107,6 +107,26 @@ class RiskCensusesTest {
     }
 
     @Test
+    @DisplayName("every kind is judged: P13-TSK-025's fact alert (OBLIGATION_DEFAULTED - its own code, no policy"
+            + " version, a CREDIT_AGREEMENT's D1 window) is born-once-counted and the COLLECTIONS case one-open-counted"
+            + " like any other - the statements filter on no kind, no policy and no subject kind")
+    void theFactAlertAndTheCollectionsCaseAreCounted() {
+        for (String statement : List.of(JdbcRiskProofReads.BORN_ONCE, JdbcRiskProofReads.OPEN_CASES,
+                JdbcRiskProofReads.ALERTS, JdbcRiskProofReads.ALERT_RULES)) {
+            assertThat(statement).doesNotContain("policy_version").doesNotContain("kind IN")
+                    .doesNotContain("kind =").doesNotContain("subject_kind");
+        }
+        reads.bornOnce.put(DAY, List.of(
+                new RiskProofReads.BornOnceRow(AlertKind.OBLIGATION_DEFAULTED, WindowKind.D1, 2, 1, 2)));
+        AlertBornOnceCensus.Result alerts = new AlertBornOnceCensus(reads).run(StandInConnections.snapshot(), DAY);
+        assertThat(alerts.duplicates()).as("one default raised twice").isEqualTo(1);
+        assertThat(alerts.verdict()).isEqualTo(ProofVerdict.DIVERGED);
+        reads.open.add(new RiskProofReads.OpenRow(CaseKind.COLLECTIONS, 2, 2, 0));
+        assertThat(new CaseOneOpenCensus(reads).run(StandInConnections.snapshot()).verdict())
+                .isEqualTo(ProofVerdict.HELD);
+    }
+
+    @Test
     @DisplayName("one open case per subject and kind: a subject holding two open cases diverges; none open is vacuous")
     void oneOpenCasePerSubjectAndKind() {
         CaseOneOpenCensus census = new CaseOneOpenCensus(reads);

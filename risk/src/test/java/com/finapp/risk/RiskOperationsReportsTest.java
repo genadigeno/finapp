@@ -50,6 +50,7 @@ class RiskOperationsReportsTest {
     private final List<AuditRecord> audit = new ArrayList<>();
     private final Map<String, UUID> partyOfActor = new HashMap<>(Map.of("analyst-1", OWN));
     private final Map<UUID, UUID> partyOfAccount = new HashMap<>();
+    private final java.util.concurrent.atomic.AtomicInteger placementCalls = new java.util.concurrent.atomic.AtomicInteger();
     private final RiskOperationsReports reports = new RiskOperationsReports(reads, new AssessmentCensus(reads, owners),
             new MonitoringCensus(emptyLedger(), noWatermark(), reads), new AlertBornOnceCensus(reads),
             new CaseOneOpenCensus(reads), new FilingCensus(reads),
@@ -208,6 +209,34 @@ class RiskOperationsReportsTest {
     }
 
     @Test
+    @DisplayName("a report's placements are bounded: each subject placed once a request across both links, at most PLACED"
+            + " of them - past the bound a divergence is withheld, counted, with no lookup")
+    void placementsAreMemoisedAndBounded() {
+        windows.now = Instant.parse("2026-10-23T09:00:00Z");
+        VelocityWindows counting = new VelocityWindows(windows);
+        int accounts = RiskOperationsReports.PLACED + 5;
+        for (int i = 0; i < accounts; i++) {
+            UUID account = UUID.fromString(String.format("018f0000-0000-7000-8000-%012d", 1000 + i));
+            counting.increment(StandInConnections.unused(), counting.cut(StandInConnections.unused(),
+                    VelocityMovement.of(Money.ofMinorUnits(10_00, EUR)).sourceAccount(account).build()),
+                    RiskDecision.ALLOW, false);
+        }
+        windows.now = Instant.parse("2026-10-23T12:00:00Z");
+
+        RiskOperationsReports.VelocityReport report = reports.velocity(StandInConnections.snapshot(), DAY, analyst());
+        VelocityProof.Whole whole = report.proof().orElseThrow();
+        // Each account's D1, D7 and D30 windows count what no evidence holds - on the record's link and the journal's.
+        assertThat(whole.record().divergences()).hasSize(accounts * 3);
+        assertThat(whole.journal().orElseThrow().divergences()).hasSize(accounts * 3);
+        assertThat(placementCalls).as("one lookup a subject, the bound's worth, the journal's link memoised")
+                .hasValue(RiskOperationsReports.PLACED);
+        assertThat(report.record()).isEmpty();
+        assertThat(report.journal()).isEmpty();
+        assertThat(report.withheld()).as("every divergence examined - unplaced, or past the bound").isEqualTo(
+                2L * accounts * 3);
+    }
+
+    @Test
     @DisplayName("the meters' reading: the day-based censuses over today and yesterday, the worse of the two; the snapshot"
             + " ones once; the velocity proof made whole")
     void theReading() {
@@ -232,6 +261,7 @@ class RiskOperationsReportsTest {
         return new MonitoredParties() {
             @Override
             public Optional<UUID> partyOfAccount(Connection unitOfWork, UUID customerAccountId) {
+                placementCalls.incrementAndGet();
                 return Optional.ofNullable(partyOfAccount.get(customerAccountId));
             }
 

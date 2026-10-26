@@ -24323,7 +24323,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   the clearance, and alerts and cases a hit once.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
 
-**P13-TSK-023 — The risk proofs, the explanation door and replay** — `COMPLETE` (2026-10-26; wave G beside `-022` and `-025`, branch `P13-TSK-023` from master `3d12e386`; no migration - the reserved `V018` released; **M13.7 at 1 of 2**; marks no task `READY` — the coordinator does (`-024` waits on it alone)) *(read "`READY` (2026-10-25; marked by the coordinator at `P13-TSK-016`'s merge, master `e3f272fe`; every dependency `COMPLETE`)" until its gate)*
+**P13-TSK-023 — The risk proofs, the explanation door and replay** — `COMPLETE` (2026-10-26; wave G beside `-022` and `-025`, branch `P13-TSK-023` from master `3d12e386`, master `bac11de8` (`-025`) merged in at integration; no migration - the reserved `V018` released; **M13.7 at 1 of 2**; marks no task `READY` — the coordinator does (`-024` waits on it alone)) *(read "`READY` (2026-10-25; marked by the coordinator at `P13-TSK-016`'s merge, master `e3f272fe`; every dependency `COMPLETE`)" until its gate)*
 - **Objective**: the phase's proofs as operator-runnable, audited reads — `VelocityProof` made whole over the
   monitored transactions, the assessment census (assessments = judged commands per operation), the monitoring census
   (monitored transactions = journal entries since the floor), the born-once and one-open censuses — the explanation
@@ -24458,7 +24458,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   **I1 - the proofs ran on the scrape thread, unbounded:** `RiskProofMetrics` now *starts* a reading on a virtual thread
   of its own (`virtualThreads()`, an injected `Executor`) when a scrape finds the last older than the floor, a
   compare-and-set in-flight flag making it **single-flight per instance**, and answers the last reading meanwhile; a
-  failed reading is counted - the new `finapp.risk.proof.reading{outcome=completed|failed}` (§15's 28th row, the outcome
+  failed reading is counted - the new `finapp.risk.proof.reading{outcome=completed|failed}` (§15's 28th row on this branch - 29 with `-025`'s `finapp.risk.collections.unplaced` at the merge -, the outcome
   vocabulary +2) - and leaves the gauges NaN until one completes; a reading older than two floors is NaN (`staleAfter`), so
   a stuck refresher never keeps an old `HELD`; every statement of the reading bounded by **`RiskProofs.bound`** -
   `statement_timeout` armed `SET LOCAL` by `set_config(..., true)`, `finapp.risk.proofs.statement-timeout` (5 s); the
@@ -24498,7 +24498,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   orphaned assessment of the reader's own party is withheld from the decisions report, counted (`withheld`;
   `RiskProofReads.Assessed` carries the party). Tests: `RiskOperationsReportsTest#theReaderIsPlaced`,
   `RiskProofDesksTest#anUnplacedReaderIsRefusedAReport`. *Registers:* `RiskLogSitesAreEnumeratedTest` (+1),
-  `RiskMetricTagsAreBoundedTest` (`completed`, `failed`), `PHASE_13_PLAN.md` §9, §12.4, §13.3, §15 (28 rows),
+  `RiskMetricTagsAreBoundedTest` (`completed`, `failed`), `PHASE_13_PLAN.md` §9, §12.4, §13.3, §15 (28 rows; 29 after `-025`'s merge),
   `AUDITABLE_ACTIONS.md` (`risk.Replayed`'s page summary, `risk.ReportRead`'s placed reader, `risk.SelfDealingRefused`'s
   two acts), `DISTRIBUTED_EXECUTION.md`, `MUTATION_TESTING.md` §2, `docs/api/openapi.json` (the replay's two parameters,
   the views' new fields - additions only). *Probes, four more* (each red on its first run, restored by its saved bytes,
@@ -24509,8 +24509,52 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   across 65 classes, one red - `OpenApiContractTest`, additions only, accepted by regenerating `docs/api/openapi.json` -
   then the contract and doc guards re-run 69 across 14 classes, 0 failed; `:app:architectureTest` not re-run (the
   coordinator's, once on the merged wave); `RiskProofsDatabaseTest` (10) and `RiskReportsApiTest` (4) written and owed
-  (C5). **For `-024`:** `RiskMetersTest` counts §15's 28 rows; an alert on
+  (C5). **For `-024`:** `RiskMetersTest` counts §15's 29 rows (`-025`'s `finapp.risk.collections.unplaced` among them); an alert on
   `finapp_risk_proof_reading_total{outcome="failed"}` rising for two floors (the proofs unread). Ten-instance `PASS`.
+- **The review's second round (2026-10-26; the coordinator's re-check of `5b011ec8` - `MERGE`, the three IMPORTANT
+  verified fixed - with five more findings, folded into the integration with master `bac11de8`).** **(1) "Explained" was
+  too coarse - fixed:** the first round set aside every window of both account dimensions for an uncounted movement of
+  *any* operation, so a counted, never-posted transfer (`-008`'s `DESTINATION_NOT_POSTABLE`) on an account with any
+  uncounted movement read `explained` for up to 30 days. Now only the uncounted *transfers* are accounted for
+  (`VelocityProof.transfersOf`), and their figures are **subtracted** from the range the postings give each window
+  (`Range.less`, interval subtraction) - the window still judged, the lost-count check netted the same way; a window so
+  adjusted counts `explained`. It errs only toward the alarm (an uncounted transfer that never posted is still
+  subtracted). Test `VelocityProofTest#anUncountedMovementExplainsOnlyItself`; probes: every uncounted movement subtracted,
+  and the window set aside (the first round's behaviour) - both red. **(2) The floor slid with the 30-day read - fixed:**
+  the floor is now the first transfer the record **ever** holds, whatever its decision - `RiskAssessmentStore.firstTransferAt`
+  (`JdbcRiskAssessmentStore.FIRST_TRANSFER`: the primary key in minting order, the first `TRANSFER` row met),
+  `VelocityEvidence.Record.firstTransferAt` - the transfer seam's go-live, so a posting after it with no record
+  counterpart is judged however far before the read's first transfer; the `INV-RSK-03` as-built note now says exactly
+  that. Test `#theFloorIsTheGoLiveNotTheRead` (probe red); owed `RiskProofsDatabaseTest#theFloorIsTheFirstTransferEverJudged`.
+  **(3) The velocity report's statements were not a fixed set - fixed:** `RiskOperationsReports.Placements` places each
+  subject once a request across both links and at most `PLACED` (50) subjects; past the bound a divergence is withheld,
+  counted; divergences are examined until `NAMED` are shown. Test `RiskOperationsReportsTest#placementsAreMemoisedAndBounded`
+  (probe red: no memo); `RiskProofs` and `DISTRIBUTED_EXECUTION.md` now say "a fixed set plus at most 50 placements",
+  bounded in time, not rows. **(4) A stuck reading was invisible - recorded and routed:** the data source sets no socket
+  timeout, so a reading on a black-holed connection holds the flag with no `failed` counted; an `Error` is neither caught
+  nor counted (`RiskProofMetrics` now catches any `RuntimeException` starting the refresh); both leave NaN gauges no
+  `> 0` rule fires on - **routed to `-024`: alert on no increase of `finapp_risk_proof_reading_total{outcome="completed"}`
+  over two floors** (§15's row). The 30-day load is bounded in time, not rows (the debt row). **(5) Replaying today
+  could skip rows - fixed:** pages are separate snapshots and UUIDv7 ids are minted before commit, so a page of a day not
+  yet closed - until the settle horizon (`finapp.risk.monitoring.horizon`, 60 s; `DailyReplay.SETTLE`) past its end -
+  answers **`closed=false`** (`DailyReplay.Result.closed`, the view's `closed`, `risk.Replayed`'s summary); a closed day's
+  pages are the whole day. Test `DailyReplayTest#aDayNotYetClosedSaysSo` (probe red: every page closed); owed
+  `RiskProofsDatabaseTest#aDayReplaysByPage` (today open, two days ago closed), `RiskReportsApiTest#theDayReplay`
+  (`"closed":false`). **The integration** (master `bac11de8`, `-025`): conflicts in `DISTRIBUTED_EXECUTION.md` (the proofs'
+  row beside `-025`'s re-made `RiskSignalIntake` row), `CURRENT_STATE.md` (§Current Task and §Just completed - this
+  record first, then `-025`'s, untouched), `MUTATION_TESTING.md` §2 (both sides' rows - and `P12-GATE`'s `A13` row, which
+  `5b011ec8` had dropped by accident, restored), `CHANGE_LOG.md` (both rows); `-025`'s `OBLIGATION_DEFAULTED` (a fact
+  alert of its own code, no policy version, a `CREDIT_AGREEMENT`'s `D1` window) and its `COLLECTIONS` case are counted by
+  the born-once and one-open censuses and the alerts and cases reports like any other kind - their statements filter on
+  no kind, policy or subject kind (`RiskCensusesTest#theFactAlertAndTheCollectionsCaseAreCounted`); the evidence door
+  serves a collections case's default signal through the case file's own judgement; §15 now 29 rows. *Probes, five more*
+  (each red on its first run and restored by its saved bytes, sha256 equal; `MUTATION_TESTING.md` §2). **Tests,
+  fresh after round two and the merge:** risk `test` 494 across 77 classes, 0 failed (`-025`'s suites among them;
+  new: `VelocityProofTest` +2, `RiskOperationsReportsTest` +1, `DailyReplayTest` +1, `RiskCensusesTest` +1); `app` `test`
+  filtered to `com.finapp.app.risk.*` and the nineteen guard suites by name 385 across 67 classes, one red -
+  `OpenApiContractTest`, the replay view's `closed` its only difference - accepted by regenerating `docs/api/openapi.json`,
+  then the contract and doc guards and the two proof suites re-run 75 across 15 classes, 0 failed; `:app:architectureTest`
+  not run (the coordinator's); `RiskProofsDatabaseTest` (11) and `RiskReportsApiTest` (4) written and owed (C5).
 
 **P13-TSK-024 — Operating risk: meters, alerts, reports, runbook §9, the activation gate** — `PLANNED`
 - **Objective**: the phase operable — every `PHASE_13_PLAN.md` §15 series registered eagerly and guarded, the
@@ -24562,7 +24606,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   activation gate and each procedure; the register rows agree with the code.
 - **Definition of done**: `DOD-OBS`, `DOD-DOC`. **Risk**: Low. **Cx**: L.
 
-**P13-TSK-025 — A collections case opened on default (C3, cut candidate)** — `READY` (2026-10-25; marked by the coordinator at `P13-TSK-016`'s merge, master `e3f272fe`; every dependency `COMPLETE`) *(cut candidate, first in the cut order)*
+**P13-TSK-025 — A collections case opened on default (C3, cut candidate)** — `COMPLETE` (2026-10-26; built on the owner's request - not cut - in a parallel wave beside `-022` and `-023`, branch `P13-TSK-025` from master `3d12e386`; risk `V017` *(the entry's "persistence: none" did not hold: `V010`'s alert CHECKs refuse a fact's alert; the wave held `V019` for it - `-022` `V017`, `-023` `V018` - and the coordinator's rule renumbered it at integration to the next free number after master's highest, `V016`)*; **M13.8 `CLOSED` at 1 of 1**; marks no task `READY` — the coordinator does; no task waits on `-025`). **Gate (2026-10-26): `COMPLETE`, no CRITICAL, one IMPORTANT found and fixed (the party join's live read over lending's and bnpl's views was claimed and never written - `CollectionsCaseDatabaseTest#theJoinReadsThePublishedViews` added), seven MINOR** — see the as-built paragraph below. Ten-instance `PASS`: the inbox PK, the signal's, the alert's and the one-open uniques in one T-sig transaction, no read-then-write, the second default of a party waiting only on the first's uncommitted birth; counted by the owed `CollectionsCaseDatabaseTest` (C5). Seven probes performed and sha256-verified (`MUTATION_TESTING.md` §2); the database's recorded as owed.) *(read "`READY` (2026-10-25; marked by the coordinator at `P13-TSK-016`'s merge, master `e3f272fe`; every dependency `COMPLETE`) *(cut candidate, first in the cut order)*" until its gate)*
 - **Objective**: a `COLLECTIONS` case opened once per party on `lending.LoanDefaulted` / `bnpl.BnplDefaulted`, with
   investigator actions as facts (note, evidence, `REFERRED`) — the thin slice of collections case management, nothing
   of collections operations (C3; `PHASE_13_PLAN.md` §3.1).
@@ -24600,6 +24644,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
 - **Probe**: drop the alert's unique → `#theSameEventTwiceOpensOnce` red.
 - **Acceptance criteria**: a default opens exactly one collections case per party, worked by facts only.
 - **Definition of done**: `DOD-DOMAIN`. **Risk**: Low. **Cx**: L.
+ - **As built (2026-10-26, the gate's record; `DESIGN-025`).** *The signal:* no kind added - `-005`'s `LOAN_DEFAULTED` and `BNPL_DEFAULTED` are the entry's "`OBLIGATION_DEFAULTED` carrying the obligation's kind and id" (the kind names the obligation's module, the `CREDIT_AGREEMENT` subject its id). *The alert:* `AlertKind.OBLIGATION_DEFAULTED` (→ `COLLECTIONS`), a **fact** - its own code its rule and no policy (a default alerts whether or not a `MONITORING` version is active), about the agreement, its evidence exactly its one signal, severity `MEDIUM` - raised in T-sig by `CollectionsCases` through the new port `SignalAlerts` on **every delivery that reaches the handler** (born, or `ALREADY` and read back by `RiskSignalStore.recordedFrom`), under the platform's actor (`RiskSignalIntake.asThePlatform`, enumerated); keyed (agreement, `OBLIGATION_DEFAULTED`, the `D1` bucket of the default's business date) - **"born once per (party, obligation)" read as once per default** (an agreement has one party for ever; a re-default after a cure is a second default and a second alert - owner item). *The case:* `Cases`' kind rule folds it into **the agreement's party's** `COLLECTIONS` case (the accountable join: `app`'s `JdbcCreditAgreementParties` over `lending.party_principal_exposure` / `bnpl.party_principal_exposure`, `SYSTEM_JOIN`, `IdentitySubjectParties` the one caller; never `partyOf`); an unplaceable borrower refuses the delivery whole; never opened by hand (on a kind, or from its alert - `422 risk.CaseRequestInvalid`); the SLA the existing 168 h; disposed `CLOSED_NO_ACTION` or `REFERRED` only (`DispositionRules.COLLECTIONS`; `CLOSED_FALSE_POSITIVE`, `CONFIRMED_*`, `PROHIBITED` refused); no `ActionKind` (`-017`'s `ActionRules` and `V013`, unchanged). *risk `V017`* (`V017__the_collections_case.sql`): `risk_alert_kind_is_known`, `_rule_code_is_known`, `_rule_matches_kind`, `_policy_named` dropped and re-made by name over the own-code kinds; new `risk_alert_default_names_its_agreement`, `risk_case_collections_of_a_party`, `risk_case_collections_opened_by_a_default`, `risk_case_collections_disposed_by_facts`; no table, column, index, grant or trigger. *Meter:* `case{kind=COLLECTIONS,status}` (and `alert{kind=OBLIGATION_DEFAULTED,severity}`) eager by enum, no new series. *Tests:* hermetic `CollectionsCaseRulesTest` (10), `RiskCollectionsMigrationTest` (3), `JdbcCreditAgreementPartiesTest` (3), `RiskCaseMetricsTest` (1), `RiskSignalIntakeTest#aDefaultIsRecordedAsThePlatform`, `IdentitySubjectPartiesTest#theAccountablePartyPlacesACreditAgreement`, `RiskEventsCarryOnlyCodesTest` (the collections flow emitted); database written and owed (C5): `CollectionsCaseDatabaseTest` (6 - `#aDefaultOpensOneCase`, `#aSecondDefaultOfOnePartyAttaches`, `#theSameEventTwiceOpensOnce`, `#anUnplaceableBorrowerStallsTheDelivery`, `#aDefaultsCaseChangesNothingOfTheObligationOrTheLedger`, `#theJoinReadsThePublishedViews`), `RiskMigrationTest#theCollectionsCase`. *Probe:* the entry's "drop the alert's unique → `#theSameEventTwiceOpensOnce` red" performed in its hermetic form (the in-memory arbiter, 1 of 10 red) and owed live. **MINOR (recorded):** (1) the alert queue and the case file place each default's alert with up to two view reads (loan, then obligation) - an N+1 bounded by the scan's 1,000 rows; (2) an `OPEN` default alert whose party cannot be placed (none can exist: the fold is in the raising transaction) would sit at the drain's head, counted `claim.failed` each tick; (3) ~~the stall on an unplaceable borrower has no metric of its own~~ - *fixed after the coordinator's review (2026-10-26): `finapp.risk.collections.unplaced` (no tag, `RiskCollectionsMetrics`, PHASE_13_PLAN §15), counted by `CollectionsCases` before anything is raised*; (4) a cure is not consumed - the case waits for a person (owner item); (5) defaults recorded before this build open their case only on a replay (no backfill; owner item); (6) the join reads credit's exposure views, not a party view of its own (owner item) - **a future status filter on either view ("not `CLOSED`") would leave a default's agreement unplaceable and stall the `finapp.lending` or `finapp.bnpl` partition for every risk handler on it**; the reader is now recorded in `DATA_CLASSIFICATION.md` and `MODULE_ARCHITECTURE.md` beside the views' other readers; (7) the SLA and the severity are this task's defaults, C3 fixing neither (owner item). **After the coordinator's read-only review (MERGE, 2026-10-26) - its MINORs fixed:** the party placed first in `CollectionsCases.raise` (an unplaceable borrower refused before any alert is born or `finapp.risk.alert` counted - `#anUnplaceableBorrowerOpensNothing`, probed) and the stall's own meter `finapp.risk.collections.unplaced`; `CollectionsCaseDatabaseTest` seeds a loan and a BNPL obligation into lending's and bnpl's own tables and runs `#theJoinReadsThePublishedViews` (the placed parties asserted, the real `IdentitySubjectParties`) and the money's census end to end through the real join with a content digest of every lending, bnpl and ledger table (`#aDefaultsCaseChangesNothingOfTheObligationOrTheLedger`); `AUDITABLE_ACTIONS.md`'s `risk.CaseOpened` names the inbox opener; PHASE_13_PLAN §7.1's T-sig row its default leg and §7.4 the contention row for two defaults of one party.
 
 **P13-TST-001 — The risk storm** — `PLANNED`
 - **Objective**: prove risk correct under N instances, clock skew, provider faults and crashes, end to end from the

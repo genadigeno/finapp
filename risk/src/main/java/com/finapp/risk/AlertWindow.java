@@ -17,7 +17,10 @@ import java.util.Objects;
  * instant read after the caller's locks), {@link #of(VelocityWindowKey)} for a velocity window's own start, and - for
  * risk's own raisers over a born-once row's stored instant (a monitored transaction's or a signal's {@code recorded_at},
  * or, for the account-takeover alert, the anchor signal's {@code observed_at}: `P13-TSK-013`, {@link AccountTakeover})
- * - the package's {@link #containing(WindowKind, Instant)}. No factory reads a clock.
+ * - the package's {@link #containing(WindowKind, Instant)}; and for a default's alert (`P13-TSK-025`,
+ * {@link CollectionsCases}) the {@code D1} window of the business date the born-once signal stores - the producer's own
+ * date of the default, so a replay, or the same default re-delivered under any id, recomputes the same start. No factory
+ * reads a clock.
  */
 public final class AlertWindow {
 

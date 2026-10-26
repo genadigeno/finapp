@@ -87,6 +87,32 @@ class DailyReplayTest {
     }
 
     @Test
+    @DisplayName("a day not yet closed says so: today, and until the settle horizon past its end, a page answers"
+            + " closed=false - the pages may miss an assessment committed behind a cursor - and closed=true after;"
+            + " recorded in risk.Replayed's summary")
+    void aDayNotYetClosedSaysSo() {
+        partyOfActor.put(analyst.id(), UUID.randomUUID());
+        world.activate(V1);
+        seal(2);
+        DailyReplay.Result today = replay.replay(StandInConnections.snapshot(), DAY, analyst);
+        assertThat(today.known()).isTrue();
+        assertThat(today.closed()).as("today can still gain an assessment").isFalse();
+        replay.record(UOW, today, "the noon check", analyst, CorrelationId.of("flow-2"));
+        assertThat(audit.get(0).changeSummary().orElseThrow()).startsWith("date=2026-10-23, known=true, closed=false,");
+
+        reads.now = DAY.end().plus(DailyReplay.SETTLE).minusSeconds(1);
+        assertThat(replay.replay(StandInConnections.snapshot(), DAY, analyst).closed())
+                .as("within the settle horizon past midnight").isFalse();
+        reads.now = DAY.end().plus(DailyReplay.SETTLE);
+        DailyReplay.Result closed = replay.replay(StandInConnections.snapshot(), DAY, analyst);
+        assertThat(closed.closed()).isTrue();
+        assertThat(closed.replayed()).isEqualTo(today.replayed());
+        assertThatThrownBy(() -> new DailyReplay(reads, new RiskPolicies(world.policyStore), (unitOfWork, actor) ->
+                Optional.empty(), (unitOfWork, record) -> { }, EvaluationWorld.IDS, EvaluationWorld.CLOCK,
+                java.time.Duration.ofSeconds(-1))).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     @DisplayName("a policy activated mid-day changes nothing of the morning: each assessment replays under the version it"
             + " pinned, never the one active now")
     void eachAssessmentReplaysUnderItsOwnVersion() {

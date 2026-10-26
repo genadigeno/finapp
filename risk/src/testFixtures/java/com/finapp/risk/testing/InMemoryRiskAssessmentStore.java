@@ -100,6 +100,13 @@ public final class InMemoryRiskAssessmentStore implements RiskAssessmentStore {
     }
 
     @Override
+    public Optional<Instant> firstTransferAt(Connection unitOfWork) {
+        log.add("firstTransfer");
+        return rows.values().stream().filter(row -> row.operation() == RiskOperation.TRANSFER)
+                .map(row -> row.cutAt().or(row::assessedAt).orElse(Instant.EPOCH)).min(Comparator.naturalOrder());
+    }
+
+    @Override
     public Optional<JudgedPayment> judgedPayment(Connection unitOfWork, CommandRef commandRef) {
         log.add("judgedPayment");
         Objects.requireNonNull(commandRef, "commandRef");

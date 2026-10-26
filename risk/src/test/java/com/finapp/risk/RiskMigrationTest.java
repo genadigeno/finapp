@@ -438,6 +438,33 @@ class RiskMigrationTest {
                 + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
     }
 
+    // ------------------------------------------------------------------ V017 (P13-TSK-025)
+
+    @Test
+    @DisplayName("V017: the fact's alert admitted - its kind and its own code, no policy - and its shape held; the"
+            + " collections case a party's, opened by its default, disposed by facts only; no grant changed, every"
+            + " constraint name unique")
+    void theCollectionsCase() throws SQLException {
+        for (String admitting : List.of("risk_alert_kind_is_known", "risk_alert_rule_code_is_known",
+                "risk_alert_rule_matches_kind", "risk_alert_policy_named")) {
+            assertThat(scalar("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = '" + admitting + "'"))
+                    .as(admitting).contains("'OBLIGATION_DEFAULTED'");
+        }
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
+                + " AND conname IN ('risk_alert_default_names_its_agreement', 'risk_case_collections_of_a_party',"
+                + " 'risk_case_collections_opened_by_a_default', 'risk_case_collections_disposed_by_facts')"
+                + " ORDER BY conname")).containsExactly("risk_alert_default_names_its_agreement",
+                "risk_case_collections_disposed_by_facts", "risk_case_collections_of_a_party",
+                "risk_case_collections_opened_by_a_default");
+        assertThat(scalar("SELECT pg_get_constraintdef(oid) FROM pg_constraint"
+                + " WHERE conname = 'risk_case_collections_disposed_by_facts'")).contains("CLOSED_NO_ACTION")
+                .contains("REFERRED").doesNotContain("CONFIRMED").doesNotContain("FALSE_POSITIVE");
+        assertThat(grantsOn("risk_alert")).containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
+        assertThat(grantsOn("risk_case")).containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
+                + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
+    }
+
     // ------------------------------------------------------------------ V013 (P13-TSK-017)
 
     @Test

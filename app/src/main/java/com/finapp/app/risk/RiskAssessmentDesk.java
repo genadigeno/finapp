@@ -126,10 +126,11 @@ public final class RiskAssessmentDesk {
      * per operation, the reader's own party's divergent assessments counted and withheld, the first divergent of the
      * page the reader may be shown - an id and kinds, never a figure - the cursor it continued from ({@code after}) and
      * the one to continue with ({@code next}, null on the day's last page). The day is {@code IDENTICAL} when every page
-     * is.
+     * is. {@code closed} false while the day can still gain an assessment - a minute past its end - when its pages may
+     * miss one committed behind a cursor: replay it again once closed.
      */
-    public record RiskDayReplayView(String date, boolean known, String verdict, long replayed, long identical,
-            long diverged, long withheld, List<RiskDayReplayOperationView> operations,
+    public record RiskDayReplayView(String date, boolean known, boolean closed, String verdict, long replayed,
+            long identical, long diverged, long withheld, List<RiskDayReplayOperationView> operations,
             RiskDayReplayFirstView firstDiverged, String after, String next) {}
 
     /** One operation's replays of the day. */
@@ -201,7 +202,7 @@ public final class RiskAssessmentDesk {
             daily.record(unitOfWork, result, reasoned, actor, correlation);
             return null;
         });
-        return new RiskDayReplayView(result.day().toString(), result.known(), result.verdict().name(),
+        return new RiskDayReplayView(result.day().toString(), result.known(), result.closed(), result.verdict().name(),
                 result.replayed(), result.identical(), result.diverged(), result.withheld(),
                 result.operations().stream().map(operation -> new RiskDayReplayOperationView(
                         operation.operation().name(), operation.replayed(), operation.identical(),
