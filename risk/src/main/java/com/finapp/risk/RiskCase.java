@@ -235,6 +235,10 @@ public record RiskCase(
             throw new Cases.CaseActNotAdmitted("a disposition already awaits a second person on this case; decide that"
                     + " one first");
         }
+        if (!DispositionRules.admitted(kind, proposed)) {
+            throw new Cases.CaseRequestInvalid("a " + kind + " case is disposed " + DispositionRules.COLLECTIONS
+                    + " only - a default is a fact, never a finding (C3)");
+        }
         if (prohibits && !DispositionRules.mayProhibit(proposed, subject.kind())) {
             throw new Cases.CaseRequestInvalid("PROHIBITED is set only by a confirming disposition of a party's case");
         }

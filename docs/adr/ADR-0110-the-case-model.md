@@ -223,5 +223,19 @@ Financial impact: none — a case moves no money; its only effects are keyed act
   `RiskMetricTagsAreBoundedTest`) and the owed `CustomerAnswerIsIndifferentToACaseTest`. The gauges
   `finapp.risk.case.backlog{kind}` and `.case.age{kind}` read the queue. A signal's and a monitored transaction's read
   door - the resolution of those evidence references - is in no route table yet (owner item).
+- **Built by `P13-TSK-025` (2026-10-26) - decision 9, corrected (dated note).** "The model gains nothing for it beyond
+  the kind" no longer stands: a default is neither a policy rule's finding nor an operational signal, and `V010`'s CHECKs
+  coupled "own code, no policy" with "opens no case". **The alert gains a third origin, the fact**: `AlertKind.
+  OBLIGATION_DEFAULTED` (folding into `COLLECTIONS`) - its own code its rule, no policy (it alerts with no `MONITORING`
+  version active), about the `CREDIT_AGREEMENT`, its evidence exactly the one default signal, keyed on the `D1` bucket of
+  the default's business date - raised in T-sig by `CollectionsCases` on every delivery that reaches the handler (born or
+  standing), under the platform's actor (`RiskSignalIntake.asThePlatform`, enumerated). `risk V017` (persistence was
+  planned "none") re-makes the four CHECKs by name and adds the fact's shape and the kind's three CHECKs. **The case's
+  subject is the agreement's party** (`Cases`' kind rule over the accountable join - `app`'s `JdbcCreditAgreementParties`
+  over lending's and bnpl's published views, `SYSTEM_JOIN`), so one open per (party, `COLLECTIONS`) holds and a second
+  default attaches. **Facts only**: disposed `CLOSED_NO_ACTION` or `REFERRED` (`DispositionRules.COLLECTIONS`), never
+  `CLOSED_FALSE_POSITIVE`, `CONFIRMED_*` or `PROHIBITED`; no `ActionKind` (as `-017` built); never by hand. The SLA stays
+  168 h - owner item. Contact strategy, promises to pay, placement, agencies, write-off and provisioning stay out (Phase 14
+  and a later collections context); lending and bnpl unchanged.
 - **Acceptance.** `Proposed` at the Phase 12 → 13 transition (2026-10-22); the Phase 13 review (`P13-DOC-001`) reads
   this ADR against the code, corrects it in place with dated notes, and accepts it.

@@ -1,9 +1,11 @@
 package com.finapp.app.risk;
 
+import com.finapp.bnpl.BnplObligationId;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.IdentityStore;
 import com.finapp.merchant.Merchant;
 import com.finapp.merchant.MerchantId;
+import com.finapp.lending.LoanId;
 import com.finapp.merchant.MerchantStore;
 import com.finapp.risk.RiskPartyIdentities;
 import com.finapp.risk.RiskSubjectParties;
@@ -38,15 +40,30 @@ import java.util.UUID;
  * hint, and a merchant placed there would enrol every onboarded merchant's organisation in the profile sweep. The
  * merchant's people are not known to the platform (merchant access is by API key), so an analyst is refused only an
  * organisation's case that is their own party's - recorded for the owner.
+ *
+ * <p><strong>A credit agreement's party</strong> (`P13-TSK-025`): a default's collections case is its agreement's
+ * party's - the accountable join places a {@link SubjectKind#CREDIT_AGREEMENT} too, through
+ * {@link CreditAgreementParties} (lending's and bnpl's published views: a loan's borrower, else an obligation's
+ * customer), so the case folds onto the party, the default's alert is placed in the queue and judged for self-dealing.
+ * Deliberately <em>not</em> {@link #partyOf} either: a default pulling the borrower's profile permit would enrol it in a
+ * recompute no {@code MONITORING} rule kind reads a default for (`-007`'s note) - an owner's choice, recorded.
  */
 public final class IdentitySubjectParties implements RiskSubjectParties, RiskPartyIdentities {
 
     private final IdentityStore<Connection> identities;
     private final MerchantStore<Connection> merchants;
+    private final CreditAgreementParties agreements;
 
+    /** The join with no credit agreement placed ({@link CreditAgreementParties#NONE}) - the suites' shape. */
     public IdentitySubjectParties(IdentityStore<Connection> identities, MerchantStore<Connection> merchants) {
+        this(identities, merchants, CreditAgreementParties.NONE);
+    }
+
+    public IdentitySubjectParties(IdentityStore<Connection> identities, MerchantStore<Connection> merchants,
+            CreditAgreementParties agreements) {
         this.identities = Objects.requireNonNull(identities, "identities");
         this.merchants = Objects.requireNonNull(merchants, "merchants");
+        this.agreements = Objects.requireNonNull(agreements, "agreements");
     }
 
     @Override
@@ -57,7 +74,23 @@ public final class IdentitySubjectParties implements RiskSubjectParties, RiskPar
             return merchants.findById(unitOfWork, MerchantId.of(UUID.fromString(subject.ref())))
                     .map(Merchant::partyRef);
         }
+        if (subject.kind() == SubjectKind.CREDIT_AGREEMENT) {
+            return agreementParty(unitOfWork, subject.ref());
+        }
         return partyOf(unitOfWork, subject);
+    }
+
+    /** A loan's borrower, else a BNPL obligation's customer - a UUIDv7 names one agreement (ADR-0013); not one, nothing. */
+    private Optional<UUID> agreementParty(Connection unitOfWork, String ref) {
+        UUID id;
+        try {
+            id = UUID.fromString(ref);
+            LoanId.of(id);
+        } catch (IllegalArgumentException notAnAgreement) {
+            return Optional.empty();
+        }
+        Optional<UUID> borrower = agreements.partyOfLoan(unitOfWork, LoanId.of(id));
+        return borrower.isPresent() ? borrower : agreements.partyOfObligation(unitOfWork, BnplObligationId.of(id));
     }
 
     @Override

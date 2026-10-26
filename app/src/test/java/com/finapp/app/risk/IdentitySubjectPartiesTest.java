@@ -101,6 +101,48 @@ class IdentitySubjectPartiesTest {
         assertThat(join.accountablePartyOf(UOW, SignalSubject.of(SubjectKind.ACCOUNT, IDS.next()))).isEmpty();
     }
 
+    @Test
+    @DisplayName("P13-TSK-025, the accountable party: a credit agreement's party - a loan's borrower, else a BNPL"
+            + " obligation's customer - for a default's collections case; never through partyOf (a default pulls no"
+            + " profile permit); an unknown agreement or a non-v7 reference placing nothing, the obligation never asked"
+            + " once the loan answered")
+    void theAccountablePartyPlacesACreditAgreement() {
+        UUID borrower = IDS.next();
+        UUID customer = IDS.next();
+        UUID loan = IDS.next();
+        UUID obligation = IDS.next();
+        List<String> asked = new ArrayList<>();
+        CreditAgreementParties agreements = new CreditAgreementParties() {
+            @Override
+            public Optional<UUID> partyOfLoan(Connection unitOfWork, com.finapp.lending.LoanId id) {
+                asked.add("loan");
+                return id.value().equals(loan) ? Optional.of(borrower) : Optional.empty();
+            }
+
+            @Override
+            public Optional<UUID> partyOfObligation(Connection unitOfWork, com.finapp.bnpl.BnplObligationId id) {
+                asked.add("obligation");
+                return id.value().equals(obligation) ? Optional.of(customer) : Optional.empty();
+            }
+        };
+        IdentitySubjectParties join = new IdentitySubjectParties(identities(Map.of()), merchants(Map.of()), agreements);
+
+        SignalSubject loanSubject = SignalSubject.of(SubjectKind.CREDIT_AGREEMENT, loan);
+        assertThat(join.accountablePartyOf(UOW, loanSubject)).contains(borrower);
+        assertThat(asked).as("the loan answered: the obligation is never asked").containsExactly("loan");
+        assertThat(join.accountablePartyOf(UOW, SignalSubject.of(SubjectKind.CREDIT_AGREEMENT, obligation)))
+                .contains(customer);
+        assertThat(join.accountablePartyOf(UOW, SignalSubject.of(SubjectKind.CREDIT_AGREEMENT, IDS.next())))
+                .as("no such agreement").isEmpty();
+        asked.clear();
+        assertThat(join.accountablePartyOf(UOW, SignalSubject.of(SubjectKind.CREDIT_AGREEMENT, UUID.randomUUID())))
+                .as("a v4 is no agreement's").isEmpty();
+        assertThat(asked).as("nothing read for a reference no agreement can have").isEmpty();
+        assertThat(join.partyOf(UOW, loanSubject)).as("never the profile hint's join").isEmpty();
+        assertThat(new IdentitySubjectParties(identities(Map.of()), merchants(Map.of()))
+                .accountablePartyOf(UOW, loanSubject)).as("the suites' join places no agreement").isEmpty();
+    }
+
     /** Merchant's store answering {@code findById} with a merchant whose organisation party is the map's. */
     @SuppressWarnings("unchecked")
     private static com.finapp.merchant.MerchantStore<Connection> merchants(Map<UUID, UUID> organisations) {

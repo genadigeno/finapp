@@ -38,7 +38,9 @@ import java.util.UUID;
  *       {@code risk_case_one_open} with the alert as its opening (a racer losing the unique finds the winner's row
  *       next) - then (R5) the alert {@code OPEN → ATTACHED} through {@link RiskAlertStore#attach} (the store, never
  *       {@link Alerts}: a folding holding {@code Alerts} would be a construction cycle), the case's revision advanced
- *       and its {@code ALERT_ATTACHED} step written. The system never suppresses: a duplicate attaches.</li>
+ *       and its {@code ALERT_ATTACHED} step written. The system never suppresses: a duplicate attaches. <em>The case's
+ *       subject is the alert's</em> - but a default's alert (`P13-TSK-025`, {@link CollectionsCases}) folds into its
+ *       agreement's party's {@code COLLECTIONS} case ({@code caseSubjectOf}).</li>
  *   <li><strong>{@link #openFor}</strong> - `-004`'s {@link CaseOpener}, inside T-eval's money transaction after the
  *       seal and the alerts: the party's open case of the decision's kind ({@code ATO} when the sealed hits show the
  *       account-takeover anchors, else {@code FRAUD} - {@code DESIGN-016} D5) locked or opened, the assessment its
@@ -267,12 +269,13 @@ public final class Cases {
                 "an operational alert opens no case and folds into none"));
         Actor actor = SecurityContext.require();
         CorrelationId correlation = CorrelationId.of(born.correlationId());
+        SignalSubject subject = caseSubjectOf(unitOfWork, kind, born);
         for (int attempt = 0; attempt < OPEN_ATTEMPTS; attempt++) {
-            Optional<RiskCase> open = store.lockOpen(unitOfWork, born.subject(), kind);
+            Optional<RiskCase> open = store.lockOpen(unitOfWork, subject, kind);
             if (open.isPresent()) {
                 return attachedTo(unitOfWork, open.get(), born, actor, correlation);
             }
-            Optional<RiskCase> opened = born(unitOfWork, kind, born.subject(), Optional.of(born.id()),
+            Optional<RiskCase> opened = born(unitOfWork, kind, subject, Optional.of(born.id()),
                     Optional.empty(), actor, correlation, "alert");
             if (opened.isPresent()) {
                 attachEdge(unitOfWork, born.id(), opened.get().id());
@@ -689,6 +692,10 @@ public final class Cases {
         RiskAlert alert = alerts.find(unitOfWork, alertId).orElseThrow(CaseNotFound::new);
         CaseKind kind = alert.kind().caseKind().orElseThrow(() -> new CaseRequestInvalid(
                 "an operational alert opens no case"));
+        if (kind == CaseKind.COLLECTIONS) {
+            // P13-TSK-025: a default's alert folds into its party's collections case by itself, never by hand.
+            throw new CaseRequestInvalid("a COLLECTIONS case opens on its default by itself - never by hand");
+        }
         notOwn(unitOfWork, alert.subject(), own, "case-open");
         for (int attempt = 0; attempt < OPEN_ATTEMPTS; attempt++) {
             Optional<RiskCase> open = store.lockOpen(unitOfWork, alert.subject(), kind);
@@ -830,6 +837,28 @@ public final class Cases {
         }
         return actingParties.partyOf(unitOfWork, actor).orElseThrow(() -> new RiskAssessments.SelfDealingRefused(
                 RiskAssessments.SelfDealingRefused.Cause.UNPLACEABLE, act));
+    }
+
+    /**
+     * The subject of the case {@code born} folds into (`P13-TSK-025`, the kind's rule): an alert's own subject - except a
+     * {@link CaseKind#COLLECTIONS} alert's, about a credit agreement, whose case is <em>the agreement's party's</em>
+     * (one open per (party, {@code COLLECTIONS}): a second default of one party attaches), placed through the
+     * accountable join on the caller's unit of work.
+     *
+     * @throws IllegalStateException a collections alert whose party cannot be placed - a default never commits without
+     *     its case, so the raising transaction (T-sig's) is refused whole and the delivery is retried
+     */
+    private SignalSubject caseSubjectOf(Connection unitOfWork, CaseKind kind, RiskAlert born) {
+        if (kind != CaseKind.COLLECTIONS) {
+            return born.subject();
+        }
+        if (born.subject().kind() != SubjectKind.CREDIT_AGREEMENT) {
+            throw new IllegalArgumentException("a collections alert is about a credit agreement");
+        }
+        UUID party = subjectParties.accountablePartyOf(unitOfWork, born.subject()).orElseThrow(() ->
+                new IllegalStateException("a defaulted agreement's party cannot be placed: no collections case opens"
+                        + " without one"));
+        return SignalSubject.of(SubjectKind.PARTY, party);
     }
 
     /** {@code subject}'s accountable party placed (fail closed) and not {@code own}. */
