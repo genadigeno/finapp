@@ -22,7 +22,11 @@ import java.util.UUID;
 final class FakeRiskProofReads implements RiskProofReads {
 
     /** One planted assessment as the census reads it, with the identifier whose millisecond places its day. */
-    record Planted(UUID id, RiskOperation operation, CommandRef commandRef, boolean permits) {}
+    record Planted(UUID id, RiskOperation operation, CommandRef commandRef, boolean permits, UUID party) {
+        Planted(UUID id, RiskOperation operation, CommandRef commandRef, boolean permits) {
+            this(id, operation, commandRef, permits, UUID.randomUUID());
+        }
+    }
 
     Instant now = Instant.parse("2026-10-23T12:00:00Z");
     final List<Planted> assessed = new ArrayList<>();
@@ -53,7 +57,7 @@ final class FakeRiskProofReads implements RiskProofReads {
     public List<Assessed> assessed(Connection snapshot, RiskOperation operation, RiskDay day) {
         calls.add("assessed " + operation);
         return assessed.stream().filter(one -> one.operation() == operation && on(one.id(), day))
-                .map(one -> new Assessed(one.commandRef(), one.permits())).toList();
+                .map(one -> new Assessed(one.commandRef(), one.permits(), one.party())).toList();
     }
 
     @Override

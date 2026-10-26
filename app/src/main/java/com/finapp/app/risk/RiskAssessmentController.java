@@ -47,14 +47,19 @@ public class RiskAssessmentController {
     }
 
     /**
-     * Every assessment of a UTC day replayed under its own pinned pair (`P13-TSK-023`) - audited, a reason required,
-     * nothing changed; {@code IDENTICAL} or {@code DIVERGED}, the first divergent named.
+     * A page of a UTC day's assessments replayed under their own pinned pairs (`P13-TSK-023`) - audited, a reason
+     * required, nothing changed; {@code IDENTICAL} or {@code DIVERGED}, the page's first divergent named; at most
+     * {@code limit} (200 unless named, 1000 at most) after the cursor {@code after}, the answer's {@code next} the cursor
+     * of the page that follows.
      */
     @PostMapping(path = "/replay", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_INVESTIGATE)
     public RiskAssessmentDesk.RiskDayReplayView replayRiskAssessmentsOfDay(
-            @RequestParam(value = "date", required = false) String date, @Valid @RequestBody RiskReplayRequest body) {
-        return desk.replayDay(date, body.reason());
+            @RequestParam(value = "date", required = false) String date,
+            @RequestParam(value = "after", required = false) String after,
+            @RequestParam(value = "limit", required = false) String limit,
+            @Valid @RequestBody RiskReplayRequest body) {
+        return desk.replayDay(date, after, limit, body.reason());
     }
 
     /** Why the assessment is replayed - required, judged by the desk so a blank one carries its own code. */

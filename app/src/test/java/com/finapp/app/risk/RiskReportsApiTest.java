@@ -117,6 +117,24 @@ class RiskReportsApiTest {
         assertThat(RiskOperatorSessions.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
                 + " 'risk.Replayed' AND target_type = 'risk_assessment_day' AND target_id = '" + today + "' AND reason"
                 + " = 'the daily check' AND actor_id = '" + analyst.identity() + "'")).isEqualTo(1);
+
+        // The review's I3: a page at a time - a page of one names the cursor of the next; the next continues from it.
+        HttpResponse<String> first = http.post("/v1/operator/risk/assessments/replay?date=" + today + "&limit=1",
+                "{\"reason\":\"the paged check\"}", analyst.token());
+        assertThat(first.statusCode()).as(first.body()).isEqualTo(200);
+        assertThat(first.body()).contains("\"replayed\":1").contains("\"after\":null");
+        String next = RiskOperatorSessions.field(first.body(), "next");
+        HttpResponse<String> second = http.post("/v1/operator/risk/assessments/replay?date=" + today + "&limit=1&after="
+                + next, "{\"reason\":\"the paged check\"}", analyst.token());
+        assertThat(second.statusCode()).as(second.body()).isEqualTo(200);
+        assertThat(second.body()).contains("\"after\":\"" + next + "\"");
+        for (String page : new String[] {"&limit=0", "&limit=ten", "&after=not-an-id",
+                "&after=" + RiskOperatorSessions.IDS.next().toString().substring(0, 8)}) {
+            HttpResponse<String> refused = http.post("/v1/operator/risk/assessments/replay?date=" + today + page,
+                    "{\"reason\":\"the paged check\"}", analyst.token());
+            assertThat(refused.statusCode()).as(page + ": " + refused.body()).isEqualTo(422);
+            assertThat(refused.body()).contains("api.ValidationFailed");
+        }
     }
 
     @Test

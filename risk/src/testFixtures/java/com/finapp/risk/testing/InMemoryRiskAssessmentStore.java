@@ -88,6 +88,18 @@ public final class InMemoryRiskAssessmentStore implements RiskAssessmentStore {
     }
 
     @Override
+    public List<VelocityEvidence.Counted> uncountedSince(Connection unitOfWork, Instant from) {
+        log.add("uncounted");
+        return rows.values().stream()
+                .filter(row -> row.velocity() == VelocityOutcome.UNCOUNTED
+                        && !row.cutAt().or(row::assessedAt).orElse(Instant.EPOCH).isBefore(from))
+                .sorted(Comparator.comparing(row -> row.cutAt().or(row::assessedAt).orElse(Instant.EPOCH)))
+                .map(row -> new VelocityEvidence.Counted(row.movement(), row.cutAt().or(row::assessedAt).orElseThrow(),
+                        Optional.of(row.operation())))
+                .toList();
+    }
+
+    @Override
     public Optional<JudgedPayment> judgedPayment(Connection unitOfWork, CommandRef commandRef) {
         log.add("judgedPayment");
         Objects.requireNonNull(commandRef, "commandRef");

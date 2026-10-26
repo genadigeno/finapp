@@ -24453,6 +24453,64 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   §9's "a `VelocityDiverged`" procedure reading `GET /v1/operator/reports/risk/velocity`. **For `P13-TST-001`:** the
   censuses at every round are `RiskOperationsReports`' (one snapshot); the owed database suites. **For `P13-DOC-001`:**
   ratify D1 (a day an identifier range), D2 (no floor), D4 (the journal link's scope), D10 (gauges, no schedule).
+- **Fixed after the gate (2026-10-26; the coordinator's independent review of `f6986740` - `FIX FIRST`, no CRITICAL,
+  three IMPORTANT, seven MINOR; every finding fixed or recorded, the gate's checks re-run for what changed).**
+  **I1 - the proofs ran on the scrape thread, unbounded:** `RiskProofMetrics` now *starts* a reading on a virtual thread
+  of its own (`virtualThreads()`, an injected `Executor`) when a scrape finds the last older than the floor, a
+  compare-and-set in-flight flag making it **single-flight per instance**, and answers the last reading meanwhile; a
+  failed reading is counted - the new `finapp.risk.proof.reading{outcome=completed|failed}` (§15's 28th row, the outcome
+  vocabulary +2) - and leaves the gauges NaN until one completes; a reading older than two floors is NaN (`staleAfter`), so
+  a stuck refresher never keeps an old `HELD`; every statement of the reading bounded by **`RiskProofs.bound`** -
+  `statement_timeout` armed `SET LOCAL` by `set_config(..., true)`, `finapp.risk.proofs.statement-timeout` (5 s); the
+  windows × movements loop gone - the judgement groups the evidence by subject once (linear). Nothing on a money-moving
+  path waits on a proof. Tests: `RiskProofMetricsTest#singleFlightOffTheScrapeThread`, `#staleIsAbsent` (+2),
+  `RiskCensusesTest#aSnapshotIsBounded`, `RiskProofDesksTest#theReadingIsBounded`; owed `RiskProofsDatabaseTest#aProofsSnapshotIsBounded`.
+  **I2 - the velocity divergences:** a `Divergence` was already keyed by its window; the velocity report now **locates**
+  each - `RiskOperationsReports.Located` with the subject's reference - after placing the reader (fail closed) and
+  withholding, counted, a subject of the reader's own party or one the platform cannot place (a device, a session, a
+  beneficiary; an account through `MonitoredParties`, a merchant through `RiskSubjectParties`); the journal link sets
+  aside the windows of a movement the record permitted **`UNCOUNTED`** (`explained` - `RiskAssessmentStore.uncountedSince`,
+  `VelocityEvidence.Record.uncounted`) and the postings older than the record's first transfer (`beforeFloor` - the
+  go-live floor, `VelocityProof.transferFloor`), so `DIVERGED` - `VelocityDiverged` - is an unexplained difference only.
+  Tests: `VelocityProofTest#anUncountedTransferIsExplainedNotDiverged`, `#postingsBeforeTheFloorAreNotJudged` (+2),
+  `RiskOperationsReportsTest#aDivergenceIsLocated`. **I3 - the day's replay was unbounded:** `DailyReplay.replay(snapshot,
+  day, actor, after, limit)` - a page of at most `limit` assessments (`DEFAULT_LIMIT` 200, `MAX_LIMIT` 1000) after a
+  cursor of the day, the answer's `next` the cursor of the page that follows (`risk.Replayed`'s summary names both);
+  `POST …/assessments/replay?date=&after=&limit=`, a cursor not of the day or a limit that is no count `422
+  api.ValidationFailed` before any read; the page's snapshot bounded. **The bound alone, no advisory lock** (justified in
+  `DISTRIBUTED_EXECUTION.md`'s row): a page takes no lock and writes only its own record, so ten instances serving a
+  retry storm hold one bounded read each and nothing stacks; a lock would turn a harmless duplicate read into a refusal.
+  Tests: `DailyReplayTest#aDayReplaysIdenticalPageByPage`, `RiskProofDesksTest#theDayReplay` (the page's refusals);
+  owed `RiskProofsDatabaseTest#aDayReplaysByPage`, `RiskReportsApiTest#theDayReplay` (the paged HTTP case).
+  **M4 - recorded, not fixed:** a payment intent's day is its creation's, not its judgement's (an intent is minted at
+  creation and judged at confirmation, any number of days later, and `payment_intent_event.occurred_at` has no index) -
+  no difference manufactured (the cross-day lookup reconciles both directions), but an intent created on `D` and
+  confirmed later without its seal is named missing only by the census of `D`, which the meters stop reading after two
+  days; written precisely on `PlatformJudgedCommands`, `AssessmentCensus` and `PHASE_13_PLAN.md` §13.3 (owner item: a
+  payments index). **M5:** the javadoc's "bucketed sum, never one movement" corrected - a group's sum, which for a group of
+  one is that assessment's amount (an operator's read). **M6:** the velocity view carries `proofAsOf` - the proof is of
+  the windows live at the snapshot, the monitoring census of the date. **M7:** `INV-RSK-03`'s statement and verification
+  in `FINANCIAL_INVARIANTS.md` now say what is proven (the record over every dimension; the journal for windows of
+  transfers alone, explained and before-floor set aside) with an as-built note. **M8:** the AML desk's evidence door
+  stays an owner item. **M9:** `VelocityProof.run` and `prove` call `RiskProofs.requireSnapshot` - read-only required
+  (`VelocityProofTest`'s refusal case). **M10:** every report places its reader like the replay - an unplaceable reader
+  `403 risk.SelfDealingRefused`, recorded `FAILED` against the report (`RiskOperationsReports.recordRefusal`) - and an
+  orphaned assessment of the reader's own party is withheld from the decisions report, counted (`withheld`;
+  `RiskProofReads.Assessed` carries the party). Tests: `RiskOperationsReportsTest#theReaderIsPlaced`,
+  `RiskProofDesksTest#anUnplacedReaderIsRefusedAReport`. *Registers:* `RiskLogSitesAreEnumeratedTest` (+1),
+  `RiskMetricTagsAreBoundedTest` (`completed`, `failed`), `PHASE_13_PLAN.md` §9, §12.4, §13.3, §15 (28 rows),
+  `AUDITABLE_ACTIONS.md` (`risk.Replayed`'s page summary, `risk.ReportRead`'s placed reader, `risk.SelfDealingRefused`'s
+  two acts), `DISTRIBUTED_EXECUTION.md`, `MUTATION_TESTING.md` §2, `docs/api/openapi.json` (the replay's two parameters,
+  the views' new fields - additions only). *Probes, four more* (each red on its first run, restored by its saved bytes,
+  sha256 equal): the explained windows judged (`VelocityProofTest`, `INV-RSK-03`), the floor dropped (`VelocityProofTest`,
+  `INV-RSK-03`), the reader's own party located (`RiskOperationsReportsTest`, `INV-RSK-08`), the in-flight flag ignored
+  (`RiskProofMetricsTest`, 2 red - the distributed-execution probe). **Tests, fresh after the fixes:** risk `test` 476
+  across 75 classes, 0 failed; `app` `test` filtered to `com.finapp.app.risk.*` and nineteen guard suites by name 378
+  across 65 classes, one red - `OpenApiContractTest`, additions only, accepted by regenerating `docs/api/openapi.json` -
+  then the contract and doc guards re-run 69 across 14 classes, 0 failed; `:app:architectureTest` not re-run (the
+  coordinator's, once on the merged wave); `RiskProofsDatabaseTest` (10) and `RiskReportsApiTest` (4) written and owed
+  (C5). **For `-024`:** `RiskMetersTest` counts §15's 28 rows; an alert on
+  `finapp_risk_proof_reading_total{outcome="failed"}` rising for two floors (the proofs unread). Ten-instance `PASS`.
 
 **P13-TSK-024 — Operating risk: meters, alerts, reports, runbook §9, the activation gate** — `PLANNED`
 - **Objective**: the phase operable — every `PHASE_13_PLAN.md` §15 series registered eagerly and guarded, the

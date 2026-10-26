@@ -1,6 +1,7 @@
 package com.finapp.app.risk;
 
 import com.finapp.platform.api.ApiException;
+import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
@@ -14,13 +15,16 @@ import com.finapp.risk.RiskAssessments;
 import com.finapp.risk.RiskDay;
 import com.finapp.risk.RiskDecision;
 import com.finapp.risk.RiskErrorCode;
+import com.finapp.risk.RiskProofs;
 import com.finapp.risk.RiskReasons;
 import com.finapp.risk.RiskSpans;
 import com.finapp.risk.RuleHit;
 import com.finapp.sharedkernel.correlation.CorrelationId;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -35,11 +39,13 @@ import java.util.UUID;
  *   <li><strong>The replay</strong> - a blank or instrument-shaped reason refused ({@code 422 risk.ReasonRequired}) before
  *       anything is read; the replay on one read-only {@code REPEATABLE READ} snapshot; then {@code risk.Replayed}
  *       committed in a transaction of its own - only then is the verdict answered. It writes nothing else.</li>
- *   <li><strong>The day's replay</strong> (`P13-TSK-023`) - a date that is no calendar date {@code 422
- *       api.ValidationFailed} and a blank reason {@code 422 risk.ReasonRequired} before anything is read; every
- *       assessment of the UTC day replayed under its own pinned pair on one snapshot ({@link DailyReplay}); then
- *       {@code risk.Replayed} for the day committed in a transaction of its own; a reader the platform cannot place
- *       {@code 403 risk.SelfDealingRefused}, recorded {@code FAILED}.</li>
+ *   <li><strong>The day's replay</strong> (`P13-TSK-023`) - a date that is no calendar date, a cursor that is not one of
+ *       the day's assessments or a limit below one {@code 422 api.ValidationFailed}, and a blank reason {@code 422
+ *       risk.ReasonRequired}, before anything is read; a bounded page of the UTC day's assessments, each replayed under
+ *       its own pinned pair on one snapshot whose every statement is bounded ({@link DailyReplay},
+ *       {@link RiskProofs#bound}); then {@code risk.Replayed} for the page committed in a transaction of its own; a
+ *       reader the platform cannot place {@code 403 risk.SelfDealingRefused}, recorded {@code FAILED}. A retry repeats
+ *       one bounded page - no lock, nothing to stack across instances.</li>
  * </ul>
  *
  * <p>An analyst of the assessment's own party - or one the platform cannot place in a party - is {@code 403
@@ -53,13 +59,22 @@ public final class RiskAssessmentDesk {
     private final DailyReplay daily;
     private final RiskTransactions transactions;
     private final RiskFlowScope flow;
+    private final Duration statementTimeout;
 
+    /** The doors, a day replay's snapshot bounded by {@link RiskProofs#STATEMENT_TIMEOUT}. */
     public RiskAssessmentDesk(RiskAssessments assessments, DailyReplay daily, RiskTransactions transactions,
             RiskFlowScope flow) {
+        this(assessments, daily, transactions, flow, RiskProofs.STATEMENT_TIMEOUT);
+    }
+
+    /** The doors, a day replay's snapshot armed with {@code statementTimeout} ({@link RiskProofs#bound}). */
+    public RiskAssessmentDesk(RiskAssessments assessments, DailyReplay daily, RiskTransactions transactions,
+            RiskFlowScope flow, Duration statementTimeout) {
         this.assessments = Objects.requireNonNull(assessments, "assessments");
         this.daily = Objects.requireNonNull(daily, "daily");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
         this.flow = Objects.requireNonNull(flow, "flow");
+        this.statementTimeout = Objects.requireNonNull(statementTimeout, "statementTimeout");
     }
 
     /**
@@ -107,13 +122,15 @@ public final class RiskAssessmentDesk {
     public record RiskReplayView(String assessmentId, String verdict, List<String> diverged, Integer firstDivergedRule) {}
 
     /**
-     * A day's replay (`P13-TSK-023`): the date, whether the platform had it, the day's verdict, the counts per
-     * operation, the reader's own party's divergent assessments counted and withheld, and the first divergent the reader
-     * may be shown - an id and kinds, never a figure.
+     * A page of a day's replay (`P13-TSK-023`): the date, whether the platform had it, the page's verdict, the counts
+     * per operation, the reader's own party's divergent assessments counted and withheld, the first divergent of the
+     * page the reader may be shown - an id and kinds, never a figure - the cursor it continued from ({@code after}) and
+     * the one to continue with ({@code next}, null on the day's last page). The day is {@code IDENTICAL} when every page
+     * is.
      */
     public record RiskDayReplayView(String date, boolean known, String verdict, long replayed, long identical,
             long diverged, long withheld, List<RiskDayReplayOperationView> operations,
-            RiskDayReplayFirstView firstDiverged) {}
+            RiskDayReplayFirstView firstDiverged, String after, String next) {}
 
     /** One operation's replays of the day. */
     public record RiskDayReplayOperationView(String operation, long replayed, long identical, long diverged) {}
@@ -141,12 +158,22 @@ public final class RiskAssessmentDesk {
         return view(explained.assessment(), explanation(explained.explanation()));
     }
 
-    /**
-     * Every assessment of {@code rawDate} (UTC) replayed under its own pinned pair with {@code reason}, on one snapshot,
-     * the verdict answered once recorded ({@code risk.Replayed}, the day its target).
-     */
+    /** The day's first page, {@link DailyReplay#DEFAULT_LIMIT} assessments at most. */
     public RiskDayReplayView replayDay(String rawDate, String reason) {
+        return replayDay(rawDate, null, null, reason);
+    }
+
+    /**
+     * At most {@code limit} assessments of {@code rawDate} (UTC) after the assessment {@code rawAfter}, replayed under
+     * their own pinned pairs with {@code reason}, on one bounded snapshot, the page answered once recorded
+     * ({@code risk.Replayed}, the day its target). A cursor that is no assessment id of the day, or a limit below one, is
+     * {@code 422 api.ValidationFailed} before anything is read; a limit above {@link DailyReplay#MAX_LIMIT} is answered
+     * with that many.
+     */
+    public RiskDayReplayView replayDay(String rawDate, String rawAfter, String rawLimit, String reason) {
         RiskDay day = RiskReportDates.day(rawDate, "A risk day replay");
+        Optional<RiskAssessmentId> after = cursor(rawAfter, day);
+        int bounded = limit(rawLimit);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         String reasoned;
@@ -158,8 +185,10 @@ public final class RiskAssessmentDesk {
         }
         DailyReplay.Result result;
         try {
-            result = flow.door(RiskSpans.EXPLAIN, () -> transactions.inSnapshot(
-                    snapshot -> daily.replay(snapshot, day, actor)));
+            result = flow.door(RiskSpans.EXPLAIN, () -> transactions.inSnapshot(snapshot -> {
+                RiskProofs.bound(snapshot, statementTimeout);
+                return daily.replay(snapshot, day, actor, after, bounded);
+            }));
         } catch (RiskAssessments.SelfDealingRefused refused) {
             transactions.inTransaction(unitOfWork -> {
                 daily.recordRefusal(unitOfWork, day, refused, actor, correlation);
@@ -180,7 +209,39 @@ public final class RiskAssessmentDesk {
                 result.first().map(first -> new RiskDayReplayFirstView(first.assessment().value().toString(),
                         first.operation().name(), first.diverged().stream().map(Enum::name).toList(),
                         first.firstDivergedRule().isPresent() ? first.firstDivergedRule().getAsInt() : null))
-                        .orElse(null));
+                        .orElse(null),
+                result.after().map(id -> id.value().toString()).orElse(null),
+                result.next().map(id -> id.value().toString()).orElse(null));
+    }
+
+    /** {@code raw} as a page's limit - {@link DailyReplay#DEFAULT_LIMIT} when none is given; not a count 422. */
+    private static int limit(String raw) {
+        if (raw == null) {
+            return DailyReplay.DEFAULT_LIMIT;
+        }
+        if (raw.matches("^[0-9]{1,9}$") && Integer.parseInt(raw) >= 1) {
+            return Integer.parseInt(raw);
+        }
+        throw new ApiException(PlatformErrorCode.VALIDATION_FAILED, "A risk day replay was asked for a page that is"
+                + " not a count", "limit is 1 to " + DailyReplay.MAX_LIMIT + "; a larger one is answered with "
+                + DailyReplay.MAX_LIMIT + ".");
+    }
+
+    /** {@code raw} as a cursor of {@code day} - absent when none is given; anything else 422 before any read. */
+    private static Optional<RiskAssessmentId> cursor(String raw, RiskDay day) {
+        if (raw == null) {
+            return Optional.empty();
+        }
+        try {
+            UUID id = UUID.fromString(raw);
+            if (raw.length() == 36 && day.holds(id)) {
+                return Optional.of(RiskAssessmentId.of(id));
+            }
+        } catch (IllegalArgumentException malformed) {
+            // Falls through to the refusal.
+        }
+        throw new ApiException(PlatformErrorCode.VALIDATION_FAILED, "A risk day replay was asked to continue from a"
+                + " cursor that is not one of the day's", "after must be the next of the day's previous page.");
     }
 
     private record Explained(RiskAssessment assessment, Explanation explanation) {}

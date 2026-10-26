@@ -53,6 +53,12 @@ public record RiskDay(LocalDate date) {
         return MonitoringWatermark.positionAt(end().toEpochMilli());
     }
 
+    /** True when {@code id} was minted on this day. */
+    public boolean holds(UUID id) {
+        Objects.requireNonNull(id, "id");
+        return RiskProofs.order(id, fromId()) >= 0 && RiskProofs.order(id, toId()) < 0;
+    }
+
     /** The day before. */
     public RiskDay previous() {
         return new RiskDay(date.minusDays(1));

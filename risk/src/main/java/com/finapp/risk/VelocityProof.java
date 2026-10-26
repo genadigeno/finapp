@@ -2,11 +2,11 @@ package com.finapp.risk;
 
 import com.finapp.sharedkernel.money.CurrencyCode;
 import java.sql.Connection;
-import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +51,12 @@ import java.util.TreeMap;
  * transfers by construction, and is unprovable there. A window that holds against the record and diverges against the
  * journal is a seam that counted a transfer that never posted - named, never corrected. Each {@link Divergence} names its
  * currency and scale: a window counts in one currency, and a lost count in a second currency is its own divergence.
+ *
+ * <p><strong>What the journal link sets aside, by design, and names as such</strong> (the review's I2): the windows of a
+ * movement the record permitted <em>without counting</em> ({@link VelocityOutcome#UNCOUNTED} - the fail-safe's money
+ * moves uncounted) are <em>explained</em>; the postings older than the record's first transfer are <em>before the
+ * floor</em> - the seams judged nothing before they went live. So the link's {@code DIVERGED} - and the alert on it - is an
+ * unexplained difference only.
  */
 public final class VelocityProof {
 
@@ -88,9 +94,14 @@ public final class VelocityProof {
         }
     }
 
-    /** One run's outcome. */
+    /**
+     * One run's outcome. {@code explained} counts the windows set aside because the record names a movement it permitted
+     * without counting there (`P13-TSK-023`: an {@code UNCOUNTED} fail-safe's money moves uncounted, by design);
+     * {@code beforeFloor} the evidence's movements older than the record's first movement of the link's operation - the
+     * platform judged nothing before its seams went live. Neither is ever a divergence.
+     */
     public record Result(Verdict verdict, Instant asOf, Instant evidenceThrough, int judged, int pending, int unprovable,
-            List<Divergence> divergences) {
+            List<Divergence> divergences, int explained, int beforeFloor) {
         public Result {
             Objects.requireNonNull(verdict, "verdict");
             Objects.requireNonNull(asOf, "asOf");
@@ -99,12 +110,22 @@ public final class VelocityProof {
             if ((verdict == Verdict.DIVERGED) == divergences.isEmpty()) {
                 throw new IllegalArgumentException("a proof diverges exactly when it names a divergence");
             }
+            if (explained < 0 || beforeFloor < 0) {
+                throw new IllegalArgumentException("a proof counts from zero");
+            }
+        }
+
+        /** A run with nothing explained and no floor - the record's link, and every run before `-023`. */
+        public Result(Verdict verdict, Instant asOf, Instant evidenceThrough, int judged, int pending, int unprovable,
+                List<Divergence> divergences) {
+            this(verdict, asOf, evidenceThrough, judged, pending, unprovable, divergences, 0, 0);
         }
 
         @Override
         public String toString() {
             return "VelocityProof.Result[" + verdict + ", judged " + judged + ", pending " + pending + ", unprovable "
-                    + unprovable + ", diverged " + divergences.size() + "]";
+                    + unprovable + ", explained " + explained + ", before the floor " + beforeFloor + ", diverged "
+                    + divergences.size() + "]";
         }
     }
 
@@ -157,12 +178,12 @@ public final class VelocityProof {
     }
 
     /**
-     * One run in the caller's {@code REPEATABLE READ} transaction - one snapshot for the windows and the evidence, so a
-     * movement committing mid-run is in both or neither. A risk-only read: no lock, no write. Refused in any other
-     * isolation, where the two reads could see two different worlds.
+     * One run in the caller's read-only {@code REPEATABLE READ} transaction - one snapshot for the windows and the
+     * evidence, so a movement committing mid-run is in both or neither. A risk-only read: no lock, no write. Refused on
+     * any other connection ({@link RiskProofs#requireSnapshot}), where the two reads could see two worlds or write.
      */
     public Result run(Connection snapshot) {
-        requireRepeatableRead(snapshot);
+        RiskProofs.requireSnapshot(snapshot);
         Instant asOf = windows.databaseNow(snapshot);
         List<VelocityWindow> live = windows.live(snapshot);
         VelocityEvidence.Record record = evidence.read(snapshot, asOf.minus(LONGEST).minus(SKEW));
@@ -170,12 +191,13 @@ public final class VelocityProof {
     }
 
     /**
-     * The whole proof in the caller's {@code REPEATABLE READ} transaction (`P13-TSK-023`): the database's clock, the live
-     * windows and both evidences read once, the record's link judged over every dimension it names and the journal's
-     * over the windows of transfers alone. No lock, no write.
+     * The whole proof in the caller's read-only {@code REPEATABLE READ} transaction (`P13-TSK-023`): the database's clock,
+     * the live windows and both evidences read once, the record's link judged over every dimension it names and the
+     * journal's over the windows of transfers alone - with the windows of a permitted, uncounted movement explained and
+     * the postings older than the record's first transfer before the floor. No lock, no write.
      */
     public Whole prove(Connection snapshot) {
-        requireRepeatableRead(snapshot);
+        RiskProofs.requireSnapshot(snapshot);
         Instant asOf = windows.databaseNow(snapshot);
         List<VelocityWindow> live = windows.live(snapshot);
         Instant from = asOf.minus(LONGEST).minus(SKEW);
@@ -186,8 +208,19 @@ public final class VelocityProof {
         }
         VelocityEvidence.Record posted = journal.get().read(snapshot, from);
         Set<VelocityDimension> provable = journal.get().provable();
-        return new Whole(ofRecord, Optional.of(judge(asOf, live, posted, provable, SKEW,
-                notOnlyTransfers(record, provable))));
+        Optional<Instant> floor = transferFloor(record);
+        List<VelocityEvidence.Counted> judged = new ArrayList<>();
+        int beforeFloor = 0;
+        for (VelocityEvidence.Counted counted : posted.movements()) {
+            if (floor.isPresent() && !counted.at().isBefore(floor.get().minus(SKEW))) {
+                judged.add(counted);
+            } else {
+                beforeFloor++;
+            }
+        }
+        return new Whole(ofRecord, Optional.of(judge(asOf, live,
+                new VelocityEvidence.Record(judged, posted.completeThrough()), provable, SKEW,
+                notOnlyTransfers(record, provable), keysOf(record.uncounted(), provable), beforeFloor)));
     }
 
     /**
@@ -195,11 +228,19 @@ public final class VelocityProof {
      * the journal's transfers cannot equal them. A movement whose operation the record does not name counts as other.
      */
     static Set<VelocityWindowKey> notOnlyTransfers(VelocityEvidence.Record record, Set<VelocityDimension> provable) {
-        Set<VelocityWindowKey> keys = new HashSet<>();
+        List<VelocityEvidence.Counted> others = new ArrayList<>();
         for (VelocityEvidence.Counted counted : record.movements()) {
-            if (counted.operation().filter(operation -> operation == RiskOperation.TRANSFER).isPresent()) {
-                continue;
+            if (counted.operation().filter(operation -> operation == RiskOperation.TRANSFER).isEmpty()) {
+                others.add(counted);
             }
+        }
+        return keysOf(others, provable);
+    }
+
+    /** Every window, of every kind, of {@code provable} dimensions that one of {@code movements} falls in. */
+    static Set<VelocityWindowKey> keysOf(List<VelocityEvidence.Counted> movements, Set<VelocityDimension> provable) {
+        Set<VelocityWindowKey> keys = new HashSet<>();
+        for (VelocityEvidence.Counted counted : movements) {
             for (VelocityDimension dimension : provable) {
                 counted.movement().subject(dimension).ifPresent(subject -> {
                     for (WindowKind kind : WindowKind.values()) {
@@ -209,6 +250,25 @@ public final class VelocityProof {
             }
         }
         return keys;
+    }
+
+    /**
+     * The journal link's floor: the earliest transfer the record holds, counted or permitted uncounted - before it the
+     * platform's seams judged no transfer (the go-live), so a posting older than it is no evidence for any window.
+     * Empty when the record holds no transfer at all: then the link judges nothing, and the assessment census - not this
+     * proof - is what names a transfer committed without its seal.
+     */
+    static Optional<Instant> transferFloor(VelocityEvidence.Record record) {
+        Instant floor = null;
+        for (List<VelocityEvidence.Counted> movements : List.of(record.movements(), record.uncounted())) {
+            for (VelocityEvidence.Counted counted : movements) {
+                if (counted.operation().filter(operation -> operation == RiskOperation.TRANSFER).isPresent()
+                        && (floor == null || counted.at().isBefore(floor))) {
+                    floor = counted.at();
+                }
+            }
+        }
+        return Optional.ofNullable(floor);
     }
 
     /** The pure judgement - {@link #run}'s, given its reads. */
@@ -223,17 +283,38 @@ public final class VelocityProof {
      */
     public static Result judge(Instant asOf, List<VelocityWindow> live, VelocityEvidence.Record record,
             Set<VelocityDimension> provable, Duration skew, Set<VelocityWindowKey> unprovable) {
+        return judge(asOf, live, record, provable, skew, unprovable, Set.of(), 0);
+    }
+
+    /**
+     * The pure judgement with {@code unprovable} windows and {@code explained} ones set aside - counted, never judged,
+     * never a lost count - and {@code beforeFloor} the evidence's movements already set aside by the caller. The
+     * evidence is grouped by subject once, so a run is linear in the windows plus the movements, never their product.
+     */
+    public static Result judge(Instant asOf, List<VelocityWindow> live, VelocityEvidence.Record record,
+            Set<VelocityDimension> provable, Duration skew, Set<VelocityWindowKey> unprovable,
+            Set<VelocityWindowKey> explained, int beforeFloor) {
         Objects.requireNonNull(asOf, "asOf");
         Objects.requireNonNull(live, "live");
         Objects.requireNonNull(record, "record");
         Objects.requireNonNull(provable, "provable");
         Objects.requireNonNull(skew, "skew");
         Objects.requireNonNull(unprovable, "unprovable");
+        Objects.requireNonNull(explained, "explained");
         Instant judgeable = record.completeThrough().minus(skew);
+        Map<VelocityDimension, Map<String, List<VelocityEvidence.Counted>>> bySubject = new HashMap<>();
+        for (VelocityEvidence.Counted counted : record.movements()) {
+            for (VelocityDimension dimension : provable) {
+                counted.movement().subject(dimension).ifPresent(subject -> bySubject
+                        .computeIfAbsent(dimension, ignored -> new HashMap<>())
+                        .computeIfAbsent(subject, ignored -> new ArrayList<>()).add(counted));
+            }
+        }
         Map<VelocityWindowKey, VelocityWindow> rows = new TreeMap<>();
         int judged = 0;
         int pending = 0;
         int unproven = 0;
+        int setAside = 0;
         List<Divergence> divergences = new ArrayList<>();
         for (VelocityWindow window : live) {
             if (!window.key().windowEnd().isAfter(asOf)) {
@@ -244,12 +325,19 @@ public final class VelocityProof {
                 unproven++;
                 continue;
             }
+            if (explained.contains(window.key())) {
+                setAside++;
+                continue;
+            }
             if (window.lastCountedAt().isAfter(judgeable)) {
                 pending++;
                 continue;
             }
             judged++;
-            Range range = range(window, record.movements(), skew);
+            List<VelocityEvidence.Counted> ofSubject = bySubject
+                    .getOrDefault(window.key().dimension(), Map.of())
+                    .getOrDefault(window.key().subjectRef(), List.of());
+            Range range = range(window, ofSubject, skew);
             if (!range.admits(window.count(), window.sum().minorUnits())) {
                 divergences.add(range.divergence(window.key(), window.sum().currency(), window.sum().scale(),
                         window.count(), window.sum().minorUnits()));
@@ -265,7 +353,7 @@ public final class VelocityProof {
                         VelocityWindow row = rows.get(key);
                         boolean counts = row != null && row.sameMoneyAs(counted.movement().amount());
                         if (key.windowEnd().isAfter(asOf) && certainlyInside(key, counted.at(), skew) && !counts
-                                && !unprovable.contains(key)) {
+                                && !unprovable.contains(key) && !explained.contains(key)) {
                             lost.computeIfAbsent(new LostKey(key, counted.movement().amount().currency().code(),
                                     counted.movement().amount().scale()), k -> new Range()).add(counted, true);
                         }
@@ -278,20 +366,7 @@ public final class VelocityProof {
         Verdict verdict = !divergences.isEmpty() ? Verdict.DIVERGED
                 : judged == 0 ? Verdict.VACUOUS : Verdict.HELD;
         return new Result(verdict, asOf, record.completeThrough(), judged, pending, unproven,
-                Collections.unmodifiableList(divergences));
-    }
-
-    /** The proofs read one REPEATABLE READ snapshot - refused in any other isolation. */
-    private static void requireRepeatableRead(Connection snapshot) {
-        Objects.requireNonNull(snapshot, "snapshot");
-        try {
-            if (snapshot.getTransactionIsolation() != Connection.TRANSACTION_REPEATABLE_READ) {
-                throw new IllegalStateException("the velocity proof reads one REPEATABLE READ snapshot");
-            }
-        } catch (SQLException failure) {
-            throw new RiskStorageException(
-                    "risk storage failed reading the proof's isolation: SQLSTATE " + failure.getSQLState());
-        }
+                Collections.unmodifiableList(divergences), setAside, beforeFloor);
     }
 
     /** A lost count's identity: the window it belongs to, in the movement's own currency and scale. */

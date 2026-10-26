@@ -58,11 +58,23 @@ public interface VelocityEvidence {
         }
     }
 
-    /** The evidence: the counted movements, and the instant through which no counted movement is missing from them. */
-    record Record(List<Counted> movements, Instant completeThrough) {
+    /**
+     * The evidence: the counted movements, the instant through which no counted movement is missing from them, and -
+     * the record's own account (`P13-TSK-023`) - the movements it <em>permitted without counting</em>
+     * ({@link VelocityOutcome#UNCOUNTED}: the fail-safe's "the money moves uncounted"), at their assessment's instant:
+     * they post and are rightly absent from every window, so a link judging windows against postings sets their
+     * windows aside as explained rather than naming a difference.
+     */
+    record Record(List<Counted> movements, Instant completeThrough, List<Counted> uncounted) {
         public Record {
             movements = List.copyOf(Objects.requireNonNull(movements, "movements"));
             Objects.requireNonNull(completeThrough, "completeThrough");
+            uncounted = List.copyOf(Objects.requireNonNull(uncounted, "uncounted"));
+        }
+
+        /** Evidence that names no uncounted movement - the journal's, and every evidence before `-023`. */
+        public Record(List<Counted> movements, Instant completeThrough) {
+            this(movements, completeThrough, List.of());
         }
     }
 

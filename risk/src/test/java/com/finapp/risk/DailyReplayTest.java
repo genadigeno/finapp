@@ -51,23 +51,39 @@ class DailyReplayTest {
     private final Actor analyst = new Actor("analyst-1", ActorType.CUSTOMER);
 
     @Test
-    @DisplayName("a day of judged transfers and fail-safes replays IDENTICAL across pages - more than one page of"
-            + " assessments, each counted once")
-    void aDayReplaysIdentical() {
+    @DisplayName("a day of judged transfers and fail-safes replays IDENTICAL a bounded page at a time - each call at most"
+            + " its limit, the cursor to continue with answered while more remain, every assessment counted once")
+    void aDayReplaysIdenticalPageByPage() {
         partyOfActor.put(analyst.id(), UUID.randomUUID());
         seal(3); // no policy yet: three recorded fail-safes
         world.activate(V1);
-        seal(DailyReplay.PAGE + 7);
+        seal(DailyReplay.DEFAULT_LIMIT + 7);
 
-        DailyReplay.Result result = replay.replay(StandInConnections.snapshot(), DAY, analyst);
-        assertThat(result.known()).isTrue();
-        assertThat(result.replayed()).isEqualTo(DailyReplay.PAGE + 10);
-        assertThat(result.identical()).isEqualTo(result.replayed());
-        assertThat(result.verdict()).isEqualTo(AssessmentReplay.Outcome.IDENTICAL);
-        assertThat(result.first()).isEmpty();
-        assertThat(result.operations()).singleElement().satisfies(operation ->
+        DailyReplay.Result first = replay.replay(StandInConnections.snapshot(), DAY, analyst);
+        assertThat(first.known()).isTrue();
+        assertThat(first.replayed()).as("the default page").isEqualTo(DailyReplay.DEFAULT_LIMIT);
+        assertThat(first.identical()).isEqualTo(first.replayed());
+        assertThat(first.next()).as("more remain").isPresent();
+        DailyReplay.Result rest = replay.replay(StandInConnections.snapshot(), DAY, analyst, first.next(),
+                DailyReplay.MAX_LIMIT);
+        assertThat(rest.replayed()).isEqualTo(10);
+        assertThat(rest.after()).isEqualTo(first.next());
+        assertThat(rest.next()).as("the day is done").isEmpty();
+        assertThat(rest.verdict()).isEqualTo(AssessmentReplay.Outcome.IDENTICAL);
+        assertThat(first.first()).isEmpty();
+        assertThat(rest.operations()).singleElement().satisfies(operation ->
                 assertThat(operation.operation()).isEqualTo(RiskOperation.TRANSFER));
-        assertThat(reads.calls.stream().filter("assessmentsOfDay"::equals)).as("two pages").hasSize(2);
+
+        DailyReplay.Result capped = replay.replay(StandInConnections.snapshot(), DAY, analyst, Optional.empty(),
+                Integer.MAX_VALUE);
+        assertThat(capped.replayed()).as("a larger limit is answered with the bound").isEqualTo(
+                DailyReplay.DEFAULT_LIMIT + 10);
+        assertThatThrownBy(() -> replay.replay(StandInConnections.snapshot(), DAY, analyst, Optional.empty(), 0))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> replay.replay(StandInConnections.snapshot(), DAY, analyst,
+                Optional.of(RiskAssessmentId.of(FakeRiskProofReads.mintedAt(java.time.Instant.parse(
+                        "2026-10-24T09:00:00Z")))), 10)).as("a cursor of another day").isInstanceOf(
+                IllegalArgumentException.class);
     }
 
     @Test

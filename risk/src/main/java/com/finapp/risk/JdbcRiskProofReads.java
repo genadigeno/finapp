@@ -36,7 +36,7 @@ public final class JdbcRiskProofReads implements RiskProofReads {
 
     static final String NOW = "SELECT clock_timestamp()";
 
-    static final String ASSESSED = "SELECT command_ref, decision, challenge_satisfied FROM risk.risk_assessment"
+    static final String ASSESSED = "SELECT command_ref, decision, challenge_satisfied, party_id FROM risk.risk_assessment"
             + " WHERE id >= ? AND id < ? AND operation = ? ORDER BY id";
 
     static final String ASSESSED_AMONG = "SELECT command_ref FROM risk.risk_assessment"
@@ -141,7 +141,8 @@ public final class JdbcRiskProofReads implements RiskProofReads {
                 while (row.next()) {
                     Object satisfied = row.getObject("challenge_satisfied");
                     assessed.add(new Assessed(CommandRef.of(row.getString("command_ref")), VelocityWindows.permits(
-                            RiskDecision.valueOf(row.getString("decision")), Boolean.TRUE.equals(satisfied))));
+                            RiskDecision.valueOf(row.getString("decision")), Boolean.TRUE.equals(satisfied)),
+                            row.getObject("party_id", UUID.class)));
                 }
             }
         } catch (SQLException failure) {

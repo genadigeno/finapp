@@ -47,6 +47,8 @@ import com.finapp.risk.RiskPolicies;
 import com.finapp.risk.RiskPolicy;
 import com.finapp.risk.RiskPolicyAdministration;
 import com.finapp.risk.RiskProofReads;
+import com.finapp.risk.RiskProofs;
+import com.finapp.risk.RiskStorageException;
 import com.finapp.risk.SignalSubject;
 import com.finapp.risk.SubjectKind;
 import com.finapp.risk.VelocityDimension;
@@ -125,12 +127,12 @@ class RiskProofsDatabaseTest {
     void aCensusUnderLoadIsOneSnapshot() {
         RiskDay today = RiskDay.containing(Instant.now());
         long[] seen = riskTransactions.inSnapshot(snapshot -> {
-            long before = transfers(riskOperationsReports.decisions(snapshot, today));
+            long before = transfers(riskProofReads.decisions(snapshot, today));
             CompletableFuture.allOf(new CompletableFuture<?>[] {
                     CompletableFuture.runAsync(() -> seal(IDS.next(), 100_00)),
                     CompletableFuture.runAsync(() -> seal(IDS.next(), 200_00)),
                     CompletableFuture.runAsync(() -> seal(IDS.next(), 300_00))}).join();
-            long after = transfers(riskOperationsReports.decisions(snapshot, today));
+            long after = transfers(riskProofReads.decisions(snapshot, today));
             long census = new AssessmentCensus(riskProofReads, judgedCommands).run(snapshot, today).operations().stream()
                     .filter(operation -> operation.operation() == RiskOperation.TRANSFER).findFirst().orElseThrow()
                     .assessments();
@@ -138,7 +140,7 @@ class RiskProofsDatabaseTest {
         });
         assertThat(seen[1]).as("three seals committed between the two reads - the snapshot saw none").isEqualTo(seen[0]);
         assertThat(seen[2]).as("the census and the report read one world").isEqualTo(seen[0]);
-        long fresh = riskTransactions.inSnapshot(snapshot -> transfers(riskOperationsReports.decisions(snapshot, today)));
+        long fresh = riskTransactions.inSnapshot(snapshot -> transfers(riskProofReads.decisions(snapshot, today)));
         assertThat(fresh).isGreaterThanOrEqualTo(seen[0] + 3);
     }
 
@@ -191,16 +193,67 @@ class RiskProofsDatabaseTest {
                 (unitOfWork, actor) -> Optional.of(UUID.randomUUID()), auditWriter, IDS, Clock.systemUTC());
         Actor analyst = new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER);
         RiskDay today = RiskDay.containing(Instant.now());
-        DailyReplay.Result before = riskTransactions.inSnapshot(snapshot -> replay.replay(snapshot, today, analyst));
+        long[] before = wholeDay(replay, today, analyst);
 
         for (int i = 0; i < 3; i++) {
             plant(v1, first);
             plant(v2, second);
         }
 
-        DailyReplay.Result after = riskTransactions.inSnapshot(snapshot -> replay.replay(snapshot, today, analyst));
-        assertThat(after.replayed() - before.replayed()).isGreaterThanOrEqualTo(6);
-        assertThat(after.diverged()).as("each under its own version - none diverged").isEqualTo(before.diverged());
+        long[] after = wholeDay(replay, today, analyst);
+        assertThat(after[0] - before[0]).isGreaterThanOrEqualTo(6);
+        assertThat(after[1]).as("each under its own version - none diverged").isEqualTo(before[1]);
+    }
+
+    @Test
+    @DisplayName("a proof's snapshot is bounded (the review's I1, I3): statement_timeout armed for the transaction alone,"
+            + " a statement past it cancelled 57014 - the read fails whole; the next transaction is unbounded again")
+    void aProofsSnapshotIsBounded() {
+        String armed = riskTransactions.inSnapshot(snapshot -> {
+            RiskProofs.bound(snapshot, java.time.Duration.ofSeconds(5));
+            return setting(snapshot);
+        });
+        assertThat(armed).isEqualTo("5s");
+        Throwable cancelled = org.assertj.core.api.Assertions.catchThrowable(() -> riskTransactions.inSnapshot(
+                snapshot -> {
+                    RiskProofs.bound(snapshot, java.time.Duration.ofMillis(100));
+                    try (PreparedStatement sleep = snapshot.prepareStatement("SELECT pg_sleep(2)")) {
+                        sleep.executeQuery().close();
+                        return null;
+                    } catch (java.sql.SQLException failure) {
+                        throw new IllegalStateException(failure.getSQLState(), failure);
+                    }
+                }));
+        assertThat(cancelled).hasMessageContaining(RiskStorageException.QUERY_CANCELED);
+        assertThat(riskTransactions.inSnapshot(RiskProofsDatabaseTest::setting)).as("SET LOCAL - gone with the"
+                + " transaction").isNotEqualTo("100ms");
+    }
+
+    @Test
+    @DisplayName("a day's replay pages by cursor: the pages in order replay every assessment once - their counts sum to"
+            + " the day's - and a page past the last answers no next")
+    void aDayReplaysByPage() {
+        DailyReplay replay = new DailyReplay(riskProofReads, riskPolicies,
+                (unitOfWork, actor) -> Optional.of(UUID.randomUUID()), auditWriter, IDS, Clock.systemUTC());
+        Actor analyst = new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER);
+        RiskDay today = RiskDay.containing(Instant.now());
+        seal(IDS.next(), 10_00);
+        seal(IDS.next(), 20_00);
+        long[] counted = riskTransactions.inSnapshot(snapshot -> {
+            long whole = replay.replay(snapshot, today, analyst, Optional.empty(), DailyReplay.MAX_LIMIT).replayed();
+            long paged = 0;
+            Optional<RiskAssessmentId> cursor = Optional.empty();
+            DailyReplay.Result page;
+            do {
+                page = replay.replay(snapshot, today, analyst, cursor, 1);
+                paged += page.replayed();
+                cursor = page.next();
+            } while (cursor.isPresent() && paged < DailyReplay.MAX_LIMIT);
+            return new long[] {whole, paged};
+        });
+        assertThat(counted[0]).isGreaterThanOrEqualTo(2);
+        assertThat(counted[1]).as("one snapshot: the pages are the day").isEqualTo(Math.min(counted[0],
+                DailyReplay.MAX_LIMIT));
     }
 
     // ------------------------------------------------------------------ one per census
@@ -355,9 +408,34 @@ class RiskProofsDatabaseTest {
         }
     }
 
-    private static long transfers(RiskOperationsReports.DecisionsReport report) {
-        return report.rows().stream().filter(row -> row.operation() == RiskOperation.TRANSFER)
+    private static long transfers(List<RiskProofReads.DecisionRow> rows) {
+        return rows.stream().filter(row -> row.operation() == RiskOperation.TRANSFER)
                 .mapToLong(RiskProofReads.DecisionRow::assessments).sum();
+    }
+
+    /** The whole day replayed page by page, each page its own snapshot: {replayed, diverged}. */
+    private long[] wholeDay(DailyReplay replay, RiskDay day, Actor analyst) {
+        long[] figures = new long[2];
+        Optional<RiskAssessmentId> cursor = Optional.empty();
+        do {
+            Optional<RiskAssessmentId> after = cursor;
+            DailyReplay.Result page = riskTransactions.inSnapshot(snapshot -> replay.replay(snapshot, day, analyst,
+                    after, DailyReplay.MAX_LIMIT));
+            figures[0] += page.replayed();
+            figures[1] += page.diverged();
+            cursor = page.next();
+        } while (cursor.isPresent());
+        return figures;
+    }
+
+    private static String setting(Connection snapshot) {
+        try (PreparedStatement select = snapshot.prepareStatement("SELECT current_setting('statement_timeout')");
+                ResultSet row = select.executeQuery()) {
+            row.next();
+            return row.getString(1);
+        } catch (java.sql.SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
     }
 
     private static <T> T inTransaction(Function<Connection, T> work) {

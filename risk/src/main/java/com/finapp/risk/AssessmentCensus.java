@@ -4,7 +4,9 @@ import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -31,6 +33,11 @@ import java.util.Set;
  * One read-only {@code REPEATABLE READ} snapshot ({@link RiskProofs#requireSnapshot}): the seal and its command commit in
  * one transaction, so in one snapshot they are both visible or neither. Nothing is written; a difference is named
  * (at most {@link RiskProofs#NAMED} references a list) and corrected by nobody here.
+ *
+ * <p><strong>A command's day is its id's</strong>, and for a payment intent that is its creation, not its judgement
+ * (the review's M4, recorded in {@code app}'s {@code PlatformJudgedCommands}): an intent created on {@code D} and confirmed
+ * later without its seal is named missing only by the census of {@code D} - the meters' reading of today and yesterday
+ * stops seeing it after two days; the decisions report for {@code D} does not.
  */
 public final class AssessmentCensus {
 
@@ -40,7 +47,7 @@ public final class AssessmentCensus {
 
     /** One operation's census for the day. */
     public record Operation(RiskOperation operation, long assessments, long commands, long matched, long reconciled,
-            long unrecordable, List<CommandRef> missing, long missingCount, List<CommandRef> orphaned,
+            long unrecordable, List<CommandRef> missing, long missingCount, List<RiskProofReads.Assessed> orphaned,
             long orphanedCount) {
         public Operation {
             Objects.requireNonNull(operation, "operation");
@@ -98,7 +105,7 @@ public final class AssessmentCensus {
         List<RiskProofReads.Assessed> assessed = reads.assessed(snapshot, operation, day);
         Set<CommandRef> commands = owners.judged(snapshot, operation, day);
         Set<CommandRef> sealed = new LinkedHashSet<>();
-        Set<CommandRef> recordable = new LinkedHashSet<>();
+        Map<CommandRef, RiskProofReads.Assessed> recordable = new LinkedHashMap<>();
         long unrecordable = 0;
         for (RiskProofReads.Assessed one : assessed) {
             sealed.add(one.commandRef());
@@ -106,7 +113,7 @@ public final class AssessmentCensus {
                 // crossborder keeps no row of a command risk refused - only the seal stands (DESIGN-023 D2).
                 unrecordable++;
             } else {
-                recordable.add(one.commandRef());
+                recordable.put(one.commandRef(), one);
             }
         }
         Set<CommandRef> unsealed = new LinkedHashSet<>(commands);
@@ -119,14 +126,14 @@ public final class AssessmentCensus {
                 missing.add(ref);
             }
         }
-        Set<CommandRef> uncommanded = new LinkedHashSet<>(recordable);
+        Set<CommandRef> uncommanded = new LinkedHashSet<>(recordable.keySet());
         uncommanded.removeAll(commands);
         Set<CommandRef> commandedElsewhere = uncommanded.isEmpty() ? Set.of()
                 : owners.recorded(snapshot, operation, uncommanded);
-        List<CommandRef> orphaned = new ArrayList<>();
+        List<RiskProofReads.Assessed> orphaned = new ArrayList<>();
         for (CommandRef ref : uncommanded) {
             if (!commandedElsewhere.contains(ref)) {
-                orphaned.add(ref);
+                orphaned.add(recordable.get(ref));
             }
         }
         long matched = commands.size() - unsealed.size();

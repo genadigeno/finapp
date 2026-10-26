@@ -10,28 +10,46 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Risk's operations reports and the proofs' one reading (`P13-TSK-023`; {@code PHASE_13_PLAN.md} sections 9, 13.3, 15;
  * {@code DESIGN-023} D8, D10; bnpl's {@code BnplReports} shape) - <strong>decisions</strong>, <strong>alerts</strong>,
  * <strong>cases</strong> and <strong>velocity</strong> for one UTC day, each read on ONE read-only
  * {@code REPEATABLE READ} snapshot with the census it carries, so a report's rows and its census agree whatever commits
- * beside it. Counts and codes; money only as exact minor units grouped by currency (a bucketed sum, never one movement);
- * never a subject, a person, a note or a score - an identifier only where a proof names a difference (at most
- * {@link RiskProofs#NAMED} a list). A day before {@link DailyReplay#EARLIEST} or after the database's today is
- * {@code known=false}: nothing read, still recorded. {@link #record} appends {@code risk.ReportRead}, which the caller
- * commits in a transaction of its own before the report is answered. Nothing else is written - a report names, a person
- * acts.
+ * beside it. Counts and codes; money only as exact minor units grouped by currency - a group's sum, which for a group of
+ * one assessment is that assessment's amount: an operator's read, never a customer's. A day before
+ * {@link DailyReplay#EARLIEST} or after the database's today is {@code known=false}: nothing read, still recorded.
+ * {@link #record} appends {@code risk.ReportRead}, which the caller commits in a transaction of its own before the report
+ * is answered. Nothing else is written - a report names, a person acts.
+ *
+ * <h2>The reader, placed - and what is withheld from them (the review's M10, I2)</h2>
+ *
+ * <p>Every report is read by a person the platform can place in a party - fail closed, the day replay's and the queues'
+ * rule ({@link RiskAssessments.SelfDealingRefused}, recorded {@code FAILED} by the caller). Then:
+ *
+ * <ul>
+ *   <li>a velocity divergence is <strong>located</strong> by its window's subject - the dimension, the subject reference,
+ *       the window kind and start - unless the subject is the reader's own party's or cannot be placed (a device, a
+ *       beneficiary): withheld and counted, the queues' rule for a subject;</li>
+ *   <li>an orphaned assessment's command reference is withheld when the assessment judged the reader's own party; the
+ *       other references a census names - a judged command missing its seal, a journal entry or a monitored row - name
+ *       defects by id, their content readable only through the doors that judge self-dealing.</li>
+ * </ul>
+ * Names are bounded ({@link RiskProofs#NAMED} a list); the counts are always whole.
  */
 public final class RiskOperationsReports {
 
     /** The audit target type of a report - its id the report's name. */
     public static final String TARGET_TYPE = "risk_report";
+
+    private static final String ACT = "report-read";
 
     /** The four reports. */
     public enum Report {
@@ -60,7 +78,7 @@ public final class RiskOperationsReports {
 
     public record DecisionsReport(RiskDay day, boolean known, Instant asOf, List<RiskProofReads.DecisionRow> rows,
             List<RiskProofReads.ReasonRow> reasons, List<RiskProofReads.VersionRow> versions,
-            Optional<AssessmentCensus.Result> census) {
+            Optional<AssessmentCensus.Result> census, long withheld) {
         public DecisionsReport {
             rows = List.copyOf(rows);
             reasons = List.copyOf(reasons);
@@ -101,8 +119,31 @@ public final class RiskOperationsReports {
         }
     }
 
+    /** One divergence the reader may locate: the window, and its subject's reference. */
+    public record Located(VelocityProof.Divergence divergence, String subjectRef) {
+        public Located {
+            Objects.requireNonNull(divergence, "divergence");
+            Objects.requireNonNull(subjectRef, "subjectRef");
+        }
+
+        @Override
+        public String toString() {
+            return "Located[" + divergence + "]";
+        }
+    }
+
+    /**
+     * The velocity report: the proof made whole <em>as of the snapshot</em> ({@code proof}'s own {@code asOf} - the
+     * windows live now, whatever the date asked: the review's M6), its divergences located per link, those withheld
+     * counted; and the date's monitoring census.
+     */
     public record VelocityReport(RiskDay day, boolean known, Instant asOf, Optional<VelocityProof.Whole> proof,
-            Optional<MonitoringCensus.Result> monitoring) {
+            List<Located> record, List<Located> journal, long withheld, Optional<MonitoringCensus.Result> monitoring) {
+        public VelocityReport {
+            record = List.copyOf(record);
+            journal = List.copyOf(journal);
+        }
+
         public Served served() {
             ProofVerdict verdict = proof.map(whole -> ProofVerdict.of(whole.verdict())).orElse(ProofVerdict.VACUOUS)
                     .and(monitoring.map(MonitoringCensus.Result::verdict).orElse(ProofVerdict.VACUOUS));
@@ -126,12 +167,16 @@ public final class RiskOperationsReports {
     private final CaseOneOpenCensus cases;
     private final FilingCensus filings;
     private final VelocityProof velocity;
+    private final RiskActingParty actingParties;
+    private final RiskSubjectParties subjectParties;
+    private final MonitoredParties parties;
     private final AuditWriter<Connection> audit;
     private final IdGenerator ids;
     private final Clock clock;
 
     public RiskOperationsReports(RiskProofReads reads, AssessmentCensus assessments, MonitoringCensus monitoring,
             AlertBornOnceCensus alerts, CaseOneOpenCensus cases, FilingCensus filings, VelocityProof velocity,
+            RiskActingParty actingParties, RiskSubjectParties subjectParties, MonitoredParties parties,
             AuditWriter<Connection> audit, IdGenerator ids, Clock clock) {
         this.reads = Objects.requireNonNull(reads, "reads");
         this.assessments = Objects.requireNonNull(assessments, "assessments");
@@ -140,24 +185,50 @@ public final class RiskOperationsReports {
         this.cases = Objects.requireNonNull(cases, "cases");
         this.filings = Objects.requireNonNull(filings, "filings");
         this.velocity = Objects.requireNonNull(velocity, "velocity");
+        this.actingParties = Objects.requireNonNull(actingParties, "actingParties");
+        this.subjectParties = Objects.requireNonNull(subjectParties, "subjectParties");
+        this.parties = Objects.requireNonNull(parties, "parties");
         this.audit = Objects.requireNonNull(audit, "audit");
         this.ids = Objects.requireNonNull(ids, "ids");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
-    /** The day's decisions: per operation, decision, fail-safe, challenge, velocity and currency; reasons; versions. */
-    public DecisionsReport decisions(Connection snapshot, RiskDay day) {
+    /**
+     * The day's decisions for {@code reader}: per operation, decision, fail-safe, challenge, velocity and currency;
+     * reasons; versions; the assessment census, an orphan of the reader's own party withheld.
+     *
+     * @throws RiskAssessments.SelfDealingRefused the reader is placed in no party (fail closed)
+     */
+    public DecisionsReport decisions(Connection snapshot, RiskDay day, Actor reader) {
         Instant asOf = asOf(snapshot);
+        UUID own = Queues.reader(snapshot, actingParties, reader, ACT);
         if (!known(day, asOf)) {
-            return new DecisionsReport(day, false, asOf, List.of(), List.of(), List.of(), Optional.empty());
+            return new DecisionsReport(day, false, asOf, List.of(), List.of(), List.of(), Optional.empty(), 0);
+        }
+        AssessmentCensus.Result census = assessments.run(snapshot, day);
+        List<AssessmentCensus.Operation> shown = new ArrayList<>();
+        long withheld = 0;
+        for (AssessmentCensus.Operation operation : census.operations()) {
+            List<RiskProofReads.Assessed> orphans = new ArrayList<>();
+            for (RiskProofReads.Assessed orphan : operation.orphaned()) {
+                if (orphan.party().equals(own)) {
+                    withheld++;
+                } else {
+                    orphans.add(orphan);
+                }
+            }
+            shown.add(new AssessmentCensus.Operation(operation.operation(), operation.assessments(),
+                    operation.commands(), operation.matched(), operation.reconciled(), operation.unrecordable(),
+                    operation.missing(), operation.missingCount(), orphans, operation.orphanedCount()));
         }
         return new DecisionsReport(day, true, asOf, reads.decisions(snapshot, day), reads.reasons(snapshot, day),
-                reads.versions(snapshot, day), Optional.of(assessments.run(snapshot, day)));
+                reads.versions(snapshot, day), Optional.of(new AssessmentCensus.Result(day, shown)), withheld);
     }
 
-    /** The day's alerts by kind, severity and status, by rule, and the born-once census. */
-    public AlertsReport alerts(Connection snapshot, RiskDay day) {
+    /** The day's alerts by kind, severity and status, by rule, and the born-once census - for a placed reader. */
+    public AlertsReport alerts(Connection snapshot, RiskDay day, Actor reader) {
         Instant asOf = asOf(snapshot);
+        Queues.reader(snapshot, actingParties, reader, ACT);
         if (!known(day, asOf)) {
             return new AlertsReport(day, false, asOf, List.of(), List.of(), Optional.empty());
         }
@@ -165,9 +236,10 @@ public final class RiskOperationsReports {
                 Optional.of(alerts.run(snapshot, day)));
     }
 
-    /** The day's cases opened and disposed, and - at the snapshot - the one-open and the filing censuses. */
-    public CasesReport cases(Connection snapshot, RiskDay day) {
+    /** The day's cases opened and disposed, and - at the snapshot - the one-open and filing censuses; a placed reader. */
+    public CasesReport cases(Connection snapshot, RiskDay day, Actor reader) {
         Instant asOf = asOf(snapshot);
+        Queues.reader(snapshot, actingParties, reader, ACT);
         if (!known(day, asOf)) {
             return new CasesReport(day, false, asOf, List.of(), List.of(), Optional.empty(), Optional.empty());
         }
@@ -175,13 +247,22 @@ public final class RiskOperationsReports {
                 Optional.of(cases.run(snapshot)), Optional.of(filings.run(snapshot)));
     }
 
-    /** The velocity proof made whole at the snapshot, and the day's monitoring census. */
-    public VelocityReport velocity(Connection snapshot, RiskDay day) {
+    /**
+     * The velocity proof made whole at the snapshot, its divergences located for {@code reader} - the subject withheld
+     * when it is the reader's own party's or cannot be placed - and the day's monitoring census.
+     */
+    public VelocityReport velocity(Connection snapshot, RiskDay day, Actor reader) {
         Instant asOf = asOf(snapshot);
+        UUID own = Queues.reader(snapshot, actingParties, reader, ACT);
         if (!known(day, asOf)) {
-            return new VelocityReport(day, false, asOf, Optional.empty(), Optional.empty());
+            return new VelocityReport(day, false, asOf, Optional.empty(), List.of(), List.of(), 0, Optional.empty());
         }
-        return new VelocityReport(day, true, asOf, Optional.of(velocity.prove(snapshot)),
+        VelocityProof.Whole whole = velocity.prove(snapshot);
+        long[] withheld = {0};
+        List<Located> record = locate(snapshot, whole.record().divergences(), own, withheld);
+        List<Located> journal = whole.journal().map(link -> locate(snapshot, link.divergences(), own, withheld))
+                .orElse(List.of());
+        return new VelocityReport(day, true, asOf, Optional.of(whole), record, journal, withheld[0],
                 Optional.of(monitoring.run(snapshot, day)));
     }
 
@@ -214,6 +295,50 @@ public final class RiskOperationsReports {
                 AuditOutcome.SUCCEEDED, correlation, Optional.of("report=" + served.report().path() + ", date="
                         + served.day() + ", known=" + served.known() + ", rows=" + served.rows() + ", verdict="
                         + served.verdict().name())));
+    }
+
+    /** Records a refused report {@code FAILED} ({@code risk.SelfDealingRefused}) - a transaction of the caller's own. */
+    public void recordRefusal(Connection unitOfWork, Report report, RiskAssessments.SelfDealingRefused refused,
+            Actor actor, CorrelationId correlation) {
+        Objects.requireNonNull(report, "report");
+        Objects.requireNonNull(refused, "refused");
+        audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, clock.instant(),
+                RiskAuditAction.SELF_DEALING_REFUSED, TARGET_TYPE, report.path(), Optional.empty(), AuditOutcome.FAILED,
+                correlation, Optional.of("act=" + refused.act() + ", cause=" + refused.refusal().name() + " refused")));
+    }
+
+    /** {@code divergences} located for the reader of party {@code own}, at most {@link RiskProofs#NAMED} shown. */
+    private List<Located> locate(Connection snapshot, List<VelocityProof.Divergence> divergences, UUID own,
+            long[] withheld) {
+        List<Located> shown = new ArrayList<>();
+        for (VelocityProof.Divergence divergence : divergences) {
+            Optional<UUID> party = partyOf(snapshot, divergence.key());
+            if (party.isEmpty() || party.get().equals(own)) {
+                withheld[0]++;
+            } else if (shown.size() < RiskProofs.NAMED) {
+                shown.add(new Located(divergence, divergence.key().subjectRef()));
+            }
+        }
+        return shown;
+    }
+
+    /** The party accountable for a window's subject - empty when this build cannot place it (fail closed). */
+    private Optional<UUID> partyOf(Connection snapshot, VelocityWindowKey key) {
+        String ref = key.subjectRef();
+        return switch (key.dimension()) {
+            case PARTY -> uuid(ref);
+            case SOURCE_ACCOUNT, DESTINATION -> uuid(ref).flatMap(account -> parties.partyOfAccount(snapshot, account));
+            case MERCHANT -> subjectParties.accountablePartyOf(snapshot, new SignalSubject(SubjectKind.MERCHANT, ref));
+            case DEVICE, SESSION -> Optional.empty();
+        };
+    }
+
+    private static Optional<UUID> uuid(String ref) {
+        try {
+            return Optional.of(UUID.fromString(ref));
+        } catch (IllegalArgumentException notAnId) {
+            return Optional.empty();
+        }
     }
 
     private Instant asOf(Connection snapshot) {

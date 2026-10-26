@@ -247,7 +247,7 @@ inputs, or the fail-safe the recorded cause names — and answers `IDENTICAL` or
 (`INPUTS`, `POLICY`, `EVALUATION`, `SEAL`, `DECISION`, `SCORE`, `HITS`, `REASONS`, `FAIL_SAFE`, `CHALLENGE`) and the
 first diverged rule.)*
 
-*(As built by `P13-TSK-023`, 2026-10-26: the read serves the explanation beside the sealed row - the rules, readings and contributions, the band reached by position and decision, the step that decided, the fail-safe - from the rows and the pinned version, never the engine; and a whole UTC day replays on one snapshot (`DailyReplay`), each assessment under its own pinned pair, audited `risk.Replayed` against the day. The assessment census proves exactly one seal per judged command against the owners' own rows, both directions.)*
+*(As built by `P13-TSK-023`, 2026-10-26: the read serves the explanation beside the sealed row - the rules, readings and contributions, the band reached by position and decision, the step that decided, the fail-safe - from the rows and the pinned version, never the engine; and a UTC day replays a bounded page at a time on one snapshot a page (`DailyReplay` - at most `limit` after the cursor `after`, the answer's `next` the page that follows: the gate review's I3), each assessment under its own pinned pair, audited `risk.Replayed` against the day. The assessment census proves exactly one seal per judged command against the owners' own rows, both directions.)*
 
 #### 4.2a Decision override (`risk.decision_override`) — `P13-TSK-012` (`risk V007`'s table)
 
@@ -353,7 +353,7 @@ grace after its end) — so "keyed on an instance clock" is refused by the table
 skew, a window counted after the evidence is complete `PENDING`; see `PHASE_13_PLAN.md` §12.4's note for the evidence
 contract `-004`…`-011` inherit.)*
 
-*(As built by `P13-TSK-023`, 2026-10-26: `VelocityProof.prove` reads one snapshot and judges two links - the windows against the counted assessments (every dimension) and, for windows of transfers alone, against the monitored journal; a difference is named in its currency, never corrected; no schedule runs it - the velocity report and `finapp.risk.velocity.proof{verdict}` (a gauge read on scrape) do.)*
+*(As built by `P13-TSK-023`, 2026-10-26: `VelocityProof.prove` reads one snapshot and judges two links - the windows against the counted assessments (every dimension) and, for windows of transfers alone, against the monitored journal; a difference is named in its currency, never corrected; no schedule runs it - the velocity report and `finapp.risk.velocity.proof{verdict}` (a gauge refreshed off the scrape thread, single-flight, every statement bounded) do. The journal link sets aside the windows of a movement permitted `UNCOUNTED` (explained) and the postings older than the record's first transfer (before the floor), so its `DIVERGED` is an unexplained difference only (the gate review's I2).)*
 
 ### 4.4 Risk signal (`risk.risk_signal`) — `P13-TSK-005` (`risk V003`) — not a machine
 

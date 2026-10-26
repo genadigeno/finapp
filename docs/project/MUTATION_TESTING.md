@@ -2018,7 +2018,9 @@ so the guard was silently not checking that the tests they name exist.
 | `INV-RSK-01` | `DailyReplayTest#eachAssessmentReplaysUnderItsOwnVersion` | Recorded | A `P13-TSK-023` probe (2026-10-26; the replay's pinned pair): `DailyReplay` resolving each assessment's version as the operation's `ACTIVE` one (`policies.active`) instead of its pin | Caught on the first run (`--tests *DailyReplayTest`): 1 of 4 red - the morning's `V1` seals replayed under the afternoon's `V2`, `DIVERGED` (`:87`); `DailyReplay.java` restored by its saved bytes, sha256 `07a8008d…3d9680dd` before and after |
 | `INV-RSK-09` | `RiskCensusesTest#monitoredEqualsTheJournal` | Recorded | A `P13-TSK-023` probe (2026-10-26; "the monitoring record never diverges from the journal" judged by count): `MonitoringCensus` naming an entry missing only while the journal's count exceeds the monitored rows' | Caught on the first run (`--tests *RiskCensusesTest`): 1 of 6 red - a lost entry and a phantom row cancelled out, the loss unnamed (`:54`); `MonitoringCensus.java` restored by its saved bytes, sha256 `6c71fca9…18687149` before and after |
 | `INV-RSK-06` | `RiskCensusesTest#alertsAreBornOnce` | Recorded | A `P13-TSK-023` probe (2026-10-26; "the uniques' truth re-proven by query", `-020`'s AML alerts per window): `AlertBornOnceCensus.Row.duplicates` counting the day's own rows (`raised - keys`) instead of every row of the day's keys | Caught on the first run (`--tests *RiskCensusesTest`): 1 of 6 red - the AML `D30` key's second row, born another day, unseen (`:101`); `AlertBornOnceCensus.java` restored by its saved bytes, sha256 `e3cc6800…a8a46dab` before and after |
-| `A13` | `BnplLateFeeDatabaseTest#theCapHolds` | Recorded | *(the late-fee cap's database arm - `bnpl V013:390`)* - A `P12-GATE` probe (R4, A1-2): the cap arm (`OR assessed + NEW.amount_minor > terms.late_fee_cap_minor`) removed from the fee trigger by in-test DDL, the fee's own arm kept - against the new raw case, 3.00 on instalment 4 within the pinned 5.00 but past the 2.00 of room | Caught - "Expecting code to raise a throwable" for the application role's raw fee (1 test, 1 failed). Restored byte-identical (sha256 `dfbf7818…ef2a`, verified) |
+| `INV-RSK-03` | `VelocityProofTest#anUncountedTransferIsExplainedNotDiverged` | Recorded | A `P13-TSK-023` probe (2026-10-26, the review's I2): `VelocityProof.judge` judging the windows the record names as permitted uncounted (`explained`) instead of setting them aside | Caught on the first run (`--tests *VelocityProofTest`): 1 of 12 red - the fail-safe's uncounted transfer diverged on the journal (`:271`); `VelocityProof.java` restored by its saved bytes, sha256 `df487e03…8e721263` before and after |
+| `INV-RSK-03` | `VelocityProofTest#postingsBeforeTheFloorAreNotJudged` | Recorded | A `P13-TSK-023` probe (2026-10-26, the review's I2, the go-live floor): `VelocityProof.prove` judging every journal posting, the record's first transfer no floor | Caught on the first run (`--tests *VelocityProofTest`): 1 of 12 red - the posting older than the seams' first transfer counted against today's window (`:285`); `VelocityProof.java` restored by its saved bytes, sha256 `df487e03…8e721263` before and after |
+| `INV-RSK-08` | `RiskOperationsReportsTest#aDivergenceIsLocated` | Recorded | A `P13-TSK-023` probe (2026-10-26, the review's I2/M10): `RiskOperationsReports.locate` withholding only an unplaceable subject, the reader's own party's windows located | Caught on the first run (`--tests *RiskOperationsReportsTest`): 1 of 6 red - the reader's own party named among the located subjects (`:188`); `RiskOperationsReports.java` restored by its saved bytes, sha256 `d63c4d13…50e39325` before and after || `A13` | `BnplLateFeeDatabaseTest#theCapHolds` | Recorded | *(the late-fee cap's database arm - `bnpl V013:390`)* - A `P12-GATE` probe (R4, A1-2): the cap arm (`OR assessed + NEW.amount_minor > terms.late_fee_cap_minor`) removed from the fee trigger by in-test DDL, the fee's own arm kept - against the new raw case, 3.00 on instalment 4 within the pinned 5.00 but past the 2.00 of room | Caught - "Expecting code to raise a throwable" for the application role's raw fee (1 test, 1 failed). Restored byte-identical (sha256 `dfbf7818…ef2a`, verified) |
 
 *`P13-TSK-004`'s database-only probes, written and **not run** (owner decision C5: the database tier is skipped per task;
 Docker was not running at the gate either), so recorded here as owed rather than claimed: drop `UNIQUE (operation,
@@ -2028,6 +2030,12 @@ command_ref)` (`risk_assessment_command_once`) by in-test DDL → `RiskEvaluatio
 a held subject lock → `#aTimeoutSealsTheFailSafe` red with the caller's transaction aborted (`25P02`). The same
 invariants' hermetic demonstrations are the rows above.*
 
+*`P13-TSK-023`'s distributed-execution probe - the review's I1, no invariant's row (the meters decide nothing): with
+`RiskProofMetrics.refreshed` starting a reading whatever its compare-and-set in-flight flag says,
+`RiskProofMetricsTest#singleFlightOffTheScrapeThread` and `#staleIsAbsent` went red on the first run (2 of 6 - ten scrapes
+of a slow reading started ten, `:119`; the stuck reading's refresh stacked, `:152`); `RiskProofMetrics.java` restored by
+its saved bytes, sha256 `c46cda34…6107dcda` before and after.*
+
 *`P13-TSK-023`'s database-only probes, written and **not run** (owner decision C5), recorded as owed rather than
 claimed: let the proof upsert the corrected figure (the entry's probe) → `RiskProofsDatabaseTest#theVelocityProofNamesADifferenceAndCorrectsNothing`
 red twice over - the read-only snapshot refuses the write (`25006`), and on a writable connection the injected window's
@@ -2035,8 +2043,10 @@ figures change; read the census's two statements on two connections instead of o
 `#aCensusUnderLoadIsOneSnapshot` red (the second read sees the three seals); resolve the pinned version as the operation's
 `ACTIVE` one → `#aDailyReplayPinsEachAssessmentsOwnVersion` red; count the judged commands from `risk.risk_assessment`
 instead of `PlatformJudgedCommands` → `#theAssessmentCensusCountsTheJudgedCommandsThroughTheirOwners` red; drop
-`monitored_transaction_born_once`'s use (compare counts) → `#theMonitoringCensusEqualsTheJournalSinceTheFloor` red. The
-same invariants' hermetic demonstrations are the rows above.*
+`monitored_transaction_born_once`'s use (compare counts) → `#theMonitoringCensusEqualsTheJournalSinceTheFloor` red; the
+review's fixes - arm the bound with `set_config(..., false)` (a session setting) → `#aProofsSnapshotIsBounded` red (the
+next transaction still bounded), and page the replay without its cursor → `#aDayReplaysByPage` red (the pages replay the
+first assessment over and over). The same invariants' hermetic demonstrations are the rows above.*
 
 *`P13-TSK-008`'s database-only probes, written and **not run** (owner decision C5), recorded as owed rather than
 claimed: wire `PermitAllUntilPhase13` back into `TransferBeans` in place of risk's two seams →

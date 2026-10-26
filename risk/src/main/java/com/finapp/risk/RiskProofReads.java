@@ -27,10 +27,19 @@ public interface RiskProofReads {
 
     // ------------------------------------------------------------------ assessments
 
-    /** One assessment of the day as the census reads it: the command it judged, and whether it permitted it. */
-    record Assessed(CommandRef commandRef, boolean permits) {
+    /**
+     * One assessment of the day as the census reads it: the command it judged, whether it permitted it, and the party it
+     * judged - so a report withholds a reference of its reader's own party (`P13-TSK-023`, the review's M10).
+     */
+    record Assessed(CommandRef commandRef, boolean permits, UUID party) {
         public Assessed {
             Objects.requireNonNull(commandRef, "commandRef");
+            Objects.requireNonNull(party, "party");
+        }
+
+        @Override
+        public String toString() {
+            return "Assessed[" + commandRef + "]";
         }
     }
 

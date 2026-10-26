@@ -2971,8 +2971,11 @@ movement — upserts the increments in the same transaction, each window one sta
 CONFLICT DO UPDATE … RETURNING` in sorted key order (position (R2)), so a committed movement counts
 exactly once, a refused or rolled-back movement counts for nothing, and ten concurrent movements of
 one subject count ten. No window lives in Redis, a cache or process memory. A window's count and sum
-equal the monitored transactions it covers, recomputed by `VelocityProof`; a difference is an alert,
-never self-corrected.
+equal the movements it counts, recomputed by `VelocityProof` on one read-only snapshot: the counted
+assessments of record, over every dimension; and - for a window every counted movement of which is a
+transfer - the monitored journal's transfers, from the record's first transfer on (the floor), a
+window of a movement the record permitted uncounted set aside as explained. A difference is an
+alert, never self-corrected.
 **Why:** A velocity limit enforced from a counter that can be lost, lag or be passed twice is not a
 limit (`INV-CON-03`; the Phase 4 seam contract: an authoritative check is anchored to durable state
 read in-lock). A counter outside the money transaction counts movements that never committed or
@@ -2987,9 +2990,10 @@ clock read after the lock; the increment skipped for `DENY`, `REVIEW` and an uns
 **Verify:** `VelocityWindowDatabaseTest#tenMovementsCountTen` and `#aWindowIsCutByTheDatabaseClock`
 (two instances, clocks ±5 s) (`P13-TSK-006`); scenario 14 — ten concurrent movements of one subject
 count ten and a refused movement zero (`P13-TSK-006`, `P13-TST-001`); `VelocityProof` recomputing
-every live window from the monitored transactions, gauged `finapp.risk.velocity.proof{verdict}` and
-alerting on any failure, a planted drift caught (`P13-TSK-023`); the storm's census at every round,
-windows = monitored sums (`P13-TST-001`).
+every live window from the counted assessments and, for the windows of transfers alone, the monitored
+journal, gauged `finapp.risk.velocity.proof{verdict}` and alerting on any `DIVERGED`, a planted drift
+caught (`P13-TSK-023`); the storm's census at every round, windows = monitored sums for the windows
+of transfers (`P13-TST-001`).
 **Phase:** 13
 
 *(As built by `P13-TSK-006`, 2026-10-23 — `risk V005`, `VelocityWindows`, `VelocityProof`. The dimensions
@@ -3003,6 +3007,19 @@ device's or merchant's window open to two concurrent movements on two accounts (
 the journal's transfers prove `SOURCE_ACCOUNT` and `DESTINATION`; the rest are reported unprovable until
 the evidence moves to the permitting assessments (`PHASE_13_PLAN.md` §12.4's note). Probes:
 `MUTATION_TESTING.md` §2.)*
+
+*(As built by `P13-TSK-023`, 2026-10-26 — the proof made whole (`DESIGN-023` D4, the gate review's I2): the
+evidence did move to the permitting assessments - every dimension is judged against the counted
+assessments, the journal judging only the windows of transfers alone (a window that also counts a
+withdrawal, a payment or a cross-border movement cannot equal the journal's transfers by construction and
+is unprovable there). The journal link sets two things aside, by design and by name, so its `DIVERGED` is
+an unexplained difference only: the windows of a movement the record permitted `UNCOUNTED` (the
+fail-safe's money moves uncounted - `explained`), and the postings older than the record's first transfer
+(the seams' go-live - `beforeFloor`). A divergence names its window - dimension, subject reference, kind,
+start - its currency and scale; the velocity report locates it for an operator, withholding a subject of
+the reader's own party or one the platform cannot place (`INV-RSK-08`). The proof reads on a bounded
+snapshot (`statement_timeout`), off the scrape thread, single-flight per instance; it never gates a
+movement. Probes: `MUTATION_TESTING.md` §2.)*
 
 ### INV-RSK-04 — Every decision is explainable, and the fail-safe is a recorded decision, never a silent default
 **Statement:** Every assessment records the policy version it was evaluated under, the engine version

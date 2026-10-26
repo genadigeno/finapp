@@ -68,7 +68,9 @@ class RiskMetricTagsAreBoundedTest {
                     Set.of("satisfied", "refused"),
                     lower(names(com.finapp.risk.MonitoringObserver.SubjectOutcome.values())),
                     lower(names(com.finapp.risk.RegulatoryFilingProvider.Outcome.values())),
-                    Set.of(RegulatoryReportMetrics.FAILED))),
+                    Set.of(RegulatoryReportMetrics.FAILED),
+                    // P13-TSK-023 (the review's I1): a reading of the proofs completed or failed.
+                    Set.of(RiskProofMetrics.COMPLETED, RiskProofMetrics.FAILED))),
             "operation", names(RiskOperation.values()),
             // A decision; the velocity proof's and the censuses' verdicts (P13-TSK-023).
             "verdict", union(List.of(names(RiskDecision.values()),

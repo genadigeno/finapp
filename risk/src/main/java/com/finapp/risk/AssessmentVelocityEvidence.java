@@ -41,6 +41,8 @@ public final class AssessmentVelocityEvidence implements VelocityEvidence {
         Objects.requireNonNull(snapshot, "snapshot");
         Objects.requireNonNull(from, "from");
         Instant completeThrough = windows.databaseNow(snapshot);
-        return new Record(assessments.countedSince(snapshot, from), completeThrough);
+        // P13-TSK-023: the permitted movements it did not count travel beside - the journal's link explains them.
+        return new Record(assessments.countedSince(snapshot, from), completeThrough,
+                assessments.uncountedSince(snapshot, from));
     }
 }

@@ -23011,6 +23011,9 @@
       },
       "RiskDayReplayView": {
         "properties": {
+          "after": {
+            "type": "string"
+          },
           "date": {
             "type": "string"
           },
@@ -23027,6 +23030,9 @@
           },
           "known": {
             "type": "boolean"
+          },
+          "next": {
+            "type": "string"
           },
           "operations": {
             "items": {
@@ -23114,6 +23120,10 @@
               "$ref": "#/components/schemas/RiskVersionCountView"
             },
             "type": "array"
+          },
+          "withheld": {
+            "format": "int64",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -24277,6 +24287,9 @@
             "format": "int32",
             "type": "integer"
           },
+          "subjectRef": {
+            "type": "string"
+          },
           "toCount": {
             "format": "int64",
             "type": "integer"
@@ -24299,6 +24312,10 @@
           "asOf": {
             "type": "string"
           },
+          "beforeFloor": {
+            "format": "int32",
+            "type": "integer"
+          },
           "divergedCount": {
             "format": "int32",
             "type": "integer"
@@ -24311,6 +24328,10 @@
           },
           "evidenceThrough": {
             "type": "string"
+          },
+          "explained": {
+            "format": "int32",
+            "type": "integer"
           },
           "judged": {
             "format": "int32",
@@ -24347,11 +24368,18 @@
           "monitoring": {
             "$ref": "#/components/schemas/RiskMonitoringCensusView"
           },
+          "proofAsOf": {
+            "type": "string"
+          },
           "record": {
             "$ref": "#/components/schemas/RiskVelocityLinkView"
           },
           "verdict": {
             "type": "string"
+          },
+          "withheld": {
+            "format": "int64",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -35963,6 +35991,22 @@
           {
             "in": "query",
             "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
             "required": false,
             "schema": {
               "type": "string"

@@ -170,13 +170,13 @@ class VelocityProofTest {
         };
         VelocityProof proof = new VelocityProof(store, fake);
 
-        VelocityProof.Result result = proof.run(StandInConnections.withIsolation(Connection.TRANSACTION_REPEATABLE_READ));
+        VelocityProof.Result result = proof.run(StandInConnections.snapshot());
         assertThat(result.verdict()).isEqualTo(VelocityProof.Verdict.HELD);
         assertThat(result.asOf()).isEqualTo(NOW);
         assertThat(asked).containsExactly(NOW.minus(Duration.ofDays(30)).minus(VelocityProof.SKEW));
         assertThat(store.calls.subList(calls, store.calls.size())).containsExactly("now", "live");
 
-        assertThatThrownBy(() -> proof.run(StandInConnections.withIsolation(Connection.TRANSACTION_READ_COMMITTED)))
+        assertThatThrownBy(() -> proof.run(StandInConnections.declaring(true, false, Connection.TRANSACTION_READ_COMMITTED)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("REPEATABLE READ");
         assertThat(store.upserted).as("the proof never wrote").hasSize(written);
@@ -194,7 +194,7 @@ class VelocityProofTest {
         countAndPost(Instant.parse("2031-03-09T11:00:00Z"), withdrawal, RiskOperation.WITHDRAWAL, false);
         int written = store.upserted.size();
 
-        VelocityProof.Whole whole = whole().prove(StandInConnections.withIsolation(Connection.TRANSACTION_REPEATABLE_READ));
+        VelocityProof.Whole whole = whole().prove(StandInConnections.snapshot());
         assertThat(whole.record().verdict()).isEqualTo(VelocityProof.Verdict.HELD);
         // Live at 15:30: D1, D7 and D30 of each subject (the H1 windows of 10:00 and 11:00 have closed).
         assertThat(whole.record().judged()).as("party, source, the account and the beneficiary destinations")
@@ -215,7 +215,7 @@ class VelocityProofTest {
         countAndPost(Instant.parse("2031-03-09T10:45:00Z"), movement(30_00), RiskOperation.TRANSFER, false);
         int written = store.upserted.size();
 
-        VelocityProof.Whole whole = whole().prove(StandInConnections.withIsolation(Connection.TRANSACTION_REPEATABLE_READ));
+        VelocityProof.Whole whole = whole().prove(StandInConnections.snapshot());
         assertThat(whole.record().verdict()).isEqualTo(VelocityProof.Verdict.HELD);
         assertThat(whole.journal().orElseThrow().verdict()).isEqualTo(VelocityProof.Verdict.DIVERGED);
         assertThat(whole.verdict()).isEqualTo(VelocityProof.Verdict.DIVERGED);
@@ -227,8 +227,11 @@ class VelocityProofTest {
             assertThat(divergence.scale()).isEqualTo(2);
         });
         assertThat(store.upserted).as("named, never corrected").hasSize(written);
-        assertThatThrownBy(() -> whole().prove(StandInConnections.withIsolation(Connection.TRANSACTION_READ_COMMITTED)))
+        assertThatThrownBy(() -> whole().prove(StandInConnections.declaring(true, false, Connection.TRANSACTION_READ_COMMITTED)))
                 .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> whole().prove(StandInConnections.declaring(false, false,
+                Connection.TRANSACTION_REPEATABLE_READ))).as("a connection that could write is refused too (M9)")
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("read-only");
     }
 
     @Test
@@ -249,10 +252,49 @@ class VelocityProofTest {
         });
     }
 
+    @Test
+    @DisplayName("the journal link explains, never diverges on, the windows of a transfer permitted uncounted - the"
+            + " fail-safe's money moves uncounted by design; without the record naming it, the same posting diverges")
+    void anUncountedTransferIsExplainedNotDiverged() {
+        countAndPost(Instant.parse("2031-03-09T10:15:00Z"), movement(120_00), RiskOperation.TRANSFER, true);
+        VelocityEvidence.Counted uncounted = new VelocityEvidence.Counted(movement(30_00),
+                Instant.parse("2031-03-09T10:45:00Z"), java.util.Optional.of(RiskOperation.TRANSFER));
+        posted.add(uncounted);
+
+        VelocityProof.Result blind = whole().prove(StandInConnections.snapshot()).journal().orElseThrow();
+        assertThat(blind.verdict()).as("a record that does not name the uncounted movement").isEqualTo(
+                VelocityProof.Verdict.DIVERGED);
+
+        this.uncounted.add(uncounted);
+        VelocityProof.Whole whole = whole().prove(StandInConnections.snapshot());
+        VelocityProof.Result journal = whole.journal().orElseThrow();
+        assertThat(journal.divergences()).isEmpty();
+        assertThat(journal.explained()).as("the source's and the destination's live windows").isEqualTo(2 * 3);
+        assertThat(whole.verdict()).isEqualTo(VelocityProof.Verdict.HELD);
+    }
+
+    @Test
+    @DisplayName("a posting older than the record's first transfer is before the floor - the seams judged nothing before"
+            + " they went live - counted, never a lost count")
+    void postingsBeforeTheFloorAreNotJudged() {
+        posted.add(new VelocityEvidence.Counted(movement(55_00), Instant.parse("2031-03-09T01:00:00Z"),
+                java.util.Optional.of(RiskOperation.TRANSFER)));
+        countAndPost(Instant.parse("2031-03-09T10:15:00Z"), movement(120_00), RiskOperation.TRANSFER, true);
+
+        VelocityProof.Result journal = whole().prove(StandInConnections.snapshot()).journal().orElseThrow();
+        assertThat(journal.beforeFloor()).isEqualTo(1);
+        assertThat(journal.divergences()).isEmpty();
+        assertThat(journal.verdict()).isEqualTo(VelocityProof.Verdict.HELD);
+        assertThat(VelocityProof.transferFloor(new VelocityEvidence.Record(record, NOW)))
+                .contains(Instant.parse("2031-03-09T10:15:00Z"));
+        assertThat(VelocityProof.transferFloor(new VelocityEvidence.Record(List.of(), NOW))).isEmpty();
+    }
+
     // -----------------------------------------------------------------
 
     private final List<VelocityEvidence.Counted> record = new ArrayList<>();
     private final List<VelocityEvidence.Counted> posted = new ArrayList<>();
+    private final List<VelocityEvidence.Counted> uncounted = new ArrayList<>();
 
     /** {@code movement} counted by T-eval at {@code at} as {@code operation}, and - when {@code posts} - journalled. */
     private void countAndPost(Instant at, VelocityMovement movement, RiskOperation operation, boolean posts) {
@@ -268,10 +310,12 @@ class VelocityProofTest {
 
     /** The proof made whole over the planted record (every dimension) and journal (the two account dimensions). */
     private VelocityProof whole() {
-        return new VelocityProof(store, fixed(EnumSet.allOf(VelocityDimension.class), record), fixed(PROVABLE, posted));
+        return new VelocityProof(store, fixed(EnumSet.allOf(VelocityDimension.class), record, uncounted),
+                fixed(PROVABLE, posted, List.of()));
     }
 
-    private static VelocityEvidence fixed(Set<VelocityDimension> provable, List<VelocityEvidence.Counted> movements) {
+    private static VelocityEvidence fixed(Set<VelocityDimension> provable, List<VelocityEvidence.Counted> movements,
+            List<VelocityEvidence.Counted> uncounted) {
         return new VelocityEvidence() {
             @Override
             public Set<VelocityDimension> provable() {
@@ -280,7 +324,7 @@ class VelocityProofTest {
 
             @Override
             public Record read(Connection snapshot, Instant from) {
-                return new Record(movements, NOW.minusSeconds(60));
+                return new Record(movements, NOW.minusSeconds(60), List.copyOf(uncounted));
             }
         };
     }

@@ -98,6 +98,9 @@ class RiskLogSitesAreEnumeratedTest {
             "RiskProofMetrics.java|\"CRITICAL: a risk census diverged: {} {}\"|kind.name()|verdict.name()",
             "RiskProofMetrics.java|\"Could not read the risk proofs; their gauges report absent rather than clean: {}\""
                     + "|unreadable.getClass().getSimpleName()",
+            // The review's I1: a refresher that refused the reading - its exception class only.
+            "RiskProofMetrics.java|\"Could not start a reading of the risk proofs; their gauges keep the last: {}\""
+                    + "|refused.getClass().getSimpleName()",
             "RiskSignalIntake.java|\"No risk signal from {} {}: its payment was never judged\"|event.eventType()"
                     + "|event.eventId().value()",
             "RiskSignalIntake.java|\"Risk signal {} from {} {}: {}\"|signal.kind()|event.eventType()"

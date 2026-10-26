@@ -20,6 +20,7 @@ import com.finapp.risk.DailyReplay;
 import com.finapp.risk.FilingCensus;
 import com.finapp.risk.JudgedCommands;
 import com.finapp.risk.MonitoredLedger;
+import com.finapp.risk.MonitoredParties;
 import com.finapp.risk.MonitoringCensus;
 import com.finapp.risk.MonitoringWatermarkStore;
 import com.finapp.risk.RiskAuditAction;
@@ -28,6 +29,7 @@ import com.finapp.risk.RiskOperationsReports;
 import com.finapp.risk.RiskPolicies;
 import com.finapp.risk.RiskPolicyStore;
 import com.finapp.risk.RiskProofReads;
+import com.finapp.risk.RiskSubjectParties;
 import com.finapp.risk.VelocityEvidence;
 import com.finapp.risk.VelocityProof;
 import com.finapp.risk.VelocityWindowStore;
@@ -39,6 +41,7 @@ import java.lang.reflect.Proxy;
 import java.security.SecureRandom;
 import java.sql.Connection;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -53,12 +56,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The proofs' doors, hermetic (`P13-TSK-023`; {@code DESIGN-023} D7-D9): a report's date judged first ({@code 422
- * api.ValidationFailed}, nothing read, nothing recorded), the report read on one snapshot, then {@code risk.ReportRead}
- * committed in a transaction of its own before the answer; the day's replay reasoned first ({@code 422
- * risk.ReasonRequired}), an unplaced reader {@code 403 risk.SelfDealingRefused} recorded {@code FAILED}, the day
- * recorded {@code risk.Replayed} before the answer; the evidence door's unknown kind and malformed ids the uniform
- * {@code 404}; every route {@code RISK_INVESTIGATE}. Over HTTP the doors are {@code RiskReportsApiTest}'s (owed, C5).
+ * The proofs' doors, hermetic (`P13-TSK-023`; {@code DESIGN-023} D7-D9; the review's I1, I3, M10): a report's date judged
+ * first ({@code 422 api.ValidationFailed}, nothing read, nothing recorded), the report read for a placed reader on one
+ * snapshot armed with the statement timeout, then {@code risk.ReportRead} committed in a transaction of its own before
+ * the answer - an unplaced reader {@code 403 risk.SelfDealingRefused}, recorded {@code FAILED} against the report; the
+ * day's replay reasoned and its page judged first ({@code 422 risk.ReasonRequired}, {@code 422 api.ValidationFailed}
+ * for a cursor not of the day or a limit that is no count), an unplaced reader {@code 403 risk.SelfDealingRefused}
+ * recorded {@code FAILED}, the page recorded {@code risk.Replayed} before the answer; the meters' reading armed with the
+ * timeout too; the evidence door's unknown kind and malformed ids the uniform {@code 404}; every route
+ * {@code RISK_INVESTIGATE}. Over HTTP the doors are {@code RiskReportsApiTest}'s (owed, C5).
  */
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 @DisplayName("the proofs' doors: the date and the reason judged first, one snapshot, recorded before the answer"
@@ -69,6 +75,8 @@ class RiskProofDesksTest {
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
 
     private final List<String> units = new ArrayList<>();
+    /** The statement timeouts the snapshots were armed with, as {@code set_config} was handed them. */
+    private final List<String> armed = new ArrayList<>();
     private final List<AuditRecord> audit = new ArrayList<>();
     private final Map<String, UUID> partyOfActor = new HashMap<>();
     private final RiskProofReads reads = empty(RiskProofReads.class);
@@ -90,9 +98,10 @@ class RiskProofDesksTest {
             new MonitoringCensus(empty(MonitoredLedger.class), empty(MonitoringWatermarkStore.class), reads),
             new AlertBornOnceCensus(reads), new CaseOneOpenCensus(reads), new FilingCensus(reads),
             new VelocityProof(empty(VelocityWindowStore.class), evidence(), evidence()),
-            (unitOfWork, record) -> audit.add(record), IDS, CLOCK);
+            (unitOfWork, actor) -> Optional.ofNullable(partyOfActor.get(actor.id())), RiskSubjectParties.NONE,
+            MonitoredParties.NONE, (unitOfWork, record) -> audit.add(record), IDS, CLOCK);
     private final RiskOperationsReportDesk desk = new RiskOperationsReportDesk(reports, transactions,
-            RiskFlowScope.NONE);
+            RiskFlowScope.NONE, Duration.ofSeconds(4));
     private final DailyReplay daily = new DailyReplay(reads, new RiskPolicies(empty(RiskPolicyStore.class)),
             (unitOfWork, actor) -> Optional.ofNullable(partyOfActor.get(actor.id())),
             (unitOfWork, record) -> audit.add(record), IDS, CLOCK);
@@ -100,7 +109,7 @@ class RiskProofDesksTest {
 
     @Test
     @DisplayName("a report: a date that is no calendar date is 422 api.ValidationFailed with nothing read or recorded;"
-            + " a day is read on one snapshot, then risk.ReportRead committed in a transaction of its own")
+            + " a day is read on one bounded snapshot, then risk.ReportRead committed in a transaction of its own")
     void aReportIsJudgedReadAndRecorded() {
         for (String bad : new String[] {null, "", "2026-02-30", "26-10-23", "2026-10-23T00:00:00Z"}) {
             ApiException refused = catchThrowableOfType(ApiException.class, () -> as(analyst, () -> desk.decisions(bad)));
@@ -109,11 +118,14 @@ class RiskProofDesksTest {
         assertThat(units).isEmpty();
         assertThat(audit).isEmpty();
 
+        partyOfActor.put(analyst.id(), UUID.randomUUID());
         RiskOperationsReportDesk.RiskDecisionsReportView view = as(analyst, () -> desk.decisions("2026-10-23"));
         assertThat(view.known()).isTrue();
         assertThat(view.census().verdict()).isEqualTo("VACUOUS");
         assertThat(view.census().operations()).hasSize(5);
+        assertThat(view.withheld()).isZero();
         assertThat(units).containsExactly("snapshot", "transaction");
+        assertThat(armed).as("the snapshot bounded before the report read").containsExactly("4000ms");
         assertThat(audit).singleElement().satisfies(record -> {
             assertThat(record.operation()).isEqualTo(RiskAuditAction.REPORT_READ);
             assertThat(record.actor()).isEqualTo(analyst);
@@ -124,8 +136,40 @@ class RiskProofDesksTest {
         assertThat(as(analyst, () -> desk.velocity("2026-10-24")).known()).as("tomorrow").isFalse();
         assertThat(as(analyst, () -> desk.alerts("2026-10-23")).census().verdict()).isEqualTo("VACUOUS");
         assertThat(as(analyst, () -> desk.cases("2026-10-23")).filings().verdict()).isEqualTo("VACUOUS");
+        RiskOperationsReportDesk.RiskVelocityReportView velocity = as(analyst, () -> desk.velocity("2026-10-23"));
+        assertThat(velocity.proofAsOf()).as("the proof is of the snapshot's instant, labelled as such")
+                .isEqualTo(CLOCK.instant().toString());
+        assertThat(velocity.record().explained()).isZero();
+        assertThat(velocity.withheld()).isZero();
         assertThat(units).containsExactly("snapshot", "transaction", "snapshot", "transaction", "snapshot",
-                "transaction");
+                "transaction", "snapshot", "transaction");
+        assertThat(armed).hasSize(5).containsOnly("4000ms");
+    }
+
+    @Test
+    @DisplayName("a report for a reader the platform cannot place: 403 risk.SelfDealingRefused, recorded FAILED against"
+            + " the report in a transaction of its own, nothing served and no risk.ReportRead")
+    void anUnplacedReaderIsRefusedAReport() {
+        ApiException refused = catchThrowableOfType(ApiException.class,
+                () -> as(analyst, () -> desk.velocity("2026-10-23")));
+        assertThat(refused.errorCode()).isEqualTo(RiskErrorCode.SELF_DEALING_REFUSED);
+        assertThat(units).containsExactly("snapshot", "transaction");
+        assertThat(audit).singleElement().satisfies(record -> {
+            assertThat(record.operation()).isEqualTo(RiskAuditAction.SELF_DEALING_REFUSED);
+            assertThat(record.outcome()).isEqualTo(AuditOutcome.FAILED);
+            assertThat(record.targetType()).isEqualTo(RiskOperationsReports.TARGET_TYPE);
+            assertThat(record.targetId()).isEqualTo("velocity");
+        });
+    }
+
+    @Test
+    @DisplayName("the meters' reading is armed with the statement timeout on its one snapshot")
+    void theReadingIsBounded() {
+        RiskOperationsReports.Reading reading = RiskProofMetrics.over(reports, transactions, Duration.ofSeconds(3))
+                .get();
+        assertThat(reading.velocity()).isEqualTo(VelocityProof.Verdict.VACUOUS);
+        assertThat(units).containsExactly("snapshot");
+        assertThat(armed).containsExactly("3000ms");
     }
 
     @Test
@@ -135,7 +179,8 @@ class RiskProofDesksTest {
         RiskAssessmentDesk assessments = new RiskAssessmentDesk(new com.finapp.risk.RiskAssessments(
                 empty(com.finapp.risk.RiskAssessmentStore.class), new RiskPolicies(empty(RiskPolicyStore.class)),
                 (unitOfWork, actor) -> Optional.ofNullable(partyOfActor.get(actor.id())),
-                (unitOfWork, record) -> audit.add(record), IDS, CLOCK), daily, transactions, RiskFlowScope.NONE);
+                (unitOfWork, record) -> audit.add(record), IDS, CLOCK), daily, transactions, RiskFlowScope.NONE,
+                Duration.ofSeconds(4));
 
         ApiException blank = catchThrowableOfType(ApiException.class,
                 () -> as(analyst, () -> assessments.replayDay("2026-10-23", " ")));
@@ -143,6 +188,15 @@ class RiskProofDesksTest {
         ApiException date = catchThrowableOfType(ApiException.class,
                 () -> as(analyst, () -> assessments.replayDay("yesterday", "the audit")));
         assertThat(date.errorCode()).isEqualTo(PlatformErrorCode.VALIDATION_FAILED);
+        String otherDay = com.finapp.risk.MonitoringWatermark.positionAt(Instant.parse("2026-10-22T12:00:00Z")
+                .toEpochMilli()).toString();
+        for (String[] page : new String[][] {{"not-an-id", null}, {otherDay, null}, {null, "0"}, {null, "-1"},
+                {null, "ten"}, {null, "99999999999"}}) {
+            ApiException refused = catchThrowableOfType(ApiException.class,
+                    () -> as(analyst, () -> assessments.replayDay("2026-10-23", page[0], page[1], "the audit")));
+            assertThat(refused.errorCode()).as(page[0] + " / " + page[1])
+                    .isEqualTo(PlatformErrorCode.VALIDATION_FAILED);
+        }
         assertThat(units).isEmpty();
 
         ApiException unplaced = catchThrowableOfType(ApiException.class,
@@ -156,13 +210,17 @@ class RiskProofDesksTest {
 
         audit.clear();
         units.clear();
+        armed.clear();
         partyOfActor.put(analyst.id(), UUID.randomUUID());
         RiskAssessmentDesk.RiskDayReplayView view = as(analyst, () -> assessments.replayDay("2026-10-23", "the audit"));
         assertThat(view.known()).isTrue();
         assertThat(view.verdict()).isEqualTo("IDENTICAL");
         assertThat(view.replayed()).isZero();
         assertThat(view.firstDiverged()).isNull();
+        assertThat(view.after()).isNull();
+        assertThat(view.next()).as("an empty day is one page").isNull();
         assertThat(units).containsExactly("snapshot", "transaction");
+        assertThat(armed).as("the page's snapshot bounded").containsExactly("4000ms");
         assertThat(audit).singleElement().satisfies(record -> {
             assertThat(record.operation()).isEqualTo(RiskAuditAction.REPLAYED);
             assertThat(record.reason()).contains("the audit");
@@ -196,9 +254,9 @@ class RiskProofDesksTest {
                         .isEqualTo(PermissionName.RISK_INVESTIGATE);
             }
         }
-        assertThat(RiskAssessmentController.class.getMethod("replayRiskAssessmentsOfDay", String.class,
-                RiskAssessmentController.RiskReplayRequest.class).getAnnotation(RequiresPermission.class).value())
-                .isEqualTo(PermissionName.RISK_INVESTIGATE);
+        assertThat(RiskAssessmentController.class.getMethod("replayRiskAssessmentsOfDay", String.class, String.class,
+                String.class, RiskAssessmentController.RiskReplayRequest.class).getAnnotation(RequiresPermission.class)
+                .value()).isEqualTo(PermissionName.RISK_INVESTIGATE);
         assertThat(RiskCaseController.class.getMethod("readRiskCaseEvidence", String.class, String.class, String.class)
                 .getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.RISK_INVESTIGATE);
     }
@@ -213,13 +271,35 @@ class RiskProofDesksTest {
         }
     }
 
-    /** A stand-in for the proofs' snapshot: read-only, in a transaction, REPEATABLE READ; it answers nothing else. */
-    private static Connection snapshot() {
+    /**
+     * A stand-in for the proofs' snapshot: read-only, in a transaction, REPEATABLE READ; it answers the statement
+     * timeout's {@code set_config} - recording the value - and nothing else.
+     */
+    private Connection snapshot() {
         return (Connection) Proxy.newProxyInstance(RiskProofDesksTest.class.getClassLoader(),
                 new Class<?>[] {Connection.class}, (proxy, method, args) -> switch (method.getName()) {
                     case "isReadOnly" -> true;
                     case "getAutoCommit" -> false;
                     case "getTransactionIsolation" -> Connection.TRANSACTION_REPEATABLE_READ;
+                    case "prepareStatement" -> {
+                        assertThat((String) args[0]).isEqualTo("SELECT set_config('statement_timeout', ?, true)");
+                        yield armedTimeout();
+                    }
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
+    }
+
+    private java.sql.PreparedStatement armedTimeout() {
+        return (java.sql.PreparedStatement) Proxy.newProxyInstance(RiskProofDesksTest.class.getClassLoader(),
+                new Class<?>[] {java.sql.PreparedStatement.class}, (statement, method, args) -> switch (method.getName()) {
+                    case "setString" -> {
+                        armed.add((String) args[1]);
+                        yield null;
+                    }
+                    case "executeQuery" -> Proxy.newProxyInstance(RiskProofDesksTest.class.getClassLoader(),
+                            new Class<?>[] {java.sql.ResultSet.class},
+                            (rows, call, values) -> call.getName().equals("next") ? Boolean.TRUE : null);
+                    case "close" -> null;
                     default -> throw new UnsupportedOperationException(method.getName());
                 });
     }

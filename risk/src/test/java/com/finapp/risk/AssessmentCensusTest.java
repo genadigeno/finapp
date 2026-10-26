@@ -84,7 +84,7 @@ class AssessmentCensusTest {
 
         AssessmentCensus.Result result = census.run(StandInConnections.snapshot(), DAY);
         AssessmentCensus.Operation withdrawals = operation(result, RiskOperation.WITHDRAWAL);
-        assertThat(withdrawals.orphaned()).containsExactly(orphan);
+        assertThat(withdrawals.orphaned()).extracting(RiskProofReads.Assessed::commandRef).containsExactly(orphan);
         assertThat(result.verdict()).isEqualTo(ProofVerdict.DIVERGED);
         assertThat(result.differences()).isEqualTo(1);
     }
@@ -128,7 +128,8 @@ class AssessmentCensusTest {
         AssessmentCensus.Operation crossBorder = operation(census.run(StandInConnections.snapshot(), DAY),
                 RiskOperation.CROSS_BORDER);
         assertThat(crossBorder.unrecordable()).isEqualTo(1);
-        assertThat(crossBorder.orphaned()).containsExactly(permittedQuote);
+        assertThat(crossBorder.orphaned()).extracting(RiskProofReads.Assessed::commandRef)
+                .containsExactly(permittedQuote);
     }
 
     @Test

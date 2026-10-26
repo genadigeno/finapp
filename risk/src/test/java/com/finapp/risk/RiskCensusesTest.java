@@ -150,6 +150,45 @@ class RiskCensusesTest {
         assertThat(ProofVerdict.VACUOUS.and(ProofVerdict.DIVERGED)).isEqualTo(ProofVerdict.DIVERGED);
     }
 
+    @Test
+    @DisplayName("a proof's snapshot is bounded: statement_timeout armed SET LOCAL by set_config(..., true) in"
+            + " milliseconds; refused on a connection that could write and for a timeout PostgreSQL reads as none")
+    void aSnapshotIsBounded() {
+        List<String> said = new ArrayList<>();
+        Connection snapshot = (Connection) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[] {Connection.class}, (proxy, method, arguments) -> switch (method.getName()) {
+                    case "isReadOnly" -> true;
+                    case "getAutoCommit" -> false;
+                    case "getTransactionIsolation" -> Connection.TRANSACTION_REPEATABLE_READ;
+                    case "prepareStatement" -> {
+                        said.add((String) arguments[0]);
+                        yield Proxy.newProxyInstance(getClass().getClassLoader(),
+                                new Class<?>[] {java.sql.PreparedStatement.class}, (statement, call, values) -> {
+                                    switch (call.getName()) {
+                                        case "setString" -> said.add(values[0] + "=" + values[1]);
+                                        case "executeQuery" -> {
+                                            return Proxy.newProxyInstance(getClass().getClassLoader(),
+                                                    new Class<?>[] {java.sql.ResultSet.class},
+                                                    (rows, rowCall, rowValues) ->
+                                                            rowCall.getName().equals("next") ? Boolean.TRUE : null);
+                                        }
+                                        case "close" -> said.add("closed");
+                                        default -> throw new UnsupportedOperationException(call.getName());
+                                    }
+                                    return null;
+                                });
+                    }
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
+        RiskProofs.bound(snapshot, Duration.ofSeconds(5));
+        assertThat(said).containsExactly("SELECT set_config('statement_timeout', ?, true)", "1=5000ms", "closed");
+        assertThat(RiskProofs.STATEMENT_TIMEOUT).isEqualTo(Duration.ofSeconds(5));
+        assertThatThrownBy(() -> RiskProofs.bound(snapshot, Duration.ofNanos(999_999)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> RiskProofs.bound(StandInConnections.declaring(false, false,
+                Connection.TRANSACTION_REPEATABLE_READ), Duration.ofSeconds(5))).isInstanceOf(IllegalStateException.class);
+    }
+
     // ------------------------------------------------------------------
 
     private UUID entry(String at, boolean monitored) {

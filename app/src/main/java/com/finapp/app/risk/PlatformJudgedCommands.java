@@ -42,6 +42,24 @@ import java.util.UUID;
  *   <li>{@code CROSS_BORDER} (the <em>quote's</em> id): every {@code crossborder.payment} - a refused command leaves
  *       crossborder no row, which the census knows.</li>
  * </ul>
+ *
+ * <p><strong>The intents' day is their creation's, not their judgement's</strong> (the review's M4 - recorded, not
+ * fixed). A transfer, a withdrawal and a cross-border payment are minted by the command the seam judges, so their id's
+ * day is the judgement's day. A payment intent is minted at its <em>creation</em> and judged at its
+ * <em>confirmation</em>, which may come any number of days later (an intent has no expiry). So for
+ * {@code CARD_PAYMENT} and {@code WALLET_PAYMENT} the census of day {@code D} counts the intents created on {@code D}
+ * that the snapshot finds judged, and its assessments are those sealed on {@code D}. What that means, exactly:
+ *
+ * <ul>
+ *   <li>no difference is manufactured - a seal and its intent on different days reconcile by the cross-day lookup, in
+ *       both directions ({@code reconciled});</li>
+ *   <li>the day's {@code commands} and {@code assessments} totals for intents may differ with nothing wrong;</li>
+ *   <li><strong>the limit</strong>: an intent created on {@code D} and confirmed without its seal is named
+ *       {@code missing} only by the census <em>of {@code D}</em> - the meters' reading (today and yesterday) stops seeing
+ *       it once {@code D} is two days old; the operator's decisions report for {@code D} still names it.</li>
+ * </ul>
+ * The exact day would need the confirmation's instant behind an index - {@code payment_intent_event.occurred_at} has
+ * none and its id is an identity, not a UUIDv7 - which is a payments migration this task does not own (owner item).
  */
 public final class PlatformJudgedCommands implements JudgedCommands {
 
