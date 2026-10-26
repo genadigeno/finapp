@@ -260,7 +260,6 @@ class RescreeningDatabaseTest {
         ScreeningListVersion version = activated(ScreeningList.SANCTIONS);
         Instant activatedAt = version.activatedAt().orElseThrow();
         enqueueAll();
-        int before = provider.requestCount(ScreeningAdapter.SANCTIONS_PATH);
         List<UUID> parties = base.stream().map(Onboarded::party).toList();
         concurrently(10, () -> {
             Instant deadline = Instant.now().plusSeconds(180);
@@ -269,8 +268,12 @@ class RescreeningDatabaseTest {
             }
             return null;
         });
-        assertThat(provider.requestCount(ScreeningAdapter.SANCTIONS_PATH) - before)
-                .as("one provider call per party - never two under ten sweepers").isEqualTo(parties.size());
+        // Per party, by the case its ask names: the activation rescreens every ACTIVE or PENDING party in the shared
+        // database, so earlier cases' parties made calls of their own (P13-TST-001's first run of this owed suite).
+        for (Onboarded onboarded : base) {
+            assertThat(callsNaming(ScreeningAdapter.SANCTIONS_PATH, onboarded.kycCase()))
+                    .as("one provider call per party - never two under ten sweepers").isEqualTo(1);
+        }
         for (Onboarded onboarded : base) {
             UUID permit = scalarUuid("SELECT id FROM risk.rescreening_permit WHERE party_id = ? AND list_version_id = ?"
                     + " AND status = 'DONE' AND outcome = 'CLEARED'", onboarded.party(), version.id().value());
@@ -449,14 +452,23 @@ class RescreeningDatabaseTest {
         String key = PartyRescreening.KEY_PREFIX + permit;
         UUID abandoned = IDS.next();
         try (Connection migrator = DatabaseRoles.migrator()) {
+            // Each planted permit 250 ms ahead (then slept past): V018's trigger reads its own clock_timestamp() after the
+            // SET's, and a 1 ms margin flaked 23514 "keeps a permit ahead" (P13-TST-001's first run of this owed suite).
             execute(migrator, "UPDATE risk.rescreening_permit SET attempts = 1,"
-                    + " next_attempt_at = clock_timestamp() + interval '1 millisecond' WHERE id = ?", permit);
+                    + " next_attempt_at = clock_timestamp() + interval '250 milliseconds' WHERE id = ?", permit);
+            // Both questions asked AFTER the activation, as a permit's own always are: #0 planted ten minutes back was
+            // asked before the version came into force, no rescreening under it, and RescreeningRun.hit rightly told
+            // nothing. #1's clear is planted - abandoning a fresh #0 would take a lease (2 min);
+            // aCallKilledMidFlightIsAskedAgain covers the leg asking #1 (P13-TST-001's first run of this owed suite).
             execute(migrator, "INSERT INTO kyc.verification_check (id, case_id, check_type, status, requested_at,"
                     + " status_changed_at, purpose, rescreen_key) VALUES (?, ?, 'SANCTIONS', 'DISPATCHED',"
-                    + " clock_timestamp() - interval '10 minute', clock_timestamp() - interval '10 minute', 'RESCREEN',"
-                    + " ?)", abandoned, onboarded.kycCase(), key + "#0");
+                    + " clock_timestamp(), clock_timestamp(), 'RESCREEN', ?)", abandoned, onboarded.kycCase(), key + "#0");
+            execute(migrator, "INSERT INTO kyc.verification_check (id, case_id, check_type, status, requested_at,"
+                    + " status_changed_at, purpose, rescreen_key) VALUES (?, ?, 'SANCTIONS', 'CLEAR',"
+                    + " clock_timestamp(), clock_timestamp(), 'RESCREEN', ?)", IDS.next(), onboarded.kycCase(),
+                    key + "#1");
         }
-        Thread.sleep(20);
+        Thread.sleep(300);
         driveUntil(() -> concludedOf(version, List.of(onboarded.party())) == 1);
         assertThat(scalarText("SELECT outcome FROM risk.rescreening_permit WHERE id = ?", permit)).isEqualTo("CLEARED");
 
@@ -492,21 +504,22 @@ class RescreeningDatabaseTest {
         try (Connection migrator = DatabaseRoles.migrator()) {
             // What a claim that died mid-call leaves: one attempt counted, its question dispatched ten minutes ago.
             execute(migrator, "UPDATE risk.rescreening_permit SET attempts = 1,"
-                    + " next_attempt_at = clock_timestamp() + interval '1 millisecond' WHERE id = ?", permit);
+                    + " next_attempt_at = clock_timestamp() + interval '250 milliseconds' WHERE id = ?", permit);
             execute(migrator, "INSERT INTO kyc.verification_check (id, case_id, check_type, status, requested_at,"
                     + " status_changed_at, purpose, rescreen_key) VALUES (?, ?, 'SANCTIONS', 'DISPATCHED',"
                     + " clock_timestamp() - interval '10 minute', clock_timestamp() - interval '10 minute', 'RESCREEN',"
                     + " ?)", IDS.next(), onboarded.kycCase(), key + "#0");
         }
-        Thread.sleep(20);
-        int before = provider.requestCount(ScreeningAdapter.SANCTIONS_PATH);
+        Thread.sleep(300);
         driveUntil(() -> concludedOf(version, List.of(onboarded.party())) == 1);
         assertThat(scalarText("SELECT outcome FROM risk.rescreening_permit WHERE id = ?", permit)).isEqualTo("CLEARED");
         assertThat(scalarText("SELECT status FROM kyc.verification_check WHERE rescreen_key = ?", key + "#1"))
                 .as("the next ordinal asked and answered").isEqualTo("CLEAR");
         assertThat(scalarText("SELECT status FROM kyc.verification_check WHERE rescreen_key = ?", key + "#0"))
                 .as("the abandoned question stays as it stood").isEqualTo("DISPATCHED");
-        assertThat(provider.requestCount(ScreeningAdapter.SANCTIONS_PATH) - before).isEqualTo(1);
+        // This party's calls only: the activation rescreens every ACTIVE or PENDING party in the shared database
+        // (P13-TST-001's first run of this owed suite).
+        assertThat(callsNaming(ScreeningAdapter.SANCTIONS_PATH, onboarded.kycCase())).isEqualTo(1);
         assertThat(scalarText("SELECT screening_ref::text FROM risk.risk_signal WHERE source_event_id = ?", permit))
                 .isEqualTo(scalarText("SELECT id::text FROM kyc.verification_check WHERE rescreen_key = ?", key + "#1"));
     }
@@ -517,7 +530,9 @@ class RescreeningDatabaseTest {
             + " #1 and the provider's recovery is the permit's clearance - never three questions and a failure")
     void anOutageThenRecoveryIsCleared() throws Exception {
         Onboarded onboarded = onboarded("ACTIVE", "APPROVED");
-        provider.failsThenSucceeds(ScreeningAdapter.SANCTIONS_PATH, 1, 200, "{\"status\":\"clear\"}");
+        // Down for every party until the recovery below: a one-shot 503 was spent on an earlier case's party, rescreened
+        // first under this activation (P13-TST-001's first run of this owed suite).
+        provider.isUnavailable(ScreeningAdapter.SANCTIONS_PATH);
         ScreeningListVersion version = activated(ScreeningList.SANCTIONS);
         enqueueAll();
         UUID permit = scalarUuid("SELECT id FROM risk.rescreening_permit WHERE party_id = ? AND list_version_id = ?",
@@ -529,9 +544,10 @@ class RescreeningDatabaseTest {
                 .isEqualTo("INDETERMINATE");
         try (Connection migrator = DatabaseRoles.migrator()) {
             execute(migrator, "UPDATE risk.rescreening_permit SET next_attempt_at = clock_timestamp()"
-                    + " + interval '1 millisecond' WHERE id = ?", permit);
+                    + " + interval '250 milliseconds' WHERE id = ?", permit);
         }
-        Thread.sleep(20);
+        provider.succeedsWith(ScreeningAdapter.SANCTIONS_PATH, 200, "{\"status\":\"clear\"}"); // the recovery: newest wins
+        Thread.sleep(300);
         driveUntil(() -> concludedOf(version, List.of(onboarded.party())) == 1);
         assertThat(scalarText("SELECT outcome FROM risk.rescreening_permit WHERE id = ?", permit)).isEqualTo("CLEARED");
         assertThat(scalarText("SELECT status FROM kyc.verification_check WHERE rescreen_key = ?", key + "#1"))
@@ -546,7 +562,6 @@ class RescreeningDatabaseTest {
         UUID active = plantedCustomer("ACTIVE");
         ScreeningListVersion version = activated(ScreeningList.PEP);
         enqueueAll();
-        int before = provider.requestCount(ScreeningAdapter.PEP_PATH);
         driveUntil(() -> concludedOf(version, List.of(pending)) == 1
                 && count("SELECT count(*) FROM risk.rescreening_permit WHERE party_id = ? AND list_version_id = ?"
                         + " AND attempts >= 1", active, version.id().value()) == 1);
@@ -556,7 +571,13 @@ class RescreeningDatabaseTest {
         assertThat(count("SELECT count(*) FROM risk.rescreening_permit WHERE party_id = ? AND list_version_id = ?"
                 + " AND status = 'PENDING' AND cause = 'NOT_SCREENED'", active, version.id().value()))
                 .as("the exposure waits, failing at its bound, counted").isEqualTo(1);
-        assertThat(provider.requestCount(ScreeningAdapter.PEP_PATH) - before).isZero();
+        // Neither party asked about (kyc's ask names the customer): the activation rescreens every ACTIVE or PENDING
+        // party in the shared database, and earlier cases' parties made the calls (P13-TST-001's first run of this owed
+        // suite).
+        for (UUID party : List.of(pending, active)) {
+            String customer = scalarUuid("SELECT id FROM party.customer WHERE party_id = ?", party).toString();
+            assertThat(provider.bodyValues(ScreeningAdapter.PEP_PATH)).noneMatch(body -> body.contains(customer));
+        }
     }
 
     @Test
@@ -606,7 +627,6 @@ class RescreeningDatabaseTest {
             assertThat(checks.dispatch(app, stranded.id(), Instant.now(CLOCK))).isTrue();
             app.commit();
         }
-        int before = provider.requestCount(ScreeningAdapter.SANCTIONS_PATH);
         String body = "{\"deliveryId\":\"rescreen-" + UUID.randomUUID() + "\",\"checkId\":\"" + stranded.id().value()
                 + "\",\"status\":\"hit\"}";
         assertThat(provider.deliverSignedCallback(URI.create("http://localhost:" + port + "/v1/providers/kyc/callbacks"),
@@ -624,7 +644,9 @@ class RescreeningDatabaseTest {
                 .isEqualTo(1);
         assertThat(count("SELECT count(*) FROM risk.risk_alert WHERE subject_ref = ? AND kind = 'SCREENING_HIT'",
                 onboarded.party().toString())).isEqualTo(1);
-        assertThat(provider.requestCount(ScreeningAdapter.SANCTIONS_PATH) - before)
+        // This party's calls only: earlier cases' parties are rescreened under the activation too (P13-TST-001's first
+        // run of this owed suite).
+        assertThat(callsNaming(ScreeningAdapter.SANCTIONS_PATH, onboarded.kycCase()))
                 .as("the answer was the row's: no second question").isZero();
         assertThat(count("SELECT count(*) FROM kyc.review_task WHERE case_id = ?", onboarded.kycCase())).isZero();
     }
@@ -843,6 +865,15 @@ class RescreeningDatabaseTest {
                     + " status = 'DONE'", party, version.id().value());
         }
         return done;
+    }
+
+    /**
+     * The provider calls on {@code path} that asked about {@code kycCase} - kyc's ask names its case. A path-wide count
+     * is not a case's: every activation rescreens every ACTIVE or PENDING party in the shared database (P13-TST-001's
+     * first run of this owed suite).
+     */
+    private static long callsNaming(String path, UUID kycCase) {
+        return provider.bodyValues(path).stream().filter(body -> body.contains(kycCase.toString())).count();
     }
 
     private static Actor person() {

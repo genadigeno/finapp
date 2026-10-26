@@ -84,6 +84,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 class MerchantAbuseDatabaseTest {
 
     private static final Clock CLOCK = Clock.system(ZoneOffset.UTC);
+    // Every identifier a UUIDv7, as the seams' own are (ADR-0013): a random v4 party or merchant made PartyId.of and
+    // MerchantId.of throw inside T-eval's read - every payment a READ_FAILED fail-safe ALLOW judged by no rule, and the
+    // profile leg's recompute failed outright (P13-TST-001's first run of this owed suite).
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
     private static final Duration RETENTION = Duration.ofDays(14);
@@ -122,7 +125,7 @@ class MerchantAbuseDatabaseTest {
             + " the merchant's MERCHANT_ABUSE case (P13-TSK-016), the"
             + " merchant, REFUND_RATIO, the D30 bucket, the payment permitted")
     void aRefundRatioOverTheThresholdRaisesOneMerchantAbuseAlert() throws Exception {
-        UUID merchant = UUID.randomUUID();
+        UUID merchant = IDS.next();
         List<UUID> intents = paidTo(merchant, 30);
         for (UUID intent : intents.subList(0, 25)) {
             assertThat(deliver(refundCompleted, refund(intent))).isEqualTo(InboxConsumer.Outcome.PROCESSED);
@@ -130,7 +133,7 @@ class MerchantAbuseDatabaseTest {
         assertThat(count("SELECT count(*) FROM risk.risk_signal WHERE kind = 'REFUND_COMPLETED' AND merchant_subject_ref = ?",
                 merchant)).as("each refund attributed to the merchant its payment's assessment named").isEqualTo(25);
 
-        RiskEvaluation.Assessed next = pay(merchant, UUID.randomUUID(), UUID.randomUUID());
+        RiskEvaluation.Assessed next = pay(merchant, IDS.next(), IDS.next());
         assertThat(next.permits()).as("the merchant's ratio refuses no customer").isTrue();
         assertThat(column("SELECT kind || ',' || status || ',' || subject_kind || ',' || rule_code || ',' || window_kind"
                 + " FROM risk.risk_alert WHERE subject_ref = ?", merchant.toString()))
@@ -149,14 +152,14 @@ class MerchantAbuseDatabaseTest {
     @DisplayName("ten concurrent payments to a merchant over its ratio, on ten instances, raise ONE alert and one"
             + " AlertRaised - serialised on the merchant's R2a lock, the unique beneath")
     void tenConcurrentConfirmationsOverTheRatioRaiseOneAlert() throws Exception {
-        UUID merchant = UUID.randomUUID();
+        UUID merchant = IDS.next();
         List<UUID> intents = paidTo(merchant, 40);
         for (UUID intent : intents.subList(0, 30)) {
             deliver(refundCompleted, refund(intent));
         }
         List<Callable<RiskEvaluation.Assessed>> payments = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
-            payments.add(() -> pay(merchant, UUID.randomUUID(), UUID.randomUUID()));
+            payments.add(() -> pay(merchant, IDS.next(), IDS.next()));
         }
         List<RiskEvaluation.Assessed> answers = race(payments);
         assertThat(answers).allMatch(RiskEvaluation.Assessed::permits);
@@ -172,7 +175,7 @@ class MerchantAbuseDatabaseTest {
     @DisplayName("a replayed refund event - redelivered past the inbox's dedupe - records nothing new: the unique on its"
             + " source event absorbs it, no second signal, no second announcement, the ratio unmoved")
     void aReplayedRefundEventRecordsNothingNew() throws Exception {
-        UUID merchant = UUID.randomUUID();
+        UUID merchant = IDS.next();
         UUID intent = paidTo(merchant, 1).get(0);
         ReceivedEvent refund = refund(intent);
         assertThat(deliver(refundCompleted, refund)).isEqualTo(InboxConsumer.Outcome.PROCESSED);
@@ -194,13 +197,13 @@ class MerchantAbuseDatabaseTest {
     @DisplayName("a chargeback ratio over its threshold alerts once per window: ten chargebacks of a hundred payments,"
             + " the merchant's next payments meet one CHARGEBACK_RATIO alert (HIGH)")
     void aChargebackRatioOverTheThresholdAlertsOncePerWindow() throws Exception {
-        UUID merchant = UUID.randomUUID();
+        UUID merchant = IDS.next();
         List<UUID> intents = paidTo(merchant, 100);
         for (UUID intent : intents.subList(0, 10)) {
-            deliver(chargebackReceived, chargeback(UUID.randomUUID(), intent));
+            deliver(chargebackReceived, chargeback(IDS.next(), intent));
         }
-        pay(merchant, UUID.randomUUID(), UUID.randomUUID());
-        pay(merchant, UUID.randomUUID(), UUID.randomUUID());
+        pay(merchant, IDS.next(), IDS.next());
+        pay(merchant, IDS.next(), IDS.next());
         assertThat(column("SELECT rule_code || ',' || severity FROM risk.risk_alert WHERE subject_ref = ?",
                 merchant.toString()))
                 .containsExactly("CHARGEBACK_RATIO,HIGH");
@@ -210,12 +213,12 @@ class MerchantAbuseDatabaseTest {
     @DisplayName("duplicate dispute events count once: the same ChargebackReceived on two instances at once and again"
             + " later is one signal - nine distinct chargebacks and a duplicated tenth stay below the floor of ten")
     void duplicateDisputeEventsCountOnce() throws Exception {
-        UUID merchant = UUID.randomUUID();
+        UUID merchant = IDS.next();
         List<UUID> intents = paidTo(merchant, 100);
         for (UUID intent : intents.subList(0, 9)) {
-            deliver(chargebackReceived, chargeback(UUID.randomUUID(), intent));
+            deliver(chargebackReceived, chargeback(IDS.next(), intent));
         }
-        ReceivedEvent tenth = chargeback(UUID.randomUUID(), intents.get(9));
+        ReceivedEvent tenth = chargeback(IDS.next(), intents.get(9));
         List<InboxConsumer.Outcome> outcomes = race(List.of(() -> deliver(chargebackReceived, tenth),
                 () -> deliver(chargebackReceived, tenth)));
         assertThat(outcomes).containsOnlyOnce(InboxConsumer.Outcome.PROCESSED);
@@ -223,16 +226,16 @@ class MerchantAbuseDatabaseTest {
         assertThat(count("SELECT count(*) FROM risk.risk_signal WHERE kind = 'CHARGEBACK_RECEIVED' AND merchant_subject_ref = ?",
                 merchant)).isEqualTo(10);
 
-        UUID other = UUID.randomUUID();
+        UUID other = IDS.next();
         List<UUID> others = paidTo(other, 100);
         for (UUID intent : others.subList(0, 9)) {
-            deliver(chargebackReceived, chargeback(UUID.randomUUID(), intent));
+            deliver(chargebackReceived, chargeback(IDS.next(), intent));
         }
-        ReceivedEvent duplicated = chargeback(UUID.randomUUID(), others.get(9));
+        ReceivedEvent duplicated = chargeback(IDS.next(), others.get(9));
         deliver(chargebackReceived, duplicated);
         forgetDedupe(duplicated);
         deliver(chargebackReceived, duplicated);
-        pay(other, UUID.randomUUID(), UUID.randomUUID());
+        pay(other, IDS.next(), IDS.next());
         assertThat(alerts(other, "CHARGEBACK_RATIO")).as("ten distinct chargebacks: at the floor").isEqualTo(1);
     }
 
@@ -242,7 +245,7 @@ class MerchantAbuseDatabaseTest {
     @DisplayName("ten BNPL applications across merchants within the week: ten signals about the applicant, the profile"
             + " leg raises ONE FRAUD alert BNPL_MULTI_APPLICATION, swept again still one - and the rating moves")
     void tenApplicationsAcrossMerchantsAlertOnce() throws Exception {
-        UUID party = UUID.randomUUID();
+        UUID party = IDS.next();
         for (int i = 0; i < 10; i++) {
             deliver(applicationSubmitted, application(party, Instant.now(CLOCK).minus(Duration.ofHours(i))));
         }
@@ -260,11 +263,11 @@ class MerchantAbuseDatabaseTest {
     @DisplayName("a session confirming many checkouts is challenged: five confirmations in the hour count five in the"
             + " SESSION window; the sixth is CHALLENGE, unsatisfied, counting nothing; the session sealed on each")
     void aSessionConfirmingManyCheckoutsIsChallenged() throws Exception {
-        UUID session = UUID.randomUUID();
+        UUID session = IDS.next();
         for (int i = 0; i < 5; i++) {
-            assertThat(pay(UUID.randomUUID(), UUID.randomUUID(), session).decision()).isEqualTo(RiskDecision.ALLOW);
+            assertThat(pay(IDS.next(), IDS.next(), session).decision()).isEqualTo(RiskDecision.ALLOW);
         }
-        RiskEvaluation.Assessed sixth = pay(UUID.randomUUID(), UUID.randomUUID(), session);
+        RiskEvaluation.Assessed sixth = pay(IDS.next(), IDS.next(), session);
         assertThat(sixth.decision()).isEqualTo(RiskDecision.CHALLENGE);
         assertThat(sixth.permits()).isFalse();
         assertThat(count("SELECT sum(count) FROM risk.velocity_window WHERE dimension = 'SESSION' AND subject_ref = ?"
@@ -278,7 +281,7 @@ class MerchantAbuseDatabaseTest {
     private List<UUID> paidTo(UUID merchant, int payments) throws SQLException {
         List<UUID> intents = new ArrayList<>();
         for (int i = 0; i < payments; i++) {
-            UUID intent = UUID.randomUUID();
+            UUID intent = IDS.next();
             evaluate(merchant, intent, null);
             intents.add(intent);
         }
@@ -294,7 +297,7 @@ class MerchantAbuseDatabaseTest {
         try (Connection app = DatabaseRoles.application()) {
             app.setAutoCommit(false);
             RiskEvaluationRequest.Builder request = RiskEvaluationRequest.builder(RiskOperation.CARD_PAYMENT,
-                    CommandRef.of(intent), Money.ofMinorUnits(25_00, EUR), UUID.randomUUID(), CorrelationId.generate(IDS),
+                    CommandRef.of(intent), Money.ofMinorUnits(25_00, EUR), IDS.next(), CorrelationId.generate(IDS),
                     CausationId.of("p13-tsk-014")).merchant(merchant);
             if (session != null) {
                 request.session(session);
@@ -335,31 +338,31 @@ class MerchantAbuseDatabaseTest {
     }
 
     private static ReceivedEvent refund(UUID intent) {
-        UUID refund = UUID.randomUUID();
+        UUID refund = IDS.next();
         return new ReceivedEvent(EventId.next(IDS), "payments.RefundCompleted", 1, 1, refund, "refund",
-                Instant.now(CLOCK), "payments", CorrelationId.of(UUID.randomUUID().toString()),
+                Instant.now(CLOCK), "payments", CorrelationId.of(IDS.next().toString()),
                 CausationId.of("p13-tsk-014"), "application/json", EventPayload.of().with("status", "COMPLETED")
-                        .with("intentId", intent.toString()).with("attemptId", UUID.randomUUID().toString()).toBytes());
+                        .with("intentId", intent.toString()).with("attemptId", IDS.next().toString()).toBytes());
     }
 
     private static ReceivedEvent chargeback(UUID dispute, UUID intent) {
         return new ReceivedEvent(EventId.next(IDS), "payments.ChargebackReceived", 1, 1, dispute, "dispute",
-                Instant.now(CLOCK), "payments", CorrelationId.of(UUID.randomUUID().toString()),
+                Instant.now(CLOCK), "payments", CorrelationId.of(IDS.next().toString()),
                 CausationId.of("p13-tsk-014"), "application/json", EventPayload.of().with("stage", "CHARGED_BACK")
-                        .with("disputeId", dispute.toString()).with("attemptId", UUID.randomUUID().toString())
+                        .with("disputeId", dispute.toString()).with("attemptId", IDS.next().toString())
                         .with("intentId", intent.toString()).toBytes());
     }
 
     private static ReceivedEvent application(UUID party, Instant occurredAt) {
-        UUID application = UUID.randomUUID();
+        UUID application = IDS.next();
         return new ReceivedEvent(EventId.next(IDS), "bnpl.BnplApplicationSubmitted", 1, 1, application,
-                "bnpl_application", occurredAt, "bnpl", CorrelationId.of(UUID.randomUUID().toString()),
+                "bnpl_application", occurredAt, "bnpl", CorrelationId.of(IDS.next().toString()),
                 CausationId.of("p13-tsk-014"), "application/json", EventPayload.of()
                         .with("applicationId", application.toString()).with("partyId", party.toString())
                         .with("product", "BNPL_PAY_IN_N").with("plan", "PAY_IN_3")
-                        .with("checkoutSessionId", UUID.randomUUID().toString())
-                        .with("decisionRequestId", UUID.randomUUID().toString())
-                        .with("termsVersionId", UUID.randomUUID().toString()).with("termsVersion", "1").toBytes());
+                        .with("checkoutSessionId", IDS.next().toString())
+                        .with("decisionRequestId", IDS.next().toString())
+                        .with("termsVersionId", IDS.next().toString()).with("termsVersion", "1").toBytes());
     }
 
     private static void forgetDedupe(ReceivedEvent event) throws SQLException {
@@ -425,7 +428,7 @@ class MerchantAbuseDatabaseTest {
     }
 
     private static Actor employee() {
-        return new Actor("employee-" + UUID.randomUUID(), ActorType.EMPLOYEE);
+        return new Actor("employee-" + IDS.next(), ActorType.EMPLOYEE);
     }
 
     private static <T> List<T> race(List<Callable<T>> calls) throws Exception {
