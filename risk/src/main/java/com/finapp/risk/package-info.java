@@ -258,7 +258,7 @@
  * {@code REINSTATE_ACCOUNT} and {@code BLOCK_BENEFICIARY} have no owning command and are unavailable
  * ({@link com.finapp.risk.ActionKind#available()}); {@code RESCREEN_PARTY} is the rescreening sweep's (`-022`).
  *
- * <p><strong>The rescreening</strong> (`P13-TSK-022`, {@code risk V017}; section 12.10 of the plan): T-list -
+ * <p><strong>The rescreening</strong> (`P13-TSK-022`, {@code risk V018}; section 12.10 of the plan): T-list -
  * {@link com.finapp.risk.ScreeningListVersions} over {@link com.finapp.risk.ScreeningListStore}
  * ({@code JdbcScreeningListStore}): a {@link com.finapp.risk.ScreeningListVersion} recorded by a person, activated by a
  * second ({@code RECORDED → ACTIVE → RETIRED}, the predecessor retired beside it), its enqueue left due; the leg -

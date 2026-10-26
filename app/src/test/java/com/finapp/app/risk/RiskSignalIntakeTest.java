@@ -198,6 +198,97 @@ class RiskSignalIntakeTest {
     }
 
     @Test
+    @DisplayName("P13-TSK-025: a default is recorded as the platform - its signal raises the collections case's alert in"
+            + " the same transaction, the standing signal again on a redelivery; every other kind records with no actor"
+            + " entered and raises nothing")
+    void aDefaultIsRecordedAsThePlatform() {
+        List<String> actorsAtInsert = new ArrayList<>();
+        List<String> raisedUnder = new ArrayList<>();
+        List<RiskSignal> raised = new ArrayList<>();
+        RecordingStore recording = new RecordingStore();
+        RiskSignalStore watched = new RiskSignalStore() {
+            @Override
+            public boolean insert(Connection unitOfWork, RiskSignal signal) {
+                actorsAtInsert.add(signal.kind() + ":" + com.finapp.platform.security.SecurityContext.current()
+                        .map(actor -> actor.type().name()).orElse("none"));
+                return recording.insert(unitOfWork, signal);
+            }
+
+            @Override
+            public Optional<RiskSignal> recordedFrom(Connection unitOfWork, EventId source) {
+                return recording.inserted.stream().filter(row -> row.source().id().equals(source)).findFirst();
+            }
+
+            @Override
+            public int countSince(Connection unitOfWork, SignalSubject subject, SignalKind kind, Instant since) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public int countByMerchantSince(Connection unitOfWork, UUID merchant, SignalKind kind, Instant since) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public Optional<RiskSignal> latest(Connection unitOfWork, SignalSubject subject, SignalKind kind) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public Optional<Instant> firstObservedAt(Connection unitOfWork, SignalSubject subject, SignalKind kind) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public boolean seen(Connection unitOfWork, SignalSubject subject) {
+                throw new UnsupportedOperationException();
+            }
+        };
+        com.finapp.risk.SignalAlerts collections = new com.finapp.risk.CollectionsCases((unitOfWork, alerts) -> {
+            raisedUnder.add(com.finapp.platform.security.SecurityContext.require().type().name());
+            return List.of();
+        }, (unitOfWork, subject) -> Optional.of(UUID.randomUUID()), com.finapp.risk.CollectionsObserver.NONE);
+        RiskSignals withCases = new RiskSignals(watched, outbox, IDS, CLOCK, com.finapp.risk.ProfileHints.NONE,
+                new com.finapp.risk.SignalAlerts() {
+                    @Override
+                    public boolean raises(SignalKind kind) {
+                        return collections.raises(kind);
+                    }
+
+                    @Override
+                    public void raise(Connection unitOfWork, RiskSignal standing) {
+                        raised.add(standing);
+                        collections.raise(unitOfWork, standing);
+                    }
+                });
+        UUID loan = UUID.randomUUID();
+        UUID obligation = UUID.randomUUID();
+        Connection uow = (Connection) java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[] {Connection.class}, (proxy, method, args) -> {
+                    throw new UnsupportedOperationException("the fakes never touch the connection");
+                });
+        ReceivedEvent loanDefaulted = event("lending.LoanDefaulted", loan, "lending", condition("loanId", loan));
+        new RiskSignalIntake(RiskSignalIntake.Source.LOAN_DEFAULTED, withCases, hints, IDS, RiskFlowScope.NONE)
+                .handle(uow, loanDefaulted);
+        new RiskSignalIntake(RiskSignalIntake.Source.LOAN_DEFAULTED, withCases, hints, IDS, RiskFlowScope.NONE)
+                .handle(uow, loanDefaulted);
+        new RiskSignalIntake(RiskSignalIntake.Source.BNPL_DEFAULTED, withCases, hints, IDS, RiskFlowScope.NONE)
+                .handle(uow, event("bnpl.BnplDefaulted", obligation, "bnpl", condition("obligationId", obligation)));
+        new RiskSignalIntake(RiskSignalIntake.Source.LOAN_DELINQUENCY_CHANGED, withCases, hints, IDS,
+                RiskFlowScope.NONE).handle(uow, event("lending.LoanDelinquencyChanged", loan, "lending",
+                        condition("loanId", loan).with("previousBucket", "CURRENT")));
+
+        assertThat(actorsAtInsert).containsExactly("LOAN_DEFAULTED:SYSTEM", "LOAN_DEFAULTED:SYSTEM",
+                "BNPL_DEFAULTED:SYSTEM", "LOAN_DELINQUENCY_CHANGED:none");
+        assertThat(raisedUnder).containsExactly("SYSTEM", "SYSTEM", "SYSTEM");
+        assertThat(raised).extracting(RiskSignal::kind).containsExactly(SignalKind.LOAN_DEFAULTED,
+                SignalKind.LOAN_DEFAULTED, SignalKind.BNPL_DEFAULTED);
+        assertThat(raised.get(1).id()).as("the redelivery raises over the standing signal, never its own copy")
+                .isEqualTo(raised.get(0).id());
+        assertThat(com.finapp.platform.security.SecurityContext.current()).as("the scope closed").isEmpty();
+    }
+
+    @Test
     @DisplayName("a completion is a hint: handed to the port with the envelope's facts, and no signal recorded")
     void aCompletionIsAHint() {
         UUID transfer = UUID.randomUUID();

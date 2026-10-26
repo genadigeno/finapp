@@ -9,7 +9,7 @@ import java.util.stream.Collectors;
 
 /**
  * One party's rescreening under one list version (`P13-TSK-022`; {@code RISK_LIFECYCLES.md} section 4.10; {@code risk
- * V017}'s {@code rescreening_permit}) - born once per (party, version) by the activation's enqueue
+ * V018}'s {@code rescreening_permit}) - born once per (party, version) by the activation's enqueue
  * ({@code rescreening_permit_once}), claimed by the sweep's rescreening leg, concluded once:
  * {@code PENDING → DONE(CLEARED | HIT | SKIPPED) | FAILED(cause)}, a claim or a deferral moving it {@code PENDING →
  * PENDING} with its permit ahead. Its id is the clearance signal's born-once key and its request's key to kyc.

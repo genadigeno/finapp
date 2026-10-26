@@ -245,7 +245,7 @@ populations; four eyes are two persons), `INV-CRD-01`/`-04` (credit replay; scor
 | **T-advise** | a read at a door, no transaction of the command, no row | the same evaluation without the upserts and without the insert — for the step-up answer before anything exists; never authoritative |
 | **T-pol** | own | propose / activate / reject / retire a policy version (A0 advisory → the version rows) |
 | **T-ovr** | own | propose / approve / reject an override (R1 → the assessment's override row R4) and record the action it issues |
-| **T-sig** | the inbox handler's transaction | record a signal born once; pull the sweep's permit forward |
+| **T-sig** | the inbox handler's transaction | record a signal born once; pull the sweep's permit forward *(as built, `P13-TSK-025`: **the default leg** - for `lending.LoanDefaulted` / `bnpl.BnplDefaulted`, under the platform's actor and on every delivery that reaches the handler (born, or the standing row read back by `UNIQUE (source_event_id)`): the agreement's party placed first (lock-free, the modules' published views; unplaceable → the delivery refused whole, `finapp.risk.collections.unplaced`), then the `OBLIGATION_DEFAULTED` alert (R3), the fold - the party's `COLLECTIONS` case `FOR UPDATE` or born under `risk_case_one_open` (R4) - and the alert's attach (R5); no permit pulled, never R8)* |
 | **T-mon** | own, per claim | the monitoring sweep: claim the watermark (R7), read journal entries since it through the port, insert monitored transactions, advance the watermark; then per subject: lock the profile head (R8), evaluate the monitoring policy over the subject's windows, raise alerts, fold into a case, recompute the profile |
 | **T-case** | own | every case act under the case row (R4) and the `revision` compare-and-set; alerts attached (R5) |
 | **T-act** | own, per action | dispatch an approved action: the action row (R6), then the owning domain's command on **its** lock order, then the outcome — never holding R4 |
@@ -387,6 +387,7 @@ conclusion (R9 → R1 → R3 → R8 → R5 → R4 → R5). Nobody holding anothe
 | Duplicate / delayed / replayed events | inbox dedupe per consumer + `UNIQUE (source_event_id)` + born-once alerts | `SignalIntakeDatabaseTest#theSameEventTwiceRecordsOnce` |
 | Ten sweepers over one watermark | `FOR UPDATE SKIP LOCKED` claim; `UNIQUE (journal_entry_id)` | `MonitoringIntakeDatabaseTest#tenSweepersIngestOnce` |
 | Reprocessing from an earlier watermark | born-once rows; alert and case uniques | `#reprocessingCreatesNothingNew` |
+| Two defaults of one party at once (a loan's on the `finapp.lending` partition, a BNPL obligation's on `finapp.bnpl`, two instances) (`P13-TSK-025`) | distinct signals and alerts; the one-open partial unique `risk_case_one_open` (the loser waits only on the winner's uncommitted birth, holding nothing it needs) and then the case row `FOR UPDATE` (R4) - one case, both alerts attached | `CollectionsCaseDatabaseTest#aSecondDefaultOfOnePartyAttaches` (owed, C5) |
 | A delayed event after a case is disposed | the event records a signal; a disposed case is never re-opened; a new alert opens a new case referencing the old | `CaseDatabaseTest#aLateEventAfterDispositionOpensANewCase` |
 | The profile recomputed by two sweepers | the head row `FOR UPDATE`; `UNIQUE (party_id, version)` | `ProfileDatabaseTest#tenRecomputesOneVersion` |
 | An approved release racing the held withdrawal's expiry (`held_until`) | the withdrawal row lock in payments' order; the action keyed; the first committed edge wins and the loser is a recorded `DONE(ALREADY)` outcome | `WithdrawalHoldDatabaseTest#releaseAndExpiryLeaveExactlyOne` |
@@ -496,7 +497,7 @@ Phase 12 wave-D lesson — so a task's number is below every number of a later w
 | `monitored_transaction`, `monitoring_watermark` | `V004` (`-019`) | `UNIQUE (journal_entry_id)`; one watermark per source |
 | `risk_signal` widened (three abuse kinds, `merchant_subject_ref`, `intent_ref`, `risk_signal_by_merchant`), `velocity_window` and `risk_rule_parameter` (`SESSION`), `risk_assessment.session_id` | `V011` (`-014`) — *as built 2026-10-25, the next free at its build; the entry planned no migration* | the kinds' `CHECK`s re-made by name; a guard refusing a stored ratio rule without `threshold_count`; no grant, no row |
 | `regulatory_report`, `regulatory_report_event` | `V011` (`-021`) *(taken by `-014`: the next free at `-021`'s build)* *(as built by `P13-TSK-021`, 2026-10-25: `V016`)* | the filing artefact |
-| `screening_list_version`, `rescreening_permit`; `risk_signal` widened (`SCREENING_CLEARED`, `SCREENING_HIT`, `list_version_ref`, `screening_ref`) | `V012` (`-022`) *(as built by `P13-TSK-022`, 2026-10-26: `V017`, the next free number; `-023` and `-025` hold `V018`, `V019`)* | list facts (one per (list, label), one `ACTIVE` per list, four eyes by `CHECK`); permits (one per (party, version), the signal its own by a composite foreign key) |
+| `screening_list_version`, `rescreening_permit`; `risk_signal` widened (`SCREENING_CLEARED`, `SCREENING_HIT`, `list_version_ref`, `screening_ref`) | `V012` (`-022`) *(as built by `P13-TSK-022`, 2026-10-26: `V018` - built as `V017`, renumbered at integration when `-025`'s `V017` merged first; `-023` took none)* | list facts (one per (list, label), one `ACTIVE` per list, four eyes by `CHECK`); permits (one per (party, version), the signal its own by a composite foreign key) |
 | payments `withdrawal` `HELD`; `WithdrawalFailureReason.RISK_REFUSED` | payments `V033` (`-009`) | payments' own machine |
 | payments `PaymentFailureReason.RISK_REFUSED` and the intent's refused-by-risk decision row | payments `V034` (`-010`) | payments' own *(as built: the intent's `failure_reason`, the fifth intent edge, and slice 2's `payment_capture_hold`)* |
 | identity roles | identity `V023` (`-001`) | `RISK_ANALYST`, `RISK_OFFICER`, `AML_OFFICER` |
@@ -977,6 +978,14 @@ the owning domain's lock order with key `risk.action:<id>`, and its outcome reco
 already suspended) is a recorded outcome, not an error. **Risk never reverses a transaction**: a reversal is the
 owning domain's four-eyes act, and a case may only recommend it (an investigator action of kind `REFERRED`).
 
+*(As built, `P13-TSK-025`, 2026-10-26, owner decision C3 - the collections case: a default recorded by `-005`'s handler
+(`LOAN_DEFAULTED`, `BNPL_DEFAULTED`) raises in T-sig, under the platform's actor and on every delivery, one
+`OBLIGATION_DEFAULTED` alert - a **fact**, its own code its rule, no policy - about the agreement, born once per default
+(the `D1` bucket of its business date), folded into **the agreement's party's** `COLLECTIONS` case: one open per party, a
+second default attaching. The case is worked by facts and disposed `CLOSED_NO_ACTION` or `REFERRED` only (a referral to
+the owning domain's restructuring or write-off path), proposes no action, is never opened by hand; the borrower is placed
+through `app`'s join over lending's and bnpl's published views, neither module changed. `risk V017`.)*
+
 ### 12.9 The regulatory report — internal investigation versus filing (ADR-0111)
 
 An internal alert or case is the platform's own; a **regulatory report** is a filing to an authority, and the two are
@@ -1026,7 +1035,7 @@ activation enqueues one rescreening permit per `ACTIVE` party; the sweep's rescr
 through kyc's existing ports (`CounterpartyScreenings` for counterparties; the case-bound screening for parties),
 records the clearance as a signal, and raises an alert on a hit. kyc stays the screening owner (Refinement 3).
 
-*(As built by `P13-TSK-022`, 2026-10-26, `risk V017` - `DESIGN-022`.)* **What kyc's ports can do, unchanged (D1):** the
+*(As built by `P13-TSK-022`, 2026-10-26, `risk V018` - `DESIGN-022`.)* **What kyc's ports can do, unchanged (D1):** the
 case-bound screening is a `SANCTIONS`/`PEP` check on a KYC case, and kyc **never re-asks an answered question**
 (`CheckStore.requestOrConverge` converges on a `CLEAR`/`HIT`); a list update's re-verification is a *new* case
 (`INV-LIFE-04`) - consent-gated, re-running identity and documents, customer-visible, and undecidable for an `ACTIVE`
@@ -1137,6 +1146,7 @@ the two the plan names are `RiskEvaluationUnavailable` and `RiskPolicyNoneActive
 | `finapp.risk.alert` | counter | kind, severity | a sustained rate far above the policy's baseline (flood) |
 | `finapp.risk.alert.suppressed` | counter | reason_code | — |
 | `finapp.risk.case` | counter | kind, status | — |
+| `finapp.risk.collections.unplaced` | counter (`P13-TSK-025`: every default delivery whose agreement's party could not be placed - refused before any alert is born, so a stalled `risk.signals` partition's retries count here alone) | — | any increase (`-024`) |
 | `finapp.risk.case.backlog` | gauge (open cases) | kind | above the queue's staffed capacity |
 | `finapp.risk.case.age` | gauge (seconds, oldest open) | kind | older than the kind's SLA |
 | `finapp.risk.case.resolution` | timer (open → disposed) | kind | — |
@@ -1211,10 +1221,10 @@ wave-D lesson), so a task's number is below every number of a later wave; the wa
 | `P13-TSK-019` | Monitored transactions: the journal intake, the watermark, reprocessing | M13.6 | `-001` | `risk V004` | `DOD-DOMAIN`, `DOD-FIN` |
 | `P13-TSK-020` | Monitoring rules and AML alerts | M13.6 | `-019`, `-015` | none *(as built: `risk V015` - the counterparty index the design found missing)* | `DOD-DOMAIN` |
 | `P13-TSK-021` | The AML case and the regulatory report artefact | M13.6 | `-016`, `-020` | `risk V011` *(as built: `risk V016` - the next free number)* | `DOD-DOMAIN`, `DOD-API`, `DOD-SEC` |
-| `P13-TSK-022` | Rescreening on screening-list updates | M13.6 | `-005`, `-016` | `risk V012` *(as built: `risk V017` - the next free number)* | `DOD-DOMAIN`, `DOD-SEC` |
+| `P13-TSK-022` | Rescreening on screening-list updates | M13.6 | `-005`, `-016` | `risk V012` *(as built: `risk V018` - built as `V017`, renumbered at integration when `-025`'s `V017` merged first)* | `DOD-DOMAIN`, `DOD-SEC` |
 | `P13-TSK-023` | The risk proofs, the explanation door and replay | M13.7 | `-006`, `-019`, `-016` | none | `DOD-FIN`, `DOD-API` |
 | `P13-TSK-024` | Operating risk: meters, alerts, reports, runbook §9, the activation gate | M13.7 | `-023` | none | `DOD-OBS`, `DOD-DOC` |
-| `P13-TSK-025` | A collections case opened on default (C3, cut candidate) | M13.8 | `-016` | none | `DOD-DOMAIN` |
+| `P13-TSK-025` | A collections case opened on default (C3, cut candidate) | M13.8 | `-016` | none *(as built: `risk V017` - V010's four alert CHECKs re-made for the fact kind `OBLIGATION_DEFAULTED`, the fact's shape and the collections case's three; held `V019` in the parallel wave, renumbered at integration to the next free after master's `V016`)* | `DOD-DOMAIN` |
 | `P13-TST-001` | The risk storm | M13.9 | `-001`…`-024` | none | `DOD-TEST` |
 | `P13-TST-002` | The policy battery | M13.9 | `-003`, `-004` | none | `DOD-TEST` |
 | `P13-DOC-001` | The Phase 13 exit review | M13.9 | `P13-TST-001`, `-002` | none | `DOD-DOC` |

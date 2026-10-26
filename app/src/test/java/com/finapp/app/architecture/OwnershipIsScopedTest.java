@@ -2011,6 +2011,36 @@ class OwnershipIsScopedTest {
                                         + " recorded risk.CaseRead before it is answered. Risk's own rows about a"
                                         + " subject, owned by no party.")),
                     Map.entry(
+                            "com.finapp.risk.JdbcRiskSignalStore.recordedFrom",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P13-TSK-025. T-sig's read of the signal a source event was already recorded"
+                                        + " as - the event id is the consumed envelope's own, inside the inbox"
+                                        + " handler's transaction, no person's request and no door; the row is"
+                                        + " risk's born-once evidence that an event happened, owned by no party.")),
+                    Map.entry(
+                            "com.finapp.app.risk.JdbcCreditAgreementParties.partyOfLoan",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.app.risk.IdentitySubjectParties",
+                                    "P13-TSK-025. A default's collections case: the loan -> borrower join. The"
+                                        + " identifier is the CREDIT_AGREEMENT reference risk recorded itself (a"
+                                        + " LoanDefaulted signal's subject, carried by its alert), never a request's;"
+                                        + " the statement answers the party alone, over lending's published definer"
+                                        + " view, lock-free, on the caller's connection. IdentitySubjectParties"
+                                        + " alone calls it (its accountable join), and that class depends on risk, so"
+                                        + " NoCustomerSurfaceReadsRiskTest refuses any customer or merchant surface"
+                                        + " reaching it.")),
+                    Map.entry(
+                            "com.finapp.app.risk.JdbcCreditAgreementParties.partyOfObligation",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.app.risk.IdentitySubjectParties",
+                                    "P13-TSK-025. A default's collections case: the BNPL obligation -> customer"
+                                        + " join, partyOfLoan's twin over bnpl's published definer view - the"
+                                        + " reference a BnplDefaulted signal's subject named, the party alone"
+                                        + " answered, IdentitySubjectParties its one caller.")),
+                    Map.entry(
                             "com.finapp.risk.JdbcRiskCaseStore.lock",
                             new Entry(
                                     Scope.ADMINISTERED,

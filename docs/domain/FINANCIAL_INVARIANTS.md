@@ -3138,7 +3138,7 @@ one report is the drive's: `FILED` once (`regulatory_report_event`'s key), the f
 inquires by the filing reference - a lost answer asked for, never filed again. Verified hermetically by
 `RegulatoryReportTest#oneOpenDraftPerCase`, `#aLostFilingResponseIsInquiredNeverReFiled`, `#tenFilersFileOnce` and
 `RegulatoryReportMigrationTest#oneLiveReportPerCase`; on the database by `RegulatoryReportDatabaseTest`, owed (C5).)*
-*(As built by `P13-TSK-022`, 2026-10-26, `risk V017`: the rescreening's arbiters - one permit per (party, list version)
+*(As built by `P13-TSK-022`, 2026-10-26, `risk V018`: the rescreening's arbiters - one permit per (party, list version)
 (`rescreening_permit_once`, the enqueue's `ON CONFLICT`), one clearance signal per permit (its `source_event_id` the
 permit's id; `rescreening_permit_signal_is_its_own`), one `SCREENING_HIT` alert per (party, rule, the activation's `H1`
 bucket) (`risk_alert_born_once`); a permit concluded once, at the claimed attempt; a second activation of one list version

@@ -19,6 +19,10 @@ public enum CaseKind {
     /** A suspicion of money laundering from the monitoring rules - the regulatory report's source (`-021`). */
     AML,
 
-    /** A collections case opened on a loan's or a BNPL obligation's default - facts only, no operation (C3, `-025`). */
+    /**
+     * A collections case opened on a loan's or a BNPL obligation's default - facts only, no operation (C3, `-025`): about
+     * the agreement's PARTY, one open per party, opened only by the default's alert ({@link CollectionsCases}),
+     * disposed {@code CLOSED_NO_ACTION} or {@code REFERRED} ({@link DispositionRules#COLLECTIONS}), proposing no action.
+     */
     COLLECTIONS
 }

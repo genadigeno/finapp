@@ -106,7 +106,7 @@ class RiskMigrationTest {
             + " signal (P13-TSK-005), V004 the monitored transactions and the watermark (P13-TSK-019), V005 the velocity"
             + " windows (P13-TSK-006), V006 the customer risk profile (P13-TSK-007), V007 the sealed assessment and the"
             + " override's table (P13-TSK-004), V010 the born-once alert (P13-TSK-015), V012 the case (P13-TSK-016),"
-            + " V013 the downstream action (P13-TSK-017), V016 the regulatory report (P13-TSK-021), V017 the"
+            + " V013 the downstream action (P13-TSK-017), V016 the regulatory report (P13-TSK-021), V018 the"
             + " screening list versions and the rescreening permits (P13-TSK-022)")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
@@ -126,7 +126,7 @@ class RiskMigrationTest {
                 // V016 (P13-TSK-021): the regulatory report and its history.
                 "regulatory_report",
                 "regulatory_report_event",
-                // V017 (P13-TSK-022): the rescreening permits.
+                // V018 (P13-TSK-022): the rescreening permits.
                 "rescreening_permit",
                 // V013 (P13-TSK-017): the downstream action.
                 "risk_action",
@@ -152,7 +152,7 @@ class RiskMigrationTest {
                 "risk_rule_parameter",
                 // V003 (P13-TSK-005): the born-once signal.
                 "risk_signal",
-                // V017 (P13-TSK-022): the screening list versions.
+                // V018 (P13-TSK-022): the screening list versions.
                 "screening_list_version",
                 // V005 (P13-TSK-006): the durable velocity windows.
                 "velocity_window");
@@ -184,7 +184,7 @@ class RiskMigrationTest {
                 "regulatory_report_event_is_append_only",
                 "regulatory_report_has_its_history",
                 "regulatory_report_permits_only_machine_edges",
-                // V017 (P13-TSK-022): the permit's machine.
+                // V018 (P13-TSK-022): the permit's machine.
                 "rescreening_permit_permits_only_machine_edges",
                 // V013 (P13-TSK-017): the action's machine.
                 "risk_action_permits_only_machine_edges",
@@ -214,7 +214,7 @@ class RiskMigrationTest {
                 // V003 (P13-TSK-005): the signal's stamp and its refusal of every edit.
                 "risk_signal_is_born_once",
                 "risk_signal_is_never_edited",
-                // V017 (P13-TSK-022): the list version's machine.
+                // V018 (P13-TSK-022): the list version's machine.
                 "screening_list_version_permits_only_machine_edges",
                 // V004 (P13-TSK-019).
                 "uuid7_sequence",
@@ -447,10 +447,37 @@ class RiskMigrationTest {
                 + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
     }
 
-    // ------------------------------------------------------------------ V017 (P13-TSK-022)
+    // ------------------------------------------------------------------ V017 (P13-TSK-025)
 
     @Test
-    @DisplayName("V017: the list version's and the permit's grants - SELECT, INSERT and an UPDATE of each machine's columns"
+    @DisplayName("V017: the fact's alert admitted - its kind and its own code, no policy - and its shape held; the"
+            + " collections case a party's, opened by its default, disposed by facts only; no grant changed, every"
+            + " constraint name unique")
+    void theCollectionsCase() throws SQLException {
+        for (String admitting : List.of("risk_alert_kind_is_known", "risk_alert_rule_code_is_known",
+                "risk_alert_rule_matches_kind", "risk_alert_policy_named")) {
+            assertThat(scalar("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = '" + admitting + "'"))
+                    .as(admitting).contains("'OBLIGATION_DEFAULTED'");
+        }
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
+                + " AND conname IN ('risk_alert_default_names_its_agreement', 'risk_case_collections_of_a_party',"
+                + " 'risk_case_collections_opened_by_a_default', 'risk_case_collections_disposed_by_facts')"
+                + " ORDER BY conname")).containsExactly("risk_alert_default_names_its_agreement",
+                "risk_case_collections_disposed_by_facts", "risk_case_collections_of_a_party",
+                "risk_case_collections_opened_by_a_default");
+        assertThat(scalar("SELECT pg_get_constraintdef(oid) FROM pg_constraint"
+                + " WHERE conname = 'risk_case_collections_disposed_by_facts'")).contains("CLOSED_NO_ACTION")
+                .contains("REFERRED").doesNotContain("CONFIRMED").doesNotContain("FALSE_POSITIVE");
+        assertThat(grantsOn("risk_alert")).containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
+        assertThat(grantsOn("risk_case")).containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
+        assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
+                + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
+    }
+
+    // ------------------------------------------------------------------ V018 (P13-TSK-022)
+
+    @Test
+    @DisplayName("V018: the list version's and the permit's grants - SELECT, INSERT and an UPDATE of each machine's columns"
             + " alone (never a fact or a stamp); no DELETE; the uniques, four eyes, the persons and the permit's own-signal"
             + " foreign key live; risk_signal still SELECT and INSERT alone; every constraint name unique")
     void theRescreeningGrants() throws SQLException {
@@ -466,7 +493,7 @@ class RiskMigrationTest {
                 + " AND privilege_type = 'UPDATE' ORDER BY column_name"))
                 .containsExactly("attempts", "cause", "next_attempt_at", "outcome", "signal_id", "status");
         assertThat(grantsOn("risk_signal")).containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
-        String statements = statementsOf(migration("V017__screening_list_versions_and_rescreening.sql"));
+        String statements = statementsOf(migration("V018__screening_list_versions_and_rescreening.sql"));
         assertThat(statements).doesNotContainPattern("GRANT[^;]*(DELETE|TRUNCATE)").doesNotContain("GRANT ALL");
         assertThat(scalar("SELECT indexdef FROM pg_indexes WHERE indexname = 'screening_list_version_one_active'"))
                 .contains("UNIQUE INDEX").contains("(list)").contains("'ACTIVE'");

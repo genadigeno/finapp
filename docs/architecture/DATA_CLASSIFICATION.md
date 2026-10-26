@@ -2892,7 +2892,11 @@ codes `INTERNAL`.
 column it projects (the loan's identity, party and decision `CONFIDENTIAL`, its kind, status and currency `INTERNAL`, its
 latest agreement's principal or limit `RESTRICTED-FINANCIAL` with its scale `INTERNAL`). SELECT to the application role
 only; read by credit's exposure (`LendingCreditExposure`, version 2) and the exposure census - no figure leaves them in a
-log, tag or span.
+log, tag or span. *(Since `P13-TSK-025`, 2026-10-26, a third reader: risk's party join, `app`'s
+`JdbcCreditAgreementParties.partyOfLoan` - `party_id` by `loan_id` alone, `SYSTEM_JOIN` (`OwnershipIsScopedTest`), its one
+caller `IdentitySubjectParties`: a defaulted loan's borrower for its collections case. It reads every row, whatever the
+status: a filter added to the view ("not `CLOSED`") would leave a default's loan unplaceable and stall the
+`risk.signals` consumption of the `finapp.lending` partition for every risk handler on it.)*
 
 | Table | Column | Level | Note |
 |---|---|---|---|
@@ -4050,7 +4054,10 @@ at the merchant's own door only - `reason`; never `excess_*`, `cancelled_*` or t
 
 `bnpl V007`'s definer view `party_principal_exposure`, one row per obligation: each column classified as the column it
 projects - no figure. SELECT to the application role only; read by credit's exposure (`BnplCreditExposure`, version 3)
-and the exposure census.
+and the exposure census. *(Since `P13-TSK-025`, 2026-10-26, a third reader: risk's party join, `app`'s
+`JdbcCreditAgreementParties.partyOfObligation` - `party_id` by `obligation_id` alone, `SYSTEM_JOIN`, its one caller
+`IdentitySubjectParties`: a defaulted obligation's customer for its collections case; a status filter added to the view
+would stall the `finapp.bnpl` partition's risk consumption the same way.)*
 
 | Table | Column | Level | Note |
 |---|---|---|---|
@@ -4290,8 +4297,8 @@ customer or merchant route reads this table (`INV-RSK-08`, `NoCustomerSurfaceRea
 | `risk_signal` | `request_ref` | `CONFIDENTIAL` | The recovery request, by identifier (`RECOVERY_*`) |
 | `risk_signal` | `merchant_subject_ref` | `CONFIDENTIAL` | *(`P13-TSK-014`, `risk V011`)* The merchant a refunded or charged-back payment credited, by identifier, as risk's own sealed assessment of that payment named it (`REFUND_COMPLETED`, `CHARGEBACK_RECEIVED`) - with the subject, whom the payer paid; never an amount |
 | `risk_signal` | `intent_ref` | `CONFIDENTIAL` | *(`P13-TSK-014`, `risk V011`)* The payment intent a refund or chargeback was of, by identifier, as the event named it |
-| `risk_signal` | `list_version_ref` | `INTERNAL` | *(`P13-TSK-022`, `risk V017`)* The screening list version a `SCREENING_CLEARED` or `SCREENING_HIT` clearance was judged current under - risk's own row |
-| `risk_signal` | `screening_ref` | `CONFIDENTIAL` | *(`P13-TSK-022`, `risk V017`)* kyc's screening a rescreening clearance records, by identifier - never kyc's row, its evidence or a name; with the subject, a party's screening |
+| `risk_signal` | `list_version_ref` | `INTERNAL` | *(`P13-TSK-022`, `risk V018`)* The screening list version a `SCREENING_CLEARED` or `SCREENING_HIT` clearance was judged current under - risk's own row |
+| `risk_signal` | `screening_ref` | `CONFIDENTIAL` | *(`P13-TSK-022`, `risk V018`)* kyc's screening a rescreening clearance records, by identifier - never kyc's row, its evidence or a name; with the subject, a party's screening |
 
 ### `risk.velocity_window` - the durable velocity windows - *added by `P13-TSK-006`*
 
@@ -4590,7 +4597,7 @@ identifiers, counters and the database's stamps `INTERNAL`.
 
 ### `risk.screening_list_version` and `rescreening_permit` - the rescreening - *added by `P13-TSK-022`*
 
-`risk V017`: the operator's fact that a sanctions or PEP list version is in force - `RECORDED → ACTIVE → RETIRED`, one
+`risk V018`: the operator's fact that a sanctions or PEP list version is in force - `RECORDED → ACTIVE → RETIRED`, one
 per (list, label), one in force per list, four eyes by `screening_list_version_four_eyes` - and one rescreening permit per
 (party, version), `PENDING → DONE | FAILED`, born by the activation's enqueue and concluded once by the sweep's leg. **No
 list content, no screening result, no money, no text** - the list is kyc's provider's and the result kyc's (Refinement

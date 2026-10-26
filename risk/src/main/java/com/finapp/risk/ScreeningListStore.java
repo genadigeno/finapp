@@ -7,7 +7,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * The screening list versions' rows (`P13-TSK-022`; {@code risk V017}'s {@code screening_list_version}) - every write one
+ * The screening list versions' rows (`P13-TSK-022`; {@code risk V018}'s {@code screening_list_version}) - every write one
  * statement on risk's own table, conditional on the state it leaves; the stamps the trigger's on the database clock; no
  * {@code DELETE}.
  */

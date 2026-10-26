@@ -20,7 +20,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * A {@link RescreeningPermitStore} in memory for the hermetic suites (`P13-TSK-022`) - {@code risk V017}'s arbiters as the
+ * A {@link RescreeningPermitStore} in memory for the hermetic suites (`P13-TSK-022`) - {@code risk V018}'s arbiters as the
  * statements apply them: one permit per (party, version) ({@code rescreening_permit_once} - a second is no row), born only
  * for a version in force, the claim only of a permit that has come on the database clock {@link #now} and that no other
  * claimer holds ({@link #held}, the {@code SKIP LOCKED} a suite's fake transaction ends with {@link #release}), moved a

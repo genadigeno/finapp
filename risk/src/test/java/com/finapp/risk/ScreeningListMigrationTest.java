@@ -20,17 +20,17 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@code risk V017}'s text held to the code (`P13-TSK-022`; the migration-test idiom, hermetic - the live constraints,
+ * {@code risk V018}'s text held to the code (`P13-TSK-022`; the migration-test idiom, hermetic - the live constraints,
  * grants and triggers are {@code RescreeningDatabaseTest}'s and {@code RiskMigrationTest}'s, written and owed under C5):
  * the vocabularies are the enums', one version per (list, label) and one in force per list, four eyes a {@code CHECK} of
  * its own, the persons {@code CUSTOMER} or {@code EMPLOYEE} exactly as {@link Cases#person} admits, one permit per (party,
  * version), the permit's signal its own, the claim and the conclusions' shapes, the grants the machines' columns alone,
  * every name new, no other schema.
  */
-@DisplayName("risk V017: screening list versions and rescreening permits, held to the code (P13-TSK-022)")
+@DisplayName("risk V018: screening list versions and rescreening permits, held to the code (P13-TSK-022)")
 class ScreeningListMigrationTest {
 
-    static final String RESOURCE = "db/migration/risk/V017__screening_list_versions_and_rescreening.sql";
+    static final String RESOURCE = "db/migration/risk/V018__screening_list_versions_and_rescreening.sql";
 
     private static final List<String> EARLIER = List.of(
             "db/migration/risk/V001__initialise_risk_schema.sql",

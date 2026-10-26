@@ -2,6 +2,7 @@ package com.finapp.app.risk;
 
 import com.finapp.platform.inbox.InboxEventHandler;
 import com.finapp.platform.inbox.ReceivedEvent;
+import com.finapp.platform.security.SecurityContext;
 import com.finapp.risk.CommandRef;
 import com.finapp.risk.MonitoringHints;
 import com.finapp.risk.RiskAssessmentStore;
@@ -14,6 +15,7 @@ import java.sql.Connection;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -54,7 +56,11 @@ import lombok.extern.slf4j.Slf4j;
  * later one. The sealed assessment always commits before its payment can be captured, refunded or disputed.
  *
  * <p>No actor is entered: a signal names no actor, and the inbox's own record is the trail (plan section 11: audit -
- * none, machine acts). The span is {@link RiskSpans#SIGNAL_RECORD}, with no attribute.
+ * none, machine acts) - <strong>except for a kind whose signal raises a case</strong> (`P13-TSK-025`,
+ * {@link RiskSignals#raises}: a default opens or joins the borrower's {@code COLLECTIONS} case in this transaction):
+ * that recording runs as the platform ({@link #asThePlatform}, an enumerated site) - an inbox delivery has no caller,
+ * the case's opening is the platform's own policy act, audited {@code risk.CaseOpened} under {@code SYSTEM}. The span is
+ * {@link RiskSpans#SIGNAL_RECORD}, with no attribute.
  */
 @Slf4j
 public final class RiskSignalIntake implements InboxEventHandler {
@@ -244,9 +250,25 @@ public final class RiskSignalIntake implements InboxEventHandler {
             } else {
                 signal = SignalMappings.map(source.kind, event, ids);
             }
-            RiskSignals.Outcome outcome = signals.record(unitOfWork, signal);
+            RiskSignal recorded = signal;
+            RiskSignals.Outcome outcome = signals.raises(signal.kind())
+                    ? asThePlatform(() -> signals.record(unitOfWork, recorded))
+                    : signals.record(unitOfWork, signal);
             // Debug: an ALREADY is the arbiter working beneath the dedupe, not a fault. Ids and codes only.
             log.debug("Risk signal {} from {} {}: {}", signal.kind(), event.eventType(), event.eventId().value(), outcome);
         });
+    }
+
+    /**
+     * {@code recording} as the platform (`P13-TSK-025`): a signal whose kind raises a case - a default - folds into the
+     * borrower's collections case in this transaction, which names its acting principal. Nobody is present at an inbox
+     * delivery; the person whose servicing step recorded the default is not this flow's, and the correlation ties the
+     * case to it.
+     */
+    @SuppressWarnings("try") // The Scope is used for its close side effect (the established idiom).
+    private static RiskSignals.Outcome asThePlatform(Supplier<RiskSignals.Outcome> recording) {
+        try (SecurityContext.Scope platform = SecurityContext.enterSystem()) {
+            return recording.get();
+        }
     }
 }

@@ -28,10 +28,10 @@ class RiskSignalMigrationTest {
 
     /**
      * risk V011 (P13-TSK-014): the kind, subject-match and attribute-shape CHECKs dropped and re-made for the three abuse
-     * kinds and the two reference columns; risk V017 (P13-TSK-022) re-made them again for the rescreening's two kinds and
-     * two references - V003 and V011 are merged and never edited, so their effective definition is V017's.
+     * kinds and the two reference columns; risk V018 (P13-TSK-022) re-made them again for the rescreening's two kinds and
+     * two references - V003 and V011 are merged and never edited, so their effective definition is V018's.
      */
-    private static final String ABUSE = "db/migration/risk/V017__screening_list_versions_and_rescreening.sql";
+    private static final String ABUSE = "db/migration/risk/V018__screening_list_versions_and_rescreening.sql";
 
     private final String sql = statementsOf(migration(MIGRATION));
 

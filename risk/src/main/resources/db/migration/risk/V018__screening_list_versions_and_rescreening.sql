@@ -1,7 +1,7 @@
 -- Rescreening on screening-list updates (P13-TSK-022; PHASE_13_PLAN.md sections 7.1 T-list, 7.2, 7.5, 8, 9, 11, 12.10;
 -- RISK_LIFECYCLES.md section 4.10; ROADMAP.md Refinement 3; OQ-8; INV-RSK-06, INV-RSK-02, INV-RSK-07, INV-RSK-08,
--- INV-AUD-04). The next free number at its build: the entry's V012 went to P13-TSK-016 (and V013-V016 to -017, -018,
--- -020, -021); P13-TSK-023 and -025, building beside it, hold V018 and V019 in reserve.
+-- INV-AUD-04). The next free number at its integration: the entry's V012 went to P13-TSK-016 (V013-V016 to -017, -018,
+-- -020, -021); built as V017 beside -023 and -025, renumbered V018 when -025's V017 (the collections case) merged first.
 --
 -- WHAT A LIST VERSION IS
 --   An operator's fact: "version V of the sanctions (or PEP) list is in force". Risk holds no list content - kyc's

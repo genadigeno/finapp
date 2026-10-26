@@ -1,12 +1,13 @@
 package com.finapp.risk;
 
+import com.finapp.sharedkernel.event.EventId;
 import java.sql.Connection;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Where risk signals rest (`P13-TSK-005`; {@code risk V003}) - one born-once insert and five bounded reads, every one
+ * Where risk signals rest (`P13-TSK-005`; {@code risk V003}) - one born-once insert and six bounded reads, every one
  * on the caller's unit of work (ADR-0033): the insert joins the inbox handler's transaction (T-sig), the reads join
  * T-eval's (`-004`) or the sweep's (`-007`). No update, no delete: none exists in the contract, the grant or the
  * table's trigger.
@@ -43,4 +44,15 @@ public interface RiskSignalStore {
 
     /** Whether any signal of any kind exists about {@code subject} - a device's novelty is the absence of one. */
     boolean seen(Connection unitOfWork, SignalSubject subject);
+
+    /**
+     * The signal {@code source} was recorded as, if any (`P13-TSK-025`) - read by T-sig when an insert answered that the
+     * event was already recorded and the signal's kind raises an alert of its own ({@link SignalAlerts}): the raise is
+     * made over the standing row, never over the delivery's unrecorded copy. One probe of the source event's unique.
+     *
+     * <p>A store that cannot answer it refuses: the suites' fakes are never wired with an alerting kind.
+     */
+    default Optional<RiskSignal> recordedFrom(Connection unitOfWork, EventId source) {
+        throw new UnsupportedOperationException("this signal store does not read a signal by its source event");
+    }
 }

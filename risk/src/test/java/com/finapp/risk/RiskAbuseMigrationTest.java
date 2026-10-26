@@ -31,7 +31,7 @@ class RiskAbuseMigrationTest {
 
     /**
      * What later migrations added after V011 - applied history is never edited, so V011's text is held to the code as it
-     * stood at V011: risk V017 (P13-TSK-022) added the rescreening's two kinds and two references (its own suite holds
+     * stood at V011: risk V018 (P13-TSK-022) added the rescreening's two kinds and two references (its own suite holds
      * them, {@code ScreeningListMigrationTest}).
      */
     private static final List<SignalKind> LATER_KINDS = List.of(SignalKind.SCREENING_CLEARED, SignalKind.SCREENING_HIT);

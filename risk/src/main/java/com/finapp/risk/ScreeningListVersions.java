@@ -34,7 +34,7 @@ import lombok.RequiredArgsConstructor;
  *
  * <p><strong>Persons only</strong>: both acts are an authenticated human's - {@code CUSTOMER}-typed as the platform's
  * session establishes every operator, or {@code EMPLOYEE} ({@link Cases#person}) - never the system, a service or a
- * merchant; {@code risk V017}'s {@code screening_list_version_by_persons} is the rank beneath.
+ * merchant; {@code risk V018}'s {@code screening_list_version_by_persons} is the rank beneath.
  */
 @RequiredArgsConstructor
 public final class ScreeningListVersions {

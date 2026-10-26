@@ -12,7 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * {@link RescreeningPermitStore} over {@code risk.rescreening_permit} ({@code risk V017}; `P13-TSK-022`): explicit SQL on
+ * {@link RescreeningPermitStore} over {@code risk.rescreening_permit} ({@code risk V018}; `P13-TSK-022`): explicit SQL on
  * the caller's connection (ADR-0033); the enqueue {@code ON CONFLICT DO NOTHING} on the permit's unique; the claim one
  * statement, {@code FOR UPDATE SKIP LOCKED} on a permit that has come, the permit a lease ahead and the attempt counted in
  * the same statement; every conclusion conditional on {@code PENDING} and the claimed attempt. Each read joins the

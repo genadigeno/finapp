@@ -14,7 +14,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * {@link ScreeningListStore} over {@code risk.screening_list_version} ({@code risk V017}; `P13-TSK-022`): explicit SQL on
+ * {@link ScreeningListStore} over {@code risk.screening_list_version} ({@code risk V018}; `P13-TSK-022`): explicit SQL on
  * the caller's connection (ADR-0033), every write one statement conditional on the state it leaves, the trigger judging
  * it again and stamping the instants on the database clock. Risk's own table only - no other schema is named
  * ({@code INV-RSK-02}). A failure is named by its operation and SQLSTATE only, never the driver's message.

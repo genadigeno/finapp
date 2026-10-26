@@ -28,6 +28,14 @@ import java.util.Objects;
  * <p><strong>The permit pull</strong> (`P13-TSK-007`): a signal born is handed to {@link ProfileHints} in the same
  * transaction, which pulls the subject's party's customer risk profile permit to now - enrolling the party if it has
  * none. A signal already recorded hints nothing: its first delivery did.
+ *
+ * <p><strong>The fact's alert</strong> (`P13-TSK-025`, {@link SignalAlerts}): a signal of a kind that raises an alert
+ * of its own - a default ({@link CollectionsCases}) - has it raised in the same transaction, after the permit pull,
+ * <strong>on every delivery that reaches the handler</strong>: the born signal, or, when the insert answered
+ * {@link Outcome#ALREADY}, the standing row read back by its source event ({@link RiskSignalStore#recordedFrom}). The
+ * alert's own unique is what a duplicate meets, and a default recorded before the alert existed converges on its
+ * replay. The raise folds into a case under the acting principal, so the handler enters the platform's for such a kind
+ * ({@link #raises}).
  */
 public final class RiskSignals {
 
@@ -49,25 +57,53 @@ public final class RiskSignals {
     private final IdGenerator ids;
     private final Clock clock;
     private final ProfileHints profileHints;
+    private final SignalAlerts alerts;
 
     /** T-sig with no permit pull ({@link ProfileHints#NONE}) - the suites' shape. */
     public RiskSignals(RiskSignalStore store, OutboxWriter<Connection> outbox, IdGenerator ids, Clock clock) {
         this(store, outbox, ids, clock, ProfileHints.NONE);
     }
 
+    /** T-sig with the permit pull and no fact's alert ({@link SignalAlerts#NONE}). */
     public RiskSignals(RiskSignalStore store, OutboxWriter<Connection> outbox, IdGenerator ids, Clock clock,
             ProfileHints profileHints) {
+        this(store, outbox, ids, clock, profileHints, SignalAlerts.NONE);
+    }
+
+    public RiskSignals(RiskSignalStore store, OutboxWriter<Connection> outbox, IdGenerator ids, Clock clock,
+            ProfileHints profileHints, SignalAlerts alerts) {
         this.store = Objects.requireNonNull(store, "store");
         this.outbox = Objects.requireNonNull(outbox, "outbox");
         this.ids = Objects.requireNonNull(ids, "ids");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.profileHints = Objects.requireNonNull(profileHints, "profileHints");
+        this.alerts = Objects.requireNonNull(alerts, "alerts");
     }
 
-    /** Records {@code signal} on the caller's unit of work; announces it only when born. */
+    /**
+     * True when recording a signal of {@code kind} raises an alert - and so opens or joins a case - in the same
+     * transaction (`P13-TSK-025`): the handler records it under the platform's actor.
+     */
+    public boolean raises(SignalKind kind) {
+        return alerts.raises(Objects.requireNonNull(kind, "kind"));
+    }
+
+    /**
+     * Records {@code signal} on the caller's unit of work; announces it only when born; and for a kind that
+     * {@link #raises}, raises its alert over the standing signal whether born now or already.
+     */
     public Outcome record(Connection unitOfWork, RiskSignal signal) {
         Objects.requireNonNull(signal, "signal");
         if (!store.insert(unitOfWork, signal)) {
+            if (alerts.raises(signal.kind())) {
+                RiskSignal standing = store.recordedFrom(unitOfWork, signal.source().id())
+                        .orElseThrow(() -> new IllegalStateException(
+                                "a signal's insert conflicted and no signal stands for its source event"));
+                if (standing.kind() != signal.kind()) {
+                    throw new IllegalStateException("a source event stands recorded as another kind of signal");
+                }
+                alerts.raise(unitOfWork, standing);
+            }
             return Outcome.ALREADY;
         }
         outbox.write(
@@ -91,6 +127,9 @@ public final class RiskSignals {
                         .toBytes(),
                 EventPayload.MEDIA_TYPE);
         profileHints.signalRecorded(unitOfWork, signal);
+        if (alerts.raises(signal.kind())) {
+            alerts.raise(unitOfWork, signal);
+        }
         return Outcome.BORN;
     }
 }

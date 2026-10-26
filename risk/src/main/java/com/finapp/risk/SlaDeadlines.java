@@ -17,7 +17,8 @@ import java.util.Objects;
  *   <li>{@code FRAUD} 24 hours - inside a held withdrawal's 72-hour validity with room to act;</li>
  *   <li>{@code MERCHANT_ABUSE} 72 hours - a merchant's ratio is a trend, not a seizure;</li>
  *   <li>{@code AML} 720 hours (30 days) - the investigation a filing decision rests on;</li>
- *   <li>{@code COLLECTIONS} 168 hours - reserved for `-025` (C3), opened by nothing here.</li>
+ *   <li>{@code COLLECTIONS} 168 hours - a default's case (`P13-TSK-025`, C3): a credit fact to be worked within the
+ *       week, the queue's routine, not a seizure; C3 fixes no figure (owner item).</li>
  * </ul>
  */
 public final class SlaDeadlines {

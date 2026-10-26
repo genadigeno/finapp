@@ -31,7 +31,7 @@ import lombok.RequiredArgsConstructor;
  * refusals onto the error contract - {@code 404 risk.NotFound}, {@code 409 risk.PolicyStale} (a second activation of one
  * version, or a version recorded before the one in force - the entry's code), {@code 403 risk.SelfApprovalRefused}
  * (recorded {@code FAILED} in a transaction of its own), {@code 422 risk.ReasonRequired}. The machine, four eyes and the
- * persons are the domain's and {@code risk V017}'s; nothing here decides them. The stored answer is the receipt: ids,
+ * persons are the domain's and {@code risk V018}'s; nothing here decides them. The stored answer is the receipt: ids,
  * codes and the provider's label - never the reason.
  */
 @RequiredArgsConstructor

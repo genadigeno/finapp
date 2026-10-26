@@ -8,7 +8,7 @@ import java.util.regex.Pattern;
 
 /**
  * A screening list version - the operator-recorded fact that version {@link #version} of {@link #list} is in force
- * (`P13-TSK-022`; {@code PHASE_13_PLAN.md} section 12.10; {@code RISK_LIFECYCLES.md} section 4.10; {@code risk V017}'s
+ * (`P13-TSK-022`; {@code PHASE_13_PLAN.md} section 12.10; {@code RISK_LIFECYCLES.md} section 4.10; {@code risk V018}'s
  * {@code screening_list_version}). Not a Screening Result (kyc's) and not a policy: no rule reads the list itself.
  *
  * <p>{@link #ordinal} numbers a list's versions in the order they were recorded ({@code max + 1} under the list's

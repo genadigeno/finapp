@@ -20,7 +20,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * A {@link ScreeningListStore} in memory for the hermetic suites (`P13-TSK-022`) - {@code risk V017}'s arbiters as the
+ * A {@link ScreeningListStore} in memory for the hermetic suites (`P13-TSK-022`) - {@code risk V018}'s arbiters as the
  * statements apply them: the label's unique (a second recording of a label is no row), every edge conditional on the
  * state it leaves, the stamps the database clock {@link #now} (which the suite moves), the enqueue's claim only of a
  * version whose permit has come and that no other claimer holds - {@link #held}, the {@code SKIP LOCKED} a suite's fake

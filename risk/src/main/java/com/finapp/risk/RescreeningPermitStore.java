@@ -7,7 +7,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * The rescreening permits' rows (`P13-TSK-022`; {@code risk V017}'s {@code rescreening_permit}) - every write one
+ * The rescreening permits' rows (`P13-TSK-022`; {@code risk V018}'s {@code rescreening_permit}) - every write one
  * statement on risk's own table, conditional on the state and the attempt it leaves; the stamps and the first permit the
  * trigger's on the database clock; no {@code DELETE}. Each read returns the permit with its version's list and
  * activation instant.

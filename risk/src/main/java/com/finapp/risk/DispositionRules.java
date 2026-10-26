@@ -1,6 +1,8 @@
 package com.finapp.risk;
 
+import java.util.EnumSet;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Who a disposition needs (`P13-TSK-016`; {@code PHASE_13_PLAN.md} sections 3.1, 5; ADR-0110 decision 6;
@@ -43,5 +45,22 @@ public final class DispositionRules {
         Objects.requireNonNull(disposition, "disposition");
         Objects.requireNonNull(subject, "subject");
         return disposition.confirms() && subject == SubjectKind.PARTY;
+    }
+
+    /** The dispositions a {@link CaseKind#COLLECTIONS} case takes (`P13-TSK-025`, C3) - facts, never a finding. */
+    public static final Set<Disposition> COLLECTIONS = EnumSet.of(Disposition.CLOSED_NO_ACTION, Disposition.REFERRED);
+
+    /**
+     * True when a case of {@code kind} may be disposed {@code disposition} - every disposition for every kind but
+     * {@link CaseKind#COLLECTIONS} (`P13-TSK-025`, owner decision C3), which takes {@code CLOSED_NO_ACTION} (worked, or
+     * cured: nothing to do - one person, from {@code OPEN} too) and {@code REFERRED} (to the owning domain's own
+     * restructuring or write-off path - a recommendation, never an action; two persons). A default is a fact: never a
+     * false positive, never a fraud or a suspicion confirmed - and so never {@code PROHIBITED}. {@code risk V017}'s
+     * {@code risk_case_collections_disposed_by_facts} holds the same for every writer.
+     */
+    public static boolean admitted(CaseKind kind, Disposition disposition) {
+        Objects.requireNonNull(kind, "kind");
+        Objects.requireNonNull(disposition, "disposition");
+        return kind != CaseKind.COLLECTIONS || COLLECTIONS.contains(disposition);
     }
 }
