@@ -3,6 +3,8 @@ package com.finapp.risk;
 import java.sql.Connection;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -59,4 +61,27 @@ public interface CustomerRiskProfileStore {
      * {@code customer_risk_profile_version_one_per_disposition}; the prohibition's idempotency under the head's lock.
      */
     Optional<CustomerRiskProfileVersion> versionOfDisposition(Connection unitOfWork, UUID dispositionId);
+
+    /**
+     * The heads by their current rating (`P13-TSK-024`; {@code PHASE_13_PLAN.md} section 15's
+     * {@code finapp.risk.profile.rating{bucket}}): how many parties stand at each {@link RiskRating}, and how many are
+     * born and never rated ({@code rating IS NULL} - no {@code MONITORING} version has judged them yet). One grouped count
+     * on the caller's read-only snapshot, no lock; counts only - never a party.
+     */
+    Ratings ratings(Connection unitOfWork);
+
+    /** The heads per rating, and the unrated ones. */
+    record Ratings(Map<RiskRating, Long> rated, long unrated) {
+        public Ratings {
+            rated = Map.copyOf(Objects.requireNonNull(rated, "rated"));
+            if (unrated < 0 || rated.values().stream().anyMatch(count -> count < 0)) {
+                throw new IllegalArgumentException("a rating count counts from zero");
+            }
+        }
+
+        /** The parties at {@code rating}, 0 for none. */
+        public long at(RiskRating rating) {
+            return rated.getOrDefault(Objects.requireNonNull(rating, "rating"), 0L);
+        }
+    }
 }

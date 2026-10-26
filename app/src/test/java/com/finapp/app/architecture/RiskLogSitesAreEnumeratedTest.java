@@ -105,6 +105,12 @@ class RiskLogSitesAreEnumeratedTest {
             "RiskMonitoringSchedule.java|\"Risk profile recompute: {}\"|outcome.get().kind()",
             "RiskMonitoringSchedule.java|\"Risk monitoring sweep failed: {}\"|failure.getClass().getSimpleName()",
             "RiskPolicyMetrics.java|\"risk policy gauge unreadable: {}\"|unreadable.getClass().getSimpleName()",
+            // P13-TSK-024: the rating distribution read off the scrape thread - an unreadable reading's or a refused
+            // start's exception class alone; never a party or a rating of one.
+            "RiskProfileMetrics.java|\"The risk profile ratings could not be read: {}\""
+                    + "|unreadable.getClass().getSimpleName()",
+            "RiskProfileMetrics.java|\"The risk profile ratings' reading could not start: {}\""
+                    + "|refused.getClass().getSimpleName()",
             // P13-TSK-023: the proofs' gauges - a diverged proof's verdict and a census's kind, both closed vocabularies;
             // an unreadable reading's exception class. Never a window's subject, an id, an amount or a party.
             "RiskProofMetrics.java|\"CRITICAL: the velocity proof diverged (INV-RSK-03): {}\"|reading.velocity().name()",

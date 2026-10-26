@@ -52,6 +52,21 @@ public final class InMemoryCustomerRiskProfileStore implements CustomerRiskProfi
     }
 
     @Override
+    public Ratings ratings(Connection unitOfWork) {
+        log.add("ratings");
+        Map<RiskRating, Long> rated = new java.util.EnumMap<>(RiskRating.class);
+        long unrated = 0;
+        for (CustomerRiskProfile head : heads.values()) {
+            if (head.rating().isPresent()) {
+                rated.merge(head.rating().get(), 1L, Long::sum);
+            } else {
+                unrated++;
+            }
+        }
+        return new Ratings(rated, unrated);
+    }
+
+    @Override
     public void pullForward(Connection unitOfWork, UUID partyId) {
         log.add("pull " + partyId);
         CustomerRiskProfile head = heads.get(partyId);

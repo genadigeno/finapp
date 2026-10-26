@@ -4,6 +4,7 @@ import com.finapp.risk.Cases;
 import com.finapp.risk.ProfileRecompute;
 import com.finapp.risk.RiskCaseId;
 import com.finapp.risk.RiskCaseStore;
+import com.finapp.risk.RiskSpans;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.util.List;
@@ -31,10 +32,21 @@ public final class CaseProhibitionDriver {
     private final RiskTransactions transactions;
     private final IdGenerator ids;
     private final int perTick;
+    private final RiskFlowScope flow;
 
-    /** @param perTick the most prohibitions one tick of the case leg applies */
+    /** @param perTick the most prohibitions one tick of the case leg applies - no spans ({@link RiskFlowScope#NONE}) */
     public CaseProhibitionDriver(Cases cases, ProfileRecompute recompute, RiskTransactions transactions,
             IdGenerator ids, int perTick) {
+        this(cases, recompute, transactions, ids, perTick, RiskFlowScope.NONE);
+    }
+
+    /**
+     * @param perTick the most prohibitions one tick of the case leg applies
+     * @param flow each prohibition's version write recorded {@code risk.profile.recompute}, no attribute (`P13-TSK-024`)
+     */
+    public CaseProhibitionDriver(Cases cases, ProfileRecompute recompute, RiskTransactions transactions,
+            IdGenerator ids, int perTick, RiskFlowScope flow) {
+        this.flow = Objects.requireNonNull(flow, "flow");
         this.cases = Objects.requireNonNull(cases, "cases");
         this.recompute = Objects.requireNonNull(recompute, "recompute");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
@@ -54,12 +66,12 @@ public final class CaseProhibitionDriver {
         Objects.requireNonNull(caseId, "caseId");
         Objects.requireNonNull(correlation, "correlation");
         try {
-            transactions.inTransaction(uow -> {
+            flow.sweep(RiskSpans.PROFILE_RECOMPUTE, () -> transactions.inTransaction(uow -> {
                 Optional<RiskCaseStore.PendingProhibition> due = cases.prohibitionOf(uow, caseId);
                 due.ifPresent(pending -> recompute.applyDisposition(uow, pending.partyId(), pending.dispositionId(),
                         correlation));
                 return null;
-            });
+            }));
         } catch (RuntimeException failure) {
             log.warn("Risk case prohibition deferred to the case leg: {}", failure.getClass().getSimpleName());
         }
@@ -72,8 +84,8 @@ public final class CaseProhibitionDriver {
         int applied = 0;
         for (RiskCaseStore.PendingProhibition pending : due) {
             CorrelationId correlation = CorrelationId.generate(ids);
-            transactions.inTransaction(uow -> recompute.applyDisposition(uow, pending.partyId(),
-                    pending.dispositionId(), correlation));
+            flow.sweep(RiskSpans.PROFILE_RECOMPUTE, () -> transactions.inTransaction(uow -> recompute.applyDisposition(
+                    uow, pending.partyId(), pending.dispositionId(), correlation)));
             applied++;
         }
         return applied;

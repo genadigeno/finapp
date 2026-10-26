@@ -16,11 +16,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The monitoring, born-once, one-open and filing censuses over fakes (`P13-TSK-023`; {@code INV-RSK-09},
+ * The monitoring, born-once, one-open, filing and rescreening censuses over fakes (`P13-TSK-023`; {@code INV-RSK-09},
  * {@code INV-RSK-06}; ADR-0111 decision 6; F8; {@code DESIGN-023} D3, D5): monitored = journal by set, so a lost entry
  * and a phantom row cannot cancel out; the watermark bounds what is judged (pending behind it, ahead of a reprocessing);
  * a second alert of one key is found whatever day it was born, `-020`'s AML alerts per window among the rows; a second
- * open case of one subject and kind is found; a filing left undriven past one inquiry interval is overdue. Each census
+ * open case of one subject and kind is found; a filing left undriven past one inquiry interval is overdue; a rescreening
+ * permit unaccounted for under its list version is found (`P13-TSK-024`). Each census
  * reads one read-only snapshot and writes nothing. The database's half is {@code RiskProofsDatabaseTest}'s (owed, C5).
  */
 @DisplayName("the monitoring, born-once, one-open and filing censuses: each re-proven by query, a difference named"
@@ -28,6 +29,8 @@ import org.junit.jupiter.api.Test;
 class RiskCensusesTest {
 
     private static final RiskDay DAY = RiskDay.of(LocalDate.of(2026, 10, 23));
+    private static final com.finapp.sharedkernel.id.IdGenerator IDS = new com.finapp.sharedkernel.id.IdGenerator(
+            java.time.Clock.systemUTC(), new java.security.SecureRandom());
 
     private final FakeRiskProofReads reads = new FakeRiskProofReads();
     private final List<UUID> journal = new ArrayList<>();
@@ -156,6 +159,46 @@ class RiskCensusesTest {
     }
 
     @Test
+    @DisplayName("the rescreening census (P13-TSK-024, -022's row): per list version, permits = the enqueue's count,"
+            + " DONE(CLEARED) = clearance signals, DONE(HIT) <= hit signals (a late hit adds one) - each broken alone is"
+            + " a difference; the versions in force or retired since yesterday's start, UTC")
+    void everyRescreeningPermitIsAccountedFor() {
+        RescreeningCensus census = new RescreeningCensus(reads);
+        assertThat(census.run(StandInConnections.snapshot()).verdict()).as("no version in scope").isEqualTo(
+                ProofVerdict.VACUOUS);
+        assertThat(reads.rescreeningAsked).as("yesterday's start on the database's clock")
+                .isEqualTo(Instant.parse("2026-10-22T00:00:00Z"));
+
+        // 10 born and counted; 6 cleared, each a signal; 3 hits, a fourth hit signal told late; 1 still PENDING.
+        reads.rescreening.add(version(ScreeningList.SANCTIONS, 7, 10, 10, 6, 3, 6, 4));
+        // A version just activated - nothing enqueued yet - holds trivially.
+        reads.rescreening.add(version(ScreeningList.PEP, 3, 0, 0, 0, 0, 0, 0));
+        RescreeningCensus.Result held = census.run(StandInConnections.snapshot());
+        assertThat(held.verdict()).isEqualTo(ProofVerdict.HELD);
+        assertThat(held.rows()).hasSize(2).allMatch(RescreeningCensus.Row::holds);
+
+        for (RiskProofReads.RescreeningRow broken : List.of(
+                version(ScreeningList.SANCTIONS, 8, 10, 11, 0, 0, 0, 0), // a permit born and never counted
+                version(ScreeningList.SANCTIONS, 8, 10, 9, 0, 0, 0, 0), // a counted permit missing
+                version(ScreeningList.SANCTIONS, 8, 10, 10, 5, 0, 4, 0), // a clearance with no signal
+                version(ScreeningList.SANCTIONS, 8, 10, 10, 5, 0, 6, 0), // a clearance signal with no permit
+                version(ScreeningList.SANCTIONS, 8, 10, 10, 0, 2, 0, 1))) { // a hit with no signal
+            reads.rescreening.clear();
+            reads.rescreening.add(version(ScreeningList.PEP, 3, 4, 4, 4, 0, 4, 0));
+            reads.rescreening.add(broken);
+            RescreeningCensus.Result result = census.run(StandInConnections.snapshot());
+            assertThat(result.verdict()).as("%s", broken).isEqualTo(ProofVerdict.DIVERGED);
+            assertThat(result.diverged()).isEqualTo(1);
+        }
+    }
+
+    private static RiskProofReads.RescreeningRow version(ScreeningList list, int ordinal, long enqueued, long permits,
+            long cleared, long hit, long clearedSignals, long hitSignals) {
+        return new RiskProofReads.RescreeningRow(ScreeningListVersionId.next(IDS), list, ordinal, enqueued,
+                permits, cleared, hit, clearedSignals, hitSignals);
+    }
+
+    @Test
     @DisplayName("every census reads one read-only REPEATABLE READ snapshot - refused a connection that could write")
     void oneSnapshotEach() {
         Connection writable = StandInConnections.declaring(false, false, Connection.TRANSACTION_REPEATABLE_READ);
@@ -164,6 +207,7 @@ class RiskCensusesTest {
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> new CaseOneOpenCensus(reads).run(writable)).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> new FilingCensus(reads).run(writable)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> new RescreeningCensus(reads).run(writable)).isInstanceOf(IllegalStateException.class);
         assertThat(reads.calls).isEmpty();
         assertThat(ProofVerdict.of(0, 0)).isEqualTo(ProofVerdict.VACUOUS);
         assertThat(ProofVerdict.HELD.and(ProofVerdict.VACUOUS)).isEqualTo(ProofVerdict.HELD);

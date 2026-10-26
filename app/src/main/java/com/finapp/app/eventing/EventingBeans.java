@@ -96,6 +96,15 @@ public class EventingBeans {
         return new InboxConsumer<>(new JdbcInboxRecordStore(), clock, retention);
     }
 
+    /**
+     * {@code finapp.inbox.consumption{outcome}} eager either way (`P13-TSK-024`): the consumer's counters exist on an
+     * instance whose consumer is off, so the stalled-partition alert evaluates a series everywhere it is scraped.
+     */
+    @Bean
+    InboxConsumptionMeters inboxConsumptionMeters(MeterRegistry registry) {
+        return new InboxConsumptionMeters(registry);
+    }
+
     // The same gate shape as the relay schedule, for the same reason: a background worker
     // consuming records under every @SpringBootTest would race assertions, so the app test
     // overlay disables it and the kafka tier runs the real thing deliberately. matchIfMissing:

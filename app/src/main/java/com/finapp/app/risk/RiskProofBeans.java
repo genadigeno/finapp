@@ -16,6 +16,7 @@ import com.finapp.risk.MonitoredLedger;
 import com.finapp.risk.MonitoredParties;
 import com.finapp.risk.MonitoringCensus;
 import com.finapp.risk.MonitoringWatermarkStore;
+import com.finapp.risk.RescreeningCensus;
 import com.finapp.risk.RiskOperationsReports;
 import com.finapp.risk.RiskPolicies;
 import com.finapp.risk.RiskProofReads;
@@ -81,7 +82,7 @@ public class RiskProofBeans {
         return new RiskOperationsReports(riskProofReads, new AssessmentCensus(riskProofReads, judgedCommands),
                 new MonitoringCensus(monitoredLedger, monitoringWatermarkStore, riskProofReads),
                 new AlertBornOnceCensus(riskProofReads), new CaseOneOpenCensus(riskProofReads),
-                new FilingCensus(riskProofReads), velocityProof,
+                new FilingCensus(riskProofReads), new RescreeningCensus(riskProofReads), velocityProof,
                 new com.finapp.app.credit.IdentityActingParty(identityStore), riskSubjectParties, monitoredParties,
                 auditWriter, idGenerator, clock);
     }

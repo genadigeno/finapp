@@ -73,7 +73,7 @@ public final class RiskMonitoringMetrics implements MonitoringObserver {
     public static final String KIND = "monitoring";
 
     /** The lag's saturation: beyond this the figure says "many", not how many. */
-    static final long LAG_CAP = 1_000_000L;
+    public static final long LAG_CAP = 1_000_000L;
 
     static final Duration MIN_REFRESH = Duration.ofSeconds(15);
 

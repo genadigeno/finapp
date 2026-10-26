@@ -93,7 +93,7 @@ public final class InboxConsumers implements SmartLifecycle {
         return byModule;
     }
 
-    private static Counter outcome(MeterRegistry registry, String outcome) {
+    static Counter outcome(MeterRegistry registry, String outcome) {
         return Counter.builder("finapp.inbox.consumption")
                 .tag("outcome", outcome)
                 .description("Inbox deliveries by outcome, summed over consumer polls")

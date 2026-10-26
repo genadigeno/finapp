@@ -83,6 +83,19 @@ class RiskSignalsTest {
     }
 
     @Test
+    @DisplayName("every recording is told to the observer by kind and outcome - born or already, codes only"
+            + " (P13-TSK-024, finapp.risk.signal)")
+    void everyRecordingIsObserved() {
+        List<String> told = new ArrayList<>();
+        SignalObserver observer = (kind, outcome) -> told.add(kind + " " + outcome);
+        new RiskSignals(new ScriptedStore(true), outbox, IDS, CLOCK, ProfileHints.NONE, SignalAlerts.NONE, observer)
+                .record(null, signal());
+        new RiskSignals(new ScriptedStore(false), outbox, IDS, CLOCK, ProfileHints.NONE, SignalAlerts.NONE, observer)
+                .record(null, signal());
+        assertThat(told).containsExactly("ACCOUNT_OPENED BORN", "ACCOUNT_OPENED ALREADY");
+    }
+
+    @Test
     @DisplayName("a device subject's reference rides the event as its hash - which the payload grammar admits and a description could not")
     void aDeviceSubjectRidesAsItsHash() {
         ScriptedStore store = new ScriptedStore(true);

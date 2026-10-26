@@ -29,8 +29,9 @@ import lombok.extern.slf4j.Slf4j;
  *       whole reached ({@code HELD}, {@code DIVERGED}, {@code VACUOUS}), 0 on the others; {@code DIVERGED} must be 0 -
  *       {@code VelocityDiverged}, `-024`'s rule;</li>
  *   <li>{@code finapp.risk.census{kind,verdict}} - the same for each census ({@link CensusKind}): assessments = judged
- *       commands, monitored = journal, alerts born once, one open case, no filing left undriven - the day-based ones
- *       over today and yesterday (UTC), the worse of the two;</li>
+ *       commands, monitored = journal, alerts born once, one open case, no filing left undriven, and every rescreening
+ *       permit accounted for under its list version (`P13-TSK-024`) - the day-based ones over today and yesterday (UTC),
+ *       the worse of the two;</li>
  *   <li>{@code finapp.risk.proof.reading{outcome}} - the readings taken, {@code completed} or {@code failed} (a statement
  *       cancelled by the bound, a lost connection, a refused snapshot): `-024` alerts on a failed rate, never on a gauge
  *       left quietly stale.</li>

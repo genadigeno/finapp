@@ -74,8 +74,10 @@ public class RiskCaseBeans {
             ProfileRecompute profileRecompute,
             RiskTransactions riskTransactions,
             IdGenerator idGenerator,
+            RiskFlowScope riskFlowScope,
             @Value("${finapp.risk.case.prohibitions-per-tick:20}") int prohibitionsPerTick) {
-        return new CaseProhibitionDriver(cases, profileRecompute, riskTransactions, idGenerator, prohibitionsPerTick);
+        return new CaseProhibitionDriver(cases, profileRecompute, riskTransactions, idGenerator, prohibitionsPerTick,
+                riskFlowScope);
     }
 
     /**

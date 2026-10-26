@@ -28,7 +28,9 @@ import java.util.UUID;
  * - {@code id >= ? AND id < ?} over the writer's UUIDv7 ({@link RiskDay}) - so no read needs an index the migrations do
  * not already hold: {@code risk_assessment_pk}, {@code risk_alert_pk}, {@code risk_case_pk}, {@code
  * risk_assessment_command_once}, {@code risk_alert_born_once}, {@code monitored_transaction_born_once},
- * {@code regulatory_report_due}. Only the day's dispositions scan {@code risk_case} (a table of human investigations).
+ * {@code regulatory_report_due}, and - for the rescreening census (`P13-TSK-024`) - {@code risk V018}'s
+ * {@code rescreening_permit_of_version} and {@code risk_signal_by_list_version}. Only the day's dispositions scan
+ * {@code risk_case} (a table of human investigations).
  * A sum is read exact ({@link BigDecimal#longValueExact()} - refused, never wrapped). A failure is named by its operation
  * and SQLSTATE only.
  */
@@ -113,6 +115,25 @@ public final class JdbcRiskProofReads implements RiskProofReads {
             + " count(*) FILTER (WHERE next_inquiry_at <= clock_timestamp()) AS due,"
             + " count(*) FILTER (WHERE next_inquiry_at <= clock_timestamp() - make_interval(secs => ?)) AS overdue"
             + " FROM risk.regulatory_report WHERE next_inquiry_at IS NOT NULL";
+
+    /**
+     * The rescreening census (`P13-TSK-024`, `-022`'s routed row): per version in force or retired since the bound, its
+     * enqueue's count beside its permits by outcome ({@code rescreening_permit_of_version}) and the clearance signals
+     * naming it ({@code risk_signal_by_list_version}) - one statement, so one snapshot's figures.
+     */
+    static final String RESCREENINGS = "SELECT v.id, v.list, v.ordinal, v.enqueued,"
+            + " (SELECT count(*) FROM risk.rescreening_permit p WHERE p.list_version_id = v.id) AS permits,"
+            + " (SELECT count(*) FROM risk.rescreening_permit p WHERE p.list_version_id = v.id AND p.status = 'DONE'"
+            + " AND p.outcome = 'CLEARED') AS cleared,"
+            + " (SELECT count(*) FROM risk.rescreening_permit p WHERE p.list_version_id = v.id AND p.status = 'DONE'"
+            + " AND p.outcome = 'HIT') AS hit,"
+            + " (SELECT count(*) FROM risk.risk_signal s WHERE s.list_version_ref = v.id"
+            + " AND s.kind = 'SCREENING_CLEARED') AS cleared_signals,"
+            + " (SELECT count(*) FROM risk.risk_signal s WHERE s.list_version_ref = v.id"
+            + " AND s.kind = 'SCREENING_HIT') AS hit_signals"
+            + " FROM risk.screening_list_version v"
+            + " WHERE v.status = 'ACTIVE' OR (v.status = 'RETIRED' AND v.retired_at >= ?)"
+            + " ORDER BY v.list, v.ordinal";
 
     static final String MONITORED_BETWEEN = "SELECT journal_entry_id FROM risk.monitored_transaction"
             + " WHERE journal_entry_id >= ? AND journal_entry_id < ? ORDER BY journal_entry_id";
@@ -404,6 +425,26 @@ public final class JdbcRiskProofReads implements RiskProofReads {
         } catch (SQLException failure) {
             throw failed("taking the filing census", failure);
         }
+    }
+
+    @Override
+    public List<RescreeningRow> rescreenings(Connection snapshot, Instant retiredSince) {
+        Objects.requireNonNull(retiredSince, "retiredSince");
+        List<RescreeningRow> rows = new ArrayList<>();
+        try (PreparedStatement select = snapshot.prepareStatement(RESCREENINGS)) {
+            select.setObject(1, OffsetDateTime.ofInstant(retiredSince, ZoneOffset.UTC));
+            try (ResultSet row = select.executeQuery()) {
+                while (row.next()) {
+                    rows.add(new RescreeningRow(ScreeningListVersionId.of(row.getObject("id", UUID.class)),
+                            ScreeningList.valueOf(row.getString("list")), row.getInt("ordinal"), row.getLong("enqueued"),
+                            row.getLong("permits"), row.getLong("cleared"), row.getLong("hit"),
+                            row.getLong("cleared_signals"), row.getLong("hit_signals")));
+                }
+            }
+        } catch (SQLException failure) {
+            throw failed("taking the rescreening census", failure);
+        }
+        return rows;
     }
 
     @Override

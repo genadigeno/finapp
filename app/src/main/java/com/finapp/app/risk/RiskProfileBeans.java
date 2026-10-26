@@ -111,6 +111,18 @@ public class RiskProfileBeans {
         return new RiskCreditRiskSignal(customerRiskProfiles);
     }
 
+    /**
+     * {@code finapp.risk.profile.rating{bucket}} (`P13-TSK-024`) - the heads by rating, eager per bucket, read off the
+     * scrape thread on a read-only snapshot bounded by {@code finapp.risk.proofs.statement-timeout} (5 s by default).
+     */
+    @Bean
+    RiskProfileMetrics riskProfileMetrics(CustomerRiskProfileStore customerRiskProfileStore,
+            RiskTransactions riskTransactions, Clock clock, io.micrometer.core.instrument.MeterRegistry meterRegistry,
+            @Value("${finapp.risk.proofs.statement-timeout:PT5S}") Duration statementTimeout) {
+        return new RiskProfileMetrics(RiskProfileMetrics.over(customerRiskProfileStore, riskTransactions, statementTimeout),
+                RiskProfileMetrics.virtualThreads(), clock, meterRegistry);
+    }
+
     @Bean
     RiskProfileDesk riskProfileDesk(
             CustomerRiskProfiles customerRiskProfiles, RiskTransactions riskTransactions, RiskFlowScope riskFlowScope) {

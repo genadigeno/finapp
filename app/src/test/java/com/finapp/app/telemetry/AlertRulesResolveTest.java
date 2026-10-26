@@ -80,6 +80,11 @@ class AlertRulesResolveTest {
 
     private static final String BNPL_GROUP = "bnpl";
 
+    /** The risk rules (P13-TSK-024), held to the same checks and to the objectives the code declares. */
+    private static final String RISK_RULES = "infra/prometheus/rules/risk.yml";
+
+    private static final String RISK_GROUP = "risk";
+
     /** A PromQL metric selector: an identifier not immediately followed by an opening bracket. */
     private static final Pattern METRIC = Pattern.compile("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\b(?!\\s*\\()");
 
@@ -110,7 +115,10 @@ class AlertRulesResolveTest {
                     // P11-TSK-030: the lending rules read a TARGET label the environment sets (never a metric tag).
                     "lending_offered",
                     // P12-TSK-026: the BNPL rules select a servicing step, and read their own TARGET label.
-                    "step", "bnpl_offered");
+                    "step", "bnpl_offered",
+                    // P13-TSK-024: the risk rules select a fail-safe's reason, group by operation, kind and instance, and
+                    // read their own TARGET label.
+                    "operation", "reason_code", "kind", "instance", "risk_judging");
 
     /** Every series PHASE_8_PLAN section 15 says is alerted, in its published form. */
     private static final Set<String> ALERTED_SERIES =
@@ -373,6 +381,75 @@ class AlertRulesResolveTest {
             assertThat(String.valueOf(map(rule.get("annotations")).get("summary"))).isNotBlank().isNotEqualTo("null");
         });
         Path rulesFile = Path.of(PROMETHEUS_CONFIG).getParent().relativize(Path.of(BNPL_RULES));
+        assertThat(list(yaml(PROMETHEUS_CONFIG).get("rule_files")).stream().map(String::valueOf))
+                .anySatisfy(pattern -> assertThat(
+                        FileSystems.getDefault().getPathMatcher("glob:" + pattern).matches(rulesFile)).isTrue());
+    }
+
+    @Test
+    @DisplayName("the risk rules: every section 15 alert present, every queried series published on a fresh instance with"
+            + " the reasons, verdicts, kinds and bucket the rules select, each threshold the objective the code declares,"
+            + " each rule well formed, the file loaded (P13-TSK-024)")
+    void theRiskRulesResolve() {
+        List<Map<String, Object>> risk = rules(RISK_RULES, RISK_GROUP);
+        Map<String, String> expressions = new TreeMap<>();
+        risk.forEach(rule -> expressions.put(String.valueOf(rule.get("alert")), String.valueOf(rule.get("expr")).strip()));
+        // PHASE_13_PLAN.md section 15's alerts, every one, and the routed ones (the plan's table names each).
+        assertThat(expressions).containsOnlyKeys("RiskEvaluationUnavailable", "RiskEvaluationLatencyOverBudget",
+                "RiskPolicyNoneActive", "RiskAlertsUnraised", "RiskAlertFlood", "RiskCaseOverdueAto", "RiskCaseOverdueFraud",
+                "RiskCaseOverdueMerchantAbuse", "RiskCaseOverdueAml", "RiskCaseOverdueCollections",
+                "RiskCaseBacklogAboveCapacity", "RiskActionDispatchFailing", "RiskActionRefused", "RiskFilingUnknown",
+                "RiskFilingCallsFailing", "RiskMonitoringLagGrowing", "RiskMonitoringUnclassified",
+                "RiskMonitoringSubjectFailing", "RiskMonitoringUnplaced", "VelocityDiverged", "RiskCensusDiverged",
+                "RiskProofReadingsFailing", "RiskProofReadingsStalled", "RiskGaugesUnreadable", "RiskSweeperOff",
+                "RiskSweeperClaimFailing", "RiskCollectionsUnplaced", "InboxConsumptionFailing", "RiskRescreeningFailing",
+                "RiskRescreeningBacklogStanding");
+        Set<String> queried = risk.stream()
+                .map(rule -> String.valueOf(rule.get("expr")))
+                .flatMap(AlertRulesResolveTest::seriesIn)
+                .collect(Collectors.toCollection(TreeSet::new));
+        assertThat(queried).containsExactlyInAnyOrder("finapp_risk_evaluation_unavailable_total",
+                "finapp_risk_evaluation_latency_seconds_count", "finapp_risk_evaluation_latency_seconds_bucket",
+                "finapp_risk_policy_active", "finapp_risk_alert_unraised_total", "finapp_risk_alert_total",
+                "finapp_risk_case_age", "finapp_risk_case_backlog", "finapp_risk_action_failed_total",
+                "finapp_risk_action_total", "finapp_risk_report_filing_total", "finapp_risk_monitoring_lag",
+                "finapp_risk_monitoring_unclassified", "finapp_risk_monitoring_subject_total",
+                "finapp_risk_monitoring_unplaced_total", "finapp_risk_velocity_proof", "finapp_risk_census",
+                "finapp_risk_proof_reading_total", "finapp_risk_rescreening_backlog", "finapp_risk_profile_rating",
+                "finapp_risk_sweeper_enabled", "finapp_risk_sweeper_claim_failed_total",
+                "finapp_risk_collections_unplaced_total", "finapp_inbox_consumption_total", "finapp_risk_rescreening_total");
+        assertThat(publishedSeriesNames()).containsAll(queried);
+
+        // The thresholds are the code's objectives; the label values the rules select are on the live scrape.
+        for (com.finapp.risk.CaseKind kind : com.finapp.risk.CaseKind.values()) {
+            StringBuilder camel = new StringBuilder();
+            for (String word : kind.name().split("_")) {
+                camel.append(word.charAt(0)).append(word.substring(1).toLowerCase(java.util.Locale.ROOT));
+            }
+            assertThat(threshold(expressions.get("RiskCaseOverdue" + camel))).as(kind.name())
+                    .isEqualTo(RiskObjectives.caseSla(kind).toSeconds());
+            assertThat(expressions.get("RiskCaseBacklogAboveCapacity")).contains("{kind=\"" + kind.name() + "\"}) > "
+                    + RiskObjectives.caseCapacity(kind));
+        }
+        assertThat(threshold(expressions.get("RiskAlertFlood"))).isEqualTo(RiskObjectives.ALERT_FLOOD_PER_HOUR);
+        String scrape = scrape();
+        String bucket = Double.toString(RiskObjectives.EVALUATION_LATENCY_P99.toMillis() / 1000.0);
+        assertThat(expressions.get("RiskEvaluationLatencyOverBudget")).contains("le=\"" + bucket + "\"");
+        assertThat(scrape.lines()).as("the budget is a bucket the timer publishes, on a fresh instance")
+                .anySatisfy(line -> assertThat(line).startsWith("finapp_risk_evaluation_latency_seconds_bucket{")
+                        .contains("le=\"" + bucket + "\""));
+        assertThat(scrape).contains("reason_code=\"RISK_UNAVAILABLE\"", "reason_code=\"NO_POLICY_ACTIVE\"",
+                "finapp_risk_velocity_proof{verdict=\"DIVERGED\"}", "kind=\"RESCREENING\"",
+                "finapp_risk_profile_rating{bucket=\"UNRATED\"}", "finapp_inbox_consumption_total{outcome=\"failed\"}");
+        assertThat(expressions.get("RiskPolicyNoneActive")).contains("risk_judging=\"true\"");
+
+        assertThat(risk).allSatisfy(rule -> {
+            assertThat(String.valueOf(rule.get("for"))).matches("\\d+[smhd]");
+            assertThat(map(rule.get("labels")).get("severity")).isIn("page", "ticket");
+            assertThat(String.valueOf(map(rule.get("annotations")).get("summary"))).isNotBlank().isNotEqualTo("null");
+            assertThat(String.valueOf(map(rule.get("annotations")).get("invariant"))).containsPattern("INV-[A-Z]+-\\d+");
+        });
+        Path rulesFile = Path.of(PROMETHEUS_CONFIG).getParent().relativize(Path.of(RISK_RULES));
         assertThat(list(yaml(PROMETHEUS_CONFIG).get("rule_files")).stream().map(String::valueOf))
                 .anySatisfy(pattern -> assertThat(
                         FileSystems.getDefault().getPathMatcher("glob:" + pattern).matches(rulesFile)).isTrue());

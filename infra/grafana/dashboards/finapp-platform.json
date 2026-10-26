@@ -2658,6 +2658,553 @@
           "sort": "none"
         }
       }
+    },
+    {
+      "type": "row",
+      "title": "Risk — evaluation, alerts and cases, actions and filings, AML monitoring, proofs, rescreening",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 265
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Risk evaluations by decision",
+      "description": "finapp.risk.evaluation{operation, verdict}, the fail-safe's .evaluation.unavailable{operation, reason_code} (RISK_UNAVAILABLE alerted; NO_POLICY_ACTIVE production's state until the activation gate), challenges and fired rules by kind. Counts and codes only - never a subject, an amount or a score (INV-RSK-08).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 266
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (operation, verdict) (rate(finapp_risk_evaluation_total[5m]))",
+          "legendFormat": "{{operation}} {{verdict}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (operation, reason_code) (rate(finapp_risk_evaluation_unavailable_total[5m]))",
+          "legendFormat": "fail-safe {{operation}} {{reason_code}}"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (operation, outcome) (rate(finapp_risk_challenge_total[5m]))",
+          "legendFormat": "challenge {{operation}} {{outcome}}"
+        },
+        {
+          "refId": "D",
+          "expr": "sum by (operation, rule) (rate(finapp_risk_rule_hit_total[5m]))",
+          "legendFormat": "hit {{operation}} {{rule}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Risk evaluation latency against the 50 ms budget",
+      "description": "T-eval's p99 per operation (finapp.risk.evaluation.latency, alerted above 50 ms) beside one party's monitoring rule leg (.monitoring.latency) - M3's split trigger, read side by side; the timers' max.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 266
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.99, sum by (operation, le) (rate(finapp_risk_evaluation_latency_seconds_bucket[5m])))",
+          "legendFormat": "p99 {{operation}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (operation) (finapp_risk_evaluation_latency_seconds_max)",
+          "legendFormat": "max {{operation}}"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(finapp_risk_monitoring_latency_seconds_bucket[5m])))",
+          "legendFormat": "monitoring leg p99"
+        },
+        {
+          "refId": "D",
+          "expr": "max(finapp_risk_monitoring_latency_seconds_max)",
+          "legendFormat": "monitoring leg max"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Active risk policies, risk schedules and their claims",
+      "description": "finapp.risk.policy.active - each operation's ACTIVE version, 0 for none (production's state until the activation gate; alerted where the target judges) - the three schedules' flags, min() showing whether any scraped instance does not run one, and their claim failures by kind (all alerted).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 266
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (operation) (finapp_risk_policy_active)",
+          "legendFormat": "active version {{operation}}"
+        },
+        {
+          "refId": "B",
+          "expr": "min by (kind) (finapp_risk_sweeper_enabled)",
+          "legendFormat": "{{kind}} schedule (min)"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (kind) (increase(finapp_risk_sweeper_claim_failed_total[15m]))",
+          "legendFormat": "{{kind}} claims failed"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Risk alerts and signals",
+      "description": "finapp.risk.alert{kind, severity} (a kind's hour past its flood objective alerted), suppressions by reason, a sealed assessment's alerts unraised (.alert.unraised, alerted), and the signals recorded by kind, born or already (.signal).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 273
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind, severity) (rate(finapp_risk_alert_total[5m]))",
+          "legendFormat": "alert {{kind}} {{severity}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (reason_code) (rate(finapp_risk_alert_suppressed_total[5m]))",
+          "legendFormat": "suppressed {{reason_code}}"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (operation) (rate(finapp_risk_alert_unraised_total[5m]))",
+          "legendFormat": "unraised {{operation}}"
+        },
+        {
+          "refId": "D",
+          "expr": "sum by (kind, outcome) (rate(finapp_risk_signal_total[5m]))",
+          "legendFormat": "signal {{kind}} {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Risk cases: the queues, their oldest, their resolution",
+      "description": "Open cases per kind (finapp.risk.case.backlog, alerted above the desk's staffed capacity), the oldest open case's age (.case.age, alerted past the kind's SLA), the cases moved by status, and the mean open-to-disposed time (.case.resolution).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 273
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (kind) (finapp_risk_case_backlog)",
+          "legendFormat": "open {{kind}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (kind) (finapp_risk_case_age)",
+          "legendFormat": "oldest {{kind}} (s)"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (kind, status) (increase(finapp_risk_case_total[1h]))",
+          "legendFormat": "moved {{kind}} {{status}} /h"
+        },
+        {
+          "refId": "D",
+          "expr": "sum by (kind) (rate(finapp_risk_case_resolution_seconds_sum[1h])) / sum by (kind) (rate(finapp_risk_case_resolution_seconds_count[1h]))",
+          "legendFormat": "mean resolution {{kind}} (s)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Risk actions, overrides and regulatory filings",
+      "description": "finapp.risk.action{kind, outcome} (a refusal alerted), dispatches that threw (.action.failed, alerted), overrides, the regulatory report's statuses and the filing authority's answers (.report.filing - unknown and failed alerted). Codes only - never a report, a case or a reference.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 273
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind, outcome) (rate(finapp_risk_action_total[5m]))",
+          "legendFormat": "action {{kind}} {{outcome}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (kind) (rate(finapp_risk_action_failed_total[5m]))",
+          "legendFormat": "dispatch threw {{kind}}"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (outcome) (rate(finapp_risk_override_total[5m]))",
+          "legendFormat": "override {{outcome}}"
+        },
+        {
+          "refId": "D",
+          "expr": "sum by (status) (rate(finapp_risk_report_total[5m]))",
+          "legendFormat": "report {{status}}"
+        },
+        {
+          "refId": "E",
+          "expr": "sum by (outcome) (rate(finapp_risk_report_filing_total[5m]))",
+          "legendFormat": "filing {{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "AML monitoring: the lag, the unclassified, the parties judged",
+      "description": "Journal entries beyond the watermark (finapp.risk.monitoring.lag, alerted when it grows by more than a tick's intake in an hour), UNCLASSIFIED monitored transactions (alerted above 0), the parties the rule leg met by outcome, accounts no party could be placed behind, and defaults whose party could not be placed - the stalled risk.signals partition (all alerted).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 280
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (source) (finapp_risk_monitoring_lag)",
+          "legendFormat": "lag {{source}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max(finapp_risk_monitoring_unclassified)",
+          "legendFormat": "unclassified"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (outcome) (increase(finapp_risk_monitoring_subject_total[15m]))",
+          "legendFormat": "parties {{outcome}} /15m"
+        },
+        {
+          "refId": "D",
+          "expr": "sum(increase(finapp_risk_monitoring_unplaced_total[15m]))",
+          "legendFormat": "accounts unplaced /15m"
+        },
+        {
+          "refId": "E",
+          "expr": "sum(increase(finapp_risk_collections_unplaced_total[15m]))",
+          "legendFormat": "defaults unplaced /15m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Risk proofs and censuses",
+      "description": "finapp.risk.velocity.proof and .census{kind} - 1 on the latest reading's verdict, DIVERGED alerted per kind, NaN when unreadable - and the readings taken off the scrape thread (.proof.reading - failed at two floors, or none completed in two, alerted).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 280
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (verdict) (finapp_risk_velocity_proof)",
+          "legendFormat": "velocity {{verdict}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (kind, verdict) (finapp_risk_census)",
+          "legendFormat": "census {{kind}} {{verdict}}"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (outcome) (increase(finapp_risk_proof_reading_total[30m]))",
+          "legendFormat": "readings {{outcome}} /30m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Customer risk ratings and rescreening",
+      "description": "Parties per customer risk rating (finapp.risk.profile.rating{bucket} - UNRATED until a MONITORING version judges them), rescreening permits PENDING (.rescreening.backlog, alerted when standing a day) and what became of each claimed permit (.rescreening{outcome} - failed alerted).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "finapp-prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 280
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (bucket) (finapp_risk_profile_rating)",
+          "legendFormat": "rating {{bucket}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max(finapp_risk_rescreening_backlog)",
+          "legendFormat": "rescreening pending"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (outcome) (increase(finapp_risk_rescreening_total[1h]))",
+          "legendFormat": "rescreened {{outcome}} /h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never"
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
     }
   ]
 }

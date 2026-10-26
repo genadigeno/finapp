@@ -3103,7 +3103,13 @@ waiting pin of `INV-RSK-05`, not a budget breach), and a pin that cannot be read
 reads "except `NO_POLICY_ACTIVE` and an unreadable pin". An amount the bands cannot place (another currency) answers
 the open-ended band. The alert is `-015`'s and `-024`'s: until then `finapp.risk.evaluation.unavailable{operation,
 reason_code}` counts every fail-safe and one log line (ids and codes) marks each `RISK_UNAVAILABLE`. The replay re-derives
-a fail-safe by its recorded cause. Probes: `MUTATION_TESTING.md` §2.)*
+a fail-safe by its recorded cause. Probes: `MUTATION_TESTING.md` §2.)* *(`P13-TSK-024`, 2026-10-26: the rules are
+`RiskEvaluationUnavailable` - any `RISK_UNAVAILABLE` increase, per operation - and `RiskPolicyNoneActive` - the gauge at 0,
+or a `NO_POLICY_ACTIVE` recorded, on a target the environment labels `risk_judging="true"` - in
+`infra/prometheus/rules/risk.yml`, each proven by `RiskAlertRulesTest` to fire on its break and only then; the gauge's
+`policy_version` the plan named is its value (a tag per version would open a series per activation), so the series is
+`finapp.risk.policy.active{operation}`; `RiskEvaluationLatencyOverBudget` watches the 50 ms p99 the fail-safe's timeout
+sits beyond.)*
 
 *(Scenario 9 through a consumer, `P13-TSK-008`, 2026-10-23: transfers reach the fail-safe through both seams — no
 version is `ALLOW(NO_POLICY_ACTIVE)` counted and posted; a timed-out subject lock below EUR 1,000 is
@@ -3145,7 +3151,9 @@ version, none "neither", the activation never waiting on a money row (`P13-TSK-0
 (`P13-TSK-002`); a raw-SQL `UPDATE` of a decided version's rule row refused for every role
 (`P13-TSK-002`); the battery replaying every version (`P13-TST-002`);
 `finapp.risk.policy.active{operation,policy_version}` and its rule "no active policy where judging is
-expected" (`P13-TSK-024`).
+expected" (`P13-TSK-024`). *(As built by `P13-TSK-024`, 2026-10-26: `finapp.risk.policy.active{operation}` - the version
+number its value - and `RiskPolicyNoneActive`, proven by `RiskAlertRulesTest`; the activation's four eyes and its
+rehearsal are steps of `OPERATIONS_RUNBOOK.md` §9.1's gate.)*
 **Phase:** 13
 
 ### INV-RSK-06 — An alert is born once, a case is open at most once per subject and kind, and a replay creates no second alert, case, action or filing
@@ -3355,7 +3363,10 @@ journal entries = monitored transactions, amounts equal, no orphan — at every 
 `UNCLASSIFIED` with `finapp.risk.monitoring.unclassified` > 0 firing its rule (`P13-TSK-019`,
 `P13-TSK-024`); `finapp.risk.monitoring.lag` (journal head − watermark) with its rule at an hour
 (`P13-TSK-024`); a sweeper killed mid-claim among the storm's crash points, the next claim re-reading
-from the committed watermark (`P13-TST-001`).
+from the committed watermark (`P13-TST-001`). *(As built by `P13-TSK-024`, 2026-10-26:
+`RiskMonitoringUnclassified` above 0, and `RiskMonitoringLagGrowing` - the lag counts entries, not time, so the rule is
+its growth by more than one tick's intake over the hour, or the gauge saturated - each proven by `RiskAlertRulesTest`;
+`RiskCensusDiverged{kind="MONITORING"}` alerts the census.)*
 **Phase:** 13
 
 *(As built by `P13-TSK-020`, 2026-10-25: reprocessing re-judges as well as re-reads - the monitoring rules run on every
@@ -3391,7 +3402,9 @@ changes after a credit decision is sealed and the decision replays `IDENTICAL` u
 `CreditReplayProof` (`P13-TSK-007`); a raw-SQL `UPDATE` of a version row refused for every role, and
 a `PROHIBITED` version without its disposition refused by the `CHECK` alone (`P13-TSK-007`,
 `P13-TSK-016`); a decision made under seam version 1 replaying `NOT_ASSESSED` (`P13-TSK-007`);
-`finapp.risk.profile.rating{bucket}` (`P13-TSK-024`); the battery replaying every assessment under
+`finapp.risk.profile.rating{bucket}` (`P13-TSK-024` - built: the heads per rating, `LOW`…`PROHIBITED` and
+`UNRATED`, one grouped count read off the scrape thread, `RiskProfileMetricsTest`; owed
+`ProfileDatabaseTest#theRatingsCountTheHeads`); the battery replaying every assessment under
 the profile version it recorded (`P13-TST-002`). *(As built by `P13-TSK-007`, 2026-10-23: the schema
 holds each rule for every writer - `PRIMARY KEY (party_id, version)`, the versions `INSERT`-only and
 born in sequence, `PROHIBITED` only with cause `DISPOSITION` and its `disposition_id` (`CHECK`), no

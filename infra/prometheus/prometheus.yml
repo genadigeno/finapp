@@ -38,3 +38,8 @@ scrape_configs:
           # Whether this environment OFFERS BNPL (P12-TSK-026): the BnplTermsNoneActive alert reads it, the same way.
           # Production's expected state is "false" until OPERATIONS_RUNBOOK.md section 8.1's activation gate opens.
           bnpl_offered: "false"
+          # Whether this environment's risk policies are meant to JUDGE (P13-TSK-024): the RiskPolicyNoneActive alert
+          # reads it, so an operation without an ACTIVE policy version alerts only where judging is expected.
+          # Production's expected state is "false" until OPERATIONS_RUNBOOK.md section 9.1's activation gate opens -
+          # every seam answering ALLOW with NO_POLICY_ACTIVE recorded; its last step sets this to "true".
+          risk_judging: "false"

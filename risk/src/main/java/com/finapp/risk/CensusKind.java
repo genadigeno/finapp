@@ -14,5 +14,10 @@ public enum CensusKind {
     /** One open case per (subject, kind) ({@code INV-RSK-06}; {@link CaseOneOpenCensus}). */
     CASE_ONE_OPEN,
     /** No filed report left undriven past its due ({@code ADR-0111} decision 6; {@link FilingCensus}). */
-    FILING
+    FILING,
+    /**
+     * Per screening list version, every permit born counted by its enqueue and every clearance a signal naming the
+     * version ({@code INV-KYC-04}, {@code INV-RSK-06}; {@link RescreeningCensus} - `P13-TSK-024`, the row `-022` routed).
+     */
+    RESCREENING
 }

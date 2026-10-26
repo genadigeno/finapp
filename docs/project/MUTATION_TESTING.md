@@ -2071,6 +2071,9 @@ so the guard was silently not checking that the tests they name exist.
 | `INV-KYC-04` | `RescreenRoutingTest#theDoorsHitIsAssessedAndTold` | Recorded | A `P13-TSK-022` probe after the last review (P36; item 4): `VerificationRunService.rescreen`'s assessment of its hit deleted | Caught on the first run (`:app:test --tests *RescreenRoutingTest`): 1 of 3 red - `[routed to review] expected: IN_REVIEW but was: CHECKS_IN_PROGRESS`. `VerificationRunService.java` restored by its saved bytes, sha256 `8adb375c…2b9b19117ae` before and after |
 | `INV-KYC-04` | `RescreenRoutingTest#aLateCallbacksHitIsAssessedAndTold` | Recorded | A `P13-TSK-022` probe after the last review (P37; item 4): `ProviderCallbackService`'s rescreen branch without its `assessRescreened` | Caught on the first run (`:app:test --tests *RescreenRoutingTest`): 1 of 3 red - `expected: IN_REVIEW but was: CHECKS_IN_PROGRESS`. `ProviderCallbackService.java` restored by its saved bytes, sha256 `a5c9097e…5e96b9e2cc3` before and after |
 | `INV-RSK-06` | `RescreenRoutingTest#aLateCallbacksHitIsAssessedAndTold` | Recorded | A `P13-TSK-022` probe after the last review (P38; item 3, kyc's half): the callback's tell of a rescreen hit to the permit deleted (`rescreenHits.ifAvailable(…)`) - a late callback's hit never reaching risk | Caught on the first run (`:app:test --tests *RescreenRoutingTest`): 1 of 3 red - `Expecting actual: [] to contain exactly [CheckId(…)]`. Restored by its saved bytes, sha256 `a5c9097e…5e96b9e2cc3` before and after |
+| `INV-RSK-08` | `RiskMetricTagsAreBoundedTest#everyRiskTagIsBounded` | Recorded | A `P13-TSK-024` probe (2026-10-26; the entry's "tag `rule.hit` with the assessment id"): `RiskEvaluationMetrics` registering every `finapp.risk.rule.hit` series with an identifier-shaped `rule` value (`0192e1a0-0000-7000-8000-…`, the shape of an assessment's UUIDv7) in place of the rule kind's code | Caught on the first run (`--tests *RiskMetricTagsAreBoundedTest`, with `PlannedMetersExistTest` beside it): 1 of 2 red - "finapp.risk.rule.hit{rule=0192e1a0-…} is not a value of its vocabulary" for every kind; `RiskEvaluationMetrics.java` restored by its saved bytes, sha256 `a369e391…6b813e9e` before and after |
+| `INV-RSK-06` | `RiskCensusesTest#everyRescreeningPermitIsAccountedFor` | Recorded | A `P13-TSK-024` probe (2026-10-26; the rescreening census `-022` routed, built here): `RescreeningCensus.Row.everyHitASignal` answering `true` - a `DONE(HIT)` permit with no `SCREENING_HIT` signal naming its version no longer a difference | Caught on the first run (`:risk:test --tests *RiskCensusesTest`): 1 of 9 red - the version with two `HIT` permits and one hit signal read `HELD` where `DIVERGED` was due (`:…everyRescreeningPermitIsAccountedFor`); `RescreeningCensus.java` restored by its saved bytes, sha256 `f8934865…49462a44` before and after |
+| `INV-AUD-02` | `RiskSpansTest#everyRecordingCarriesNoAttribute`, `RiskSpansTest#theScopeRecordsNoAttribute` | Recorded | A `P13-TSK-024` probe (2026-10-26; "`RiskFlowScope` per step, no attributes" - the trace backend as a sink): `RiskFlowScope.door` recording its span with an attribute (`Map.of("case", "0192e1a0")`) | Caught on the first run (`--tests *RiskSpansTest`): 2 of 4 red - the source scan read `Map.of("case"` where `Map.of()` was due, and the recording scope saw `{"case"="0192e1a0"}` on the door; `RiskFlowScope.java` restored by its saved bytes, sha256 `d43a8dd0…dc41ccb9` before and after |
 | `A13` | `BnplLateFeeDatabaseTest#theCapHolds` | Recorded | *(the late-fee cap's database arm - `bnpl V013:390`)* - A `P12-GATE` probe (R4, A1-2): the cap arm (`OR assessed + NEW.amount_minor > terms.late_fee_cap_minor`) removed from the fee trigger by in-test DDL, the fee's own arm kept - against the new raw case, 3.00 on instalment 4 within the pinned 5.00 but past the 2.00 of room | Caught - "Expecting code to raise a throwable" for the application role's raw fee (1 test, 1 failed). Restored byte-identical (sha256 `dfbf7818…ef2a`, verified) |
 
 *`P13-TSK-004`'s database-only probes, written and **not run** (owner decision C5: the database tier is skipped per task;
@@ -2091,6 +2094,27 @@ went red on the first run (1 of 7 - every divergence a lookup, `:232`); `RiskOpe
 saved bytes, sha256 `02f46c6a…70530bdd` before and after. The first round's `#anUncountedTransferIsExplainedNotDiverged`
 row above was probed against the set-aside it then had; the subtraction that replaced it keeps that test green and is
 probed by the rows that follow it.*
+
+*`P13-TSK-024`'s probes with no invariant's row - the observability guards (the meters, the rules, the readings decide
+nothing), each performed, red on its first run and restored by its saved bytes (sha256 equal): **the entry's "remove
+`evaluation.unavailable`'s registration"** - `RiskEvaluationMetrics` registering no `finapp.risk.evaluation.unavailable`
+series (the reason loop over an empty array) → `PlannedMetersExistTest#phase13PlannedMetersAreAlreadyPublished` red (1 of
+13) and `RiskMetersTest` 3 of 3 red (the row unregistered, `TRANSFER RISK_UNAVAILABLE` absent, the dashboard row's query
+unpublished), sha256 `a369e391…6b813e9e`; **the entry's "misspell a series in `risk.yml`"** - `VelocityDiverged` reading
+`finapp_risk_velocity_proofs` → `RiskAlertRulesTest` 2 of 7 red (the rule's series not published; the divergence fires
+nothing), sha256 `516c95f7…d571415f`; **the inbox counters' eager registration removed** (`InboxConsumptionMeters`
+registering nothing - the series `InboxConsumptionFailing` reads absent where the consumer is off) →
+`PlannedMetersExistTest#phase13PlannedMetersAreAlreadyPublished` red, sha256 `a216d9d8…3c4effcf`; **the rating gauge read on
+the scrape thread** (`RiskProfileMetrics.figure` calling `read()` in place of `refreshed()`) → `RiskProfileMetricsTest` 2
+of 5 red (a figure served with no reading started; the stale reading never NaN), sha256 `b6c055d2…a7e2ae49`.*
+
+*`P13-TSK-024`'s database-only cases, written and **not run** (owner decision C5), recorded as owed rather than claimed:
+`AlertRulesResolveTest#theRiskRulesResolve` (every risk rule's series on a live scrape with a database - the misspelt
+series of the probe above red there too), `DashboardQueriesResolveTest#theRiskRowResolves` (the risk row's nine panels),
+`RescreeningDatabaseTest#theRescreeningCensusHoldsPerVersion` (the census over live permits and signals - drop the `HIT`
+identity → still green there, the live rows hold it; the `DIVERGED` direction is the hermetic row above),
+`ProfileDatabaseTest#theRatingsCountTheHeads` (the grouped count of `JdbcCustomerRiskProfileStore.RATINGS` - count the
+versions instead of the heads → red).*
 
 *`P13-TSK-023`'s database-only probes, written and **not run** (owner decision C5), recorded as owed rather than
 claimed: let the proof upsert the corrected figure (the entry's probe) → `RiskProofsDatabaseTest#theVelocityProofNamesADifferenceAndCorrectsNothing`
