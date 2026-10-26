@@ -37,14 +37,15 @@ import org.junit.jupiter.api.Test;
 class RiskBatteryCoverageTest {
 
     // The floors - each about half the smallest figure of its family in the full population (2026-10-26, seed 13302,
-    // 10,000 subjects; BACKLOG.md's as-built records the figures): the fewest fires of a row 343 (MONITORING v1 rule 7),
-    // the fewest quiet judgements 7,811 (WITHDRAWAL v1 rule 6), the fewest fires of a kind 808 (STRUCTURING), the rarest
-    // decision 294 (a WITHDRAWAL challenge refused), the rarest band edge 71 (WITHDRAWAL v1 at 700), the rarest planned edge
-    // 72 (MONITORING v1 rule 8 at 100), the rarest fail-safe case 357 (CROSS_BORDER with its pin unread).
+    // 10,000 subjects, the gate's second round; BACKLOG.md's as-built records the figures): the fewest fires of a row 285
+    // (MONITORING v1 rule 7), the fewest quiet judgements 8,222 (WITHDRAWAL v1 rule 6), the fewest fires of a kind 808
+    // (STRUCTURING), the rarest decision or step 296 (a WITHDRAWAL challenge refused), the rarest band edge 71 (WITHDRAWAL v1
+    // at 700), the rarest planned edge 48 (the party's chargeback share exactly 1 %, MONITORING v1 rule 10), the rarest
+    // fail-safe case 355 (CROSS_BORDER with its pin unread).
 
     /** Each rule row's fires and quiet judgements (a row's reading present). */
-    static final long ROW_FIRED = 170;
-    static final long ROW_NOT_FIRED = 3_900;
+    static final long ROW_FIRED = 140;
+    static final long ROW_NOT_FIRED = 4_100;
 
     /** Each rule kind's fires over the whole population. */
     static final long KIND_FIRED = 400;
@@ -55,8 +56,8 @@ class RiskBatteryCoverageTest {
     /** Each side of each band edge, and the clamp. */
     static final long BAND_EDGE = 35;
 
-    /** Each planned threshold, lookback and window edge. */
-    static final long THRESHOLD_EDGE = 35;
+    /** Each planned threshold, lookback, ratio, round and window edge. */
+    static final long THRESHOLD_EDGE = 24;
 
     /** Each fail-safe band, edge, cause, compiled answer and unplaceable amount. */
     static final long FAIL_SAFE = 175;
@@ -102,8 +103,9 @@ class RiskBatteryCoverageTest {
     }
 
     @Test
-    @DisplayName("every decision each judged version can reach - by a hard rule and by a band - every rating, and a"
-            + " challenge both satisfied and refused")
+    @DisplayName("every decision each judged version can reach, by each step that can reach it - every band's decision by"
+            + " the band, every hard decision by a hard rule - every rating, a challenge both satisfied and refused; the"
+            + " fail-safe's decisions counted apart")
     void everyDecisionAndRatingIsReached() {
         List<String> short_ = new ArrayList<>();
         for (RiskOperation operation : RiskBatteryOracles.OPERATIONS) {
@@ -123,6 +125,20 @@ class RiskBatteryCoverageTest {
                 floor(short_, "decision|" + version + "|" + decision, count("decision|" + version + "|" + decision),
                         DECIDED);
             }
+            // Each decision by each step that can reach it: a band's decision by the band, a hard decision by its rule.
+            Set<String> pairs = new TreeSet<>();
+            statement.scoreBands().forEach(band -> pairs.add(band.answer() + "|SCORE_BAND"));
+            statement.lines().forEach(line -> line.hard().ifPresent(hard -> pairs.add(hard + "|HARD_RULE")));
+            for (String pair : pairs) {
+                floor(short_, "decided|" + version + "|" + pair, count("decided|" + version + "|" + pair), DECIDED);
+            }
+            // The fail-safe's decisions, apart: each band's, and the compiled ALLOW.
+            Set<RiskDecision> failSafe = new TreeSet<>(List.of(RiskDecision.ALLOW));
+            statement.failSafe().forEach(edge -> failSafe.add(edge.decision()));
+            for (RiskDecision decision : failSafe) {
+                floor(short_, "failSafeDecision|" + operation + "|" + decision, count("failSafeDecision|" + operation
+                        + "|" + decision), FAIL_SAFE);
+            }
             for (RiskBatteryOracles.Step step : List.of(RiskBatteryOracles.Step.HARD_RULE,
                     RiskBatteryOracles.Step.SCORE_BAND)) {
                 floor(short_, "step|" + version + "|" + step, count("step|" + version + "|" + step), DECIDED);
@@ -135,7 +151,8 @@ class RiskBatteryCoverageTest {
         Map<String, Long> figures = new TreeMap<>();
         run.coverage().forEach((key, value) -> {
             if (key.startsWith("decision|") || key.startsWith("rating|") || key.startsWith("step|")
-                    || key.startsWith("challenge|") || key.startsWith("kindFired|")) {
+                    || key.startsWith("challenge|") || key.startsWith("kindFired|") || key.startsWith("decided|")
+                    || key.startsWith("failSafeDecision|")) {
                 figures.put(key, value);
             }
         });
@@ -182,8 +199,10 @@ class RiskBatteryCoverageTest {
 
     @Test
     @DisplayName("the planned threshold, lookback and window edges: every amount band at t-1, t, t+1; the counts, sums,"
-            + " lookbacks, ages and dormancy at their threshold and one short; structuring's sum and below edges; the"
-            + " rapid in-out share; every window kind's boundary; every corridor; the account-takeover hold")
+            + " lookbacks, the account age and dormancy at their threshold and one short; every ratio rule's share exact and"
+            + " one short and its count floor exact and one short; structuring's sum and below edges; the rapid in-out"
+            + " share; a round amount and its neighbours; every window kind's boundary; every corridor; the"
+            + " account-takeover hold")
     void everyPlannedEdgeIsReached() {
         List<String> short_ = new ArrayList<>();
         List<String> keys = new ArrayList<>();
@@ -198,10 +217,21 @@ class RiskBatteryCoverageTest {
             }
         }
         for (String row : List.of("TRANSFER v1|3", "TRANSFER v1|4", "TRANSFER v1|5", "TRANSFER v1|12",
-                "WITHDRAWAL v1|2", "CARD_PAYMENT v1|6", "CARD_PAYMENT v1|7", "CARD_PAYMENT v1|10", "WALLET_PAYMENT v1|10",
-                "CROSS_BORDER v1|6", "MONITORING v1|3", "MONITORING v1|8", "MONITORING v1|11")) {
+                "WITHDRAWAL v1|2", "WITHDRAWAL v1|7", "CARD_PAYMENT v1|6", "CARD_PAYMENT v1|7", "CARD_PAYMENT v1|10",
+                "WALLET_PAYMENT v1|10", "CROSS_BORDER v1|6", "MONITORING v1|3", "MONITORING v1|8", "MONITORING v1|11")) {
             keys.add("edge|" + row + "|-1");
             keys.add("edge|" + row + "|0");
+        }
+        // Every ratio rule: its share exact and one short (the count met), its count floor exact and one short (the share
+        // met) - the merchant's on the two payments, the party's on the sweep.
+        for (String row : List.of("CARD_PAYMENT v1|11", "CARD_PAYMENT v1|12", "WALLET_PAYMENT v1|11",
+                "WALLET_PAYMENT v1|12", "MONITORING v1|9", "MONITORING v1|10")) {
+            for (String edge : List.of("share=0", "share=-1", "count=0", "count=-1")) {
+                keys.add("edge|" + row + "|" + edge);
+            }
+        }
+        for (String edge : List.of("round=0", "round=-1", "round=1")) {
+            keys.add("edge|MONITORING v1|4|" + edge);
         }
         keys.add("edge|MONITORING v1|7|0");
         keys.add("edge|MONITORING v1|1|sum=0");

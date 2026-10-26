@@ -32,9 +32,14 @@ import java.util.UUID;
  * <p><strong>The walk and the edges.</strong> A subject's cohort is its index modulo twelve - the generator's walk - each
  * shaping one family of the backlog's: amounts across every band's edge, velocity bursts at every window boundary, novelty,
  * account takeover, structuring, dormancy gaps, round amounts, corridors, hard decisions, abuse ratios and the fail-safe at
- * every band. The edges are read from the battery's own {@link Statement} (data-driven: a threshold moved in the statement
- * moves the edges with it), never from the fixtures. Every selection the battery makes of a subject - its perturbation, its
- * version swap - is taken from a mix of the index and never from this walk ({@code RiskBattery#mix}).
+ * every band. <strong>The edges are the C8 v1 fixtures' figures</strong>: only the amount bands' thresholds and the
+ * fail-safe bands' edges are read from the battery's own {@link Statement}; every other planned edge - the velocity counts
+ * and sums (10, EUR 5,000, 5 a session, 100 and EUR 50,000 a month), the authentication failures, the lookbacks (29/30
+ * days, 23/24 and 71/72 hours), the account age, structuring, dormancy, round amounts and the ratio figures - is written
+ * here for C8's values. So the battery proves the C8 versions; another version needs its own statement, these edges, the
+ * floors and its successor written for it before its fingerprint means anything ({@code OPERATIONS_RUNBOOK.md} section
+ * 9.1 step 1). Every selection the battery makes of a subject - its perturbation, its version swap - is taken from a mix of
+ * the index and never from this walk ({@code RiskBattery#mix}).
  *
  * <p><strong>Deterministic in any JVM.</strong> A subject's randomness is one {@link Random} seeded from its index (the JDK
  * specifies the sequence); no hash map is ever iterated into an output; the windows are tumbling buckets anchored at Monday
@@ -169,7 +174,13 @@ final class RiskBatteryWorld {
         }
     }
 
-    /** A merchant: its suspension and its other customers' figures per thirty-day bucket (a profile of three). */
+    /**
+     * A merchant: its suspension and its figures per thirty-day bucket - its other customers' beside this subject's counted
+     * payments (profiles 0 to 2), or (profile 3) exactly at the C8 payment ratio rules' edges: both shares exact (EUR
+     * figures 400 refunds and 20 chargebacks over 2,000 payments - 20 % and 1 %), both one refund or chargeback short of
+     * the share (399, 19), both counts exactly at their floors with the share met (20 and 10 over 90), both one short of
+     * the floor (19 and 9 over 90) - a variant per bucket.
+     */
     private static final class Merchant {
         final UUID id;
         final long seed;
@@ -183,15 +194,24 @@ final class RiskBatteryWorld {
             this.suspendedFrom = suspendedFrom;
         }
 
-        /** {@code count, refunds, chargebacks} of the merchant's other customers in the bucket starting at {@code bucket}. */
-        long[] background(Instant bucket) {
+        /**
+         * {@code count, refunds, chargebacks} in the bucket starting at {@code bucket} - the count with {@code own}, this
+         * subject's payments to the merchant already counted there (the edge profile's figures are the merchant's whole).
+         */
+        long[] figures(Instant bucket, long own) {
             Random random = new Random(seed ^ (bucket.getEpochSecond() * 0x9E3779B97F4A7C15L));
             return switch (profile) {
-                case 1 -> new long[] {100 + random.nextInt(5), 18 + random.nextInt(5), random.nextInt(4)};
-                case 2 -> new long[] {995 + random.nextInt(10), random.nextInt(60), 9 + random.nextInt(3)};
+                case 1 -> new long[] {100 + random.nextInt(5) + own, 18 + random.nextInt(5), random.nextInt(4)};
+                case 2 -> new long[] {995 + random.nextInt(10) + own, random.nextInt(60), 9 + random.nextInt(3)};
+                case 3 -> switch (random.nextInt(4)) {
+                    case 0 -> new long[] {2_000, 400, 20};
+                    case 1 -> new long[] {2_000, 399, 19};
+                    case 2 -> new long[] {90, 20, 10};
+                    default -> new long[] {90, 19, 9};
+                };
                 default -> {
                     long count = 200 + random.nextInt(400);
-                    yield new long[] {count, random.nextInt((int) (count / 10)), random.nextInt(2)};
+                    yield new long[] {count + own, random.nextInt((int) (count / 10)), random.nextInt(2)};
                 }
             };
         }
@@ -474,7 +494,10 @@ final class RiskBatteryWorld {
             if (window == WindowKind.D30) {
                 Instant bucket = start(WindowKind.D30, now).plus(WindowKind.D30.length());
                 advanceTo(bucket.plusSeconds(DAY));
-                if (Math.floorMod(index / 48, 2) == 0) {
+                int run = Math.floorMod(index / 48, 3);
+                if (run == 2) {
+                    partyRatios();
+                } else if (run == 0) {
                     // A hundred and four small checkouts in one thirty-day bucket - the party's D30 count past 100.
                     for (int i = 0; i < 104; i++) {
                         if (i % 4 == 0) {
@@ -493,6 +516,40 @@ final class RiskBatteryWorld {
                 }
             }
             ordinary(2);
+        }
+
+        /**
+         * The party's own shares at the C8 sweep's ratio edges (`MONITORING v1` rules 9 and 10): about two hundred small
+         * checkouts in one thirty-day bucket, refunds and chargebacks placed against the party's counted movements - two
+         * refunds while the count is at most 10 (one short of the floor of 3, the share met), the third once 12 are counted
+         * (the floor exact; 20 % exactly at 15; one refund short of the share from 16 to 20); one chargeback while at most
+         * 60 are counted (one short of the floor of 2), the second after (the floor exact; 1 % exactly at 200; one short
+         * from 201).
+         */
+        void partyRatios() {
+            refunds.add(now);
+            refunds.add(now);
+            chargebacks.add(now);
+            boolean thirdRefund = false;
+            boolean secondChargeback = false;
+            for (int i = 0; i < 215; i++) {
+                long counted = window(VelocityDimension.PARTY, party.toString(), WindowKind.D30, now)[0];
+                if (!thirdRefund && counted >= 12) {
+                    refunds.add(now);
+                    thirdRefund = true;
+                    advance(60);
+                }
+                if (!secondChargeback && counted >= 60) {
+                    chargebacks.add(now);
+                    secondChargeback = true;
+                    advance(60);
+                }
+                if (i % 4 == 0) {
+                    session = newSession();
+                }
+                move(RiskOperation.CARD_PAYMENT, 100 + rng.nextInt(900)).session(session).merchant(pick(merchants)).go();
+                advance(3 * HOUR);
+            }
         }
 
         /**
@@ -542,7 +599,14 @@ final class RiskBatteryWorld {
             move(RiskOperation.TRANSFER, 4_000).payee(fresh).device(device).session(confirming).go();
             advance(HOUR);
             move(RiskOperation.CARD_PAYMENT, 3_000).device(device).session(confirming).go();
-            Beneficiary beneficiary = new Beneficiary(uuid(), now, CORRIDORS.get(3 + rng.nextInt(3)));
+            // The account age's edge (WITHDRAWAL v1's "younger than 7 days"): a wallet opened now, withdrawn from at 6 and 7.
+            Account opened = new Account(uuid(), now);
+            accounts.add(opened);
+            for (long days : new long[] {6, 7}) {
+                advanceTo(opened.opened.plusSeconds(days * DAY + 3 * HOUR));
+                move(RiskOperation.WITHDRAWAL, 5_000).source(opened).session(multi()).go();
+            }
+            Beneficiary beneficiary = new Beneficiary(uuid(), first.plusSeconds(HOUR), CORRIDORS.get(3 + rng.nextInt(3)));
             beneficiaries.add(beneficiary);
             for (long days : new long[] {29, 30, 31}) {
                 advanceTo(first.plusSeconds(days * DAY + 2 * HOUR));
@@ -677,12 +741,15 @@ final class RiskBatteryWorld {
             ordinary(2);
         }
 
-        /** Authentication failures, BNPL applications, the party's refunds and chargebacks, merchants at the ratio edges. */
+        /**
+         * Authentication failures, BNPL applications, the party's refunds and chargebacks; the first merchant exactly at the
+         * payment ratio rules' edges (profile 3), the second near them - each paid by card and by wallet.
+         */
         void abuse() {
             ordinary(2);
             int variant = Math.floorMod(index / 12, 3);
-            merchants.get(0).profile = 1;
-            merchants.get(1).profile = 2;
+            merchants.get(0).profile = 3;
+            merchants.get(1).profile = 1 + Math.floorMod(index / 36, 2);
             morning(1);
             advance(HOUR);
             for (int i = 0; i < 2 + variant; i++) {
@@ -701,7 +768,7 @@ final class RiskBatteryWorld {
             advanceTo(month.plusSeconds(DAY));
             for (int i = 0; i < 8; i++) {
                 move(i % 2 == 0 ? RiskOperation.CARD_PAYMENT : RiskOperation.WALLET_PAYMENT, 1_000 + rng.nextInt(9_000))
-                        .merchant(merchants.get(i % 2)).session(multi()).go();
+                        .merchant(merchants.get((i / 2) % 2)).session(multi()).go();
                 advance(10 * HOUR);
                 if (i < 1 + variant) {
                     refunds.add(now);
@@ -1033,13 +1100,11 @@ final class RiskBatteryWorld {
             if (move.merchant != null) {
                 in.merchantSuspended(move.merchant.suspendedFrom != null && !at.isBefore(move.merchant.suspendedFrom));
                 // The merchant's shares (`-014`): its other customers' figures, this subject's counted payments beside them.
-                Instant bucket = start(WindowKind.D30, at);
-                long[] background = move.merchant.background(bucket);
-                long denominator = background[0]
-                        + window(VelocityDimension.MERCHANT, move.merchant.id.toString(), WindowKind.D30, at)[0];
+                long[] figures = move.merchant.figures(start(WindowKind.D30, at),
+                        window(VelocityDimension.MERCHANT, move.merchant.id.toString(), WindowKind.D30, at)[0]);
                 in.monitoring(new MonitoringReadings(Reading.absent(), Map.of(), Map.of(),
-                        Map.of(WindowKind.D30, new Ratio(background[1], denominator)),
-                        Map.of(WindowKind.D30, new Ratio(background[2], denominator)), Map.of()));
+                        Map.of(WindowKind.D30, new Ratio(figures[1], figures[0])),
+                        Map.of(WindowKind.D30, new Ratio(figures[2], figures[0])), Map.of()));
             }
             return in.build();
         }

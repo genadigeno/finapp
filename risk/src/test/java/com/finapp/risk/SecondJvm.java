@@ -108,21 +108,19 @@ final class SecondJvm {
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             }
-            for (Path file : List.of(out, log)) {
-                try {
-                    Files.deleteIfExists(file);
-                } catch (IOException held) {
-                    file.toFile().deleteOnExit();
-                }
-            }
+            delete();
         }
 
-        /** Waits at most {@code timeout} for the child and returns the lines it wrote after its defaults line. */
+        /**
+         * Waits at most {@code timeout} for the child and returns the lines it wrote after its defaults line. A child past its
+         * timeout is destroyed and waited for, and the files are deleted best effort, as {@link #abandon} does - so the
+         * timeout, not a file still held on Windows, is what the caller sees.
+         */
         List<String> join(Duration timeout) throws IOException, InterruptedException {
             try {
                 boolean finished = child.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
                 if (!finished) {
-                    child.destroyForcibly();
+                    child.destroyForcibly().waitFor(30, TimeUnit.SECONDS);
                 }
                 assertThat(finished).as("the second JVM finished").isTrue();
                 assertThat(child.exitValue()).as(Files.readString(log, StandardCharsets.UTF_8)).isZero();
@@ -132,8 +130,17 @@ final class SecondJvm {
                 assertThat(defaults()).as("and this JVM's differ").isNotEqualTo(lines.get(0));
                 return List.copyOf(lines.subList(1, lines.size()));
             } finally {
-                Files.deleteIfExists(out);
-                Files.deleteIfExists(log);
+                delete();
+            }
+        }
+
+        private void delete() {
+            for (Path file : List.of(out, log)) {
+                try {
+                    Files.deleteIfExists(file);
+                } catch (IOException held) {
+                    file.toFile().deleteOnExit();
+                }
             }
         }
     }

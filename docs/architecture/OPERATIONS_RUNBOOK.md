@@ -906,19 +906,23 @@ recorded in the gate's record (one per policy version admitted: the operation, t
    *How it is produced and recorded (as built by `P13-TST-002`, 2026-10-26):* the battery is `risk`'s four hermetic suites,
    run at full size - `./gradlew :risk:test --tests "com.finapp.risk.RiskBattery*" --tests
    "com.finapp.risk.RiskPolicyBatteryTest" --rerun` with `FINAPP_RISK_BATTERY_SUBJECTS` unset (a shrunk run fails the
-   census and can never be the gate's). It judges a version **as the battery states it** (`RiskBatteryOracles.Statement`)
-   and requires the policy under test equal to that statement. It judges one version per operation - today the C8
-   fixtures; to judge another, a reviewed test change writes its content as that operation's statement and fixture and
-   re-pins the fingerprints the run then prints. A green run prints one
-   line per version - `P13-TST-002 VERSION: <OPERATION> v<n> content=<sha256> fingerprint=<sha256>` - the content digest
-   being the battery's canonical text of the version (rules, parameters, weights, hard decisions, bands, fail-safe bands,
-   challenge, override threshold, hold validity) and the fingerprint binding it to every verdict of the 10,000-subject
-   population; and `P13-TST-002 FINGERPRINT: ... fingerprint=<sha256>` over all of them. The record carries the version's
-   id, its `content` and `fingerprint` from that run, the commit the run was on, and the reviewer's read-back of
-   `GET /v1/operator/risk/policies?operation=` against the statement, rule by rule - the version row carries no content
-   digest of its own (`PHASE_13_PLAN.md` §1.2 item 69). The committed figures today are the C8 fixtures' (test content;
-   production activates none): the battery `d09ee13b2d5ea847877feedba7975765d27588a89034adbd295788dd61b7ddad`, each
-   version's in `BACKLOG.md`'s `P13-TST-002` record.
+   census and can never be the gate's). **What it proves today is the C8 v1 fixtures, and nothing else**: it judges a
+   version as the battery states it (`RiskBatteryOracles.Statement`) and requires the policy under test equal to that
+   statement, but only the amount bands' thresholds and the fail-safe edges are read from the statement - every other
+   planned edge (the velocity figures, the lookbacks, the account age, structuring, dormancy, round amounts, the ratio
+   figures), the coverage floors' rule positions, the successor versions and the oracles' hand cases are written for C8's
+   values. **A production version's fingerprint means nothing until** a reviewed test change gives the battery that
+   version's statement and fixture, generator edges at its thresholds, floors for its rows and a successor written against
+   it, and the run is green at full size. A green run prints one line per version - `P13-TST-002 VERSION: <OPERATION>
+   v<n> content=<sha256> fingerprint=<sha256>` - the content digest being the battery's canonical text of the version
+   (rules, parameters, weights, hard decisions, bands, fail-safe bands, challenge, override threshold, hold validity) and
+   the fingerprint binding it to every verdict of the 10,000-subject population; and `P13-TST-002 FINGERPRINT: ...
+   fingerprint=<sha256>` over all of them. The record carries the version's id, its `content` and `fingerprint` from that
+   run, the commit the run was on, and the reviewer's read-back of `GET /v1/operator/risk/policies?operation=` against the
+   statement, rule by rule - the version row carries no content digest of its own (`PHASE_13_PLAN.md` §1.2 item 69). The
+   committed figures today are the C8 fixtures' (test content; production activates none): the battery
+   `d470990578800637e77550116ba5147c77704b02c587e84f99d74a27566683c8`, each version's in `BACKLOG.md`'s `P13-TST-002`
+   record.
 2. **The storm's latency figures within budget**: `P13-TST-001`'s storm on the release - T-eval's p99 at or below 50 ms per
    operation (`RiskEvaluationLatencyOverBudget`'s objective, `RiskObjectives.EVALUATION_LATENCY_P99`) with the
    monitoring sweep running beside it (M3's split trigger), the figures copied into the record.
@@ -933,7 +937,12 @@ recorded in the gate's record (one per policy version admitted: the operation, t
    monitoring policy's weight-only `ROUND_AMOUNT` alerts for every round-amount payer, because every fired AML kind
    alerts (`-020` MINOR 4) - its weight reviewed, or the rule left out of the version, knowingly. The SLA per case kind
    (`SlaDeadlines`), the queues' staffed capacity and the alert-flood objective (`RiskObjectives` - defaults) are
-   reviewed in the same signature.
+   reviewed in the same signature. **The version's rules read for reachability** in the same review (`P13-TST-002`'s
+   findings, `PHASE_13_PLAN.md` §1.2 item 72): a rule whose reading no request of its operation can carry never fires and
+   protects nothing - a velocity dimension the operation's seam does not carry (a `SOURCE_ACCOUNT` or `DESTINATION` window
+   on `CARD_PAYMENT`: a card payment carries neither), and today `NEW_DEVICE` and `RECENT_AUTH_FAILURES` on every operation
+   (no seam carries a device or authentication failures yet) - each such row removed, or kept knowingly and named in the
+   signature.
 4. **The reporting jurisdiction decided (C4) or the simulation explicitly accepted**: the reference remains the neutral
    EUR one and `RegulatoryFilingProvider` is simulated (`SimulatedFilingProvider`, `finapp.risk.filing.simulation`;
    `PHASE_13_PLAN.md` §12.9). Either a real jurisdiction is chosen - its reporting format, deadlines and content rules

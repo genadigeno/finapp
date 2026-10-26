@@ -59,19 +59,19 @@ final class RiskBattery {
     static final int SLICE = 10;
 
     /** The population's fingerprint - every sealed inputs digest in order - at {@link RiskBatteryWorld#SEED}, full size. */
-    static final String POPULATION = "a21ea993de4d5947d7482541f434fa1971035a87229b057e81f700863835b6fc";
+    static final String POPULATION = "2c22367d07f8a3aef6d3b29ec7dc21e9c2d9d5d07bd6dce38dc560b5c2eef60d";
 
     /** Each v1 version's fingerprint: its content as this battery renders it, then every verdict digest under it. */
     static final Map<RiskOperation, String> VERSIONS = versions(
-            "1f0ebacd87f967f5d0d7aa00d952c2e2936d5e0fee81557942d98476ed235709", // TRANSFER v1
-            "a27fccd88d1671a23df23183ee54718b2bf7c50823818fe048b3d92140f9df24", // WITHDRAWAL v1
-            "cf282e8e93c792967640f0b469f01041a133464a197cc3a78a262afb181b9ac9", // CARD_PAYMENT v1
-            "21ec09d158e1c136cde2466966a88eea891a68cc38ecde19e1b148857d423204", // WALLET_PAYMENT v1
-            "d5e584aad9f2a1b78532a3a0f71d295667896a6811b00cf6a2f8d21675786f6f", // CROSS_BORDER v1
-            "278ba120a4deff4a19eafad30fd56895101c5be9a133e95af9637bd8a429c97a"); // MONITORING v1
+            "186361e3691c08cf35d8d11df289265282412b414cfc2372e12001706c0e8ed4", // TRANSFER v1
+            "27c4d4ea2ec084428fa6fffeaee8057561c1d52dc02ddfe1d8f1c52621196708", // WITHDRAWAL v1
+            "9a47cb4cc8eca4b112bf212374177b1fcf3e408f7c604dc6e0653e0f2d493f92", // CARD_PAYMENT v1
+            "4d3d9beb46fbdf83d810a62c28f625e6645d25a8af3a06a02efa1393b178afac", // WALLET_PAYMENT v1
+            "7957f2f88fccfb72edeefe4b0a983a000b6c0f2162ffbdc5a14696f86d3e6a80", // CROSS_BORDER v1
+            "88abda474d4e1a5a262e75926bcc8384de973849ce594b37927a075d8a574102"); // MONITORING v1
 
     /** The battery's fingerprint over the population's and the six versions' - what the activation gate records. */
-    static final String FINGERPRINT = "d09ee13b2d5ea847877feedba7975765d27588a89034adbd295788dd61b7ddad";
+    static final String FINGERPRINT = "d470990578800637e77550116ba5147c77704b02c587e84f99d74a27566683c8";
 
     /** The perturbations, one per subject. */
     enum Perturbation {
@@ -734,7 +734,8 @@ final class RiskBattery {
             if (evaluation.mustRefuse().isPresent()) {
                 coverage.add("refused|" + evaluation.operation() + "|" + evaluation.mustRefuse().get());
             }
-            coverage.add("decision|" + version + "|" + expected.decision().orElseThrow());
+            // Kept apart from the evaluated decisions: a fail-safe's decision is its band's, never a rule's or a score's.
+            coverage.add("failSafeDecision|" + evaluation.operation() + "|" + expected.decision().orElseThrow());
             return;
         }
         long sum = 0;
@@ -756,6 +757,7 @@ final class RiskBattery {
         if (expected.decision().isPresent()) {
             coverage.add("decision|" + version + "|" + expected.decision().get());
             coverage.add("step|" + version + "|" + expected.step());
+            coverage.add("decided|" + version + "|" + expected.decision().get() + "|" + expected.step());
             expected.challengeSatisfied().ifPresent(satisfied -> coverage.add("challenge|" + version + "|" + satisfied));
         }
         expected.rating().ifPresent(rating -> coverage.add("rating|" + version + "|" + rating));
@@ -846,6 +848,36 @@ final class RiskBattery {
                     }
                 }
             }
+            case REFUND_RATIO, CHARGEBACK_RATIO -> {
+                Ratio ratio = (line.kind() == RuleKind.REFUND_RATIO ? in.monitoring().refunds()
+                        : in.monitoring().chargebacks()).get(line.value("window", WindowKind.class));
+                if (ratio != null && ratio.denominator() > 0) {
+                    long floor = line.number("threshold_count");
+                    long margin = ratio.numerator() * 10_000L - line.number("ratio_bps") * ratio.denominator();
+                    boolean shareMet = margin >= 0;
+                    if (ratio.numerator() >= floor && margin == 0) {
+                        coverage.add(key + "share=0"); // exactly the share, the count met
+                    } else if (ratio.numerator() >= floor && margin < 0 && margin + 10_000L >= 0) {
+                        coverage.add(key + "share=-1"); // one more refund or chargeback would meet the share
+                    }
+                    if (shareMet && ratio.numerator() == floor) {
+                        coverage.add(key + "count=0"); // exactly the count floor, the share met
+                    } else if (shareMet && ratio.numerator() == floor - 1) {
+                        coverage.add(key + "count=-1"); // one short of the count floor, the share met
+                    }
+                }
+            }
+            case ROUND_AMOUNT -> in.amount().value().ifPresent(money -> {
+                long amount = money.minorUnits();
+                long modulus = line.number("modulus_minor");
+                if (amount > 0 && amount % modulus == 0) {
+                    coverage.add(key + "round=0");
+                } else if ((amount + 1) % modulus == 0) {
+                    coverage.add(key + "round=-1");
+                } else if (amount > modulus && amount % modulus == 1) {
+                    coverage.add(key + "round=1");
+                }
+            });
             default -> {
                 // The boolean and set kinds have no edge; their fired and not-fired counts are the coverage.
             }
