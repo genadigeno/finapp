@@ -24708,7 +24708,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   latency figures recorded, within budget or the finding recorded against M3's trigger.
 - **Definition of done**: `DOD-TEST`. **Risk**: Medium. **Cx**: H.
 
-**P13-TST-002 — The policy battery** — `READY` (2026-10-26; marked by the coordinator at `P13-TSK-024`'s merge, master `2c60d584`; its dependencies `-003` and `-004` `COMPLETE` since 2026-10-23; never marked until now)
+**P13-TST-002 — The policy battery** — `COMPLETE` (2026-10-26, at its completion gate - the gate's record below; built alone, branch `P13-TST-002` from master `57b05c3f`; test code only - no main code, no migration; **M13.9 at 1 of 3**; marks **no task `READY`** — the coordinator does: `P13-TST-001` has been `READY` since `P13-TSK-024`'s merge, `P13-DOC-001` needs it) *(read "`READY` (2026-10-26; marked by the coordinator at `P13-TSK-024`'s merge, master `2c60d584`; its dependencies `-003` and `-004` `COMPLETE` since 2026-10-23; never marked until now)" until its gate)*
 - **Objective**: exactness and replay over a large generated population — ≥ 10,000 subjects and movement sequences
   replayed through `RISK_ENGINE_V1` under every v1 policy version in two JVMs, byte-identical; perturbations of an
   input, a rule parameter or a policy version flipping the verdict and naming their row; a fingerprint committed; a
@@ -24752,6 +24752,159 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
 - **Acceptance criteria**: ≥ 10,000 subjects replayed byte-identically in two JVMs; every perturbation flips and names
   its row; the coverage floors met; the fingerprint committed.
 - **Definition of done**: `DOD-TEST`. **Risk**: Low. **Cx**: M.
+- **Design** (2026-10-26; design, implementation and gate run straight through on the coordinator's instruction - the
+  23-point design in the task's scratch, no owner round-trip; the BNPL battery's shape, `P12-TST-002`): hermetic and
+  untagged in `risk`'s test source set (ADR-0028: no new tier); risk's own `SecondJvm` (risk refuses `creditmath`) given
+  creditmath's `start`/`join`; `Flip.namesItsRow` and selections by a splitmix64 mix of the index from the start.
+  **Refinements of the backlog, each with its reason**: (1) the oracles hold **their own statement of every v1 version**
+  (`RiskBatteryOracles.Statement`, transcribed from §12.2/C8 and the fixtures' recorded `-013`/`-014` additions) and never
+  read the fixture object, and a separate case requires the statement, translated into the production model, *equal* to
+  each `RiskPolicyFixtures.v1` - "the battery is the proof that a version is the data it says" made literal, so a band
+  edge moved in a fixture is red naming the version (the entry's first probe); (2) the fingerprint is three-level - the
+  population's (every sealed inputs digest), each version's (the battery's canonical text of the version's content, then
+  every verdict digest under it) and the battery's over all seven (owner item 69: the version row has no content digest);
+  (3) the readings are the battery's world's, computed from the state before each movement on tumbling buckets anchored at
+  Monday 1970-01-05 UTC (held equal to `WindowStarts` on every evaluation), and the ORACLE's verdict decides what counts -
+  the population is independent of the engine; T-eval's reads themselves are the storm's; (4) "one band" includes a pinned
+  fail-safe band's decision flipped, and "the policy version swapped" replays under the battery's successor versions
+  (`v2`: one threshold, one weight or lookback, one band edge, one fail-safe edge per operation), with the BNPL battery's
+  slice beside it - one subject in ten replayed whole under `v2`, `DIVERGED` exactly where the oracle predicts
+  (`INV-RSK-05`); (5) a **control** - every seal replayed under the battery's own statement, unperturbed - flips nothing (it
+  is the flip suite's red naming the version); (6) the seal records the ENGINE's decision with the challenge answered by the
+  battery's rule from it, so a disputed verdict is still sealed, replayed and controlled; (7) the requests carry what the
+  seams carry - a card payment no source account, a session only at checkout (`PaymentRiskJudgement`) - but devices and
+  authentication failures are generated where no seam carries them yet (findings 2-3). **What the battery proves, plainly**:
+  the C8 v1 fixtures. Only the amount bands' thresholds and the fail-safe bands' edges are read from the statement; every
+  other planned edge (the velocity figures, the lookbacks, the account age, structuring, dormancy, round amounts, the ratio
+  figures), the floors' row positions, the successor versions and the hand cases are written for C8's values - a production
+  version needs its own statement, edges, floors and successor before its fingerprint means anything (runbook §9.1 step 1).
+- **As built** (2026-10-26, the gate's second round): test code only - `risk/src/test`: `RiskBatteryOracles`,
+  `RiskBatteryWorld`, `RiskBattery` (the run, once per JVM), `RiskBatteryInAnotherJvm`, and the four named suites -
+  `RiskPolicyBatteryTest` (7 cases), `RiskBatteryOraclesTest` (7), `RiskBatteryCoverageTest` (5), `RiskBatteryFlipTest` (7);
+  `SecondJvm` grew `start`/`Started`, and both `abandon` and `join` destroy, wait and delete best effort - never masking the
+  caller's failure; `risk/build.gradle.kts` declares `FINAPP_RISK_BATTERY_SUBJECTS` an input of every risk test task. **The
+  population** (seed 13302): 10,000 subjects, twelve cohorts by `index mod 12` (833-834 each: ordinary, band edges, velocity
+  bursts with a party-ratio run, novelty with the account-age edge, account takeover, structuring, dormancy, round amounts,
+  corridors, hard decisions, abuse ratios with a merchant exactly at the ratio edges, the fail-safe), a calendar over
+  2027-2029; **347,296 evaluations** - 204,518 judged (TRANSFER 45,924, WITHDRAWAL 23,096, CARD_PAYMENT 56,732,
+  WALLET_PAYMENT 26,972, CROSS_BORDER 29,626 and 22,168 fail-safes) and 142,778 sweeps (`MONITORING`). **The figures**
+  (the final fresh full-size run): 0 verdicts differing from the oracle; 347,296 `IDENTICAL` (every judged seal through
+  `AssessmentReplay`, every sweep's seal re-evaluated to its digest); every explanation the oracle's step, deciding rules
+  and band; 0 window starts differing from `WindowStarts`; the second JVM's 10,001 lines equal, every line; perturbations -
+  READING 2,602, PARAMETER 2,560, BAND 2,415 (226 fail-safe bands), VERSION 2,423 - every one flipped and named its row, the
+  engine's perturbed verdict the oracle's, every kind across every cohort and every version, all twenty-two rule kinds
+  named; the slice (974 subjects) - TRANSFER 4,744 replayed / 2,056 predicted / 2,056 diverged, WITHDRAWAL 2,435/331/331,
+  CARD_PAYMENT 5,463/454/454, WALLET_PAYMENT 2,969/175/175, CROSS_BORDER 3,001/590/590, MONITORING 13,008/1,541/1,541; the
+  control 0. **Coverage** (each family's floor about half its smallest figure): every row fired (fewest 285, `MONITORING v1`
+  rule 7) and quiet (fewest 8,222) but `CARD_PAYMENT v1` rule 4, held at zero fires (finding 2); every kind fired (fewest
+  808, `STRUCTURING`); every decision each version reaches, **by each step that reaches it** - every band's decision by its
+  band, every hard decision by its rule (rarest: `WITHDRAWAL HOLD` by the band 310, `REVIEW` by its rule 366, a refused
+  `WITHDRAWAL` challenge 296), the fail-safe's decisions counted apart (fewest 722); ratings LOW 123,078 / MEDIUM 19,170 /
+  HIGH 530; every band edge's nearest reachable score on both sides (rarest 71) and the clamp in all six versions (209-353);
+  every amount band at t-1/t/t+1; the count, sum, lookback and dormancy edges; **the account age** at 6 and 7 days (1,004 /
+  1,001); **every ratio rule's share exact and one short and its count floor exact and one short** - the merchant's on card
+  and wallet (`CARD_PAYMENT v1` rule 11: 991 / 4,597 / 2,545 / 666; rule 12: 1,085 / 2,850 / 945 / 666; `WALLET_PAYMENT v1`
+  rule 11: 653 / 2,108 / 1,554 / 435; rule 12: 772 / 1,911 / 634 / 435), the party's on the sweep (`MONITORING v1` rule 9:
+  64 / 320 / 1,875 / 2,897; rule 10: 48 / 670 / 9,911 / 8,242); a round amount and its neighbours (13,425 / 6,861 / 1,621);
+  structuring at 2,500.00 and 2,500.01 (211 each); the rapid share exact (413) and one cent short (406); window boundaries
+  H1 4,094, D1 24,535, D7 11,024, D30 7,988; every corridor; the account-takeover hold 1,173; the fail-safe at every band
+  (TRANSFER 1,160/1,570, edges 500/503; CARD 789/1,835; WALLET 799/1,804; WITHDRAWAL 1,132; CROSS_BORDER 1,096), every cause
+  (fewest 355), the compiled answers, the unplaceable USD amount refused by the engine (990-1,163 per operation).
+  **Fingerprints** (the run's `P13-TST-002 FINGERPRINT` and `VERSION` lines; each version's content digest - the battery's
+  canonical text of the fixture - beside its fingerprint): population
+  `2c22367d07f8a3aef6d3b29ec7dc21e9c2d9d5d07bd6dce38dc560b5c2eef60d`; TRANSFER v1
+  `186361e3691c08cf35d8d11df289265282412b414cfc2372e12001706c0e8ed4` (content
+  `5d1e91d1bcdc2dffc666123b0179425379185042ee00201f65b6569a9bc76b36`); WITHDRAWAL v1
+  `27c4d4ea2ec084428fa6fffeaee8057561c1d52dc02ddfe1d8f1c52621196708` (content
+  `89e29827bfa76d30a7531ae4bbc63a0af98e00e3b4027cf52082fc194d0f2dae`); CARD_PAYMENT v1
+  `9a47cb4cc8eca4b112bf212374177b1fcf3e408f7c604dc6e0653e0f2d493f92` (content
+  `1ab7b25b45e1f896b292a818e5738bcaef1031597054769551145903b549bc32`); WALLET_PAYMENT v1
+  `4d3d9beb46fbdf83d810a62c28f625e6645d25a8af3a06a02efa1393b178afac` (content
+  `09ab15298aa1bc98e43c2dc676f01f05c3d0fdc051804636c981ef1943096596`); CROSS_BORDER v1
+  `7957f2f88fccfb72edeefe4b0a983a000b6c0f2162ffbdc5a14696f86d3e6a80` (content
+  `0f8c5b0ce12afbee1c5f72e9ea9d3a3169e34302d48c1260b65997fab843ce8e`); MONITORING v1
+  `88abda474d4e1a5a262e75926bcc8384de973849ce594b37927a075d8a574102` (content
+  `dbb4476a0962451935786d2ebf744e02f02d6b12de5064d3fb9b9b6cb2f07579`); **the battery**
+  `d470990578800637e77550116ba5147c77704b02c587e84f99d74a27566683c8` *(the first round's `d09ee13b…dd61b7ddad`, re-pinned
+  when the gate's second round added the ratio and age edges)*. **Time** (the final fresh run): the battery's wall 41.3 s
+  (this JVM's pass 41.3 s, the second JVM 32.2 s beside it, 12 processors); the whole hermetic `:risk:test` 51.1 s.
+- **Findings** (no defect in the engine or the policy model over 347,296 evaluations - the probes show what would have been
+  caught): (1) **`STRUCTURING`'s judged token breaks the token contract - inside the engine only.** Its token
+  `amounts:<window>:n=..,below=..,belowSum=..` names the count and sum below the version's own `below_minor`
+  (`RuleEvaluation`), where `RuleEvaluation` and `RuleHit` document a token as "the reading only, never a threshold". It
+  reaches no one today: `STRUCTURING` is a `MONITORING` kind, a `MONITORING` verdict never becomes a `RiskAssessment`, the
+  explanation door renders assessment hits only, the profile version seals the score and the inputs (no verdict text) and
+  the AML alert stores journal-entry evidence - so no investigator reads it and no production replay compares it; the
+  "replay diverges on `below_minor` alone" effect exists only inside this battery's swap (found there: 179 `MONITORING`
+  seals of a 1,200-subject run predicted `IDENTICAL` diverged before the oracle stated the dependency - `Judged.evidence`,
+  the token's figures now checked on every `STRUCTURING` hit). A `RISK_ENGINE_V2` is not forced - nothing persisted holds
+  the token and no version is active: correct the contract to state the exception, or change the V1 token and re-pin the
+  test digests while nothing is active; the trigger to decide is any future change that persists `MONITORING` hits -
+  `PHASE_13_PLAN.md` §1.2 item 71. (2) **The C8 card fixture carries a dead rule** - `CARD_PAYMENT v1` rule 4
+  (`VELOCITY_COUNT` per `SOURCE_ACCOUNT`) is `ABSENT` on every card payment, in production as here: a card payment carries no
+  source account, and the policy door admits the row - item 72; the activation gate's policy review now checks for such
+  rows (runbook §9.1 step 3). (3) Confirmed, not new: no seam carries a device or authentication failures today (`-008`,
+  `-010`, `-013`'s as-built), so `NEW_DEVICE` and `RECENT_AUTH_FAILURES` are judged here on generated readings production
+  never seals - the battery proves the engine on them, not production's reach (the transfer's account-takeover composite
+  reaches `REVIEW` in production only without its device leg). (4) **The oracle and the engine share one ordering**: both
+  read the `EvaluationInputs` velocity map, a `TreeMap` ordered by production's `VelocityKey.compareTo` - a defect that
+  collapsed two keys into one (a comparator equating two dimensions or windows) would hand both the same reading and be
+  invisible here - item 73. (5) **What equality proves**: where C8 is silent the oracle follows the engine author's
+  documented choices (the kinds' and the reading types' documentation, the as-built notes - "within" as fewer than,
+  structuring's strict sum, a never-seen payee new, `ROUND_AMOUNT`'s zero now stated in §12.2), so the battery proves the
+  engine equals its documented as-built behaviour - not the owner's intent where nobody stated it - item 74. (6) The test
+  harness: `SecondJvm` (creditmath's published copy too) deleted a file the dying child still held on Windows and threw,
+  replacing the caller's own failure - fixed in risk's copy, `abandon` and `join` both; creditmath's keeps it (a previous
+  phase's module - recorded).
+- **Probes** (twelve, each on the final population at full size, the battery run fresh by `--tests`, the file saved first
+  and restored from the saved bytes, sha256 verified - `MUTATION_TESTING.md` §2 and §4): (1) the entry's band edge -
+  `TRANSFER v1`'s CHALLENGE band from 300 to 350 in the fixture: 8 of 26 red, every one naming `TRANSFER v1` (the fixture
+  not the stated version, its fingerprint, 294 verdicts, 1,448 explanations, the control's 294 seals, the slice's 28 and 18
+  flips); (2) the entry's clamp at 999 (`Score`): 2,028 verdicts `score engine=999 oracle=1000` over all six versions, every
+  replay still `IDENTICAL` - the oracle alone sees it (5 red); (3) `VELOCITY_COUNT` strictly above (`RuleEvaluation`):
+  10,957 differences, 7 red; (4) the fail-safe band's upper edge inclusive (`FailSafeBand`): 1,504 differences - exactly the
+  coverage's 503 + 501 + 500 movements on the edges, 5 red; (5) the precedence's refused reading, a hard decision overriding
+  the band (`RiskEngineV1`): 5,973 differences, 6 red; (6) the replay no longer comparing the hits (`AssessmentReplay`): every
+  replay `IDENTICAL`, 4,676 flips `DIVERGED` without naming their rule and the slice's 3,416 - 4 red; (7) a salted
+  `Map.copyOf` order in the sealed inputs (`EvaluationInputs`): exactly the two-JVM case and the population fingerprint red,
+  every in-JVM check green; (8) the score rendered with the default locale (`CanonicalEvaluation`): the second JVM (ar-EG)
+  died on the canonical form's own guard, the run red; (9) the knob at 1,000: the census red with the floors and the flips'
+  500 - a shrunk run never passes; (10) the oracle's precedence through the engine's `RiskDecision.strictest` - the same
+  answer, every verdict agreeing: `RiskBatteryOraclesTest#theOraclesNameNoEngineCode` red alone (`RiskBatteryOracles names
+  strictest`); (11, the second round) a share read strictly above its basis points (`Ratio.atLeast`, `>`): 9,217
+  differences on the ratio rows (CARD_PAYMENT 5,227, WALLET_PAYMENT 3,606, MONITORING 384) - the exact shares now generated -
+  7 red. *(Probes 1-10 first ran on the first round's population with the same outcome and slightly different counts.)*
+- **Gate** (2026-10-26, `COMPLETE` after a second round): every scope item, oracle, perturbation, acceptance criterion and
+  named test read against the code one by one - all built. The oracles' independence, **how**: their own statement of each
+  version (never the fixture object - a separate case holds the fixture equal to it), their own sentence for every kind, the
+  clamp, the precedence, the admission and the fail-safe, and their class files - the generator's with them - read for any
+  engine type or comparison (`#theOraclesNameNoEngineCode`, proven by probe 10); their limits are findings 4 and 5.
+  Multi-instance: `PASS` on the digest - the second JVM's lines byte-identical, and a JVM-local order leaking into the
+  sealed bytes red there alone (probe 7). **First round, IMPORTANT, fixed**: (I1) the seal carried the oracle's challenge
+  answer beside the engine's decision, so a disputed verdict could not be sealed and the control never replayed it - the
+  seal now records the engine's decision; (I2) the oracle's `ROUND_AMOUNT` excluded zero because the engine does - the
+  meaning now stated in §12.2. **Second round** (the coordinator's independent review, FIX FIRST on the records - oracle
+  independence "largely yes", the generator "mostly yes", two JVMs, replay and perturbations "yes"), each fixed: (R1) item 71
+  and finding 1 overstated the `STRUCTURING` token's reach and the fix - rewritten (reaches no door and no production
+  replay; a `RISK_ENGINE_V2` not forced; the trigger named); (R2) the activation-gate procedure overstated what the battery
+  can judge - runbook §9.1 step 1 and the generator's Javadoc now say it proves the C8 fixtures and what a production version
+  needs; step 3 checks for unreachable rules; (R3) the ratio and age edges were neither planned nor floored - a merchant
+  exactly at the payment ratio edges (four variants), a party-ratio run in the thirty-day bursts and a wallet withdrawn from
+  at 6 and 7 days now generate them, every ratio rule's share-exact, share-short, count-exact and count-short edges, the
+  age edges and the round edges are floored, and probe 11 proves the exact share bites; (R4) the decision coverage counted
+  fail-safes - their decisions now keyed apart, and every decision floored by each step that can reach it; (R5) `join`
+  destroyed without waiting - the same best-effort fix as `abandon`; (R6) findings 4 and 5 recorded, items 73-74; (R7) two
+  pre-existing defects on master fixed: `CURRENT_STATE.md` §Current Phase's "M13.7 at 1 of 2 (… `-024` `READY` …)" (it
+  closed at 2 of 2) and `MUTATION_TESTING.md` §2's `DailyReplayTest#aDayNotYetClosedSaysSo` row, which carried a
+  byte-identical copy of the `A13` row pasted onto its line (`5b011ec8`) - the copy removed, each row once. The population
+  changed, so every fingerprint was re-pinned (here, `RiskBattery`, the runbook, `CURRENT_STATE.md`) and every probe re-run.
+  **MINOR, recorded**: the floors are by family (half the smallest figure of each), weaker than the BNPL battery's per tag -
+  the fingerprint pins the rest; a sweep's replay is the battery's re-evaluation of its sealed text (no production door
+  replays a profile version), a judged one is `AssessmentReplay`'s. **Tests** (fresh, the final tree): `:risk:test` 84
+  suites, 565 tests, 0 failed (the battery's four suites 26 cases among them); the guard suites by name - `TestTaxonomyTest`
+  17, `MutationDemonstrationTest` 9, `DomainGlossaryTest` 9, `AdrRegistersAreReconciledTest` 4,
+  `ArchitectureRulesAreDocumentedTest` 2, `NoFloatingPointMoneyRulesTest` 11 - 52, 0 failed. No main code, so no
+  `architectureTest`; no database part, so nothing owed (C5); no fleet run.
 
 **P13-DOC-001 — The Phase 13 exit review** — `PLANNED`
 - **Objective**: close Phase 13 against its gate (`PHASE_GATES.md` §5 Phase 13, extended by the transition), with the

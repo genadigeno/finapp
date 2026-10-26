@@ -160,6 +160,31 @@ request) and OQ-1…OQ-10 (§24 - OQ-1 read for `HOLD` in item 2; OQ-8 widened b
 70. `-024` (the coordinator's merge review): `RiskFilingUnknown` fires when the oldest `FILED` report is older than 1,800 s
     (two inquiry intervals) - right for the simulated FIU, which answers at once; a real authority's acknowledgement may
     take far longer, so the threshold is the jurisdiction's acknowledgement time, set with C4 at the activation gate.
+71. `P13-TST-002`: `STRUCTURING`'s judged token (`amounts:<window>:n=..,below=..,belowSum=..`) names the count and the sum of
+    the window's amounts below the version's own `below_minor` - figures derived from a threshold, where `RuleEvaluation`
+    and `RuleHit` document a token as "the reading only, never a threshold": a breach of the token contract, inside the
+    engine only. It reaches no one today - `STRUCTURING` is a `MONITORING` kind, a `MONITORING` verdict never becomes a
+    `RiskAssessment` (`RiskOperation.MONITORING` judges no movement), the explanation door renders assessment hits only, the
+    profile version seals the score and the inputs and no verdict text, the AML alert stores journal-entry evidence - so no
+    investigator reads it and no production replay compares it; a replay diverging on `below_minor` alone exists only in the
+    battery's own swap. Not forced to a `RISK_ENGINE_V2` (nothing persisted holds the token; no version is active): correct
+    the contract to state the exception, or change the V1 token and re-pin the test digests while nothing is active. **The
+    trigger to decide**: any change that persists `MONITORING` hits. The battery's oracle states the dependency.
+72. `P13-TST-002`: the C8 `CARD_PAYMENT` v1 fixture's rule 4 (`VELOCITY_COUNT` per `SOURCE_ACCOUNT`, ten a day) never fires -
+    a card payment carries no source account (`PaymentRiskJudgement`: present exactly for the wallet) - so "10 per 24 h per
+    source account" never protects a card, and the policy door admits the row (the kind is written for `CARD_PAYMENT`, the
+    dimension free). A real card version written alike would carry a silently dead rule: the door to refuse a
+    `SOURCE_ACCOUNT` (and `DESTINATION`) dimension for `CARD_PAYMENT`, or the activation gate's review (runbook §9.1 step 3,
+    which now checks for unreachable rules) to read it. The battery holds the row at zero fires.
+73. `P13-TST-002` (its gate's second round): the battery's oracle and the engine read one `EvaluationInputs` velocity map, a
+    `TreeMap` ordered by production's `VelocityKey.compareTo` - a defect collapsing two keys into one (a comparator that
+    equates two dimensions or two windows) would give both the same reading and stay invisible to the battery. A guard of
+    its own (`RiskVocabulariesTest`-like: every (dimension, window) pair a distinct key) or the storm's reads closes it.
+74. `P13-TST-002` (its gate's second round): where C8 is silent the battery's oracle follows the engine author's documented
+    choices - "within a lookback" as fewer than, a never-seen payee or device new, a never-happened change never recent,
+    structuring's sum strictly above, a share needing a positive denominator, `ROUND_AMOUNT`'s zero not round (§12.2) - so the
+    battery proves the engine equals its documented as-built behaviour, not the owner's intent where no one stated it. The
+    exit review ratifies these meanings or changes them (each a new engine version once a version is active).
 
 **Resolved, kept for the record**: `-007`'s "no `MONITORING` rule kind reads a signal" (`-013` admitted two); `-012` D1
 (the action re-drive moved to `RiskActionSchedule` by `-017`); `-014`/`-015` D6 (an unplaceable alert's suppression -
@@ -867,6 +892,13 @@ for `-002`'s door to tighten. The canonical form is `CanonicalEvaluation` format
 as lowercase hex, the inputs form parsed back strictly); `RiskEngineDigestTest` proves the bytes identical in a second
 JVM with another charset, locale, time zone and identity hash codes.)*
 
+*(Stated by `P13-TST-002`'s gate, 2026-10-26 - **`ROUND_AMOUNT` fires on a positive multiple of its modulus: a zero amount
+is not round.** The kind's statement said only "a multiple of the named modulus", of which zero is one; the engine has
+always read it as positive (`RuleEvaluation`), and the battery's oracle - which must take every kind from a statement,
+never from the engine's code - found the statement silent. Written here as the version-independent meaning of the kind;
+no behaviour changes. Every other kind's oracle reads a sentence of this section, the kind's own documentation, or the
+reading type's (`FirstSeen`, `LastSeen`, `Flow`, `Ratio`).)*
+
 ### 12.3 The decision model and the fail-safe (ADR-0108)
 
 Derived from what each operation can do with a judgement, not adopted as a list:
@@ -1279,6 +1311,20 @@ sequences replayed through `RISK_ENGINE_V1` in two JVMs, byte-identical; perturb
 a policy version flip the verdict and name their row; a fingerprint committed; a shrunk run fails the census.
 
 *(As built by `P13-TSK-023`, 2026-10-26 - the censuses the storm reads at every round exist as operator-runnable, audited reads and as meters, each ONE read-only `REPEATABLE READ` snapshot (`RiskProofs.requireSnapshot`), a day being a range of the writers' UUIDv7 identifiers (`RiskDay` - every table's primary key, no new index): **`AssessmentCensus`** - assessments = the owners' judged commands per operation and day, a *set* comparison by command reference in both directions through `JudgedCommands` (`app`'s `PlatformJudgedCommands` over transfers', payments', paymentmethods', ledger's and crossborder's own tables): missing, orphaned, reconciled across midnight, a refused cross-border seal unrecordable (crossborder keeps no row of it); **`MonitoringCensus`** - monitored = journal by sequence, the day's journal ids through `MonitoredLedger.entryIds` against the monitored rows' `journal_entry_id`s, bounded by the watermark (pending behind it, ahead of a reprocessing); **`AlertBornOnceCensus`** - the alerts raised that day per kind and window kind, rows against keys over every row of each key (`-020`'s AML alerts per window among them); **`CaseOneOpenCensus`** - open cases per kind and subject; **`FilingCensus`** - `-021`'s row, `FILED` reports over `regulatory_report_due`, overdue past one inquiry interval. A census names a difference (at most 20 references a list) and corrects nothing. **A command's day is its id's** (the review's M4, recorded): a transfer, a withdrawal and a cross-border payment are minted by the judged command, but a payment intent is minted at its creation and judged at its confirmation, any number of days later - so for `CARD_PAYMENT` and `WALLET_PAYMENT` the census of `D` counts the intents created on `D` that the snapshot finds judged. No difference is manufactured (a seal and its intent on different days reconcile by the cross-day lookup, both directions), but an intent created on `D` and confirmed later without its seal is named missing only by the census of `D`: the meters' reading of today and yesterday stops seeing it after two days, the decisions report for `D` does not. The exact day needs the confirmation's instant behind an index - `payment_intent_event.occurred_at` has none - a payments migration this task does not own (owner item).)*
+
+*(As built by `P13-TST-002`, 2026-10-26 - **the battery**, hermetic, in `risk`'s tests: 10,000 generated subjects (seed
+13302, twelve cohorts on a 2027-2029 calendar) and their 347,296 evaluations under all six v1 versions - every verdict
+the battery's own oracle's (`RiskBatteryOracles`: its own statement of each version and of every kind, the clamp, the
+precedence and the fail-safe, its class files proven to name no engine code), every judged seal replayed `IDENTICAL`
+through `AssessmentReplay` and explained by `Explanation`, every sweep's seal re-evaluated to its digest, the second JVM's
+lines equal, every perturbation (a reading, a parameter, a band, the version swapped for the battery's successor) flipping
+and naming its row, a control under the battery's statement flipping nothing, the floors met (every ratio rule's exact and
+one-short edges among them); three fingerprints committed - the population's, each version's (its content and every
+verdict under it), the battery's - for runbook §9.1 step 1. **It proves the C8 v1 fixtures**: its planned edges, floors,
+successor versions and hand cases are written for C8's figures, so a production version needs its own before its
+fingerprint means anything. No engine or policy defect; findings in §1.2 items 71-74 (`STRUCTURING`'s token, the card
+fixture's dead row, the shared velocity ordering, the documented as-built meanings). `FINAPP_RISK_BATTERY_SUBJECTS`
+shrinks it for a probe only and fails the census.)*
 
 ---
 
