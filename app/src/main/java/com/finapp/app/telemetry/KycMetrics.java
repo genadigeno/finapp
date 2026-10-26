@@ -64,7 +64,12 @@ final class KycMetrics {
         // Built through KycMeters, the same definition the owners use, so the two registrations
         // cannot drift apart; registration is idempotent, so sharing is safe.
         for (com.finapp.kyc.CheckOutcome outcome : com.finapp.kyc.CheckOutcome.values()) {
-            KycMeters.check(registry, outcome.name().toLowerCase(java.util.Locale.ROOT));
+            for (com.finapp.kyc.CheckPurpose purpose : com.finapp.kyc.CheckPurpose.values()) {
+                KycMeters.check(
+                        registry,
+                        outcome.name().toLowerCase(java.util.Locale.ROOT),
+                        purpose.name().toLowerCase(java.util.Locale.ROOT));
+            }
         }
         KycMeters.providerLatency(registry);
 

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.kyc.CheckId;
 import com.finapp.kyc.CheckOutcome;
+import com.finapp.kyc.CheckStatus;
 import com.finapp.kyc.CheckStore;
 import com.finapp.kyc.CheckType;
 import com.finapp.kyc.KycCase;
@@ -26,9 +27,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -82,6 +85,30 @@ class KycScreeningClearancesTest {
     }
 
     @Test
+    @DisplayName("P13-TSK-022's door: a list update's rescreen is read - an onboarding clear 400 days old, a rescreen hit"
+            + " yesterday reads as a hit - and judged per type: a later PEP clear never masks a SANCTIONS hit")
+    void aRescreenIsReadAndJudgedPerType() {
+        checks.add(check(CheckType.SANCTIONS, CheckOutcome.CLEAR, Instant.now(CLOCK).minus(Duration.ofDays(400))));
+        checks.add(check(CheckType.PEP, CheckOutcome.CLEAR, Instant.now(CLOCK).minus(Duration.ofDays(400))));
+        VerificationCheck sanctionsHit = rescreen(CheckType.SANCTIONS, CheckStatus.HIT, Duration.ofDays(2));
+        checks.add(sanctionsHit);
+        assertThat(clearances.latestFor(null, party)).hasValueSatisfying(clearance -> {
+            assertThat(clearance.hit()).isTrue();
+            assertThat(clearance.screeningId()).isEqualTo(sanctionsHit.id().value());
+        });
+        checks.add(rescreen(CheckType.PEP, CheckStatus.CLEAR, Duration.ofDays(1)));
+        assertThat(clearances.latestFor(null, party)).as("the PEP list's later clear masks nothing")
+                .hasValueSatisfying(clearance -> {
+                    assertThat(clearance.hit()).isTrue();
+                    assertThat(clearance.screeningId()).isEqualTo(sanctionsHit.id().value());
+                });
+        VerificationCheck sanctionsClear = rescreen(CheckType.SANCTIONS, CheckStatus.CLEAR, Duration.ofHours(1));
+        checks.add(sanctionsClear);
+        assertThat(clearances.latestFor(null, party)).as("the SANCTIONS list asked again, and clear")
+                .hasValueSatisfying(clearance -> assertThat(clearance.hit()).isFalse());
+    }
+
+    @Test
     @DisplayName("an undecided or indeterminate check is not a clearance, and an identity or document check never is")
     void onlyADecidedScreeningCheckCounts() {
         checks.add(requested(CheckType.SANCTIONS));
@@ -105,6 +132,12 @@ class KycScreeningClearancesTest {
     private VerificationCheck check(CheckType type, CheckOutcome outcome, Instant decidedAt) {
         return VerificationCheck.rehydrate(CheckId.next(IDS), kycCase, type, outcome.toStatus(),
                 decidedAt.minus(Duration.ofMinutes(1)), decidedAt);
+    }
+
+    private VerificationCheck rescreen(CheckType type, CheckStatus status, Duration ago) {
+        Instant asked = Instant.now(CLOCK).minus(ago);
+        return VerificationCheck.rehydrate(CheckId.next(IDS), kycCase, type, status, asked, asked.plusSeconds(1),
+                com.finapp.kyc.CheckPurpose.RESCREEN);
     }
 
     private VerificationCheck requested(CheckType type) {
@@ -157,6 +190,12 @@ class KycScreeningClearancesTest {
 
         @Override
         public Optional<PartyId> partyOfCustomer(Connection unitOfWork, CustomerId customerId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public java.util.List<PartyId> customerPartiesAfter(Connection unitOfWork,
+                java.util.Set<com.finapp.party.CustomerStatus> statuses, Optional<PartyId> after, int limit) {
             throw new UnsupportedOperationException();
         }
 
@@ -221,7 +260,44 @@ class KycScreeningClearancesTest {
 
         @Override
         public List<VerificationCheck> forCase(Connection unitOfWork, KycCaseId caseId) {
-            return rows.stream().filter(check -> check.caseId().equals(caseId)).toList();
+            // kyc's onboarding read: a rescreen is not one of them (kyc V011) - the reader must not depend on it.
+            return rows.stream().filter(check -> check.caseId().equals(caseId)).filter(VerificationCheck::onboarding)
+                    .toList();
+        }
+
+        @Override
+        public List<VerificationCheck> allForCase(Connection unitOfWork, KycCaseId caseId) {
+            // T-eval's read is bounded (the review's MINOR 6): never every check of a case.
+            throw new UnsupportedOperationException("allForCase");
+        }
+
+        @Override
+        public List<VerificationCheck> latestDecidedScreenings(Connection unitOfWork, KycCaseId caseId) {
+            // The store's statement in memory: per screening type the decided check asked last, both purposes.
+            return Stream.of(CheckType.SANCTIONS, CheckType.PEP)
+                    .flatMap(type -> rows.stream()
+                            .filter(check -> check.caseId().equals(caseId) && check.type() == type)
+                            .filter(check -> check.status() == CheckStatus.CLEAR || check.status() == CheckStatus.HIT)
+                            .max(Comparator.comparing(VerificationCheck::requestedAt)
+                                    .thenComparing(VerificationCheck::statusChangedAt))
+                            .stream())
+                    .toList();
+        }
+
+        @Override
+        public Requested requestRescreen(Connection unitOfWork, KycCaseId caseId, CheckType type, CheckId fresh,
+                String rescreenKey) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Optional<VerificationCheck> findRescreen(Connection unitOfWork, String rescreenKey) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Optional<String> rescreenKeyOf(Connection unitOfWork, CheckId checkId) {
+            throw new UnsupportedOperationException();
         }
 
         @Override

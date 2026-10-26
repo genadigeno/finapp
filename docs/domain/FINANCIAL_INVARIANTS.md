@@ -412,6 +412,26 @@ Subsequent economic changes are new operations (reversal, refund, chargeback).
 **Verify:** Transition tests from every terminal state.
 **Phase:** 4 onward
 
+*(Amended by `P13-TSK-022`, 2026-10-26 - the owner's decision O1 "add the kyc door"; ADR-0035's amendment; the
+coordinator's default and, from the task's second review, its fail-closed rule for an undecided case - both to be
+ratified by the owner at `P13-DOC-001`: **a list update is answered beside a decided KYC case, never by reopening it or
+by a new case.** When a sanctions or PEP list changes, kyc re-screens a party by a **`RESCREEN` check** on its latest
+case (kyc `V011`, keyed by risk's permit and an ordinal). On a **decided** case it is evidence beside the decision, never
+a re-decision - the case stays `APPROVED` (or `REJECTED`), the customer's relationship does not move, and the rescreen's
+own assessment opens no review task (`CaseAssessment.assessRescreened` assesses nothing on a case it reads decided). The
+one exception is a race, recorded as it is: a hit whose assessment read the case undecided while a concurrent decision
+was being made may still open its review task on the just-decided case - `OPEN`, resolvable, moving nothing (a late
+onboarding hit's precedent) - and that decision's evidence does not name it. On a case **not yet decided** its `HIT`
+counts - it blocks the automatic approval and routes the case to review exactly as an onboarding hit does
+(`INV-KYC-04`), and the decision's move waits on its open task (`KycCaseStore.moveStatus`, the task's last review); its
+`CLEAR`, in flight or unknown it neither holds nor proceeds the case. Either way a hit is risk's to act on too: its
+`SCREENING_HIT` fact alert, one per party and list version, folded into the party's `AML` case, which a person works. A
+changed circumstance *of the person* still opens a new case. Verified by `ChecksAssessmentTest#aRescreenHitOfAnUndecidedCaseNeedsAPerson`
+(probed), `#theDecisionsEvidenceIsEveryAnsweredCheck`, `CheckStorePurposeTest`, `KycRescreenMigrationTest`,
+`RescreenRoutingTest` (probed) and the owed `RescreeningDatabaseTest#aPostDecisionHitAlertsOnceAndCasesAndTheDecisionStands`,
+`#aLateCallbackForARescreenAssessesNothing`, `#aRescreenHitBeforeTheDecisionNeedsAPerson`,
+`#aRescreenHitOnACaseInReviewOpensItsTask`, `#aRescreenHitOnACaseReadyForDecisionHoldsTheDecision`.)*
+
 ---
 
 # Reversal and Correction — `INV-REV`
@@ -2959,6 +2979,14 @@ stands, the domain's outcome is recorded, nothing is retried by risk (`P13-TSK-0
 domain's key (`P13-TSK-017`); `WithdrawalHoldDatabaseTest#releaseAndExpiryLeaveExactlyOne`
 (`P13-TSK-012`); the storm's census at every round — every refusal left the ledger as it was, every
 `HELD` withdrawal holds exactly its one hold, no `FAILED` withdrawal holds any (`P13-TST-001`).
+*(As built by `P13-TSK-022`, 2026-10-26: `RESCREEN_PARTY` is not a risk action - the rescreening is the sweep's, and
+**risk asks, kyc screens**: `PartyRescreening` places the party through kyc's and party's own stores on a snapshot of its
+own and writes nothing of either; kyc screens through its own re-screening door (`VerificationRunService.rescreen`, the
+owner's decision O1 - kyc's own transactions write kyc's `RESCREEN` check, its evidence and its trail, never a risk
+transaction). Risk records kyc's answer as a signal only when kyc was **asked** it at or after the list version's
+activation (one clock, the database's) - a stale, pending or unavailable answer is never recorded as a clearance
+(`RescreeningRunTest#aStaleClearanceIsNotARescreen`, probed); T-eval reads kyc's latest decided screening per type through
+kyc's bounded `latestDecidedScreenings`.)*
 **Phase:** 13
 
 ### INV-RSK-03 — A velocity window is a durable row written in the judged command's transaction, equal to what it counts
@@ -3157,6 +3185,18 @@ one report is the drive's: `FILED` once (`regulatory_report_event`'s key), the f
 inquires by the filing reference - a lost answer asked for, never filed again. Verified hermetically by
 `RegulatoryReportTest#oneOpenDraftPerCase`, `#aLostFilingResponseIsInquiredNeverReFiled`, `#tenFilersFileOnce` and
 `RegulatoryReportMigrationTest#oneLiveReportPerCase`; on the database by `RegulatoryReportDatabaseTest`, owed (C5).)*
+*(As built by `P13-TSK-022`, 2026-10-26, `risk V018`: the rescreening's arbiters - one permit per (party, list version)
+(`rescreening_permit_once`, the enqueue's `ON CONFLICT`), one clearance signal per permit (its `source_event_id` the
+permit's id; `rescreening_permit_signal_is_its_own`), **one `SCREENING_HIT` alert per (party, list version)** - the
+born-once unique re-made over `fact_signal_id`, the alert's one signal, beside (party, rule, the activation's `D1` day),
+`NULLS NOT DISTINCT` so every other kind's identity is `V010`'s (`risk_alert_born_once`; the task's second review,
+IMPORTANT 3: a second list's or version's hit of a party on one day is its own alert, born and folded, never lost to a
+case the first one's investigator closed); one kyc question per key (`verification_check_rescreen_once`) and one new key
+ordinal per claim; a permit concluded once, at the claimed attempt; a second activation of one list version refused.
+Verified hermetically by `RescreeningRunTest` (`#anActivationEnqueuesEveryActivePartyOnce`, `#tenSweepersRescreenOnce`,
+`#aLeaseLostMidAskRecordsOnce`, `#aHitAlertsOnceAndCases`, `#aSecondHitOfTheDayAfterTheFirstCaseClosedIsCased`, probed),
+`RiskAlertTest#aScreeningHitIsKeyedByItsSignal`, `ScreeningListVersionTest`, `ScreeningListMigrationTest#theArbiters`,
+`#oneAlertPerPartyAndListVersion`; on the database by `RescreeningDatabaseTest`, owed (C5).)*
 **Phase:** 13
 
 ### INV-RSK-07 — Every consequential risk act is two persons' acts, and a refused self-approval is recorded `FAILED`
@@ -3542,6 +3582,14 @@ longer `REQUESTED`), `..._basis_matches_the_outcome` (`REVIEWER` exactly for `RE
 (a reviewer, or the platform under a stated automatic policy), its reason, the policy version
 applied (`INV-HIST-04`) and the evidence it rested on. Changed circumstances produce a new case
 event, never an edit.
+*(`P13-TSK-022`, 2026-10-26: a sanctions or PEP list update is not a changed circumstance of the person - it is
+answered by a `RESCREEN` check (kyc `V011`; `INV-LIFE-04`'s amendment), never by an edit and never by a new case. Beside
+a decided case the decision and the evidence it rested on stand. A case decided **after** a rescreen answered - the
+task's second review, fail-closed - rests on it: the decision's evidence is every onboarding check and every rescreen
+answered `CLEAR` or `HIT` (`ChecksAssessment.decisionEvidence`, for the automatic and the reviewer's decision alike), so a
+rescreen hit the reviewer resolved is named in the record they defend. Verified by
+`ChecksAssessmentTest#theDecisionsEvidenceIsEveryAnsweredCheck` and the owed
+`RescreeningDatabaseTest#aRescreenHitBeforeTheDecisionNeedsAPerson`.)*
 **Why:** An onboarding decision is the record later financial phases gate on and the record a
 dispute replays. `INV-CRD-02`'s regime, three phases early, for the same reason.
 **Enforce:** `DB-PRIVILEGE` (no `UPDATE`/`DELETE` for the application role) + `DB-CONSTRAINT`
@@ -3572,6 +3620,20 @@ is a person refused service by string similarity. Both are invisible without the
 **Verify:** Negative authorization tests; a test asserting a hit case cannot reach a terminal
 state without a recorded review decision.
 **Phase:** 2
+
+*(`P13-TSK-022`'s second review, 2026-10-26 - the coordinator's fail-closed rule, to be ratified by the owner at
+`P13-DOC-001`: **a list update's hit on a case not yet decided is resolved by a person too.** A `RESCREEN` check's `HIT`
+on an undecided case blocks its automatic approval, opens its review task and routes the case to `IN_REVIEW` exactly as
+an onboarding hit does (`ChecksAssessment.of`, `needingReview`; `CaseAssessment.assessRescreened` after the rescreen's
+outcome commits, on the run's path and the late callback alike); a `READY_FOR_DECISION` case, which cannot move back,
+gets the task, and **no decision is recorded past an `OPEN` review task** (the task's last review, item 1:
+`KycCaseStore.moveStatus` to a terminal status locks the case row and requires none open - the decision waits, the
+reviewer resolves the hit first, and the decision names it; the same guard closes the gap a late onboarding hit had
+before this task - `DecisionMovePastOpenTasksTest`, probed; the owed
+`RescreeningDatabaseTest#aRescreenHitOnACaseReadyForDecisionHoldsTheDecision`). On a decided case the hit is risk's `SCREENING_HIT` alert in the
+party's `AML` case - a person still. Verified by `ChecksAssessmentTest#aRescreenHitOfAnUndecidedCaseNeedsAPerson`
+(probed) and the owed `RescreeningDatabaseTest#aRescreenHitBeforeTheDecisionNeedsAPerson`,
+`#aRescreenHitOnACaseInReviewOpensItsTask`.)*
 
 *(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0081 (`Proposed`), in force when
 `P9-TSK-016` lands: extended to counterparty screening, where an **unverified payee is

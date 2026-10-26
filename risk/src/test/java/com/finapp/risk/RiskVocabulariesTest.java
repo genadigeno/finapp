@@ -139,7 +139,7 @@ class RiskVocabulariesTest {
 
     @Test
     @DisplayName("eight alert kinds, each investigative one folding into a case kind, the two operational ones into none,"
-            + " the one fact (P13-TSK-025) into COLLECTIONS")
+            + " the two facts - a default (P13-TSK-025) into COLLECTIONS, a rescreening hit (P13-TSK-022) into AML")
     void theAlertKinds() {
         assertThat(names(AlertKind.values())).containsExactly("FRAUD", "ACCOUNT_TAKEOVER", "MERCHANT_ABUSE", "AML",
                 "SCREENING_HIT", "UNCLASSIFIED_TRANSACTION", "VELOCITY_DIVERGENCE", "OBLIGATION_DEFAULTED");
@@ -155,9 +155,11 @@ class RiskVocabulariesTest {
                 .as("a collections case opens on its default's alert, a fact (C3, P13-TSK-025)")
                 .isEqualTo(AlertKind.OBLIGATION_DEFAULTED);
         assertThat(java.util.Arrays.stream(AlertKind.values()).filter(AlertKind::fact))
-                .containsExactly(AlertKind.OBLIGATION_DEFAULTED);
+                .containsExactly(AlertKind.SCREENING_HIT, AlertKind.OBLIGATION_DEFAULTED);
         assertThat(java.util.Arrays.stream(AlertKind.values()).filter(AlertKind::ownCode)).containsExactly(
-                AlertKind.UNCLASSIFIED_TRANSACTION, AlertKind.VELOCITY_DIVERGENCE, AlertKind.OBLIGATION_DEFAULTED);
+                AlertKind.SCREENING_HIT, AlertKind.UNCLASSIFIED_TRANSACTION, AlertKind.VELOCITY_DIVERGENCE,
+                AlertKind.OBLIGATION_DEFAULTED);
+        assertThat(AlertKind.SCREENING_HIT.factSubject()).contains(SubjectKind.PARTY);
         assertThat(names(AlertSeverity.values())).containsExactly("LOW", "MEDIUM", "HIGH", "CRITICAL");
     }
 
@@ -255,7 +257,7 @@ class RiskVocabulariesTest {
             + " doors' four and four (-002), the reprocessing door's one and one (-019), the profile read's act (-007), the"
             + " override doors' two and four (-012), the alert machine's two and three (-015), the case's five and eight"
             + " (-016), the action machine's none and four (-017), the queues' one and two (-018), the regulatory report's"
-            + " two and six (-021) - namespaced risk., the"
+            + " two and six (-021), the list version's none and two (-022) - namespaced risk., the"
             + " refusals 403, the policy codes"
             + " the register's statuses")
     void theCodesAndActions() {
@@ -317,8 +319,12 @@ class RiskVocabulariesTest {
                         // P13-TSK-021: the report's three acts, the authority's two answers, the AML desk's read.
                         "risk.ReportDrafted", "risk.ReportApproved", "risk.ReportFiled", "risk.ReportAcknowledged",
                         "risk.ReportRejected", "risk.RegulatoryReportRead",
+                        // P13-TSK-022: the list version's two acts.
+                        "risk.ListVersionRecorded", "risk.ListVersionActivated",
                         // P13-TSK-023: the operations reports' audited read.
                         "risk.ReportRead");
+        assertThat(RiskAuditAction.LIST_VERSION_RECORDED.requiresReason()).isTrue();
+        assertThat(RiskAuditAction.LIST_VERSION_ACTIVATED.requiresReason()).isTrue();
         assertThat(RiskAuditAction.ACTION_PROPOSED.requiresReason()).isTrue();
         assertThat(RiskAuditAction.ACTION_APPROVED.requiresReason()).isTrue();
         assertThat(RiskAuditAction.ACTION_REJECTED.requiresReason()).isTrue();

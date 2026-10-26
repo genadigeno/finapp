@@ -66,15 +66,18 @@ public enum ChecksAssessment {
      *     assessing as clear-to-proceed would decide a case by absence of evidence
      */
     public static ChecksAssessment of(
-            Set<CheckType> requiredTypes, Collection<VerificationCheck> checks) {
+            Set<CheckType> requiredTypes, Collection<VerificationCheck> all) {
         Objects.requireNonNull(requiredTypes, "requiredTypes must not be null");
-        Objects.requireNonNull(checks, "checks must not be null");
+        Objects.requireNonNull(all, "checks must not be null");
+        Collection<VerificationCheck> checks = onboarding(all);
         if (requiredTypes.isEmpty()) {
             // No requirement can never mean "proceed": it means nobody has said what a run is.
             throw new IllegalArgumentException("a verification run requires at least one type");
         }
 
-        if (checks.stream().anyMatch(check -> check.status() == CheckStatus.HIT)) {
+        // A HIT of either purpose: a RESCREEN hit the caller passed (an undecided case's - P13-TSK-022's review,
+        // fail-closed) is resolved by a person exactly as an onboarding hit is (INV-KYC-04).
+        if (all.stream().anyMatch(check -> check.status() == CheckStatus.HIT)) {
             return BLOCKED;
         }
         if (checks.stream().anyMatch(check -> !check.status().isTerminal())) {
@@ -107,12 +110,13 @@ public enum ChecksAssessment {
      * from; its predecessors stay true beside it (ADR-0038).
      */
     public static List<VerificationCheck> needingReview(
-            Set<CheckType> requiredTypes, Collection<VerificationCheck> checks) {
-        if (of(requiredTypes, checks) != BLOCKED) {
+            Set<CheckType> requiredTypes, Collection<VerificationCheck> all) {
+        Collection<VerificationCheck> checks = onboarding(all);
+        if (of(requiredTypes, all) != BLOCKED) {
             return List.of();
         }
         List<VerificationCheck> needing = new ArrayList<>();
-        for (VerificationCheck check : checks) {
+        for (VerificationCheck check : all) {
             if (check.status() == CheckStatus.HIT) {
                 needing.add(check);
             }
@@ -128,6 +132,33 @@ public enum ChecksAssessment {
                     .ifPresent(needing::add);
         }
         return List.copyOf(needing);
+    }
+
+    /**
+     * The evidence a decision of an <strong>undecided</strong> case rests on (`P13-TSK-022`'s review):
+     * every onboarding check, and every {@link CheckPurpose#RESCREEN} check answered {@code CLEAR} or
+     * {@code HIT} - a list update's answer that arrived before the decision is part of it. A rescreen
+     * still in flight or answered "we do not know" is not evidence of anything.
+     */
+    public static List<VerificationCheck> decisionEvidence(Collection<VerificationCheck> all) {
+        Objects.requireNonNull(all, "checks must not be null");
+        return all.stream()
+                .filter(check -> check.onboarding()
+                        || check.status() == CheckStatus.CLEAR
+                        || check.status() == CheckStatus.HIT)
+                .toList();
+    }
+
+    /**
+     * The case's onboarding checks alone (`P13-TSK-022`): only they answer the run's required types,
+     * hold it {@code INCOMPLETE} while in flight and spend its retry budget. A {@link
+     * CheckPurpose#RESCREEN} check the caller passed counts for one thing - its {@code HIT} blocks (see
+     * {@link #of}); in flight, clear or unknown it neither holds nor proceeds the run, so a stranded
+     * rescreen can never deadlock an onboarding.
+     */
+    private static Collection<VerificationCheck> onboarding(Collection<VerificationCheck> all) {
+        Objects.requireNonNull(all, "checks must not be null");
+        return all.stream().filter(VerificationCheck::onboarding).toList();
     }
 
     /** The store's {@code ORDER BY requested_at DESC, id DESC}, in memory. */

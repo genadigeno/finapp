@@ -27,6 +27,10 @@ public interface CheckStore<T> {
      * {@code INDETERMINATE} under the retry budget invites a <em>new</em> check, and one at the
      * budget is converged on because the assessment routes the type to a person (`P2-TSK-010`,
      * correcting this doc's earlier "any state": an unknown is not an answer, ADR-0038).
+     *
+     * <p>An {@link CheckPurpose#ONBOARDING} check, always: since `P13-TSK-022` a rescreen of the
+     * case is neither converged on, counted against the budget nor held by the one-in-flight
+     * index ({@code kyc V011}) - a list update's question is not the run's.
      */
     Requested requestOrConverge(T unitOfWork, VerificationCheck fresh);
 
@@ -56,8 +60,65 @@ public interface CheckStore<T> {
      */
     boolean complete(T unitOfWork, CheckId checkId, CheckOutcome outcome, Instant at);
 
-    /** Every check of a case, evidence excluded. */
+    /**
+     * The case's <strong>onboarding</strong> checks, evidence excluded - what a <em>decided</em>
+     * case's re-assessment reads (a duplicate callback's healing), as it always has.
+     *
+     * <p>`P13-TSK-022` ({@code kyc V011}): a {@link CheckPurpose#RESCREEN} check is not one of
+     * them - on a decided case a list update's screening is evidence beside the decision, never a
+     * re-decision, so a decided case's re-assessment never opens a review task for it.
+     */
     List<VerificationCheck> forCase(T unitOfWork, KycCaseId caseId);
+
+    /**
+     * Every check of a case, onboarding and rescreen alike, evidence excluded (`P13-TSK-022` and
+     * its review's fail-closed rule): what an <em>undecided</em> case's assessment and decision
+     * read - a rescreen's {@code HIT} before the decision blocks the automatic approval and needs a
+     * person ({@link ChecksAssessment#of}), and the decision's evidence names every answered
+     * rescreen ({@link ChecksAssessment#decisionEvidence}) - and what the reviewer reads, decided
+     * or not, so a rescreen beside the decision is visible to the person defending it.
+     */
+    List<VerificationCheck> allForCase(T unitOfWork, KycCaseId caseId);
+
+    /**
+     * Per screening type - {@code SANCTIONS}, {@code PEP} - the case's decided check
+     * ({@code CLEAR} or {@code HIT}) asked last, onboarding or rescreen alike: at most one row per
+     * type (`P13-TSK-022`'s review). Risk's screening-hit reading on T-eval's hot path reads this -
+     * one index probe per type on {@code kyc V011}'s {@code verification_check_decided_latest},
+     * never every check of a case, whose rescreens accumulate with every list update.
+     */
+    List<VerificationCheck> latestDecidedScreenings(T unitOfWork, KycCaseId caseId);
+
+    /**
+     * Requests a {@link CheckPurpose#RESCREEN} screening of {@code type} on {@code caseId} under
+     * {@code rescreenKey}, or converges on the check that key already asked (`P13-TSK-022`, the
+     * owner's decision O1; {@code kyc V011}).
+     *
+     * <p><strong>Keyed, never converged on an answer of another question.</strong> The key -
+     * risk's permit key and its retry ordinal - is unique ({@code
+     * verification_check_rescreen_once}): a second ask under it, from any instance, a lease lost
+     * mid-call or a replay, lands on the same row, so one key is one question and one provider
+     * effect (the dispatch below is still conditional). It never converges on an answered
+     * onboarding check (that is the point: the list changed), and onboarding's one-in-flight
+     * index does not hold it - a rescreen and an onboarding run are two questions. The ask's
+     * instant is the <strong>database's</strong> ({@code clock_timestamp()}), the clock the
+     * list version's activation is stamped on, so "asked after the activation" is one clock.
+     *
+     * @param fresh the identifier a created row takes - ignored when the key already asked
+     * @throws IllegalArgumentException for a type that is not a screening
+     * @throws IllegalStateException when the key already asked another case or another type
+     */
+    Requested requestRescreen(
+            T unitOfWork, KycCaseId caseId, CheckType type, CheckId fresh, String rescreenKey);
+
+    /** The check {@code rescreenKey} asked, if it asked one (`P13-TSK-022`). */
+    Optional<VerificationCheck> findRescreen(T unitOfWork, String rescreenKey);
+
+    /**
+     * The key a {@code RESCREEN} check was asked under - empty for an onboarding check or none (`P13-TSK-022`'s last
+     * review): how a hit kyc recorded on a list update's question is told back to the permit that asked it.
+     */
+    Optional<String> rescreenKeyOf(T unitOfWork, CheckId checkId);
 
     /**
      * Appends the raw bytes a provider answered with, verbatim ({@code INV-HIST-02}).

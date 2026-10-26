@@ -136,6 +136,13 @@ class RiskAlertTest {
         assertThat(AlertRule.codes()).containsExactlyElementsOf(expected);
         assertThat(AlertRule.named("NOT_A_RULE")).isEmpty();
         assertThat(AlertRule.of(RuleKind.STRUCTURING).ruleKind()).contains(RuleKind.STRUCTURING);
+        // P13-TSK-022 (risk V018): SCREENING_HIT is a rule kind's name and the rescreening fact's own code - one code, the
+        // fact's; no rule raises an alert under it.
+        assertThat(AlertRule.codes()).containsOnlyOnce("SCREENING_HIT");
+        assertThatThrownBy(() -> AlertRule.of(RuleKind.SCREENING_HIT)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(AlertRule.fact(AlertKind.SCREENING_HIT).ownCode()).isTrue();
+        assertThat(AlertKind.SCREENING_HIT.factSubject()).contains(SubjectKind.PARTY);
+        assertThat(AlertKind.SCREENING_HIT.caseKind()).contains(CaseKind.AML);
         assertThat(AlertRule.operational(AlertKind.VELOCITY_DIVERGENCE).operational()).isTrue();
         assertThatThrownBy(() -> AlertRule.operational(AlertKind.AML)).isInstanceOf(IllegalArgumentException.class);
 
@@ -155,11 +162,12 @@ class RiskAlertTest {
                 AlertRule.operational(AlertKind.VELOCITY_DIVERGENCE), AlertWorld.day(), Optional.of(AlertWorld.policy()),
                 one, AlertWorld.correlation(), CausationId.of("c")))
                 .as("a rule's alert is never raised under an operational code").isInstanceOf(IllegalArgumentException.class);
-        assertThatCode(() -> NewAlert.ofRule(AlertKind.SCREENING_HIT, AlertSeverity.CRITICAL, subject,
+        // P13-TSK-022 (risk V018): SCREENING_HIT names an alert kind and a rule kind - the name is the rescreening fact's,
+        // so its alert is raised as a fact (its own code, no policy) and never as a rule's.
+        assertThatThrownBy(() -> NewAlert.ofRule(AlertKind.SCREENING_HIT, AlertSeverity.CRITICAL, subject,
                 RuleKind.SCREENING_HIT, AlertWorld.day(), AlertWorld.policy(), one, AlertWorld.correlation(),
                 CausationId.of("c")))
-                .as("SCREENING_HIT names an alert kind and a rule kind: its rule's alert is admitted")
-                .doesNotThrowAnyException();
+                .as("SCREENING_HIT is a fact's own code: no rule's alert under it").isInstanceOf(IllegalArgumentException.class);
         assertThatCode(() -> NewAlert.operational(AlertKind.VELOCITY_DIVERGENCE, AlertSeverity.LOW, subject,
                 AlertWorld.day(), AlertEvidence.NONE, AlertWorld.correlation(), CausationId.of("c")))
                 .as("an operational alert may carry no reference").doesNotThrowAnyException();
@@ -177,6 +185,28 @@ class RiskAlertTest {
         AlertKey c = new AlertKey("b", "AMOUNT_BAND", NOW);
         assertThat(List.of(c, b, a).stream().sorted().toList()).containsExactly(a, b, c);
         assertThat(alert.toString()).doesNotContain(subject.ref());
+        assertThat(alert.key().factSignal()).as("a rule's alert: no signal in its identity").isEmpty();
+    }
+
+    @Test
+    @DisplayName("P13-TSK-022's review, IMPORTANT 3: a SCREENING_HIT's identity carries its one signal - one alert per"
+            + " (party, list version) - and no other kind's does; two such keys of a day differ and order by the signal")
+    void aScreeningHitIsKeyedByItsSignal() {
+        SignalSubject party = AlertWorld.freshParty();
+        RiskSignalId pep = RiskSignalId.of(EvaluationWorld.IDS.next());
+        RiskSignalId sanctions = RiskSignalId.of(EvaluationWorld.IDS.next());
+        NewAlert first = NewAlert.ofFact(AlertKind.SCREENING_HIT, AlertSeverity.CRITICAL, party, AlertWorld.day(), pep,
+                AlertWorld.correlation(), CausationId.of("permit-1"));
+        NewAlert second = NewAlert.ofFact(AlertKind.SCREENING_HIT, AlertSeverity.CRITICAL, party, AlertWorld.day(),
+                sanctions, AlertWorld.correlation(), CausationId.of("permit-2"));
+        assertThat(first.key().factSignal()).contains(pep.value());
+        assertThat(first.key()).isNotEqualTo(second.key());
+        assertThat(first.key()).isEqualTo(new AlertKey(party.ref(), "SCREENING_HIT", AlertWorld.day().start(),
+                Optional.of(pep.value())));
+        assertThat(Integer.signum(first.key().compareTo(second.key())))
+                .isEqualTo(Integer.signum(pep.value().toString().compareTo(sanctions.value().toString())));
+        assertThat(Arrays.stream(AlertKind.values()).filter(AlertKind::oneAlertPerSignal))
+                .containsExactly(AlertKind.SCREENING_HIT);
     }
 
     // -----------------------------------------------------------------

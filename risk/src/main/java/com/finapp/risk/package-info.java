@@ -257,5 +257,17 @@
  * caller entering the platform's actor; the outcome recorded once by a conditional edge. {@code SUSPEND_ACCOUNT},
  * {@code REINSTATE_ACCOUNT} and {@code BLOCK_BENEFICIARY} have no owning command and are unavailable
  * ({@link com.finapp.risk.ActionKind#available()}); {@code RESCREEN_PARTY} is the rescreening sweep's (`-022`).
+ *
+ * <p><strong>The rescreening</strong> (`P13-TSK-022`, {@code risk V018}; section 12.10 of the plan): T-list -
+ * {@link com.finapp.risk.ScreeningListVersions} over {@link com.finapp.risk.ScreeningListStore}
+ * ({@code JdbcScreeningListStore}): a {@link com.finapp.risk.ScreeningListVersion} recorded by a person, activated by a
+ * second ({@code RECORDED → ACTIVE → RETIRED}, the predecessor retired beside it), its enqueue left due; the leg -
+ * {@link com.finapp.risk.RescreeningRun}: the enqueue in bounded batches over {@link com.finapp.risk.ActiveParties} (one
+ * {@link com.finapp.risk.RescreeningPermit} per party and version, {@link com.finapp.risk.RescreeningPermitStore}), then
+ * each permit's three steps - the claim committed, kyc's re-screening door asked through
+ * {@link com.finapp.risk.PartyRescreening} on no risk transaction (a post-decision check keyed by the permit, the owner's
+ * decision O1), the conclusion at the claimed attempt: kyc's keyed answer recorded as {@code SCREENING_CLEARED} or
+ * {@code SCREENING_HIT} (risk's own signal kinds, {@link com.finapp.risk.SignalKind.Origin#RISK}), a hit's fact alert
+ * raised once and folded; otherwise deferred and failed at the bound - the leg {@code RiskActionSchedule}'s third. {@link com.finapp.risk.RescreeningObserver} is the meters' port.
  */
 package com.finapp.risk;

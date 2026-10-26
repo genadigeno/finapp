@@ -50,9 +50,11 @@ class RiskMetricTagsAreBoundedTest {
 
     /** Each tag key a risk meter carries, and the closed vocabulary its value is from. */
     static final Map<String, Set<String>> VOCABULARIES = Map.of(
-            // An alert's, a case's or an action's kind - and the sweepers' own kinds (the filing's drive, P13-TSK-021).
+            // An alert's, a case's or an action's kind - and the sweepers' own kinds (the filing's drive, P13-TSK-021; the
+            // rescreening leg, P13-TSK-022).
             "kind", union(List.of(names(AlertKind.values()), names(CaseKind.values()), names(ActionKind.values()),
-                    Set.of(RiskMonitoringMetrics.KIND, RiskActionMetrics.KIND, RegulatoryReportMetrics.KIND),
+                    Set.of(RiskMonitoringMetrics.KIND, RiskActionMetrics.KIND, RegulatoryReportMetrics.KIND,
+                            RescreeningMetrics.KIND),
                     // P13-TSK-023: the censuses' kinds (finapp.risk.census).
                     names(com.finapp.risk.CensusKind.values()))),
             "severity", names(AlertSeverity.values()),
@@ -69,6 +71,8 @@ class RiskMetricTagsAreBoundedTest {
                     lower(names(com.finapp.risk.MonitoringObserver.SubjectOutcome.values())),
                     lower(names(com.finapp.risk.RegulatoryFilingProvider.Outcome.values())),
                     Set.of(RegulatoryReportMetrics.FAILED),
+                    // What became of a claimed rescreening permit (P13-TSK-022), lower-cased.
+                    lower(names(com.finapp.risk.RescreeningObserver.Conclusion.values())),
                     // P13-TSK-023 (the review's I1): a reading of the proofs completed or failed.
                     Set.of(RiskProofMetrics.COMPLETED, RiskProofMetrics.FAILED))),
             "operation", names(RiskOperation.values()),

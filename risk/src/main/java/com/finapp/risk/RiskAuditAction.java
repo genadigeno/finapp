@@ -58,7 +58,7 @@ public enum RiskAuditAction implements AuditableAction {
             "A proposer tried to approve their own risk proposal - a policy version's activation (P13-TSK-002), an"
                     + " override's approval (P13-TSK-012), an alert's suppression (P13-TSK-015's machine, -018's door),"
                     + " a disposition's or an action's approval (P13-TSK-016, -017), a regulatory report's approval"
-                    + " (P13-TSK-021) - and was refused"
+                    + " (P13-TSK-021), a screening list version's activation (P13-TSK-022) - and was refused"
                     + " 403 risk.SelfApprovalRefused before anything was written (INV-AUD-04, INV-RSK-07; also held by"
                     + " each table's four-eyes CHECK). Recorded FAILED in a transaction of its own after the act rolled"
                     + " back, so the attempt survives. Its target the proposal; the summary names it and the act -"
@@ -419,6 +419,29 @@ public enum RiskAuditAction implements AuditableAction {
                     + " before the answer, so the narrative is never served unrecorded. Its target the report; the"
                     + " summary the case, the status and the jurisdiction - never the narrative.",
             false),
+
+    /** A screening list version was recorded (`P13-TSK-022`). */
+    LIST_VERSION_RECORDED(
+            "risk.ListVersionRecorded",
+            "A holder of RISK_POLICY_ADMINISTER - a person - recorded, with a reason, that a sanctions or PEP list version"
+                    + " exists (POST /v1/operator/risk/screening-lists, keyed risk.list:<actor>, P13-TSK-022; UNIQUE (list,"
+                    + " version), numbered in the list's recording order under advisory namespace 13), awaiting a"
+                    + " DIFFERENT person's activation. A label already recorded converges on its version and records"
+                    + " nothing. Its target the list version; the summary the list, the label and the ordinal - never a"
+                    + " list entry or a name.",
+            true),
+
+    /** A screening list version was activated by a second person, its predecessor retired beside it (`P13-TSK-022`). */
+    LIST_VERSION_ACTIVATED(
+            "risk.ListVersionActivated",
+            "A holder of RISK_POLICY_ADMINISTER other than its recorder activated a screening list version from a"
+                    + " MULTI_FACTOR session (POST /v1/operator/risk/screening-lists/{id}/activation, 202; INV-AUD-04, the"
+                    + " four-eyes CHECK beneath), retiring the list's predecessor in the same transaction; the rescreening"
+                    + " of every party whose customer relationship is ACTIVE or PENDING is enqueued by RiskActionSchedule's"
+                    + " rescreening leg in bounded batches, never in this transaction - kyc stays the screening owner"
+                    + " (Refinement 3). Its target the list version; the summary the list, the label, the ordinal and the"
+                    + " predecessor retired.",
+            true),
 
     /** An officer ordered the monitoring intake reprocessed from an earlier watermark. */
     REPROCESSING_ORDERED(

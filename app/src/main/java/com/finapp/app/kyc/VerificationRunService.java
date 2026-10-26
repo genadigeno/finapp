@@ -20,6 +20,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import javax.sql.DataSource;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -62,6 +63,7 @@ public class VerificationRunService {
     private final Clock clock;
     private final KycUnitOfWork units;
     private final Timer providerLatency;
+    private final ObjectProvider<RescreenHits> rescreenHits;
 
     public VerificationRunService(
             KycCaseStore<Connection> kycCaseStore,
@@ -73,8 +75,11 @@ public class VerificationRunService {
             Clock clock,
             TransactionTemplate kycTransactions,
             DataSource dataSource,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            ObjectProvider<RescreenHits> rescreenHits) {
         this.cases = Objects.requireNonNull(kycCaseStore, "kycCaseStore must not be null");
+        // An ObjectProvider: risk's rescreening, which implements it, is wired after this bean and asks it.
+        this.rescreenHits = Objects.requireNonNull(rescreenHits, "rescreenHits must not be null");
         this.checks = Objects.requireNonNull(checkStore, "checkStore must not be null");
         this.assessment =
                 Objects.requireNonNull(caseAssessment, "caseAssessment must not be null");
@@ -130,6 +135,96 @@ public class VerificationRunService {
 
         CaseAssessment.Result assessed = assessment.assess(caseId);
         return new RunReport(assessed.assessment(), assessed.checks());
+    }
+
+    /**
+     * Re-screens a party on a list update: one {@code RESCREEN} check of {@code type} on
+     * {@code caseId}, asked under {@code rescreenKey} (`P13-TSK-022`, the owner's decision O1;
+     * {@code kyc V011}; {@code INV-LIFE-04} as amended).
+     *
+     * <p>The run's choreography, one check: the keyed request and its conditional dispatch in one
+     * transaction, committed; the provider asked holding no connection; the outcome, its evidence
+     * and its {@link CheckOutcomeTrail} together in a second. Then, for a {@code HIT} only, the
+     * case's assessment after the commit (`P13-TSK-022`'s review, fail-closed;
+     * {@link CaseAssessment#assessRescreened}): on a case not yet decided the hit blocks its
+     * automatic approval and opens its review task exactly as an onboarding hit does; on a
+     * decided case nothing moves, no task opens, the customer is untouched - evidence beside the
+     * decision, never a re-decision. The answer is also the caller's (risk's rescreening) to act
+     * on.
+     *
+     * <p>Idempotent on the key: a key already asked is answered from its row - in flight
+     * ({@code REQUESTED} or {@code DISPATCHED}, another asker holding the call) or answered - and
+     * the provider is called only by the asker whose dispatch won. Ten instances, a lease lost
+     * mid-call, a replay: one row, one provider effect, one outcome.
+     *
+     * @return the keyed check as it stands after this call
+     * @throws IllegalStateException when no provider answers {@code type}
+     */
+    public VerificationCheck rescreen(
+            KycCaseId caseId, UUID customerId, CheckType type, String rescreenKey) {
+        Objects.requireNonNull(caseId, "caseId must not be null");
+        Objects.requireNonNull(customerId, "customerId must not be null");
+        Objects.requireNonNull(type, "type must not be null");
+        Objects.requireNonNull(rescreenKey, "rescreenKey must not be null");
+        VerificationProvider provider =
+                providers.stream()
+                        .filter(candidate -> candidate.checkType() == type)
+                        .findFirst()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "no provider answers a " + type + " screening"));
+        Optional<VerificationCheck> dispatched =
+                units.inTransaction(
+                        unitOfWork -> {
+                            VerificationCheck check =
+                                    checks.requestRescreen(
+                                                    unitOfWork,
+                                                    caseId,
+                                                    type,
+                                                    com.finapp.kyc.CheckId.next(ids),
+                                                    rescreenKey)
+                                            .check();
+                            if (check.status() != com.finapp.kyc.CheckStatus.REQUESTED
+                                    || !checks.dispatch(
+                                            unitOfWork, check.id(), Instant.now(clock))) {
+                                // In flight under another asker, or answered: never asked twice.
+                                return Optional.<VerificationCheck>empty();
+                            }
+                            // No case move: the case is decided (or its own run's), never this.
+                            return Optional.of(check.dispatch(clock));
+                        });
+        if (dispatched.isPresent()) {
+            // No connection is held here, as in the run.
+            VerificationProvider.ProviderResult result =
+                    providerLatency.record(
+                            () ->
+                                    provider.verify(
+                                            new VerificationProvider.VerificationSubject(
+                                                    caseId, customerId)));
+            recordOutcome(dispatched.get(), result);
+        }
+        VerificationCheck keyed =
+                units.inTransaction(
+                        unitOfWork ->
+                                checks.findRescreen(unitOfWork, rescreenKey)
+                                        .orElseThrow(
+                                                () ->
+                                                        new IllegalStateException(
+                                                                "a requested rescreen has its row")));
+        if (keyed.status() == com.finapp.kyc.CheckStatus.HIT) {
+            // P13-TSK-022's review (fail-closed): a hit on an undecided case needs a person - its
+            // own case assessed after the outcome commits, exactly as an onboarding answer is; on
+            // a decided case nothing. On the already-answered path too, deliberately: risk's leg
+            // asks a hit's own key again on its next claim (KycPartyRescreening - the answer from
+            // the row, no provider call), so a crash between the outcome's commit and this
+            // assessment is healed by that re-ask. Then the permit that asked is told (its last
+            // review's item 3): a hit landing after the permit concluded otherwise still reaches
+            // a person. Both idempotent.
+            assessment.assessRescreened(keyed.caseId());
+            rescreenHits.ifAvailable(hits -> hits.hit(keyed.id()));
+        }
+        return keyed;
     }
 
     /** Transaction one: the claim and the durable dispatch. */

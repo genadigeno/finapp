@@ -29,6 +29,25 @@ class RiskAbuseMigrationTest {
 
     private static final String MIGRATION = "db/migration/risk/V011__payment_merchant_and_bnpl_abuse.sql";
 
+    /**
+     * What later migrations added after V011 - applied history is never edited, so V011's text is held to the code as it
+     * stood at V011: risk V018 (P13-TSK-022) added the rescreening's two kinds and two references (its own suite holds
+     * them, {@code ScreeningListMigrationTest}).
+     */
+    private static final List<SignalKind> LATER_KINDS = List.of(SignalKind.SCREENING_CLEARED, SignalKind.SCREENING_HIT);
+
+    private static final List<String> LATER_COLUMNS = List.of("list_version_ref", "screening_ref");
+
+    /** SignalKind's attribute columns as V011 left them. */
+    private static List<String> columnsAtV011() {
+        return SignalKind.ATTRIBUTE_COLUMNS.stream().filter(column -> !LATER_COLUMNS.contains(column)).toList();
+    }
+
+    /** SignalKind's kinds as V011 left them. */
+    private static List<String> kindsAtV011() {
+        return Arrays.stream(SignalKind.values()).filter(kind -> !LATER_KINDS.contains(kind)).map(Enum::name).toList();
+    }
+
     private static final List<String> EARLIER = List.of(
             "db/migration/risk/V001__initialise_risk_schema.sql",
             "db/migration/risk/V002__risk_policy_versions_as_data.sql",
@@ -52,7 +71,7 @@ class RiskAbuseMigrationTest {
                 .contains("ALTER TABLE risk.risk_assessment ADD COLUMN session_id uuid;");
         assertThat(sql).doesNotContainPattern("ADD COLUMN [a-z_]+ [a-z]+ NOT NULL")
                 .doesNotContainPattern("ADD COLUMN [^;]*\\bDEFAULT\\b");
-        assertThat(SignalKind.ATTRIBUTE_COLUMNS).endsWith("merchant_subject_ref", "intent_ref");
+        assertThat(columnsAtV011()).endsWith("merchant_subject_ref", "intent_ref");
         assertThat(JdbcRiskAssessmentStore.INSERT_HEAD).contains("session_id");
         assertThat(JdbcRiskAssessmentStore.JUDGED_PAYMENT).contains("risk.risk_assessment")
                 .contains("operation IN ('CARD_PAYMENT', 'WALLET_PAYMENT')").contains("command_ref = ?");
@@ -81,13 +100,12 @@ class RiskAbuseMigrationTest {
         Matcher kinds = Pattern.compile("risk_signal_kind_is_known CHECK \\(kind IN \\(([^)]*)\\)", Pattern.DOTALL)
                 .matcher(sql);
         assertThat(kinds.find()).isTrue();
-        assertThat(quoted(kinds.group(1))).containsExactlyElementsOf(
-                Arrays.stream(SignalKind.values()).map(Enum::name).toList());
+        assertThat(quoted(kinds.group(1))).containsExactlyElementsOf(kindsAtV011());
         for (SignalKind kind : List.of(SignalKind.REFUND_COMPLETED, SignalKind.CHARGEBACK_RECEIVED,
                 SignalKind.BNPL_APPLICATION_SUBMITTED)) {
             assertThat(sql).containsPattern("WHEN '" + kind.name() + "'\\s+THEN 'PARTY'");
         }
-        String columns = String.join(", ", SignalKind.ATTRIBUTE_COLUMNS);
+        String columns = String.join(", ", columnsAtV011());
         Matcher counted = Pattern.compile("num_nonnulls\\(([^)]*)\\)").matcher(sql);
         int arms = 0;
         while (counted.find()) {
@@ -95,7 +113,7 @@ class RiskAbuseMigrationTest {
             assertThat(counted.group(1).replaceAll("\\s+", " ").strip()).as("every arm counts every column")
                     .isEqualTo(columns);
         }
-        assertThat(arms).as("an arm per kind").isEqualTo(SignalKind.values().length);
+        assertThat(arms).as("an arm per kind").isEqualTo(kindsAtV011().size());
     }
 
     @Test

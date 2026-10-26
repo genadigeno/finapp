@@ -98,9 +98,9 @@ public record RiskAlert(
         }
     }
 
-    /** The alert's identity. */
+    /** The alert's identity: its one signal too for a kind keyed by it (risk V018's fact_signal_id). */
     public AlertKey key() {
-        return new AlertKey(subject.ref(), rule.code(), window.start());
+        return AlertKey.of(kind, subject.ref(), rule.code(), window.start(), evidence);
     }
 
     /** True while the alert awaits a case or a person - the queue's. */

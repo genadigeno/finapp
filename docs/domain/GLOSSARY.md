@@ -2356,7 +2356,14 @@ party; the sweep's rescreening leg requests each screening through kyc's existin
 Risk Signal and raises an Alert on a hit.
 **Not:** a Screening Result — kyc screens and owns the result and its evidence; `risk` asks, and owns only the list
 fact, the permits and what it records from the answer (`ROADMAP.md` Refinement 3). Nor a Risk Policy Version: no rule
-reads the list itself.
+reads the list itself. *(As built by `P13-TSK-022`, `risk V018`, 2026-10-26: `RECORDED → ACTIVE → RETIRED`, recorded and
+activated by two persons, the predecessor retired beside the activation; each permit (one per `ACTIVE` or `PENDING`
+party and version) asks kyc's re-screening door (the owner's decision O1, kyc `V011`) for a `RESCREEN` check of the
+list's type under the permit's key and an ordinal - one new question per claim while the last was unknown or abandoned -
+evidence beside a decided KYC case, never a re-decision, and on an undecided one a hit routed to kyc's review as an
+onboarding hit; it records its own questions' answer, asked after the activation on the database's clock; a hit is the
+`SCREENING_HIT` fact alert - one per party and list version - in the party's `AML` case; a `PENDING` party with no KYC
+case is `NOT_ONBOARDED`. A version whose permits failed is re-driven by a successor version, never by hand.)*
 **Owned by:** `risk`
 
 ### Regulatory Report

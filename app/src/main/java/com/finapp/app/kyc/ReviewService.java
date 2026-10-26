@@ -125,7 +125,12 @@ public class ReviewService {
                                             CaseFile file =
                                                     new CaseFile(
                                                             kycCase,
-                                                            checks.forCase(unitOfWork, caseId),
+                                                            // Every check, its purpose shown
+                                                            // (P13-TSK-022's review): a list
+                                                            // update's rescreen - its HIT a task
+                                                            // here while the case is undecided,
+                                                            // evidence beside a decided one.
+                                                            checks.allForCase(unitOfWork, caseId),
                                                             tasks.forCase(unitOfWork, caseId),
                                                             owners.ownersOf(unitOfWork, caseId));
                                             auditRead(unitOfWork, kycCase);

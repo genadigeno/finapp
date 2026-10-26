@@ -142,16 +142,19 @@ public class RiskActionBeans {
 
     /**
      * The action schedule - every instance, no lease, off in test contexts ({@code finapp.risk.action.poll}); its second
-     * leg the filing's inquiry (`P13-TSK-021`, {@code RiskReportBeans}' driver).
+     * leg the filing's inquiry (`P13-TSK-021`, {@code RiskReportBeans}' driver), its third the rescreening
+     * (`P13-TSK-022`, {@code RiskRescreeningBeans}' driver - moved here when kyc's door made it a provider caller).
      */
     @Bean
     @ConditionalOnProperty(name = "finapp.risk.action.sweeper.enabled", havingValue = "true", matchIfMissing = true)
     RiskActionSchedule riskActionSchedule(
             RiskActionDriver riskActionDriver,
             RegulatoryFilingDriver regulatoryFilingDriver,
+            RescreeningDriver rescreeningDriver,
             RiskActionMetrics riskActionMetrics,
             @Value("${finapp.risk.action.poll:PT5S}") Duration pollInterval) {
-        return new RiskActionSchedule(riskActionDriver, regulatoryFilingDriver, riskActionMetrics, pollInterval);
+        return new RiskActionSchedule(riskActionDriver, regulatoryFilingDriver, rescreeningDriver, riskActionMetrics,
+                pollInterval);
     }
 
     /** Whether this instance runs the action schedule - eager either way (`P1-TSK-029`'s rule). */

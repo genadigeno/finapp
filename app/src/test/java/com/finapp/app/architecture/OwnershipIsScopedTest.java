@@ -207,7 +207,20 @@ class OwnershipIsScopedTest {
          * {@link #systemJoinsHaveTheirOneCaller} fails the build when any other class calls it - so the read
          * by identifier alone cannot drift into a request path without somebody writing a second sentence.
          */
-        SYSTEM_JOIN
+        SYSTEM_JOIN,
+
+        /**
+         * The system pages a whole population, for no person's request.
+         *
+         * <p>Added by {@code P13-TSK-022}'s review for the rescreening's census of {@code ACTIVE} parties,
+         * and not {@link #SYSTEM_JOIN}, because it resolves no reference: the identifier it takes is a
+         * keyset cursor - the last party the system's own enqueue paged, recorded on the list version -
+         * and it answers <em>every</em> party after it. No label that scopes a read to an owner can be
+         * true of a read whose purpose is all owners. The control is the same one as a join's, and held by
+         * the same rule ({@link #systemJoinsHaveTheirOneCaller}): the entry names the one production class
+         * that calls it, and a second caller fails the build.
+         */
+        SYSTEM_ENUMERATION
     }
 
     /**
@@ -278,6 +291,21 @@ class OwnershipIsScopedTest {
                                         + " answers the owner's identifier and nothing of the agreement (no product,"
                                         + " status or date), on the monitoring claim's own connection as the system."
                                         + " AccountMonitoredParties alone calls it, and that class depends on risk, so"
+                                        + " NoCustomerSurfaceReadsRiskTest refuses any customer or merchant surface"
+                                        + " reaching it.")),
+                    Map.entry(
+                            "com.finapp.party.JdbcPartyStore.customerPartiesAfter",
+                            new Entry(
+                                    Scope.SYSTEM_ENUMERATION,
+                                    "com.finapp.app.risk.PartyActiveParties",
+                                    "P13-TSK-022. The rescreening's census of a list version: a keyset page of"
+                                        + " the parties whose live customer relationship is ACTIVE or PENDING, after a"
+                                        + " cursor"
+                                        + " that is the last party the platform's own enqueue paged (risk's"
+                                        + " screening_list_version.enqueue_cursor), never a request's. It answers"
+                                        + " party identifiers alone - no name, no customer, no status - on the"
+                                        + " enqueue batch's own connection as the system. PartyActiveParties alone"
+                                        + " calls it, and that class depends on risk, so"
                                         + " NoCustomerSurfaceReadsRiskTest refuses any customer or merchant surface"
                                         + " reaching it.")),
                     Map.entry(
@@ -1921,6 +1949,18 @@ class OwnershipIsScopedTest {
                                         + " is never served); deliberately someone else's subject, the not-self rule"
                                         + " judged by Alerts on every person's act and by the queue on every row.")),
                     Map.entry(
+                            "com.finapp.risk.JdbcRiskAlertStore.queue",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-018 (classified by P13-TSK-022's review, when the detector learned to"
+                                        + " see an Optional identifier): the alert queue's keyset page on the reader's"
+                                        + " read-only snapshot behind @RequiresPermission(RISK_INVESTIGATE). The"
+                                        + " cursor is the request's, its key only - AlertQueue.page has read it with"
+                                        + " find(after) and refused one that names no alert; the statement excludes"
+                                        + " the reader's own party (excludingParty), Queues.visibleTo withholds every"
+                                        + " row whose party is the reader's or cannot be placed, and the page is"
+                                        + " recorded risk.AlertRead before it is served.")),
+                    Map.entry(
                             "com.finapp.risk.JdbcRiskAlertStore.lock",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -2022,6 +2062,18 @@ class OwnershipIsScopedTest {
                                         + " same transaction holds; and P13-TSK-018's file (its subject's party judged"
                                         + " before anything else is read) and queue cursor (its key only - the row is"
                                         + " never served). No customer or merchant surface reaches it.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskCaseStore.queue",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-018 (classified by P13-TSK-022's review, when the detector learned to"
+                                        + " see an Optional identifier): the case worklist's keyset page on the"
+                                        + " reader's read-only snapshot behind @RequiresPermission(RISK_INVESTIGATE)."
+                                        + " The cursor is the request's, its key only - CaseWorklist reads it with"
+                                        + " find(after) first; the statement excludes the reader's own party"
+                                        + " (excludingParty), Queues.visibleTo withholds every row whose party is the"
+                                        + " reader's or cannot be placed, and the page is recorded risk.CaseRead"
+                                        + " before it is served.")),
                     Map.entry(
                             "com.finapp.risk.JdbcRiskCaseStore.advance",
                             new Entry(
@@ -2170,6 +2222,75 @@ class OwnershipIsScopedTest {
                                     "P13-TSK-021. The id is a claimed report's - one this drive's claim returned - and"
                                         + " the write is conditional on FILED and the claimed attempt; it records the"
                                         + " authority's answer and moves nothing of anyone's.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcScreeningListStore.byId",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022. A screening list version read or locked by id (find, lock): the"
+                                        + " activation door's subject behind @RequiresPermission(RISK_POLICY_ADMINISTER)"
+                                        + " and MULTI_FACTOR, a person's act with four eyes by the domain and by"
+                                        + " screening_list_version_four_eyes. A list version is a platform-wide operator"
+                                        + " fact owned by no party; nothing of a party is served.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcScreeningListStore.retire",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022. The id comes only from the list's ACTIVE row this transaction locked"
+                                        + " FOR UPDATE (lockActive, under the list's advisory lock), the move conditional"
+                                        + " on ACTIVE - beside the activation's own edge.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcScreeningListStore.activate",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022. The id comes only from the row this transaction locked FOR UPDATE"
+                                        + " (lock(id), under the list's advisory lock, after the not-self rule), the move"
+                                        + " conditional on RECORDED; behind RISK_POLICY_ADMINISTER and MULTI_FACTOR.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcScreeningListStore.advanceEnqueue",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022. The id is the version this enqueue's claim returned (claimEnqueueDue,"
+                                        + " FOR UPDATE SKIP LOCKED, the same transaction), the write conditional on ACTIVE"
+                                        + " with its permit standing; the platform's sweep, no request names it.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRescreeningPermitStore.byId",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022. A rescreening permit read or locked by id (find, lock): the id is a"
+                                        + " permit the leg's own claim returned (claimNextDue, SKIP LOCKED, committed); the"
+                                        + " platform's sweep, no request names it, nothing is served.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRescreeningPermitStore.conclude",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022. The id is a claimed permit's, locked FOR UPDATE in this transaction,"
+                                        + " and the write is conditional on PENDING and the claimed attempt; it records"
+                                        + " kyc's answer and moves nothing of anyone's.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRescreeningPermitStore.fail",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022. As conclude: a claimed permit's id, locked in this transaction, the"
+                                        + " write conditional on PENDING and the claimed attempt.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRescreeningPermitStore.defer",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022. As conclude: a claimed permit's id, locked in this transaction, the"
+                                        + " permit moved a backoff ahead conditionally on PENDING and the claimed attempt.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRiskProofReads.assessmentsOfDay",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-023 (classified at P13-TSK-022's integration, when its widened detector"
+                                        + " saw the Optional cursor): the day replay's keyset page on a read-only"
+                                        + " snapshot behind @RequiresPermission(RISK_INVESTIGATE) - POST"
+                                        + " /v1/operator/risk/assessments/replay, reasoned and recorded risk.Replayed."
+                                        + " The cursor is the request's, refused unless it is an assessment of the day"
+                                        + " replayed (DailyReplay), the reader placed in a party first (Queues.reader)"
+                                        + " and the reader's own party's assessments counted but never named (withheld);"
+                                        + " the rows are risk's own sealed assessments, replayed and never served - the"
+                                        + " answer counts and names the first divergent by its id alone.")),
                     Map.entry(
                             "com.finapp.risk.JdbcRiskProofReads.signal",
                             new Entry(
@@ -4377,6 +4498,73 @@ class OwnershipIsScopedTest {
                                         + " this being a read whose rows a reviewer is entitled"
                                         + " to see.")),
                     Map.entry(
+                            "com.finapp.kyc.JdbcCheckStore.allForCase",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022, reclassified by its review (fail-closed) from SYSTEM_JOIN when"
+                                        + " every check of a case became what an undecided case's assessment and"
+                                        + " decision read and what the reviewer reads - forCase's own precedent and"
+                                        + " shape: the reviewer surface's ReviewService.readCase and the reviewer's"
+                                        + " DecisionRecording.byReviewer pass a URL-derived case identifier, so the"
+                                        + " label is named for that WEAKER provenance; the assessment's id comes from"
+                                        + " findOpenFor or a check's own case. What stands in on the reviewer path:"
+                                        + " KYC_REVIEW at the boundary, the audited kyc.CaseRead in the same unit of"
+                                        + " work, and these being rows a reviewer is entitled to see. Risk's T-eval"
+                                        + " read moved to the bounded latestDecidedScreenings.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcKycCaseStore.lockRow",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022's last review (item 1). moveStatus's private helper: the case row"
+                                        + " FOR UPDATE before a decision's move, so its NOT EXISTS over OPEN review"
+                                        + " tasks runs on a snapshot taken after the lock - a decision never passes"
+                                        + " an open task (INV-KYC-04). The KycCaseId is the one the decision names:"
+                                        + " the assessment's own (findOpenFor, a check's case) or the reviewer's -"
+                                        + " DecisionRecording.byReviewer's URL-derived identifier, the weaker"
+                                        + " provenance and so the label (forCase's precedent): KYC_REVIEW at the"
+                                        + " boundary and the kyc.DecisionRecorded record stand in. A lock and a"
+                                        + " boolean leave, never a row.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcCheckStore.rescreenKeyOf",
+                            new Entry(
+                                    Scope.SIGNED_CALLBACK,
+                                    "P13-TSK-022's last review (item 3). The key a RESCREEN check was asked"
+                                        + " under, read by app's RescreeningHits to tell the permit that asked of a"
+                                        + " hit kyc recorded. The CheckId is one kyc itself just completed - on its"
+                                        + " door's path a system-resolved keyed check, on the provider's callback the"
+                                        + " check a signed callback named (findById's provenance, the weaker of the"
+                                        + " two, so the label): the HMAC verified at the boundary before any read,"
+                                        + " the identifier one the platform handed the provider. Only the key leaves"
+                                        + " - an identifier of a question - and the write it leads to is risk's own"
+                                        + " born-once signal and alert.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcCheckStore.latestDecidedScreenings",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.app.risk.KycScreeningClearances",
+                                    "P13-TSK-022's review (MINOR 6). Per screening type the case's decided check"
+                                        + " asked last, onboarding or rescreen - risk's screening-hit reading for"
+                                        + " T-eval, bounded (one index probe per type): the KycCaseId is the latest"
+                                        + " case of the party's live customer, resolved by the system"
+                                        + " (findLiveCustomerFor, findLatestFor) on the evaluation's own connection,"
+                                        + " never a request's; three bounded facts leave, never the row."
+                                        + " KycScreeningClearances alone calls it, and that class depends on risk, so"
+                                        + " NoCustomerSurfaceReadsRiskTest refuses any customer or merchant surface"
+                                        + " reaching it.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcCheckStore.requestRescreen",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.app.kyc.VerificationRunService",
+                                    "P13-TSK-022 (kyc V011, the owner's decision O1). A list update's keyed"
+                                        + " re-screening of a decided party: the KycCaseId is the latest case of the"
+                                        + " party's live customer, resolved by the system for risk's permit"
+                                        + " (KycPartyRescreening's snapshot), never a request's; the key is risk's"
+                                        + " permit key, unique, so a second ask is the same row. It writes a RESCREEN"
+                                        + " check only - evidence beside the decision, read by no onboarding reader."
+                                        + " VerificationRunService.rescreen alone calls it, on the platform's"
+                                        + " rescreening leg.")),
+                    Map.entry(
                             "com.finapp.kyc.JdbcCheckStore.move",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,
@@ -4955,21 +5143,30 @@ class OwnershipIsScopedTest {
      * check: the calls are read from the bytecode, so a second caller - a desk, a controller, another
      * adapter - fails here before it can serve the read to anybody. The store's own class and its
      * interfaces are the call's possible targets; the implementation calling itself is not a caller.
+     * A {@code SYSTEM_ENUMERATION} is held the same way (`P13-TSK-022`).
      */
     @Test
-    @DisplayName("a SYSTEM_JOIN read is called by the one production class its entry names, and by nothing else")
+    @DisplayName("a SYSTEM_JOIN or SYSTEM_ENUMERATION read is called by the one production class its entry names,"
+            + " and by nothing else")
     void systemJoinsHaveTheirOneCaller() {
         JavaClasses production = productionClasses();
         List<String> joins = new ArrayList<>();
+        List<String> enumerations = new ArrayList<>();
         REGISTER.forEach(
                 (method, entry) -> {
                     if (entry.scope() == Scope.SYSTEM_JOIN) {
                         joins.add(method);
+                    } else if (entry.scope() == Scope.SYSTEM_ENUMERATION) {
+                        enumerations.add(method);
                     }
                 });
         assertThat(joins)
                 .as("the classification exists for the monitoring join; an empty set checks nothing")
                 .isNotEmpty();
+        assertThat(enumerations)
+                .as("the classification exists for the rescreening's census; an empty set checks nothing")
+                .isNotEmpty();
+        joins.addAll(enumerations);
         for (String method : joins) {
             String caller = REGISTER.get(method).authoritativeRead();
             assertThat(production.contain(caller)).as("%s does not exist", caller).isTrue();
@@ -5315,18 +5512,37 @@ class OwnershipIsScopedTest {
      * primary key is an operation <em>on</em> an identity, which is exactly the administrative
      * shape. Scoping <em>by</em> an identity — {@code WHERE identity_id = ?} on somebody's sessions
      * or credentials — is the ordinary one and stays excluded.
+     *
+     * <p>An {@code Optional} of one is one too (`P13-TSK-022`'s review): a raw-type sweep read
+     * {@code Optional<PartyId>} as {@code Optional} and missed party's {@code customerPartiesAfter},
+     * whose keyset cursor is a party's identifier. The widening is that one wrapper - an optional
+     * identifier is still a single resource named by the caller; a collection is a different shape,
+     * left to the day one exists.
      */
     private static boolean takesAResourceIdentifier(JavaMethod method, String qualified) {
         boolean nonIdentityResource =
                 method.getRawParameterTypes().stream()
-                        .anyMatch(
-                                parameter ->
-                                        parameter.isAssignableTo(
-                                                        com.finapp.sharedkernel.id.EntityId.class)
-                                                && !parameter
-                                                        .getName()
-                                                        .equals("com.finapp.identity.IdentityId"));
+                                .anyMatch(OwnershipIsScopedTest::isAResourceIdentifier)
+                        || method.getParameterTypes().stream()
+                                .anyMatch(OwnershipIsScopedTest::isAnOptionalResourceIdentifier);
         return nonIdentityResource || actsOnAnIdentityRow(method, qualified);
+    }
+
+    /** An {@code EntityId} other than the owner's {@code IdentityId}. */
+    private static boolean isAResourceIdentifier(JavaClass parameter) {
+        return parameter.isAssignableTo(com.finapp.sharedkernel.id.EntityId.class)
+                && !parameter.getName().equals("com.finapp.identity.IdentityId");
+    }
+
+    /** {@code Optional<X>} for a resource identifier {@code X}. */
+    private static boolean isAnOptionalResourceIdentifier(
+            com.tngtech.archunit.core.domain.JavaType parameter) {
+        if (!(parameter instanceof com.tngtech.archunit.core.domain.JavaParameterizedType generic)
+                || !generic.toErasure().getName().equals("java.util.Optional")) {
+            return false;
+        }
+        return generic.getActualTypeArguments().stream()
+                .anyMatch(argument -> isAResourceIdentifier(argument.toErasure()));
     }
 
     /** Takes an {@code IdentityId} and reaches {@code identity.identity} by primary key. */

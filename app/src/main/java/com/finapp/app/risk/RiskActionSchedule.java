@@ -33,18 +33,65 @@ import org.springframework.context.SmartLifecycle;
  * recorded once). Its failed claims are counted {@code finapp.risk.sweeper.claim.failed{kind=report}} by the driver,
  * which never throws, so a failing leg ends only itself; a failing action claim ends the action leg, never the report
  * leg. No new scheduler: {@code LEASE_PROTECTED_SCHEDULERS} is unchanged.
+ *
+ * <p><strong>The rescreening leg</strong> (`P13-TSK-022`, moved here from {@code RiskMonitoringSchedule} when the owner's
+ * decision O1 gave kyc a re-screening door: the leg now makes kyc's provider calls, and this is the schedule whose
+ * legs make external calls - the monitoring schedule makes none): last in each tick, {@link RescreeningDriver#driveDue}
+ * - an activated screening list version's enqueue in bounded batches (the version row {@code SKIP LOCKED}, a page of
+ * the parties to rescreen, one permit each born once, the cursor advanced, one transaction a batch), then up to
+ * {@code finapp.risk.rescreening.permits-per-tick} due permits in three steps: the claim committed, kyc asked on no
+ * risk transaction and no connection held across the provider's bounded call, the conclusion conditional on the
+ * claimed attempt. It counts its own failures ({@code claim.failed{kind=rescreening}}) and never throws; a defect that
+ * escapes it is counted here and ends only it. Still no new scheduler: {@code LEASE_PROTECTED_SCHEDULERS} is unchanged.
  */
 @Slf4j
 public final class RiskActionSchedule implements SmartLifecycle {
 
     private final RiskActionDriver driver;
     private final RegulatoryFilingDriver filings;
+    private final RescreeningLeg rescreening;
     private final RiskActionMetrics metrics;
     private final Duration pollInterval;
     private ScheduledExecutorService executor;
 
+    /**
+     * The rescreening leg (`P13-TSK-022`) - {@link RescreeningDriver} in production: its step, and where a defect that
+     * escapes it is counted (its own {@code claim.failed{kind=rescreening}}, never the action leg's).
+     */
+    public interface RescreeningLeg {
+
+        /** No rescreening leg - the earlier tasks' shape, kept for their suites. */
+        RescreeningLeg NONE = new RescreeningLeg() {
+            @Override
+            public int rescreen() {
+                return 0;
+            }
+
+            @Override
+            public void failed() {
+                // Nothing runs, nothing fails.
+            }
+        };
+
+        /** The enqueue batches and the due permits driven, bounded per tick; how many permits were concluded. */
+        int rescreen();
+
+        /** Counts a defect that escaped {@link #rescreen} - the leg counts its own failures. */
+        void failed();
+    }
+
     public RiskActionSchedule(RiskActionDriver driver, RegulatoryFilingDriver filings, RiskActionMetrics metrics,
             Duration pollInterval) {
+        this(driver, filings, RescreeningLeg.NONE, metrics, pollInterval);
+    }
+
+    /**
+     * @param rescreening the rescreening leg - the {@link RescreeningDriver} in production (`P13-TSK-022`): last in each
+     *     tick, after the report leg
+     */
+    public RiskActionSchedule(RiskActionDriver driver, RegulatoryFilingDriver filings, RescreeningLeg rescreening,
+            RiskActionMetrics metrics, Duration pollInterval) {
+        this.rescreening = Objects.requireNonNull(rescreening, "rescreening");
         this.driver = Objects.requireNonNull(driver, "driver");
         this.filings = Objects.requireNonNull(filings, "filings");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
@@ -56,12 +103,31 @@ public final class RiskActionSchedule implements SmartLifecycle {
 
     /**
      * One tick: the due actions driven, bounded - a failed claim counted and the action leg ended - then the due
-     * {@code FILED} reports asked of the authority, bounded (the report leg, `P13-TSK-021`).
+     * {@code FILED} reports asked of the authority, bounded (the report leg, `P13-TSK-021`), then the rescreening leg
+     * (`P13-TSK-022`), bounded.
      *
-     * @return how many actions and report answers this tick recorded
+     * @return how many actions, report answers and rescreening conclusions this tick recorded
      */
     public int sweepOnce() {
-        return actions() + filings.inquireDue();
+        return actions() + filings.inquireDue() + rescreenings();
+    }
+
+    /**
+     * The rescreening leg (`P13-TSK-022`): it counts its own failures ({@code claim.failed{kind=rescreening}}) and never
+     * throws; a defect that escapes it is counted here and ends only it.
+     */
+    private int rescreenings() {
+        try {
+            int done = rescreening.rescreen();
+            if (done > 0) {
+                log.debug("Rescreening permits concluded: {}", done);
+            }
+            return done;
+        } catch (RuntimeException failure) {
+            rescreening.failed();
+            log.warn("Rescreening leg failed: {}", failure.getClass().getSimpleName());
+            return 0;
+        }
     }
 
     private int actions() {

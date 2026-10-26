@@ -424,6 +424,12 @@ class RoutePermissionRegisterTest {
                             PermissionName.AML_REPORT_FILE),
                     entry("GET /v1/operator/risk/cases/{caseId}/reports/{reportId}",
                             PermissionName.AML_REPORT_APPROVE),
+                    // P13-TSK-022: the screening list version - recorded (201) and activated by a second holder from
+                    // MULTI_FACTOR (202, the rescreening enqueued by the sweep) under RISK_POLICY_ADMINISTER; the
+                    // negatives are ScreeningListApiTest's (an analyst 403, no session 401, the recorder's activation 403).
+                    entry("POST /v1/operator/risk/screening-lists", PermissionName.RISK_POLICY_ADMINISTER),
+                    entry("POST /v1/operator/risk/screening-lists/{listVersionId}/activation",
+                            PermissionName.RISK_POLICY_ADMINISTER),
                     // P13-TSK-023: the phase's proofs as operator-runnable, audited reads under RISK_INVESTIGATE - the
                     // four operations reports with their censuses (audited risk.ReportRead), the day's replay (reasoned,
                     // audited risk.Replayed) and the case's evidence door (audited risk.CaseRead, self-dealing refused);

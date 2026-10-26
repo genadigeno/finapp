@@ -46,11 +46,16 @@ public final class KycMeters {
                 .register(registry);
     }
 
-    /** The check-outcome counter for one normalised outcome (clear, hit, indeterminate). */
-    public static Counter check(MeterRegistry registry, String outcome) {
+    /**
+     * The check-outcome counter for one normalised outcome (clear, hit, indeterminate) of one purpose (onboarding,
+     * rescreen - `P13-TSK-022`'s review: a list update's screenings counted apart from the runs', the dashboard's
+     * {@code sum by (outcome)} unchanged).
+     */
+    public static Counter check(MeterRegistry registry, String outcome, String purpose) {
         return Counter.builder(CHECK)
                 .tag("outcome", outcome)
-                .description("Verification check outcomes, as normalised by us")
+                .tag("purpose", purpose)
+                .description("Verification check outcomes, as normalised by us, by why the check was asked")
                 .register(registry);
     }
 

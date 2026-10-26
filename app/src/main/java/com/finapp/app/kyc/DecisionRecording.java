@@ -2,6 +2,7 @@ package com.finapp.app.kyc;
 
 import com.finapp.identity.IdentityId;
 import com.finapp.kyc.CheckStore;
+import com.finapp.kyc.ChecksAssessment;
 import com.finapp.kyc.DecisionOutcome;
 import com.finapp.kyc.KycAuditAction;
 import com.finapp.kyc.KycCase;
@@ -118,6 +119,11 @@ public class DecisionRecording {
      *
      * <p>The policy version recorded is the <em>case's own</em>, copied by the factory — never
      * {@code CURRENT} re-read at decision time ({@code INV-HIST-04}).
+     *
+     * <p>The evidence is every check the case's decision rests on
+     * ({@link ChecksAssessment#decisionEvidence}, `P13-TSK-022`'s review): its onboarding checks
+     * and every list update's rescreen answered before it - a rescreen {@code HIT} the reviewer
+     * resolved is named in the record they defend ({@code INV-KYC-02}).
      */
     public Recording byReviewer(
             KycCaseId caseId, IdentityId reviewer, DecisionOutcome outcome, String reason) {
@@ -141,7 +147,11 @@ public class DecisionRecording {
                     if (!won) {
                         // Disambiguate the lost conditional by what is checked, not by the
                         // commonest cause (the NOT_ACTIVE lesson): a terminal case is already
-                        // decided; anything else is not ready for a decision yet.
+                        // decided; anything else is not ready for a decision yet - among it,
+                        // since P13-TSK-022's last review, a READY_FOR_DECISION case with an OPEN
+                        // review task (a list update's rescreen hit, or a late onboarding hit,
+                        // that arrived after the review exit): the decision's move never passes
+                        // one (KycCaseStore.moveStatus), so the reviewer resolves it first.
                         return cases.findById(unitOfWork, caseId)
                                         .map(current -> current.status().isTerminal())
                                         .orElse(false)
@@ -153,7 +163,8 @@ public class DecisionRecording {
                                     ids,
                                     clock,
                                     kycCase.get(),
-                                    checks.forCase(unitOfWork, caseId),
+                                    ChecksAssessment.decisionEvidence(
+                                            checks.allForCase(unitOfWork, caseId)),
                                     reviewer.value(),
                                     outcome,
                                     reason);

@@ -1,6 +1,7 @@
 package com.finapp.app.kyc;
 
 import com.finapp.kyc.CheckOutcome;
+import com.finapp.kyc.CheckPurpose;
 import com.finapp.kyc.KycAuditAction;
 import com.finapp.kyc.VerificationCheck;
 import com.finapp.platform.audit.AuditId;
@@ -42,7 +43,7 @@ public class CheckOutcomeTrail {
     private final AuditWriter<Connection> auditWriter;
     private final IdGenerator ids;
     private final Clock clock;
-    private final Map<CheckOutcome, Counter> outcomes;
+    private final Map<CheckPurpose, Map<CheckOutcome, Counter>> outcomes;
 
     public CheckOutcomeTrail(
             AuditWriter<Connection> auditWriter,
@@ -60,12 +61,19 @@ public class CheckOutcomeTrail {
         // shares with the unconditional registrar in KycMetrics: this trail exists only where a
         // provider endpoint is configured, and the series must not depend on that.
         Objects.requireNonNull(meterRegistry, "meterRegistry must not be null");
-        this.outcomes = new EnumMap<>(CheckOutcome.class);
-        for (CheckOutcome outcome : CheckOutcome.values()) {
-            outcomes.put(
-                    outcome,
-                    com.finapp.app.telemetry.KycMeters.check(
-                            meterRegistry, outcome.name().toLowerCase(Locale.ROOT)));
+        // By purpose since P13-TSK-022's review: a list update's rescreens counted apart from the runs'.
+        this.outcomes = new EnumMap<>(CheckPurpose.class);
+        for (CheckPurpose purpose : CheckPurpose.values()) {
+            Map<CheckOutcome, Counter> ofPurpose = new EnumMap<>(CheckOutcome.class);
+            for (CheckOutcome outcome : CheckOutcome.values()) {
+                ofPurpose.put(
+                        outcome,
+                        com.finapp.app.telemetry.KycMeters.check(
+                                meterRegistry,
+                                outcome.name().toLowerCase(Locale.ROOT),
+                                purpose.name().toLowerCase(Locale.ROOT)));
+            }
+            outcomes.put(purpose, ofPurpose);
         }
     }
 
@@ -105,12 +113,14 @@ public class CheckOutcomeTrail {
                                                                 + " identifier"))
                                     .correlationId(),
                             // Identifiers and enum names only (INV-AUD-02) - which case, which
-                            // question, what it normalised to.
+                            // question, why it was asked (P13-TSK-022's review: an onboarding
+                            // run's or a list update's rescreen), what it normalised to.
                             Optional.of(
                                     "case=" + check.caseId()
                                             + " type=" + check.type()
+                                            + " purpose=" + check.purpose()
                                             + " outcome=" + outcome)));
         }
-        outcomes.get(outcome).increment();
+        outcomes.get(check.purpose()).get(outcome).increment();
     }
 }

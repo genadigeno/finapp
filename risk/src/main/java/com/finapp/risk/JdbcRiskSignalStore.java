@@ -32,7 +32,7 @@ public final class JdbcRiskSignalStore implements RiskSignalStore {
             "id, kind, subject_kind, subject_ref, source_event_id, source_event_type, source_event_version, producer,"
                     + " observed_at, correlation_id, causation_id, product, status, previous_status, bucket,"
                     + " previous_bucket, country, currency, business_date, days_past_due, defaulted, agreement_version,"
-                    + " channel_ref, request_ref, merchant_subject_ref, intent_ref";
+                    + " channel_ref, request_ref, merchant_subject_ref, intent_ref, list_version_ref, screening_ref";
 
     @Override
     public boolean insert(Connection unitOfWork, RiskSignal signal) {
@@ -42,7 +42,7 @@ public final class JdbcRiskSignalStore implements RiskSignalStore {
                 // Born once: the unique on source_event_id arbitrates beneath the inbox's dedupe, so a replay past the
                 // dedupe's retention inserts nothing (INV-RSK-06). recorded_at is the trigger's: the database's clock.
                 "INSERT INTO risk.risk_signal (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
-                        + " ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (source_event_id) DO NOTHING")) {
+                        + " ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (source_event_id) DO NOTHING")) {
             int i = 0;
             insert.setObject(++i, signal.id().value());
             insert.setString(++i, signal.kind().name());
@@ -197,7 +197,7 @@ public final class JdbcRiskSignalStore implements RiskSignalStore {
                     statement.setBoolean(index, Boolean.parseBoolean(value));
                 }
             }
-            case "channel_ref", "request_ref", "merchant_subject_ref", "intent_ref" -> {
+            case "channel_ref", "request_ref", "merchant_subject_ref", "intent_ref", "list_version_ref", "screening_ref" -> {
                 if (value == null) {
                     statement.setNull(index, Types.OTHER);
                 } else {

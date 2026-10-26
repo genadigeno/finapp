@@ -42,7 +42,8 @@ public final class JdbcRiskAlertStore implements RiskAlertStore {
             + " ON CONFLICT ON CONSTRAINT risk_alert_born_once DO NOTHING RETURNING " + COLUMNS;
 
     static final String FIND_BY_KEY = "SELECT " + COLUMNS + " FROM risk.risk_alert"
-            + " WHERE subject_ref = ? AND rule_code = ? AND window_start = ?";
+            + " WHERE subject_ref = ? AND rule_code = ? AND window_start = ?"
+            + " AND fact_signal_id IS NOT DISTINCT FROM ?::uuid";
 
     static final String ATTACH = "UPDATE risk.risk_alert SET status = 'ATTACHED', attached_case_id = ?"
             + " WHERE id = ? AND status = 'OPEN' RETURNING " + COLUMNS;
@@ -123,6 +124,8 @@ public final class JdbcRiskAlertStore implements RiskAlertStore {
             select.setString(1, key.subjectRef());
             select.setString(2, key.ruleCode());
             select.setTimestamp(3, Timestamp.from(key.windowStart()));
+            // risk V018: the born-once unique holds the alert's one signal for a kind keyed by it, NULL for the rest.
+            select.setObject(4, key.factSignal().orElse(null), Types.OTHER);
             return single(select);
         } catch (SQLException failure) {
             throw failed("reading a risk alert by its key", failure);

@@ -118,25 +118,60 @@ public final class JdbcKycCaseStore implements KycCaseStore<Connection> {
         Objects.requireNonNull(from, "from must not be null");
         Objects.requireNonNull(to, "to must not be null");
         Objects.requireNonNull(at, "at must not be null");
-        try (PreparedStatement update =
-                unitOfWork.prepareStatement(
-                        "UPDATE " + TABLE
-                                + " SET status = ?,"
-                                // GREATEST(?, opened_at) - the P1-TSK-031 drift, clamped in the
-                                // statement: the mover's clock may read behind the one that
-                                // opened the case (ADR-0014: skew is bounded, never zero), and a
-                                // legal move must not die on V002's CHECK.
-                                + " status_changed_at = GREATEST(?, opened_at)"
-                                + " WHERE id = ? AND status = ?")) {
-            update.setString(1, to.name());
-            update.setTimestamp(2, Timestamp.from(at));
-            update.setObject(3, caseId.value());
-            update.setString(4, from.name());
-            return update.executeUpdate() == 1;
+        boolean deciding = to.isTerminal();
+        try {
+            if (deciding) {
+                // The decision's move (P13-TSK-022's last review, INV-KYC-04): never past an OPEN
+                // review task. Lock first, update second - moveToReadyForDecision's argument: the
+                // UPDATE below is a NEW statement whose snapshot is taken after the lock was
+                // granted, so a task that committed while we waited is visible to its NOT EXISTS
+                // (a blocked UPDATE alone would re-run the subquery on its original snapshot).
+                // A task's insert holds the case row FOR KEY SHARE through its foreign key, which
+                // this FOR UPDATE waits on - so either the task committed first and the decision
+                // is refused (the reviewer resolves it first), or the decision committed first and
+                // the task lands beside it.
+                if (!lockRow(unitOfWork, caseId)) {
+                    return false;
+                }
+            }
+            try (PreparedStatement update =
+                    unitOfWork.prepareStatement(
+                            "UPDATE " + TABLE
+                                    + " SET status = ?,"
+                                    // GREATEST(?, opened_at) - the P1-TSK-031 drift, clamped in the
+                                    // statement: the mover's clock may read behind the one that
+                                    // opened the case (ADR-0014: skew is bounded, never zero), and
+                                    // a legal move must not die on V002's CHECK.
+                                    + " status_changed_at = GREATEST(?, opened_at)"
+                                    + " WHERE id = ? AND status = ?"
+                                    + (deciding
+                                            ? " AND NOT EXISTS (SELECT 1 FROM kyc.review_task"
+                                                    + " WHERE case_id = ? AND status = 'OPEN')"
+                                            : ""))) {
+                update.setString(1, to.name());
+                update.setTimestamp(2, Timestamp.from(at));
+                update.setObject(3, caseId.value());
+                update.setString(4, from.name());
+                if (deciding) {
+                    update.setObject(5, caseId.value());
+                }
+                return update.executeUpdate() == 1;
+            }
         } catch (SQLException failure) {
             throw new KycStorageException(
                     DatabaseFailure.describe(
                             "moving KYC case " + caseId + " from " + from + " to " + to, failure));
+        }
+    }
+
+    /** The case row {@code FOR UPDATE}; false when there is no such case. */
+    private static boolean lockRow(Connection unitOfWork, KycCaseId caseId) throws SQLException {
+        try (PreparedStatement lock =
+                unitOfWork.prepareStatement("SELECT 1 FROM " + TABLE + " WHERE id = ? FOR UPDATE")) {
+            lock.setObject(1, caseId.value());
+            try (ResultSet row = lock.executeQuery()) {
+                return row.next();
+            }
         }
     }
 

@@ -156,6 +156,53 @@ public final class JdbcPartyStore implements PartyStore<Connection> {
     }
 
     @Override
+    public java.util.List<PartyId> customerPartiesAfter(
+            Connection unitOfWork,
+            java.util.Set<CustomerStatus> statuses,
+            Optional<PartyId> after,
+            int limit) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(statuses, "statuses must not be null");
+        Objects.requireNonNull(after, "after must not be null");
+        if (statuses.isEmpty()) {
+            throw new IllegalArgumentException("a page of customers' parties names a status");
+        }
+        if (limit < 1 || limit > 1000) {
+            throw new IllegalArgumentException("a page of customers' parties is 1..1000 rows: " + limit);
+        }
+        // Two statements, not one "(? IS NULL OR party_id > ?)": under a generic plan that disjunction
+        // is not sargable, so every batch after the first would rescan from the start (P13-TSK-022's
+        // review). Each statement here is one range scan of customer_by_party from its cursor.
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        after.isEmpty()
+                                ? "SELECT party_id FROM party.customer WHERE status = ANY (?)"
+                                        + " ORDER BY party_id LIMIT ?"
+                                : "SELECT party_id FROM party.customer WHERE status = ANY (?)"
+                                        + " AND party_id > ? ORDER BY party_id LIMIT ?")) {
+            int index = 1;
+            select.setArray(
+                    index++,
+                    unitOfWork.createArrayOf(
+                            "text", statuses.stream().map(Enum::name).sorted().toArray()));
+            if (after.isPresent()) {
+                select.setObject(index++, after.get().value());
+            }
+            select.setInt(index, limit);
+            java.util.List<PartyId> page = new java.util.ArrayList<>();
+            try (ResultSet rows = select.executeQuery()) {
+                while (rows.next()) {
+                    page.add(PartyId.of(rows.getObject("party_id", UUID.class)));
+                }
+            }
+            return page;
+        } catch (SQLException e) {
+            throw new PartyStorageException(
+                    DatabaseFailure.describe("Could not read a page of customers' parties", e));
+        }
+    }
+
+    @Override
     public Optional<PartyKind> kindOfCustomer(Connection unitOfWork, CustomerId customerId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(customerId, "customerId must not be null");

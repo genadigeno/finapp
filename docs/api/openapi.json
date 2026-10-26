@@ -14293,6 +14293,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "purpose": {
+            "type": "string"
+          },
           "requestedAt": {
             "format": "date-time",
             "type": "string"
@@ -24116,6 +24119,65 @@
           "decision",
           "from",
           "to"
+        ],
+        "type": "object"
+      },
+      "RiskScreeningListActivationRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskScreeningListReceipt": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "list": {
+            "type": "string"
+          },
+          "ordinal": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "retiredId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskScreeningListVersionRequest": {
+        "properties": {
+          "list": {
+            "minLength": 1,
+            "pattern": "SANCTIONS|PEP",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "[A-Za-z0-9][A-Za-z0-9._:-]{0,63}",
+            "type": "string"
+          }
+        },
+        "required": [
+          "list",
+          "version"
         ],
         "type": "object"
       },
@@ -37244,6 +37306,88 @@
               }
             },
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/screening-lists": {
+      "post": {
+        "operationId": "recordScreeningListVersion",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskScreeningListVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskScreeningListReceipt"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/screening-lists/{listVersionId}/activation": {
+      "post": {
+        "operationId": "activateScreeningListVersion",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "listVersionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiskScreeningListActivationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskScreeningListReceipt"
+                }
+              }
+            },
+            "description": "Accepted"
           }
         }
       }

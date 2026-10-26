@@ -738,6 +738,11 @@ class CredentialReachesNoEmittedSinkTest {
                         // and by risk V016's CHECK; the approval's and the filing's body a REASON alone.
                         "RiskReportDraftRequest",
                         "RiskReportDecisionRequest",
+                        // P13-TSK-022: the screening list version's bodies. No secret: a list code, the provider's
+                        // label for its version (a bounded identifier, no text) and a REASON, screened at the domain
+                        // (RiskReasons); the activation's body a REASON alone.
+                        "RiskScreeningListVersionRequest",
+                        "RiskScreeningListActivationRequest",
                         // P13-TSK-023: the risk monitoring reprocessing's body (P13-TSK-019's), renamed from
                         // ReprocessingRequest - which it shared with reconciliation's, so the contract published one
                         // schema for two doors (ApiSchemaNamesAreUniqueTest). No secret: a sequence and a REASON.

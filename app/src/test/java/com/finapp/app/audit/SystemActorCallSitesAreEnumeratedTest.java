@@ -509,6 +509,18 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " an inquiry: the permit came on the database clock. No door that holds a Session calls this:"
                         + " the desk calls the driver after its keyed act."),
                     Map.entry(
+                            "com.finapp.app.risk.RescreeningDriver.asThePlatform",
+                    "The rescreening leg of RiskActionSchedule (P13-TSK-022, PHASE_13_PLAN.md sections 7.1 T-list and"
+                        + " 12.10): PERSONS decided it - a RISK_POLICY_ADMINISTER holder recorded the screening list"
+                        + " version and a different one activated it from a MULTI_FACTOR session, each recorded under"
+                        + " their own actor at the door (risk.ListVersionRecorded, risk.ListVersionActivated; the"
+                        + " version's recorded_by and activated_by) - and the PLATFORM rescreens: the enqueue of one"
+                        + " permit per ACTIVE or PENDING party, the claim, kyc asked through PartyRescreening, the clearance"
+                        + " recorded as a risk signal and a hit's alert raised and folded (risk.CaseOpened under SYSTEM,"
+                        + " exactly as T-mon's folds). Nobody commands a permit: the activation left the enqueue due and"
+                        + " each permit's came on the database clock. Called only from the monitoring sweep, inside its"
+                        + " own system scope; no door that holds a Session calls this."),
+                    Map.entry(
                             "com.finapp.app.risk.RiskSignalIntake.asThePlatform",
                     "A default recorded as a risk signal opens or joins the borrower's COLLECTIONS case (P13-TSK-025,"
                         + " owner decision C3; the CustomerOpenedOpensCase.handle class of site): an inbox delivery of"

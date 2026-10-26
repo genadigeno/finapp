@@ -210,14 +210,20 @@ public class ReviewController {
         }
     }
 
-    /** A check as a reference: the id IS the evidence reference; content stays encrypted. */
-    public record CheckView(UUID id, String type, String status, Instant requestedAt) {
+    /**
+     * A check as a reference: the id IS the evidence reference; content stays encrypted. Its
+     * purpose since `P13-TSK-022`'s review: {@code ONBOARDING}, or {@code RESCREEN} - a list
+     * update's screening, whose hit the reviewer resolves on an undecided case and reads beside
+     * the decision on a decided one.
+     */
+    public record CheckView(UUID id, String type, String status, Instant requestedAt, String purpose) {
         static CheckView of(VerificationCheck check) {
             return new CheckView(
                     check.id().value(),
                     check.type().name(),
                     check.status().name(),
-                    check.requestedAt());
+                    check.requestedAt(),
+                    check.purpose().name());
         }
     }
 

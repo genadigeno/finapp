@@ -495,6 +495,10 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/reports/{reportId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/reports/{reportId}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/reports/{reportId}/filing",
+                        // P13-TSK-022: the screening list version - recorded (201) and activated by a second holder
+                        // from MULTI_FACTOR (202) under RISK_POLICY_ADMINISTER.
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/screening-lists",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/screening-lists/{listVersionId}/activation",
                         // P13-TSK-023: the proofs as audited reads - the four operations reports with their censuses,
                         // the day's replay, and the case's evidence door (RISK_INVESTIGATE).
                         ApiVersion.CURRENT_PREFIX + "/operator/reports/risk/decisions",

@@ -386,6 +386,9 @@ class NoSingleInstanceAssumptionRulesTest {
                     // back under FOR UPDATE, waiting for a running batch. Register row: DISTRIBUTED_EXECUTION.md section
                     // 3; the ten-sweeper race is MonitoringIntakeDatabaseTest#tenSweepersIngestOnce. (P13-TSK-012's
                     // override action leg rode this schedule until P13-TSK-017 moved it to RiskActionSchedule below.)
+                    // P13-TSK-022 rode this tick as its rescreening leg until the owner's decision O1 gave kyc a re-screening
+                    // door: the leg then makes kyc's provider calls, and it moved to RiskActionSchedule below - so "no
+                    // external call" holds here again.
                     "com.finapp.app.risk.RiskMonitoringSchedule",
                     // P13-TSK-017: the same half for the risk action schedule - the 31st entry. DESIGN: no money row is
                     // taken by risk and no risk row is held while an owner works. Each claim is ONE statement on the
@@ -406,6 +409,16 @@ class NoSingleInstanceAssumptionRulesTest {
                     // later one inquires by it - and the answer recorded conditionally on FILED and the claimed attempt,
                     // once. Ten instances drive one report once per lease; a lost answer is asked for, never filed
                     // again. Counted by RegulatoryReportDatabaseTest#tenInquirersAcknowledgeOnce (owed - C5).
+                    // P13-TSK-022 adds its third leg, still not a 32nd entry: the rescreening (moved here from the monitoring
+                    // schedule with kyc's door, owner decision O1). An activated list version's enqueue in bounded
+                    // batches - the version row FOR UPDATE SKIP LOCKED (R9), a keyset page of the parties to rescreen, one
+                    // permit each ON CONFLICT DO NOTHING, the cursor advanced, one transaction a batch - then up to
+                    // permits-per-tick due permits, each claimed FOR UPDATE SKIP LOCKED with its lease and attempt and
+                    // COMMITTED before kyc's door is asked on no risk transaction under risk.rescreen:<id>#n, with no
+                    // connection held across the provider's bounded call; kyc's rescreen_key unique makes one key one
+                    // question and its conditional dispatch one provider effect, and the conclusion is conditional on
+                    // PENDING and the claimed attempt. Ten instances rescreen each party once:
+                    // RescreeningDatabaseTest#tenSweepersRescreenEveryActivePartyOnceThroughKyc (owed - C5).
                     "com.finapp.app.risk.RiskActionSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
