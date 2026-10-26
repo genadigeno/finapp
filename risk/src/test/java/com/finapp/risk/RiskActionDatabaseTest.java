@@ -330,7 +330,9 @@ class RiskActionDatabaseTest {
                 .replace("risk.decision_override o", "pg_temp.fold_override o");
         UUID awaiting = IDS.next();
         UUID concluded = IDS.next();
-        try (Connection migrator = DatabaseRoles.migrator()) {
+        // The bootstrap role: the probe makes no privilege claim, and the migrator holds no TEMP on the database (the
+        // privilege floor) - P13-TST-001's run of this owed suite met "permission denied to create temporary tables".
+        try (Connection migrator = DatabaseRoles.bootstrap()) {
             migrator.setAutoCommit(false);
             try (Statement statement = migrator.createStatement()) {
                 statement.execute("CREATE TEMP TABLE fold_override (id uuid, status text, effect text, target_id uuid,"
