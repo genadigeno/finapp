@@ -343,15 +343,18 @@ read both entries against the code as built through `P12-TSK-028`.)*
 - **Operations:** case age and throughput, straight-through rate, screening hit rate, provider latency and error rate, review queue depth.
 - **Providers:** sanctions, PEP, adverse media, document verification — all via adapters (ADR-0008).
 - **Phase 13** *(`P13-TSK-022`, 2026-10-26, the owner's decision O1; ADR-0035's amendment; kyc `V011`)*: **a re-screening
-  door beside the decision.** A Verification Check gains its purpose - `ONBOARDING` (the run's own, the decision's
-  evidence) or `RESCREEN` (a sanctions or PEP screening asked again on a list update, keyed by risk's permit,
-  `verification_check_rescreen_once`; its ask on the database's clock). `VerificationRunService.rescreen` asks one with the
-  run's choreography and **no assessment**: the case, its decision and the customer never move, no review task opens;
-  kyc's onboarding reads (`forCase`, the convergence, the budget, `ChecksAssessment`, the in-flight index) see onboarding
-  checks only and the callback door assesses only on one - on the run's path and on a late callback alike. The one read
-  that sees both, `CheckStore.allForCase`, is risk's screening-hit reading's. The purpose and the key are frozen by the
-  grant (`UPDATE` narrowed to `status`, `status_changed_at`). Caller: risk's rescreening leg, through `app`'s
-  `KycPartyRescreening` - the one production caller of `requestRescreen` (`OwnershipIsScopedTest`'s `SYSTEM_JOIN`).
+  door beside the decision.** A Verification Check gains its purpose - `ONBOARDING` (the run's own, what answers its
+  required types) or `RESCREEN` (a sanctions or PEP screening asked again on a list update, keyed by risk's permit and an
+  ordinal, `verification_check_rescreen_once`; its ask on the database's clock). `VerificationRunService.rescreen` asks one
+  with the run's choreography; on a **decided** case nothing more - the case, its decision and the customer never move, no
+  review task opens; on a case **not yet decided** a hit is assessed after its commit
+  (`CaseAssessment.assessRescreened`, the second review's fail-closed rule) and routes the case to review exactly as an
+  onboarding hit, on the run's path and on a late callback alike. The run's reads (the convergence, the budget, the
+  in-flight index) see onboarding checks only, so a rescreen never answers or deadlocks a run; an undecided case's
+  assessment and decision and the reviewer read every check (`CheckStore.allForCase`), a decided case's re-assessment its
+  onboarding checks (`forCase`); risk's screening-hit reading reads `latestDecidedScreenings`, bounded. The purpose and the
+  key are frozen by the grant (`UPDATE` narrowed to `status`, `status_changed_at`). Caller: risk's rescreening leg, through
+  `app`'s `KycPartyRescreening` - the one production caller of `requestRescreen` (`OwnershipIsScopedTest`'s `SYSTEM_JOIN`).
 
 ### `consent` — Phase 2
 - **Responsibility:** the lawful basis for processing, held separately from authentication and authorization.

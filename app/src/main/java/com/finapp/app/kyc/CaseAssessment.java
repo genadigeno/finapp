@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -43,6 +44,20 @@ import org.springframework.transaction.support.TransactionTemplate;
  * afterwards, the last assessor sees every committed outcome. The same separation is what lets
  * a <em>duplicate</em> callback delivery re-assess and heal a crash that landed between an
  * outcome and the transition.
+ *
+ * <h2>A list update's rescreen, by the case's own state (`P13-TSK-022`'s review, fail-closed)</h2>
+ *
+ * <p>An <em>undecided</em> case is assessed over every check ({@code CheckStore#allForCase}): a
+ * {@code RESCREEN} check's {@code HIT} blocks the automatic approval, opens its review task and
+ * moves the case to {@code IN_REVIEW} exactly as an onboarding {@code HIT} does
+ * ({@code INV-KYC-04}), and the decision's evidence names every rescreen answered
+ * ({@link ChecksAssessment#decisionEvidence}). A <em>decided</em> case is re-assessed over its
+ * onboarding checks, as it always was, and a rescreen's answer on it assesses nothing
+ * ({@link #assessRescreened}): evidence beside the decision, never a re-decision (ADR-0035's
+ * amendment). A rescreen {@code HIT} that commits while a concurrent assessment is deciding
+ * the case is ordered after that decision - the decision rests on exactly what its own
+ * transaction read - and lands beside it; risk's {@code SCREENING_HIT} alert puts it in front of
+ * a person on either side of the decision.
  */
 public class CaseAssessment {
 
@@ -113,11 +128,25 @@ public class CaseAssessment {
 
     /** Assesses the case and applies the one transition the assessment permits. */
     public Result assess(KycCaseId caseId) {
+        return assessing(caseId, false).orElseThrow();
+    }
+
+    /**
+     * A {@code RESCREEN}'s answer (`P13-TSK-022`'s review, fail-closed): assessed exactly as an
+     * onboarding answer while the case is undecided - its {@code HIT} needs a person - and, on a
+     * decided case, nothing at all: the rescreen is evidence beside the decision, never a
+     * re-decision. Empty when the case was decided.
+     */
+    public Optional<Result> assessRescreened(KycCaseId caseId) {
+        return assessing(caseId, true);
+    }
+
+    private Optional<Result> assessing(KycCaseId caseId, boolean undecidedOnly) {
         Objects.requireNonNull(caseId, "caseId must not be null");
-        Result result =
+        Optional<Result> result =
                 units.inTransaction(
-                        unitOfWork -> assessInTransaction(unitOfWork, caseId));
-        if (result.assessment() == ChecksAssessment.CLEAR_TO_PROCEED) {
+                        unitOfWork -> assessInTransaction(unitOfWork, caseId, undecidedOnly));
+        if (result.isPresent() && result.get().assessment() == ChecksAssessment.CLEAR_TO_PROCEED) {
             // After the commit, never inside it (the exit-attempt discipline throughout this
             // phase): if this case is some KYB case's pinned verification and the clear
             // assessment just decided it, the parents waiting on the answer are re-routed now.
@@ -126,7 +155,8 @@ public class CaseAssessment {
         return result;
     }
 
-    private Result assessInTransaction(Connection unitOfWork, KycCaseId caseId) {
+    private Optional<Result> assessInTransaction(
+            Connection unitOfWork, KycCaseId caseId, boolean undecidedOnly) {
         // The kind decides the CLEAR branch (P2-TSK-015): a KYB case moves to
         // READY_FOR_DECISION - behind the ownership gate - and then WAITS for a
         // KYC_REVIEWER, because an organisation is never decided automatically
@@ -138,7 +168,20 @@ public class CaseAssessment {
                                         new IllegalStateException(
                                                 "an assessed case must exist: "
                                                         + caseId));
-        List<VerificationCheck> all = checks.forCase(unitOfWork, caseId);
+        boolean decided = kycCase.status().isTerminal();
+        if (undecidedOnly && decided) {
+            // A rescreen's answer on a decided case: evidence beside the decision - nothing is
+            // assessed, no task opens, nothing moves (ADR-0035's amendment, INV-LIFE-04).
+            return Optional.empty();
+        }
+        // P13-TSK-022's review (fail-closed): an undecided case reads every check - a rescreen's
+        // HIT before the decision blocks it and needs a person, and the decision rests on every
+        // answered rescreen; a decided case's re-assessment (a duplicate callback) reads its
+        // onboarding checks, as it always has, so it never opens a task for a rescreen.
+        List<VerificationCheck> all =
+                decided
+                        ? checks.forCase(unitOfWork, caseId)
+                        : ChecksAssessment.decisionEvidence(checks.allForCase(unitOfWork, caseId));
         ChecksAssessment assessment = ChecksAssessment.of(requiredTypes, all);
         if (assessment == ChecksAssessment.CLEAR_TO_PROCEED) {
             // The move's result is deliberately not the gate on the decision: a
@@ -177,7 +220,7 @@ public class CaseAssessment {
                     KycCaseStatus.IN_REVIEW,
                     Instant.now(clock));
         }
-        return new Result(assessment, all);
+        return Optional.of(new Result(assessment, all));
     }
 
     /**

@@ -61,15 +61,21 @@ class KycMetricsTest {
         new KycMetrics(new FixedQueue(0), () -> null, CLOCK, registry);
 
         for (com.finapp.kyc.CheckOutcome outcome : com.finapp.kyc.CheckOutcome.values()) {
-            assertThat(
-                            registry.get(KycMeters.CHECK)
-                                    .tag(
-                                            "outcome",
-                                            outcome.name().toLowerCase(java.util.Locale.ROOT))
-                                    .counter()
-                                    .count())
-                    .as("finapp.kyc.check{outcome=%s} exists at zero", outcome)
-                    .isZero();
+            // By purpose since P13-TSK-022's review: a list update's rescreens apart from the runs'.
+            for (com.finapp.kyc.CheckPurpose purpose : com.finapp.kyc.CheckPurpose.values()) {
+                assertThat(
+                                registry.get(KycMeters.CHECK)
+                                        .tag(
+                                                "outcome",
+                                                outcome.name().toLowerCase(java.util.Locale.ROOT))
+                                        .tag(
+                                                "purpose",
+                                                purpose.name().toLowerCase(java.util.Locale.ROOT))
+                                        .counter()
+                                        .count())
+                        .as("finapp.kyc.check{outcome=%s,purpose=%s} exists at zero", outcome, purpose)
+                        .isZero();
+            }
         }
         assertThat(registry.get(KycMeters.PROVIDER_LATENCY).timer().count()).isZero();
     }

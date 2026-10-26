@@ -78,6 +78,17 @@ class KycRescreenMigrationTest {
     }
 
     @Test
+    @DisplayName("risk's screening-hit read is served in its own order (P13-TSK-022's review): per (case, type) the"
+            + " decided checks newest first, both purposes - one probe per type, however many rescreens accumulate")
+    void theLatestDecidedReadIsIndexed() {
+        assertThat(sql)
+                .contains(
+                        "CREATE INDEX verification_check_decided_latest ON kyc.verification_check (case_id,"
+                                + " check_type, requested_at DESC, status_changed_at DESC, id DESC) WHERE status IN"
+                                + " ('CLEAR', 'HIT');");
+    }
+
+    @Test
     @DisplayName("the purpose and the key are frozen: V004's table-wide UPDATE narrowed to the machine's two columns;"
             + " no DELETE; no other schema named; no row written")
     void thePurposeAndTheKeyAreFrozen() {

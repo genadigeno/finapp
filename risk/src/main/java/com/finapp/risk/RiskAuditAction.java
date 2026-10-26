@@ -437,9 +437,10 @@ public enum RiskAuditAction implements AuditableAction {
             "A holder of RISK_POLICY_ADMINISTER other than its recorder activated a screening list version from a"
                     + " MULTI_FACTOR session (POST /v1/operator/risk/screening-lists/{id}/activation, 202; INV-AUD-04, the"
                     + " four-eyes CHECK beneath), retiring the list's predecessor in the same transaction; the rescreening"
-                    + " of every ACTIVE party is enqueued by RiskMonitoringSchedule's rescreening leg in bounded batches,"
-                    + " never in this transaction - kyc stays the screening owner (Refinement 3). Its target the list"
-                    + " version; the summary the list, the label, the ordinal and the predecessor retired.",
+                    + " of every party whose customer relationship is ACTIVE or PENDING is enqueued by RiskActionSchedule's"
+                    + " rescreening leg in bounded batches, never in this transaction - kyc stays the screening owner"
+                    + " (Refinement 3). Its target the list version; the summary the list, the label, the ordinal and the"
+                    + " predecessor retired.",
             true),
 
     /** An officer ordered the monitoring intake reprocessed from an earlier watermark. */

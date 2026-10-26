@@ -187,7 +187,7 @@ class RescreeningRunTest {
         }
         assertThat(claimed).as("one claim of ten").hasSize(1);
         assertThat(claimed.getFirst().attempts()).isEqualTo(1);
-        PartyRescreening.Answer answer = run.ask(claimed.getFirst());
+        PartyRescreening.Answer answer = run.ask(claimed.getFirst(), LEASE);
         assertThat(kyc.asked).containsExactly(party + "|SANCTIONS|" + PartyRescreening.KEY_PREFIX
                 + claimed.getFirst().id().value());
         Optional<RescreeningRun.Concluded> done = conclude(claimed.getFirst(), answer);
@@ -209,7 +209,7 @@ class RescreeningRunTest {
         kyc.answers.put(party, screened(true, lists.now.plusSeconds(60)));
         RescreeningPermit first = claimed(run.claimNextDue(UOW, LEASE)).orElseThrow();
         commit();
-        PartyRescreening.Answer slow = run.ask(first);
+        PartyRescreening.Answer slow = run.ask(first, LEASE);
         tick(LEASE.plusSeconds(1));
         RescreeningPermit second = claimed(run.claimNextDue(UOW, LEASE)).orElseThrow();
         commit();
@@ -217,7 +217,7 @@ class RescreeningRunTest {
         assertThat(conclude(first, slow)).as("the earlier claim's conclusion, with the second claim standing").isEmpty();
         commit();
         assertThat(permits.all().getFirst().status()).isEqualTo(RescreeningPermit.Status.PENDING);
-        assertThat(conclude(second, run.ask(second))).isPresent();
+        assertThat(conclude(second, run.ask(second, LEASE))).isPresent();
         commit();
         assertThat(signalStore.rows).hasSize(1);
         assertThat(world.alertStore.all()).hasSize(1);
@@ -227,7 +227,7 @@ class RescreeningRunTest {
     @Test
     @DisplayName("a hit alerts once and cases: SCREENING_HIT recorded born of the permit, the CRITICAL fact alert of the"
             + " activation's day raised - its own code its rule, no policy - and folded into the party's AML case; a"
-            + " second list's hit that day meets the standing alert")
+            + " second list's hit that day is its own alert (one per party and list version), folded beside it")
     void aHitAlertsOnceAndCases() {
         UUID party = oneEnqueued(ScreeningList.SANCTIONS, "v1");
         Instant activatedAt = lists.all().getFirst().activatedAt().orElseThrow();
@@ -259,8 +259,8 @@ class RescreeningRunTest {
         assertThat(aml.subject()).isEqualTo(SignalSubject.of(SubjectKind.PARTY, party));
         assertThat(alert.attachedCase()).contains(aml.id());
 
-        // A PEP version activated the same day hits the same party: its own signal, the alert standing - one alert, one
-        // case (the review's MINOR 7, an owner item: one key per (party, day) across lists).
+        // A PEP version activated the same day hits the same party: its own signal and - the review's IMPORTANT 3 - its
+        // own alert, one per (party, list version), folded into the party's open AML case beside the first.
         tick(Duration.ofMinutes(10));
         ScreeningListVersion pep = activated(ScreeningList.PEP, "p1");
         enqueueAll();
@@ -269,8 +269,97 @@ class RescreeningRunTest {
                 .isEqualTo(AlertWindow.containing(WindowKind.D1, activatedAt));
         assertThat(rescreenOnce().orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.HIT);
         assertThat(signalStore.rows).hasSize(2);
-        assertThat(world.alertStore.all()).as("born once per (party, rule, window start)").hasSize(1);
-        assertThat(world.caseStore.all()).hasSize(1);
+        assertThat(world.alertStore.all()).as("born once per (party, list version): two versions, two alerts").hasSize(2)
+                .allSatisfy(each -> assertThat(each.attachedCase()).contains(aml.id()));
+        assertThat(world.alertStore.all()).extracting(RiskAlert::key).extracting(AlertKey::factSignal)
+                .containsExactlyInAnyOrder(Optional.of(signalStore.rows.get(0).id().value()),
+                        Optional.of(signalStore.rows.get(1).id().value()));
+        assertThat(world.caseStore.all()).as("folded into the one open AML case").hasSize(1);
+
+        // A replay of the second hit's alert meets its own key: born once.
+        RescreeningPermit second = permits.all().stream().filter(p -> p.listVersionId().equals(pep.id())).findFirst()
+                .orElseThrow();
+        CaseWorld.asSystem(() -> world.alerts.raiseAll(UOW, List.of(RescreeningRun.hitAlert(second,
+                signalStore.rows.get(1).id(), CorrelationId.of(second.correlationId()),
+                com.finapp.sharedkernel.correlation.CausationId.of("replay")))));
+        assertThat(world.alertStore.all()).as("the second hit's key is its own, and born once").hasSize(2);
+    }
+
+    @Test
+    @DisplayName("the review's IMPORTANT 3, its scenario: a PEP v3 hit at 08:00 is cased, the case closed a false positive"
+            + " at 10:00, a SANCTIONS v7 hit of the party at 14:00 the same day is its own alert - born, and cased anew"
+            + " (a successor naming the closed case), never lost to the first alert's key")
+    void aSecondHitOfTheDayAfterTheFirstCaseClosedIsCased() {
+        lists.now = Instant.parse("2026-10-26T08:00:00Z");
+        permits.now = lists.now;
+        UUID party = oneEnqueued(ScreeningList.PEP, "v3");
+        kyc.answers.put(party, screened(true, lists.now.plusSeconds(30)));
+        assertThat(rescreenOnce().orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.HIT);
+        RiskCase first = world.caseStore.all().getFirst();
+        assertThat(first.kind()).isEqualTo(CaseKind.AML);
+
+        tick(Duration.ofHours(2));
+        RiskCase closing = world.cases.current(UOW, first.id()).orElseThrow();
+        world.cases.proposeDisposition(UOW, first.id(), closing.revision(), "CLOSED_FALSE_POSITIVE", false,
+                "a namesake, not the party", world.analyst(), CaseWorld.correlation());
+        assertThat(world.cases.current(UOW, first.id()).orElseThrow().status()).isEqualTo(CaseStatus.DISPOSED);
+
+        tick(Duration.ofHours(4));
+        ScreeningListVersion sanctions = activated(ScreeningList.SANCTIONS, "v7");
+        enqueueAll();
+        assertThat(AlertWindow.containing(WindowKind.D1, sanctions.activatedAt().orElseThrow()))
+                .as("the same UTC day").isEqualTo(AlertWindow.containing(WindowKind.D1,
+                        Instant.parse("2026-10-26T08:00:00Z")));
+        kyc.answers.put(party, screened(true, permits.now.plusSeconds(30)));
+        assertThat(rescreenOnce().orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.HIT);
+
+        assertThat(world.alertStore.all()).as("two hits, two alerts").hasSize(2);
+        RiskAlert sanctionsHit = world.alertStore.all().stream()
+                .filter(alert -> alert.evidence().signals().contains(signalStore.rows.get(1).id())).findFirst()
+                .orElseThrow();
+        assertThat(sanctionsHit.status()).as("born and cased, never an orphan of the closed case")
+                .isEqualTo(AlertStatus.ATTACHED);
+        RiskCase second = world.cases.current(UOW, sanctionsHit.attachedCase().orElseThrow()).orElseThrow();
+        assertThat(second.id()).isNotEqualTo(first.id());
+        assertThat(second.status()).isEqualTo(CaseStatus.OPEN);
+        assertThat(second.kind()).isEqualTo(CaseKind.AML);
+        assertThat(second.predecessor()).contains(first.id());
+    }
+
+    @Test
+    @DisplayName("the review's IMPORTANT 4: an onboarding party with no KYC case is DONE(NOT_ONBOARDED) - counted on its"
+            + " own, nothing recorded, never the exposure FAILED counts")
+    void anOnboardingPartyWithNoCaseIsNotOnboarded() {
+        UUID party = oneEnqueued(ScreeningList.SANCTIONS, "v1");
+        kyc.answers.put(party, new PartyRescreening.NotOnboarded());
+        assertThat(rescreenOnce().orElseThrow().conclusion()).isEqualTo(RescreeningObserver.Conclusion.NOT_ONBOARDED);
+        RescreeningPermit done = permits.all().getFirst();
+        assertThat(done.status()).isEqualTo(RescreeningPermit.Status.DONE);
+        assertThat(done.outcome()).contains(RescreeningPermit.Outcome.NOT_ONBOARDED);
+        assertThat(done.signalId()).isEmpty();
+        assertThat(signalStore.rows).isEmpty();
+        assertThat(concluded).containsExactly(RescreeningObserver.Conclusion.NOT_ONBOARDED);
+        assertThat(RescreeningPermit.Outcome.NOT_ONBOARDED.recordsASignal()).isFalse();
+    }
+
+    @Test
+    @DisplayName("the review's IMPORTANT 2: each claim's question carries its attempt - the most key ordinals it may have"
+            + " asked - and its abandonment line, the claim's instant less one lease, both on the database's clock")
+    void theQuestionCarriesTheClaimsAttemptAndAbandonmentLine() {
+        UUID party = oneEnqueued(ScreeningList.SANCTIONS, "v1");
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            Instant claimedAt = permits.now;
+            RescreeningPermit claimed = claimed(run.claimNextDue(UOW, LEASE)).orElseThrow();
+            commit();
+            conclude(claimed, run.ask(claimed, LEASE));
+            commit();
+            PartyRescreening.Question question = kyc.questions.getLast();
+            assertThat(question.attempt()).isEqualTo(attempt);
+            assertThat(question.abandonedBefore()).isEqualTo(claimedAt.minus(LEASE));
+            assertThat(question.requestKey()).isEqualTo(claimed.requestKey());
+            assertThat(question.partyId()).isEqualTo(party);
+            tick(Duration.ofHours(7));
+        }
     }
 
     @Test
@@ -380,7 +469,7 @@ class RescreeningRunTest {
             RescreeningPermit permit = claimed(run.claimNextDue(UOW, LEASE)).orElseThrow();
             commit();
             assertThat(permit.attempts()).isEqualTo(attempt);
-            PartyRescreening.Answer answer = run.ask(permit);
+            PartyRescreening.Answer answer = run.ask(permit, LEASE);
             assertThatThrownBy(() -> conclude(permit, answer)).hasMessageContaining("refuses");
             commit();
             tick(LEASE.plusSeconds(1));
@@ -553,7 +642,7 @@ class RescreeningRunTest {
         if (claimed.isEmpty()) {
             return Optional.empty();
         }
-        Optional<RescreeningRun.Concluded> done = conclude(claimed.get(), run.ask(claimed.get()));
+        Optional<RescreeningRun.Concluded> done = conclude(claimed.get(), run.ask(claimed.get(), LEASE));
         commit();
         return done;
     }
@@ -589,14 +678,17 @@ class RescreeningRunTest {
         final Map<UUID, Answer> answers = new HashMap<>();
         final List<UUID> failing = new ArrayList<>();
         final List<String> asked = new ArrayList<>();
+        final List<Question> questions = new ArrayList<>();
 
         @Override
-        public Answer ask(UUID partyId, ScreeningList list, String requestKey) {
-            asked.add(partyId + "|" + list + "|" + requestKey);
-            if (failing.contains(partyId)) {
+        public Answer ask(Question question) {
+            questions.add(question);
+            asked.add(question.partyId() + "|" + question.list() + "|" + question.requestKey());
+            if (failing.contains(question.partyId())) {
                 throw new IllegalStateException("kyc's store could not be read: a message that never leaves");
             }
-            return answers.getOrDefault(partyId, new PartyRescreening.Pending(PartyRescreening.Wait.NOT_SCREENED));
+            return answers.getOrDefault(question.partyId(),
+                    new PartyRescreening.Pending(PartyRescreening.Wait.NOT_SCREENED));
         }
     }
 

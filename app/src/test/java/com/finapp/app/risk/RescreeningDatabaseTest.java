@@ -3,14 +3,22 @@ package com.finapp.app.risk;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.app.kyc.CaseAssessment;
+import com.finapp.app.kyc.DecisionRecording;
+import com.finapp.app.kyc.ReviewService;
 import com.finapp.app.kyc.VerificationRunService;
+import com.finapp.identity.IdentityId;
 import com.finapp.kyc.CheckId;
+import com.finapp.kyc.CheckPurpose;
 import com.finapp.kyc.CheckStatus;
 import com.finapp.kyc.CheckStore;
 import com.finapp.kyc.CheckType;
+import com.finapp.kyc.ChecksAssessment;
+import com.finapp.kyc.DecisionOutcome;
 import com.finapp.kyc.DocumentVerificationAdapter;
 import com.finapp.kyc.IdentityVerificationAdapter;
 import com.finapp.kyc.KycCaseId;
+import com.finapp.kyc.ReviewTaskId;
 import com.finapp.kyc.ScreeningAdapter;
 import com.finapp.kyc.VerificationCheck;
 import com.finapp.platform.correlation.CorrelationContext;
@@ -38,7 +46,6 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -79,8 +86,16 @@ import org.springframework.test.context.DynamicPropertySource;
  *       each, every permit {@code DONE(CLEARED)} with one signal - and every decision standing;</li>
  *   <li>{@link #aPostDecisionHitAlertsOnceAndCasesAndTheDecisionStands} - a hit: one signal, one {@code SCREENING_HIT}
  *       fact alert (no policy) attached to one {@code AML} case; the KYC case still {@code APPROVED} (kyc-approved
- *       true), no kyc review task; T-eval's screening reading a hit; a re-drive and a second list's hit that day create
- *       no second alert or case;</li>
+ *       true), no kyc review task; T-eval's screening reading a hit; a re-drive creates nothing more; a second list's
+ *       hit is its own alert (one per party and list version - the second review's IMPORTANT 3) in the one open case;</li>
+ *   <li>{@link #aRescreenHitBeforeTheDecisionNeedsAPerson}, {@link #aRescreenHitOnACaseInReviewOpensItsTask} - the
+ *       second review's IMPORTANT 1 (fail-closed): an undecided case's rescreen hit blocks the automatic approval and is
+ *       resolved by a kyc reviewer, its decision naming it; a case in review gains the rescreen's task;</li>
+ *   <li>{@link #aCallKilledMidFlightIsAskedAgain}, {@link #anOutageThenRecoveryIsCleared} - IMPORTANT 2: a question
+ *       abandoned mid-call is asked again under the next ordinal; an outage's "we do not know" is asked again at the next
+ *       claim, the provider's recovery the clearance;</li>
+ *   <li>{@link #anOnboardingPartyWithNoCaseIsNotOnboarded} - IMPORTANT 4; {@link #theScreeningReadIsTheLatestDecidedPerType}
+ *       - MINOR 6;</li>
  *   <li>{@link #aLateCallbackForARescreenAssessesNothing} - a rescreen stranded {@code DISPATCHED} (a crash mid-call),
  *       its provider's signed callback a hit: completed, its evidence kept, the case not assessed - no review task, still
  *       {@code APPROVED} - and the leg records it from the row with no provider call of its own;</li>
@@ -121,6 +136,9 @@ class RescreeningDatabaseTest {
     @Autowired private VerificationRunService runs;
     @Autowired private CheckStore<Connection> checks;
     @Autowired private ScreeningClearances clearances;
+    @Autowired private CaseAssessment assessment;
+    @Autowired private ReviewService reviews;
+    @Autowired private DecisionRecording decisions;
     @LocalServerPort private int port;
 
     @BeforeAll
@@ -246,7 +264,8 @@ class RescreeningDatabaseTest {
     @Test
     @DisplayName("a post-decision hit: one SCREENING_HIT signal, one CRITICAL fact alert (no policy, the activation's"
             + " day) attached to one AML case; the KYC case still APPROVED - kyc-approved true - with no review task;"
-            + " T-eval's screening reading a hit; a re-drive and a PEP hit that day create no second alert or case")
+            + " T-eval's screening reading a hit; a re-drive creates nothing more; a PEP version's hit is its own alert"
+            + " (one per party and list version - the second review's IMPORTANT 3), folded into the one open AML case")
     void aPostDecisionHitAlertsOnceAndCasesAndTheDecisionStands() throws Exception {
         Onboarded onboarded = onboarded("ACTIVE", "APPROVED");
         UUID party = onboarded.party();
@@ -278,15 +297,192 @@ class RescreeningDatabaseTest {
         driveUntil(() -> concludedOf(pep, List.of(party)) == 1);
         assertThat(count("SELECT count(*) FROM risk.risk_signal WHERE subject_ref = ? AND kind = 'SCREENING_HIT'",
                 party.toString())).as("one signal per (party, version)").isEqualTo(2);
-        boolean sameDay = sanctions.activatedAt().orElseThrow().truncatedTo(ChronoUnit.DAYS)
-                .equals(scalarInstant("SELECT activated_at FROM risk.screening_list_version WHERE id = ?",
-                        pep.id().value()).truncatedTo(ChronoUnit.DAYS));
-        assertThat(count("SELECT count(*) FROM risk.risk_alert WHERE subject_ref = ? AND kind = 'SCREENING_HIT'",
-                party.toString())).as("born once per (party, SCREENING_HIT, the activation's day)")
-                .isEqualTo(sameDay ? 1 : 2);
+        assertThat(count("SELECT count(*) FROM risk.risk_alert WHERE subject_ref = ? AND kind = 'SCREENING_HIT'"
+                + " AND status = 'ATTACHED' AND fact_signal_id = evidence_signal_ids[1]", party.toString()))
+                .as("born once per (party, list version): two versions, two alerts, whatever the day")
+                .isEqualTo(2);
+        assertThat(count("SELECT count(DISTINCT attached_case_id) FROM risk.risk_alert WHERE subject_ref = ?"
+                + " AND kind = 'SCREENING_HIT'", party.toString())).as("both folded into one case").isEqualTo(1);
         assertThat(count("SELECT count(*) FROM risk.risk_case WHERE subject_ref = ? AND kind = 'AML'", party.toString()))
                 .as("one open AML case per party").isEqualTo(1);
         assertThat(count("SELECT count(*) FROM kyc.review_task WHERE case_id = ?", onboarded.kycCase())).isZero();
+    }
+
+    @Test
+    @DisplayName("the second review's IMPORTANT 1, the automatic path (fail-closed): a rescreen HIT on an undecided case"
+            + " - every onboarding check clear, its assessment not yet run - blocks the automatic approval: the case"
+            + " IN_REVIEW with the rescreen's task, no decision, the customer PENDING; a re-assessment decides nothing;"
+            + " the reviewer resolves it and the decision names it as evidence")
+    void aRescreenHitBeforeTheDecisionNeedsAPerson() throws Exception {
+        Undecided undecided = undecided("CHECKS_IN_PROGRESS", null);
+        provider.succeedsWith(ScreeningAdapter.SANCTIONS_PATH, 200, "{\"status\":\"hit\"}");
+        String key = PartyRescreening.KEY_PREFIX + IDS.next() + "#0";
+        VerificationCheck hit = inFlow(() -> runs.rescreen(KycCaseId.of(undecided.kycCase()), undecided.customer(),
+                CheckType.SANCTIONS, key));
+        assertThat(hit.status()).isEqualTo(CheckStatus.HIT);
+        assertThat(scalarText("SELECT status FROM kyc.kyc_case WHERE id = ?", undecided.kycCase()))
+                .as("routed to review exactly as an onboarding hit").isEqualTo("IN_REVIEW");
+        assertThat(count("SELECT count(*) FROM kyc.review_task WHERE case_id = ? AND check_id = ? AND status = 'OPEN'",
+                undecided.kycCase(), hit.id().value())).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM kyc.kyc_decision WHERE case_id = ?", undecided.kycCase())).isZero();
+        assertThat(scalarText("SELECT status FROM party.customer WHERE id = ?", undecided.customer())).isEqualTo("PENDING");
+
+        // A duplicate callback's re-assessment: still blocked - the rescreen's hit is among what it reads.
+        assertThat(inFlow(() -> assessment.assess(KycCaseId.of(undecided.kycCase()))).assessment())
+                .isEqualTo(ChecksAssessment.BLOCKED);
+        assertThat(count("SELECT count(*) FROM kyc.kyc_decision WHERE case_id = ?", undecided.kycCase())).isZero();
+
+        IdentityId reviewer = IdentityId.of(IDS.next());
+        UUID task = scalarUuid("SELECT id FROM kyc.review_task WHERE check_id = ?", hit.id().value());
+        asReviewer(() -> reviews.resolve(KycCaseId.of(undecided.kycCase()), ReviewTaskId.of(task), reviewer,
+                "a namesake: the date of birth differs"));
+        assertThat(scalarText("SELECT status FROM kyc.kyc_case WHERE id = ?", undecided.kycCase()))
+                .isEqualTo("READY_FOR_DECISION");
+        asReviewer(() -> decisions.byReviewer(KycCaseId.of(undecided.kycCase()), reviewer, DecisionOutcome.APPROVED,
+                "the screening hit resolved as a namesake"));
+        assertThat(count("SELECT count(*) FROM kyc.kyc_decision_check c JOIN kyc.kyc_decision d ON d.id = c.decision_id"
+                + " WHERE d.case_id = ? AND c.check_id = ?", undecided.kycCase(), hit.id().value()))
+                .as("the decision record names the rescreen it rests on (INV-KYC-02)").isEqualTo(1);
+        assertThat(scalarText("SELECT status FROM party.customer WHERE id = ?", undecided.customer())).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    @DisplayName("the second review's IMPORTANT 1, the IN_REVIEW path: a rescreen HIT on a case already in review opens"
+            + " its own task; resolving the onboarding hit's task does not exit review while the rescreen's is open; the"
+            + " reviewer reads both checks, each with its purpose")
+    void aRescreenHitOnACaseInReviewOpensItsTask() throws Exception {
+        Undecided undecided = undecided("IN_REVIEW", "SANCTIONS");
+        provider.succeedsWith(ScreeningAdapter.PEP_PATH, 200, "{\"status\":\"hit\"}");
+        VerificationCheck hit = inFlow(() -> runs.rescreen(KycCaseId.of(undecided.kycCase()), undecided.customer(),
+                CheckType.PEP, PartyRescreening.KEY_PREFIX + IDS.next() + "#0"));
+        assertThat(count("SELECT count(*) FROM kyc.review_task WHERE case_id = ? AND status = 'OPEN'",
+                undecided.kycCase())).as("the onboarding hit's task and the rescreen's").isEqualTo(2);
+
+        IdentityId reviewer = IdentityId.of(IDS.next());
+        UUID onboardingTask = scalarUuid("SELECT id FROM kyc.review_task WHERE check_id = ?", undecided.onboardingHit());
+        asReviewer(() -> reviews.resolve(KycCaseId.of(undecided.kycCase()), ReviewTaskId.of(onboardingTask), reviewer,
+                "the onboarding hit is a namesake"));
+        assertThat(scalarText("SELECT status FROM kyc.kyc_case WHERE id = ?", undecided.kycCase()))
+                .as("the rescreen's task still open: no exit").isEqualTo("IN_REVIEW");
+        ReviewService.CaseFile file = asReviewer(() -> reviews.readCase(KycCaseId.of(undecided.kycCase())))
+                .orElseThrow();
+        assertThat(file.checks()).filteredOn(check -> check.id().equals(hit.id())).singleElement()
+                .satisfies(check -> assertThat(check.purpose()).isEqualTo(CheckPurpose.RESCREEN));
+        assertThat(file.checks()).filteredOn(check -> check.purpose() == CheckPurpose.ONBOARDING).hasSize(5);
+
+        UUID rescreenTask = scalarUuid("SELECT id FROM kyc.review_task WHERE check_id = ?", hit.id().value());
+        asReviewer(() -> reviews.resolve(KycCaseId.of(undecided.kycCase()), ReviewTaskId.of(rescreenTask), reviewer,
+                "the PEP hit is a namesake too"));
+        assertThat(scalarText("SELECT status FROM kyc.kyc_case WHERE id = ?", undecided.kycCase()))
+                .isEqualTo("READY_FOR_DECISION");
+    }
+
+    @Test
+    @DisplayName("the second review's IMPORTANT 2, a restart mid-call: the permit's question dispatched more than a lease"
+            + " ago and never completed is abandoned at the next claim and the next ordinal asked - one provider call, the"
+            + " permit DONE on the new question's answer, never failed waiting")
+    void aCallKilledMidFlightIsAskedAgain() throws Exception {
+        Onboarded onboarded = onboarded("ACTIVE", "APPROVED");
+        ScreeningListVersion version = activated(ScreeningList.SANCTIONS);
+        enqueueAll();
+        UUID permit = scalarUuid("SELECT id FROM risk.rescreening_permit WHERE party_id = ? AND list_version_id = ?",
+                onboarded.party(), version.id().value());
+        String key = PartyRescreening.KEY_PREFIX + permit;
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            // What a claim that died mid-call leaves: one attempt counted, its question dispatched ten minutes ago.
+            execute(migrator, "UPDATE risk.rescreening_permit SET attempts = 1,"
+                    + " next_attempt_at = clock_timestamp() + interval '1 millisecond' WHERE id = ?", permit);
+            execute(migrator, "INSERT INTO kyc.verification_check (id, case_id, check_type, status, requested_at,"
+                    + " status_changed_at, purpose, rescreen_key) VALUES (?, ?, 'SANCTIONS', 'DISPATCHED',"
+                    + " clock_timestamp() - interval '10 minute', clock_timestamp() - interval '10 minute', 'RESCREEN',"
+                    + " ?)", IDS.next(), onboarded.kycCase(), key + "#0");
+        }
+        Thread.sleep(20);
+        int before = provider.requestCount(ScreeningAdapter.SANCTIONS_PATH);
+        driveUntil(() -> concludedOf(version, List.of(onboarded.party())) == 1);
+        assertThat(scalarText("SELECT outcome FROM risk.rescreening_permit WHERE id = ?", permit)).isEqualTo("CLEARED");
+        assertThat(scalarText("SELECT status FROM kyc.verification_check WHERE rescreen_key = ?", key + "#1"))
+                .as("the next ordinal asked and answered").isEqualTo("CLEAR");
+        assertThat(scalarText("SELECT status FROM kyc.verification_check WHERE rescreen_key = ?", key + "#0"))
+                .as("the abandoned question stays as it stood").isEqualTo("DISPATCHED");
+        assertThat(provider.requestCount(ScreeningAdapter.SANCTIONS_PATH) - before).isEqualTo(1);
+        assertThat(scalarText("SELECT screening_ref::text FROM risk.risk_signal WHERE source_event_id = ?", permit))
+                .isEqualTo(scalarText("SELECT id::text FROM kyc.verification_check WHERE rescreen_key = ?", key + "#1"));
+    }
+
+    @Test
+    @DisplayName("the second review's IMPORTANT 2, an outage then recovery: the provider down at the first claim is"
+            + " \"we do not know\" under #0; the next claim (its backoff fast-forwarded by a deferral-shaped write) asks"
+            + " #1 and the provider's recovery is the permit's clearance - never three questions and a failure")
+    void anOutageThenRecoveryIsCleared() throws Exception {
+        Onboarded onboarded = onboarded("ACTIVE", "APPROVED");
+        provider.failsThenSucceeds(ScreeningAdapter.SANCTIONS_PATH, 1, 200, "{\"status\":\"clear\"}");
+        ScreeningListVersion version = activated(ScreeningList.SANCTIONS);
+        enqueueAll();
+        UUID permit = scalarUuid("SELECT id FROM risk.rescreening_permit WHERE party_id = ? AND list_version_id = ?",
+                onboarded.party(), version.id().value());
+        String key = PartyRescreening.KEY_PREFIX + permit;
+        driveUntil(() -> count("SELECT count(*) FROM risk.rescreening_permit WHERE id = ? AND attempts = 1"
+                + " AND cause IS NOT NULL", permit) == 1);
+        assertThat(scalarText("SELECT status FROM kyc.verification_check WHERE rescreen_key = ?", key + "#0"))
+                .isEqualTo("INDETERMINATE");
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            execute(migrator, "UPDATE risk.rescreening_permit SET next_attempt_at = clock_timestamp()"
+                    + " + interval '1 millisecond' WHERE id = ?", permit);
+        }
+        Thread.sleep(20);
+        driveUntil(() -> concludedOf(version, List.of(onboarded.party())) == 1);
+        assertThat(scalarText("SELECT outcome FROM risk.rescreening_permit WHERE id = ?", permit)).isEqualTo("CLEARED");
+        assertThat(scalarText("SELECT status FROM kyc.verification_check WHERE rescreen_key = ?", key + "#1"))
+                .isEqualTo("CLEAR");
+    }
+
+    @Test
+    @DisplayName("the second review's IMPORTANT 4: an onboarding (PENDING) party with no KYC case is DONE(NOT_ONBOARDED) -"
+            + " no provider call, nothing recorded; an ACTIVE one with no case is never done - decided on nothing")
+    void anOnboardingPartyWithNoCaseIsNotOnboarded() throws Exception {
+        UUID pending = plantedCustomer("PENDING");
+        UUID active = plantedCustomer("ACTIVE");
+        ScreeningListVersion version = activated(ScreeningList.PEP);
+        enqueueAll();
+        int before = provider.requestCount(ScreeningAdapter.PEP_PATH);
+        driveUntil(() -> concludedOf(version, List.of(pending)) == 1
+                && count("SELECT count(*) FROM risk.rescreening_permit WHERE party_id = ? AND list_version_id = ?"
+                        + " AND attempts >= 1", active, version.id().value()) == 1);
+        assertThat(count("SELECT count(*) FROM risk.rescreening_permit WHERE party_id = ? AND list_version_id = ?"
+                + " AND status = 'DONE' AND outcome = 'NOT_ONBOARDED' AND signal_id IS NULL", pending,
+                version.id().value())).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM risk.rescreening_permit WHERE party_id = ? AND list_version_id = ?"
+                + " AND status = 'PENDING' AND cause = 'NOT_SCREENED'", active, version.id().value()))
+                .as("the exposure waits, failing at its bound, counted").isEqualTo(1);
+        assertThat(provider.requestCount(ScreeningAdapter.PEP_PATH) - before).isZero();
+    }
+
+    @Test
+    @DisplayName("the second review's MINOR 6: T-eval's read is per screening type the decided check asked last, both"
+            + " purposes - an old onboarding clear under a newer rescreen hit reads the hit; nothing in flight reads")
+    void theScreeningReadIsTheLatestDecidedPerType() throws Exception {
+        Onboarded onboarded = onboarded("ACTIVE", "APPROVED");
+        UUID rescreenHit = IDS.next();
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            execute(migrator, "INSERT INTO kyc.verification_check (id, case_id, check_type, status, requested_at,"
+                    + " status_changed_at, purpose, rescreen_key) VALUES (?, ?, 'SANCTIONS', 'HIT',"
+                    + " now() - interval '1 day', now() - interval '1 day', 'RESCREEN', ?)", rescreenHit,
+                    onboarded.kycCase(), PartyRescreening.KEY_PREFIX + IDS.next() + "#0");
+            execute(migrator, "INSERT INTO kyc.verification_check (id, case_id, check_type, status, requested_at,"
+                    + " status_changed_at, purpose, rescreen_key) VALUES (?, ?, 'SANCTIONS', 'DISPATCHED', now(),"
+                    + " now(), 'RESCREEN', ?)", IDS.next(), onboarded.kycCase(),
+                    PartyRescreening.KEY_PREFIX + IDS.next() + "#0");
+        }
+        List<VerificationCheck> latest = transactions.inSnapshot(uow -> checks.latestDecidedScreenings(uow,
+                KycCaseId.of(onboarded.kycCase())));
+        assertThat(latest).hasSize(2);
+        assertThat(latest).filteredOn(check -> check.type() == CheckType.SANCTIONS).singleElement()
+                .satisfies(check -> assertThat(check.id().value()).isEqualTo(rescreenHit));
+        assertThat(latest).filteredOn(check -> check.type() == CheckType.PEP).singleElement()
+                .satisfies(check -> assertThat(check.onboarding()).isTrue());
+        assertThat(transactions.inSnapshot(uow -> clearances.latestFor(uow, onboarded.party())).orElseThrow().hit())
+                .isTrue();
     }
 
     @Test
@@ -450,6 +646,52 @@ class RescreeningDatabaseTest {
             }
         }
         return new Onboarded(party, customer, kycCase);
+    }
+
+    private record Undecided(UUID party, UUID customer, UUID kycCase, UUID onboardingHit) {}
+
+    /**
+     * An onboarding party (customer {@code PENDING}) whose KYC case stands in {@code caseStatus}, every required type's
+     * onboarding check answered {@code CLEAR} - but {@code hitType}'s, answered {@code HIT} with its review task OPEN,
+     * when named. The case is undecided: the second review's IMPORTANT 1.
+     */
+    private static Undecided undecided(String caseStatus, String hitType) throws SQLException {
+        UUID party = IDS.next();
+        UUID customer = IDS.next();
+        UUID kycCase = IDS.next();
+        UUID onboardingHit = null;
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            execute(migrator, "INSERT INTO party.party (id, kind, display_name, registered_at)"
+                    + " VALUES (?, 'PERSON', 'Onboarding Holder', now() - interval '1 day')", party);
+            execute(migrator, "INSERT INTO party.customer (id, party_id, status, opened_at, status_changed_at)"
+                    + " VALUES (?, ?, 'PENDING', now() - interval '1 day', now() - interval '1 day')", customer, party);
+            execute(migrator, "INSERT INTO kyc.kyc_case (id, customer_id, status, policy_version, opened_at,"
+                    + " status_changed_at, case_kind) VALUES (?, ?, ?, 'kyc-v1', now() - interval '1 day',"
+                    + " now() - interval '1 hour', 'KYC')", kycCase, customer, caseStatus);
+            for (String type : List.of("IDENTITY", "DOCUMENT", "SANCTIONS", "PEP", "ADVERSE_MEDIA")) {
+                UUID check = IDS.next();
+                boolean hit = type.equals(hitType);
+                execute(migrator, "INSERT INTO kyc.verification_check (id, case_id, check_type, status, requested_at,"
+                        + " status_changed_at) VALUES (?, ?, ?, ?, now() - interval '2 hour', now() - interval '2 hour')",
+                        check, kycCase, type, hit ? "HIT" : "CLEAR");
+                if (hit) {
+                    onboardingHit = check;
+                    execute(migrator, "INSERT INTO kyc.review_task (id, case_id, check_id, status, opened_at)"
+                            + " VALUES (?, ?, ?, 'OPEN', now() - interval '1 hour')", IDS.next(), kycCase, check);
+                }
+            }
+        }
+        return new Undecided(party, customer, kycCase, onboardingHit);
+    }
+
+    /** {@code work} as a KYC reviewer - a person, in a flow of its own. */
+    private static <T> T asReviewer(java.util.function.Supplier<T> work) {
+        try (SecurityContext.Scope person = SecurityContext.enter(new Actor(UUID.randomUUID().toString(),
+                        ActorType.EMPLOYEE));
+                CorrelationContext.Scope flow = CorrelationContext.enter(
+                        Correlation.startingWith(CorrelationId.generate(IDS)))) {
+            return work.get();
+        }
     }
 
     /** A party with a customer relationship in {@code status} and no KYC case; the party. */

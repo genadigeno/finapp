@@ -595,8 +595,9 @@ class RiskMigrationTest {
                 "risk_alert_pk", "risk_alert_policy_version_fk", "risk_alert_suppression_four_eyes",
                 "risk_alert_suppression_by_persons", "risk_alert_window_start_is_aligned",
                 "risk_alert_operational_never_attached", "risk_alert_evidence_bounded");
+        // V010's triple, re-made by risk V018 (P13-TSK-022's review) over a SCREENING_HIT's one signal too.
         assertThat(scalar("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'risk_alert_born_once'"))
-                .isEqualTo("UNIQUE (subject_ref, rule_code, window_start)");
+                .isEqualTo("UNIQUE NULLS NOT DISTINCT (subject_ref, rule_code, window_start, fact_signal_id)");
         assertThat(column("SELECT indexname FROM pg_indexes WHERE schemaname = 'risk' AND tablename = 'risk_alert'"
                 + " ORDER BY indexname")).containsExactly("risk_alert_born_once", "risk_alert_open_queue",
                 "risk_alert_pk");

@@ -6,6 +6,7 @@ import com.finapp.sharedkernel.event.EventId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -21,11 +22,11 @@ import java.util.UUID;
  * <h2>The enqueue - one batch, one transaction</h2>
  *
  * <p>{@link #enqueueNextBatch}: the oldest {@code ACTIVE} version whose enqueue permit has come, {@code FOR UPDATE SKIP
- * LOCKED} (R9), then a page of {@code ACTIVE} parties after its cursor ({@link ActiveParties}, on the same unit of work),
+ * LOCKED} (R9), then a page of {@code ACTIVE} or {@code PENDING} parties after its cursor ({@link ActiveParties}, on the same unit of work),
  * one permit each {@code ON CONFLICT DO NOTHING} ({@code rescreening_permit_once}), then the cursor advanced - or the
  * census completed when the page came back short. The page, its permits and the advance commit together or not at all:
  * a crash re-runs the batch from the committed cursor into the same keys, and ten enqueuers take a version one batch at a
- * time - <strong>every {@code ACTIVE} party once</strong>. Never in the activation's transaction: an activation writes
+ * time - <strong>every such party once</strong>. Never in the activation's transaction: an activation writes
  * one row whatever the population.
  *
  * <h2>A permit - three steps, the kyc call in none of risk's transactions</h2>
@@ -35,7 +36,10 @@ import java.util.UUID;
  *       attempt counted, <strong>committed</strong>; a claim past the bound with no conclusion behind it fails the permit
  *       {@code UNCONCLUDED} instead - so a conclusion that always throws is bounded too;</li>
  *   <li>{@link #ask} - kyc asked through {@link PartyRescreening} under the permit's key, holding no risk row; a throw is
- *       {@link PartyRescreening.Unavailable};</li>
+ *       {@link PartyRescreening.Unavailable}. The question carries the claim's attempt and its abandonment line (the
+ *       review's IMPORTANT 2): one new key ordinal per claim while the last answered "we do not know" or was abandoned
+ *       mid-call, at most {@code maxAttempts} - so a provider outage or a restart mid-call is retried at the leg's own
+ *       backoff and bound, never failed after three questions;</li>
  *   <li>{@link #conclude} - in one transaction: the permit {@code FOR UPDATE} (R9), acted on only while {@code PENDING}
  *       at the claimed attempt (a slower conclusion of an earlier claim records nothing), then judged:
  *       <ul>
@@ -46,7 +50,9 @@ import java.util.UUID;
  *             {@code AML} case (R5 → R4 → R5);</li>
  *         <li>an older screening ({@code STALE} - kyc has not screened the party under this version), one in flight, none,
  *             or kyc unavailable: the permit re-permitted, backed off - {@code FAILED} with the cause at the bound;</li>
- *         <li>no {@code ACTIVE} or {@code PENDING} customer relationship any more: {@code DONE(SKIPPED)}.</li>
+ *         <li>no {@code ACTIVE} or {@code PENDING} customer relationship any more: {@code DONE(SKIPPED)};</li>
+ *         <li>a {@code PENDING} relationship with no KYC case - never screened, nothing to rescreen (the review's
+ *             IMPORTANT 4): {@code DONE(NOT_ONBOARDED)}, counted on its own, never an exposure.</li>
  *       </ul></li>
  * </ol>
  *
@@ -56,10 +62,14 @@ import java.util.UUID;
  * <p><strong>The hit's alert</strong> (the review's IMPORTANT 2, replacing {@code DESIGN-022} D9): a <em>fact</em>
  * ({@link AlertKind#SCREENING_HIT}, {@code risk V018}) - its own code its rule, no policy naming it, so no policy in
  * force (or one without a screening rule) can leave a sanctions hit unalerted; about the {@code PARTY}, its window the
- * {@code D1} bucket holding the version's activation (a database stamp on a born-once fact, so every raiser of the
- * version computes the same key); severity {@code CRITICAL}; evidence exactly the hit's signal. Two lists' or versions'
- * hits of one party whose activations share a day meet one alert (the second signal recorded and its permit naming it
- * - owner item).
+ * {@code D1} bucket holding the version's activation (a database stamp on a born-once fact); severity
+ * {@code CRITICAL}; evidence exactly the hit's signal. <strong>One alert per (party, list version)</strong> (the
+ * review's IMPORTANT 3): a {@code SCREENING_HIT} alert's identity carries its one signal ({@link
+ * AlertKind#oneAlertPerSignal}, {@code risk V018}'s {@code fact_signal_id}), and that signal is born once of the permit,
+ * which is one per (party, version) - so two lists' or versions' hits of one party on one day are two alerts, each born,
+ * each folded into the party's open {@code AML} case or a new one, and a second hit is never lost to a case the first
+ * one's investigator already closed.
+ *
  * <p><strong>The answer is kyc's door's</strong> (the owner's decision O1): kyc re-asks a decided party under the
  * permit's key, so "asked at or after the activation" is true by construction for a permit's own check and judged here
  * on one clock - kept as the rule, never assumed.
@@ -75,7 +85,10 @@ public final class RescreeningRun {
     /** The leg's bounds: how many claims a permit takes before it fails, and the backoff between them. */
     public record Bounds(int maxAttempts, Duration firstBackoff, Duration maxBackoff) {
 
-        /** Twelve attempts, five minutes doubling to six hours - about a day and a quarter before a permit fails. */
+        /**
+         * Twelve attempts, five minutes doubling to six hours: eleven waits of 5, 10, 20, 40, 80, 160 and 320 minutes and
+         * then four of six hours - about 34.6 hours from the first claim to the last before a permit fails.
+         */
         public static final Bounds DEFAULT = new Bounds(12, Duration.ofMinutes(5), Duration.ofHours(6));
 
         public Bounds {
@@ -232,12 +245,21 @@ public final class RescreeningRun {
         }
     }
 
-    /** Step 2, on no risk transaction: kyc asked under the permit's key; a throw is {@code Unavailable}. */
-    public PartyRescreening.Answer ask(RescreeningPermit claimed) {
+    /**
+     * Step 2, on no risk transaction: kyc asked under the permit's key; a throw is {@code Unavailable}. {@code lease} is
+     * the one {@code claimed} was taken with: the claim's instant is its permit less the lease, and a question still
+     * unanswered from before that instant less one more lease was abandoned ({@link PartyRescreening.Question}) - all
+     * on the database's clock.
+     */
+    public PartyRescreening.Answer ask(RescreeningPermit claimed, Duration lease) {
         Objects.requireNonNull(claimed, "claimed");
+        Objects.requireNonNull(lease, "lease");
+        Instant claimedAt = claimed.nextAttemptAt().orElseThrow(() -> new IllegalArgumentException(
+                "a claimed permit holds its permit")).minus(lease);
+        PartyRescreening.Question question = new PartyRescreening.Question(claimed.partyId(), claimed.list(),
+                claimed.requestKey(), claimed.attempts(), claimedAt.minus(lease));
         try {
-            return Objects.requireNonNull(kyc.ask(claimed.partyId(), claimed.list(), claimed.requestKey()),
-                    "kyc's answer");
+            return Objects.requireNonNull(kyc.ask(question), "kyc's answer");
         } catch (RuntimeException unavailable) {
             // The class only - never the message, which a storage failure may fill with a row (INV-RSK-08).
             observer.askFailed(unavailable.getClass());
@@ -259,7 +281,10 @@ public final class RescreeningRun {
             return Optional.empty();
         }
         Concluded concluded = switch (answer) {
-            case PartyRescreening.Inactive inactive -> skipped(unitOfWork, locked);
+            case PartyRescreening.Inactive inactive -> unrecorded(unitOfWork, locked, RescreeningPermit.Outcome.SKIPPED,
+                    RescreeningObserver.Conclusion.SKIPPED);
+            case PartyRescreening.NotOnboarded notOnboarded -> unrecorded(unitOfWork, locked,
+                    RescreeningPermit.Outcome.NOT_ONBOARDED, RescreeningObserver.Conclusion.NOT_ONBOARDED);
             case PartyRescreening.Screened screened when current(screened, locked) -> screened(unitOfWork, locked, screened);
             case PartyRescreening.Screened stale -> waits(unitOfWork, locked, RescreeningPermit.Cause.STALE);
             case PartyRescreening.Pending pending -> waits(unitOfWork, locked,
@@ -300,10 +325,11 @@ public final class RescreeningRun {
         return high != 0 ? high : Long.compareUnsigned(left.getLeastSignificantBits(), right.getLeastSignificantBits());
     }
 
-    private Concluded skipped(Connection unitOfWork, RescreeningPermit locked) {
-        recorded(permits.conclude(unitOfWork, locked.id(), locked.attempts(), RescreeningPermit.Outcome.SKIPPED,
-                Optional.empty()));
-        return new Concluded(locked, RescreeningObserver.Conclusion.SKIPPED, Optional.empty());
+    /** Done with nothing recorded: the party gone ({@code SKIPPED}), or never onboarded ({@code NOT_ONBOARDED}). */
+    private Concluded unrecorded(Connection unitOfWork, RescreeningPermit locked, RescreeningPermit.Outcome outcome,
+            RescreeningObserver.Conclusion conclusion) {
+        recorded(permits.conclude(unitOfWork, locked.id(), locked.attempts(), outcome, Optional.empty()));
+        return new Concluded(locked, conclusion, Optional.empty());
     }
 
     private Concluded screened(Connection unitOfWork, RescreeningPermit locked, PartyRescreening.Screened screened) {
@@ -336,8 +362,9 @@ public final class RescreeningRun {
     }
 
     /**
-     * The hit's fact alert - born once per (party, {@code SCREENING_HIT}, the day the version came into force), whoever
-     * raises it and whenever ({@code INV-RSK-06}); its evidence exactly the signal born of the permit.
+     * The hit's fact alert - born once per (party, {@code SCREENING_HIT}, the day the version came into force, its one
+     * signal), whoever raises it and whenever ({@code INV-RSK-06}); its evidence exactly the signal born of the permit, so
+     * one alert per (party, list version) - the review's IMPORTANT 3.
      */
     static NewAlert hitAlert(RescreeningPermit permit, RiskSignalId signal, CorrelationId correlation,
             CausationId cause) {

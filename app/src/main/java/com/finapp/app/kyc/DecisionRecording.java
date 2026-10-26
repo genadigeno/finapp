@@ -2,6 +2,7 @@ package com.finapp.app.kyc;
 
 import com.finapp.identity.IdentityId;
 import com.finapp.kyc.CheckStore;
+import com.finapp.kyc.ChecksAssessment;
 import com.finapp.kyc.DecisionOutcome;
 import com.finapp.kyc.KycAuditAction;
 import com.finapp.kyc.KycCase;
@@ -118,6 +119,11 @@ public class DecisionRecording {
      *
      * <p>The policy version recorded is the <em>case's own</em>, copied by the factory — never
      * {@code CURRENT} re-read at decision time ({@code INV-HIST-04}).
+     *
+     * <p>The evidence is every check the case's decision rests on
+     * ({@link ChecksAssessment#decisionEvidence}, `P13-TSK-022`'s review): its onboarding checks
+     * and every list update's rescreen answered before it - a rescreen {@code HIT} the reviewer
+     * resolved is named in the record they defend ({@code INV-KYC-02}).
      */
     public Recording byReviewer(
             KycCaseId caseId, IdentityId reviewer, DecisionOutcome outcome, String reason) {
@@ -153,7 +159,8 @@ public class DecisionRecording {
                                     ids,
                                     clock,
                                     kycCase.get(),
-                                    checks.forCase(unitOfWork, caseId),
+                                    ChecksAssessment.decisionEvidence(
+                                            checks.allForCase(unitOfWork, caseId)),
                                     reviewer.value(),
                                     outcome,
                                     reason);

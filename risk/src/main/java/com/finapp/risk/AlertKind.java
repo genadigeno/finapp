@@ -110,6 +110,17 @@ public enum AlertKind {
         return operational() || fact();
     }
 
+    /**
+     * True when each alert of the kind speaks for its one signal (`P13-TSK-022`'s review, IMPORTANT 3;
+     * {@code risk V018}'s {@code fact_signal_id}): {@code SCREENING_HIT} alone. Its signal is born once of a rescreening
+     * permit, one per (party, list version) - so its identity is (party, rule, day, signal): one alert per (party, list
+     * version), and a second list's or version's hit of a party on one day is a second alert, born and folded, never a
+     * key met by the first. {@code OBLIGATION_DEFAULTED} keeps one alert per (agreement, day).
+     */
+    public boolean oneAlertPerSignal() {
+        return this == SCREENING_HIT;
+    }
+
     /** The kind that folds into {@code caseKind} first in declaration order - for the suites' fixtures. */
     public static AlertKind firstFor(CaseKind caseKind) {
         Objects.requireNonNull(caseKind, "caseKind");

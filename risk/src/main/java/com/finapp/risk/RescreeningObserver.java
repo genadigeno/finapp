@@ -34,6 +34,8 @@ public interface RescreeningObserver {
         HIT,
         /** The party's relationship is neither active nor onboarding any more. */
         SKIPPED,
+        /** The party is onboarding with no KYC case yet - never screened, nothing to rescreen; not an exposure. */
+        NOT_ONBOARDED,
         /** Not yet current, in flight, never screened or kyc unavailable - re-permitted. */
         DEFERRED,
         /** The bound reached without a current screening, or passed with no conclusion - the exposure. */

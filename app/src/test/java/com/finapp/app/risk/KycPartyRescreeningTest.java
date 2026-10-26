@@ -42,12 +42,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@code PartyRescreening} through kyc's re-screening door (`P13-TSK-022`, the owner's decision O1), hermetic over
- * scripted stores and a scripted door: a decided party is asked again under the permit's key - never answered from its
- * onboarding screening, however recent; the keyed check answers once asked; in flight is {@code IN_FLIGHT} and asks
- * nothing; "we do not know" retries under the next key ordinal up to kyc's budget; an onboarding ({@code PENDING})
- * customer is asked too; a relationship gone is {@code Inactive}; the placing read on a snapshot of the port's own,
- * never a risk transaction.
+ * {@code PartyRescreening} through kyc's re-screening door (`P13-TSK-022`, the owner's decision O1, and its second
+ * review), hermetic over scripted stores and a scripted door: a decided party is asked again under the permit's key -
+ * never answered from its onboarding screening, however recent; the keyed checks answer once asked; in flight under its
+ * asker is {@code IN_FLIGHT} and asks nothing; "we do not know" - a provider outage - is asked again under the next key
+ * ordinal at every claim, the leg's attempt the only bound (IMPORTANT 2), and a call killed mid-flight is abandoned once
+ * older than a lease at the claim and asked again; an onboarding ({@code PENDING}) customer is asked too, and one with no
+ * case is {@code NotOnboarded} (IMPORTANT 4); a relationship gone is {@code Inactive}; the placing read on a snapshot of
+ * the port's own, never a risk transaction.
  */
 @DisplayName("PartyRescreening through kyc's door: a decided party asked again under the permit's key (P13-TSK-022)")
 class KycPartyRescreeningTest {
@@ -57,6 +59,10 @@ class KycPartyRescreeningTest {
     private static final String KEY = PartyRescreening.KEY_PREFIX + UUID.randomUUID();
     /** The database's clock at the door's ask - after the list's activation. */
     private static final Instant ASKED = CLOCK.instant().plusSeconds(30);
+    /** A claim whose abandonment line is the ask itself: a question asked then is still its asker's. */
+    private static final Instant HELD = ASKED;
+    /** A claim more than a lease after the ask: a question still unanswered from then was abandoned. */
+    private static final Instant LAPSED = ASKED.plusSeconds(1);
 
     private final UUID party = IDS.next();
     private final UUID customer = IDS.next();
@@ -76,7 +82,7 @@ class KycPartyRescreeningTest {
     void aDecidedPartyIsAskedAgainUnderThePermitsKey() {
         checks.add(onboarding(CheckType.SANCTIONS, CheckOutcome.CLEAR, CLOCK.instant().minus(Duration.ofDays(400))));
         door.answers = CheckStatus.CLEAR;
-        PartyRescreening.Answer answer = rescreening.ask(party, ScreeningList.SANCTIONS, KEY);
+        PartyRescreening.Answer answer = ask(party, ScreeningList.SANCTIONS, KEY, 1, HELD);
         assertThat(door.asked).containsExactly(kycCase + "|" + customer + "|SANCTIONS|" + KEY + "#0");
         VerificationCheck keyed = checks.byKey.get(KEY + "#0");
         assertThat(answer).isEqualTo(new PartyRescreening.Screened(keyed.id().value(), false, ASKED, ASKED));
@@ -84,79 +90,119 @@ class KycPartyRescreeningTest {
         assertThat(transactions.writes).as("never a risk transaction: kyc's door writes kyc's rows").isZero();
 
         door.answers = CheckStatus.HIT;
-        assertThat(rescreening.ask(party, ScreeningList.PEP, KEY + "-pep")).as("the PEP list asks kyc's PEP screening")
-                .isInstanceOf(PartyRescreening.Screened.class)
-                .satisfies(screened -> assertThat(((PartyRescreening.Screened) screened).hit()).isTrue());
+        assertThat(ask(party, ScreeningList.PEP, KEY + "-pep", 1, HELD)).as("the PEP list asks kyc's PEP screening")
+                .isInstanceOfSatisfying(PartyRescreening.Screened.class, screened -> assertThat(screened.hit()).isTrue());
         assertThat(door.asked).last().asString().contains("|PEP|");
     }
 
     @Test
-    @DisplayName("once asked, the keyed check answers - the door is not called again: answered is Screened, in flight is"
-            + " IN_FLIGHT (another asker holds the call, or a crash left it dispatched)")
+    @DisplayName("once asked, the keyed checks answer - the door is not called again: answered is Screened, in flight under"
+            + " its asker is IN_FLIGHT at any attempt")
     void theKeyedCheckAnswersOnceAsked() {
         checks.add(rescreen(KEY + "#0", CheckType.SANCTIONS, CheckStatus.HIT));
-        assertThat(rescreening.ask(party, ScreeningList.SANCTIONS, KEY)).isInstanceOf(PartyRescreening.Screened.class)
-                .satisfies(screened -> assertThat(((PartyRescreening.Screened) screened).hit()).isTrue());
+        assertThat(ask(party, ScreeningList.SANCTIONS, KEY, 3, LAPSED))
+                .isInstanceOfSatisfying(PartyRescreening.Screened.class, screened -> assertThat(screened.hit()).isTrue());
         checks.add(rescreen(KEY + "-b#0", CheckType.SANCTIONS, CheckStatus.DISPATCHED));
-        assertThat(rescreening.ask(party, ScreeningList.SANCTIONS, KEY + "-b"))
-                .isEqualTo(new PartyRescreening.Pending(PartyRescreening.Wait.IN_FLIGHT));
-        assertThat(door.asked).as("never a second question under a key").isEmpty();
-    }
-
-    @Test
-    @DisplayName("\"we do not know\" retries under the next key ordinal - one ask per call - up to kyc's budget; at the"
-            + " budget the party is NOT_SCREENED and nothing more is asked")
-    void anUnknownRetriesUnderTheNextOrdinalUpToTheBudget() {
-        checks.add(rescreen(KEY + "#0", CheckType.SANCTIONS, CheckStatus.INDETERMINATE));
-        door.answers = CheckStatus.INDETERMINATE;
-        assertThat(rescreening.ask(party, ScreeningList.SANCTIONS, KEY))
-                .isEqualTo(new PartyRescreening.Pending(PartyRescreening.Wait.NOT_SCREENED));
-        assertThat(door.asked).containsExactly(kycCase + "|" + customer + "|SANCTIONS|" + KEY + "#1");
-        for (int ordinal = 2; ordinal < ChecksAssessment.INDETERMINATE_RETRY_BUDGET; ordinal++) {
-            rescreening.ask(party, ScreeningList.SANCTIONS, KEY);
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            assertThat(ask(party, ScreeningList.SANCTIONS, KEY + "-b", attempt, HELD)).as("attempt %d", attempt)
+                    .isEqualTo(new PartyRescreening.Pending(PartyRescreening.Wait.IN_FLIGHT));
         }
-        int asked = door.asked.size();
-        assertThat(asked).isEqualTo(ChecksAssessment.INDETERMINATE_RETRY_BUDGET - 1);
-        assertThat(rescreening.ask(party, ScreeningList.SANCTIONS, KEY))
-                .isEqualTo(new PartyRescreening.Pending(PartyRescreening.Wait.NOT_SCREENED));
-        assertThat(door.asked).as("the budget spent: nothing more asked").hasSize(asked);
+        assertThat(door.asked).as("never a second question while the first is its asker's").isEmpty();
     }
 
     @Test
-    @DisplayName("an onboarding (PENDING) customer is asked too, on its open case - the review's MINOR 9; a relationship"
-            + " neither ACTIVE nor PENDING, or none, is Inactive; a customer with no case is NOT_SCREENED")
+    @DisplayName("IMPORTANT 2, outage then recovery: \"we do not know\" is asked again under the next key ordinal at every"
+            + " claim - one new question per claim, the claim's attempt the only bound, never kyc's onboarding budget of"
+            + " three - and the provider's recovery is the permit's clearance")
+    void anOutageIsAskedAgainAtEveryClaimUntilTheProviderRecovers() {
+        door.answers = CheckStatus.INDETERMINATE;
+        int outage = ChecksAssessment.INDETERMINATE_RETRY_BUDGET + 3;
+        for (int attempt = 1; attempt <= outage; attempt++) {
+            assertThat(ask(party, ScreeningList.SANCTIONS, KEY, attempt, LAPSED)).as("claim %d, the provider down", attempt)
+                    .isEqualTo(new PartyRescreening.Pending(PartyRescreening.Wait.NOT_SCREENED));
+            assertThat(door.asked).as("claim %d asks exactly one new question", attempt).hasSize(attempt)
+                    .last().asString().endsWith(KEY + "#" + (attempt - 1));
+            assertThat(ask(party, ScreeningList.SANCTIONS, KEY, attempt, LAPSED))
+                    .as("a second ask at one attempt - a replayed claim - asks nothing more")
+                    .isEqualTo(new PartyRescreening.Pending(PartyRescreening.Wait.NOT_SCREENED));
+            assertThat(door.asked).hasSize(attempt);
+        }
+        door.answers = CheckStatus.CLEAR;
+        PartyRescreening.Answer recovered = ask(party, ScreeningList.SANCTIONS, KEY, outage + 1, LAPSED);
+        assertThat(recovered).as("the provider back: the next claim's question is answered")
+                .isEqualTo(new PartyRescreening.Screened(checks.byKey.get(KEY + "#" + outage).id().value(), false, ASKED,
+                        ASKED));
+        assertThat(ask(party, ScreeningList.SANCTIONS, KEY, outage + 2, LAPSED)).isEqualTo(recovered);
+        assertThat(door.asked).as("answered: nothing more asked").hasSize(outage + 1);
+    }
+
+    @Test
+    @DisplayName("IMPORTANT 2, a restart mid-call: a question dispatched and never completed is its asker's within a lease"
+            + " (IN_FLIGHT, nothing asked) and abandoned past it - the next ordinal asked; a late answer of the abandoned"
+            + " one is still the permit's own, and its HIT wins (fail-closed)")
+    void aCallKilledMidFlightIsAbandonedAfterALease() {
+        checks.add(rescreen(KEY + "#0", CheckType.SANCTIONS, CheckStatus.DISPATCHED));
+        assertThat(ask(party, ScreeningList.SANCTIONS, KEY, 2, HELD)).as("within a lease of its ask")
+                .isEqualTo(new PartyRescreening.Pending(PartyRescreening.Wait.IN_FLIGHT));
+        assertThat(ask(party, ScreeningList.SANCTIONS, KEY, 1, LAPSED)).as("abandoned, but the claim's question is spent")
+                .isEqualTo(new PartyRescreening.Pending(PartyRescreening.Wait.IN_FLIGHT));
+        assertThat(door.asked).isEmpty();
+
+        door.answers = CheckStatus.CLEAR;
+        assertThat(ask(party, ScreeningList.SANCTIONS, KEY, 3, LAPSED)).as("abandoned past a lease: asked again")
+                .isInstanceOfSatisfying(PartyRescreening.Screened.class, screened -> assertThat(screened.hit()).isFalse());
+        assertThat(door.asked).containsExactly(kycCase + "|" + customer + "|SANCTIONS|" + KEY + "#1");
+
+        checks.add(rescreen(KEY + "#0", CheckType.SANCTIONS, CheckStatus.HIT));
+        assertThat(ask(party, ScreeningList.SANCTIONS, KEY, 4, LAPSED)).as("the abandoned call answered late: a hit")
+                .isInstanceOfSatisfying(PartyRescreening.Screened.class, screened -> assertThat(screened.hit()).isTrue());
+        assertThat(KycPartyRescreening.abandoned(checks.byKey.get(KEY + "#1"), LAPSED)).as("an answer is never abandoned")
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("who is asked: an onboarding (PENDING) customer on its open case too; a relationship neither ACTIVE nor"
+            + " PENDING, or none, is Inactive; IMPORTANT 4 - a PENDING customer with no case is NotOnboarded (never"
+            + " screened, never an exposure), an ACTIVE one with no case NOT_SCREENED (decided on nothing)")
     void whoIsAsked() {
         door.answers = CheckStatus.CLEAR;
         status = CustomerStatus.PENDING;
         caseStatus = KycCaseStatus.CHECKS_IN_PROGRESS;
-        assertThat(rescreening.ask(party, ScreeningList.SANCTIONS, KEY)).isInstanceOf(PartyRescreening.Screened.class);
+        assertThat(ask(party, ScreeningList.SANCTIONS, KEY, 1, HELD)).isInstanceOf(PartyRescreening.Screened.class);
         assertThat(door.asked).hasSize(1);
         for (CustomerStatus gone : List.of(CustomerStatus.SUSPENDED, CustomerStatus.CLOSED, CustomerStatus.REJECTED)) {
             status = gone;
-            assertThat(rescreening.ask(party, ScreeningList.SANCTIONS, KEY + gone)).as("%s", gone)
+            assertThat(ask(party, ScreeningList.SANCTIONS, KEY + gone, 1, HELD)).as("%s", gone)
                     .isInstanceOf(PartyRescreening.Inactive.class);
         }
         status = CustomerStatus.ACTIVE;
-        assertThat(rescreening.ask(IDS.next(), ScreeningList.SANCTIONS, KEY)).as("no live customer")
+        assertThat(ask(IDS.next(), ScreeningList.SANCTIONS, KEY, 1, HELD)).as("no live customer")
                 .isInstanceOf(PartyRescreening.Inactive.class);
         PartyRescreening noCase = new KycPartyRescreening(new Parties(), new NoCases(), checks, door, transactions);
-        assertThat(noCase.ask(party, ScreeningList.SANCTIONS, KEY + "-none"))
+        assertThat(noCase.ask(question(party, ScreeningList.SANCTIONS, KEY + "-none", 1, HELD)))
+                .as("ACTIVE with no case: decided on nothing - the exposure, failing counted")
                 .isEqualTo(new PartyRescreening.Pending(PartyRescreening.Wait.NOT_SCREENED));
+        status = CustomerStatus.PENDING;
+        assertThat(noCase.ask(question(party, ScreeningList.SANCTIONS, KEY + "-none", 1, HELD)))
+                .as("PENDING with no case: never screened, nothing to rescreen")
+                .isEqualTo(new PartyRescreening.NotOnboarded());
         assertThat(door.asked).as("nothing asked for a party gone or with no case").hasSize(1);
     }
 
     @Test
-    @DisplayName("refusals: a key that is not a permit's, a key that asked another list's screening; no provider anywhere"
-            + " is the door's throw - the leg's Unavailable")
+    @DisplayName("refusals: a key that is not a permit's, a key that asked another list's screening, a question no claim"
+            + " asked; no provider anywhere is the door's throw - the leg's Unavailable")
     void refusals() {
-        assertThatThrownBy(() -> rescreening.ask(party, ScreeningList.SANCTIONS, "not-a-permit"))
+        assertThatThrownBy(() -> ask(party, ScreeningList.SANCTIONS, "not-a-permit", 1, HELD))
                 .isInstanceOf(IllegalArgumentException.class);
         checks.add(rescreen(KEY + "-x#0", CheckType.PEP, CheckStatus.CLEAR));
-        assertThatThrownBy(() -> rescreening.ask(party, ScreeningList.SANCTIONS, KEY + "-x"))
+        assertThatThrownBy(() -> ask(party, ScreeningList.SANCTIONS, KEY + "-x", 1, HELD))
                 .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> question(party, ScreeningList.SANCTIONS, KEY, 0, HELD))
+                .isInstanceOf(IllegalArgumentException.class);
         PartyRescreening unavailable = new KycPartyRescreening(new Parties(), new Cases(), checks,
                 KycPartyRescreening.Door.UNAVAILABLE, transactions);
-        assertThatThrownBy(() -> unavailable.ask(party, ScreeningList.SANCTIONS, KEY + "-u"))
+        assertThatThrownBy(() -> unavailable.ask(question(party, ScreeningList.SANCTIONS, KEY + "-u", 1, HELD)))
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> KycPartyRescreening.answerOf(onboarding(CheckType.SANCTIONS, CheckOutcome.CLEAR,
                 CLOCK.instant()))).as("a permit's key never names an onboarding check")
@@ -164,11 +210,13 @@ class KycPartyRescreeningTest {
     }
 
     @Test
-    @DisplayName("the answer names nothing of kyc's row but its id, whether it hit and when: its text names neither")
+    @DisplayName("the answer names nothing of kyc's row but its id, whether it hit and when; the question names no party")
     void theAnswerIsBounded() {
         checks.add(rescreen(KEY + "#0", CheckType.SANCTIONS, CheckStatus.HIT));
-        PartyRescreening.Answer answer = rescreening.ask(party, ScreeningList.SANCTIONS, KEY);
+        PartyRescreening.Answer answer = ask(party, ScreeningList.SANCTIONS, KEY, 1, HELD);
         assertThat(answer.toString()).isEqualTo("Screened[hit=true]");
+        assertThat(question(party, ScreeningList.SANCTIONS, KEY, 2, HELD).toString())
+                .isEqualTo("Question[SANCTIONS, attempt 2]");
         assertThat(KycPartyRescreening.typeOf(ScreeningList.SANCTIONS)).isEqualTo(CheckType.SANCTIONS);
         assertThat(KycPartyRescreening.typeOf(ScreeningList.PEP)).isEqualTo(CheckType.PEP);
         assertThat(KycPartyRescreening.keyed(KEY, 2)).isEqualTo(KEY + "#2");
@@ -177,6 +225,16 @@ class KycPartyRescreeningTest {
     }
 
     // -----------------------------------------------------------------
+
+    private PartyRescreening.Answer ask(UUID asking, ScreeningList list, String key, int attempt,
+            Instant abandonedBefore) {
+        return rescreening.ask(question(asking, list, key, attempt, abandonedBefore));
+    }
+
+    private static PartyRescreening.Question question(UUID asking, ScreeningList list, String key, int attempt,
+            Instant abandonedBefore) {
+        return new PartyRescreening.Question(asking, list, key, attempt, abandonedBefore);
+    }
 
     private VerificationCheck onboarding(CheckType type, CheckOutcome outcome, Instant decidedAt) {
         return VerificationCheck.rehydrate(CheckId.next(IDS), kycCase, type, outcome.toStatus(),
@@ -343,6 +401,11 @@ class KycPartyRescreeningTest {
         @Override
         public List<VerificationCheck> allForCase(Connection unitOfWork, KycCaseId caseId) {
             return rows.stream().filter(check -> check.caseId().equals(caseId)).toList();
+        }
+
+        @Override
+        public List<VerificationCheck> latestDecidedScreenings(Connection unitOfWork, KycCaseId caseId) {
+            throw new UnsupportedOperationException("the port reads its own keys, never the case's latest");
         }
 
         @Override

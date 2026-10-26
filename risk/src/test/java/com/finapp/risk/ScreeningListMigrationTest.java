@@ -236,15 +236,41 @@ class ScreeningListMigrationTest {
                 .contains("ADD CONSTRAINT risk_alert_screening_hit_names_its_party CHECK (kind <> 'SCREENING_HIT' OR"
                         + " (subject_kind = 'PARTY' AND window_kind = 'D1' AND cardinality(evidence_signal_ids) = 1"
                         + " AND cardinality(evidence_assessment_ids) = 0 AND cardinality(evidence_journal_entry_ids) = 0));")
-                .doesNotContain("risk_alert_kind_is_known").doesNotContain("risk_alert_rule_code_is_known")
-                .doesNotContain("CONSTRAINT risk_alert_born_once");
+                .doesNotContain("risk_alert_kind_is_known").doesNotContain("risk_alert_rule_code_is_known");
         assertThat(AlertKind.SCREENING_HIT.factSubject()).contains(SubjectKind.PARTY);
         assertThat(RescreeningRun.HIT_WINDOW).isEqualTo(WindowKind.D1);
     }
 
     @Test
-    @DisplayName("nothing else: every name new across V001 to V017 but the three re-made signal constraints and the two"
-            + " re-made alert pairings, each dropped first under its own name; no other schema named; no row written")
+    @DisplayName("the review's IMPORTANT 3: one alert per (party, list version) - fact_signal_id generated from a"
+            + " SCREENING_HIT's evidence (NULL for every other kind, AlertKind.oneAlertPerSignal) and the born-once unique"
+            + " re-made by its name over it, NULLS NOT DISTINCT, so every other kind's identity is V010's")
+    void oneAlertPerPartyAndListVersion() {
+        String keyed = Arrays.stream(AlertKind.values()).filter(AlertKind::oneAlertPerSignal)
+                .map(kind -> "'" + kind.name() + "'").collect(java.util.stream.Collectors.joining(", "));
+        assertThat(keyed).isEqualTo("'SCREENING_HIT'");
+        assertThat(sql)
+                .contains("ALTER TABLE risk.risk_alert ADD COLUMN fact_signal_id uuid GENERATED ALWAYS AS (CASE WHEN"
+                        + " kind = " + keyed + " THEN evidence_signal_ids[1] END) STORED;")
+                .contains("ALTER TABLE risk.risk_alert DROP CONSTRAINT risk_alert_born_once;")
+                .contains("ALTER TABLE risk.risk_alert ADD CONSTRAINT risk_alert_born_once UNIQUE NULLS NOT DISTINCT"
+                        + " (subject_ref, rule_code, window_start, fact_signal_id);");
+        assertThat(sql.indexOf("ADD COLUMN fact_signal_id")).isLessThan(sql.indexOf("DROP CONSTRAINT risk_alert_born_once"));
+        assertThat(sql.indexOf("DROP CONSTRAINT risk_alert_born_once"))
+                .isLessThan(sql.indexOf("ADD CONSTRAINT risk_alert_born_once"));
+        assertThat(JdbcRiskAlertStore.FIND_BY_KEY).as("the store reads the key the unique holds")
+                .contains("AND fact_signal_id IS NOT DISTINCT FROM ?");
+        assertThat(JdbcRiskAlertStore.INSERT).as("a generated column is never written")
+                .doesNotContain("fact_signal_id").contains("ON CONFLICT ON CONSTRAINT risk_alert_born_once DO NOTHING");
+        assertThat(JdbcRiskProofReads.BORN_ONCE).as("-023's census groups by the key the unique holds")
+                .contains("GROUP BY kind, window_kind, subject_ref, rule_code, window_start, fact_signal_id")
+                .contains("a.fact_signal_id IS NOT DISTINCT FROM k.fact_signal_id");
+    }
+
+    @Test
+    @DisplayName("nothing else: every name new across V001 to V017 but the three re-made signal constraints, the two"
+            + " re-made alert pairings and the re-made born-once unique, each dropped first under its own name; no other"
+            + " schema named; no row written")
     void everyNameNewAndNoOtherSchema() {
         String raw = statements(RESOURCE);
         Set<String> earlier = new HashSet<>();
@@ -257,7 +283,8 @@ class ScreeningListMigrationTest {
                 "rescreening_permit_signal_is_its_own", "rescreening_permit_permits_only_machine_edges");
         List<String> remade = made.stream().filter(earlier::contains).toList();
         assertThat(remade).containsExactlyInAnyOrder("risk_signal_kind_is_known", "risk_signal_subject_matches_kind",
-                "risk_signal_attributes_match_kind", "risk_alert_rule_matches_kind", "risk_alert_policy_named");
+                "risk_signal_attributes_match_kind", "risk_alert_rule_matches_kind", "risk_alert_policy_named",
+                "risk_alert_born_once");
         for (String name : remade) {
             assertThat(raw).as("%s dropped before it is made again", name).contains("DROP CONSTRAINT " + name + ";");
         }

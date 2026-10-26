@@ -1053,22 +1053,33 @@ The owner decided **"add the kyc door"**: kyc `V011` gives a check its **purpose
 `RESCREEN` its **key** (`verification_check_rescreen_once UNIQUE (rescreen_key)`), and `VerificationRunService.rescreen`
 asks one keyed `SANCTIONS`/`PEP` screening on the party's latest case with the run's own choreography (the keyed insert
 and its conditional dispatch committed, the provider asked holding no connection, the outcome with its evidence and its
-trail) - **and no assessment**: evidence beside the decision, never a re-decision (ADR-0035's amendment, `INV-LIFE-04` as
-amended; the coordinator's default, ratified at `P13-DOC-001`). kyc's onboarding readers name `purpose = 'ONBOARDING'`
-(`forCase`, the run's convergence, the budget's count), `ChecksAssessment` reads onboarding checks only, the one-in-flight
-index holds onboarding checks only, and the callback door assesses only on an onboarding check - so a rescreen hit opens
-no kyc review task and never moves the case or the customer, on the run's path and on a late callback alike; the purpose
-and the key are frozen by the grant. `PartyRescreening` (reshaped) asks kyc under the permit's key
-(`risk.rescreen:<permit id>`, and `#n` - the retry ordinal kyc's "we do not know" spends, up to its budget of three) and
-`app`'s `KycPartyRescreening` places the party on a read-only snapshot (its live customer `ACTIVE` or `PENDING` - an
-onboarding customer is rescreened too, the review's MINOR 9; its latest case), asks the door when the permit has not, and
-answers from the permit's keyed check alone - never another question's; **risk judges currency on one clock** (the
-check's ask, stamped by the database, at or after the activation - true by construction for a permit's own check, kept
-as the rule): `SCREENING_CLEARED` / `SCREENING_HIT`, about the party, born of the permit. In flight is waited on (the same
-key - never a second provider call); kyc unavailable or no provider configured backs the permit off (5 min doubling to
-6 h) and fails it at 12 attempts, counted; a claim past the bound with no conclusion behind it fails it `UNCONCLUDED`.
-`KycScreeningClearances` reads the rescreen too (`CheckStore.allForCase`), judged per type, so T-eval judges a party a
-list found as a hit. A version whose permits failed is re-driven by recording and activating a successor version
+trail). **On a decided case** evidence beside the decision, never a re-decision (ADR-0035's amendment, `INV-LIFE-04` as
+amended; the coordinator's default, ratified at `P13-DOC-001`): nothing is assessed, no kyc review task opens, the case
+and the customer never move. **On a case not yet decided** (the second review's IMPORTANT 1, the coordinator's
+fail-closed rule, ratified at `P13-DOC-001`) a rescreen `HIT` counts: after its outcome commits the case is assessed
+over every check (`CaseAssessment.assessRescreened`, `CheckStore.allForCase`) - the hit blocks the automatic approval,
+opens its review task and moves the case to `IN_REVIEW` exactly as an onboarding hit (`INV-KYC-04`), the reviewer sees it
+with its purpose and the decision names every rescreen answered before it (`ChecksAssessment.decisionEvidence`,
+`INV-KYC-02`); a rescreen in flight or unknown neither holds nor proceeds the case. The run's own reads name
+`purpose = 'ONBOARDING'` (the convergence, the budget's count) and the one-in-flight index holds onboarding checks only,
+so a rescreen never answers a run's type nor deadlocks one; the purpose and the key are frozen by the grant.
+`PartyRescreening` (reshaped) asks kyc one claim's `Question` - the permit's key (`risk.rescreen:<permit id>` and an
+ordinal `#n`), the claim's attempt and its abandonment line (the claim's instant less a lease, the database's clock) -
+and `app`'s `KycPartyRescreening` places the party on a read-only snapshot (its live customer `ACTIVE` or `PENDING` - an
+onboarding customer is rescreened too, the review's MINOR 9; its latest case - a `PENDING` customer with none is
+`NotOnboarded`, `DONE(NOT_ONBOARDED)`, counted on its own and never an exposure, the second review's IMPORTANT 4), asks the
+door when the claim may ask a new question, and answers from the permit's own questions alone - a hit among them first,
+else a clear; **risk judges currency on one clock** (the check's ask, stamped by the database, at or after the
+activation - true by construction for a permit's own check, kept as the rule): `SCREENING_CLEARED` / `SCREENING_HIT`,
+about the party, born of the permit. **The leg's bound governs the asking** (the second review's IMPORTANT 2): one new
+ordinal per claim while the last question answered "we do not know" or was abandoned (unanswered and asked before the
+claim's line - a restart mid-call), up to the claim's attempt - so a provider outage is asked again at every claim of the
+backoff (5 min doubling to 6 h, 12 attempts - about 34.6 h) and a call killed mid-flight is asked again, never waited on
+forever; a question within its asker's lease is waited on (never a second provider call). kyc unavailable or no provider
+configured backs the permit off and fails it at 12 attempts, counted; a claim past the bound with no conclusion behind it
+fails it `UNCONCLUDED`. `KycScreeningClearances` reads the rescreen too, bounded (`CheckStore.latestDecidedScreenings`:
+per type the decided check asked last, one index probe each - the review's MINOR 6), judged per type, so T-eval judges a
+party a list found as a hit. A version whose permits failed is re-driven by recording and activating a successor version
 (runbook §9.6), never by moving a `FAILED` permit. **The list fact:** recorded by a person (`CUSTOMER` or `EMPLOYEE`),
 numbered in the list's order under its advisory lock, a recorded label converging; activated by a **second** person from
 `MULTI_FACTOR` (§11's "under four eyes"; the recorder refused `403 risk.SelfApprovalRefused`, recorded `FAILED`), the
@@ -1080,7 +1091,9 @@ leg - moved from the monitoring schedule with the door, since it now makes provi
 **fact** (the review's IMPORTANT 2; risk `V018` re-makes `V017`'s two pairing CHECKs with `SCREENING_HIT` among the
 own-code kinds): its own code its rule, no policy naming it - whatever policy is in force a sanctions hit is alerted -
 about the party on the `D1` window of the version's activation, `CRITICAL`, its evidence its one signal, folded into the
-party's `AML` case. **`RESCREEN_PARTY`** stays the leg's, never a case's proposable action (the routing of `-017`'s
+party's `AML` case - **one alert per (party, list version)** (the second review's IMPORTANT 3: the born-once unique
+re-made over the alert's one signal, `fact_signal_id`, so a second list's or version's hit of the party on one day is its
+own alert, born and cased, never lost to a case the first one's investigator closed). **`RESCREEN_PARTY`** stays the leg's, never a case's proposable action (the routing of `-017`'s
 as-built; the entry's "on demand, through `-017`" is an owner item).
 
 ---

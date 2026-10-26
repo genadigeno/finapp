@@ -185,6 +185,28 @@ class RiskAlertTest {
         AlertKey c = new AlertKey("b", "AMOUNT_BAND", NOW);
         assertThat(List.of(c, b, a).stream().sorted().toList()).containsExactly(a, b, c);
         assertThat(alert.toString()).doesNotContain(subject.ref());
+        assertThat(alert.key().factSignal()).as("a rule's alert: no signal in its identity").isEmpty();
+    }
+
+    @Test
+    @DisplayName("P13-TSK-022's review, IMPORTANT 3: a SCREENING_HIT's identity carries its one signal - one alert per"
+            + " (party, list version) - and no other kind's does; two such keys of a day differ and order by the signal")
+    void aScreeningHitIsKeyedByItsSignal() {
+        SignalSubject party = AlertWorld.freshParty();
+        RiskSignalId pep = RiskSignalId.of(EvaluationWorld.IDS.next());
+        RiskSignalId sanctions = RiskSignalId.of(EvaluationWorld.IDS.next());
+        NewAlert first = NewAlert.ofFact(AlertKind.SCREENING_HIT, AlertSeverity.CRITICAL, party, AlertWorld.day(), pep,
+                AlertWorld.correlation(), CausationId.of("permit-1"));
+        NewAlert second = NewAlert.ofFact(AlertKind.SCREENING_HIT, AlertSeverity.CRITICAL, party, AlertWorld.day(),
+                sanctions, AlertWorld.correlation(), CausationId.of("permit-2"));
+        assertThat(first.key().factSignal()).contains(pep.value());
+        assertThat(first.key()).isNotEqualTo(second.key());
+        assertThat(first.key()).isEqualTo(new AlertKey(party.ref(), "SCREENING_HIT", AlertWorld.day().start(),
+                Optional.of(pep.value())));
+        assertThat(Integer.signum(first.key().compareTo(second.key())))
+                .isEqualTo(Integer.signum(pep.value().toString().compareTo(sanctions.value().toString())));
+        assertThat(Arrays.stream(AlertKind.values()).filter(AlertKind::oneAlertPerSignal))
+                .containsExactly(AlertKind.SCREENING_HIT);
     }
 
     // -----------------------------------------------------------------

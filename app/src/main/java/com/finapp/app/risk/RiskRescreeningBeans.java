@@ -21,7 +21,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
-import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -79,11 +78,17 @@ public class RiskRescreeningBeans {
         return new KycPartyRescreening(partyStore, kycCaseStore, checkStore, door, riskTransactions);
     }
 
-    /** {@code finapp.risk.rescreening{outcome}}, {@code .rescreening.backlog}, {@code claim.failed{kind=rescreening}}. */
+    /**
+     * {@code finapp.risk.rescreening{outcome}}, {@code .rescreening.backlog}, {@code claim.failed{kind=rescreening}} - the
+     * backlog read off the scrape thread on a snapshot bounded by {@code finapp.risk.proofs.statement-timeout} (5 s by
+     * default), the risk proofs' bound.
+     */
     @Bean
-    RescreeningMetrics rescreeningMetrics(RescreeningPermitStore rescreeningPermitStore, DataSource dataSource,
-            Clock clock, MeterRegistry meterRegistry) {
-        return new RescreeningMetrics(rescreeningPermitStore, dataSource::getConnection, clock, meterRegistry);
+    RescreeningMetrics rescreeningMetrics(RescreeningPermitStore rescreeningPermitStore,
+            RiskTransactions riskTransactions, Clock clock, MeterRegistry meterRegistry,
+            @Value("${finapp.risk.proofs.statement-timeout:PT5S}") Duration statementTimeout) {
+        return new RescreeningMetrics(RescreeningMetrics.over(rescreeningPermitStore, riskTransactions, statementTimeout),
+                RescreeningMetrics.virtualThreads(), clock, meterRegistry);
     }
 
     /**

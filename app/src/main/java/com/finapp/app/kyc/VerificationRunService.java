@@ -137,12 +137,15 @@ public class VerificationRunService {
      * {@code caseId}, asked under {@code rescreenKey} (`P13-TSK-022`, the owner's decision O1;
      * {@code kyc V011}; {@code INV-LIFE-04} as amended).
      *
-     * <p>The run's choreography, one check, <strong>and no assessment</strong>: the keyed request
-     * and its conditional dispatch in one transaction, committed; the provider asked holding no
-     * connection; the outcome, its evidence and its {@link CheckOutcomeTrail} together in a
-     * second. Then nothing more - the case is not assessed, not moved, no review task opened, the
-     * customer untouched: a rescreen is evidence beside the decision, never a re-decision. Its
-     * answer is the caller's (risk's rescreening) to act on.
+     * <p>The run's choreography, one check: the keyed request and its conditional dispatch in one
+     * transaction, committed; the provider asked holding no connection; the outcome, its evidence
+     * and its {@link CheckOutcomeTrail} together in a second. Then, for a {@code HIT} only, the
+     * case's assessment after the commit (`P13-TSK-022`'s review, fail-closed;
+     * {@link CaseAssessment#assessRescreened}): on a case not yet decided the hit blocks its
+     * automatic approval and opens its review task exactly as an onboarding hit does; on a
+     * decided case nothing moves, no task opens, the customer is untouched - evidence beside the
+     * decision, never a re-decision. The answer is also the caller's (risk's rescreening) to act
+     * on.
      *
      * <p>Idempotent on the key: a key already asked is answered from its row - in flight
      * ({@code REQUESTED} or {@code DISPATCHED}, another asker holding the call) or answered - and
@@ -196,13 +199,22 @@ public class VerificationRunService {
                                                     caseId, customerId)));
             recordOutcome(dispatched.get(), result);
         }
-        return units.inTransaction(
-                unitOfWork ->
-                        checks.findRescreen(unitOfWork, rescreenKey)
-                                .orElseThrow(
-                                        () ->
-                                                new IllegalStateException(
-                                                        "a requested rescreen has its row")));
+        VerificationCheck keyed =
+                units.inTransaction(
+                        unitOfWork ->
+                                checks.findRescreen(unitOfWork, rescreenKey)
+                                        .orElseThrow(
+                                                () ->
+                                                        new IllegalStateException(
+                                                                "a requested rescreen has its row")));
+        if (keyed.status() == com.finapp.kyc.CheckStatus.HIT) {
+            // P13-TSK-022's review (fail-closed): a hit on an undecided case needs a person - its
+            // case assessed after the outcome commits, exactly as an onboarding answer is; on a
+            // decided case nothing. On the already-answered path too: a crash between the
+            // outcome's commit and this assessment is healed by the key's next ask.
+            assessment.assessRescreened(caseId);
+        }
+        return keyed;
     }
 
     /** Transaction one: the claim and the durable dispatch. */

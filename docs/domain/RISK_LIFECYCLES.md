@@ -752,24 +752,28 @@ risk.PolicyStale`; every invalid edge refused by `screening_list_version_permits
 **The enqueue is not the activation's** (the entry): the activation leaves `enqueue_next_at` due and the rescreening leg
 (`RiskActionSchedule`'s third, moved from the monitoring schedule with kyc's door) enqueues in bounded batches, one
 transaction each (the version row `SKIP LOCKED`, a keyset page of the `ACTIVE` and `PENDING` parties, the cursor
-advanced). **The permit's states** are `PENDING → DONE(CLEARED |
-HIT | SKIPPED) | FAILED(cause)` - no `REQUESTED` state: the claim (`SKIP LOCKED`, one attempt, a lease ahead) is
-committed before kyc is asked, kyc is asked on no risk transaction through `PartyRescreening`, and the conclusion is
-recorded at the claimed attempt. **kyc is asked again** (the owner's decision O1): its re-screening door
-(`VerificationRunService.rescreen`) asks a post-decision `RESCREEN` check (kyc `V011`) on the party's latest case under
-the permit's key - evidence beside the decision, never a re-decision (§4's kyc case is untouched: no review task, no
-move) - and the permit records **that keyed check's** answer, never another question's: asked at or after the activation
-(one clock, the database's; judged by the ask, never the answer - the review's IMPORTANT 3), decided `CLEAR` or `HIT`;
-in flight it waits under the same key, "we do not know" retries under the next key ordinal up to kyc's budget, kyc
-unavailable backs it off - deferred (`IN_FLIGHT`, `NOT_SCREENED`, `UNAVAILABLE`; `STALE` kept as the rule's refusal) and
-`FAILED` at the bound; a claim past the bound with no
-conclusion behind it fails the permit `UNCONCLUDED` (a conclusion that always throws is bounded too). The clearance is the signal `SCREENING_CLEARED` or
+advanced). **The permit's states** are `PENDING → DONE(CLEARED | HIT | SKIPPED | NOT_ONBOARDED) | FAILED(cause)` - no
+`REQUESTED` state: the claim (`SKIP LOCKED`, one attempt, a lease ahead) is committed before kyc is asked, kyc is asked
+on no risk transaction through `PartyRescreening`, and the conclusion is recorded at the claimed attempt. **kyc is asked
+again** (the owner's decision O1): its re-screening door (`VerificationRunService.rescreen`) asks a `RESCREEN` check
+(kyc `V011`) on the party's latest case under the permit's key and an ordinal - on a decided case evidence beside the
+decision, never a re-decision (§4's kyc case untouched: no review task, no move); on a case not yet decided its hit
+routes the case to kyc's review exactly as an onboarding hit (the second review's fail-closed rule, ADR-0035's
+amendment) - and the permit records **its own questions'** answer, never another question's: asked at or after the
+activation (one clock, the database's; judged by the ask, never the answer - the first review's IMPORTANT 3), decided
+`CLEAR` or `HIT` (a hit among them first). **One new question per claim** (the second review's IMPORTANT 2): while the
+last answered "we do not know" or was abandoned - unanswered and asked more than a lease before the claim, the asker
+lost mid-call - the claim asks the next ordinal, up to its attempt, so the leg's backoff and bound govern the asking; a
+question within its asker's lease is waited on. Deferred (`IN_FLIGHT`, `NOT_SCREENED`, `UNAVAILABLE`; `STALE` kept as the
+rule's refusal) and `FAILED` at the bound; a claim past the bound with no conclusion behind it fails the permit
+`UNCONCLUDED` (a conclusion that always throws is bounded too). The clearance is the signal `SCREENING_CLEARED` or
 `SCREENING_HIT` (`UNIQUE (source_event_id)` = the permit; the permit names it by `rescreening_permit_signal_is_its_own`);
 a hit's alert is the `SCREENING_HIT` **fact** (§4.5's third origin; risk `V018`): its own code, no policy, born once per
-(party, `SCREENING_HIT`, the activation's `D1` bucket), its evidence its one signal, folded into the party's `AML` case.
-A party neither `ACTIVE` nor `PENDING` any more is `DONE(SKIPPED)`; a burnt version is re-driven by a successor version
-(runbook §9.6). Every invalid edge is
-refused by `rescreening_permit_permits_only_machine_edges`.)*
+(party, `SCREENING_HIT`, the activation's `D1` bucket, **its one signal**) - one alert per (party, list version), the
+second review's IMPORTANT 3 - its evidence its one signal, folded into the party's open `AML` case or a new one. A party
+neither `ACTIVE` nor `PENDING` any more is `DONE(SKIPPED)`; a `PENDING` one with no KYC case `DONE(NOT_ONBOARDED)` (never
+screened, nothing to rescreen; the second review's IMPORTANT 4); a burnt version is re-driven by a successor version
+(runbook §9.6). Every invalid edge is refused by `rescreening_permit_permits_only_machine_edges`.)*
 
 ### 4.11 Monitored transaction and the watermark (`risk.monitored_transaction`, `monitoring_watermark`) — `P13-TSK-019` (`risk V004`) — born once; the watermark a claim, not a machine
 

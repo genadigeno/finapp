@@ -11,8 +11,9 @@ import java.util.stream.Collectors;
  * One party's rescreening under one list version (`P13-TSK-022`; {@code RISK_LIFECYCLES.md} section 4.10; {@code risk
  * V018}'s {@code rescreening_permit}) - born once per (party, version) by the activation's enqueue
  * ({@code rescreening_permit_once}), claimed by the sweep's rescreening leg, concluded once:
- * {@code PENDING → DONE(CLEARED | HIT | SKIPPED) | FAILED(cause)}, a claim or a deferral moving it {@code PENDING →
- * PENDING} with its permit ahead. Its id is the clearance signal's born-once key and its request's key to kyc.
+ * {@code PENDING → DONE(CLEARED | HIT | SKIPPED | NOT_ONBOARDED) | FAILED(cause)}, a claim or a deferral moving it
+ * {@code PENDING → PENDING} with its permit ahead. Its id is the clearance signal's born-once key and its request's key
+ * to kyc.
  *
  * <p>Read with its version's list and activation instant (the claim's join): what the request names and the currency
  * line a clearance is judged against.
@@ -65,8 +66,14 @@ public record RescreeningPermit(
         CLEARED,
         /** kyc's screening under the version hit - {@code SCREENING_HIT} recorded and alerted. */
         HIT,
-        /** The party has no {@code ACTIVE} customer relationship any more - nothing recorded. */
-        SKIPPED;
+        /** The party has no {@code ACTIVE} or {@code PENDING} customer relationship any more - nothing recorded. */
+        SKIPPED,
+        /**
+         * The party's relationship is {@code PENDING} with no KYC case (`P13-TSK-022`'s review, IMPORTANT 4): never
+         * screened, nothing to rescreen - its onboarding screens it against the list in force. Nothing recorded; not an
+         * exposure.
+         */
+        NOT_ONBOARDED;
 
         /** The quoted SQL list. */
         public static String sqlValueList() {
@@ -75,7 +82,7 @@ public record RescreeningPermit(
 
         /** True when the conclusion recorded a clearance signal. */
         public boolean recordsASignal() {
-            return this != SKIPPED;
+            return this == CLEARED || this == HIT;
         }
     }
 

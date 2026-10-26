@@ -31,7 +31,6 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.lang.reflect.Proxy;
 import java.security.SecureRandom;
 import java.sql.Connection;
-import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -70,16 +69,17 @@ class RescreeningDriverTest {
     private final List<String> asked = new ArrayList<>();
     private final List<RiskSignal> signals = new ArrayList<>();
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
-    private final RescreeningMetrics metrics = new RescreeningMetrics(permits, () -> {
-        throw new SQLException("no database in this suite");
-    }, CLOCK, registry);
+    private final RescreeningMetrics metrics = new RescreeningMetrics(() -> {
+        throw new IllegalStateException("no database in this suite");
+    }, Runnable::run, CLOCK, registry);
     private final Transactions transactions = new Transactions();
     private boolean failClaims;
     private boolean refuseSignals;
 
-    private final PartyRescreening kyc = (party, list, key) -> {
+    private final PartyRescreening kyc = question -> {
         Actor actor = SecurityContext.require();
-        asked.add(actor.type() + "|" + CorrelationContext.current().orElseThrow().correlationId().value() + "|" + key);
+        asked.add(actor.type() + "|" + CorrelationContext.current().orElseThrow().correlationId().value() + "|"
+                + question.requestKey());
         // Asked a minute after the activation - past the clock skew - so the screening is current.
         return new PartyRescreening.Screened(UUID.randomUUID(), false, lists.now.plusSeconds(60), lists.now.plusSeconds(61));
     };

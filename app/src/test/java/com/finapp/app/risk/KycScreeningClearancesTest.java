@@ -27,9 +27,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -265,7 +267,21 @@ class KycScreeningClearancesTest {
 
         @Override
         public List<VerificationCheck> allForCase(Connection unitOfWork, KycCaseId caseId) {
-            return rows.stream().filter(check -> check.caseId().equals(caseId)).toList();
+            // T-eval's read is bounded (the review's MINOR 6): never every check of a case.
+            throw new UnsupportedOperationException("allForCase");
+        }
+
+        @Override
+        public List<VerificationCheck> latestDecidedScreenings(Connection unitOfWork, KycCaseId caseId) {
+            // The store's statement in memory: per screening type the decided check asked last, both purposes.
+            return Stream.of(CheckType.SANCTIONS, CheckType.PEP)
+                    .flatMap(type -> rows.stream()
+                            .filter(check -> check.caseId().equals(caseId) && check.type() == type)
+                            .filter(check -> check.status() == CheckStatus.CLEAR || check.status() == CheckStatus.HIT)
+                            .max(Comparator.comparing(VerificationCheck::requestedAt)
+                                    .thenComparing(VerificationCheck::statusChangedAt))
+                            .stream())
+                    .toList();
         }
 
         @Override

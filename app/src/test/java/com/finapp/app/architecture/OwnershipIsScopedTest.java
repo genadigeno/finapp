@@ -4500,13 +4500,28 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.kyc.JdbcCheckStore.allForCase",
                             new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P13-TSK-022, reclassified by its review (fail-closed) from SYSTEM_JOIN when"
+                                        + " every check of a case became what an undecided case's assessment and"
+                                        + " decision read and what the reviewer reads - forCase's own precedent and"
+                                        + " shape: the reviewer surface's ReviewService.readCase and the reviewer's"
+                                        + " DecisionRecording.byReviewer pass a URL-derived case identifier, so the"
+                                        + " label is named for that WEAKER provenance; the assessment's id comes from"
+                                        + " findOpenFor or a check's own case. What stands in on the reviewer path:"
+                                        + " KYC_REVIEW at the boundary, the audited kyc.CaseRead in the same unit of"
+                                        + " work, and these being rows a reviewer is entitled to see. Risk's T-eval"
+                                        + " read moved to the bounded latestDecidedScreenings.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcCheckStore.latestDecidedScreenings",
+                            new Entry(
                                     Scope.SYSTEM_JOIN,
                                     "com.finapp.app.risk.KycScreeningClearances",
-                                    "P13-TSK-022. Every check of a case, onboarding and rescreen alike - risk's"
-                                        + " screening-hit reading for T-eval, so a party a list update found is a hit:"
-                                        + " the KycCaseId is the latest case of the party's live customer, resolved by"
-                                        + " the system (findLiveCustomerFor, findLatestFor) on the evaluation's own"
-                                        + " connection, never a request's; three bounded facts leave, never the row."
+                                    "P13-TSK-022's review (MINOR 6). Per screening type the case's decided check"
+                                        + " asked last, onboarding or rescreen - risk's screening-hit reading for"
+                                        + " T-eval, bounded (one index probe per type): the KycCaseId is the latest"
+                                        + " case of the party's live customer, resolved by the system"
+                                        + " (findLiveCustomerFor, findLatestFor) on the evaluation's own connection,"
+                                        + " never a request's; three bounded facts leave, never the row."
                                         + " KycScreeningClearances alone calls it, and that class depends on risk, so"
                                         + " NoCustomerSurfaceReadsRiskTest refuses any customer or merchant surface"
                                         + " reaching it.")),

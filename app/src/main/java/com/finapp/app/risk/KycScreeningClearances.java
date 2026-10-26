@@ -21,8 +21,10 @@ import java.util.UUID;
  * {@link ScreeningClearances} over kyc's case checks (`P13-TSK-005`; ADR-0107 decision 3; {@code PHASE_13_PLAN.md}
  * sections 3.1, 12.10): a party's screening clearance is judged over the <em>decided</em> sanctions and PEP checks on
  * the latest KYC case of the party's live customer relationship - its onboarding checks and, since `P13-TSK-022`'s
- * door, the list updates' rescreens beside them ({@code CheckStore#allForCase}) - per type, the decided check asked
- * last; a hit if either type's is ({@link #clearanceOf}). kyc's own rows, read through kyc's own stores on the
+ * door, the list updates' rescreens beside them - per type, the decided check asked last; a hit if either type's is
+ * ({@link #clearanceOf}). Read bounded on T-eval's hot path (the review's MINOR 6): {@code
+ * CheckStore#latestDecidedScreenings} returns at most one decided check per type, one index probe each, however many
+ * rescreens a case accumulates; the judgement over them stays here. kyc's own rows, read through kyc's own stores on the
  * caller's unit of work, returned as three bounded facts (the check's id, whether it hit, when it was decided) and
  * never as a row ({@code INV-RSK-02}). The Screening Result stays kyc's; risk asks, kyc screened.
  *
@@ -58,7 +60,7 @@ public final class KycScreeningClearances implements ScreeningClearances {
         Objects.requireNonNull(partyId, "partyId");
         return parties.findLiveCustomerFor(unitOfWork, PartyId.of(partyId))
                 .flatMap(customer -> cases.findLatestFor(unitOfWork, customer.id().value()))
-                .flatMap(kycCase -> clearanceOf(checks.allForCase(unitOfWork, kycCase.id())));
+                .flatMap(kycCase -> clearanceOf(checks.latestDecidedScreenings(unitOfWork, kycCase.id())));
     }
 
     /**

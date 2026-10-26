@@ -15,13 +15,28 @@
 --   A verification check gains its PURPOSE: ONBOARDING (every check before this migration, and
 --   every check of a case's own run) or RESCREEN - a SANCTIONS or PEP screening asked again
 --   because the list changed, keyed by risk's permit (rescreen_key, unique: one key is one
---   question, whichever instance asks and however often). A rescreen is evidence beside the
---   case's decision: kyc's onboarding reads (the assessment, review, the decision) name
---   purpose = 'ONBOARDING', the run never converges on a rescreen, and the one-in-flight index
---   below holds onboarding checks only - so a list update's question never routes a decided case
---   to review, never moves a case or a customer, and never blocks or is blocked by a run. Its
---   instants are the database's (the insert's clock_timestamp()), the clock risk's list version
---   is activated on: "asked after the activation" is one clock.
+--   question, whichever instance asks and however often). A rescreen never answers a run's
+--   required type, never holds a run in flight and never spends its retry budget: the run's reads
+--   (the convergence, the budget's count) name purpose = 'ONBOARDING' and the one-in-flight index
+--   below holds onboarding checks only - so a stranded rescreen never deadlocks an onboarding. Its
+--   HIT is what counts (P13-TSK-022's review, fail-closed): on a case not yet decided a rescreen
+--   HIT blocks the automatic approval, opens a review task and moves the case to IN_REVIEW exactly
+--   as an onboarding HIT does, and the decision's evidence names every rescreen answered CLEAR or
+--   HIT; on a DECIDED case it is evidence beside the decision, never a re-decision - nothing
+--   moves, no task opens, the customer is untouched. Its instants are the database's (the
+--   insert's clock_timestamp()), the clock risk's list version is activated on: "asked after the
+--   activation" is one clock.
+--
+-- THE LEGAL COMBINATIONS, stated (not enforced here): a RESCREEN check is a review task's subject
+-- only when HIT (ChecksAssessment.needingReview - an unknown rescreen is never a task), and a
+-- decision's evidence only when CLEAR or HIT (ChecksAssessment.decisionEvidence). A composite FK
+-- (the V008 precedent) cannot hold either: it would have to reference the check's status, which
+-- moves until terminal - so the domain is the one statement, ChecksAssessmentTest pins it, and the
+-- review task's and the evidence row's own check_id FKs hold the rest.
+--
+-- RISK'S READ (the review's MINOR 6): verification_check_decided_latest serves CheckStore
+-- .latestDecidedScreenings - per screening type the decided check asked last, one index probe per
+-- type on T-eval's hot path however many rescreens a case accumulates.
 --
 -- Every row before this migration is ONBOARDING (the column's default) with no key - the new
 -- CHECKs hold them as written. The purpose and the key are frozen: the table-wide UPDATE V004
@@ -30,9 +45,9 @@
 --
 -- DEPLOY-TIME LOCKS: the two ADD COLUMNs are catalogue-only (a constant default since PG 11);
 -- the unique and the CHECKs validate every row of kyc.verification_check under ACCESS EXCLUSIVE,
--- and the in-flight index is rebuilt - one scan and two index builds, linear in the table. kyc's
--- runs and callbacks wait on the lock and retry; nothing fails. The migration names no other
--- schema.
+-- the in-flight index is rebuilt and the decided-latest index built - one scan and three index
+-- builds, linear in the table. kyc's runs and callbacks wait on the lock and retry; nothing
+-- fails. The migration names no other schema.
 -- =============================================================================================
 
 ALTER TABLE kyc.verification_check ADD COLUMN purpose text NOT NULL DEFAULT 'ONBOARDING';
@@ -62,10 +77,17 @@ CREATE UNIQUE INDEX verification_check_one_in_flight_per_type
     ON kyc.verification_check (case_id, check_type)
     WHERE status NOT IN ('CLEAR', 'HIT', 'INDETERMINATE') AND purpose = 'ONBOARDING';
 
+-- Risk's screening-hit read: per (case, type) the decided checks newest first, so the lateral's
+-- LIMIT 1 is one probe. Both purposes - a list update's answer is the latest when it is.
+CREATE INDEX verification_check_decided_latest
+    ON kyc.verification_check (case_id, check_type, requested_at DESC, status_changed_at DESC, id DESC)
+    WHERE status IN ('CLEAR', 'HIT');
+
 COMMENT ON COLUMN kyc.verification_check.purpose IS
-    'Why the check was asked: ONBOARDING (the case''s own run - the evidence its assessment, review '
-    'and decision rest on) or RESCREEN (a sanctions or PEP screening asked again on a list update, '
-    'evidence beside the decision, never a re-decision - kyc V011, P13-TSK-022). Frozen.';
+    'Why the check was asked: ONBOARDING (the case''s own run - what answers its required types) or '
+    'RESCREEN (a sanctions or PEP screening asked again on a list update; its HIT needs a person while '
+    'the case is undecided, and on a decided case it is evidence beside the decision, never a '
+    're-decision - kyc V011, P13-TSK-022). Frozen.';
 
 COMMENT ON COLUMN kyc.verification_check.rescreen_key IS
     'The key a RESCREEN was asked under - risk''s permit key (risk.rescreen:<permit id>) and its retry '

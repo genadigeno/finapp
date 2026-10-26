@@ -53,9 +53,11 @@ import lombok.RequiredArgsConstructor;
  * <p>A {@link CheckPurpose#RESCREEN} check is asked by its key, not by convergence: the key's
  * unique is its arbiter, onboarding's one-in-flight index holds onboarding checks only, and
  * every onboarding read here - {@code forCase}, the convergence, the budget's count - names
- * {@code purpose = 'ONBOARDING'}, so a list update's screening is never the evidence a
- * case's assessment, review or decision reads. {@code allForCase} is the one read that sees
- * both, for risk's screening-hit reading.
+ * {@code purpose = 'ONBOARDING'}, so a list update's screening never answers a run's required
+ * type, never holds a run in flight and never spends its budget. {@code allForCase} reads both -
+ * an undecided case's assessment and decision, where a rescreen's {@code HIT} needs a person
+ * (the review's fail-closed rule), and the reviewer's read; {@code latestDecidedScreenings}
+ * reads both, bounded, for risk's screening-hit reading.
  */
 @RequiredArgsConstructor
 public final class JdbcCheckStore implements CheckStore<Connection> {
@@ -260,6 +262,39 @@ public final class JdbcCheckStore implements CheckStore<Connection> {
             throw new KycStorageException(
                     DatabaseFailure.describe(
                             "reading every check of case " + caseId, failure));
+        }
+    }
+
+    /**
+     * One index probe per screening type (`P13-TSK-022`'s review): the lateral's {@code LIMIT 1}
+     * walks {@code verification_check_decided_latest} in its own order, so the read is two rows
+     * however many rescreens a case has accumulated.
+     */
+    private static final String LATEST_DECIDED_SCREENINGS =
+            "SELECT latest.* FROM (VALUES ('SANCTIONS'), ('PEP')) AS screening (screened_type)"
+                    + " CROSS JOIN LATERAL (SELECT " + COLUMNS + " FROM " + TABLE
+                    + " WHERE case_id = ? AND check_type = screening.screened_type"
+                    + " AND status IN ('CLEAR', 'HIT')"
+                    + " ORDER BY requested_at DESC, status_changed_at DESC, id DESC LIMIT 1) AS latest";
+
+    @Override
+    public List<VerificationCheck> latestDecidedScreenings(
+            Connection unitOfWork, KycCaseId caseId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(caseId, "caseId must not be null");
+        try (PreparedStatement select = unitOfWork.prepareStatement(LATEST_DECIDED_SCREENINGS)) {
+            select.setObject(1, caseId.value());
+            try (ResultSet rows = select.executeQuery()) {
+                List<VerificationCheck> checks = new ArrayList<>();
+                while (rows.next()) {
+                    checks.add(rehydrate(rows));
+                }
+                return checks;
+            }
+        } catch (SQLException failure) {
+            throw new KycStorageException(
+                    DatabaseFailure.describe(
+                            "reading the latest decided screenings of case " + caseId, failure));
         }
     }
 

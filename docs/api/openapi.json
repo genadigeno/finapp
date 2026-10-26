@@ -14293,6 +14293,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "purpose": {
+            "type": "string"
+          },
           "requestedAt": {
             "format": "date-time",
             "type": "string"

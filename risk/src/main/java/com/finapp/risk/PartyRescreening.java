@@ -14,13 +14,13 @@ import java.util.UUID;
  * <p><strong>The answer is kyc's</strong> - never a verdict risk derives: kyc's answer to the permit's keyed screening of the
  * list's type for the party ({@link Screened}: kyc's screening id, whether it hit, when kyc was asked it and decided it),
  * a screening not yet decided ({@link Pending}), or a party with no {@code ACTIVE} or {@code PENDING} customer relationship
- * ({@link Inactive}). Whether the screened answer is a rescreening <em>under the list version</em> is risk's judgement of
+ * ({@link Inactive}), or an onboarding one with no KYC case ({@link NotOnboarded}). Whether the screened answer is a rescreening <em>under the list version</em> is risk's judgement of
  * currency ({@link RescreeningRun}): only a screening kyc was <em>asked</em> after the version came into force is one.
  *
  * <p><strong>The key binds kyc's question</strong> (the owner's decision O1, kyc {@code V011}): kyc's re-screening door asks a
  * post-decision {@code RESCREEN} check under it (and its retry ordinal), unique - so a re-driven permit, a lease lost
  * mid-call or ten sweepers meet one question and one provider call, and the answer is that keyed check's, never another
- * question's. Evidence beside kyc's decision, never a re-decision.
+ * question's. Evidence beside a decided case, never a re-decision; on an undecided case its hit goes to kyc's review.
  */
 @FunctionalInterface
 public interface PartyRescreening {
@@ -29,20 +29,50 @@ public interface PartyRescreening {
     String KEY_PREFIX = "risk.rescreen:";
 
     /**
-     * kyc's answer for {@code partyId} against {@code list}, requested under {@code requestKey} - on the
-     * implementation's own transaction, never the caller's.
+     * kyc's answer to one claim's {@code question} - on the implementation's own transaction, never the caller's.
      *
      * @throws RuntimeException when kyc cannot be asked - the leg records the permit unavailable and backs it off
      */
-    Answer ask(UUID partyId, ScreeningList list, String requestKey);
+    Answer ask(Question question);
 
     /** The request key of {@code permit}. */
     static String keyOf(RescreeningPermitId permit) {
         return KEY_PREFIX + Objects.requireNonNull(permit, "permit").value();
     }
 
+    /**
+     * One claim's question (`P13-TSK-022`'s review, IMPORTANT 2): the party, the list, the permit's key - and the leg's
+     * bound on how often it is asked, so a provider outage or a restart mid-call never fails a permit early.
+     *
+     * <ul>
+     *   <li>{@code attempt} - the claim's attempt (1 .. the leg's {@code maxAttempts}): the most distinct questions the
+     *       permit may have asked by this claim - its key's ordinals {@code #0 .. #attempt-1}, one new ordinal per claim
+     *       while the previous answered "we do not know" or was abandoned;</li>
+     *   <li>{@code abandonedBefore} - the claim's own instant less one lease, both the database's: a question asked
+     *       before it and still unanswered was abandoned (its asker lost the call - a crash, a shutdown mid-call), so the
+     *       next ordinal is asked rather than waiting on it forever.</li>
+     * </ul>
+     */
+    record Question(UUID partyId, ScreeningList list, String requestKey, int attempt, Instant abandonedBefore) {
+        public Question {
+            Objects.requireNonNull(partyId, "partyId");
+            Objects.requireNonNull(list, "list");
+            Objects.requireNonNull(requestKey, "requestKey");
+            Objects.requireNonNull(abandonedBefore, "abandonedBefore");
+            if (attempt < 1) {
+                throw new IllegalArgumentException("a question is asked by a claim: its attempt is at least one");
+            }
+        }
+
+        @Override
+        public String toString() {
+            // Codes only: the party is CONFIDENTIAL.
+            return "Question[" + list + ", attempt " + attempt + "]";
+        }
+    }
+
     /** kyc's answer: closed, so the leg judges every case. */
-    sealed interface Answer permits Screened, Pending, Inactive, Unavailable {}
+    sealed interface Answer permits Screened, Pending, Inactive, NotOnboarded, Unavailable {}
 
     /**
      * kyc's latest decided screening of the list's type - its id, whether it hit, when kyc was asked it and when kyc
@@ -85,6 +115,14 @@ public interface PartyRescreening {
 
     /** The party has no {@code ACTIVE} or {@code PENDING} customer relationship any more - nothing to rescreen. */
     record Inactive() implements Answer {}
+
+    /**
+     * The party's customer relationship is {@code PENDING} with no KYC case yet (`P13-TSK-022`'s review, IMPORTANT 4):
+     * never screened, so nothing to rescreen - its onboarding, when it begins, screens it against the list in force. Not
+     * an exposure, never a failure: counted on its own ({@code NOT_ONBOARDED}). An {@code ACTIVE} customer with no case
+     * is never this - it was decided on nothing, and stays {@link Pending} {@code NOT_SCREENED}, failing counted.
+     */
+    record NotOnboarded() implements Answer {}
 
     /** kyc could not be asked - the leg's own answer when the port throws; never kyc's. */
     record Unavailable() implements Answer {}

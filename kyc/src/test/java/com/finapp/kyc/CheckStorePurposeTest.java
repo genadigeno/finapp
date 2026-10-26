@@ -21,9 +21,9 @@ import org.junit.jupiter.api.Test;
 /**
  * Which checks the store's statements reach (`P13-TSK-022`, {@code kyc V011}), hermetic over a recording connection:
  * every onboarding read - {@code forCase}, the run's convergence, the budget's count - names
- * {@code purpose = 'ONBOARDING'}, so a list update's rescreen is never the evidence a case's assessment, review or
- * decision reads; {@code allForCase} reads both; the rescreen is one keyed insert on the database's clock. The live
- * behaviour is {@code RescreeningDatabaseTest}'s (written, owed - C5).
+ * {@code purpose = 'ONBOARDING'}, so a list update's rescreen never answers a run's required type; {@code allForCase}
+ * reads both; {@code latestDecidedScreenings} reads both, bounded; the rescreen is one keyed insert on the database's
+ * clock. The live behaviour is {@code RescreeningDatabaseTest}'s (written, owed - C5).
  */
 @DisplayName("the check store's statements: onboarding reads see onboarding checks alone (P13-TSK-022)")
 class CheckStorePurposeTest {
@@ -36,8 +36,8 @@ class CheckStorePurposeTest {
             new JdbcCheckStore(new DocumentCipher(new byte[32], 1, new SecureRandom()));
 
     @Test
-    @DisplayName("forCase - the assessment's, the review door's, the decision's read - names ONBOARDING; allForCase - risk's"
-            + " screening reading - names no purpose")
+    @DisplayName("forCase - a decided case's re-assessment - names ONBOARDING; allForCase - an undecided case's"
+            + " assessment and decision, the reviewer's read - names no purpose")
     void theOnboardingReadIsScoped() {
         KycCaseId caseId = KycCaseId.next(IDS);
         store.forCase(recording(), caseId);
@@ -45,6 +45,19 @@ class CheckStorePurposeTest {
         prepared.clear();
         store.allForCase(recording(), caseId);
         assertThat(prepared).singleElement().asString().contains("WHERE case_id = ?").doesNotContain("purpose =");
+    }
+
+    @Test
+    @DisplayName("latestDecidedScreenings - risk's T-eval read (the review's MINOR 6) - is bounded: per screening type one"
+            + " LIMIT 1 probe in verification_check_decided_latest's order, decided checks of both purposes")
+    void theScreeningReadIsBounded() {
+        store.latestDecidedScreenings(recording(), KycCaseId.next(IDS));
+        assertThat(prepared).singleElement().asString()
+                .contains("(VALUES ('SANCTIONS'), ('PEP'))")
+                .contains("CROSS JOIN LATERAL")
+                .contains("WHERE case_id = ? AND check_type = screening.screened_type AND status IN ('CLEAR', 'HIT')")
+                .contains("ORDER BY requested_at DESC, status_changed_at DESC, id DESC LIMIT 1")
+                .doesNotContain("purpose =");
     }
 
     @Test

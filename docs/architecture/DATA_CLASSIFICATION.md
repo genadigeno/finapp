@@ -4437,6 +4437,7 @@ are; the people `CONFIDENTIAL`; closed codes, the platform's own identifiers and
 | `risk_alert` | `raised_at` | `INTERNAL` | The database's stamp of the birth |
 | `risk_alert` | `correlation_id` | `INTERNAL` | The raising flow's correlation |
 | `risk_alert` | `causation_id` | `INTERNAL` | The raising flow's cause |
+| `risk_alert` | `fact_signal_id` | `CONFIDENTIAL` | *Added by `P13-TSK-022`'s second review (risk `V018`).* A `SCREENING_HIT` alert's one signal, generated from `evidence_signal_ids` - part of its born-once identity (one alert per party and list version); `NULL` for every other kind. Evidence by reference, as `evidence_signal_ids`; never written |
 
 ### `risk.risk_case`, `risk_case_action` and `risk_case_event` - the case - *added by `P13-TSK-016`*
 
@@ -4606,8 +4607,9 @@ list content, no screening result, no money, no text** - the list is kyc's provi
 3); risk holds the label, the persons, the permit's codes and counters, and kyc's screening by reference on the signal.
 That a party is being rescreened is what the tipping-off rule protects, so the permit's `party_id` is `CONFIDENTIAL` as a
 case's subject is (`INV-RSK-08` - no customer or merchant route reads either table, `NoCustomerSurfaceReadsRiskTest`);
-the persons `CONFIDENTIAL`; a provider's version label, closed codes, the platform's identifiers, counters and the
-database's stamps `INTERNAL`.
+the persons `CONFIDENTIAL`, and the permit's `outcome` - a `HIT` beside the party is the tipping-off rule's fact; a
+provider's version label, the other closed codes, the platform's identifiers, counters and the database's stamps
+`INTERNAL`.
 
 | Table | Column | Level | Note |
 |---|---|---|---|
@@ -4632,7 +4634,7 @@ database's stamps `INTERNAL`.
 | `rescreening_permit` | `party_id` | `CONFIDENTIAL` | The party rescreened - never served to a customer or merchant |
 | `rescreening_permit` | `list_version_id` | `INTERNAL` | The version it rescreens under - risk's own row |
 | `rescreening_permit` | `status` | `INTERNAL` | The machine's state |
-| `rescreening_permit` | `outcome` | `INTERNAL` | A closed code - `CLEARED`, `HIT`, `SKIPPED` |
+| `rescreening_permit` | `outcome` | `CONFIDENTIAL` | A closed code - `CLEARED`, `HIT`, `SKIPPED`, `NOT_ONBOARDED` - but beside `party_id` it says whether a list found the party: `HIT` is the tipping-off rule's fact, so the column is `CONFIDENTIAL` as the party is (`P13-TSK-022`'s second review, MINOR 10) |
 | `rescreening_permit` | `cause` | `INTERNAL` | A closed code - why it waits or failed |
 | `rescreening_permit` | `signal_id` | `INTERNAL` | The clearance signal born of it - risk's own row |
 | `rescreening_permit` | `next_attempt_at` | `INTERNAL` | The leg's permit - the database's clock plus the lease or the backoff |

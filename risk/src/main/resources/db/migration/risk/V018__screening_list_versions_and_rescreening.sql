@@ -27,9 +27,12 @@
 --   (kyc V011, the owner's decision O1) at or after the version's activation - one clock, the database's - and decided,
 --   recorded as the signal
 --   SCREENING_CLEARED | SCREENING_HIT whose source_event_id IS the permit's id - rescreening_permit_signal_is_its_own;
---   SKIPPED: the party neither ACTIVE nor PENDING any more) | FAILED (the bound reached, the cause kept; or UNCONCLUDED - a claim past the
---   bound with no conclusion behind it). Risk asks and kyc screens (INV-RSK-02): kyc's call is outside every risk
---   transaction, the conclusion conditional on PENDING and the claimed attempt.
+--   SKIPPED: the party neither ACTIVE nor PENDING any more; NOT_ONBOARDED: PENDING with no KYC case - never screened,
+--   nothing to rescreen, never an exposure - the review's IMPORTANT 4) | FAILED (the bound reached, the cause kept; or
+--   UNCONCLUDED - a claim past the bound with no conclusion behind it). One new question to kyc per claim while the last
+--   answered "we do not know" or was abandoned mid-call (older than a lease at the claim, on the database's clock), so the
+--   leg's backoff and bound govern the asking (IMPORTANT 2). Risk asks and kyc screens (INV-RSK-02): kyc's call is
+--   outside every risk transaction, the conclusion conditional on PENDING and the claimed attempt.
 --
 -- THE SIGNAL GAINS TWO REFERENCES AND TWO KINDS
 --   list_version_ref (the version the clearance was judged under) and screening_ref (kyc's screening, by id - never kyc's
@@ -42,6 +45,11 @@
 --   SCREENING_HIT joins V017's own-code alert kinds (section 2b): its own code its rule, no policy naming it, about the
 --   PARTY on the D1 window of the activation, its evidence its one signal - so a sanctions hit is alerted whatever
 --   policy is in force. V010 and V017 are applied history; their two pairing CHECKs are re-made here by name.
+--   ONE ALERT PER (party, list version) (the review's IMPORTANT 3): the born-once unique is re-made by name over
+--   fact_signal_id too - a SCREENING_HIT alert's one signal, generated from its evidence (NULL for every other kind,
+--   NULLS NOT DISTINCT, so every other kind's identity is V010's unchanged). The signal is born once of its permit and
+--   a permit is one per (party, version): a second list's or version's hit of a party on one day is a second alert,
+--   born and folded into the open AML case or a new one - never a key the first one's alert already holds.
 --
 -- Persons are authenticated humans - CUSTOMER-typed as the platform's session establishes every operator, or EMPLOYEE -
 -- never SYSTEM, SERVICE or MERCHANT (the meaning V012-V016 adopted). The stamps are the triggers' clock_timestamp(). No
@@ -57,8 +65,10 @@
 --   reader makes the migration fail and retry rather than queue every writer behind it. The mechanism is kept (no
 --   NOT VALID and VALIDATE split, no CONCURRENTLY build): the table is risk's young evidence, the unique index is what
 --   the permit's composite foreign key needs, and a split would leave the CHECKs unproven for a window in which the new
---   kinds are already written. Section 2b holds risk_alert the same way for its two re-made CHECKs and one new one (three
---   scans; the alert's raisers - T-eval, T-mon, T-sig - wait and retry). The runbook line is routed to P13-TSK-024.
+--   kinds are already written. Section 2b holds risk_alert the same way: the generated column REWRITES the table (a
+--   stored column computed for every row), the born-once unique is rebuilt over it, and its two re-made CHECKs and one
+--   new one validate every row - one rewrite, one index build and three scans, linear in the alerts; the alert's raisers
+--   (T-eval, T-mon, T-sig) wait and retry. The runbook line is routed to P13-TSK-024.
 
 -- ---------------------------------------------------------------------------------------------------------------------
 -- 1. The list version.
@@ -434,7 +444,23 @@ ALTER TABLE risk.risk_alert ADD CONSTRAINT risk_alert_screening_hit_names_its_pa
         AND cardinality(evidence_journal_entry_ids) = 0));
 
 COMMENT ON CONSTRAINT risk_alert_screening_hit_names_its_party ON risk.risk_alert IS
-    'A SCREENING_HIT alert (P13-TSK-022, a fact since its review) is about the PARTY a rescreening found on a list, on the D1 window of the list version''s activation, its evidence exactly the one SCREENING_HIT signal born of the permit - born once per (party, day) by risk_alert_born_once.';
+    'A SCREENING_HIT alert (P13-TSK-022, a fact since its review) is about the PARTY a rescreening found on a list, on the D1 window of the list version''s activation, its evidence exactly the one SCREENING_HIT signal born of the permit - born once per (party, list version) by risk_alert_born_once over fact_signal_id.';
+
+-- ONE ALERT PER (party, list version) (the review's IMPORTANT 3). A SCREENING_HIT alert's one signal, generated from its
+-- frozen evidence - so no writer sets it and V010's trigger, which freezes the evidence, freezes it too; NULL for every
+-- other kind (AlertKind.oneAlertPerSignal).
+ALTER TABLE risk.risk_alert ADD COLUMN fact_signal_id uuid
+    GENERATED ALWAYS AS (CASE WHEN kind = 'SCREENING_HIT' THEN evidence_signal_ids[1] END) STORED;
+
+-- The born-once unique, re-made by name (ON CONFLICT ON CONSTRAINT risk_alert_born_once names it): V010's triple and the
+-- signal, NULLS NOT DISTINCT - every other kind's NULL is one value, its identity V010's unchanged.
+ALTER TABLE risk.risk_alert DROP CONSTRAINT risk_alert_born_once;
+
+ALTER TABLE risk.risk_alert ADD CONSTRAINT risk_alert_born_once
+    UNIQUE NULLS NOT DISTINCT (subject_ref, rule_code, window_start, fact_signal_id);
+
+COMMENT ON COLUMN risk.risk_alert.fact_signal_id IS
+    'A SCREENING_HIT alert''s one signal, generated from its evidence (P13-TSK-022''s review): part of its born-once identity, so one alert per (party, list version) - the signal is born once of its rescreening permit, one per (party, version). NULL for every other kind. An identifier; never written.';
 
 -- ---------------------------------------------------------------------------------------------------------------------
 -- 3. The rescreening permit.
@@ -464,7 +490,8 @@ CREATE TABLE risk.rescreening_permit (
 
     -- The closed vocabularies RescreeningPermit declares (ScreeningListMigrationTest).
     CONSTRAINT rescreening_permit_status_is_known CHECK (status IN ('PENDING', 'DONE', 'FAILED')),
-    CONSTRAINT rescreening_permit_outcome_is_known CHECK (outcome IS NULL OR outcome IN ('CLEARED', 'HIT', 'SKIPPED')),
+    CONSTRAINT rescreening_permit_outcome_is_known CHECK (
+        outcome IS NULL OR outcome IN ('CLEARED', 'HIT', 'SKIPPED', 'NOT_ONBOARDED')),
     CONSTRAINT rescreening_permit_cause_is_known CHECK (
         cause IS NULL OR cause IN ('STALE', 'IN_FLIGHT', 'NOT_SCREENED', 'UNAVAILABLE', 'UNCONCLUDED')),
 
@@ -490,7 +517,7 @@ CREATE INDEX rescreening_permit_due ON risk.rescreening_permit (next_attempt_at,
 CREATE INDEX rescreening_permit_of_version ON risk.rescreening_permit (list_version_id, status);
 
 COMMENT ON TABLE risk.rescreening_permit IS
-    'One party''s rescreening under one screening list version (PHASE_13_PLAN.md section 12.10): born PENDING by the activation''s enqueue, one per (party, version) (rescreening_permit_once); claimed by RiskActionSchedule''s rescreening leg FOR UPDATE SKIP LOCKED (an attempt, the permit a lease ahead), kyc asked outside every risk transaction under the key risk.rescreen:<id>, concluded once at the claimed attempt: DONE (CLEARED | HIT - a kyc screening asked after the version''s activation and decided, recorded as the signal born of this permit; SKIPPED - the party no longer ACTIVE) or FAILED at the bound, the cause kept. Risk asks; kyc screens (INV-RSK-02). P13-TSK-022.';
+    'One party''s rescreening under one screening list version (PHASE_13_PLAN.md section 12.10): born PENDING by the activation''s enqueue, one per (party, version) (rescreening_permit_once); claimed by RiskActionSchedule''s rescreening leg FOR UPDATE SKIP LOCKED (an attempt, the permit a lease ahead), kyc asked outside every risk transaction under the key risk.rescreen:<id>, concluded once at the claimed attempt: DONE (CLEARED | HIT - a kyc screening asked after the version''s activation and decided, recorded as the signal born of this permit; SKIPPED - the party neither ACTIVE nor PENDING any more | NOT_ONBOARDED - PENDING with no KYC case, nothing to rescreen) or FAILED at the bound, the cause kept. Risk asks; kyc screens (INV-RSK-02). P13-TSK-022.';
 COMMENT ON COLUMN risk.rescreening_permit.cause IS
     'Why the permit waits (the last deferral''s cause) or why it failed: STALE (kyc''s latest decided screening was asked before the version''s activation), IN_FLIGHT, NOT_SCREENED, UNAVAILABLE, or - failing only - UNCONCLUDED (the bound passed with no conclusion recorded; failed by the next claim). NULL once DONE.';
 

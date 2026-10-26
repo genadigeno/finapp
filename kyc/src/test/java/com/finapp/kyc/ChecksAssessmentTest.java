@@ -184,37 +184,71 @@ class ChecksAssessmentTest {
     }
 
     @Test
-    @DisplayName("P13-TSK-022: a RESCREEN check is evidence beside the decision, never part of it - a rescreen HIT"
-            + " blocks nothing and needs no review, a rescreen in flight leaves nothing incomplete, a rescreen CLEAR"
-            + " answers no required type")
-    void aRescreenIsNeverTheDecisionsEvidence() {
+    @DisplayName("P13-TSK-022's review (fail-closed): a RESCREEN HIT the caller passed blocks the undecided case and"
+            + " needs a person, exactly as an onboarding HIT does; in flight, clear or unknown a rescreen neither holds"
+            + " nor proceeds the run, and answers no required type")
+    void aRescreenHitOfAnUndecidedCaseNeedsAPerson() {
         Set<CheckType> screened = EnumSet.of(CheckType.IDENTITY, CheckType.SANCTIONS);
-        List<VerificationCheck> decided =
-                List.of(at(CheckType.IDENTITY, CheckStatus.CLEAR), at(CheckType.SANCTIONS, CheckStatus.CLEAR));
+        VerificationCheck identity = at(CheckType.IDENTITY, CheckStatus.CLEAR);
+        VerificationCheck sanctions = at(CheckType.SANCTIONS, CheckStatus.CLEAR);
         VerificationCheck rescreenHit = rescreen(CheckType.SANCTIONS, CheckStatus.HIT);
-        List<VerificationCheck> withHit =
-                List.of(decided.get(0), decided.get(1), rescreenHit);
+        List<VerificationCheck> withHit = List.of(identity, sanctions, rescreenHit);
         assertThat(ChecksAssessment.of(screened, withHit))
-                .as("a list update's hit routes no decided case to review")
+                .as("a list update's hit before the decision blocks the automatic approval (INV-KYC-04)")
+                .isEqualTo(ChecksAssessment.BLOCKED);
+        assertThat(ChecksAssessment.needingReview(screened, withHit))
+                .as("and is the task a person resolves")
+                .containsExactly(rescreenHit);
+        assertThat(
+                        ChecksAssessment.of(
+                                screened,
+                                List.of(identity, at(CheckType.SANCTIONS, CheckStatus.DISPATCHED), rescreenHit)))
+                .as("the hit wins every tie - even an onboarding check still in flight")
+                .isEqualTo(ChecksAssessment.BLOCKED);
+        assertThat(
+                        ChecksAssessment.of(
+                                screened,
+                                List.of(identity, sanctions, rescreen(CheckType.PEP, CheckStatus.DISPATCHED))))
+                .as("a rescreen in flight holds nothing: a stranded rescreen never deadlocks an onboarding")
                 .isEqualTo(ChecksAssessment.CLEAR_TO_PROCEED);
-        assertThat(ChecksAssessment.needingReview(screened, withHit)).isEmpty();
         assertThat(
                         ChecksAssessment.of(
                                 screened,
                                 List.of(
-                                        decided.get(0),
-                                        decided.get(1),
-                                        rescreen(CheckType.PEP, CheckStatus.DISPATCHED))))
-                .as("a rescreen in flight leaves nothing incomplete")
+                                        identity,
+                                        sanctions,
+                                        rescreen(CheckType.SANCTIONS, CheckStatus.INDETERMINATE),
+                                        rescreen(CheckType.SANCTIONS, CheckStatus.INDETERMINATE),
+                                        rescreen(CheckType.SANCTIONS, CheckStatus.INDETERMINATE))))
+                .as("a rescreen's unknowns spend no onboarding budget")
                 .isEqualTo(ChecksAssessment.CLEAR_TO_PROCEED);
         assertThat(
                         ChecksAssessment.of(
                                 screened,
-                                List.of(
-                                        decided.get(0),
-                                        rescreen(CheckType.SANCTIONS, CheckStatus.CLEAR))))
+                                List.of(identity, rescreen(CheckType.SANCTIONS, CheckStatus.CLEAR))))
                 .as("a rescreen's clear answers no required type of the run")
                 .isEqualTo(ChecksAssessment.INCOMPLETE);
+    }
+
+    @Test
+    @DisplayName("P13-TSK-022's review: an undecided case's decision rests on every onboarding check and every rescreen"
+            + " answered CLEAR or HIT - never on a rescreen in flight or unknown")
+    void theDecisionsEvidenceIsEveryAnsweredCheck() {
+        VerificationCheck identity = at(CheckType.IDENTITY, CheckStatus.CLEAR);
+        VerificationCheck onboardingUnknown = at(CheckType.SANCTIONS, CheckStatus.INDETERMINATE);
+        VerificationCheck rescreenHit = rescreen(CheckType.SANCTIONS, CheckStatus.HIT);
+        VerificationCheck rescreenClear = rescreen(CheckType.PEP, CheckStatus.CLEAR);
+        List<VerificationCheck> all =
+                List.of(
+                        identity,
+                        onboardingUnknown,
+                        rescreenHit,
+                        rescreenClear,
+                        rescreen(CheckType.PEP, CheckStatus.DISPATCHED),
+                        rescreen(CheckType.SANCTIONS, CheckStatus.REQUESTED),
+                        rescreen(CheckType.PEP, CheckStatus.INDETERMINATE));
+        assertThat(ChecksAssessment.decisionEvidence(all))
+                .containsExactly(identity, onboardingUnknown, rescreenHit, rescreenClear);
     }
 
     private VerificationCheck rescreen(CheckType type, CheckStatus status) {

@@ -146,7 +146,7 @@ public final class RescreeningDriver implements RiskActionSchedule.RescreeningLe
             try (CorrelationContext.Scope scope = CorrelationContext.enter(
                     Correlation.startingWith(CorrelationId.of(permit.correlationId())))) {
                 // kyc asked on no risk transaction - the claim has committed, no risk row is held.
-                PartyRescreening.Answer answer = run.ask(permit);
+                PartyRescreening.Answer answer = run.ask(permit, lease);
                 Optional<RescreeningRun.Concluded> done;
                 try {
                     done = flow.sweep(RiskSpans.RESCREEN,

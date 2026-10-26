@@ -8,7 +8,8 @@ import java.util.Optional;
 
 /**
  * What a raiser asks {@link Alerts} to raise (`P13-TSK-015`; {@code risk V010}) - judged whole here, the
- * {@code CHECK}s' twin: the alert's identity ({@link #key}: the subject, the rule, the window start), its kind and
+ * {@code CHECK}s' twin: the alert's identity ({@link #key}: the subject, the rule, the window start - and a {@code SCREENING_HIT}'s one
+ * signal, `P13-TSK-022`'s review), its kind and
  * severity, the policy version whose rule raised it and its evidence by reference, and the raiser's flow (correlation,
  * causation). Three shapes, and only three:
  *
@@ -88,9 +89,9 @@ public record NewAlert(
                 correlation, causation);
     }
 
-    /** The alert's identity - what the unique holds. */
+    /** The alert's identity - what the unique holds: its one signal too for a kind keyed by it (risk V018). */
     public AlertKey key() {
-        return new AlertKey(subject.ref(), rule.code(), window.start());
+        return AlertKey.of(kind, subject.ref(), rule.code(), window.start(), evidence);
     }
 
     @Override

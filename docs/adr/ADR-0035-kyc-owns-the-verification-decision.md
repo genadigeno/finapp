@@ -74,26 +74,42 @@ stated and monitored (`INV-BAL-05`'s shape).
 
 ## Amendment — a list update re-screens beside the decision (`P13-TSK-022`, 2026-10-26)
 
-*The owner's decision O1, "add the kyc door"; the coordinator's default for its semantics, to be ratified by the owner at
-`P13-DOC-001`.* When a sanctions or PEP list changes, kyc's decided party must be screened against it - and kyc never
-re-asks an answered question, while a new case would re-run identity and documents, need fresh consent, be visible to the
-customer and could not be decided for an `ACTIVE` customer. So the decision this ADR places in `kyc` gains one
-neighbour, never a rival:
+*The owner's decision O1, "add the kyc door"; the coordinator's default for its semantics and, from the task's second
+review, the coordinator's fail-closed rule for an undecided case - both to be ratified by the owner at `P13-DOC-001`.*
+When a sanctions or PEP list changes, kyc's decided party must be screened against it - and kyc never re-asks an
+answered question, while a new case would re-run identity and documents, need fresh consent, be visible to the customer
+and could not be decided for an `ACTIVE` customer. So the decision this ADR places in `kyc` gains one neighbour, never
+a rival:
 
-- **A post-decision check.** `CheckPurpose.RESCREEN` (kyc `V011`): a `SANCTIONS` or `PEP` check asked on the customer's
-  latest case under risk's permit key (`verification_check_rescreen_once`: one key, one question), its ask stamped on the
-  database's clock, dispatched and answered by the run's own choreography (`VerificationRunService.rescreen`: the
-  dispatch committed, the provider asked holding no connection, the outcome with its evidence and its trail).
-- **Evidence beside the decision, never a re-decision.** The case's status, the decision and the customer's relationship
-  do not move; no review task opens. kyc's onboarding readers name `purpose = 'ONBOARDING'` (`CheckStore.forCase`, the
-  run's convergence, the budget's count), `ChecksAssessment` reads onboarding checks only, the one-in-flight index holds
-  onboarding checks only, and the callback door assesses only on an onboarding check - on both the run's path and the
-  provider's late callback. The purpose and the key are frozen (`UPDATE` narrowed to the machine's two columns).
+- **A rescreen check.** `CheckPurpose.RESCREEN` (kyc `V011`): a `SANCTIONS` or `PEP` check asked on the customer's
+  latest case under risk's permit key and an ordinal (`verification_check_rescreen_once`: one key, one question), its
+  ask stamped on the database's clock, dispatched and answered by the run's own choreography
+  (`VerificationRunService.rescreen`: the dispatch committed, the provider asked holding no connection, the outcome with
+  its evidence and its trail). It never answers a run's required type, never holds a run in flight and never spends its
+  retry budget (the run's reads and the one-in-flight index name `purpose = 'ONBOARDING'`), so a stranded rescreen can
+  never deadlock an onboarding. The purpose and the key are frozen (`UPDATE` narrowed to the machine's two columns).
+- **On a case not yet decided, its hit needs a person - fail-closed** (the second review's IMPORTANT 1,
+  `INV-KYC-04`). The assessment of an undecided case reads every check (`CheckStore.allForCase`): a rescreen `HIT` blocks
+  the automatic approval, opens its review task and moves the case to `IN_REVIEW` exactly as an onboarding `HIT` does
+  (`ChecksAssessment.of`, `needingReview`); the review door shows it with its purpose; the decision's evidence names
+  every rescreen answered `CLEAR` or `HIT` before it (`ChecksAssessment.decisionEvidence`, `INV-KYC-02`). The rescreen
+  path assesses after its outcome commits (`CaseAssessment.assessRescreened`, on the run's path and the provider's late
+  callback alike). On a `READY_FOR_DECISION` case - which cannot move back to review - the task opens and the
+  reviewer's decision names the hit, the late onboarding hit's precedent. A rescreen in flight or answered "we do not
+  know" neither holds nor proceeds the case: the HIT reaches a person whichever side of the decision it lands
+  (below), and holding on it would let a stranded rescreen deadlock an onboarding. A hit that commits while a concurrent
+  assessment decides the case is ordered after that decision - the decision rests on exactly what its own transaction
+  read - and lands beside it.
+- **On a decided case, evidence beside the decision, never a re-decision.** The case's status, the decision and the
+  customer's relationship do not move; no review task opens (`assessRescreened` assesses nothing on a terminal case,
+  and a decided case's re-assessment reads its onboarding checks, `CheckStore.forCase`, as it always has).
 - **The hit is risk's to work.** Risk's rescreening records it as a `SCREENING_HIT` signal and raises the `SCREENING_HIT`
-  fact alert, folded into the party's `AML` case - the person who works it is risk's investigator, not kyc's reviewer.
-  Whether a sanctions match should also open kyc work is the owner's to ratify at `P13-DOC-001`.
-- **Read where it matters.** `CheckStore.allForCase` - onboarding and rescreen alike - is the one read beside the
-  onboarding ones, for risk's screening-hit reading (`KycScreeningClearances`, judged per type), so T-eval judges a party
-  a list update found as a hit from the moment kyc decided it.
+  fact alert - one per party and list version - folded into the party's `AML` case; on a decided case the person who
+  works it is risk's investigator, not kyc's reviewer. Whether a sanctions match on a decided party should also open kyc
+  work is the owner's to ratify at `P13-DOC-001`.
+- **Read where it matters.** `CheckStore.latestDecidedScreenings` - per screening type the decided check asked last,
+  onboarding or rescreen, one index probe per type - is risk's screening-hit reading (`KycScreeningClearances`, judged
+  per type), so T-eval judges a party a list update found as a hit from the moment kyc decided it.
 
-`INV-LIFE-04` and `INV-KYC-02` carry the amendment; a changed circumstance of the *person* still opens a new case.
+`INV-LIFE-04`, `INV-KYC-02` and `INV-KYC-04` carry the amendment; a changed circumstance of the *person* still opens a
+new case.

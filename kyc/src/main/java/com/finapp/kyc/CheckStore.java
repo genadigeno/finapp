@@ -61,22 +61,33 @@ public interface CheckStore<T> {
     boolean complete(T unitOfWork, CheckId checkId, CheckOutcome outcome, Instant at);
 
     /**
-     * The case's <strong>onboarding</strong> checks, evidence excluded - the evidence its
-     * assessment, its review tasks and its decision rest on.
+     * The case's <strong>onboarding</strong> checks, evidence excluded - what a <em>decided</em>
+     * case's re-assessment reads (a duplicate callback's healing), as it always has.
      *
      * <p>`P13-TSK-022` ({@code kyc V011}): a {@link CheckPurpose#RESCREEN} check is not one of
-     * them. Every reader that existed before it - the assessment, the review door, the decision
-     * recording - keeps the meaning it was written for, and a list update's screening can never
-     * route a decided case to review or reach a customer surface through them.
+     * them - on a decided case a list update's screening is evidence beside the decision, never a
+     * re-decision, so a decided case's re-assessment never opens a review task for it.
      */
     List<VerificationCheck> forCase(T unitOfWork, KycCaseId caseId);
 
     /**
-     * Every check of a case, onboarding and rescreen alike, evidence excluded (`P13-TSK-022`) -
-     * for readers outside the onboarding decision that must see a list update's answer: risk's
-     * screening-hit reading, so a party a rescreen found on a list is judged a hit by T-eval.
+     * Every check of a case, onboarding and rescreen alike, evidence excluded (`P13-TSK-022` and
+     * its review's fail-closed rule): what an <em>undecided</em> case's assessment and decision
+     * read - a rescreen's {@code HIT} before the decision blocks the automatic approval and needs a
+     * person ({@link ChecksAssessment#of}), and the decision's evidence names every answered
+     * rescreen ({@link ChecksAssessment#decisionEvidence}) - and what the reviewer reads, decided
+     * or not, so a rescreen beside the decision is visible to the person defending it.
      */
     List<VerificationCheck> allForCase(T unitOfWork, KycCaseId caseId);
+
+    /**
+     * Per screening type - {@code SANCTIONS}, {@code PEP} - the case's decided check
+     * ({@code CLEAR} or {@code HIT}) asked last, onboarding or rescreen alike: at most one row per
+     * type (`P13-TSK-022`'s review). Risk's screening-hit reading on T-eval's hot path reads this -
+     * one index probe per type on {@code kyc V011}'s {@code verification_check_decided_latest},
+     * never every check of a case, whose rescreens accumulate with every list update.
+     */
+    List<VerificationCheck> latestDecidedScreenings(T unitOfWork, KycCaseId caseId);
 
     /**
      * Requests a {@link CheckPurpose#RESCREEN} screening of {@code type} on {@code caseId} under

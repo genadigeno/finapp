@@ -81,14 +81,19 @@ public final class JdbcRiskProofReads implements RiskProofReads {
     /**
      * The born-once census: the day's alerts grouped by their key, then, per kind and window kind, the alerts raised,
      * the keys among them and every row of those keys any day holds - each key probed through {@code
-     * risk_alert_born_once} itself, so a second row is found wherever and whenever it was born.
+     * risk_alert_born_once} itself, so a second row is found wherever and whenever it was born. The key is the unique's
+     * as {@code risk V018} re-made it (`P13-TSK-022`'s review): the alert's one signal too for a {@code SCREENING_HIT}
+     * ({@code fact_signal_id}, {@code NULL} for every other kind - compared {@code IS NOT DISTINCT FROM}, as the
+     * {@code NULLS NOT DISTINCT} unique does), so two list versions' hits of one party on one day are two keys, never a
+     * divergence.
      */
     static final String BORN_ONCE = "WITH keyed AS (SELECT kind, window_kind, subject_ref, rule_code, window_start,"
-            + " count(*) AS raised FROM risk.risk_alert WHERE id >= ? AND id < ?"
-            + " GROUP BY kind, window_kind, subject_ref, rule_code, window_start)"
+            + " fact_signal_id, count(*) AS raised FROM risk.risk_alert WHERE id >= ? AND id < ?"
+            + " GROUP BY kind, window_kind, subject_ref, rule_code, window_start, fact_signal_id)"
             + " SELECT k.kind, k.window_kind, sum(k.raised) AS raised, count(*) AS keys,"
             + " sum((SELECT count(*) FROM risk.risk_alert a WHERE a.subject_ref = k.subject_ref"
-            + " AND a.rule_code = k.rule_code AND a.window_start = k.window_start)) AS held"
+            + " AND a.rule_code = k.rule_code AND a.window_start = k.window_start"
+            + " AND a.fact_signal_id IS NOT DISTINCT FROM k.fact_signal_id)) AS held"
             + " FROM keyed k GROUP BY k.kind, k.window_kind ORDER BY k.kind, k.window_kind";
 
     static final String CASES_OPENED = "SELECT kind, status, count(*) AS cases FROM risk.risk_case"

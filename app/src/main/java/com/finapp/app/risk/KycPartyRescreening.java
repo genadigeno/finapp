@@ -3,7 +3,6 @@ package com.finapp.app.risk;
 import com.finapp.kyc.CheckStatus;
 import com.finapp.kyc.CheckStore;
 import com.finapp.kyc.CheckType;
-import com.finapp.kyc.ChecksAssessment;
 import com.finapp.kyc.KycCase;
 import com.finapp.kyc.KycCaseId;
 import com.finapp.kyc.KycCaseStore;
@@ -15,7 +14,10 @@ import com.finapp.party.PartyStore;
 import com.finapp.risk.PartyRescreening;
 import com.finapp.risk.ScreeningList;
 import java.sql.Connection;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -29,22 +31,31 @@ import java.util.UUID;
  * <ol>
  *   <li><strong>Placed</strong>, on a read-only snapshot of its own (never risk's transaction - the leg asks holding no
  *       risk row): the party's live customer relationship, {@code ACTIVE} or {@code PENDING} (an onboarding customer
- *       is rescreened too - the review's MINOR 9: its onboarding screening may have been asked before the list came
- *       into force) - else {@link Inactive}; its latest KYC case - else {@link Pending} {@code NOT_SCREENED}; and the
- *       permit's keyed check, if the permit already asked one.</li>
- *   <li><strong>Asked</strong>, when the permit has not: {@link Door#rescreen} - kyc's
- *       {@code VerificationRunService.rescreen}: a {@code RESCREEN} check on that case under the permit's key, its
- *       dispatch committed, the provider asked holding no connection, the outcome with its evidence and trail - and no
- *       assessment: the case stays as it was, the customer untouched, no review task.</li>
- *   <li><strong>Answered</strong> from the keyed check alone - never from another question's: answered
- *       {@code CLEAR}/{@code HIT} is {@link Screened} (kyc's check id, whether it hit, when it was asked and decided -
- *       both on the database's clock, the one the list version's activation is stamped on); in flight is
- *       {@link Pending} {@code IN_FLIGHT} (another asker holds the call, or a crash left it dispatched; the next claim
- *       asks the same key and kyc answers from the row - never a second provider call); "we do not know"
- *       ({@code INDETERMINATE}) is a retry under the next key ordinal, at most
- *       {@link ChecksAssessment#INDETERMINATE_RETRY_BUDGET} keys - kyc's own budget - then {@link Pending}
- *       {@code NOT_SCREENED}, the permit failing at its bound, counted.</li>
+ *       is rescreened too - its onboarding screening may have been asked before the list came into force) - else
+ *       {@link Inactive}; its latest KYC case - else, for a {@code PENDING} customer, {@link NotOnboarded} (never
+ *       screened, nothing to rescreen: its onboarding screens it against the list in force - the review's IMPORTANT 4),
+ *       and for an {@code ACTIVE} one {@link Pending} {@code NOT_SCREENED} (decided on nothing: the exposure, failing
+ *       counted); and the questions the permit already asked.</li>
+ *   <li><strong>Asked</strong>, when the claim may ask a new question: {@link Door#rescreen} - kyc's
+ *       {@code VerificationRunService.rescreen}: a {@code RESCREEN} check on that case under the permit's key and the
+ *       next ordinal, its dispatch committed, the provider asked holding no connection, the outcome with its evidence
+ *       and trail - and, for a hit on a case not yet decided, kyc's own assessment (fail-closed); a decided case stays
+ *       as it was, the customer untouched.</li>
+ *   <li><strong>Answered</strong> from the permit's own questions alone - never from another's: one of them answered
+ *       {@code HIT} (first - fail-closed) or {@code CLEAR} is {@link Screened} (kyc's check id, whether it hit, when it
+ *       was asked and decided - both on the database's clock, the one the list version's activation is stamped on);
+ *       otherwise the newest question decides - in flight under its asker is {@link Pending} {@code IN_FLIGHT}; "we do
+ *       not know" ({@code INDETERMINATE}), or in flight but asked before the question's abandonment line, is a new
+ *       question under the next ordinal when the claim may ask one, else {@link Pending} ({@code NOT_SCREENED} or
+ *       {@code IN_FLIGHT}) and the leg backs the permit off.</li>
  * </ol>
+ *
+ * <p><strong>The bound is the leg's</strong> (the review's IMPORTANT 2). A claim at attempt {@code n} may have asked the
+ * ordinals {@code #0 .. #n-1}: one new question per claim while the last answered "we do not know" or was abandoned -
+ * a provider outage is asked again at every claim of the leg's backoff, about 34.6 hours by default, and a restart that
+ * killed a call mid-flight (a dispatched check no asker will ever complete) is abandoned once it is older than a lease
+ * at the claim and asked again, never waited on forever. kyc's onboarding budget of three unknowns is the onboarding's,
+ * not this.
  *
  * <p><strong>The key.</strong> The permit's request key ({@code risk.rescreen:<permit id>}) and an ordinal:
  * {@code risk.rescreen:<permit id>#0}, {@code #1}, ... - kyc's {@code verification_check_rescreen_once} makes one key
@@ -89,52 +100,81 @@ public final class KycPartyRescreening implements PartyRescreening {
     }
 
     @Override
-    public Answer ask(UUID partyId, ScreeningList list, String requestKey) {
-        Objects.requireNonNull(partyId, "partyId");
-        Objects.requireNonNull(list, "list");
-        Objects.requireNonNull(requestKey, "requestKey");
-        if (!requestKey.startsWith(KEY_PREFIX)) {
+    public Answer ask(Question question) {
+        Objects.requireNonNull(question, "question");
+        if (!question.requestKey().startsWith(KEY_PREFIX)) {
             throw new IllegalArgumentException("a rescreen is asked under a permit's key");
         }
-        Placed placed = transactions.inSnapshot(unitOfWork -> place(unitOfWork, partyId, list, requestKey));
+        Placed placed = transactions.inSnapshot(unitOfWork -> place(unitOfWork, question));
         return switch (placed) {
             case Placed.Gone gone -> gone.answer();
             case Placed.Keyed keyed -> answerOf(keyed.check());
             case Placed.Unasked unasked -> answerOf(door.rescreen(unasked.caseId(), unasked.customerId(),
-                    typeOf(list), unasked.rescreenKey()));
+                    typeOf(question.list()), unasked.rescreenKey()));
         };
     }
 
     /** Where the party stands, on {@code unitOfWork} - one snapshot, so the customer, its case and its checks agree. */
-    Placed place(Connection unitOfWork, UUID partyId, ScreeningList list, String requestKey) {
-        Optional<Customer> customer = parties.findLiveCustomerFor(unitOfWork, PartyId.of(partyId));
+    Placed place(Connection unitOfWork, Question question) {
+        Optional<Customer> customer = parties.findLiveCustomerFor(unitOfWork, PartyId.of(question.partyId()));
         if (customer.isEmpty() || !RESCREENED.contains(customer.get().status())) {
             return new Placed.Gone(new Inactive());
         }
         Optional<KycCase> latest = cases.findLatestFor(unitOfWork, customer.get().id().value());
         if (latest.isEmpty()) {
-            return new Placed.Gone(new Pending(Wait.NOT_SCREENED));
+            // Onboarding with no case: never screened, nothing to rescreen. Decided with no case: the exposure.
+            return new Placed.Gone(customer.get().status() == CustomerStatus.PENDING ? new NotOnboarded()
+                    : new Pending(Wait.NOT_SCREENED));
         }
-        Optional<VerificationCheck> last = Optional.empty();
-        for (int ordinal = 0; ordinal < ChecksAssessment.INDETERMINATE_RETRY_BUDGET; ordinal++) {
-            String key = keyed(requestKey, ordinal);
-            Optional<VerificationCheck> asked = checks.findRescreen(unitOfWork, key);
-            if (asked.isEmpty()) {
-                return new Placed.Unasked(latest.get().id(), customer.get().id().value(), key);
-            }
-            if (asked.get().type() != typeOf(list)) {
-                throw new IllegalStateException("a permit's key asked another list's screening");
-            }
-            last = asked;
-            if (asked.get().status() != CheckStatus.INDETERMINATE) {
-                return new Placed.Keyed(asked.get());
-            }
+        List<VerificationCheck> asked = askedBy(unitOfWork, question);
+        Optional<VerificationCheck> decided = asked.stream()
+                .filter(check -> check.status() == CheckStatus.HIT)
+                .findFirst()
+                .or(() -> asked.reversed().stream().filter(check -> check.status() == CheckStatus.CLEAR).findFirst());
+        if (decided.isPresent()) {
+            return new Placed.Keyed(decided.get());
         }
-        // kyc's budget of "we do not know" spent under this permit: not screened.
-        return new Placed.Keyed(last.orElseThrow());
+        Placed.Unasked next = new Placed.Unasked(latest.get().id(), customer.get().id().value(),
+                keyed(question.requestKey(), asked.size()));
+        if (asked.isEmpty()) {
+            return next;
+        }
+        VerificationCheck newest = asked.getLast();
+        boolean unanswered = newest.status() == CheckStatus.INDETERMINATE
+                || abandoned(newest, question.abandonedBefore());
+        // One new question per claim, at most the claim's attempt: the leg's backoff and bound govern the asking.
+        return unanswered && asked.size() < question.attempt() ? next : new Placed.Keyed(newest);
     }
 
-    /** kyc's answer from the permit's keyed check - never from another question's. */
+    /**
+     * The permit's questions in ordinal order - {@code #0} upward until the first never asked, at most the claim's
+     * attempt (each claim asks at most one).
+     */
+    private List<VerificationCheck> askedBy(Connection unitOfWork, Question question) {
+        List<VerificationCheck> asked = new ArrayList<>();
+        for (int ordinal = 0; ordinal < question.attempt(); ordinal++) {
+            Optional<VerificationCheck> check = checks.findRescreen(unitOfWork, keyed(question.requestKey(), ordinal));
+            if (check.isEmpty()) {
+                break;
+            }
+            if (check.get().type() != typeOf(question.list())) {
+                throw new IllegalStateException("a permit's key asked another list's screening");
+            }
+            asked.add(check.get());
+        }
+        return asked;
+    }
+
+    /**
+     * A question still unanswered that was asked before {@code abandonedBefore} - more than a lease before the claim,
+     * both instants the database's ({@code kyc V011} stamps the ask with {@code clock_timestamp()}): its asker lost the
+     * call, and no one will complete it.
+     */
+    static boolean abandoned(VerificationCheck check, Instant abandonedBefore) {
+        return !check.status().isTerminal() && check.requestedAt().isBefore(abandonedBefore);
+    }
+
+    /** kyc's answer from one of the permit's keyed checks - never from another question's. */
     static Answer answerOf(VerificationCheck check) {
         Objects.requireNonNull(check, "check");
         if (check.onboarding()) {
@@ -167,10 +207,10 @@ public final class KycPartyRescreening implements PartyRescreening {
         /** Nothing to ask: the party's relationship is gone, or it has no case. */
         record Gone(Answer answer) implements Placed {}
 
-        /** The permit's key already asked: its check answers. */
+        /** The permit's questions answer: one of its keyed checks. */
         record Keyed(VerificationCheck check) implements Placed {}
 
-        /** The permit has not asked under {@code rescreenKey}: kyc is asked on that case. */
+        /** The claim asks a new question under {@code rescreenKey}: kyc is asked on that case. */
         record Unasked(KycCaseId caseId, UUID customerId, String rescreenKey) implements Placed {}
     }
 }

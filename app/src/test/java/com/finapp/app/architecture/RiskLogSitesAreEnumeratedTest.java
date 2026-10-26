@@ -77,6 +77,9 @@ class RiskLogSitesAreEnumeratedTest {
             "RescreeningMetrics.java|\"Rescreening kyc ask failed: {}\"|cause",
             "RescreeningMetrics.java|\"The rescreening backlog could not be read: {}\""
                     + "|unreadable.getClass().getSimpleName()",
+            // The second review's MINOR 9: the backlog read off the scrape thread - a refused start, its class alone.
+            "RescreeningMetrics.java|\"The rescreening backlog's reading could not start: {}\""
+                    + "|refused.getClass().getSimpleName()",
             "RiskActionSchedule.java|\"Rescreening permits concluded: {}\"|done",
             "RiskActionSchedule.java|\"Rescreening leg failed: {}\"|failure.getClass().getSimpleName()",
             "RiskActionSchedule.java|\"Risk action claim failed: {}\"|failure.getClass().getSimpleName()",
