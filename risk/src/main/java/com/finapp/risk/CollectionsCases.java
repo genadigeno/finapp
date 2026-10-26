@@ -34,6 +34,12 @@ import java.util.Set;
  * or in the case writes lending's, bnpl's or the ledger's rows, and neither module changes (contact strategy, promises
  * to pay, placement, agencies, write-off and provisioning are Phase 14's and a later collections context's).
  *
+ * <p><strong>The party first.</strong> The agreement's party is placed ({@link RiskSubjectParties#accountablePartyOf})
+ * <em>before</em> the alert is raised: a borrower that cannot be placed refuses the delivery before anything is born,
+ * announced or counted - only {@link CollectionsObserver#unplaced} - so a stalled partition's every retry leaves no
+ * trace but its own meter ({@code finapp.risk.alert} never climbs for an alert that does not exist). {@link Cases#fold}
+ * places it again under the case's lock, the kind's rule for every folding (the drain's included).
+ *
  * <p>The raise runs on the caller's unit of work under the acting principal the handler entered (the platform's: an
  * inbox delivery has no caller). Nothing here logs or reads a clock.
  */
@@ -46,9 +52,13 @@ public final class CollectionsCases implements SignalAlerts {
     public static final AlertSeverity SEVERITY = AlertSeverity.MEDIUM;
 
     private final AlertRaiser raiser;
+    private final RiskSubjectParties parties;
+    private final CollectionsObserver observer;
 
-    public CollectionsCases(AlertRaiser raiser) {
+    public CollectionsCases(AlertRaiser raiser, RiskSubjectParties parties, CollectionsObserver observer) {
         this.raiser = Objects.requireNonNull(raiser, "raiser");
+        this.parties = Objects.requireNonNull(parties, "parties");
+        this.observer = Objects.requireNonNull(observer, "observer");
     }
 
     @Override
@@ -56,10 +66,22 @@ public final class CollectionsCases implements SignalAlerts {
         return DEFAULTS.contains(Objects.requireNonNull(kind, "kind"));
     }
 
+    /**
+     * Raises {@code standing}'s alert - after its agreement's party is placed.
+     *
+     * @throws IllegalStateException the agreement's party cannot be placed - counted
+     *     {@link CollectionsObserver#unplaced}, nothing raised: the caller's transaction (T-sig's) is refused whole
+     */
     @Override
     public void raise(Connection unitOfWork, RiskSignal standing) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
-        raiser.raiseAll(unitOfWork, List.of(alertFor(standing)));
+        NewAlert alert = alertFor(standing);
+        if (parties.accountablePartyOf(unitOfWork, standing.subject()).isEmpty()) {
+            observer.unplaced();
+            throw new IllegalStateException("a defaulted agreement's party cannot be placed: no collections case opens"
+                    + " without one");
+        }
+        raiser.raiseAll(unitOfWork, List.of(alert));
     }
 
     /**

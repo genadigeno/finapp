@@ -2892,7 +2892,11 @@ codes `INTERNAL`.
 column it projects (the loan's identity, party and decision `CONFIDENTIAL`, its kind, status and currency `INTERNAL`, its
 latest agreement's principal or limit `RESTRICTED-FINANCIAL` with its scale `INTERNAL`). SELECT to the application role
 only; read by credit's exposure (`LendingCreditExposure`, version 2) and the exposure census - no figure leaves them in a
-log, tag or span.
+log, tag or span. *(Since `P13-TSK-025`, 2026-10-26, a third reader: risk's party join, `app`'s
+`JdbcCreditAgreementParties.partyOfLoan` - `party_id` by `loan_id` alone, `SYSTEM_JOIN` (`OwnershipIsScopedTest`), its one
+caller `IdentitySubjectParties`: a defaulted loan's borrower for its collections case. It reads every row, whatever the
+status: a filter added to the view ("not `CLOSED`") would leave a default's loan unplaceable and stall the
+`risk.signals` consumption of the `finapp.lending` partition for every risk handler on it.)*
 
 | Table | Column | Level | Note |
 |---|---|---|---|
@@ -4050,7 +4054,10 @@ at the merchant's own door only - `reason`; never `excess_*`, `cancelled_*` or t
 
 `bnpl V007`'s definer view `party_principal_exposure`, one row per obligation: each column classified as the column it
 projects - no figure. SELECT to the application role only; read by credit's exposure (`BnplCreditExposure`, version 3)
-and the exposure census.
+and the exposure census. *(Since `P13-TSK-025`, 2026-10-26, a third reader: risk's party join, `app`'s
+`JdbcCreditAgreementParties.partyOfObligation` - `party_id` by `obligation_id` alone, `SYSTEM_JOIN`, its one caller
+`IdentitySubjectParties`: a defaulted obligation's customer for its collections case; a status filter added to the view
+would stall the `finapp.bnpl` partition's risk consumption the same way.)*
 
 | Table | Column | Level | Note |
 |---|---|---|---|

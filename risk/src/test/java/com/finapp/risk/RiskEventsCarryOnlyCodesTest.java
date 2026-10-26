@@ -344,7 +344,9 @@ class RiskEventsCarryOnlyCodesTest {
         collections.partyOfSubject.put(SignalSubject.of(SubjectKind.CREDIT_AGREEMENT, loan), EvaluationWorld.IDS.next());
         RiskSignals defaults = new RiskSignals(new CollectionsCaseRulesTest.BornOnceSignals(), recording,
                 EvaluationWorld.IDS, EvaluationWorld.CLOCK, ProfileHints.NONE,
-                new CollectionsCases(collections.alerts::raiseAll));
+                new CollectionsCases(collections.alerts::raiseAll,
+                        (uow, subject) -> Optional.ofNullable(collections.partyOfSubject.get(subject)),
+                        CollectionsObserver.NONE));
         Map<String, String> condition = new LinkedHashMap<>();
         condition.put("product", "INSTALMENT");
         condition.put("business_date", "2026-10-24");

@@ -19,6 +19,7 @@ import com.finapp.risk.Alerts;
 import com.finapp.risk.CaseObserver;
 import com.finapp.risk.Cases;
 import com.finapp.risk.CollectionsCases;
+import com.finapp.risk.CollectionsObserver;
 import com.finapp.risk.JdbcRiskAlertStore;
 import com.finapp.risk.JdbcRiskCaseStore;
 import com.finapp.risk.JdbcRiskSignalStore;
@@ -68,10 +69,12 @@ import org.junit.jupiter.api.Test;
  * driven through the platform's own {@link InboxConsumer}, so the dedupe row, the signal, the alert and the case share
  * the transaction they share in production, over the real stores, T-sig ({@link RiskSignals} with
  * {@link CollectionsCases}), {@link Alerts} and {@link Cases} - wired as {@code RiskBeans}, {@code RiskAlertBeans} and
- * {@code RiskCaseBeans} wire them. The agreement's party is the accountable join's answer, planted here for the folding
- * cases: the join's own statements are {@code JdbcCreditAgreementPartiesTest}'s and their live read over the published
- * views {@link #theJoinReadsThePublishedViews}'s, and a loan or an obligation born through lending's and bnpl's doors is
- * no part of what this suite proves.
+ * {@code RiskCaseBeans} wire them. For the races the agreement's party is planted (the join's answer by map); the
+ * money's census runs end to end through the composition's real join ({@code IdentitySubjectParties} over
+ * {@code JdbcCreditAgreementParties}) over a loan and a BNPL obligation seeded into lending's and bnpl's own tables
+ * ({@link #seededLoan}, {@link #seededObligation} - the bootstrap superuser, triggers suspended for that session, removed
+ * after), and {@link #theJoinReadsThePublishedViews} reads them live as the application role. A loan or an obligation
+ * born through lending's and bnpl's doors is no part of what this suite proves.
  *
  * <p>The entry's three - {@link #aDefaultOpensOneCase}, {@link #aSecondDefaultOfOnePartyAttaches},
  * {@link #theSameEventTwiceOpensOnce} - and the failure and the money's census beside them. <strong>Written and owed a
@@ -109,7 +112,23 @@ class CollectionsCaseDatabaseTest {
     private static final Alerts ALERTS = new Alerts(ALERT_STORE, CASES::fold, NO_PERSON, SUBJECTS,
             new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, CLOCK, Spans.NONE, AlertObserver.NONE);
     private static final RiskSignals SIGNALS = new RiskSignals(new JdbcRiskSignalStore(), new JdbcOutboxWriter(), IDS,
-            CLOCK, ProfileHints.NONE, new CollectionsCases(ALERTS::raiseAll));
+            CLOCK, ProfileHints.NONE, new CollectionsCases(ALERTS::raiseAll, SUBJECTS, CollectionsObserver.NONE));
+
+    /** The composition's join, unplanted: identity's, merchant's and the two published views' (`RiskProfileBeans`). */
+    private static final IdentitySubjectParties REAL_SUBJECTS = new IdentitySubjectParties(
+            new com.finapp.identity.JdbcIdentityStore(), new com.finapp.merchant.JdbcMerchantStore(),
+            new JdbcCreditAgreementParties());
+    private static final Cases REAL_CASES = new Cases(new JdbcRiskCaseStore(), ALERT_STORE, NO_PERSON, REAL_SUBJECTS,
+            new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, CLOCK, CaseObserver.NONE);
+    private static final Alerts REAL_ALERTS = new Alerts(ALERT_STORE, REAL_CASES::fold, NO_PERSON, REAL_SUBJECTS,
+            new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, CLOCK, Spans.NONE, AlertObserver.NONE);
+    private static final RiskSignals REAL_SIGNALS = new RiskSignals(new JdbcRiskSignalStore(), new JdbcOutboxWriter(),
+            IDS, CLOCK, ProfileHints.NONE, new CollectionsCases(REAL_ALERTS::raiseAll, REAL_SUBJECTS,
+                    CollectionsObserver.NONE));
+    private static final RiskSignalIntake REAL_LOANS = new RiskSignalIntake(RiskSignalIntake.Source.LOAN_DEFAULTED,
+            REAL_SIGNALS, MonitoringHints.NONE, IDS, RiskFlowScope.NONE);
+    private static final RiskSignalIntake REAL_OBLIGATIONS = new RiskSignalIntake(
+            RiskSignalIntake.Source.BNPL_DEFAULTED, REAL_SIGNALS, MonitoringHints.NONE, IDS, RiskFlowScope.NONE);
 
     private final InboxConsumer<Connection> inbox = new InboxConsumer<>(new JdbcInboxRecordStore(), CLOCK, RETENTION);
     private final RiskSignalIntake loans = intake(RiskSignalIntake.Source.LOAN_DEFAULTED);
@@ -238,46 +257,66 @@ class CollectionsCaseDatabaseTest {
     }
 
     @Test
-    @DisplayName("INV-RSK-02: a default's case moves no money and touches no obligation - every lending, bnpl and ledger"
-            + " table holds exactly the rows it held before the delivery")
+    @DisplayName("end to end through the real join, and INV-RSK-02: a seeded loan's and a seeded BNPL obligation's"
+            + " defaults of one borrower, placed by IdentitySubjectParties over JdbcCreditAgreementParties, open ONE"
+            + " COLLECTIONS case of that borrower holding both alerts - and every lending, bnpl and ledger table's content"
+            + " digest is exactly what it was before the deliveries")
     void aDefaultsCaseChangesNothingOfTheObligationOrTheLedger() throws SQLException {
-        UUID party = UUID.randomUUID();
-        UUID loan = agreementOf(party);
-        Map<String, Long> before = rowsOfTheMoneyDomains();
-        try (SimulatedInstance a = SimulatedInstance.inAgreementWithTheServer()) {
-            assertThat(deliver(a, loans, loanDefaulted(EventId.next(IDS), loan, "2026-10-24")))
-                    .isEqualTo(InboxConsumer.Outcome.PROCESSED);
+        UUID party = IDS.next();
+        UUID loan = seededLoan(party);
+        UUID obligation = seededObligation(party);
+        try {
+            Map<String, String> before = digestsOfTheMoneyDomains();
+            assertThat(before).as("the census reads the seeded rows").containsKeys("lending.loan",
+                    "bnpl.bnpl_obligation");
+            try (SimulatedInstance a = SimulatedInstance.inAgreementWithTheServer()) {
+                assertThat(deliver(a, REAL_LOANS, loanDefaulted(EventId.next(IDS), loan, "2026-10-24")))
+                        .isEqualTo(InboxConsumer.Outcome.PROCESSED);
+                assertThat(deliver(a, REAL_OBLIGATIONS, bnplDefaulted(EventId.next(IDS), obligation, "2026-10-24")))
+                        .isEqualTo(InboxConsumer.Outcome.PROCESSED);
+            }
+            assertThat(column("SELECT kind || ':' || subject_kind || ':' || revision FROM risk.risk_case"
+                    + " WHERE subject_ref = ?", party.toString())).as("the borrower the real join placed")
+                    .containsExactly("COLLECTIONS:PARTY:1");
+            assertThat(count("SELECT count(*) FROM risk.risk_alert a JOIN risk.risk_case c ON c.id = a.attached_case_id"
+                    + " WHERE c.subject_ref = ? AND a.kind = 'OBLIGATION_DEFAULTED'", party.toString())).isEqualTo(2);
+            assertThat(digestsOfTheMoneyDomains()).as("not one row of lending, bnpl or the ledger written, changed or"
+                    + " removed").isEqualTo(before);
+        } finally {
+            unseed(loan, obligation);
         }
-        assertThat(count("SELECT count(*) FROM risk.risk_case WHERE subject_ref = ?", party.toString())).isEqualTo(1);
-        assertThat(rowsOfTheMoneyDomains()).as("not one row of lending, bnpl or the ledger").isEqualTo(before);
     }
 
     @Test
-    @DisplayName("the party join's live read: both statements run as the application role over lending's and bnpl's"
-            + " published views - the view, its columns and the grant live - an unknown agreement answering empty; an"
-            + " agreement the database holds answering its own party")
+    @DisplayName("the party join's live read: as the application role, over lending's and bnpl's published views - the"
+            + " views, their columns and the grant live - a seeded loan answering its borrower, a seeded BNPL obligation"
+            + " its customer, through JdbcCreditAgreementParties and the real accountable join alike; an unknown agreement"
+            + " empty")
     void theJoinReadsThePublishedViews() throws SQLException {
-        JdbcCreditAgreementParties join = new JdbcCreditAgreementParties();
+        UUID borrower = IDS.next();
+        UUID customer = IDS.next();
+        UUID loan = seededLoan(borrower);
+        UUID obligation = seededObligation(customer);
         try (Connection application = DatabaseRoles.application()) {
+            JdbcCreditAgreementParties join = new JdbcCreditAgreementParties();
+            assertThat(join.partyOfLoan(application, com.finapp.lending.LoanId.of(loan))).contains(borrower);
+            assertThat(join.partyOfObligation(application, com.finapp.bnpl.BnplObligationId.of(obligation)))
+                    .contains(customer);
+            assertThat(join.partyOfLoan(application, com.finapp.lending.LoanId.of(obligation))).as("no loan of that id")
+                    .isEmpty();
             assertThat(join.partyOfLoan(application, com.finapp.lending.LoanId.of(IDS.next()))).isEmpty();
             assertThat(join.partyOfObligation(application, com.finapp.bnpl.BnplObligationId.of(IDS.next())))
                     .isEmpty();
-            for (String view : List.of("lending.party_principal_exposure|loan_id", "bnpl.party_principal_exposure"
-                    + "|obligation_id")) {
-                String[] named = view.split("\\|");
-                try (Statement any = application.createStatement();
-                        ResultSet row = any.executeQuery("SELECT " + named[1] + ", party_id FROM " + named[0]
-                                + " LIMIT 1")) {
-                    if (row.next()) {
-                        UUID agreement = row.getObject(1, UUID.class);
-                        UUID party = row.getObject(2, UUID.class);
-                        assertThat(named[1].equals("loan_id")
-                                ? join.partyOfLoan(application, com.finapp.lending.LoanId.of(agreement))
-                                : join.partyOfObligation(application, com.finapp.bnpl.BnplObligationId.of(agreement)))
-                                .as("an agreement the database holds answers its own party").contains(party);
-                    }
-                }
-            }
+            assertThat(REAL_SUBJECTS.accountablePartyOf(application,
+                    SignalSubject.of(SubjectKind.CREDIT_AGREEMENT, loan))).contains(borrower);
+            assertThat(REAL_SUBJECTS.accountablePartyOf(application,
+                    SignalSubject.of(SubjectKind.CREDIT_AGREEMENT, obligation))).contains(customer);
+            assertThat(REAL_SUBJECTS.accountablePartyOf(application,
+                    SignalSubject.of(SubjectKind.CREDIT_AGREEMENT, IDS.next()))).isEmpty();
+            assertThat(REAL_SUBJECTS.partyOf(application, SignalSubject.of(SubjectKind.CREDIT_AGREEMENT, loan)))
+                    .as("never the profile hint's join").isEmpty();
+        } finally {
+            unseed(loan, obligation);
         }
     }
 
@@ -377,9 +416,65 @@ class CollectionsCaseDatabaseTest {
         }
     }
 
-    /** Every base table of lending, bnpl and the ledger, and its row count. */
-    private static Map<String, Long> rowsOfTheMoneyDomains() throws SQLException {
-        Map<String, Long> rows = new LinkedHashMap<>();
+    /**
+     * A loan of {@code party} planted in {@code lending.loan} - the bootstrap superuser, its triggers and foreign keys
+     * suspended for this one session ({@code session_replication_role = replica}, {@code BnplCreditExposureDatabaseTest}'s
+     * precedent), its CHECKs holding; {@code CLOSED}, so no servicing sweep of another suite ever claims it; removed by
+     * {@link #unseed}. What the join reads of it is its id and its party - nothing of lending's flows is under test here.
+     */
+    private static UUID seededLoan(UUID party) throws SQLException {
+        UUID loan = IDS.next();
+        try (Connection root = DatabaseRoles.bootstrap(); Statement replica = root.createStatement();
+                PreparedStatement insert = root.prepareStatement("INSERT INTO lending.loan (id, party_id, product, kind,"
+                        + " status, currency, offer_id, decision_id, opened_at, closed_at, closure_reason, correlation_id,"
+                        + " next_servicing_at) VALUES (?, ?, 'PERSONAL_LOAN', 'INSTALMENT', 'CLOSED', 'EUR',"
+                        + " gen_random_uuid(), gen_random_uuid(), clock_timestamp(), clock_timestamp(), 'REPAID',"
+                        + " 'p13-tsk-025-seed', clock_timestamp())")) {
+            replica.execute("SET session_replication_role = replica");
+            insert.setObject(1, loan);
+            insert.setObject(2, party);
+            insert.executeUpdate();
+        }
+        return loan;
+    }
+
+    /** A BNPL obligation of {@code party} planted in {@code bnpl.bnpl_obligation} - as {@link #seededLoan}, {@code CLOSED}. */
+    private static UUID seededObligation(UUID party) throws SQLException {
+        UUID obligation = IDS.next();
+        try (Connection root = DatabaseRoles.bootstrap(); Statement replica = root.createStatement();
+                PreparedStatement insert = root.prepareStatement("INSERT INTO bnpl.bnpl_obligation (id, purchase_id,"
+                        + " agreement_id, party_id, decision_id, product, plan, currency, status, servicing_zone,"
+                        + " purchase_date, opened_at, next_servicing_at, closed_at, closure_reason, correlation_id)"
+                        + " VALUES (?, gen_random_uuid(), gen_random_uuid(), ?, gen_random_uuid(), 'BNPL_PAY_IN_4',"
+                        + " 'PAY_IN_4', 'EUR', 'CLOSED', 'Europe/Berlin', current_date, clock_timestamp(),"
+                        + " clock_timestamp(), clock_timestamp(), 'REPAID', 'p13-tsk-025-seed')")) {
+            replica.execute("SET session_replication_role = replica");
+            insert.setObject(1, obligation);
+            insert.setObject(2, party);
+            insert.executeUpdate();
+        }
+        return obligation;
+    }
+
+    /** The planted agreements removed - the bootstrap superuser, the modules' never-delete triggers suspended. */
+    private static void unseed(UUID loan, UUID obligation) throws SQLException {
+        try (Connection root = DatabaseRoles.bootstrap(); Statement replica = root.createStatement();
+                PreparedStatement loans = root.prepareStatement("DELETE FROM lending.loan WHERE id = ?");
+                PreparedStatement obligations = root.prepareStatement("DELETE FROM bnpl.bnpl_obligation WHERE id = ?")) {
+            replica.execute("SET session_replication_role = replica");
+            loans.setObject(1, loan);
+            loans.executeUpdate();
+            obligations.setObject(1, obligation);
+            obligations.executeUpdate();
+        }
+    }
+
+    /**
+     * Every base table of lending, bnpl and the ledger, and a digest of its whole content - each row's text, in a total
+     * order of the text - so an {@code UPDATE} of any column is seen, not only an insert or a delete.
+     */
+    private static Map<String, String> digestsOfTheMoneyDomains() throws SQLException {
+        Map<String, String> digests = new LinkedHashMap<>();
         try (Connection migrator = DatabaseRoles.migrator(); Statement list = migrator.createStatement();
                 ResultSet tables = list.executeQuery("SELECT table_schema || '.' || table_name FROM"
                         + " information_schema.tables WHERE table_schema IN ('lending', 'bnpl', 'ledger')"
@@ -390,14 +485,15 @@ class CollectionsCaseDatabaseTest {
             }
             assertThat(names).as("the census reads every money domain").isNotEmpty();
             for (String table : names) {
-                try (Statement count = migrator.createStatement();
-                        ResultSet counted = count.executeQuery("SELECT count(*) FROM " + table)) {
-                    counted.next();
-                    rows.put(table, counted.getLong(1));
+                try (Statement digest = migrator.createStatement();
+                        ResultSet read = digest.executeQuery("SELECT count(*) || ':' || md5(coalesce(string_agg(t::text,"
+                                + " ',' ORDER BY t::text), '')) FROM " + table + " t")) {
+                    read.next();
+                    digests.put(table, read.getString(1));
                 }
             }
         }
-        return rows;
+        return digests;
     }
 
     private static long count(String sql, Object argument) throws SQLException {

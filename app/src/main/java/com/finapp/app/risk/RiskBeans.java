@@ -106,13 +106,22 @@ public class RiskBeans {
     /**
      * T-sig - with the customer risk profile's permit pull (`P13-TSK-007`, {@code RiskProfileBeans}) and, since
      * `P13-TSK-025`, a default's alert raised in the same transaction ({@link com.finapp.risk.CollectionsCases} over
-     * {@code RiskAlertBeans}' {@code AlertRaiser}): folded into the borrower's {@code COLLECTIONS} case.
+     * {@code RiskAlertBeans}' {@code AlertRaiser}, the borrower placed first through {@code RiskProfileBeans}' join):
+     * folded into the borrower's {@code COLLECTIONS} case; a borrower that cannot be placed counted
+     * {@code finapp.risk.collections.unplaced} and the delivery refused.
      */
     @Bean
     RiskSignals riskSignals(RiskSignalStore riskSignalStore, OutboxWriter<Connection> outboxWriter, IdGenerator ids,
-            Clock clock, com.finapp.risk.ProfileHints profileHints, com.finapp.risk.AlertRaiser alertRaiser) {
+            Clock clock, com.finapp.risk.ProfileHints profileHints, com.finapp.risk.AlertRaiser alertRaiser,
+            com.finapp.risk.RiskSubjectParties riskSubjectParties, RiskCollectionsMetrics riskCollectionsMetrics) {
         return new RiskSignals(riskSignalStore, outboxWriter, ids, clock, profileHints,
-                new com.finapp.risk.CollectionsCases(alertRaiser));
+                new com.finapp.risk.CollectionsCases(alertRaiser, riskSubjectParties, riskCollectionsMetrics));
+    }
+
+    /** {@code finapp.risk.collections.unplaced} - eager (`P13-TSK-025`). */
+    @Bean
+    RiskCollectionsMetrics riskCollectionsMetrics(MeterRegistry meterRegistry) {
+        return new RiskCollectionsMetrics(meterRegistry);
     }
 
     @Bean

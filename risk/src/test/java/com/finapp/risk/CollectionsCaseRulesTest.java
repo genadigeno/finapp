@@ -40,8 +40,29 @@ class CollectionsCaseRulesTest {
 
     private final CaseWorld world = new CaseWorld();
     private final BornOnceSignals signalStore = new BornOnceSignals();
+    /** The accountable join, as the world plants it. */
+    private final RiskSubjectParties subjects = (unitOfWork, subject) -> Optional.ofNullable(
+            world.partyOfSubject.get(subject));
+    /** Every alert the meter counted ({@code finapp.risk.alert{kind,severity}}), and every refused default. */
+    private final List<AlertKind> alertsCounted = new ArrayList<>();
+    private final List<String> unplacedCounted = new ArrayList<>();
+    /** The world's alert machine, metered: the case's folding, the world's stores. */
+    private final Alerts metered = new Alerts(world.alertStore, world.cases::fold,
+            (unitOfWork, actor) -> Optional.ofNullable(world.partyOfActor.get(actor.id())), subjects,
+            (unitOfWork, record) -> world.audit.add(record), recordingOutbox(), EvaluationWorld.IDS,
+            EvaluationWorld.CLOCK, com.finapp.platform.telemetry.Spans.NONE, new AlertObserver() {
+                @Override
+                public void raised(AlertKind kind, AlertSeverity severity) {
+                    alertsCounted.add(kind);
+                }
+
+                @Override
+                public void suppressed(SuppressionReason reason) {
+                }
+            });
     private final RiskSignals signals = new RiskSignals(signalStore, recordingOutbox(), EvaluationWorld.IDS,
-            EvaluationWorld.CLOCK, ProfileHints.NONE, new CollectionsCases(world.alerts::raiseAll));
+            EvaluationWorld.CLOCK, ProfileHints.NONE, new CollectionsCases(metered::raiseAll, subjects,
+                    () -> unplacedCounted.add("unplaced")));
 
     // ------------------------------------------------------------------ the entry's three cases
 
@@ -103,6 +124,8 @@ class CollectionsCaseRulesTest {
         });
         assertThat(world.movedInto(CaseKind.COLLECTIONS, CaseStatus.OPEN)).as("case{kind=COLLECTIONS,status=OPEN}")
                 .isEqualTo(1);
+        assertThat(alertsCounted).as("alert{kind=OBLIGATION_DEFAULTED}").containsExactly(AlertKind.OBLIGATION_DEFAULTED);
+        assertThat(unplacedCounted).isEmpty();
     }
 
     @Test
@@ -162,6 +185,7 @@ class CollectionsCaseRulesTest {
         assertThat(world.announced(Cases.OPENED_EVENT)).hasSize(1);
         assertThat(world.announced(RiskSignals.EVENT_TYPE)).hasSize(1);
         assertThat(signalStore.readsBySource).as("the standing row read for each redelivery").isEqualTo(2);
+        assertThat(alertsCounted).as("the alert meter counts the one birth").hasSize(1);
     }
 
     // ------------------------------------------------------------------ replay and re-default
@@ -304,13 +328,24 @@ class CollectionsCaseRulesTest {
     }
 
     @Test
-    @DisplayName("fail closed: a defaulted agreement whose party cannot be placed opens no case - the raise throws, so"
-            + " T-sig's transaction (the signal and the dedupe with it) is refused and the delivery retried")
+    @DisplayName("fail closed: a defaulted agreement whose party cannot be placed opens no case - the raise throws before"
+            + " any alert is born, announced or counted, so T-sig's transaction (the signal and the dedupe with it) is"
+            + " refused and the delivery retried; each refusal counted collections.unplaced alone, every retry of a"
+            + " stalled partition the same")
     void anUnplaceableBorrowerOpensNothing() {
         UUID orphan = EvaluationWorld.IDS.next();
-        assertThatThrownBy(() -> record(defaulted(SignalKind.LOAN_DEFAULTED, orphan, DEFAULTED_ON)))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("cannot be placed");
+        RiskSignal stalled = defaulted(SignalKind.LOAN_DEFAULTED, orphan, DEFAULTED_ON);
+        for (int retry = 0; retry < 3; retry++) {
+            RiskSignal delivery = retry == 0 ? stalled : sameEvent(stalled);
+            // The in-memory store does not roll back as the database does: the retries meet the first's row ALREADY.
+            assertThatThrownBy(() -> record(delivery))
+                    .isInstanceOf(IllegalStateException.class).hasMessageContaining("cannot be placed");
+        }
+        assertThat(world.alertStore.all()).as("no alert born").isEmpty();
         assertThat(world.caseStore.all()).isEmpty();
+        assertThat(alertsCounted).as("finapp.risk.alert never climbs for an alert that does not exist").isEmpty();
+        assertThat(world.announced(Alerts.EVENT_TYPE)).isEmpty();
+        assertThat(unplacedCounted).as("finapp.risk.collections.unplaced, once per refused delivery").hasSize(3);
     }
 
     @Test

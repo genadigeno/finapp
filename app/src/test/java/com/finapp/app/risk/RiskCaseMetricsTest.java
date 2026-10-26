@@ -57,4 +57,17 @@ class RiskCaseMetricsTest {
             });
         }
     }
+
+    @Test
+    @DisplayName("the stall's own meter: finapp.risk.collections.unplaced registered eagerly with no tag, one per refused"
+            + " default delivery")
+    void theStallIsMeteredAlone() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RiskCollectionsMetrics metrics = new RiskCollectionsMetrics(registry);
+        assertThat(registry.get(RiskCollectionsMetrics.UNPLACED).counter().count()).isZero();
+        assertThat(registry.get(RiskCollectionsMetrics.UNPLACED).counter().getId().getTags()).isEmpty();
+        metrics.unplaced();
+        metrics.unplaced();
+        assertThat(registry.get(RiskCollectionsMetrics.UNPLACED).counter().count()).isEqualTo(2);
+    }
 }

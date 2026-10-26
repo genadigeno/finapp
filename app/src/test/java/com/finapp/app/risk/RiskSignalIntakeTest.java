@@ -242,7 +242,7 @@ class RiskSignalIntakeTest {
         com.finapp.risk.SignalAlerts collections = new com.finapp.risk.CollectionsCases((unitOfWork, alerts) -> {
             raisedUnder.add(com.finapp.platform.security.SecurityContext.require().type().name());
             return List.of();
-        });
+        }, (unitOfWork, subject) -> Optional.of(UUID.randomUUID()), com.finapp.risk.CollectionsObserver.NONE);
         RiskSignals withCases = new RiskSignals(watched, outbox, IDS, CLOCK, com.finapp.risk.ProfileHints.NONE,
                 new com.finapp.risk.SignalAlerts() {
                     @Override
