@@ -86,7 +86,8 @@ public final class RiskActionDriver {
         return asThePlatform(() -> {
             Optional<RiskAction> claimed;
             try {
-                claimed = transactions.inTransaction(uow -> actions.claim(uow, id, lease));
+                claimed = flow.sweep(RiskSpans.ACTION_DISPATCH,
+                        () -> transactions.inTransaction(uow -> actions.claim(uow, id, lease)));
             } catch (RuntimeException failure) {
                 metrics.claimFailed();
                 log.warn("Risk action claim failed: {}", failure.getClass().getSimpleName());
@@ -108,7 +109,8 @@ public final class RiskActionDriver {
         return asThePlatform(() -> {
             int concluded = 0;
             for (int taken = 0; taken < perTick; taken++) {
-                Optional<RiskAction> claimed = transactions.inTransaction(uow -> actions.claimNextDue(uow, lease));
+                Optional<RiskAction> claimed = flow.sweep(RiskSpans.ACTION_DISPATCH,
+                        () -> transactions.inTransaction(uow -> actions.claimNextDue(uow, lease)));
                 if (claimed.isEmpty()) {
                     return concluded;
                 }
@@ -143,7 +145,8 @@ public final class RiskActionDriver {
                 .orElseGet(() -> CorrelationId.of(claimed.correlationId()));
         Optional<RiskAction> recorded;
         try {
-            recorded = transactions.inTransaction(uow -> actions.conclude(uow, claimed, outcome, correlation));
+            recorded = flow.sweep(RiskSpans.ACTION_DISPATCH,
+                    () -> transactions.inTransaction(uow -> actions.conclude(uow, claimed, outcome, correlation)));
         } catch (RuntimeException failure) {
             // The owner answered but the record did not commit: the same as a dispatch that threw - nothing recorded,
             // the permit stands, and the next claim re-drives the same key, the owner replaying its answer. Never a

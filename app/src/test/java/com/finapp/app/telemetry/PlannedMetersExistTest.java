@@ -454,7 +454,7 @@ class PlannedMetersExistTest {
     /**
      * `P13-TSK-024`'s acceptance, armed ahead of the flip: every meter Phase 13's plan §15 names is registered in this
      * context - nothing configured, no reachable database, no filing authority, no kyc provider - exactly the "freshly
-     * started instance" the criterion names. Read from §15 alone and counted EXACTLY: thirty-three rows; the series the
+     * started instance" the criterion names. Read from §15 alone and counted EXACTLY: thirty-five rows; the series the
      * alert rules read by a tag value are checked by it - the fail-safe's reason, a census's divergence, the rescreening
      * census, each schedule's flag. {@code RiskMetersTest} holds the same table to the registry the other way too.
      */
@@ -478,9 +478,10 @@ class PlannedMetersExistTest {
                 planned.add(row.group(1));
             }
         }
-        assertThat(rows).as("the Phase 13 plan's section 15 table has exactly 33 meter rows").isEqualTo(33);
-        assertThat(planned).as("one series per row").hasSize(33)
-                .contains("finapp.risk.evaluation.unavailable", "finapp.risk.profile.rating", "finapp.risk.signal");
+        assertThat(rows).as("the Phase 13 plan's section 15 table has exactly 35 meter rows").isEqualTo(35);
+        assertThat(planned).as("one series per row").hasSize(35)
+                .contains("finapp.risk.evaluation.unavailable", "finapp.risk.profile.rating", "finapp.risk.signal",
+                        "finapp.risk.monitoring.age", "finapp.risk.report.unconcluded.age");
         assertThat(registeredMeters()).containsAll(planned);
         assertThat(registry.find("finapp.risk.evaluation.unavailable").tag("operation", "TRANSFER")
                 .tag("reason_code", "RISK_UNAVAILABLE").counters()).isNotEmpty();

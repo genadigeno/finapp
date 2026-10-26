@@ -3005,6 +3005,11 @@
           "refId": "E",
           "expr": "sum by (outcome) (rate(finapp_risk_report_filing_total[5m]))",
           "legendFormat": "filing {{outcome}}"
+        },
+        {
+          "refId": "F",
+          "expr": "max(finapp_risk_report_unconcluded_age)",
+          "legendFormat": "oldest unconcluded filing (s)"
         }
       ],
       "fieldConfig": {
@@ -3050,6 +3055,11 @@
           "refId": "A",
           "expr": "max by (source) (finapp_risk_monitoring_lag)",
           "legendFormat": "lag {{source}}"
+        },
+        {
+          "refId": "F",
+          "expr": "max by (source) (finapp_risk_monitoring_age)",
+          "legendFormat": "oldest unmonitored entry {{source}} (s)"
         },
         {
           "refId": "B",

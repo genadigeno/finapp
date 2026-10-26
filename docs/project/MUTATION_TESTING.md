@@ -2108,6 +2108,30 @@ registering nothing - the series `InboxConsumptionFailing` reads absent where th
 the scrape thread** (`RiskProfileMetrics.figure` calling `read()` in place of `refreshed()`) → `RiskProfileMetricsTest` 2
 of 5 red (a figure served with no reading started; the stale reading never NaN), sha256 `b6c055d2…a7e2ae49`.*
 
+*`P13-TSK-024`'s probes after the coordinator's review (FIX FIRST of `3ac20f14`) - the rule timing guards and the spans
+per call site, no invariant's row (the rules decide nothing), each performed, red on its first run and restored by its
+saved bytes, sha256 equal. Against `RiskAlertRulesTest`, `infra/prometheus/rules/risk.yml` restored to sha256
+`aab26f4c…f0cd8290` after each run: **`RiskFilingUnknown` back to the counter form**
+(`sum(increase(…{outcome="unknown"}[15m])) > 0`, `for: 15m`) → `#aStuckFilingFiresThroughTime` red (a report filed and
+never concluded never fires) and `#everyAlertFiresWhenItsConditionBreaks` red; **`RiskMonitoringLagging` back to the
+lag's growth** (`max(delta(finapp_risk_monitoring_lag[1h])) > 2000`) → `#aStalledSweepFiresAtAnyVolume` red (one entry
+left unmonitored, the sweep stopped, never fires) and `#theThresholdsAreTheCodesObjectives` red;
+**`RiskMonitoringUnclassified` back to the level** (`max(…) > 0`) → `#newUnclassifiedRowsFireThenResolve` red (five
+standing rows fire for ever); **`RiskMonitoringSubjectFailing` back to `[15m]` / `for: 15m`** →
+`#sparseAndRepeatedFailuresFire` red (one failed party never fires) - these four in one run, 6 of 12 red, each in its
+own case; **`RiskProofReadingsFailing` without `by (instance)`** → `#theProofsAndTheGaugesHonourTheirFloors` red (one
+failure on each of two instances fires) and `#theThresholdsAreTheCodesObjectives` red; **`RiskGaugesUnreadable`'s wait
+back to `15m`** → the same timing case red (one floor's NaN fires at 960 s, before the 2,160 s past two floors) and
+`#theThresholdsAreTheCodesObjectives` red. **`RiskActionDriver.driveDue`'s claim unspanned**
+(`transactions.inTransaction(… claimNextDue …)` outside `flow.sweep`) → `RiskSpansTest#everyStepIsSpanned` red
+(`RiskActionDriver.java#driveDue` among the unspanned), `RiskActionDriver.java` sha256 `5077d53b…2ef4b27c`; **the
+monitoring age unregistered** (`RiskAgeMetrics` registering no `finapp.risk.monitoring.age`) →
+`PlannedMetersExistTest#phase13PlannedMetersAreAlreadyPublished` red, `RiskMetersTest` 2 of 3 red and
+`RiskAlertRulesTest` 3 of 12 red (the series `RiskMonitoringLagging` reads unpublished), `RiskAgeMetrics.java` sha256
+`1cd8e107…d56eccab`. The database halves - `AlertRulesResolveTest#theRiskRulesResolve` and
+`DashboardQueriesResolveTest#theRiskRowResolves` over the two ages, the ages' statements (`FIRST_BEYOND`,
+`OLDEST_FILED`) over a live journal and live reports - are owed (C5).*
+
 *`P13-TSK-024`'s database-only cases, written and **not run** (owner decision C5), recorded as owed rather than claimed:
 `AlertRulesResolveTest#theRiskRulesResolve` (every risk rule's series on a live scrape with a database - the misspelt
 series of the probe above red there too), `DashboardQueriesResolveTest#theRiskRowResolves` (the risk row's nine panels),

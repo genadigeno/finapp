@@ -973,14 +973,15 @@ never relabel the target to silence it.
 | `RiskCaseBacklogAboveCapacity` | `case.backlog{kind}` above the staffed capacity | `INV-RSK-06` | ticket | §9.8 |
 | `RiskActionDispatchFailing` | `action.failed{kind}` in each quarter hour | `INV-RSK-02`, `INV-IDEM-01` | ticket | §9.9 |
 | `RiskActionRefused` | `action{outcome="refused"}` rising | `INV-RSK-02` | ticket | §9.9 |
-| `RiskFilingUnknown`, `RiskFilingCallsFailing` | `report.filing{outcome="unknown"|"failed"}` at successive inquiries | `INV-RSK-06` | ticket | §9.4 |
-| `RiskMonitoringLagGrowing` | `monitoring.lag` grown by more than a tick's intake in an hour, or saturated | `INV-RSK-09` | page | §9.10 |
-| `RiskMonitoringUnclassified` | `monitoring.unclassified` above 0 | `INV-RSK-09` | ticket | §9.10 |
-| `RiskMonitoringSubjectFailing`, `RiskMonitoringUnplaced` | `monitoring.subject{outcome="failed"}`, `monitoring.unplaced` | `INV-RSK-09` | ticket | §9.10 |
+| `RiskFilingUnknown` | `report.unconcluded.age` past two inquiry intervals (30 min) - a report `FILED` and not concluded | `INV-RSK-06` | ticket | §9.4 |
+| `RiskFilingCallsFailing` | `report.filing{outcome="failed"}` in the hour | `INV-RSK-06` | ticket | §9.4 |
+| `RiskMonitoringLagging` | `monitoring.age` - the oldest unmonitored journal entry - past an hour | `INV-RSK-09` | page | §9.10 |
+| `RiskMonitoringUnclassified` | NEW `monitoring.unclassified` rows in the hour (`delta`) | `INV-RSK-09` | ticket | §9.10 |
+| `RiskMonitoringSubjectFailing`, `RiskMonitoringUnplaced` | `monitoring.subject{outcome="failed"}` in the hour, `monitoring.unplaced` | `INV-RSK-09` | ticket | §9.10 |
 | `VelocityDiverged` | `velocity.proof{verdict="DIVERGED"}` | `INV-RSK-03` | page | §9.11 |
 | `RiskCensusDiverged` | `census{kind,verdict="DIVERGED"}`, per kind | `INV-RSK-01`, `-06`, `-09`, `INV-KYC-04` | page | §9.11, §9.6 |
-| `RiskProofReadingsFailing`, `RiskProofReadingsStalled` | `proof.reading` failed at two floors / none completed in two | the proofs' invariants | ticket | §9.11 |
-| `RiskGaugesUnreadable` | any risk gauge NaN | the gauges' invariants | ticket | §9.11 |
+| `RiskProofReadingsFailing`, `RiskProofReadingsStalled` | one instance's `proof.reading` failed at two floors / none completed in two | the proofs' invariants | ticket | §9.11 |
+| `RiskGaugesUnreadable` | any risk gauge NaN past 35 min (beyond the proofs' two floors) | the gauges' invariants | ticket | §9.11 |
 | `RiskSweeperOff` | `sweeper.enabled{kind}` 0 on an instance | `INV-RSK-06`, `-09`, `INV-KYC-04` | ticket | §9.10, §9.9, §9.6 |
 | `RiskSweeperClaimFailing` | `sweeper.claim.failed{kind}` in each quarter hour | `INV-RSK-06`, `-09`, `INV-KYC-04` | ticket | §9.10, §9.9, §9.4, §9.6 |
 | `RiskCollectionsUnplaced`, `InboxConsumptionFailing` | a default unplaced; any inbox delivery failing | `INV-RSK-06`, `INV-EVT-04` | ticket | §9.12 |
@@ -999,10 +1000,12 @@ policy, or deploy the classifier, first - a reprocessing under the old one re-fi
 watermark back to the chosen journal sequence through the operator door (`POST
 /v1/operator/risk/monitoring/reprocessing`, a reason, `Idempotency-Key`; never SQL); (3) let `RiskMonitoringSchedule`
 sweep - every instance claims the watermark `SKIP LOCKED`, none is designated; (4) watch `finapp.risk.monitoring.lag`
-fall to 0 and `finapp.risk.monitoring.unclassified` stay 0 (`RiskMonitoringUnclassified` silent - a classifier change's
-reprocessing is the one that ends it, §9.10) - `RiskMonitoringLagGrowing` fires while the lag stands
-high after the move (a step back of more than a tick's intake is "growth" by its arithmetic) and clears as the sweep
-catches up, so acknowledge it for the reprocessing's duration rather than silencing it; (5) read the decisions and alerts
+fall to 0 and `finapp.risk.monitoring.unclassified` hold its figure - a reprocessing creates no monitored transaction
+that exists, so the rows born `UNCLASSIFIED` before a classifier change stay `UNCLASSIFIED` (insert-only, §9.10) and
+`RiskMonitoringUnclassified` stays silent unless the re-read meets a namespace still unknown; `RiskMonitoringLagging`
+(`finapp.risk.monitoring.age` - the oldest unmonitored entry) fires when the step back reaches entries posted more than
+an hour ago and clears as the sweep catches up, so acknowledge it for the reprocessing's duration rather than silencing
+it; (5) read the decisions and alerts
 reports for the window reprocessed (`GET /v1/operator/reports/risk/alerts?date=`). New alerts fold into their subjects'
 open cases; a disposed case is never re-opened - a new alert on its subject opens a new case referencing it. A replayed
 history is `P13-TST-001`'s scenario 8 and `MonitoringIntakeDatabaseTest#reprocessingCreatesNothingNew`.
@@ -1018,8 +1021,13 @@ first attempt submits and every later one inquires by it (a definitive `NOT_RECE
 still the one filing); an unknown standing is asked again every `finapp.risk.filing.inquiry-interval` (15 min) by
 `RiskActionSchedule`'s report leg, and each answer is counted `finapp.risk.report.filing{outcome}`.)*
 
-**A filing `UNKNOWN`** - `RiskFilingUnknown`: the authority answered `unknown` at an inquiry and again at the next, one
-inquiry interval later (the rule's window and wait are the interval, `FilingCensus.OVERDUE_AFTER`). **What a person
+**A filing `UNKNOWN`** - `RiskFilingUnknown` (`finapp.risk.report.unconcluded.age` - seconds since the oldest report
+still `FILED` was filed, on the database's clock - past two inquiry intervals, 30 min): the report was submitted, asked
+again at least once a `finapp.risk.filing.inquiry-interval` later, and the authority has neither acknowledged nor rejected
+it - it answered `unknown`, or the calls failed (`RiskFilingCallsFailing`, any `failed` call in the hour), or the drive did
+not run (`RiskSweeperClaimFailing{kind="report"}`, `RiskSweeperOff{kind="action"}`). An age, not a count of `unknown`
+answers: those come an inquiry interval apart, which a counter's window of one interval cannot hold (the coordinator's
+review of `P13-TSK-024`). **What a person
 does**: the `AML_OFFICER` reads the report (`GET /v1/operator/risk/cases/{caseId}/reports/{reportId}`, `AML_REPORT_APPROVE`,
 recorded `risk.RegulatoryReportRead`) and confirms with the authority by the report's reference outside the platform.
 **No operator door records the authority's answer by hand** - only the drive records it, as the platform; a report the
@@ -1226,24 +1234,28 @@ watermark `SKIP LOCKED` and ingests up to `finapp.risk.monitoring.batch` (200) e
 tick every `poll` (5 s), judging each party behind them against the `MONITORING` policy in the same claim
 (`P13-TSK-020`), then the profile and case legs.
 
-- **The monitoring lag** - `RiskMonitoringLagGrowing` (`finapp.risk.monitoring.lag`, journal entries beyond the
-  watermark, grown by more than one tick's intake - 2,000 - over the hour, or saturated at its million): the sweep is
-  behind the ledger. The lag counts entries, not time, and stands above zero whenever the ledger posts faster than a poll
-  (the settle horizon, `finapp.risk.monitoring.horizon`, 60 s, keeps the newest entries waiting on purpose), so its
-  growth is the signal. Causes: every instance's sweeper off (**`RiskSweeperOff{kind="monitoring"}`** on each - the
+- **The monitoring lag** - `RiskMonitoringLagging` (`finapp.risk.monitoring.age{source}` - seconds since the oldest
+  journal entry beyond the watermark was posted, its UUIDv7 read on the database's clock - past an hour): the sweep has
+  left a movement unmonitored for an hour. An age, not the entry count: `finapp.risk.monitoring.lag` (the dashboard's)
+  stands above zero whenever the ledger posts faster than a poll and near zero on a quiet ledger however stalled the
+  sweep, while the age stays within the settle horizon and a poll (`finapp.risk.monitoring.horizon`, 60 s) on a busy,
+  draining sweep and rises from the first entry left behind at any volume. Causes: every instance's sweeper off (**`RiskSweeperOff{kind="monitoring"}`** on each - the
   standing cause), the claim failing (**`RiskSweeperClaimFailing{kind="monitoring"}`**, the
   `Risk monitoring intake batch failed` warn lines), a party's head held by a stuck transaction holding the claim and so
   the watermark (`-020` MINOR 6 - find the blocker in `pg_stat_activity`; a `lock_timeout` is the owner's trade), or a
   reprocessing in progress (§9.3, expected). **Never advance a watermark by hand** - an entry skipped is an entry never
   monitored (`INV-RSK-09`).
-- **`RiskMonitoringUnclassified`** (`finapp.risk.monitoring.unclassified` above 0): the intake met a posting-key
-  namespace its register does not know and recorded the movement `UNCLASSIFIED` - nothing passes unseen, but nothing is
-  evaluated for it either. A new module's postings or a renamed key: extend the classifier (`-019`'s register, a code
-  change with its test), deploy, then reprocess (§9.3). A row born `UNCLASSIFIED` stays so after the register learns its
-  namespace (owner item, `-019`): the reprocessing judges the movement, the row keeps its history.
-- **`RiskMonitoringSubjectFailing`** (`finapp.risk.monitoring.subject{outcome="failed"}` in each quarter hour): a party's
-  rule leg rolled back alone (its savepoint) - the movements are monitored but the party is not judged until a later run
-  succeeds. The `Risk monitoring subject failed` warn line names the cause's class, never the party; a profile whose
+- **`RiskMonitoringUnclassified`** (NEW rows of `finapp.risk.monitoring.unclassified` in the last hour - the gauge's
+  growth; its level counts every `UNCLASSIFIED` row ever born and never falls, the rows being insert-only): the intake met
+  a posting-key namespace its register does not know and recorded the movement `UNCLASSIFIED` - nothing passes unseen,
+  but nothing is evaluated for it either. A new module's postings or a renamed key: extend the classifier (`-019`'s
+  register, a code change with its test) and deploy; the alert resolves an hour after the last new row, and fires again
+  for a second unknown namespace. A row born `UNCLASSIFIED` stays so after the register learns its namespace - a
+  reprocessing meets it `ON CONFLICT` and evaluates nothing for it (owner item, `PHASE_13_PLAN.md` §1.2 #33: a
+  reclassification fact if history must be re-judged).
+- **`RiskMonitoringSubjectFailing`** (any `finapp.risk.monitoring.subject{outcome="failed"}` in the hour - a party's leg
+  re-runs at its next movement or profile permit, not each tick): a party's rule leg rolled back alone (its savepoint) -
+  the movements are monitored but the party is not judged until a later run succeeds. The `Risk monitoring subject failed` warn line names the cause's class, never the party; a profile whose
   canonical sealing passes its bound (`-020` MINOR 8) fails every run - an owner item.
 - **`RiskMonitoringUnplaced`** (`finapp.risk.monitoring.unplaced` rising): customer accounts no party could be placed
   behind (accounts' ownership read through `MonitoredParties`) - unjudged. An account whose owner is gone or a new
@@ -1274,17 +1286,19 @@ The proofs write nothing and decide nothing: each reading takes one read-only sn
   and kind - the alerts and cases reports), `FILING` (a `FILED` report undriven past its permit - §9.4) and `RESCREENING`
   (a list version's permits or clearances unaccounted for - §9.6). Each is a defect to report with its report attached,
   never a row to correct.
-- **The proofs unread** - `RiskProofReadingsFailing` (`finapp.risk.proof.reading{outcome="failed"}` at two floors in a
-  row: a statement past its bound, a lost connection, a refused start - the `Could not read the risk proofs` warn lines
+- **The proofs unread** - `RiskProofReadingsFailing` (one instance's `finapp.risk.proof.reading{outcome="failed"}` at
+  two floors in a row - `by (instance)`, each reading its own: a statement past its bound, a lost connection, a refused start - the `Could not read the risk proofs` warn lines
   name the class) and `RiskProofReadingsStalled` (no `completed` reading on an instance in two floors: a reading stuck on a
   connection the network black-holed - the data source sets no socket timeout - or killed by an `Error`; restart that
   instance, nothing is lost). While either stands, the velocity proof and the censuses are not watched: read the four
   reports by hand for today until the readings complete. Both rules' window and wait are two floors of the default
   `finapp.risk.proofs.refresh` (15 min, `RiskObjectives.proofReadingFloors`): a deployment that raises the floor
   raises these two figures in `risk.yml` with it, or the stalled rule fires on a healthy instance.
-- **`RiskGaugesUnreadable`**: any database-read risk gauge NaN for a quarter hour - the proofs, the census, the active
-  policies, the monitoring lag and unclassified count, the case queues, the rescreening backlog, the rating distribution
-  (`finapp.risk.profile.rating`). A NaN is "not watched", never "clean": find the failing read in the instances' warn
+- **`RiskGaugesUnreadable`**: any database-read risk gauge NaN for 35 minutes - past the proofs' two floors, so one
+  failed reading (NaN until the next floor) is tolerated - the proofs, the census, the active policies, the monitoring lag,
+  age and unclassified count, the filing's age, the case queues, the rescreening backlog, the rating distribution
+  (`finapp.risk.profile.rating`). A rescreening census at a population of millions can pass the shared 5 s statement
+  timeout and fail the whole reading (the debt row "the rescreening census counts each version whole"). A NaN is "not watched", never "clean": find the failing read in the instances' warn
   lines (`… could not be read`, the class alone).
 
 ### 9.12 The signal intake stalled

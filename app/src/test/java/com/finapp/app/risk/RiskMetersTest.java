@@ -39,7 +39,7 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>The context boots with nothing configured and no reachable database: exactly the "freshly started instance" the
  * observability criterion names - armed ahead of the phase flip, after which {@code PlannedMetersExistTest} reads the same
- * table. The section's rows are counted EXACTLY (33), and the reconciliation runs both ways: a row added without a meter,
+ * table. The section's rows are counted EXACTLY (35), and the reconciliation runs both ways: a row added without a meter,
  * a meter renamed, or a meter registered with no row each fail here. Each row's tag keys are the plan's, and every
  * category-tagged series is registered for every value of its category (each operation, case kind, census kind and
  * verdict, rating bucket, signal kind, schedule kind). Tag VALUES are {@code RiskMetricTagsAreBoundedTest}'s.
@@ -61,11 +61,11 @@ class RiskMetersTest {
     @Autowired private MeterRegistry registry;
 
     @Test
-    @DisplayName("section 15's 33 rows are each a registered series on a fresh instance with the plan's tag keys, and"
+    @DisplayName("section 15's 35 rows are each a registered series on a fresh instance with the plan's tag keys, and"
             + " every registered finapp.risk series is a row")
     void everySectionFifteenSeriesIsRegisteredWithItsTags() {
         List<String> planned = plannedSeries();
-        assertThat(planned).as("PHASE_13_PLAN.md section 15 has exactly 33 series rows").hasSize(33)
+        assertThat(planned).as("PHASE_13_PLAN.md section 15 has exactly 35 series rows").hasSize(35)
                 .doesNotHaveDuplicates();
         assertThat(planned).as("the table and this test's keys name the same series")
                 .containsExactlyInAnyOrderElementsOf(KEYS.keySet());
@@ -239,6 +239,8 @@ class RiskMetersTest {
         keys.put("finapp.risk.report.filing", Set.of("outcome"));
         keys.put("finapp.risk.policy.active", Set.of("operation"));
         keys.put("finapp.risk.monitoring.lag", Set.of("source"));
+        keys.put("finapp.risk.monitoring.age", Set.of("source"));
+        keys.put("finapp.risk.report.unconcluded.age", Set.of());
         keys.put("finapp.risk.monitoring.unclassified", Set.of());
         keys.put("finapp.risk.monitoring.subject", Set.of("outcome"));
         keys.put("finapp.risk.monitoring.unplaced", Set.of());

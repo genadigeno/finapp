@@ -46,7 +46,8 @@ public final class RescreeningHits implements RescreenHits {
     @Override
     public void hit(CheckId checkId) {
         Objects.requireNonNull(checkId, "checkId");
-        Optional<Told> told = transactions.inSnapshot(unitOfWork -> told(unitOfWork, checkId));
+        Optional<Told> told = flow.sweep(RiskSpans.RESCREEN,
+                () -> transactions.inSnapshot(unitOfWork -> told(unitOfWork, checkId)));
         told.ifPresent(hit -> RescreeningDriver.asThePlatform(() -> flow.sweep(RiskSpans.RESCREEN,
                 () -> transactions.inTransaction(unitOfWork -> run.hit(unitOfWork, hit.permit(), hit.screened())))));
     }

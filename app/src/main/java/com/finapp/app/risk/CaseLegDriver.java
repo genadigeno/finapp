@@ -55,7 +55,8 @@ public final class CaseLegDriver implements RiskMonitoringSchedule.CaseLeg {
     @Override
     public int driveDue() {
         int done = 0;
-        List<RiskAlert> queued = transactions.inTransaction(uow -> cases.queued(uow, foldsPerTick));
+        List<RiskAlert> queued = flow.sweep(RiskSpans.CASE_OPEN,
+                () -> transactions.inTransaction(uow -> cases.queued(uow, foldsPerTick)));
         for (RiskAlert alert : queued) {
             try {
                 AlertFolding.Folded folded = flow.sweep(RiskSpans.CASE_OPEN,

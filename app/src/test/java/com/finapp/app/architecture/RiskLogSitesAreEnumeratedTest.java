@@ -107,6 +107,9 @@ class RiskLogSitesAreEnumeratedTest {
             "RiskPolicyMetrics.java|\"risk policy gauge unreadable: {}\"|unreadable.getClass().getSimpleName()",
             // P13-TSK-024: the rating distribution read off the scrape thread - an unreadable reading's or a refused
             // start's exception class alone; never a party or a rating of one.
+            // The review's IMPORTANT 1 and 2: the ages read off the scrape thread - the class alone.
+            "RiskAgeMetrics.java|\"The risk ages could not be read: {}\"|unreadable.getClass().getSimpleName()",
+            "RiskAgeMetrics.java|\"The risk ages' reading could not start: {}\"|refused.getClass().getSimpleName()",
             "RiskProfileMetrics.java|\"The risk profile ratings could not be read: {}\""
                     + "|unreadable.getClass().getSimpleName()",
             "RiskProfileMetrics.java|\"The risk profile ratings' reading could not start: {}\""

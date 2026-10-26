@@ -145,6 +145,12 @@ public interface RiskProofReads {
 
     List<RescreeningRow> rescreenings(Connection snapshot, Instant retiredSince);
 
+    /**
+     * When the oldest report still {@code FILED} was filed - a filing the authority has not concluded (`P13-TSK-024`,
+     * {@code finapp.risk.report.unconcluded.age}); empty when none is.
+     */
+    Optional<Instant> oldestUnconcludedFiling(Connection snapshot);
+
     // ------------------------------------------------------------------ monitoring
 
     /** The journal entry ids of the monitored transactions in {@code [fromInclusive, toExclusive)}, ascending. */

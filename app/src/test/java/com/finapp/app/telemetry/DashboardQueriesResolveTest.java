@@ -302,7 +302,8 @@ class DashboardQueriesResolveTest {
                 "finapp_risk_case_age", "finapp_risk_case_total", "finapp_risk_case_resolution_seconds_sum",
                 "finapp_risk_case_resolution_seconds_count", "finapp_risk_action_total", "finapp_risk_action_failed_total",
                 "finapp_risk_override_total", "finapp_risk_report_total", "finapp_risk_report_filing_total",
-                "finapp_risk_monitoring_lag", "finapp_risk_monitoring_unclassified", "finapp_risk_monitoring_subject_total",
+                "finapp_risk_monitoring_lag", "finapp_risk_monitoring_age", "finapp_risk_report_unconcluded_age",
+                "finapp_risk_monitoring_unclassified", "finapp_risk_monitoring_subject_total",
                 "finapp_risk_monitoring_unplaced_total", "finapp_risk_collections_unplaced_total",
                 "finapp_risk_velocity_proof", "finapp_risk_census", "finapp_risk_proof_reading_total",
                 "finapp_risk_profile_rating", "finapp_risk_rescreening_backlog", "finapp_risk_rescreening_total");

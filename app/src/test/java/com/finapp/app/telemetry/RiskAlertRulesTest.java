@@ -28,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
@@ -84,6 +85,8 @@ class RiskAlertRulesTest {
     private static final String ACTION_FAILED = "finapp_risk_action_failed_total";
     private static final String FILING = "finapp_risk_report_filing_total";
     private static final String LAG = "finapp_risk_monitoring_lag";
+    private static final String MONITORING_AGE = "finapp_risk_monitoring_age";
+    private static final String FILING_AGE = "finapp_risk_report_unconcluded_age";
     private static final String UNCLASSIFIED = "finapp_risk_monitoring_unclassified";
     private static final String SUBJECT = "finapp_risk_monitoring_subject_total";
     private static final String MONITORING_UNPLACED = "finapp_risk_monitoring_unplaced_total";
@@ -99,7 +102,8 @@ class RiskAlertRulesTest {
     private static final String RATING = "finapp_risk_profile_rating";
 
     /** Every database-read gauge of the section - the NaN rule's inputs. */
-    private static final List<String> READ_GAUGES = List.of(VELOCITY, CENSUS, POLICY, LAG, UNCLASSIFIED, CASE_BACKLOG,
+    private static final List<String> READ_GAUGES = List.of(VELOCITY, CENSUS, POLICY, LAG, MONITORING_AGE, FILING_AGE,
+            UNCLASSIFIED, CASE_BACKLOG,
             CASE_AGE, RESCREENING_BACKLOG, RATING);
 
     private static final Pattern INVARIANT = Pattern.compile("INV-[A-Z]+-\\d+");
@@ -130,6 +134,8 @@ class RiskAlertRulesTest {
         assertThat(name(RegulatoryReportMetrics.FILING) + "_total").isEqualTo(FILING);
         assertThat(name(RiskMonitoringMetrics.LAG)).isEqualTo(LAG);
         assertThat(name(RiskMonitoringMetrics.UNCLASSIFIED)).isEqualTo(UNCLASSIFIED);
+        assertThat(name(com.finapp.app.risk.RiskAgeMetrics.MONITORING_AGE)).isEqualTo(MONITORING_AGE);
+        assertThat(name(com.finapp.app.risk.RiskAgeMetrics.FILING_AGE)).isEqualTo(FILING_AGE);
         assertThat(name(RiskMonitoringMetrics.SUBJECT) + "_total").isEqualTo(SUBJECT);
         assertThat(name(RiskMonitoringMetrics.UNPLACED) + "_total").isEqualTo(MONITORING_UNPLACED);
         assertThat(name(RiskMonitoringMetrics.CLAIM_FAILED) + "_total").isEqualTo(CLAIM_FAILED);
@@ -235,25 +241,27 @@ class RiskAlertRulesTest {
         }
 
         // The filing: unknown and failed answers; an acknowledgement is no alert.
-        counter(rules, covered, "RiskFilingUnknown", healthy, named(FILING).and(label("outcome", "unknown")));
+        // A filing unconcluded past two inquiry intervals - an age, never a counter's increase (the review's IMPORTANT 1).
+        threshold(rules, covered, "RiskFilingUnknown", healthy, named(FILING_AGE),
+                RiskObjectives.filingUnconcluded().toSeconds());
+        assertThat(firing(rules, healthy, completed(bump(healthy, named(FILING).and(label("outcome", "unknown")), 1))))
+                .as("one UNKNOWN answer alone is no alert - its report's age is").isEmpty();
         counter(rules, covered, "RiskFilingCallsFailing", healthy, named(FILING).and(label("outcome", "failed")));
         assertThat(firing(rules, healthy, completed(bump(healthy, named(FILING).and(label("outcome", "acknowledged")),
                 1)))).isEmpty();
 
-        // The monitoring lag: growth over the window past one tick's intake fires; at it, silent; saturated, fires.
-        List<RuleEvaluator.Sample> grown = completed(set(healthy, named(LAG),
-                value -> (double) RiskObjectives.MONITORING_LAG_GROWTH));
-        assertThat(firing(rules, healthy, grown)).isEmpty();
-        assertThat(firing(rules, healthy, completed(set(healthy, named(LAG),
-                value -> (double) RiskObjectives.MONITORING_LAG_GROWTH + 1)))).containsExactly("RiskMonitoringLagGrowing");
-        List<RuleEvaluator.Sample> nearCap = set(healthy, named(LAG), value -> RiskObjectives.monitoringLagCap() - 1.0);
-        assertThat(firing(rules, nearCap, completed(nearCap))).as("high but steady, below the cap").isEmpty();
-        List<RuleEvaluator.Sample> capped = set(healthy, named(LAG), value -> (double) RiskObjectives.monitoringLagCap());
-        assertThat(firing(rules, capped, completed(capped))).as("saturated - it can no longer grow")
-                .containsExactly("RiskMonitoringLagGrowing");
-        covered.put("RiskMonitoringLagGrowing", true);
+        // The monitoring's hour: the oldest unmonitored entry's age (the review's IMPORTANT 2); the entry count is no rule.
+        threshold(rules, covered, "RiskMonitoringLagging", healthy, named(MONITORING_AGE),
+                RiskObjectives.MONITORING_AGE.toSeconds());
+        List<RuleEvaluator.Sample> busy = set(healthy, named(LAG), value -> 900_000.0);
+        assertThat(firing(rules, healthy, completed(busy))).as("a busy journal's lag is no alert by itself").isEmpty();
 
-        threshold(rules, covered, "RiskMonitoringUnclassified", healthy, named(UNCLASSIFIED), 0);
+        // New UNCLASSIFIED rows: the gauge's growth, never its level (the review's IMPORTANT 3).
+        List<RuleEvaluator.Sample> standing = set(healthy, named(UNCLASSIFIED), value -> 5.0);
+        assertThat(firing(rules, standing, completed(standing))).as("rows born long ago, none new").isEmpty();
+        assertThat(firing(rules, standing, completed(set(healthy, named(UNCLASSIFIED), value -> 6.0))))
+                .containsExactly("RiskMonitoringUnclassified");
+        covered.put("RiskMonitoringUnclassified", true);
         counter(rules, covered, "RiskMonitoringSubjectFailing", healthy, named(SUBJECT).and(label("outcome", "failed")));
         assertThat(firing(rules, healthy, completed(bump(healthy, named(SUBJECT).and(label("outcome", "judged")), 1))))
                 .isEmpty();
@@ -333,17 +341,22 @@ class RiskAlertRulesTest {
             assertThat(expr(rules, "RiskCaseBacklogAboveCapacity")).contains("max by (kind) (" + CASE_BACKLOG + "{kind=\""
                     + kind.name() + "\"}) > " + RiskObjectives.caseCapacity(kind));
         }
-        assertThat(expr(rules, "RiskMonitoringLagGrowing"))
-                .contains("[" + RiskObjectives.MONITORING_LAG_WINDOW.toHours() + "h]")
-                .contains("> " + RiskObjectives.MONITORING_LAG_GROWTH)
-                .contains(">= " + RiskObjectives.monitoringLagCap());
+        assertThat(threshold(expr(rules, "RiskMonitoringLagging"))).isEqualTo(RiskObjectives.MONITORING_AGE.toSeconds());
+        assertThat(expr(rules, "RiskMonitoringLagging")).contains(MONITORING_AGE);
+        assertThat(threshold(expr(rules, "RiskFilingUnknown"))).isEqualTo(RiskObjectives.filingUnconcluded().toSeconds());
+        assertThat(expr(rules, "RiskFilingUnknown")).contains(FILING_AGE);
+        String sparse = RiskObjectives.SPARSE_FAILURE_WINDOW.toHours() + "h";
+        for (String hourly : List.of("RiskFilingCallsFailing", "RiskMonitoringSubjectFailing",
+                "RiskMonitoringUnclassified")) {
+            assertThat(expr(rules, hourly)).as(hourly).contains("[" + sparse + "]");
+        }
+        assertThat(expr(rules, "RiskMonitoringUnclassified")).startsWith("max(delta(" + UNCLASSIFIED);
+        assertThat(String.valueOf(rules.get("RiskGaugesUnreadable").get("for")))
+                .isEqualTo(minutes(RiskObjectives.UNREADABLE_WAIT));
+        assertThat(RiskObjectives.UNREADABLE_WAIT).isGreaterThan(RiskObjectives.proofReadingFloors());
+        assertThat(expr(rules, "RiskProofReadingsFailing")).startsWith("sum by (instance) (");
         assertThat(threshold(expr(rules, "RiskAlertFlood"))).isEqualTo(RiskObjectives.ALERT_FLOOD_PER_HOUR);
         assertThat(expr(rules, "RiskAlertFlood")).contains("[1h]");
-        String interval = minutes(RiskObjectives.filingInquiryInterval());
-        for (String filing : List.of("RiskFilingUnknown", "RiskFilingCallsFailing")) {
-            assertThat(expr(rules, filing)).as(filing).contains("[" + interval + "]");
-            assertThat(String.valueOf(rules.get(filing).get("for"))).as(filing).isEqualTo(interval);
-        }
         String floors = minutes(RiskObjectives.proofReadingFloors());
         assertThat(expr(rules, "RiskProofReadingsFailing")).contains("[" + floors + "]");
         assertThat(String.valueOf(rules.get("RiskProofReadingsFailing").get("for"))).isEqualTo(floors);
@@ -443,6 +456,119 @@ class RiskAlertRulesTest {
                 .anySatisfy(pattern -> assertThat(
                         FileSystems.getDefault().getPathMatcher("glob:" + pattern).matches(rulesFile)).isTrue());
         assertThat(target(false)).containsEntry("risk_judging", "false");
+    }
+
+    // ------------------------------------------------------------------ time (the review's IMPORTANT 1)
+
+    @Test
+    @DisplayName("through time: one report stuck UNKNOWN fires past two inquiry intervals and stays firing; one acknowledged"
+            + " at its first inquiry never fires - however far apart its inquiries answer")
+    void aStuckFilingFiresThroughTime() {
+        List<RuleEvaluator.Sample> healthy = healthy(target(false));
+        long interval = RiskObjectives.filingInquiryInterval().toSeconds();
+        Optional<Long> stuck = timeline("RiskFilingUnknown", second -> set(healthy, named(FILING_AGE),
+                value -> (double) second)).firstFiring(4 * 3600);
+        long wait = forOf("RiskFilingUnknown").toSeconds();
+        assertThat(stuck).as("a report filed at 0, never concluded").isPresent();
+        assertThat(stuck.get()).isBetween(2 * interval + wait, 2 * interval + wait + 2 * RuleTimeline.EVALUATION.toSeconds());
+        assertThat(timeline("RiskFilingUnknown", second -> set(healthy, named(FILING_AGE),
+                value -> second < interval + 5 ? (double) second : 0.0)).firing(4 * 3600))
+                .as("acknowledged at its first inquiry, 15 min in").isEmpty();
+    }
+
+    @Test
+    @DisplayName("through time: one entry left unmonitored at low volume fires past the hour; a busy, draining journal never"
+            + " does - its oldest entry within the settle horizon and a poll")
+    void aStalledSweepFiresAtAnyVolume() {
+        List<RuleEvaluator.Sample> healthy = healthy(target(false));
+        long hour = RiskObjectives.MONITORING_AGE.toSeconds();
+        Optional<Long> stalled = timeline("RiskMonitoringLagging", second -> set(set(healthy, named(MONITORING_AGE),
+                value -> (double) second), named(LAG), value -> 1.0)).firstFiring(3 * hour);
+        assertThat(stalled).as("one entry, the sweep stopped").isPresent();
+        assertThat(stalled.get()).isBetween(hour + forOf("RiskMonitoringLagging").toSeconds(),
+                hour + forOf("RiskMonitoringLagging").toSeconds() + 2 * RuleTimeline.EVALUATION.toSeconds());
+        assertThat(timeline("RiskMonitoringLagging", second -> set(set(healthy, named(MONITORING_AGE),
+                value -> (double) (60 + second % 10)), named(LAG), value -> 50_000.0 + second % 7_000)).firing(3 * hour))
+                .as("busy and draining").isEmpty();
+    }
+
+    @Test
+    @DisplayName("through time: a new UNCLASSIFIED namespace fires at once and resolves an hour after its last row; rows"
+            + " born long ago never fire")
+    void newUnclassifiedRowsFireThenResolve() {
+        List<RuleEvaluator.Sample> healthy = healthy(target(false));
+        assertThat(timeline("RiskMonitoringUnclassified", second -> set(healthy, named(UNCLASSIFIED), value -> 5.0))
+                .firing(6 * 3600)).as("five rows, standing").isEmpty();
+        RuleTimeline grows = timeline("RiskMonitoringUnclassified", second -> set(healthy, named(UNCLASSIFIED),
+                value -> second < 3600 ? 5.0 : 6.0));
+        assertThat(grows.firstFiring(6 * 3600)).hasValueSatisfying(first -> assertThat(first).isBetween(3600L, 3780L));
+        assertThat(grows.firing(6 * 3600).last()).as("resolved an hour after the last new row").isLessThan(2 * 3600 + 120L);
+    }
+
+    @Test
+    @DisplayName("through time: a sparse failure - one party's leg, one filing call - fires within minutes; a dispatch"
+            + " re-driven every lease and throwing each time fires after its quarter hour")
+    void sparseAndRepeatedFailuresFire() {
+        List<RuleEvaluator.Sample> healthy = healthy(target(false));
+        for (String[] sparse : new String[][] {{"RiskMonitoringSubjectFailing", SUBJECT, "failed"},
+                {"RiskFilingCallsFailing", FILING, "failed"}}) {
+            Optional<Long> first = timeline(sparse[0], second -> set(healthy, named(sparse[1]).and(label("outcome",
+                    sparse[2])), value -> second >= 600 ? 1.0 : 0.0)).firstFiring(3 * 3600);
+            assertThat(first).as("%s on one failure", sparse[0])
+                    .hasValueSatisfying(at -> assertThat(at).isBetween(600L, 600L + 180));
+        }
+        String kind = values(healthy, ACTION_FAILED, "kind").iterator().next();
+        Optional<Long> redriven = timeline("RiskActionDispatchFailing", second -> set(healthy,
+                named(ACTION_FAILED).and(label("kind", kind)), value -> (double) (second / 120))).firstFiring(3 * 3600);
+        assertThat(redriven).hasValueSatisfying(at -> assertThat(at).isBetween(900L, 900L + 180));
+    }
+
+    @Test
+    @DisplayName("through time: one instance's proofs failing at two floors in a row fires; one failure, or two instances"
+            + " failing once each, never does; a gauge NaN for one floor is tolerated, for longer is ticketed")
+    void theProofsAndTheGaugesHonourTheirFloors() {
+        List<RuleEvaluator.Sample> healthy = healthy(target(false));
+        long floor = RiskProofMetrics.DEFAULT_REFRESH.toSeconds();
+        Predicate<RuleEvaluator.Sample> failed = named(READING).and(label("outcome", "failed"));
+        assertThat(timeline("RiskProofReadingsFailing", second -> set(healthy, failed,
+                value -> second >= 60 ? (second >= 60 + floor ? 2.0 : 1.0) : 0.0)).firstFiring(3 * 3600))
+                .as("two floors in a row").isPresent();
+        assertThat(timeline("RiskProofReadingsFailing", second -> set(healthy, failed,
+                value -> second >= 60 ? 1.0 : 0.0)).firing(3 * 3600)).as("one failure").isEmpty();
+        List<RuleEvaluator.Sample> twoInstances = withSecondInstance(healthy);
+        assertThat(timeline("RiskProofReadingsFailing", second -> set(set(twoInstances,
+                failed.and(label("instance", "a:1")), value -> second >= 60 ? 1.0 : 0.0),
+                failed.and(label("instance", "b:2")), value -> second >= 60 + floor ? 1.0 : 0.0)).firing(3 * 3600))
+                .as("one failure on each of two instances - no instance failed twice").isEmpty();
+        assertThat(timeline("RiskGaugesUnreadable", second -> set(healthy, named(VELOCITY),
+                value -> second >= 60 && second < 60 + floor ? Double.NaN : value)).firing(3 * 3600))
+                .as("NaN until the next floor").isEmpty();
+        assertThat(timeline("RiskGaugesUnreadable", second -> set(healthy, named(VELOCITY),
+                value -> second >= 60 ? Double.NaN : value)).firstFiring(3 * 3600))
+                .hasValueSatisfying(at -> assertThat(at).isGreaterThanOrEqualTo(60 + RiskObjectives.UNREADABLE_WAIT
+                        .toSeconds()));
+    }
+
+    /** The rule {@code alert} of the committed file, with its own {@code for}, over {@code scrapeAt}. */
+    private static RuleTimeline timeline(String alert, java.util.function.LongFunction<List<RuleEvaluator.Sample>> scrapeAt) {
+        return RuleTimeline.of(rules().get(alert), forOf(alert), scrapeAt);
+    }
+
+    private static Duration forOf(String alert) {
+        return RuleTimeline.duration(String.valueOf(ruleMaps().get(alert).get("for")));
+    }
+
+    /** {@code scrape}'s samples twice, under instances {@code a:1} and {@code b:2}. */
+    private static List<RuleEvaluator.Sample> withSecondInstance(List<RuleEvaluator.Sample> scrape) {
+        List<RuleEvaluator.Sample> both = new ArrayList<>();
+        for (RuleEvaluator.Sample sample : scrape) {
+            for (String instance : List.of("a:1", "b:2")) {
+                Map<String, String> labels = new LinkedHashMap<>(sample.labels());
+                labels.put("instance", instance);
+                both.add(new RuleEvaluator.Sample(sample.name(), labels, sample.value()));
+            }
+        }
+        return both;
     }
 
     // ------------------------------------------------------------------ cases

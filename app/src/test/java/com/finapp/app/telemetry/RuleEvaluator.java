@@ -77,13 +77,23 @@ final class RuleEvaluator {
 
     /** Whether {@code expr} fires on {@code after} - {@code before} the scrape a window earlier, for {@code increase}. */
     static boolean fires(String expr, List<Sample> before, List<Sample> after) {
+        return !series(expr, before, after).isEmpty();
+    }
+
+    /**
+     * The label sets of the series {@code expr} yields on {@code after} - each an alert of its own, whose {@code for} runs
+     * apart from the others' (`P13-TSK-024`'s {@code RuleTimeline}, as Prometheus keys an alert by its labels).
+     */
+    static Set<Map<String, String>> series(String expr, List<Sample> before, List<Sample> after) {
         RuleEvaluator evaluator = new RuleEvaluator(expr, before, after);
         List<Element> result = evaluator.expression();
         if (evaluator.at != evaluator.tokens.size()) {
             throw new IllegalArgumentException("unparsed tail in " + expr + " at " + evaluator.tokens.subList(evaluator.at,
                     evaluator.tokens.size()));
         }
-        return !result.isEmpty();
+        Set<Map<String, String>> series = new java.util.LinkedHashSet<>();
+        result.forEach(element -> series.add(element.labels()));
+        return series;
     }
 
     /** A Prometheus text scrape's samples, each given {@code targetLabels}. */

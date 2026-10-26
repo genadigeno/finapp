@@ -43,6 +43,7 @@ final class FakeRiskProofReads implements RiskProofReads {
     FilingRow filing = new FilingRow(0, 0, 0);
     Duration filingAsked;
     final List<RescreeningRow> rescreening = new ArrayList<>();
+    Instant oldestFiling;
     Instant rescreeningAsked;
     final List<UUID> monitored = new ArrayList<>();
     final Map<UUID, MonitoredTransaction> transactions = new HashMap<>();
@@ -152,6 +153,12 @@ final class FakeRiskProofReads implements RiskProofReads {
         calls.add("rescreenings");
         rescreeningAsked = retiredSince;
         return List.copyOf(rescreening);
+    }
+
+    @Override
+    public Optional<Instant> oldestUnconcludedFiling(Connection snapshot) {
+        calls.add("oldestUnconcludedFiling");
+        return Optional.ofNullable(oldestFiling);
     }
 
     @Override

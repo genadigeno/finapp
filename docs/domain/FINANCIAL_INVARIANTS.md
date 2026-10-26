@@ -3364,8 +3364,10 @@ journal entries = monitored transactions, amounts equal, no orphan — at every 
 `P13-TSK-024`); `finapp.risk.monitoring.lag` (journal head − watermark) with its rule at an hour
 (`P13-TSK-024`); a sweeper killed mid-claim among the storm's crash points, the next claim re-reading
 from the committed watermark (`P13-TST-001`). *(As built by `P13-TSK-024`, 2026-10-26:
-`RiskMonitoringUnclassified` above 0, and `RiskMonitoringLagGrowing` - the lag counts entries, not time, so the rule is
-its growth by more than one tick's intake over the hour, or the gauge saturated - each proven by `RiskAlertRulesTest`;
+`RiskMonitoringUnclassified` on NEW `UNCLASSIFIED` rows in the hour (the gauge's growth - its level never falls, the
+rows insert-only), and `RiskMonitoringLagging` past an hour on `finapp.risk.monitoring.age` - the oldest unmonitored
+journal entry's age on the database's clock, since the lag counts entries, not time - each proven by `RiskAlertRulesTest`,
+through time by `RuleTimeline` (a stalled sweep at low volume fires, a busy draining one never does);
 `RiskCensusDiverged{kind="MONITORING"}` alerts the census.)*
 **Phase:** 13
 

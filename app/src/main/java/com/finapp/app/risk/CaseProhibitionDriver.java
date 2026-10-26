@@ -79,8 +79,8 @@ public final class CaseProhibitionDriver {
 
     /** The case leg's re-drive: up to {@code perTick} approved prohibitions with no version, each in its own transaction. */
     public int applyDue() {
-        List<RiskCaseStore.PendingProhibition> due = transactions.inTransaction(uow -> cases.prohibitionsDue(uow,
-                perTick));
+        List<RiskCaseStore.PendingProhibition> due = flow.sweep(RiskSpans.PROFILE_RECOMPUTE,
+                () -> transactions.inTransaction(uow -> cases.prohibitionsDue(uow, perTick)));
         int applied = 0;
         for (RiskCaseStore.PendingProhibition pending : due) {
             CorrelationId correlation = CorrelationId.generate(ids);

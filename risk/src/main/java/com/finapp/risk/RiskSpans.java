@@ -19,6 +19,8 @@ public final class RiskSpans {
     public static final String POLICY_ACTIVATE = "risk.policy.activate";
     /** T-pol - a policy version rejected. */
     public static final String POLICY_REJECT = "risk.policy.reject";
+    /** The policy door's reads - the version in force, one version by id (`P13-TSK-024`). */
+    public static final String POLICY_READ = "risk.policy.read";
     /** T-ovr - an override proposed. */
     public static final String OVERRIDE_PROPOSE = "risk.override.propose";
     /** T-ovr - an override decided, and the action it issues. */

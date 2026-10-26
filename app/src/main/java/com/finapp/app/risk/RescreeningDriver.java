@@ -125,7 +125,8 @@ public final class RescreeningDriver implements RiskActionSchedule.RescreeningLe
         for (int taken = 0; taken < permitsPerTick; taken++) {
             RescreeningRun.Claim claim;
             try {
-                claim = transactions.inTransaction(uow -> run.claimNextDue(uow, lease));
+                claim = flow.sweep(RiskSpans.RESCREEN,
+                        () -> transactions.inTransaction(uow -> run.claimNextDue(uow, lease)));
             } catch (RuntimeException failure) {
                 metrics.claimFailed();
                 log.warn("Rescreening claim failed: {}", failure.getClass().getSimpleName());

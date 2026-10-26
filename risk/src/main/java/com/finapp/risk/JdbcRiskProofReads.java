@@ -135,6 +135,10 @@ public final class JdbcRiskProofReads implements RiskProofReads {
             + " WHERE v.status = 'ACTIVE' OR (v.status = 'RETIRED' AND v.retired_at >= ?)"
             + " ORDER BY v.list, v.ordinal";
 
+    /** The oldest filing not concluded - on {@code regulatory_report_due}'s rows (`P13-TSK-024`). */
+    static final String OLDEST_FILED = "SELECT min(filed_at) FROM risk.regulatory_report"
+            + " WHERE status = 'FILED' AND next_inquiry_at IS NOT NULL";
+
     static final String MONITORED_BETWEEN = "SELECT journal_entry_id FROM risk.monitored_transaction"
             + " WHERE journal_entry_id >= ? AND journal_entry_id < ? ORDER BY journal_entry_id";
 
@@ -445,6 +449,17 @@ public final class JdbcRiskProofReads implements RiskProofReads {
             throw failed("taking the rescreening census", failure);
         }
         return rows;
+    }
+
+    @Override
+    public Optional<Instant> oldestUnconcludedFiling(Connection snapshot) {
+        try (PreparedStatement select = snapshot.prepareStatement(OLDEST_FILED); ResultSet row = select.executeQuery()) {
+            row.next();
+            OffsetDateTime filed = row.getObject(1, OffsetDateTime.class);
+            return filed == null ? Optional.empty() : Optional.of(filed.toInstant());
+        } catch (SQLException failure) {
+            throw failed("reading the oldest unconcluded filing", failure);
+        }
     }
 
     @Override

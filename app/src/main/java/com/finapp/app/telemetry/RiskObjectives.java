@@ -1,6 +1,5 @@
 package com.finapp.app.telemetry;
 
-import com.finapp.app.risk.RiskMonitoringMetrics;
 import com.finapp.app.risk.RiskProofMetrics;
 import com.finapp.risk.CaseKind;
 import com.finapp.risk.FilingCensus;
@@ -20,19 +19,24 @@ import java.util.Objects;
  *   <li><strong>The evaluation budget</strong>: T-eval's p99 within 50 ms ({@code PHASE_13_PLAN.md} section 7.6, M3's
  *       split trigger) - read exactly as "more than 1% of a five-minute window's evaluations above the 50 ms bucket", the
  *       bucket one of {@code RiskEvaluationMetrics}' service-level objectives.
- *   <li><strong>The monitoring lag's growth</strong>: the lag is journal entries, not time, and stands above zero
- *       whenever the ledger posts faster than one poll - so the alert is its <em>growth</em> over an hour by more than
- *       one tick's intake at the defaults ({@code finapp.risk.monitoring.batch} 200 x {@code .batches-per-tick} 10), or
- *       the figure saturated ({@link RiskMonitoringMetrics#LAG_CAP}), where it can no longer grow.
+ *   <li><strong>The monitoring's hour</strong> (the entry's "monitoring lag over an hour"; the review's IMPORTANT 2):
+ *       the oldest journal entry not yet monitored is at most an hour old - an AGE on the database's clock
+ *       ({@code finapp.risk.monitoring.age}), because the lag counts entries, which a busy ledger keeps above zero and a
+ *       quiet one keeps near zero however stalled the sweep.
+ *   <li><strong>The unclassified hour</strong>: new {@code UNCLASSIFIED} rows in an hour - the gauge's growth, never its
+ *       level (the rows are insert-only, so a level rule could never resolve).
  *   <li><strong>A case's SLA</strong>: {@link SlaDeadlines} - the code's per-kind figure, the database's
  *       {@code sla_deadline}, restated by no one.
  *   <li><strong>The queues' staffed capacity</strong> and <strong>the alert flood</strong>: defaults pending the owner's
  *       staffing figures and the production policy's measured baseline (owner items, {@code PHASE_13_PLAN.md} section
  *       1.2) - each a number the activation gate reviews.
- *   <li><strong>The filing's inquiry interval</strong>: {@link FilingCensus#OVERDUE_AFTER} (`-021`'s 15 minutes,
- *       {@code finapp.risk.filing.inquiry-interval}'s default) - an {@code UNKNOWN} answered at two inquiries in a row.
- *   <li><strong>The proofs' two floors</strong>: twice {@link RiskProofMetrics#DEFAULT_REFRESH} - a reading failing at two
- *       floors in a row, or none completing in two.
+ *   <li><strong>The filing's two intervals</strong>: twice {@link FilingCensus#OVERDUE_AFTER} (`-021`'s 15 minutes,
+ *       {@code finapp.risk.filing.inquiry-interval}'s default) - a report still {@code FILED} that long after its filing
+ *       was asked again and not concluded ({@code finapp.risk.report.unconcluded.age}; the review's IMPORTANT 1).
+ *   <li><strong>The sparse failures' hour</strong>: a filing call or a party's monitoring leg - events an inquiry
+ *       interval or a party's next movement apart - read over an hour, any failure the ticket.
+ *   <li><strong>The proofs' two floors</strong>: twice {@link RiskProofMetrics#DEFAULT_REFRESH} - one instance's reading
+ *       failing at two floors in a row, or none completing in two; the unreadable gauges' wait a little past them.
  *   <li><strong>The rescreening backlog's day</strong>: permits standing {@code PENDING} for a day (section 15's row).
  * </ul>
  */
@@ -47,11 +51,14 @@ public final class RiskObjectives {
      */
     public static final long EVALUATION_LATENCY_SHARE_PERCENT = 1;
 
-    /** The window over which the monitoring lag's growth is judged. */
-    public static final Duration MONITORING_LAG_WINDOW = Duration.ofHours(1);
+    /** How long the oldest journal entry may stand unmonitored before the monitoring is lagging. */
+    public static final Duration MONITORING_AGE = Duration.ofHours(1);
 
-    /** One tick's intake at the defaults - a growth beyond it over the window is a sweep not keeping up. */
-    public static final long MONITORING_LAG_GROWTH = 200L * 10L;
+    /** The window over which new UNCLASSIFIED rows, failed filing calls and failed party legs are counted. */
+    public static final Duration SPARSE_FAILURE_WINDOW = Duration.ofHours(1);
+
+    /** How long a risk gauge may read NaN before it is ticketed - past the proofs' two floors. */
+    public static final Duration UNREADABLE_WAIT = Duration.ofMinutes(35);
 
     /** An hour's alerts of one kind past which the queue is flooded - a default, the owner's to set from the baseline. */
     public static final long ALERT_FLOOD_PER_HOUR = 500L;
@@ -87,18 +94,18 @@ public final class RiskObjectives {
         return CAPACITY.get(Objects.requireNonNull(kind, "kind"));
     }
 
-    /** The filing's inquiry interval - the window and the wait of the unknown-filing rule. */
+    /** The filing's inquiry interval. */
     public static Duration filingInquiryInterval() {
         return FilingCensus.OVERDUE_AFTER;
+    }
+
+    /** How long a report may stand {@code FILED} before the filing is UNKNOWN past its interval: two intervals. */
+    public static Duration filingUnconcluded() {
+        return FilingCensus.OVERDUE_AFTER.multipliedBy(2);
     }
 
     /** Two floors of the proofs' reading - the window and the wait of the reading rules. */
     public static Duration proofReadingFloors() {
         return RiskProofMetrics.DEFAULT_REFRESH.multipliedBy(2);
-    }
-
-    /** The lag at which the gauge saturates. */
-    public static long monitoringLagCap() {
-        return RiskMonitoringMetrics.LAG_CAP;
     }
 }

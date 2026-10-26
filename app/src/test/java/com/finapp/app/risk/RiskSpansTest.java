@@ -105,30 +105,170 @@ class RiskSpansTest {
     }
 
     /**
-     * The classes that open a risk transaction and record no span of their own, each argued: the gauges' readings (a
-     * meter's refresh, no flow - `RiskProofMetrics`, `RescreeningMetrics`, `RiskProfileMetrics`), the transaction port
-     * and its Spring implementation, and kyc's re-screening port, called by {@code RescreeningDriver} inside its
-     * {@code risk.rescreen} span.
+     * The transaction-opening methods deliberately outside a span call, each argued - keyed {@code File#method}. Every
+     * other {@code .inTransaction(} / {@code .inSnapshot(} in {@code app}'s risk code is lexically inside a
+     * {@code flow.door(}, {@code flow.sweep(}, {@code scope.step(} or {@code spans.within(} call, or in a private method
+     * every call of which is (the desks' {@code keyed} helpers, run inside their door's lambda).
      */
-    private static final java.util.Set<String> UNSPANNED = java.util.Set.of("RiskProofMetrics.java",
-            "RescreeningMetrics.java", "RiskProfileMetrics.java", "RiskTransactions.java", "SpringRiskTransactions.java",
-            "KycPartyRescreening.java");
+    static final Map<String, String> UNSPANNED = Map.ofEntries(
+            // A gauge's reading - a meter's refresh off the scrape thread, no flow and no step of one.
+            Map.entry("RescreeningMetrics.java#over", "a gauge's reading"),
+            Map.entry("RiskProfileMetrics.java#over", "a gauge's reading"),
+            Map.entry("RiskProofMetrics.java#over", "a gauge's reading"),
+            Map.entry("RiskAgeMetrics.java#over", "a gauge's reading"),
+            // kyc's re-screening port: RescreeningRun.ask calls it inside RescreeningDriver's risk.rescreen span.
+            Map.entry("KycPartyRescreening.java#ask", "inside the driver's risk.rescreen span, one class up"),
+            // The door's answer: the row its spanned, keyed act wrote, re-read for the receipt after the act commits.
+            Map.entry("RiskActionDesk.java#receipt", "the receipt's re-read after the spanned act"),
+            Map.entry("RiskAlertDesk.java#receipt", "the receipt's re-read after the spanned act"),
+            Map.entry("RiskCaseDesk.java#receipt", "the receipt's re-read after the spanned act"),
+            Map.entry("RiskOverrideDesk.java#receipt", "the receipt's re-read after the spanned act"),
+            Map.entry("RiskReportDesk.java#receipt", "the receipt's re-read after the spanned act"),
+            // A spanned read's audit record (risk.*Read, risk.Replayed) or a refusal's FAILED record, written in a
+            // transaction of its own before the answer - the door's trail, its work already spanned.
+            Map.entry("RiskAssessmentDesk.java#replayDay", "the spanned replay's audit record"),
+            Map.entry("RiskAssessmentDesk.java#replay", "the spanned replay's audit record"),
+            Map.entry("RiskAssessmentDesk.java#refused", "a refusal's FAILED record"),
+            Map.entry("RiskEvidenceDesk.java#read", "the spanned read's audit record or refusal"),
+            Map.entry("RiskOperationsReportDesk.java#served", "the spanned report's audit record or refusal"),
+            Map.entry("RiskOverrideDesk.java#refusalsRecorded", "a refusal's FAILED record"),
+            Map.entry("RiskProfileDesk.java#read", "the spanned read's audit record or refusal"),
+            Map.entry("RiskQueueDesk.java#alerts", "the spanned page's audit record or refusal"),
+            Map.entry("RiskQueueDesk.java#cases", "the spanned page's audit record or refusal"),
+            Map.entry("RiskQueueDesk.java#file", "the spanned file's audit record or refusal"),
+            Map.entry("RiskReportDesk.java#read", "the spanned read's audit record or refusal"),
+            // The profile leg's failure path: the failed recompute (spanned) rolled back; its permit deferred alone.
+            Map.entry("RiskMonitoringSchedule.java#recomputeDueProfiles", "the failed recompute's deferral"));
+
+    private static final Pattern TRANSACTION = Pattern.compile("\\.(inTransaction|inSnapshot)\\(");
+    private static final Pattern SPAN_CALL = Pattern.compile("(flow|scope|spans)\\.(door|sweep|step|within)\\s*$");
+    private static final Pattern MEMBER = Pattern.compile("^    [A-Za-z<][^=;\\n]*?\\b(\\w+)\\(", Pattern.MULTILINE);
 
     @Test
-    @DisplayName("every app class that opens a risk transaction holds a RiskFlowScope - a step never runs unspanned -"
-            + " but the gauges' readings, the transaction port and kyc's port inside the rescreening span")
+    @DisplayName("every risk transaction app code opens is inside a span call - directly, or in a private method every"
+            + " call of which is - but the enumerated, argued few (P13-TSK-024's review)")
     void everyStepIsSpanned() throws Exception {
-        List<String> unspanned = new ArrayList<>();
+        java.util.Set<String> unspanned = new java.util.TreeSet<>();
+        int sites = 0;
         for (Path file : javaFiles(appRisk())) {
-            String source = Files.readString(file, StandardCharsets.UTF_8);
-            String name = file.getFileName().toString();
-            boolean opens = source.contains(".inTransaction(") || source.contains(".inSnapshot(");
-            if (opens && !source.contains("RiskFlowScope") && !UNSPANNED.contains(name)) {
-                unspanned.add(name);
+            String text = stripped(Files.readString(file, StandardCharsets.UTF_8));
+            List<int[]> members = members(text);
+            Matcher call = TRANSACTION.matcher(text);
+            while (call.find()) {
+                sites++;
+                if (!spanned(text, members, call.start(), 0)) {
+                    unspanned.add(file.getFileName() + "#" + memberName(text, members, call.start()));
+                }
             }
         }
-        assertThat(unspanned).as("risk steps recorded by no span (INV-AUD-02's trace, PHASE_13_PLAN.md section 15)")
-                .isEmpty();
+        assertThat(sites).as("the scan reads the risk code's transactions").isGreaterThan(60);
+        assertThat(unspanned).as("risk steps outside every span - span them, or argue them in UNSPANNED")
+                .isEqualTo(new java.util.TreeSet<>(UNSPANNED.keySet()));
+    }
+
+    /** Whether {@code position} is inside a span call's parentheses, or in a private method every call of which is. */
+    private static boolean spanned(String text, List<int[]> members, int position, int depth) {
+        if (insideSpanCall(text, position)) {
+            return true;
+        }
+        int[] member = enclosing(members, position);
+        if (member == null || depth > 3 || !text.substring(member[0], member[1]).contains("private ")) {
+            return false;
+        }
+        String name = memberName(text, members, position);
+        Matcher call = Pattern.compile("(?<![\\w.])" + Pattern.quote(name) + "\\(").matcher(text);
+        int calls = 0;
+        while (call.find()) {
+            if (call.start() >= member[0] && call.start() < member[1]) {
+                continue; // the declaration itself
+            }
+            calls++;
+            if (!spanned(text, members, call.start(), depth + 1)) {
+                return false;
+            }
+        }
+        return calls > 0;
+    }
+
+    /** Walks out through the unmatched opening parentheses before {@code position}, looking for a span call's. */
+    private static boolean insideSpanCall(String text, int position) {
+        int depth = 0;
+        for (int at = position - 1; at >= 0; at--) {
+            char character = text.charAt(at);
+            if (character == ')') {
+                depth++;
+            } else if (character == '(') {
+                if (depth == 0) {
+                    if (SPAN_CALL.matcher(text.substring(Math.max(0, at - 40), at)).find()) {
+                        return true;
+                    }
+                } else {
+                    depth--;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Each member declaration's head: [start, end of its head's line]. */
+    private static List<int[]> members(String text) {
+        List<int[]> members = new ArrayList<>();
+        Matcher member = MEMBER.matcher(text);
+        while (member.find()) {
+            members.add(new int[] {member.start(), member.end()});
+        }
+        return members;
+    }
+
+    private static int[] enclosing(List<int[]> members, int position) {
+        int[] found = null;
+        for (int[] member : members) {
+            if (member[0] <= position) {
+                found = member;
+            }
+        }
+        return found;
+    }
+
+    private static String memberName(String text, List<int[]> members, int position) {
+        int[] member = enclosing(members, position);
+        if (member == null) {
+            return "?";
+        }
+        Matcher head = MEMBER.matcher(text.substring(member[0], member[1]));
+        return head.find() ? head.group(1) : "?";
+    }
+
+    /** {@code source} with its comments and string literals blanked - their parentheses are no code's. */
+    private static String stripped(String source) {
+        StringBuilder out = new StringBuilder(source.length());
+        int at = 0;
+        while (at < source.length()) {
+            if (source.startsWith("//", at)) {
+                int end = source.indexOf('\n', at);
+                end = end < 0 ? source.length() : end;
+                out.append(" ".repeat(end - at));
+                at = end;
+            } else if (source.startsWith("/*", at)) {
+                int end = source.indexOf("*/", at + 2);
+                end = end < 0 ? source.length() : end + 2;
+                for (int i = at; i < end; i++) {
+                    out.append(source.charAt(i) == '\n' ? '\n' : ' ');
+                }
+                at = end;
+            } else if (source.charAt(at) == '"') {
+                int end = at + 1;
+                while (end < source.length() && source.charAt(end) != '"') {
+                    end += source.charAt(end) == '\\' ? 2 : 1;
+                }
+                out.append('"').append(" ".repeat(Math.max(0, end - at - 1))).append('"');
+                at = end + 1;
+            } else {
+                out.append(source.charAt(at));
+                at++;
+            }
+        }
+        return out.toString();
     }
 
     // ------------------------------------------------------------------

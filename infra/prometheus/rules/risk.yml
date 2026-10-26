@@ -15,8 +15,15 @@
 #   are alerted per series, the instance label naming which one.
 # - A gauge that cannot be read is NaN, never zero and never its last value; x != x holds only for NaN, so the threshold
 #   rules cannot see it and RiskGaugesUnreadable can.
-# - "Failing" rules (a step that rolls back and is retried) read a window equal to their wait: a failure in each window
-#   for the whole wait, so a single transient that the next attempt cures does not page.
+# - "Failing" rules over a step retried on every tick or lease (seconds to two minutes apart) read a window equal to their
+#   wait: a failure in each window for the whole wait, so a single transient the next attempt cures does not page. A
+#   series whose events come further apart than that - a party's leg re-run by its next movement, a filing call every
+#   inquiry interval - is read over an hour with a short wait instead: any failure in the hour is the ticket.
+#   RiskAlertRulesTest steps every rule whose timing matters through time (RuleTimeline: a scrape every 15 s, an
+#   evaluation every 30 s, the rule's window and its for applied), so a window shorter than its series' gaps is red.
+# - Where "for longer than X" is the question, the rule reads an AGE gauge on the database's clock, never a counter's
+#   increase: a filing unconcluded (finapp.risk.report.unconcluded.age), the journal unmonitored
+#   (finapp.risk.monitoring.age).
 # - Never a party, a subject, an amount, a score, a rule parameter or a case, alert or report id anywhere (INV-RSK-08 -
 #   tipping-off; INV-AUD-02): labels and annotations name operations, kinds, verdicts and outcomes only. Amounts and
 #   subjects are the audited reports' (GET /v1/operator/reports/risk/*) and the case file's.
@@ -182,61 +189,71 @@ groups:
           invariant: "INV-RSK-02"
 
       - alert: RiskFilingUnknown
-        # The authority answered UNKNOWN at an inquiry and again at the next, one inquiry interval later
-        # (FilingCensus.OVERDUE_AFTER, 15 min): a filing unknown for longer than the interval. Inquired, never re-filed.
-        expr: sum(increase(finapp_risk_report_filing_total{outcome="unknown"}[15m])) > 0
-        for: 15m
-        labels:
-          severity: ticket
-        annotations:
-          summary: "A regulatory filing stays UNKNOWN"
-          description: "The filing authority answered UNKNOWN to inquiries in each of the last fifteen minutes - a FILED report it cannot place. Confirm with the authority by the report's reference (OPERATIONS_RUNBOOK.md section 9.4)."
-          invariant: "INV-RSK-06"
-
-      - alert: RiskFilingCallsFailing
-        # Filing calls throwing in each window: nothing known, the permit standing for the next inquiry.
-        expr: sum(increase(finapp_risk_report_filing_total{outcome="failed"}[15m])) > 0
-        for: 15m
-        labels:
-          severity: ticket
-        annotations:
-          summary: "Calls to the filing authority keep failing"
-          description: "Submissions or inquiries to the filing authority threw in each of the last fifteen minutes; each FILED report is asked again by its own reference, never re-filed (OPERATIONS_RUNBOOK.md section 9.4)."
-          invariant: "INV-RSK-06"
-
-      - alert: RiskMonitoringLagGrowing
-        # The journal entries beyond the watermark grew by more than one tick's intake over the hour, or the figure is
-        # saturated at its cap (1,000,000) where it can no longer grow: the monitoring sweep is not keeping up.
-        expr: max(delta(finapp_risk_monitoring_lag[1h])) > 2000 or max(finapp_risk_monitoring_lag) >= 1000000
-        for: 15m
-        labels:
-          severity: page
-        annotations:
-          summary: "The AML monitoring sweep is falling behind the ledger"
-          description: "The monitoring lag grew by more than 2,000 journal entries in the last hour, or stands at its cap. Check every instance's finapp_risk_sweeper_enabled{kind=\"monitoring\"} and claim failures; never advance a watermark by hand (OPERATIONS_RUNBOOK.md section 9.10)."
-          invariant: "INV-RSK-09"
-
-      - alert: RiskMonitoringUnclassified
-        # Monitored transactions recorded UNCLASSIFIED: a posting-key namespace the register does not know - seen, never
-        # evaluated.
-        expr: max(finapp_risk_monitoring_unclassified) > 0
+        # A report still FILED - unconcluded by the authority - more than two inquiry intervals after its filing
+        # (2 x FilingCensus.OVERDUE_AFTER, 15 min): it was submitted and asked again at least once and the authority
+        # answered UNKNOWN (or the calls failed, or the drive did not run) - a filing UNKNOWN for longer than the
+        # interval. An age on the database's clock: one report stuck UNKNOWN keeps it rising, however far apart its
+        # inquiries. Inquired, never re-filed.
+        expr: max(finapp_risk_report_unconcluded_age) > 1800
         for: 5m
         labels:
           severity: ticket
         annotations:
-          summary: "Journal entries are being monitored as UNCLASSIFIED"
-          description: "{{ $value }} monitored transactions carry a posting-key namespace the intake's register does not know; nothing is evaluated for them. Extend the register, deploy, then reprocess (OPERATIONS_RUNBOOK.md sections 9.10 and 9.3)."
-          invariant: "INV-RSK-09"
+          summary: "A regulatory filing has not concluded"
+          description: "The oldest FILED report was filed {{ $value | humanizeDuration }} ago and the authority has neither acknowledged nor rejected it - answered UNKNOWN at its inquiries, its calls failing, or its drive not running. Confirm with the authority by the report's reference (OPERATIONS_RUNBOOK.md section 9.4)."
+          invariant: "INV-RSK-06"
 
-      - alert: RiskMonitoringSubjectFailing
-        # A party's monitoring rule leg rolling back alone in each window - the party unjudged until a later run.
-        expr: sum(increase(finapp_risk_monitoring_subject_total{outcome="failed"}[15m])) > 0
-        for: 15m
+      - alert: RiskFilingCallsFailing
+        # A filing call threw in the last hour: nothing known, the permit standing for the next inquiry - an inquiry
+        # interval (15 min) apart, so the window is the hour and the wait short.
+        expr: sum(increase(finapp_risk_report_filing_total{outcome="failed"}[1h])) > 0
+        for: 1m
         labels:
           severity: ticket
         annotations:
-          summary: "AML monitoring keeps failing for some parties"
-          description: "Parties' monitoring rule legs rolled back in each of the last fifteen minutes; their movements are monitored but not judged. Read the warn lines for the cause's class (OPERATIONS_RUNBOOK.md section 9.10)."
+          summary: "Calls to the filing authority are failing"
+          description: "A submission or an inquiry to the filing authority threw in the last hour; each FILED report is asked again by its own reference at its next inquiry, never re-filed (OPERATIONS_RUNBOOK.md section 9.4)."
+          invariant: "INV-RSK-06"
+
+      - alert: RiskMonitoringLagging
+        # The oldest journal entry beyond the monitoring watermark was posted more than an hour ago, on the database's
+        # clock: the sweep has left a movement unmonitored for an hour - every sweeper off, its claim failing, or a head
+        # held by a stuck transaction holding the watermark - at any volume (a busy, draining sweep keeps the age within
+        # the settle horizon and a poll; one entry an hour unmonitored is enough).
+        expr: max(finapp_risk_monitoring_age) > 3600
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "The AML monitoring has left the journal unmonitored for over an hour"
+          description: "The oldest journal entry the monitoring has not ingested was posted {{ $value | humanizeDuration }} ago. Check every instance's finapp_risk_sweeper_enabled{kind=\"monitoring\"}, the monitoring claim failures and a blocked head; never advance a watermark by hand (OPERATIONS_RUNBOOK.md section 9.10)."
+          invariant: "INV-RSK-09"
+
+      - alert: RiskMonitoringUnclassified
+        # NEW monitored transactions recorded UNCLASSIFIED in the last hour: a posting-key namespace the register does
+        # not know - seen, never evaluated. The gauge counts every UNCLASSIFIED row ever born and the rows are
+        # insert-only (a reprocessing meets them ON CONFLICT), so its LEVEL never falls: the rule is its growth, which
+        # fires on the first row of a namespace, again on a second namespace, and resolves an hour after the register
+        # learns it.
+        expr: max(delta(finapp_risk_monitoring_unclassified[1h])) > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "New journal entries are being monitored as UNCLASSIFIED"
+          description: "{{ $value }} more monitored transactions carry a posting-key namespace the intake's register does not know than an hour ago; nothing is evaluated for them. Extend the register and deploy; the rows already born stay UNCLASSIFIED (OPERATIONS_RUNBOOK.md sections 9.10 and 9.3)."
+          invariant: "INV-RSK-09"
+
+      - alert: RiskMonitoringSubjectFailing
+        # A party's monitoring rule leg rolled back alone in the last hour - the party unjudged until its next movement
+        # or its profile permit runs it again, which may be days: any failure in the hour is the ticket.
+        expr: sum(increase(finapp_risk_monitoring_subject_total{outcome="failed"}[1h])) > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "AML monitoring failed for some parties"
+          description: "Parties' monitoring rule legs rolled back in the last hour; their movements are monitored but not judged until the party's next run. Read the warn lines for the cause's class (OPERATIONS_RUNBOOK.md section 9.10)."
           invariant: "INV-RSK-09"
 
       - alert: RiskMonitoringUnplaced
@@ -276,15 +293,16 @@ groups:
           invariant: "INV-RSK-01, INV-RSK-06, INV-RSK-09, INV-KYC-04"
 
       - alert: RiskProofReadingsFailing
-        # The proofs' reading failing at two floors in a row (window and wait: twice finapp.risk.proofs.refresh's 15 min
-        # default) - a statement past its bound, a lost connection, a refused start; the gauges read NaN meanwhile.
-        expr: sum(increase(finapp_risk_proof_reading_total{outcome="failed"}[30m])) > 0
+        # One instance's reading of the proofs failing at two floors in a row (window and wait: twice
+        # finapp.risk.proofs.refresh's 15 min default; per instance - each reads its own) - a statement past its bound, a
+        # lost connection, a refused start; the gauges read NaN meanwhile.
+        expr: sum by (instance) (increase(finapp_risk_proof_reading_total{outcome="failed"}[30m])) > 0
         for: 30m
         labels:
           severity: ticket
         annotations:
-          summary: "The risk proofs cannot be read"
-          description: "Readings of the risk proofs failed at two refresh floors in a row; the velocity proof and the censuses are not being watched. Read the warn lines for the cause's class (OPERATIONS_RUNBOOK.md section 9.11)."
+          summary: "An instance cannot read the risk proofs"
+          description: "{{ $labels.instance }}'s readings of the risk proofs failed at two refresh floors in a row; the velocity proof and the censuses are not being watched there. Read the warn lines for the cause's class (OPERATIONS_RUNBOOK.md section 9.11)."
           invariant: "INV-RSK-01, INV-RSK-03, INV-RSK-06, INV-RSK-09"
 
       - alert: RiskProofReadingsStalled
@@ -301,15 +319,17 @@ groups:
           invariant: "INV-RSK-01, INV-RSK-03, INV-RSK-06, INV-RSK-09"
 
       - alert: RiskGaugesUnreadable
-        # NaN: a risk gauge whose database read failed or went stale - an unreadable proof, queue, lag or policy must
-        # stay visible, never read as 0.
-        expr: max(finapp_risk_velocity_proof != finapp_risk_velocity_proof) or max(finapp_risk_census != finapp_risk_census) or max(finapp_risk_policy_active != finapp_risk_policy_active) or max(finapp_risk_monitoring_lag != finapp_risk_monitoring_lag) or max(finapp_risk_monitoring_unclassified != finapp_risk_monitoring_unclassified) or max(finapp_risk_case_backlog != finapp_risk_case_backlog) or max(finapp_risk_case_age != finapp_risk_case_age) or max(finapp_risk_rescreening_backlog != finapp_risk_rescreening_backlog) or max(finapp_risk_profile_rating != finapp_risk_profile_rating)
-        for: 15m
+        # NaN: a risk gauge whose database read failed or went stale - an unreadable proof, queue, lag, age or policy
+        # must stay visible, never read as 0. The wait exceeds the proofs' two floors (30 min): one failed reading leaves
+        # their gauges NaN until the next floor, and only a second failure in a row is an incident (the proofs' own
+        # failing rule says the same per instance).
+        expr: max(finapp_risk_velocity_proof != finapp_risk_velocity_proof) or max(finapp_risk_census != finapp_risk_census) or max(finapp_risk_policy_active != finapp_risk_policy_active) or max(finapp_risk_monitoring_lag != finapp_risk_monitoring_lag) or max(finapp_risk_monitoring_age != finapp_risk_monitoring_age) or max(finapp_risk_monitoring_unclassified != finapp_risk_monitoring_unclassified) or max(finapp_risk_case_backlog != finapp_risk_case_backlog) or max(finapp_risk_case_age != finapp_risk_case_age) or max(finapp_risk_report_unconcluded_age != finapp_risk_report_unconcluded_age) or max(finapp_risk_rescreening_backlog != finapp_risk_rescreening_backlog) or max(finapp_risk_profile_rating != finapp_risk_profile_rating)
+        for: 35m
         labels:
           severity: ticket
         annotations:
           summary: "A risk gauge cannot be read"
-          description: "A risk gauge reads NaN - its database read failed or went stale. The proofs, the queues, the monitoring lag, the active policies, the rescreening backlog or the rating distribution are not being watched until it reads again (OPERATIONS_RUNBOOK.md section 9.11)."
+          description: "A risk gauge has read NaN for over half an hour - its database read failed or went stale. The proofs, the queues, the monitoring lag and age, the filing's age, the active policies, the rescreening backlog or the rating distribution are not being watched until it reads again (OPERATIONS_RUNBOOK.md section 9.11)."
           invariant: "INV-RSK-03, INV-RSK-05, INV-RSK-06, INV-RSK-09, INV-RSK-10"
 
       - alert: RiskSweeperOff
