@@ -903,6 +903,22 @@ recorded in the gate's record (one per policy version admitted: the operation, t
    to be activated (its rules, weights, score bands, fail-safe bands and override threshold - a version is immutable once
    proposed, `INV-RSK-05`) and its committed fingerprint written into the gate's record beside the version's id; a
    version whose battery has not run, or whose fingerprint differs from the committed one, is not admitted.
+   *How it is produced and recorded (as built by `P13-TST-002`, 2026-10-26):* the battery is `risk`'s four hermetic suites,
+   run at full size - `./gradlew :risk:test --tests "com.finapp.risk.RiskBattery*" --tests
+   "com.finapp.risk.RiskPolicyBatteryTest" --rerun` with `FINAPP_RISK_BATTERY_SUBJECTS` unset (a shrunk run fails the
+   census and can never be the gate's). It judges a version **as the battery states it** (`RiskBatteryOracles.Statement`)
+   and requires the policy under test equal to that statement. It judges one version per operation - today the C8
+   fixtures; to judge another, a reviewed test change writes its content as that operation's statement and fixture and
+   re-pins the fingerprints the run then prints. A green run prints one
+   line per version - `P13-TST-002 VERSION: <OPERATION> v<n> content=<sha256> fingerprint=<sha256>` - the content digest
+   being the battery's canonical text of the version (rules, parameters, weights, hard decisions, bands, fail-safe bands,
+   challenge, override threshold, hold validity) and the fingerprint binding it to every verdict of the 10,000-subject
+   population; and `P13-TST-002 FINGERPRINT: ... fingerprint=<sha256>` over all of them. The record carries the version's
+   id, its `content` and `fingerprint` from that run, the commit the run was on, and the reviewer's read-back of
+   `GET /v1/operator/risk/policies?operation=` against the statement, rule by rule - the version row carries no content
+   digest of its own (`PHASE_13_PLAN.md` §1.2 item 69). The committed figures today are the C8 fixtures' (test content;
+   production activates none): the battery `d09ee13b2d5ea847877feedba7975765d27588a89034adbd295788dd61b7ddad`, each
+   version's in `BACKLOG.md`'s `P13-TST-002` record.
 2. **The storm's latency figures within budget**: `P13-TST-001`'s storm on the release - T-eval's p99 at or below 50 ms per
    operation (`RiskEvaluationLatencyOverBudget`'s objective, `RiskObjectives.EVALUATION_LATENCY_P99`) with the
    monitoring sweep running beside it (M3's split trigger), the figures copied into the record.
