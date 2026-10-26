@@ -164,6 +164,9 @@ class RiskProofsDatabaseTest {
             }
             application.commit();
         }
+        // The injection is itself a count: V005's trigger stamps last_counted_at with the database clock, so the window is
+        // pending again until the skew passes (P13-TST-001's first run of this owed suite).
+        Thread.sleep(VelocityProof.SKEW.plusSeconds(1).toMillis());
         long[] injected = figures(party);
 
         List<VelocityProof.Divergence> named = divergencesOf(party);

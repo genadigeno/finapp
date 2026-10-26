@@ -175,8 +175,9 @@ class WithdrawalRiskSeamDatabaseTest {
         assertThat(holdStatus(id)).isEqualTo("ACTIVE");
         assertThat(count("SELECT count(*) FROM ledger.hold h JOIN payments.withdrawal w ON w.hold_reference = h.id"
                 + " WHERE w.id = ? AND h.status = 'ACTIVE'", id)).isEqualTo(1);
-        assertThat(column("SELECT (held_until - held_at)::text FROM payments.withdrawal WHERE id = ?", id))
-                .containsExactly("72:00:00");
+        // A timestamptz difference renders "3 days", so the window is read in seconds (P13-TST-001's first run of this owed suite).
+        assertThat(column("SELECT extract(epoch FROM held_until - held_at)::bigint::text FROM payments.withdrawal"
+                + " WHERE id = ?", id)).containsExactly("259200");
         assertThat(count("SELECT count(*) FROM payments.withdrawal WHERE id = ? AND held_at >= created_at"
                 + " AND last_dispatched_at <= held_at", id)).isEqualTo(1);
         assertThat(column("SELECT decision || ',' || velocity_outcome FROM risk.risk_assessment"
@@ -260,8 +261,11 @@ class WithdrawalRiskSeamDatabaseTest {
         activateWithdrawalPolicy();
         Customer customer = fixtures.funded(5_000_00);
         String key = someKey();
-        Withdrawals.Initiated first = withdraw(customer, 2_600_00, key);
-        Withdrawals.Initiated retry = withdraw(customer, 2_600_00, key);
+        // One resolution for both: resolved(..) mints a fresh payment method per call, which the fingerprint keys - a
+        // different request, where the door's retry names the same method (P13-TST-001's first run of this owed suite).
+        Withdrawals.Resolved resolved = HeldWithdrawalFixtures.resolved(customer, EUR);
+        Withdrawals.Initiated first = withdraw(customer, resolved, 2_600_00, key);
+        Withdrawals.Initiated retry = withdraw(customer, resolved, 2_600_00, key);
         assertThat(retry.replayed()).isTrue();
         assertThat(retry.id()).isEqualTo(first.id());
         assertThat(retry.status()).isEqualTo(WithdrawalStatus.HELD);
@@ -397,12 +401,16 @@ class WithdrawalRiskSeamDatabaseTest {
     /** The composition root's own engine, as the customer, outside a request: no session, so a challenge refuses. */
     private Withdrawals.Initiated withdraw(Customer customer, CurrencyCode currency, long minor, String key)
             throws Exception {
-        Withdrawals.Resolved resolved = HeldWithdrawalFixtures.resolved(customer, currency);
+        return withdraw(customer, HeldWithdrawalFixtures.resolved(customer, currency), minor, key);
+    }
+
+    private Withdrawals.Initiated withdraw(Customer customer, Withdrawals.Resolved resolved, long minor, String key)
+            throws Exception {
         try (SecurityContext.Scope scope = SecurityContext.enter(
                         new Actor(customer.identity().toString(), ActorType.CUSTOMER));
                 CorrelationContext.Scope flow = CorrelationContext.enter(
                         Correlation.startingWith(CorrelationId.generate(IDS)))) {
-            return engine.withdraw(key, Money.ofMinorUnits(minor, currency), uow -> resolved);
+            return engine.withdraw(key, Money.ofMinorUnits(minor, resolved.walletCurrency()), uow -> resolved);
         }
     }
 

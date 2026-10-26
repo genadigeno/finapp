@@ -105,8 +105,9 @@ class PaymentRiskMigrationDatabaseTest {
         try (Connection app = DatabaseRoles.application()) {
             PaymentAttempt attempt = authorizedAttempt(app);
             holds.insert(app, attempt.intentId(), attempt.id(), Duration.ofHours(72));
-            assertThat(text(app, "SELECT (held_until - held_at)::text FROM payments.payment_capture_hold"
-                    + " WHERE intent_id = ?", attempt.intentId().value())).isEqualTo("72:00:00");
+            // A timestamptz difference renders "3 days", so the window is read in seconds (P13-TST-001's first run of this owed suite).
+            assertThat(text(app, "SELECT extract(epoch FROM held_until - held_at)::bigint::text FROM"
+                    + " payments.payment_capture_hold WHERE intent_id = ?", attempt.intentId().value())).isEqualTo("259200");
             assertThat(holds.resolveVoid(app, attempt.intentId(), "risk.action:v1")).isTrue();
             CaptureHold voided = holds.findForIntent(app, attempt.intentId()).orElseThrow();
             assertThat(voided.resolution()).contains(CaptureHold.Resolution.VOID);

@@ -58,6 +58,13 @@ class DashboardQueriesResolveTest {
     private static final Pattern METRIC = Pattern.compile("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\b(?!\\s*\\()");
 
     /**
+     * A PromQL string literal - a label matcher's value, never a series: the BNPL row's
+     * {@code {purpose="MERCHANT_PAYABLE"}} (P12-TSK-026) was read as a series named {@code MERCHANT_PAYABLE}
+     * (P13-TST-001's first run of this owed suite). The dashboard selects no series by {@code __name__}.
+     */
+    private static final Pattern STRING_LITERAL = Pattern.compile("\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'");
+
+    /**
      * PromQL tokens that are not series names.
      *
      * <p>Aggregation operators appear here because they are written {@code sum by (outcome) (...)}
@@ -373,7 +380,7 @@ class DashboardQueriesResolveTest {
     }
 
     private static java.util.stream.Stream<String> seriesIn(String expr) {
-        Matcher matcher = METRIC.matcher(expr);
+        Matcher matcher = METRIC.matcher(STRING_LITERAL.matcher(expr).replaceAll("\"\""));
         Set<String> found = new TreeSet<>();
         while (matcher.find()) {
             String candidate = matcher.group(1);
