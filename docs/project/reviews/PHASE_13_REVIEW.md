@@ -301,6 +301,9 @@ budget measured per operation (p50/p99/max, M3's split trigger — items 76, 95)
 code; "no `40P01` in any storm run" (and A4-2's caution). **Phase 13's ten-instance answer on storm counts stays open under
 PI-004**; its answer on arbitration is `PASS` (Area 3).
 
+
+**Addendum (2026-10-27, after this review): the owner closed `P13-TST-001` by acceptance.** It is `COMPLETE` on its partial evidence above, not demonstrated: the latency budget, the storm's probes, its final run and its gate were waived by the owner, not performed. The seventeen sub-clauses this review counted as resting on the storm now read **held by the owner's acceptance** - accepted, not counted; the ten-instance answer on storm counts is the owner's acceptance, not a measurement. The harness is on master (own-container) so the storm can be run again; PI-004 keeps the storms of later phases.
+
 ---
 
 ## The fifteen mandatory scenarios
@@ -396,6 +399,8 @@ audit: 19) and A7 (privacy: 13), each sub-clause against its named test, read in
 | AML · alerts · cases · integrations · idempotency · testing · observability · criterion 7 · production | 124 | 94 | 22 | 8 | 0 *(the jurisdiction debt row written; the probe record → the arbiter suite and the named four-eyes probes)* |
 | Multi-instance | 13 | 8 | 2 | 3 | 0 *(lock-bypass → the arbiter suite; lock-wait tests → rest on the storm, (R6) in-suite)* |
 | Security and privacy · auditability | 32 | 24 | 8 | 0 | 0 *(the filing's step-up → `RiskStepUpRoutesTest`; classification → reclassified; reports' amounts → item 81)* |
+
+*(Addendum 2026-10-27: the 17 "rest on the storm" sub-clauses are held by the owner's acceptance of `P13-TST-001` - see "The storm".)*
 
 **Each clause met in a form its words did not anticipate** is recorded in the note after Phase 13's criteria in `PHASE_GATES.md`
 — among them: the fail-safe's unpinned answer (item 75); `RiskEvaluationUnavailable` firing on `RISK_UNAVAILABLE` only,

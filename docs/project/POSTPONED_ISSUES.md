@@ -13,7 +13,7 @@ commit and the date; do not delete the entry.
 | PI-001 | `POSTPONED` | P12-TSK-003 (2026-10-17) | lending — loan account opener |
 | PI-002 | `POSTPONED` | Phase 12 → 13 transition gate, R2 (2026-10-22) | merchant — card-payment fee version in force on the JVM clock |
 | PI-003 | `POSTPONED` | Phase 12 → 13 transition gate, R2 (2026-10-22) | merchant — Phase 6 reason columns unscreened for card and account numbers |
-| PI-004 | `POSTPONED` | P13-TST-001, by the owner (2026-10-27) | every phase's storm (`TST-001`) — run after the project's phases |
+| PI-004 | `POSTPONED` | P13-TST-001, by the owner (2026-10-27) | every later phase's storm (`TST-001`) — run after the project's phases (`P13-TST-001` itself closed by the owner's acceptance, 2026-10-27) |
 
 ---
 
@@ -122,6 +122,10 @@ commit and the date; do not delete the entry.
   final run, completion gate and records, and settle its phase's ten-instance answer.
 - **Owner of the fix:** the post-phase clean-up. The coordinator reminds the owner of this entry at each phase's exit
   and when the last phase closes.
+- **Update (2026-10-27, the same day):** the owner closed `P13-TST-001` by acceptance on its partial evidence
+  ("mark the missings as completed"): it is `COMPLETE`, not demonstrated - the latency table, its probes, its final run and
+  its gate waived, not performed. Its harness is on master (own-container), so it can still be run. This entry now covers
+  the storms of **later** phases only; the parked branch `P13-TST-001` is no longer needed.
 - **Recorded by `P13-DOC-001` (2026-10-27):** the exit review took the three suite-repair commits, ran the database pass
   on the final tree (green after test-only repairs) and recorded the storm's deferral in place of its evidence
   (`reviews/PHASE_13_REVIEW.md`, *The storm*); `MUTATION_TESTING.md` §4 carries a `P13-TST-001` row recording the deferral,

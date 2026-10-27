@@ -2099,7 +2099,7 @@ are, not here. Nothing of Phase 13 is built at the transition.*
 
 *Status (the exit review, `P13-DOC-001`, 2026-10-27, [`reviews/PHASE_13_REVIEW.md`](reviews/PHASE_13_REVIEW.md)):
 **Phase 13 `COMPLETE`, pending the Phase 13 → 14 transition gate and the owner's ratification - with `P13-TST-001`
-(the storm) `POSTPONED` by the owner until after the project's phases** (`POSTPONED_ISSUES.md` PI-004). The six originals
+(the storm) `POSTPONED` by the owner until after the project's phases** (`POSTPONED_ISSUES.md` PI-004). *(Addendum 2026-10-27: the owner then closed `P13-TST-001` by acceptance on its partial evidence - the latency budget, its probes, its final run and its gate waived, not performed; the seventeen sub-clauses below that rest on the storm are held by that acceptance, not counted. PI-004 keeps the storms of later phases.)* The six originals
 and the per-area blocks were read clause by clause against their named tests (269 sub-clauses across five audits):
 none does not hold after the review's corrections; seventeen rest on the postponed storm - every census at every round,
 the named lock waits for (R1), (R4), (R7), (R8), crash points, "no `40P01` in any storm run", the latency budget

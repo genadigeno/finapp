@@ -391,6 +391,32 @@ class RiskVocabulariesTest {
         assertThat(EnumSet.allOf(RiskOperation.class)).hasSize(7);
     }
 
+    @Test
+    @DisplayName("every (dimension, window) pair is its own velocity key - distinct by equality, by hash and by order, and a"
+            + " sorted map of readings keeps all 24 apart (the policy battery's item 73: a comparator equating two keys"
+            + " would hand both one reading, invisible to an oracle reading the same map)")
+    void everyDimensionAndWindowIsItsOwnVelocityKey() {
+        List<VelocityKey> keys = new java.util.ArrayList<>();
+        for (VelocityDimension dimension : VelocityDimension.values()) {
+            for (WindowKind window : WindowKind.values()) {
+                keys.add(new VelocityKey(dimension, window));
+            }
+        }
+        assertThat(keys).hasSize(VelocityDimension.values().length * WindowKind.values().length).doesNotHaveDuplicates();
+        assertThat(new java.util.HashSet<>(keys)).hasSameSizeAs(keys);
+        java.util.TreeMap<VelocityKey, Integer> sorted = new java.util.TreeMap<>();
+        for (int i = 0; i < keys.size(); i++) {
+            assertThat(sorted.put(keys.get(i), i)).as("%s collides in the sorted map", keys.get(i)).isNull();
+        }
+        assertThat(sorted).hasSameSizeAs(keys);
+        for (int i = 0; i < keys.size(); i++) {
+            for (int j = 0; j < keys.size(); j++) {
+                assertThat(Integer.signum(keys.get(i).compareTo(keys.get(j)))).as("%s vs %s", keys.get(i), keys.get(j))
+                        .isEqualTo(Integer.signum(Integer.compare(i, j)));
+            }
+        }
+    }
+
     private static String[] names(Enum<?>[] values) {
         return Arrays.stream(values).map(Enum::name).toArray(String[]::new);
     }

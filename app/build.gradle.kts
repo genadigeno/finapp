@@ -397,6 +397,9 @@ extra["ownContainerSuites"] =
         // P13-TSK-008: each activates a EUR TRANSFER risk version, after which every transfer in the database is
         // judged by it - a shared container's USD transfers would be refused by the open-ended fail-safe band.
         "com.finapp.app.risk.RiskPolicyEndpointDatabaseTest",
+        // P13-TST-001: the risk storm - two instances, every operation's version activated, absolute censuses over the
+        // whole database (every assessment against its command, every window against its evidence) at every rest.
+        "com.finapp.app.risk.RiskStormTest",
         "com.finapp.app.settlement.BankStatementCashDatabaseTest",
         "com.finapp.app.settlement.PayoutSettlementCashDatabaseTest",
         "com.finapp.app.settlement.SchemeCycleCashDatabaseTest",
