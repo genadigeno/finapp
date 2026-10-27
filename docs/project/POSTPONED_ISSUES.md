@@ -13,6 +13,7 @@ commit and the date; do not delete the entry.
 | PI-001 | `POSTPONED` | P12-TSK-003 (2026-10-17) | lending — loan account opener |
 | PI-002 | `POSTPONED` | Phase 12 → 13 transition gate, R2 (2026-10-22) | merchant — card-payment fee version in force on the JVM clock |
 | PI-003 | `POSTPONED` | Phase 12 → 13 transition gate, R2 (2026-10-22) | merchant — Phase 6 reason columns unscreened for card and account numbers |
+| PI-004 | `POSTPONED` | P13-TST-001, by the owner (2026-10-27) | every phase's storm (`TST-001`) — run after the project's phases |
 
 ---
 
@@ -88,3 +89,36 @@ commit and the date; do not delete the entry.
   if existing rows must be kept; the corpus-parity and raw-writer cases of
   `MerchantBnplEnablementDatabaseTest#everyBnplReasonColumnRefusesAnInstrumentShape` extended to them; probe each rank.
 - **Owner of the fix:** the post-phase clean-up, or Phase 15's data-handling review if the owner schedules it there.
+
+---
+
+## PI-004 — Every phase's storm (`TST-001`) is run after the project's phases
+
+- **Status:** `POSTPONED` (owner, 2026-10-27, after the Phase 13 storm had run 11.5 hours: "postpone TST-001 for all
+  next phases, we will back to them after all phases are finished. remember it and remind me later").
+- **Scope:** `P13-TST-001` (the risk storm) and the storm task (`TST-001`) of every later phase. Each is still planned
+  with its phase; when its phase reaches it, it is recorded `POSTPONED` under this entry, and its phase's exit review
+  records the deferral in place of the storm's evidence — that phase's ten-instance answer on counts stays open until
+  its storm runs.
+- **`P13-TST-001` when parked:** branch `P13-TST-001` at `e353e11c` (four commits on master `f733d47f`; worktree
+  `.claude/worktrees/agent-ab8a70173e8f392a5`):
+  - `09471d19`, `7628a1c7`, `8f648796` — the owed risk and `app` database suites run for the first time and repaired:
+    test defects only, no production defect;
+  - `e353e11c` — the storm harness, work in progress (`RiskStormTest`, `RiskStormWorld`, `RiskStormCensus`,
+    `RiskStormFaults`, `RiskStormClock`, `RiskStormLocks`, `RiskStormRelay`, `RiskStormLatencyReport`,
+    `RiskStormRules`, `RiskStormCatalogue`, `RiskStormCredit`, `RiskStormCrossBorder`), its own-container
+    registration and the in-progress records.
+  - Its ninth full run (seed `1793081146028`, 12 cores, two instances, PostgreSQL 18 and Kafka): **57 census checks, 0
+    failing, at every round** — before the storm, with no policy, with v1 in force, six rounds, each of the fifteen
+    `PHASE_13_PLAN.md` §13.2 scenarios, the filing with a lost response, the named lock waits and the crash points
+    (about 2,065 s into the storm). The latency table was produced but not finalised; the probes, the final run, the
+    completion gate and the records were not done.
+- **Consequence today:** Phase 13's multi-instance answer rests on each task's hermetic proofs, the independent
+  reviews and the partial storm run above, not on a finished storm; the T-eval latency budget (M3's split trigger) is
+  not measured on record. `P13-DOC-001` records this deferral.
+- **For `P13-DOC-001`'s database pass:** the three suite-repair commits above are test-only fixes the pass needs — take
+  them from the parked branch rather than repairing the same suites again.
+- **Fix:** after the last phase, resume each parked storm from its branch (merged up to master), finish its probes,
+  final run, completion gate and records, and settle its phase's ten-instance answer.
+- **Owner of the fix:** the post-phase clean-up. The coordinator reminds the owner of this entry at each phase's exit
+  and when the last phase closes.
