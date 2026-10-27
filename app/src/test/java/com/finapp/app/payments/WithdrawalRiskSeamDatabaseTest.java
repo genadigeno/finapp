@@ -183,6 +183,15 @@ class WithdrawalRiskSeamDatabaseTest {
         assertThat(column("SELECT decision || ',' || velocity_outcome FROM risk.risk_assessment"
                 + " WHERE operation = 'WITHDRAWAL' AND command_ref = ?", id.toString()))
                 .containsExactly("HOLD,NOT_PERMITTED");
+        // The exit review's walk (P13-DOC-001; the gate's "Decision explainability": "the explanation of a HELD withdrawal
+        // ... walked by id from the operation's outcome to its assessment to its hits"): the withdrawal's id is the
+        // assessment's command ref; the assessment's fired hits name the rule that held it, its reasons why.
+        String assessment = "(SELECT id FROM risk.risk_assessment WHERE operation = 'WITHDRAWAL' AND command_ref = ?)";
+        assertThat(column("SELECT kind || ':' || coalesce(hard_decision, '-') FROM risk.risk_rule_hit WHERE assessment_id"
+                + " = " + assessment + " AND outcome = 'FIRED' ORDER BY ordinal", id.toString()))
+                .as("the rule that held it").anySatisfy(hit -> assertThat(hit).endsWith(":HOLD"));
+        assertThat(column("SELECT code FROM risk.risk_reason WHERE assessment_id = " + assessment + " ORDER BY position",
+                id.toString())).as("its ordered reasons").isNotEmpty();
         assertThat(windowCount("PARTY", customer.party(), "D1")).as("a HOLD counts nothing").isZero();
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type = 'payments.WithdrawalHeld'"
                 + " AND aggregate_id = ?", id)).isEqualTo(1);

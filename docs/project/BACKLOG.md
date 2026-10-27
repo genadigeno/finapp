@@ -22108,7 +22108,12 @@ after everything.
 
 # Phase 13 — Risk, Fraud and AML
 
-Status: `READY` (2026-10-22 — entry gate passed by the Phase 12 → 13 transition
+Status: `COMPLETE` (2026-10-27, ruled by the exit review [`reviews/PHASE_13_REVIEW.md`](reviews/PHASE_13_REVIEW.md),
+`P13-DOC-001`; 27 of 28 items complete, **`P13-TST-001` `POSTPONED`** by the owner until after the project's phases
+(`POSTPONED_ISSUES.md` PI-004), its evidence deferred and not claimed; M13.1–M13.9 closed, M13.9 with the storm postponed)
+— **pending the Phase 13 → 14 transition gate and the owner's ratification** (`PHASE_13_PLAN.md` §1.2, items 1–95, C1–C10,
+OQ-1…10) *(read "`READY`" from the transition until the exit review - no task's gate moved it to `IN_PROGRESS`, the
+stale-status class)*. Opened 2026-10-22 (entry gate passed by the Phase 12 → 13 transition
 ([`reviews/PHASE_12_TO_13_TRANSITION.md`](reviews/PHASE_12_TO_13_TRANSITION.md): Phase 12 confirmed after repair,
 R1–R4 closed in bnpl `V018`, merchant `V012`, bnpl `V019` and lending `V031`, merged at `27bd7e1f`), elaborated to task
 granularity by the same transition's Part B: twenty-eight items (`P13-TSK-001`…`-025`, `P13-TST-001`, `P13-TST-002`,
@@ -24906,7 +24911,7 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   `ArchitectureRulesAreDocumentedTest` 2, `NoFloatingPointMoneyRulesTest` 11 - 52, 0 failed. No main code, so no
   `architectureTest`; no database part, so nothing owed (C5); no fleet run.
 
-**P13-DOC-001 — The Phase 13 exit review** — `READY` (2026-10-27; marked by the coordinator when the owner postponed `P13-TST-001` (PI-004): `P13-TST-002` `COMPLETE`, the storm's deferral to be recorded by the review in place of its evidence)
+**P13-DOC-001 — The Phase 13 exit review** — `COMPLETE` (2026-10-27; [`reviews/PHASE_13_REVIEW.md`](reviews/PHASE_13_REVIEW.md) - **Phase 13 `COMPLETE`**, pending the Phase 13 → 14 transition gate and the owner's ratification, **with `P13-TST-001` `POSTPONED`** by the owner (PI-004) - its evidence deferred and not claimed; **M13.9 `CLOSED`** with `P13-TST-002` and this review complete and the storm postponed; branch `P13-DOC-001` from master `499992ac`; no production change, no migration; marks **no task `READY`** - the transition is the owner's to open) *(read "`READY` (2026-10-27; marked by the coordinator when the owner postponed `P13-TST-001` (PI-004): `P13-TST-002` `COMPLETE`, the storm's deferral to be recorded by the review in place of its evidence)" until its gate)*
 - **Objective**: close Phase 13 against its gate (`PHASE_GATES.md` §5 Phase 13, extended by the transition), with the
   documents made true against the code — the six original bullets made measurable and the per-area blocks for risk
   evaluation, policy versioning, decision explainability, fraud workflows, AML monitoring, alert deduplication, case
@@ -24948,6 +24953,57 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
   exactly it, restored byte-identical.
 - **Acceptance criteria**: the gate holds, counted.
 - **Definition of done**: `DOD-DOC`. **Risk**: Medium. **Cx**: L.
+- **As built** (`P13-DOC-001`, 2026-10-27 - **COMPLETE**; [`reviews/PHASE_13_REVIEW.md`](reviews/PHASE_13_REVIEW.md)): **the
+  owner-authorised database pass first** (C5), then ten independent read-only audits (A1/A2 the gate's clauses, A3 financial
+  correctness, A4 multi-instance, A5 architecture and ADR-0107…0112, A6 security and audit, A7 privacy and tipping-off, A8
+  test meaningfulness and the register, A9 the owner list and the plan's errata, A10 the documents), then five document
+  correctors (none deciding an owner question). **No CRITICAL defect and no production defect; no migration changed or
+  added.**
+  - **The database pass.** The storm branch's three test-only repair commits (`09471d19`, `7628a1c7`, `8f648796`) taken
+    first; then every Phase 13 database suite, the touched modules' (`:risk`, `:credit`, `:crossborder`; platform's
+    `ColumnClassificationTest` and `ApplicationRoleGrantsTest`; 74 `app` suites - every Phase 13 one, every `app` payments
+    and kyc suite, the cited re-runs, identity's schema, ledger's journal read), no Kafka suite (Phase 13 has none). **First
+    run: 102 suites, 895 tests, 23 failures in 10 suites**; **re-run fresh: 103 suites, 897 tests, 0 failures**. The
+    failures, every one a test's: the container's clock (Docker Desktop's VM 1.2–2.5 s behind the JVM and stepping -
+    `MonitoringIntakeDatabaseTest` 2, `MonitoringRulesDatabaseTest` 4, `WithdrawalHoldDatabaseTest` 1,
+    `RiskProofsDatabaseTest` 1; repaired by waiting on the database's own clock, `DatabaseClock`); `P13-TSK-010`'s
+    intent-first lock order moving two Phase 5 interleaving points (`PaymentAuthorizationDatabaseTest` 1,
+    `PaymentEndpointDatabaseTest` 2 - one the other's cascade); payments `V034`'s deliberate grant
+    (`PaymentsSchemaDatabaseTest` 1); a race in the test (`RiskActionDatabaseTest` 1); a round-robin that could skip a burst
+    kind (`MultiRailConservationStormDatabaseTest` 1); and shared-container interference - `RescreeningDatabaseTest` 9 (a
+    Phase 1 suite's v4 party failing the whole-database enumeration), then on the re-runs `RiskProofsDatabaseTest`'s committed
+    plants, `MonitoringRulesDatabaseTest`'s rule leg meeting a fixture account's non-v7 owner, the multi-rail storm's sweep
+    meeting other suites' stranded authorizations: **four suites moved to their own containers** (each reason in
+    `app/build.gradle.kts`). The production class the shared container exposed - one corrupt id stalls a whole sweep - is the
+    existing Phase 15 debt row, widened to risk's monitoring and rescreening sweeps. Per suite: the review's appendix.
+  - **The review's corrections - tests only:** `RiskBornOnceArbitersDatabaseTest` (21 uniques pinned, 18 refused alone, 3
+    key-bound), the seven four-eyes `CHECK`s refused by name (the report's could not fail before), the seal's race
+    asserting its `RaceLost`, the pin `CHECK` proven alone, `payment_capture_hold_one_per_attempt` and kyc's re-made in-flight
+    arbiter proven alone, `RiskStepUpRoutesTest` (the filing's step-up had no evidence), the explanation walk in-suite (a
+    `HELD` withdrawal, a refused transfer, a `REVIEW` case), the repair's `TRUNCATE … CASCADE` pinned to each table's own
+    trigger, scenario 10's catch-all narrowed. **Probes:** four performed and caught, each restored sha256-identical
+    (`MUTATION_TESTING.md` §2).
+  - **The flip:** Phase 13 recorded `COMPLETE`; with `INV-RSK-09`'s five §2 rows withheld, `MutationDemonstrationTest` failed
+    1 of 9 reporting `(currently 13)` and naming exactly `["INV-RSK-09"]`; restored byte-identical (sha256 `18faaeb7…`,
+    verified). `P13-TST-001`'s §4 row records its deferral, not a demonstration (the guard demands a row per test item).
+  - **The gate, clause by clause** (269 sub-clauses across five audits): **none does not hold** after the corrections; 54
+    hold in a form their words did not anticipate (recorded after Phase 13's criteria in `PHASE_GATES.md`); **17 rest on the
+    postponed storm** - the census at every round, the named lock waits, "no `40P01`", the latency budget and M3's trigger,
+    every keyed door raced ten ways, the run-time needle walk - each with the evidence that exists named. Universal criteria:
+    ten `PASS`, criterion 1 `PASS` with the storm postponed, criterion 7 `PARTIAL` (C5). The ten-instance question: `PASS` on
+    arbitration; the counted storm half open under PI-004.
+  - **Documents:** ADR-0107…0112 `Accepted` after correction; `PHASE_13_PLAN.md` §1.2 items 75–95 and §25's errata; every
+    named document made true (`FINANCIAL_INVARIANTS.md`, `RISK_LIFECYCLES.md`, `DISTRIBUTED_EXECUTION.md` §3,
+    `MODULE_ARCHITECTURE.md`, `BOUNDED_CONTEXTS.md`, `DOMAIN_MODEL.md`, `GLOSSARY.md`, `OPERATIONS_RUNBOOK.md` §9,
+    `AUDITABLE_ACTIONS.md`, `ERROR_CONTRACT.md`, `DATA_CLASSIFICATION.md`, `TESTING.md`, `CAPABILITY_MAP.md`, `ROADMAP.md`,
+    `DECISIONS.md`, ADR-0045/0062 notes); `MUTATION_TESTING.md` §2, §3 (Phase 13's owed block), §4; six debt rows and three
+    corrected in `CURRENT_STATE.md`.
+  - **For the owner (none decided here):** the owner list, items 1–95, C1–C10, OQ-1…10, each with a recommendation; ⚑ where
+    the review recommends deciding differently from the as-built - before the first activation items 1/10/12 (non-EUR
+    `DENY`), 75 (an unreadable pin answers `ALLOW` everywhere), 77 (hot-subject fail-safes outrun velocity), 83, 72, 86; before production use **79 (the evidence door serves a
+    reference of the reader's own party - IMPORTANT, security, a remediation item recommended)**, 78 (four-eyes
+    suppression reached by one person's case closure), 84, 85, 68, 21, 25, 45/41, 27, 87–91.
+  - **Fresh test counts:** the database pass - first run 102 suites, 895 tests, 23 failed; re-run fresh 103 suites, 897 tests, 0 failed (risk 13/113, credit 10/106, crossborder 4/23, platform 2/11, `app` shared 61/535, `app` own-container 13/109); the probes' run 3 of 20 red as aimed, restored; `:risk:test --rerun` 84 suites, 565 tests, 0 failed; `:app:test --rerun` filtered to the risk package and the guards (`RiskStepUpRoutesTest`, `DomainGlossaryTest`, `CredentialReachesNoEmittedSinkTest`, `PlannedMetersExistTest`, `OpenApiContractTest`, `RoutePermissionRegisterTest`, `RiskAlertRulesTest`) 66 suites, 335 tests, 0 failed; `:app:architectureTest --rerun` once at the gate 35 suites, 192 tests, 0 failed (`MutationDemonstrationTest` 9, `TestTaxonomyTest` 17, `AdrRegistersAreReconciledTest` 4, `ArchitectureRulesAreDocumentedTest` 2 among them, after the flip). Not run (C5): the fleet `databaseTest`/`kafkaTest` beyond the Phase 13 set, previous phases' other suites, `build`; the storm (PI-004).
 
 ---
 

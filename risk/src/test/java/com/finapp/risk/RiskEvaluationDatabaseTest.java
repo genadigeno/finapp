@@ -243,17 +243,47 @@ class RiskEvaluationDatabaseTest {
     void anUnserialisedDuplicateLosesAtTheSeal() throws Exception {
         activate(RiskOperation.TRANSFER);
         RiskEvaluationRequest request = transfer(eur(1_00), IDS.next(), IDS.next());
-        List<Object> outcomes = race(2, () -> {
-            try {
-                return inOneTransaction(uow -> EVALUATION.evaluate(uow, request));
-            } catch (RiskEvaluation.RaceLost lost) {
-                return lost;
+        // Both duplicates must pass the seal's look-up before either commits, or the second merely replays and the unique
+        // is never the arbiter (P13-DOC-001, the review's A1-4/A8-4: the race asserted counts only, and passed when the
+        // two serialised by timing). A holder takes the ACTIVE version's row FOR UPDATE, so each duplicate - its look-up
+        // done, finding nothing - waits at the pin's FOR SHARE (R1); released together, R2a orders them and the second's
+        // insert meets UNIQUE (operation, command_ref): RaceLost, its count rolled back with it.
+        List<Object> outcomes;
+        try (Connection holder = DatabaseRoles.application()) {
+            holder.setAutoCommit(false);
+            try (Statement lock = holder.createStatement()) {
+                lock.execute("SELECT id FROM risk.risk_policy_version WHERE operation = 'TRANSFER' AND status = 'ACTIVE'"
+                        + " FOR UPDATE");
             }
-        });
+            ExecutorService pool = Executors.newFixedThreadPool(2);
+            try {
+                List<Future<Object>> racing = new ArrayList<>();
+                for (int i = 0; i < 2; i++) {
+                    racing.add(pool.submit(() -> {
+                        try {
+                            return (Object) inOneTransaction(uow -> EVALUATION.evaluate(uow, request));
+                        } catch (RiskEvaluation.RaceLost lost) {
+                            return lost;
+                        }
+                    }));
+                }
+                awaitWaiters(2, "risk_policy_version", "FOR SHARE");
+                holder.rollback();
+                outcomes = new ArrayList<>();
+                for (Future<Object> outcome : racing) {
+                    outcomes.add(outcome.get(2, TimeUnit.MINUTES));
+                }
+            } finally {
+                pool.shutdownNow();
+            }
+        }
+        assertThat(outcomes).filteredOn(RiskEvaluation.RaceLost.class::isInstance)
+                .as("the unique, not a replay, decided the duplicate").hasSize(1);
+        assertThat(outcomes).filteredOn(RiskEvaluation.Assessed.class::isInstance).singleElement()
+                .satisfies(won -> assertThat(((RiskEvaluation.Assessed) won).replayed()).isFalse());
         assertThat(count("SELECT count(*) FROM risk.risk_assessment WHERE command_ref = '"
                 + request.commandRef().value() + "'")).isEqualTo(1);
-        assertThat(windowCount("PARTY", request.party(), "D30")).isEqualTo(1);
-        assertThat(outcomes).hasSize(2);
+        assertThat(windowCount("PARTY", request.party(), "D30")).as("the loser's count rolled back with it").isEqualTo(1);
     }
 
     @Test
@@ -282,6 +312,50 @@ class RiskEvaluationDatabaseTest {
             owner.setAutoCommit(false);
             refused(owner, "INSERT INTO risk.risk_assessment_input (assessment_id, inputs_canonical, inputs_sha256)"
                     + " VALUES (gen_random_uuid(), '{}', '" + "0".repeat(64) + "')", "23514");
+            owner.rollback();
+        }
+    }
+
+    @Test
+    @DisplayName("INV-RSK-01/-04, the gate's original 4: a version is named unless none could be pinned - a raw copy of a"
+            + " sealed row with no version and a TIMEOUT cause is refused by risk_assessment_pinned_unless_unpinnable alone;"
+            + " the unpinnable causes (NO_POLICY, PIN_UNREADABLE) admitted the same copy")
+    void theVersionIsNamedUnlessNoneCouldBePinned() throws Exception {
+        // P13-DOC-001 (the review's A1-3): the CHECK existed and no test refused a row by it alone.
+        activate(RiskOperation.TRANSFER);
+        RiskEvaluation.Assessed assessed = inOneTransaction(
+                uow -> EVALUATION.evaluate(uow, transfer(eur(1_00), IDS.next(), IDS.next())));
+        assertThat(column("SELECT (policy_version_id IS NOT NULL)::text FROM risk.risk_assessment WHERE id = '"
+                + assessed.assessmentId().value() + "'")).as("the source row names its version").containsExactly("true");
+        String copy = "INSERT INTO risk.risk_assessment (id, operation, command_ref, party_id, identity_id,"
+                + " source_account_id, destination_kind, destination_id, device_hash, merchant_subject_id, amount_minor,"
+                + " currency, scale, policy_version_id, policy_operation, policy_version, engine, score, decision,"
+                + " fail_safe_reason, unavailable_cause, challenge_satisfied, velocity_outcome, velocity_cut_at,"
+                + " canonical_format, inputs_sha256, verdict_sha256, latency_micros, correlation_id, causation_id,"
+                + " assessed_at) SELECT gen_random_uuid(), operation, 'probe-' || replace(gen_random_uuid()::text, '-',"
+                + " ''), party_id, identity_id, source_account_id, destination_kind, destination_id, device_hash,"
+                + " merchant_subject_id, amount_minor, currency, scale, NULL, NULL, NULL, engine, 0, 'ALLOW',"
+                + " 'RISK_UNAVAILABLE', '%s', NULL, 'UNCOUNTED', NULL, canonical_format, inputs_sha256, verdict_sha256,"
+                + " latency_micros, correlation_id, causation_id, assessed_at FROM risk.risk_assessment WHERE id = '"
+                + assessed.assessmentId().value() + "'";
+        try (Connection owner = DatabaseRoles.migrator()) {
+            owner.setAutoCommit(false);
+            assertThatThrownBy(() -> {
+                        try (Statement insert = owner.createStatement()) {
+                            insert.execute(copy.formatted("TIMEOUT"));
+                        }
+                    })
+                    .isInstanceOf(SQLException.class)
+                    .satisfies(failure -> {
+                        assertThat(((SQLException) failure).getSQLState()).isEqualTo("23514");
+                        assertThat(failure.getMessage()).contains("risk_assessment_pinned_unless_unpinnable");
+                    });
+            owner.rollback();
+            // The positive control: the same copy with an unpinnable cause passes the CHECK (rolled back - the probe
+            // writes nothing).
+            try (Statement insert = owner.createStatement()) {
+                insert.execute(copy.formatted("PIN_UNREADABLE"));
+            }
             owner.rollback();
         }
     }
@@ -346,6 +420,16 @@ class RiskEvaluationDatabaseTest {
                 + " WHERE subject_ref = '" + party + "'")).containsExactly("FRAUD/OPEN/" + reviewed.assessmentId().value());
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'risk.CaseOpened'"
                 + " AND actor_id = '" + customer.id() + "'")).isEqualTo(1);
+        // The exit review's walk (P13-DOC-001; the gate's "Decision explainability": "a REVIEW case ... walked by id from
+        // the operation's outcome to its assessment to its hits"): the case names its opening assessment; that assessment
+        // is the eleventh command's, REVIEW, with the rule that fired among its hits and the reason it gives.
+        String opening = "(SELECT opening_assessment_id FROM risk.risk_case WHERE subject_ref = '" + party + "')";
+        assertThat(column("SELECT operation || '/' || command_ref || '/' || decision FROM risk.risk_assessment WHERE id"
+                + " = " + opening)).containsExactly("TRANSFER/" + eleventh.commandRef().value() + "/REVIEW");
+        assertThat(column("SELECT kind || ':' || outcome FROM risk.risk_rule_hit WHERE assessment_id = " + opening
+                + " AND outcome = 'FIRED' ORDER BY ordinal")).as("the hits that decided it").isNotEmpty();
+        assertThat(column("SELECT code FROM risk.risk_reason WHERE assessment_id = " + opening + " ORDER BY position"))
+                .as("its ordered reasons").isNotEmpty();
     }
 
     @SuppressWarnings("try") // The Scope is used for its close side effect (the established idiom).
@@ -478,6 +562,26 @@ class RiskEvaluationDatabaseTest {
                 .as(sql)
                 .isInstanceOf(SQLException.class)
                 .satisfies(failure -> assertThat(((SQLException) failure).getSQLState()).as(sql).isEqualTo(sqlState));
+    }
+
+    /** Until {@code waiters} statements naming {@code table} and {@code marker} wait on a lock (bounded: 30 s). */
+    private static void awaitWaiters(int waiters, String table, String marker) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        // Observed as the application role, the waiters' own: pg_stat_activity shows another role's query text only to
+        // a member of pg_read_all_stats.
+        try (Connection observer = DatabaseRoles.application(); Statement statement = observer.createStatement()) {
+            while (System.nanoTime() < deadline) {
+                try (ResultSet row = statement.executeQuery("SELECT count(*) FROM pg_stat_activity WHERE"
+                        + " wait_event_type = 'Lock' AND query LIKE '%" + table + "%' AND query LIKE '%" + marker + "%'")) {
+                    row.next();
+                    if (row.getLong(1) >= waiters) {
+                        return;
+                    }
+                }
+                Thread.sleep(20);
+            }
+        }
+        throw new AssertionError(waiters + " statements never waited on " + table + " " + marker);
     }
 
     private static <T> List<T> race(int racers, Callable<T> work) throws Exception {

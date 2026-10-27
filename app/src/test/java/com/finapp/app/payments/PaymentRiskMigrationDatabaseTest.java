@@ -108,6 +108,25 @@ class PaymentRiskMigrationDatabaseTest {
             // A timestamptz difference renders "3 days", so the window is read in seconds (P13-TST-001's first run of this owed suite).
             assertThat(text(app, "SELECT extract(epoch FROM held_until - held_at)::bigint::text FROM"
                     + " payments.payment_capture_hold WHERE intent_id = ?", attempt.intentId().value())).isEqualTo("259200");
+            // The born-once arbiter alone (P13-DOC-001, the review's A8-2): every trigger and foreign key suspended, a
+            // copy of the hold under a fresh intent is refused by payment_capture_hold_one_per_attempt by name - one
+            // hold per attempt whatever the domain or the triggers above it would have said. Rolled back.
+            try (Connection bootstrap = DatabaseRoles.bootstrap()) {
+                bootstrap.setAutoCommit(false);
+                try (java.sql.Statement suspend = bootstrap.createStatement()) {
+                    suspend.execute("SET LOCAL session_replication_role = replica");
+                }
+                try (PreparedStatement copy = bootstrap.prepareStatement("INSERT INTO payments.payment_capture_hold"
+                        + " (intent_id, attempt_id, held_at, held_until) SELECT gen_random_uuid(), attempt_id, held_at,"
+                        + " held_until FROM payments.payment_capture_hold WHERE intent_id = ?")) {
+                    copy.setObject(1, attempt.intentId().value());
+                    assertThatThrownBy(copy::executeUpdate).isInstanceOf(SQLException.class)
+                            .hasMessageContaining("payment_capture_hold_one_per_attempt")
+                            .satisfies(failure -> assertThat(((SQLException) failure).getSQLState()).isEqualTo("23505"));
+                } finally {
+                    bootstrap.rollback();
+                }
+            }
             assertThat(holds.resolveVoid(app, attempt.intentId(), "risk.action:v1")).isTrue();
             CaptureHold voided = holds.findForIntent(app, attempt.intentId()).orElseThrow();
             assertThat(voided.resolution()).contains(CaptureHold.Resolution.VOID);

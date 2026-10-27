@@ -1489,15 +1489,18 @@ opens with the marker is not a catalogue row: `ErrorCodeRegistryTest` catalogues
 backticked `module.Code`. The
 twelve are `PHASE_13_PLAN.md` §9's; the statuses are the plan's where it names one (`403 risk.SelfApprovalRefused`,
 `409 risk.CaseRevisionStale`, `422 risk.PolicyInvalid`) and this register's standing readings for the rest (bnpl's and
-credit's shapes), for `-001` to confirm. Every detail is stranger-safe: never a score, a rule, a reason text, a threshold or
-an amount - and, the tipping-off rule (`INV-RSK-08`), never a word that lets a customer or merchant surface learn that an
-alert, a case or a report exists.
+credit's shapes), for `-001` to confirm. *(P13-DOC-001, 2026-10-27, as built: `RiskErrorCode` declares **twenty** codes -
+the three above and seventeen the doors brought, the plan's and those its tasks added (each row's note names the task)
+- every one catalogued below without a marker, each row's status equal to the code's (`ErrorCodeRegistryTest`).
+This paragraph read "the nine others" and "the twelve" as the whole until then.)* Every detail is stranger-safe: never a score, a rule, a reason
+text, a threshold or an amount - and, the tipping-off rule (`INV-RSK-08`), never a word that lets a customer or merchant
+surface learn that an alert, a case or a report exists.
 
 | Code | Status | Meaning |
 |---|---|---|
 | `risk.NotFound` | 404 | No risk record matches the requested identifier - another party's, an unknown or a malformed id alike. |
 | `risk.SelfApprovalRefused` | 403 | A proposal is decided by someone other than its proposer; the proposer may reject it. *(The `credit`/`lending`/`bnpl` precedent — a forbidden act, not a conflict; the plan's §9 corrected to `403` by the transition, 2026-10-22.)* |
-| `risk.SelfDealingRefused` | 403 | An employee never reads or works a case, approves an override or files a report on their own party's subject; nothing was done. *(Raised by `P13-TSK-007`'s profile read and `P13-TSK-004`'s assessment read and replay, an employee placed in no party refused alike.)* |
+| `risk.SelfDealingRefused` | 403 | An employee never reads or works a case, approves an override or files a report on their own party's subject; nothing was done. *(Raised by `P13-TSK-007`'s profile read and `P13-TSK-004`'s assessment read and replay, an employee placed in no party refused alike.)* *(P13-DOC-001, 2026-10-27: and by every later door that judges the reader's party - the override, alert, case, action, suppression, regulatory report and operations report doors and the day's replay; the acts are listed on `AUDITABLE_ACTIONS.md`'s `risk.SelfDealingRefused` row.)* |
 | `risk.PolicyNotActive` | 409 | No risk policy version is active for the operation, or the version named is not the active one. |
 | `risk.PolicyStale` | 409 | The risk policy version is no longer awaiting a decision, or is superseded by a later activation (`P13-TSK-002`). *(Also the screening list doors, `P13-TSK-022` - the entry's code: a second activation of one list version, by anyone, or a list version recorded before the one in force.)* |
 | `risk.PolicyInvalid` | 422 | The policy version is not complete, a rule parameter is outside its kind's schema, or a band maps to a decision the operation does not admit; nothing was proposed. |
@@ -1513,7 +1516,7 @@ alert, a case or a report exists.
 | `risk.OverrideStale` | 409 | The override is no longer awaiting a decision - approved or rejected by somebody else, or differently; the same person's retry converges. *(`P13-TSK-012`, the override's approval and rejection doors - `risk.PolicyStale`'s shape.)* |
 | `risk.ReportNotFileable` | 409 | The regulatory report cannot take this act now: its case is not an AML case disposed `CONFIRMED_SUSPICIOUS`, the case already has a live or accepted report, or the report is not awaiting this act. *(Declared by `P13-TSK-021`, 2026-10-25, the register's planned status kept - the entry's "422" for the draft read as the register's `409`, a state conflict, `-015`'s precedent (`DESIGN-021` D10): raised by `POST /v1/operator/risk/cases/{caseId}/reports` (a case open, closed otherwise, of another kind, or with a `DRAFT`, `APPROVED`, `FILED` or `ACKNOWLEDGED` report - only a `REJECTED` filing frees it), `…/reports/{reportId}/approval` (no longer a `DRAFT`; the same approver's retry converges) and `…/filing` (not `APPROVED`; the same filer's retry converges).)* |
 | `risk.ReportRequestInvalid` | 422 | The regulatory report is not drafted as asked: a jurisdiction no filing adapter declares, too many attachments, or a reference that is no identifier; nothing was drafted. *(Added by `P13-TSK-021`, 2026-10-25, `DESIGN-021` D10 - the entry named no code for a draft the doors cannot take as asked; `risk.CaseRequestInvalid` is a case act's. Raised by `POST /v1/operator/risk/cases/{caseId}/reports`.)* |
-| `risk.ReasonRequired` | 422 | A reason is required - 1 to 1000 characters, holding no card-number or bank-account shape. *(One code, the wave's: raised by `P13-TSK-002`'s policy doors and `P13-TSK-019`'s reprocessing door; `P13-TSK-004`'s assessment replay door raises it too.)* |
+| `risk.ReasonRequired` | 422 | A reason is required - 1 to 1000 characters, holding no card-number or bank-account shape. *(One code, the wave's: raised by `P13-TSK-002`'s policy doors and `P13-TSK-019`'s reprocessing door; `P13-TSK-004`'s assessment replay door raises it too.)* *(P13-DOC-001, 2026-10-27: and every later door that takes a person's reason - the override, suppression, case, disposition, action, regulatory report and screening list doors.)* |
 | `risk.ReprocessingNotBehind` | 422 | A reprocessing restarts at or before the monitoring watermark's sequence; a point ahead of it would skip entries. Nothing was changed. *(`P13-TSK-019`, `POST /v1/operator/risk/monitoring/reprocessing`.)* |
 
 **The consumers' answers are their own, unchanged** (`PHASE_13_PLAN.md` §9, C6): a transfer refused by a seam commits
@@ -1521,7 +1524,8 @@ alert, a case or a report exists.
 reserved by `P4-TSK-010`, produced from `P13-TSK-008`); a cross-border authorisation answers `422 crossborder.RiskRefused`
 / `crossborder.LimitRefused` (reserved by `P9-TSK-016`, produced from `P13-TSK-011`); a withdrawal gains
 `WithdrawalFailureReason.RISK_REFUSED` and the status word `HELD` (payments `V033`, `P13-TSK-009`) and a payment intent
-`PaymentFailureReason.RISK_REFUSED` (payments `V034`, `P13-TSK-010`) - committed domain outcomes in payments' own
+`PaymentFailureReason.RISK_REFUSED` (payments `V034`, `P13-TSK-010`; the customer's and the merchant's answers carry
+the generic `FAILED`, no reason, and a held card payment reads `PROCESSING`) - committed domain outcomes in payments' own
 contracts, never error codes; an unsatisfied `CHALLENGE` at a door is `403 identity.AssuranceRequired` before any row
 exists (T-advise), the committed refusal with reason `CHALLENGE_REQUIRED` being the race's answer only. No customer or
 merchant response ever differs by the existence of an alert, a case or a report.

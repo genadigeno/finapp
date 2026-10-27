@@ -94,8 +94,16 @@ import org.springframework.boot.test.context.SpringBootTest;
  * container is judged by these versions.
  *
  * <p>Written and owed under C5 (the standing criterion-7 deviation): the database tier is not run per task.
+ *
+ * <p><strong>Its own container</strong> ({@code own-container}, P13-DOC-001's database pass): to prove each census
+ * names what it must, it COMMITS what no real path writes - a monitored transaction naming no journal entry (a phantom),
+ * an assessment of a command that never existed, a window counted once more than its evidence - and none of them can be
+ * removed (append-only by trigger). In a shared container every whole-database census another suite asserts would then
+ * hold this suite's plants: the pass's re-run found {@code MonitoringIntakeDatabaseTest}'s journal census failing on
+ * exactly this suite's phantom.
  */
 @Tag("database")
+@Tag("own-container")
 @SpringBootTest
 @DisplayName("the risk proofs over real rows: one snapshot, a difference named and never corrected, each seal under its"
         + " own version (P13-TSK-023)")
@@ -150,8 +158,11 @@ class RiskProofsDatabaseTest {
     void theVelocityProofNamesADifferenceAndCorrectsNothing() throws Exception {
         UUID party = IDS.next();
         seal(party, 120_00);
-        // A window counted within the skew of the evidence's completion is pending, not judged: let the skew pass.
-        Thread.sleep(VelocityProof.SKEW.plusSeconds(1).toMillis());
+        // A window counted within the skew of the evidence's completion is pending, not judged: let the skew pass ON THE
+        // DATABASE'S CLOCK (P13-DOC-001's database pass: a fixed sleep assumed the database's clock keeps the JVM's pace,
+        // and this machine's Docker clock advanced 3.9 s across a 6 s sleep - the window stayed pending and the proof,
+        // judging nothing of it, named nothing).
+        DatabaseClock.awaitPast(lastCountedAt(party).plus(VelocityProof.SKEW).plusMillis(100));
         assertThat(divergencesOf(party)).as("sealed and counted together - nothing to name").isEmpty();
 
         try (Connection application = DatabaseRoles.application()) {
@@ -165,8 +176,8 @@ class RiskProofsDatabaseTest {
             application.commit();
         }
         // The injection is itself a count: V005's trigger stamps last_counted_at with the database clock, so the window is
-        // pending again until the skew passes (P13-TST-001's first run of this owed suite).
-        Thread.sleep(VelocityProof.SKEW.plusSeconds(1).toMillis());
+        // pending again until the skew passes (P13-TST-001's first run of this owed suite) - on that clock.
+        DatabaseClock.awaitPast(lastCountedAt(party).plus(VelocityProof.SKEW).plusMillis(100));
         long[] injected = figures(party);
 
         List<VelocityProof.Divergence> named = divergencesOf(party);
@@ -427,6 +438,19 @@ class RiskProofsDatabaseTest {
             try (ResultSet row = select.executeQuery()) {
                 assertThat(row.next()).isTrue();
                 return new long[] {row.getLong(1), row.getLong(2)};
+            }
+        }
+    }
+
+    /** The latest {@code last_counted_at} of {@code party}'s windows - the database's stamp, read back. */
+    private static java.time.Instant lastCountedAt(UUID party) throws Exception {
+        try (Connection application = DatabaseRoles.application(); PreparedStatement select = application
+                .prepareStatement("SELECT max(last_counted_at) FROM risk.velocity_window WHERE dimension = 'PARTY'"
+                        + " AND subject_ref = ?")) {
+            select.setString(1, party.toString());
+            try (ResultSet row = select.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getObject(1, java.time.OffsetDateTime.class).toInstant();
             }
         }
     }

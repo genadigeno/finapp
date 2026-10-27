@@ -292,6 +292,15 @@ class RiskMigrationTest {
                     .isThrownBy(() -> plant.execute("TRUNCATE " + SCHEMA + ".risk_signal CASCADE"))
                     .withMessageContaining("never");
             migrator.rollback();
+            // With CASCADE either table's trigger may be the one that refuses, so the signal's OWN truncate trigger is
+            // pinned present and enabled (P13-DOC-001, the review's A8-7 on the repair that added the CASCADE).
+            try (ResultSet own = plant.executeQuery("SELECT count(*) FROM pg_trigger WHERE tgrelid = '" + SCHEMA
+                    + ".risk_signal'::regclass AND tgname = 'risk_signal_is_never_truncated' AND tgenabled <> 'D'"
+                    + " AND (tgtype & 32) <> 0")) {
+                own.next();
+                assertThat(own.getLong(1)).as("risk.risk_signal's own BEFORE TRUNCATE trigger").isEqualTo(1);
+            }
+            migrator.rollback();
         } finally {
             migrator.setAutoCommit(true);
         }

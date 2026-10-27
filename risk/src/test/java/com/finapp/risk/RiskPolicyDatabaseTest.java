@@ -225,10 +225,10 @@ class RiskPolicyDatabaseTest {
         String selfActivation = "UPDATE risk.risk_policy_version SET status = 'ACTIVE', decided_by = proposed_by,"
                 + " decided_by_type = 'EMPLOYEE', decision_reason = 'raw' WHERE id = '" + proposed.id().value() + "'";
         try (Connection owner = DatabaseRoles.migrator()) {
-            refused(owner, selfActivation, "23514");
+            refusedBy(owner, selfActivation, "23514", "risk_policy_version_four_eyes");
         }
         try (Connection application = DatabaseRoles.application()) {
-            refused(application, selfActivation, "23514");
+            refusedBy(application, selfActivation, "23514", "risk_policy_version_four_eyes");
         }
         assertThat(status(proposed.id())).isEqualTo("PROPOSED");
         inOneTransaction(uow -> ADMINISTRATION.reject(uow, proposed.id(), proposer, "withdrawn", correlation()));
@@ -354,6 +354,21 @@ class RiskPolicyDatabaseTest {
             row.next();
             return row.getString(1);
         }
+    }
+
+    /** Refused with {@code sqlState} by {@code constraint} by name - not by another rank raising the same state. */
+    private static void refusedBy(Connection connection, String sql, String sqlState, String constraint) {
+        assertThatThrownBy(() -> {
+                    try (Statement statement = connection.createStatement()) {
+                        statement.execute(sql);
+                    }
+                })
+                .as(sql)
+                .isInstanceOf(SQLException.class)
+                .satisfies(failure -> {
+                    assertThat(((SQLException) failure).getSQLState()).as(sql).isEqualTo(sqlState);
+                    assertThat(failure.getMessage()).as("refused by %s itself", constraint).contains(constraint);
+                });
     }
 
     private static void refused(Connection connection, String sql, String sqlState) {

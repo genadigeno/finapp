@@ -287,8 +287,11 @@ class WithdrawalHoldDatabaseTest {
                         transactionsDo(uow -> riskActions.conclude(uow, claimed, outcome,
                                 CorrelationId.of(claimed.correlationId())));
                         return outcome;
-                    } catch (RuntimeException inFlight) {
-                        return null; // another flight held the key - nothing recorded, re-driven later
+                    } catch (com.finapp.platform.idempotency.IdempotencyInProgressException inFlight) {
+                        // Another flight held the key - nothing recorded, re-driven later. Only that: a racer failing
+                        // any other way (a deadlock, a storage failure) fails the test (P13-DOC-001, the review's A8-8 -
+                        // this caught every RuntimeException).
+                        return null;
                     }
                 }))
                 .toList());
@@ -333,7 +336,10 @@ class WithdrawalHoldDatabaseTest {
     void theExpiryReleasesTheHoldOnce() throws Exception {
         Customer customer = fixtures.funded(1_000_00);
         UUID held = held(customer, 25_00, Duration.ofMillis(200));
-        Thread.sleep(400);
+        // Due on the DATABASE clock (P13-DOC-001's database pass): held_at is never earlier than the instance's
+        // created_at (X-TSK-013's birth permit), so an instance ahead of the database - this machine's Docker clock ran
+        // ~1.5 s behind the JVM - holds the row past a fixed sleep. Wait for the expiry leg's own predicate instead.
+        awaitDue(held);
         race(java.util.stream.IntStream.range(0, 10)
                 .<Callable<WithdrawalResolution.ExpiryResult>>mapToObj(i -> () -> asPlatform(resolution::expireHolds))
                 .toList());
@@ -427,6 +433,29 @@ class WithdrawalHoldDatabaseTest {
 
     private static Actor operator() {
         return new Actor("employee-" + UUID.randomUUID(), ActorType.EMPLOYEE);
+    }
+
+    /** Until the expiry leg's own predicate holds for {@code held} on the database's clock (bounded: 30 s). */
+    private static void awaitDue(UUID held) throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (System.nanoTime() < deadline) {
+            boolean due = transactionsDo(connection -> {
+                try (java.sql.PreparedStatement select = connection.prepareStatement(
+                        "SELECT held_until <= statement_timestamp() FROM payments.withdrawal WHERE id = ?")) {
+                    select.setObject(1, held);
+                    try (java.sql.ResultSet row = select.executeQuery()) {
+                        return row.next() && row.getBoolean(1);
+                    }
+                } catch (java.sql.SQLException failure) {
+                    throw new IllegalStateException(failure);
+                }
+            });
+            if (due) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        throw new AssertionError("withdrawal " + held + " never came due on the database's clock");
     }
 
     /** {@code work} in one committed transaction on the application role's connection. */

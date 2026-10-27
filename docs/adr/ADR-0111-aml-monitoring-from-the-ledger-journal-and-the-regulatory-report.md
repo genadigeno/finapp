@@ -1,6 +1,6 @@
 # ADR-0111 — AML transaction monitoring from the ledger journal, and the regulatory report as an artefact distinct from the investigation, behind a filing port
 
-Status: Proposed
+Status: Accepted (2026-10-27, `P13-DOC-001` — read against the code and corrected first)
 Date: 2026-10-22
 Phase: 13
 Context: Risk (AML / Transaction Monitoring) · Ledger · KYC · Identity · Audit · Reconciliation
@@ -35,12 +35,23 @@ answer. Rests on `PHASE_13_PLAN.md` §1.1, §2.1, §2.2 (C4), §3.1, §4, §5, �
    over the ledger's journal entry store ordered by its sequence, read from a per-source **watermark** row. Each entry
    becomes one **monitored transaction**, born once by `UNIQUE (journal_entry_id)` (`risk V004`, `P13-TSK-019`), with
    the kind, subject references, counterparties, amount, currency and value date its posting-key namespace yields.
+   *(P13-DOC-001, 2026-10-27: **the journal has no sequence.** As built (`P13-TSK-019`) the port walks the journal by
+   its primary key - a UUIDv7 minted by the posting instance, whose first 48 bits are the minting millisecond
+   (ADR-0013) - after the watermark's position and only behind a **settle horizon** on the database clock
+   (`JournalEntryStore.entriesAfter`; `finapp.risk.monitoring.horizon`, 60 s), because an entry's commit can land after
+   a later-minted entry's. Completeness is therefore bounded by the horizon: a posting that commits later than the
+   horizon after its id was minted is skipped until an operator orders reprocessing - the monitoring census names it
+   (decision 4's note) - for the owner's ratification (`PHASE_13_PLAN.md` §1.2 item 92).)*
 
 2. **Classification is by posting-key namespace, through a closed register.** `transfer:`, `payments.`,
    `merchant-payout:`, `crossborder.`, `lending.`, `bnpl.`, … each map to a kind and to the rule that names the
    subject and the counterparties. An entry whose namespace the register does not know is recorded as
    `UNCLASSIFIED` **and alerted** — nothing passes unseen — and `finapp.risk.monitoring.unclassified` gauges it. A new
    posting-key namespace anywhere in the platform therefore surfaces as an alert, not as a blind spot.
+   *(P13-DOC-001, 2026-10-27: "alerted" is the Prometheus rule `RiskMonitoringUnclassified` over the gauge
+   (`infra/prometheus/rules/risk.yml`) - no alert row: `AlertKind.UNCLASSIFIED_TRANSACTION` is admitted by `risk V010`
+   and never raised (`PHASE_13_PLAN.md` §1.2 items 20, 93). A row born `UNCLASSIFIED` stays so after the register
+   learns its namespace (item 33).)*
 
 3. **T-mon is leaderless, per claim, in its own transactions.** `RiskMonitoringSchedule` claims the watermark row
    `FOR UPDATE SKIP LOCKED` (R7) by its `next_sweep_at` permit, reads the entries since it through the port, inserts
@@ -67,6 +78,12 @@ answer. Rests on `PHASE_13_PLAN.md` §1.1, §2.1, §2.2 (C4), §3.1, §4, §5, �
    proving the monitoring record never diverges from the journal (monitored transactions = classified journal
    entries since the first watermark, by count and sum per namespace), and **`VelocityProof`** recomputing every live
    velocity window from the monitored transactions (`INV-RSK-03`) — a difference is an alert, never self-corrected.
+   *(P13-DOC-001, 2026-10-27, both proofs as built (`P13-TSK-023`): `MonitoringCensus` compares, one UTC day at a time
+   behind the watermark, the journal's entry ids with the monitored rows' `journal_entry_id`s **as sets** - never by
+   count and sum per namespace, and never amounts (`PHASE_13_PLAN.md` §1.2 item 82). `VelocityProof` judges every live
+   window against the counted assessments, and against the monitored journal only for windows whose every counted
+   movement is a transfer (items 57, 58). "An alert" is a Prometheus rule over each proof's gauge - `RiskCensusDiverged`,
+   `VelocityDiverged` - never an alert row (`AlertKind.VELOCITY_DIVERGENCE` is never raised, item 93).)*
 
 5. **The regulatory report is its own aggregate** (`risk V011`, `P13-TSK-021`), distinct from the case in
    lifecycle, permissions and retention. It is drafted from a disposed `CONFIRMED_SUSPICIOUS` case by an
@@ -87,6 +104,10 @@ answer. Rests on `PHASE_13_PLAN.md` §1.1, §2.1, §2.2 (C4), §3.1, §4, §5, �
    beside a filed or acknowledged report is a second filing; the content frozen **from birth** for every writer and in no
    `UPDATE` grant; a read door `GET …/reports/{reportId}` (`AML_REPORT_APPROVE`, audited `risk.RegulatoryReportRead`)
    added so the second person reads what they approve; persons `CUSTOMER` or `EMPLOYEE`.)*
+   *(P13-DOC-001, 2026-10-27: two as-built readings for the owner - the act answers (draft, approval, filing) return the
+   full report, narrative included, unaudited as a read, and the analyst desk's cases report counts filings
+   (`PHASE_13_PLAN.md` §1.2 item 88); the filer may be the drafter or the approver - four eyes on the approval only
+   (item 48). The `-021` readings above await ratification as items 41-47.)*
 
 6. **Filing goes through `RegulatoryFilingProvider`, a port whose Phase 13 implementation is a simulated FIU
    endpoint** (the `ScreeningAdapter` precedent). T-rep commits `FILED` with the provider's reference pending
@@ -131,6 +152,19 @@ answer. Rests on `PHASE_13_PLAN.md` §1.1, §2.1, §2.2 (C4), §3.1, §4, §5, �
    through kyc's existing ports (`CounterpartyScreenings` for counterparties; the case-bound screening for parties),
    records the clearance as a signal and raises an alert on a hit. `risk` asks, kyc screens (OQ-8); `risk` never
    calls a list provider.
+   *(P13-DOC-001, 2026-10-27, as built by `P13-TSK-022` (2026-10-26): **`risk V018`**, not `V012`; the list version
+   recorded by one `RISK_POLICY_ADMINISTER` holder and **activated by a second** from a `MULTI_FACTOR` session (T-list,
+   advisory namespace 13 on `screening_list:<list>`; `UNIQUE (list, version)`); the activation writes one row and the
+   permits - one per (party, version), for every party whose customer relationship is `ACTIVE` or `PENDING`
+   (`ActiveParties`) - are born by the leg in bounded batches. The leg runs on **`RiskActionSchedule`**, not the
+   monitoring sweep, and asks through **kyc's new re-screening door** (kyc `V011`, `VerificationRunService.rescreen`,
+   under the permit's key; the owner's decision O1, also recorded as an amendment to ADR-0035) - not kyc's existing
+   ports; `CounterpartyScreenings` is not used and **counterparties are not rescreened** (O3, `PHASE_13_PLAN.md` §1.2
+   item 51). A decided answer records a `SCREENING_CLEARED` or `SCREENING_HIT` signal born of the permit, and a hit
+   raises the policy-free **fact** alert `SCREENING_HIT` (`CRITICAL`, one per (party, list version)) folded into the
+   party's `AML` case - whatever policy is in force. `RESCREEN_PARTY` on demand from a case is not built (O2, items 50,
+   93); the door's semantics and the four eyes on activation await ratification (item 49), the rest of the leg's
+   readings items 52-56.)*
 
 9. **Tipping-off, applied to monitoring** (`INV-RSK-08`). No AML alert, case, report or evidence reaches a customer
    or merchant surface, a log, an event payload or a metric tag; `AlertRaised` carries an alert id, kind, severity and
@@ -148,6 +182,15 @@ answer. Rests on `PHASE_13_PLAN.md` §1.1, §2.1, §2.2 (C4), §3.1, §4, §5, �
     Every window boundary, deadline and value-date judgement is the database clock's, read after the lock.
     `finapp.risk.monitoring.lag` (journal head − watermark) is the gauge that says the sweep is behind, never a
     per-instance timer.
+    *(P13-DOC-001, 2026-10-27: "a money transaction never takes a watermark, profile head, alert or case row" is
+    **false as built** for the last two: T-eval births its alerts at (R3)'s position and folds them - the subject's case
+    `FOR UPDATE` (R4), the alert's attach (R5) - and opens or folds a `REVIEW`/`HOLD` case at (R4), all inside the
+    caller's money transaction (ADR-0108 decision 6's note); it never takes the watermark (R7) or the profile head (R8)
+    - the profile read is a plain `SELECT`. The sweep holds no money row, so no cycle closes, but its per-party leg
+    holds the party's case row (R8 → R4 → R5) and a T-eval opening that party's case waits on it, untimed - contention
+    beyond the velocity rows, unmeasured: the storm is postponed (`POSTPONED_ISSUES.md` PI-004; `PHASE_13_PLAN.md`
+    §1.2 items 76, 95). The named tests exist and ran green in the owner-authorised database pass (2026-10-27, after
+    test-only repairs).)*
 
 ## Alternatives Considered
 
@@ -224,11 +267,15 @@ ADR-0107, ADR-0109, ADR-0110.
   rules and AML alerts; `P13-TSK-021` — the AML case and the regulatory report (`risk V011`); `P13-TSK-022` —
   rescreening (`risk V012`, cuttable); `P13-TSK-023` — the census, `VelocityProof` and the explanation door.
 - `P13-TST-001` runs scenarios 2, 8 and 12 with counts and measures the sweep beside T-eval (M3's trigger).
+  *(P13-DOC-001, 2026-10-27: postponed by the owner until after the project's phases (PI-004) - nothing measured; the
+  rescreening is `risk V018`, built (decision 8's note).)*
 - When a reporting jurisdiction is chosen: verify point 7 against the official text, write the adapter, and record
   every added field as adapter data in a dated amendment here; `DECISIONS.md` §Deferred "Jurisdiction-specific
   compliance" stays open until then.
 - `RISK_LIFECYCLES.md` §Regulatory report and §Monitored transaction are the machines' record; the classification
   register is `P13-TSK-019`'s and is corrected here as built.
 - *(As built, `P13-TSK-023`, 2026-10-26 - decision 1's census.)* `MonitoringCensus` proves monitored = journal by sequence one UTC day at a time: the journal's entry ids of the day through `MonitoredLedger.entryIds` (`app`, the journal's primary key) against the monitored rows' `journal_entry_id`s, as sets - a lost entry and a phantom row never cancel out - bounded by the watermark (pending behind it, ahead of a reprocessing). Decision 6's filing has its census too: `FILED` reports over `regulatory_report_due`, a report whose permit came more than one inquiry interval ago overdue. Both name a difference; nothing is corrected.
-- **Acceptance.** `Proposed` at the Phase 12 → 13 transition (2026-10-22); the Phase 13 review (`P13-DOC-001`) reads
-  this ADR against the code, corrects it in place with dated notes, and accepts it.
+  *(P13-DOC-001, 2026-10-27: "by sequence" reads "by id" - the journal has no sequence; decision 1's note.)*
+- **Acceptance.** **As built** (`P13-DOC-001`, 2026-10-27): `Proposed` at the Phase 12 → 13 transition (2026-10-22);
+  the Phase 13 review read this ADR against the code, corrected it in place above with dated notes, and accepted it.
+  The `-020` readings (decision 3's note) await the owner as `PHASE_13_PLAN.md` §1.2 items 34-40.

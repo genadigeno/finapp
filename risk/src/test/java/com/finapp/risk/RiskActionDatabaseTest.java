@@ -96,16 +96,18 @@ class RiskActionDatabaseTest {
         List<Object> answers = race(10, () -> {
             Actor approver = analyst();
             try {
-                RiskActions.Decided decided = inOneTransaction(uow -> actions.approve(uow,
+                return inOneTransaction(uow -> actions.approve(uow,
                         held.taken().riskCase().id(), proposed.id(), revision, "four eyes", approver, correlation()));
-                drive(proposed.id());
-                return decided;
             } catch (Cases.CaseRevisionStale | Cases.CaseActNotAdmitted refused) {
                 return refused;
             }
         });
         assertThat(answers).filteredOn(RiskActions.Decided.class::isInstance).hasSize(1);
         assertThat(answers).filteredOn(answer -> !(answer instanceof RiskActions.Decided)).hasSize(9);
+        // The dispatch is the schedule's, after the approvals (P13-DOC-001's database pass): driven from inside the race,
+        // the winner's SKIP LOCKED claim could meet a loser still holding the action row FOR UPDATE (lockedOf, before its
+        // refusal rolls back) and claim nothing - the next tick's to take, never a defect, but not this test's subject.
+        assertThat(drive(proposed.id())).as("the approved action's one dispatch").isPresent();
         assertThat(column("SELECT status || ',' || outcome || ',' || attempts FROM risk.risk_action WHERE id = '"
                 + proposed.id().value() + "'")).containsExactly("DONE,DONE,1");
         assertThat(owners.calls()).hasSize(1);

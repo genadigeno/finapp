@@ -1109,11 +1109,17 @@ payable's third bounded negative source recorded in `INV-MER-07`, recovered befo
 servicing on the disputed amount; the merchant answers within fourteen days or the silence is a refund; a refund
 outcome executes the one refund path under the purchase lock. → [ADR-0106](../adr/ADR-0106-bnpl-disputes-and-the-single-refund-bound.md)
 
-### Risk, fraud and AML (Phase 13, `Proposed` at the Phase 12 → 13 transition)
+### Risk, fraud and AML (Phase 13, `Proposed` at the Phase 12 → 13 transition; `Accepted` at the Phase 13 review, `P13-DOC-001`, each read against the code with its corrected passages marked in place)
 Planned by the Phase 12 → 13 transition (2026-10-22) in `PHASE_13_PLAN.md`, with the owner's decisions C1–C10
-recorded as accepted defaults pending ratification; nothing of it is built. The phase's tasks are
-`P13-TSK-001`…`P13-TSK-025`, `P13-TST-001`, `P13-TST-002` and `P13-DOC-001`, whose review reads each ADR against the
-code. The invariants are `INV-RSK-01`…`-10` (ten new; the catalogue 152 → 162). The phase's ADRs are
+recorded as accepted defaults pending ratification; built by `P13-TSK-001`…`P13-TSK-025` and `P13-TST-002`, and read
+against the code and accepted by the Phase 13 review (`P13-DOC-001`, 2026-10-27), which corrected every drifted
+passage in place with a dated note before accepting any, the `P12-DOC-001` precedent. `P13-TST-001`, the risk storm,
+is postponed by the owner until after the project's phases (`POSTPONED_ISSUES.md` PI-004) - no latency figure and no
+storm count exist; the evidence is each task's hermetic proofs and database suites (first run in the owner-authorised
+database pass, 2026-10-27, green after test-only repairs), the production censuses and proofs and the independent
+reviews. The as-built choices awaiting the owner are `PHASE_13_PLAN.md` §1.2's numbered items. *(This paragraph read
+"nothing of it is built. The phase's tasks are `P13-TSK-001`…`P13-TSK-025`, `P13-TST-001`, `P13-TST-002` and
+`P13-DOC-001`, whose review reads each ADR against the code" until that review.)* The invariants are `INV-RSK-01`…`-10` (ten new; the catalogue 152 → 162). The phase's ADRs are
 ADR-0107…ADR-0112; **the next free number is ADR-0113.** Phase 13 moves no money; production evaluates nothing until a
 risk policy version is activated under four eyes (every seam answers `ALLOW` with `NO_POLICY_ACTIVE`, recorded).
 
@@ -1122,19 +1128,26 @@ a port.** Schema `risk`, edges to `platform` and `sharedkernel` only — no ledg
 consumers' seams (`TransferLimitCheck`, `CrossBorderRiskDecision`, `CreditRiskSignal`, payments' new
 `WithdrawalRiskDecision` and `PaymentRiskDecision`) are implemented in `app` as adapters over one channel-neutral
 evaluation. Fraud decisioning is synchronous and in-lock, AML monitoring a leaderless retrospective sweep, case
-management serves both and decides no money; M3's split triggers are measured by the storm. `risk` never posts, holds
-or writes another module's row. → [ADR-0107](../adr/ADR-0107-the-risk-bounded-context.md)
+management serves both and decides no money; M3's split triggers stand, the latency one unmeasured - T-eval's
+latency metered and alerted, the storm postponed (PI-004; `PHASE_13_PLAN.md` §1.2 item 76) *(P13-DOC-001, 2026-10-27:
+read "M3's split triggers are measured by the storm")*. `risk` never posts, holds or writes another module's row.
+→ [ADR-0107](../adr/ADR-0107-the-risk-bounded-context.md)
 
 **Evaluated in the caller's transaction, last, with a fail-safe that is a recorded decision.** T-eval pins the
 `ACTIVE` policy, reads durable inputs, upserts the velocity windows only when the movement is permitted, and seals one
 assessment per judged command (`UNIQUE (operation, command_ref)`). The vocabulary is `ALLOW`, `CHALLENGE`, `DENY`,
-`HOLD` (withdrawals only — their native hold-then-dispatch shape), `REVIEW`; the seam contract of two values is
-unchanged. "Unavailable" — no active policy, a failing read, a throwing rule, the 250 ms statement timeout behind a
+`HOLD` (withdrawals and, since `P13-TSK-010`'s second slice, card payments — their native hold-then-dispatch and
+authorise-then-capture shapes) *(P13-DOC-001, 2026-10-27: read "withdrawals only")*, `REVIEW`; the seam contract of two
+values is unchanged. "Unavailable" — no active policy, a failing read, a throwing rule, the 250 ms statement timeout behind a
 savepoint — becomes the policy's fail-safe band for the amount (C1: transfers allow below EUR 1,000, withdrawals and
 cross-border deny at every band, checkout allows below EUR 250), always written as an assessment with
-`RISK_UNAVAILABLE` or `NO_POLICY_ACTIVE` and alerted. Budget p99 ≤ 50 ms, measured. An override is a separate four-eyes
-aggregate that records the action it issues and never edits the decision; an `ALLOW` is never overridden. **Answers
-unresolved question #11.** → [ADR-0108](../adr/ADR-0108-synchronous-risk-evaluation-in-the-callers-transaction.md)
+`RISK_UNAVAILABLE` or `NO_POLICY_ACTIVE` and alerted. Budget p99 ≤ 50 ms, metered and alerted, not measured under load
+- the storm postponed (PI-004; item 76) *(P13-DOC-001, 2026-10-27: read "measured")*. An override is a separate
+four-eyes aggregate that records the action it issues and never edits the decision; an `ALLOW` is never overridden.
+**Answers unresolved question #11.** *(P13-DOC-001, 2026-10-27, as built and awaiting the owner: a failing pin read
+answers the compiled `ALLOW` for every operation (item 75); T-eval also takes the case row (R4) and alert rows (R5)
+inside the money transaction, the `REVIEW`/`HOLD` case opening untimed (item 95); a policy-flagged `DENY` opens no case
+(item 94).)* → [ADR-0108](../adr/ADR-0108-synchronous-risk-evaluation-in-the-callers-transaction.md)
 
 **Policy is versioned data; rule kinds are code.** A per-operation version holds rules of a closed `RuleKind` with
 typed parameters, weights and hard decisions, score bands, fail-safe bands, the challenge assurance and the override
@@ -1142,29 +1155,46 @@ threshold; `PROPOSED → ACTIVE` by a second person, `ACTIVE → RETIRED` beside
 `ACTIVE` per operation, immutable once decided. `RISK_ENGINE_V1` is pure and deterministic — every rule evaluated,
 precedence resolves — and every assessment replays `IDENTICAL` in two JVMs. The pin reads `FOR SHARE` and, on an
 empty read, takes advisory namespace 13's shared lock and reads again, so no evaluation answers "neither" during an
-activation. Production activates none. → [ADR-0109](../adr/ADR-0109-risk-policy-as-versioned-data.md)
+activation. Production activates none. *(P13-DOC-001, 2026-10-27, as built: a version is in EUR only (items 1, 10),
+names its hold validity where it can decide `HOLD`, and the `MONITORING` version carries rating bands instead of score
+and fail-safe bands; the reads are `RISK_POLICY_ADMINISTER`'s alone, unaudited; the battery (`P13-TST-002`) proved the
+replay in two JVMs over 10,000 generated subjects.)* → [ADR-0109](../adr/ADR-0109-risk-policy-as-versioned-data.md)
 
 **One case model for fraud, ATO, merchant abuse, AML and a collections door.** Alerts are born once per (subject,
 rule, window) and never deleted; a case is open at most once per (subject, kind), never re-opens, and folds every
 alert of its subject; every investigator act is append-only under the case row lock and a `revision`
-compare-and-set (the loser `409 risk.CaseRevisionStale`, nothing lost); every `CONFIRMED_*` disposition and every
-disposition that acts is two persons' act with step-up; self-dealing fails closed; nothing reaches a customer
-surface. Collections is the case only (C3, cut candidate). → [ADR-0110](../adr/ADR-0110-the-case-model.md)
+compare-and-set (the loser `409 risk.CaseRevisionStale`, nothing lost); every `CONFIRMED_*`, `REFERRED` and
+prohibiting disposition is two persons' act with step-up, and no disposition issues an action - a case's risk action is
+proposed and approved on its own row under four eyes *(P13-DOC-001, 2026-10-27: read "every `CONFIRMED_*`
+disposition and every disposition that acts is two persons' act")*; self-dealing fails closed; nothing reaches a
+customer surface. Collections is the case only (C3) - built by `P13-TSK-025`, a default's policy-free fact alert
+opening its party's `COLLECTIONS` case; a rescreening hit's `SCREENING_HIT` is a second fact alert. *(P13-DOC-001,
+2026-10-27: a policy-flagged `DENY` opens no case (item 94); one person may open a case on an open alert and close it
+`CLOSED_*` alone (item 78).)* → [ADR-0110](../adr/ADR-0110-the-case-model.md)
 
 **Monitoring reads the ledger journal, and the report is not the case.** A leaderless sweep claims a watermark
-(`SKIP LOCKED`), reads journal entries through `MonitoredLedger`, classifies each by posting-key namespace into a
-monitored transaction born once (`UNIQUE (journal_entry_id)`), records and alerts anything `UNCLASSIFIED`, runs the
-monitoring rules per subject and recomputes the profile; events are hints that pull the permit forward; reprocessing
-from any watermark creates nothing. The regulatory report is a distinct aggregate — `DRAFT → APPROVED → FILED →
+(`SKIP LOCKED`), reads journal entries through `MonitoredLedger` - by id behind a 60 s settle horizon, the journal
+having no sequence (item 92) -, classifies each by posting-key namespace into a monitored transaction born once
+(`UNIQUE (journal_entry_id)`), records and gauges anything `UNCLASSIFIED`, alerted by a Prometheus rule, never an alert
+row (item 93) *(P13-DOC-001, 2026-10-27: read "records and alerts anything `UNCLASSIFIED`")*, runs the monitoring rules
+per party and recomputes the profile; events are hints that pull the permit forward; reprocessing from any watermark
+creates nothing. The regulatory report is a distinct aggregate — `DRAFT → APPROVED → FILED →
 ACKNOWLEDGED | REJECTED`, four eyes, immutable once filed, a jurisdiction field — filed through a simulated
 `RegulatoryFilingProvider`; the EU research is recorded with its "to be verified" caveats (C4). Rescreening on a list
-update asks kyc through its ports. → [ADR-0111](../adr/ADR-0111-aml-monitoring-from-the-ledger-journal-and-the-regulatory-report.md)
+update asks kyc through its new re-screening door (kyc `V011`, the owner's decision O1), parties only - counterparties
+are not rescreened (O3, item 51) - and a hit raises the policy-free `SCREENING_HIT` fact alert into the party's `AML`
+case *(P13-DOC-001, 2026-10-27: read "asks kyc through its ports")*.
+→ [ADR-0111](../adr/ADR-0111-aml-monitoring-from-the-ledger-journal-and-the-regulatory-report.md)
 
 **Every effect is a keyed command through the owning domain's existing door.** A risk action is `PROPOSED →
-APPROVED` (a second person) `→ DISPATCHED → DONE | FAILED`, dispatched by a leaderless schedule on the owning domain's
-lock order under key `risk.action:<id>`, so a re-drive replays and a domain's refusal is a recorded outcome. The kinds
-are closed — suspend/reinstate identity, revoke sessions (C10's ATO response), suspend/reinstate account, suspend
-merchant, block beneficiary, release/deny a held withdrawal, rescreen a party. Risk never resets a credential, never
+APPROVED` (a second person) `→ DISPATCHED → DONE | FAILED`, driven as the platform by the approval door after its
+commit and re-driven by a leaderless schedule, on the owning domain's lock order under key `risk.action:<id>`, so a
+re-drive replays and a domain's refusal is a recorded outcome (item 26). The kinds are closed — suspend/reinstate
+identity, revoke sessions (C10's ATO response), suspend merchant, release/deny a held withdrawal, capture/void a held
+card payment; suspend/reinstate account and block beneficiary are declared unavailable, no owning command (item 24),
+and rescreen a party is never proposed or dispatched (items 50, 93) *(P13-DOC-001, 2026-10-27: read "dispatched by a
+leaderless schedule" and "suspend/reinstate identity, revoke sessions (C10's ATO response), suspend/reinstate account,
+suspend merchant, block beneficiary, release/deny a held withdrawal, rescreen a party")*. Risk never resets a credential, never
 reverses a transaction and never writes another domain's row; a reversal is the owning domain's four-eyes act a case
 may only recommend. → [ADR-0112](../adr/ADR-0112-downstream-actions-through-the-owning-domains.md)
 
@@ -1260,14 +1290,14 @@ concluded only on `RECALLED`. The batch-rail return-window half stays open.)* |
 | `SHA`/`BEN` charge bearers and correspondent-chain deductions | A corridor whose provider cannot guarantee the delivered amount | `OUR` only: the beneficiary receives the quoted destination amount, so a deduction from principal is an `AMOUNT_MISMATCH` break, never a silent short delivery (O9, ADR-0079) |
 | Merchant multi-currency settlement and cross-currency merchant fees | A merchant multi-currency phase of its own | `merchant.FeeCurrencyMismatch` and `PayoutCurrencyMismatch` stay; the corridor is a customer rail, and the merchant payout stays single-currency on its own provider (ADR-0050 annotated at the Phase 8 → 9 transition; ADR-0079 §9) |
 | Funds owed to a closed customer by a parked corridor return | Phase 15 | There is no `ACTIVE` wallet to credit; the value stays parked with its HIGH break, aged and escalated, beside ADR-0070 §4's residual and the closed merchant's return (ADR-0079) |
-| Cross-border KYC tiers, residence attributes, velocity limits, transaction monitoring and risk scoring | Phase 13 | The `CrossBorderLimitCheck` and `CrossBorderRiskDecision` seams are required parameters from birth with reserved refusal codes; screening validity and static corridor limits are Phase 9's only compliance controls (ADR-0081). *(Planned by the Phase 12 → 13 transition (2026-10-22): velocity limits, risk scoring and the `CROSS_BORDER` seams' implementation are `P13-TSK-011` (ADR-0108, `Proposed`); transaction monitoring of corridor movements is the journal intake and the `CORRIDOR_HIGH_RISK` rule, `P13-TSK-019`/`-020` (ADR-0111). KYC tiers and residence attributes are not in `PHASE_13_PLAN.md` and stay deferred.)* |
+| Cross-border KYC tiers, residence attributes, velocity limits, transaction monitoring and risk scoring | Phase 13 | The `CrossBorderLimitCheck` and `CrossBorderRiskDecision` seams are required parameters from birth with reserved refusal codes; screening validity and static corridor limits are Phase 9's only compliance controls (ADR-0081). *(Planned by the Phase 12 → 13 transition (2026-10-22): velocity limits, risk scoring and the `CROSS_BORDER` seams' implementation are `P13-TSK-011` (ADR-0108, `Proposed`); transaction monitoring of corridor movements is the journal intake and the `CORRIDOR_HIGH_RISK` rule, `P13-TSK-019`/`-020` (ADR-0111). KYC tiers and residence attributes are not in `PHASE_13_PLAN.md` and stay deferred.)* *(As built, recorded by the Phase 13 review, `P13-DOC-001`, 2026-10-27: the `CROSS_BORDER` seams, velocity limits and risk scoring built by `P13-TSK-011` (2026-10-24); corridor movements monitored from the journal by `P13-TSK-019`/`-020`, but `CORRIDOR_HIGH_RISK` reads `ABSENT` in monitoring - the journal carries no corridor (`PHASE_13_PLAN.md` §1.2 item 34); ADR-0108 and ADR-0111 `Accepted`. KYC tiers and residence attributes remain deferred, no phase named.)* |
 | Credit evidence purge and crypto-shredding | Phase 15 | `credit_evidence.retain_until` is stored (recorded-at plus the product's 25 months, the database's clock) and every role is refused `DELETE`; a purge is a privileged, audited deletion with its own definer path. The normalised attributes and the snapshot's canonical text, kept for replay, are the purge's scope question too (ADR-0085 §5, `CURRENT_STATE.md` §Known Architectural Debt) |
 | Real bureau and financial-data connectivity; a party's date of birth and residence | When unresolved questions #13 and #14 are answered (never in Phase 10) | Production composes the fail-safe sources (`bureau-none`, `findata-none`) and refuses any named provider at startup (`CreditSourceOrder`); the party facts answer `ABSENT`, so no Phase 10 production decision judges age or residency (ADR-0084, ADR-0085) |
-| The risk score and fraud rules credit consumes | Phase 13 | `CreditRiskSignal` answers `NOT_ASSESSED` with its seam version, recorded in every snapshot, so Phase 10 decisions replay identically after Phase 13 (ADR-0084 §5). *(Planned by the Phase 12 → 13 transition (2026-10-22): `P13-TSK-007` answers the customer risk profile's rating with seam version 2 and retires `NOT_ASSESSED`; a decision made under version 1 replays unchanged (ADR-0107, ADR-0108, `Proposed`).)* |
+| ~~The risk score and fraud rules credit consumes~~ | ~~Phase 13~~ — **settled 2026-10-23** by `P13-TSK-007` | `CreditRiskSignal` answers `NOT_ASSESSED` with its seam version, recorded in every snapshot, so Phase 10 decisions replay identically after Phase 13 (ADR-0084 §5). *(Planned by the Phase 12 → 13 transition (2026-10-22): `P13-TSK-007` answers the customer risk profile's rating with seam version 2 and retires `NOT_ASSESSED`; a decision made under version 1 replays unchanged (ADR-0107, ADR-0108, `Proposed`).)* Built: `app`'s `RiskCreditRiskSignal`, seam version 2 - the party's customer risk rating code with its profile version, recorded by credit's freezer; a decision under version 1 replays unchanged. It does **not** retire `NOT_ASSESSED`: a party risk has not assessed still answers it, under version 2 (ADR-0107 and ADR-0108 `Accepted`, their dated notes). Struck by the Phase 13 review |
 | ~~Loan application, offer, acceptance, disbursement and the consumption writer~~ | ~~Phase 11~~ — **settled 2026-10-12** by `P11-TSK-001` and `P11-TSK-010`…`-015` | Credit decides and reserves exposure; `credit_decision_consumption` exists empty and the `CreditDecisions` port has no consumer outside credit (ADR-0084 §4, ADR-0088). *(Planned by the Phase 10 → 11 transition (2026-10-10): the consumption writer is credit's own port, `P11-TSK-001` (ADR-0091, `Proposed`); application to disbursement are `P11-TSK-010`…`-015` (ADR-0090, ADR-0097).)* Built: the consumption port by `P11-TSK-001` (credit `V021`), the application, offer, acceptance and disbursement by `P11-TSK-010`…`-015` (lending `V004`…`V009`). Struck by the Phase 11 review |
 | Refinance (a new loan repaying an old one) | The later lending phase the Phase 11 → 12 transition names | Needs a fresh credit decision and a two-account atomic payoff; Phase 11's payoff and consumption port are the parts it would compose (ADR-0090 §10, recorded by the Phase 10 → 11 transition) |
 | Loan write-off, charge-off, provisioning and IFRS 9 staging | Phase 14 | `LOAN_WRITE_OFF_EXPENSE` is seeded and posted by nothing, and posting rule 14 is designed, so the account plan does not change later; a defaulted loan in Phase 11 is a flag, never a loss (ADR-0096, ADR-0098) |
-| Collections case management and operations | Phase 13 opens the case only (C3); the operations: Phase 14 and a later collections context | Lending owns the contractual facts and emits `LoanDelinquencyChanged`, `LoanDefaulted` and `LoanDefaultCleared`; contact strategy, promises to pay and placement are a collections context's, which never writes lending's rows (ADR-0098). *(Planned by the Phase 12 → 13 transition (2026-10-22), owner decision C3: a thin slice only — `P13-TSK-025`, a cut candidate, opens a `COLLECTIONS` case on `LoanDefaulted` / `BnplDefaulted` with investigator actions as facts (ADR-0110, `Proposed`); contact strategy, promises to pay, placement and write-off stay out.)* |
+| Collections case management and operations | Phase 13 opens the case only (C3); the operations: Phase 14 and a later collections context | Lending owns the contractual facts and emits `LoanDelinquencyChanged`, `LoanDefaulted` and `LoanDefaultCleared`; contact strategy, promises to pay and placement are a collections context's, which never writes lending's rows (ADR-0098). *(Planned by the Phase 12 → 13 transition (2026-10-22), owner decision C3: a thin slice only — `P13-TSK-025`, a cut candidate, opens a `COLLECTIONS` case on `LoanDefaulted` / `BnplDefaulted` with investigator actions as facts (ADR-0110, `Proposed`); contact strategy, promises to pay, placement and write-off stay out.)* *(As built, recorded by the Phase 13 review, `P13-DOC-001`, 2026-10-27: built by `P13-TSK-025` (2026-10-26, `risk V017`) - each default's `OBLIGATION_DEFAULTED` fact alert, raised with no policy, opens or folds into its party's `COLLECTIONS` case, disposed `CLOSED_NO_ACTION` or `REFERRED` only; ADR-0110 `Accepted` with decision 9 corrected; the operations stay deferred as this row says.)* |
 | Consumer-credit-law features — statutory APR, withdrawal rights, statutory notices and caps; penalty or default interest, prepayment fees, acceleration | When a real jurisdiction is chosen; never in Phase 11 | The neutral EUR reference jurisdiction (L4, L8); each feature would be a terms field in a new terms schema version and a reviewed engine version, and production activation of any product requires legal review first (ADR-0092, ADR-0098) |
 | ~~Partial prepayment with recalculation~~ | ~~Phase 11 if not cut (`P11-TSK-028`, the phase's first cut candidate); if cut, the deferral is recorded with its owner by the cutting decision~~ — **settled 2026-10-14**: built by `P11-TSK-028` (lending `V024`), not cut | Payoff and the credit line's principal paydown remain; prepayment is an agreement and schedule version n+1, refused while past due (ADR-0099 §6). Struck by the Phase 11 review |
 | Effective-interest amortisation of the origination fee | Phase 14 | The origination fee is recognised upfront in the operational ledger at disbursement (rule 1, A17); spreading it over the loan's life is general-ledger work (ADR-0096 §2; recorded by the Phase 11 review) |

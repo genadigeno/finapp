@@ -248,9 +248,23 @@ reverse of the order they were written. The rules (`X-TSK-013`, `P11-TSK-033`, `
 
 The three rules are the default, and a few suites cannot meet them without losing what they
 prove: a proof that is **absolute** over the whole database (the settlement storm's census, the
-batch repudiations, the resolution battery), or a bank statement chain that must **start at
+batch repudiations, the resolution battery), a bank statement chain that must **start at
 sequence 1** — one chain per currency for the whole database, and two suites need the same first
-USD statement. Through Phase 8 they said "runs in its own container" in their javadoc and were
+USD statement — or an act whose **effect is database-wide**: a suite that activates a risk policy
+version (every movement of the operation in the database is judged by it from then on — a shared
+container's USD transfers refused by the open-ended fail-safe band, its EUR 2,500 withdrawals held)
+or a screening list version (its enqueue enumerates every `ACTIVE` and `PENDING` party in the
+database and asks kyc to rescreen each). *(P13-DOC-001, 2026-10-27: the third reason was added from
+the build's own list — `app`'s `extra["ownContainerSuites"]` names `TransferRiskSeamDatabaseTest`,
+`WithdrawalRiskSeamDatabaseTest`, `PaymentRiskSeamDatabaseTest`, `CrossBorderRiskSeamDatabaseTest`,
+`AccountTakeoverDatabaseTest`, `MerchantAbuseDatabaseTest` and `RiskPolicyEndpointDatabaseTest` for
+it since `P13-TSK-008`…`-014`, and `RescreeningDatabaseTest` joined in `P13-DOC-001`'s database pass:
+a party another suite inserted under a non-UUIDv7 identifier fails the enumeration, ADR-0013. Three more joined
+in the same pass for the first two reasons' kind - a suite whose sweep or census reads the WHOLE database:
+`MonitoringRulesDatabaseTest` (its `MONITORING` activation and its rule leg over the whole journal from the one
+global watermark), `RiskProofsDatabaseTest` (it commits append-only plants every whole-database census then holds)
+and `MultiRailConservationStormDatabaseTest` (its resolvers sweep every stranded authorization in the database).)*
+Through Phase 8 they said "runs in its own container" in their javadoc and were
 run apart by hand; nothing in the build made it true. Run together, the tier went red in an
 order-dependent way (22 failures on one run of unchanged code, 31 on the next, `X-TSK-016`).
 
@@ -362,9 +376,12 @@ that matters — without it the harness could claim a mode no test ever exercise
 - **Nothing checks that a test is in the *lightest* tier that would work.** That is a review
   question, and the cost of getting it wrong is time rather than correctness.
 - **Nothing checks that a test asserts anything**, and nothing can. What is enforced instead is
-  that every Phase 0 invariant has a **recorded demonstration** that its test fails when the
-  invariant is broken — see [`MUTATION_TESTING.md`](MUTATION_TESTING.md), which `P0-TSK-038`
-  established and `MutationDemonstrationTest` holds to the invariant catalogue on every build.
+  that every invariant of every phase reached — every phase `CURRENT_STATE.md` records `COMPLETE` —
+  has a **recorded demonstration** that its test fails when the invariant is broken — see
+  [`MUTATION_TESTING.md`](MUTATION_TESTING.md), which `P0-TSK-038` established and
+  `MutationDemonstrationTest` holds to the invariant catalogue on every build. *(P13-DOC-001,
+  2026-10-27: this read "every Phase 0 invariant" — the guard's first scope, extended to every phase
+  reached long since; the `INV-RSK-*` rows join its demand when Phase 13 is recorded `COMPLETE`.)*
   What that still cannot check is whether a *recorded* procedure would reproduce today; only an
   in-suite proof answers that, which is why the register records which form each one takes.
 

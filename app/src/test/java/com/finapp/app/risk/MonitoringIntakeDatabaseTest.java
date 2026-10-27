@@ -196,6 +196,7 @@ class MonitoringIntakeDatabaseTest {
             + " watermark, and the next claim re-reads from it")
     void aCrashMidClaimLapsesAndResumes() throws Exception {
         UUID entry = postTransfer(777_00);
+        DatabaseClock.awaitPastNow();
         MonitoringIntake intake = intake(50);
         MonitoringWatermark standing;
         try (Connection app = DatabaseRoles.application()) {
@@ -281,6 +282,9 @@ class MonitoringIntakeDatabaseTest {
      * journal other suites filled: two thousand claims of fifty is a hundred thousand entries.
      */
     private int drain(MonitoringIntake intake) {
+        // A zero horizon reads an entry once the DATABASE's clock is past its minting millisecond (the instance's): wait
+        // for that before the first empty read can end the drain (P13-DOC-001's database pass - the JVM ran ahead).
+        DatabaseClock.awaitPastNow();
         int born = 0;
         try (SecurityContext.Scope actor = SecurityContext.enter(SYSTEM)) {
             for (int i = 0; i < 2_000; i++) {

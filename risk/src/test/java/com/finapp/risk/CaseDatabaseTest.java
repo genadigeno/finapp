@@ -197,9 +197,9 @@ class CaseDatabaseTest {
         for (Connection writer : List.of(DatabaseRoles.application(), DatabaseRoles.migrator())) {
             try (writer) {
                 writer.setAutoCommit(false);
-                refused(writer, "UPDATE risk.risk_case SET status = 'DISPOSED', revision = revision + 1,"
+                refusedBy(writer, "UPDATE risk.risk_case SET status = 'DISPOSED', revision = revision + 1,"
                         + " disposition_approved_by = disposition_proposed_by, disposition_approved_by_type = 'EMPLOYEE'"
-                        + " WHERE id = '" + taken.id().value() + "'", CHECK_VIOLATION);
+                        + " WHERE id = '" + taken.id().value() + "'", CHECK_VIOLATION, "risk_case_disposition_four_eyes");
                 writer.rollback();
             }
         }
@@ -500,6 +500,21 @@ class CaseDatabaseTest {
             }
         }
         return values;
+    }
+
+    /** Refused with {@code sqlState} by {@code constraint} by name - not by another rank raising the same state. */
+    private static void refusedBy(Connection connection, String sql, String sqlState, String constraint) {
+        assertThatThrownBy(() -> {
+                    try (Statement statement = connection.createStatement()) {
+                        statement.execute(sql);
+                    }
+                })
+                .as(sql)
+                .isInstanceOf(SQLException.class)
+                .satisfies(failure -> {
+                    assertThat(((SQLException) failure).getSQLState()).as(sql).isEqualTo(sqlState);
+                    assertThat(failure.getMessage()).as("refused by %s itself", constraint).contains(constraint);
+                });
     }
 
     private static void refused(Connection connection, String sql, String sqlState) {

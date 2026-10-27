@@ -47,6 +47,18 @@ producer-earned:**
    capture happen?", and a single `UNKNOWN` would need a second column the machine cannot
    see to answer them.
 
+   *(Phase 13 cross-reference, `P13-DOC-001`, 2026-10-27: risk's judgement of a checkout payment,
+   decided under ADR-0108 and ADR-0112 and built by `P13-TSK-010` as payments `V034`, adds one
+   intent edge and one attempt gate. The intent gains `REQUIRES_CONFIRMATION → FAILED`, admitted
+   only with the intent's own `failure_reason` `RISK_REFUSED`, set with the edge and frozen
+   after: a risk refusal precedes every attempt, so no attempt carries it, and it is terminal -
+   never re-confirmable, unlike routing's refusal (ADR-0060 §3). A card payment risk `HOLD`s is
+   authorised as any other, and its `AUTHORIZED → CAPTURE_DISPATCHED` is refused while its
+   `payment_capture_hold` stands unresolved or resolved other than `CAPTURE` - captured or voided
+   exactly once by payments' keyed doors behind risk's `HeldPaymentActions`, or voided by the
+   expiry leg once `held_until` (the pinned policy's hold validity, stamped by the database) has
+   passed.)*
+
 3. **Refund**: `DISPATCHED → {COMPLETED, FAILED}`, `DISPATCHED → UNKNOWN → {COMPLETED,
    FAILED}` — one operation, so one unknown state suffices. Bounded by the captured amount
    (`INV-PAY-05`), including under concurrent partials, at database rank.

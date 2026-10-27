@@ -1,6 +1,6 @@
 # ADR-0109 — Risk policy as versioned data: rule kinds in code, parameters as data, score and fail-safe bands, four-eyes activation, the deterministic engine and replay
 
-Status: Proposed
+Status: Accepted (2026-10-27, `P13-DOC-001` — read against the code and corrected first)
 Date: 2026-10-22
 Phase: 13
 Context: Risk · Identity · Audit · Platform
@@ -34,6 +34,14 @@ engine, test-only fixtures, production activating none — and the Phase 12 → 
    evaluation is unavailable (C1; ADR-0108); the **challenge assurance** (`MULTI_FACTOR`); the **override threshold**
    (C7); **effective from**; the proposer, the activator and the decision stamps, on the database clock. A band
    mapping to a decision the operation does not admit is refused at the door (`422 risk.PolicyInvalid`).
+   *(P13-DOC-001, 2026-10-27: the field list as built (`RiskPolicy`) has three more. **The currency** - every amount of
+   a version in one currency, and that currency must be EUR (`REFERENCE_CURRENCY`; anything else `PolicyInvalid`), so a
+   non-EUR movement meets the open-ended fail-safe band once a version is active - for the owner before the activation
+   gate (`PHASE_13_PLAN.md` §1.2 items 1, 10). **The hold validity** - named by a withdrawal version always (default
+   72 h, 1 h to 30 days) and by a card version exactly when it can decide `HOLD` (`P13-TSK-009`, `-010`). **Rating
+   bands** - the `MONITORING` operation's version carries rules and rating bands (the party's signal score to a
+   rating) and no score or fail-safe band, challenge assurance, override threshold or hold validity; `CREDIT_SIGNAL`
+   carries no version.)*
 
 2. **Rule kinds are code; their parameters are data.** `RuleKind` v1 is a closed enum: `AMOUNT_BAND`,
    `VELOCITY_COUNT`, `VELOCITY_SUM`, `NEW_PAYEE`, `NEW_DEVICE`, `SESSION_ASSURANCE_BELOW`, `RECENT_AUTH_FAILURES`,
@@ -44,6 +52,13 @@ engine, test-only fixtures, production activating none — and the Phase 12 → 
    the inputs it reads; a parameter outside its schema is `422 risk.PolicyInvalid` at the policy door, so a policy
    that cannot be evaluated is never stored. A new kind is a code change with a new engine version; a new threshold
    is a new policy version. Nothing in a rule is an expression, a script or a reference to code by name.
+   *(P13-DOC-001, 2026-10-27: "a policy that cannot be evaluated is never stored" holds for the schema, not for what
+   the inputs can answer. `RECENT_AUTH_FAILURES` always reads `ABSENT` - identity publishes no identity-keyed failure
+   window (`PlatformRiskInputs`) - and `NEW_DEVICE` too, no device ever reaching a seam; the door admits both, and a
+   dimension a movement never carries (`SOURCE_ACCOUNT` on a card payment), so a version can carry a rule that never
+   fires (`PHASE_13_PLAN.md` §1.2 items 3, 4, 72). A `CORRIDOR_HIGH_RISK` corridor set is bounded in shape, not in
+   size (item 90); the engine checks a judged amount's currency against the version's, not its scale against the
+   bands' (item 89).)*
 
 3. **The engine is deterministic and pure.** `RISK_ENGINE_V1` takes the sealed inputs and the pinned version and
    returns the hits, the score (Σ contributions, clamped to [0, 1000]) and the decision: rules are evaluated in the
@@ -57,6 +72,9 @@ engine, test-only fixtures, production activating none — and the Phase 12 → 
 4. **Replay.** `POST /v1/operator/risk/assessments/{id}/replay` re-runs the engine named by the assessment over its
    sealed inputs and answers `IDENTICAL` or `DIVERGED` (`INV-RSK-01`), audited `risk.Replayed`; it writes nothing. A
    `DIVERGED` is a defect of the engine or a corrupted row, never a changed policy — the policy is pinned by id.
+   *(P13-DOC-001, 2026-10-27, as built: the door is `RISK_INVESTIGATE`'s, a reason required, and it writes its audit
+   record only; a day's replay beside it, `POST …/assessments/replay?date=` (`DailyReplay`, the follow-up below). The
+   request body `RiskReplayRequest` lacks `@ClosedBody` - for the owner (`PHASE_13_PLAN.md` §1.2 item 91).)*
 
 5. **The lifecycle, four eyes, immutability** (plan §5; `RISK_LIFECYCLES.md`). `PROPOSED → ACTIVE` by a **second**
    `RISK_POLICY_ADMINISTER` holder with a `MULTI_FACTOR` session, `| REJECTED`; `ACTIVE → RETIRED` only beside its
@@ -65,6 +83,11 @@ engine, test-only fixtures, production activating none — and the Phase 12 → 
    `CHECK` holds every writer to it; `INV-RSK-07`). Routes `POST /v1/operator/risk/policies`, `…/{id}/activation`,
    `…/{id}/rejection`, keyed `risk.policy:<actor>`; reads under `RISK_POLICY_ADMINISTER` or `RISK_INVESTIGATE`. Audit
    `risk.PolicyProposed/Activated/Rejected/Retired`; event `RiskPolicyActivated` (operation, version).
+   *(P13-DOC-001, 2026-10-27, as built: the acts are keyed per principal, `risk.policy:<type>:<id>`; a rejection is
+   anyone's with the permission, the proposer's withdrawal included. **The reads** - the version in force for an
+   operation and any version by id - are under `RISK_POLICY_ADMINISTER` alone (`RiskPolicyController`), not
+   `RISK_INVESTIGATE`, and are **not audited** (no `risk.PolicyRead`); the analyst reads a policy only through the
+   assessment that pinned it, by position and decision, never its bounds (`Explanation`).)*
 
 6. **One `ACTIVE` per operation, and the pin that never reads "neither."** A partial unique index holds one
    `ACTIVE` row per operation. **T-pol** (activation) takes `pg_advisory_xact_lock(13, hashtext(operation))` first,
@@ -85,6 +108,11 @@ engine, test-only fixtures, production activating none — and the Phase 12 → 
    dormant, then ≥ EUR 1,000 in 24 h), `ROUND_AMOUNT`, `CORRIDOR_HIGH_RISK`; and the C1 fail-safe bands. The fixtures
    are the battery's and the storm's input; **production activates none** — no version is seeded `ACTIVE` by
    migration, and the activation gate (`OPERATIONS_RUNBOOK.md` §9) is a person's recorded act.
+   *(P13-DOC-001, 2026-10-27: two fixture rows read otherwise than they promise. The `CARD_PAYMENT` fixture's "10 per
+   24 h per source account" never fires - a card payment carries no source account (`PHASE_13_PLAN.md` §1.2 item 72;
+   the battery holds it at zero fires). And `PROFILE_RATING = PROHIBITED → DENY` is a rule, not a property of the
+   rating: a `PROHIBITED` party is refused only while the active version carries that rule (item 83). The fixtures'
+   behaviour changes recorded by `-013`/`-014` await ratification (item 16).)*
 
 8. **Policy and engine drift are refused mechanically.** The door validates every parameter against its kind's
    schema; the battery replays every fixture version under the engine in two JVMs; a version written for an engine
@@ -144,13 +172,15 @@ Negative:
 - A genuinely new rule shape needs a code change and an engine version; the vocabulary will grow by ADR amendment.
 - Every parameter needs a schema and a door test; the battery must be re-run for every fixture change.
 - The advisory lock on an empty pin adds a wait inside a money transaction for the duration of an activation's
-  commit — bounded, measured by the storm, and only during an activation.
+  commit — bounded, measured by the storm, and only during an activation. *(P13-DOC-001, 2026-10-27: bounded and
+  only during an activation as built; not measured - the storm is postponed, `POSTPONED_ISSUES.md` PI-004.)*
 
 Operational impact: `finapp.risk.policy.active{operation,policy_version}` (gauge), `rule.hit{operation,rule}` with
 `rule` added to the tag allow-list (C9); the alert "no active policy where judging is expected"; the activation
 gate and the policy report.
 Security impact: `RISK_POLICY_ADMINISTER` with four eyes and step-up; the proposer never activates; the policy's
-content is `CONFIDENTIAL` and read only under the two permissions, audited.
+content is `CONFIDENTIAL` and read only under the two permissions, audited. *(P13-DOC-001, 2026-10-27: read under
+`RISK_POLICY_ADMINISTER` alone, unaudited - decision 5's note.)*
 Financial impact: none directly; indirectly, every threshold that refuses, holds or challenges money is a field of a
 version a person activated.
 
@@ -196,5 +226,10 @@ effective dates), `INV-AUD-04` (four eyes are two persons), ADR-0107, ADR-0108.
 - `DISTRIBUTED_EXECUTION.md` registers advisory namespace 13 and the pin's rule; `RISK_LIFECYCLES.md` §Policy
   version is the machine's record.
 - *(As built, `P13-TSK-023`, 2026-10-26 - decision 4 over a day.)* `DailyReplay` replays every assessment of a UTC day on one snapshot, each under the version it pinned by id and the engine it names - never the version active now, so an activation mid-day changes nothing of the morning - the versions memoised for the run (they are immutable from proposal); `IDENTICAL` / `DIVERGED` per operation, the first divergent named by id and the kinds that diverged, never a figure and never one of the reader's own party. *(The gate review's I3: a bounded page at a time - at most `limit` assessments after the cursor `after`, the answer's `next` the page that follows, each page's snapshot under `statement_timeout`; the pin is per assessment, so pages replay exactly as one run would.)*
-- **Acceptance.** `Proposed` at the Phase 12 → 13 transition (2026-10-22); the Phase 13 review (`P13-DOC-001`) reads
-  this ADR against the code, corrects it in place with dated notes, and accepts it.
+- *(P13-DOC-001, 2026-10-27 - decision 3's battery, built by `P13-TST-002` (2026-10-26):* 10,000 generated subjects,
+  347,296 evaluations, none differing from the battery's own oracle, every one replayed `IDENTICAL`, the corpus equal in
+  two JVMs, every perturbation flipping and naming its row, the fingerprint committed. Where C8 is silent the oracle
+  follows the engine author's documented meanings, and `STRUCTURING`'s judged token names threshold-derived figures -
+  both for the owner (`PHASE_13_PLAN.md` §1.2 items 74, 71); a version carries no content digest (item 69).)*
+- **Acceptance.** **As built** (`P13-DOC-001`, 2026-10-27): `Proposed` at the Phase 12 → 13 transition (2026-10-22);
+  the Phase 13 review read this ADR against the code, corrected it in place above with dated notes, and accepted it.

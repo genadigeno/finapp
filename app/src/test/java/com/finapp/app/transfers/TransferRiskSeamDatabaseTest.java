@@ -211,6 +211,15 @@ class TransferRiskSeamDatabaseTest {
         assertThat(column("SELECT decision || ',' || challenge_satisfied || ',' || velocity_outcome"
                 + " FROM risk.risk_assessment WHERE operation = 'TRANSFER' AND command_ref = ?", transferId))
                 .containsExactly("CHALLENGE,false,NOT_PERMITTED");
+        // The exit review's walk (P13-DOC-001; the gate's "Decision explainability": "a refused transfer ... walked by
+        // id from the operation's outcome to its assessment to its hits"): the transfer's id is the assessment's command
+        // ref; its fired hits name the EUR 500 amount band that asked the step-up, its reasons why.
+        String assessment = "(SELECT id FROM risk.risk_assessment WHERE operation = 'TRANSFER' AND command_ref = ?)";
+        assertThat(column("SELECT kind || ':' || coalesce(hard_decision, '-') FROM risk.risk_rule_hit WHERE assessment_id"
+                + " = " + assessment + " AND outcome = 'FIRED' ORDER BY ordinal", transferId))
+                .as("the rule that refused it").contains("AMOUNT_BAND:CHALLENGE");
+        assertThat(column("SELECT code FROM risk.risk_reason WHERE assessment_id = " + assessment + " ORDER BY position",
+                transferId)).as("its ordered reasons").isNotEmpty();
         assertThat(count("SELECT count(*) FROM risk.velocity_window WHERE subject_ref = ?", payer.party().toString()))
                 .as("a refused movement counts nothing (scenario 14)").isZero();
     }

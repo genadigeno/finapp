@@ -122,3 +122,11 @@ commit and the date; do not delete the entry.
   final run, completion gate and records, and settle its phase's ten-instance answer.
 - **Owner of the fix:** the post-phase clean-up. The coordinator reminds the owner of this entry at each phase's exit
   and when the last phase closes.
+- **Recorded by `P13-DOC-001` (2026-10-27):** the exit review took the three suite-repair commits, ran the database pass
+  on the final tree (green after test-only repairs) and recorded the storm's deferral in place of its evidence
+  (`reviews/PHASE_13_REVIEW.md`, *The storm*); `MUTATION_TESTING.md` §4 carries a `P13-TST-001` row recording the deferral,
+  not a demonstration - a convention for the owner to keep or replace for every later postponed storm. **For the
+  resumption:** the review's A4-2 - an inversion through risk's (R2a) resolves as a recorded `TIMEOUT` fail-safe at the
+  250 ms read budget, below PostgreSQL's 1 s `deadlock_timeout`, so the storm's lock-cycle rounds need a larger budget (or
+  an assertion that no racer's assessment is a fail-safe) to see a cycle at all; and its first run must use the
+  own-container suites as they now stand.

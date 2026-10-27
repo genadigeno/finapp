@@ -1,13 +1,24 @@
 # Risk Lifecycles
 
-*Planned — written at the Phase 12 → 13 transition (2026-10-22), when nothing here is built; the building task is the
-record.* At the transition no `risk` module, schema, table, trigger, door or sweep exists: every machine, edge, lock,
-refusal, event and audit act below is the decided design of [`PHASE_13_PLAN.md`](../project/PHASE_13_PLAN.md) (§3
+*Written by the Phase 12 → 13 transition (2026-10-22), when nothing here was built; each task corrected its machine
+to the code.* At the transition no `risk` module, schema, table, trigger, door or sweep existed: every machine, edge,
+lock, refusal, event and audit act below was the decided design of [`PHASE_13_PLAN.md`](../project/PHASE_13_PLAN.md) (§3
 ownership, §4 aggregates and commands, §5 lifecycles, §7 the multi-instance architecture, §8 data, §9 doors, §10 events,
-§11 security, §12 the model, §24 the settled questions), and the task named beside each machine corrects this document
-where the code teaches otherwise. Where this document and the plan disagree, the plan governs until the building task
+§11 security, §12 the model, §24 the settled questions), and the task named beside each machine corrected this document
+where the code taught otherwise. Where this document and the plan disagree, the plan governs until the building task
 corrects one of them; §8 below lists every point where this document had to read the plan one way, for the task to
 confirm.
+
+*(P13-DOC-001, 2026-10-27: every machine below is built - `P13-TSK-001`…`-025` - and was read against the code by the
+exit review; where a decided-design paragraph, diagram or table and its as-built note differ, the note — and the code —
+govern, and where a design statement was materially false the review corrected it in place and marked it so. risk's
+migrations are `V001`–`V018`, numbered in the landing order (§5). The storm `P13-TST-001` is POSTPONED by the owner until
+after the project's phases (`POSTPONED_ISSUES.md` PI-004): wherever a line below says the storm measures, watches or
+proves something, that evidence is not on record - what stands is each task's hermetic proofs, the owed database suites
+run in the owner-authorised database pass (2026-10-27, green after test-only repairs), the production censuses and
+proofs with their gauges, and the independent reviews. The owner's open items are cited by their `PHASE_13_PLAN.md`
+§1.2 numbers. The opening paragraph above read "*Planned — written at the Phase 12 → 13 transition (2026-10-22), when
+nothing here is built; the building task is the record.*", in the present tense, until this review.)*
 
 Written on the `BNPL_LIFECYCLES.md` precedent (itself on `LENDING_LIFECYCLES.md`'s and
 `CREDIT_DECISIONING_LIFECYCLES.md`'s): the document that names a phase's machines is written before the phase's first
@@ -39,7 +50,7 @@ risk decision changes a money movement, the change is the owning domain's own co
 | **Risk Policy Version** vs **Rule** vs the **engine version** | The policy version is the four-eyes machine row and its immutable content; a rule is one row inside it — a closed `RuleKind` with typed parameters and a weight or a hard decision, data never code; the engine version (`RISK_ENGINE_V1`) is code, pinned by every assessment so the replay is `IDENTICAL` (`INV-RSK-01`, `-04`) |
 | **Fail-safe decision** vs **silent default** | When the evaluation is unavailable (no `ACTIVE` policy; the pin's read failing; a rule throwing; the statement timeout) the answer is the policy's fail-safe band for the judged amount — or, with no policy at all, the compiled `ALLOW` — **recorded** as an assessment with reason `RISK_UNAVAILABLE` or `NO_POLICY_ACTIVE`, counted, and an operational alert; never a value nobody wrote down (`INV-RSK-04`) |
 | **Velocity Window** vs a cache counter | A durable row per (dimension, subject, window kind, window start), upserted in the judged command's own transaction after the caller's locks, proven against the monitored transactions (`INV-RSK-03`, `INV-CON-03`). There is no Redis counter and nothing to lose |
-| **Risk Signal** vs **Monitored Transaction** vs **Alert** | A signal is an append-only fact about a subject born once per source event (`UNIQUE (source_event_id)`); a monitored transaction is the channel-neutral record of one money movement born once per ledger journal entry (`UNIQUE (journal_entry_id)`); an alert is a rule's born-once observation over them (`UNIQUE (subject_ref, rule_code, window_start)`). Signals and monitored transactions are inputs; an alert is an output; none is a judgement a person made |
+| **Risk Signal** vs **Monitored Transaction** vs **Alert** | A signal is an append-only fact about a subject born once per source event (`UNIQUE (source_event_id)`); a monitored transaction is the channel-neutral record of one money movement born once per ledger journal entry (`UNIQUE (journal_entry_id)`); an alert is a rule's born-once observation over them (`UNIQUE (subject_ref, rule_code, window_start)` - *since risk `V018` `UNIQUE NULLS NOT DISTINCT (subject_ref, rule_code, window_start, fact_signal_id)`, a fact's own signal in the key, §4.5; P13-DOC-001*). Signals and monitored transactions are inputs; an alert is an output; none is a judgement a person made |
 | **Alert** vs **Case** vs **Regulatory Report** | The alert is the observation, born once and attached or suppressed; the case is the investigation — one open per (subject, kind), worked by append-only investigator actions, disposed under four eyes; the regulatory report is the filing to an authority, a different aggregate with its own lifecycle, permissions and retention, drafted from a disposed case and never the case itself (ADR-0111; never "the SAR" in code — the jurisdiction names it) |
 | **Disposition** vs **Escalation** vs **Investigator Action** | A disposition ends the case (`CLOSED_FALSE_POSITIVE \| CLOSED_NO_ACTION \| CONFIRMED_FRAUD \| CONFIRMED_SUSPICIOUS \| REFERRED`); an escalation raises its level and queue and the case goes on; both are recorded as investigator actions, the append-only, reasoned, audited facts of the investigation |
 | **Risk Action** (the record) vs the **effect** (the owning domain's) | `risk` records `PROPOSED → APPROVED → DISPATCHED → DONE \| FAILED`; the effect — a suspension, a freeze, a release — is the owning domain's existing command, keyed `risk.action:<id>`, executed in its own transaction on its own lock order, recorded on both sides (`INV-RSK-02`, ADR-0112). Risk never writes the domain's row and never reverses a transaction |
@@ -56,13 +67,13 @@ Nothing here has a ledger effect; the column names where the money moves, if any
 | Act | Record (`risk`) | Money effect |
 |---|---|---|
 | Policy version proposed · activated · rejected · retired | `risk_policy_version` and its rules; its history | **None** |
-| A judged command evaluated (T-eval) | the assessment with its inputs, rule hits and reasons; the velocity windows' increments (only when the decision permits the movement) | **None of risk's.** The caller commits its own outcome in the same transaction: a transfer `FAILED(RISK_REFUSED)`, a withdrawal `HELD` or `FAILED(RISK_REFUSED)` with its hold kept or released, a payment intent's refusal — §4.12 |
+| A judged command evaluated (T-eval) | the assessment with its inputs, rule hits and reasons; the velocity windows' increments (only when the decision permits the movement) | **None of risk's.** The caller commits its own outcome in the same transaction: a transfer `FAILED(RISK_REFUSED)`, a withdrawal `HELD` or `FAILED(RISK_REFUSED)` with its hold kept or released, a payment intent's refusal (its terminal `FAILED`) or a held card payment (`PROCESSING`, its capture held) — §4.12 |
 | Advice at a door (T-advise) | nothing | none; a `403 identity.AssuranceRequired` before any row exists |
 | Signal recorded (T-sig) · monitored transaction born (T-mon) | born-once rows | none |
 | Alert raised · attached · suppressed | the alert row; its folding into a case | none |
 | Case opened · taken · noted · escalated · disposed | the case row and its append-only actions | none |
 | Override proposed · approved · rejected | the override row and the action it issues | none of risk's; the issued action's effect is the owning domain's (next row) |
-| Risk action dispatched · concluded | the action row with its outcome | **the owning domain's**, in its own transaction through its door: a released withdrawal dispatches (its hold then released by payments' completion as today), a denied one fails and releases its hold; a suspension, a block, a revocation move no money |
+| Risk action dispatched · concluded | the action row with its outcome | **the owning domain's**, in its own transaction through its door: a released withdrawal dispatches (its hold then released by payments' completion as today), a denied one fails and releases its hold; a held card payment is captured or voided; a suspension, a block, a revocation move no money |
 | Regulatory report drafted · approved · filed · acknowledged | the report and its history | none |
 | Profile recomputed | a new profile version | none |
 | List version recorded · activated | the list row; rescreening permits | none |
@@ -74,18 +85,25 @@ Nothing here has a ledger effect; the column names where the money moves, if any
 **Actors.** **P** — a person holding a Phase 13 permission (identity `V023`; `-001`): `RISK_INVESTIGATE`,
 `RISK_CASE_APPROVE`, `RISK_POLICY_ADMINISTER`, `RISK_OVERRIDE`, `AML_REPORT_APPROVE`, `AML_REPORT_FILE`, in the roles
 `RISK_ANALYST` {INVESTIGATE, CASE_APPROVE}, `RISK_OFFICER` {POLICY_ADMINISTER, OVERRIDE} and `AML_OFFICER`
-{AML_REPORT_APPROVE, AML_REPORT_FILE} — a partition (`P13-TSK-001`: one live role per identity, every pair of grants
-disjoint; the override door serves the assessment it overrides under `RISK_OVERRIDE`, the report draft door the
+{AML_REPORT_APPROVE, AML_REPORT_FILE} — a partition of the grants (`P13-TSK-001`: every pair of grants disjoint
+*(P13-DOC-001, 2026-10-27: this read "one live role per identity, every pair of grants disjoint" - identity `V010`'s
+`role_assignment_one_live_per_identity` is unique per (identity, role) while unrevoked, so one identity may hold
+`RISK_ANALYST`, `RISK_OFFICER` and `AML_OFFICER` at once - the roles partition the grants, not the persons; four eyes
+compares actors, so it holds either way; for the owner, `PHASE_13_PLAN.md` §1.2 item 86)*; the override door serves the assessment it overrides under `RISK_OVERRIDE`, the report draft door the
 disposed case's evidence under `AML_REPORT_APPROVE`); pairwise-disjoint grants with every existing role
 (`INV-AUD-03`); keyed per actor (`risk.policy:<actor>`, `risk.override:<actor>`, `risk.case:<actor>`,
 `risk.report:<actor>`, `risk.list:<actor>`); reasoned where the plan says so (`422 risk.ReasonRequired`; reasons and
-notes bounded, screened by `InstrumentShapes`, classified `CONFIDENTIAL`); **four eyes** where marked ★ — two persons,
+notes bounded, screened by `InstrumentShapes`, classified `RESTRICTED-PII` - *read `CONFIDENTIAL` until P13-DOC-001
+(2026-10-27); `DATA_CLASSIFICATION.md`'s rows classify every person-written reason and note `RESTRICTED-PII`*); **four eyes** where marked ★ — two persons,
 the proposer never the approver, by the domain and by a `CHECK`; a refused self-approval `403 risk.SelfApprovalRefused`,
 **audited `FAILED`** (`INV-RSK-07`, `INV-AUD-04`); and **self-dealing fails closed**: no holder reads or works a case,
 approves an override or files a report on their own party's subject, and an operator with no placeable party is
 refused — `risk.SelfDealingRefused`, audited `FAILED` (the Phase 12 → 13 gate's A7-6 applied forward). Policy
 activation, override approval, report approval and filing, and every `CONFIRMED_*` disposition require a
-`MULTI_FACTOR` operator session. **S** — the system: T-eval inside a caller's transaction, a sweep's step
+`MULTI_FACTOR` operator session *(as built: every approval - the policy's and the list version's activation, the
+override's, the two persons' disposition's (`CONFIRMED_*`, `REFERRED`, a prohibiting one), the case action's, the
+suppression's and the report's - and the report's filing; no proposal and no one-person close is stepped up -
+P13-DOC-001)*. **S** — the system: T-eval inside a caller's transaction, a sweep's step
 (`RiskMonitoringSchedule`, `RiskActionSchedule`: leaderless, `SKIP LOCKED`, off in test contexts, each with its gauge
 and its claim failures metered from the first task — the transition's N5), or an inbox handler (`risk.<component>`).
 **C** — the customer and **M** — the merchant: **never an actor of any machine here**, and never a reader of any `risk`
@@ -104,8 +122,8 @@ amount on `INSERT`-only rows and as the velocity windows' sums, bounded by a `CH
 window (`PHASE_13_PLAN.md` §8). `risk`'s migrations name no other schema; a precondition that lives in payments,
 identity, kyc or the ledger is the domain's, through `app`'s port.
 
-**The lock order** (`PHASE_13_PLAN.md` §7.2; to be registered in `DISTRIBUTED_EXECUTION.md` §3 as "The Phase 13 lock
-order" — *planned*). Risk rows are taken **after** every money row and **only** in two shapes: last inside a caller's
+**The lock order** (`PHASE_13_PLAN.md` §7.2; registered in `DISTRIBUTED_EXECUTION.md` §3 as "The Phase 13 lock
+order", each position's build recorded there — *read "to be registered … — planned" until P13-DOC-001, 2026-10-27*). Risk rows are taken **after** every money row and **only** in two shapes: last inside a caller's
 transaction, or first in a risk-only transaction that takes no money row.
 
 | Position | Row | Mode | Taken by |
@@ -118,7 +136,7 @@ transaction, or first in a risk-only transaction that takes no money row.
 | **(R5)** | alert rows | — | T-case (attach), T-mon (raise), T-eval |
 | **(R6)** | the `risk_action` row | `FOR UPDATE`, **then the owning domain's command on that domain's own order, no other risk row held** | T-act |
 | **(R7)** | the monitoring watermark row | `FOR UPDATE SKIP LOCKED` — the claim; commits alone | T-mon |
-| **(R8)** | the `customer_risk_profile` head row | `FOR UPDATE` | T-mon's per-subject leg; T-case's disposition |
+| **(R8)** | the `customer_risk_profile` head row | `FOR UPDATE` | T-mon's per-subject leg; a prohibiting disposition's profile write in a transaction of its own after the case commits (`ProfileRecompute.applyDisposition` - never under (R4), §4.6's note (2)) *(read "T-case's disposition" until P13-DOC-001)* |
 
 **No cycle, by construction:** a money transaction holds its money rows and then takes (R1)–(R3), which no risk
 transaction holds while waiting on a money row — T-case, T-mon and T-rep take no money row at all, and T-act takes (R6)
@@ -128,8 +146,19 @@ holds no money row. The only risk rows a money transaction writes are its own ve
 money transactions upserting overlapping windows cannot deadlock. A sweep's claim commits before its step; `risk` holds
 no connection across a provider call (the filing call — ADR-0046).
 
+*(As built - P13-DOC-001, 2026-10-27, from `DISTRIBUTED_EXECUTION.md` §3's row: **(R2a)** precedes (R2) - one advisory
+lock per (dimension, subject), namespace `131`, ascending, held to commit (`P13-TSK-006`, §4.3); **T-act holds no risk row
+at all** while the owner works - its claim on (R6) commits before the owning domain's command is called (`P13-TSK-017`,
+§4.7); (R8) is never taken under (R4) - the profile leg takes R8 → R4 → R5, and a prohibiting disposition writes the
+profile in its own transaction after the case commits (`P13-TSK-016`); **(R9)** - a `screening_list_version` or
+`rescreening_permit` row - is taken first in a risk-only transaction that takes no money row (`P13-TSK-022`). T-eval's
+`REVIEW`/`HOLD` case opening (`CaseOpener`, R4) runs untimed inside the money transaction and can wait on a monitoring
+batch holding the party's case row - no cycle, a latency unmeasured (item 95).)*
+
 **The latency budget.** T-eval runs in-lock, so its cost is paid by every money movement: **p99 ≤ 50 ms** for its
-reads and upserts (the storm measures it); `risk`'s reads run under a per-statement `SET LOCAL statement_timeout` of
+reads and upserts (*read "the storm measures it" until P13-DOC-001: the storm is postponed, PI-004, so the budget is
+unmeasured on record - `finapp.risk.evaluation.latency` and `RiskEvaluationLatencyOverBudget` watch it in operation; M3's
+split triggers stay unmeasured, `PHASE_13_PLAN.md` §1.2 item 76*); `risk`'s reads run under a per-statement `SET LOCAL statement_timeout` of
 250 ms inside the caller's transaction, behind a savepoint and restored after; a timeout is "unavailable" and becomes
 the band's fail-safe decision, recorded `RISK_UNAVAILABLE` — the caller's transaction is not aborted (§7.6 of the plan).
 
@@ -142,7 +171,7 @@ a window (`VelocityWindowDatabaseTest#aWindowIsCutByTheDatabaseClock`); a permit
 |---|---|
 | A velocity window's start | computed from `clock_timestamp()` read after the caller's lock: `H1`, `D1`, `D7`, `D30` cut on the database clock |
 | A policy version's effective-from | stamped on the database clock at activation; the retirement stamps its successor's start in the same transaction (credit `V014`'s `GREATEST(transaction_timestamp(), effective_from + 1 µs)` rule — for `-002` to confirm, §8) |
-| A case's SLA deadline | stamped at opening from the pinned monitoring policy's SLA per kind; the gauge `finapp.risk.case.age{kind}` and the alert "a case older than its SLA" read it; nothing transitions on it |
+| A case's SLA deadline | stamped at opening from the pinned monitoring policy's SLA per kind *(as built: from `SlaDeadlines`' per-kind task defaults - no policy carries an SLA; `PHASE_13_PLAN.md` §1.2 item 23 - P13-DOC-001)*; the gauge `finapp.risk.case.age{kind}` and the alert "a case older than its SLA" (`RiskCaseOverdue*`) read it; nothing transitions on it |
 | A rule's lookback | the pinned rule's `lookback days`, judged against the database clock read after (R1) |
 | A held withdrawal's `held_until` | stamped at the hold: held at + the pinned policy version's **hold validity** (default 72 h); judged on the database clock under the withdrawal row lock by a leg of payments' existing `WithdrawalResolutionSchedule` — §4.12 |
 
@@ -176,7 +205,8 @@ rating bands over the party's signal score); at most one `ACTIVE` per operation
 (partial unique). **Never migration-activated**: production activates none; every seam answers `ALLOW(NO_POLICY_ACTIVE)`
 recorded until a version is activated under four eyes and `OPERATIONS_RUNBOOK.md` §9's activation gate is passed (plan
 §1.1); the C8 fixtures are test-only. The reads: `GET /v1/operator/risk/policies/{id}` and `GET …?operation=`
-(`RISK_POLICY_ADMINISTER`, `RISK_INVESTIGATE`; the in-force read with none active answers `risk.PolicyNotActive` — its
+(`RISK_POLICY_ADMINISTER` alone - *read "`RISK_POLICY_ADMINISTER`, `RISK_INVESTIGATE`" until P13-DOC-001, 2026-10-27;
+`RiskPolicyController`'s reads declare the one permission*; the in-force read with none active answers `risk.PolicyNotActive` — its
 status is `-002`'s to assign). **Invalid:** anything out of `RETIRED` or `REJECTED`; `PROPOSED → RETIRED`;
 `ACTIVE → PROPOSED | REJECTED`; an `ACTIVE` retired without its successor activated in the same transaction; activation
 by the proposer (`CHECK`); a content edit of any version (no `UPDATE` grant on the content columns).
@@ -217,9 +247,13 @@ rating code); precedence when rules disagree `DENY` > `HOLD` > `REVIEW` > `CHALL
 beating a score band's. **The seam mapping** (ADR-0108): `ALLOW` → `PERMIT`; `CHALLENGE` → `PERMIT` when the session
 already satisfies `MULTI_FACTOR`, else `REFUSE` committed as the reserved `RISK_REFUSED` with reason
 `CHALLENGE_REQUIRED` (the race's answer — the door's T-advise turns the normal case into `403
-identity.AssuranceRequired` before any row exists); `DENY` → `REFUSE`, a case when the policy says so; `HOLD` → the
-withdrawal commits `HELD` with its hold kept and a case opens; `REVIEW` → `REFUSE` and a case of the operation's kind
-opens in T-eval's transaction with the assessment as its first evidence. **Invalid:** any edge out of `DECIDED`; any
+identity.AssuranceRequired` before any row exists); `DENY` → `REFUSE`, a case when the policy says so *(not built -
+no `DENY` opens a case: the policy version carries no such flag and T-eval opens a case for `REVIEW` and `HOLD` alone;
+ADR-0108 D3 / ADR-0110 D2 promised one - for the owner, `PHASE_13_PLAN.md` §1.2 item 94; P13-DOC-001)*; `HOLD` → the
+withdrawal commits `HELD` with its hold kept (a card payment `PROCESSING`, its capture held) and a case opens; `REVIEW` →
+`REFUSE` and a case of the operation's kind opens in T-eval's transaction with the assessment as its first evidence
+*(as built the case's kind is `ATO` when the sealed hits show the account-takeover anchors, else `FRAUD` -
+`CaseOpener.Decided.kindFor`)*. **Invalid:** any edge out of `DECIDED`; any
 `UPDATE` of any column (no grant); a second assessment for one (operation, command ref); a decision an operation does
 not admit (refused at the policy door, `422 risk.PolicyInvalid`); an assessment written outside the judged command's
 transaction.
@@ -242,7 +276,8 @@ own read failing has no band to read and answers the compiled `ALLOW` under `RIS
 currency than the policy's is answered by the open-ended band (`DENY` in every C1 band set) — multi-currency judging is
 an owner item; a permitted fail-safe is counted behind a savepoint of its own and recorded `UNCOUNTED` when that count
 fails. **A `DENY` opens no case:** the policy version carries no "case on deny" field, so T-eval calls the opener for
-`REVIEW` and `HOLD` alone — the field is `-016`'s. The replay re-derives the verdict — the engine over the parsed sealed
+`REVIEW` and `HOLD` alone — the field is `-016`'s *(P13-DOC-001, 2026-10-27: `-016` did not build it - still no `DENY`
+opens a case; item 94)*. The replay re-derives the verdict — the engine over the parsed sealed
 inputs, or the fail-safe the recorded cause names — and answers `IDENTICAL` or `DIVERGED` with the kinds
 (`INPUTS`, `POLICY`, `EVALUATION`, `SEAL`, `DECISION`, `SCORE`, `HITS`, `REASONS`, `FAIL_SAFE`, `CHALLENGE`) and the
 first diverged rule.)*
@@ -260,7 +295,7 @@ first diverged rule.)*
 | Edge | Actor & door | Locks / arbiters | Refusals | Event | Audit |
 |---|---|---|---|---|---|
 | (birth) → `PROPOSED` | P, `RISK_OVERRIDE`, `POST /v1/operator/risk/assessments/{id}/overrides` (reason code and text), key `risk.override:<actor>` (T-ovr) | the assessment read plainly (immutable); **(R4)** the override row; `UNIQUE (assessment_id)` over a live proposal; the decision one of `DENY`, `HOLD`, `REVIEW` — an `ALLOW` is never overridden (OQ-5) | `409 risk.ActionNotProposable` (an `ALLOW` or a `CHALLENGE`, or a live proposal exists — read one way, §8), `422 risk.ReasonRequired`, `risk.SelfDealingRefused` (audited `FAILED`) | — | `risk.OverrideProposed` |
-| `PROPOSED → APPROVED` ★ at or above the threshold (C7: the judged amount at or above EUR 1,000, or the decision `DENY`) | P ≠ proposer, `…/{id}/approval`, `MULTI_FACTOR` | (R4) conditional `PROPOSED`; the four-eyes `CHECK`; **the action it issues recorded in the same transaction**: for a held withdrawal the release — run in T-act's shape from this approval door, keyed `risk.action:<override id>`, through payments' existing door on payments' lock order (`-012`), and folded into §4.7's machine as a `RELEASE_HELD_WITHDRAWAL` action on the hold's case once `-017` lands; for a denied transfer **nothing to dispatch** — a one-time allowance for the same command ref, read as an input by the customer's retry under a new key | `403 risk.SelfApprovalRefused` (audited `FAILED`) | `RiskActionRequested` where an action is issued | `risk.OverrideApproved` |
+| `PROPOSED → APPROVED` ★ at or above the threshold (C7: the judged amount at or above EUR 1,000, or the decision `DENY` - *as built the pinned version's `override_threshold`, EUR 1,000 in the v1 fixtures; P13-DOC-001*) | P ≠ proposer, `…/{id}/approval`, `MULTI_FACTOR` | (R4) conditional `PROPOSED`; the four-eyes `CHECK`; **the action it issues recorded in the same transaction**: for a held withdrawal the release — run in T-act's shape from this approval door, keyed `risk.action:<override id>`, through payments' existing door on payments' lock order (`-012`), and folded into §4.7's machine as a `RELEASE_HELD_WITHDRAWAL` action on the hold's case once `-017` lands; for a denied transfer **nothing to dispatch** — a one-time allowance for the same command ref, read as an input by the customer's retry under a new key | `403 risk.SelfApprovalRefused` (audited `FAILED`) | `RiskActionRequested` where an action is issued | `risk.OverrideApproved` |
 | `PROPOSED → APPROVED` below the threshold | P, the proposer, the same door's one-holder path (reasoned, audited) | (R4) conditional `PROPOSED` | as above | as above | `risk.OverrideApproved` |
 | `PROPOSED → REJECTED` | P, `…/{id}/rejection` | (R4) conditional `PROPOSED` | `422 risk.ReasonRequired` | — | `risk.OverrideRejected` |
 
@@ -322,11 +357,16 @@ now runs **as the platform** (T-act, §4.7), never under the approving officer's
 door's first dispatch under an operator's `CUSTOMER`-typed session refused by payments' held doors and left to the leg's
 re-drive - fixed here without widening payments' door (`RiskOverrideDeskTest`, `RiskActionDispatchTest#anApprovalsDispatchSucceedsOnTheFirstAttempt`).)*
 
+*(P13-DOC-001, 2026-10-27: the override's action is **not** a second four-eyes act - `risk_action_four_eyes` binds a
+case's actions alone - so below C7's threshold an override's release, denial, capture or void is one holder's act, the
+approval stepped up `MULTI_FACTOR` and audited; C7's one-holder path as accepted, for the owner's ratification with C7.)*
+
 ### 4.3 Velocity window (`risk.velocity_window`) — `P13-TSK-006` (`risk V005`) — not a machine
 
 A velocity window has no status and no edges: it is a durable counter per primary key (dimension, subject_ref,
-window_kind, window_start) — dimensions party, source account, destination account or beneficiary, device, merchant;
-kinds `H1`, `D1`, `D7`, `D30` — with `count`, `sum_minor` and `currency`. **The upsert** is one statement per row in
+window_kind, window_start) — dimensions party, source account, destination account or beneficiary, device, merchant,
+session (*`P13-TSK-014`, risk `V011`, omitted here until P13-DOC-001*); kinds `H1`, `D1`, `D7`, `D30` — with `count`,
+`sum_minor` and `currency`. **The upsert** is one statement per row in
 T-eval, in sorted key order, after the caller's locks: `INSERT … ON CONFLICT (…) DO UPDATE SET count = count + 1,
 sum_minor = sum_minor + EXCLUDED.sum_minor RETURNING count, sum_minor` — the row lock the statement takes is the
 arbiter, so ten concurrent movements of one subject count ten (`VelocityWindowDatabaseTest#tenMovementsCountTen`).
@@ -354,6 +394,14 @@ skew, a window counted after the evidence is complete `PENDING`; see `PHASE_13_P
 contract `-004`…`-011` inherit.)*
 
 *(As built by `P13-TSK-023`, 2026-10-26: `VelocityProof.prove` reads one snapshot and judges two links - the windows against the counted assessments (every dimension) and, for windows of transfers alone, against the monitored journal; a difference is named in its currency, never corrected; no schedule runs it - the velocity report and `finapp.risk.velocity.proof{verdict}` (a gauge refreshed off the scrape thread, single-flight, every statement bounded) do. The journal link subtracts the figures of a transfer permitted `UNCOUNTED` from what the postings expect of its windows (explained - the window still judged) and sets aside the postings older than the first transfer the record ever holds, the seam's go-live (before the floor), so its `DIVERGED` is an unexplained difference only (the gate review's I2 and its second round).)*
+
+*(P13-DOC-001, 2026-10-27: "a committed one counts exactly once" holds for a movement the decision permits; as built a
+`HOLD` is counted in no window, so a held withdrawal later released or a held card payment later captured moves money
+no window counts (`PHASE_13_PLAN.md` §1.2 item 2); a permitted fail-safe whose count fails moves `UNCOUNTED` - and a
+T-eval waiting on a hot subject's (R2a) past the 250 ms budget is a `TIMEOUT` fail-safe judged by the amount band alone,
+so a concurrent burst can pass a velocity limit (item 77); a transfer refused `DESTINATION_NOT_POSTABLE` after the seams
+keeps its count, its journal link then reading `DIVERGED` (item 58). `SESSION` (`VelocityDimension`'s last) is carried by
+the checkout payment seam alone.)*
 
 ### 4.4 Risk signal (`risk.risk_signal`) — `P13-TSK-005` (`risk V003`) — not a machine
 
@@ -389,6 +437,12 @@ has it raised in T-sig **on every delivery that reaches the handler** - the born
 its source event (`RiskSignalStore.recordedFrom`) - and that recording runs under the platform's actor
 (`RiskSignalIntake.asThePlatform`); every other kind records with no actor, as before.)*
 
+*(P13-DOC-001, 2026-10-27 - the kinds as built: **eighteen** - `-005`'s thirteen, `-014`'s three and `-022`'s two,
+`SCREENING_CLEARED` and `SCREENING_HIT` (risk `V018`). The last two are risk's own (`SignalKind.Origin.RISK`): recorded by
+the rescreening leg from a concluded permit (the permit's id the born-once key), never by an inbox handler and never
+consumed from an event. The sweep (T-mon) records no signal - "and by the sweep (T-mon) for what it derives" above reads,
+as built, "and by the rescreening leg for its conclusions".)*
+
 ### 4.5 Alert (`risk.risk_alert`) — `P13-TSK-015` (`risk V010` - planned `V008`, the next free at its build: the table, raise, dedupe and suppression); the folding into a case `-016`; the monitoring rules `-020`; the fraud rules `-013`, `-014`
 
 ```
@@ -398,7 +452,7 @@ its source event (`RiskSignalStore.recordedFrom`) - and that recording runs unde
 
 | Edge | Actor & door | Locks / arbiters | Refusals | Event | Audit |
 |---|---|---|---|---|---|
-| (birth) → `OPEN` | S — T-mon (a monitoring rule over a subject's monitored transactions and windows) or T-eval (a fraud rule, synchronously; the retrospective fraud rules run in the sweep) | `UNIQUE (subject_ref, rule_code, window_start)` with `ON CONFLICT DO NOTHING` — two instances raise once (`AlertDatabaseTest#twoInstancesRaiseOnce`; `INV-RSK-06`); carries evidence refs (signal, assessment, monitored transaction ids — never copies), kind (`AlertKind`), severity, the policy version | — | `AlertRaised` (alert id, kind, severity, subject ref) | — |
+| (birth) → `OPEN` | S — T-mon (a monitoring rule over a subject's monitored transactions and windows) or T-eval (a fraud rule, synchronously; the retrospective fraud rules run in the sweep) | `UNIQUE (subject_ref, rule_code, window_start)` (*since risk `V018`: `risk_alert_born_once UNIQUE NULLS NOT DISTINCT (subject_ref, rule_code, window_start, fact_signal_id)` - P13-DOC-001*) with `ON CONFLICT DO NOTHING` — two instances raise once (`AlertDatabaseTest#twoInstancesRaiseOnce`; `INV-RSK-06`); carries evidence refs (signal, assessment, monitored transaction ids — never copies), kind (`AlertKind`), severity, the policy version | — | `AlertRaised` (alert id, kind, severity, subject ref) | — |
 | `OPEN → ATTACHED` | S, in the raising transaction (`-016`'s folding): an alert raised while its subject has an open case of the kind attaches to it — **the system's dedupe** — else T-mon opens the case (T-eval: the case `REVIEW`/`HOLD` opened); or P, `POST /v1/operator/risk/cases` from an alert, `RISK_INVESTIGATE`, key `risk.case:<actor>` (T-case) | (R4) the case row; (R5) the alert conditional `OPEN`; one open case per (subject, kind) — ten alerts, one open case (`CaseDatabaseTest#tenAlertsOneOpenCase`) | `409 risk.AlertNotOpen` | `CaseOpened` when the attach opened the case | `risk.CaseOpened` (when opened) |
 | `OPEN → SUPPRESSED` ★ | P only — never the system: `POST /v1/operator/risk/alerts/{id}/suppression` proposed by a `RISK_INVESTIGATE` holder with a reason, approved by a second holder with `RISK_CASE_APPROVE` at `…/suppression/approval` (or rejected at `…/suppression/rejection`), key `risk.alert:<actor>` (`-018`) | (R5) conditional `OPEN`; the reason code; the four-eyes `CHECK` | `409 risk.AlertNotOpen`, `422 risk.ReasonRequired`, `403 risk.SelfApprovalRefused` (audited `FAILED`) | — | `risk.AlertSuppressed` |
 
@@ -409,7 +463,7 @@ second one (`-016`). The fail-safe's `RiskEvaluationUnavailable` / `RiskPolicyNo
 velocity proof's difference and an `UNCLASSIFIED` journal entry are read here as **operational alerts**
 (`infra/prometheus/rules/risk.yml`, fed by `finapp.risk.evaluation.unavailable`, `velocity.proof{verdict}` and
 `monitoring.unclassified`), not rows of this machine — §8. **Invalid:** anything out of `ATTACHED` or `SUPPRESSED`;
-`ATTACHED → OPEN`; a second alert per (subject, rule, window start); an alert carrying a reason text, a score or PII
+`ATTACHED → OPEN`; a second alert per (subject, rule, window start) (*and, since `V018`, fact signal*); an alert carrying a reason text, a score or PII
 into an event (`INV-RSK-08`); an alert reaching any customer or merchant surface.
 
 *(As built, `P13-TSK-015`, 2026-10-25, `risk V010`.)* **The raise** - `Alerts.raise` / `raiseAll` on the caller's unit
@@ -421,7 +475,8 @@ fold (a birth is an insert at (R3)'s position, the fold the case's (R4) then the
 meet on the unique in one order. **The window is a bucket**: `window_kind` + `window_start`, aligned by `CHECK` to the
 velocity windows' anchor (`date_bin` over `risk.velocity_window_length`), computed from a database instant that is the
 evidence's own (`AlertWindow.of(kind, WindowCut)` in T-eval; a born-once row's stamp in T-mon) - so a replay recomputes
-the same start; the unique stays the plan's triple. **The folding** is the port `AlertFolding` (`-016` implements it;
+the same start; the unique stays the plan's triple (*until risk `V018` re-made it over the triple and `fact_signal_id`,
+`NULLS NOT DISTINCT` - §4.5's `-022` note; P13-DOC-001*). **The folding** is the port `AlertFolding` (`-016` implements it;
 `NONE` wired - every alert stays `OPEN`, queued in `risk_alert_open_queue`); only a born alert of a kind that opens a
 case is folded; `Alerts.attach` is the alert's own `OPEN → ATTACHED` edge (`attached_case_id`'s foreign key is
 `-016`'s migration). **The suppression** (P only, `EMPLOYEE` by domain and `CHECK`): `proposeSuppression` (a closed
@@ -496,11 +551,17 @@ alert of its own, so the name both vocabularies share is the fact's.)*
 ### 4.6 Case (`risk.risk_case`, `risk_case_action`, `risk_case_event`) — `P13-TSK-016` (`risk V012` - planned `V009`, the next free at its build; the folding of alerts into cases is this task's); the queues and the tipping-off control `-018`; the AML case `-021`; collections `-025` (C3)
 
 ```
- (opened — T-eval on REVIEW | HOLD | a policy-flagged DENY; the sweep on an alert with no open case; by hand; -025 on LoanDefaulted | BnplDefaulted)
+ (opened — T-eval on REVIEW | HOLD [a policy-flagged DENY: not built, item 94]; the sweep on an alert with no open case; by hand; -025 on LoanDefaulted | BnplDefaulted)
       OPEN ──taken by an investigator──> IN_INVESTIGATION ──escalated (level and queue raised)──> ESCALATED ──★ disposed──> DISPOSED
+       │                                       │                                                   └──escalated again (L2 → L3)──> ESCALATED
        │                                       └──────────────────────────────────────────────────────────────★ disposed──> DISPOSED
        └──★ disposed (CLOSED_FALSE_POSITIVE | CLOSED_NO_ACTION, from OPEN, one person, reasoned — plan §5)──────────────────────────> DISPOSED
 ```
+
+*(P13-DOC-001, 2026-10-27: the diagram read "a policy-flagged DENY" as an opener - not built (`PHASE_13_PLAN.md` §1.2 item
+94) - and lacked the `ESCALATED → ESCALATED` edge `risk V012`'s trigger admits (a further escalation, one level up to a
+queue above the first line). ★ on a disposition is, as built, `CONFIRMED_*`, `REFERRED` and a prohibiting one
+(`risk_case_disposition_four_eyes`); a `CLOSED_*` is one person's from any live state.)*
 
 Kinds `CaseKind { FRAUD, ATO, MERCHANT_ABUSE, AML, COLLECTIONS }`; status
 `CaseStatus { OPEN, IN_INVESTIGATION, ESCALATED, DISPOSED }`; **one open per (subject, kind)** (partial unique over the
@@ -509,19 +570,20 @@ queue.
 
 | Edge | Actor & door | Locks / arbiters | Refusals | Event | Audit |
 |---|---|---|---|---|---|
-| (birth) → `OPEN` | S — T-eval (`REVIEW`, `HOLD`, a `DENY` the policy flags), with the assessment as its first evidence; T-mon (an alert with no open case of the kind); `-025`'s handler on `lending.LoanDefaulted` / `bnpl.BnplDefaulted` (`COLLECTIONS`, facts only — C3). P — `POST /v1/operator/risk/cases` (from an alert, or by hand), `RISK_INVESTIGATE`, key `risk.case:<actor>` (T-case) | the partial unique one-open per (subject, kind): a loser finds the open case and attaches to it; **never the operator's own party** (self-dealing, fail closed); the SLA deadline and `revision = 0` stamped | `risk.SelfDealingRefused` (audited `FAILED`); `409 risk.AlertNotOpen` | `CaseOpened` (case id, kind, status) | `risk.CaseOpened` |
+| (birth) → `OPEN` | S — T-eval (`REVIEW`, `HOLD`, a `DENY` the policy flags - *not built, item 94; P13-DOC-001*), with the assessment as its first evidence; T-mon (an alert with no open case of the kind); `-025`'s handler on `lending.LoanDefaulted` / `bnpl.BnplDefaulted` (`COLLECTIONS`, facts only — C3). P — `POST /v1/operator/risk/cases` (from an alert, or by hand), `RISK_INVESTIGATE`, key `risk.case:<actor>` (T-case) | the partial unique one-open per (subject, kind): a loser finds the open case and attaches to it; **never the operator's own party** (self-dealing, fail closed); the SLA deadline and `revision = 0` stamped | `risk.SelfDealingRefused` (audited `FAILED`); `409 risk.AlertNotOpen` | `CaseOpened` (case id, kind, status) | `risk.CaseOpened` |
 | `OPEN → IN_INVESTIGATION` (take) | P, `POST /v1/operator/risk/cases/{id}/actions` (`take`), `RISK_INVESTIGATE`; the body carries the `revision` | (R4) `FOR UPDATE`; the `revision` compare-and-set — the loser answers `409 risk.CaseRevisionStale` (`CaseDatabaseTest#concurrentUpdatesKeepEveryAction`); a take is one person's act | `409 risk.CaseRevisionStale`, `409 risk.CaseNotOpen`, `risk.SelfDealingRefused` | — | `risk.CaseTaken` |
 | (no edge) note · evidence attached | P, the same door (`note`, `evidence`) from any live state | (R4); the compare-and-set; the note bounded and screened (`InstrumentShapes`); evidence as references only (signal, assessment, journal entry ids), resolved through audited reads | as above; `422 risk.ReasonRequired` | — | `risk.CaseNoted` |
 | `IN_INVESTIGATION → ESCALATED` | P, the same door (`escalate`, reasoned) | (R4); the compare-and-set; level and queue raised, recorded as an investigator action | as above | `CaseEscalated` | `risk.CaseEscalated` |
-| disposition proposed (no edge) | P, `POST /v1/operator/risk/cases/{id}/dispositions` (the `Disposition`, a reason), `RISK_INVESTIGATE` | (R4); the compare-and-set; one live disposition proposal per case; a `CONFIRMED_*` or an action-issuing disposition needs a second person (★ below); a `REFERRED` disposition recommends — never performs — a reversal (ADR-0112) | `409 risk.CaseNotOpen`, `422 risk.ReasonRequired` | — | `risk.DispositionProposed` |
-| `IN_INVESTIGATION \| ESCALATED → DISPOSED` ★ for every `CONFIRMED_*` and for any disposition that issues an action; one person for `CLOSED_FALSE_POSITIVE` / `CLOSED_NO_ACTION` / `REFERRED` with no action | P ≠ proposer, `…/approval`, `RISK_CASE_APPROVE`, `MULTI_FACTOR` for a `CONFIRMED_*` | (R4) conditional live; the four-eyes `CHECK`; **in the same transaction**: the risk actions the disposition issues `PROPOSED → APPROVED` (§4.7), the profile's recompute under (R8) — `PROHIBITED` only here (`INV-RSK-10`), the report draft permitted for `CONFIRMED_SUSPICIOUS` (§4.8) | `403 risk.SelfApprovalRefused` (audited `FAILED`), `risk.SelfDealingRefused` | `CaseDisposed` (case id, kind, status, disposition code); `RiskActionRequested` per action; `CustomerRiskRatingChanged` when the rating moved | `risk.CaseDisposed`, `risk.DispositionApproved` |
+| disposition proposed (no edge) | P, `POST /v1/operator/risk/cases/{id}/dispositions` (the `Disposition`, a reason), `RISK_INVESTIGATE` | (R4); the compare-and-set; one live disposition proposal per case; a `CONFIRMED_*`, `REFERRED` or prohibiting disposition needs a second person (★ below) (*read "a `CONFIRMED_*` or an action-issuing disposition" until P13-DOC-001 - no disposition issues an action*); a `REFERRED` disposition recommends — never performs — a reversal (ADR-0112) | `409 risk.CaseNotOpen`, `422 risk.ReasonRequired` | — | `risk.DispositionProposed` |
+| `IN_INVESTIGATION \| ESCALATED → DISPOSED` ★ for every `CONFIRMED_*`, `REFERRED` and prohibiting disposition; one person for `CLOSED_FALSE_POSITIVE` / `CLOSED_NO_ACTION`, decided by its own proposal (*read "★ for every `CONFIRMED_*` and for any disposition that issues an action; one person for … `REFERRED` with no action" until P13-DOC-001*) | P ≠ proposer, `…/approval`, `RISK_CASE_APPROVE`, `MULTI_FACTOR` for every two persons' disposition | (R4) conditional live; the four-eyes `CHECK`; refused while an action proposed on the case awaits its decision (`risk_case_disposes_no_standing_action`); the report draft permitted for an `AML` case's `CONFIRMED_SUSPICIOUS` (§4.8); **after the commit, in a transaction of its own**, a prohibiting disposition's `PROHIBITED` profile version under (R8) (`INV-RSK-10`) (*read "in the same transaction: the risk actions the disposition issues `PROPOSED → APPROVED` (§4.7), the profile's recompute under (R8)" until P13-DOC-001 - no disposition issues an action, and R8 is never taken under R4; note (2), (3) below*) | `403 risk.SelfApprovalRefused` (audited `FAILED`), `risk.SelfDealingRefused` | `CaseDisposed` (case id, kind, status, disposition code); `RiskActionRequested` per action; `CustomerRiskRatingChanged` when the rating moved | `risk.CaseDisposed`, `risk.DispositionApproved` |
 | disposition rejected (no edge) | P, `…/rejection` | (R4); the compare-and-set | `422 risk.ReasonRequired` | — | `risk.DispositionRejected` |
 
 **A case re-opens never** (OQ-6): a delayed event after a disposition records its signal and, if a rule fires, raises a
 new alert which opens a **new** case referencing the old (`CaseDatabaseTest#aLateEventAfterDispositionOpensANewCase`).
 Every act of the investigation is an **investigator action** — append-only, reasoned, audited (`risk_case_action`:
-note, evidence attached, escalation, action proposed/approved/rejected, disposition proposed/approved/rejected, report
-drafted) — and both concurrent investigators' actions are kept while one answers `409` (mandatory scenario 5). The
+taken, note, evidence attached, escalation, action proposed/approved/rejected, disposition proposed/approved/rejected,
+report drafted - *`TAKEN` omitted until P13-DOC-001; `risk V012`'s `risk_case_action_kind_is_known`, a take the one
+unreasoned act*) — and both concurrent investigators' actions are kept while one answers `409` (mandatory scenario 5). The
 queue: `GET /v1/operator/risk/cases?status=&kind=&after=` and `GET …/{id}` (`RISK_INVESTIGATE`, audited; never the
 operator's own party). An investigator who leaves mid-case changes no state: the SLA gauge and alert find the case, the
 queue is oldest-first. **The tipping-off control** (`INV-RSK-08`, `-018`): no customer or merchant route reads a case,
@@ -576,26 +638,39 @@ domain's own restructuring or write-off path, a recommendation, never an act); `
 (`*DefaultCleared`) is not consumed: the case waits for a person. Nothing of it reaches lending, bnpl, the ledger or a
 customer (`INV-RSK-02`, `INV-RSK-08`).
 
+*(P13-DOC-001, 2026-10-27 - for the owner: one `RISK_INVESTIGATE` holder can open a case on an open alert by hand and
+close it `CLOSED_*` alone, so an alert can be disposed of by one person where its suppression is a four-eyes act (AML
+included; `PHASE_13_PLAN.md` §1.2 item 78); the case file's evidence door judges the case's subject, not each reference
+it serves (item 79); `CaseProhibitionDriver` has no per-item failure handling, so one failing prohibition starves those
+behind it (item 84).)*
+
 ### 4.7 Risk action (`risk.risk_action`) — `P13-TSK-017` (`risk V013` - planned `V010`, the next free at its build); the override's release ran in this shape from `-012`'s approval door until `-017` folded it in
 
 ```
- (proposed from a case, or issued by an approved override | disposition) PROPOSED ──★ a second person approves──> APPROVED ──RiskActionSchedule claims and dispatches──> DISPATCHED ──the owning domain's outcome──> DONE
-                                                                           │                                                                                                 └──> FAILED (re-proposable)
-                                                                           └──rejected──> REJECTED
+ (proposed from a live, taken case) PROPOSED ──★ a second person approves──> APPROVED ──RiskActionSchedule claims and dispatches──> DISPATCHED ──the owning domain's outcome──> DONE
+                                         │                                    ↑                                                                                              └──> FAILED (re-proposable)
+                                         └──rejected──> REJECTED              (born APPROVED by an approved override - its own approval, C7)
 ```
 
+*(P13-DOC-001, 2026-10-27: the diagram read "(proposed from a case, or issued by an approved override | disposition)
+PROPOSED". As built **no disposition issues an action** (`DESIGN-017` D11) - a case's action is proposed on the live,
+taken case and approved by a second person before the case is disposed (a disposition is refused while one awaits its
+decision, and a disposed case proposes nothing); an override's action is born `APPROVED` in the override's approval, so
+its four eyes are C7's, never a second `risk_action` approval.)*
+
 Kinds `ActionKind { SUSPEND_IDENTITY, REINSTATE_IDENTITY, REVOKE_SESSIONS, SUSPEND_ACCOUNT, REINSTATE_ACCOUNT,
-SUSPEND_MERCHANT, BLOCK_BENEFICIARY, RELEASE_HELD_WITHDRAWAL, DENY_HELD_WITHDRAWAL, RESCREEN_PARTY }` (plan §12.8; C10
-for the ATO pair) — each a keyed command through the owning domain's **existing** door, never a new mutation (plan §20:
+SUSPEND_MERCHANT, BLOCK_BENEFICIARY, RELEASE_HELD_WITHDRAWAL, DENY_HELD_WITHDRAWAL, CAPTURE_HELD_PAYMENT,
+VOID_HELD_PAYMENT, RESCREEN_PARTY }` (plan §12.8; C10 for the ATO pair; the held card payment's pair `-010`/`-012`, added
+here by P13-DOC-001 from risk `V013` - `RESCREEN_PARTY` reads available but no door proposes or dispatches it, item 93) — each a keyed command through the owning domain's **existing** door, never a new mutation (plan §20:
 no credential reset; no reversal).
 
 | Edge | Actor & door | Locks / arbiters | Refusals | Event | Audit |
 |---|---|---|---|---|---|
-| (birth) → `PROPOSED` | P, `POST /v1/operator/risk/cases/{id}/risk-actions` (kind, target, reason), `RISK_INVESTIGATE`, key `risk.case:<actor>` (T-case); or S — issued by an approved disposition (§4.6), born `PROPOSED` and approved in that act's transaction (an approved override's release takes this shape from `-017` on; before it, `-012` runs the release from its approval door — §4.2a) | (R4) the case; `UNIQUE (case_id, kind, target_ref)` over a live action; the kind admitted for the target's kind | `409 risk.ActionNotProposable` (a live twin; a kind the target does not admit; a `DISPOSED` case — read one way, §8), `409 risk.CaseNotOpen`, `422 risk.ReasonRequired` | — | `risk.ActionProposed` |
+| (birth) → `PROPOSED` | P, `POST /v1/operator/risk/cases/{id}/risk-actions` (kind, target, reason), `RISK_INVESTIGATE`, key `risk.case:<actor>` (T-case); an approved override's action is born **`APPROVED`** in the override's approval transaction from `-017` on (before it, `-012` ran the release from its approval door — §4.2a) *(read "or S — issued by an approved disposition (§4.6), born `PROPOSED` and approved in that act's transaction (an approved override's release takes this shape …)" until P13-DOC-001: no disposition issues an action)* | (R4) the case; `UNIQUE (case_id, kind, target_ref)` over a live action; the kind admitted for the target's kind | `409 risk.ActionNotProposable` (a live twin; a kind the target does not admit; a `DISPOSED` case — read one way, §8), `409 risk.CaseNotOpen`, `422 risk.ReasonRequired` | — | `risk.ActionProposed` |
 | `PROPOSED → APPROVED` ★ | P ≠ proposer, `…/approval`, `RISK_CASE_APPROVE` (`202`) | (R4); (R6) conditional `PROPOSED`; the four-eyes `CHECK`; `next_attempt_at` stamped | `403 risk.SelfApprovalRefused` (audited `FAILED`) | `RiskActionRequested` (action id, kind, target kind and ref) | `risk.ActionApproved` |
 | `PROPOSED → REJECTED` | P, `…/rejection` | (R4); (R6) | `422 risk.ReasonRequired` | — | `risk.ActionRejected` |
 | `APPROVED → DISPATCHED` | S, `RiskActionSchedule` (T-act): the claim on `next_attempt_at` (`SKIP LOCKED`), then **(R6) `FOR UPDATE` and nothing else of risk's**, then the owning domain's command on **its** lock order with key `risk.action:<id>` — ten approvers, one dispatch (`RiskActionDatabaseTest#tenApproversOneDispatch`) | (R6) conditional `APPROVED` | — | — | `risk.ActionDispatched` |
-| `DISPATCHED → DONE \| FAILED` | S, T-act — the domain's answer in the same call, or a later claim for a domain whose effect concludes asynchronously (a released withdrawal's dispatch); a domain's refusal (an identity already suspended) is `DONE(ALREADY)`, a recorded outcome, never an error; a timeout is re-driven under the same key and replays (`RiskActionDatabaseTest#aReDriveReplays`; `INV-IDEM-01`) | (R6) conditional `DISPATCHED` | — | `RiskActionCompleted` (action id, kind, target kind and ref, outcome) | `risk.ActionConcluded` |
+| `DISPATCHED → DONE \| FAILED` | S, T-act — the domain's answer in the same call, or a later claim for a domain whose effect concludes asynchronously (a released withdrawal's dispatch); a domain's refusal (an identity already suspended) is `DONE(ALREADY)`, a recorded outcome, never an error (*as built: the effect already in place is `DONE(ALREADY)`, an owner's refusal `FAILED(REFUSED)` - the note below; P13-DOC-001*); a timeout is re-driven under the same key and replays (`RiskActionDatabaseTest#aReDriveReplays`; `INV-IDEM-01`) | (R6) conditional `DISPATCHED` | — | `RiskActionCompleted` (action id, kind, target kind and ref, outcome) | `risk.ActionConcluded` |
 
 A `FAILED` action is **re-proposable, never re-dispatched by itself**: a new proposal, four eyes again. Risk never
 retries the owning domain's business failure (mandatory scenario 7): a downstream payment operation that fails after
@@ -656,7 +731,7 @@ hermetically by `RiskActionTest`, `ActionDispatchTest`, `RiskActionMigrationTest
 | (birth) → `DRAFT` | P, `AML_REPORT_APPROVE`, `POST /v1/operator/risk/cases/{id}/reports`, key `risk.report:<actor>` (T-rep) | (R4) the case: `DISPOSED` with `CONFIRMED_SUSPICIOUS`; `UNIQUE (case_id)` over an open draft; the artefact's fields — jurisdiction code, format version, the reporting entity's reference, the subject and account references, the transactions referenced, the grounds (the case's reason codes and the narrative, `RESTRICTED-PII`), the attachments' references; recorded as an investigator action (`report drafted`) | `409 risk.ReportNotFileable` (the case not so disposed; a live draft exists — read one way, §8), `risk.SelfDealingRefused` (audited `FAILED`) | — | `risk.ReportDrafted` |
 | `DRAFT → APPROVED` ★ | P ≠ drafter, `…/approval`, `AML_REPORT_APPROVE`, `MULTI_FACTOR` | (R4) the report row conditional `DRAFT`; the four-eyes `CHECK` | `403 risk.SelfApprovalRefused` (audited `FAILED`) | — | `risk.ReportApproved` |
 | `APPROVED → FILED` | P, `…/filing`, `AML_REPORT_FILE`, `MULTI_FACTOR` (`202`) | (R4) conditional `APPROVED`; **`FILED` committed before the call** with the provider's reference pending (the payout precedent, ADR-0046: no connection held across `RegulatoryFilingProvider`); the call after the commit; its reference recorded by a second transaction | `409 risk.ReportNotFileable` | `RegulatoryReportFiled` (report id, jurisdiction — **never** the subject) | `risk.ReportFiled` |
-| `FILED → ACKNOWLEDGED \| REJECTED` | S, the filing port's inquiry leg (`RegulatoryFilingProvider` inquiry on the `FILED` row's permit; the simulated FIU endpoint, the `ScreeningAdapter` precedent) — an `UNKNOWN` filing is a permit on the `FILED` row, reconciled by inquiry, never re-filed | (R4) conditional `FILED` | — | — | `risk.ReportAcknowledged` / `risk.ReportRejected` (the system actor) |
+| `FILED → ACKNOWLEDGED \| REJECTED` | S, the filing port's inquiry leg (`RegulatoryFilingProvider` inquiry on the `FILED` row's permit; the simulated FIU endpoint, the `ScreeningAdapter` precedent) — an `UNKNOWN` filing is a permit on the `FILED` row, reconciled by inquiry, never re-filed (*as built: an inquiry answered `NOT_RECEIVED` re-submits under the same filing reference - one filing only by the provider's dedupe on it, the adapter's contract; the simulated provider never answers `NOT_RECEIVED`; P13-DOC-001*) | (R4) conditional `FILED` | — | — | `risk.ReportAcknowledged` / `risk.ReportRejected` (the system actor) |
 
 **Immutable once `FILED`**: no column of a filed report is ever updated but its status and the authority's reference; a
 `REJECTED` filing is a **new draft** from the same case (`UNIQUE (case_id)` admits it once the previous is terminal).
@@ -703,10 +778,15 @@ person reads what they approve. Persons `CUSTOMER` or `EMPLOYEE` throughout (`re
 
 The head row per party (`customer_risk_profile`, locked `FOR UPDATE` at (R8), carrying the current version and
 `next_recompute_at`) and `INSERT`-only versions (`customer_risk_profile_version`, `UNIQUE (party_id, version)`):
-rating `LOW | MEDIUM | HIGH | PROHIBITED`, the assessment or disposition that set it, the policy version, the stamp.
+rating `LOW | MEDIUM | HIGH | PROHIBITED`, its cause - `RECOMPUTE` (the `MONITORING` policy version pinned, the engine,
+the sealed inputs and the signal score) or `DISPOSITION` (the approved disposition that set `PROHIBITED`, no evaluation) -
+and the stamp (*read "the assessment or disposition that set it, the policy version" until P13-DOC-001; no version names
+an assessment - risk `V006`'s `customer_risk_profile_version_cause_is_known` and the two wholeness `CHECK`s*).
 **Recompute** — S, T-mon's per-subject leg when a signal or a case outcome arrives for the party (the `MONITORING`
 policy version's rule kinds fire over the party's signals and case history, and its **rating bands** map the resulting
-signal score to `LOW`, `MEDIUM` or `HIGH` — there is no `PROFILE` rule kind), or T-case's disposition: (R8), then a new version only when
+signal score to `LOW`, `MEDIUM` or `HIGH` — there is no `PROFILE` rule kind), or a prohibiting disposition (*as built
+in a transaction of its own after the case commits, never under (R4) - §4.6's note (2); read "T-case's disposition" until
+P13-DOC-001*): (R8), then a new version only when
 the rating moved (`ProfileDatabaseTest#tenRecomputesOneVersion`), `CustomerRiskRatingChanged` (party id, rating,
 version). **`PROHIBITED` is set only by a four-eyes disposition** (§4.6); the sweep never raises a rating to it and
 never lowers one from it. **Read** by every T-eval (the `PROFILE_RATING` rule) and by credit's seam: `app`'s
@@ -724,23 +804,38 @@ the rating changes; no `MONITORING` version `ACTIVE` writes nothing (an unassess
 a `PROHIBITED` head is never evaluated by the sweep. The recompute is `ProfileRecompute` - the pin (R1), then the head
 (R8) claimed `SKIP LOCKED` by the sweep's leg or locked waiting by a direct call - and the hint is T-sig's
 (`ProfileHints`), waiting on a held head rather than skipping it.)*
+*(P13-DOC-001, 2026-10-27: a `PROHIBITED` rating refuses a movement only where the operation's `ACTIVE` version carries a
+`PROFILE_RATING` rule deciding `DENY` - the engine compiles none - and under `NO_POLICY_ACTIVE` a `PROHIBITED` party moves
+money (`PHASE_13_PLAN.md` §1.2 item 83); no door lifts a `PROHIBITED` rating (item 21).)*
 
-### 4.10 Screening list version and the rescreening permit (`risk.screening_list_version`, `rescreening_permit`) — `P13-TSK-022` (`risk V012`; cut candidate)
+### 4.10 Screening list version and the rescreening permit (`risk.screening_list_version`, `rescreening_permit`) — `P13-TSK-022` (`risk V012` - *built as `V018`, the next free*; cut candidate)
 
 ```
- (recorded) RECORDED ──activated (rescreening enqueued)──> ACTIVE
- per ACTIVE party:  (enqueued at activation) PENDING ──the sweep's rescreening leg requests through kyc's ports──> REQUESTED ──kyc's outcome recorded as a signal (a hit also an alert)──> DONE
+ (recorded by a person) RECORDED ──★ activated by a second person (MULTI_FACTOR)──> ACTIVE ──a successor activated──> RETIRED
+ per ACTIVE or PENDING party, enqueued by the rescreening leg after the activation:
+     (enqueued) PENDING ──the leg's claim committed, kyc asked on no risk transaction, the answer recorded at the claimed attempt──> DONE(CLEARED | HIT | SKIPPED | NOT_ONBOARDED)
+                   └──past the attempts' bound──> FAILED(cause)
 ```
+
+*(P13-DOC-001, 2026-10-27: the diagram and the table read the plan's machine - "RECORDED ──activated (rescreening
+enqueued)──> ACTIVE", "per ACTIVE party: (enqueued at activation) PENDING ──…──> REQUESTED ──…──> DONE", no `RETIRED`, an
+activation by any holder enqueuing in its own transaction, the leg on `RiskMonitoringSchedule` and the outcome arriving by
+kyc's event. Corrected to risk `V018` as the note below records it: no `REQUESTED` state; the predecessor `RETIRED` beside
+its successor's activation; the activation four eyes (`screening_list_version_four_eyes`) from a `MULTI_FACTOR` session;
+the parties `ACTIVE` or `PENDING`; the enqueue and the asking the rescreening leg's on `RiskActionSchedule`.)*
 
 | Edge | Actor & door | Locks / arbiters | Refusals | Event | Audit |
 |---|---|---|---|---|---|
-| (birth) → `RECORDED` | P, `POST /v1/operator/risk/screening-lists` (list, version), `RISK_POLICY_ADMINISTER`, key `risk.list:<actor>` (T-list) | `UNIQUE (list, version)` | `422 risk.ReasonRequired` | — | `risk.ListVersionRecorded` |
-| `RECORDED → ACTIVE` | P, `…/{id}/activation` (`202`) | the list row conditional `RECORDED`; **one rescreening permit per `ACTIVE` party enqueued in the same transaction** (`UNIQUE (list_version_id, party_id)` — read one way, §8) | — | — | `risk.ListVersionActivated` |
-| permit `PENDING → REQUESTED` | S, `RiskMonitoringSchedule`'s rescreening leg (T-mon's claim shape: `SKIP LOCKED`) — the screening requested through kyc's existing ports (`CounterpartyScreenings` for counterparties; the case-bound screening for parties); **kyc stays the screening owner** (Refinement 3, OQ-8) | the permit conditional `PENDING` | — | — | — |
-| permit `REQUESTED → DONE` | S — kyc's outcome arrives (its event, through `risk.<component>`'s handler): the clearance recorded as a **Risk Signal** (`SCREENING_HIT`, or clear); a hit raises an **Alert** born once and folds into the party's case | the permit conditional `REQUESTED`; `UNIQUE (source_event_id)` | — | `RiskSignalRecorded`; `AlertRaised` on a hit | — |
+| (birth) → `RECORDED` | P, `POST /v1/operator/risk/screening-lists` (list, version), `RISK_POLICY_ADMINISTER`, key `risk.list:<actor>` (T-list) | A0′ (namespace `13`, the list's key); `UNIQUE (list, version)` - a recorded label converging; numbered `max + 1` | `422 risk.ReasonRequired` | — | `risk.ListVersionRecorded` |
+| `RECORDED → ACTIVE` ★ | P ≠ recorder, `…/{id}/activation` (`202`), `RISK_POLICY_ADMINISTER`, `MULTI_FACTOR` | A0′; the version row (R9) conditional `RECORDED`; the list's `ACTIVE` row `FOR UPDATE` → `RETIRED` first, in the same transaction; the four-eyes `CHECK`; the enqueue left **due** (`enqueue_next_at`), never run in the activation | `403 risk.SelfApprovalRefused` (audited `FAILED`); `409 risk.PolicyStale` (a second activation, or a version recorded before the one in force) | — | `risk.ListVersionActivated` |
+| (enqueue) → permit `PENDING` | S, `RiskActionSchedule`'s rescreening leg - bounded batches, one transaction each: the version row `SKIP LOCKED`, a keyset page of the `ACTIVE` and `PENDING` parties, the cursor advanced | `rescreening_permit_once UNIQUE (party_id, list_version_id)`, `ON CONFLICT DO NOTHING` | — | — | — |
+| permit `PENDING → DONE \| FAILED` | S, the same leg: the claim (`SKIP LOCKED`, one attempt, a lease ahead) **committed**; kyc asked through `PartyRescreening` on no risk transaction (kyc's own re-screening door, the owner's O1; **kyc stays the screening owner**, Refinement 3, OQ-8); the conclusion recorded at the claimed attempt - the clearance a **Risk Signal** (`SCREENING_CLEARED` / `SCREENING_HIT`, the permit its born-once source), a hit's **Alert** the `SCREENING_HIT` fact folded into the party's `AML` case | the permit conditional `PENDING` and its attempt; `UNIQUE (source_event_id)`; `rescreening_permit_signal_is_its_own` | — | `RiskSignalRecorded`; `AlertRaised` on a hit | — |
 
-Whether the predecessor list version is marked superseded, and the permit's states, are `-022`'s to confirm (§8).
-**Invalid:** `ACTIVE → RECORDED`; a second activation; a permit for a party not `ACTIVE`; a screening performed by
+Whether the predecessor list version is marked superseded, and the permit's states, are `-022`'s to confirm (§8) *(settled
+by `-022`, the note below)*.
+**Invalid:** `ACTIVE → RECORDED`; anything out of `RETIRED`; a second activation; an activation by the recorder
+(`CHECK`); a permit for a party neither `ACTIVE` nor `PENDING` (*read "not `ACTIVE`" until P13-DOC-001; one that has
+left both by its claim concludes `DONE(SKIPPED)`*); a screening performed by
 `risk` (it asks; kyc screens); a Screening Result written by `risk`.
 *(As built, `P13-TSK-022`, `risk V018`, 2026-10-26 - the planned table above read one way, now confirmed: **the list
 version** `RECORDED → ACTIVE → RETIRED` - recorded by a person (`CUSTOMER` or `EMPLOYEE`, `screening_list_version_by_persons`),
@@ -790,9 +885,14 @@ most its `SCREENING_HIT` signals (a hit told after the fact adds a signal, never
 updated: kind (classified by the entry's posting-key namespace — `transfer:`, `payments.`, `merchant-payout:`,
 `crossborder.`, `lending.`, `bnpl.`… — through `MonitoredLedger`, the port `app` implements over the ledger's journal
 entry store ordered by its sequence), subject refs, counterparties, amount and value date; an entry of a namespace the
-register does not know is recorded **`UNCLASSIFIED`** and alerted — nothing passes unseen. The record never diverges
-from the journal: a census proves assessments = judged commands and windows = monitored sums at every storm round
-(`INV-RSK-09`).
+register does not know is recorded **`UNCLASSIFIED`** and alerted — nothing passes unseen. A divergence of the record
+from the journal is named, never silent: `MonitoringCensus` proves every journal entry at or behind the watermark
+monitored and no monitored row without its entry, by entry id as sets, one UTC day at a time - never by amount
+(`INV-RSK-09`; `PHASE_13_PLAN.md` §1.2 item 82). *(P13-DOC-001, 2026-10-27: this read "The record never diverges from the
+journal: a census proves assessments = judged commands and windows = monitored sums at every storm round" - the wrong
+censuses (those are `AssessmentCensus`'s and `VelocityProof`'s), and the storm is postponed (PI-004). The record can
+diverge: an entry committing later than the settle horizon after its id was minted is passed by the keyset, named missing
+by the census and repaired by an ordered reprocessing - item 92, and the `-019` note below.)*
 
 **The watermark** — one row per source, `next_sweep_at` its permit: **T-mon** claims it `FOR UPDATE SKIP LOCKED` (R7)
 and commits the claim alone; then reads the journal entries since it through the port, inserts the monitored
@@ -807,7 +907,8 @@ watermark after a policy change or an incident — is ordered at `POST /v1/opera
 `risk.reprocess:<actor>`, `202`, audited `risk.ReprocessingOrdered`, and creates nothing new: born-once rows, alert and case uniques
 (`MonitoringIntakeDatabaseTest#reprocessingCreatesNothingNew`; mandatory scenario 8). The gauges:
 `finapp.risk.monitoring.lag` (journal head − watermark), `finapp.risk.monitoring.unclassified`. The monitoring sweep
-never runs inside a money transaction (M3's split trigger, watched by the storm). **Invalid:** an `UPDATE` of a
+never runs inside a money transaction (M3's split trigger, watched by the storm - *not on record: the storm is postponed,
+PI-004, and M3's split triggers are unmeasured, `PHASE_13_PLAN.md` §1.2 item 76; P13-DOC-001*). **Invalid:** an `UPDATE` of a
 monitored transaction; a second row per journal entry; a watermark advanced before its rows are committed; an entry
 skipped for an unknown namespace; a monitored transaction born from an event rather than the journal.
 
@@ -836,6 +937,11 @@ raised and no head enrolled. A reprocessing re-judges the same rows into the sam
 
 *(As built by `P13-TSK-023`, 2026-10-26: `MonitoringCensus` - monitored = journal by sequence, one UTC day of entry ids at a time, as sets, bounded by the watermark: an entry behind it unmonitored is missing, a monitored row naming no entry a phantom, a row past it after a reprocessing ahead.)*
 
+*(P13-DOC-001, 2026-10-27 - for the owner: the census compares ids, never amounts (`PHASE_13_PLAN.md` §1.2 item 82); the
+settle horizon is unenforced - an entry committing later than it after its mint is skipped until an operator orders
+reprocessing, the census naming it (item 92); `AlertKind.UNCLASSIFIED_TRANSACTION` is raised by no writer - the
+`UNCLASSIFIED` row's alert is the Prometheus rule `RiskMonitoringUnclassified` (item 93, §4.5's `-015` note).)*
+
 ### 4.12 The consumers' machines, as Phase 13 changes them
 
 **Transfers (`transfers.transfer`) — unchanged.** `TransferExecution` consults both seams after `lockBothInFixedOrder`
@@ -848,7 +954,9 @@ both seams' answers (the limit seam's call seals, the risk seam's is answered fr
 when a fired amount or velocity rule's own hard decision is the refusing decision, `RISK_REFUSED` for every other
 refusal, an unsatisfied `CHALLENGE` among them. A posting refused after the permit (`DESTINATION_NOT_POSTABLE`, the
 savepoint after the seams) leaves the assessment `ALLOW`/`COUNTED` standing — scenario 7's transfer half: the decision
-stands, the domain's outcome is recorded, risk retries nothing.)*
+stands, the domain's outcome is recorded, risk retries nothing.)* *(P13-DOC-001, 2026-10-27: its count stands too, so the
+velocity proof's journal link reads `DIVERGED` for that account's windows until they age out - named, not corrected,
+`PHASE_13_PLAN.md` §1.2 item 58.)*
 
 **Cross-border (`crossborder.payment`) — unchanged.** `CrossBorderAuthorization` consults the seams in its first
 transaction before the offer is accepted; a refusal consumes nothing (`422 crossborder.RiskRefused` /
@@ -865,17 +973,25 @@ transaction before the offer is accepted; a refusal consumes nothing (`422 cross
      HOLD ──> HELD                                           (the ledger hold KEPT; the customer reads `HELD`, a status word, no reason — C6)
      DENY ──> FAILED(RISK_REFUSED)                           (the hold released in the same transaction)
 
-     HELD ──RELEASE_HELD_WITHDRAWAL (an approved override's or a disposition's risk action, T-act, key risk.action:<id>)──> DISPATCHED
-     HELD ──DENY_HELD_WITHDRAWAL (a disposition's risk action)──────────────────────────────────────────────────────────> FAILED(RISK_REFUSED)   (the hold released)
+     HELD ──RELEASE_HELD_WITHDRAWAL (an approved override's action, or a case's four-eyes risk action, T-act, key risk.action:<id>)──> DISPATCHED
+     HELD ──DENY_HELD_WITHDRAWAL (an approved override's action, or a case's four-eyes risk action)──────────────────────> FAILED(RISK_REFUSED)   (the hold released)
      HELD ──held_until reached (held at + the policy version's hold validity, default 72 h; payments' WithdrawalResolutionSchedule leg)──> FAILED(RISK_REFUSED, HOLD_EXPIRED)   (the hold released; the case stays open)
 ```
+
+*(P13-DOC-001, 2026-10-27: the diagram read "an approved override's or a disposition's risk action" for the release and
+"a disposition's risk action" for the denial. As built a held withdrawal is resolved by an **override** - `PROCEED` →
+`RELEASE_HELD_WITHDRAWAL`, `REFUSE` → `DENY_HELD_WITHDRAWAL`, the action born `APPROVED` by the override's approval (one
+holder below C7's threshold, two at or above it) - or by **a case's own four-eyes risk action** on the movement the case
+holds, proposed and approved while the case is live, before its disposal; never by a disposition (no disposition issues
+an action, a disposition is refused while an action awaits its decision, and a disposed case proposes nothing - §4.6,
+§4.7). The held card payment likewise, by `CAPTURE_HELD_PAYMENT` / `VOID_HELD_PAYMENT`.)*
 
 | Edge | Actor & door | Locks / arbiters | Refusals | Event | Audit |
 |---|---|---|---|---|---|
 | (birth) → `HELD` | S, the withdrawal's own transaction, `HOLD` read from T-eval | the wallet account's lock (`INV-BAL-04`); the hold kept; `held_until` stamped = held at + the pinned policy version's hold validity (default 72 h); a case opened in the same transaction (R4) | — | payments' own (the withdrawal's birth with `HELD`) and `RiskDecisionMade` | payments' own |
 | (birth) → `FAILED(RISK_REFUSED)` | S, the same transaction, `DENY` | the wallet lock; the hold released | the operation's generic answer | payments' own; `RiskDecisionMade` | payments' own |
-| `HELD → DISPATCHED` | S — the approved override's release in T-act's shape from the approval door, keyed `risk.action:<override id>` (`-012`), or T-act dispatching `RELEASE_HELD_WITHDRAWAL` (`-017`) *(as built by `-017`: both are T-act - the override's action folded into `risk_action`, every dispatch as the platform)* — through payments' existing door (keyed, audited by payments) | the withdrawal row lock **in payments' order**; conditional `HELD` with `held_until` not reached — release and expiry leave exactly one, the first committed edge winning (`WithdrawalHoldDatabaseTest#releaseAndExpiryLeaveExactlyOne`); then the dispatch as today (`DISPATCHED` with the send permit, the send after the commit) | the domain's refusal (already moved or expired) is the action's `DONE(ALREADY)` | payments' own | payments' own; `risk.ActionConcluded` |
-| `HELD → FAILED(RISK_REFUSED)` | S — T-act dispatching `DENY_HELD_WITHDRAWAL` (an approved disposition's denial); or **the expiry**: a new leg of payments' existing `WithdrawalResolutionSchedule` (no new scheduler) finding `held_until` reached on the database clock, reason detail `HOLD_EXPIRED` (`-009`) | the row lock in payments' order; conditional `HELD`; the hold released once; the case stays open and its age alerts | — | payments' own | payments' own |
+| `HELD → DISPATCHED` | S — the approved override's release in T-act's shape from the approval door, keyed `risk.action:<override id>` (`-012`), or T-act dispatching `RELEASE_HELD_WITHDRAWAL` (`-017`) *(as built by `-017`: both are T-act - the override's action folded into `risk_action`, every dispatch as the platform)* — through payments' existing door (keyed, audited by payments) | the withdrawal row lock **in payments' order**; conditional `HELD` with `held_until` not reached — release and expiry leave exactly one, the first committed edge winning (`WithdrawalHoldDatabaseTest#releaseAndExpiryLeaveExactlyOne`); then the dispatch as today (`DISPATCHED` with the send permit, the send after the commit) | the domain's refusal (already moved or expired) is the action's `DONE(ALREADY)` (*as built: no longer `HELD` is `ALREADY`; a release past `held_until` or no such withdrawal is `REFUSED`, the action `FAILED(REFUSED)` - P13-DOC-001*) | payments' own | payments' own; `risk.ActionConcluded` |
+| `HELD → FAILED(RISK_REFUSED)` | S — T-act dispatching `DENY_HELD_WITHDRAWAL` (an approved override's `REFUSE`, or a case's four-eyes action - *read "an approved disposition's denial" until P13-DOC-001*); or **the expiry**: a new leg of payments' existing `WithdrawalResolutionSchedule` (no new scheduler) finding `held_until` reached on the database clock, reason detail `HOLD_EXPIRED` (`-009`) | the row lock in payments' order; conditional `HELD`; the hold released once; the case stays open and its age alerts | — | payments' own | payments' own |
 
 A customer whose withdrawal is `HELD` cannot close the wallet while the hold is `ACTIVE` (accounts' existing rule,
 plan §14). `held_until` is payments' column (`V033`), stamped at the hold from the decision's pinned policy version. `WithdrawalStatus.permittedTransitions()` and `V016`'s every-writer trigger gain the edges (`V033`);
@@ -913,7 +1029,9 @@ ADR-0060 §3) and a risk refusal must not — its decision row sealed in Tx1 wit
 refused state is `-010`'s to decide, and the customer sees the intent's generic failure; the book rail's wallet pair
 lock is unchanged. `HOLD` (slice 2, cuttable) authorises and defers the capture: the intent `PROCESSING` with an
 `AUTHORIZED` attempt whose capture waits on an approved override or disposition (the `MANUAL` capture-mode shape,
-ADR-0059) — `-010` confirms. `ALLOW` and a satisfied `CHALLENGE` route as today. **Invalid:** a payment moved by
+ADR-0059) — `-010` confirms. *(P13-DOC-001, 2026-10-27: as built never a disposition - an approved override's
+`CAPTURE_HELD_PAYMENT` / `VOID_HELD_PAYMENT`, or a case's four-eyes risk action of those kinds proposed before its
+disposal; payments' stuck-payment gauge counts every such held payment as stuck, `PHASE_13_PLAN.md` §1.2 item 85.)* `ALLOW` and a satisfied `CHALLENGE` route as today. **Invalid:** a payment moved by
 `risk`; a capture deferred without the attempt's own machine recording it; a risk-refused intent re-confirmed.
 
 *(As built, `P13-TSK-010`, 2026-10-24 — payments `V034` and risk `V008`, both slices. **The refusal is intent-level**,
@@ -950,22 +1068,25 @@ rows changes and every earlier decision replays as it was sealed.
 
 ## 5. The ranks, per machine (planned)
 
+*(P13-DOC-001, 2026-10-27: every row is built; the italic "built" notes and the corrections marked below record where the
+build differs from the plan's row.)*
+
 | Machine | Table (task) | History | Database rank beyond the edge trigger |
 |---|---|---|---|
 | Policy version | `risk_policy_version`, `risk_rule` (`-002`, `V002`) | its event table | one `ACTIVE` per operation (partial unique); four-eyes `CHECK`; content frozen from insert; retirement only beside a successor (deferred); rules `INSERT`-only; namespace `13` |
 | Assessment | `risk_assessment` + `_input`, `risk_rule_hit`, `risk_reason` (`-004`, `V007`) | — (`INSERT`-only) | `UNIQUE (operation, command_ref)`; no `UPDATE` grant; the decision in the operation's admitted set; reasons ordered |
-| Override | `decision_override` (`-004`'s `V007` table, `-012`) | the row's decided columns | four-eyes `CHECK` above the threshold; `UNIQUE (assessment_id)` over a live proposal; the decision not `ALLOW` |
+| Override | `decision_override` (`-004`'s `V007` table, `-012`) *(built: its machine `V009`, `-012`; its issued action folded into `risk_action` under the override's id by `V013`, `-017`)* | the row's decided columns | four-eyes `CHECK` above the threshold; `UNIQUE (assessment_id)` over a live proposal; the decision not `ALLOW` *(built: `decision_override_four_eyes` where `requires_second_person`, derived from the pinned threshold at the birth; `decision_override_one_live` and `_one_standing`; `decision_override_issues_its_action`, the action born `APPROVED`)* |
 | Signal | `risk_signal` (`-005`, `V003`) | — | `UNIQUE (source_event_id)`; attributes typed and bounded |
 | Velocity window | `velocity_window` (`-006`, `V005`) | — | primary key (dimension, subject_ref, window_kind, window_start); the one-statement upsert the only `UPDATE`; a sum never decreases |
 | Profile | `customer_risk_profile`, `_version` (`-007`, `V006`) | the versions | `UNIQUE (party_id, version)`; `PROHIBITED` only beside an approved disposition (deferred) |
-| Alert | `risk_alert` (`-015`, `V008` - *built as `V010`, the next free*) | — | `UNIQUE (subject_ref, rule_code, window_start)`; `ATTACHED` only naming a case; never deleted *(built: the window aligned by `CHECK`, four eyes and persons by `CHECK`, the facts frozen and `DELETE`/`TRUNCATE` refused for every writer by `risk_alert_permits_only_machine_edges`)* |
-| Case | `risk_case`, `risk_case_action`, `risk_case_event` (`-016`, `V009`) | `risk_case_event`; actions append-only | partial unique one open per (subject, kind); `revision` monotonic; four-eyes `CHECK` on `CONFIRMED_*`; no action on `DISPOSED` |
+| Alert | `risk_alert` (`-015`, `V008` - *built as `V010`, the next free*) | — | `UNIQUE (subject_ref, rule_code, window_start)` *(since `V018`: `NULLS NOT DISTINCT` over the triple and `fact_signal_id`)*; `ATTACHED` only naming a case; never deleted *(built: the window aligned by `CHECK`, four eyes and persons by `CHECK`, the facts frozen and `DELETE`/`TRUNCATE` refused for every writer by `risk_alert_permits_only_machine_edges`)* |
+| Case | `risk_case`, `risk_case_action`, `risk_case_event` (`-016`, `V009` - *built as `V012`, the next free*) | `risk_case_event`; actions append-only | partial unique one open per (subject, kind); `revision` monotonic; four-eyes `CHECK` on `CONFIRMED_*`; no action on `DISPOSED` *(built: `risk_case_one_open`; `risk_case_disposition_four_eyes` on `CONFIRMED_*`, `REFERRED` and a prohibiting disposition; `risk_case_has_its_history`, deferred; the predecessor a disposed case of the same subject and kind; `V017`'s `COLLECTIONS` `CHECK`s)* |
 | Risk action | `risk_action` (`-017`, `V010` - *built as `V013`, the next free*) | the row's stamps | `UNIQUE (case_id, kind, target_ref)` over live; four-eyes `CHECK`; the `next_attempt_at` permit *(built: `risk_action_one_live`, `risk_action_four_eyes` for a case's action, an override's action one per override and its id the override's, the kind's target and availability by `CHECK` and trigger, `DELETE`/`TRUNCATE` refused for every writer by `risk_action_permits_only_machine_edges`; a disposition refused beside a `PROPOSED` action by `risk_case_disposes_no_standing_action`)* |
 | Monitored transaction · watermark | `monitored_transaction`, `monitoring_watermark` (`-019`, `V004`) | — | `UNIQUE (journal_entry_id)`; one watermark per source; `next_sweep_at` |
 | Regulatory report | `regulatory_report`, `_event` (`-021`, `V011` - *built as `V016`, the next free*) | `regulatory_report_event` | `UNIQUE (case_id)` over an open draft; four-eyes `CHECK`; `FILED` columns frozen (trigger) *(built: `regulatory_report_one_live_per_case` over every status but `REJECTED`; `regulatory_report_four_eyes` and the persons `CHECK`; the content frozen from birth by the trigger and in no `UPDATE` grant; one history row per status, `PRIMARY KEY (report_id, status)`, deferred; the `REPORT_DRAFTED` act bound both ways)* |
-| List version · permit | `screening_list_version`, `rescreening_permit` (`-022`, `V012`) | — | `UNIQUE (list, version)`; one permit per (list version, party) |
+| List version · permit | `screening_list_version`, `rescreening_permit` (`-022`, `V012` - *built as `V018`, the next free*) | — | `UNIQUE (list, version)`; one permit per (list version, party) *(built: `screening_list_version_once`, `_ordinal_once`, `_one_active`, `_four_eyes`, `_by_persons`; `rescreening_permit_once`, `rescreening_permit_signal_is_its_own`; every invalid edge refused for every writer by each table's `…_permits_only_machine_edges`)* |
 | Withdrawal (payments') | `withdrawal` (payments `V033`, `-009`) | payments' | `HELD` in the status `CHECK` and the edge trigger; `RISK_REFUSED` in the reason list, with the `HOLD_EXPIRED` detail; `held_until` stamped at the hold *(built: the judged births by trigger, `held_at`/`held_until` frozen and stamped by the database, `held_resolution_key`, the expiry's partial index `withdrawal_hold_expiry`)* |
-| Payment intent (payments') | the refused-by-risk decision row (payments `V034`, `-010`) | payments' | `RISK_REFUSED` in `PaymentFailureReason`'s list; the refusal terminal for the intent — no edge back to `REQUIRES_CONFIRMATION` |
+| Payment intent (payments') | the refused-by-risk decision row (payments `V034`, `-010`) *(built: no decision row - the intent's own `REQUIRES_CONFIRMATION → FAILED` carrying `failure_reason` `RISK_REFUSED`; and the held card payment's `payment_capture_hold`, payments `V034` with risk `V008`)* | payments' | `RISK_REFUSED` in `PaymentFailureReason`'s list; the refusal terminal for the intent — no edge back to `REQUIRES_CONFIRMATION` *(built: no attempt for a refused intent, by trigger; an attempt's capture refused while its hold is open, voided or expired - `payment_attempt_capture_waits_for_its_hold`)* |
 
 Every trigger is `<table>_permits_only_machine_edges`, written by hand; every status `CHECK` a membership list; every
 migration test asserts constraint-name uniqueness per table (the Phase 12 `V012` lesson, plan §13.1); raw-SQL terminal
@@ -973,7 +1094,10 @@ edges are refused for every role in each task's database tests. Migration number
 order, Flyway `outOfOrder` off (plan §8, §17): `-001` `V001`, `-002` `V002`, `-005` `V003`, `-019` `V004`, `-006` `V005`,
 `-007` `V006`, `-004` `V007`, `-015` `V008`, `-016` `V009`, `-017` `V010`, `-021` `V011`, `-022` `V012`. *(As
 landed: `-010` `V008`, `-012` `V009`, `-015` `V010` - each the next free at its build; the later rows take theirs.
-Then `-014` `V011`, `-016` `V012`, `-017` `V013`.)*
+Then `-014` `V011`, `-016` `V012`, `-017` `V013`.)* *(The whole landing order, P13-DOC-001, 2026-10-27 - from the
+migrations' own headers: `-001` `V001`, `-002` `V002`, `-005` `V003`, `-019` `V004`, `-006` `V005`, `-007` `V006`, `-004`
+`V007`, `-010` `V008`, `-012` `V009`, `-015` `V010`, `-014` `V011`, `-016` `V012`, `-017` `V013`, `-018` `V014`, `-020`
+`V015`, `-021` `V016`, `-025` `V017`, `-022` `V018`.)*
 
 ---
 
@@ -1011,8 +1135,10 @@ The fifteen mandatory scenarios (`PHASE_13_PLAN.md` §13.2): 1 §4.4–§4.6 · 
 - **Every door `/v1`, closed bodies, the error contract, `Idempotency-Key` on every keyed command, owner-scoped**; the
   uniform `404 risk.NotFound`.
 - **Data classification**: assessment inputs and rule hits `CONFIDENTIAL`; signal attributes at their source's level
-  (`device` `RESTRICTED-PII`); case notes and evidence refs `CONFIDENTIAL`, screened; the report narrative
-  `RESTRICTED-PII`; nothing `INTERNAL` but identifiers and timestamps (`ColumnClassificationTest`).
+  (`device` `RESTRICTED-PII`); evidence refs `CONFIDENTIAL`; case notes and every person-written reason
+  `RESTRICTED-PII`, screened (*read "case notes and evidence refs `CONFIDENTIAL`" until P13-DOC-001;
+  `DATA_CLASSIFICATION.md`'s rows*); the report narrative `RESTRICTED-PII`; nothing `INTERNAL` but identifiers and
+  timestamps (`ColumnClassificationTest`).
 - **Architecture guards**: `RiskModuleIsolationTest` (`risk → platform, sharedkernel` only; every business module and
   `app` refused; every sibling refuses `risk`), `NoCustomerSurfaceReadsRiskTest`, `NoSingleInstanceAssumptionRulesTest`,
   `RoutePermissionRegisterTest`, `NoFloatingPointMoneyRulesTest` over `risk`.
@@ -1070,12 +1196,15 @@ them.*
 - **The acknowledgement's record and the `UNKNOWN` filing** (`-021`) — **settled** (plan §5): the acknowledgement is
   recorded by the filing port's inquiry leg (`RegulatoryFilingProvider` inquiry, the system actor) as
   `FILED → ACKNOWLEDGED | REJECTED`, audited `risk.ReportAcknowledged` / `risk.ReportRejected`; an `UNKNOWN` filing is a
-  permit on the `FILED` row, never re-filed (§4.8).
+  permit on the `FILED` row, never re-filed (§4.8). *(As built by `-021`: re-submitted under the same filing reference
+  when an inquiry answers `NOT_RECEIVED` - one filing by the provider's dedupe on the reference, the adapter's contract;
+  P13-DOC-001.)*
 - **Migration numbers** — **settled** (plan §8, §17): assigned in the waves' landing order, Flyway `outOfOrder` off —
   `-001` `V001`, `-002` `V002`, `-005` `V003`, `-019` `V004`, `-006` `V005`, `-007` `V006`, `-004` `V007` (the
   assessment tables and `decision_override`), `-015` `V008`, `-016` `V009`, `-017` `V010`, `-021` `V011`, `-022` `V012`
   (the headings of §4 and the table of §5). *(As landed: `-021`'s is `V016` - the next free number at its build, after
-  `-014` `V011`, `-016` `V012`, `-017` `V013`, `-018` `V014`, `-020` `V015`.)*
+  `-014` `V011`, `-016` `V012`, `-017` `V013`, `-018` `V014`, `-020` `V015`; then `-025` `V017` and `-022` `V018` - the
+  whole order in §5, P13-DOC-001.)*
 - **One `PROPOSED` per operation** (`-002`) — **settled by the build** (`P13-TSK-002`, 2026-10-23): several `PROPOSED`
   per operation, numbered without a gap under the advisory lock (the backlog entry's "ten proposals leave ten
   versions"); activation monotonic in version number, a proposal below the version in force superseded; the loser of a
@@ -1095,9 +1224,13 @@ them.*
   while one is `DRAFT`, `APPROVED`, `FILED` or `ACKNOWLEDGED` - `regulatory_report_one_live_per_case`, wider than "a
   second open draft" so that no case is filed twice - and for every other state conflict of a report (a case not so
   disposed, a report not awaiting the act); a draft not taken as asked `422 risk.ReportRequestInvalid` - new.)*
-- **The rescreening permit's states and the superseded list** (`-022`) — still this document's reading: the permit
-  `PENDING → REQUESTED → DONE` keyed (list version, party); the predecessor list version keeps `ACTIVE` until `-022`
-  decides whether a `SUPERSEDED` state is wanted.
+- **The rescreening permit's states and the superseded list** (`-022`) — **settled by the build** (`P13-TSK-022`,
+  2026-10-26, risk `V018`; §4.10): the permit `PENDING → DONE(CLEARED | HIT | SKIPPED | NOT_ONBOARDED) | FAILED(cause)`
+  keyed (party, list version) - no `REQUESTED` state, the claim committed before kyc is asked; the predecessor list
+  version `RETIRED` beside its successor's activation, which is four eyes from a `MULTI_FACTOR` session; the parties
+  enqueued are the `ACTIVE` and `PENDING` ones, by the rescreening leg after the activation. *(Read "still this document's
+  reading: the permit `PENDING → REQUESTED → DONE` …; the predecessor list version keeps `ACTIVE` until `-022` decides
+  whether a `SUPERSEDED` state is wanted" until P13-DOC-001.)*
 - **The effective-from arithmetic** (`-002`) — **confirmed by the build** (`P13-TSK-002`, 2026-10-23): credit `V014`'s
   rule in `risk V002`'s edge trigger — the retirement's end `GREATEST(clock_timestamp(), transaction_timestamp(),
   effective_from + 1 µs)`, the successor's start `GREATEST(transaction_timestamp(), max(effective_to))` — so a backward

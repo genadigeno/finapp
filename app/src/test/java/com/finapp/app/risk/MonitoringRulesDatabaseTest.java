@@ -104,8 +104,15 @@ import org.junit.jupiter.api.TestMethodOrder;
  * <p>Written and owed under C5 (the standing criterion-7 deviation): the database tier is not run per task. The
  * {@code MONITORING} version is the v1 fixture, activated once for the suite (its predecessor, if any, retired beside
  * it); every case uses parties of its own.
+ *
+ * <p><strong>Its own container</strong> ({@code own-container}, P13-DOC-001's database pass): the {@code MONITORING}
+ * version it activates judges every profile recompute in the database, and its drains run the rule leg over the WHOLE
+ * journal from the one global watermark - so in a shared container it judges every other suite's movements, and meets
+ * their rows: the pass's re-run failed four of its cases on another suite's customer account whose ledger
+ * {@code owner_ref} is not a UUIDv7, which the rule leg's account-to-party join refuses (ADR-0013) - green alone.
  */
 @Tag("database")
+@Tag("own-container")
 @DisplayName("the monitoring rules over real postings (P13-TSK-020)")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
@@ -318,6 +325,9 @@ class MonitoringRulesDatabaseTest {
 
     /** Claims until one reads nothing - the cap bounds a shared journal other suites filled. */
     private void drainWith(MonitoringIntake intake, MonitoringIntake.BatchLeg leg) {
+        // A zero horizon reads an entry once the DATABASE's clock is past its minting millisecond (the instance's): wait
+        // for that before the first empty read can end the drain (P13-DOC-001's database pass - the JVM ran ahead).
+        DatabaseClock.awaitPastNow();
         try (SecurityContext.Scope actor = SecurityContext.enter(SYSTEM);
                 CorrelationContext.Scope flow = CorrelationContext.enter(
                         Correlation.startingWith(CorrelationId.generate(IDS)))) {
@@ -336,6 +346,7 @@ class MonitoringRulesDatabaseTest {
 
     /** The monitored row of {@code entry}, read back from the journal and classified as the intake does. */
     private com.finapp.risk.MonitoredTransaction classified(UUID entry) {
+        DatabaseClock.awaitPastNow();
         return inTransaction(uow -> {
             List<com.finapp.risk.MonitoredEntry> read = ledger.entriesAfter(uow, previous(entry), Duration.ZERO, 1);
             return com.finapp.risk.MonitoringClassification.classify(

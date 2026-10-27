@@ -234,6 +234,11 @@ class AlertDatabaseTest {
             refusedWithMessage(migrator, "TRUNCATE risk.risk_alert CASCADE", "never deleted");
             refusedWithMessage(migrator, "UPDATE risk.risk_alert SET severity = 'LOW'" + where, "facts never change");
         }
+        // With CASCADE any truncated table's trigger may be the one that refuses, so the alert's OWN truncate trigger is
+        // pinned present and enabled (P13-DOC-001, the review's A8-7 on the repair that added the CASCADE).
+        assertThat(count("SELECT count(*) FROM pg_trigger WHERE tgrelid = 'risk.risk_alert'::regclass"
+                + " AND tgname = 'risk_alert_is_never_truncated' AND tgenabled <> 'D' AND (tgtype & 32) <> 0"))
+                .as("risk.risk_alert's own BEFORE TRUNCATE trigger").isEqualTo(1);
         assertThat(count("SELECT count(*) FROM risk.risk_alert" + where)).isEqualTo(1);
     }
 

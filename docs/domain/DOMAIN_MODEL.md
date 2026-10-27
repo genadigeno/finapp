@@ -308,7 +308,22 @@ planned design, defined in the glossary's §8a with the same guard, and the mach
 [`RISK_LIFECYCLES.md`](RISK_LIFECYCLES.md).)* *(`P13-TSK-018`, 2026-10-25, added two terms after Risk Action, each
 built as a read of its own and defined in the glossary: Risk Queue (the investigator's ordered, audited, self-dealing-
 withheld read of alerts or cases - not a projection, and not `CaseQueue`, the routing vocabulary) and Case File (one
-case read whole, its evidence by reference - not the evidence, and never a report's narrative).)*
+case read whole, its evidence by reference - not the evidence, and never a report's narrative).)* *(The Phase 13 exit
+review, `P13-DOC-001`, 2026-10-27: Phase 13 is built — `P13-TSK-001`…`-025` and `P13-TST-002`, risk `V001`…`V018`;
+the storm `P13-TST-001` is POSTPONED by the owner until after the project's phases (`POSTPONED_ISSUES.md` PI-004) — and
+every risk entry was read against the code; every term above is built, so the transition's "Nothing of Phase 13 is
+built: each is the planned design" no longer holds and the glossary's §8a states each as built. No term was added or
+renamed. Two states `risk` owns (`MODULE_ARCHITECTURE.md` §4 `risk`, *Owns*) are not terms of the list, because each is
+a mechanism of a term rather than a concept of its own, and are described here: the **monitoring watermark** —
+`risk.monitoring_watermark`, one row per source (today the ledger journal), holding the id of the last journal entry
+ingested (a keyset position over the journal's UUIDv7 ids — the journal has no sequence column) and the sweep's permit;
+claimed `FOR UPDATE SKIP LOCKED` and advanced only in the batch's own transaction, moved back only by an audited
+reprocessing order, pulled forward by a completion's hint — Transaction Monitoring's position in the journal, never a
+copy of it and never a broker offset; and the **rescreening permit** — `risk.rescreening_permit`, one per (party,
+Screening List Version) (`rescreening_permit_once`), born `PENDING` by the rescreening leg's enqueue after the version's
+activation, claimed `SKIP LOCKED` under a lease, kyc asked under its key, concluded once `DONE` (`CLEARED`, `HIT`,
+`SKIPPED`, `NOT_ONBOARDED`) or `FAILED` at its bound, naming the one signal born of it — risk's record that it asked,
+never a Screening Result, which stays kyc's.)*
 
 ---
 

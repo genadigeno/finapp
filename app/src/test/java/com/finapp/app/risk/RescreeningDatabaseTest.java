@@ -110,9 +110,17 @@ import org.springframework.test.context.DynamicPropertySource;
  * </ul>
  *
  * <p><strong>Written and owed under C5</strong> (the standing criterion-7 deviation): the database tier is not run per
- * task. The database is shared with every other suite, so each case asserts over its own parties and its own versions.
+ * task. Each case asserts over its own parties and its own versions.
+ *
+ * <p><strong>Its own container</strong> ({@code own-container}, P13-DOC-001's database pass): every activation here
+ * enumerates EVERY {@code ACTIVE} and {@code PENDING} party in the database and rescreens each through kyc - one keyed
+ * {@code RESCREEN} check and one provider call per party - so in a shared container it judges every other suite's
+ * parties too (their kyc checks, their provider counts), and it meets their rows: the pass's first run failed nine of
+ * its cases on a party a Phase 1 schema suite inserts under a random (version 4) identifier, which {@code PartyId.of}
+ * refuses (ADR-0013) - green alone.
  */
 @Tag("database")
+@Tag("own-container")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @DisplayName("the rescreening over the database: every active party once through kyc, a hit alerted once, the"
         + " decision standing (P13-TSK-022)")
@@ -706,9 +714,10 @@ class RescreeningDatabaseTest {
         }
         ScreeningListVersion recorded = recorded(ScreeningList.SANCTIONS);
         try (Connection app = DatabaseRoles.application()) {
-            assertThat(sqlState(app, "UPDATE risk.screening_list_version SET status = 'ACTIVE', activated_by = '"
+            assertThat(refusal(app, "UPDATE risk.screening_list_version SET status = 'ACTIVE', activated_by = '"
                     + recorded.recordedBy().id() + "', activated_by_type = 'CUSTOMER' WHERE id = '" + recorded.id().value()
-                    + "'")).as("four eyes for every writer").isEqualTo(CHECK_VIOLATION);
+                    + "'")).as("four eyes for every writer - by the CHECK itself (P13-DOC-001)")
+                    .startsWith(CHECK_VIOLATION).contains("screening_list_version_four_eyes");
             assertThat(sqlState(app, "INSERT INTO risk.rescreening_permit (id, party_id, list_version_id, status,"
                     + " attempts, next_attempt_at, enqueued_at, correlation_id) VALUES ('" + IDS.next() + "', '"
                     + IDS.next() + "', '" + recorded.id().value() + "', 'PENDING', 0, now(), now(), 'c')"))
@@ -734,6 +743,14 @@ class RescreeningDatabaseTest {
                     .as("one question per key").isEqualTo(UNIQUE_VIOLATION);
             assertThat(sqlState(app, "UPDATE kyc.verification_check SET purpose = 'ONBOARDING', rescreen_key = NULL"
                     + " WHERE rescreen_key = " + key)).as("the purpose and the key frozen").isEqualTo(INSUFFICIENT_PRIVILEGE);
+            // kyc V011's re-made in-flight arbiter, alone for a raw writer (P13-DOC-001, the review's A8-2): one
+            // ONBOARDING question in flight per (case, type) - a second refused by the index by name - while the rescreen
+            // in flight above (the same case and type) neither refused the first nor is refused beside it.
+            assertThat(sqlState(app, String.format(insert, IDS.next(), "SANCTIONS", "ONBOARDING", "NULL")))
+                    .as("an onboarding question beside a rescreen in flight").isEqualTo("succeeded");
+            assertThat(refusal(app, String.format(insert, IDS.next(), "SANCTIONS", "ONBOARDING", "NULL")))
+                    .as("a second onboarding question of the type in flight")
+                    .startsWith(UNIQUE_VIOLATION).contains("verification_check_one_in_flight_per_type");
         }
         assertThat(scalarText("SELECT recorded_by_type FROM risk.screening_list_version WHERE id = ?",
                 recorded.id().value())).as("the operator the session types CUSTOMER").isEqualTo("CUSTOMER");
@@ -918,6 +935,16 @@ class RescreeningDatabaseTest {
                 statement.setObject(i + 1, parameters[i]);
             }
             statement.executeUpdate();
+        }
+    }
+
+    /** The refusal's SQLSTATE and message ("succeeded" when nothing refused) - a CHECK named, not only a state. */
+    private static String refusal(Connection connection, String sql) {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.execute();
+            return "succeeded";
+        } catch (SQLException refused) {
+            return refused.getSQLState() + " " + refused.getMessage();
         }
     }
 

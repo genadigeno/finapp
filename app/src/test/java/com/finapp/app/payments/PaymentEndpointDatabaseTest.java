@@ -585,21 +585,29 @@ class PaymentEndpointDatabaseTest {
         String later =
                 field(payment(token, body(methodId, "4.00", "USD"), someKey()).body(), "id");
 
-        // MID-CONFIRMATION: the confirm has read the instrument ACTIVE and routed; the held
-        // intent row stops it at the conditional transition while the detach commits.
+        // MID-CONFIRMATION: the confirm has read the instrument ACTIVE, and waits on the wallet
+        // it will credit while the detach commits. Since P13-TSK-010 its Tx1 locks the intent row
+        // FIRST - before the instrument - so a held intent row stops it too early to be "mid"
+        // (this suite's first run since, P13-DOC-001's database pass, C5). The hold is the
+        // credited wallet's ledger account instead: the confirm share-locks it (`creditable`,
+        // FOR SHARE) right after resolving the instrument; the holder takes it FOR UPDATE.
         java.util.concurrent.ExecutorService pool =
                 java.util.concurrent.Executors.newSingleThreadExecutor();
         try (Connection holder = DatabaseRoles.application()) {
             holder.setAutoCommit(false);
             try (PreparedStatement lock =
                     holder.prepareStatement(
-                            "SELECT id FROM payments.payment_intent WHERE id = ? FOR UPDATE")) {
+                            "SELECT a.id FROM ledger.ledger_account a JOIN payments.payment_intent i"
+                                    + " ON a.id = i.credit_account_id WHERE i.id = ?"
+                                    + " FOR UPDATE OF a")) {
                 lock.setObject(1, UUID.fromString(midway));
-                lock.executeQuery().close();
+                try (ResultSet locked = lock.executeQuery()) {
+                    assertThat(locked.next()).as("the credited wallet, held").isTrue();
+                }
             }
             java.util.concurrent.Future<HttpResponse<String>> confirming =
                     pool.submit(() -> confirm(token, midway));
-            awaitLockWaitOn("payment_intent", "SET status");
+            awaitLockWaitOn("ledger_account", "FOR SHARE");
             HttpResponse<String> detached = delete(token, "/v1/me/payment-methods/" + methodId);
             assertThat(detached.statusCode()).as(detached.body()).isEqualTo(204);
             holder.rollback();

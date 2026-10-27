@@ -26,8 +26,8 @@ Detailed architectural decisions. The human-readable index of *what* was decided
   Phase 10 → 11 transition (2026-10-10) and accepted by the Phase 11 review (`P11-DOC-001`,
   2026-10-15) in the same way; ADR-0101…0106 were written `Proposed` at the Phase 11 → 12
   transition (2026-10-16) and accepted by the Phase 12 review (`P12-DOC-001`, 2026-10-22) in the
-  same way; ADR-0107…0112 were written `Proposed` at the Phase 12 → 13 transition (2026-10-22), to
-  be read against the code and accepted by the Phase 13 review (`P13-DOC-001`) in the same way.
+  same way; ADR-0107…0112 were written `Proposed` at the Phase 12 → 13 transition (2026-10-22) and
+  accepted by the Phase 13 review (`P13-DOC-001`, 2026-10-27) in the same way.
   *(The Phase 7 review's acceptance was missing from this line until the Phase 7 → 8
   transition added it with the Phase 8 decisions.)*
 - A decision found in code but absent from this record is architectural debt.
@@ -142,12 +142,12 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0104](ADR-0104-bnpl-funding-from-lending-capital.md) | BNPL funding from lending capital: the shared headroom and credit exposure version 3 | Accepted | 12 | BNPL · Lending · Credit · Ledger · Merchant |
 | [0105](ADR-0105-the-bnpl-refund-policy.md) | The BNPL refund policy: latest instalments first, the excess to the customer, the merchant fee pro-rated back, the PN interest rule, and the merchant payable's third bounded negative source | Accepted | 12 | BNPL · Merchant · Ledger · Accounts (wallet) · Identity |
 | [0106](ADR-0106-bnpl-disputes-and-the-single-refund-bound.md) | BNPL disputes and the single refund bound: a customer's contest holds servicing on the disputed amount and resolves only as a refund under the purchase's one bound, so nothing is credited twice | Accepted | 12 | BNPL · Merchant · Payments (Disputes) · Identity · Audit |
-| [0107](ADR-0107-the-risk-bounded-context.md) | The `risk` bounded context: one module for risk, fraud, AML and case management, none of the money, every other domain through ports | Proposed | 13 | Risk · Fraud · AML · Case Management · Platform |
-| [0108](ADR-0108-synchronous-risk-evaluation-in-the-callers-transaction.md) | Synchronous risk evaluation in the caller's transaction: the decision model, the seam mapping, the fail-safe as a recorded decision, the latency budget and the override | Proposed | 13 | Risk · Transfers · Payments · Cross-border · Credit · Identity |
-| [0109](ADR-0109-risk-policy-as-versioned-data.md) | Risk policy as versioned data: rule kinds in code, parameters as data, score and fail-safe bands, four-eyes activation, the deterministic engine and replay | Proposed | 13 | Risk · Identity · Audit |
-| [0110](ADR-0110-the-case-model.md) | The case model shared by fraud, ATO, merchant abuse, AML and collections: born-once alerts, one open case per subject and kind, concurrent updates by revision, four-eyes dispositions | Proposed | 13 | Risk (Case Management) · Identity · Audit |
-| [0111](ADR-0111-aml-monitoring-from-the-ledger-journal-and-the-regulatory-report.md) | AML transaction monitoring from the ledger journal, and the regulatory report as an artefact distinct from the investigation, behind a filing port | Proposed | 13 | Risk (AML) · Ledger · KYC · Audit |
-| [0112](ADR-0112-downstream-actions-through-the-owning-domains.md) | Downstream actions as keyed commands through the owning domains: risk never mutates authoritative state and never reverses a transaction | Proposed | 13 | Risk · Identity · Accounts · Merchant · Cross-border · Payments · KYC |
+| [0107](ADR-0107-the-risk-bounded-context.md) | The `risk` bounded context: one module for risk, fraud, AML and case management, none of the money, every other domain through ports | Accepted | 13 | Risk · Fraud · AML · Case Management · Platform |
+| [0108](ADR-0108-synchronous-risk-evaluation-in-the-callers-transaction.md) | Synchronous risk evaluation in the caller's transaction: the decision model, the seam mapping, the fail-safe as a recorded decision, the latency budget and the override | Accepted | 13 | Risk · Transfers · Payments · Cross-border · Credit · Identity |
+| [0109](ADR-0109-risk-policy-as-versioned-data.md) | Risk policy as versioned data: rule kinds in code, parameters as data, score and fail-safe bands, four-eyes activation, the deterministic engine and replay | Accepted | 13 | Risk · Identity · Audit |
+| [0110](ADR-0110-the-case-model.md) | The case model shared by fraud, ATO, merchant abuse, AML and collections: born-once alerts, one open case per subject and kind, concurrent updates by revision, four-eyes dispositions | Accepted | 13 | Risk (Case Management) · Identity · Audit |
+| [0111](ADR-0111-aml-monitoring-from-the-ledger-journal-and-the-regulatory-report.md) | AML transaction monitoring from the ledger journal, and the regulatory report as an artefact distinct from the investigation, behind a filing port | Accepted | 13 | Risk (AML) · Ledger · KYC · Audit |
+| [0112](ADR-0112-downstream-actions-through-the-owning-domains.md) | Downstream actions as keyed commands through the owning domains: risk never mutates authoritative state and never reverses a transaction | Accepted | 13 | Risk · Identity · Accounts · Merchant · Cross-border · Payments · KYC |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch
