@@ -42,6 +42,9 @@ class AccountMonitoredPartiesDatabaseTest {
         UUID party = IDS.next();
         UUID customer = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
+            // openOrConverge takes a savepoint, which an autocommit connection has no transaction for - 25P01
+            // (P13-TST-001's first run of this owed suite).
+            app.setAutoCommit(false);
             execute(app, "INSERT INTO party.party (id, kind, display_name, registered_at)"
                     + " VALUES (?, 'PERSON', 'Joined Holder', now() - interval '2 hour')", party);
             execute(app, "INSERT INTO party.customer (id, party_id, status, opened_at, status_changed_at)"
@@ -58,6 +61,7 @@ class AccountMonitoredPartiesDatabaseTest {
             assertThat(accounts.ids()).containsExactly(agreement.id().value());
             assertThat(accounts.firstOpenedAt()).isPresent();
             assertThat(join.accountsOf(app, IDS.next())).isEqualTo(MonitoredParties.Accounts.NONE);
+            app.rollback();
         }
     }
 

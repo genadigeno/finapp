@@ -367,6 +367,9 @@ extra["ownContainerSuites"] =
         // P13-TSK-010: it activates EUR CARD_PAYMENT and WALLET_PAYMENT risk versions, after which every merchant-bound
         // card and wallet payment in the database is judged by them - a shared container's USD checkouts would be
         // refused by the open-ended fail-safe band, its EUR 600 ones challenged, its EUR 2,500 card ones held.
+        // P13-DOC-001's database pass: its resolvers sweep the whole database and it asserts no row failed the card sweep
+        // - another suite's stranded authorization on a fixture's posting account fails the chain in a shared container.
+        "com.finapp.app.payments.MultiRailConservationStormDatabaseTest",
         "com.finapp.app.payments.PaymentRiskSeamDatabaseTest",
         "com.finapp.app.payments.SystemWithdrawalDatabaseTest",
         // P13-TSK-009: it activates a EUR WITHDRAWAL risk version, after which every withdrawal in the database is
@@ -380,6 +383,17 @@ extra["ownContainerSuites"] =
         // P13-TSK-014: it activates EUR CARD_PAYMENT, WALLET_PAYMENT and MONITORING risk versions carrying the abuse
         // rules - a shared container's merchants with refunds would be alerted, its sessions' sixth checkout challenged.
         "com.finapp.app.risk.MerchantAbuseDatabaseTest",
+        // P13-DOC-001's database pass: it activates a MONITORING version and drains the rule leg over the whole journal
+        // from the one global watermark - every other suite's movements judged, and a fixture's non-UUIDv7 account
+        // owner refused by the account-to-party join.
+        "com.finapp.app.risk.MonitoringRulesDatabaseTest",
+        // P13-DOC-001's database pass: each activation of a screening-list version enumerates every ACTIVE and PENDING
+        // party in the database and rescreens each through kyc - a shared container's parties would all be asked, and a
+        // party another suite inserted under a non-UUIDv7 identifier fails the enumeration (ADR-0013).
+        "com.finapp.app.risk.RescreeningDatabaseTest",
+        // P13-DOC-001's database pass: it commits what no real path writes - a phantom monitored transaction, an assessment
+        // of no command, a window counted past its evidence - append-only rows every whole-database census then holds.
+        "com.finapp.app.risk.RiskProofsDatabaseTest",
         // P13-TSK-008: each activates a EUR TRANSFER risk version, after which every transfer in the database is
         // judged by it - a shared container's USD transfers would be refused by the open-ended fail-safe band.
         "com.finapp.app.risk.RiskPolicyEndpointDatabaseTest",

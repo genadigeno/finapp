@@ -113,7 +113,8 @@ class ReportApiTest {
                 filer.token());
         assertThat(filed.statusCode()).as(filed.body()).isEqualTo(202);
         assertThat(filed.body()).contains("\"status\":\"ACKNOWLEDGED\"").contains("\"providerReference\":\"SIM-FIU-");
-        assertThat(scalar("SELECT payload::text FROM platform.outbox_event WHERE event_type ="
+        // payload is bytea: ::text renders hex, so it is decoded (P13-TST-001's first run of this owed suite).
+        assertThat(scalar("SELECT convert_from(payload, 'UTF8') FROM platform.outbox_event WHERE event_type ="
                 + " 'risk.RegulatoryReportFiled' AND aggregate_id = '" + reportId + "'")).contains(reportId)
                 .contains("EU-REF").doesNotContain(customer.party().toString()).doesNotContain("threshold");
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'risk.ReportAcknowledged'"

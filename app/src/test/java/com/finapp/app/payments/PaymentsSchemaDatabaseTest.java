@@ -101,14 +101,19 @@ class PaymentsSchemaDatabaseTest {
     }
 
     @Test
-    @DisplayName("the intent's UPDATE grant is ONE column, swept from information_schema")
+    @DisplayName("the intent's UPDATE grant is its status and, since payments V034, its failure reason - swept from"
+            + " information_schema")
     void theIntentsUpdateGrantIsOneColumn() throws Exception {
+        // payments V034 (P13-TSK-010) granted failure_reason beside status: a risk refusal writes the intent's edge and
+        // its reason in one statement, frozen once set by V034's trigger. Found stale by P13-DOC-001's database pass -
+        // the grant was widened on purpose and this sweep, a Phase 5 suite, never ran under C5.
+        java.util.Set<String> granted = java.util.Set.of("status", "failure_reason");
         try (Connection app = DatabaseRoles.application()) {
             for (String column : columnsOf(app, "payment_intent")) {
                 String update = "UPDATE payments.payment_intent SET " + column + " = " + column
                         + " WHERE false";
-                if ("status".equals(column)) {
-                    // The positive control: the one granted column plans cleanly.
+                if (granted.contains(column)) {
+                    // The positive control: each granted column plans cleanly.
                     assertThatCode(() -> {
                         try (Statement allowed = app.createStatement()) {
                             allowed.executeUpdate(update);

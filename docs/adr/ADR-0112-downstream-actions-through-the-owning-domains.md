@@ -1,6 +1,6 @@
 # ADR-0112 — Downstream actions as keyed commands through the owning domains: risk never mutates authoritative state and never reverses a transaction
 
-Status: Proposed
+Status: Accepted (2026-10-27, `P13-DOC-001` — read against the code and corrected first)
 Date: 2026-10-22
 Phase: 13
 Context: Risk · Identity · Accounts · Merchant · Cross-border · Payments (withdrawals) · KYC · Audit
@@ -53,6 +53,13 @@ recorded on both sides"), §2.2 (C10), §3.1 (Risk Action), §4, §5, §7.1 (T-a
    The vocabulary is closed in code; a new kind is a new row here and a new port method, never a generic "execute
    this" command. There is **no** credential reset, no identity mutation beyond the existing suspend / reinstate /
    revoke, no posting, no hold placed by `risk`, and no reversal (plan §20).
+   *(P13-DOC-001, 2026-10-27, the table as built (`ActionKind`, `ActionRules`, `ActionDispatch`): eight kinds are
+   proposable and dispatched - identity's three, `SUSPEND_MERCHANT` and payments' four held doors. `SUSPEND_ACCOUNT`,
+   `REINSTATE_ACCOUNT` and `BLOCK_BENEFICIARY` are unavailable - no owning command (the follow-up's amendment (a);
+   `PHASE_13_PLAN.md` §1.2 item 24). **`RESCREEN_PARTY` is not built**: it reads available, but no door proposes it
+   (`ActionRules`: "the rescreening sweep's, never a case's"), `ActionDispatch` throws on it, and the rescreening leg
+   asks kyc through `PartyRescreening` with no `risk_action` row (ADR-0111 decision 8's note) - dead vocabulary, and
+   on-demand rescreening from a case not built (items 93, 50).)*
 
 3. **Proposed and approved in T-case, under four eyes.** A `RISK_INVESTIGATE` holder proposes an action on a case
    (`POST /v1/operator/risk/cases/{id}/risk-actions`, keyed `risk.case:<actor>`, under the case row R4 and its
@@ -60,6 +67,11 @@ recorded on both sides"), §2.2 (C10), §3.1 (Risk Action), §4, §5, §7.1 (T-a
    proposer never approves (`403 risk.SelfApprovalRefused`, a four-eyes `CHECK`, recorded `FAILED`; `INV-RSK-07`). An
    override-issued action (ADR-0108) is born `APPROVED` by the override's own approval, which is itself four eyes at
    the threshold. Self-dealing fails closed on both acts. The approval answers `202`: the effect is the schedule's.
+   *(P13-DOC-001, 2026-10-27, as built: the acts are keyed per principal, `risk.case:<type>:<id>`; a disposition
+   issues no action (the follow-up's amendment (a)). The effect is first the approval door's own - after its commit,
+   and again on every replay of its key, `RiskActionDesk` drives the action through its owner's door as the platform
+   (`RiskActionDriver.driveIfDue`) - and `RiskActionSchedule` re-drives whatever that left; the `202` stands. The
+   platform as executor and no disposition issuing an action await ratification (`PHASE_13_PLAN.md` §1.2 item 26).)*
 
 4. **Dispatched by `RiskActionSchedule` in T-act, on the owning domain's lock order, keyed.** The schedule claims
    `APPROVED` actions by their `next_attempt_at` permit (`SKIP LOCKED`, leaderless, off in test contexts). T-act takes
@@ -108,6 +120,10 @@ recorded on both sides"), §2.2 (C10), §3.1 (Risk Action), §4, §5, §7.1 (T-a
     holding no risk row a money transaction could wait on (plan §7.3); the ATO sequence (credential change → new
     payee → withdrawal) is held and cased, and its actions dispatched once (scenario 11). Permits are the database's
     clock; the schedule is leaderless.
+    *(P13-DOC-001, 2026-10-27: the named tests exist and ran green in the owner-authorised database pass (2026-10-27,
+    after test-only repairs); the storm's counted run of scenarios 4, 7, 10 and 11 is postponed (`POSTPONED_ISSUES.md`
+    PI-004). As built T-act holds no risk row at all while the owner works - the claim on (R6) commits first (the
+    follow-up's amendment (c)).)*
 
 ## Alternatives Considered
 
@@ -228,11 +244,16 @@ keyed command through its door), `INV-RSK-07` (every downstream action is two pe
   `-017`; the outcomes `DONE`, `ALREADY`, `REFUSED` recorded once (`risk.ActionConcluded`), a thrown dispatch recording
   nothing; `risk.RiskActionRequested` / `risk.RiskActionCompleted` carry the override's id with `source=OVERRIDE`.)*
   `P13-TSK-013` — the ATO rules that propose C10's actions; `P13-TSK-022` — `RESCREEN_PARTY` through kyc.
+  *(P13-DOC-001, 2026-10-27: `P13-TSK-013`'s rules propose nothing - they raise the `ACCOUNT_TAKEOVER` alert and hold
+  or case the movement; C10's actions are a person's proposal on the case. `P13-TSK-022` built the rescreening without
+  `RESCREEN_PARTY` - decision 2's note, items 50, 93.)*
 - `P13-TST-001` runs scenarios 4, 7, 10 and 11 with counts and asserts the lock wait on R6 and on the withdrawal row
-  in both orders.
+  in both orders. *(P13-DOC-001, 2026-10-27: postponed by the owner until after the project's phases (PI-004) -
+  decision 10's note.)*
 - `RISK_LIFECYCLES.md` §Risk action is the machine's record; `AUDITABLE_ACTIONS.md` gains
   `risk.ActionProposed/Approved/Rejected/Dispatched/Concluded`; each owning domain's register keeps its own action
   names unchanged.
 - A new `ActionKind` is a dated amendment here naming its owning command and port method.
-- **Acceptance.** `Proposed` at the Phase 12 → 13 transition (2026-10-22); the Phase 13 review (`P13-DOC-001`) reads
-  this ADR against the code, corrects it in place with dated notes, and accepts it.
+- **Acceptance.** **As built** (`P13-DOC-001`, 2026-10-27): `Proposed` at the Phase 12 → 13 transition (2026-10-22);
+  the Phase 13 review read this ADR against the code, corrected it in place above with dated notes, and accepted it.
+  The as-built choices awaiting the owner carry their `PHASE_13_PLAN.md` §1.2 item numbers (items 14, 24-26, 50, 93).

@@ -67,7 +67,11 @@ class RiskMonitoringEndpointDatabaseTest {
             + " carrying the positions only")
     void ordered() throws Exception {
         String officer = sessionWith(RoleName.RISK_OFFICER);
-        long from = Instant.now().minus(Duration.ofHours(1)).toEpochMilli();
+        // At or before the watermark, as the door requires: "an hour ago" held only once another suite's sweep had moved
+        // the watermark past it - a fresh container's sits at the floor, and the door rightly answered 422
+        // ReprocessingNotBehind (P13-TST-001's first run of this owed suite).
+        long watermark = count("SELECT last_sequence FROM risk.monitoring_watermark WHERE source = 'ledger.journal'");
+        long from = Math.min(Instant.now().minus(Duration.ofHours(1)).toEpochMilli(), watermark);
         String key = someKey();
 
         HttpResponse<String> ordered = post(DOOR, body(from, "policy v2 applied to history"), officer, key);
@@ -96,7 +100,8 @@ class RiskMonitoringEndpointDatabaseTest {
     @Test
     @Order(2)
     @DisplayName("the refusals: no reason 422 risk.ReasonRequired; a point ahead of the watermark 422"
-            + " risk.ReprocessingNotBehind; an analyst 403; no key 400 - and none of them is audited or moves the watermark")
+            + " risk.ReprocessingNotBehind; an analyst 403; no key 422 api.IdempotencyKeyRequired; an undeclared field"
+            + " 422 api.ValidationFailed - and none of them is audited or moves the watermark")
     void theRefusals() throws Exception {
         String officer = sessionWith(RoleName.RISK_OFFICER);
         String analyst = sessionWith(RoleName.RISK_ANALYST);
@@ -119,12 +124,18 @@ class RiskMonitoringEndpointDatabaseTest {
         HttpResponse<String> wrongDesk = post(DOOR, body(0, "an analyst's try"), analyst, someKey());
         assertThat(wrongDesk.statusCode()).isEqualTo(403);
 
+        // A missing key is the platform's 422 api.IdempotencyKeyRequired (@RequiresIdempotencyKey), never a 400
+        // (P13-TST-001's first run of this owed suite).
         HttpResponse<String> unkeyed = post(DOOR, body(0, "no key"), officer, null);
-        assertThat(unkeyed.statusCode()).isEqualTo(400);
+        assertThat(unkeyed.statusCode()).as(unkeyed.body()).isEqualTo(422);
+        assertThat(unkeyed.body()).contains("api.IdempotencyKeyRequired");
 
         HttpResponse<String> unknownField = post(DOOR, "{\"fromSequence\":0,\"reason\":\"x\",\"extra\":1}", officer,
                 someKey());
-        assertThat(unknownField.statusCode()).as("closed body").isEqualTo(400);
+        // An undeclared field is @ClosedBody's 422 api.ValidationFailed, never a 400 (P13-TST-001's first run of this owed
+        // suite).
+        assertThat(unknownField.statusCode()).as("closed body: " + unknownField.body()).isEqualTo(422);
+        assertThat(unknownField.body()).contains("api.ValidationFailed");
 
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'risk.ReprocessingOrdered'"))
                 .isEqualTo(auditedBefore);

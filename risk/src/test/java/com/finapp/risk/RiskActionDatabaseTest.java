@@ -96,16 +96,18 @@ class RiskActionDatabaseTest {
         List<Object> answers = race(10, () -> {
             Actor approver = analyst();
             try {
-                RiskActions.Decided decided = inOneTransaction(uow -> actions.approve(uow,
+                return inOneTransaction(uow -> actions.approve(uow,
                         held.taken().riskCase().id(), proposed.id(), revision, "four eyes", approver, correlation()));
-                drive(proposed.id());
-                return decided;
             } catch (Cases.CaseRevisionStale | Cases.CaseActNotAdmitted refused) {
                 return refused;
             }
         });
         assertThat(answers).filteredOn(RiskActions.Decided.class::isInstance).hasSize(1);
         assertThat(answers).filteredOn(answer -> !(answer instanceof RiskActions.Decided)).hasSize(9);
+        // The dispatch is the schedule's, after the approvals (P13-DOC-001's database pass): driven from inside the race,
+        // the winner's SKIP LOCKED claim could meet a loser still holding the action row FOR UPDATE (lockedOf, before its
+        // refusal rolls back) and claim nothing - the next tick's to take, never a defect, but not this test's subject.
+        assertThat(drive(proposed.id())).as("the approved action's one dispatch").isPresent();
         assertThat(column("SELECT status || ',' || outcome || ',' || attempts FROM risk.risk_action WHERE id = '"
                 + proposed.id().value() + "'")).containsExactly("DONE,DONE,1");
         assertThat(owners.calls()).hasSize(1);
@@ -330,7 +332,9 @@ class RiskActionDatabaseTest {
                 .replace("risk.decision_override o", "pg_temp.fold_override o");
         UUID awaiting = IDS.next();
         UUID concluded = IDS.next();
-        try (Connection migrator = DatabaseRoles.migrator()) {
+        // The bootstrap role: the probe makes no privilege claim, and the migrator holds no TEMP on the database (the
+        // privilege floor) - P13-TST-001's run of this owed suite met "permission denied to create temporary tables".
+        try (Connection migrator = DatabaseRoles.bootstrap()) {
             migrator.setAutoCommit(false);
             try (Statement statement = migrator.createStatement()) {
                 statement.execute("CREATE TEMP TABLE fold_override (id uuid, status text, effect text, target_id uuid,"

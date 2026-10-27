@@ -189,8 +189,16 @@ import org.springframework.test.context.DynamicPropertySource;
  * holds it. And an honest {@code UNKNOWN} refund, its answer lost to a transport failure no one
  * chose, stood unresolved at rest while the providers answered only the storm's chosen losses:
  * truth, not a script, is what the resolvers are asked for.
+ *
+ * <p><strong>Its own container</strong> ({@code own-container}, P13-DOC-001's database pass): its resolvers sweep the
+ * WHOLE database and it asserts that no row failed the card sweep - so in a shared container every other suite's
+ * stranded authorization is its to chain, and one whose posting account is a fixture's id fails the chain
+ * (`UnknownPostingAccountException`): the pass's re-run failed it on seven such rows another suite left - green alone
+ * (`CURRENT_STATE.md`'s debt row "Suites that sweep with a fixed capture body" names the class). Every other storm runs
+ * in a container of its own already.
  */
 @Tag("database")
+@Tag("own-container")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @DisplayName("the multi-rail conservation storm (P7-TST-001)")
@@ -1798,6 +1806,10 @@ class MultiRailConservationStormDatabaseTest {
             ExecutorService racers = Executors.newFixedThreadPool(10);
             try {
                 int round = 0;
+                // The kind advances only once its burst ran (P13-DOC-001's database pass): a CHARGEBACK burst finding no
+                // undisputed sale returns nothing, and advancing past it anyway let a slower storm - every confirmation
+                // judged by risk since P13-TSK-010 - end with no chargeback burst at all ("every burst kind ran" red).
+                int kinds = 0;
                 long next = 20;
                 while (!storm.stop.get()) {
                     if (storm.committed.get() < next) {
@@ -1805,10 +1817,11 @@ class MultiRailConservationStormDatabaseTest {
                         continue;
                     }
                     next = storm.committed.get() + 30;
-                    BurstKind kind = BurstKind.values()[round % BurstKind.values().length];
+                    BurstKind kind = BurstKind.values()[kinds % BurstKind.values().length];
                     round++;
                     Burst burst = burst(storm, racers, kind, round);
                     if (burst != null) {
+                        kinds++;
                         storm.bursts.add(burst);
                         storm.committed("burst:" + kind);
                     }

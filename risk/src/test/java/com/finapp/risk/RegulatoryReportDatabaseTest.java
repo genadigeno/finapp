@@ -78,9 +78,15 @@ class RegulatoryReportDatabaseTest {
         RegulatoryReport drafted = draft(caseId, drafter);
         assertThatThrownBy(() -> inOneTransaction(uow -> reports.approve(uow, caseId, drafted.id(), "mine", drafter,
                 correlation()))).isInstanceOf(RegulatoryReports.SelfApprovalRefused.class);
+        // In a transaction of its own (P13-DOC-001, the review's A8-3): on an autocommit connection the implicit commit
+        // fires V016's deferred history trigger, which raises 23514 too - a probe that would pass with the CHECK gone.
+        // The statement itself is refused, by the CHECK by name, before any commit.
         try (Connection migrator = DatabaseRoles.migrator()) {
-            refused(migrator, "UPDATE risk.regulatory_report SET status = 'APPROVED', approved_by = drafted_by,"
-                    + " approved_by_type = drafted_by_type WHERE id = '" + drafted.id().value() + "'", CHECK_VIOLATION);
+            migrator.setAutoCommit(false);
+            refusedBy(migrator, "UPDATE risk.regulatory_report SET status = 'APPROVED', approved_by = drafted_by,"
+                    + " approved_by_type = drafted_by_type WHERE id = '" + drafted.id().value() + "'", CHECK_VIOLATION,
+                    "regulatory_report_four_eyes");
+            migrator.rollback();
         }
         assertThat(inOneTransaction(uow -> reports.approve(uow, caseId, drafted.id(), "accurate", officer(),
                 correlation())).report().status()).isEqualTo(RegulatoryReportStatus.APPROVED);
@@ -332,6 +338,21 @@ class RegulatoryReportDatabaseTest {
             }
         }
         return values;
+    }
+
+    /** Refused with {@code sqlState} by {@code constraint} by name - not by another rank raising the same state. */
+    private static void refusedBy(Connection connection, String sql, String sqlState, String constraint) {
+        assertThatThrownBy(() -> {
+                    try (Statement statement = connection.createStatement()) {
+                        statement.execute(sql);
+                    }
+                })
+                .as(sql)
+                .isInstanceOf(SQLException.class)
+                .satisfies(failure -> {
+                    assertThat(((SQLException) failure).getSQLState()).as(sql).isEqualTo(sqlState);
+                    assertThat(failure.getMessage()).as("refused by %s itself", constraint).contains(constraint);
+                });
     }
 
     private static void refused(Connection connection, String sql, String sqlState) {

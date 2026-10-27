@@ -4098,8 +4098,11 @@ derives the schemas from the database, so the first `risk` migration fails the b
 as the scheme requires. The levels decided: assessment inputs and rule hits (`risk_assessment_input`, `risk_rule_hit`,
 `risk_reason`) `CONFIDENTIAL`; signal attributes (`risk_signal`) at their source's level - a device attribute
 `RESTRICTED-PII` (identity's `session.device` reaches `risk` only as a hash computed by the handler; no description is
-stored); case notes and evidence references (`risk_case_action`, `risk_case_event`) `CONFIDENTIAL`, person-written text
-screened by `InstrumentShapes` for card and account shapes; the regulatory report's narrative (`regulatory_report`)
+stored) *(as built the hash is classified `CONFIDENTIAL` - P13-DOC-001's third reading below, item 87)*; case notes
+`RESTRICTED-PII` and evidence references `CONFIDENTIAL` (`risk_case_action`, `risk_case_event`), person-written text
+screened by `InstrumentShapes` for card and account shapes *(P13-DOC-001, 2026-10-27: this read "case notes and evidence
+references … `CONFIDENTIAL`" - the notes were raised by `DESIGN-016` D13, as the register's `risk_case_action.text`
+row says)*; the regulatory report's narrative (`regulatory_report`)
 `RESTRICTED-PII`, readable by `AML_REPORT_*` holders only and never in a log, an event or a metric (`INV-RSK-08`,
 tipping-off); nothing in `risk` is `INTERNAL` except identifiers and timestamps (the plan's words; the register's standing
 reading of "identifier" takes in a machine's state and a closed code - `bnpl_terms_version.status`, `.product` - which
@@ -4109,6 +4112,53 @@ one-statement upsert; the people who propose, activate, approve, take, escalate,
 identities, `CONFIDENTIAL` as in every register above. Payments' `withdrawal` `HELD` status and its `RISK_REFUSED`
 failure reasons (payments `V033`, `V034`; `P13-TSK-009`, `-010`) are machine states in payments' own rows, classified
 there by the tasks that add them.
+
+*(P13-DOC-001, 2026-10-27 - the Phase 13 exit review read the register below against this note and the code, and
+corrected three readings.)*
+
+- **A judgement beside a subject is `CONFIDENTIAL`, whatever its vocabulary.** The tasks read "identifiers" to take in
+  every closed code, and so classified `INTERNAL` - which may appear in logs, traces, metrics and error responses (§2) -
+  codes that, beside the row's subject, are the very judgement the tipping-off rule protects: an `AML` case of a party,
+  its `CONFIRMED_SUSPICIOUS` disposition, a `SCREENING_HIT` alert (`CRITICAL`, the one kind of that severity) or signal,
+  an action's `RISK_CASE_AML` reason. The register contradicted itself on it - `rescreening_permit.outcome`
+  `CONFIDENTIAL` because `HIT` beside the party is the tipping-off fact; the `ReasonCode` vocabulary `CONFIDENTIAL` in
+  `risk_reason.code` and `INTERNAL` in `risk_assessment.fail_safe_reason`; `RuleKind` `CONFIDENTIAL` in `risk_rule.kind`
+  and `INTERNAL` in `risk_rule_hit.kind`. **Tightened to `CONFIDENTIAL`**, each row marked: `risk_signal.kind`,
+  `risk_assessment.fail_safe_reason`, `risk_rule_hit.kind`, `decision_override.reason_code`, `risk_alert.kind`,
+  `.severity`, `.rule_code` and `.suppression_reason_code`, `risk_case.kind`, `.disposition` and
+  `.disposition_prohibits`, `risk_case_action.disposition` and `.prohibits`, `risk_action.reason_code` - the findings
+  and reasons: what risk concluded about the subject, and why. Left `INTERNAL`, read so: machine states, levels, queues,
+  the case's and the history's act and event kinds, an action's kind and an override's effect and action (the command
+  the platform runs - a name of a door, not a finding; the target beside it is `CONFIDENTIAL`), the permit's cause, and
+  `risk_assessment.unavailable_cause` (why the platform failed, never what it judged - the fail-safe warn line logs it).
+  A tightening only: `ColumnClassificationTest` holds every column's presence and the five levels, not which level; no
+  log site and no customer or merchant answer carries one of these columns beside its subject
+  (`RiskLogSitesAreEnumeratedTest` - the fail-safe warn line names the assessment, the operation and the
+  `unavailable_cause`; `NoCustomerSurfaceReadsRiskTest`); the operator desk serves them, as it serves
+  `risk_assessment.decision` and `customer_risk_profile.rating`; and the internal events that carry a code beside a
+  subject (the alert's - `kind`, `severity`, `subjectRef`; the signal's - `kind`, `subjectRef`; `risk.CaseOpened` / `risk.CaseDisposed`'s
+  `kind` and `disposition` beside the case's id) stay within the level, which bars an API answer and a metric tag, not
+  an internal event - `risk.CustomerRiskRatingChanged` carries the `CONFIDENTIAL` rating beside the party
+  (`RiskEventsCarryOnlyCodesTest`: codes, never a figure or a text). The level is the
+  column's - the code beside its row's subject: a count by code with no subject, a bounded metric tag
+  (`finapp.risk.alert{kind,severity}`, `finapp.risk.case{kind,status}`, `finapp.risk.signal{kind,outcome}`), is not the
+  column, as `finapp.risk.evaluation{verdict}` and `finapp.risk.rule.hit{rule}` already stood beside the `CONFIDENTIAL`
+  `risk_assessment.decision` and `risk_rule.kind` (`RiskMetricTagsAreBoundedTest`).
+- **The sealed inputs and a rule's reading hold amounts**: `risk_assessment_input.inputs_canonical` (the judged amount,
+  the velocity windows' sums), `customer_risk_profile_version.inputs_canonical` (since `P13-TSK-020`, the journal's
+  readings - the flows, the amounts, the party's window sums) and `risk_rule_hit.judged` (`amount=…`, a window's sum) -
+  **`RESTRICTED-FINANCIAL`** by the level's own definition, as `risk_assessment.amount_minor` and
+  `velocity_window.sum_minor` are; `CONFIDENTIAL` until then, each row marked. None of the three is logged or announced;
+  the analyst's assessment door serves the assessment's two with the amount beside them.
+- **This note's own words, as built**: case notes are `RESTRICTED-PII`, not `CONFIDENTIAL` - `risk_case_action.text`,
+  raised by `DESIGN-016` D13 to the override's and the suppression's level (the evidence references stay
+  `CONFIDENTIAL`); and the device is held only as `DeviceHash`, an **unsalted** SHA-256 of identity's device description
+  (a User-Agent), classified `CONFIDENTIAL` as "a stable per-device identifier" (`risk_signal.subject_ref`,
+  `velocity_window.subject_ref`, `risk_assessment.device_hash`), where this note planned a device attribute
+  `RESTRICTED-PII`. An unkeyed hash of a low-entropy description is guessable - `idempotency_record.request_fingerprint`'s
+  reasoning - so the `CONFIDENTIAL` reading holds only for a keyed hash; no producer of a device exists yet (the seams
+  carry none, `PHASE_13_PLAN.md` §1.2 item 4), so no row holds one today. The level and the key are the owner's,
+  before any producer exists (item 87).
 
 #### `risk` - the monitored transaction and the monitoring watermark - *added by `P13-TSK-019` (`risk V004`)*
 
@@ -4152,10 +4202,13 @@ the head's current rating and every version's - and never on a customer or merch
 payload beyond its code or a metric tag (`INV-RSK-08`; the event `risk.CustomerRiskRatingChanged` carries the party, the
 rating's code and the version, to internal consumers). The signal score, the reason codes and the sealed inputs are the
 evaluation that set it - `CONFIDENTIAL`, as the plan holds an assessment's inputs and rule hits (`PHASE_13_PLAN.md`
-section 8); the inputs are identifiers and readings (the party's id, a screening flag, `ABSENT` markers), never an amount,
-a name or a description. The party is referenced by identifier, `CONFIDENTIAL` as a party's id is wherever it says whose
+section 8); the inputs are identifiers and readings (the party's id, a screening flag, `ABSENT` markers), never a name or
+a description - and since `P13-TSK-020` the journal's readings too, amounts among them, so the sealed inputs are
+`RESTRICTED-FINANCIAL` *(P13-DOC-001, 2026-10-27: this read "never an amount, a name or a description", the inputs
+`CONFIDENTIAL`; the section's note above)*. The party is referenced by identifier, `CONFIDENTIAL` as a party's id is wherever it says whose
 risk this is; the policy version, the engine, the cause, the version numbers, the digest and the stamps are
-`INTERNAL` - identifiers, closed codes and the platform's own clock. No column holds money.
+`INTERNAL` - identifiers, closed codes and the platform's own clock. No column holds money *(but the sealed inputs
+hold amounts since `P13-TSK-020` - above)*.
 
 | Table | Column | Level | Note |
 |---|---|---|---|
@@ -4175,7 +4228,7 @@ risk this is; the policy version, the engine, the cause, the version numbers, th
 | `customer_risk_profile_version` | `policy_operation` | `INTERNAL` | A closed code - `MONITORING`, the composite key's half |
 | `customer_risk_profile_version` | `policy_version` | `INTERNAL` | The pinned version's number |
 | `customer_risk_profile_version` | `engine` | `INTERNAL` | A closed code - the engine that evaluated it |
-| `customer_risk_profile_version` | `inputs_canonical` | `CONFIDENTIAL` | The sealed inputs (`CanonicalEvaluation` format 1) - identifiers and readings, as an assessment's inputs |
+| `customer_risk_profile_version` | `inputs_canonical` | `RESTRICTED-FINANCIAL` | The sealed inputs (`CanonicalEvaluation` format 1) - identifiers and readings, as an assessment's inputs, and since `P13-TSK-020` the journal's readings: the flows, the amounts, the party's window sums *(P13-DOC-001, 2026-10-27: `CONFIDENTIAL` until then)* |
 | `customer_risk_profile_version` | `inputs_sha256` | `INTERNAL` | The inputs' digest, recomputed by a `CHECK` - a hash of the row's own text |
 | `customer_risk_profile_version` | `disposition_id` | `INTERNAL` | The approved disposition that set a `DISPOSITION` version, by identifier (`P13-TSK-016`) |
 | `customer_risk_profile_version` | `correlation_id` | `INTERNAL` | The flow that wrote the version |
@@ -4267,13 +4320,15 @@ classified `CONFIDENTIAL` as a stable per-device identifier. Every subject refer
 by identifier (an identity, an account, a merchant, a beneficiary, a loan or a BNPL obligation - and since
 `P13-TSK-014` a party, the payer of a refunded or charged-back payment or a BNPL applicant) and is
 `CONFIDENTIAL` as those identifiers are in their own registers; the codes and dates copied from the events are
-`INTERNAL`, as they are at their sources (`PHASE_13_PLAN.md` §8: signal attributes at the source's level). No
-customer or merchant route reads this table (`INV-RSK-08`, `NoCustomerSurfaceReadsRiskTest`).
+`INTERNAL`, as they are at their sources (`PHASE_13_PLAN.md` §8: signal attributes at the source's level) - the
+signal's `kind` excepted since `P13-DOC-001` (2026-10-27): `SCREENING_HIT` beside a party is the rescreening's hit,
+`CONFIDENTIAL` at its source (the risk note above). No customer or merchant route reads this table (`INV-RSK-08`,
+`NoCustomerSurfaceReadsRiskTest`).
 
 | Table | Column | Level | Note |
 |---|---|---|---|
 | `risk_signal` | `id` | `INTERNAL` | Generated - a signal's identity, the evidence reference a case holds (`-016`) |
-| `risk_signal` | `kind` | `INTERNAL` | A closed `SignalKind` code |
+| `risk_signal` | `kind` | `CONFIDENTIAL` | A closed `SignalKind` code - beside `subject_ref` a finding: `SCREENING_HIT` on a party is the rescreening's hit, `rescreening_permit.outcome`'s tipping-off fact *(P13-DOC-001, 2026-10-27: `INTERNAL` until then - the section's note above)* |
 | `risk_signal` | `subject_kind` | `INTERNAL` | A closed `SubjectKind` code |
 | `risk_signal` | `subject_ref` | `CONFIDENTIAL` | The subject by identifier - an identity, account, merchant, beneficiary or credit agreement id as text, or for a `DEVICE` identity's hash of the description (64 hex; never the description, OQ-4) |
 | `risk_signal` | `source_event_id` | `INTERNAL` | The event the signal was born from - once (`UNIQUE`) |
@@ -4328,7 +4383,7 @@ identity's hash, never the description (OQ-4, the `CHECK`). No customer or merch
 
 ### `risk.risk_assessment`, `risk_assessment_input`, `risk_rule_hit`, `risk_reason` and `decision_override` - the sealed assessment - *added by `P13-TSK-004`*
 
-`risk V007`: one assessment per (operation, command ref), born `DECIDED` by T-eval in the judged command's own transaction and sealed for every writer (`INV-RSK-01`, `INV-RSK-04`). The assessment's inputs and rule hits are `CONFIDENTIAL` (`PHASE_13_PLAN.md` section 8): who was judged, on what readings, how - the Transaction Risk Profile; so are the score, the decision and the reasons - what the control said of a party's movement, never a customer's surface (`INV-RSK-08`, C6). The judged amount is `RESTRICTED-FINANCIAL` by rule 0, on an `INSERT`-only row, never a balance. Identifiers of the platform's own aggregates, closed codes, digests and stamps are `INTERNAL` (the note above); the subjects - the party, the accounts, the device's hash, the merchant - `CONFIDENTIAL`, as the velocity windows' `subject_ref`. `decision_override` is the override's table (its machine `P13-TSK-012`'s): the person-written reasons `RESTRICTED-PII`, the people `CONFIDENTIAL`. *(`risk V009`, `P13-TSK-012`, adds five columns: the effect and the issued action's permit, attempts and conclusion are closed codes, counts and the database's stamps - `INTERNAL`; the target is the judged command's own id - a withdrawal's or a payment intent's, an identifier of the platform's own aggregate and the assessment's `command_ref` again - `INTERNAL` by the note above. The reasons are served on the override desk alone, to `RISK_OVERRIDE` holders, never logged.)* *(`risk V013`, `P13-TSK-017`, folds the issued action into `risk_action` - the section below - and drops `action_outcome`, `action_due_at`, `action_attempts` and `action_concluded_at` here, their values copied first; `action` stays, the kind the approval issued.)*
+`risk V007`: one assessment per (operation, command ref), born `DECIDED` by T-eval in the judged command's own transaction and sealed for every writer (`INV-RSK-01`, `INV-RSK-04`). The assessment's inputs and rule hits are `CONFIDENTIAL` (`PHASE_13_PLAN.md` section 8): who was judged, on what readings, how - the Transaction Risk Profile; so are the score, the decision and the reasons - what the control said of a party's movement, never a customer's surface (`INV-RSK-08`, C6). The judged amount is `RESTRICTED-FINANCIAL` by rule 0, on an `INSERT`-only row, never a balance. Identifiers of the platform's own aggregates, closed codes, digests and stamps are `INTERNAL` (the note above); the subjects - the party, the accounts, the device's hash, the merchant - `CONFIDENTIAL`, as the velocity windows' `subject_ref`. `decision_override` is the override's table (its machine `P13-TSK-012`'s): the person-written reasons `RESTRICTED-PII`, the people `CONFIDENTIAL`. *(`risk V009`, `P13-TSK-012`, adds five columns: the effect and the issued action's permit, attempts and conclusion are closed codes, counts and the database's stamps - `INTERNAL`; the target is the judged command's own id - a withdrawal's or a payment intent's, an identifier of the platform's own aggregate and the assessment's `command_ref` again - `INTERNAL` by the note above. The reasons are served on the override desk alone, to `RISK_OVERRIDE` holders, never logged.)* *(`risk V013`, `P13-TSK-017`, folds the issued action into `risk_action` - the section below - and drops `action_outcome`, `action_due_at`, `action_attempts` and `action_concluded_at` here, their values copied first; `action` stays, the kind the approval issued.)* *(`P13-DOC-001`, 2026-10-27: the sealed inputs and the hits' readings hold amounts - `RESTRICTED-FINANCIAL`; the hit's kind, the fail-safe reason and the override's reason code are findings beside the party's movement - `CONFIDENTIAL`; the risk note above.)*
 
 | Table | Column | Level | Note |
 |---|---|---|---|
@@ -4352,7 +4407,7 @@ identity's hash, never the description (OQ-4, the `CHECK`). No customer or merch
 | `risk_assessment` | `engine` | `INTERNAL` | A closed `RiskEngine` name |
 | `risk_assessment` | `score` | `CONFIDENTIAL` | The Risk Score - the fired weights summed, 0-1000; never a credit score (`INV-CRD-04`), never in an event or a tag (`INV-RSK-08`) |
 | `risk_assessment` | `decision` | `CONFIDENTIAL` | The Risk Decision - what the control said of this party's movement; the customer sees the operation's generic outcome only (C6) |
-| `risk_assessment` | `fail_safe_reason` | `INTERNAL` | A closed `ReasonCode` - `RISK_UNAVAILABLE` or `NO_POLICY_ACTIVE` |
+| `risk_assessment` | `fail_safe_reason` | `CONFIDENTIAL` | A closed `ReasonCode` - `RISK_UNAVAILABLE` or `NO_POLICY_ACTIVE` - the vocabulary `risk_reason.code` holds at `CONFIDENTIAL`, beside the party's judged movement *(P13-DOC-001, 2026-10-27: `INTERNAL` until then)* |
 | `risk_assessment` | `unavailable_cause` | `INTERNAL` | A closed `UnavailableCause` code |
 | `risk_assessment` | `challenge_satisfied` | `CONFIDENTIAL` | Whether the session satisfied a `CHALLENGE` - a fact of the judgement |
 | `risk_assessment` | `velocity_outcome` | `INTERNAL` | A closed `VelocityOutcome` code |
@@ -4365,22 +4420,22 @@ identity's hash, never the description (OQ-4, the `CHECK`). No customer or merch
 | `risk_assessment` | `causation_id` | `INTERNAL` | The judged command's cause |
 | `risk_assessment` | `assessed_at` | `INTERNAL` | The database's stamp at the seal |
 | `risk_assessment_input` | `assessment_id` | `INTERNAL` | The assessment's id |
-| `risk_assessment_input` | `inputs_canonical` | `CONFIDENTIAL` | The sealed inputs (`CanonicalEvaluation` format 1) - the Transaction Risk Profile: subjects by identifier, the amount, the velocity figures, the readings (`PHASE_13_PLAN.md` section 8) |
+| `risk_assessment_input` | `inputs_canonical` | `RESTRICTED-FINANCIAL` | The sealed inputs (`CanonicalEvaluation` format 1) - the Transaction Risk Profile: subjects by identifier, the amount, the velocity figures (the windows' sums among them), the readings (`PHASE_13_PLAN.md` section 8); amounts, so at their level *(P13-DOC-001, 2026-10-27: `CONFIDENTIAL` until then)* |
 | `risk_assessment_input` | `inputs_sha256` | `INTERNAL` | The inputs' digest, recomputed by a `CHECK` |
 | `risk_rule_hit` | `assessment_id` | `INTERNAL` | The assessment's id |
 | `risk_rule_hit` | `ordinal` | `INTERNAL` | The rule's position in its version |
-| `risk_rule_hit` | `kind` | `INTERNAL` | A closed `RuleKind` code |
+| `risk_rule_hit` | `kind` | `CONFIDENTIAL` | A closed `RuleKind` code - `risk_rule.kind`'s level; beside `outcome`, which rule fired on a party's movement *(P13-DOC-001, 2026-10-27: `INTERNAL` until then)* |
 | `risk_rule_hit` | `outcome` | `CONFIDENTIAL` | Whether the rule fired on this party's movement - a rule hit (`PHASE_13_PLAN.md` section 8) |
 | `risk_rule_hit` | `contribution` | `CONFIDENTIAL` | The rule's contribution to the score |
 | `risk_rule_hit` | `hard_decision` | `CONFIDENTIAL` | The fired rule's own decision |
-| `risk_rule_hit` | `judged` | `CONFIDENTIAL` | The canonical token of what the rule read (`amount=150000`, a velocity figure) - a reading, never a threshold |
+| `risk_rule_hit` | `judged` | `RESTRICTED-FINANCIAL` | The canonical token of what the rule read (`amount=150000`, a velocity figure - a window's sum among them) - a reading, never a threshold; an amount, so at its level *(P13-DOC-001, 2026-10-27: `CONFIDENTIAL` until then)* |
 | `risk_reason` | `assessment_id` | `INTERNAL` | The assessment's id |
 | `risk_reason` | `position` | `INTERNAL` | The reason's order |
 | `risk_reason` | `code` | `CONFIDENTIAL` | A closed `ReasonCode` - why this party's movement was decided so; carried in `risk.RiskDecisionMade` as a code, never as text |
 | `decision_override` | `id` | `INTERNAL` | Generated |
 | `decision_override` | `assessment_id` | `INTERNAL` | The overridden assessment's id |
 | `decision_override` | `status` | `INTERNAL` | The machine's state (`P13-TSK-012`) |
-| `decision_override` | `reason_code` | `INTERNAL` | A closed code (`P13-TSK-012`'s vocabulary) |
+| `decision_override` | `reason_code` | `CONFIDENTIAL` | A closed code (`P13-TSK-012`'s vocabulary, `OverrideReason`) - the officers' finding on the party's judged movement (`RISK_CONFIRMED`, `FALSE_POSITIVE`), as `risk_reason.code` is the control's *(P13-DOC-001, 2026-10-27: `INTERNAL` until then)* |
 | `decision_override` | `reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served beyond the override desk |
 | `decision_override` | `requires_second_person` | `INTERNAL` | Whether C7's four eyes apply - fixed at the proposal |
 | `decision_override` | `action` | `INTERNAL` | A closed code - the action the approval issued |
@@ -4406,16 +4461,18 @@ journal entry ids, resolved through audited reads, never copied (`PHASE_13_PLAN.
 description, by `CHECK`); that a subject has an alert is itself what the tipping-off rule protects (`INV-RSK-08` - no
 customer or merchant route reads this table, `NoCustomerSurfaceReadsRiskTest`). The suppression's texts are
 person-written, screened for instrument shapes (`risk.holds_instrument_shape`) and `RESTRICTED-PII`, as the override's
-are; the people `CONFIDENTIAL`; closed codes, the platform's own identifiers and the database's stamps `INTERNAL`.
+are; the people `CONFIDENTIAL`; closed codes, the platform's own identifiers and the database's stamps `INTERNAL` - the
+alert's findings (`kind`, `severity`, `rule_code`, `suppression_reason_code`) excepted since `P13-DOC-001`,
+`CONFIDENTIAL` (the risk note above).
 
 | Table | Column | Level | Note |
 |---|---|---|---|
 | `risk_alert` | `id` | `INTERNAL` | Generated - the alert's identity, the evidence reference a case holds (`-016`) |
-| `risk_alert` | `kind` | `INTERNAL` | A closed `AlertKind` code |
-| `risk_alert` | `severity` | `INTERNAL` | A closed `AlertSeverity` code |
+| `risk_alert` | `kind` | `CONFIDENTIAL` | A closed `AlertKind` code - beside `subject_ref` a finding: `AML` or `SCREENING_HIT` on a party is the tipping-off rule's fact *(P13-DOC-001, 2026-10-27: `INTERNAL` until then - the section's note above)* |
+| `risk_alert` | `severity` | `CONFIDENTIAL` | A closed `AlertSeverity` code - fixed per kind or rule, so it names them: `CRITICAL` is the screening hit's alone *(P13-DOC-001, 2026-10-27: `INTERNAL` until then)* |
 | `risk_alert` | `subject_kind` | `INTERNAL` | A closed `SubjectKind` code |
 | `risk_alert` | `subject_ref` | `CONFIDENTIAL` | The subject by identifier - a party, identity, account, merchant, beneficiary, session or credit agreement id as text, or for a `DEVICE` identity's hash (64 hex; never the description, OQ-4) |
-| `risk_alert` | `rule_code` | `INTERNAL` | A closed code - a `RuleKind`, or an operational `AlertKind`'s own; never a parameter |
+| `risk_alert` | `rule_code` | `CONFIDENTIAL` | A closed code - a `RuleKind`, or an operational `AlertKind`'s own; never a parameter - beside the subject, the rule that found it (`STRUCTURING`, `SCREENING_HIT`) *(P13-DOC-001, 2026-10-27: `INTERNAL` until then)* |
 | `risk_alert` | `window_kind` | `INTERNAL` | A closed `WindowKind` code |
 | `risk_alert` | `window_start` | `INTERNAL` | The bucket's start on the velocity windows' anchor, from a database instant (`CHECK`-aligned) |
 | `risk_alert` | `policy_version_id` | `INTERNAL` | The policy version whose rule raised it - risk's own row; none for an operational alert |
@@ -4425,7 +4482,7 @@ are; the people `CONFIDENTIAL`; closed codes, the platform's own identifiers and
 | `risk_alert` | `status` | `INTERNAL` | The machine's state - `OPEN`, `ATTACHED`, `SUPPRESSED` |
 | `risk_alert` | `attached_case_id` | `INTERNAL` | The case it attached to - risk's own row (`-016`'s foreign key) |
 | `risk_alert` | `attached_at` | `INTERNAL` | The database's stamp of the attach |
-| `risk_alert` | `suppression_reason_code` | `INTERNAL` | A closed `SuppressionReason` code |
+| `risk_alert` | `suppression_reason_code` | `CONFIDENTIAL` | A closed `SuppressionReason` code - the analysts' finding on the subject's alert *(P13-DOC-001, 2026-10-27: `INTERNAL` until then)* |
 | `risk_alert` | `suppression_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; served on the analyst's desk alone, never logged |
 | `risk_alert` | `suppression_proposed_by` | `CONFIDENTIAL` | The analyst who proposed the suppression |
 | `risk_alert` | `suppression_proposed_by_type` | `INTERNAL` | A closed actor type - `EMPLOYEE` by `CHECK` |
@@ -4450,12 +4507,13 @@ is `CONFIDENTIAL` as the alert's is; the evidence references `CONFIDENTIAL` (`PH
 who took, proposed and approved `CONFIDENTIAL`; an action's text is person-written, screened for instrument shapes
 (`risk.holds_instrument_shape`) and `RESTRICTED-PII` - the plan's "case notes `CONFIDENTIAL`" raised to the override's
 and the suppression's level (`DESIGN-016` D13); closed codes, the platform's own identifiers, counters and the
-database's stamps `INTERNAL`.
+database's stamps `INTERNAL` - the case's findings (`kind`, the dispositions and their `PROHIBITED` flags) excepted
+since `P13-DOC-001`, `CONFIDENTIAL` (the risk note above).
 
 | Table | Column | Level | Note |
 |---|---|---|---|
 | `risk_case` | `id` | `INTERNAL` | Generated - the case's identity, what an attached alert and the doors name |
-| `risk_case` | `kind` | `INTERNAL` | A closed `CaseKind` code |
+| `risk_case` | `kind` | `CONFIDENTIAL` | A closed `CaseKind` code - beside `subject_ref` a finding: an `AML` case of a party is the suspicion the tipping-off rule protects *(P13-DOC-001, 2026-10-27: `INTERNAL` until then - the section's note above)* |
 | `risk_case` | `subject_kind` | `INTERNAL` | A closed `SubjectKind` code |
 | `risk_case` | `subject_ref` | `CONFIDENTIAL` | The subject by identifier - a party's or a merchant's id as text (a device only as identity's hash, by `CHECK`) |
 | `risk_case` | `status` | `INTERNAL` | The machine's state - `OPEN`, `IN_INVESTIGATION`, `ESCALATED`, `DISPOSED` |
@@ -4470,9 +4528,9 @@ database's stamps `INTERNAL`.
 | `risk_case` | `opening_assessment_id` | `INTERNAL` | The sealed assessment it was opened from - risk's own row |
 | `risk_case` | `predecessor_case_id` | `INTERNAL` | The disposed case of the same subject and kind it follows - risk's own row |
 | `risk_case` | `opened_at` | `INTERNAL` | The database's stamp of the opening |
-| `risk_case` | `disposition` | `INTERNAL` | A closed `Disposition` code - standing or decided |
+| `risk_case` | `disposition` | `CONFIDENTIAL` | A closed `Disposition` code - standing or decided; beside the subject the investigation's finding (`CONFIRMED_SUSPICIOUS`) *(P13-DOC-001, 2026-10-27: `INTERNAL` until then)* |
 | `risk_case` | `disposition_id` | `INTERNAL` | The disposition's identity - its `DISPOSITION_PROPOSED` action's id |
-| `risk_case` | `disposition_prohibits` | `INTERNAL` | Whether the disposition sets the party's profile `PROHIBITED` |
+| `risk_case` | `disposition_prohibits` | `CONFIDENTIAL` | Whether the disposition sets the party's profile `PROHIBITED` - the rating's fact, `customer_risk_profile.rating`'s level *(P13-DOC-001, 2026-10-27: `INTERNAL` until then)* |
 | `risk_case` | `disposition_proposed_by` | `CONFIDENTIAL` | The analyst who proposed the disposition |
 | `risk_case` | `disposition_proposed_by_type` | `INTERNAL` | A closed actor type - a person's, `CUSTOMER` (the session establishes every identity so) or `EMPLOYEE`, by `CHECK` |
 | `risk_case` | `disposition_proposed_at` | `INTERNAL` | The database's stamp of the proposal |
@@ -4490,8 +4548,8 @@ database's stamps `INTERNAL`.
 | `risk_case_action` | `evidence_signal_ids` | `CONFIDENTIAL` | Evidence by reference - signals (at most 100) |
 | `risk_case_action` | `evidence_assessment_ids` | `CONFIDENTIAL` | Evidence by reference - sealed assessments (at most 100) |
 | `risk_case_action` | `evidence_journal_entry_ids` | `CONFIDENTIAL` | Evidence by reference - the ledger's journal entries (at most 100) |
-| `risk_case_action` | `disposition` | `INTERNAL` | A closed `Disposition` code - a proposal's |
-| `risk_case_action` | `prohibits` | `INTERNAL` | Whether the proposal sets `PROHIBITED` |
+| `risk_case_action` | `disposition` | `CONFIDENTIAL` | A closed `Disposition` code - a proposal's; `risk_case.disposition`'s level *(P13-DOC-001, 2026-10-27: `INTERNAL` until then)* |
+| `risk_case_action` | `prohibits` | `CONFIDENTIAL` | Whether the proposal sets `PROHIBITED` - `risk_case.disposition_prohibits`'s level *(P13-DOC-001, 2026-10-27: `INTERNAL` until then)* |
 | `risk_case_action` | `queue` | `INTERNAL` | A closed `CaseQueue` code - an escalation's |
 | `risk_case_action` | `recorded_at` | `INTERNAL` | The database's stamp |
 | `risk_case_action` | `correlation_id` | `INTERNAL` | The act's correlation |
@@ -4519,7 +4577,8 @@ live per (case, kind, target) by `risk_action_one_live`; four eyes by `risk_acti
 movement's id (a held withdrawal, a held card payment intent): that a party or merchant is the object of a risk action is
 what the tipping-off rule protects, so `target_ref` is `CONFIDENTIAL` as a case's subject is (`INV-RSK-08` - no customer
 or merchant route reads this table, `NoCustomerSurfaceReadsRiskTest`); the people who proposed and decided
-`CONFIDENTIAL`; closed codes, the platform's own identifiers, counters and the database's stamps `INTERNAL`. An
+`CONFIDENTIAL`; closed codes, the platform's own identifiers, counters and the database's stamps `INTERNAL` - the
+`reason_code` excepted since `P13-DOC-001`, `CONFIDENTIAL` (it names the case's kind; the risk note above). An
 override's action carries the override's own id and its officers.
 
 | Table | Column | Level | Note |
@@ -4531,7 +4590,7 @@ override's action carries the override's own id and its officers.
 | `risk_action` | `kind` | `INTERNAL` | A closed code (`ActionKind`) |
 | `risk_action` | `target_kind` | `INTERNAL` | A closed code (`ActionTarget`) |
 | `risk_action` | `target_ref` | `CONFIDENTIAL` | The subject acted on - a party, a merchant - or the held movement's id; never served to a customer or merchant |
-| `risk_action` | `reason_code` | `INTERNAL` | A closed code the owner records - `RISK_CASE_<kind>` or the override's `OverrideReason` |
+| `risk_action` | `reason_code` | `CONFIDENTIAL` | A closed code the owner records - `RISK_CASE_<kind>` or the override's `OverrideReason`: beside `target_ref` it names the case's kind (`RISK_CASE_AML`) or the officers' finding *(P13-DOC-001, 2026-10-27: `INTERNAL` until then - the section's note above)* |
 | `risk_action` | `status` | `INTERNAL` | The machine's state |
 | `risk_action` | `proposed_by` | `CONFIDENTIAL` | The analyst (or officer) who proposed it |
 | `risk_action` | `proposed_by_type` | `INTERNAL` | A closed actor type |

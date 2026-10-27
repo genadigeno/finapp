@@ -1,6 +1,6 @@
 # ADR-0108 — Synchronous risk evaluation in the caller's transaction: the decision model, the seam mapping, the fail-safe as a recorded decision, the latency budget and the override
 
-Status: Proposed
+Status: Accepted (2026-10-27, `P13-DOC-001` — read against the code and corrected first)
 Date: 2026-10-22
 Phase: 13
 Context: Risk · Transfers · Payments (withdrawals, checkout confirmation) · Cross-border · Credit · Identity · Audit
@@ -51,6 +51,11 @@ question #11, "Fail-safe policy for risk evaluation: block or allow on unavailab
    operation, and a band mapping to a decision the operation does not admit is refused at the policy door
    (`422 risk.PolicyInvalid`, ADR-0109). BNPL and loan applications are judged through credit's signal, not a seam of
    their own.
+   *(P13-DOC-001, 2026-10-27, as built: `CARD_PAYMENT` admits `HOLD` since `-010`'s second slice (`risk V008`,
+   `RiskDecision.admittedBy`); `WALLET_PAYMENT` does not. `CREDIT_SIGNAL` runs no T-eval and seals no assessment - credit's
+   `SnapshotFreezer` records the rating code with the seam and profile versions (`INV-RSK-10`, `INV-CRD-01`) - carries
+   no policy, and answers `NOT_ASSESSED` for a party risk has not assessed. A seventh operation, `MONITORING`, carries the
+   monitoring version (rules and rating bands) and judges no movement.)*
 
 3. **The decision model** (C2; plan §12.3) is derived from what each operation can do with a judgement:
 
@@ -64,6 +69,14 @@ question #11, "Fail-safe policy for risk evaluation: block or allow on unavailab
 
    **Precedence when rules disagree:** `DENY` > `HOLD` > `REVIEW` > `CHALLENGE` > `ALLOW`; a hard rule's decision
    beats a score band's. The decision is immutable; an override is a separate aggregate (point 7).
+   *(P13-DOC-001, 2026-10-27, the table as built: **`DENY`** - "a case opens when the policy says so" is **not built**:
+   no version carries such a field and `CaseOpener` is called for `REVIEW` and `HOLD` alone, so a policy-flagged
+   `DENY` opens no case - for the owner's ratification (`PHASE_13_PLAN.md` §1.2 item 94). **`HOLD`** - no disposition
+   issues an action (ADR-0112's dated amendment (a)): a release or denial (a card's capture or void) is an approved
+   override's effect, or a case's risk action proposed and approved on its own row under four eyes; payments'
+   stuck-payment gauge counts every capture-held card payment as stuck (item 85). **`REVIEW`** (and `HOLD`) - the case
+   is not "of the operation's kind": it is the party's `ATO` case when the sealed hits show the account-takeover
+   anchors, else its `FRAUD` case (`CaseOpener.Decided.kindFor`), opened or folded into at (R4) - decision 6's note.)*
 
 4. **The fail-safe is a recorded decision, never a silent default** (C1; unresolved #11 answered). "Unavailable" is
    any of: no `ACTIVE` policy for the operation; the pin's read failing; a rule evaluation throwing; the statement
@@ -84,6 +97,11 @@ question #11, "Fail-safe policy for risk evaluation: block or allow on unavailab
    A fail-open is therefore a visible, counted event with an assessment row; a fail-closed is the band's refusal
    committed by the owning domain under its reserved reason. Production starts with no policy — closed to judging,
    `ALLOW(NO_POLICY_ACTIVE)` recorded — and opens by the activation gate (plan §1.1).
+   *(P13-DOC-001, 2026-10-27, as built: the meter is `finapp.risk.evaluation.unavailable{operation,reason_code}`, and
+   both alerts are Prometheus rules over the meters (`infra/prometheus/rules/risk.yml`), never alert rows. "The pin's
+   read failing" answers the compiled `ALLOW` under `RISK_UNAVAILABLE` for **every** operation - `WITHDRAWAL` and
+   `CROSS_BORDER`, whose bands deny at every amount, included (the follow-up's reading (ii)) - for the owner's decision
+   before the activation gate (`PHASE_13_PLAN.md` §1.2 item 75).)*
 
 5. **The latency budget and what a breach becomes** (plan §7.6). Budget: **p99 ≤ 50 ms** for T-eval's reads and
    upserts, measured per operation by the storm with the monitoring sweep running beside it (M3's split trigger).
@@ -92,6 +110,13 @@ question #11, "Fail-safe policy for risk evaluation: block or allow on unavailab
    transaction; a timeout is "unavailable" and becomes the band's fail-safe decision recorded `RISK_UNAVAILABLE`. The
    sweep never runs inside a money transaction, so it cannot breach the budget except through row contention on
    windows, which the storm measures.
+   *(P13-DOC-001, 2026-10-27: **the budget is metered, not measured.** `finapp.risk.evaluation.latency{operation}` and
+   `RiskEvaluationLatencyOverBudget` watch it in operation; the storm that was to measure it beside the sweep is
+   postponed (`POSTPONED_ISSUES.md` PI-004) - for the owner (`PHASE_13_PLAN.md` §1.2 item 76). Two as-built
+   consequences: a hot subject's T-eval queued on (R2a) past the 250 ms read budget becomes a `TIMEOUT` fail-safe judged
+   by the amount band alone, its count possibly `UNCOUNTED`, so concurrent bursts can pass velocity limits (item 77);
+   and the sweep is not the only contention - T-eval takes the party's case row (R4) when it folds an alert or opens a
+   `REVIEW`/`HOLD` case, the opening untimed (decision 6's note; item 95).)*
 
 6. **The lock order, and why no cycle closes** (plan §7.2, §7.3; registered in `DISTRIBUTED_EXECUTION.md` §3 as
    "The Phase 13 lock order", planned). Risk rows are taken after every money row and only in two shapes: last inside
@@ -119,6 +144,16 @@ question #11, "Fail-safe policy for risk evaluation: block or allow on unavailab
    transfer's source account); without (R2a) two movements of one party, device or merchant on two money locks each
    read the window below its threshold and both pass — this ADR's own refused alternative, reached by the side door.
    No new cycle: one global order, where (R2)'s row locks already sat.)*
+   *(P13-DOC-001, 2026-10-27: "a money transaction ... takes (R1)–(R3)" is **false as built**. T-eval's (R3) inserts the
+   assessment and its outbox rows (`risk.RiskDecisionMade`, `risk.LimitBreached`) - no signal; then, inside the caller's
+   transaction, it **births** the account-takeover and merchant-abuse alerts at (R3)'s position and **folds** each into
+   its subject's open case - the case `FOR UPDATE` (R4), then the alert's attach (R5) - behind a savepoint under the
+   250 ms budget (a failed raise is undone alone, `RiskAlertsUnraised`); and for a `REVIEW` or `HOLD` it opens or
+   folds into the party's `FRAUD`/`ATO` case at (R4) through `CaseOpener`, **untimed** and fail closed (a failure
+   aborts the caller). `DISTRIBUTED_EXECUTION.md` §3's lock-order row records (R4) in T-eval. The no-cycle argument
+   stands - every risk-only holder of (R4) (T-case, T-mon's profile leg R8 → R4 → R5, T-rep's draft) takes no money
+   row - but a T-eval can wait on a monitoring batch holding the party's case row, its latency unmeasured: for the
+   owner's ratification (`PHASE_13_PLAN.md` §1.2 item 95). The row is built, no longer "planned".)*
 
 7. **The override** (C7; T-ovr, its own transaction). A `RISK_OVERRIDE` holder proposes an override of a `DENY`,
    `HOLD` or `REVIEW` decision with a reason code and text; a second holder approves when the judged amount is at or
@@ -129,6 +164,9 @@ question #11, "Fail-safe policy for risk evaluation: block or allow on unavailab
    nothing, the customer retries under a new key and the override sets a one-time allowance for the same command
    reference that the retry's evaluation reads as an input — and is itself an assessment's sibling, replayable. An
    `ALLOW` is never overridden after the fact — the money has moved; a case is the remedy (OQ-5).
+   *(P13-DOC-001, 2026-10-27: "EUR 1,000" is no constant - it is the pinned version's `override_threshold` (C7, a field
+   of the version, EUR 1,000 in the v1 fixtures), compared by the domain's `requiresSecondPerson` and by the birth
+   trigger, failing closed where it cannot be compared; the follow-up's `-012` note records the rest as built.)*
 
 8. **What the customer sees** (C6). The operation's generic answer: `transfers.RISK_REFUSED` → the existing error;
    a `HELD` withdrawal reads `HELD` with no reason; the checkout's refused decision carries
@@ -147,6 +185,12 @@ question #11, "Fail-safe policy for risk evaluation: block or allow on unavailab
    order arbitrates and the action is keyed. The unavailable case is scenario 9: the fail-safe is recorded, the alert
    fires, the movement commits the band's outcome. `VelocityProof` recomputes every live window from the monitored
    transactions; a difference is an alert, never self-corrected (ADR-0111).
+   *(P13-DOC-001, 2026-10-27: the named tests exist and ran green in the owner-authorised database pass (2026-10-27,
+   after test-only repairs); the scenarios' storm run did not - `P13-TST-001` is postponed (PI-004). `VelocityProof`
+   judges two links (`P13-TSK-023`): every live window against the counted assessments, and - for windows of transfers
+   alone - against the monitored journal; "an alert" is the Prometheus rule `VelocityDiverged` over
+   `finapp.risk.velocity.proof{verdict}` - `AlertKind.VELOCITY_DIVERGENCE` is never raised as a row (`PHASE_13_PLAN.md`
+   §1.2 item 93; items 57, 58).)*
 
 ## Alternatives Considered
 
@@ -195,12 +239,15 @@ Positive:
 
 Negative:
 - Every money movement pays T-eval's cost in-lock; the budget is a target the storm measures, not a guarantee.
+  *(P13-DOC-001, 2026-10-27: not yet measured - the storm is postponed (PI-004); item 76.)*
 - A `CHALLENGE` met at the command rather than at the door commits a refusal the customer must retry.
 - Three consumer migrations (payments `V033`, `V034`; identity `V023`) and five adapters widen the phase.
 
 Operational impact: `finapp.risk.evaluation{operation,verdict}`, `evaluation.latency{operation}` (p50/p99/max),
 `evaluation.unavailable{operation}`, `challenge{operation}`, `override{outcome}`; alerts on unavailable > 0, p99 over
-budget, no active policy where judging is expected; the activation gate in `OPERATIONS_RUNBOOK.md` §9.
+budget, no active policy where judging is expected; the activation gate in `OPERATIONS_RUNBOOK.md` §9. *(P13-DOC-001,
+2026-10-27, as built: `evaluation.unavailable{operation,reason_code}`, `challenge{operation,outcome}`, and
+`alert.unraised{operation}` beside them (`RiskEvaluationMetrics`).)*
 Security impact: `RISK_OVERRIDE` with four eyes at the threshold and step-up; the override and every assessment read
 audited (`risk.AssessmentRead`, `risk.Replayed`, `risk.Override*`); no reason, score or rule name leaves `risk`.
 Financial impact: no posting by `risk`. A `HOLD` keeps the withdrawal's existing ledger hold under the wallet lock
@@ -307,10 +354,15 @@ score), ADR-0024, ADR-0062 §6, ADR-0084 §5.
   runs in ADR-0112's T-act shape from the approval door after the commit, re-driven by the door's retry and a leg on
   `RiskMonitoringSchedule`, until `-017`'s machine.)*
 - `P13-TST-001` measures T-eval p50/p99/max per operation beside the sweep; `P13-TST-002` replays every decision in
-  two JVMs.
+  two JVMs. *(P13-DOC-001, 2026-10-27: `P13-TST-002` is built - the policy battery, 10,000 generated subjects, every
+  evaluation replayed `IDENTICAL` and the corpus equal in two JVMs; `P13-TST-001` is postponed by the owner until after
+  the project's phases (PI-004), so no latency figure exists - item 76.)*
 - `CURRENT_STATE.md` §Unresolved questions: #11 is answered by this ADR (C1) and moves to "Resolved since" when the
   owner ratifies it; `FINANCIAL_INVARIANTS.md` gains `INV-RSK-01`…`-04`; `ERROR_CONTRACT.md` and
   `AUDITABLE_ACTIONS.md` gain the planned entries.
 - *(As built, `P13-TSK-023`, 2026-10-26 - the explanation of decision 3's model.)* The analyst's read of an assessment explains it from the sealed rows and the pinned version's band list only (`Explanation`): the rules in declared order with each reading and contribution, the band reached by position and decision - never its bounds, a threshold being the policy's `CONFIDENTIAL` content -, the precedence step that decided (`FAIL_SAFE`; `HARD_RULE`, a fired rule's hard decision stricter than the band's, with the rules that carried it; `SCORE_BAND`) and, for a fail-safe, its cause, reason and band by position. The engine is never run again to explain: finding a difference between the rows and the engine is the replay's work.
-- **Acceptance.** `Proposed` at the Phase 12 → 13 transition (2026-10-22); the Phase 13 review (`P13-DOC-001`) reads
-  this ADR against the code, corrects it in place with dated notes, and accepts it.
+- **Acceptance.** **As built** (`P13-DOC-001`, 2026-10-27): `Proposed` at the Phase 12 → 13 transition (2026-10-22);
+  the Phase 13 review read this ADR against the code, corrected it in place above with dated notes, and accepted it.
+  The readings the build settled and recorded above for this review stand as built; those awaiting the owner carry
+  their `PHASE_13_PLAN.md` §1.2 item numbers (reading (iii): items 1, 10 and 89; the `-012` readings: items 2, 13
+  and 14).

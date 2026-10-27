@@ -171,12 +171,14 @@ class PaymentRiskSeamDatabaseTest {
         provider.reset();
         fixtures = new HeldWithdrawalFixtures(port, provider);
         fixtures.schemeAccepts();
+        // One reference per CALL, as a PSP mints them: a per-test constant collided on the UNIQUE provider references
+        // at a test's second authorisation (P13-TST-001's first run of this owed suite).
         provider.succeedsWith(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH, 200,
-                "{\"status\":\"approved\",\"reference\":\"psp_auth-" + UUID.randomUUID() + "\"}");
+                "{\"status\":\"approved\",\"reference\":\"psp_auth-{{randomValue type='UUID'}}\"}");
         provider.succeedsWith(SimulatedCardPspAdapter.CAPTURES_PATH, 200,
-                "{\"status\":\"approved\",\"reference\":\"psp_cap-" + UUID.randomUUID() + "\"}");
+                "{\"status\":\"approved\",\"reference\":\"psp_cap-{{randomValue type='UUID'}}\"}");
         provider.succeedsWith(SimulatedCardPspAdapter.VOIDS_PATH, 200,
-                "{\"status\":\"approved\",\"reference\":\"psp_void-" + UUID.randomUUID() + "\"}");
+                "{\"status\":\"approved\",\"reference\":\"psp_void-{{randomValue type='UUID'}}\"}");
     }
 
     // ------------------------------------------------------------------ before any version
@@ -428,8 +430,9 @@ class PaymentRiskSeamDatabaseTest {
         assertThat(column("SELECT status FROM payments.payment_attempt WHERE intent_id = ?", intent))
                 .containsExactly("AUTHORIZED");
         assertThat(provider.requestCount(SimulatedCardPspAdapter.CAPTURES_PATH)).as("never captured").isZero();
-        assertThat(column("SELECT (held_until - held_at)::text || ',' || coalesce(resolution, 'OPEN') FROM"
-                + " payments.payment_capture_hold WHERE intent_id = ?", intent)).containsExactly("72:00:00,OPEN");
+        // A timestamptz difference renders "3 days", so the window is read in seconds (P13-TST-001's first run of this owed suite).
+        assertThat(column("SELECT extract(epoch FROM held_until - held_at)::bigint || ',' || coalesce(resolution, 'OPEN')"
+                + " FROM payments.payment_capture_hold WHERE intent_id = ?", intent)).containsExactly("259200,OPEN");
         assertThat(column("SELECT decision || ',' || velocity_outcome FROM risk.risk_assessment WHERE command_ref = ?",
                 intent.toString())).containsExactly("HOLD,NOT_PERMITTED");
         assertThat(windowCount("PARTY", payer.customer().party(), "D1")).isZero();

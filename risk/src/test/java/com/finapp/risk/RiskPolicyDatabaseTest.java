@@ -225,10 +225,10 @@ class RiskPolicyDatabaseTest {
         String selfActivation = "UPDATE risk.risk_policy_version SET status = 'ACTIVE', decided_by = proposed_by,"
                 + " decided_by_type = 'EMPLOYEE', decision_reason = 'raw' WHERE id = '" + proposed.id().value() + "'";
         try (Connection owner = DatabaseRoles.migrator()) {
-            refused(owner, selfActivation, "23514");
+            refusedBy(owner, selfActivation, "23514", "risk_policy_version_four_eyes");
         }
         try (Connection application = DatabaseRoles.application()) {
-            refused(application, selfActivation, "23514");
+            refusedBy(application, selfActivation, "23514", "risk_policy_version_four_eyes");
         }
         assertThat(status(proposed.id())).isEqualTo("PROPOSED");
         inOneTransaction(uow -> ADMINISTRATION.reject(uow, proposed.id(), proposer, "withdrawn", correlation()));
@@ -240,21 +240,28 @@ class RiskPolicyDatabaseTest {
     void aDecidedVersionIsImmutable() throws SQLException {
         RiskPolicyVersionId active = activate(RiskOperation.MONITORING);
         String id = active.value().toString();
-        for (Connection writer : List.of(DatabaseRoles.migrator(), DatabaseRoles.application())) {
-            try (writer) {
-                refused(writer, "UPDATE risk.risk_rule SET weight = 1 WHERE policy_version_id = '" + id + "'", "P0001");
+        // The owner holds every privilege, so each refusal is the trigger's (P0001); the application holds no UPDATE or
+        // DELETE of the content tables, so it is refused by privilege first (42501) wherever it lacks one and by the
+        // trigger wherever it holds one (P13-TST-001's run of this owed suite: the loop had demanded P0001 of the
+        // application too, contradicting the 42501 its own next block asserts).
+        for (boolean owner : new boolean[] {true, false}) {
+            try (Connection writer = owner ? DatabaseRoles.migrator() : DatabaseRoles.application()) {
+                String bare = owner ? "P0001" : "42501";
+                refused(writer, "UPDATE risk.risk_rule SET weight = 1 WHERE policy_version_id = '" + id + "'", bare);
                 refused(writer, "UPDATE risk.risk_rule_parameter SET value_minor = 1 WHERE policy_version_id = '" + id
-                        + "' AND type = 'MINOR_AMOUNT'", "P0001");
+                        + "' AND type = 'MINOR_AMOUNT'", bare);
                 refused(writer, "UPDATE risk.risk_policy_band SET rating = 'LOW' WHERE policy_version_id = '" + id + "'",
-                        "P0001");
+                        bare);
                 refused(writer, "UPDATE risk.risk_policy SET currency = 'USD' WHERE policy_version_id = '" + id + "'",
+                        bare);
+                refused(writer, "DELETE FROM risk.risk_rule WHERE policy_version_id = '" + id + "'", bare);
+                refused(writer, "DELETE FROM risk.risk_policy_version WHERE id = '" + id + "'", bare);
+                refused(writer, "UPDATE risk.risk_policy_version SET version = 999 WHERE id = '" + id + "'", bare);
+                // The application holds UPDATE of status (V002's column grant): refused by the trigger.
+                refused(writer, "UPDATE risk.risk_policy_version SET status = 'PROPOSED' WHERE id = '" + id + "'",
                         "P0001");
-                refused(writer, "DELETE FROM risk.risk_rule WHERE policy_version_id = '" + id + "'", "P0001");
-                refused(writer, "DELETE FROM risk.risk_policy_version WHERE id = '" + id + "'", "P0001");
-                refused(writer, "UPDATE risk.risk_policy_version SET version = 999 WHERE id = '" + id + "'", "P0001");
-                refused(writer, "UPDATE risk.risk_policy_version SET status = 'PROPOSED' WHERE id = '" + id + "'", "P0001");
-                refused(writer, "UPDATE risk.risk_policy_version_event SET reason = 'edited' WHERE policy_version_id = '"
-                        + id + "'", "P0001");
+                refused(writer, "UPDATE risk.risk_policy_version_event SET reason = 'edited' WHERE"
+                        + " policy_version_id = '" + id + "'", bare);
                 refused(writer, "INSERT INTO risk.risk_rule (policy_version_id, ordinal, kind, weight) VALUES ('" + id
                         + "', 999, 'ROUND_AMOUNT', 1)", "P0001");
             }
@@ -347,6 +354,21 @@ class RiskPolicyDatabaseTest {
             row.next();
             return row.getString(1);
         }
+    }
+
+    /** Refused with {@code sqlState} by {@code constraint} by name - not by another rank raising the same state. */
+    private static void refusedBy(Connection connection, String sql, String sqlState, String constraint) {
+        assertThatThrownBy(() -> {
+                    try (Statement statement = connection.createStatement()) {
+                        statement.execute(sql);
+                    }
+                })
+                .as(sql)
+                .isInstanceOf(SQLException.class)
+                .satisfies(failure -> {
+                    assertThat(((SQLException) failure).getSQLState()).as(sql).isEqualTo(sqlState);
+                    assertThat(failure.getMessage()).as("refused by %s itself", constraint).contains(constraint);
+                });
     }
 
     private static void refused(Connection connection, String sql, String sqlState) {

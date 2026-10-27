@@ -114,6 +114,9 @@ class CrossBorderRiskSeamDatabaseTest {
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
     private static final Clock CLOCK = Clock.systemUTC();
     private static final AtomicBoolean ACTIVATED = new AtomicBoolean();
+    // v1's rows with room for the ten open quotes of one party the races hold: v1's cap of five refused the sixth offer
+    // 429 fx.TooManyOpenQuotes before any authorisation raced (P13-TST-001's first run of this owed suite).
+    private static final FxTestPolicy.Wanted TEN_OPEN_QUOTES = new FxTestPolicy.Wanted(FxTestPolicy.V1.pairs(), 10);
     private static final SimulatedCorridorEngine CORRIDOR = corridor();
     private static SimulatedFxEngine fxEngine;
     private static SimulatedProvider provider;
@@ -161,7 +164,7 @@ class CrossBorderRiskSeamDatabaseTest {
         provider.reset();
         provider.succeedsWith(SimulatedInstantSchemeAdapter.TRANSFERS_PATH, 200,
                 "{\"status\":\"accepted\",\"reference\":\"xbr-{{request.headers.Idempotency-Key}}\",\"cycle\":\"C1\"}");
-        FxTestPolicy.ensure(administration, policyStore, FxTestPolicy.V1);
+        FxTestPolicy.ensure(administration, policyStore, TEN_OPEN_QUOTES);
         FxTestClient.freshReferences();
         if (count("SELECT count(*) FROM crossborder.corridor_policy_version WHERE status = 'ACTIVE'") == 0) {
             activateCorridorPolicy();

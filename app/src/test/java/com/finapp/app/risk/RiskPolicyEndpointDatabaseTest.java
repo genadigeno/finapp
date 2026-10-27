@@ -126,8 +126,10 @@ class RiskPolicyEndpointDatabaseTest {
         HttpResponse<String> now = get(POLICIES + "?operation=TRANSFER", first);
         assertThat(now.statusCode()).as(now.body()).isEqualTo(200);
         assertThat(field(now.body(), "id")).isEqualTo(v1);
+        // aggregate_id is a uuid and the parameter a string: cast, or "uuid = character varying" (P13-TST-001's first
+        // run of this owed suite).
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type = 'risk.RiskPolicyActivated'"
-                + " AND aggregate_id = ?", v1)).isEqualTo(1);
+                + " AND aggregate_id = ?::uuid", v1)).isEqualTo(1);
 
         String v2 = field(post(POLICIES, transfer(Map.of()), second, someKey()).body(), "id");
         HttpResponse<String> successor = post(POLICIES + "/" + v2 + "/activation", decision("v2"), first, someKey());

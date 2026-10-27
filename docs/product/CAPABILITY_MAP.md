@@ -141,7 +141,9 @@ Phase 13: credit consumes a risk signal through a seam and computes none.)*
   production, so the application door answers `422 lending.ProductNotOffered` until a real bureau is
   connected (unresolved #13, #14) and `OPERATIONS_RUNBOOK.md` §7.4's activation gate is passed;
   Phase 11 proves origination end to end against the simulators
-- Collections operations *(later phases — Phase 13's case management consumes lending's facts)*;
+- Collections operations *(later phases — Phase 13's case management consumes lending's facts; as built by
+  `P13-TSK-025`, a thin slice: a loan's or BNPL agreement's default opens its party's `COLLECTIONS` case, and contact
+  strategy, promises to pay, placement and write-off stay out, C3 - P13-DOC-001, 2026-10-27)*;
   refinance *(not Phase 12 — decided by the Phase 11 → 12 transition; unowned)*; write-off and provisioning *(Phase 14)*
 
 *(Marked "planned" by the Phase 10 → 11 transition, 2026-10-10 (`PHASE_11_PLAN.md`; ADR-0090…0100,
@@ -207,47 +209,93 @@ and proven by `P12-TST-001` (the BNPL storm) and `P12-TST-002` (the battery); AD
 (2026-10-22, `P12-DOC-001`, each read against the code and corrected first) *(P12-DOC-001, 2026-10-22: this read "stay
 `Proposed` until the review's verdict" until the ADRs were accepted)*. This note read "to be marked delivered by the Phase 12 exit review, `P12-DOC-001`" until then. **Confirmed after repair by the Phase 12 → 13 transition's completion gate, 2026-10-22** (`reviews/PHASE_12_TO_13_TRANSITION.md`): a refund-scoped merchant key needs `PAYMENT_REFUND` beside `MERCHANT_ADMINISTER` and is refused on a purchase of its issuer's own party, and a dispute ACCEPT needs the `BNPL_REFUND` scope; a withdrawn dispute never moves the days-past-due clock and starts a 30-day cooldown on its purchase; contested disputes are announced, gauged, alerted after seven days and queued for operators (`GET /v1/operator/bnpl-disputes`); a dispute refund that cannot post is alerted and a wallet cannot close beneath an open dispute; the terms pin is never "neither" during an activation; a repayment reversal is never valued before its repayment and releases a late fee a refund released; the BNPL fee is pinned on the database clock; merchant BNPL reasons are screened for card and account numbers; the delinquency bounds are the ones the labels name - bnpl `V018`, `V019`, merchant `V012`, lending `V031`.)*
 
-## Risk *(Phase 13, planned at the Phase 12 → 13 transition, 2026-10-22 — `PHASE_13_PLAN.md`)*
-- Risk evaluation at the seams — planned: every money-moving command judged inside its owner's transaction through the
+## Risk *(Phase 13, built 2026-10-22…2026-10-26 — `P13-TSK-001`…`-025`, `P13-TST-002`; COMPLETE pending the exit review's verdict, `P13-DOC-001`, and the 13 → 14 transition; the storm, `P13-TST-001`, POSTPONED — PI-004)*
+- Risk evaluation at the seams — built: every money-moving command judged inside its owner's transaction through the
   seams Phases 4, 9 and 10 reserved (`TransferLimitCheck`, `TransferRiskDecision`, `CrossBorderLimitCheck`,
-  `CrossBorderRiskDecision`, `CreditRiskSignal` version 2) and the two added for the wallet withdrawal (with a `HELD`
-  state) and the checkout payment confirmation; one channel-neutral `risk` capability that owns the judgement and none
-  of the money; a decision `ALLOW | CHALLENGE | DENY | HOLD | REVIEW` with reason codes; the fail-safe a recorded
-  decision per operation and value band, never a silent default; manual override under four eyes
-- Policy versioning — planned: rules as data of closed kinds, weights, score bands and fail-safe bands per operation,
-  versioned, four-eyes activated, one `ACTIVE` per operation; a deterministic engine (`RISK_ENGINE_V1`); every assessment
-  sealed with its inputs and the versions it pinned, replayable `IDENTICAL`
-- Limits / velocity — planned: durable windows (`H1`, `D1`, `D7`, `D30`) per party, account, beneficiary, device and
-  merchant, upserted in the judged command's own transaction and proven against the monitored transactions; no cache
-  and no counter outside the money transaction
-- Customer risk profile — planned: a versioned, append-only rating per party (`LOW | MEDIUM | HIGH | PROHIBITED`)
-  recomputed from signals and case outcomes; credit consumes it through its seam and computes no risk score
-- Fraud detection — planned: account takeover (a credential change or recovery followed by a new payee, a new device and
-  a withdrawal - held and cased) and payment, merchant and BNPL abuse (chargeback and refund ratios, multi-application,
-  many checkouts in one session) as rule kinds with parameters, synchronous and retrospective
-- AML transaction monitoring — planned: a leaderless sweep over the ledger's own journal classifying every movement into
-  a monitored transaction; monitoring rules per subject over durable aggregates (structuring, rapid in-out,
-  dormant-then-active, round amounts, high-risk corridors); alerts born once per (subject, rule, window); reprocessing
-  idempotent from any watermark
-- Manual review (cases) — planned: one case open per (subject, kind) for fraud, account takeover, merchant abuse, AML
-  and - a thin slice, cut candidate (C3) - collections; taken, worked by append-only investigator actions, escalated,
-  disposed under four eyes; concurrent updates by revision; queues oldest first; the tipping-off control - no AML alert,
-  case or report reaches a customer or merchant surface
-- Downstream actions — planned: identity suspension, reinstatement and session revocation, account and merchant
-  suspension, a beneficiary block, a held withdrawal's release or denial, a party's rescreening - each a keyed command
-  through the owning domain's existing door, proposed and approved under four eyes, dispatched by a leaderless schedule;
-  risk never writes another domain's row and never reverses a transaction
-- Regulatory report artefact — planned: a filing distinct from the investigation, drafted from a confirmed-suspicious
-  case, approved by a second person, filed through a port (simulated; the jurisdiction a field), immutable once filed
-- Rescreening — planned: a sanctions or PEP list version recorded and activated by an operator enqueues the rescreening
-  of every active party through kyc's existing screening ports; kyc stays the screening owner (Refinement 3)
-- **Production constraint** — planned: production evaluates nothing until a risk policy version is activated under
-  four eyes and `OPERATIONS_RUNBOOK.md` §9's activation gate is passed; until then every seam answers `ALLOW` with the
-  reason code `NO_POLICY_ACTIVE`, recorded; the filing adapter is simulated and the reference jurisdiction neutral (C4)
+  `CrossBorderRiskDecision`, `CreditRiskSignal` version 2) and the two added - payments' `WithdrawalRiskDecision` (the
+  wallet withdrawal, with a `HELD` state, payments `V033`) and `PaymentRiskDecision` (the checkout card and wallet
+  payment confirmation, payments `V034`); one channel-neutral `risk` capability that owns the judgement and none of the
+  money; a decision `ALLOW | CHALLENGE | DENY | HOLD | REVIEW` with reason codes, each admitted only where its operation
+  can honour it (`HOLD` for the withdrawal and the card payment - its capture deferred, risk `V008`; `REVIEW` for the
+  transfer, the withdrawal and cross-border); the fail-safe a recorded decision per operation and value band, never a
+  silent default - and, when the pin itself cannot be read, the compiled `ALLOW` (`RISK_UNAVAILABLE`) for every
+  operation (owner item 75); an override of a `DENY`, `HOLD` or `REVIEW` under four eyes at or above the pinned
+  threshold or for any `DENY` (C7), a held movement released or refused through payments' keyed doors, a refusal
+  recorded for its resubmission
+- Policy versioning — built: rules as data of closed kinds, weights, score bands and fail-safe bands per operation (and
+  rating bands for `MONITORING`), versioned, four-eyes activated, one `ACTIVE` per operation, the pin never "neither"
+  during an activation; a deterministic engine (`RISK_ENGINE_V1`); every assessment sealed with its inputs and the
+  versions it pinned, replayable `IDENTICAL` one at a time or a day at a time, and explained to an investigator from its
+  sealed rows (`P13-TSK-023`)
+- Limits / velocity — built: durable windows (`H1`, `D1`, `D7`, `D30`) per party, source account, destination, device,
+  merchant and - since `P13-TSK-014` - confirming session, upserted in the judged command's own transaction (a hot
+  subject serialised on its subject locks), proven by the velocity proof against the counted assessments and, for
+  transfers' windows, the monitored journal; no cache and no counter outside the money transaction. No seam carries a
+  device yet, so no device window is written (owner item 4)
+- Customer risk profile — built: a versioned, append-only rating per party (`LOW | MEDIUM | HIGH | PROHIBITED`;
+  `UNRATED` until first evaluated) recomputed by the monitoring sweep's profile leg under the `MONITORING` version from
+  signals and the journal's readings, set `PROHIBITED` only by a four-eyes disposition; credit consumes it through
+  `CreditRiskSignal` version 2 with the profile version it read (credit `V023`) and computes no risk score. A
+  `PROHIBITED` rating refuses a movement only where the active version carries a `PROFILE_RATING` → `DENY` rule (owner
+  item 83)
+- Fraud detection — built: account takeover (a credential change or recovery followed by a new payee and a new device
+  and money leaving - the `ACCOUNT_TAKEOVER` alert and an `ATO` case; the device continuation and recent authentication
+  failures read `ABSENT` until a seam carries them, owner items 3, 4) and payment, merchant and BNPL abuse (refund and
+  chargeback ratios - `MERCHANT_ABUSE` alerts and cases - and BNPL multi-application) as rule kinds with parameters,
+  synchronous and retrospective; "many checkouts in one session" is a `CHALLENGE`-weighted `SESSION` velocity rule, with
+  no alert and no case (owner item 80)
+- AML transaction monitoring — built: a leaderless sweep (`RiskMonitoringSchedule`) over the ledger's own journal,
+  classifying every movement into a monitored transaction born once per journal entry (`UNCLASSIFIED` for a namespace
+  the register does not know); monitoring rules per subject over durable aggregates (structuring, rapid in-out,
+  dormant-then-active, round amounts, high-risk corridors, velocity); alerts born once per (subject, rule, window
+  start); reprocessing from an earlier watermark idempotent, under the operator's order. The 60 s settle horizon is
+  unenforced: a posting committing later is skipped until a reprocessing (owner item 92)
+- Manual review (cases) — built: one case open per (subject, kind) for fraud, account takeover, merchant abuse, AML and
+  - built by `P13-TSK-025` at the owner's request, no longer a cut candidate (C3) - collections: a `LoanDefaulted` or
+  `BnplDefaulted` delivery raises a policy-free default alert folded into the party's `COLLECTIONS` case, which proposes
+  nothing; a `REVIEW` or `HOLD` decision opens a `FRAUD` or `ATO` case in the judged command's own transaction (a `DENY`
+  opens none, owner item 94); taken, worked by append-only investigator actions and evidence by reference behind an
+  audited door, escalated (`L1`…`L3`), disposed - a `CLOSED_*` by one person, a confirming, referring or prohibiting
+  disposition under four eyes (owner item 78); concurrent updates by revision; queues oldest first; the tipping-off
+  control - no alert, case or report reaches a customer or merchant surface (`NoCustomerSurfaceReadsRiskTest`)
+- Downstream actions — built, as the code's `ActionKind`: identity suspension, reinstatement and session revocation (a
+  party's case), merchant suspension (a merchant-abuse case), a held withdrawal's release or denial and a held card
+  payment's capture or void (a movement the case holds, or an approved override's) - each a keyed command
+  (`risk.action:<id>`) through the owning domain's existing door, proposed and approved under four eyes, dispatched by a
+  leaderless schedule (`RiskActionSchedule`); account suspension and reinstatement and the beneficiary block are
+  unavailable - no owning command exists (owner item, `-017` MINOR 2) - and `RESCREEN_PARTY` is never proposed or
+  dispatched (owner item 93); risk never writes another domain's row and never reverses a transaction
+- Regulatory report artefact — built: a filing distinct from the investigation, drafted from an `AML` case disposed
+  `CONFIRMED_SUSPICIOUS`, approved by a second `AML_OFFICER`, filed through `RegulatoryFilingProvider` (simulated; the
+  jurisdiction `EU-REF`, adapter data) with `FILED` committed before the call, an unknown answer inquired and never
+  re-filed, immutable once filed; a rejection is a new draft
+- Rescreening — built: a sanctions or PEP list version recorded and activated by two `RISK_POLICY_ADMINISTER` holders
+  enqueues one permit per party whose customer relationship is `ACTIVE` or `PENDING`; `RiskActionSchedule`'s
+  rescreening leg asks kyc's **new** rescreen door (the owner's decision O1 - not the existing screening ports) for a
+  `RESCREEN` check on the party's latest KYC case; a hit is a `SCREENING_HIT` alert in the party's `AML` case (and, on a
+  case not yet decided, kyc's own review item); a burnt version is re-driven by a successor; kyc stays the screening
+  owner (Refinement 3)
+- Operating risk — built: the meters, thirty alert rules (`infra/prometheus/rules/risk.yml`), four audited operations
+  reports with their censuses, the velocity proof and the production censuses behind `RiskCensusDiverged`, and
+  `OPERATIONS_RUNBOOK.md` §9 with the production activation gate (`P13-TSK-023`, `-024`)
+- **Production constraint** — production evaluates nothing until a risk policy version is activated under four eyes and
+  `OPERATIONS_RUNBOOK.md` §9.1's activation gate is passed; until then every seam answers `ALLOW` with the reason code
+  `NO_POLICY_ACTIVE`, recorded, and the monitoring sweep raises no rule's alert - while the policy-free facts still
+  reach the desks (a default's `COLLECTIONS` case, a list version's rescreening hits); the filing adapter is simulated and
+  the reference jurisdiction neutral (C4). The gate's step 2 - the storm's latency figures - cannot be met until the
+  storm runs (PI-004)
 
-*(Marked "planned" by the Phase 12 → 13 transition, 2026-10-22 (`PHASE_13_PLAN.md`; ADR-0107…0112 `Proposed`); to be
-marked delivered by the Phase 13 exit review, `P13-DOC-001`. This section read "Fraud / Transaction risk / Account
-takeover / AML monitoring / Limits / velocity / Manual review", unannotated, until then.)*
+*(Marked "planned" by the Phase 12 → 13 transition, 2026-10-22 (`PHASE_13_PLAN.md`; ADR-0107…0112 `Proposed`), and
+marked built by the Phase 13 exit review, `P13-DOC-001`, 2026-10-27 - each capability built by `P13-TSK-001`…`-025`
+and evidenced by each task's hermetic proofs, the policy battery (`P13-TST-002`), the owed database suites (run for the
+first time in the owner-authorised database pass, 2026-10-27, green after test-only repairs), the production censuses
+and proofs (`AssessmentCensus`, `MonitoringCensus`, `VelocityProof`, `RescreeningCensus`, `FilingCensus`,
+`AlertBornOnceCensus`, `CaseOneOpenCensus`) and the independent reviews. **Not by the storm**: `P13-TST-001` is POSTPONED
+by the owner until after the project's phases (`POSTPONED_ISSUES.md` PI-004; its partial ninth run green on all 57 census
+checks, never finished - no latency figure, no probe, no final run). COMPLETE awaits the review's verdict and the
+13 → 14 transition; the open owner items are `PHASE_13_PLAN.md` §1.2's. This note read "to be marked delivered by the
+Phase 13 exit review, `P13-DOC-001`", and each capability "planned", until then; the section read "Fraud / Transaction
+risk / Account takeover / AML monitoring / Limits / velocity / Manual review", unannotated, before the transition.)*
 
 ## Financial Operations
 - Settlement

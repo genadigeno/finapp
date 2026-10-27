@@ -369,6 +369,19 @@ by `VelocityProof`. Its "concurrency tests" are `VelocityWindowDatabaseTest#tenM
 unchanged. The demonstration `MUTATION_TESTING.md` §2 will demand of this entry at Phase 13's
 `COMPLETE` is the same as `INV-RSK-03`'s.)*
 
+*(As built - P13-DOC-001, 2026-10-27: the windows are as above, and since `P13-TSK-006` the read is serialised per
+(dimension, subject) by (R2a), advisory namespace `131`, before the database clock is read - the caller's money lock alone
+left a party's window open to two movements from two accounts (`VelocityWindowDatabaseTest#tenMovementsOfOnePartyFromTenAccountsCountTen`).
+Three limits of "not bypassable by concurrent requests" as built: (1) a T-eval waiting on a hot subject's (R2a) past the
+250 ms read budget is a `TIMEOUT` fail-safe judged by the policy's amount band alone - no velocity rule is read - and its
+count, attempted behind a timed savepoint of its own, can itself time out and be recorded `UNCOUNTED`, so a concurrent
+burst on one subject can pass a velocity limit (recorded and counted by `RiskEvaluationUnavailable`, never silent), for the
+owner's ratification (`PHASE_13_PLAN.md` §1.2 item 77); (2) a `HOLD` is counted in no window, so a held movement later
+released or captured moves money no window counts (item 2); (3) a transfer refused `DESTINATION_NOT_POSTABLE` after the
+seams keeps its count (item 58). The database suites named above ran for the first time in the owner-authorised database
+pass (2026-10-27), green after test-only repairs; the storm's ten-instance count (`P13-TST-001`) is postponed by the
+owner (`POSTPONED_ISSUES.md` PI-004).)*
+
 ---
 
 # Lifecycle and State — `INV-LIFE`
@@ -2887,8 +2900,11 @@ the decided design, corrected by the tasks that build it.*
 
 ### INV-RSK-01 — Every judged command has exactly one sealed assessment, replayable `IDENTICAL`
 **Statement:** Every money-moving command an operation judges (`TRANSFER`, `WITHDRAWAL`,
-`CARD_PAYMENT`, `WALLET_PAYMENT`, `CROSS_BORDER`) and every `CREDIT_SIGNAL` read has exactly one risk
-assessment, inserted in the judged command's own transaction after the caller's locks (T-eval,
+`CARD_PAYMENT`, `WALLET_PAYMENT`, `CROSS_BORDER`) has exactly one risk assessment *(P13-DOC-001,
+2026-10-27: this read "… `CROSS_BORDER`) and every `CREDIT_SIGNAL` read has exactly one risk assessment" - false as
+built: `risk V007`'s `risk_assessment_operation_is_judged` admits the five money operations alone, `RiskCreditRiskSignal`
+reads the profile head and writes nothing, and `AssessmentCensus` judges the five; a credit read's record is credit's
+sealed snapshot of the rating and profile version it was given, `INV-RSK-10`)*, inserted in the judged command's own transaction after the caller's locks (T-eval,
 positions (R1)–(R3)) and sealed at insert: the operation, the subject refs, the judged amount and
 currency, every input read, the policy version and the engine version, every rule hit with its
 contribution, the score, the decision, the ordered reason codes, whether the fail-safe applied, and
@@ -2939,21 +2955,42 @@ exists), while a permit later refused by fx or payments rolls back with its coun
 The command ref is the quote's id, so one cross-border movement has one assessment under any number of keys. Probes:
 `MUTATION_TESTING.md` §2.)*
 
+*(P13-DOC-001, 2026-10-27 - the evidence on record: the storm `P13-TST-001` is POSTPONED by the owner until after the
+project's phases (`POSTPONED_ISSUES.md` PI-004; parked at `e353e11c`, its partial ninth run green on all 57 census checks
+but never finished), so "the storm's census at every round" above is not evidence on record. What exists: `AssessmentCensus`
+(`P13-TSK-023` - assessments = the owners' judged commands per operation and day, both directions, on one snapshot),
+gauged `finapp.risk.census{kind="ASSESSMENT"}` and alerted `RiskCensusDiverged`; `RiskEvaluationDatabaseTest` (the owed
+database suite, run for the first time in the owner-authorised database pass, 2026-10-27, green after test-only repairs);
+the hermetic proofs and probes (`MUTATION_TESTING.md` §2); and the battery `P13-TST-002`.)*
+
 ### INV-RSK-02 — A risk decision never moves money, holds money or writes another domain's row
 **Statement:** The `risk` module posts no journal entry, places and releases no ledger hold, and
-inserts, updates or deletes no row outside schema `risk`. A decision changes a money movement only
+inserts, updates or deletes no row of another domain's schema — beyond schema `risk` it writes only
+the platform's own audit, outbox, inbox and idempotency rows, through platform's stores. A decision
+changes a money movement only
 because the owning domain consulted a seam in its own transaction and committed its own outcome
 under its own machine: `transfers` `FAILED(RISK_REFUSED)`; payments' withdrawal `HELD` with the hold
 payments placed kept, or `FAILED(RISK_REFUSED)` with that hold released by payments in the same
-transaction; the payment intent's refused-by-risk decision row (`PaymentFailureReason.RISK_REFUSED`);
+transaction; the payment intent's terminal `FAILED` carrying its own `failure_reason`
+`RISK_REFUSED` (payments `V034`), or a held card payment - the intent `PROCESSING` with an
+`AUTHORIZED` attempt whose capture waits on payments' open `payment_capture_hold`;
 crossborder's `422 crossborder.RiskRefused` with nothing consumed. Every downstream effect of a case
 or an override — `SUSPEND_IDENTITY`, `REINSTATE_IDENTITY`, `REVOKE_SESSIONS`, `SUSPEND_ACCOUNT`,
 `REINSTATE_ACCOUNT`, `SUSPEND_MERCHANT`, `BLOCK_BENEFICIARY`, `RELEASE_HELD_WITHDRAWAL`,
-`DENY_HELD_WITHDRAWAL`, `RESCREEN_PARTY` — is a risk action: a keyed command (`risk.action:<id>`)
-through the owning domain's existing door, dispatched in its own transaction (T-act) on that domain's
-lock order with no risk row held but (R6), its outcome recorded on both sides; a domain's refusal (an
-identity already suspended) is a recorded outcome, never a retry. Risk never reverses a transaction;
-a case may only recommend one (an investigator action of kind `REFERRED`).
+`DENY_HELD_WITHDRAWAL`, `CAPTURE_HELD_PAYMENT`, `VOID_HELD_PAYMENT` — is a risk action: a keyed command
+(`risk.action:<id>`) through the owning domain's existing door, dispatched by T-act after its claim on
+(R6) has committed, so no risk row is held while the owner works on its own lock order, its outcome
+recorded on both sides; the effect already in place (an identity already suspended) is `DONE(ALREADY)`
+and an owner's refusal `FAILED(REFUSED)`, each a recorded outcome, never a retry. Risk never reverses a
+transaction; a case may only recommend one (the disposition `REFERRED`).
+*(P13-DOC-001, 2026-10-27: corrected in place - this read "no row outside schema `risk`" (risk writes the platform's
+audit, outbox, inbox and idempotency rows), "the payment intent's refused-by-risk decision row" (the refusal is the
+intent's own terminal `FAILED`, no attempt or decision row - `P13-TSK-010`), "dispatched in its own transaction (T-act) …
+with no risk row held but (R6)" (the claim commits first - `P13-TSK-017`), "a domain's refusal (an identity already
+suspended)" (that is `ALREADY`; a refusal is `FAILED(REFUSED)`), "an investigator action of kind `REFERRED`" (`REFERRED`
+is a `Disposition`); the effects omitted the held card payment's `CAPTURE_HELD_PAYMENT` / `VOID_HELD_PAYMENT` and listed
+`RESCREEN_PARTY`, which no door proposes or dispatches (the note below; item 93). Of the kinds, `SUSPEND_ACCOUNT`,
+`REINSTATE_ACCOUNT` and `BLOCK_BENEFICIARY` are unavailable - no owning command (item 24).)*
 **Why:** A control that can move money is a second money-mover whose postings nobody reconciles and
 whose defects are financial. The seams were built in Phase 4 as the caller's own decision point so
 that the money transaction keeps one writer; a `risk` row written into `payments`, or a hold released
@@ -2967,7 +3004,8 @@ PUBLIC`; the application role's grants on `risk` confer nothing on another schem
 rows and as window sums on the velocity rows) + `DOMAIN` (every seam adapter in `app` —
 `RiskTransferLimitCheck`, `RiskTransferRiskDecision`, `RiskWithdrawalRiskDecision`,
 `RiskPaymentRiskDecision`, `RiskCrossBorderLimitCheck`, `RiskCrossBorderRiskDecision` — maps the
-decision to the consumer's two-value verdict and the caller commits; every action's effect is a port
+decision to the consumer's verdict (two values; three - `PERMIT`, `HOLD(validity)`, `REFUSE` - for the
+withdrawal and the checkout payment) and the caller commits; every action's effect is a port
 `risk` declares and `app` implements over the owning domain's existing command; the Phase 13 lock
 order takes risk rows last inside a caller's transaction or first in a risk-only one that takes no
 money row).
@@ -2987,18 +3025,35 @@ transaction). Risk records kyc's answer as a signal only when kyc was **asked** 
 activation (one clock, the database's) - a stale, pending or unavailable answer is never recorded as a clearance
 (`RescreeningRunTest#aStaleClearanceIsNotARescreen`, probed); T-eval reads kyc's latest decided screening per type through
 kyc's bounded `latestDecidedScreenings`.)*
+*(P13-DOC-001, 2026-10-27 - the evidence on record: "the storm's census at every round" above is not evidence on record -
+`P13-TST-001` is POSTPONED by the owner (`POSTPONED_ISSUES.md` PI-004), and no production census judges the ledger or
+the withdrawal holds. What exists: the static guards (`RiskModuleIsolationTest` and the siblings' refusals, probed); the
+owed database suites - `WithdrawalHoldDatabaseTest`, `RiskActionDatabaseTest` and the seams' suites - run for the first
+time in the owner-authorised database pass (2026-10-27), green after test-only repairs; the hermetic proofs
+(`MUTATION_TESTING.md` §2); and the independent reviews.)*
 **Phase:** 13
 
 ### INV-RSK-03 — A velocity window is a durable row written in the judged command's transaction, equal to what it counts
 **Statement:** Every velocity figure a decision reads is a row of `velocity_window`, keyed by
 (dimension, subject ref, window kind, window start) — dimensions party, source account, destination
-account or beneficiary, device, merchant; windows `H1`, `D1`, `D7`, `D30` — with the window start
+account or beneficiary, device, merchant, session (`P13-TSK-014`, risk `V011`); windows `H1`, `D1`,
+`D7`, `D30` — with the window start
 computed from `clock_timestamp()` read after the caller's lock, and holding a count and a sum in one
 currency. T-eval reads the current figures, evaluates, and — only when the decision permits the
 movement — upserts the increments in the same transaction, each window one statement `INSERT … ON
-CONFLICT DO UPDATE … RETURNING` in sorted key order (position (R2)), so a committed movement counts
-exactly once, a refused or rolled-back movement counts for nothing, and ten concurrent movements of
-one subject count ten. No window lives in Redis, a cache or process memory. A window's count and sum
+CONFLICT DO UPDATE … RETURNING` in sorted key order (position (R2)), so a movement the decision
+permits counts once with the judged command's transaction, a refused (`DENY`, `HOLD`, `REVIEW`, an
+unsatisfied `CHALLENGE`) or rolled-back movement counts for nothing, and ten concurrent movements of
+one subject count ten. *(P13-DOC-001, 2026-10-27: this read "so a committed movement counts exactly
+once, a refused or rolled-back movement counts for nothing", and the dimensions omitted `SESSION`. As
+built a committed movement can count nowhere or a refused one once: a `HOLD` is counted in no window
+(`VelocityOutcome.NOT_PERMITTED`), so a held withdrawal later released or a held card payment later
+captured moves money no window counts - for the owner's ratification (`PHASE_13_PLAN.md` §1.2 item 2);
+a permitted fail-safe whose own count fails is recorded `UNCOUNTED` and moves uncounted (below; item
+77); and a transfer the seams permitted and transfers then refused `DESTINATION_NOT_POSTABLE` (the
+posting's savepoint, after the seams) keeps its count - its velocity proof's journal link then reads
+`DIVERGED` for that account's windows until they age out, a false `VelocityDiverged` page that can mask
+a real one (item 58).)* No window lives in Redis, a cache or process memory. A window's count and sum
 equal the movements it counts, recomputed by `VelocityProof` on one read-only snapshot: the counted
 assessments of record, over every dimension; and - for a window every counted movement of which is a
 transfer - the monitored journal's transfers, from the first transfer the record ever holds (the
@@ -3014,7 +3069,7 @@ Structuring and account-takeover detection both rest on these figures being exac
 `CHECK` that a window's sum never decreases within a window; `currency NOT NULL`) + `DB-PRIVILEGE`
 (the velocity rows' only `UPDATE` is the one-statement upsert; no `DELETE`) + `DOMAIN` (the upsert
 runs in T-eval after the caller's locks, in sorted key order; the window start from the database
-clock read after the lock; the increment skipped for `DENY`, `REVIEW` and an unsatisfied
+clock read after the lock; the increment skipped for `DENY`, `HOLD`, `REVIEW` and an unsatisfied
 `CHALLENGE`; nothing in `risk` reads a counter from any store but these rows).
 **Verify:** `VelocityWindowDatabaseTest#tenMovementsCountTen` and `#aWindowIsCutByTheDatabaseClock`
 (two instances, clocks ±5 s) (`P13-TSK-006`); scenario 14 — ten concurrent movements of one subject
@@ -3056,6 +3111,15 @@ start - its currency and scale; the velocity report locates it for an operator, 
 the reader's own party or one the platform cannot place (`INV-RSK-08`). The proof reads on a bounded
 snapshot (`statement_timeout`), off the scrape thread, single-flight per instance; it never gates a
 movement. Probes: `MUTATION_TESTING.md` §2.)*
+
+*(P13-DOC-001, 2026-10-27 - the evidence on record: scenario 14's storm half and "the storm's census at every round" are
+not evidence on record - `P13-TST-001` is POSTPONED by the owner (`POSTPONED_ISSUES.md` PI-004). What exists:
+`VelocityProof` with its gauge `finapp.risk.velocity.proof{verdict}` and the alert `VelocityDiverged`; the owed database
+suites (`VelocityWindowDatabaseTest`, the seams' `…CountTen` cases) run for the first time in the owner-authorised
+database pass (2026-10-27), green after test-only repairs; the hermetic proofs and probes (`MUTATION_TESTING.md` §2).
+The dimension the session was added for counts only on the checkout payment seam (`PaymentRiskJudgement`); the "session
+confirming many checkouts" rule it serves is a `CHALLENGE`-weighted `SESSION` velocity rule that raises no alert and opens
+no case (item 80).)*
 
 ### INV-RSK-04 — Every decision is explainable, and the fail-safe is a recorded decision, never a silent default
 **Statement:** Every assessment records the policy version it was evaluated under, the engine version
@@ -3117,6 +3181,16 @@ version is `ALLOW(NO_POLICY_ACTIVE)` counted and posted; a timed-out subject loc
 `LIMIT_REFUSED`: a fail-safe has no hit. Hermetic `RiskTransferSeamsTest#theFailSafeReachesTheSeam`; owed
 `TransferRiskSeamDatabaseTest#noPolicyRecordsAllowAndTheTransferPosts`, `#riskUnavailableCommitsTheBandsOutcome`.)*
 
+*(P13-DOC-001, 2026-10-27: the unreadable pin's compiled `ALLOW` answers **every** operation, `WITHDRAWAL` and
+`CROSS_BORDER` included, where C1's bands are `DENY` at every amount - recorded `RISK_UNAVAILABLE` and alerted, never
+silent; for the owner's decision before the activation gate (`PHASE_13_PLAN.md` §1.2 item 75; ADR-0108's follow-up). The
+evidence on record: "the storm's census at every round" above is not - `P13-TST-001` is POSTPONED by the owner
+(`POSTPONED_ISSUES.md` PI-004). What exists: the schema's every-writer `CHECK`s (`engine` `NOT NULL`;
+`risk_assessment_pinned_unless_unpinnable`; the cause and reason together), `finapp.risk.evaluation.unavailable` with
+`RiskEvaluationUnavailable` and `RiskPolicyNoneActive` proven by `RiskAlertRulesTest`, the owed database suites run for the
+first time in the owner-authorised database pass (2026-10-27, green after test-only repairs), the hermetic proofs and the
+battery `P13-TST-002`.)*
+
 ### INV-RSK-05 — A policy version is immutable once decided, only an `ACTIVE` one is evaluated, activation is four eyes, and the pin never answers "neither"
 **Statement:** A risk policy version — its rules, weights, score bands, fail-safe bands, challenge
 assurance, override threshold and effective-from — is immutable from the moment it is decided
@@ -3135,7 +3209,8 @@ during an activation is a window in which every money movement falls to the fail
 12 → 13 gate's A3-I1 found exactly that in BNPL's terms pin. One person activating a policy alone can
 open the platform to fraud or close it to every customer with no second judgement (`INV-AUD-04`).
 **Enforce:** `DB-CONSTRAINT` (partial unique one `ACTIVE` per operation; the status `CHECK`; the
-four-eyes `CHECK` `activated_by <> proposed_by`; `risk_rule` rows keyed to their version and
+four-eyes `CHECK` `risk_policy_version_four_eyes`, `decided_by <> proposed_by` for an `ACTIVE` or `RETIRED` version
+*(P13-DOC-001, 2026-10-27: read `activated_by <> proposed_by`; the decider's column is `decided_by`, `risk V002`)*; `risk_rule` rows keyed to their version and
 `INSERT`-only; the conditional edges `PROPOSED → ACTIVE | REJECTED`, `ACTIVE → RETIRED`) +
 `DB-PRIVILEGE` (conditional `UPDATE` only of status and decision columns on the version row; no
 `UPDATE` of a rule row; no `DELETE`) + `DOMAIN` (T-pol takes advisory namespace **13**
@@ -3153,7 +3228,11 @@ version, none "neither", the activation never waiting on a money row (`P13-TSK-0
 `finapp.risk.policy.active{operation,policy_version}` and its rule "no active policy where judging is
 expected" (`P13-TSK-024`). *(As built by `P13-TSK-024`, 2026-10-26: `finapp.risk.policy.active{operation}` - the version
 number its value - and `RiskPolicyNoneActive`, proven by `RiskAlertRulesTest`; the activation's four eyes and its
-rehearsal are steps of `OPERATIONS_RUNBOOK.md` §9.1's gate.)*
+rehearsal are steps of `OPERATIONS_RUNBOOK.md` §9.1's gate.)* *(P13-DOC-001, 2026-10-27: scenario 3's storm half is not
+evidence on record - `P13-TST-001` is POSTPONED by the owner (`POSTPONED_ISSUES.md` PI-004); the race is
+`RiskPolicyDatabaseTest#anEvaluationBehindAnActivationPinsTheSuccessor` and `RiskEvaluationDatabaseTest`'s, run for the
+first time in the owner-authorised database pass (2026-10-27), green after test-only repairs, beside the probed pin
+re-read (`MUTATION_TESTING.md` §2).)*
 **Phase:** 13
 
 ### INV-RSK-06 — An alert is born once, a case is open at most once per subject and kind, and a replay creates no second alert, case, action or filing
@@ -3190,7 +3269,10 @@ open per subject and kind (`P13-TST-001`).
 report per case (`DRAFT`, `APPROVED`, `FILED`, `ACKNOWLEDGED`), since a draft beside a filed or acknowledged report would
 be the second filing this invariant forbids; a `REJECTED` filing frees the case for a new draft. "No second filing" of
 one report is the drive's: `FILED` once (`regulatory_report_event`'s key), the first attempt submits and every later one
-inquires by the filing reference - a lost answer asked for, never filed again. Verified hermetically by
+inquires by the filing reference - a lost answer asked for, never filed again *(P13-DOC-001, 2026-10-27: not quite -
+an inquiry answered `NOT_RECEIVED` re-submits the filing under the **same** reference (`RegulatoryFilingProvider`'s
+contract), so "no second filing" there rests on the adapter's contract that the provider deduplicates on that reference;
+the simulated provider never answers `NOT_RECEIVED`, so that path is unexercised)*. Verified hermetically by
 `RegulatoryReportTest#oneOpenDraftPerCase`, `#aLostFilingResponseIsInquiredNeverReFiled`, `#tenFilersFileOnce` and
 `RegulatoryReportMigrationTest#oneLiveReportPerCase`; on the database by `RegulatoryReportDatabaseTest`, owed (C5).)*
 *(As built by `P13-TSK-022`, 2026-10-26, `risk V018`: the rescreening's arbiters - one permit per (party, list version)
@@ -3205,29 +3287,60 @@ Verified hermetically by `RescreeningRunTest` (`#anActivationEnqueuesEveryActive
 `#aLeaseLostMidAskRecordsOnce`, `#aHitAlertsOnceAndCases`, `#aSecondHitOfTheDayAfterTheFirstCaseClosedIsCased`, probed),
 `RiskAlertTest#aScreeningHitIsKeyedByItsSignal`, `ScreeningListVersionTest`, `ScreeningListMigrationTest#theArbiters`,
 `#oneAlertPerPartyAndListVersion`; on the database by `RescreeningDatabaseTest`, owed (C5).)*
+*(P13-DOC-001, 2026-10-27: the Enforce's `risk_alert UNIQUE (subject_ref, rule_code, window_start)` is, since risk `V018`,
+`risk_alert_born_once UNIQUE NULLS NOT DISTINCT (subject_ref, rule_code, window_start, fact_signal_id)` (the note
+above). An alert is born by a fraud rule in T-eval, a monitoring rule in the sweep, or a fact - `OBLIGATION_DEFAULTED` in
+T-sig (`P13-TSK-025`), `SCREENING_HIT` by the rescreening leg (`-022`). The evidence on record: the storm's rounds and
+census are not - `P13-TST-001` is POSTPONED by the owner (`POSTPONED_ISSUES.md` PI-004). What exists: `AlertBornOnceCensus`
+and `CaseOneOpenCensus`, gauged `finapp.risk.census{kind}` and alerted `RiskCensusDiverged`; the owed database suites
+named above (`AlertDatabaseTest`, `CaseDatabaseTest`, `SignalIntakeDatabaseTest`, `MonitoringIntakeDatabaseTest`,
+`RegulatoryReportDatabaseTest`, `RescreeningDatabaseTest`) run for the first time in the owner-authorised database pass
+(2026-10-27), green after test-only repairs; the probed arbiters (`MUTATION_TESTING.md` §2).)*
 **Phase:** 13
 
 ### INV-RSK-07 — Every consequential risk act is two persons' acts, and a refused self-approval is recorded `FAILED`
 **Statement:** A disposition that confirms fraud or suspicion (`CONFIRMED_FRAUD`,
-`CONFIRMED_SUSPICIOUS`) or that issues an action; an override of a `DENY`, `HOLD` or `REVIEW`
-decision at or above the threshold (C7: the judged amount at or above EUR 1,000, or the decision
-`DENY`; below it one holder with a reason, audited); a policy activation; a regulatory report's
-approval; and every downstream risk action are each proposed by one holder and approved by a
-different one. The proposer's own approval is refused at the domain and by the row's `CHECK`, each
+`CONFIRMED_SUSPICIOUS`), refers (`REFERRED`) or prohibits (asks `PROHIBITED`); an override of a `DENY`,
+`HOLD` or `REVIEW` decision at or above the threshold (C7: the judged amount at or above the pinned
+version's `override_threshold` - EUR 1,000 in the v1 fixtures - or the decision `DENY`; below it one
+holder with a reason, audited); a policy activation; a screening list version's activation; an
+alert's suppression; a regulatory report's approval; and every risk action a case proposes are each
+proposed by one holder and approved by a different one. The proposer's own approval is refused at the domain and by the row's `CHECK`, each
 alone, and the refusal is audited `FAILED` (`risk.SelfApprovalRefused`). An override carries a reason
 code and text and never edits the decision; an `ALLOW` is never overridden after the fact. No holder
 reads or works a case, approves an override or files a report on their own party's subject, and an
 operator with no placeable party is refused (`risk.SelfDealingRefused`, audited `FAILED`). Every such
-act requires a `MULTI_FACTOR` operator session.
+approval, and a report's filing, requires a `MULTI_FACTOR` operator session.
+*(P13-DOC-001, 2026-10-27: corrected in place - this read "a disposition that confirms fraud or suspicion … or that
+issues an action", "C7: the judged amount at or above EUR 1,000", "and every downstream risk action" and "every such act".
+As built **no disposition issues an action** (`DESIGN-017` D11 - a case's action is its own four-eyes act, proposed while
+the case is live, and a disposition is refused while one awaits its decision), and `REFERRED` and a prohibiting
+disposition are two persons' acts beside `CONFIRMED_*` (`risk_case_disposition_four_eyes`); C7's figure is policy data;
+the suppression and the list activation were four-eyes acts the statement omitted. **An override's action is not a second
+four-eyes act**: it is born `APPROVED` by the override's own approval (`risk V013`, `decision_override_issues_its_action`),
+so below C7's threshold an override's release, denial, capture or void of a held movement is one holder's act - C7 as
+accepted, for the owner's ratification with C7 (`PHASE_13_PLAN.md` §2.2) and item 26. The approvals are stepped up; a
+proposal and a one-person close are not. Further as-built limits, for the owner: one `RISK_INVESTIGATE` holder can open a
+case on an open alert by hand and close it `CLOSED_*` alone, reaching what the four-eyes suppression controls (item 78);
+the roles partition the grants, not the persons - one identity may hold `RISK_ANALYST`, `RISK_OFFICER` and `AML_OFFICER`
+at once (identity `V010`'s unique is per (identity, role); item 86) - while four eyes compares actors, so it holds either
+way.)*
 **Why:** The override is the one door through which a person can let refused money move; the
 disposition is the door through which a person can suspend a customer or report them to an
 authority; the activation is the door that sets the rules for every movement. One person at any of
 these is a single point of fraud, coercion or error, and a self-approval that fails silently is
 indistinguishable from one that never happened (`INV-AUD-04`: four eyes are two persons;
 `INV-AUD-01`).
-**Enforce:** `DB-CONSTRAINT` (four-eyes `CHECK`s `approved_by <> proposed_by` on
-`decision_override`, the disposition rows of `risk_case_action`, `risk_action`, `regulatory_report`
-and `risk_policy_version`; `decision_override UNIQUE (assessment_id)` over live proposals;
+**Enforce:** `DB-CONSTRAINT` (four-eyes `CHECK`s, each for every writer and provable alone:
+`decision_override_four_eyes` (`decided_by <> proposed_by` where `requires_second_person`, fixed at the
+proposal from the pinned threshold), `risk_case_disposition_four_eyes` on `risk_case` (`CONFIRMED_*`,
+`REFERRED` and a prohibiting disposition), `risk_action_four_eyes` (a case's action only - an
+override's is born `APPROVED`), `regulatory_report_four_eyes` (`approved_by <> drafted_by`),
+`risk_policy_version_four_eyes` (`decided_by <> proposed_by`), `risk_alert_suppression_four_eyes` and
+`screening_list_version_four_eyes` (`activated_by <> recorded_by`) *(P13-DOC-001, 2026-10-27: read "four-eyes
+`CHECK`s `approved_by <> proposed_by` on `decision_override`, the disposition rows of `risk_case_action`, `risk_action`,
+`regulatory_report` and `risk_policy_version`" - the disposition's `CHECK` is on `risk_case` (`V012`), the columns are
+as named, and the suppression's and the list version's were omitted)*; `decision_override UNIQUE (assessment_id)` over live proposals;
 `reason_code NOT NULL` on an override and a disposition) + `DOMAIN` (the approval edge compares
 actors in the aggregate before the write; `risk.ReasonRequired`; the self-dealing check in every
 case, override and report door against the actor's placeable party, fail closed — the gate's A7-6
@@ -3267,9 +3380,11 @@ teaches a fraudster the rule to step around; a score in a metric tag or a note i
 disclosure by another channel (`INV-AUD-02`).
 **Enforce:** `STATIC` (`NoCustomerSurfaceReadsRiskTest`: no customer or merchant route depends on
 `risk` or reads a `risk` table; `ColumnClassificationTest` with every `risk` column classified —
-assessment inputs and rule hits `CONFIDENTIAL`, signal attributes at their source's level, case notes
-and evidence refs `CONFIDENTIAL`, the narrative `RESTRICTED-PII`, nothing `INTERNAL` but identifiers
-and timestamps; the metric tag register; the event payload tests) + `DB-PRIVILEGE` (the narrative
+assessment inputs and rule hits `CONFIDENTIAL`, signal attributes at their source's level, evidence
+refs `CONFIDENTIAL`, every person-written note and reason (`risk_case_action.text`, the override's,
+the suppression's and the policy version's reasons) `RESTRICTED-PII` *(P13-DOC-001, 2026-10-27: read "case
+notes and evidence refs `CONFIDENTIAL`"; `DATA_CLASSIFICATION.md`'s rows classify the notes `RESTRICTED-PII`)*, the
+narrative `RESTRICTED-PII`, nothing `INTERNAL` but identifiers and timestamps; the metric tag register; the event payload tests) + `DB-PRIVILEGE` (the narrative
 read only through the `AML_REPORT_*` doors) + `DOMAIN` (the seam adapters map the decision to the
 consumer's two-value verdict and the caller's reserved reason; the customer withdrawal read answers
 `HELD` only; `InstrumentShapes` over notes; the queue and read doors under `RISK_INVESTIGATE`,
@@ -3329,16 +3444,35 @@ case file are the operator's only reads of cases and alerts, each audited (`risk
 self-dealing withheld or refused; evidence served by reference. The customer's answer with and without an open case is
 the owed `CustomerAnswerIsIndifferentToACaseTest` (C5).)*
 
+*(P13-DOC-001, 2026-10-27 - the evidence on record: the needle walk over risk's doors and "the storm's census at every
+round" are not evidence on record - `P13-TST-001` is POSTPONED by the owner (`POSTPONED_ISSUES.md` PI-004). What exists:
+the four static guards above, each probed (`MUTATION_TESTING.md` §2), the payload and negative tests named above, the
+owed database suites run for the first time in the owner-authorised database pass (2026-10-27, green after test-only
+repairs), and the independent reviews. The seam adapters' verdict is two-valued for the transfer and cross-border seams
+and three-valued (`PERMIT`, `HOLD(validity)`, `REFUSE`, no reason) for the withdrawal and the checkout payment. For the
+owner: the operations reports under `RISK_INVESTIGATE` carry amounts (item 81); the report doors' act answers return the
+full report, narrative included, unaudited as a read (item 88); the device hash is an unsalted SHA-256 of a User-Agent
+(item 87).)*
+
 ### INV-RSK-09 — Every monitored transaction is born once from a ledger journal entry, never diverges from it, and reprocessing is idempotent
 **Statement:** The monitoring intake reads the ledger's journal — the one financial truth — through
 `MonitoredLedger` in the journal's own sequence from a durable watermark, and records exactly one
 monitored transaction per journal entry, classified by the entry's posting-key namespace
 (`transfer:`, `payments.`, `merchant-payout:`, `crossborder.`, `lending.`, `bnpl.`…) into its kind,
 subject refs, counterparties, amount and value date; an entry of a namespace the register does not
-know is recorded `UNCLASSIFIED` and alerted, so nothing passes unseen. The monitoring record never
-diverges from the journal: a census proves that every journal entry since the floor has its one
-monitored transaction carrying the entry's amount and that no monitored transaction exists without
-its entry. Ten sweepers over one watermark ingest once; a sweeper that crashes mid-claim lapses its
+know is recorded `UNCLASSIFIED` and alerted, so nothing passes unseen. A divergence of the monitoring
+record from the journal is named, never silent: a census proves that every journal entry at or behind
+the watermark has its one monitored transaction and that no monitored transaction exists without its
+entry - by journal-entry id, as sets, never by amount. *(P13-DOC-001, 2026-10-27: this read "The
+monitoring record never diverges from the journal: a census proves that every journal entry since the
+floor has its one monitored transaction carrying the entry's amount …". As built `MonitoringCensus`
+(`P13-TSK-023`) compares the id sets one UTC day at a time, bounded by the watermark, and compares no
+amount - for the owner's ratification (`PHASE_13_PLAN.md` §1.2 item 82); the monitored row's amount is
+derived from the entry's lines at birth and never updated. And the record can diverge: the intake reads only
+entries minted before the settle horizon (`finapp.risk.monitoring.horizon`, PT60S, on the database clock)
+and its keyset passes an entry that commits later than the horizon after its id was minted - the census
+names it missing (`RiskCensusDiverged{kind="MONITORING"}`) and an operator's reprocessing repairs it;
+the horizon is unenforced, for the owner (item 92).)* Ten sweepers over one watermark ingest once; a sweeper that crashes mid-claim lapses its
 permit and the next claim re-reads from the committed watermark; reprocessing from any earlier
 watermark — after a policy change or an incident, ordered under `RISK_POLICY_ADMINISTER` and audited
 — creates no new monitored transaction, alert, case or action. Events only pull the watermark's
@@ -3377,10 +3511,24 @@ evidence's value date, never a run's clock, so a re-run from any watermark raise
 profile version anew (`MonitoringRulesTest#reprocessingRaisesNoSecondAlert`; owed
 `MonitoringRulesDatabaseTest#reprocessingRaisesNoSecondAlert`). Probe: `MUTATION_TESTING.md` §2.)*
 
+*(P13-DOC-001, 2026-10-27 - as built and the evidence on record: "in the journal's own sequence" is the journal's
+primary key - a UUIDv7 entry id read as a keyset (the journal has no sequence column; `RISK_LIFECYCLES.md` §4.11); the
+claim, the read and the batch's inserts are one transaction, so a sweeper's crash is a rollback the next claim re-reads
+from. The Verify's "journal entries = monitored transactions, amounts equal, no orphan — at every storm round" and "a
+sweeper killed mid-claim among the storm's crash points" are not evidence on record: `P13-TST-001` is POSTPONED by the
+owner (`POSTPONED_ISSUES.md` PI-004), and the census compares ids, not amounts (item 82). What exists: `MonitoringCensus`
+with `finapp.risk.census{kind="MONITORING"}` and `RiskCensusDiverged`; `RiskMonitoringLagging` and
+`RiskMonitoringUnclassified`; `MonitoringIntakeDatabaseTest` and `MonitoringRulesDatabaseTest`, run for the first time
+in the owner-authorised database pass (2026-10-27), green after test-only repairs; the hermetic proofs and probes. The
+`UNCLASSIFIED` row's alert is the Prometheus rule - `AlertKind.UNCLASSIFIED_TRANSACTION` is raised by no writer (item 93).)*
+
 ### INV-RSK-10 — The customer risk profile is versioned and append-only, credit's snapshot records the rating it was given, and a rating change never rewrites a decision
 **Statement:** A party's customer risk profile is a head row and append-only versions, `UNIQUE
-(party_id, version)`, each version recording the rating (`LOW | MEDIUM | HIGH | PROHIBITED`), the
-assessment or case outcome that set it, and the database time; no version is edited or deleted;
+(party_id, version)`, each version recording the rating (`LOW | MEDIUM | HIGH | PROHIBITED`), its
+cause - `RECOMPUTE` (the `MONITORING` policy version pinned, the engine and the sealed inputs) or
+`DISPOSITION` (the approved disposition that set `PROHIBITED`) - and the database time *(P13-DOC-001,
+2026-10-27: read "the assessment or case outcome that set it"; no version names an assessment, `risk V006`'s
+`customer_risk_profile_version_cause_is_known`)*; no version is edited or deleted;
 `PROHIBITED` is set only by a disposition under four eyes. Two sweepers recomputing one profile
 produce one version. Credit's `CreditRiskSignal` (seam version 2) answers the current rating's code
 with the profile version, and credit's decision snapshot records exactly what it was given, so a
@@ -3390,8 +3538,12 @@ re-decides an assessment or a credit decision already made; it applies to the ne
 **Why:** A rating that can be edited in place makes every past decision unexplainable — the snapshot
 says `LOW` and the profile says `HIGH`, and nobody can say which was true when the money moved
 (`INV-CRD-01`, `INV-CRD-07`, `INV-HIST-04`). A rating that re-decides history turns a monitoring
-outcome into a retroactive refusal of credit already extended. `PROHIBITED` closes a customer's money
-movement entirely and is therefore a four-eyes act.
+outcome into a retroactive refusal of credit already extended. `PROHIBITED` is meant to close a
+customer's money movement and is therefore a four-eyes act. *(P13-DOC-001, 2026-10-27: this read "`PROHIBITED`
+closes a customer's money movement entirely". As built the rating refuses a movement only where the operation's
+`ACTIVE` version carries a `PROFILE_RATING` rule deciding `DENY` - the engine has no compiled rule for it - and under
+`NO_POLICY_ACTIVE` (the compiled `ALLOW`) a `PROHIBITED` party moves money; for the owner's ratification
+(`PHASE_13_PLAN.md` §1.2 item 83) and the activation gate's review of the production versions.)*
 **Enforce:** `DB-CONSTRAINT` (`customer_risk_profile_version UNIQUE (party_id, version)`,
 `INSERT`-only; the rating `CHECK`ed; a `PROHIBITED` version carrying a `NOT NULL` reference to its
 approved disposition, a `CHECK`; the head row's version advanced by a conditional `UPDATE` only) +
@@ -3427,8 +3579,18 @@ moves no money and its properties are about judgement, evidence and separation (
 §13.2 the fifteen scenarios they cite; §2.2 the owner decisions C1–C10 applied as accepted defaults
 pending ratification). Table, constraint, test and task names are the plan's; the building task may
 rename a test, renumber a migration within its module or shape a constraint differently, and says
-so. None built yet: until `P13-TSK-001` lands, nothing these entries name is implemented, and every
-statement is the decided design, corrected by the tasks that build it.*
+so.* *(P13-DOC-001, 2026-10-27: built - `P13-TSK-001`…`-025` and the battery `P13-TST-002` are `COMPLETE`, every entry's
+enforcement is in the code, and the dated notes under each entry record where the build read the design differently;
+the exit review read the ten against the code, corrected in place - and so marked - each statement false as built, and
+named the owner's open items by their `PHASE_13_PLAN.md` §1.2 numbers. The storm `P13-TST-001` is POSTPONED by the owner
+until after the project's phases (`POSTPONED_ISSUES.md` PI-004), so every Verify line citing its rounds, census, crash
+points, needle walk or latency names evidence not on record; what stands in its place is each task's hermetic proofs and
+probes, the owed database suites run for the first time in the owner-authorised database pass (2026-10-27, green after
+test-only repairs), the production censuses and proofs - `AssessmentCensus`, `MonitoringCensus`, `VelocityProof`,
+`RescreeningCensus`, `FilingCensus`, `AlertBornOnceCensus`, `CaseOneOpenCensus` - with their gauges and
+`RiskCensusDiverged` / `VelocityDiverged`, and the independent reviews. This note's sentence read "None built yet: until
+`P13-TSK-001` lands, nothing these entries name is implemented, and every statement is the decided design, corrected by
+the tasks that build it.")*
 
 ---
 
@@ -4324,4 +4486,6 @@ to 142 at the Phase 10 → 11 transition, 2026-10-10: `INV-LND-01`…`14` catalo
 *(The count moved from 142 to 152 at the Phase 11 → 12 transition, 2026-10-16: `INV-BNPL-01`…`10`
 catalogued, a new group, and `INV-MER-07` amended — proposed, in force when `P12-TSK-021` lands.)*
 *(The count moved from 152 to 162 at the Phase 12 → 13 transition, 2026-10-22: `INV-RSK-01`…`10`
-catalogued, a new group — the decided design, nothing built until `P13-TSK-001` lands.)*
+catalogued, a new group — the decided design, nothing built until `P13-TSK-001` lands.)* *(P13-DOC-001,
+2026-10-27: built by `P13-TSK-001`…`-025`; the count stands at 162 - the exit review corrected statements, catalogued
+none.)*

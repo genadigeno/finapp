@@ -281,8 +281,12 @@ module depends on `bnpl`):
   Phase 12 proves every flow against the simulators *(`P12-DOC-001`, 2026-10-22: the activation gate added)*.
 
 **Risk (20), Fraud (21), AML / Transaction Monitoring (22) and Case Management (23)** were bounded by the Phase 12 → 13
-transition (ADR-0107, `Proposed`, 2026-10-22; `PHASE_13_PLAN.md` §3) — *planned: nothing of it is built; `P13-TSK-001`
-builds the boundary, schema floor and vocabularies, and each task corrects this paragraph to the code.* Four contexts
+transition (ADR-0107, written `Proposed`, 2026-10-22; `PHASE_13_PLAN.md` §3) — built by `P13-TSK-001`…`-025` (risk
+`V001`…`V018`) and `P13-TST-002`, and read against the code by the Phase 13 exit review, `P13-DOC-001`, 2026-10-27;
+the storm, `P13-TST-001`, POSTPONED by the owner until after the project's phases (`POSTPONED_ISSUES.md` PI-004)
+*(this read "planned: nothing of it is built; `P13-TSK-001` builds the boundary, schema floor and vocabularies, and
+each task corrects this paragraph to the code" until then; where a clause below still stated the design, it is
+corrected in place and marked)*. Four contexts
 in **one module, `risk`** (`MODULE_ARCHITECTURE.md` M3 and M6; schema `risk`, Flyway `risk/V001…`), kept distinct
 inside it by timing and obligation: fraud decisioning is synchronous, in the caller's transaction, latency-bounded; AML
 monitoring is asynchronous, retrospective, a leaderless sweep in its own transactions; case management serves both and
@@ -296,7 +300,9 @@ implements, and every seam the consuming modules declare (`transfers.TransferLim
 channel-neutral evaluation API; `RiskModuleIsolationTest` refuses every business module and `app`, and every sibling's
 isolation test refuses `risk`. The machines are [`RISK_LIFECYCLES.md`](../domain/RISK_LIFECYCLES.md)'s; the invariants
 `INV-RSK-01`…`-10`. M3's split triggers stand: AML acquiring retention or isolation obligations fraud does not share, or
-monitoring workload harming the synchronous budget — the storm (`P13-TST-001`) measures the second.
+monitoring workload harming the synchronous budget — the storm (`P13-TST-001`) measures the second *(`P13-DOC-001`,
+2026-10-27: unmeasured — the storm is postponed, PI-004; the deferral is for the owner's ratification,
+`PHASE_13_PLAN.md` §1.2 item 76)*.
 - **Risk (20)** — *responsibility:* the judgement of every money-moving command before it happens, channel-neutral:
   versioned policies of rules as data, a deterministic scoring engine (`RISK_ENGINE_V1`), durable velocity windows
   written in the caller's own transaction, an immutable assessment per judged command, an explicit decision
@@ -309,20 +315,37 @@ monitoring workload harming the synchronous budget — the storm (`P13-TST-001`)
   committed row; the credit decision and its snapshot (`credit` records the rating it was given). *Transaction
   boundary:* **T-eval** runs inside the caller's transaction after the caller's locks — the pin of the `ACTIVE` policy
   `FOR SHARE`, the inputs, the windows' one-statement upserts in sorted order, the assessment's insert — and returns
-  the decision; T-advise is a read at a door with no row; T-pol and T-ovr are their own. *Consistency boundary:* the
+  the decision; T-advise is a read at a door with no row; T-pol and T-ovr are their own. *(As built, `P13-DOC-001`,
+  2026-10-27: before the inputs, the subjects' advisory locks (R2a, namespace `131`, `P13-TSK-006`); after the seal,
+  the alerts and, for a `REVIEW` or `HOLD`, the case (R4); T-advise a risk-only transaction at the door — the pin and
+  peeks, nothing written; the order per transaction is `DISTRIBUTED_EXECUTION.md` §3's "The Phase 13 lock order".)*
+  *Consistency boundary:* the
   judged command — exactly one assessment per (operation, command ref), sealed with the money's commit; the policy pin
   never answers "neither" during an activation; the latency budget p99 ≤ 50 ms, enforced by a 250 ms statement
-  timeout behind a savepoint whose breach becomes the fail-safe decision. *APIs:* the internal evaluation and advice
+  timeout behind a savepoint whose breach becomes the fail-safe decision *(`P13-DOC-001`: the p99 is unmeasured — the
+  storm postponed, PI-004, item 76; the 250 ms bounds the windows' locks and reads and the alerts, not the pin (by
+  design) nor the case opening (item 95); a movement queued on R2a past it is a `TIMEOUT` fail-safe judged by the
+  amount band alone, its count possibly `UNCOUNTED` — a concurrent burst can pass a velocity limit, item 77)*. *APIs:* the internal evaluation and advice
   API; `POST /v1/operator/risk/policies` (+ activation, rejection; `RISK_POLICY_ADMINISTER`),
   `GET …/assessments/{id}` and `…/replay` (`RISK_INVESTIGATE`), `POST …/assessments/{id}/overrides` (+ approval,
   rejection; `RISK_OVERRIDE`), `GET …/parties/{partyId}/profile`; **no customer route reads a risk table**. *Events
   produced:* `RiskDecisionMade`, `LimitBreached`, `RiskSignalRecorded`, `CustomerRiskRatingChanged`,
-  `RiskPolicyActivated`; *consumed:* identity's authentication, credential, recovery and session events, kyc's
-  outcomes, `accounts.AccountOpened`, `crossborder.BeneficiaryRegistered`, merchant enablement and suspension,
-  lending's and bnpl's delinquency and default — each as a signal born once. *Failure behaviour:* "unavailable" (no
-  `ACTIVE` policy, a failed read, a throwing rule, the timeout) is the band's fail-safe decision recorded
-  `RISK_UNAVAILABLE` / `NO_POLICY_ACTIVE` and an operational alert (owner decision C1); a duplicate event is one
-  signal; a policy activated mid-evaluation applies to the next. *Security boundary:* the permissions
+  `RiskPolicyActivated`; *consumed:* identity's credential, recovery and suspension events (`CredentialChanged`,
+  `RecoveryInitiated`, `RecoveryCompleted`, `IdentitySuspended`), `accounts.AccountOpened`, crossborder's
+  `BeneficiaryRegistered`, `BeneficiaryActivated` and `BeneficiaryBlocked`, `merchant.MerchantOnboarded`, lending's and
+  bnpl's delinquency and default, bnpl's `BnplApplicationSubmitted` and payments' `RefundCompleted` and
+  `ChargebackReceived` — each as a signal born once, under the one consumer `risk.signals` *(`P13-DOC-001`,
+  2026-10-27: this read "identity's authentication, credential, recovery and session events, kyc's outcomes, … merchant
+  enablement and suspension" — `AuthenticationFailed` names no identity, the session's acts are audit actions, kyc
+  publishes no case outcome and merchant no enablement or suspension event; none is consumed)*. *Failure behaviour:*
+  "unavailable" (a failed read, a throwing rule, the timeout) is the band's fail-safe decision recorded
+  `RISK_UNAVAILABLE` and an operational alert (owner decision C1); no `ACTIVE` policy is the compiled `ALLOW` recorded
+  `NO_POLICY_ACTIVE`; a duplicate event is one signal; a policy activated mid-evaluation applies to the next.
+  *(`P13-DOC-001`, as coded — this read "(no `ACTIVE` policy, a failed read, a throwing rule, the timeout) is the band's
+  fail-safe decision recorded `RISK_UNAVAILABLE` / `NO_POLICY_ACTIVE`": with no policy there is no band; the pin's own
+  read failing is the compiled `ALLOW` under `RISK_UNAVAILABLE` for every operation, `WITHDRAWAL` and `CROSS_BORDER`
+  included — item 75; an amount in another currency than the version's takes the open-ended last band, and its scale is
+  not judged — item 89.)* *Security boundary:* the permissions
   `RISK_POLICY_ADMINISTER` and `RISK_OVERRIDE` in the role `RISK_OFFICER`, `RISK_INVESTIGATE` and `RISK_CASE_APPROVE` in
   `RISK_ANALYST` (identity `V023`, `P13-TSK-001`), a partition pairwise-disjoint with every existing role; four eyes on activation and on an override above the
   threshold (C7); self-dealing fails closed; assessment inputs and rule hits `CONFIDENTIAL`, device attributes
@@ -334,7 +357,12 @@ monitoring workload harming the synchronous budget — the storm (`P13-TST-001`)
   signals: account takeover (a credential change or recovery followed within the lookback by a new payee, a new device
   and a withdrawal), payment and merchant abuse (chargeback and refund ratios per merchant and per customer, a
   merchant's refunds to new accounts, BNPL applications across merchants within a window, a session confirming many
-  checkouts), each a `RuleKind` with parameters in a policy version. *Owned state:* none of its own — its rules are
+  checkouts), each a `RuleKind` with parameters in a policy version. *(`P13-DOC-001`, 2026-10-27, as built: a
+  merchant's refunds to new accounts is not built — deferred, `PHASE_13_PLAN.md` §1.2 item 18; "a session confirming
+  many checkouts" is a `VELOCITY_COUNT` rule over the `SESSION` dimension weighted toward `CHALLENGE` — it raises no
+  alert and opens no case (item 80); the account takeover's new device is `ABSENT` on every movement, no seam carrying a
+  device, so the sequence is judged on the anchor, the new payee and the movement (the device hash an unsalted SHA-256
+  of a `User-Agent`, item 87).)* *Owned state:* none of its own — its rules are
   rows of Risk's policy versions; its alerts and cases are Case Management's. *Not owned:* the identity, session,
   merchant or beneficiary it judges; the money. *Transaction boundary:* T-eval's (synchronous) and T-mon's
   (retrospective). *Consistency boundary:* an alert born once per (subject, rule, window start) and folded into one
@@ -350,15 +378,24 @@ monitoring workload harming the synchronous budget — the storm (`P13-TST-001`)
   transaction (an unknown namespace `UNCLASSIFIED` and alerted), the monitoring policy's rules per subject over
   monitored transactions and velocity windows, alerts born once folded into the subject's open `AML` case, the
   customer risk profile recomputed through the `MONITORING` policy version's rating bands, rescreening of `ACTIVE` parties on a screening list version's activation through
-  kyc's ports, and the regulatory report — drafted from a disposed `CONFIRMED_SUSPICIOUS` case, approved by a second
+  kyc's ports *(`P13-DOC-001`, 2026-10-27, as built: "alerted" is the gauge and the Prometheus rule
+  `RiskMonitoringUnclassified` — `AlertKind.UNCLASSIFIED_TRANSACTION` is never raised, item 93; the rules run per
+  **party** over its monitored transactions by value date, inside the intake's claim (`-020`); the rescreening covers
+  `ACTIVE` and `PENDING` parties, its permits enqueued by `RiskActionSchedule`'s leg in bounded batches and kyc asked
+  through its re-screening door, the owner's decision O1)*, and the regulatory report — drafted from a disposed `CONFIRMED_SUSPICIOUS` case, approved by a second
   person, filed through the `RegulatoryFilingProvider` port (simulated; the reference jurisdiction the neutral EUR
   one, C4). *Owned state:* Monitored Transaction and the monitoring watermark, Screening List Version and the
   rescreening permit, Regulatory Report. *Not owned:* the Journal Entry (`ledger`'s truth, referenced never copied),
   the Screening Result (`kyc`'s — risk asks, kyc screens), the money. *Transaction boundary:* **T-mon** — the claim
-  `FOR UPDATE SKIP LOCKED` commits alone; then the intake and the per-subject evaluation in their own transactions;
-  **T-rep** and **T-list** their own; the filing call holds no connection. *Consistency boundary:* the journal —
+  `FOR UPDATE SKIP LOCKED`, the intake's batch and the rule leg per party in **one** transaction, the watermark held to
+  its commit; the profile leg one head per transaction *(`P13-DOC-001`, 2026-10-27: this read "the claim … commits
+  alone; then the intake and the per-subject evaluation in their own transactions" — the design `-019` and `-020`
+  replaced)*; **T-rep** and **T-list** their own; the filing call holds no connection. *Consistency boundary:* the journal —
   every monitored transaction born once per entry, a census proving the record never diverges and reprocessing from
-  any watermark idempotent; the report immutable once `FILED`. *APIs:* `POST /v1/operator/risk/cases/{id}/reports`
+  any watermark idempotent; the report immutable once `FILED`. *(`P13-DOC-001`: the census compares the journal's entry
+  ids behind the watermark with the record's, never amounts — item 82; the intake's settle horizon
+  (`finapp.risk.monitoring.horizon`, 60 s) is a bound, not enforced — a posting committing later than it after its id
+  was minted is skipped until an operator orders reprocessing, the census naming it — item 92.)* *APIs:* `POST /v1/operator/risk/cases/{id}/reports`
   (+ approval, filing; `AML_REPORT_APPROVE` / `AML_REPORT_FILE`), `POST …/screening-lists` (+ activation) and
   `POST …/monitoring/reprocessing` (`RISK_POLICY_ADMINISTER`, audited `risk.ReprocessingOrdered`), the audited reports `GET /v1/operator/reports/risk/{decisions,alerts,cases,velocity}`.
   *Events produced:* `AlertRaised`, `RegulatoryReportFiled` (report id and jurisdiction — never the subject),
@@ -367,12 +404,18 @@ monitoring workload harming the synchronous budget — the storm (`P13-TST-001`)
   under consumer `risk.signals` — identity's credential, recovery and suspension events, `accounts.AccountOpened`,
   crossborder's beneficiary registered / activated / blocked, `merchant.MerchantOnboarded`, lending's and bnpl's
   delinquency and default events as born-once signals; the completions as hints to `MonitoringHints`, `NONE` until
-  `-019`; `RiskSignalRecorded` the signal id, kind, subject kind and reference)*. *Failure behaviour:* a sweep crashing mid-claim lapses its permit
+  `-019`; `RiskSignalRecorded` the signal id, kind, subject kind and reference)* *(`P13-DOC-001`, 2026-10-27: since
+  `P13-TSK-014` also bnpl's `BnplApplicationSubmitted` and payments' `RefundCompleted` and `ChargebackReceived`; since
+  `-019` the hints pull the watermark's permit through `WatermarkMonitoringHints`; risk's own `SCREENING_CLEARED` and
+  `SCREENING_HIT` are recorded by the rescreening leg, never consumed)*. *Failure behaviour:* a sweep crashing mid-claim lapses its permit
   and the next claim re-reads from the committed watermark; a filing provider unavailable or unknown leaves `FILED`
   committed with the reference pending, reconciled by the inquiry leg (`risk.ReportAcknowledged` / `risk.ReportRejected`),
   never re-filed (the payout precedent). *Security
   boundary:* `AML_OFFICER` {AML_REPORT_APPROVE, AML_REPORT_FILE} — the filing desk, disjoint from the analyst's
-  (`P13-TSK-001`: an analyst never files, an AML officer never investigates); the report narrative
+  (`P13-TSK-001`: an analyst never files, an AML officer never investigates) *(`P13-DOC-001`, 2026-10-27: the roles'
+  grants are disjoint, their holders need not be — identity's arbiter is one live assignment **of each role** per
+  identity, so one identity may hold `RISK_ANALYST`, `RISK_OFFICER` and `AML_OFFICER` at once; for the owner's
+  ratification, `PHASE_13_PLAN.md` §1.2 item 86)*; the report narrative
   `RESTRICTED-PII`, readable by `AML_REPORT_*` holders only; **tipping-off**: no AML alert, case, report or evidence
   reaches a customer- or merchant-facing surface, a log, an event payload or a metric tag. *Operational
   responsibility:* `finapp.risk.monitoring.lag`, `monitoring.unclassified`, `report{status}`, `sweeper.enabled`; the
@@ -387,9 +430,15 @@ monitoring workload harming the synchronous budget — the storm (`P13-TST-001`)
   block, payments' held-withdrawal release or denial and kyc's rescreening are their owners' commands, keyed
   `risk.action:<id>` and audited by them; a reversal, which a case may only recommend (`REFERRED`); kyc's Review Task
   and reconciliation's Investigation (other case-like states with their own owners, `MODULE_ARCHITECTURE.md` §5);
-  collections operations beyond the case's opening. *Transaction boundary:* **T-case** — every act under the case row
+  collections operations beyond the case's opening. *(`P13-DOC-001`, 2026-10-27, as built by `P13-TSK-017`/`-022`:
+  accounts has no suspension command and crossborder no block command — `SUSPEND_ACCOUNT`, `REINSTATE_ACCOUNT` and
+  `BLOCK_BENEFICIARY` are unavailable, never proposable; payments' held card capture and void join the held
+  withdrawal's release and denial; kyc's rescreening is the rescreening leg's question, keyed
+  `risk.rescreen:<permit id>#<n>` — `RESCREEN_PARTY` reads available but nothing proposes or dispatches it, item 93.)*
+  *Transaction boundary:* **T-case** — every act under the case row
   and the compare-and-set; **T-act** — the action row, then the owning domain's command on **its** lock order, never
-  holding the case row. *Consistency boundary:* one open case per (subject, kind) — an alert raised while the subject has an open case of
+  holding the case row *(as built: the claim of the action row committed first, the owner's command run holding no
+  risk row at all, the outcome recorded after — `DISTRIBUTED_EXECUTION.md` §3)*. *Consistency boundary:* one open case per (subject, kind) — an alert raised while the subject has an open case of
   the kind attaches to it; both concurrent investigators'
   actions kept, one answering `409 risk.CaseRevisionStale`; a disposed case never re-opened — a late event opens a
   new case referencing it; ten approvers, one dispatch; a duplicated downstream command replayed by the domain's key.
@@ -400,10 +449,17 @@ monitoring workload harming the synchronous budget — the storm (`P13-TST-001`)
   *Events:* `CaseOpened`, `CaseEscalated`, `CaseDisposed`, `RiskActionRequested`, `RiskActionCompleted` — ids, codes
   and statuses only. *Failure behaviour:* an owning domain's refusal (already suspended) is the action's recorded
   outcome, never an error; a domain timeout is re-driven under the same key; a `FAILED` action is re-proposable, never
-  re-dispatched by itself; a downstream payment failure after a decision leaves the decision standing. *Security
+  re-dispatched by itself; a downstream payment failure after a decision leaves the decision standing. *(`P13-DOC-001`,
+  as coded: an effect already in place is `DONE(ALREADY)`, an owner's refusal `FAILED(REFUSED)` — each recorded once,
+  never retried; an approved prohibition is written to the profile after the case commits, and
+  `CaseProhibitionDriver`'s re-drive has no per-item failure handling — one failing prohibition holds up those behind
+  it, item 84.)* *Security
   boundary:* four eyes on every `CONFIRMED_*` disposition and every action; self-approval and self-dealing refused
   and recorded `FAILED`; step-up for `CONFIRMED_*`; notes bounded and screened, evidence as references; the
-  tipping-off control above. *Operational responsibility:* `finapp.risk.case{kind,status}`, `case.age{kind}`,
+  tipping-off control above. *(`P13-DOC-001`: and on `REFERRED` and any disposition that sets `PROHIBITED`; no
+  disposition issues an action ("where the disposition confirms or acts" above reads "confirms, refers or prohibits").
+  One `RISK_INVESTIGATE` holder may open a case by hand on an open alert and close it `CLOSED_*` alone, reaching what the
+  suppression's four eyes control — for the owner's ratification, `PHASE_13_PLAN.md` §1.2 item 78.)* *Operational responsibility:* `finapp.risk.case{kind,status}`, `case.age{kind}`,
   `case.backlog{kind}`, `case.resolution{kind}`, `action{kind,outcome}`, `action.failed{kind}`,
   `alert.suppressed{reason_code}`; the alerts "a case older than its SLA", "an action failed".
 
@@ -423,6 +479,9 @@ Its relationships, every one through a port `app` implements or a seam the consu
   the capture. A held withdrawal's release or denial goes through payments'
   existing door on payments' lock order — an approved override's release keyed `risk.action:<override id>` from its
   approval door (`P13-TSK-012`), a Risk Action once `P13-TSK-017` lands; the customer reads `HELD` as a status word only (C6).
+  *(`P13-DOC-001`, 2026-10-27: `-017` landed — an approved override's action and a case's are both T-act's, dispatched
+  under `risk.action:<id>` through payments' four held doors, a held card payment's capture and void beside the
+  withdrawal's release and denial.)*
 - **Cross-Border Payments (16)** — `CrossBorderAuthorization` consults `CrossBorderLimitCheck` and
   `CrossBorderRiskDecision` in its first transaction before the offer is accepted; a refusal consumes nothing; the
   contract unchanged since `P9-TSK-016`.
@@ -432,21 +491,32 @@ Its relationships, every one through a port `app` implements or a seam the consu
   `NotAssessedUntilPhase13` is retired by `P13-TSK-007`. BNPL and loan applications are judged through credit's
   signal, not a seam of their own (B5).
 - **Ledger (7)** — read only, through `MonitoredLedger`: the journal entries since the watermark, ordered by sequence;
-  **no posting, no hold, no release** — `risk` has no ledger edge.
+  **no posting, no hold, no release** — `risk` has no ledger edge. *(`P13-DOC-001`, 2026-10-27: the journal has no
+  sequence column — the entries are read by their UUIDv7 ids as a keyset after the watermark, behind a settle horizon on
+  the database clock, `-019`.)*
 - **Identity, Authentication & Authorization (2)** — upstream for signals (`AuthenticationFailed`,
   `AuthenticationLocked`, `MfaChallengeFailed`, `CredentialChanged`, `ContactChannelAdded`, `RecoveryInitiated`,
   `RecoveryCompleted`, `SessionRotated`, `IdentitySuspended`; the session's assurance read by the `CHALLENGE` mapping;
   the device hashed at the source) and downstream for actions (`IdentityAdministration.suspend`, reinstatement,
   session revocation — keyed, audited by identity; never a credential reset); the six permissions and three roles
-  (identity `V023`).
+  (identity `V023`). *(`P13-DOC-001`, 2026-10-27, as built: the signals are `CredentialChanged`, `RecoveryInitiated`,
+  `RecoveryCompleted` and `IdentitySuspended` only — `AuthenticationFailed` names no identity, and the others are audit
+  actions, not events; the session's assurance is read live through `IdentitySessionAssurance`; no device reaches risk —
+  no identity event or seam carries one.)*
 - **KYC/KYB (3)** — upstream: kyc stays the screening owner — clearances read through a port and recorded as signals;
   rescreening on a list version's activation requested through `CounterpartyScreenings` and the case-bound screening
   (`P13-TSK-022`); `KYC_NOT_APPROVED` and `SCREENING_HIT` as rule kinds; kyc's Review Task is not risk's Case.
+  *(`P13-DOC-001`, 2026-10-27, as built: the rescreening goes through kyc's **re-screening door** — the owner's decision
+  O1, `VerificationRunService.rescreen`, kyc `V011`, a post-decision `RESCREEN` check keyed `risk.rescreen:<permit
+  id>#<n>` — and `CounterpartyScreenings` is not used; kyc publishes no event risk consumes.)*
 - **Accounts / Wallet (5, 6), Merchant (12), Cross-Border Beneficiary (16)** — upstream for signals (`AccountOpened`,
   merchant enablement and suspension, `BeneficiaryRegistered`) and downstream for actions through their existing
   commands (`SUSPEND_ACCOUNT` / `REINSTATE_ACCOUNT`, `SUSPEND_MERCHANT`, `BLOCK_BENEFICIARY`); a wallet with a held
   withdrawal cannot close while the hold is `ACTIVE` (accounts' existing rule); a merchant sees only the operation's
-  generic refusal (OQ-9).
+  generic refusal (OQ-9). *(`P13-DOC-001`, 2026-10-27, as built: the signals are `AccountOpened`,
+  `merchant.MerchantOnboarded` — merchant publishes no enablement or suspension event — and crossborder's
+  `BeneficiaryRegistered`, `BeneficiaryActivated` and `BeneficiaryBlocked`; of the actions only `SUSPEND_MERCHANT` has a
+  command — accounts has no suspension and crossborder no block, so the other three are unavailable (`P13-TSK-017`).)*
 - **Lending (18), BNPL (19)** — upstream for signals (`LoanDelinquencyChanged` / `LoanDefaulted`,
   `BnplDelinquencyChanged` / `BnplDefaulted`); `P13-TSK-025` opens a `COLLECTIONS` case on default, facts only (C3);
   contact strategy, promises to pay, placement and write-off stay out. *(Built 2026-10-26: the borrower is placed for the
@@ -454,15 +524,17 @@ Its relationships, every one through a port `app` implements or a seam the consu
   changed; nothing of the case reaches either.)*
 - **Consent (4)** — nothing new: the evaluation is a platform control over the platform's own records; no consent
   purpose is created (`P13-TSK-001` confirms).
-- **Audit (26)** — every act in `AUDITABLE_ACTIONS.md`'s planned `risk.*` set with actor, time, target, reason where
-  required, correlation and outcome; summaries carry counts and codes, never amounts or names.
+- **Audit (26)** — every act in `AUDITABLE_ACTIONS.md`'s `risk.*` set with actor, time, target, reason where
+  required, correlation and outcome; summaries carry counts and codes, never amounts or names *(`P13-DOC-001`,
+  2026-10-27: this read "planned `risk.*` set" — built)*.
 - **Accounting / General Ledger (25), Reporting (27)** — nothing: no GL mapping; the four risk reports are audited
   operator reads.
 
 **Production evaluates nothing** until a risk policy version is activated under four eyes and
 `OPERATIONS_RUNBOOK.md` §9's activation gate is passed; until then every seam answers `ALLOW` with `NO_POLICY_ACTIVE`,
 recorded, and the monitoring sweep runs from the first deployment and raises no alert until a monitoring policy is
-active (`PHASE_13_PLAN.md` §1.1).
+active (`PHASE_13_PLAN.md` §1.1). *(`P13-DOC-001`, 2026-10-27: the sweep's alerts — two facts alert with no policy in
+force: a default's `OBLIGATION_DEFAULTED` (`-025`) and a rescreening's `SCREENING_HIT` (`-022`).)*
 
 1. Party & Customer
 2. Identity, Authentication & Authorization

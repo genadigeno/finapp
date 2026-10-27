@@ -233,6 +233,19 @@ The concepts this phase must keep apart:
    reversal refused from the declaration with zero transactions and zero wire calls — plus
    the machine's own shape: no edge leaves `COMPLETED`.)*
 
+   *(Phase 13 cross-reference, `P13-DOC-001`, 2026-10-27: risk judges a person's withdrawal
+   inside this dispatch transaction, after the hold is placed under the wallet account's lock -
+   decided under ADR-0108 and ADR-0112, built by `P13-TSK-009` as payments `V033`. The verdict
+   decides the birth state: `PERMIT` → `DISPATCHED` as before; `HOLD` → **`HELD`**, the ledger
+   hold kept and nothing sent, `held_at`/`held_until` stamped by the database (`held_until` the
+   pinned policy's hold validity); `REFUSE` → `FAILED(RISK_REFUSED)`, the hold released in the
+   same transaction. A held withdrawal leaves `HELD` only by payments' keyed release (`HELD →
+   DISPATCHED`, the send after the commit) or keyed denial (`HELD → FAILED(RISK_REFUSED)`, the
+   hold released) - both behind risk's `HeldWithdrawalActions` - or by
+   `WithdrawalResolutionSchedule`'s expiry leg past `held_until` (`FAILED(RISK_REFUSED)`, detail
+   `HOLD_EXPIRED`); `RISK_REFUSED` never follows a dispatch. A `SYSTEM` withdrawal on an
+   instruction (a loan's payout) is not judged (`PHASE_13_PLAN.md` §1.2 item 5).)*
+
 7. **Payouts keep their port.** The merchant payout (ADR-0057) stays on `PayoutProvider`. The
    push rail can implement that port in `app` without any `merchant` change. Converging the two
    is recorded, not scheduled. Its trigger is a second outbound rail, or Phase 8 needing one

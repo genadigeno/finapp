@@ -1,6 +1,6 @@
 # ADR-0110 — The case model shared by fraud, ATO, merchant abuse, AML and collections: born-once alerts, one open case per subject and kind, concurrent updates by revision, four-eyes dispositions
 
-Status: Proposed
+Status: Accepted (2026-10-27, `P13-DOC-001` — read against the code and corrected first)
 Date: 2026-10-22
 Phase: 13
 Context: Risk (Case Management) · Fraud · AML · Lending and BNPL (collections, C3) · Identity · Audit
@@ -44,12 +44,25 @@ Action, Disposition, Escalation), §4, §5, §7.1 (T-case), §7.2 (R4, R5), §7.
    (an alert with no open case), by hand (`POST /v1/operator/risk/cases`), or by `-025` on `LoanDefaulted` /
    `BnplDefaulted`. **A case never re-opens** (OQ-6): a later alert for a disposed subject opens a new case that
    references the old one; the disposed case is untouched.
+   *(P13-DOC-001, 2026-10-27, the openers as built: T-eval opens (or folds into) the party's case for `REVIEW` and
+   `HOLD` alone - `ATO` when the sealed hits show the account-takeover anchors, else `FRAUD` - and **a policy-flagged
+   `DENY` opens none**: no version carries such a flag (`CaseOpener`) - for the owner's ratification
+   (`PHASE_13_PLAN.md` §1.2 item 94). Every other opening is an alert's fold (decision 3): T-eval's account-takeover
+   and merchant-abuse alerts, the profile leg's fraud alerts, the monitoring rules' `AML` alerts, a rescreening's
+   `SCREENING_HIT` fact alert (into the party's `AML` case) and T-sig's `OBLIGATION_DEFAULTED` fact alert (into its
+   party's `COLLECTIONS` case); by hand under `RISK_INVESTIGATE`.)*
 
 3. **Alerts fold into the subject's open case.** Raising an alert and attaching it are one transaction where the
    sweep or T-eval holds nothing else of `risk`: the case row `FOR UPDATE` (R4), then the alert rows (R5). An alert
    for a subject with an open case of the matching kind attaches to it; without one, it opens one — the partial
    unique arbitrates when ten alerts race (`CaseDatabaseTest#tenAlertsOneOpenCase`, scenario 12: a structuring
    sequence is alerted once per window and the case folds every alert).
+   *(P13-DOC-001, 2026-10-27: "where the sweep or T-eval holds nothing else of `risk`" is not so as built: a raising
+   transaction holds the risk rows it took before - T-eval its pin, velocity locks and sealed assessment (R1)–(R3),
+   inside the caller's money transaction (ADR-0108 decision 6's note); the profile leg the party's profile head (R8 →
+   R4 → R5); a rescreening's conclusion its permit (R9 → R3 → R8 → R5 → R4 → R5). The order that keeps it cycle-free is
+   the follow-up's: every birth (at (R3)'s position, in key order) before any fold, then the case (R4), then the attach
+   (R5); no transaction holding (R4) waits on a money row.)*
 
 4. **Investigator actions are append-only, reasoned and audited.** `risk_case_action`: note, evidence attached,
    taken, escalation, action proposed / approved / rejected (ADR-0112), disposition proposed / approved / rejected,
@@ -72,10 +85,24 @@ Action, Disposition, Escalation), §4, §5, §7.1 (T-case), §7.2 (R4, R5), §7.
    recorded `FAILED` (scenario 15; `INV-RSK-07`). A `CONFIRMED_*` disposition may set the customer risk profile's
    rating — `PROHIBITED` only this way — as a new profile version, never an edit (`INV-RSK-10`). `REFERRED` is the
    case recommending an act it cannot make: a reversal is the owning domain's four-eyes act (ADR-0112).
+   *(P13-DOC-001, 2026-10-27, the four-eyes set as built (`DispositionRules`; `risk V012`'s
+   `risk_case_disposition_four_eyes`): every `CONFIRMED_*`, every `REFERRED` and every disposition that sets
+   `PROHIBITED` - two persons, the approval stepped up, proposed only on a taken case. "Any disposition that issues an
+   action" is moot: **no disposition issues an action** (ADR-0112's dated amendment (a)) - a case's risk action is
+   proposed on the case and approved on its own row under four eyes, a disposition waiting while one stands `PROPOSED`.
+   `CLOSED_FALSE_POSITIVE` and `CLOSED_NO_ACTION` that prohibit nothing are one person's act, decided by its own
+   proposal, from `OPEN` too - so one `RISK_INVESTIGATE` holder may open a case by hand on an open alert and close it
+   alone, reaching what decision 1's four-eyes suppression controls, `AML` included (`PHASE_13_PLAN.md` §1.2 item 78).
+   A `PROHIBITED` rating refuses a movement only while the active version carries a `PROFILE_RATING → DENY` rule (item
+   83); no door lifts it (item 21); `CaseProhibitionDriver`, which writes it after the case commits, has no per-item
+   failure handling (item 84).)*
 
 7. **Self-dealing fails closed** (the gate's A7-6 applied forward). No holder reads or works a case, approves a
    disposition or an action, or files a report whose subject is their own party; an operator with no placeable party
    is refused too; each refusal `403 risk.SelfDealingRefused`, recorded `FAILED` in a transaction of its own.
+   *(P13-DOC-001, 2026-10-27: the case file's evidence door (`P13-TSK-023`) judges the **case's** subject, not each
+   served reference - a reference of the reader's own party attached to another party's case is served - for the
+   owner (`PHASE_13_PLAN.md` §1.2 item 79); a merchant's case is judged against its organisation party (item 22).)*
 
 8. **Queues and reads are operators' only** (plan §9, §11; `INV-RSK-08`). `GET /v1/operator/risk/alerts` and
    `…/cases` are oldest-first, keyset-paged, filtered by status and kind, never the operator's own party's, every
@@ -102,6 +129,10 @@ Action, Disposition, Escalation), §4, §5, §7.1 (T-case), §7.2 (R4, R5), §7.
     under the head row lock (`ProfileDatabaseTest#tenRecomputesOneVersion`). The SLA is judged on the database clock
     and surfaced as a gauge (`case.age{kind}`), never by an instance's timer. T-case takes no money row, so it can
     wait on nothing a money transaction holds.
+    *(P13-DOC-001, 2026-10-27: the named tests exist and ran green in the owner-authorised database pass (2026-10-27,
+    after test-only repairs); the storm's counted run of the scenarios is postponed (`POSTPONED_ISSUES.md` PI-004), and
+    `AlertBornOnceCensus` and `CaseOneOpenCensus` watch the two arbiters in operation. The converse holds less: a money
+    transaction's T-eval does take the case row (R4) - decision 2's note, ADR-0108 decision 6's note, item 95.)*
 
 ## Alternatives Considered
 
@@ -171,7 +202,9 @@ Financial impact: none — a case moves no money; its only effects are keyed act
 - `P13-TSK-013` and `-014` — the account-takeover and abuse rules that raise fraud alerts into this model;
   `P13-TSK-020` and `-021` — the AML alerts and case.
 - `P13-TST-001` runs scenarios 1, 2, 5, 6, 12 and 15 with counts; `RISK_LIFECYCLES.md` §Alert and §Case are the
-  machines' record; `AUDITABLE_ACTIONS.md` and `ERROR_CONTRACT.md` gain the planned entries.
+  machines' record; `AUDITABLE_ACTIONS.md` and `ERROR_CONTRACT.md` gain the planned entries. *(P13-DOC-001,
+  2026-10-27: `P13-TST-001` is postponed by the owner until after the project's phases (PI-004) - decision 11's
+  note.)*
 - The SLA per kind is a policy figure the owner sets at activation; until then the default is the task's and is
   recorded here when built.
 - **Built by `P13-TSK-015` (2026-10-25) - decision 1, and decision 3's contract.** `risk V010` (the next free
@@ -237,5 +270,13 @@ Financial impact: none — a case moves no money; its only effects are keyed act
   `CLOSED_FALSE_POSITIVE`, `CONFIRMED_*` or `PROHIBITED`; no `ActionKind` (as `-017` built); never by hand. The SLA stays
   168 h - owner item. Contact strategy, promises to pay, placement, agencies, write-off and provisioning stay out (Phase 14
   and a later collections context); lending and bnpl unchanged.
-- **Acceptance.** `Proposed` at the Phase 12 → 13 transition (2026-10-22); the Phase 13 review (`P13-DOC-001`) reads
-  this ADR against the code, corrects it in place with dated notes, and accepts it.
+- *(P13-DOC-001, 2026-10-27 - the fact origin, as built: `OBLIGATION_DEFAULTED` is not the only fact kind.
+  `AlertKind.SCREENING_HIT` (`P13-TSK-022`'s review, `risk V018`) is a second - raised from the rescreening permit's
+  born-once `SCREENING_HIT` signal, its own code its rule, no policy naming it, about the `PARTY` on the `D1` window of
+  the list version's activation, one alert per (party, list version) by its `fact_signal_id`, folded into the party's
+  `AML` case. And the `-016` bullet's "'any disposition that issues an action' joins the four-eyes set with `-017`" did
+  not happen: `-017` built no disposition that issues an action (decision 6's note).)*
+- **Acceptance.** **As built** (`P13-DOC-001`, 2026-10-27): `Proposed` at the Phase 12 → 13 transition (2026-10-22);
+  the Phase 13 review read this ADR against the code, corrected it in place above with dated notes, and accepted it.
+  The as-built choices awaiting the owner carry their `PHASE_13_PLAN.md` §1.2 item numbers (the SLA per kind, item
+  23; the collections fact, items 60-65).

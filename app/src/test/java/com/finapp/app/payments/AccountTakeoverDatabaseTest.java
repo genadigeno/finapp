@@ -172,7 +172,11 @@ class AccountTakeoverDatabaseTest {
 
         fixtures.registerBankAccount(customer); // the new payee, as the customer's door records it
         String key = someKey();
-        Withdrawals.Initiated held = withdraw(customer, 10_00, key);
+        // One resolution for the withdrawal and its retry: resolved(..) mints a fresh payment method per call, which the
+        // fingerprint keys - a different request, where the door's retry names the same method (P13-TST-001's first run
+        // of this owed suite).
+        Withdrawals.Resolved resolved = HeldWithdrawalFixtures.resolved(customer, EUR);
+        Withdrawals.Initiated held = withdraw(customer, resolved, 10_00, key);
         assertThat(held.status()).isEqualTo(WithdrawalStatus.HELD);
         assertThat(fixtures.sends()).as("a held withdrawal is never sent").isZero();
         assertThat(HeldWithdrawalFixtures.holdStatus(held.id().value())).isEqualTo("ACTIVE");
@@ -197,7 +201,7 @@ class AccountTakeoverDatabaseTest {
                 customer.party().toString(), changed.eventId().value())).isEqualTo(1);
         assertThat(alertsRaised(customer)).isEqualTo(1);
 
-        Withdrawals.Initiated retry = withdraw(customer, 10_00, key);
+        Withdrawals.Initiated retry = withdraw(customer, resolved, 10_00, key);
         assertThat(retry.replayed()).isTrue();
         Withdrawals.Initiated again = withdraw(customer, 20_00, someKey());
         assertThat(again.status()).isEqualTo(WithdrawalStatus.HELD);
@@ -326,7 +330,11 @@ class AccountTakeoverDatabaseTest {
 
     /** The composition root's own engine, as the customer, outside a request: the actor's identity is judged. */
     private Withdrawals.Initiated withdraw(Customer customer, long minor, String key) throws Exception {
-        Withdrawals.Resolved resolved = HeldWithdrawalFixtures.resolved(customer, EUR);
+        return withdraw(customer, HeldWithdrawalFixtures.resolved(customer, EUR), minor, key);
+    }
+
+    private Withdrawals.Initiated withdraw(Customer customer, Withdrawals.Resolved resolved, long minor, String key)
+            throws Exception {
         try (SecurityContext.Scope scope = SecurityContext.enter(
                         new Actor(customer.identity().toString(), ActorType.CUSTOMER));
                 CorrelationContext.Scope flow = CorrelationContext.enter(

@@ -64,6 +64,10 @@ class AlertDatabaseTest {
     private static final Alerts ALERTS = new Alerts(STORE, AlertFolding.NONE,
             (uow, actor) -> Optional.ofNullable(PARTY_OF.get(actor.id())), RiskSubjectParties.NONE,
             new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, CLOCK, Spans.NONE, AlertObserver.NONE);
+    /** A case to attach to (risk V012's foreign key) - opened by hand, never folded into. */
+    private static final Cases CASES = new Cases(new JdbcRiskCaseStore(), STORE,
+            (uow, actor) -> Optional.ofNullable(PARTY_OF.get(actor.id())), RiskSubjectParties.NONE,
+            new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, CLOCK, CaseObserver.NONE);
     private static final String INSUFFICIENT_PRIVILEGE = "42501";
     private static final String CHECK_VIOLATION = "23514";
     /** Today's D1 window start on the database clock - the alignment the CHECK admits. */
@@ -224,9 +228,17 @@ class AlertDatabaseTest {
         }
         try (Connection migrator = DatabaseRoles.migrator()) {
             refusedWithMessage(migrator, "DELETE FROM risk.risk_alert" + where, "never deleted");
-            refusedWithMessage(migrator, "TRUNCATE risk.risk_alert", "never deleted");
+            // CASCADE: since risk V012 the case tables reference the alert, and a plain TRUNCATE is refused by the
+            // foreign key before any trigger runs (P13-TST-001's run of this owed suite) - with them in the statement,
+            // the refusal is a trigger's, each of which says "never deleted or truncated".
+            refusedWithMessage(migrator, "TRUNCATE risk.risk_alert CASCADE", "never deleted");
             refusedWithMessage(migrator, "UPDATE risk.risk_alert SET severity = 'LOW'" + where, "facts never change");
         }
+        // With CASCADE any truncated table's trigger may be the one that refuses, so the alert's OWN truncate trigger is
+        // pinned present and enabled (P13-DOC-001, the review's A8-7 on the repair that added the CASCADE).
+        assertThat(count("SELECT count(*) FROM pg_trigger WHERE tgrelid = 'risk.risk_alert'::regclass"
+                + " AND tgname = 'risk_alert_is_never_truncated' AND tgenabled <> 'D' AND (tgtype & 32) <> 0"))
+                .as("risk.risk_alert's own BEFORE TRUNCATE trigger").isEqualTo(1);
         assertThat(count("SELECT count(*) FROM risk.risk_alert" + where)).isEqualTo(1);
     }
 
@@ -235,7 +247,10 @@ class AlertDatabaseTest {
             + " OPEN, a window off its boundary, an operational alert attached, a proposal over a standing one")
     void theMachineRefusesEveryOtherEdge() throws SQLException {
         RiskAlert attached = open();
-        RiskCaseId caseId = RiskCaseId.of(IDS.next());
+        // A real case: since risk V012 the attachment references risk_case, so a made-up id is refused by the foreign
+        // key (P13-TST-001's run of this owed suite).
+        RiskCaseId caseId = inOneTransaction(uow -> CASES.open(uow, Cases.OpenRequest.of(CaseKind.FRAUD,
+                freshParty()), "an attachment's case", analyst(), correlation())).riskCase().id();
         inOneTransaction(uow -> ALERTS.attach(uow, attached.id(), caseId));
         RiskAlert proposedOnce = open();
         inOneTransaction(uow -> ALERTS.proposeSuppression(uow, proposedOnce.id(), "DATA_DEFECT", "the feed was wrong",
@@ -254,12 +269,12 @@ class AlertDatabaseTest {
                     + " 'D1', " + TODAY + ", NULL, '{}', '{}', '{}', 'OPEN', clock_timestamp(), 'flow', 'cause')",
                     CHECK_VIOLATION);
         }
-        // The positive control for the shared name: a SCREENING_HIT alert of the SCREENING_HIT rule kind is admitted.
-        Alerts.Raised screening = inOneTransaction(uow -> ALERTS.raise(uow, NewAlert.ofRule(AlertKind.SCREENING_HIT,
-                AlertSeverity.CRITICAL, freshParty(), RuleKind.SCREENING_HIT,
-                AlertWindow.containing(WindowKind.D1, Instant.now()), policy(),
-                AlertEvidence.signals(List.of(RiskSignalId.of(IDS.next()))), correlation(),
-                CausationId.of("alert-suite"))));
+        // The positive control for the shared name: a SCREENING_HIT alert is admitted - since risk V018 (P13-TSK-022's
+        // review) a fact's alert, its own code the rule and its one signal its identity, never a policy rule's (the
+        // first run of this owed suite, P13-TST-001, met the domain refusing the rule-kind shape this case was written in).
+        Alerts.Raised screening = inOneTransaction(uow -> ALERTS.raise(uow, NewAlert.ofFact(AlertKind.SCREENING_HIT,
+                AlertSeverity.CRITICAL, freshParty(), AlertWindow.containing(WindowKind.D1, Instant.now()),
+                RiskSignalId.of(IDS.next()), correlation(), CausationId.of("alert-suite"))));
         assertThat(screening.outcome()).isEqualTo(Alerts.Outcome.BORN);
         RiskAlert operational = inOneTransaction(uow -> ALERTS.raise(uow, NewAlert.operational(
                 AlertKind.UNCLASSIFIED_TRANSACTION, AlertSeverity.LOW, freshParty(),

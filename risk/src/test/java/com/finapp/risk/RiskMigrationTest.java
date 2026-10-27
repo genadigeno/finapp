@@ -55,6 +55,13 @@ class RiskMigrationTest {
     /** PostgreSQL's SQLState for a trigger's or CHECK's refusal. */
     private static final String CHECK_VIOLATION = "23514";
 
+    /**
+     * A grant naming DELETE - the statements' check. Not the bare words "DELETE ON": every append-only table's trigger is
+     * declared {@code BEFORE UPDATE OR DELETE ON}, so that check could never pass (P13-TST-001's first run of this owed
+     * suite - five methods red on their own triggers).
+     */
+    private static final String GRANTS_DELETE = "GRANT[^;]*DELETE";
+
     private static Connection migrator;
     private static Connection application;
 
@@ -241,8 +248,10 @@ class RiskMigrationTest {
                 + " GROUP BY grantee ORDER BY grantee"))
                 .containsExactlyInAnyOrder(
                         "finapp_app=INSERT,SELECT",
-                        // The owner's full set as PostgreSQL 18 (the catalogue's image) reports it - MAINTAIN since 17.
-                        "finapp_migrator=DELETE,INSERT,MAINTAIN,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE");
+                        // The owner's full set as information_schema reports it on PostgreSQL 18 (the catalogue's
+                        // image): MAINTAIN (17+) is not an SQL-standard privilege, so the view never lists it - the
+                        // first run of this owed suite (P13-TST-001) read exactly these seven.
+                        "finapp_migrator=DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE");
 
         // The application role: refused by privilege before any trigger runs.
         assertThatExceptionOfType(SQLException.class)
@@ -276,9 +285,21 @@ class RiskMigrationTest {
                     .isThrownBy(() -> plant.execute("DELETE FROM " + SCHEMA + ".risk_signal"))
                     .withMessageContaining("never updated or deleted");
             migrator.rollback();
+            // CASCADE: since risk V018 the rescreening permit references the signal, and a plain TRUNCATE is refused by
+            // the foreign key before any trigger runs (P13-TST-001's run of this owed suite); with it in the statement
+            // the refusal is a trigger's - the signal's or the permit's, each saying "never".
             assertThatExceptionOfType(SQLException.class)
-                    .isThrownBy(() -> plant.execute("TRUNCATE " + SCHEMA + ".risk_signal"))
-                    .withMessageContaining("never updated or deleted");
+                    .isThrownBy(() -> plant.execute("TRUNCATE " + SCHEMA + ".risk_signal CASCADE"))
+                    .withMessageContaining("never");
+            migrator.rollback();
+            // With CASCADE either table's trigger may be the one that refuses, so the signal's OWN truncate trigger is
+            // pinned present and enabled (P13-DOC-001, the review's A8-7 on the repair that added the CASCADE).
+            try (ResultSet own = plant.executeQuery("SELECT count(*) FROM pg_trigger WHERE tgrelid = '" + SCHEMA
+                    + ".risk_signal'::regclass AND tgname = 'risk_signal_is_never_truncated' AND tgenabled <> 'D'"
+                    + " AND (tgtype & 32) <> 0")) {
+                own.next();
+                assertThat(own.getLong(1)).as("risk.risk_signal's own BEFORE TRUNCATE trigger").isEqualTo(1);
+            }
             migrator.rollback();
         } finally {
             migrator.setAutoCommit(true);
@@ -344,7 +365,7 @@ class RiskMigrationTest {
                 .containsExactly("last_entry_id", "next_sweep_at");
         // The statements, not the commentary.
         String statements = statementsOf(migration("V004__monitored_transactions_and_the_watermark.sql"));
-        assertThat(statements).doesNotContain("DELETE ON").doesNotContain("GRANT ALL");
+        assertThat(statements).doesNotContainPattern(GRANTS_DELETE).doesNotContain("GRANT ALL");
     }
 
     @Test
@@ -599,8 +620,8 @@ class RiskMigrationTest {
         assertThat(scalar("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'risk_alert_born_once'"))
                 .isEqualTo("UNIQUE NULLS NOT DISTINCT (subject_ref, rule_code, window_start, fact_signal_id)");
         assertThat(column("SELECT indexname FROM pg_indexes WHERE schemaname = 'risk' AND tablename = 'risk_alert'"
-                + " ORDER BY indexname")).containsExactly("risk_alert_born_once", "risk_alert_open_queue",
-                "risk_alert_pk");
+                + " ORDER BY indexname")).containsExactly("risk_alert_born_once", "risk_alert_of_case",
+                "risk_alert_open_queue", "risk_alert_pk", "risk_alert_queue"); // of_case and queue: risk V014's
         assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
                 + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
     }
@@ -621,7 +642,7 @@ class RiskMigrationTest {
                 + " AND table_name = 'decision_override' AND column_name LIKE 'action%' ORDER BY column_name"))
                 .as("V013 moved the issued action's state to risk_action").containsExactly("action");
         String statements = statementsOf(migration("V009__the_decision_override_machine.sql"));
-        assertThat(statements).doesNotContain("DELETE ON").doesNotContain("GRANT ALL").doesNotContain("CREATE TABLE");
+        assertThat(statements).doesNotContainPattern(GRANTS_DELETE).doesNotContain("GRANT ALL").doesNotContain("CREATE TABLE");
         assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
                 + " AND conname LIKE 'decision_override_%' ORDER BY conname")).contains(
                 "decision_override_action_is_the_effect", "decision_override_action_shape",
@@ -651,7 +672,7 @@ class RiskMigrationTest {
         assertThat(grantsOn("customer_risk_profile_version"))
                 .containsExactlyInAnyOrder("finapp_app:INSERT", "finapp_app:SELECT");
         String statements = statementsOf(migration("V006__the_customer_risk_profile.sql"));
-        assertThat(statements).doesNotContain("DELETE ON").doesNotContain("GRANT ALL");
+        assertThat(statements).doesNotContainPattern(GRANTS_DELETE).doesNotContain("GRANT ALL");
         assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
                 + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
         assertThat(scalar("SELECT pg_get_constraintdef(oid) FROM pg_constraint"
@@ -674,7 +695,7 @@ class RiskMigrationTest {
                     + " AND privilege_type = 'UPDATE'")).as(table).isEmpty();
         }
         String statements = statementsOf(migration("V007__the_sealed_assessment.sql"));
-        assertThat(statements).doesNotContain("DELETE ON").doesNotContain("GRANT ALL").doesNotContain("GRANT UPDATE");
+        assertThat(statements).doesNotContainPattern(GRANTS_DELETE).doesNotContain("GRANT ALL").doesNotContain("GRANT UPDATE");
         assertThat(column("SELECT conname FROM pg_constraint WHERE connamespace = 'risk'::regnamespace"
                 + " GROUP BY conname HAVING count(*) > 1")).as("the V012 class").isEmpty();
     }
@@ -836,7 +857,7 @@ class RiskMigrationTest {
             migrator.setAutoCommit(true);
         }
         String statements = statementsOf(migration("V005__velocity_windows.sql"));
-        assertThat(statements).doesNotContain("DELETE ON").doesNotContain("GRANT ALL").doesNotContain("TRUNCATE ON risk");
+        assertThat(statements).doesNotContainPattern(GRANTS_DELETE).doesNotContain("GRANT ALL").doesNotContainPattern("GRANT[^;]*TRUNCATE");
     }
 
     // -----------------------------------------------------------------

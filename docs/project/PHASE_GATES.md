@@ -2097,6 +2097,44 @@ twelve criteria are recorded in the transition review
 ([`reviews/PHASE_12_TO_13_TRANSITION.md`](reviews/PHASE_12_TO_13_TRANSITION.md)), as every phase's
 are, not here. Nothing of Phase 13 is built at the transition.*
 
+*Status (the exit review, `P13-DOC-001`, 2026-10-27, [`reviews/PHASE_13_REVIEW.md`](reviews/PHASE_13_REVIEW.md)):
+**Phase 13 `COMPLETE`, pending the Phase 13 → 14 transition gate and the owner's ratification - with `P13-TST-001`
+(the storm) `POSTPONED` by the owner until after the project's phases** (`POSTPONED_ISSUES.md` PI-004). The six originals
+and the per-area blocks were read clause by clause against their named tests (269 sub-clauses across five audits):
+none does not hold after the review's corrections; seventeen rest on the postponed storm - every census at every round,
+the named lock waits for (R1), (R4), (R7), (R8), crash points, "no `40P01` in any storm run", the latency budget
+measured per operation and M3's split trigger, every keyed door raced ten ways under one key, the needle walk at run
+time - each recorded with the evidence that exists instead (each task's hermetic proofs, the database suites run green
+in the owner-authorised database pass, the production censuses and proofs, the independent reviews, the storm's partial
+ninth run green on its 57 census checks); the phase's ten-instance answer on storm counts stays open under PI-004.
+**Universal criterion 7** remains the standing C5 deviation: the one owner-authorised database pass ran on the final
+tree before the review (102 suites; its first run's 23 failures every one a test's - the container's clock, a shared
+container, a Phase 13 lock-order change moving a Phase 5 interleaving point - no production defect, no migration
+changed), and the fleet tiers beyond it were not run.*
+
+*Clauses met in a form their words did not anticipate (the exit review, 2026-10-27), recorded rather than re-worded:
+**the six originals** - 1: "the pin's read failing" answers the compiled `ALLOW` (`RISK_UNAVAILABLE`, `PIN_UNREADABLE`),
+not a version's band, for every operation (ADR-0108's follow-up reading (ii); `PHASE_13_PLAN.md` §1.2 item 75, for the
+owner); `RiskEvaluationUnavailable` fires on `RISK_UNAVAILABLE` only, `NO_POLICY_ACTIVE` raising `RiskPolicyNoneActive`
+where judging is expected; the unavailability meter is tagged `{operation, reason_code}`. 3: the sum guard is `V005`'s
+trigger, not a `CHECK`; the clock case is sequential with a foreign clock refused. 4: the column is `engine`; the battery's
+"replay door" is the `AssessmentReplay` function; the pin `CHECK` admits `PIN_UNREADABLE` too. 5: the one-time allowance
+for a denied transfer is not built (item 13); C7's threshold is the pinned version's `override_threshold`. 6: the
+case-indifference test covers the withdrawal and its reads (the merchant half structural - the review's A7-1).
+**Risk evaluation**: `CHALLENGE_REQUIRED` is derived from `challenge_satisfied`, never stored. **Policy versioning**: the
+active version is the gauge's value, not a tag. **Decision explainability**: the walk's first step, a command to its
+assessment, is a query - no operator route maps them; `rule` is bounded by the `RuleKind` vocabulary. **Fraud workflows**:
+the ATO sequence's payee and device steps are judged on no withdrawal (items 4, 6) - the hold is the credential change's;
+"a session confirming many checkouts" is a challenge with no alert or case (item 80); refunds to new accounts deferred
+(item 18). **AML monitoring**: the unclassified and the divergence "alerts" are Prometheus rules (item 93); the
+monitoring census compares id sets (item 82); `monitoring.lag`'s rule reads `monitoring.age`; rescreening asks kyc
+through its new rescreen door (owner decision O1), for `ACTIVE` and `PENDING` parties. **Alert deduplication**: the
+unique is `NULLS NOT DISTINCT (subject_ref, rule_code, window_start, fact_signal_id)` (`V018`). **Case management**:
+no disposition issues an action. **Domain integrations**: a checkout refusal is the intent's terminal `FAILED`, not
+routing's; `NOT_ASSESSED` remains seam version 2's answer for an unassessed party; the cross-border input gained `quoteId`.
+**Idempotency and recovery**: seven keyed doors replay in-suite; every door raced ten ways rests on the storm.
+**Auditability**: the operations reports carry judged sums and the velocity report per-subject sums (item 81).*
+
 ### Phase 14 — Accounting and Financial Reporting
 - Trial balance zero per currency across the entire posting history, continuously verified.
 - Any GL figure drills down to the individual journal lines that compose it.

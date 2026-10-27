@@ -2059,17 +2059,31 @@ invariants (`PHASE_13_PLAN.md` §6) are catalogued by the same transition; the e
 catalogued before it, and the building tasks add the Phase 13 citations when they correct an entry to the code — the
 Phase 9 → 10 precedent.)*
 
+*(Built, and read against the code by the Phase 13 exit review, `P13-DOC-001`, 2026-10-27: `P13-TSK-001`…`-025` and
+`P13-TST-002` built every concept below — risk `V001`…`V018` — so "Nothing of Phase 13 is built" in the note above, the
+transition's, kept as written, no longer holds, and each entry states what was built; where an entry's first sentences
+still stated the design they are corrected in place and marked. The storm, `P13-TST-001`, is POSTPONED by the owner
+until after the project's phases (`POSTPONED_ISSUES.md` PI-004). No term was added or renamed; Risk Queue and Case File
+were added by `P13-TSK-018`. The behaviours the owner has not yet ratified are named in each entry with their
+`PHASE_13_PLAN.md` §1.2 item.)*
+
 **The words the entries use.** The five decisions, each with a fixed meaning and the operations that admit it
 (`PHASE_13_PLAN.md` §12.3, owner decision C2): **`ALLOW`** — the movement may proceed; **`CHALLENGE`** — it may proceed
 only under `MULTI_FACTOR` assurance, else it is refused as the reserved `RISK_REFUSED` with reason `CHALLENGE_REQUIRED`;
 **`DENY`** — refuse, the caller committing its reserved reason; **`HOLD`** — accept the command and move nothing until a
 person decides, admitted only where the operation has a native hold-then-dispatch shape (a withdrawal `HELD`; a card
-payment in `P13-TSK-010`'s second slice); **`REVIEW`** — refuse now and open a case. Precedence when rules disagree:
+payment's capture held, built by `P13-TSK-010`'s second slice, risk `V008` — `WITHDRAWAL` and `CARD_PAYMENT` admit it,
+no other operation); **`REVIEW`** — refuse now and open a case (`TRANSFER`, `WITHDRAWAL`, `CROSS_BORDER`). Precedence when rules disagree:
 `DENY` > `HOLD` > `REVIEW` > `CHALLENGE` > `ALLOW`, a hard rule's decision beating a score band's. A **fail-safe
 decision** is the decision taken when the evaluation is unavailable — no `ACTIVE` policy, a failed read, a throwing
 rule, the statement timeout — the policy's fail-safe band for the judged amount (or, with no policy at all, the compiled
 `ALLOW`), always **recorded** as an assessment with reason `RISK_UNAVAILABLE` or `NO_POLICY_ACTIVE`; never a silent
-default (owner decision C1). **Four eyes** is two persons' acts — the proposer never the approver, by the domain and by
+default (owner decision C1). *(`P13-DOC-001`, 2026-10-27, as coded — `HOLD`'s card payment read "a card payment in
+`P13-TSK-010`'s second slice", and the operations each admits were added: the band answers a failed read, a throwing rule and
+the timeout — the open-ended last band for an amount in another currency than the version's, its scale not judged
+(`PHASE_13_PLAN.md` §1.2 item 89); no `ACTIVE` policy is the compiled `ALLOW` under `NO_POLICY_ACTIVE`; and the pin's
+own read failing is the compiled `ALLOW` under `RISK_UNAVAILABLE` for **every** operation, `WITHDRAWAL` and
+`CROSS_BORDER` included, whose C1 bands deny at every amount — for the owner's ratification, item 75.)* **Four eyes** is two persons' acts — the proposer never the approver, by the domain and by
 a `CHECK`, a refused self-approval recorded `FAILED` (`INV-AUD-04`). **Self-dealing** is an operator acting on their
 own party's subject: refused, fail closed, recorded `FAILED`. **Tipping-off** is letting a subject learn that an AML
 alert, case, report or investigation exists: no customer- or merchant-facing surface, log, event payload or metric tag
@@ -2083,7 +2097,14 @@ bnpl and payments events, or by the monitoring sweep. A device arrives as a hash
 description is stored. *(As built by `P13-TSK-005`, 2026-10-23: the subject is the aggregate the event names — the
 events carry their own aggregate and codes, never the party — so a subject is also an identity or a credit agreement
 (a loan or a BNPL obligation); thirteen kinds from the events that exist; the completions are hints and record no
-signal; a device's hash is `DeviceHash`, SHA-256 of the description, the only shape admitted.)*
+signal; a device's hash is `DeviceHash`, SHA-256 of the description, the only shape admitted.)* *(`P13-DOC-001`,
+2026-10-27, as built: eighteen kinds — the thirteen above; `REFUND_COMPLETED`, `CHARGEBACK_RECEIVED` and
+`BNPL_APPLICATION_SUBMITTED` about a party (`P13-TSK-014`, the two payments kinds attributed from risk's own sealed
+assessment of the intent); and risk's own `SCREENING_CLEARED` and `SCREENING_HIT`, recorded by the rescreening leg
+from a concluded permit (`-022`), never by "the monitoring sweep", which records none. The subjects as built are an
+identity, an account, a beneficiary, a merchant, a credit agreement and a party — no kind is about a device or a
+session, and no kyc event is consumed. No source sends a device today; the hash is an unsalted SHA-256 of a
+`User-Agent`, for the owner's ratification before a producer exists, `PHASE_13_PLAN.md` §1.2 item 87.)*
 **Not:** a Risk Decision or an Alert — a signal is an input nobody judged; a rule reads signals and may raise an alert.
 Nor credit's Credit Attribute (evidence from a bureau about creditworthiness), nor the risk *signal* credit receives
 through its `CreditRiskSignal` port, which is the Customer Risk Profile's rating code, not a row here.
@@ -2146,7 +2167,9 @@ The assessment moves no money and is never read by a customer or merchant surfac
 ### Risk Decision
 **Is:** the outcome field of a Risk Assessment — `ALLOW | CHALLENGE | DENY | HOLD | REVIEW` (the five words above) with
 its ordered reason codes — immutable, admitted per operation by the policy, mapped by `app`'s seam adapter to the
-consuming seam's two-valued verdict (`PERMIT` / `REFUSE`) or, for a withdrawal, to its `HELD`. A fail-safe decision is
+consuming seam's two-valued verdict (`PERMIT` / `REFUSE`) or, for a withdrawal, to its `HELD` — and, since
+`P13-TSK-010`'s second slice, for a card payment to its authorised payment with the capture held (`P13-DOC-001`,
+2026-10-27). A fail-safe decision is
 a Risk Decision like any other, recorded with reason `RISK_UNAVAILABLE` or `NO_POLICY_ACTIVE`.
 **Not:** the money movement's outcome — the caller commits that in its own machine (`transfers`' `RISK_REFUSED`;
 payments' `HELD` or `RISK_REFUSED`), and `risk` never posts, holds or releases. Nor a Credit Decision (`INV-CRD-04`'s
@@ -2158,7 +2181,8 @@ that never edits the decision.
 **Is:** a four-eyes proposal over one `DENY`, `HOLD` or `REVIEW` Risk Decision — `PROPOSED → APPROVED | REJECTED`, a
 second `RISK_OVERRIDE` holder at or above the threshold (owner decision C7: the judged amount at or above EUR 1,000,
 or a `DENY`), one holder with a reason below it — recording the action it issues: the release of a held withdrawal (keyed
-`risk.action:<override id>` from the approval door; a Risk Action proper once `P13-TSK-017` folds it in), or, for a
+`risk.action:<override id>` from the approval door; a Risk Action proper once `P13-TSK-017` folds it in — *folded in:
+born `APPROVED` under the override's id in the approval's transaction, `P13-DOC-001`, 2026-10-27*), or, for a
 denied transfer, a one-time allowance for the same command reference that the customer's retry
 is evaluated against. *(As built by `P13-TSK-012`, 2026-10-24: the proposal names its effect - a held withdrawal
 released or denied, a held card payment captured or voided, each through payments' keyed door after the approval
@@ -2171,7 +2195,9 @@ the remedy. Nor credit's underwriting second approval.
 
 ### Velocity Window
 **Is:** a durable counter per (dimension, subject, window kind, window start) — dimensions party, source account,
-destination account or beneficiary, device, merchant; kinds `H1`, `D1`, `D7`, `D30`, cut on the database clock read
+destination account or beneficiary, device, merchant, and the identity session that confirmed a checkout payment
+(`SESSION`, appended by `P13-TSK-014` — by the session's id, never its token; the device dimension has no producer, no
+seam carrying a device; `P13-DOC-001`, 2026-10-27: this listed five dimensions until then); kinds `H1`, `D1`, `D7`, `D30`, cut on the database clock read
 after the caller's lock — holding a count and a sum in an explicit currency; read by the evaluation under the
 subject's serialisation lock (`VelocityDimension`, R2a, `P13-TSK-006`) and upserted in one
 statement in the judged command's own transaction, only when the decision permits the movement, so a refused movement
@@ -2188,7 +2214,10 @@ the window. It has no lifecycle.
 (`UNIQUE (party_id, version)`) naming the assessment or disposition that set each, recomputed by the monitoring sweep
 on signals and case outcomes under the profile's head-row lock, through the `MONITORING` policy version's rating
 bands (`LOW`, `MEDIUM`, `HIGH`); `PROHIBITED` only by a four-eyes disposition. Read by
-every evaluation (`PROFILE_RATING`) and answered to credit's `CreditRiskSignal` seam as the rating code with seam
+every evaluation (`PROFILE_RATING`) *(`P13-DOC-001`, 2026-10-27, as coded: read only by an evaluation whose pinned
+version carries a `PROFILE_RATING` rule, with no lock — so a `PROHIBITED` party's movement is refused only when the
+active version carries a `PROFILE_RATING` → `DENY` rule; for the owner's ratification, `PHASE_13_PLAN.md` §1.2
+item 83)* and answered to credit's `CreditRiskSignal` seam as the rating code with seam
 version 2, recorded in the decision's snapshot so the decision replays as it was sealed whatever the rating does after
 (`INV-CRD-01`).
 **Not:** credit's Credit Profile (the deciding transaction's anchor, holding no rating) nor kyc's Risk Rating
@@ -2213,7 +2242,12 @@ assessment, never a table, so the same movement judged again under the same inpu
 (`UNIQUE (journal_entry_id)`) by the monitoring sweep reading the journal through the `MonitoredLedger` port from a
 watermark — classified by the entry's posting-key namespace into a kind with subject refs, counterparties, amount and
 value date; an entry of an unknown namespace recorded `UNCLASSIFIED` and alerted, so nothing passes unseen. The
-subject of the monitoring rules and the proof of the Velocity Windows.
+subject of the monitoring rules and the proof of the Velocity Windows. *(`P13-DOC-001`, 2026-10-27, as built:
+"alerted" is the gauge `finapp.risk.monitoring.unclassified` and the Prometheus rule `RiskMonitoringUnclassified` — no
+`UNCLASSIFIED_TRANSACTION` alert row is ever raised (`PHASE_13_PLAN.md` §1.2 item 93); the sweep reads the journal's
+UUIDv7 ids as a keyset behind a 60 s settle horizon that is a bound, not enforced — a posting committing later than it
+after its id was minted is skipped until an operator orders reprocessing (item 92); the census compares entry ids,
+never amounts (item 82).)*
 **Not:** the Journal Entry (the ledger's truth, which it references and never copies as a balance), nor a Transfer,
 Payment or Cross-Border Payment (the owning domains' aggregates), nor an event: events are hints that pull the sweep's
 permit forward and the sweep reads rows. Reprocessing from any earlier watermark — ordered at
@@ -2222,7 +2256,9 @@ permit forward and the sweep reads rows. Reprocessing from any earlier watermark
 
 ### Alert
 **Is:** the born-once observation of a monitoring or fraud Rule over a subject — `UNIQUE (subject_ref, rule_code,
-window_start)` — carrying its kind, severity, policy version and evidence references; `OPEN → ATTACHED` (to a Case — an
+window_start)`, since `risk V018` `UNIQUE NULLS NOT DISTINCT (subject_ref, rule_code, window_start, fact_signal_id)`:
+a `SCREENING_HIT` alert's one evidence signal joins its identity, one alert per (party, list version), and every other
+kind's `NULL` is one value, its identity unchanged (`P13-DOC-001`, 2026-10-27) — carrying its kind, severity, policy version and evidence references; `OPEN → ATTACHED` (to a Case — an
 alert raised while its subject has an open case of the kind attaches to it, the system's dedupe; else the case is
 opened) `| SUPPRESSED` (only an operator's reasoned suppression under four eyes); never deleted. An **AML alert** is an alert of kind `AML`, raised by the monitoring sweep over
 Monitored Transactions; a fraud alert one raised by a fraud rule, synchronously or retrospectively.
@@ -2267,10 +2303,14 @@ assessment door, `risk.AssessmentRead`), never embedded. Nor a Regulatory Report
 ### Case
 **Is:** the unit of a person's judgement — the investigation — of kind `FRAUD | ATO | MERCHANT_ABUSE | AML |
 COLLECTIONS` (owner decision C3), `OPEN → IN_INVESTIGATION → ESCALATED → DISPOSED`, one open per (subject, kind),
-opened by the evaluation (`REVIEW`, `HOLD`, a policy-flagged `DENY`), by the sweep (an alert with no open case) or by
+opened by the evaluation (`REVIEW`, `HOLD`, a policy-flagged `DENY` — *`P13-DOC-001`, 2026-10-27: as built `REVIEW` and
+`HOLD` only; no policy version carries a "`DENY` opens a case" field, so a `DENY` opens none, against ADR-0108 D3 and
+ADR-0110 D2 — for the owner's ratification, `PHASE_13_PLAN.md` §1.2 item 94*), by the sweep (an alert with no open case) or by
 hand; taken by one investigator; worked by append-only Investigator Actions under a `revision` compare-and-set;
 carrying an SLA deadline; closable as a false positive or with no action straight from `OPEN` by one person; disposed
-under four eyes where the Disposition confirms or acts; never re-opened — a new
+under four eyes where the Disposition confirms, refers or prohibits (*`P13-DOC-001`: this read "confirms or acts" — no
+disposition issues an action; one `RISK_INVESTIGATE` holder may open a case by hand on an open alert and close it
+`CLOSED_*` alone, reaching what the suppression's four eyes control — item 78*); never re-opened — a new
 case references it. An **AML case** is a case of kind `AML`, the subject's open case the monitoring alerts fold into
 and the only case a Regulatory Report is drafted from.
 **Not:** kyc's KYC Case or Review Task (onboarding's own files), credit's Underwriting Case (a referral's second look
@@ -2309,7 +2349,9 @@ past the case's last revision - a disposed case never steps - and withheld from 
 ### Disposition
 **Is:** a Case's end — `CLOSED_FALSE_POSITIVE | CLOSED_NO_ACTION | CONFIRMED_FRAUD | CONFIRMED_SUSPICIOUS | REFERRED` —
 proposed by a `RISK_INVESTIGATE` holder and, for every `CONFIRMED_*` and for any disposition that issues a Risk
-Action, approved by a second person holding `RISK_CASE_APPROVE` on a `MULTI_FACTOR` session; recorded as Investigator
+Action, approved by a second person holding `RISK_CASE_APPROVE` on a `MULTI_FACTOR` session (*`P13-DOC-001`,
+2026-10-27: as built for every `CONFIRMED_*`, `REFERRED` and any that sets `PROHIBITED` — no disposition issues a Risk
+Action, each of which is proposed and approved on its own*); recorded as Investigator
 Actions; the act that may set a Customer Risk Profile to `PROHIBITED` and that permits a Regulatory Report
 (`CONFIRMED_SUSPICIOUS`).
 **Not:** a Risk Decision (made by the engine on a command, before any person) nor a Decision Override (a person's act
@@ -2318,7 +2360,9 @@ on one decision). Nor a reversal: `REFERRED` recommends the owning domain's four
 `CLOSED_NO_ACTION` decided by their proposal, from `OPEN` too; `CONFIRMED_*`, `REFERRED` and any that sets
 `PROHIBITED` proposed on a taken case and approved by a second person - `risk_case_disposition_four_eyes`;
 `PROHIBITED` asked by the proposal (`prohibit`), never implied, of a confirming disposition of a party's case alone, and
-written to the profile after the case commits; an action-issuing disposition joins the four-eyes set with `-017`.)*
+written to the profile after the case commits; an action-issuing disposition joins the four-eyes set with `-017`.
+`P13-DOC-001`, 2026-10-27: `-017` built none — no disposition issues an action. The prohibition's re-drive
+(`CaseProhibitionDriver`) has no per-item failure handling: one failing prohibition holds up those behind it, item 84.)*
 **Owned by:** `risk`
 
 ### Escalation
@@ -2334,11 +2378,18 @@ reconciliation's break escalation, which is a severity's forward-only step on a 
 **Is:** `risk`'s record of one downstream effect a Case or a Decision Override issues — `PROPOSED → APPROVED` (a
 second person) `| REJECTED`; `APPROVED → DISPATCHED → DONE | FAILED` — of a kind from the closed vocabulary
 (`SUSPEND_IDENTITY`, `REINSTATE_IDENTITY`, `REVOKE_SESSIONS`, `SUSPEND_ACCOUNT`, `REINSTATE_ACCOUNT`,
-`SUSPEND_MERCHANT`, `BLOCK_BENEFICIARY`, `RELEASE_HELD_WITHDRAWAL`, `DENY_HELD_WITHDRAWAL`, `RESCREEN_PARTY`), one
+`SUSPEND_MERCHANT`, `BLOCK_BENEFICIARY`, `RELEASE_HELD_WITHDRAWAL`, `DENY_HELD_WITHDRAWAL`, `CAPTURE_HELD_PAYMENT`,
+`VOID_HELD_PAYMENT`, `RESCREEN_PARTY`), one
 live per (case, kind, target); dispatched by `RiskActionSchedule` in its own transaction as a keyed command
 (`risk.action:<id>`) through the owning domain's **existing** door on that domain's lock order, its outcome recorded —
-a domain's refusal (already suspended) a recorded `DONE`, never an error; a `FAILED` action re-proposable, never
-re-dispatched by itself. *(As built by `P13-TSK-017`, 2026-10-25, `risk V013`: the id is the proposing investigator
+an effect already in place (already suspended) a recorded `DONE(ALREADY)` and an owner's refusal a recorded
+`FAILED(REFUSED)`, never an error; a `FAILED` action re-proposable, never
+re-dispatched by itself. *(`P13-DOC-001`, 2026-10-27: this read "a domain's refusal (already suspended) a recorded
+`DONE`" and omitted the held card payment's two kinds (`-010`'s second slice). Available as built: identity's three,
+`SUSPEND_MERCHANT` and payments' four; `SUSPEND_ACCOUNT`, `REINSTATE_ACCOUNT` and `BLOCK_BENEFICIARY` unavailable — no
+owning command; `RESCREEN_PARTY` reads available but no door proposes or dispatches it — the rescreening leg asks kyc
+under `risk.rescreen:<permit id>#<n>` instead (`PHASE_13_PLAN.md` §1.2 item 93). The approval door claims and
+dispatches its own action at once; the schedule re-drives.)* *(As built by `P13-TSK-017`, 2026-10-25, `risk V013`: the id is the proposing investigator
 action's or the issuing override's, so the key is fixed at birth; the effect already in place (an identity already
 suspended) is `DONE(ALREADY)` and an owner's refusal `FAILED(REFUSED)`, each recorded once and never retried; the
 owner's command runs as the platform, the deciding persons recorded on the action; `SUSPEND_ACCOUNT`,
@@ -2353,7 +2404,9 @@ Investigator Action (the case's record of proposing it).
 **Is:** an operator-recorded fact, under `RISK_POLICY_ADMINISTER`, that a sanctions or PEP list version is in force —
 `UNIQUE (list, version)`, recorded then activated — whose activation enqueues one rescreening permit per `ACTIVE`
 party; the sweep's rescreening leg requests each screening through kyc's existing ports, records the clearance as a
-Risk Signal and raises an Alert on a hit.
+Risk Signal and raises an Alert on a hit. *(`P13-DOC-001`, 2026-10-27: as the note below records — the activation
+writes one row and `RiskActionSchedule`'s rescreening leg enqueues the permits in bounded batches, for `ACTIVE` and
+`PENDING` parties, asking kyc through its re-screening door rather than its existing ports.)*
 **Not:** a Screening Result — kyc screens and owns the result and its evidence; `risk` asks, and owns only the list
 fact, the permits and what it records from the answer (`ROADMAP.md` Refinement 3). Nor a Risk Policy Version: no rule
 reads the list itself. *(As built by `P13-TSK-022`, `risk V018`, 2026-10-26: `RECORDED → ACTIVE → RETIRED`, recorded and
@@ -2394,6 +2447,10 @@ declare — the Risk Assessment and its Risk Decision — and retrospective frau
 takeover: a credential change or recovery followed by a new payee, a new device and a withdrawal; payment, merchant
 and BNPL abuse: chargeback and refund ratios, refunds to new accounts, applications across merchants, a session
 confirming many checkouts), each raising an Alert born once and folding into a Case of the matching kind.
+*(`P13-DOC-001`, 2026-10-27, as built: refunds to new accounts is not built — deferred, `PHASE_13_PLAN.md` §1.2 item 18;
+"a session confirming many checkouts" is a `VELOCITY_COUNT` rule over the `SESSION` dimension weighted toward
+`CHALLENGE` — no alert, no case (item 80); the takeover's new device is `ABSENT` on every movement, no seam carrying a
+device, so the sequence is judged on the anchor, the new payee and the movement.)*
 **Not:** Transaction Monitoring — fraud decisioning is synchronous and asks "should this movement proceed?";
 monitoring is asynchronous and asks "is this subject's pattern suspicious?". Nor onboarding screening (kyc's), nor
 credit's Underwriting, nor a machine-learned model: rules as data through a versioned, deterministic engine, every

@@ -427,10 +427,12 @@ class PaymentAuthorizationDatabaseTest {
                 APPROVED_BODY.formatted("window"));
         ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
-            // THE CANCEL HOLDS THE ROW: the confirm - its instrument resolved and its plan
-            // computed - blocks on the conditional transition, reads CANCELLED when the cancel
-            // commits, and its Tx1 rolls back whole: routed before the arbiter, written only
-            // after winning it.
+            // THE CANCEL HOLDS THE ROW: the confirm blocks on the intent row - which its Tx1 locks
+            // FIRST since P13-TSK-010 (`SELECT ... FOR UPDATE`, before the instrument, the plan
+            // and the risk seam; it blocked on the conditional transition before) - reads
+            // CANCELLED when the cancel commits, and refuses with nothing written. The marker
+            // was found stale by P13-DOC-001's database pass, this Phase 5 suite's first run
+            // since the lock order changed (C5).
             PaymentIntentId cancelledFirst = createIntent();
             Future<PaymentConfirmation.ConfirmationResult> losingConfirm;
             try (Connection held = DatabaseRoles.application()) {
@@ -442,7 +444,7 @@ class PaymentAuthorizationDatabaseTest {
                                 inScopes(
                                         () -> confirmation(adapter())
                                                 .confirm(party, cancelledFirst)));
-                awaitLockWaitOn("payment_intent", "SET status");
+                awaitLockWaitOn("payment_intent", "FOR UPDATE");
                 held.commit();
             }
             assertThatThrownBy(losingConfirm::get)

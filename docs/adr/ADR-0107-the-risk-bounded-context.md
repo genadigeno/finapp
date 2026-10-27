@@ -1,6 +1,6 @@
 # ADR-0107 — The `risk` bounded context: one module for risk, fraud, AML and case management, none of the money, every other domain through ports
 
-Status: Proposed
+Status: Accepted (2026-10-27, `P13-DOC-001` — read against the code and corrected first)
 Date: 2026-10-22
 Phase: 13
 Context: Risk · Fraud · AML (Transaction Monitoring) · Case Management · Platform · every money-moving module, through its seams
@@ -54,8 +54,8 @@ M3 and M6 (fraud and AML share one module, case management is in it). Rests on `
 
    | Port (declared by `risk`) | Over | Used by |
    |---|---|---|
-   | `MonitoredLedger` | the ledger's journal entry store, ordered by its sequence, read from a watermark | the monitoring intake (ADR-0111) |
-   | the action ports, one per owning domain | identity's suspend / reinstate / revoke-sessions, accounts' suspension, merchant's suspension, crossborder's beneficiary block, payments' held-withdrawal release and denial, kyc's screening request | downstream actions (ADR-0112) |
+   | `MonitoredLedger` | the ledger's journal entry store, ordered by its sequence, read from a watermark *(P13-DOC-001, 2026-10-27: the journal has no sequence column - it is walked by its UUIDv7 id, instance-minted (ADR-0013), behind a settle horizon on the database clock (`JournalEntryStore.entriesAfter`, `app`'s `LedgerMonitoredLedger`); ADR-0111 decision 1's note)* | the monitoring intake (ADR-0111) |
+   | the action ports, one per owning domain | identity's suspend / reinstate / revoke-sessions, accounts' suspension, merchant's suspension, crossborder's beneficiary block, payments' held-withdrawal release and denial, kyc's screening request *(P13-DOC-001, 2026-10-27, as built: identity's (`IdentityActions`), merchant's (`MerchantActions`) and payments' (`HeldWithdrawalActions`, and `HeldPaymentActions` for the held card payment) are implemented; accounts has no suspension command and crossborder no beneficiary block, so `AccountActions` and `BeneficiaryActions` stay declared and unimplemented and their kinds unavailable (`ActionKind.available()`; `PHASE_13_PLAN.md` §1.2 item 24); kyc's screening request is no action port - `PartyRescreening` is the rescreening leg's (the row below) and `RESCREEN_PARTY` is never proposed or dispatched (item 93))* | downstream actions (ADR-0112) |
    | kyc's screening ports | `CounterpartyScreenings`; the case-bound party screening *(as built by `P13-TSK-022`, 2026-10-26, widened by the owner's decision O1 "add the kyc door": `PartyRescreening` reshaped - kyc asked under the permit's key `risk.rescreen:<id>` (and its retry ordinal `#n`) - and implemented by `app`'s `KycPartyRescreening` through **kyc's re-screening door**, `VerificationRunService.rescreen`: a post-decision `RESCREEN` check (kyc `V011`) on the latest case of the party's live `ACTIVE` or `PENDING` customer, keyed by the permit (one key, one question, one provider call under ten instances), its ask stamped on the database's clock - on a decided case evidence beside the decision, never a re-decision (ADR-0035's amendment, `INV-LIFE-04` as amended): the case and the customer do not move, no kyc review task opens; on a case not yet decided its hit routes the case to kyc's review exactly as an onboarding hit (the second review's fail-closed rule). Risk records its own questions' answer only - never another question's - one new question per claim while the last answered "we do not know" or was abandoned mid-call, up to the leg's attempt bound, and judges currency on one clock (asked at or after the activation); a `PENDING` customer with no case is `NOT_ONBOARDED`, never an exposure. `CounterpartyScreenings` (a payee abroad by name, country and payee check) is not used for a party. `ActiveParties` was added beside it, over party's store; `CheckStore.latestDecidedScreenings` lets the screening-hit reading see a rescreen, bounded and judged per type)* | rescreening on list updates (plan §12.10) |
    | identity's acting party | the party of an acting person | every self-dealing refusal (plan §11) |
    | the session's assurance | `MULTI_FACTOR` or not, read for `CHALLENGE` and for step-up | T-eval and T-advise (ADR-0108) |
@@ -68,6 +68,16 @@ M3 and M6 (fraud and AML share one module, case management is in it). Rests on `
    `HeldWithdrawalActions` — each free to be reshaped by the task that first implements it. No
    port returns a row of another module; each returns a verdict, a reference or a bounded fact. No score, rule name,
    reason text or note crosses out of `risk` through any of them.
+   *(P13-DOC-001, 2026-10-27: the table is incomplete as built. Ports `risk` declares and `app` implements that it does
+   not list: `HeldPaymentActions` (payments' held card payment, `P13-TSK-010`; `PaymentsHeldPaymentActions`);
+   `RiskInputs` (the session's assurance, kyc's clearance and approval, the merchant's standing, read in T-eval;
+   `PlatformRiskInputs`); `RiskSubjectParties` and `RiskPartyIdentities` (the party behind a signal's subject, the
+   identities a party holds; `IdentitySubjectParties`, `P13-TSK-007`, `-013`); `MonitoredParties` (the party behind a
+   monitored account, `P13-TSK-020`; `AccountMonitoredParties`); and `JudgedCommands` (the assessment census's other
+   side, `P13-TSK-023`) - whose implementation, `app`'s `PlatformJudgedCommands`, reads the owners' **tables** directly
+   (`transfers.transfer`, `payments.withdrawal`, `payments.payment_intent`, `paymentmethods.payment_method`,
+   `ledger.ledger_account`, `crossborder.payment`), ids only on the caller's snapshot: a widening of ADR-0091's
+   precedent, where `app`'s statement reads an owner's published definer view - recorded as built.)*
 
 4. **Three capabilities, kept distinct inside one module** (M3's condition):
    - **Fraud decisioning** is synchronous, in the caller's transaction, latency-bounded (plan §7.6; ADR-0108).
@@ -79,6 +89,13 @@ M3 and M6 (fraud and AML share one module, case management is in it). Rests on `
    profile and the case model. M3's split triggers stand and are measured: AML acquiring retention or isolation
    obligations fraud does not share, or the monitoring workload harming the synchronous budget — `P13-TST-001` runs
    the sweep beside the storm and measures T-eval's latency per operation (plan §13.3).
+   *(P13-DOC-001, 2026-10-27: **not measured.** `P13-TST-001` is postponed by the owner until after the project's
+   phases (`POSTPONED_ISSUES.md` PI-004): no latency figure exists, so the second trigger is unread - T-eval's latency
+   is metered (`finapp.risk.evaluation.latency{operation}`) and alerted (`RiskEvaluationLatencyOverBudget`), never
+   measured under load beside the sweep; for the owner's ratification (`PHASE_13_PLAN.md` §1.2 item 76). The first
+   trigger has not fired as built: the regulatory report sits in the one `risk` schema with no retention or isolation
+   obligation of its own - kept for ever until a real jurisdiction's record-keeping rules (C4), a debt row
+   (`CURRENT_STATE.md` §Known Architectural Debt; Phase 15).)*
 
 5. **None of the money.** `risk` never posts, never holds, never releases a hold of its own and never writes
    another module's row (`INV-RSK-02`). Its schema holds no balance: `amount_minor` + `currency` appear only as the
@@ -88,6 +105,10 @@ M3 and M6 (fraud and AML share one module, case management is in it). Rests on `
    `DELETE` for any role. A decision changes a money movement only because the owning domain consulted the seam in
    its own transaction and committed its own outcome; an action is a keyed command through the owning domain's
    existing door (ADR-0112). Every timestamp is `clock_timestamp()` read after the row lock.
+   *(P13-DOC-001, 2026-10-27: the window's guard is a trigger, not a `CHECK` - `risk V005`'s
+   `velocity_window_counts_forward`, for every writer: the key, currency and scale never change, the count moves
+   forward by exactly one per update, the sum never decreases, and a window is counted only while the database clock
+   is inside it.)*
 
 6. **What `risk` owns and what it does not** (plan §3.1). Owned: the signal (born once per source event), the
    policy version and its rules, the assessment with its score and decision, the override, the velocity window, the
@@ -104,6 +125,11 @@ M3 and M6 (fraud and AML share one module, case management is in it). Rests on `
    recorded as an assessment — the control ran and had no policy — so the first activation changes behaviour and not
    the shape of any record. The monitoring sweep runs from the first deployment and raises nothing until a monitoring
    policy is active. The filing adapter is simulated (ADR-0111).
+   *(P13-DOC-001, 2026-10-27: "raises nothing until a monitoring policy is active" holds for the monitoring rules'
+   `AML` alerts alone. Two **fact** alerts are raised in production with no policy active, each its own code its rule:
+   `OBLIGATION_DEFAULTED` on a loan's or a BNPL obligation's default, folding into a `COLLECTIONS` case (`P13-TSK-025`,
+   ADR-0110 decision 9), and `SCREENING_HIT` on a rescreening hit once an operator has activated a list version,
+   folding into the party's `AML` case (`P13-TSK-022`, ADR-0111 decision 8).)*
 
 8. **Events and consumption** (plan §10). Outbox, the platform envelope, producer `risk`, event version 1, additive
    evolution, every event in its state change's transaction. No event carries a reason text, a score, a rule name, a
@@ -130,6 +156,11 @@ risk never judged records none. `RiskSignalRecorded` unchanged: it names the par
    source's level (`device` `RESTRICTED-PII` — only identity's hash of the device description is ever received, OQ-4);
    case notes and evidence references `CONFIDENTIAL`, screened for instrument shapes; the report narrative
    `RESTRICTED-PII`; nothing in `risk` is `INTERNAL` except identifiers and timestamps.
+   *(P13-DOC-001, 2026-10-27: no device is received at all - no identity event carries one and no seam adapter sends
+   one, so the device subject is `ABSENT` on every movement (`NEW_DEVICE` and the `DEVICE` velocity dimension never
+   read `PRESENT`; `PHASE_13_PLAN.md` §1.2 item 4). `DeviceHash` declares the function a producer must mirror - an
+   unsalted SHA-256 of the `User-Agent`; a keyed hash before any producer exists is for the owner's ratification
+   (item 87).)*
 
 10. **Security** (plan §11; identity `V023`). Six permissions — `RISK_INVESTIGATE`, `RISK_CASE_APPROVE`,
     `RISK_POLICY_ADMINISTER`, `RISK_OVERRIDE`, `AML_REPORT_APPROVE`, `AML_REPORT_FILE` — and three roles,
@@ -140,12 +171,25 @@ risk never judged records none. `RiskSignalRecorded` unchanged: it names the par
     rule refuses - the override door and the report draft door serve what their desks must read under their own
     permissions instead. No customer or merchant route reads any `risk` table
     (`NoCustomerSurfaceReadsRiskTest`); the customer sees the operation's generic outcome (C6).
+    *(P13-DOC-001, 2026-10-27: "one live role per identity" is not what identity enforces - identity `V010`'s
+    `role_assignment_one_live_per_identity` is unique on (identity, role), one live assignment of each **role**, so one
+    identity may hold `RISK_ANALYST`, `RISK_OFFICER` and `AML_OFFICER` at once; the roles' permissions are disjoint, the
+    persons are not - for the owner's ratification (`PHASE_13_PLAN.md` §1.2 item 86).)*
 
 11. **Schedules and the advisory namespace.** `RiskMonitoringSchedule` (the intake leg, profile recomputes,
     rescreening permits) and `RiskActionSchedule` (approved actions; dispatched actions awaiting an outcome), both
     leaderless, `SKIP LOCKED`, off in test contexts, each with its gauge and its claim failures metered from the first
     task (the Phase 12 → 13 gate's N5); `LEASE_PROTECTED_SCHEDULERS` 29 → 31. Advisory namespace **13** is `risk`'s,
     keyed `hashtext(operation)` for the policy pin and activation (ADR-0109).
+    *(P13-DOC-001, 2026-10-27, as built: `RiskMonitoringSchedule` runs the intake leg (the monitoring rules inside each
+    batch's claim, `P13-TSK-020`), the profile leg and the case leg (alerts born before `-016`, folded; `P13-TSK-016`);
+    `RiskActionSchedule` runs the action leg (approved and dispatched actions, `-012`'s override leg folded in by
+    `-017`), the filing leg (`FILED` reports inquired, `P13-TSK-021`) and the **rescreening** leg - moved from the
+    monitoring schedule when the owner's decision O1 gave it kyc's provider calls (`P13-TSK-022`), so the action
+    schedule is the one whose legs call out and the monitoring schedule calls no one. `LEASE_PROTECTED_SCHEDULERS` is
+    31. Namespace 13 also keys T-list's list lock (A0′, `hashtext('screening_list:' || list)`,
+    `JdbcScreeningListStore`), and a second namespace, **131**, is (R2a)'s - one transaction-scoped lock per
+    (dimension, subject) a judged movement carries (`P13-TSK-006`; ADR-0108 decision 6's amendment).)*
 
 12. **Would this remain correct with ten instances?** Yes, by construction and by counted test. The module keeps no
     state in process: every arbiter is a row, a unique or a lock named in plan §7.4 — one assessment per judged command
@@ -156,6 +200,19 @@ risk never judged records none. `RiskSignalRecorded` unchanged: it names the par
     transaction that takes no money row — so no cycle can close through `risk` (ADR-0108 carries the order and the
     argument). Time is the database's, read after the lock. Each row of §7.4 is a database test owed by its task and
     re-run by the storm with two instances and clocks ±5 s.
+    *(P13-DOC-001, 2026-10-27: two readings corrected. **The risk rows of a money transaction** are not (R1)–(R3)
+    alone (ADR-0108 decision 6's note): T-eval also births its alerts at (R3)'s position and folds them - the subject's
+    open case `FOR UPDATE` (R4), then the alert's attach (R5) - behind its timed savepoint, and a `REVIEW` or `HOLD`
+    opens or folds into the party's `FRAUD`/`ATO` case at (R4) through `CaseOpener`, untimed (a failure aborts the
+    caller: fail closed) - all inside the caller's transaction, after every money row. No cycle closes - every
+    risk-only holder of (R4) takes no money row (`DISTRIBUTED_EXECUTION.md` §3's lock-order row) - but the opening can
+    wait on a monitoring batch holding the party's case row, its latency unmeasured: for the owner's ratification
+    (`PHASE_13_PLAN.md` §1.2 item 95). **The storm's re-run** with two instances and clocks ±5 s did not happen:
+    `P13-TST-001` is postponed (`POSTPONED_ISSUES.md` PI-004). The §7.4 rows' database tests were written by their
+    tasks and first run in the owner-authorised database pass (2026-10-27), green after test-only repairs; the
+    production censuses and proofs (`AssessmentCensus`, `MonitoringCensus`, `VelocityProof`, `RescreeningCensus`,
+    `FilingCensus`, `AlertBornOnceCensus`, `CaseOneOpenCensus`, their gauges and `RiskCensusDiverged`) watch the
+    arbiters in operation.)*
 
 ## Alternatives Considered
 
@@ -196,7 +253,8 @@ Positive:
 
 Negative:
 - Every money movement pays T-eval's cost on its own connection; the budget and its breach are a decision of this
-  phase, not an accident (ADR-0108), and the storm measures it.
+  phase, not an accident (ADR-0108), and the storm measures it. *(P13-DOC-001, 2026-10-27: it did not - the storm is
+  postponed (PI-004); the cost is metered and alerted, unmeasured under load, `PHASE_13_PLAN.md` §1.2 item 76.)*
 - A wide port surface in `app` — one port per owning domain for actions, the ledger port, kyc's ports — each landing
   with the task that first needs it.
 - Production judges nothing until an activation; an accepted limitation recorded up front (plan §1.1).
@@ -224,9 +282,15 @@ ADR-0001, ADR-0024, ADR-0084 §5.
   sweeper property names and the ports' interfaces declared empty of implementation.
 - The ports land with the tasks that first use them: `MonitoredLedger` with `-019`; the action ports with `-017`
   (payments' held-withdrawal release with `-012`); kyc's screening ports with `-022`; the seam adapters with
-  `-008`…`-011`; `CreditRiskSignal` version 2 with `-007`, which retires the `NOT_ASSESSED` answer.
+  `-008`…`-011`; `CreditRiskSignal` version 2 with `-007`, which retires the `NOT_ASSESSED` answer. *(P13-DOC-001,
+  2026-10-27: version 2 (`RiskCreditRiskSignal`) does not retire it - a party risk has not assessed (no profile, or one
+  not yet recomputed) still answers `NOT_ASSESSED`, now under seam version 2; only Phase 10's
+  `NotAssessedUntilPhase13` left the composition. `CREDIT_SIGNAL` seals no assessment: credit's snapshot records the
+  rating and the profile version.)*
 - `BOUNDED_CONTEXTS.md` (contexts 20–23) and `MODULE_ARCHITECTURE.md` (M3, M6) carry the planned entries; each
   building task corrects them as built. `DISTRIBUTED_EXECUTION.md` §3 gains the Phase 13 lock order row (ADR-0108).
-- The M3 split triggers are re-read at `P13-DOC-001` against `P13-TST-001`'s latency measurement.
-- **Acceptance.** `Proposed` at the Phase 12 → 13 transition (2026-10-22); the Phase 13 review (`P13-DOC-001`) reads
-  this ADR against the code, corrects it in place with dated notes, and accepts it.
+- The M3 split triggers are re-read at `P13-DOC-001` against `P13-TST-001`'s latency measurement. *(P13-DOC-001,
+  2026-10-27: re-read with no measurement - the storm is postponed (PI-004); decision 4's note records both triggers'
+  state, the second for the owner (`PHASE_13_PLAN.md` §1.2 item 76).)*
+- **Acceptance.** **As built** (`P13-DOC-001`, 2026-10-27): `Proposed` at the Phase 12 → 13 transition (2026-10-22);
+  the Phase 13 review read this ADR against the code, corrected it in place above with dated notes, and accepted it.
