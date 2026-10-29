@@ -25226,11 +25226,7 @@ first policy activation** (runbook §9.1 steps 3 and 5)
 
 # Phase 14 — Accounting and Financial Reporting
 
-Status: `PLANNED` — initialised as documents only by the Phase 13 → 14 transition (2026-10-29) and elaborated to task
-granularity: twenty-four items (`P14-TSK-001`…`-021`, `P14-TST-001`, `P14-TST-002`, `P14-DOC-001`) across ten milestones,
-with `P14-TSK-001` marked `READY`. The phase reads `READY` in `CURRENT_STATE.md` when the coordinator applies the
-transition after the Phase 13 completion gate (branch `P13-GATE`) passes — this section does not move the current-phase
-pointer. The engineering plan is [`PHASE_14_PLAN.md`](PHASE_14_PLAN.md); decisions are ADR-0113…ADR-0118 (`Proposed`). The
+Status: `READY` (2026-10-29 — entry gate passed by the Phase 13 → 14 transition ([`reviews/PHASE_13_TO_14_TRANSITION.md`](reviews/PHASE_13_TO_14_TRANSITION.md): Phase 13 confirmed `COMPLETE` by `P13-GATE`, merged at `b1aabd2e`), elaborated to task granularity by the same transition: twenty-four items (`P14-TSK-001`…`-021`, `P14-TST-001`, `P14-TST-002`, `P14-DOC-001`) across ten milestones, with `P14-TSK-001` marked `READY`. *(Read "`PLANNED` … the phase reads `READY` … when the coordinator applies the transition" on branch `P14-INIT` until the merge.)* The engineering plan is [`PHASE_14_PLAN.md`](PHASE_14_PLAN.md); decisions are ADR-0113…ADR-0118 (`Proposed`). The
 in-scope invariants are whatever the catalogue marks `Phase: 14` — **fourteen at planning**, `INV-ACC-01`…`-05` (existing)
 and the transition's `INV-ACC-06`…`-14` (the catalogue 162 → 171) — **read from the catalogue at the gate, never from this
 file**, beside `INV-LED-01`…`-06`, `INV-BAL-02`, `-05`, `INV-HIST-01`, `-04`, `INV-REV-01`…`-04`, `INV-REC-02`, `-05`,
