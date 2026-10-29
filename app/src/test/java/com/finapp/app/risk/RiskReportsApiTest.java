@@ -2,6 +2,9 @@ package com.finapp.app.risk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.accounts.CustomerAccount;
+import com.finapp.accounts.JdbcCustomerAccountStore;
+import com.finapp.accounts.ProductType;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.RoleName;
 import com.finapp.risk.CommandRef;
@@ -22,6 +25,10 @@ import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.net.http.HttpResponse;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -144,7 +151,7 @@ class RiskReportsApiTest {
         RiskOperatorSessions.Session analyst = http.sessionWith(RoleName.RISK_ANALYST, false);
         RiskOperatorSessions.Session colleague = http.sessionWith(RoleName.RISK_ANALYST, false);
         UUID customer = RiskOperatorSessions.IDS.next();
-        UUID journalEntry = monitored(customer);
+        UUID journalEntry = monitored(account(customer), account(RiskOperatorSessions.IDS.next()));
         String caseId = caseHolding(colleague, customer, journalEntry);
 
         HttpResponse<String> served = http.get("/v1/operator/risk/cases/" + caseId + "/evidence/journal-entries/"
@@ -161,11 +168,30 @@ class RiskReportsApiTest {
         assertThat(http.get("/v1/operator/risk/cases/" + caseId + "/evidence/assessments/" + journalEntry,
                 analyst.token()).statusCode()).as("the assessment door's").isEqualTo(404);
 
-        String own = caseHolding(colleague, analyst.party(), monitored(analyst.party()));
+        String own = caseHolding(colleague, analyst.party(), monitored(RiskOperatorSessions.IDS.next(),
+                RiskOperatorSessions.IDS.next()));
         HttpResponse<String> refused = http.get("/v1/operator/risk/cases/" + own + "/evidence/journal-entries/"
                 + journalEntry, analyst.token());
         assertThat(refused.statusCode()).as(refused.body()).isEqualTo(403);
         assertThat(refused.body()).contains("risk.SelfDealingRefused");
+
+        // Item 79 (the Phase 13 gate): another party's case holding a journal entry whose counterparty is the
+        // analyst's own account - the file's subject is not theirs, the reference is - refused 403, nothing served,
+        // recorded FAILED; an entry the platform cannot place is refused too (fail closed).
+        UUID other = RiskOperatorSessions.IDS.next();
+        UUID theirs = monitored(account(other), account(analyst.party()));
+        String othersCase = caseHolding(colleague, other, theirs);
+        HttpResponse<String> ownReference = http.get("/v1/operator/risk/cases/" + othersCase
+                + "/evidence/journal-entries/" + theirs, analyst.token());
+        assertThat(ownReference.statusCode()).as(ownReference.body()).isEqualTo(403);
+        assertThat(ownReference.body()).contains("risk.SelfDealingRefused").doesNotContain("25000");
+        assertThat(RiskOperatorSessions.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'risk.CaseRead' AND target_id = '" + othersCase + "' AND outcome = 'SUCCEEDED' AND change_summary"
+                + " LIKE 'act=evidence%'")).isZero();
+        UUID unplaced = monitored(RiskOperatorSessions.IDS.next(), RiskOperatorSessions.IDS.next());
+        String unplacedCase = caseHolding(colleague, RiskOperatorSessions.IDS.next(), unplaced);
+        assertThat(http.get("/v1/operator/risk/cases/" + unplacedCase + "/evidence/journal-entries/" + unplaced,
+                analyst.token()).statusCode()).as("fail closed").isEqualTo(403);
     }
 
     @Test
@@ -200,14 +226,56 @@ class RiskReportsApiTest {
     }
 
     /** A monitored transfer of EUR 250 out of {@code customer}'s account, born from a fresh journal entry id. */
-    private UUID monitored(UUID customer) {
+    /**
+     * A wallet agreement of {@code party}'s live customer - the party and the customer made when absent - so the
+     * evidence door's account join places it (item 79).
+     */
+    private static UUID account(UUID party) {
+        return RiskOperatorSessions.inOneTransaction(app -> {
+            try {
+                try (PreparedStatement insert = app.prepareStatement("INSERT INTO party.party (id, kind, display_name,"
+                        + " registered_at) VALUES (?, 'PERSON', 'Evidence Holder', now() - interval '2 hour')"
+                        + " ON CONFLICT (id) DO NOTHING")) {
+                    insert.setObject(1, party);
+                    insert.executeUpdate();
+                }
+                UUID customer = null;
+                try (PreparedStatement select = app.prepareStatement(
+                        "SELECT id FROM party.customer WHERE party_id = ? AND status NOT IN ('CLOSED', 'REJECTED')")) {
+                    select.setObject(1, party);
+                    try (ResultSet rows = select.executeQuery()) {
+                        if (rows.next()) {
+                            customer = rows.getObject(1, UUID.class);
+                        }
+                    }
+                }
+                if (customer == null) {
+                    customer = RiskOperatorSessions.IDS.next();
+                    try (PreparedStatement insert = app.prepareStatement("INSERT INTO party.customer (id, party_id,"
+                            + " status, opened_at, status_changed_at) VALUES (?, ?, 'ACTIVE', now() - interval '1 hour',"
+                            + " now() - interval '1 hour')")) {
+                        insert.setObject(1, customer);
+                        insert.setObject(2, party);
+                        insert.executeUpdate();
+                    }
+                }
+                return new JdbcCustomerAccountStore().openOrConverge(app, CustomerAccount.open(
+                        RiskOperatorSessions.IDS, Clock.systemUTC(), customer, ProductType.WALLET)).account().id()
+                        .value();
+            } catch (SQLException failure) {
+                throw new IllegalStateException(failure);
+            }
+        });
+    }
+
+    private UUID monitored(UUID subjectAccount, UUID counterpartyAccount) {
         UUID entry = RiskOperatorSessions.IDS.next();
         RiskOperatorSessions.inOneTransaction(app -> monitoredTransactionStore.insertAbsent(app, List.of(
                 new MonitoredTransaction(MonitoredTransactionId.next(RiskOperatorSessions.IDS), entry,
                         MonitoringWatermark.sequenceOf(entry), MonitoredEntry.EntryType.POSTING, "transfer",
-                        MonitoredKind.TRANSFER, Optional.of(MonitoredSubjectKind.ACCOUNT), Optional.of(customer),
+                        MonitoredKind.TRANSFER, Optional.of(MonitoredSubjectKind.ACCOUNT), Optional.of(subjectAccount),
                         Optional.of(MonitoredDirection.OUT), MonitoredCounterpartyKind.CUSTOMER,
-                        Optional.of(RiskOperatorSessions.IDS.next()), Optional.empty(), 250_00, 2,
+                        Optional.of(counterpartyAccount), Optional.empty(), 250_00, 2,
                         CurrencyCode.of("EUR"), LocalDate.now(ZoneOffset.UTC), Instant.now(), Optional.empty()))));
         return entry;
     }

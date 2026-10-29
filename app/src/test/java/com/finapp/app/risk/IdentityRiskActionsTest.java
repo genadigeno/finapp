@@ -13,6 +13,7 @@ import com.finapp.identity.LoginIdentifier;
 import com.finapp.identity.RoleAssignmentStore;
 import com.finapp.identity.SessionRevocation;
 import com.finapp.identity.SessionStore;
+import com.finapp.identity.SuspensionCause;
 import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.IdempotencyKey;
@@ -64,6 +65,7 @@ class IdentityRiskActionsTest {
     private final List<String> events = new ArrayList<>();
     private final Map<IdempotencyKey, IdempotencyRecord> claims = new LinkedHashMap<>();
     private final List<String> moves = new ArrayList<>();
+    private final Map<IdentityId, SuspensionCause> causes = new HashMap<>();
 
     private final IdentityStore<Connection> identities = new IdentityStore<>() {
         @Override
@@ -83,12 +85,23 @@ class IdentityRiskActionsTest {
         }
 
         @Override
-        public boolean moveStatus(Connection unitOfWork, IdentityId id, IdentityStatus from, Identity to) {
+        public boolean moveStatus(Connection unitOfWork, IdentityId id, IdentityStatus from, Identity to,
+                Optional<SuspensionCause> cause) {
             Identity row = rows.get(id);
             if (row == null || row.status() != from) {
                 return false;
             }
+            boolean suspending = to.status() == IdentityStatus.SUSPENDED;
+            if (!suspending && from == IdentityStatus.SUSPENDED && cause.isPresent()
+                    && !cause.equals(Optional.ofNullable(causes.get(id)))) {
+                return false; // JdbcIdentityStore's "AND suspension_cause = ?" (identity V024)
+            }
             rows.put(id, to);
+            if (suspending) {
+                causes.put(id, cause.orElseThrow());
+            } else {
+                causes.remove(id);
+            }
             moves.add(id + ":" + to.status());
             return true;
         }
@@ -145,6 +158,8 @@ class IdentityRiskActionsTest {
                 .isEqualTo(ActionOutcome.DONE);
         assertThat(rows.get(first.id()).status()).isEqualTo(IdentityStatus.SUSPENDED);
         assertThat(rows.get(second.id()).status()).isEqualTo(IdentityStatus.SUSPENDED);
+        assertThat(causes).as("identity records risk as the cause (item 25)").containsEntry(first.id(),
+                SuspensionCause.RISK).containsEntry(second.id(), SuspensionCause.RISK);
         assertThat(audit).filteredOn(record -> record.operation().code().equals("identity.IdentitySuspended"))
                 .hasSize(2).allSatisfy(record -> {
                     assertThat(record.actor()).as("the platform executes").isEqualTo(Actor.SYSTEM);
@@ -168,6 +183,7 @@ class IdentityRiskActionsTest {
     void theOtherKindsAndTheRefusals() {
         UUID party = UUID.randomUUID();
         Identity suspended = identity(party, IdentityStatus.SUSPENDED);
+        causes.put(suspended.id(), SuspensionCause.RISK);
         String decider = RiskEvaluationWorld.IDS.next().toString();
         assertThat(asThePlatform(() -> doors.reinstate(party, decider, "risk.action:r", "RISK_CASE_FRAUD")))
                 .isEqualTo(ActionOutcome.DONE);
@@ -193,6 +209,38 @@ class IdentityRiskActionsTest {
                 "RISK_CASE_ATO"))).as("identity names two parties").isEqualTo(ActionOutcome.REFUSED);
         assertThat(rows.values()).filteredOn(row -> row.partyId().equals(other))
                 .allSatisfy(row -> assertThat(row.status()).isEqualTo(IdentityStatus.ACTIVE));
+    }
+
+    @Test
+    @DisplayName("item 25 (the Phase 13 gate): REINSTATE_IDENTITY lifts risk's own suspension only - an"
+            + " administrator's and one recorded with no cause stand, that identity REFUSED; a party whose only"
+            + " suspension is an administrator's is REFUSED and stays suspended")
+    void riskLiftsOnlyItsOwnSuspension() {
+        UUID party = UUID.randomUUID();
+        Identity byRisk = identity(party, IdentityStatus.SUSPENDED);
+        causes.put(byRisk.id(), SuspensionCause.RISK);
+        Identity byAdministrator = identity(party, IdentityStatus.SUSPENDED);
+        causes.put(byAdministrator.id(), SuspensionCause.ADMINISTRATOR);
+        Identity unrecorded = identity(party, IdentityStatus.SUSPENDED);
+        String decider = RiskEvaluationWorld.IDS.next().toString();
+
+        assertThat(asThePlatform(() -> doors.reinstate(party, decider, "risk.action:own", "RISK_CASE_FRAUD")))
+                .isEqualTo(ActionOutcome.DONE);
+        assertThat(rows.get(byRisk.id()).status()).isEqualTo(IdentityStatus.ACTIVE);
+        assertThat(rows.get(byAdministrator.id()).status()).as("identity's decision stands")
+                .isEqualTo(IdentityStatus.SUSPENDED);
+        assertThat(rows.get(unrecorded.id()).status()).as("fail closed").isEqualTo(IdentityStatus.SUSPENDED);
+        assertThat(audit).filteredOn(record -> record.operation().code().equals("identity.IdentityReinstated"))
+                .singleElement().satisfies(record -> assertThat(record.changeSummary().orElseThrow())
+                        .contains("cause=RISK"));
+
+        UUID administered = UUID.randomUUID();
+        Identity held = identity(administered, IdentityStatus.SUSPENDED);
+        causes.put(held.id(), SuspensionCause.ADMINISTRATOR);
+        assertThat(asThePlatform(() -> doors.reinstate(administered, decider, "risk.action:admin", "RISK_CASE_FRAUD")))
+                .isEqualTo(ActionOutcome.REFUSED);
+        assertThat(rows.get(held.id()).status()).isEqualTo(IdentityStatus.SUSPENDED);
+        assertThat(causes).containsEntry(held.id(), SuspensionCause.ADMINISTRATOR);
     }
 
     @Test

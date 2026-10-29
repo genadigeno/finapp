@@ -103,9 +103,13 @@ public record RiskCase(
             return approvedBy.isEmpty();
         }
 
-        /** True when this disposition is two persons' act. */
+        /**
+         * True when this disposition is two persons' act - by its code, or because it stands awaiting a second person
+         * or was decided by one (item 78's close of a case holding an alert).
+         */
         public boolean needsSecondPerson() {
-            return DispositionRules.needsSecondPerson(disposition, prohibits);
+            return DispositionRules.needsSecondPerson(disposition, prohibits)
+                    || approvedBy.map(approver -> !approver.equals(proposedBy)).orElse(true);
         }
 
         @Override
@@ -230,6 +234,11 @@ public record RiskCase(
      * @throws Cases.CaseNotTaken a two persons' disposition on a case nobody has taken
      */
     void judgeProposal(Disposition proposed, boolean prohibits) {
+        judgeProposal(proposed, prohibits, false);
+    }
+
+    /** The proposal judged on a case that does or does not hold an alert (item 78: a {@code CLOSED_*} of one is taken). */
+    void judgeProposal(Disposition proposed, boolean prohibits, boolean holdsAlerts) {
         Objects.requireNonNull(proposed, "proposed");
         if (standingProposal().isPresent()) {
             throw new Cases.CaseActNotAdmitted("a disposition already awaits a second person on this case; decide that"
@@ -242,9 +251,10 @@ public record RiskCase(
         if (prohibits && !DispositionRules.mayProhibit(proposed, subject.kind())) {
             throw new Cases.CaseRequestInvalid("PROHIBITED is set only by a confirming disposition of a party's case");
         }
-        if (DispositionRules.needsTaken(proposed, prohibits) && !taken()) {
-            throw new Cases.CaseNotTaken("a " + proposed + " disposition is two persons' act on a case an investigator"
-                    + " has taken");
+        if (DispositionRules.needsTaken(proposed, prohibits, kind, holdsAlerts) && !taken()) {
+            throw new Cases.CaseNotTaken("a " + proposed + " disposition " + (holdsAlerts
+                    && !DispositionRules.needsSecondPerson(proposed, prohibits) ? "of a case holding an alert " : "")
+                    + "is two persons' act on a case an investigator has taken");
         }
     }
 

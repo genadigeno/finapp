@@ -151,6 +151,9 @@ public class IdentityAdministrationController {
             case NOT_FOUND ->
                     throw new ApiException(
                             PlatformErrorCode.NOT_FOUND, "No identity matched the given identifier");
+            case OTHER_CAUSE ->
+                    // Unreachable: an administrator lifts any cause (identity V024, the Phase 13 gate's item 25).
+                    throw new IllegalStateException("an administrator's reinstatement names no cause");
             case NOT_SUSPENDED ->
                     // 409, not 204: ACTIVE and CLOSED both land here, and only the first could
                     // honestly be called "already done" - a CLOSED identity is gone permanently

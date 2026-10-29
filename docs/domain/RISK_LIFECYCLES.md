@@ -644,6 +644,15 @@ included; `PHASE_13_PLAN.md` §1.2 item 78); the case file's evidence door judge
 it serves (item 79); `CaseProhibitionDriver` has no per-item failure handling, so one failing prohibition starves those
 behind it (item 84).)*
 
+*(The Phase 13 completion gate, 2026-10-29, the owner's ratification ("fix before production use") - **items 78 and 79
+are fixed**: a `CLOSED_*` of a case that holds an alert is now two persons' act on a taken case, exactly as `CONFIRMED_*`
+(every kind but `COLLECTIONS`, the ratified C3 - its `CLOSED_NO_ACTION` stays one person's, from `OPEN` too); a case that
+holds no alert keeps the one-person close from any live state. The domain reads the case's alerts under the case's
+`FOR UPDATE` (R4) - an alert attaches only by moving the case row, so no attach slips past it - and risk `V019`'s trigger
+`risk_case_alerts_closed_by_two` refuses the one-person close for every writer. The evidence door judges each served
+reference's own parties (item 79, `ADR-0110`'s gate note). Item 84 is `P13-REM-004`. The table's ★ row above reads, for a
+case holding an alert, `CLOSED_*` among the two persons' dispositions.)*
+
 ### 4.7 Risk action (`risk.risk_action`) — `P13-TSK-017` (`risk V013` - planned `V010`, the next free at its build); the override's release ran in this shape from `-012`'s approval door until `-017` folded it in
 
 ```

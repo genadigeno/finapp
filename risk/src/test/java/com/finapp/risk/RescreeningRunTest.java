@@ -299,9 +299,7 @@ class RescreeningRunTest {
         assertThat(first.kind()).isEqualTo(CaseKind.AML);
 
         tick(Duration.ofHours(2));
-        RiskCase closing = world.cases.current(UOW, first.id()).orElseThrow();
-        world.cases.proposeDisposition(UOW, first.id(), closing.revision(), "CLOSED_FALSE_POSITIVE", false,
-                "a namesake, not the party", world.analyst(), CaseWorld.correlation());
+        world.closedByTwo(first.id(), "CLOSED_FALSE_POSITIVE", "a namesake, not the party");
         assertThat(world.cases.current(UOW, first.id()).orElseThrow().status()).isEqualTo(CaseStatus.DISPOSED);
 
         tick(Duration.ofHours(4));

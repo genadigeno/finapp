@@ -168,8 +168,13 @@ class CaseDatabaseTest {
         Alerts.Raised first = asSystem(() -> inOneTransaction(uow -> ALERTS.raise(uow, structuring(subject,
                 Instant.now().minusSeconds(86_400)))));
         RiskCaseId closed = first.folded().caseId().orElseThrow();
-        inOneTransaction(uow -> CASES.proposeDisposition(uow, closed, 0, "CLOSED_FALSE_POSITIVE", false,
-                "the payroll pattern", analyst(), correlation()));
+        // A case holding an alert is closed by two persons (item 78, the Phase 13 gate): taken, proposed, approved.
+        Actor proposer = analyst();
+        RiskCase taken = take(inOneTransaction(uow -> CASES.current(uow, closed)).orElseThrow(), proposer);
+        Cases.Decided proposed = inOneTransaction(uow -> CASES.proposeDisposition(uow, closed, taken.revision(),
+                "CLOSED_FALSE_POSITIVE", false, "the payroll pattern", proposer, correlation()));
+        inOneTransaction(uow -> CASES.approveDisposition(uow, closed, proposed.dispositionId(),
+                proposed.riskCase().revision(), "agreed", analyst(), correlation()));
         String disposedRow = column("SELECT row(c.*)::text FROM risk.risk_case c WHERE id = '" + closed.value() + "'")
                 .get(0);
 
@@ -205,6 +210,40 @@ class CaseDatabaseTest {
         }
         assertThat(column("SELECT status FROM risk.risk_case WHERE id = '" + taken.id().value() + "'"))
                 .containsExactly("IN_INVESTIGATION");
+    }
+
+    @Test
+    @DisplayName("item 78 (the Phase 13 gate): an AML case opened by hand on an open alert is never closed CLOSED_* by"
+            + " one person - the domain refuses it from OPEN and makes it stand for a second person on the taken case;"
+            + " with the domain bypassed, risk_case_alerts_closed_by_two (risk V019) refuses the one-person close alone"
+            + " for every writer; a second person closes it")
+    void aCaseHoldingAnAlertIsClosedByTwo() throws Exception {
+        SignalSubject subject = freshParty();
+        Alerts.Raised raised = inOneTransaction(uow -> UNFOLDED.raise(uow, structuring(subject, Instant.now())));
+        Actor proposer = analyst();
+        RiskCase opened = inOneTransaction(uow -> CASES.open(uow, Cases.OpenRequest.fromAlert(raised.alert().id()),
+                "worth a look", proposer, correlation())).riskCase();
+        assertThatExceptionOfType(Cases.CaseNotTaken.class).isThrownBy(() -> inOneTransaction(uow ->
+                CASES.proposeDisposition(uow, opened.id(), opened.revision(), "CLOSED_FALSE_POSITIVE", false,
+                        "nothing in it", proposer, correlation())));
+        RiskCase taken = take(opened, proposer);
+        Cases.Decided proposed = inOneTransaction(uow -> CASES.proposeDisposition(uow, taken.id(), taken.revision(),
+                "CLOSED_FALSE_POSITIVE", false, "nothing in it", proposer, correlation()));
+        assertThat(proposed.riskCase().status()).isEqualTo(CaseStatus.IN_INVESTIGATION);
+        for (Connection writer : List.of(DatabaseRoles.application(), DatabaseRoles.migrator())) {
+            try (writer) {
+                writer.setAutoCommit(false);
+                refusedBy(writer, "UPDATE risk.risk_case SET status = 'DISPOSED', revision = revision + 1,"
+                        + " disposition_approved_by = disposition_proposed_by, disposition_approved_by_type = 'EMPLOYEE'"
+                        + " WHERE id = '" + taken.id().value() + "'", CHECK_VIOLATION, "risk_case_alerts_closed_by_two");
+                writer.rollback();
+            }
+        }
+        RiskCase disposed = inOneTransaction(uow -> CASES.approveDisposition(uow, taken.id(), proposed.dispositionId(),
+                proposed.riskCase().revision(), "a second look agrees", analyst(), correlation())).riskCase();
+        assertThat(disposed.status()).isEqualTo(CaseStatus.DISPOSED);
+        assertThat(column("SELECT status FROM risk.risk_case WHERE id = '" + taken.id().value() + "'"))
+                .containsExactly("DISPOSED");
     }
 
     @Test

@@ -70,5 +70,19 @@ public interface IdentityStore<T> {
      *
      * @return whether this call performed the transition
      */
-    boolean moveStatus(T unitOfWork, IdentityId id, IdentityStatus from, Identity to);
+    default boolean moveStatus(T unitOfWork, IdentityId id, IdentityStatus from, Identity to) {
+        return moveStatus(unitOfWork, id, from, to, to.status() == IdentityStatus.SUSPENDED
+                ? Optional.of(SuspensionCause.ADMINISTRATOR) : Optional.empty());
+    }
+
+    /**
+     * {@link #moveStatus(Object, IdentityId, IdentityStatus, Identity)}, the suspension's cause in the same conditional
+     * write (identity {@code V024}; the Phase 13 gate, owner item 25): a move <em>to</em> {@code SUSPENDED} records
+     * {@code cause} (required); a move <em>from</em> {@code SUSPENDED} with {@code cause} present happens only while the
+     * recorded cause is that one - risk lifts only its own suspension - and with it empty lifts any (an administrator's);
+     * every move out of {@code SUSPENDED} clears the cause.
+     *
+     * @return whether this call performed the transition
+     */
+    boolean moveStatus(T unitOfWork, IdentityId id, IdentityStatus from, Identity to, Optional<SuspensionCause> cause);
 }

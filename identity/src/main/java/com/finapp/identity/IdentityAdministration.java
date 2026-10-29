@@ -109,6 +109,18 @@ public final class IdentityAdministration {
      */
     public Suspension suspend(
             Connection unitOfWork, IdentityId subject, IdentityId actor, String reason) {
+        return suspend(unitOfWork, subject, actor, reason, SuspensionCause.ADMINISTRATOR);
+    }
+
+    /**
+     * {@link #suspend(Connection, IdentityId, IdentityId, String)}, recording {@code cause} beside the status (identity
+     * {@code V024}; the Phase 13 gate, owner item 25) - {@link SuspensionCause#RISK} for risk's action, so only risk's
+     * own suspension is lifted by risk ({@link #reinstate(Connection, IdentityId, IdentityId, String,
+     * SuspensionCause)}). An identity already suspended answers {@link Suspension#NOT_ACTIVE} and keeps its cause.
+     */
+    public Suspension suspend(
+            Connection unitOfWork, IdentityId subject, IdentityId actor, String reason, SuspensionCause cause) {
+        Objects.requireNonNull(cause, "cause must not be null");
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(subject, "subject must not be null");
         Objects.requireNonNull(actor, "actor must not be null");
@@ -131,7 +143,7 @@ public final class IdentityAdministration {
         // aggregate, not merely unreachable through the API); the conditional UPDATE decides who
         // wins when two administrators act at once. Neither substitutes for the other.
         Identity suspended = identity.suspend(clock);
-        if (!identities.moveStatus(unitOfWork, subject, IdentityStatus.ACTIVE, suspended)) {
+        if (!identities.moveStatus(unitOfWork, subject, IdentityStatus.ACTIVE, suspended, Optional.of(cause))) {
             return Suspension.NOT_ACTIVE;
         }
 
@@ -143,7 +155,7 @@ public final class IdentityAdministration {
                 at,
                 IdentityAuditAction.IDENTITY_SUSPENDED,
                 subject,
-                "sessionsRevoked=" + ended,
+                "sessionsRevoked=" + ended + ", cause=" + cause.name(),
                 reason);
         announce(unitOfWork, at, "identity.IdentitySuspended", subject, suspended.status().name());
         return Suspension.SUSPENDED;
@@ -179,6 +191,26 @@ public final class IdentityAdministration {
      */
     public Reinstatement reinstate(
             Connection unitOfWork, IdentityId subject, IdentityId actor, String reason) {
+        return reinstate(unitOfWork, subject, actor, reason, Optional.empty());
+    }
+
+    /**
+     * Lifts a suspension only while its recorded cause is {@code cause} (identity {@code V024}; the Phase 13 gate, owner
+     * item 25): risk's {@code REINSTATE_IDENTITY} lifts risk's own suspension and never an administrator's, nor one
+     * recorded before V024 - those answer {@link Reinstatement#OTHER_CAUSE} and stand. Otherwise as
+     * {@link #reinstate(Connection, IdentityId, IdentityId, String)}.
+     */
+    public Reinstatement reinstate(
+            Connection unitOfWork, IdentityId subject, IdentityId actor, String reason, SuspensionCause cause) {
+        return reinstate(unitOfWork, subject, actor, reason, Optional.of(Objects.requireNonNull(cause, "cause")));
+    }
+
+    private Reinstatement reinstate(
+            Connection unitOfWork,
+            IdentityId subject,
+            IdentityId actor,
+            String reason,
+            Optional<SuspensionCause> only) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(subject, "subject must not be null");
         Objects.requireNonNull(actor, "actor must not be null");
@@ -198,8 +230,13 @@ public final class IdentityAdministration {
         }
 
         Identity reinstated = identity.reinstate(clock);
-        if (!identities.moveStatus(unitOfWork, subject, IdentityStatus.SUSPENDED, reinstated)) {
-            return Reinstatement.NOT_SUSPENDED;
+        if (!identities.moveStatus(unitOfWork, subject, IdentityStatus.SUSPENDED, reinstated, only)) {
+            // Lost to a concurrent move - or, when a cause was named, the suspension in force is another's.
+            boolean stillSuspended = identities.findById(unitOfWork, subject)
+                    .filter(now -> now.status() == IdentityStatus.SUSPENDED).isPresent();
+            return only.isPresent() && stillSuspended
+                    ? Reinstatement.OTHER_CAUSE
+                    : Reinstatement.NOT_SUSPENDED;
         }
 
         Instant at = Instant.now(clock);
@@ -208,7 +245,8 @@ public final class IdentityAdministration {
                 at,
                 IdentityAuditAction.IDENTITY_REINSTATED,
                 subject,
-                "status=" + reinstated.status().name(),
+                "status=" + reinstated.status().name()
+                        + only.map(cause -> ", cause=" + cause.name()).orElse(""),
                 reason);
         announce(
                 unitOfWork, at, "identity.IdentityReinstated", subject, reinstated.status().name());
@@ -283,6 +321,13 @@ public final class IdentityAdministration {
          * checked, the {@link Suspension#NOT_ACTIVE} lesson.
          */
         NOT_SUSPENDED,
+
+        /**
+         * The identity is suspended, but not by the cause the caller may lift (the Phase 13 gate, owner item 25): an
+         * administrator's suspension, or one recorded before identity {@code V024}, asked of risk's reinstatement. It
+         * stands. Never answered to an administrator, who lifts any.
+         */
+        OTHER_CAUSE,
 
         NOT_FOUND,
         /** The administrator named themselves. See {@code reinstate} — nearly unreachable. */

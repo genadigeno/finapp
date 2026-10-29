@@ -1,12 +1,14 @@
 package com.finapp.app.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.identity.Identity;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.IdentityStatus;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.JdbcIdentityStore;
+import com.finapp.identity.SuspensionCause;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.platform.testing.database.SimulatedInstance;
 import com.finapp.sharedkernel.id.IdGenerator;
@@ -18,6 +20,7 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
@@ -171,6 +174,80 @@ class SuspensionConcurrencyDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+
+    /**
+     * Item 25 (the Phase 13 completion gate; identity {@code V024}): identity records who suspended an identity, and a
+     * reinstatement that names a cause lifts only that cause's suspension - risk's never lifts an administrator's.
+     */
+    @Test
+    @DisplayName("item 25 (identity V024): the suspension's cause is written with it; a RISK-conditioned reinstatement"
+            + " never lifts an administrator's suspension; ten instances lifting risk's own produce one transition and"
+            + " clear the cause; a cause on a row not SUSPENDED is refused by its CHECK alone")
+    void riskLiftsOnlyItsOwnSuspension() throws Exception {
+        IdentityId administered = givenAnIdentity();
+        IdentityId byRisk = givenAnIdentity();
+        try (SimulatedInstance suspender = SimulatedInstance.inAgreementWithTheServer()) {
+            Connection connection = suspender.connection();
+            assertThat(identities.moveStatus(connection, administered, IdentityStatus.ACTIVE,
+                    identities.findById(connection, administered).orElseThrow().suspend(suspender.clock())))
+                    .isTrue();
+            assertThat(identities.moveStatus(connection, byRisk, IdentityStatus.ACTIVE,
+                    identities.findById(connection, byRisk).orElseThrow().suspend(suspender.clock()),
+                    Optional.of(SuspensionCause.RISK))).isTrue();
+            suspender.commit();
+        }
+        assertThat(causeOf(administered)).isEqualTo("ADMINISTRATOR");
+        assertThat(causeOf(byRisk)).isEqualTo("RISK");
+
+        try (SimulatedInstance risk = SimulatedInstance.inAgreementWithTheServer()) {
+            Identity loaded = identities.findById(risk.connection(), administered).orElseThrow();
+            assertThat(identities.moveStatus(risk.connection(), administered, IdentityStatus.SUSPENDED,
+                    loaded.reinstate(risk.clock()), Optional.of(SuspensionCause.RISK)))
+                    .as("an administrator's suspension is not risk's to lift").isFalse();
+            risk.commit();
+        }
+        assertThat(statusOf(administered)).isEqualTo("SUSPENDED");
+        assertThat(causeOf(administered)).isEqualTo("ADMINISTRATOR");
+
+        AtomicInteger won = new AtomicInteger();
+        raceOn(
+                instance -> {
+                    Identity loaded = identities.findById(instance.connection(), byRisk).orElseThrow();
+                    if (loaded.status() == IdentityStatus.SUSPENDED
+                            && identities.moveStatus(instance.connection(), byRisk, IdentityStatus.SUSPENDED,
+                                    loaded.reinstate(instance.clock()), Optional.of(SuspensionCause.RISK))) {
+                        won.incrementAndGet();
+                    }
+                    instance.commit();
+                    return null;
+                });
+        assertThat(won.get()).isEqualTo(1);
+        assertThat(statusOf(byRisk)).isEqualTo("ACTIVE");
+        assertThat(causeOf(byRisk)).isNull();
+
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            assertThatThrownBy(() -> execute(app, "UPDATE identity.identity SET suspension_cause = 'RISK' WHERE id = ?",
+                    byRisk.value()))
+                    .isInstanceOfSatisfying(SQLException.class, refused -> {
+                        assertThat(refused.getSQLState()).isEqualTo("23514");
+                        assertThat(refused.getMessage()).contains("identity_suspension_cause_only_while_suspended");
+                    });
+            app.rollback();
+        }
+    }
+
+    private static String causeOf(IdentityId identity) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement select = app.prepareStatement(
+                        "SELECT suspension_cause FROM identity.identity WHERE id = ?")) {
+            select.setObject(1, identity.value());
+            try (ResultSet rows = select.executeQuery()) {
+                rows.next();
+                return rows.getString(1);
+            }
+        }
+    }
 
     private interface InstanceWork {
         Void run(SimulatedInstance instance) throws Exception;

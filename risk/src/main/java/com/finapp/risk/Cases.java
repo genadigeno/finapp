@@ -505,9 +505,11 @@ public final class Cases {
 
     /**
      * Proposes {@code caseId}'s disposition: a one-person close ({@code CLOSED_FALSE_POSITIVE},
-     * {@code CLOSED_NO_ACTION}, prohibiting nothing) is decided by this act - the case {@code DISPOSED}, from
-     * {@code OPEN} too; a two persons' one ({@code CONFIRMED_*}, {@code REFERRED}, or {@code prohibit}) needs the case
-     * taken and stands for a second person. Audited {@code risk.DispositionProposed} (and {@code risk.CaseDisposed}).
+     * {@code CLOSED_NO_ACTION}, prohibiting nothing, of a case holding no alert or of a {@code COLLECTIONS} case) is
+     * decided by this act - the case {@code DISPOSED}, from {@code OPEN} too; a two persons' one ({@code CONFIRMED_*},
+     * {@code REFERRED}, {@code prohibit}, or a {@code CLOSED_*} of a case holding an alert - item 78, read under the
+     * case's lock: an alert attaches only by moving the case row) needs the case taken and stands for a second person.
+     * Audited {@code risk.DispositionProposed} (and {@code risk.CaseDisposed}).
      *
      * @throws CaseRequestInvalid a disposition outside the vocabulary; {@code prohibit} of a non-confirming disposition
      *     or a subject that is no party
@@ -524,8 +526,9 @@ public final class Cases {
         RiskCase locked = judged(unitOfWork, caseId, actor, "disposition-propose");
         locked.judgeOpen();
         locked.judgeRevision(revision);
-        locked.judgeProposal(code, prohibit);
-        boolean secondPerson = DispositionRules.needsSecondPerson(code, prohibit);
+        boolean holdsAlerts = !alerts.ofCase(unitOfWork, caseId).isEmpty();
+        locked.judgeProposal(code, prohibit, holdsAlerts);
+        boolean secondPerson = DispositionRules.needsSecondPerson(code, prohibit, locked.kind(), holdsAlerts);
         if (!secondPerson) {
             judgeNoStandingAction(unitOfWork, locked);
         }

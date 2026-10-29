@@ -2112,6 +2112,21 @@ tree before the review (102 suites; its first run's 23 failures every one a test
 container, a Phase 13 lock-order change moving a Phase 5 interleaving point - no production defect, no migration
 changed), and the fleet tiers beyond it were not run.*
 
+*Status (the Phase 13 completion gate, 2026-10-29 - the Phase 13 → 14 transition, Part A,
+[`reviews/PHASE_13_TO_14_TRANSITION.md`](reviews/PHASE_13_TO_14_TRANSITION.md)): **Phase 13 `COMPLETE`, confirmed after repair.** The gate reused the exit
+review's evidence and recorded the owner's ratification of its recommendations (2026-10-29, "Accept recommendations";
+`PHASE_13_PLAN.md` §1.2, §2.2, §24). It found **no CRITICAL** and **three IMPORTANT** - the owner's "fix before production
+use" items 79 (the evidence door served references of the reader's own party), 78 (an alert's four-eyes suppression
+reached by one person's case closure) and 25 (risk's reinstatement lifted identity's own suspensions - the check that
+risk is never an alternative owner of identity state) - **each repaired, tested and probed inside the gate** (risk `V019`,
+identity `V024`); the blocks **Case management**, **Security** and **Domain integrations** now hold on the repaired code.
+Every other owner item is ratified, deferred with its owner, or a `PLANNED` remediation entry (`BACKLOG.md` §Phase 13
+remediation, `P13-REM-001`…`-013`: "before production use" or "before the first policy activation", the latter the
+activation gate's step 3 preconditions) - none blocks Phase 14. The ten-instance question: **`PASS`** on arbitration and
+the database-tier concurrency suites; the storm's counted half rests on the owner's acceptance of `P13-TST-001`, not a
+measurement. **Universal criterion 7** remains the standing C5 deviation: the gate ran the database suites its repairs
+touch, fresh, not the fleet.*
+
 *Clauses met in a form their words did not anticipate (the exit review, 2026-10-27), recorded rather than re-worded:
 **the six originals** - 1: "the pin's read failing" answers the compiled `ALLOW` (`RISK_UNAVAILABLE`, `PIN_UNREADABLE`),
 not a version's band, for every operation (ADR-0108's follow-up reading (ii); `PHASE_13_PLAN.md` §1.2 item 75, for the

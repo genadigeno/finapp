@@ -60,6 +60,43 @@ when a real jurisdiction is chosen.
 items stay listed with how. `OPERATIONS_RUNBOOK.md` §9 cites the ones its procedures meet; the activation gate (§9.1 step
 8) names, in the owner's written allowance, those it does not wait on.*
 
+**The owner's ratification (2026-10-29, "Accept recommendations" - recorded by the Phase 13 completion gate,
+[`reviews/PHASE_13_TO_14_TRANSITION.md`](reviews/PHASE_13_TO_14_TRANSITION.md)).** The owner adopted the exit review's
+recommendation for every item of this list, C1–C10 and OQ-1…10 ([`reviews/PHASE_13_REVIEW.md`](reviews/PHASE_13_REVIEW.md)
+§Decisions for the owner). Recorded per group, each note dated 2026-10-29:
+
+- *Ratified as built (2026-10-29):* C1's bands, C2, C3 (built by `-025`), C4, C6, C7 (the threshold the pinned version's),
+  C8 (with items 16, 72's door, 74), C9 (`rule` the `RuleKind`), C10; OQ-1…OQ-3, OQ-5…OQ-10 (OQ-4 moot: no device reaches
+  risk); items 5, 11, 14, 16, 17, 19, 22, 23 (AML's 720 h with C4), 26, 28–31, 33, 37, 39, 40, 42–44, 47, 48, 49 (the kyc
+  door's semantics, fail-closed included), 54, 57, 58 (its false-page consequence noted), 60–65, 67, 69, 71 (the token
+  contract amended while nothing is active), 74 (each documented meaning), 80, 81, 82 (`INV-RSK-09` amended in the
+  catalogue's note), 93, 94. C5 stands as the standing deviation, asked again at the 13 → 14 transition.
+- *Decided before the first policy activation (2026-10-29) - the recommendations adopted as decisions; each an activation
+  precondition (`OPERATIONS_RUNBOOK.md` §9.1 step 3) and a remediation entry (`BACKLOG.md` §Phase 13 remediation); no
+  production activation exists, so none is a defect of the running system:* items 1, 10, 12 - a pinned EUR conversion
+  (`P13-REM-009`); 75 - a compiled per-operation answer to an unreadable pin (`DENY` for withdrawals and cross-border) and
+  the decode-before-release step (`P13-REM-010`); 77 - a fail-safe `DENY` for a `TIMEOUT` met at (R2a), or (R2a) outside
+  the budget with a retryable refusal (`P13-REM-011`); 83 and 72 - `PROHIBITED` refused whatever the version, and the
+  door refusing dimensions an operation never carries (`P13-REM-012`); 86 (one risk role per identity, or ratify), 36/66
+  (the AML kinds, weights, capacities and flood objective in the production policy) and 92 (the settle horizon ratified as
+  the recorded bound, asked again at the activation) - decided at the activation signature (`P13-REM-013`).
+- *Fixed before production use, inside the gate (2026-10-29):* **79** - the evidence door judges every party a served
+  reference names, failing closed (`CaseEvidence`); **78** - a `CLOSED_*` of a case holding an alert is two persons' act
+  (`DispositionRules`, risk `V019`); **25** - identity records a suspension's cause and risk lifts only its own
+  (identity `V024`, `SuspensionCause`). *Remediation entries, before production use:* 87 (`P13-REM-001`), 88
+  (`P13-REM-002`), 89/90/91 (`P13-REM-003`), 84 (`P13-REM-004`), 85 and 68 (`P13-REM-005`), 21 (`P13-REM-006`, before
+  the first activation), 45/41 and 27 (`P13-REM-007`, before a real FIU at the latest); and the gate's own residue of
+  item 25 - an administrator's suspension taking over a risk one (`P13-REM-008`).
+- *Deferred, with the owner named (2026-10-29):* items 3 (identity's auth-failure source - identity), 4 and 87's producer
+  (a device provider - a later phase, Phase 15 at the latest), 6, 7 (card top-ups - judged or deferred by the owner with
+  the payments phase that adds them), 8 (a card `HOLD` capped at the authorisation's life - payments), 9, 76 and 95 (the
+  storm's measurements - PI-004), 13 (a one-time allowance for a false-positive transfer `DENY` - risk, a later fraud
+  task), 15 (payee novelty per payer), 18 (refunds to new accounts - a later fraud task), 24, 32 (Phase 15), 34, 35, 38
+  (the highest-volume parties' rating freeze - Phase 15 with a trigger), 46, 50–53, 55, 56, 59 (Phase 15 recommended), 70
+  (with C4).
+- *Resolved since recorded:* item 20 (`risk.yml`, `-024`), the "Resolved" paragraph below, `CreditRiskSignal`'s
+  `NOT_ASSESSED` retired for assessed parties (`-007`).
+
 **The phase's accepted defaults, to ratify**: C1–C10 (§2.2 - C3's collections slice since built by `-025` at the owner's
 request) and OQ-1…OQ-10 (§24 - OQ-1 read for `HOLD` in item 2; OQ-8 widened by the kyc door, item 49).
 
@@ -109,6 +146,9 @@ request) and OQ-1…OQ-10 (§24 - OQ-1 read for `HOLD` in item 2; OQ-8 widened b
     4 h, FRAUD 24 h, MERCHANT_ABUSE 72 h, AML 720 h, COLLECTIONS 168 h).
 24. `-017` MINOR 2: `SUSPEND_ACCOUNT`, `REINSTATE_ACCOUNT`, `BLOCK_BENEFICIARY` unavailable - no owning command.
 25. `-017` MINOR 5: `REINSTATE_IDENTITY` lifts every suspension of the party's identities (identity records no cause).
+    *(**Fixed at the Phase 13 completion gate, 2026-10-29**: identity `V024` records the cause; risk suspends as `RISK`
+    and lifts only a `RISK` suspension - `IdentityRiskActionsTest#riskLiftsOnlyItsOwnSuspension`,
+    `SuspensionConcurrencyDatabaseTest#riskLiftsOnlyItsOwnSuspension`; residue `P13-REM-008`.)*
 26. `-017` D11 and MINOR 4: no disposition issues an action; the executor is the platform's `SYSTEM` actor - ratify both.
 27. `-018` (with `-023` M8): the AML desk's own evidence door under `AML_REPORT_APPROVE` (the case file's evidence door,
     `-023`, serves the analyst).
@@ -213,9 +253,13 @@ request) and OQ-1…OQ-10 (§24 - OQ-1 read for `HOLD` in item 2; OQ-8 widened b
     by the amount band alone, its count possibly `UNCOUNTED` - so concurrent bursts can pass velocity limits (`INV-CON-03`:
     "not bypassable by concurrent requests") - **decide before the activation gate**.
 78. A6-3: one `RISK_INVESTIGATE` holder can open a case by hand on an open alert and dispose it `CLOSED_*` alone, reaching
-    what the four-eyes suppression controls (AML alerts included) - **fix before production use**.
+    what the four-eyes suppression controls (AML alerts included) - **fix before production use**. *(**Fixed at the
+    Phase 13 completion gate, 2026-10-29**: risk `V019`, `DispositionRules#needsSecondPerson(.., kind, holdsAlerts)` -
+    every kind but `COLLECTIONS` (C3); `CaseDatabaseTest#aCaseHoldingAnAlertIsClosedByTwo`.)*
 79. A6-2: the case file's evidence door judges the case's subject, not each served reference - a reference of the
-    reader's own party attached to another party's case is served - **fix before production use**.
+    reader's own party attached to another party's case is served - **fix before production use**. *(**Fixed at the
+    Phase 13 completion gate, 2026-10-29**: `CaseEvidence#read` judges a signal's subject and a journal entry's subject and
+    party counterparty, failing closed; `CaseEvidenceTest`, `RiskReportsApiTest#theEvidenceDoor`.)*
 80. A1-7: "a session confirming many checkouts" is a `CHALLENGE`-weighted `SESSION` velocity rule - no alert, no case
     (§12.6) - **ratify**.
 81. A7-2: the operations reports under `RISK_INVESTIGATE` carry amounts (judged sums; per-subject window sums in the
@@ -292,6 +336,11 @@ database pass before the exit review.
 | Jurisdiction-neutral core; specifics behind adapters | `PRODUCT_VISION.md`; `DECISIONS.md` | The regulatory report is an artefact with a filing port; the jurisdiction is a field (§12.9) |
 
 ### 2.2 Owner decisions (2026-10-22) — C1–C10, recorded as accepted defaults pending ratification
+
+*(**Ratified by the owner, 2026-10-29** ("Accept recommendations", recorded by the Phase 13 completion gate): C1's bands,
+C2, C3, C4, C6, C7, C8, C9 and C10 as built; C5 the standing deviation, asked again at the 13 → 14 transition. C1's
+bands do not govern an unreadable pin until `P13-REM-010` (item 75) - an activation precondition. §1.2's ratification
+note has the whole record.)*
 
 | # | Decision | Default taken | Where it lands |
 |---|---|---|---|
@@ -1741,6 +1790,11 @@ item 4)*. OQ-5 whether an `ALLOW` can be overridden — never. OQ-6 whether a ca
 references it. OQ-7 whether the report is the case — no (§12.9). OQ-8 whether kyc or risk owns rescreening — risk asks,
 kyc screens. OQ-9 whether a merchant sees a risk outcome — the operation's generic refusal only. OQ-10 whether
 collections is in — a thin case slice, cut candidate (C3).
+
+*(**Ratified by the owner, 2026-10-29** ("Accept recommendations", recorded by the Phase 13 completion gate): OQ-1…OQ-3
+and OQ-5…OQ-10 as answered above; OQ-4 moot - no device reaches risk (item 4; a keyed hash before any producer,
+`P13-REM-001`). OQ-6 holds with item 78's repair: a case holding an alert is closed by two persons, and still never
+re-opened.)*
 
 ---
 

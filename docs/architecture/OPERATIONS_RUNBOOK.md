@@ -972,6 +972,18 @@ recorded in the gate's record (one per policy version admitted: the operation, t
    rating refuses a movement only when the active version carries a `PROFILE_RATING` → `DENY` rule); item 72 (the dead
    rules above); item 92 (the monitoring intake's 60 s settle horizon is unenforced: a posting committing later than it
    after its id was minted is skipped until an operator orders a reprocessing, §9.3, §9.11).)*
+   *(**The Phase 13 completion gate, 2026-10-29 - the owner's ratification ("Accept recommendations") turned these items
+   into activation preconditions.** The activation waits on each of these `BACKLOG.md` §Phase 13 remediation entries
+   being `COMPLETE`: **`P13-REM-009`** (items 1, 10, 12 - a pinned EUR conversion), **`P13-REM-010`** (item 75 - an
+   unreadable pin answers `DENY` for withdrawals and cross-border, and every `ACTIVE` version decodes under the release's
+   build before it ships), **`P13-REM-011`** (item 77 - a hot subject's queued evaluations cannot outrun velocity),
+   **`P13-REM-012`** (items 83, 72 - `PROHIBITED` refused whatever the version; a dimension the operation never carries
+   refused at the door), **`P13-REM-006`** (item 21 - a four-eyes lift of `PROHIBITED`); and on **`P13-REM-013`**'s
+   decisions written into this signature - item 86 (one risk role per identity, or ratified; step 5), items 36/66 (the
+   AML kinds and weights, the queues' capacities, the flood objective) and item 92 (the settle horizon, ratified as the
+   recorded bound unless the owner bounds it). Production use - the case desk is live from the first deployment, before
+   any activation - waits on `P13-REM-001`…`-005`, `-007` and `-008`; items 79, 78 and 25 were fixed by the gate itself
+   (risk `V019`, identity `V024`).)*
 4. **The reporting jurisdiction decided (C4) or the simulation explicitly accepted**: the reference remains the neutral
    EUR one and `RegulatoryFilingProvider` is simulated (`SimulatedFilingProvider`, `finapp.risk.filing.simulation`;
    `PHASE_13_PLAN.md` §12.9). Either a real jurisdiction is chosen - its reporting format, deadlines and content rules

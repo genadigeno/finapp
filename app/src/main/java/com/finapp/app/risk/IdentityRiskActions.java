@@ -6,6 +6,7 @@ import com.finapp.identity.IdentityId;
 import com.finapp.identity.IdentityStatus;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.SessionRevocation;
+import com.finapp.identity.SuspensionCause;
 import com.finapp.platform.idempotency.CommandResult;
 import com.finapp.platform.idempotency.IdempotencyKey;
 import com.finapp.platform.idempotency.IdempotentExecutor;
@@ -35,6 +36,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  * own</strong> - never a risk one (T-act holds no risk row while the owner works). Identity audits each move as its own
  * act with the acting principal - the platform, under the action driver's system scope - and the action's reason code.
  * The platform never resets a credential (C10): only identity's existing suspend, reinstate and revoke.
+ *
+ * <p><strong>Risk lifts only its own suspension</strong> (the Phase 13 gate, owner item 25; identity {@code V024}):
+ * the suspension is recorded with the cause {@link SuspensionCause#RISK}, and the reinstatement names it - identity's
+ * conditional write lifts a {@code RISK} suspension only, so an administrator's suspension (or one recorded before
+ * V024) stands and that identity answers {@code REFUSED}. Identity keeps the decision; risk never becomes a second owner
+ * of it.
  *
  * <p><strong>Keyed {@code risk.action:<id>}.</strong> Identity's administration converges on state but takes no key, so
  * this adapter is the keyed door: the platform's {@link IdempotentExecutor} records the answer under
@@ -102,7 +109,7 @@ public final class IdentityRiskActions implements IdentityActions {
         Objects.requireNonNull(decidedBy, "decidedBy");
         return keyed("SUSPEND_IDENTITY", partyId, idempotencyKey, reason, uow -> decider(decidedBy)
                 .map(decider -> eachIdentity(uow, partyId, identity -> switch (administration.suspend(uow,
-                        identity.id(), decider, reason)) {
+                        identity.id(), decider, reason, SuspensionCause.RISK)) {
                     case SUSPENDED -> ActionOutcome.DONE;
                     case NOT_ACTIVE -> now(uow, identity.id()) == IdentityStatus.SUSPENDED ? ActionOutcome.ALREADY
                             : ActionOutcome.REFUSED;
@@ -116,11 +123,13 @@ public final class IdentityRiskActions implements IdentityActions {
         Objects.requireNonNull(decidedBy, "decidedBy");
         return keyed("REINSTATE_IDENTITY", partyId, idempotencyKey, reason, uow -> decider(decidedBy)
                 .map(decider -> eachIdentity(uow, partyId, identity -> switch (administration.reinstate(uow,
-                        identity.id(), decider, reason)) {
+                        identity.id(), decider, reason, SuspensionCause.RISK)) {
                     case REINSTATED -> ActionOutcome.DONE;
                     case NOT_SUSPENDED -> now(uow, identity.id()) == IdentityStatus.ACTIVE ? ActionOutcome.ALREADY
                             : ActionOutcome.REFUSED;
-                    case NOT_FOUND, SELF -> ActionOutcome.REFUSED;
+                    // An administrator's suspension (or one recorded before identity V024) is identity's decision,
+                    // never risk's to lift (the Phase 13 gate, item 25): it stands, and this identity is refused.
+                    case OTHER_CAUSE, NOT_FOUND, SELF -> ActionOutcome.REFUSED;
                 }))
                 .orElse(ActionOutcome.REFUSED));
     }

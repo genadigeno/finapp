@@ -179,6 +179,7 @@ a log aggregator, an event stream or a backup (ADR-0022).
 | `identity` | `status` | `CONFIDENTIAL` | Whether a login is suspended. As `customer.status` |
 | `identity` | `created_at` | `CONFIDENTIAL` | As `party.registered_at` |
 | `identity` | `status_changed_at` | `CONFIDENTIAL` | As `customer.status_changed_at` |
+| `identity` | `suspension_cause` | `CONFIDENTIAL` | Who suspended a login - `ADMINISTRATOR` or `RISK` (identity `V024`, the Phase 13 completion gate, item 25). As `status`, and more: a `RISK` cause discloses that a risk case acted on the person, which never reaches a customer surface (`INV-RSK-08`) |
 
 ### `identity.credential` — *added by `P1-TSK-007`*
 

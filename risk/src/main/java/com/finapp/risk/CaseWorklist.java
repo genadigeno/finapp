@@ -255,6 +255,30 @@ public final class CaseWorklist {
         refused(unitOfWork, Cases.TARGET_TYPE, caseId.value().toString(), refused, actor, correlation);
     }
 
+    /**
+     * The reader's own party, as {@link #read} places it (item 79, the Phase 13 gate): the evidence door judges each
+     * reference it serves against it. Fails closed exactly as the file does.
+     *
+     * @throws RiskAssessments.SelfDealingRefused the reader is placed in no party
+     */
+    UUID readerParty(Connection snapshot, Actor actor) {
+        return Queues.reader(snapshot, actingParties, actor, READ_ACT);
+    }
+
+    /**
+     * Refuses {@code party} - one party a served reference names - when it cannot be placed or is the reader's
+     * {@code own} (item 79): the same two refusals the file's subject meets.
+     */
+    static void judgeReferenceParty(Optional<UUID> party, UUID own) {
+        if (party.isEmpty()) {
+            throw new RiskAssessments.SelfDealingRefused(RiskAssessments.SelfDealingRefused.Cause.SUBJECT_UNPLACEABLE,
+                    READ_ACT);
+        }
+        if (party.get().equals(own)) {
+            throw new RiskAssessments.SelfDealingRefused(RiskAssessments.SelfDealingRefused.Cause.OWN_PARTY, READ_ACT);
+        }
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     /** Every reference the case holds, each once, in the order the file names them. */

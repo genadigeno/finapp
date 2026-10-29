@@ -429,4 +429,35 @@ class CasesTest {
                 CaseEventKind.OPENED, CaseEventKind.TAKEN, CaseEventKind.NOTED, CaseEventKind.ESCALATED);
         assertThat(escalated.revision()).isEqualTo(3);
     }
+
+    @Test
+    @DisplayName("item 78 (the Phase 13 gate): a case holding an alert is never closed CLOSED_* by one person - not from"
+            + " OPEN, not by its proposer's own approval; the proposal stands on the taken case for a second person,"
+            + " who disposes it")
+    void aCaseHoldingAnAlertIsClosedByTwo() {
+        Alerts.Raised raised = world.raiseAto(CaseWorld.party(EvaluationWorld.IDS.next()),
+                RuleKind.RECENT_CREDENTIAL_CHANGE);
+        RiskCaseId caseId = raised.folded().caseId().orElseThrow();
+        RiskCase opened = world.cases.current(CaseWorld.UOW, caseId).orElseThrow();
+        Actor alice = world.analyst();
+
+        assertThatExceptionOfType(Cases.CaseNotTaken.class).isThrownBy(() -> world.cases.proposeDisposition(
+                CaseWorld.UOW, caseId, opened.revision(), "CLOSED_FALSE_POSITIVE", false, "nothing in it", alice,
+                CaseWorld.correlation()));
+        RiskCase taken = world.taken(opened, alice);
+        Cases.Decided proposed = world.cases.proposeDisposition(CaseWorld.UOW, caseId, taken.revision(),
+                "CLOSED_FALSE_POSITIVE", false, "nothing in it", alice, CaseWorld.correlation());
+        assertThat(proposed.riskCase().status()).as("it stands").isEqualTo(CaseStatus.IN_INVESTIGATION);
+        assertThat(proposed.riskCase().disposition().orElseThrow().needsSecondPerson()).isTrue();
+        assertThat(world.audited("risk.CaseDisposed")).isEmpty();
+        assertThatExceptionOfType(Cases.SelfApprovalRefused.class).isThrownBy(() -> world.cases.approveDisposition(
+                CaseWorld.UOW, caseId, proposed.dispositionId(), proposed.riskCase().revision(), "agreed", alice,
+                CaseWorld.correlation()));
+
+        RiskCase disposed = world.cases.approveDisposition(CaseWorld.UOW, caseId, proposed.dispositionId(),
+                proposed.riskCase().revision(), "a second look agrees", world.analyst(), CaseWorld.correlation())
+                .riskCase();
+        assertThat(disposed.status()).isEqualTo(CaseStatus.DISPOSED);
+        assertThat(disposed.disposition().orElseThrow().needsSecondPerson()).isTrue();
+    }
 }

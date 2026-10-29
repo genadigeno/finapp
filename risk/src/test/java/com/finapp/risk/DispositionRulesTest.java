@@ -46,4 +46,21 @@ class DispositionRulesTest {
             }
         }
     }
+
+    @Test
+    @DisplayName("item 78 (the Phase 13 gate): a CLOSED_* of a case holding an alert is two persons' act on a taken"
+            + " case - every kind but COLLECTIONS (C3); a case holding no alert keeps the one-person close")
+    void aCaseHoldingAnAlertIsClosedByTwo() {
+        for (CaseKind kind : CaseKind.values()) {
+            for (Disposition disposition : Disposition.values()) {
+                boolean byTwo = disposition.fourEyes() || kind != CaseKind.COLLECTIONS;
+                assertThat(DispositionRules.needsSecondPerson(disposition, false, kind, true))
+                        .as(disposition + " of a " + kind + " case holding an alert").isEqualTo(byTwo);
+                assertThat(DispositionRules.needsTaken(disposition, false, kind, true))
+                        .as(disposition + " of a " + kind + " case holding an alert, taken").isEqualTo(byTwo);
+                assertThat(DispositionRules.needsSecondPerson(disposition, false, kind, false))
+                        .as(disposition + " of a " + kind + " case holding none").isEqualTo(disposition.fourEyes());
+            }
+        }
+    }
 }
