@@ -3033,6 +3033,11 @@ time in the owner-authorised database pass (2026-10-27), green after test-only r
 (`MUTATION_TESTING.md` §2); and the independent reviews.)*
 **Phase:** 13
 
+*(The Phase 13 completion gate, 2026-10-29 - owner item 25: risk's `REINSTATE_IDENTITY` no longer lifts a suspension
+it did not make. Identity records the suspension's cause with it (identity `V024`, `ADMINISTRATOR` | `RISK`) and lifts
+on risk's behalf only a `RISK` one, in its own conditional write - so risk is never a second owner of identity state.
+Verify: `IdentityRiskActionsTest#riskLiftsOnlyItsOwnSuspension`, `SuspensionConcurrencyDatabaseTest#riskLiftsOnlyItsOwnSuspension`.)*
+
 ### INV-RSK-03 — A velocity window is a durable row written in the judged command's transaction, equal to what it counts
 **Statement:** Every velocity figure a decision reads is a row of `velocity_window`, keyed by
 (dimension, subject ref, window kind, window start) — dimensions party, source account, destination
@@ -3360,6 +3365,12 @@ released by an approved override dispatched once, denied with the hold released 
 (`P13-TSK-001`, `P13-TSK-018`); `finapp.risk.override{outcome}` (`P13-TSK-024`).
 **Phase:** 13
 
+*(The Phase 13 completion gate, 2026-10-29 - owner item 78: a `CLOSED_*` disposition of a case holding an alert is
+two persons' act on a taken case (every kind but `COLLECTIONS`, the ratified C3), so an alert's four-eyes suppression is
+not reachable by one person's closure. Domain: `DispositionRules#needsSecondPerson(.., kind, holdsAlerts)`; every
+writer: risk `V019`'s `risk_case_alerts_closed_by_two` (23514 by name). Verify: `CasesTest#aCaseHoldingAnAlertIsClosedByTwo`,
+`DispositionRulesTest#aCaseHoldingAnAlertIsClosedByTwo`, `CaseDatabaseTest#aCaseHoldingAnAlertIsClosedByTwo`.)*
+
 ### INV-RSK-08 — Nothing of an alert, case, report or investigation reaches a customer or merchant surface, a log, an event payload or a metric tag
 **Statement:** No customer- or merchant-facing route reads any `risk` table. A customer's or
 merchant's answer to a judged movement is the operation's generic outcome — `transfers.RISK_REFUSED`
@@ -3453,6 +3464,12 @@ and three-valued (`PERMIT`, `HOLD(validity)`, `REFUSE`, no reason) for the withd
 owner: the operations reports under `RISK_INVESTIGATE` carry amounts (item 81); the report doors' act answers return the
 full report, narrative included, unaudited as a read (item 88); the device hash is an unsalted SHA-256 of a User-Agent
 (item 87).)*
+
+*(The Phase 13 completion gate, 2026-10-29 - owner item 79: the case file's evidence door judges every party a
+served reference names - a signal's subject, a journal entry's subject and its party counterparty - and refuses the
+reader's own or an unplaceable one, failing closed, so a reference of the reader's own party attached to another
+party's case is never served. Verify: `CaseEvidenceTest#aReferenceOfTheReadersOwnPartyIsRefused`,
+`CaseEvidenceTest#aReferenceThatCannotBePlacedIsRefused`, `RiskReportsApiTest#theEvidenceDoor`.)*
 
 ### INV-RSK-09 — Every monitored transaction is born once from a ledger journal entry, never diverges from it, and reprocessing is idempotent
 **Statement:** The monitoring intake reads the ledger's journal — the one financial truth — through

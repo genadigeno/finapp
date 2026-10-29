@@ -22108,7 +22108,16 @@ after everything.
 
 # Phase 13 — Risk, Fraud and AML
 
-Status: `COMPLETE` (2026-10-27, ruled by the exit review [`reviews/PHASE_13_REVIEW.md`](reviews/PHASE_13_REVIEW.md),
+Status: `COMPLETE` — **confirmed by the Phase 13 completion gate** (2026-10-29,
+[`reviews/PHASE_13_TO_14_TRANSITION.md`](reviews/PHASE_13_TO_14_TRANSITION.md)) **after three repairs made inside it** - the
+owner's "fix before production use" items 79 (the evidence door judges each served reference's parties), 78 (a case
+holding an alert is closed by two persons, risk `V019`) and 25 (identity records a suspension's cause and risk lifts only
+its own, identity `V024`); **28 of 28 items complete** (`P13-TST-001` by the owner's acceptance on its partial evidence,
+2026-10-27 - not demonstrated); **the owner's ratification recorded** (2026-10-29, "Accept recommendations": the exit
+review's recommendations adopted for `PHASE_13_PLAN.md` §1.2 items 1–95, §2.2 C1–C10 and §24 OQ-1…10 - written into the
+plan per group); the remediation entries **`P13-REM-001`…`-013`** (end of this section) `PLANNED`, each marked "before
+production use" or "before the first policy activation", blocking no Phase 14 work. Phase 14 is initialised by the
+coordinator, not by the gate. *(The status read as follows until the gate:)* `COMPLETE` (2026-10-27, ruled by the exit review [`reviews/PHASE_13_REVIEW.md`](reviews/PHASE_13_REVIEW.md),
 `P13-DOC-001`; 27 of 28 items complete, **`P13-TST-001` `POSTPONED`** by the owner until after the project's phases
 (`POSTPONED_ISSUES.md` PI-004), its evidence deferred and not claimed; M13.1–M13.9 closed, M13.9 with the storm postponed)
 — **pending the Phase 13 → 14 transition gate and the owner's ratification** (`PHASE_13_PLAN.md` §1.2, items 1–95, C1–C10,
@@ -25005,6 +25014,213 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
     reference of the reader's own party - IMPORTANT, security, a remediation item recommended)**, 78 (four-eyes
     suppression reached by one person's case closure), 84, 85, 68, 21, 25, 45/41, 27, 87–91.
   - **Fresh test counts:** the database pass - first run 102 suites, 895 tests, 23 failed; re-run fresh 103 suites, 897 tests, 0 failed (risk 13/113, credit 10/106, crossborder 4/23, platform 2/11, `app` shared 61/535, `app` own-container 13/109); the probes' run 3 of 20 red as aimed, restored; `:risk:test --rerun` 84 suites, 565 tests, 0 failed; `:app:test --rerun` filtered to the risk package and the guards (`RiskStepUpRoutesTest`, `DomainGlossaryTest`, `CredentialReachesNoEmittedSinkTest`, `PlannedMetersExistTest`, `OpenApiContractTest`, `RoutePermissionRegisterTest`, `RiskAlertRulesTest`) 66 suites, 335 tests, 0 failed; `:app:architectureTest --rerun` once at the gate 35 suites, 192 tests, 0 failed (`MutationDemonstrationTest` 9, `TestTaxonomyTest` 17, `AdrRegistersAreReconciledTest` 4, `ArchitectureRulesAreDocumentedTest` 2 among them, after the flip). Not run (C5): the fleet `databaseTest`/`kafkaTest` beyond the Phase 13 set, previous phases' other suites, `build`; the storm (PI-004).
+
+---
+
+## Phase 13 remediation (the Phase 13 completion gate, 2026-10-29)
+
+*Created by the Phase 13 completion gate ([`reviews/PHASE_13_TO_14_TRANSITION.md`](reviews/PHASE_13_TO_14_TRANSITION.md))
+from the owner's ratification of the exit review's recommendations (2026-10-29, "Accept recommendations";
+[`reviews/PHASE_13_REVIEW.md`](reviews/PHASE_13_REVIEW.md) §Decisions for the owner). The three IMPORTANT "fix before
+production use" items - **79** (the evidence door), **78** (suppression's four eyes) and **25** (risk lifting identity's
+suspensions) - were fixed inside the gate (risk `V019`, identity `V024`), not here. Every entry below was judged `MINOR`
+under the gate - none is a defect of the running system, because production judges nothing until a policy version is
+activated (`OPERATIONS_RUNBOOK.md` §9.1) - and each is `PLANNED`, outside every milestone, **blocking no Phase 14 work**.
+Two horizons: **before production use** (the case desk is live from the first deployment - cases open on defaults and
+screening hits with no policy) and **before the first policy activation** (runbook §9.1 step 3 lists them as
+preconditions). Each runs the three-command loop (`.claude/skills/task-*`) when the owner schedules it; the design
+settles what each entry leaves open. Item numbers are `PHASE_13_PLAN.md` §1.2's.*
+
+**P13-REM-001 — The device hash keyed before any device producer (item 87)** — `PLANNED` — **before production use**
+(before the first producer of a device subject at the latest)
+- Objective: `DeviceHash` is an unsalted SHA-256 of a `User-Agent` description - a dictionary of common agents reverses
+  it. Make it a keyed hash (HMAC-SHA-256 under a managed key, rotatable with a key id) before any seam or event carries a
+  device. Bounded context: identity produces the hash, risk stores and compares it (OQ-4). Dependencies: none (no device
+  producer exists - item 4).
+- Scope: the hash function and its key reference; exclusions: a device-intelligence provider (item 4, Phase 15 at the
+  latest), any device subject on a seam. Domain/persistence: the `SignalSubject` `DEVICE` shape keeps 64 hex; a key id
+  beside it if rotation needs one (a risk migration). API/events: none until a producer.
+- Invariants: `INV-AUD-02` (never the description), `INV-RSK-08`. Multi-instance: every instance derives the same hash
+  from the same key version (keys from the secret store, never per process). Idempotency: deterministic per key version.
+  Failure: no key → no device subject recorded (`ABSENT`), never an unkeyed hash. Security/audit: the key in the secret
+  store, never logged; a key rotation recorded.
+- Testing: a hermetic known-answer test per key; a guard that no unkeyed SHA-256 of a description remains; a probe
+  (unkeyed restored → red). Acceptance: no code path hashes a device description without the key. DoD: `DOD-SEC`,
+  `DOD-TEST`, `DOD-DOC`.
+
+**P13-REM-002 — The regulatory report's act answers and the analyst desk's counts (item 88)** — `PLANNED` — **before
+production use**
+- Objective: the report doors' act answers (draft, approve, file) return the whole report, narrative included, which is
+  a read of `RESTRICTED-PII` the audit never records as one; and the analyst desk's cases report counts filings
+  (`INV-RSK-08`'s analyst/AML-desk separation). Answer an id-and-status receipt (the narrative only through the recorded
+  report read, `AML_REPORT_APPROVE`), and drop the filing count from the analyst desk's report.
+- Bounded context: risk (`RegulatoryReports`, `app/risk` report desks). Dependencies: none. Exclusions: the AML desk
+  worklist (item 46), a real FIU.
+- API: the three act answers narrowed (OpenAPI regenerated; a contract change on operator routes only); persistence and
+  events: none. Invariants: `INV-RSK-08`, `INV-AUD-01`. Multi-instance: unchanged (reads). Idempotency: the keyed acts
+  replay the same receipt. Failure: unchanged. Security/audit: the narrative reaches a reader only through an audited read.
+- Testing: the doors' API tests assert the receipt carries no narrative; the cases report carries no filing figure; a
+  probe per door. Acceptance: no operator answer but the recorded read carries a narrative. DoD: `DOD-SEC`, `DOD-API`,
+  `DOD-TEST`.
+
+**P13-REM-003 — Policy and request-boundary hardening: scale, the corridor set, the replay body (items 89, 90, 91)** —
+`PLANNED` — **before production use**
+- Objective: the engine compares a movement's currency but not its scale to the policy's bands (89) - refuse a scale
+  mismatch as `READ_FAILED`/the fail-safe, never a band misread by a power of ten; a policy version's corridor set is
+  unbounded (90) - bound it at the policy door; the replay request body lacks `@ClosedBody` (91) - close it.
+- Bounded context: risk (engine `RiskEngineV1`, `RiskPolicy` validation, the replay desk). Dependencies: none.
+  Exclusions: per-currency versions (P13-REM-009).
+- Domain: an engine refusal of a scale mismatch (a reason code if needed - an `INV-RSK-04` replay note: existing sealed
+  assessments replay unchanged, the new check versioned with the engine); the door's corridor bound (a new
+  `risk.PolicyInvalid` detail); API: the replay body closed (a `422` for an unknown field). Persistence/events: none.
+- Invariants: `INV-MON-05` (scale is part of the amount), `INV-RSK-04` (replay identical for sealed versions).
+  Multi-instance: pure functions; nothing shared. Idempotency: n/a. Failure: a refusal is the recorded fail-safe.
+  Security/audit: input bounds on a four-eyes door. Testing: engine known-answer cases (scale 2 vs 3), the door's bound,
+  the closed body; replay of the battery fingerprint unchanged (`P13-TST-002`); probes. Acceptance: a scale-mismatched
+  movement never meets a band; an oversized corridor set and an unknown replay field are refused. DoD: `DOD-FIN`,
+  `DOD-API`, `DOD-TEST`.
+
+**P13-REM-004 — The prohibition driver's per-item failure handling (item 84)** — `PLANNED` — **before production use**
+- Objective: `CaseProhibitionDriver` re-drives approved prohibitions oldest first with no per-item catch - one failing
+  item starves those behind it. A per-item catch, a bounded back-off per item (attempts and next-attempt on the pending
+  row, or a skip-and-count) and a meter and alert for an item that keeps failing.
+- Bounded context: risk (the case leg's schedule). Dependencies: none. Exclusions: the lift of a rating (P13-REM-006).
+- Persistence: possibly a risk migration (attempts/next-attempt columns on the pending prohibition); events: none.
+  Invariants: `INV-RSK-10` (the rating moves only by an approved disposition), `INV-RSK-07`. Multi-instance: the driver
+  is leaderless under `SKIP LOCKED` - the back-off columns are written under the row's claim; ten instances never apply
+  one prohibition twice (the profile head's lock, R8). Idempotency: applying an applied prohibition converges.
+  Failure: a failing item is skipped and retried later, the rest proceed; the alert names the stall.
+  Security/audit: unchanged. Testing: a hermetic driver test with a poisoned first item (the rest applied); the database
+  race of two drivers; a probe (the catch removed → red). Acceptance: one failing prohibition delays only itself, and is
+  alerted. DoD: `DOD-OBS`, `DOD-TEST`.
+
+**P13-REM-005 — Payments' operational signals for held money (items 85, 68)** — `PLANNED` — **before production use**
+- Objective: payments' stuck-payment gauge counts every risk-held (capture-held, `AUTHORIZED`) card payment as stuck
+  (85) - exclude unresolved capture holds; the held-withdrawal expiry leg logs its counts and meters nothing (68) - a
+  meter and an alert for an expiry that keeps failing (runbook §9.5).
+- Bounded context: payments (its gauges and its expiry schedule; risk owns none of it). Dependencies: none.
+  Exclusions: any change to the hold machines. Persistence/API/events: none (read-side). Invariants: `INV-RSK-02` (the
+  hold is payments'), the observability rules. Multi-instance: gauges read the database; the expiry leg is already
+  leaderless. Idempotency: n/a. Failure: a gauge read failing is NaN, never zero. Security/audit: no amount or subject in a
+  tag. Testing: the gauge's query test with a capture-held payment; the expiry meter on a failing expiry; the alert rule
+  in `infra/prometheus/rules`. Acceptance: no false stuck count; a failing expiry is visible within one schedule. DoD:
+  `DOD-OBS`, `DOD-TEST`, `DOD-DOC`.
+
+**P13-REM-006 — A four-eyes lift of a `PROHIBITED` rating (item 21)** — `PLANNED` — **before the first policy
+activation** (a `PROHIBITED` rating refuses money only once a version is active, item 83) and so before production use
+- Objective: `PROHIBITED` is set by an approved disposition and nothing lifts it - a mistaken prohibition has no remedy.
+  A reasoned lift proposed by one `RISK_CASE_APPROVE` holder and approved by another, writing a new profile version.
+- Bounded context: risk (the customer risk profile). Dependencies: none. Exclusions: automatic expiry of a prohibition.
+- Domain: a lift act on the profile (a proposal and its approval, or a lift case disposition); persistence: a risk
+  migration for the proposal (four-eyes `CHECK`, as the other six acts); API: an operator route under `MULTI_FACTOR`;
+  events: `CustomerRiskRatingChanged`. Invariants: `INV-RSK-07`, `INV-RSK-10`. Multi-instance: under the profile head's
+  lock (R8); the proposal born once. Idempotency: keyed acts; the approver's retry converges. Failure: a lift racing a
+  recompute serialises on R8. Security/audit: two audited acts, self-approval refused and recorded `FAILED`; the route
+  registered. Testing: hermetic, database (the `CHECK` alone by name, ten approvers), API; probes. Acceptance: a
+  prohibited party is lifted only by two persons, with a reason, recorded. DoD: `DOD-SEC`, `DOD-API`, `DOD-TEST`, `DOD-DOC`.
+
+**P13-REM-007 — The AML desk before a real FIU: the draft's exit and the approver's evidence (items 45/41, 27)** —
+`PLANNED` — **before production use** (before a real FIU is connected at the latest)
+- Objective: a draft the second person will not approve has no exit and holds the case's only report slot (45, 41) -
+  a `DRAFT → WITHDRAWN` edge freeing the slot; the AML approver cannot read the evidence it attests (27) - an evidence
+  door under `AML_REPORT_APPROVE`, judged for self-dealing per reference as the analyst's (item 79's rule).
+- Bounded context: risk (the regulatory report, `V016`). Dependencies: none (the evidence judgement exists since the
+  gate). Exclusions: a real FIU adapter (C4), supplementary reports beyond the freed slot.
+- Persistence: a risk migration (the edge in the report's machine trigger; the one-live-report unique re-made over the
+  live statuses); API: a withdrawal route and an evidence route; events: `RegulatoryReportWithdrawn` if published.
+  Invariants: `INV-RSK-06` (one live report), `INV-RSK-07`, `INV-RSK-08` (the report never on the analyst's surface).
+  Multi-instance: the edge conditional on the report's row; a withdrawal racing an approval - one wins by the row lock.
+  Idempotency: keyed. Failure: unchanged filing semantics. Security/audit: both routes audited, stepped up where four eyes.
+  Testing: machine, database (the edge and the unique), API; probes. Acceptance: a refused draft can be withdrawn and a
+  new one drafted; the approver reads only what the report cites, judged. DoD: `DOD-SEC`, `DOD-API`, `DOD-TEST`.
+
+**P13-REM-008 — An administrator's suspension takes over a risk suspension (the gate's MINOR G-3, item 25's residue)**
+— `PLANNED` — **before production use**
+- Objective: identity `V024` records one cause. An administrator suspending an identity already suspended by risk
+  answers `NOT_ACTIVE` and the cause stays `RISK`, so risk's later `REINSTATE_IDENTITY` lifts a suspension the
+  administrator also wanted. Let the administrator's suspension of a `RISK`-suspended identity re-record the cause
+  `ADMINISTRATOR` (an audited act, the sessions already revoked), answering success.
+- Bounded context: identity. Dependencies: none. Exclusions: a multi-cause hold model (a set of holds) - recorded as the
+  alternative if more causes arrive. Persistence: none beyond `V024` (the cause column); API: the admin suspension's
+  answer for that case (`204` instead of `409`); events: `IdentitySuspended` re-announced or a cause-change event (the
+  design decides). Invariants: `INV-LIFE-02` (status machine), `INV-RSK-02`. Multi-instance: a conditional `UPDATE ... WHERE
+  status = 'SUSPENDED' AND suspension_cause = 'RISK'` - an administrator and risk's reinstatement racing serialise on the
+  row. Idempotency: converges. Failure: unchanged. Security/audit: audited with actor and reason. Testing: the database
+  race (administrator's take-over vs risk's lift), the API; a probe. Acceptance: after an administrator suspends, no risk
+  action lifts it. DoD: `DOD-SEC`, `DOD-TEST`.
+
+**P13-REM-009 — Non-EUR movements: a pinned EUR conversion (items 1, 10, 12)** — `PLANNED` — **before the first policy
+activation** (runbook §9.1 step 3)
+- Objective (the owner's adopted recommendation, ⚑): every version is EUR, so a non-EUR movement meets the open-ended
+  band and is `DENY`ed, corridors with no EUR leg always `DENY`, and a window holds one currency. Judge a non-EUR
+  movement by its EUR figure at a **pinned** rate - the rate's identity sealed in the assessment's canonical inputs so
+  the replay is identical; windows summed in EUR minor units.
+- Bounded context: risk (inputs, engine, windows), reading fx's published rates through a port (fx owns the rate).
+  Dependencies: fx's rate read; none in Phase 14. Exclusions: per-currency policy versions (a code change the policy door
+  refuses today - item 1's restatement).
+- Domain/persistence: the canonical input format versioned (a new format, the old kept for replay); the window's
+  currency rule changed (a risk migration); API/events: none. Invariants: `INV-RSK-03`, `INV-RSK-04` (replay), money
+  rules (`INV-MON-03` explicit rounding of the conversion, `INV-MON-04`). Multi-instance: the rate pinned by id inside the
+  money transaction; ten instances read the same pinned rate. Idempotency: the sealed assessment born once, unchanged.
+  Failure: no rate → the recorded fail-safe, never a guessed figure. Security/audit: the rate id in the sealed inputs.
+  Testing: known-answer conversions, replay of format-1 assessments `IDENTICAL`, the battery re-fingerprinted; probes.
+  Acceptance: a USD movement is judged by its EUR figure and replays identical. DoD: `DOD-FIN`, `DOD-TEST`, `DOD-DOC`.
+
+**P13-REM-010 — An unreadable pin answers per operation; every `ACTIVE` version decodes before release (item 75)** —
+`PLANNED` — **before the first policy activation**
+- Objective (adopted, ⚑): a failure of the pin's read answers the compiled `ALLOW` for every operation, so withdrawals
+  and cross-border - `DENY` at every C1 band - move money unjudged. Compile a per-operation answer (`DENY` for
+  `WITHDRAWAL` and `CROSS_BORDER`, the C1 posture for the rest), and add the release step that every `ACTIVE` version
+  decodes under the new build (a startup or pre-release check, runbook §9).
+- Bounded context: risk (`RiskEngineV1.failSafe`, `RiskEvaluation`). Dependencies: none. Exclusions: changing C1's bands.
+  Domain: the compiled table per operation; persistence/API/events: none. Invariants: `INV-RSK-04` (the fail-safe is a
+  recorded decision and its explanation). Multi-instance: a pure table; every instance answers the same. Idempotency: n/a.
+  Failure: this is the failure path. Security/audit: the reason code `PIN_UNREADABLE` kept. Testing: the pin's read
+  failing per operation (hermetic and database); the decode-before-release check against a deliberately undecodable
+  version; probes. Acceptance: an unreadable pin never allows a withdrawal or a cross-border payment. DoD: `DOD-FIN`,
+  `DOD-TEST`, `DOD-DOC`.
+
+**P13-REM-011 — A hot subject's queued evaluations cannot outrun velocity (item 77)** — `PLANNED` — **before the first
+policy activation**
+- Objective (adopted, ⚑): a burst of one party's movements queues on (R2a) inside the 250 ms read budget; the late ones
+  become `TIMEOUT` fail-safes judged by the amount band alone, possibly `UNCOUNTED` - against `INV-CON-03`'s "not
+  bypassable by concurrent requests". The recommendation's first form is the default: a `TIMEOUT` met at (R2a) answers a
+  fail-safe `DENY`; the alternative - (R2a) taken outside the read budget under its own `lock_timeout`, with a retryable
+  refusal - is the design's to weigh with the storm's measurements (PI-004).
+- Bounded context: risk (T-eval). Dependencies: the storm's latency figures inform the budget (PI-004), not the fix.
+  Persistence/API/events: none (a reason code if the design needs one). Invariants: `INV-CON-03`, `INV-RSK-03`,
+  `INV-RSK-04`. Multi-instance: the very concern - ten instances' movements of one party must not pass a limit by
+  queueing; the test races ten. Idempotency: the sealed assessment unchanged. Failure: the late movement refused (or told
+  to retry), never judged band-only. Security/audit: counted by `RiskEvaluationUnavailable`. Testing: a database race of
+  ten movements of one party past a velocity limit (none passes beyond it); probes. Acceptance: velocity limits hold
+  under a concurrent burst. DoD: `DOD-FIN`, `DOD-TEST`.
+
+**P13-REM-012 — The policy door and the engine: `PROHIBITED` refused by the engine, unreachable rules refused (items
+83, 72)** — `PLANNED` — **before the first policy activation**
+- Objective (adopted, ⚑): a `PROHIBITED` party is refused money only when the version carries a `PROFILE_RATING` → `DENY`
+  rule (83) - the engine refuses a `PROHIBITED` party itself on every money operation (or the door requires the rule; the
+  design picks one and records it); the door refuses a velocity dimension an operation never carries, e.g.
+  `SOURCE_ACCOUNT` on `CARD_PAYMENT` (72).
+- Bounded context: risk (engine, policy door). Dependencies: none. Exclusions: rule reachability beyond dimensions
+  (`NEW_DEVICE`, `RECENT_AUTH_FAILURES` stay the signature's review until their producers exist). Domain: an engine rule or
+  door validation; persistence/API/events: none (a `risk.PolicyInvalid` detail). Invariants: `INV-RSK-10`, `INV-RSK-04`
+  (an engine change versioned so sealed assessments replay). Multi-instance: pure. Idempotency: n/a. Failure: unchanged.
+  Security/audit: the door's refusal audited as today. Testing: engine known answers, the door's refusals, the battery
+  re-fingerprinted; probes. Acceptance: a `PROHIBITED` party is refused on every money operation under any active
+  version; a dead dimension cannot be activated. DoD: `DOD-FIN`, `DOD-TEST`.
+
+**P13-REM-013 — The activation decisions that need the owner, not code (items 86, 36/66, 92)** — `PLANNED` — **before the
+first policy activation** (runbook §9.1 steps 3 and 5)
+- Objective: the recommendations adopted for these items are themselves "decide at the gate": **86** - one risk role per
+  identity, or ratify four eyes comparing actors, not roles (if one role: an identity migration holding one live risk
+  role per identity, with its race test); **36/66** - which AML kinds alert and at what weight, the queues' capacities and
+  the flood objective, decided in the production policy at the activation; **92** - the 60 s settle horizon ratified as
+  the recorded bound (the plan's recommendation) or bounded (posting transactions below it, or an alert on a late commit),
+  asked again at the activation. Bounded context: risk and identity (86). Dependencies: none.
+- Deliverable: the decisions written into the activation signature (runbook §9.1) and `PHASE_13_PLAN.md` §1.2; code only if
+  86 is decided "one role" (then `DOD-SEC`, `DOD-TEST` apply with the identity migration). Invariants: `INV-RSK-07`.
+  Multi-instance, idempotency, failure: as the decision's code requires. Acceptance: each decision recorded and signed
+  before the first activation. DoD: `DOD-DOC` (and `DOD-SEC` if 86 changes code).
 
 ---
 

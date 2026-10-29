@@ -9,6 +9,8 @@ import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
 import java.time.Clock;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,6 +30,17 @@ import java.util.UUID;
  * served: no signal or transaction is readable by its id alone. Anything else is {@link EvidenceNotFound}, the uniform
  * {@code 404}. {@link #record} appends {@code risk.CaseRead} ({@code act=evidence}), which the caller commits in a
  * transaction of its own before the answer.
+ *
+ * <p><strong>And judged by its own parties</strong> (owner item 79, fixed at the Phase 13 gate, 2026-10-29 - the
+ * owner's ratification of {@code PHASE_13_REVIEW.md}'s recommendation): the file's judgement covers the case's subject
+ * only, and a reference of the reader's own party attached to another party's case would otherwise be served. Each
+ * resolved reference is judged before it is answered, failing closed - a <strong>signal</strong> by its subject (an
+ * account through {@link MonitoredParties}, every other kind through the accountable join; a device, a session or a
+ * beneficiary names no party this build can place and is refused); a <strong>journal entry</strong> by its subject (a
+ * customer account or a merchant) and by its counterparty when that is a party's (a customer account, a merchant, a loan
+ * or a BNPL obligation through the credit agreement's party) - an operational, suspense or external counterparty names
+ * no party. A party that cannot be placed is refused {@code SUBJECT_UNPLACEABLE}; the reader's own,
+ * {@code OWN_PARTY} - the caller records either {@code FAILED} and serves nothing.
  */
 public final class CaseEvidence {
 
@@ -85,14 +98,18 @@ public final class CaseEvidence {
 
     private final CaseWorklist worklist;
     private final RiskProofReads reads;
+    private final RiskSubjectParties subjectParties;
+    private final MonitoredParties accounts;
     private final AuditWriter<Connection> audit;
     private final IdGenerator ids;
     private final Clock clock;
 
-    public CaseEvidence(CaseWorklist worklist, RiskProofReads reads, AuditWriter<Connection> audit, IdGenerator ids,
-            Clock clock) {
+    public CaseEvidence(CaseWorklist worklist, RiskProofReads reads, RiskSubjectParties subjectParties,
+            MonitoredParties accounts, AuditWriter<Connection> audit, IdGenerator ids, Clock clock) {
         this.worklist = Objects.requireNonNull(worklist, "worklist");
         this.reads = Objects.requireNonNull(reads, "reads");
+        this.subjectParties = Objects.requireNonNull(subjectParties, "subjectParties");
+        this.accounts = Objects.requireNonNull(accounts, "accounts");
         this.audit = Objects.requireNonNull(audit, "audit");
         this.ids = Objects.requireNonNull(ids, "ids");
         this.clock = Objects.requireNonNull(clock, "clock");
@@ -102,7 +119,8 @@ public final class CaseEvidence {
      * {@code caseId}'s reference {@code (kind, id)} resolved for {@code actor} on the caller's read-only snapshot -
      * nothing recorded here.
      *
-     * @throws RiskAssessments.SelfDealingRefused the file's own judgement refused the reader (fail closed)
+     * @throws RiskAssessments.SelfDealingRefused the file's own judgement refused the reader, or the reference names a
+     *     party of the reader's own or one that cannot be placed (fail closed, item 79)
      * @throws Cases.CaseNotFound no such case
      * @throws EvidenceNotFound the case holds no such reference, the kind is the assessment door's, or no row answers
      */
@@ -114,12 +132,55 @@ public final class CaseEvidence {
                 || !file.evidence().contains(new CaseWorklist.EvidenceRef(kind, id))) {
             throw new EvidenceNotFound();
         }
-        return switch (kind) {
+        Served served = switch (kind) {
             case SIGNAL -> new SignalServed(reads.signal(snapshot, RiskSignalId.of(id))
                     .orElseThrow(EvidenceNotFound::new));
             case JOURNAL_ENTRY -> new TransactionServed(reads.monitored(snapshot, id).orElseThrow(EvidenceNotFound::new));
             case ASSESSMENT -> throw new EvidenceNotFound();
         };
+        UUID own = worklist.readerParty(snapshot, actor);
+        for (Optional<UUID> party : partiesOf(snapshot, served)) {
+            CaseWorklist.judgeReferenceParty(party, own);
+        }
+        return served;
+    }
+
+    /** Every party {@code served} names, each placed or empty (item 79) - judged by the caller, failing closed. */
+    private List<Optional<UUID>> partiesOf(Connection snapshot, Served served) {
+        return switch (served) {
+            case SignalServed signal -> List.of(partyOf(snapshot, signal.signal().subject()));
+            case TransactionServed transaction -> {
+                MonitoredTransaction row = transaction.transaction();
+                List<Optional<UUID>> parties = new ArrayList<>(2);
+                if (row.subjectKind().isPresent()) {
+                    SubjectKind subject = switch (row.subjectKind().get()) {
+                        case ACCOUNT -> SubjectKind.ACCOUNT;
+                        case MERCHANT -> SubjectKind.MERCHANT;
+                    };
+                    parties.add(row.subjectRef().isEmpty() ? Optional.empty()
+                            : partyOf(snapshot, SignalSubject.of(subject, row.subjectRef().get())));
+                }
+                Optional<SubjectKind> counterparty = switch (row.counterpartyKind()) {
+                    case CUSTOMER -> Optional.of(SubjectKind.ACCOUNT);
+                    case MERCHANT -> Optional.of(SubjectKind.MERCHANT);
+                    case LOAN, BNPL_OBLIGATION -> Optional.of(SubjectKind.CREDIT_AGREEMENT);
+                    case COUNTERPARTY, OPERATIONAL, SUSPENSE, NONE -> Optional.empty();
+                };
+                if (counterparty.isPresent()) {
+                    parties.add(row.counterpartyRef().isEmpty() ? Optional.empty()
+                            : partyOf(snapshot, SignalSubject.of(counterparty.get(), row.counterpartyRef().get())));
+                }
+                yield parties;
+            }
+        };
+    }
+
+    /** {@code subject}'s accountable party - an account through the monitoring join, every other kind the case's. */
+    private Optional<UUID> partyOf(Connection snapshot, SignalSubject subject) {
+        if (subject.kind() == SubjectKind.ACCOUNT) {
+            return accounts.partyOfAccount(snapshot, UUID.fromString(subject.ref()));
+        }
+        return Queues.accountableParty(snapshot, subjectParties, subject);
     }
 
     /** Records {@code served} read by {@code actor} - {@code risk.CaseRead}, its target the case, the reference named. */

@@ -126,6 +126,19 @@ final class CaseWorld {
         return cases.take(UOW, riskCase.id(), riskCase.revision(), investigator, correlation()).riskCase();
     }
 
+    /**
+     * {@code caseId} closed {@code disposition} ({@code CLOSED_*}) by two persons - taken and proposed by one analyst,
+     * approved by another: a case holding an alert is never closed by one (item 78, the Phase 13 gate).
+     */
+    RiskCase closedByTwo(RiskCaseId caseId, String disposition, String reason) {
+        Actor proposer = analyst();
+        RiskCase taken = taken(cases.current(UOW, caseId).orElseThrow(), proposer);
+        Cases.Decided proposed = cases.proposeDisposition(UOW, caseId, taken.revision(), disposition, false, reason,
+                proposer, correlation());
+        return cases.approveDisposition(UOW, caseId, proposed.dispositionId(), proposed.riskCase().revision(),
+                "a second look agrees", analyst(), correlation()).riskCase();
+    }
+
     /** An ATO alert of {@code subject} on the day of {@link AlertWorld#EVIDENCE_STAMP}, raised by the system. */
     Alerts.Raised raiseAto(SignalSubject subject, RuleKind anchor) {
         NewAlert alert = NewAlert.ofRule(AlertKind.ACCOUNT_TAKEOVER, AlertSeverity.HIGH, subject, anchor,

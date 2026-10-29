@@ -206,6 +206,8 @@ class RiskMigrationTest {
                 // V016 (P13-TSK-021): the case's REPORT_DRAFTED act only on a confirmed-suspicious AML case, with its report.
                 "risk_case_action_report_drafted_coherent",
                 "risk_case_action_report_drafted_has_its_report",
+                // V019 (the Phase 13 gate, item 78): a case holding an alert is closed by two persons.
+                "risk_case_alerts_closed_by_two",
                 // V013 (P13-TSK-017): a disposition waits for a standing action proposal.
                 "risk_case_disposes_no_standing_action",
                 "risk_case_event_is_append_only",

@@ -280,3 +280,19 @@ Financial impact: none — a case moves no money; its only effects are keyed act
   the Phase 13 review read this ADR against the code, corrected it in place above with dated notes, and accepted it.
   The as-built choices awaiting the owner carry their `PHASE_13_PLAN.md` §1.2 item numbers (the SLA per kind, item
   23; the collections fact, items 60-65).
+- **The owner's ratification and the Phase 13 completion gate** (2026-10-29, `reviews/PHASE_13_TO_14_TRANSITION.md`):
+  the owner adopted the exit review's recommendations ("Accept recommendations"). Two of this ADR's as-built choices
+  were changed at the gate, as the ratification required ("fix before production use"):
+  - **Item 78 - a case holding an alert is closed by two persons.** Decision 6's one-person `CLOSED_FALSE_POSITIVE` /
+    `CLOSED_NO_ACTION` let one `RISK_INVESTIGATE` holder open a case on an open alert and close it alone, reaching
+    what the alert's four-eyes suppression controls (AML alerts included). Now a `CLOSED_*` of a case that holds any
+    alert needs the case taken and a second person's approval, exactly as `CONFIRMED_*` does - every kind but
+    `COLLECTIONS`, whose one-person `CLOSED_NO_ACTION` is the ratified C3 (a default is a fact). The domain's half is
+    `DispositionRules#needsSecondPerson(disposition, prohibits, kind, holdsAlerts)`, read by `Cases#proposeDisposition`
+    under the case's row lock (an alert attaches only by moving that row); every writer's half is risk `V019`'s
+    trigger `risk_case_alerts_closed_by_two` (23514 by name). A case holding no alert keeps the one-person close.
+  - **Item 79 - the evidence door judges each reference it serves.** The file's self-dealing judgement covered the
+    case's subject only; `CaseEvidence#read` now judges every party a served reference names (a signal's subject; a
+    journal entry's subject account or merchant and its customer, merchant, loan or BNPL-obligation counterparty) and
+    refuses the reader's own (`OWN_PARTY`) or an unplaceable one (`SUBJECT_UNPLACEABLE`), failing closed - recorded
+    `FAILED`, nothing served.

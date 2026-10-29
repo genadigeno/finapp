@@ -15,7 +15,15 @@ import java.util.Set;
  *       ({@code prohibits}, `DESIGN-016` D3). <em>From `-017`</em> any disposition that issues an action joins them -
  *       no disposition issues one before the action machine exists (D4).</li>
  *   <li><strong>One person, from {@code OPEN} too</strong>, for {@code CLOSED_FALSE_POSITIVE} and
- *       {@code CLOSED_NO_ACTION} that prohibit nothing - decided by its own proposal (D2).</li>
+ *       {@code CLOSED_NO_ACTION} that prohibit nothing - decided by its own proposal (D2) - <em>unless the case holds
+ *       an alert</em>.</li>
+ *   <li><strong>A second person and a taken case for a {@code CLOSED_*} of a case holding an alert</strong> (owner
+ *       item 78, fixed at the Phase 13 gate, 2026-10-29): closing such a case without action dismisses its alerts,
+ *       which is what the alert's own four-eyes suppression controls ({@code risk_alert_suppression_four_eyes}) - one
+ *       {@code RISK_INVESTIGATE} holder opening a case on an open alert and closing it alone reached it. Every kind but
+ *       {@link CaseKind#COLLECTIONS}, whose one-person {@code CLOSED_NO_ACTION} is the ratified C3 (a default is a
+ *       fact, never a suspicion to suppress). {@code risk V019}'s {@code risk_case_alerts_closed_by_two} holds the same
+ *       for every writer.</li>
  * </ul>
  *
  * <p>{@code PROHIBITED} is asked, never implied (D3): only a {@code CONFIRMED_*} disposition of a case whose subject is
@@ -26,10 +34,20 @@ public final class DispositionRules {
 
     private DispositionRules() {}
 
-    /** True when {@code disposition} (prohibiting or not) is two persons' act. */
+    /** True when {@code disposition} (prohibiting or not) is two persons' act whatever the case holds. */
     public static boolean needsSecondPerson(Disposition disposition, boolean prohibits) {
         Objects.requireNonNull(disposition, "disposition");
         return disposition.fourEyes() || prohibits;
+    }
+
+    /**
+     * True when {@code disposition} of a case of {@code kind} that does or does not hold an alert is two persons' act -
+     * the rule above, and a {@code CLOSED_*} of a case holding an alert (item 78), {@code COLLECTIONS} excepted (C3).
+     */
+    public static boolean needsSecondPerson(Disposition disposition, boolean prohibits, CaseKind kind,
+            boolean holdsAlerts) {
+        Objects.requireNonNull(kind, "kind");
+        return needsSecondPerson(disposition, prohibits) || (holdsAlerts && kind != CaseKind.COLLECTIONS);
     }
 
     /**
@@ -38,6 +56,11 @@ public final class DispositionRules {
      */
     public static boolean needsTaken(Disposition disposition, boolean prohibits) {
         return needsSecondPerson(disposition, prohibits);
+    }
+
+    /** True when the disposition, on a case of {@code kind} holding alerts or not, needs a taken case - item 78's too. */
+    public static boolean needsTaken(Disposition disposition, boolean prohibits, CaseKind kind, boolean holdsAlerts) {
+        return needsSecondPerson(disposition, prohibits, kind, holdsAlerts);
     }
 
     /** True when {@code PROHIBITED} may be asked of {@code disposition} on a case whose subject is of {@code subject}. */

@@ -209,7 +209,13 @@ and proven by `P12-TST-001` (the BNPL storm) and `P12-TST-002` (the battery); AD
 (2026-10-22, `P12-DOC-001`, each read against the code and corrected first) *(P12-DOC-001, 2026-10-22: this read "stay
 `Proposed` until the review's verdict" until the ADRs were accepted)*. This note read "to be marked delivered by the Phase 12 exit review, `P12-DOC-001`" until then. **Confirmed after repair by the Phase 12 → 13 transition's completion gate, 2026-10-22** (`reviews/PHASE_12_TO_13_TRANSITION.md`): a refund-scoped merchant key needs `PAYMENT_REFUND` beside `MERCHANT_ADMINISTER` and is refused on a purchase of its issuer's own party, and a dispute ACCEPT needs the `BNPL_REFUND` scope; a withdrawn dispute never moves the days-past-due clock and starts a 30-day cooldown on its purchase; contested disputes are announced, gauged, alerted after seven days and queued for operators (`GET /v1/operator/bnpl-disputes`); a dispute refund that cannot post is alerted and a wallet cannot close beneath an open dispute; the terms pin is never "neither" during an activation; a repayment reversal is never valued before its repayment and releases a late fee a refund released; the BNPL fee is pinned on the database clock; merchant BNPL reasons are screened for card and account numbers; the delinquency bounds are the ones the labels name - bnpl `V018`, `V019`, merchant `V012`, lending `V031`.)*
 
-## Risk *(Phase 13, built 2026-10-22…2026-10-26 — `P13-TSK-001`…`-025`, `P13-TST-002`; COMPLETE pending the exit review's verdict, `P13-DOC-001`, and the 13 → 14 transition; the storm, `P13-TST-001`, POSTPONED — PI-004)*
+## Risk *(Phase 13, delivered 2026-10-27 — `P13-DOC-001`; confirmed after repair by the Phase 13 completion gate, 2026-10-29, `reviews/PHASE_13_TO_14_TRANSITION.md`; the storm, `P13-TST-001`, closed by the owner's acceptance on its partial evidence)* *(This heading read "built 2026-10-22…2026-10-26 … COMPLETE pending the exit review's verdict … the storm POSTPONED" until the gate.)*
+
+**Delivered, as the gate confirmed it** (2026-10-29): every capability below as built, with the gate's three repairs - the
+case file's evidence door judges each served reference's own parties (item 79); a case holding an alert is closed by two
+persons (item 78, risk `V019`); a risk action reinstates only identities risk itself suspended (item 25, identity
+`V024`). **Not yet for production judging:** the activation preconditions `P13-REM-006`, `-009`…`-013` (runbook §9.1 step
+3); **before production use:** `P13-REM-001`…`-005`, `-007`, `-008`.
 - Risk evaluation at the seams — built: every money-moving command judged inside its owner's transaction through the
   seams Phases 4, 9 and 10 reserved (`TransferLimitCheck`, `TransferRiskDecision`, `CrossBorderLimitCheck`,
   `CrossBorderRiskDecision`, `CreditRiskSignal` version 2) and the two added - payments' `WithdrawalRiskDecision` (the

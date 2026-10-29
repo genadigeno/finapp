@@ -257,3 +257,12 @@ keyed command through its door), `INV-RSK-07` (every downstream action is two pe
 - **Acceptance.** **As built** (`P13-DOC-001`, 2026-10-27): `Proposed` at the Phase 12 → 13 transition (2026-10-22);
   the Phase 13 review read this ADR against the code, corrected it in place above with dated notes, and accepted it.
   The as-built choices awaiting the owner carry their `PHASE_13_PLAN.md` §1.2 item numbers (items 14, 24-26, 50, 93).
+- **The owner's ratification and the Phase 13 completion gate** (2026-10-29, `reviews/PHASE_13_TO_14_TRANSITION.md`):
+  **item 25 changed decision 2's identity leg.** `REINSTATE_IDENTITY` called identity's reinstate over every identity
+  of the party, and identity recorded no cause, so a risk case's action lifted an administrator's suspension as
+  readily as risk's own - risk had become a second owner of an identity decision. Identity now records the cause of
+  a suspension with it (identity `V024`, `suspension_cause` `ADMINISTRATOR` | `RISK`, in the same conditional write;
+  `SuspensionCause`); `IdentityRiskActions` suspends with `RISK` and reinstates naming `RISK`, and identity's
+  conditional `UPDATE ... AND suspension_cause = 'RISK'` lifts only that - an administrator's suspension, or one
+  recorded before `V024`, stands and answers `OTHER_CAUSE`, the action `REFUSED`. An administrator's reinstatement still
+  lifts any. Identity keeps the decision; risk only asks.

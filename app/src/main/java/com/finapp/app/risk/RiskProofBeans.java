@@ -106,9 +106,11 @@ public class RiskProofBeans {
     }
 
     @Bean
-    CaseEvidence caseEvidence(CaseWorklist caseWorklist, RiskProofReads riskProofReads, AuditWriter<Connection> auditWriter,
-            IdGenerator idGenerator, Clock clock) {
-        return new CaseEvidence(caseWorklist, riskProofReads, auditWriter, idGenerator, clock);
+    CaseEvidence caseEvidence(CaseWorklist caseWorklist, RiskProofReads riskProofReads,
+            RiskSubjectParties riskSubjectParties, MonitoredParties monitoredParties,
+            AuditWriter<Connection> auditWriter, IdGenerator idGenerator, Clock clock) {
+        return new CaseEvidence(caseWorklist, riskProofReads, riskSubjectParties, monitoredParties, auditWriter,
+                idGenerator, clock);
     }
 
     /** The reports' door - every snapshot armed with {@code finapp.risk.proofs.statement-timeout}. */

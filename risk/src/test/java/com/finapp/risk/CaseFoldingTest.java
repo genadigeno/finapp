@@ -110,10 +110,8 @@ class CaseFoldingTest {
         SignalSubject subject = CaseWorld.party(EvaluationWorld.IDS.next());
         Alerts.Raised first = world.raiseAto(subject, RuleKind.RECENT_CREDENTIAL_CHANGE);
         RiskCaseId closedId = first.folded().caseId().orElseThrow();
-        RiskCase closing = world.cases.current(CaseWorld.UOW, closedId).orElseThrow();
-        RiskCase disposed = world.cases.proposeDisposition(CaseWorld.UOW, closedId, closing.revision(),
-                "CLOSED_FALSE_POSITIVE", false, "the customer changed their own password", world.analyst(),
-                CaseWorld.correlation()).riskCase();
+        RiskCase disposed = world.closedByTwo(closedId, "CLOSED_FALSE_POSITIVE",
+                "the customer changed their own password");
 
         Alerts.Raised late = world.raiseAto(subject, RuleKind.RECENT_RECOVERY);
         RiskCaseId newId = late.folded().caseId().orElseThrow();
@@ -190,9 +188,7 @@ class CaseFoldingTest {
         assertThat(again.caseId()).contains(caseId);
         assertThat(world.cases.current(CaseWorld.UOW, caseId).orElseThrow().revision()).isZero();
 
-        RiskCase opened = world.cases.current(CaseWorld.UOW, caseId).orElseThrow();
-        world.cases.proposeDisposition(CaseWorld.UOW, caseId, opened.revision(), "CLOSED_NO_ACTION", false,
-                "nothing in it", world.analyst(), CaseWorld.correlation());
+        world.closedByTwo(caseId, "CLOSED_NO_ACTION", "nothing in it");
         assertThatExceptionOfType(Alerts.AlertNotOpen.class).isThrownBy(() -> CaseWorld.asSystem(() ->
                 world.cases.fold(CaseWorld.UOW, attached)));
     }

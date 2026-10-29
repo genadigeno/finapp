@@ -9,9 +9,12 @@ import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.event.EventId;
 import com.finapp.sharedkernel.money.CurrencyCode;
+import java.sql.Connection;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -35,8 +38,33 @@ class CaseEvidenceTest {
             (unitOfWork, subject) -> Optional.ofNullable(world.partyOfSubject.get(subject)),
             (unitOfWork, record) -> world.audit.add(record), EvaluationWorld.IDS, EvaluationWorld.CLOCK);
     private final FakeRiskProofReads reads = new FakeRiskProofReads();
-    private final CaseEvidence evidence = new CaseEvidence(worklist, reads, (unitOfWork, record) -> world.audit.add(record),
-            EvaluationWorld.IDS, EvaluationWorld.CLOCK);
+    private final Map<UUID, UUID> partyOfAccount = new HashMap<>();
+    private final MonitoredParties accounts = new MonitoredParties() {
+        @Override
+        public Optional<UUID> partyOfAccount(Connection unitOfWork, UUID customerAccountId) {
+            return Optional.ofNullable(partyOfAccount.get(customerAccountId));
+        }
+
+        @Override
+        public Accounts accountsOf(Connection unitOfWork, UUID partyId) {
+            return Accounts.NONE;
+        }
+    };
+    private final CaseEvidence evidence = new CaseEvidence(worklist, reads,
+            (unitOfWork, subject) -> Optional.ofNullable(world.partyOfSubject.get(subject)), accounts,
+            (unitOfWork, record) -> world.audit.add(record), EvaluationWorld.IDS, EvaluationWorld.CLOCK);
+
+    /** A third party's identity, account and counterparty account - placed, neither the case's nor the reader's. */
+    private final UUID third = EvaluationWorld.IDS.next();
+    private final SignalSubject thirdIdentity = SignalSubject.of(SubjectKind.IDENTITY, EvaluationWorld.IDS.next());
+    private final UUID thirdAccount = EvaluationWorld.IDS.next();
+    private final UUID thirdCounterparty = EvaluationWorld.IDS.next();
+
+    {
+        world.partyOfSubject.put(thirdIdentity, third);
+        partyOfAccount.put(thirdAccount, third);
+        partyOfAccount.put(thirdCounterparty, third);
+    }
 
     @Test
     @DisplayName("a signal and a journal entry the case holds are resolved - the signal's codes, the transaction's amount"
@@ -46,9 +74,9 @@ class CaseEvidenceTest {
         RiskSignalId signalId = RiskSignalId.of(EvaluationWorld.IDS.next());
         UUID journalEntry = EvaluationWorld.IDS.next();
         attach(taken, signalId, journalEntry);
-        RiskSignal signal = signal(signalId);
+        RiskSignal signal = signal(signalId, thirdIdentity);
         reads.signals.put(signalId, signal);
-        reads.transactions.put(journalEntry, transaction(journalEntry));
+        reads.transactions.put(journalEntry, transaction(journalEntry, thirdAccount, thirdCounterparty));
         Actor reader = world.analyst();
 
         CaseEvidence.Served served = evidence.read(EvaluationWorld.UOW, taken.riskCase().id(),
@@ -81,7 +109,7 @@ class CaseEvidenceTest {
         UUID journalEntry = EvaluationWorld.IDS.next();
         attach(taken, held, journalEntry);
         RiskSignalId other = RiskSignalId.of(EvaluationWorld.IDS.next());
-        reads.signals.put(other, signal(other));
+        reads.signals.put(other, signal(other, thirdIdentity));
         Actor reader = world.analyst();
 
         assertThatThrownBy(() -> evidence.read(EvaluationWorld.UOW, taken.riskCase().id(),
@@ -101,7 +129,7 @@ class CaseEvidenceTest {
         OverrideWorld.Taken taken = world.partyCase(CaseKind.AML);
         RiskSignalId signalId = RiskSignalId.of(EvaluationWorld.IDS.next());
         attach(taken, signalId, EvaluationWorld.IDS.next());
-        reads.signals.put(signalId, signal(signalId));
+        reads.signals.put(signalId, signal(signalId, thirdIdentity));
         Actor reader = world.analyst();
         world.partyOfActor.put(reader.id(), UUID.fromString(taken.riskCase().subject().ref()));
 
@@ -112,7 +140,86 @@ class CaseEvidenceTest {
         assertThat(world.audited("risk.CaseRead")).isEmpty();
     }
 
+    @Test
+    @DisplayName("item 79 (the Phase 13 gate): a reference of the reader's own party attached to another party's case is"
+            + " refused OWN_PARTY - a signal by its subject, a journal entry by its subject account or its customer"
+            + " counterparty - nothing served, nothing recorded served")
+    void aReferenceOfTheReadersOwnPartyIsRefused() {
+        OverrideWorld.Taken taken = world.partyCase(CaseKind.AML);
+        Actor reader = world.analyst();
+        UUID own = EvaluationWorld.IDS.next();
+        world.partyOfActor.put(reader.id(), own);
+        SignalSubject ownIdentity = SignalSubject.of(SubjectKind.IDENTITY, EvaluationWorld.IDS.next());
+        world.partyOfSubject.put(ownIdentity, own);
+        UUID ownAccount = EvaluationWorld.IDS.next();
+        partyOfAccount.put(ownAccount, own);
+
+        RiskSignalId ownSignal = RiskSignalId.of(EvaluationWorld.IDS.next());
+        UUID asSubject = EvaluationWorld.IDS.next();
+        UUID asCounterparty = EvaluationWorld.IDS.next();
+        attach(taken, ownSignal, asSubject);
+        attachEntry(taken, asCounterparty);
+        reads.signals.put(ownSignal, signal(ownSignal, ownIdentity));
+        reads.transactions.put(asSubject, transaction(asSubject, ownAccount, thirdCounterparty));
+        reads.transactions.put(asCounterparty, transaction(asCounterparty, thirdAccount, ownAccount));
+
+        for (var reference : List.of(new CaseWorklist.EvidenceRef(CaseWorklist.EvidenceKind.SIGNAL, ownSignal.value()),
+                new CaseWorklist.EvidenceRef(CaseWorklist.EvidenceKind.JOURNAL_ENTRY, asSubject),
+                new CaseWorklist.EvidenceRef(CaseWorklist.EvidenceKind.JOURNAL_ENTRY, asCounterparty))) {
+            assertThatThrownBy(() -> evidence.read(EvaluationWorld.UOW, taken.riskCase().id(), reference.kind(),
+                    reference.id(), reader))
+                    .as(reference.toString())
+                    .isInstanceOfSatisfying(RiskAssessments.SelfDealingRefused.class, refused -> assertThat(
+                            refused.refusal()).isEqualTo(RiskAssessments.SelfDealingRefused.Cause.OWN_PARTY));
+        }
+        assertThat(world.audited("risk.CaseRead")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("item 79: fail closed - a reference naming a party the platform cannot place (a signal's unplaced"
+            + " subject, a journal entry's unplaced counterparty account, a loan the agreement join cannot place) is"
+            + " refused SUBJECT_UNPLACEABLE; an operational counterparty names no party and does not refuse")
+    void aReferenceThatCannotBePlacedIsRefused() {
+        OverrideWorld.Taken taken = world.partyCase(CaseKind.AML);
+        Actor reader = world.analyst();
+        RiskSignalId unplaced = RiskSignalId.of(EvaluationWorld.IDS.next());
+        UUID strangerCounterparty = EvaluationWorld.IDS.next();
+        UUID loanEntry = EvaluationWorld.IDS.next();
+        UUID operationalEntry = EvaluationWorld.IDS.next();
+        attach(taken, unplaced, strangerCounterparty);
+        attachEntry(taken, loanEntry);
+        attachEntry(taken, operationalEntry);
+        reads.signals.put(unplaced, signal(unplaced, SignalSubject.of(SubjectKind.IDENTITY,
+                EvaluationWorld.IDS.next())));
+        reads.transactions.put(strangerCounterparty, transaction(strangerCounterparty, thirdAccount,
+                EvaluationWorld.IDS.next()));
+        reads.transactions.put(loanEntry, transaction(loanEntry, thirdAccount, MonitoredCounterpartyKind.LOAN,
+                EvaluationWorld.IDS.next()));
+        reads.transactions.put(operationalEntry, transaction(operationalEntry, thirdAccount,
+                MonitoredCounterpartyKind.OPERATIONAL, EvaluationWorld.IDS.next()));
+
+        for (var reference : List.of(new CaseWorklist.EvidenceRef(CaseWorklist.EvidenceKind.SIGNAL, unplaced.value()),
+                new CaseWorklist.EvidenceRef(CaseWorklist.EvidenceKind.JOURNAL_ENTRY, strangerCounterparty),
+                new CaseWorklist.EvidenceRef(CaseWorklist.EvidenceKind.JOURNAL_ENTRY, loanEntry))) {
+            assertThatThrownBy(() -> evidence.read(EvaluationWorld.UOW, taken.riskCase().id(), reference.kind(),
+                    reference.id(), reader))
+                    .as(reference.toString())
+                    .isInstanceOfSatisfying(RiskAssessments.SelfDealingRefused.class, refused -> assertThat(
+                            refused.refusal()).isEqualTo(
+                                    RiskAssessments.SelfDealingRefused.Cause.SUBJECT_UNPLACEABLE));
+        }
+        assertThat(evidence.read(EvaluationWorld.UOW, taken.riskCase().id(), CaseWorklist.EvidenceKind.JOURNAL_ENTRY,
+                operationalEntry, reader)).isInstanceOf(CaseEvidence.TransactionServed.class);
+    }
+
     // ------------------------------------------------------------------
+
+    private void attachEntry(OverrideWorld.Taken taken, UUID journalEntry) {
+        RiskCase now = world.caseOf(taken.riskCase().id());
+        world.cases.attachEvidence(EvaluationWorld.UOW, now.id(), now.revision(), new AlertEvidence(List.of(),
+                List.of(), List.of(journalEntry)), "a further ledger line", taken.investigator(),
+                OverrideWorld.correlation());
+    }
 
     private void attach(OverrideWorld.Taken taken, RiskSignalId signal, UUID journalEntry) {
         RiskCase now = world.caseOf(taken.riskCase().id());
@@ -121,18 +228,23 @@ class CaseEvidenceTest {
                 OverrideWorld.correlation());
     }
 
-    private static RiskSignal signal(RiskSignalId id) {
-        return new RiskSignal(id, SignalKind.CREDENTIAL_CHANGED, new SignalSubject(SubjectKind.IDENTITY,
-                UUID.randomUUID().toString()), new RiskSignal.SourceEvent(EventId.next(EvaluationWorld.IDS),
+    private static RiskSignal signal(RiskSignalId id, SignalSubject subject) {
+        return new RiskSignal(id, SignalKind.CREDENTIAL_CHANGED, subject, new RiskSignal.SourceEvent(
+                EventId.next(EvaluationWorld.IDS),
                 "identity.CredentialChanged", 1, "identity", CorrelationId.of("flow"), CausationId.of("cause")),
                 Instant.parse("2026-10-23T09:00:00Z"), SignalAttributes.none());
     }
 
-    private static MonitoredTransaction transaction(UUID journalEntry) {
+    private static MonitoredTransaction transaction(UUID journalEntry, UUID subjectAccount, UUID counterpartyAccount) {
+        return transaction(journalEntry, subjectAccount, MonitoredCounterpartyKind.CUSTOMER, counterpartyAccount);
+    }
+
+    private static MonitoredTransaction transaction(UUID journalEntry, UUID subjectAccount,
+            MonitoredCounterpartyKind counterpartyKind, UUID counterpartyRef) {
         return new MonitoredTransaction(MonitoredTransactionId.next(EvaluationWorld.IDS), journalEntry,
                 MonitoringWatermark.sequenceOf(journalEntry), MonitoredEntry.EntryType.POSTING, "transfer",
-                MonitoredKind.TRANSFER, Optional.of(MonitoredSubjectKind.ACCOUNT), Optional.of(UUID.randomUUID()),
-                Optional.of(MonitoredDirection.OUT), MonitoredCounterpartyKind.CUSTOMER, Optional.of(UUID.randomUUID()),
+                MonitoredKind.TRANSFER, Optional.of(MonitoredSubjectKind.ACCOUNT), Optional.of(subjectAccount),
+                Optional.of(MonitoredDirection.OUT), counterpartyKind, Optional.of(counterpartyRef),
                 Optional.empty(), 250_00, 2, CurrencyCode.of("EUR"), LocalDate.of(2026, 10, 23),
                 Instant.parse("2026-10-23T09:00:00Z"), Optional.empty());
     }

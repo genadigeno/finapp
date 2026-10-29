@@ -509,6 +509,19 @@ novelty per payer), 18 (refunds to new accounts — a later fraud task), 24, 32 
 parties' ratings freeze past ~20,000 movements — Phase 15 with a trigger), 46, 50–53, 55, 56, 59 (Phase 15 recommended), 70 (with
 C4).
 
+### The owner's ratification and the completion gate (addendum, 2026-10-29)
+
+**The owner adopted every recommendation above** ("Accept recommendations", 2026-10-29). The Phase 13 completion gate
+([`PHASE_13_TO_14_TRANSITION.md`](PHASE_13_TO_14_TRANSITION.md)) recorded it per group in `PHASE_13_PLAN.md` §1.2, §2.2 and
+§24, and acted on it: **items 79, 78 and 25 were fixed inside the gate** - the evidence door judges every party a served
+reference names, failing closed; a `CLOSED_*` of a case holding an alert is two persons' act (risk `V019`, `COLLECTIONS`
+excepted by C3); identity records a suspension's cause and risk lifts only its own (identity `V024`) - each with a
+regression test and a mutation probe. The "decide before the first policy activation" items became activation
+preconditions (`OPERATIONS_RUNBOOK.md` §9.1 step 3) and remediation entries; the other "fix before production use" items
+remediation entries - `BACKLOG.md` §Phase 13 remediation, `P13-REM-001`…`-013`, none blocking Phase 14. The deferred items
+stand deferred with their owners. The gate's result: **Phase 13 `COMPLETE`, confirmed after repair**; the ten-instance
+answer `PASS`, its storm half the owner's acceptance, not a measurement.
+
 ### Resolved since recorded
 
 Item 20 (`risk.yml`, `-024`); the list of §1.2's "Resolved" paragraph; `CreditRiskSignal`'s `NOT_ASSESSED` retired for assessed

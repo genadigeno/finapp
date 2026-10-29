@@ -93,24 +93,42 @@ public final class JdbcIdentityStore implements IdentityStore<Connection> {
 
     @Override
     public boolean moveStatus(
-            Connection unitOfWork, IdentityId id, IdentityStatus from, Identity to) {
+            Connection unitOfWork,
+            IdentityId id,
+            IdentityStatus from,
+            Identity to,
+            Optional<SuspensionCause> cause) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(id, "id must not be null");
         Objects.requireNonNull(from, "from must not be null");
         Objects.requireNonNull(to, "to must not be null");
+        Objects.requireNonNull(cause, "cause must not be null");
+        boolean suspending = to.status() == IdentityStatus.SUSPENDED;
+        if (suspending && cause.isEmpty()) {
+            throw new IllegalArgumentException("a suspension records its cause (identity V024)");
+        }
+        // The cause is part of the transition (the Phase 13 gate, item 25): recorded on the way in, cleared on the way
+        // out, and - when the caller names one on the way out - a condition of the move, so risk's reinstatement never
+        // lifts a suspension an administrator decided.
+        boolean ownCauseOnly = !suspending && from == IdentityStatus.SUSPENDED && cause.isPresent();
 
         // AND status = ? is the whole concurrency protocol. Without it the second administrator's
         // UPDATE succeeds against a row that has already moved, and two audit records describe one
         // transition - which is worse than a lost update, because the trail then says two people
         // suspended somebody and only one of them did.
         String sql =
-                "UPDATE " + TABLE + " SET status = ?, status_changed_at = ?"
-                        + " WHERE id = ? AND status = ?";
+                "UPDATE " + TABLE + " SET status = ?, status_changed_at = ?, suspension_cause = ?"
+                        + " WHERE id = ? AND status = ?"
+                        + (ownCauseOnly ? " AND suspension_cause = ?" : "");
         try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
             update.setString(1, to.status().name());
             update.setTimestamp(2, java.sql.Timestamp.from(to.statusChangedAt()));
-            update.setObject(3, id.value());
-            update.setString(4, from.name());
+            update.setString(3, suspending ? cause.get().name() : null);
+            update.setObject(4, id.value());
+            update.setString(5, from.name());
+            if (ownCauseOnly) {
+                update.setString(6, cause.get().name());
+            }
             return update.executeUpdate() == 1;
         } catch (SQLException e) {
             throw new IdentityStorageException(
