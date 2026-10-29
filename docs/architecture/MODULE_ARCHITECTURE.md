@@ -753,8 +753,15 @@ are admitted only beside it), `Payoffs` (the quote under L3 after the catch-up a
 - **Hard rule:** `risk` decides and never moves: no posting, no hold, no release, no write to another module's row, no reversal of any transaction, no credential reset; a decision changes a money movement only because the owning domain consulted the seam in its own transaction and committed its own outcome; an action is a keyed command through the owning domain's existing door, recorded on both sides. Advisory to a domain lifecycle — never a substitute for it.
 
 ### `accounting` — Phase 14
-*(Planned by the Phase 13 → 14 transition, 2026-10-29 — ADR-0113…0118 (`Proposed`), `PHASE_14_PLAN.md` §4: nothing of it
-is built; `P14-TSK-001` builds the boundary, and each task corrects this entry to the code. The entry read "Owns: GL
+*(Planned by the Phase 13 → 14 transition, 2026-10-29 — ADR-0113…0118 (`Proposed`), `PHASE_14_PLAN.md` §4; **built so
+far**: `P14-TSK-001` (2026-10-29) — the boundary as the Edges clause describes it (`AccountingModuleIsolationTest`, every
+sibling's isolation test refusing `accounting`), the migrator-owned floor `V001` (no table; `AccountingMigrationTest`
+written, owed to the phase's database pass), the ten closed vocabularies with the four lifecycles' edge tables
+(`AccountingVocabulariesTest`; `GlClassification` held to the ledger's `AccountType` by `AccountingLedgerVocabularyTest`
+in `app`), the nine ports declared empty, `AccountingErrorCode` (`NotFound`, `SelfApprovalRefused`) and
+`AccountingAuditAction` (`SelfApprovalRefused`), identity `V025` with the three roles as a **partition** (see Security),
+`NoCustomerSurfaceReadsAccountingTest` and `ReportingNeverWritesTest` armed (§6), `AccountingFlowScope`'s door leg; each
+later task corrects this entry to the code. The entry read "Owns: GL
 Account, GL Mapping Rule (versioned), Accounting Period, Trial Balance snapshot, Period Close record, Report Definition,
 Report Run (immutable output retained)" and "Hard rule: … verified at the database privilege level" until the
 transition.)*
@@ -766,10 +773,10 @@ transition.)*
 - **APIs:** `/v1/operator/accounting/…` (periods, mapping versions, GL balances and drill-down, report runs and regeneration, valuation rate sets, breaks, prior-period adjustments) and `/v1/operator/regulatory/…` (submissions); no customer or merchant surface.
 - **Events:** `AccountingPeriodOpened`, `AccountingPeriodLocked`, `AccountingPeriodCloseProposed`, `AccountingPeriodClosed`, `AccountingPeriodReopened`, `GlMappingVersionActivated`, `ReportRunCompleted` (kind `TRIAL_BALANCE` is `DELIVERY_PLAN.md`'s `TrialBalanceGenerated`), `AccountingBreakRaised`, `PriorPeriodAdjustmentPosted`, `RegulatorySubmission*`; consumes none for correctness.
 - **Failure:** a posting dated into a locked period is refused by the ledger (`ledger.PeriodClosed`); a crashed check or generator is re-claimed by lease; a provider's unknown answer is an inquiry, never a re-submit.
-- **Security:** `ACCOUNTANT` proposes, `FINANCIAL_CONTROLLER` approves, `REGULATORY_REPORTER` prepares and submits; approver ≠ proposer by `CHECK`; every act audited.
+- **Security:** `ACCOUNTANT` proposes, `FINANCIAL_CONTROLLER` approves, `REGULATORY_REPORTER` prepares and submits; approver ≠ proposer by `CHECK`; every act audited. *(`P14-TSK-001`: the three grants are a **partition** - `ACCOUNTANT` {`ACCOUNTING_READ`, `ACCOUNTING_MAPPING_PROPOSE`, `ACCOUNTING_CLOSE_PROPOSE`, `ACCOUNTING_ADJUST_PROPOSE`, `ACCOUNTING_REPORT_GENERATE`}, `FINANCIAL_CONTROLLER` {`ACCOUNTING_MAPPING_APPROVE`, `ACCOUNTING_CLOSE_APPROVE`, `ACCOUNTING_ADJUST_APPROVE`, `REGULATORY_REPORT_APPROVE`}, `REGULATORY_REPORTER` {`REGULATORY_REPORT_PREPARE`, `REGULATORY_REPORT_SUBMIT`}; `PHASE_14_PLAN.md` §12's `ACCOUNTING_READ` on all three refused by `RoleNameTest`'s pairwise disjointness (`INV-AUD-03`), the controller and the reporter reading what they act on under their own permissions; no role holds the propose and the approve of one act (`RoleNameTest#noRoleProposesAndApprovesTheSameAct`). The grants are disjoint, the holders need not be, so the `CHECK` and `accounting.SelfApprovalRefused` stay the binding control.)*
 - **Operations:** series `finapp.accounting.*` (`PHASE_14_PLAN.md` §16); `AccountingCloseSchedule`, leaderless (`LEASE_PROTECTED_SCHEDULERS` 31 → 32); runbook §10 (`P14-TSK-020`).
 - **Invariants:** `INV-ACC-01`…`-14`.
-- **Hard rule:** **no write access to ledger tables** — no ledger edge (`AccountingModuleIsolationTest`, planned), report reads in read-only transactions (`ReportingNeverWritesTest`, planned), the journal written only through the ledger's own `ACCOUNTING`-origin adjustment door; a separate read-only database role is Phase 15's (owner decision C10).
+- **Hard rule:** **no write access to ledger tables** — no ledger edge (`AccountingModuleIsolationTest`, built by `P14-TSK-001`), report code reaching no writer (`ReportingNeverWritesTest`, armed by `P14-TSK-001` over the empty `com.finapp.accounting.reporting`) and report reads in read-only transactions (`P14-TSK-008`), the journal written only through the ledger's own `ACCOUNTING`-origin adjustment door; a separate read-only database role is Phase 15's (owner decision C10).
 
 ### `notification` — Phase 1 onward
 - **Responsibility:** telling people things. Never part of a money-moving decision.
@@ -1210,6 +1217,45 @@ and correct pattern of building a local collection and returning an immutable co
 remove the constructs that *only* mean something in one process, so a claim about coordination
 cannot be made silently. The design question — would this still be correct if ten instances ran it
 concurrently — stays a review question, and `P0-TST-009` is the test convention for it.
+
+### Accounting off the surface, and reporting never writes (`P14-TSK-001`; `INV-ACC-14`)
+
+The `accounting` module's GL, periods, report runs and regulatory submissions are the operator's finance desks' and
+nothing a customer or a merchant can call reads them; and its report code reaches no writer, so a reporting path can
+never become a back door into the authoritative record. Both rules are in `app`, the one module that sees both sides,
+and both are armed before the first table: nothing in `app` depends on `accounting` yet, and the report package is
+empty, so each is proven able to fail by probes planted in its own source.
+
+- No class on the customer or merchant surface - `NoCustomerSurfaceReadsRiskTest`'s surface, shared rather than copied
+  (`/me` controllers, merchant-key controllers, `@RequiresSession` controllers outside `/operator`) - and no `app` class
+  such a class depends on directly (its desk) depends on a type of `com.finapp.accounting..`
+  (`NoCustomerSurfaceReadsAccountingTest`). Proven able to fail by a planted `/me` controller, merchant-key controller
+  and `/me` controller's desk each holding an accounting type; an operator lookalike under `/operator/accounting` is not
+  flagged.
+  *(ArchUnit: `noCustomerOrMerchantSurfaceReachesAccounting`)*
+- **The whole reach**, as risk's: from every surface class, every `com.finapp` class it depends on and on from those,
+  and every implementation of an interface or abstract class reached, stopping only at `accounting` - no class on it
+  depends on an accounting type. Unlike risk's there are **no seams**: no customer or merchant door has a reason to
+  consult accounting, so a later task that finds one adds an enumerated, reviewed seam. The census: the reach follows the
+  withdrawal door to `JdbcWithdrawalStore` over more than two hundred classes, and the import contains `accounting`.
+  Proven able to fail by a planted `/me` route whose service reaches accounting two hops away through a port's
+  implementation.
+  *(ArchUnit: `theSurfacesWholeReachNeverTouchesAccounting`)*
+- **Reporting never writes** (`ReportingNeverWritesTest`; ADR-0113 decision 5; owner decision C10): from every class of
+  `com.finapp.accounting.reporting` and its sub-packages, the reach over `accounting`'s classes (and accounting's own
+  implementations of an accounting interface reached) holds no class that depends on a `com.finapp.ledger` type, on
+  accounting's writer ports (`PostingCutoff`, `PriorPeriodPostings`, `RegulatoryReportingProvider`), on the platform's
+  writers (`AuditWriter`, `OutboxWriter`, their JDBC implementations, `IdempotencyRecordStore`), or that calls a JDBC
+  write (`executeUpdate`, `executeLargeUpdate`, `executeBatch`, `addBatch`, `execute` on a `Statement`). Phrased over
+  every imported class, never a `that()` selecting nothing, so it gains reach the moment `P14-TSK-008` adds a report
+  class - which is also why the run store, the audited read and the door live outside the report package. The database
+  half is `-008`'s `REPEATABLE READ READ ONLY` transaction. Proven able to fail by planted report classes holding the
+  ledger's `PostingService`, calling `executeUpdate`, holding `AuditWriter` or `PriorPeriodPostings`, and reaching
+  `OutboxWriter` two hops away; a report class that only reads (`executeQuery`, `JournalReads`) is not flagged.
+  *(ArchUnit: `noReportingClassReachesAWriter`)*
+- The reporting guard sees what it guards: the `accounting` package and every writer it names are in the import, and
+  the ledger's `PostingService` stands for the package refusal - or the rule above guards nothing.
+  *(ArchUnit: `theReportingGuardSeesTheAccountingModule`)*
 
 ### Persistence boundary
 

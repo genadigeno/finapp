@@ -57,6 +57,7 @@ class CreditModuleIsolationTest {
             "creditmath",
             "bnpl",
             "risk",
+            "accounting",
             "app");
 
     @Test

@@ -325,7 +325,56 @@ public enum RoleName {
      * permission - so the regulatory filing, with its tipping-off obligation ({@code INV-RSK-08}), is held by a
      * population that is not the one working the case. Four eyes inside the role: the drafter never approves.
      */
-    AML_OFFICER(EnumSet.of(PermissionName.AML_REPORT_APPROVE, PermissionName.AML_REPORT_FILE));
+    AML_OFFICER(EnumSet.of(PermissionName.AML_REPORT_APPROVE, PermissionName.AML_REPORT_FILE)),
+
+    /**
+     * Reads the General Ledger and proposes (`P14-TSK-001`, ADR-0113...ADR-0115, owner decision C12): holds
+     * {@link PermissionName#ACCOUNTING_READ} - the audited GL and report reads - and every <em>propose</em> of the
+     * accounting acts - {@link PermissionName#ACCOUNTING_MAPPING_PROPOSE}, {@link PermissionName#ACCOUNTING_CLOSE_PROPOSE},
+     * {@link PermissionName#ACCOUNTING_ADJUST_PROPOSE} - with {@link PermissionName#ACCOUNTING_REPORT_GENERATE}.
+     *
+     * <p><strong>An eighteenth role, the proposing desk</strong>: never the approve of any act it proposes - that is the
+     * {@link #FINANCIAL_CONTROLLER}'s, so a close, a mapping and a prior-period adjustment are each two populations' work
+     * (C12; {@code RoleNameTest#noRoleProposesAndApprovesTheSameAct}). {@code PHASE_14_PLAN.md} §12 first wrote
+     * {@code ACCOUNTING_READ} into all three accounting desks; pairwise-disjoint grants ({@code INV-AUD-03},
+     * {@code RoleNameTest}) make them a partition, the read the accountant's.
+     */
+    ACCOUNTANT(EnumSet.of(
+            PermissionName.ACCOUNTING_READ,
+            PermissionName.ACCOUNTING_MAPPING_PROPOSE,
+            PermissionName.ACCOUNTING_CLOSE_PROPOSE,
+            PermissionName.ACCOUNTING_ADJUST_PROPOSE,
+            PermissionName.ACCOUNTING_REPORT_GENERATE)),
+
+    /**
+     * Approves (`P14-TSK-001`, ADR-0113, ADR-0114, ADR-0118, owner decision C12): holds every <em>approve</em> of the
+     * accounting acts - {@link PermissionName#ACCOUNTING_MAPPING_APPROVE}, {@link PermissionName#ACCOUNTING_CLOSE_APPROVE},
+     * {@link PermissionName#ACCOUNTING_ADJUST_APPROVE} - and {@link PermissionName#REGULATORY_REPORT_APPROVE}.
+     *
+     * <p><strong>A nineteenth role, the approving desk</strong>: proposes nothing, prepares nothing, generates nothing;
+     * each door it decides serves what it decides under its own approve permission, so it needs no accountant's read.
+     * The grants are disjoint, the holders need not be - one identity may hold this role and {@link #ACCOUNTANT} - so
+     * approver &lt;&gt; proposer is a {@code CHECK} on every four-eyes row ({@code INV-AUD-04},
+     * {@code accounting.SelfApprovalRefused}).
+     */
+    FINANCIAL_CONTROLLER(EnumSet.of(
+            PermissionName.ACCOUNTING_MAPPING_APPROVE,
+            PermissionName.ACCOUNTING_CLOSE_APPROVE,
+            PermissionName.ACCOUNTING_ADJUST_APPROVE,
+            PermissionName.REGULATORY_REPORT_APPROVE)),
+
+    /**
+     * Prepares and submits regulatory submissions (`P14-TSK-001`, ADR-0118, owner decisions C4, C12): holds
+     * {@link PermissionName#REGULATORY_REPORT_PREPARE} - the draft from FINAL runs of CLOSED periods, which the draft
+     * door serves under it, and its validation - and {@link PermissionName#REGULATORY_REPORT_SUBMIT} - the submission
+     * through the provider and its acknowledgement.
+     *
+     * <p><strong>A twentieth role: the filing desk of the books</strong>, never their approver - a submission is
+     * approved by the {@link #FINANCIAL_CONTROLLER} between preparation and submission ({@code INV-ACC-13}).
+     */
+    REGULATORY_REPORTER(EnumSet.of(
+            PermissionName.REGULATORY_REPORT_PREPARE,
+            PermissionName.REGULATORY_REPORT_SUBMIT));
 
     private final Set<PermissionName> permissions;
 

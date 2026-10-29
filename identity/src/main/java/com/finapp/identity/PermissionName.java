@@ -649,5 +649,89 @@ public enum PermissionName {
      *
      * <p><strong>Held by {@code AML_OFFICER}</strong>, beside {@link #AML_REPORT_APPROVE}.
      */
-    AML_REPORT_FILE
+    AML_REPORT_FILE,
+
+    /**
+     * Read the General Ledger (`P14-TSK-001`; {@code PHASE_14_PLAN.md} sections 10, 12; ADR-0113, ADR-0115): GL balances,
+     * GL account activity drill-down to journal lines, the GL view of an entry, report runs, mapping versions and their
+     * diff, the posting rule register, periods, breaks - every read audited, nothing moved; drill-down lines carry owner
+     * references, never names. The routes are their tasks' (`-002`, `-003`, `-007`, `-008`).
+     *
+     * <p><strong>Held by {@code ACCOUNTANT}</strong> alone. {@code PHASE_14_PLAN.md} section 12 first gave it to all three
+     * accounting roles; pairwise-disjoint grants ({@code INV-AUD-03}, {@code RoleNameTest}) make the desks a partition
+     * instead, and the controller and the reporter read what they act on under their own permissions.
+     */
+    ACCOUNTING_READ,
+
+    /**
+     * Propose a GL mapping version (`P14-TSK-001`; ADR-0113 decision 3; {@code INV-ACC-07}): the GL accounts and the
+     * purpose -&gt; GL account rules, immutable from birth, activated only by a {@link #ACCOUNTING_MAPPING_APPROVE}
+     * holder. The routes are `-003`'s. <strong>Held by {@code ACCOUNTANT}.</strong>
+     */
+    ACCOUNTING_MAPPING_PROPOSE,
+
+    /**
+     * Activate or reject a proposed GL mapping version (`P14-TSK-001`; ADR-0113; {@code INV-ACC-07}, {@code INV-AUD-04}):
+     * never one's own proposal ({@code accounting.SelfApprovalRefused}); the version must be total over the purposes and
+     * classification-compatible. Serves the version and its diff it decides. The routes are `-003`'s.
+     * <strong>Held by {@code FINANCIAL_CONTROLLER}.</strong>
+     */
+    ACCOUNTING_MAPPING_APPROVE,
+
+    /**
+     * Lock a period, propose its close, unlock or reopen, and re-run a close check (`P14-TSK-001`; ADR-0114;
+     * {@code INV-ACC-09}, {@code -10}): a close only with every readiness check passed or disclosed by a reasoned
+     * record. The routes are `-005`'s, `-011`'s and `-012`'s. <strong>Held by {@code ACCOUNTANT}.</strong>
+     */
+    ACCOUNTING_CLOSE_PROPOSE,
+
+    /**
+     * Approve or reject a period's close, unlock or reopen (`P14-TSK-001`; ADR-0114; {@code INV-ACC-09}, {@code -10},
+     * {@code INV-AUD-04}): never one's own proposal. Serves the close run and the checks it decides. The routes are
+     * `-005`'s and `-012`'s. <strong>Held by {@code FINANCIAL_CONTROLLER}.</strong>
+     */
+    ACCOUNTING_CLOSE_APPROVE,
+
+    /**
+     * Propose a prior-period adjustment, and an accounting break's acknowledgement with its disclosure (`P14-TSK-001`;
+     * ADR-0113 decision 4, ADR-0117; {@code INV-ACC-10}, {@code -12}): a correction of a closed period posted in an open
+     * one through the ledger's {@code ACCOUNTING}-origin adjustment door. The routes are `-010`'s and `-013`'s.
+     * <strong>Held by {@code ACCOUNTANT}.</strong>
+     */
+    ACCOUNTING_ADJUST_PROPOSE,
+
+    /**
+     * Approve or reject a prior-period adjustment or a break's acknowledgement (`P14-TSK-001`; {@code INV-ACC-10},
+     * {@code INV-AUD-04}): the adjustment's approval posts the ledger's adjustment in its own transaction; never one's
+     * own proposal. The routes are `-010`'s and `-013`'s. <strong>Held by {@code FINANCIAL_CONTROLLER}.</strong>
+     */
+    ACCOUNTING_ADJUST_APPROVE,
+
+    /**
+     * Generate a report run (`P14-TSK-001`; ADR-0115; {@code INV-ACC-04}, {@code -14}): keyed; FINAL for a locked or
+     * closed period, PROVISIONAL for an open one; regenerate-and-compare. Read-only transactions; the run's content is
+     * frozen at completion. The routes are `-008`'s and its reports' tasks'. <strong>Held by {@code ACCOUNTANT}.</strong>
+     */
+    ACCOUNTING_REPORT_GENERATE,
+
+    /**
+     * Prepare a regulatory submission (`P14-TSK-001`; ADR-0118; {@code INV-ACC-13}): draft it from FINAL runs of CLOSED
+     * periods - the draft door serves those runs under this permission - and validate it. The routes are `-018`'s.
+     * <strong>Held by {@code REGULATORY_REPORTER}</strong>, beside {@link #REGULATORY_REPORT_SUBMIT}.
+     */
+    REGULATORY_REPORT_PREPARE,
+
+    /**
+     * Approve a validated regulatory submission (`P14-TSK-001`; ADR-0118; {@code INV-ACC-13}, {@code INV-AUD-04}): never
+     * the preparer's own; serves the submission and its lineage it decides. The routes are `-018`'s.
+     * <strong>Held by {@code FINANCIAL_CONTROLLER}</strong> - the preparer never approves.
+     */
+    REGULATORY_REPORT_APPROVE,
+
+    /**
+     * Submit an approved regulatory submission through the provider (simulated, owner decision C4) and read its
+     * acknowledgement (`P14-TSK-001`; ADR-0118); a correction is a new submission referencing the original. The routes
+     * are `-018`'s. <strong>Held by {@code REGULATORY_REPORTER}</strong>, beside {@link #REGULATORY_REPORT_PREPARE}.
+     */
+    REGULATORY_REPORT_SUBMIT
 }

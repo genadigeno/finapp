@@ -54,6 +54,43 @@ class RoleAssignmentMigrationTest {
     }
 
     @Test
+    @DisplayName("identity V025 admits exactly the three accounting roles beyond V023's seventeen, and touches nothing"
+            + " else (P14-TSK-001)")
+    void v025AdmitsTheAccountingRolesAndNothingElse() {
+        // V024 (the Phase 13 gate's suspension cause) defines no role constraint, so V023 is the one V025 replaces. The
+        // difference is the change a reviewer approves - three names, no removal - and the file holds no grant, no
+        // permission and no other table, because what a role means is code (ADR-0031) and who holds one is identity's
+        // existing door (RoleNameTest holds the three grants exact, pairwise disjoint and propose/approve-split).
+        java.util.Map<String, String> migrations = allMigrations();
+        String v025 = migrations.get("V025__admit_the_accounting_roles.sql");
+        assertThat(v025).as("V025 is on the classpath").isNotNull();
+        assertThat(latestConstraintDefinition()).as("V025 is the latest role constraint").isEqualTo(v025);
+        java.util.Set<String> before = roleNames(migrations.get("V023__admit_the_risk_roles.sql"));
+        java.util.Set<String> after = roleNames(v025);
+        assertThat(after).as("nothing removed").containsAll(before);
+        java.util.Set<String> added = new java.util.TreeSet<>(after);
+        added.removeAll(before);
+        assertThat(added).containsExactlyInAnyOrder("ACCOUNTANT", "FINANCIAL_CONTROLLER", "REGULATORY_REPORTER");
+        String statements = v025.lines().filter(line -> !line.stripLeading().startsWith("--"))
+                .collect(java.util.stream.Collectors.joining("\n"));
+        assertThat(statements).doesNotContain("GRANT").doesNotContain("CREATE").doesNotContain("PERMISSION")
+                .contains("ALTER TABLE identity.role_assignment");
+    }
+
+    /** The quoted names inside a migration's {@code role_name IN (...)} list. */
+    private static java.util.Set<String> roleNames(String sql) {
+        assertThat(sql).as("the migration is on the classpath").isNotNull();
+        int open = sql.indexOf("role_name IN (");
+        String list = sql.substring(open, sql.indexOf(")", open));
+        java.util.Set<String> names = new java.util.TreeSet<>();
+        java.util.regex.Matcher quoted = java.util.regex.Pattern.compile("'([A-Z_]+)'").matcher(list);
+        while (quoted.find()) {
+            names.add(quoted.group(1));
+        }
+        return names;
+    }
+
+    @Test
     @DisplayName("V010's original constraint is untouched history")
     void theOriginalConstraintIsHistory() {
         // The other half of forward-only migrations (ADR-0011): the derivation above frees the

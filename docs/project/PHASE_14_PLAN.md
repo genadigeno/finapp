@@ -292,7 +292,15 @@ provisional report forward, never feed a figure (`INV-EVT-02`).
 Roles (C12): `ACCOUNTANT` — `ACCOUNTING_READ`, `ACCOUNTING_MAPPING_PROPOSE`, `ACCOUNTING_CLOSE_PROPOSE`,
 `ACCOUNTING_ADJUST_PROPOSE`, `ACCOUNTING_REPORT_GENERATE`; `FINANCIAL_CONTROLLER` — `ACCOUNTING_READ`,
 `ACCOUNTING_MAPPING_APPROVE`, `ACCOUNTING_CLOSE_APPROVE`, `ACCOUNTING_ADJUST_APPROVE`, `REGULATORY_REPORT_APPROVE`;
-`REGULATORY_REPORTER` — `ACCOUNTING_READ`, `REGULATORY_REPORT_PREPARE`, `REGULATORY_REPORT_SUBMIT`. No role proposes and
+`REGULATORY_REPORTER` — `ACCOUNTING_READ`, `REGULATORY_REPORT_PREPARE`, `REGULATORY_REPORT_SUBMIT`. *(As built by
+`P14-TSK-001`, 2026-10-29 - the design's correction, the `P13-TSK-001` precedent: `ACCOUNTING_READ` on three roles failed
+`RoleNameTest#theGrantsArePairwiseDisjoint` (`INV-AUD-03`), so the grants are a **partition** - `ACCOUNTING_READ` the
+`ACCOUNTANT`'s alone, the `FINANCIAL_CONTROLLER` reading what it decides under its approve permissions and the
+`REGULATORY_REPORTER` the FINAL runs it drafts from under `REGULATORY_REPORT_PREPARE`; still eleven permissions. The
+lock and a close check's re-run are `ACCOUNTING_CLOSE_PROPOSE` (`-005`, `-011`), a break's acknowledgement
+`ACCOUNTING_ADJUST_PROPOSE` / `_APPROVE` (`-010`). The grants are disjoint, the holders need not be - identity's
+arbiter is one live assignment of each role - so approver ≠ proposer stays the `CHECK` and `accounting.SelfApprovalRefused`;
+`RoleNameTest#noRoleProposesAndApprovesTheSameAct` holds the four propose/approve pairs apart.)* No role proposes and
 approves the same act; approver ≠ proposer by `CHECK` on every four-eyes row (`INV-AUD-04`). Every act in
 `AUDITABLE_ACTIONS.md`'s new `accounting.*` / `regulatory.*` set with actor, time, target, reason, correlation and outcome;
 report content `CONFIDENTIAL` (aggregates), drill-down lines at the ledger's classification, regulatory content
@@ -583,7 +591,12 @@ to `platform` and `sharedkernel` only), the closed vocabularies, the ports decla
 `AccountingErrorCode` with their register rows, identity `V025` admitting the three roles and eleven permissions (C12),
 `NoCustomerSurfaceReadsAccountingTest` and `ReportingNeverWritesTest` armed. First because every later task writes into
 this schema through these ports, and the role split is the trust decision the close rests on. It depends on no owner
-decision.
+decision. *(As built, 2026-10-29: `COMPLETE` - the module, `V001` (the schema Flyway's `schemas` creates, migrator-owned;
+no table), the ten vocabularies with the four machines' edge tables, the nine ports declared empty of methods,
+`AccountingErrorCode` {`NotFound`, `SelfApprovalRefused`} and `AccountingAuditAction` {`SelfApprovalRefused`}, identity
+`V025` with the roles as a partition (§12's note), the three guards with planted probes, `AccountingFlowScope`'s door leg,
+`finapp.accounting.sweeper.enabled` reserved; `AccountingMigrationTest` and the identity database case written and owed
+to the phase's database pass (C5).)*
 
 ## 24. The transition's carried items (Phase 14 rows of `CURRENT_STATE.md` debt and `DECISIONS.md` §Deferred)
 

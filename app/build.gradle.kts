@@ -116,6 +116,14 @@ dependencies {
     // from it (INV-RSK-08).
     implementation(project(":risk"))
 
+    // The Phase 14 module (P14-TSK-001), on the classpath for the same reasons: the floating-point and audit guards
+    // reach `accounting` from its first classes (INV-MON-01), every port it declares (the journal's reads, the ledger's
+    // chart, the posting cutoff, the prior-period adjustment door, the product proofs, the accrual completeness,
+    // reconciliation's disclosure, fx's reference rates, the regulatory provider) is implemented here - the one module
+    // that sees both sides - NoCustomerSurfaceReadsAccountingTest holds every customer and merchant surface away from it,
+    // and ReportingNeverWritesTest holds its report code away from every writer (INV-ACC-14).
+    implementation(project(":accounting"))
+
     implementation(libs.spring.boot.starter)
     implementation(libs.spring.boot.starter.web)
     implementation(libs.spring.boot.starter.validation)

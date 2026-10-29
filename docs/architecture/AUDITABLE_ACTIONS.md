@@ -806,6 +806,21 @@ financial record of the judgement - not an audit record; the customer's keyed co
 facts (monitored transactions, watermarks, alerts raised, profiles recomputed - rows and events, no person acts), and the
 customer's read of a `HELD` withdrawal (payments' existing read, a status word only - C6).
 
+### `accounting` — `AccountingAuditAction` *(declared per task from `P14-TSK-001`, 2026-10-29; emitted by the tasks named)*
+
+*Declared per task* (`P14-TSK-001`, the `RiskAuditAction` precedent): `AccountingAuditAction` holds the refusal of the
+role split - `accounting.SelfApprovalRefused`, the catalogue row below, named in `AuditCompletenessTest`'s deliberate
+absences with the task that first raises it (`-003`) - and every later `accounting.*` / `regulatory.*` act
+(`PHASE_14_PLAN.md` §12: mapping proposals and activations, period edges, close proposals and approvals, report
+generations and audited GL reads, break acknowledgements, prior-period adjustments, valuation rate sets, submissions)
+arrives with the task that raises it. Each with actor, time, target, reason where required, correlation and outcome;
+summaries carry ids and codes, never an amount, a GL figure or an owner reference (`INV-AUD-02`). A role's grant to an
+accountant, controller or reporter is identity's existing `identity.RoleAssigned`.
+
+| Action code | Reason required | Description |
+|---|---|---|
+| `accounting.SelfApprovalRefused` | No | A proposer tried to approve their own accounting proposal - a mapping version's activation (`P14-TSK-003`), a period's unlock, close or reopen (`-005`, `-012`), a break's acknowledgement (`-010`), a prior-period adjustment (`-013`), a valuation rate set (`-014`) or a regulatory submission's approval (`-018`) - and was refused `403 accounting.SelfApprovalRefused` before anything was written (`INV-AUD-04`; also each four-eyes row's approver ≠ proposer `CHECK`). The roles' grants are disjoint but their holders need not be, so this binds a person holding both `ACCOUNTANT` and `FINANCIAL_CONTROLLER`. Recorded `FAILED` in a transaction of its own after the act rolled back. The summary names the proposal and the act. |
+
 ### What is emitted, and what is declared not to be
 
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is

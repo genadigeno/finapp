@@ -181,4 +181,15 @@ include("bnpl")
 // implemented in `app` as adapters over its API, and every domain an action reaches is a port `app` implements.
 include("risk")
 
+// The Phase 14 module (P14-TSK-001). `accounting` after every money module and after `risk`, for the structural reason
+// they are: it turns the one journal into reportable, closable, reproducible information and owns NONE of the money
+// (ADR-0113) - its General Ledger is a versioned mapping over the ledger's journal, never a second ledger - so
+// `accounting -> ledger` is deliberately ABSENT, not only `ledger -> accounting`. Its only edges are `platform` and
+// `sharedkernel`; every business module, `risk` and `app` are ABSENT and no cycle backs any of those refusals -
+// AccountingModuleIsolationTest is the only control - and nothing depends on `accounting` but `app`, which implements
+// every port it declares (the journal's reads, the ledger's chart, the posting cutoff, the prior-period adjustment
+// door, the product proofs, the accrual completeness, reconciliation's disclosure, fx's reference rates, the
+// regulatory provider).
+include("accounting")
+
 include("app")
