@@ -1353,6 +1353,111 @@ material losses.
 **Verify:** Close-report content tests.
 **Phase:** 14
 
+*(The Phase 13 → 14 transition, 2026-10-29 — ADR-0113…0118 (`Proposed`), `PHASE_14_PLAN.md` §7: `INV-ACC-01`…`-05`
+keep their words and gain their enforcement in Phase 14 — `-02` by the GL drill-down door (`P14-TSK-007`), `-03` by the
+ledger's posting cutoff at insert (`P14-TSK-004`, the `DB-CONSTRAINT` half), `-04` by report runs (`P14-TSK-008`), `-05`
+by the close run's disclosure check (`P14-TSK-011`, `-016`). The nine entries below were added by the same transition,
+**planned: nothing of them is built until the task that enforces each lands**; every statement is the decided design,
+corrected by the tasks that build it. The catalogue goes 162 → 171.)*
+
+### INV-ACC-06 — The GL is a function of the journal
+**Statement:** Every GL figure is the sum of journal lines whose account's purpose (and owner kind) maps to that GL
+account under the mapping version the period pins; every journal line maps to exactly one GL account under a version;
+every mapping is classification-compatible with the purpose's ledger type; no accounting table holds a balance or a line
+amount except a report run's frozen output.
+**Why:** A second store of balances is a second ledger; it drifts, and the drift is silent until a statement is wrong.
+**Enforce:** `STATIC` (`accounting` has no ledger edge; `AccountingModuleIsolationTest`) + `DOMAIN` (activation refuses a
+non-total or incompatible version through `LedgerChart`).
+**Verify:** `GlReadModelDatabaseTest#everyLineMapsOnce`, the close check `GL_EQUALS_LEDGER` per period and currency
+(`P14-TSK-007`, `-010`); the battery's independent GL oracle (`P14-TST-002`).
+**Phase:** 14
+
+### INV-ACC-07 — A mapping version is immutable, four-eyes, and never retroactive
+**Statement:** A GL mapping version's accounts and rules are immutable from birth; it is activated only by a second holder
+of `ACCOUNTING_MAPPING_APPROVE`; it takes effect from an `OPEN` period only; a period pins exactly one version when it
+locks; every GL figure and report run names the version that produced it.
+**Why:** A mapping applied retroactively changes reports already issued (`INV-ACC-04`).
+**Enforce:** `DB-CONSTRAINT` (content tables `INSERT`-only; `CHECK (approved_by <> proposed_by)`; one `ACTIVE` per
+effective period) + `DOMAIN` (namespace `14` `mapping` serialises activation against a lock's pin).
+**Verify:** `GlMappingDatabaseTest#theProposerCannotApprove`, `#aLockBehindAnActivationPinsOneVersion`,
+`#aClosedPeriodKeepsItsVersion` (`P14-TSK-003`, `-005`).
+**Phase:** 14
+
+### INV-ACC-08 — The posting cutoff and the close never race
+**Statement:** Once a period's lock commits, no journal entry with a posting date in that period commits afterwards: the
+ledger's `BEFORE INSERT` trigger takes namespace `14` shared and refuses `posting_date <= closed_through`; the lock,
+unlock and reopen edges take it exclusive. The cutoff moves only through the ledger's own API, by one period, recorded.
+**Why:** A posting that commits after the trial balance was taken makes the closed period's figures wrong without any
+row saying so.
+**Enforce:** `DB-CONSTRAINT` (the trigger and the advisory lock; the cutoff row `UPDATE` only through the conditional edge;
+the event table `INSERT`-only).
+**Verify:** `PostingCutoffDatabaseTest#tenPostersAndALockLeaveNoEntryAfterTheCut`, `#rawSqlIsRefusedToo` (`P14-TSK-004`).
+**Phase:** 14
+
+### INV-ACC-09 — A period closes only from recorded, complete readiness under four eyes
+**Statement:** A period is `CLOSED` only if it is `LOCKED`, its close run has every check `PASSED` or explicitly
+`DISCLOSED` with a reason, its FINAL trial balance is zero per currency and equal to the ledger, and a second holder of
+`ACCOUNTING_CLOSE_APPROVE` approved the proposal; periods close in order.
+**Why:** A close without evidence is an assertion; a close by one person is a control nobody checked.
+**Enforce:** `DB-CONSTRAINT` (conditional edges; `CHECK (approved_by <> proposed_by)`) + `DOMAIN` (the proposal refuses
+an incomplete run).
+**Verify:** `PeriodCloseDatabaseTest#anIncompleteRunCannotBeProposed`, `#twoApprovalsOneClose`,
+`#theProposerCannotApprove` (`P14-TSK-011`, `-012`).
+**Phase:** 14
+
+### INV-ACC-10 — After close, corrections are prior-period adjustments; a reopen supersedes, never deletes
+**Statement:** An error found in a closed period is corrected by an entry posted in an open period — a prior-period
+adjustment (origin `ACCOUNTING`, reason `PRIOR_PERIOD_ADJUSTMENT`, four-eyes, referencing the corrected period) or the
+owning domain's own correction — never by an entry dated into the closed period. A reopen is four-eyes, only of the
+latest closed period, moves the cutoff back exactly one period, increments the period's revision, and marks its FINAL
+report runs `SUPERSEDED`; nothing is deleted.
+**Why:** Issued figures must stay explainable: what was issued, what changed, by whom and why.
+**Enforce:** `DB-CONSTRAINT` (`INV-ACC-08`'s trigger; report runs immutable; `INSERT`-only events) + `DOMAIN`.
+**Verify:** `PriorPeriodAdjustmentDatabaseTest#postsInTheOpenPeriodReferencingTheClosedOne`,
+`PeriodReopenDatabaseTest#aReopenSupersedesAndDeletesNothing` (`P14-TSK-012`, `-013`).
+**Phase:** 14
+
+### INV-ACC-11 — Translation keeps the original and never alters a line or an executed rate
+**Statement:** Every translated figure carries its original amount and currency, the valuation rate set (source,
+`observed_at`, snapshot id) and its rounding; the set is captured from reference rates, approved four-eyes, immutable and
+pinned by the run; the difference between translated parts and the translated total is an explicit line; no journal line
+is re-valued and no customer execution rate is read for valuation.
+**Why:** Valuation that overwrites originals or borrows execution rates destroys the evidence `INV-FX-05` keeps.
+**Enforce:** `DOMAIN` + `DB-CONSTRAINT` (rate sets `INSERT`-only; four-eyes `CHECK`).
+**Verify:** `TranslationTest#everyCurrencyAtItsScaleWithAnExplicitDifference`, `ValuationRateSetDatabaseTest`
+(`P14-TSK-014`, `-015`); the battery's oracle.
+**Phase:** 14
+
+### INV-ACC-12 — Every entry conforms to a registered rule, and every expected entry exists once
+**Statement:** Every journal entry's posting-key namespace is in the posting rule register and its lines match the
+rule's shape in force at its posting date; every source record a proof expects to post has exactly one entry; every
+discrepancy is an accounting break born once per (period, check, subject), never a silent correction.
+**Why:** An unregistered or malformed posting is an economic event nobody can explain.
+**Enforce:** `STATIC` (`PostingRuleRegisterTest`: every key prefix registered) + `DB-CONSTRAINT` (break uniqueness) +
+`DOMAIN` (the close checks).
+**Verify:** `PostingRuleRegisterTest`, `AccountingBreakDatabaseTest#aPlantedShapeMismatchRaisesOneBreak`,
+`#twoRaisesOneBreak` (`P14-TSK-002`, `-010`).
+**Phase:** 14
+
+### INV-ACC-13 — A regulatory submission comes only from FINAL figures, four-eyes, with lineage
+**Statement:** A submission is drafted only from FINAL report runs of `CLOSED` periods and records each run's id and hash;
+it is approved by a second holder; `SUBMITTED` commits before the provider call and is immutable; it is submitted at most
+once per submission id; a correction is a new submission referencing the original.
+**Why:** A return that cannot be traced to issued figures, or that two people did not see, is not defensible.
+**Enforce:** `DB-CONSTRAINT` (lineage `NOT NULL`; four-eyes `CHECK`; `SUBMITTED` frozen) + `DOMAIN`.
+**Verify:** `RegulatorySubmissionDatabaseTest#aRetriedSubmitSubmitsOnce`, `#onlyFinalRunsFeedADraft` (`P14-TSK-018`).
+**Phase:** 14
+
+### INV-ACC-14 — Reporting never writes
+**Statement:** Report generation, the GL doors and drill-down read in `REPEATABLE READ READ ONLY` transactions; no
+reporting component reaches a ledger writer; `accounting` writes only its own schema, and the journal only through the
+ledger's `ACCOUNTING`-origin adjustment door.
+**Why:** A reporting path that can write is a back door into the authoritative record.
+**Enforce:** `DB-CONSTRAINT` (the read-only transaction refuses writes) + `STATIC` (`ReportingNeverWritesTest`,
+`AccountingModuleIsolationTest`).
+**Verify:** `ReportingNeverWritesTest`, `ReportRunDatabaseTest#aWriteInsideGenerationIsRefused` (`P14-TSK-001`, `-008`).
+**Phase:** 14
+
 ---
 
 # Security and Audit — `INV-AUD`

@@ -536,6 +536,42 @@ recorded, and the monitoring sweep runs from the first deployment and raises no 
 active (`PHASE_13_PLAN.md` §1.1). *(`P13-DOC-001`, 2026-10-27: the sweep's alerts — two facts alert with no policy in
 force: a default's `OBLIGATION_DEFAULTED` (`-025`) and a rescreening's `SCREENING_HIT` (`-022`).)*
 
+**Accounting / General Ledger (25) and Reporting (27)** were bounded by the Phase 13 → 14 transition (ADR-0113,
+`Proposed`, 2026-10-29; `PHASE_14_PLAN.md` §4) — *planned: nothing of it is built; `P14-TSK-001` builds the boundary,
+and each task corrects this paragraph to the code.* Two contexts in **one module, `accounting`** (schema `accounting`,
+Flyway `accounting/V001…`), regulatory reporting inside it behind an adapter (split trigger: regulatory reporting
+acquiring retention or segregation obligations the GL does not share). **The module creates no competing record and
+holds no balance**: every GL figure is a function of the ledger's journal lines × the mapping version the period pins;
+`accounting` depends on `platform` and `sharedkernel` only — no ledger edge — and reaches the journal, the chart, the
+posting cutoff, the prior-period adjustment door, the product proofs, the accrual completeness, reconciliation's
+disclosure and fx's reference rates through ports `app` implements.
+- **Accounting / General Ledger (25)** — *responsibility:* the GL as a versioned mapping over the one journal; accounting
+  periods and their four-eyes close; the posting rule register and GL ↔ ledger ↔ source checks; valuation rate sets;
+  prior-period adjustments. *Owned state:* GL Mapping Version (with its GL Accounts and rules), Accounting Period (with
+  its Period Close, close run and Close Checks), Valuation Rate Set, Accounting Break, Prior-Period Adjustment record,
+  the Posting Rule register. *Not owned:* any balance or line (the ledger's); the Posting Cutoff (the ledger's row, moved
+  by the ledger's API in accounting's lock transaction); the product subledgers and their proofs (lending, bnpl, fx,
+  reconciliation, merchant — read, never re-implemented); reconciliation's breaks and suspense (disclosed, never
+  copied); write-off (lending's and bnpl's event, owner decision C6). *Transaction boundary:* own; the lock, unlock and
+  reopen edges carry the ledger's cutoff edge in the same transaction under namespace `14` (ADR-0114). *Consistency:*
+  strong at the edges (conditional `UPDATE`s, unique births), derived for every figure. *APIs:*
+  `/v1/operator/accounting/…`. *Events:* `AccountingPeriod*`, `GlMappingVersionActivated`, `AccountingBreakRaised`,
+  `PriorPeriodAdjustmentPosted`; consumes none for correctness. *Failure:* a posting dated into a locked period is
+  refused by the ledger; a crashed check is re-claimed by lease. *Security:* `ACCOUNTANT` proposes,
+  `FINANCIAL_CONTROLLER` approves, four-eyes by `CHECK`.
+- **Reporting (27)** — *responsibility:* immutable, reproducible report runs (trial balance, GL activity, statements,
+  revenue, receivables and payables, settlement positions, suspense, FX results, loan portfolio, BNPL exposure,
+  reconciliation and close status) with drill-down to journal lines; regulatory obligations and submissions behind
+  `RegulatoryReportingProvider` (simulated, owner decision C4). *Owned state:* Report Run, Regulatory Obligation,
+  Regulatory Submission. *Not owned:* the operational live reports (lending, bnpl, reconciliation, merchant, risk keep
+  theirs, labelled operational). *Transaction boundary:* claim and completion its own; reads `REPEATABLE READ READ ONLY`
+  (`INV-ACC-14`). *Failure:* a generator's death re-claimed by lease; a provider's unknown answer an inquiry.
+- **Ledger (7)** — gains the Posting Cutoff, an index for period reads and the `ACCOUNTING` adjustment origin; its
+  grants, its single-writer rule and its trial balance are unchanged.
+- **Lending (18)** — its daily accrual floors its posting date at the first open date when the accrual date is locked
+  (C3, `P14-TSK-006`); write-off, if C6 (A), is its four-eyes command.
+- **Reconciliation (14), FX (15), BNPL (19), Merchant (12)** — read through ports; nothing of theirs changes.
+
 1. Party & Customer
 2. Identity, Authentication & Authorization
 3. KYC/KYB

@@ -216,6 +216,25 @@ Repudiation
 Attestation
 Readmission
 
+GL Account
+GL Mapping Version
+Posting Rule
+Posting Cutoff
+Accounting Period
+Period Close
+Close Check
+Trial Balance
+Report Run
+Financial Statement
+Valuation Rate Set
+Functional Currency
+Reporting Currency
+Translation Difference
+Accounting Break
+Prior-Period Adjustment
+Regulatory Obligation
+Regulatory Submission
+
 Important: these names are not automatically aggregates or tables. Determine domain ownership and lifecycle before implementation.
 
 Every term above is defined in [`GLOSSARY.md`](GLOSSARY.md), with an explicit statement of what it
@@ -324,6 +343,17 @@ Screening List Version) (`rescreening_permit_once`), born `PENDING` by the rescr
 activation, claimed `SKIP LOCKED` under a lease, kyc asked under its key, concluded once `DONE` (`CLEARED`, `HIT`,
 `SKIPPED`, `NOT_ONBOARDED`) or `FAILED` at its bound, naming the one signal born of it — risk's record that it asked,
 never a Screening Result, which stays kyc's.)*
+*(The Phase 13 → 14 transition, 2026-10-29 — ADR-0113…0118 (`Proposed`), `PHASE_14_PLAN.md` §4 and §13 — added the
+eighteen Phase 14 terms in an accounting block after Readmission: the GL's structure (GL Account, GL Mapping Version,
+Posting Rule), the period and its enforcement (Accounting Period, Posting Cutoff, Period Close, Close Check), the
+outputs (Trial Balance, Report Run, Financial Statement), the currencies (Functional Currency, Reporting Currency,
+Valuation Rate Set, Translation Difference), the discrepancies and corrections (Accounting Break, Prior-Period
+Adjustment) and the regulatory artefacts (Regulatory Obligation, Regulatory Submission) — each keeping a distinction
+Phase 14 could collapse: a GL account is not a ledger account and holds no balance, a mapping is not the chart, the
+cutoff is the ledger's and not a report filter, a report run is output and never truth, a valuation rate is never an
+executed rate, an accounting break is not a reconciliation break, a prior-period adjustment is not a back-dated
+posting, and a regulatory submission is not Phase 13's Regulatory Report. Nothing of Phase 14 is built: each is the
+planned design, defined in the glossary's §8b with the same guard.)*
 
 ---
 

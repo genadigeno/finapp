@@ -25008,6 +25008,696 @@ after `-019` and `-015`; `-021` after `-016` and `-020`; `-022` after `-005` and
 
 ---
 
+# Phase 14 — Accounting and Financial Reporting
+
+Status: `PLANNED` — initialised as documents only by the Phase 13 → 14 transition (2026-10-29) and elaborated to task
+granularity: twenty-four items (`P14-TSK-001`…`-021`, `P14-TST-001`, `P14-TST-002`, `P14-DOC-001`) across ten milestones,
+with `P14-TSK-001` marked `READY`. The phase reads `READY` in `CURRENT_STATE.md` when the coordinator applies the
+transition after the Phase 13 completion gate (branch `P13-GATE`) passes — this section does not move the current-phase
+pointer. The engineering plan is [`PHASE_14_PLAN.md`](PHASE_14_PLAN.md); decisions are ADR-0113…ADR-0118 (`Proposed`). The
+in-scope invariants are whatever the catalogue marks `Phase: 14` — **fourteen at planning**, `INV-ACC-01`…`-05` (existing)
+and the transition's `INV-ACC-06`…`-14` (the catalogue 162 → 171) — **read from the catalogue at the gate, never from this
+file**, beside `INV-LED-01`…`-06`, `INV-BAL-02`, `-05`, `INV-HIST-01`, `-04`, `INV-REV-01`…`-04`, `INV-REC-02`, `-05`,
+`INV-FX-05`, `INV-IDEM-01`, `INV-AUD-01`…`-04`, `INV-EVT-02`. Until `P14-TSK-001` lands nothing here is implemented; every
+statement is the decided design, corrected by the tasks that build it.
+
+**Phase 14 moves no money and creates no competing record** (`PHASE_14_PLAN.md` §1). The GL is a function of the
+journal; no accounting table holds a balance; `accounting` has no ledger edge. The only journal entries the phase causes
+are prior-period adjustments through the ledger's own `ACCOUNTING`-origin door (`-013`) and, if C6 (A), write-offs posted
+by lending and bnpl on rules already designed (`-021`). So `DOD-FIN` is carried by the tasks that **guard** the journal
+(the cutoff, `-004`; lending's accrual floor, `-006`), **derive** figures from it (`-007`, `-009`, `-015`, `-016`, `-019`),
+**check** it (`-002`, `-010`, `-011`) or **post** through it (`-013`, `-021`); each reads the supplement F1–F8: F1/F2
+balanced entries and conservation — the derived figures equal the ledger's per currency; F3 idempotency at every keyed
+door; F4 compensation by the owning domain's correction or a PPA, never by editing; F5 duplicate delivery harmless (the
+provider's answer, a replayed approval); F6 a counted concurrency test per contended resource — `PHASE_14_PLAN.md` §8.3's
+thirteen rows; F7 no floating point (rates `NUMERIC`, amounts minor units); F8 the reconciliation implication implemented
+or deferred with a named owner. An item a task cannot touch is answered vacuous with its reason.
+
+**The production limitation, recorded up front** (`PHASE_14_PLAN.md` §1.1): the GL chart, statement layout and every
+regulatory form are reference artefacts; the reference jurisdiction is the neutral EUR one (C4); the regulatory adapter
+is simulated; no mapping version is migration-activated — the first is approved four-eyes after deployment; nothing
+claims compliance with an accounting framework or a regulator. Accounting-policy choices (C3, C6, C7, C8) are recorded
+for qualified review.
+
+**Every task below states the gate's fields** — objective, bounded context, dependencies, scope, out of scope, domain
+changes, persistence, APIs, events, policy/model versioning, financial impact, invariants, distributed-system concerns
+(the ten-instance question answered), idempotency, consistency, atomicity, failure handling, security, audit,
+observability, reconciliation implications, tests, probe, acceptance criteria and definition of done, with risk and
+complexity at its end — Phase 13's labels, kept. **Policy/model versioning** here means the GL mapping version a period
+pins, the posting rule register's catalogue version, the report definition versions and the valuation rate set a run
+pins. **Probe** is the deliberate break the completion gate performs and must see caught, restored byte-identical with its
+`MUTATION_TESTING.md` §2 row. A task's design may correct its entry and says so. The ten-instance answer is `PASS` only on
+the counted tests named. Every date judged on the database clock read after the row lock. **Accounting rows are taken in
+the Phase 14 lock order** (`PHASE_14_PLAN.md` §8.2): period rows → namespace `14` → the ledger's cutoff row → accounting
+child rows; postings take only namespace `14` shared, at their entry insert. **No register row is pre-filled beyond
+`DISTRIBUTED_EXECUTION.md`'s planned rows**: each task catalogues its audit acts (`AUDITABLE_ACTIONS.md`), errors
+(`ERROR_CONTRACT.md`) and columns (`DATA_CLASSIFICATION.md` — report content and drill-down aggregates `CONFIDENTIAL`;
+no customer name or instrument in any accounting row).
+
+**Testing under C5** (`PHASE_14_PLAN.md` §14.1): per task the hermetic tier of the touched modules, the task's `app` tests
+by filter and the guard suites by name; the task's database suites written and owed a first run; the fleet
+`databaseTest`/`kafkaTest` skipped — a criterion-7 deviation recorded in every gate; every dependency-free task of a wave in
+parallel. One owner-authorised database pass before `P14-DOC-001`. Every migration test asserts constraint-name
+uniqueness per table.
+
+**Migration numbers are assigned in landing order** (next free re-verified at the transition): accounting `V001` (`-001`),
+identity `V024` (`-001`); ledger `V028` (`-004`), accounting `V002` (`-003`); accounting `V003` (`-005`); ledger `V029`
+(`-007`), accounting `V004` (`-008`), `V005` (`-014`); `V006` (`-010`); `V007` (`-011`); `V008` (`-012`); ledger `V030` and
+accounting `V009` (`-013`); lending `V032`/bnpl `V020` (`-021`, if C6 A); accounting `V010` (`-018`). Where two land in one
+wave, the board orders them; a lower number never lands after a higher (Flyway out-of-order off). Advisory namespace
+**`14`** is reserved (keys `cutoff`, `mapping`). `LEASE_PROTECTED_SCHEDULERS` 31 → 32 (`AccountingCloseSchedule`, `-011`).
+
+**Milestones** (acceptance in `PHASE_14_PLAN.md` §17): M14.1 Foundations (`-001`…`-003`) · M14.2 Periods and cutoff
+(`-004`…`-006`) · M14.3 GL and trial balance (`-007`…`-009`) · M14.4 Reconciliation and close (`-010`…`-013`) · M14.5
+Multi-currency (`-014`, `-015`) · M14.6 Financial reporting (`-016`, `-017`) · M14.7 Regulatory reporting (`-018`, `-019`) ·
+M14.8 Operations (`-020`) · M14.9 Write-off — optional, C6 (`-021`) · M14.10 Exit (`P14-TST-002`, `P14-TST-001`
+`POSTPONED`, `P14-DOC-001`).
+
+**If the phase must shrink**, cut `-021` first, then `-019`, then `-017`'s portfolio and exposure re-statements; each
+deferral recorded with its owner. **Never cut:** the cutoff (`-004`), four-eyes close (`-012`), report reproducibility
+(`-008`), conformance and breaks (`-010`), the battery.
+
+**Parallel waves** (`PHASE_14_PLAN.md` §18): **A** `-001`; **B** `-002`, `-003`, `-004`; **C** `-005`, `-006`;
+**D** `-007`, `-008`, `-014`; **E** `-009`, `-010`; **F** `-011`, `-015`; **G** `-012`, `-017`; **H** `-013`, `-021`; **I** `-016`;
+**J** `-018`; **K** `-019`, `-020`; **L** `P14-TST-002`, then `P14-DOC-001` (`P14-TST-001` `POSTPONED`, PI-004).
+
+**What Phase 14 must not implement** (`PHASE_14_PLAN.md` §21): a second ledger or a stored balance; a write to a ledger
+table from `accounting`; a posting treatment the owner has not ratified (revaluation postings, provisioning/ECL, EIR
+amortisation, closing entries); an automatic write-off policy; a real regulator, filing channel or statutory chart; a
+customer- or merchant-facing accounting surface; a cache or projection as a reported figure's source; Phase 15's separate
+reporting role; a service outside the monolith. A reviewer finding any of it refuses the change.
+
+**The owner decisions** (2026-10-29, C1–C13, `PHASE_14_PLAN.md` §2.2 — **recommended defaults awaiting ratification**; the
+first task depends on none): **C1** EUR functional = reporting currency; **C2** a reference GL chart as versioned data
+mapped by ledger purpose (+ owner kind), `gl_code` unwritten; **C3** the ledger refuses a posting dated into a locked
+period, lending's accrual floors its posting date at the first open date keeping the value date, close readiness requires
+accruals caught up; **C4** a simulated reference regulatory format, no obligation claimed; **C5** the standing criterion-7
+deviation, one database pass at the exit, the storm postponed; **C6** write-off as a four-eyes command on rule 14 / F11
+with the capital-headroom fix, cut candidate; provisioning and EIR deferred and disclosed; **C7** translation at report
+time, no revaluation posted; **C8** no closing entries; **C9** calendar-month periods, a lock grace (default 2 business
+days); **C10** read-only transactions + no ledger edge + static guard, a separate role in Phase 15; **C11** accounting-owned
+breaks in reconciliation's shape; **C12** `ACCOUNTANT` / `FINANCIAL_CONTROLLER` / `REGULATORY_REPORTER`, eleven
+permissions, four-eyes by `CHECK`; **C13** the reference safeguarding return in Phase 14, cut candidate.
+
+**The twelve mandatory scenarios** (`PHASE_14_PLAN.md` §14.2) are named tests in the tasks below: rule correctness
+(`-002`, `-010`), balance (`-009`), duplicates (`-008`, `-010`, `-013`, `-018`), source-to-GL (`-010`), conversion and
+rounding (`-015`), accruals (`-006`), cutoff (`-004`), concurrent posting vs close (`-011`), replay and recovery (`-008`,
+`-011`), report consistency (`-008`, `-012`), access and approval (`-001`, `-003`, `-012`, `-013`, `-018`), lineage (`-007`,
+`-018`).
+
+**Dependency graph** (critical path in bold): **`-001` → `-003` → `-005` → `-007` → `-009` → `-011` → `-012` → `-013` →
+`-016` → `-018` → `-020` → `TST-002` → `DOC-001`**; `-002` and `-004` after `-001`; `-005` after `-003` and `-004`; `-006`
+after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-009` after `-007` and `-008`; `-010` after
+`-002` and `-007`; `-011` after `-006`, `-009` and `-010`; `-014` after `-005`; `-015` after `-009` and `-014`; `-016` after
+`-013` and `-015`; `-017` after `-008` and `-015`; `-019` after `-018`; `-020` after `-012`, `-017` and `-018`; `-021` after
+`-002` and `-007`; `TST-002` after `-009`, `-015`, `-016`; `DOC-001` after every item but `TST-001`.
+
+**P14-TSK-001 — The `accounting` module boundary, floors, vocabularies and roles** — `READY` (2026-10-29; marked by the Phase 13 → 14 transition)
+- **Objective**: make `accounting` a build-graph fact with a privilege floor, its closed vocabularies, its ports declared
+  and empty, its guards armed and the three roles with their eleven permissions — before any table or figure.
+- **Bounded context**: Accounting / General Ledger (25) and Reporting (27) — one module (ADR-0113).
+- **Dependencies**: Phase 13 `COMPLETE` (its completion gate, branch `P13-GATE`).
+- **Scope**: `settings.gradle.kts` include and build file from the sibling templates; `accounting V001` (`CREATE SCHEMA`,
+  `REVOKE ALL FROM PUBLIC`, usage to the application role, no table); the vocabularies `GlClassification`,
+  `StatementSection`, `PeriodStatus`, `CloseCheckCode`, `ReportKind`, `RunStatus`, `BreakType`, `BreakStatus`,
+  `DatingClass`, `SubmissionStatus`; the ports `JournalReads`, `LedgerChart`, `PostingCutoff`, `PriorPeriodPostings`,
+  `SourceProofs`, `AccrualCompleteness`, `ReconciliationDisclosure`, `ValuationRates`, `RegulatoryReportingProvider`
+  (interfaces only); `AccountingAuditAction`, `AccountingErrorCode` with register rows; identity `V024` admitting
+  `ACCOUNTANT`, `FINANCIAL_CONTROLLER`, `REGULATORY_REPORTER` and the eleven permissions (`PHASE_14_PLAN.md` §12);
+  `AccountingModuleIsolationTest` (edges to `platform` and `sharedkernel` only; every business module and `app` refused;
+  every sibling's isolation test refusing `accounting`); `NoCustomerSurfaceReadsAccountingTest`; `ReportingNeverWritesTest`
+  (armed over an empty package); `AccountingFlowScope`; the `finapp.accounting.sweeper.enabled` property name reserved.
+- **Out of scope**: every table beyond the schema; every port implementation, bean, route, event and schedule.
+- **Domain changes**: the vocabularies and port interfaces; `package-info`.
+- **Persistence**: accounting `V001`; identity `V024`.
+- **APIs**: none. **Events**: none.
+- **Policy/model versioning**: none yet.
+- **Financial impact**: none; the isolation and surface guards bind from the first table.
+- **Invariants**: `INV-ACC-06` (no ledger edge, static half), `INV-ACC-14` (static half), `INV-AUD-03`/`-04` (disjoint
+  grants), `INV-MON-01` (no floating point in `accounting`).
+- **Distributed-system concerns**: none — no state, no writer. `PASS` vacuously, recorded.
+- **Idempotency / Consistency / Atomicity**: N/A — no command, no state, no transaction.
+- **Failure handling**: a misconfigured vocabulary fails the build or startup.
+- **Security**: least privilege; no role holds a propose and an approve of the same act (`RolePermissionPartitionTest`
+  extended).
+- **Audit**: none raised; `AccountingAuditAction` declared.
+- **Observability**: `AccountingFlowScope`; the gauge name reserved.
+- **Reconciliation implications**: none.
+- **Tests**: the three guards with planted violations refused; identity `V024`'s migration test (permissions, roles, no
+  overlap); `NoFloatingPointMoneyRulesTest` covering `accounting`.
+- **Probe**: add an import of `com.finapp.ledger` in `accounting` → `AccountingModuleIsolationTest` red; grant
+  `ACCOUNTING_CLOSE_APPROVE` to `ACCOUNTANT` → the partition test red.
+- **Acceptance criteria**: the module builds and is isolated; nothing but `app` depends on it; every vocabulary and port
+  declared; the roles admitted; the guards green and their probes caught.
+- **Definition of done**: `DOD-ARCH`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
+
+**P14-TSK-002 — The posting rule register, as built** — `PLANNED`
+- **Objective**: one register of every posting namespace the platform writes, read from the code, so every entry can be
+  checked against its rule (ADR-0117).
+- **Bounded context**: Accounting / GL; reads every posting module.
+- **Dependencies**: `-001`.
+- **Scope**: `PostingRuleRegister` in `accounting` (pure data; purposes as strings): per namespace — source module, economic
+  event, authoritative reference, rule id and version with `effective_from`, line shape (purpose, direction,
+  required/optional), dating class (`TODAY_CLOCK`, `TODAY_DATABASE`, `STORED_ROW`, `ECONOMIC_DATE`); every
+  `new PostingCommand(` / `ReversalCommand` / owned-adjustment site read (≈ 35 sites, eleven modules), the table of
+  `PHASE_14_PLAN.md` §13.2 corrected by erratum; `PostingRuleRegisterTest` in `app` — every key prefix literal in source
+  modules registered, every registered purpose an `AccountPurpose`, every `ECONOMIC_DATE` poster named (today: lending's
+  accrual, `LoanServicing`).
+- **Out of scope**: the runtime conformance check (`-010`); any change to a poster.
+- **Domain changes**: the register. **Persistence**: none. **APIs**: `GET /v1/operator/accounting/posting-rules` (read).
+  **Events**: none.
+- **Policy/model versioning**: the register's catalogue version constant.
+- **Financial impact**: none — descriptive; it invents no treatment.
+- **Invariants**: `INV-ACC-12` (static half), `INV-LED-05`.
+- **Distributed-system concerns**: none — code data. `PASS` vacuously.
+- **Idempotency / Consistency / Atomicity**: N/A.
+- **Failure handling**: an unregistered prefix fails the build.
+- **Security**: the read under `ACCOUNTING_READ`. **Audit**: the read is an audited operator read.
+- **Observability**: none. **Reconciliation implications**: the basis of `-010`'s conformance.
+- **Tests**: `PostingRuleRegisterTest` (planted unregistered prefix, planted unknown purpose); a hermetic test per rule
+  family asserting the shape against the documented catalogue.
+- **Probe**: remove the `transfer:` entry → red.
+- **Acceptance criteria**: every posting site registered with its dating class; the back-dating posters listed.
+- **Definition of done**: `DOD-FIN`, `DOD-ARCH`. **Risk**: Medium (completeness). **Cx**: M.
+
+**P14-TSK-003 — The GL chart and mapping as versioned data, four-eyes** — `PLANNED`
+- **Objective**: GL accounts and the purpose → GL account mapping as an immutable, four-eyes-activated version, total and
+  classification-compatible (ADR-0113, `INV-ACC-07`).
+- **Bounded context**: Accounting / GL.
+- **Dependencies**: `-001`.
+- **Scope**: accounting `V002` (`gl_mapping_version`, `gl_account`, `gl_mapping_rule`, history); `GlMappingAdministration`
+  (propose, activate, reject) with namespace `14` key `mapping`; `LedgerChart` implemented in `app` (purposes, types, owner
+  kinds, counterparties — `SELECT` only); activation refusing a non-total or incompatible version; a test-only reference
+  version fixture (C2); `effective_from_period` checked when periods exist (`-005` re-reads it).
+- **Out of scope**: periods; GL figures.
+- **Domain changes**: `GlMappingVersion`, `GlAccount`, `MappingRule`. **Persistence**: accounting `V002`.
+- **APIs**: `POST /v1/operator/accounting/mapping-versions`, `…/{id}/activation`, `…/{id}/rejection`, `GET` and a diff.
+- **Events**: `accounting.GlMappingVersionActivated`.
+- **Policy/model versioning**: the mapping version itself; no production version migration-activated.
+- **Financial impact**: none on balances; decides how every figure is classified.
+- **Invariants**: `INV-ACC-06` (totality, compatibility), `INV-ACC-07`, `INV-AUD-04`.
+- **Distributed-system concerns**: two activations racing → one `ACTIVE` (namespace `14` + conditional edge), counted.
+- **Idempotency**: proposals keyed; a replayed activation answers the recorded outcome.
+- **Consistency**: content `INSERT`-only. **Atomicity**: activation + history in one transaction.
+- **Failure handling**: a purpose added to the ledger later makes the active version non-total → `MAPPING_GAP` at close
+  (`-010`) and `AccountingMappingGap`; a new version is required.
+- **Security**: propose `ACCOUNTING_MAPPING_PROPOSE`, approve `ACCOUNTING_MAPPING_APPROVE`, approver ≠ proposer `CHECK`.
+- **Audit**: `accounting.MappingProposed`, `…Activated`, `…Rejected`.
+- **Observability**: `finapp.accounting.gl.unmapped` registered at zero.
+- **Reconciliation implications**: totality is the first half of GL = ledger.
+- **Tests**: `GlMappingDatabaseTest#theProposerCannotApprove`, `#tenActivationsOneActive`, `#aNonTotalVersionIsRefused`,
+  `#anIncompatibleClassificationIsRefused`; hermetic validation tests.
+- **Probe**: drop the compatibility check → `#anIncompatibleClassificationIsRefused` red.
+- **Acceptance criteria**: a version covering all 40 purposes activates under four eyes; an incomplete one never does.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P14-TSK-004 — The ledger posting cutoff** — `PLANNED`
+- **Objective**: the ledger refuses, at insert and serialised with the cutoff's movement, every entry dated on or before
+  the cutoff (ADR-0114, `INV-ACC-03`, `-08`).
+- **Bounded context**: Ledger (7), for Accounting.
+- **Dependencies**: `-001` (the `PostingCutoff` port).
+- **Scope**: ledger `V028` (`posting_cutoff` one row, `closed_through` nullable until the first lock; `posting_cutoff_event`
+  `INSERT`-only; the `BEFORE INSERT` trigger on `journal_entry`: `pg_advisory_xact_lock_shared(14, cutoff)`, read, refuse);
+  `PostingCutoffs` in `ledger` (advance one period, move back one period — exclusive lock, conditional `UPDATE`, event);
+  `ledger.PeriodClosed` mapped from the SQLSTATE in `PostingService`/`ReversalService`/`AdjustmentService`; `app`'s
+  `LedgerPostingCutoff` implementing accounting's port; namespace `14` registered from the code.
+- **Out of scope**: periods and their machine (`-005`); any producer change (`-006`).
+- **Domain changes**: `PostingCutoffs`, `PeriodClosedException`. **Persistence**: ledger `V028`.
+- **APIs**: none public. **Events**: none (the period's events are accounting's).
+- **Policy/model versioning**: none.
+- **Financial impact**: a guard on every posting; no balance changes.
+- **Invariants**: `INV-ACC-03`, `INV-ACC-08`, `INV-LED-03`.
+- **Distributed-system concerns**: ten posters vs a cutoff advance — none dated in the period commits after the cut;
+  `PASS` on `PostingCutoffDatabaseTest#tenPostersAndALockLeaveNoEntryAfterTheCut` (contention row 1).
+- **Idempotency**: a replayed advance to the same date answers unchanged; a posting replay of an existing key reads, never
+  inserts, so it is never refused.
+- **Consistency**: the cutoff row moves only by one period, forward or back. **Atomicity**: cutoff + event in the caller's
+  transaction.
+- **Failure handling**: the advance under `lock_timeout`, retried; a refused posting rolls back its caller's transaction
+  with a typed error.
+- **Security**: the cutoff's statements are the ledger's; `UPDATE` on the row only through its conditional edge.
+- **Audit**: the event row carries actor, correlation and reason (from accounting's act).
+- **Observability**: `finapp.accounting.cutoff.refused{module}` (the refusal counted by the posting service).
+- **Reconciliation implications**: makes a locked period's posting-date range immutable — the basis of FINAL runs.
+- **Tests**: `PostingCutoffDatabaseTest#tenPostersAndALockLeaveNoEntryAfterTheCut`, `#rawSqlIsRefusedToo`,
+  `#aReplayIsNeverRefused`, `#theCutoffMovesOnePeriodOnly`; `LedgerCutoffMigrationTest` (namespace `14` pinned, constraint
+  names unique).
+- **Probe**: drop the shared lock from the trigger → the race test red.
+- **Acceptance criteria**: under ten concurrent posters no entry dated in the period commits after the cut; raw SQL refused.
+- **Definition of done**: `DOD-FIN`, `DOD-DOMAIN`. **Risk**: High (every posting crosses it). **Cx**: M.
+
+**P14-TSK-005 — Accounting periods: open, lock, unlock** — `PLANNED`
+- **Objective**: calendar-month periods with their machine; the lock moves the ledger cutoff and pins the mapping version
+  in one transaction (ADR-0114).
+- **Bounded context**: Accounting / GL.
+- **Dependencies**: `-003`, `-004`.
+- **Scope**: accounting `V003` (`accounting_period`, `period_event`); `AccountingPeriods` (open next — insert-if-absent;
+  lock — grace (C9), previous `CLOSED`, T-lock; unlock proposal/approval — four-eyes, cutoff moved back); the
+  open-period read the other tasks use.
+- **Out of scope**: the close run, close, reopen (`-011`, `-012`).
+- **Domain changes**: `AccountingPeriod`, its machine. **Persistence**: accounting `V003`.
+- **APIs**: `GET /v1/operator/accounting/periods`, `POST …/{id}/lock`, `…/unlock-proposal`, `…/unlock-approval`.
+- **Events**: `AccountingPeriodOpened`, `AccountingPeriodLocked`.
+- **Policy/model versioning**: the period pins the active mapping version at lock.
+- **Financial impact**: from the lock no entry dated in the period commits.
+- **Invariants**: `INV-ACC-03`, `-07`, `-08`.
+- **Distributed-system concerns**: two locks → one edge (row 2); a lock behind an activation pins one version (row 8).
+- **Idempotency**: keyed lock and unlock acts; a replay reads the edge. **Consistency**: conditional edges; one period per
+  month. **Atomicity**: period edge + cutoff + pin + event + outbox in one transaction.
+- **Failure handling**: a lock that times out behind a posting retries; the response lost after commit answers `LOCKED`.
+- **Security**: lock `ACCOUNTING_CLOSE_PROPOSE`; unlock four-eyes. **Audit**: every edge.
+- **Observability**: `finapp.accounting.period.open.age`.
+- **Reconciliation implications**: none directly.
+- **Tests**: `AccountingPeriodDatabaseTest#twoLocksOneEdge`, `#aLockBeforeTheGraceIsRefused`, `#locksInOrder`,
+  `#anUnlockMovesTheCutoffBack`; `GlMappingDatabaseTest#aLockBehindAnActivationPinsOneVersion`.
+- **Probe**: lock without the cutoff call → `#aLockStopsPostingsDatedInThePeriod` red.
+- **Acceptance criteria**: the machine as `PHASE_14_PLAN.md` §6; every edge conditional, evented and audited.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P14-TSK-006 — Back-dating posters made cutoff-safe (lending's accrual)** — `PLANNED`
+- **Objective**: the one `ECONOMIC_DATE` poster never fails forever against a locked period (C3).
+- **Bounded context**: Lending (18), for Accounting.
+- **Dependencies**: `-002` (the list), `-004`.
+- **Scope**: `LoanServicing`'s accrual posting date becomes `max(accrual date, first open date)` read through the ledger's
+  `PostingCutoffs` after the loan's lock, value date the accrual date unchanged; the accrual row records the posting date
+  used; every other poster the register classes `ECONOMIC_DATE` treated the same or recorded as never back-dating;
+  `AccrualCompleteness` implemented in `app` (lending's and bnpl's accrued-through date per currency).
+- **Out of scope**: bnpl's accrual (already posts today, value date the accrual date — `BnplAccruals`); any interest
+  arithmetic.
+- **Domain changes**: the dating rule. **Persistence**: none (the posting date is the journal's). **APIs/Events**: none.
+- **Policy/model versioning**: the register entry `lending.accrual:` gains version 2 (`effective_from` the change).
+- **Financial impact**: the same amounts; a catch-up across a lock lands in the open period.
+- **Invariants**: `INV-LND-02` (once per account and date, unchanged), `INV-ACC-03`, `-08`.
+- **Distributed-system concerns**: a catch-up racing a lock (row 11); `PASS` on
+  `LoanAccrualCutoffDatabaseTest#aCatchUpAcrossALockPostsInTheOpenPeriod`.
+- **Idempotency**: `UNIQUE (loan_id, accrual_date)` and the key, unchanged. **Consistency / Atomicity**: the row and entry
+  in one transaction, unchanged.
+- **Failure handling**: none new.
+- **Security / Audit**: unchanged.
+- **Observability**: the accrual lag gauge (existing) read by the close.
+- **Reconciliation implications**: `LoanSubledgerProof` unchanged (by value date).
+- **Tests**: the race test; `#aTimelyAccrualKeepsItsDate`; the lending replay proof green.
+- **Probe**: remove the floor → the race test sees `ledger.PeriodClosed`.
+- **Acceptance criteria**: no accrual refused after a lock; value dates unchanged.
+- **Definition of done**: `DOD-FIN`. **Risk**: Medium. **Cx**: S.
+
+**P14-TSK-007 — The GL read model and drill-down** — `PLANNED`
+- **Objective**: GL balances and activity by period, account and currency, computed from journal lines under the pinned
+  version, each figure drilling to its lines (`INV-ACC-02`, `-06`).
+- **Bounded context**: Accounting / GL.
+- **Dependencies**: `-003`, `-005`.
+- **Scope**: `JournalReads` in `app` (aggregates by purpose, owner kind, counterparty, currency, direction over a
+  posting-date range; paged lines of a figure; the GL view of one entry), `REPEATABLE READ READ ONLY`; ledger `V029`
+  (index `journal_entry (posting_date, id)`); `GeneralLedger` folding aggregates through a version.
+- **Out of scope**: stored runs (`-008`); translation (`-015`).
+- **Domain changes**: `GlFigure`, `GlActivity`. **Persistence**: ledger `V029` only.
+- **APIs**: `GET /v1/operator/accounting/gl/balances`, `…/gl/accounts/{code}/activity`, `…/gl/entries/{id}`.
+- **Events**: none. **Policy/model versioning**: every figure names its mapping version.
+- **Financial impact**: none — read only.
+- **Invariants**: `INV-ACC-02`, `-06`, `-14`.
+- **Distributed-system concerns**: read only; `PASS` vacuously.
+- **Idempotency / Consistency / Atomicity**: reads in one snapshot.
+- **Failure handling**: no active version → `accounting.NoActiveMapping`.
+- **Security**: `ACCOUNTING_READ`; audited reads; drill-down lines carry owner refs, never names.
+- **Audit**: `accounting.GlRead`. **Observability**: `finapp.accounting.gl.unmapped`.
+- **Reconciliation implications**: the GL side of GL = ledger.
+- **Tests**: `GlReadModelDatabaseTest#everyLineMapsOnce`, `#aFigureDrillsToItsLines`, `#glEqualsLedgerPerCurrency`.
+- **Probe**: double-count a purpose → `#glEqualsLedgerPerCurrency` red.
+- **Acceptance criteria**: every figure equals the sum of its drill-down lines; GL = ledger per currency.
+- **Definition of done**: `DOD-FIN`, `DOD-API`. **Risk**: Medium (query cost). **Cx**: M.
+
+**P14-TSK-008 — Report runs: immutable, reproducible** — `PLANNED`
+- **Objective**: the report-run machinery every report uses (ADR-0115, `INV-ACC-04`).
+- **Bounded context**: Reporting (27).
+- **Dependencies**: `-005`.
+- **Scope**: accounting `V004` (`report_run`, content `jsonb`, `content_sha256`, inputs, freeze trigger); `ReportRuns`
+  (claim insert-or-read, generate read-only on a separate connection, complete by conditional edge; PROVISIONAL vs FINAL;
+  regeneration compare); the lease and the orphan-completion leg (added to `AccountingCloseSchedule` by `-011`); a
+  canonical JSON writer (sorted keys, minor units as strings) so the hash is stable across JVMs.
+- **Out of scope**: the definitions' content (`-009`, `-016`, `-017`).
+- **Domain changes**: `ReportRun`, `ReportDefinition`. **Persistence**: accounting `V004`.
+- **APIs**: `POST /v1/operator/accounting/report-runs` (keyed), `GET …/{id}`, `POST …/{id}/regeneration`.
+- **Events**: `ReportRunCompleted`. **Policy/model versioning**: definition version, mapping version, rate set pinned.
+- **Financial impact**: none.
+- **Invariants**: `INV-ACC-04`, `-14`.
+- **Distributed-system concerns**: two generators → one run (row 7); a dead generator reclaimed (lease).
+- **Idempotency**: the run key; a replayed request returns the run. **Consistency**: content frozen. **Atomicity**: content
+  and hash in one commit.
+- **Failure handling**: a generation failure `FAILED`, a new revision allowed; never a half run.
+- **Security**: `ACCOUNTING_REPORT_GENERATE`; reads audited; content `CONFIDENTIAL`.
+- **Audit**: `accounting.ReportGenerated`, `…Regenerated`. **Observability**: `report.run`, `report.diverged`.
+- **Reconciliation implications**: none directly.
+- **Tests**: `ReportRunDatabaseTest#twoGeneratorsOneRun`, `#aWriteInsideGenerationIsRefused`,
+  `#regenerationIsIdentical`, `#aDeadGeneratorIsReclaimed`, `#contentIsFrozen`.
+- **Probe**: drop the freeze trigger → `#contentIsFrozen` red.
+- **Acceptance criteria**: FINAL runs regenerate `IDENTICAL`; no write possible during generation.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-API`. **Risk**: Medium. **Cx**: M.
+
+**P14-TSK-009 — The period trial balance** — `PLANNED`
+- **Objective**: per GL account × currency opening, debits, credits, closing for a period; zero per currency; equal to the
+  ledger.
+- **Bounded context**: Reporting / Accounting.
+- **Dependencies**: `-007`, `-008`.
+- **Scope**: the `TRIAL_BALANCE` definition; the FINAL run at lock (triggered by the close run, `-011`); the comparison to
+  `TrialBalance.sweep`-shaped per-currency totals over the same range.
+- **Out of scope**: translation (`-015`).
+- **Domain changes**: the definition. **Persistence**: none. **APIs**: via report runs. **Events**: `ReportRunCompleted`
+  (kind `TRIAL_BALANCE`).
+- **Policy/model versioning**: the definition version.
+- **Financial impact**: none.
+- **Invariants**: `INV-ACC-01` (reported), `-04`, `-06`.
+- **Distributed-system concerns**: as `-008`.
+- **Idempotency / Consistency / Atomicity**: as `-008`.
+- **Failure handling**: a non-zero currency fails the close check; never corrected.
+- **Security / Audit**: as `-008`. **Observability**: none new.
+- **Reconciliation implications**: the close's first check.
+- **Tests**: `TrialBalanceRunDatabaseTest#zeroPerCurrency`, `#equalsTheLedger`, `#openingIsThePreviousClosing`; a
+  hermetic oracle over generated journals.
+- **Probe**: drop the opening fold → `#openingIsThePreviousClosing` red.
+- **Acceptance criteria**: every locked period has a FINAL trial balance zero per currency and equal to the ledger.
+- **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Low. **Cx**: S.
+
+**P14-TSK-010 — Rule conformance, source completeness and accounting breaks** — `PLANNED`
+- **Objective**: detect every GL-side discrepancy and record it once, never correct it (ADR-0117, `INV-ACC-12`).
+- **Bounded context**: Accounting / GL; reads reconciliation's proofs and the product proofs.
+- **Dependencies**: `-002`, `-007`.
+- **Scope**: accounting `V006` (`accounting_break`, case-file events); the checks GL = ledger (mapping gap, double
+  mapping), rule conformance (unregistered namespace, shape mismatch, unbalanced), source completeness (`SourceProofs` in
+  `app` over `LoanSubledgerProof`, `LoanReplayProof`, `LendingCapitalProof`, `BnplSubledgerProof`, `BnplThreeWayProof`,
+  `FxBooksProof`, `PositionProof`, the merchant payable drill-down, `ProjectionVerification`); break acknowledgement
+  four-eyes with a disclosure; resolution by reference to a correcting entry.
+- **Out of scope**: any correction; reconciliation's own breaks (disclosed by `-011`).
+- **Domain changes**: `AccountingBreak` and its machine. **Persistence**: accounting `V006`.
+- **APIs**: `GET /v1/operator/accounting/breaks`, `POST …/{id}/acknowledgement-proposal`, `…/acknowledgement-approval`,
+  `…/resolution`.
+- **Events**: `AccountingBreakRaised`. **Policy/model versioning**: the register version each check judged by.
+- **Financial impact**: detective only.
+- **Invariants**: `INV-ACC-05`, `-12`, `INV-REC-02`.
+- **Distributed-system concerns**: two raisers → one break (row 10).
+- **Idempotency**: the break's unique key. **Consistency**: `INSERT`-only events. **Atomicity**: break + event + outbox.
+- **Failure handling**: a proof unavailable → the check `FAILED`, never assumed passing.
+- **Security**: acknowledgement four-eyes (`ACCOUNTING_ADJUST_PROPOSE`/`_APPROVE`).
+- **Audit**: raise, acknowledge, resolve. **Observability**: `finapp.accounting.break.open{type}`.
+- **Reconciliation implications**: the GL ↔ ledger ↔ source reconciliation itself.
+- **Tests**: `AccountingBreakDatabaseTest#twoRaisesOneBreak`, `#aPlantedShapeMismatchRaisesOneBreak`,
+  `#anUnregisteredNamespaceRaisesOneBreak`, `#aSourceDiscrepancyRaisesOneBreak`, `#theProposerCannotAcknowledge`.
+- **Probe**: skip the shape comparison → the planted mismatch passes, red.
+- **Acceptance criteria**: every planted discrepancy class raises exactly one break; nothing posts.
+- **Definition of done**: `DOD-FIN`, `DOD-DOMAIN`. **Risk**: Medium. **Cx**: L.
+
+**P14-TSK-011 — The close run and its readiness checks** — `PLANNED`
+- **Objective**: a resumable, leaderless run of recorded checks per locked period (`INV-ACC-09`, `PHASE_14_PLAN.md` §13.5).
+- **Bounded context**: Accounting / GL.
+- **Dependencies**: `-006`, `-009`, `-010`.
+- **Scope**: accounting `V007` (`close_run`, `close_check` attempts); `AccountingCloseSchedule` (open-next leg from `-005`,
+  check leg, orphaned-run leg), `LEASE_PROTECTED_SCHEDULERS` 31 → 32; the nine checks; `ReconciliationDisclosure` in `app`
+  (open breaks, suspense balance and ageing as of the cutoff); `AccrualCompleteness` read.
+- **Out of scope**: proposal and approval (`-012`).
+- **Domain changes**: `CloseRun`, `CloseCheck`. **Persistence**: accounting `V007`.
+- **APIs**: `GET /v1/operator/accounting/periods/{id}/close-run`, `POST …/checks/{code}/rerun`.
+- **Events**: none (the period's events carry the close).
+- **Policy/model versioning**: each attempt records the versions it read.
+- **Financial impact**: none.
+- **Invariants**: `INV-ACC-05`, `-09`.
+- **Distributed-system concerns**: ten workers → one attempt (row 5); a dead worker reclaimed (row 6); postings vs the run
+  (scenario 8) — none dated in the period.
+- **Idempotency**: attempt rows unique; a re-run is a new attempt. **Consistency**: conditional outcomes.
+  **Atomicity**: one check per transaction.
+- **Failure handling**: a crashed worker's lease expires; a source unavailable is `FAILED`.
+- **Security**: re-run `ACCOUNTING_CLOSE_PROPOSE`. **Audit**: re-runs.
+- **Observability**: `close.check{check,outcome}`, `close.duration`, `sweeper.enabled`.
+- **Reconciliation implications**: `RECONCILIATION_DISCLOSURE` is `INV-ACC-05`'s evidence.
+- **Tests**: `CloseRunDatabaseTest#tenWorkersOneAttempt`, `#aDeadWorkersCheckIsReclaimed`, `#postingsDuringTheRunChangeNothing`,
+  `#aMissingAccrualBlocks`, `#suspenseIsDisclosed`.
+- **Probe**: claim without `SKIP LOCKED` → `#tenWorkersOneAttempt` red (double attempts).
+- **Acceptance criteria**: every check recorded with evidence; resumable after a kill.
+- **Definition of done**: `DOD-FIN`, `DOD-DOMAIN`. **Risk**: Medium. **Cx**: L.
+
+**P14-TSK-012 — Four-eyes close, rejection and reopen** — `PLANNED`
+- **Objective**: close only from a complete run under four eyes; reopen supersedes, never deletes (`INV-ACC-09`, `-10`).
+- **Bounded context**: Accounting / GL.
+- **Dependencies**: `-011`.
+- **Scope**: accounting `V008` (close and reopen proposal rows, four-eyes `CHECK`s); close proposal / approval / rejection;
+  reopen proposal / approval (latest closed only, next period not locked, cutoff back one period, `revision + 1`, FINAL runs
+  `SUPERSEDED`).
+- **Out of scope**: prior-period adjustments (`-013`).
+- **Domain changes**: the close and reopen edges. **Persistence**: accounting `V008`.
+- **APIs**: `POST …/periods/{id}/close-proposal`, `…/close-approval`, `…/close-rejection`, `…/reopen-proposal`,
+  `…/reopen-approval`.
+- **Events**: `AccountingPeriodCloseProposed`, `AccountingPeriodClosed`, `AccountingPeriodReopened`.
+- **Policy/model versioning**: the close records the run, versions and rate set.
+- **Financial impact**: closed periods become immutable; a reopen re-opens exactly one.
+- **Invariants**: `INV-ACC-03`, `-09`, `-10`, `INV-AUD-04`.
+- **Distributed-system concerns**: two approvals → one close (row 3); a reopen vs postings into the next period (row 9).
+- **Idempotency**: keyed acts. **Consistency**: conditional edges with revision. **Atomicity**: edge + cutoff (reopen) +
+  supersession + event in one transaction.
+- **Failure handling**: an incomplete run refuses the proposal (`accounting.CloseNotReady`).
+- **Security**: `ACCOUNTING_CLOSE_PROPOSE` / `_APPROVE`; approver ≠ proposer `CHECK`. **Audit**: every act.
+- **Observability**: `period.open.age` falls on close.
+- **Reconciliation implications**: disclosed items frozen into the close record.
+- **Tests**: `PeriodCloseDatabaseTest#twoApprovalsOneClose`, `#theProposerCannotApprove`, `#anIncompleteRunCannotBeProposed`;
+  `PeriodReopenDatabaseTest#aReopenSupersedesAndDeletesNothing`, `#aReopenRefusesNothingOutsideItsPeriod`, `#onlyTheLatest`.
+- **Probe**: drop the four-eyes `CHECK` → `#theProposerCannotApprove` red.
+- **Acceptance criteria**: the machine closed and reopened only as `PHASE_14_PLAN.md` §6.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P14-TSK-013 — Prior-period adjustments** — `PLANNED`
+- **Objective**: correct a closed period's error in an open period, four-eyes, linked to the period it corrects
+  (`INV-ACC-10`).
+- **Bounded context**: Accounting / GL; Ledger.
+- **Dependencies**: `-012`.
+- **Scope**: ledger `V030` (origin `ACCOUNTING`, reason `PRIOR_PERIOD_ADJUSTMENT`; the generic door refusing the origin);
+  `PriorPeriodPostings` in `app` over `AdjustmentService.proposeOwned/approveOwned`; accounting `V009`
+  (`prior_period_adjustment`: corrected period, proposal, entry id); purposes closed to free adjustments refused (their
+  domains' own correction doors apply — the register's link classifies those as prior-period corrections by derivation:
+  a reversal of an entry dated in a closed period).
+- **Out of scope**: re-dating; any product-book correction (the owning domain's).
+- **Domain changes**: `PriorPeriodAdjustment`. **Persistence**: ledger `V030`, accounting `V009`.
+- **APIs**: `POST /v1/operator/accounting/prior-period-adjustments`, `…/{id}/approval`, `…/{id}/rejection`.
+- **Events**: `PriorPeriodAdjustmentPosted` (+ the ledger's `JournalEntryPosted`).
+- **Policy/model versioning**: none.
+- **Financial impact**: a balanced entry in the open period, through the ledger's door.
+- **Invariants**: `INV-ACC-10`, `INV-REV-04`, `INV-AUD-04`, `INV-LED-01`.
+- **Distributed-system concerns**: a replayed approval posts once (row 12); a PPA vs a lock of its open period (A1 order).
+- **Idempotency**: the ledger's adjustment key. **Consistency**: the PPA row and the entry commit together.
+  **Atomicity**: one transaction.
+- **Failure handling**: the open period locked meanwhile → refused, re-proposed in the next.
+- **Security**: `ACCOUNTING_ADJUST_PROPOSE` / `_APPROVE`; the ledger's four-eyes `CHECK` too. **Audit**: both acts.
+- **Observability**: counted in `report.run` notes. **Reconciliation implications**: disclosed in the statements.
+- **Tests**: `PriorPeriodAdjustmentDatabaseTest#postsInTheOpenPeriodReferencingTheClosedOne`, `#aReplayedApprovalPostsOnce`,
+  `#theGenericDoorRefusesTheOrigin`, `#aClosedToFreeAdjustmentsPurposeIsRefused`.
+- **Probe**: date the PPA into the corrected period → the ledger refuses; the test asserting the open date stays green only
+  with the rule.
+- **Acceptance criteria**: corrections never re-date; every PPA traced to its period.
+- **Definition of done**: `DOD-FIN`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P14-TSK-014 — Valuation rate sets** — `PLANNED`
+- **Objective**: a frozen, provenanced, four-eyes set of reference rates per locked period (ADR-0116, `INV-ACC-11`).
+- **Bounded context**: Accounting / GL; reads FX.
+- **Dependencies**: `-005`.
+- **Scope**: accounting `V005` (`valuation_rate_set`, `valuation_rate` with source, `observed_at`, snapshot id);
+  `ValuationRates` in `app` over `fx.rate_snapshot` (last observation at or before the period end, staleness bound);
+  capture, approve, reject.
+- **Out of scope**: translation (`-015`); any customer or executed rate.
+- **Domain changes**: `ValuationRateSet`. **Persistence**: accounting `V005`.
+- **APIs**: `POST /v1/operator/accounting/valuation-rate-sets`, `…/{id}/approval`, `…/{id}/rejection`.
+- **Events**: none. **Policy/model versioning**: the set is pinned by runs.
+- **Financial impact**: none.
+- **Invariants**: `INV-ACC-11`, `INV-FX-05`.
+- **Distributed-system concerns**: two captures per period → one approved (conditional edge, unique approved per period).
+- **Idempotency**: keyed. **Consistency**: `INSERT`-only. **Atomicity**: one transaction.
+- **Failure handling**: a stale or missing pair refuses capture (`accounting.ValuationRateStale`).
+- **Security**: four-eyes. **Audit**: capture, approval. **Observability**: none new.
+- **Reconciliation implications**: none.
+- **Tests**: `ValuationRateSetDatabaseTest#oneApprovedPerPeriod`, `#aStalePairIsRefused`, `#provenanceIsKept`.
+- **Probe**: read `fx` trades' executed rates → a test asserting the snapshot source red.
+- **Acceptance criteria**: every pair EUR-based with provenance; immutable.
+- **Definition of done**: `DOD-FIN`, `DOD-SEC`. **Risk**: Low. **Cx**: S.
+
+**P14-TSK-015 — Reporting-currency translation** — `PLANNED`
+- **Objective**: EUR translation in every run that asks, originals beside, the difference explicit (C1, C7).
+- **Bounded context**: Reporting.
+- **Dependencies**: `-009`, `-014`.
+- **Scope**: `Translation` (pure; `HALF_EVEN` at the reporting minor unit; translation difference line); the trial balance
+  and later definitions gain translated columns; FINAL runs pin the set.
+- **Out of scope**: revaluation postings (C7 B).
+- **Domain changes**: `Translation`. **Persistence/APIs/Events**: none new.
+- **Policy/model versioning**: the rate set and the definition version.
+- **Financial impact**: none on balances.
+- **Invariants**: `INV-ACC-11`, `INV-MON-03`, `-04`.
+- **Distributed-system concerns**: pure; `PASS` by determinism across JVMs.
+- **Idempotency / Consistency / Atomicity**: N/A — pure.
+- **Failure handling**: no approved set → a FINAL translated run refused.
+- **Security / Audit / Observability**: as `-008`.
+- **Reconciliation implications**: none.
+- **Tests**: `TranslationTest#everyCurrencyAtItsScaleWithAnExplicitDifference`, `#originalsAreKept`, a property test over
+  generated amounts.
+- **Probe**: absorb the difference into the largest line → the explicit-difference test red.
+- **Acceptance criteria**: five currencies at three scales translated with explicit differences.
+- **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Low. **Cx**: S.
+
+**P14-TSK-016 — Financial statements** — `PLANNED`
+- **Objective**: balance sheet and income statement per period, with notes (C8).
+- **Bounded context**: Reporting.
+- **Dependencies**: `-013`, `-015`.
+- **Scope**: definitions `BALANCE_SHEET`, `INCOME_STATEMENT` by statement section; current-period result and retained
+  earnings computed; notes — suspense and ageing, open and acknowledged breaks, PPAs, the deferred treatments (C6, C7),
+  the reference-chart disclaimer.
+- **Out of scope**: closing entries (C8); statutory formats.
+- **Domain changes**: the definitions. **Persistence/APIs/Events**: via report runs.
+- **Policy/model versioning**: definition versions.
+- **Financial impact**: none.
+- **Invariants**: `INV-ACC-02`, `-04`, `-05`, `-06`.
+- **Distributed-system concerns**: as `-008`.
+- **Idempotency / Consistency / Atomicity**: as `-008`.
+- **Failure handling**: an unclassified section refuses the run.
+- **Security / Audit**: as `-008`. **Observability**: none new.
+- **Reconciliation implications**: discloses `INV-ACC-05`'s items.
+- **Tests**: `StatementsDatabaseTest#assetsEqualLiabilitiesPlusEquityPlusResult`, `#notesDiscloseSuspenseAndBreaks`,
+  `#everyFigureDrillsToLines`.
+- **Probe**: omit suspense from the notes → `#notesDiscloseSuspenseAndBreaks` red.
+- **Acceptance criteria**: the balance sheet balances per currency and translated; every figure drills down.
+- **Definition of done**: `DOD-FIN`, `DOD-API`. **Risk**: Low. **Cx**: M.
+
+**P14-TSK-017 — Operational financial reports** — `PLANNED`
+- **Objective**: the operational financial reports as definitions (`PHASE_14_PLAN.md` §13.6), labelled FINAL or
+  operational.
+- **Bounded context**: Reporting; reads lending, bnpl, reconciliation, merchant through ports.
+- **Dependencies**: `-008`, `-015`.
+- **Scope**: `GL_ACTIVITY`, `REVENUE` (fee, interest, spread), `RECEIVABLES_PAYABLES`, `SETTLEMENT_POSITIONS`, `SUSPENSE`,
+  `FX_RESULTS`, `LOAN_PORTFOLIO`, `BNPL_EXPOSURE`, `RECONCILIATION_STATUS`, `CLOSE_STATUS` — the portfolio and exposure
+  restated as of the period end from ledger balances, never from lending's or bnpl's live report rows.
+- **Out of scope**: dashboards beyond the existing gauges.
+- **Domain changes**: the definitions. **Persistence/APIs/Events**: via report runs.
+- **Policy/model versioning**: definition versions.
+- **Financial impact**: none.
+- **Invariants**: `INV-ACC-02`, `-04`, `INV-BAL-05`.
+- **Distributed-system concerns / Idempotency / Consistency / Atomicity**: as `-008`.
+- **Failure handling**: as `-008`.
+- **Security / Audit**: as `-008`. **Observability**: none new.
+- **Reconciliation implications**: the reconciliation status report reads, never copies.
+- **Tests**: one database test per definition asserting its figures equal ledger balances by purpose.
+- **Probe**: source the loan portfolio from lending's live report → the equality test red.
+- **Acceptance criteria**: every report's source, rule, date, currency semantics and freshness stated in its definition.
+- **Definition of done**: `DOD-API`. **Risk**: Low. **Cx**: M.
+
+**P14-TSK-018 — The regulatory reporting framework** — `PLANNED`
+- **Objective**: obligations as configuration and submissions with lineage behind a simulated adapter (ADR-0118, C4).
+- **Bounded context**: Reporting.
+- **Dependencies**: `-016`.
+- **Scope**: accounting `V010` (`regulatory_obligation`, `regulatory_submission`, lineage rows, provider answers verbatim);
+  draft / validate / approve / submit / inquiry / resubmit; `app`'s simulated `RegulatoryReportingProvider` (the reference
+  export); the inquiry leg on `AccountingCloseSchedule`.
+- **Out of scope**: a real jurisdiction or channel.
+- **Domain changes**: `RegulatoryObligation`, `RegulatorySubmission`. **Persistence**: accounting `V010`.
+- **APIs**: `/v1/operator/regulatory/submissions` (draft, validation, approval, submission, read).
+- **Events**: `RegulatorySubmissionSubmitted`, `…Acknowledged`, `…Rejected`.
+- **Policy/model versioning**: the obligation's form version.
+- **Financial impact**: none.
+- **Invariants**: `INV-ACC-13`, `INV-HIST-02`, `INV-AUD-04`.
+- **Distributed-system concerns**: a retried submit submits once (row 13).
+- **Idempotency**: the submission id at the provider. **Consistency**: `SUBMITTED` frozen. **Atomicity**: `SUBMITTED`
+  committed before the call.
+- **Failure handling**: unknown answer → inquiry; rejection → a new submission.
+- **Security**: `REGULATORY_REPORT_PREPARE`, `_APPROVE` (`FINANCIAL_CONTROLLER`), `_SUBMIT`; four-eyes `CHECK`.
+- **Audit**: every act. **Observability**: `regulatory.submission{outcome}`.
+- **Reconciliation implications**: lineage from a form line to journal lines.
+- **Tests**: `RegulatorySubmissionDatabaseTest#aRetriedSubmitSubmitsOnce`, `#onlyFinalRunsFeedADraft`,
+  `#aCorrectionReferencesTheOriginal`, `#theProposerCannotApprove`.
+- **Probe**: allow a PROVISIONAL run → `#onlyFinalRunsFeedADraft` red.
+- **Acceptance criteria**: every submitted line traced to a FINAL figure; no compliance claimed.
+- **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P14-TSK-019 — The safeguarding position return (C13)** — `PLANNED` (cut candidate)
+- **Objective**: the reference safeguarding return comparing customer and merchant liabilities with cash and clearing,
+  `lending_funded` subtracted (ADR-0096 §6).
+- **Bounded context**: Reporting; reads lending's `LendingCapitalProof` through a port.
+- **Dependencies**: `-018`.
+- **Scope**: the definition and the obligation configuration; the `lending_funded` term per currency.
+- **Out of scope**: a real safeguarding regime's rules.
+- **Domain changes / Persistence / APIs / Events**: definition and configuration only.
+- **Policy/model versioning**: the form version. **Financial impact**: none.
+- **Invariants**: `INV-ACC-13`. **Distributed-system concerns / Idempotency / Consistency / Atomicity**: as `-018`.
+- **Failure handling**: the proof unavailable → the draft refused. **Security / Audit**: as `-018`.
+- **Observability**: none new. **Reconciliation implications**: closes `DECISIONS.md` §Deferred's safeguarding row.
+- **Tests**: `SafeguardingReturnDatabaseTest#lendingFundedIsSubtracted`, `#everyLineDrillsDown`.
+- **Probe**: drop the subtraction → red.
+- **Acceptance criteria**: the return produced from FINAL figures with the subtraction.
+- **Definition of done**: `DOD-FIN`. **Risk**: Low. **Cx**: S.
+
+**P14-TSK-020 — Operating accounting: meters, alerts, runbook** — `PLANNED`
+- **Objective**: every series of `PHASE_14_PLAN.md` §16 registered, every alert firing on its break only, runbook §10.
+- **Bounded context**: Accounting / Reporting.
+- **Dependencies**: `-012`, `-017`, `-018`.
+- **Scope**: `AccountingMetersTest` (rows both ways); `infra/prometheus/rules/accounting.yml`; `AccountingAlertRulesTest`;
+  `OPERATIONS_RUNBOOK.md` §10 (close calendar, lock, a refused posting, a failed check, a divergence, a reopen, the first
+  mapping activation); the plan's meters table corrected to the code.
+- **Out of scope**: dashboards.
+- **Domain changes / Persistence / APIs / Events**: none.
+- **Policy/model versioning**: none. **Financial impact**: none.
+- **Invariants**: `INV-ACC-01`, `-05`, `-08` (alerting halves).
+- **Distributed-system concerns**: gauges computed identically on every instance from rows; `PASS` by construction, read.
+- **Idempotency / Consistency / Atomicity**: N/A.
+- **Failure handling**: a stale gauge alerts. **Security**: no tag carries an id, amount or name.
+- **Audit**: none. **Observability**: this task. **Reconciliation implications**: none.
+- **Tests**: the meters and alert-rule tests; `AlertRulesResolveTest#theAccountingRulesResolve`.
+- **Probe**: remove a meter → `AccountingMetersTest` red.
+- **Acceptance criteria**: the table exact both ways; every alert fires on its break and only then.
+- **Definition of done**: `DOD-OBS`. **Risk**: Low. **Cx**: M.
+
+**P14-TSK-021 — Loan and BNPL write-off under four eyes (C6)** — `PLANNED` (optional, first cut candidate; only if the
+owner ratifies C6 A)
+- **Objective**: post lending rule 14 / bnpl F11 by a four-eyes operator command, with the capital-headroom fix in the same
+  commit (ADR-0104 §Follow-up).
+- **Bounded context**: Lending (18), BNPL (19).
+- **Dependencies**: `-002`, `-007`.
+- **Scope**: the write-off command (proposal, approval) per defaulted loan or obligation; the entry moving the per-account
+  assets to `LOAN_WRITE_OFF_EXPENSE` / `BNPL_WRITE_OFF_EXPENSE`; `LendingCapitalHeadroom` subtracting the write-off expense
+  (or charging capital) in the same commit; the register's rule entries; lending and bnpl migrations then numbered.
+- **Out of scope**: automatic charge-off; provisioning; recovery after write-off (a later rule).
+- **Domain changes**: the write-off machine. **Persistence**: lending `V032`, bnpl `V020` (planned).
+- **APIs**: operator routes under lending and bnpl. **Events**: `LoanWrittenOff`, `BnplWrittenOff`.
+- **Policy/model versioning**: the register entries.
+- **Financial impact**: a balanced entry removing an asset to expense; headroom unchanged by the loss.
+- **Invariants**: `INV-LND-01`, `INV-REV-04`, `INV-AUD-04`, `INV-BAL-03`.
+- **Distributed-system concerns**: a write-off racing a repayment — under the loan's existing lock (the Phase 11 lock order).
+- **Idempotency**: keyed. **Consistency / Atomicity**: entry + row + headroom in one transaction.
+- **Failure handling**: a non-defaulted account refused.
+- **Security**: four-eyes, new permissions in lending's and bnpl's sets. **Audit**: both acts.
+- **Observability**: a counter per product. **Reconciliation implications**: the subledger proofs gain the rule.
+- **Tests**: `LoanWriteOffDatabaseTest#theHeadroomDoesNotRise`, `#aRepaymentRaceSerialises`, `#theProposerCannotApprove`.
+- **Probe**: omit the headroom subtraction → `#theHeadroomDoesNotRise` red.
+- **Acceptance criteria**: the write-off posted only under four eyes; headroom correct.
+- **Definition of done**: `DOD-FIN`, `DOD-SEC`. **Risk**: High (policy). **Cx**: M.
+
+**P14-TST-002 — The accounting battery** — `PLANNED`
+- **Objective**: an independent oracle for the GL, trial balance, statements and translation over generated journals.
+- **Bounded context**: Accounting / Reporting. **Dependencies**: `-009`, `-015`, `-016`.
+- **Scope**: ≥ 10,000 generated entries over five currencies and twelve periods through the real posting services; an
+  oracle written without the production folds; regeneration in two JVMs byte-identical; perturbations (a mapping rule, a
+  rate, a planted shape) flipping exactly the named rows.
+- **Out of scope / Domain / Persistence / APIs / Events / Versioning**: none. **Financial impact**: none.
+- **Invariants**: `INV-ACC-01`, `-02`, `-04`, `-06`, `-11`, `-12`.
+- **Distributed-system concerns**: determinism across JVMs. **Idempotency / Consistency / Atomicity**: N/A.
+- **Failure handling / Security / Audit / Observability / Reconciliation**: N/A — a test.
+- **Tests**: `AccountingBatteryTest` (own-container). **Probe**: perturb the oracle's rounding → red.
+- **Acceptance criteria**: 100% agreement; byte-identical runs. **Definition of done**: `DOD-TEST`. **Risk**: Low. **Cx**: L.
+
+**P14-TST-001 — The accounting storm** — `POSTPONED` (by the owner, `POSTPONED_ISSUES.md` PI-004: every later phase's
+storm runs after the project's phases)
+- **Objective**: ten application instances posting across every module while periods lock, close and reopen, checks and
+  report runs race, a generator and a worker killed — the census at every round (no entry after a cut, one run per key,
+  one break per subject, GL = ledger).
+- **Scope, fields**: as `P13-TST-001`'s shape; planned here so the phase's evidence is named; its evidence deferred, not
+  claimed. **Definition of done**: `DOD-TEST`.
+
+**P14-DOC-001 — The Phase 14 exit review** — `PLANNED`
+- **Objective**: read every ADR, invariant and register row against the code; run the owner-authorised database pass
+  (C5); rule the gate clause by clause; ratify or record C1–C13; accept ADR-0113…0118 or correct them.
+- **Dependencies**: every item but `P14-TST-001`. **Definition of done**: `DOD-DOC`. **Risk**: Low. **Cx**: L.
+
+---
+
 # Cross-cutting work
 
 Status: items here belong to no phase. They change no roadmap commitment, displace no phase task,
@@ -25922,11 +26612,17 @@ versioned rules engine, synchronous risk decisioning, fail-safe policy, limits a
 signals, account-takeover detection, AML transaction monitoring, alerting, case management and manual override
 controls are Phase 13's twenty-eight items above, in the section "Phase 13 — Risk, Fraud and AML" (initialised
 2026-10-22, 28 items) — with the regulatory report artefact, rescreening on screening-list updates and the collections
-case added by the owner's decisions.)*
+case added by the owner's decisions.)* *(The Phase 14 row went the same way at the Phase 13 → 14 transition,
+2026-10-29: GL account model, versioned GL mapping, accounting periods, period close with approval, trial balance and
+continuous verification, GL drill-down, prior-period adjustment, financial statement production, regulatory reporting
+abstraction and report reproducibility are Phase 14's twenty-four items above, in the section "Phase 14 — Accounting and
+Financial Reporting" — with the posting rule register, the ledger-enforced posting cutoff, valuation rate sets and
+translation, accounting breaks, the safeguarding return and the optional write-off added by the transition's design and
+the owner's decisions C1–C13.)*
 
 | Phase | Epics |
 |-------|-------|
 | 13 Risk, Fraud, AML | Elaborated to the section "Phase 13 — Risk, Fraud and AML" above by the Phase 12 → 13 transition — initialised 2026-10-22, 28 items (`P13-TSK-001`…`-025`, `P13-TST-001`, `P13-TST-002`, `P13-DOC-001`) across M13.1–M13.9, `P13-TSK-001` marked `READY`; the epic wording (signal ingestion; versioned rules engine; synchronous risk decisioning; fail-safe policy; limits and velocity; device and behavioural signals; account-takeover detection; AML transaction monitoring; alerting; case management; manual override controls) superseded by the task decomposition |
-| 14 Accounting and Reporting | GL account model; versioned GL mapping; accounting periods; period close with approval; trial balance and continuous verification; GL drill-down; prior-period adjustment; financial statement production; regulatory reporting abstraction; report reproducibility |
+| 14 Accounting and Reporting | Elaborated to the section "Phase 14 — Accounting and Financial Reporting" above by the Phase 13 → 14 transition — initialised 2026-10-29, 24 items (`P14-TSK-001`…`-021`, `P14-TST-001` (`POSTPONED`, PI-004), `P14-TST-002`, `P14-DOC-001`) across M14.1–M14.10, `P14-TSK-001` marked `READY`; the epic wording (GL account model; versioned GL mapping; accounting periods; period close with approval; trial balance and continuous verification; GL drill-down; prior-period adjustment; financial statement production; regulatory reporting abstraction; report reproducibility) superseded by the task decomposition |
 | 15 Production Hardening | Threat modelling; security hardening; secret and key rotation; privileged access review; audit completeness verification; rate limiting and quotas; schema registry and compatibility; dead-letter handling; SLO definition and alerting; runbooks and rehearsal; incident response; data retention and deletion |
 | 16 Scale and DR | Load characterisation; capacity model; performance testing with invariant assertion; table partitioning and archival; read-replica routing policy; backpressure and load shedding; chaos engineering; database failover; backup and restore rehearsal; DR plan and RPO/RTO; post-recovery financial verification; service extraction evaluation |

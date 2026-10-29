@@ -2050,6 +2050,17 @@ See `PHASE_GATES.md` §Phase 14.
 ### 18. What must NOT be implemented yet
 Jurisdiction-specific statutory filings, tax computation, consolidation.
 
+*(The Phase 13 → 14 transition, 2026-10-29: this section is elaborated by [`PHASE_14_PLAN.md`](PHASE_14_PLAN.md) and
+ADR-0113…0118 (`Proposed`), which supersede it where they differ, each difference recorded there: the GL is a versioned
+mapping by ledger purpose over the one journal, not "GL Mapping Rule" rows beside a GL store (§5, §6: no accounting table
+holds a balance); "postings into a closed period are rejected" is enforced by the ledger at insert under a posting cutoff
+the lock moves (ADR-0114), the period machine `OPEN → LOCKED → CLOSE_PROPOSED → CLOSED` with reopen; `TrialBalanceGenerated`
+and `ReportGenerated` (§8) are `ReportRunCompleted` of a kind; `PeriodCloseRequested` is `AccountingPeriodCloseProposed`;
+"no reporting path may write to the ledger" (§9) is held by read-only transactions, no ledger edge and a static guard, a
+separate database role left to Phase 15 (owner decision C10). Added to the scope: the posting rule register and
+accounting breaks (ADR-0117), valuation rate sets and translation (ADR-0116, C1, C7), the reference safeguarding return
+(C13) and, optional, write-off (C6). Twenty-four backlog items, `P14-TSK-001` `READY`.)*
+
 ---
 
 # Phase 15 — Production Hardening
