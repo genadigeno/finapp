@@ -315,6 +315,45 @@ class IdentityAdministrationDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("the three accounting roles are assignable - one identity may hold two of them - and each is refused by"
+            + " both administrative endpoints (P14-TSK-001)")
+    void theAccountingRolesAreAssignableAndRefusedAdministration() throws Exception {
+        IdentityId admin = givenAnAdministrator();
+        for (String role : java.util.List.of("ACCOUNTANT", "FINANCIAL_CONTROLLER", "REGULATORY_REPORTER")) {
+            IdentityId holder = givenAnIdentity();
+
+            // Granted through the REAL endpoint: the request enum admits the value at the boundary, identity V025's
+            // regenerated constraint admits the row, and the grant is audited like any other.
+            assertThat(post(rolesOf(holder), givenASessionFor(admin),
+                                    "{\"role\":\"" + role + "\",\"reason\":\"OPS-6201 finance desk\"}")
+                            .statusCode())
+                    .as(role).isEqualTo(204);
+            assertThat(auditOf("identity.RoleAssigned", holder, admin)).as(role).contains("OPS-6201");
+
+            String holderSession = givenASessionFor(holder);
+            IdentityId subject = givenAnIdentity();
+            assertThat(post(suspensionOf(subject), holderSession, REASON).statusCode())
+                    .as("%s: a finance desk is not managing identities", role)
+                    .isEqualTo(403);
+            assertThat(post(rolesOf(subject), holderSession, adminRole()).statusCode())
+                    .as("%s: and certainly not granting roles", role)
+                    .isEqualTo(403);
+            assertThat(statusOf(subject)).isEqualTo("ACTIVE");
+        }
+
+        // The grants are disjoint, the holders need not be: identity's arbiter is one live assignment of EACH role, so a
+        // second accounting role on the same identity is admitted - which is why approver <> proposer is a CHECK on every
+        // four-eyes row and a refusal at the domain (accounting.SelfApprovalRefused, INV-AUD-04), never the roles alone.
+        IdentityId both = givenAnIdentity();
+        for (String role : java.util.List.of("ACCOUNTANT", "FINANCIAL_CONTROLLER")) {
+            assertThat(post(rolesOf(both), givenASessionFor(admin),
+                                    "{\"role\":\"" + role + "\",\"reason\":\"OPS-6202 two desks\"}")
+                            .statusCode())
+                    .as(role).isEqualTo(204);
+        }
+    }
+
     // -----------------------------------------------------------------
     // The inverted ownership rule
 

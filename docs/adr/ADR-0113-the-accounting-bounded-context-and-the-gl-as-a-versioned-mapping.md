@@ -43,6 +43,16 @@ domain through ports implemented in `app`). Rests on `PHASE_14_PLAN.md` §1, §3
    transaction; `ReportingNeverWritesTest` refuses any writer type reachable from report code. A separate database role is
    Phase 15's (owner decision C10).
 
+*As built by `P14-TSK-001` (2026-10-29), the boundary only - nothing here is a different decision:* decision 1 holds as
+written (`AccountingModuleIsolationTest`: `platform` and `sharedkernel` only, every business module, `risk` and `app`
+refused; every sibling's isolation test refusing `accounting`), the nine ports declared with no methods, each shaped by the
+task that implements it. Decision 5's "report code" is made precise: every class of `com.finapp.accounting.reporting..`,
+whose reach inside `accounting` may touch no `ledger` type, no writer port (`PostingCutoff`, `PriorPeriodPostings`,
+`RegulatoryReportingProvider`), no platform writer (audit, outbox, idempotency store) and no JDBC write - so the run store,
+the audited read and the door live outside that package (`P14-TSK-008`). The trust split the decisions rest on
+(`PHASE_14_PLAN.md` §12, C12) is built as a partition: `ACCOUNTING_READ` is the `ACCOUNTANT`'s alone, because the plan's
+three-way grant failed the platform's pairwise-disjoint grants (`INV-AUD-03`).
+
 ## Alternatives Considered
 
 ### A GL journal in `accounting` fed by ledger events

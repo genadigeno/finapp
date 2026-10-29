@@ -56,6 +56,8 @@ class RiskModuleIsolationTest {
             "lending",
             "creditmath",
             "bnpl",
+            // P14-TSK-001: nothing but app depends on accounting, and risk reads no GL.
+            "accounting",
             "app");
 
     @Test

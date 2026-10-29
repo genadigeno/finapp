@@ -1530,6 +1530,20 @@ contracts, never error codes; an unsatisfied `CHALLENGE` at a door is `403 ident
 exists (T-advise), the committed refusal with reason `CHALLENGE_REQUIRED` being the race's answer only. No customer or
 merchant response ever differs by the existence of an alert, a case or a report.
 
+### `accounting` — `AccountingErrorCode` *(declared per task from `P14-TSK-001`, 2026-10-29)*
+
+*Declared per task* (`P14-TSK-001`, the `RiskErrorCode` precedent): `AccountingErrorCode` holds the two codes the role
+split owns - `accounting.NotFound` and `accounting.SelfApprovalRefused`, the two catalogue rows below, their statuses
+checked against the code - and every other `accounting.*` code (`PHASE_14_PLAN.md` §10: a stale revision `409`, a close
+not ready, a mapping gap, a stale valuation rate, …) arrives with the door that raises it, so no catalogued code is one a
+client could never receive. `ledger.PeriodClosed` is the ledger's, not this module's (`P14-TSK-004`). Every detail is
+stranger-safe: never an amount, a balance, a GL figure or an owner reference.
+
+| Code | Status | Meaning |
+|---|---|---|
+| `accounting.NotFound` | 404 | No accounting record matches the requested identifier - an unknown or a malformed id alike. |
+| `accounting.SelfApprovalRefused` | 403 | A proposal is decided by someone other than its proposer; the proposer may reject it. *(The `credit`/`lending`/`bnpl`/`risk` precedent — a forbidden act, not a conflict. The roles' grants are disjoint but one identity may hold `ACCOUNTANT` and `FINANCIAL_CONTROLLER`, so this, with each four-eyes row's `CHECK`, is the binding control, `INV-AUD-04`.)* |
+
 ## 3a. Rejection at the boundary
 
 Untrusted input is refused before any domain code runs (`P0-TSK-025`).

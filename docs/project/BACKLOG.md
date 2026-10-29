@@ -25324,7 +25324,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 `-013` and `-015`; `-017` after `-008` and `-015`; `-019` after `-018`; `-020` after `-012`, `-017` and `-018`; `-021` after
 `-002` and `-007`; `TST-002` after `-009`, `-015`, `-016`; `DOC-001` after every item but `TST-001`.
 
-**P14-TSK-001 — The `accounting` module boundary, floors, vocabularies and roles** — `READY` (2026-10-29; marked by the Phase 13 → 14 transition)
+**P14-TSK-001 — The `accounting` module boundary, floors, vocabularies and roles** — `COMPLETE` (2026-10-29; marked `READY` by the Phase 13 → 14 transition; branch `P14-TSK-001` from master `36914579`; **M14.1 at 1 of 3**; marks no task `READY` — the coordinator does: wave B, `P14-TSK-002`, `-003` and `-004`, each depending on this task alone)
 - **Objective**: make `accounting` a build-graph fact with a privilege floor, its closed vocabularies, its ports declared
   and empty, its guards armed and the three roles with their eleven permissions — before any table or figure.
 - **Bounded context**: Accounting / General Ledger (25) and Reporting (27) — one module (ADR-0113).
@@ -25362,6 +25362,38 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Acceptance criteria**: the module builds and is isolated; nothing but `app` depends on it; every vocabulary and port
   declared; the roles admitted; the guards green and their probes caught.
 - **Definition of done**: `DOD-ARCH`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
+- **As built** (2026-10-29, branch `P14-TSK-001` from master `36914579`): `accounting` included after `risk`, its build
+  file risk's without test fixtures (edge `platform` only; `sharedkernel` through platform's `api`), its lockfile written;
+  **accounting `V001`** - the schema created by Flyway's `schemas` setting (owned by the migrator, every module's shape: the
+  entry's "`CREATE SCHEMA`" is Flyway's, not a statement), `COMMENT`, `REVOKE ALL ... FROM PUBLIC`, `USAGE` to
+  `finapp_app`, no table, no default privileges (`AccountingMigrationTest`, database tier, **written and owed** - C5); the
+  ten vocabularies, the four machines as edge tables (`PeriodStatus` six edges, `admitsPostings` only `OPEN`, `fourEyesTo`
+  the approve, the unlock and the reopen; `RunStatus` four, content frozen from completion, only `FINAL` issuable;
+  `BreakStatus` three; `SubmissionStatus` five, immutable from `SUBMITTED`), `GlClassification` named exactly as the
+  ledger's `AccountType` with its normal side (held equal by `AccountingLedgerVocabularyTest` in `app`),
+  `StatementSection` seventeen reference sections each admitting only its statement's classifications (C2: for qualified
+  review), `CloseCheckCode` §13.5's nine, `ReportKind` §13.6's fourteen, `BreakType` §13.3's seven, `DatingClass` with
+  `mayBackDate` (`AccountingVocabulariesTest`, every member list and edge matrix exact); the nine ports **declared empty of
+  methods** (each implementing task shapes its own; the three writer ports named by `ReportingNeverWritesTest`);
+  `AccountingErrorCode` (`accounting.NotFound` 404, `accounting.SelfApprovalRefused` 403) and `AccountingAuditAction`
+  (`accounting.SelfApprovalRefused`, declared, not yet emitted - `AuditCompletenessTest` until `-003`), with their
+  register rows; **identity `V025`** and the roles as a **partition** - the design's correction of `PHASE_14_PLAN.md` §12,
+  which gave `ACCOUNTING_READ` to all three roles and so failed `RoleNameTest#theGrantsArePairwiseDisjoint`
+  (`INV-AUD-03`): `ACCOUNTANT` {`ACCOUNTING_READ`, the three `ACCOUNTING_*_PROPOSE`, `ACCOUNTING_REPORT_GENERATE`},
+  `FINANCIAL_CONTROLLER` {the three `ACCOUNTING_*_APPROVE`, `REGULATORY_REPORT_APPROVE`}, `REGULATORY_REPORTER`
+  {`REGULATORY_REPORT_PREPARE`, `REGULATORY_REPORT_SUBMIT`} - still eleven permissions, the controller and the reporter
+  reading what they act on under their own permissions (each read door's task names it);
+  `RoleNameTest#noRoleProposesAndApprovesTheSameAct` - the entry's "`RolePermissionPartitionTest` extended": no such class
+  exists, the partition test is `RoleNameTest` - derives the four `X_PROPOSE`/`X_PREPARE` → `X_APPROVE` pairs from the
+  names; `RoleAssignmentMigrationTest#v025AdmitsTheAccountingRolesAndNothingElse`; `docs/api/openapi.json` regenerated (the
+  role request enum's three values, the two `accounting.*` problem responses);
+  `IdentityAdministrationDatabaseTest#theAccountingRolesAreAssignableAndRefusedAdministration` **written and owed**; every
+  sibling isolation test and `RiskModuleIsolationTest` refusing `accounting`; `NoCustomerSurfaceReadsAccountingTest`
+  (risk's surface shared, the whole reach with **no seams**) and `ReportingNeverWritesTest` (over every imported class;
+  report code `com.finapp.accounting.reporting..`, its reach inside `accounting`) with planted probes, documented in
+  `MODULE_ARCHITECTURE.md` §6; `NoFloatingPointMoneyRulesTest` reaching `accounting` through `app`'s new edge;
+  `AccountingFlowScope` (the door leg) in `app`; `finapp.accounting.sweeper.enabled` reserved in the test properties.
+  `PASS` vacuously at ten instances: no state, no writer, no schedule.
 
 **P14-TSK-002 — The posting rule register, as built** — `PLANNED`
 - **Objective**: one register of every posting namespace the platform writes, read from the code, so every entry can be

@@ -321,6 +321,97 @@ class RoleNameTest {
     }
 
     @Test
+    @DisplayName("ACCOUNTANT grants exactly the GL read, the three proposes and report generation - never an approve")
+    void accountantGrantsExactlyFive() {
+        // The eighteenth population (P14-TSK-001, ADR-0113, owner decision C12): the desk that proposes the books' acts
+        // and reads the GL. PHASE_14_PLAN.md section 12 gave ACCOUNTING_READ to all three accounting roles; the pairwise
+        // disjointness below refused that at the design, so the read is this desk's alone.
+        assertThat(RoleName.ACCOUNTANT.permissions())
+                .as("reading the GL and proposing is not approving")
+                .containsExactlyInAnyOrder(
+                        PermissionName.ACCOUNTING_READ,
+                        PermissionName.ACCOUNTING_MAPPING_PROPOSE,
+                        PermissionName.ACCOUNTING_CLOSE_PROPOSE,
+                        PermissionName.ACCOUNTING_ADJUST_PROPOSE,
+                        PermissionName.ACCOUNTING_REPORT_GENERATE)
+                .doesNotContain(
+                        PermissionName.ACCOUNTING_MAPPING_APPROVE,
+                        PermissionName.ACCOUNTING_CLOSE_APPROVE,
+                        PermissionName.ACCOUNTING_ADJUST_APPROVE,
+                        PermissionName.REGULATORY_REPORT_APPROVE,
+                        PermissionName.LEDGER_POST,
+                        PermissionName.LEDGER_ADJUST);
+    }
+
+    @Test
+    @DisplayName("FINANCIAL_CONTROLLER grants exactly the four approves - no propose, no read, no preparation")
+    void financialControllerGrantsExactlyFour() {
+        // The nineteenth population (P14-TSK-001, ADR-0114, ADR-0118): the second person of every accounting act. It
+        // reads what it decides under its own approve permission, so it holds no ACCOUNTING_READ.
+        assertThat(RoleName.FINANCIAL_CONTROLLER.permissions())
+                .as("approving the books' acts is not proposing or preparing them")
+                .containsExactlyInAnyOrder(
+                        PermissionName.ACCOUNTING_MAPPING_APPROVE,
+                        PermissionName.ACCOUNTING_CLOSE_APPROVE,
+                        PermissionName.ACCOUNTING_ADJUST_APPROVE,
+                        PermissionName.REGULATORY_REPORT_APPROVE)
+                .doesNotContain(
+                        PermissionName.ACCOUNTING_READ,
+                        PermissionName.ACCOUNTING_MAPPING_PROPOSE,
+                        PermissionName.ACCOUNTING_CLOSE_PROPOSE,
+                        PermissionName.ACCOUNTING_ADJUST_PROPOSE,
+                        PermissionName.REGULATORY_REPORT_PREPARE,
+                        PermissionName.LEDGER_ADJUST);
+    }
+
+    @Test
+    @DisplayName("REGULATORY_REPORTER grants exactly REGULATORY_REPORT_PREPARE and REGULATORY_REPORT_SUBMIT - never the"
+            + " approval")
+    void regulatoryReporterGrantsExactlyTwo() {
+        // The twentieth population (P14-TSK-001, ADR-0118, owner decision C4): prepares and submits; the controller
+        // approves between the two (INV-ACC-13). Not the AML officer's filing either - a different authority and form.
+        assertThat(RoleName.REGULATORY_REPORTER.permissions())
+                .as("preparing and submitting a return is not approving it")
+                .containsExactlyInAnyOrder(
+                        PermissionName.REGULATORY_REPORT_PREPARE, PermissionName.REGULATORY_REPORT_SUBMIT)
+                .doesNotContain(
+                        PermissionName.REGULATORY_REPORT_APPROVE,
+                        PermissionName.ACCOUNTING_READ,
+                        PermissionName.AML_REPORT_FILE);
+    }
+
+    @Test
+    @DisplayName("no role holds both the propose (or prepare) and the approve of one act")
+    void noRoleProposesAndApprovesTheSameAct() {
+        // INV-AUD-04 at the grant (P14-TSK-001, owner decision C12): wherever the vocabulary names an act's proposal and
+        // its approval as two permissions - X_PROPOSE / X_APPROVE, X_PREPARE / X_APPROVE - no role holds both, so the
+        // second person of an act is always another population. Derived from the names over values(), so a fifth such
+        // pair is held without anyone editing this test. (Four-eyes INSIDE one role - LOAN_SERVICE /
+        // LOAN_SERVICE_APPROVE, RISK_INVESTIGATE / RISK_CASE_APPROVE - is a different shape, two holders of one desk,
+        // and is not named this way.)
+        int pairs = 0;
+        for (PermissionName proposal : PermissionName.values()) {
+            String name = proposal.name();
+            String stem = name.endsWith("_PROPOSE") ? name.substring(0, name.length() - "_PROPOSE".length())
+                    : name.endsWith("_PREPARE") ? name.substring(0, name.length() - "_PREPARE".length())
+                    : null;
+            if (stem == null) {
+                continue;
+            }
+            PermissionName approval = PermissionName.valueOf(stem + "_APPROVE");
+            pairs++;
+            for (RoleName role : RoleName.values()) {
+                assertThat(role.permissions().containsAll(Set.of(proposal, approval)))
+                        .as("%s holds both %s and %s - one person could propose and approve the same act", role,
+                                proposal, approval)
+                        .isFalse();
+            }
+        }
+        // Not vacuous: the mapping, the close, the adjustment and the regulatory return are the four pairs today.
+        assertThat(pairs).as("the propose/approve pairs the vocabulary names").isEqualTo(4);
+    }
+
+    @Test
     @DisplayName("every pair of grants is disjoint, so the populations really are separate")
     void theGrantsArePairwiseDisjoint() {
         // No exact-set assertion alone says the SETS do not overlap - each pins its own role.
@@ -383,6 +474,7 @@ class RoleNameTest {
                                 + " 'CREDIT_POLICY_OFFICER', 'UNDERWRITER',"
                                 + " 'LENDING_OFFICER', 'LENDING_TREASURY_OFFICER', 'LOAN_SERVICING_AGENT',"
                                 + " 'BNPL_OFFICER', 'BNPL_SERVICING_AGENT',"
-                                + " 'RISK_ANALYST', 'RISK_OFFICER', 'AML_OFFICER'");
+                                + " 'RISK_ANALYST', 'RISK_OFFICER', 'AML_OFFICER',"
+                                + " 'ACCOUNTANT', 'FINANCIAL_CONTROLLER', 'REGULATORY_REPORTER'");
     }
 }

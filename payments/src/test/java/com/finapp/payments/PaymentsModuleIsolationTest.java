@@ -65,6 +65,7 @@ class PaymentsModuleIsolationTest {
                         "creditmath",
                         "bnpl",
                         "risk",
+                        "accounting",
                         "app")) {
             assertThat(classpathEntries())
                     .as("payments must not depend on %s", forbidden)

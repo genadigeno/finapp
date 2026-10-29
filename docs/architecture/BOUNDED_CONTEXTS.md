@@ -537,8 +537,10 @@ active (`PHASE_13_PLAN.md` §1.1). *(`P13-DOC-001`, 2026-10-27: the sweep's aler
 force: a default's `OBLIGATION_DEFAULTED` (`-025`) and a rescreening's `SCREENING_HIT` (`-022`).)*
 
 **Accounting / General Ledger (25) and Reporting (27)** were bounded by the Phase 13 → 14 transition (ADR-0113,
-`Proposed`, 2026-10-29; `PHASE_14_PLAN.md` §4) — *planned: nothing of it is built; `P14-TSK-001` builds the boundary,
-and each task corrects this paragraph to the code.* Two contexts in **one module, `accounting`** (schema `accounting`,
+`Proposed`, 2026-10-29; `PHASE_14_PLAN.md` §4) — *the boundary built by `P14-TSK-001` (2026-10-29): the module with
+its edges (`AccountingModuleIsolationTest`), the schema floor (`V001`, no table), the closed vocabularies, the nine ports
+declared empty, the roles as a partition (identity `V025`; the security boundary below); no state yet - each task
+corrects this paragraph to the code.* Two contexts in **one module, `accounting`** (schema `accounting`,
 Flyway `accounting/V001…`), regulatory reporting inside it behind an adapter (split trigger: regulatory reporting
 acquiring retention or segregation obligations the GL does not share). **The module creates no competing record and
 holds no balance**: every GL figure is a function of the ledger's journal lines × the mapping version the period pins;
@@ -558,7 +560,9 @@ disclosure and fx's reference rates through ports `app` implements.
   `/v1/operator/accounting/…`. *Events:* `AccountingPeriod*`, `GlMappingVersionActivated`, `AccountingBreakRaised`,
   `PriorPeriodAdjustmentPosted`; consumes none for correctness. *Failure:* a posting dated into a locked period is
   refused by the ledger; a crashed check is re-claimed by lease. *Security:* `ACCOUNTANT` proposes,
-  `FINANCIAL_CONTROLLER` approves, four-eyes by `CHECK`.
+  `FINANCIAL_CONTROLLER` approves, four-eyes by `CHECK` *(`P14-TSK-001`: the grants a partition - `ACCOUNTING_READ` the
+  accountant's alone, the controller reading what it decides under its approve permissions; the holders need not be
+  disjoint, so approver ≠ proposer is the binding control, `accounting.SelfApprovalRefused`)*.
 - **Reporting (27)** — *responsibility:* immutable, reproducible report runs (trial balance, GL activity, statements,
   revenue, receivables and payables, settlement positions, suspense, FX results, loan portfolio, BNPL exposure,
   reconciliation and close status) with drill-down to journal lines; regulatory obligations and submissions behind

@@ -393,7 +393,8 @@ class NoCustomerSurfaceReadsRiskTest {
         return names;
     }
 
-    private static boolean isSurface(JavaClass candidate) {
+    /** The customer and merchant surface - shared with {@code NoCustomerSurfaceReadsAccountingTest} (`P14-TSK-001`). */
+    static boolean isSurface(JavaClass candidate) {
         if (!candidate.isAnnotatedWith(RestController.class)) {
             return false;
         }
