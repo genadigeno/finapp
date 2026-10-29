@@ -312,6 +312,33 @@ risk / Account takeover / AML monitoring / Limits / velocity / Manual review", u
 - Regulatory reporting abstraction
 - Audit
 
+## Accounting and Financial Reporting *(Phase 14, planned at the Phase 13 → 14 transition, 2026-10-29 — `PHASE_14_PLAN.md`)*
+- General ledger — planned: GL accounts and their mapping from the ledger's purposes as versioned data, four-eyes
+  activated, never retroactive; every GL figure computed from the one journal, no second ledger and no stored balance;
+  drill-down from any figure to its journal lines
+- Accounting periods and close — planned: calendar-month periods locked and closed in order; the lock moves a posting
+  cutoff the ledger enforces at insert, so nothing dated in a locked period commits after it; a close run of recorded
+  readiness checks (trial balance, GL = ledger, rule conformance, source completeness, accruals, reconciliation
+  disclosure); a four-eyes close; prior-period adjustments in an open period; a four-eyes reopen that supersedes, never
+  deletes
+- Accounting rules — planned: one register of every posting namespace with its source, rule, version, line shape and
+  dating; every entry checked against it; discrepancies raised once as accounting breaks, never silently corrected
+- Multi-currency reporting — planned: EUR functional and reporting currency; valuation rate sets captured from reference
+  rates with provenance, approved and pinned; originals always shown; translation differences explicit; no revaluation
+  posted
+- Financial reporting — planned: immutable, reproducible report runs — trial balance, GL activity, balance sheet and
+  income statement, fee and interest revenue, receivables and payables, settlement positions, suspense, FX results, loan
+  portfolio, BNPL exposure, reconciliation and close status — FINAL for closed periods, provisional otherwise
+- Regulatory reporting — planned: obligations as configuration, submissions only from final figures, four-eyes, with
+  lineage, corrected by resubmission; a simulated reference adapter and a reference safeguarding position return; no
+  legal obligation asserted
+- Write-off — planned, optional (owner decision C6): loan and BNPL write-off under four eyes on the rules already designed;
+  provisioning and effective-interest amortisation deferred for qualified review and disclosed
+
+*(Marked "planned" by the Phase 13 → 14 transition, 2026-10-29 (`PHASE_14_PLAN.md`; ADR-0113…0118 `Proposed`); to be
+marked delivered by the Phase 14 exit review, `P14-DOC-001`. "Accounting GL" under Money and Accounts and "Financial
+reporting" / "Regulatory reporting abstraction" above are this section's capabilities.)*
+
 ## Platform
 - API gateway
 - Eventing

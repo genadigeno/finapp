@@ -2475,6 +2475,152 @@ external evidence; monitoring judges the platform's own movements). It moves no 
 
 ---
 
+## 8b. Accounting and financial reporting
+
+*Added by the Phase 13 → 14 transition (2026-10-29; ADR-0113…0118, `Proposed`; `PHASE_14_PLAN.md` §4, §13). Planned:
+nothing of it is built until `P14-TSK-001` and the task named in each entry land; each entry is corrected to the code by
+its task and read against it by `P14-DOC-001`.*
+
+### GL Account
+**Is:** an account of the General Ledger's reference chart — code, name, classification (`ASSET`, `LIABILITY`,
+`EQUITY`, `REVENUE`, `EXPENSE`), statement section and normal balance — defined inside a GL Mapping Version
+(`P14-TSK-003`). Its figures are always computed from journal lines whose ledger purposes map to it (`INV-ACC-06`).
+**Not:** a Ledger Account — it holds no balance, receives no posting and is never written by a posting flow; nor a
+statutory chart (the codes are reference values for qualified review, owner decision C2).
+**Owned by:** `accounting`
+
+### GL Mapping Version
+**Is:** the immutable, four-eyes-activated set of GL Accounts and mapping rules (ledger purpose + owner kind → GL account)
+in force from an `OPEN` Accounting Period; total over the ledger's purposes and classification-compatible with each
+purpose's ledger type; pinned by every period when it locks (`INV-ACC-07`, ADR-0113).
+**Not:** the Chart of Accounts (the ledger's own structure, which no mapping changes), nor `ledger_account.gl_code`
+(unwritten); never applied retroactively to a locked or closed period.
+**Owned by:** `accounting`
+
+### Posting Rule
+**Is:** the registered description of how one kind of economic event posts — its posting-key namespace, source module,
+authoritative reference, rule id and version, line shape (purposes and directions) and dating class — in the posting rule
+register (`P14-TSK-002`, ADR-0117); every journal entry is checked against the rule in force at its posting date
+(`INV-ACC-12`).
+**Not:** the code that posts (each source module's, through `PostingService`), nor a GL mapping (which classifies lines
+for reporting); registering a rule posts nothing and changes no treatment.
+**Owned by:** `accounting`
+
+### Posting Cutoff
+**Is:** the ledger's `closed_through` date (`ledger.posting_cutoff`, `P14-TSK-004`): a journal entry whose posting date
+is on or before it is refused at insert (`ledger.PeriodClosed`), the refusal serialised with the cutoff's movement under
+advisory namespace `14` so no entry dated in a locked period commits after the lock (`INV-ACC-08`, ADR-0114).
+**Not:** a report filter or an accounting-side check — it is the ledger's own rule, moved only by the ledger's API, one
+period at a time; nor a business-date clock.
+**Owned by:** `ledger`
+
+### Accounting Period
+**Is:** a calendar month of `posting_date` with its machine `OPEN → LOCKED → CLOSE_PROPOSED → CLOSED` (reject, unlock
+and reopen four-eyes), locked and closed in order; locking it moves the Posting Cutoff and pins one GL Mapping Version
+(`P14-TSK-005`).
+**Not:** a value-date or system-time range (the posting date alone decides the period, `LEDGER_MODEL.md` §2), nor a
+reporting window of an operational report.
+**Owned by:** `accounting`
+
+### Period Close
+**Is:** the act of closing a `LOCKED` Accounting Period: a close run whose Close Checks are all `PASSED` or explicitly
+`DISCLOSED`, a FINAL trial balance zero per currency and equal to the ledger, proposed by an `ACCOUNTANT` and approved by
+a second person (`INV-ACC-09`, `P14-TSK-011`, `-012`).
+**Not:** the Posting Cutoff (which happens at the lock, before the checks), nor a closing journal entry (none is posted,
+owner decision C8), nor irreversible — a reopen is four-eyes and supersedes, never deletes.
+**Owned by:** `accounting`
+
+### Close Check
+**Is:** one recorded readiness test of a close run — `LEDGER_TRIAL_BALANCE`, `GL_EQUALS_LEDGER`, `RULE_CONFORMANCE`,
+`SOURCE_COMPLETENESS`, `ACCRUALS_COMPLETE`, `PROJECTION_VERIFIED`, `RECONCILIATION_DISCLOSURE`,
+`VALUATION_SET_APPROVED`, `OPEN_ACCOUNTING_BREAKS` — claimed leaderlessly, each attempt and outcome a row (`P14-TSK-011`).
+**Not:** a proof of its own: the product checks read the existing proofs' verdicts; nor a gauge (a gauge is
+operational, a check is the close's evidence).
+**Owned by:** `accounting`
+
+### Trial Balance
+**Is:** for a period, per GL Account and currency, the opening balance, debits, credits and closing balance, summing to
+zero per currency and equal to the ledger's own figures — a FINAL Report Run of kind `TRIAL_BALANCE` once the period is
+locked (`P14-TSK-009`).
+**Not:** the ledger's continuous per-currency check (`TrialBalance.sweep`, `INV-ACC-01`), which stays the ledger's and
+never self-corrects; nor a stored balance.
+**Owned by:** `accounting`
+
+### Report Run
+**Is:** one generation of one report definition and version for one period, revision and parameter set, born once,
+generated in a read-only transaction, its content and sha256 frozen at completion, recording its mapping version,
+valuation rate set and journal cut; FINAL for a locked or closed period, PROVISIONAL otherwise; superseded, never deleted,
+on a reopen (`INV-ACC-04`, ADR-0115, `P14-TSK-008`).
+**Not:** a source of truth (it is output; the journal is truth), nor an operational report (a live, unissued read).
+**Owned by:** `accounting`
+
+### Financial Statement
+**Is:** the balance sheet and income statement for a period, from the GL by statement section, the current-period
+result and retained earnings computed, with notes disclosing suspense, open breaks, prior-period adjustments and the
+treatments deferred for qualified review (`P14-TSK-016`).
+**Not:** a statutory filing or an audited statement; nor a customer Account Statement (`StatementDerivation`, the
+ledger's per-account statement).
+**Owned by:** `accounting`
+
+### Valuation Rate Set
+**Is:** the immutable, four-eyes-approved set of reference rates captured for a period from `fx.rate_snapshot` (source,
+`observed_at`, snapshot id per pair), pinned by every FINAL run that translates (`INV-ACC-11`, ADR-0116, `P14-TSK-014`).
+**Not:** an Exchange Rate a customer was quoted or a conversion executed at, nor a Reference Rate read live — it is a
+frozen valuation input, never an execution input.
+**Owned by:** `accounting`
+
+### Functional Currency
+**Is:** the currency in which the platform measures its own results — EUR, the reference jurisdiction's (owner decision
+C1).
+**Not:** a transaction currency (each journal line keeps its own), nor a settlement currency; no journal line is
+converted into it.
+**Owned by:** `accounting`
+
+### Reporting Currency
+**Is:** the currency statements are presented in — EUR, equal to the Functional Currency (C1) — every figure translated
+at the period's Valuation Rate Set with its original beside it.
+**Not:** a currency anything is posted or settled in.
+**Owned by:** `accounting`
+
+### Translation Difference
+**Is:** the explicit line by which the sum of individually translated parts differs from the translated total under one
+rounding rule — shown, never absorbed (`INV-ACC-11`).
+**Not:** a realised FX result (posted, `FX_REALISED_*`), a rounding residual (posted, `ROUNDING_RESIDUAL`) or an
+unrealised revaluation entry (none is posted, owner decision C7).
+**Owned by:** `accounting`
+
+### Accounting Break
+**Is:** a GL-side discrepancy born once per (period, check, subject) — `MAPPING_GAP`, `DOUBLE_MAPPING`,
+`UNREGISTERED_POSTING`, `SHAPE_MISMATCH`, `UNBALANCED_ENTRY`, `SOURCE_DISCREPANCY`, `SOURCE_DELAYED` — acknowledged with a
+disclosure under four eyes or resolved by reference to a correcting entry (ADR-0117, `P14-TSK-010`).
+**Not:** a Reconciliation Break (external evidence against an expectation, with suspense), nor a correction: it posts
+nothing and is never deleted (owner decision C11).
+**Owned by:** `accounting`
+
+### Prior-Period Adjustment
+**Is:** the correction of an error found in a closed period by a ledger adjustment of origin `ACCOUNTING`, reason
+`PRIOR_PERIOD_ADJUSTMENT`, posted in an open period under four eyes, recorded with the closed period it corrects
+(`INV-ACC-10`, `P14-TSK-013`).
+**Not:** a back-dated posting (the ledger refuses those), nor a reopen, nor a `MANUAL` adjustment (its own origin and
+door).
+**Owned by:** `accounting`
+
+### Regulatory Obligation
+**Is:** configuration naming a reporting duty — jurisdiction code, form and version, period type, the report definitions
+it draws from, the form-line mapping, validation rules and the adapter — simulated in Phase 14 (owner decision C4,
+ADR-0118).
+**Not:** a legal fact the platform asserts: no real jurisdiction is chosen and no compliance is claimed.
+**Owned by:** `accounting`
+
+### Regulatory Submission
+**Is:** one return under an obligation for a period, drafted only from FINAL Report Runs (lineage by run id and hash),
+validated, approved under four eyes, submitted once through `RegulatoryReportingProvider`, acknowledged or rejected;
+corrected by a new submission referencing it (`INV-ACC-13`, `P14-TSK-018`).
+**Not:** Phase 13's Regulatory Report (an AML filing from a case, `risk`'s), nor a report run.
+**Owned by:** `accounting`
+
+---
+
 ## 9. Ledger, settlement and reconciliation
 
 ### Journal Entry

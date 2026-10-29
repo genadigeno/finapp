@@ -2158,6 +2158,66 @@ routing's; `NOT_ASSESSED` remains seam version 2's answer for an unassessed part
 - Unreconciled breaks and suspense balances are explicitly disclosed at close.
 - No reporting component holds write access to ledger tables (verified by privilege review).
 
+**The six, made measurable** (written by the Phase 13 → 14 transition, 2026-10-29; each kept as written above; task IDs
+are `PHASE_14_PLAN.md`'s, a bare `-nnn` meaning `P14-TSK-nnn`; scenario numbers are its §14.2's):
+
+1. *Trial balance zero per currency, continuously verified.* `finapp.ledger.trial.balance{currency}` stays the continuous
+   signal (`INV-ACC-01`, unchanged); in addition every `LOCKED` period has a FINAL `TRIAL_BALANCE` run, per GL account ×
+   currency, summing to zero per currency and equal to the ledger's own per-currency totals over the same posting-date
+   range, a planted unbalanced fixture (raw SQL past the trigger, test-only) failing `LEDGER_TRIAL_BALANCE` and only then;
+   the battery's independent oracle agreeing across ≥ 10,000 entries, five currencies, twelve periods. **Owners**:
+   `-009`, `-011`, `P14-TST-002`.
+2. *Any GL figure drills down to its journal lines.* For every figure of every FINAL run, the drill-down door returns the
+   lines whose sum is the figure, each line's entry, namespace and source reference (`INV-ACC-02`, `INV-LED-05`); scenario
+   12 green; a submission line traced to its run figure and on to lines. **Owners**: `-007`, `-016`, `-018`.
+3. *Posting into a closed period is rejected; the prior-period adjustment path is implemented.* The ledger refuses
+   `posting_date <= closed_through` at insert for every role and raw SQL (`INV-ACC-03`, `-08`);
+   `PostingCutoffDatabaseTest#tenPostersAndALockLeaveNoEntryAfterTheCut` counts zero entries committed after the cut;
+   lending's accrual catch-up across a lock posts in the open period with its value date kept (scenario 6); a
+   prior-period adjustment posts in the open period under four eyes, referencing the corrected period, and appears in the
+   next statements' notes (`INV-ACC-10`). **Owners**: `-004`, `-006`, `-013`, `-016`.
+4. *Reports are reproducible.* Every FINAL run regenerated answers `IDENTICAL` (sha256 equal) in two JVMs; a perturbed
+   mapping rule or valuation rate flips exactly the named rows; a reopen marks runs `SUPERSEDED`, never deleted
+   (`INV-ACC-04`, `-07`, `-10`). **Owners**: `-008`, `-012`, `P14-TST-002`.
+5. *Unreconciled breaks and suspense are disclosed at close.* The `RECONCILIATION_DISCLOSURE` check records reconciliation's
+   open breaks and `SUSPENSE_UNMATCHED` balance and ageing as of the cutoff, and the statements' notes print them; open
+   accounting breaks are `DISCLOSED` with a reason or block the proposal (`INV-ACC-05`, `-09`). **Owners**: `-010`, `-011`,
+   `-016`.
+6. *No reporting component holds write access to ledger tables.* Met in the form owner decision C10 takes, recorded here
+   rather than re-worded: `accounting` has no ledger edge (`AccountingModuleIsolationTest`); every report and drill-down
+   read runs `REPEATABLE READ READ ONLY` and a planted write inside generation is refused by the database
+   (`ReportRunDatabaseTest#aWriteInsideGenerationIsRefused`); `ReportingNeverWritesTest` refuses a ledger writer type
+   reachable from report code; the journal is written by accounting only through the ledger's `ACCOUNTING`-origin door.
+   A separate database role is Phase 15's privileged-access review (`INV-ACC-14`). **Owners**: `-001`, `-008`.
+
+**Per area** (the owner's Phase 14 categories, each measurable):
+- **Rule correctness** — every posting key prefix in every source module registered (`PostingRuleRegisterTest`); every
+  entry of every period conforming to its rule's shape, a planted shape mismatch and an unregistered namespace each
+  raising one break (`INV-ACC-12`). **Owners**: `-002`, `-010`.
+- **Traceability** — economic event → posting key namespace → rule → entry → lines → GL account → report figure →
+  submission line, every link a row or a registered constant (criterion 2).
+- **Ledger reconciliation** — `GL_EQUALS_LEDGER` per period and currency; `SOURCE_COMPLETENESS` reading every existing
+  proof's verdict; every discrepancy an accounting break, never a correction; zero open breaks or each disclosed at close.
+  **Owners**: `-010`, `-011`.
+- **Multi-currency** — five currencies at three scales translated at a pinned, four-eyes valuation rate set with
+  provenance; the translation difference an explicit line; no journal line or executed rate altered (`INV-ACC-11`).
+  **Owners**: `-014`, `-015`.
+- **Period close** — the machine's every edge conditional and evented; close only from a complete run under four eyes
+  (`INV-ACC-09`); reopen four-eyes, latest only; contention rows 1–4, 8, 9 green. **Owners**: `-005`, `-011`, `-012`.
+- **Reporting** — every report of `PHASE_14_PLAN.md` §13.6 a definition producing runs; operational reports labelled
+  operational; no cache or projection a FINAL figure's source. **Owners**: `-016`, `-017`.
+- **Security** — the three roles' permissions disjoint by act; approver ≠ proposer by `CHECK` on mapping, close, unlock,
+  reopen, PPA, break acknowledgement and submission; every route in the permission register; every act audited; no
+  customer surface reads `accounting` (`NoCustomerSurfaceReadsAccountingTest`). **Owners**: `-001`, `-003`, `-012`,
+  `-013`, `-018`.
+- **Multi-instance** — the thirteen contention rows of `PHASE_14_PLAN.md` §8.3, each a counted test in its task; the
+  ten-instance answer `PASS` on those counts; the storm's counts open under PI-004 (`P14-TST-001` `POSTPONED`).
+- **Testing** — per task hermetic + architecture + guard suites; the task's database suites written and run once in the
+  owner-authorised database pass before the exit review (C5); `P14-TST-002` green.
+- **Documentation** — ADR-0113…0118 read against the code and accepted or corrected by `P14-DOC-001`; the register rows
+  (`DISTRIBUTED_EXECUTION.md`, `AUDITABLE_ACTIONS.md`, `ERROR_CONTRACT.md`, `DATA_CLASSIFICATION.md`) written by the
+  tasks that land them; the owner decisions C1–C13 ratified or changed.
+
 ### Phase 15 — Production Hardening
 - Threat model complete; identified critical and high risks mitigated or formally accepted.
 - Dependency, container and secret scanning green in CI.

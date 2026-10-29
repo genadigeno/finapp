@@ -148,6 +148,12 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0110](ADR-0110-the-case-model.md) | The case model shared by fraud, ATO, merchant abuse, AML and collections: born-once alerts, one open case per subject and kind, concurrent updates by revision, four-eyes dispositions | Accepted | 13 | Risk (Case Management) · Identity · Audit |
 | [0111](ADR-0111-aml-monitoring-from-the-ledger-journal-and-the-regulatory-report.md) | AML transaction monitoring from the ledger journal, and the regulatory report as an artefact distinct from the investigation, behind a filing port | Accepted | 13 | Risk (AML) · Ledger · KYC · Audit |
 | [0112](ADR-0112-downstream-actions-through-the-owning-domains.md) | Downstream actions as keyed commands through the owning domains: risk never mutates authoritative state and never reverses a transaction | Accepted | 13 | Risk · Identity · Accounts · Merchant · Cross-border · Payments · KYC |
+| [0113](ADR-0113-the-accounting-bounded-context-and-the-gl-as-a-versioned-mapping.md) | The `accounting` bounded context: the General Ledger as a versioned mapping over the one journal, no second ledger, no ledger edge | Proposed | 14 | Accounting / General Ledger · Reporting · Ledger |
+| [0114](ADR-0114-accounting-periods-the-ledger-posting-cutoff-and-the-close.md) | Accounting periods, the posting cutoff enforced by the ledger, and the four-eyes close | Proposed | 14 | Accounting / General Ledger · Ledger · Lending |
+| [0115](ADR-0115-reporting-as-immutable-reproducible-report-runs.md) | Financial reporting as immutable, reproducible report runs over a pinned journal cut | Proposed | 14 | Reporting · Accounting / General Ledger |
+| [0116](ADR-0116-multi-currency-valuation-and-reporting-currency-translation.md) | Multi-currency valuation: a functional currency, valuation rate sets separate from execution, translation at report time | Proposed | 14 | Accounting / General Ledger · Reporting · FX |
+| [0117](ADR-0117-the-posting-rule-register-gl-reconciliation-and-accounting-breaks.md) | The posting rule register, GL to ledger to source reconciliation, and accounting breaks | Proposed | 14 | Accounting / General Ledger · Reconciliation · every posting module |
+| [0118](ADR-0118-regulatory-reporting-behind-jurisdiction-adapters.md) | Regulatory reporting behind jurisdiction adapters: obligations as configuration, submissions from FINAL runs, a simulated reference adapter | Proposed | 14 | Reporting · Accounting / General Ledger · Lending |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch
@@ -170,8 +176,6 @@ Recorded so the decisions are not made implicitly. Each is written at its phase'
 | 5 | Payment intent vs attempt modelling |
 | 5 | Unknown-state handling and reconciliation-by-query sweeper |
 | 5 | Webhook ingestion, signature verification and deduplication |
-| 14 | Operational-ledger-to-GL mapping |
-| 14 | Accounting period and close model |
 | 16 | Any service extraction or partitioning decision (revisits ADR-0001) |
 
 *(The three Phase 8 rows left this table at the Phase 7 → 8 transition, when they were written as
@@ -210,3 +214,11 @@ case management model as ADR-0110 (born-once alerts, one open case per subject a
 revision, four-eyes dispositions). The transition also wrote ADR-0107 (the `risk` bounded context), ADR-0111 (AML
 monitoring from the ledger journal and the regulatory report) and ADR-0112 (downstream actions through the owning
 domains), which no row anticipated.)*
+
+*(The two Phase 14 rows left it at the Phase 13 → 14 transition (2026-10-29): operational-ledger-to-GL mapping was
+written as ADR-0113 (the GL a versioned mapping by ledger purpose over the one journal, no second ledger, `accounting`
+with no ledger edge) and the accounting period and close model as ADR-0114 (the posting cutoff enforced by the ledger
+at insert under namespace `14`, the four-eyes close, prior-period adjustments). The transition also wrote ADR-0115
+(reproducible report runs — `DELIVERY_PLAN.md` §Phase 14's "reporting read-model architecture"), ADR-0116 (valuation
+and translation), ADR-0117 (the posting rule register and accounting breaks) and ADR-0118 (regulatory reporting behind
+adapters). All six `Proposed`; the next free number is ADR-0119.)*

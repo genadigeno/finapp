@@ -30,7 +30,7 @@ Gate definitions and the phase status model live in
 | 11 | Lending | Applications, offers, disbursement (to the wallet and external accounts), schedules, accrual, repayment, revolving credit lines, delinquency, lending capital |
 | 12 | BNPL | Pay-in-4 and pay-in-N at checkout, the merchant paid upfront net of fee from lending capital, latest-instalment-first refunds, disputes under one bound, the three-way proof |
 | 13 | Risk, Fraud and AML | Signals, rules, decisions, cases, ongoing monitoring |
-| 14 | Accounting and Financial Reporting | GL mapping, trial balance, period close, reporting abstraction |
+| 14 | Accounting and Financial Reporting | The GL as a versioned mapping over the one journal, accounting periods with a posting cutoff the ledger enforces and a four-eyes close, the period trial balance, reproducible report runs and statements with drill-down, EUR translation at pinned valuation rates, the posting rule register and accounting breaks, regulatory reporting behind a simulated adapter *(planned by the Phase 13 → 14 transition, 2026-10-29 — `PHASE_14_PLAN.md`; this row read "GL mapping, trial balance, period close, reporting abstraction" until then)* |
 | 15 | Production Hardening | Security hardening, SLOs, runbooks, operational readiness |
 | 16 | Scale, Resilience and Disaster Recovery | Load characterisation, degradation modes, backup/restore, DR |
 
@@ -213,7 +213,7 @@ owned by the earlier phase and implemented by the later one.
 | Limit / velocity check | Phase 4 | Phase 13 — implemented by `P13-TSK-008` (transfers) and `P13-TSK-011` (cross-border, the Phase 9 seam) *(read "being implemented" until `P13-DOC-001`, 2026-10-27)* |
 | Risk decision hook on money movement | Phase 4 | Phase 13 — implemented by `P13-TSK-008` (transfers), `-011` (cross-border), `-007` (credit's `CreditRiskSignal`, the Phase 10 seam), and the two new seams by `-009` (the withdrawal) and `-010` (the checkout payment) *(read "being implemented", without the new two, until `P13-DOC-001`, 2026-10-27)* |
 | Suspense account + break record | Phase 3 | Phase 8 |
-| GL account mapping | Phase 3 | Phase 14 |
+| GL account mapping | Phase 3 | Phase 14 — planned: the mapping as accounting's versioned data keyed by ledger purpose, `P14-TSK-003` (ADR-0113, `Proposed`); the Phase 3 seam `ledger_account.gl_code` stays unwritten *(the Phase 13 → 14 transition, 2026-10-29)* |
 | Provider settlement evidence capture | Phase 5 | Phase 8 |
 | Multi-currency account/posting support | Phase 3 | Phase 9 |
 | Dispute/chargeback financial effect | Phase 5 | Phase 7 |
