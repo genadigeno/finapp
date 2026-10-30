@@ -2499,8 +2499,8 @@ purpose's ledger type; pinned by every period when it locks (`INV-ACC-07`, ADR-0
 
 ### Posting Rule
 **Is:** the registered description of how one kind of economic event posts — its posting-key namespace, source module,
-authoritative reference, rule id and version, line shape (purposes and directions) and dating class — in the posting rule
-register (`P14-TSK-002`, ADR-0117); every journal entry is checked against the rule in force at its posting date
+authoritative reference, rule id and version, line shape (purposes and directions), dating class and cutoff reaction
+(`P14-TSK-006`) — in the posting rule register (`P14-TSK-002`, ADR-0117); every journal entry is checked against the rule in force at its posting date
 (`INV-ACC-12`).
 **Not:** the code that posts (each source module's, through `PostingService`), nor a GL mapping (which classifies lines
 for reporting); registering a rule posts nothing and changes no treatment.
@@ -2509,7 +2509,10 @@ for reporting); registering a rule posts nothing and changes no treatment.
 ### Posting Cutoff
 **Is:** the ledger's `closed_through` date (`ledger.posting_cutoff`, `P14-TSK-004`): a journal entry whose posting date
 is on or before it is refused at insert (`ledger.PeriodClosed`), the refusal serialised with the cutoff's movement under
-advisory namespace `14` so no entry dated in a locked period commits after the lock (`INV-ACC-08`, ADR-0114).
+advisory namespace `14` so no entry dated in a locked period commits after the lock (`INV-ACC-08`, ADR-0114). A
+system back-dating poster may ask to be **floored** past it - posted on the first open date, the day after it, its value
+date and key kept; a person's adjustment dated on or before it is refused at approval and stays proposed (owner decision
+C3, `P14-TSK-006`).
 **Not:** a report filter or an accounting-side check — it is the ledger's own rule, moved only by the ledger's API, one
 period at a time; nor a business-date clock.
 **Owned by:** `ledger`
