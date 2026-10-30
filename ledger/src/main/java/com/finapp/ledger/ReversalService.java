@@ -108,6 +108,10 @@ public final class ReversalService {
             observer.observe(
                     PostingObserver.Outcome.REFUSED,
                     Duration.between(started, clock.instant()));
+            if (refusal instanceof PeriodClosedException) {
+                // P14-TSK-004: a reversal dated into a locked period, counted apart.
+                observer.refusedAtTheCutoff(PostingObserver.Command.REVERSAL);
+            }
             throw refusal;
         }
     }

@@ -120,6 +120,15 @@ public class LedgerBeans {
     }
 
     /**
+     * The posting cutoff's one API (`P14-TSK-004`, ADR-0114): stateless over the caller's unit of work, the clock UTC
+     * for "never over today". Its only caller is accounting's {@code PostingCutoff} port ({@code AccountingBeans}).
+     */
+    @Bean
+    com.finapp.ledger.PostingCutoffs postingCutoffs(com.finapp.sharedkernel.id.IdGenerator ids, Clock clock) {
+        return new com.finapp.ledger.PostingCutoffs(ids, clock);
+    }
+
+    /**
      * The adjustment transaction: {@code REQUIRES_NEW}, default isolation — the entry is an
      * insert under {@code READ COMMITTED} (ADR-0039), and the idempotency claim is the
      * contended write, arbitrated by its unique constraint.

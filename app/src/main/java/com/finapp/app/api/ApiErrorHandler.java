@@ -312,6 +312,23 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
     }
 
     /**
+     * The entry is dated into a locked accounting period (`P14-TSK-004`, ADR-0114, {@code INV-ACC-03}): a
+     * {@code 409}, actionable - post in the open period. Nothing was written: the ledger's trigger refused the insert
+     * and the transaction rolled back. Which date and which period are not echoed (the caller's own request).
+     */
+    @ExceptionHandler(com.finapp.ledger.PeriodClosedException.class)
+    public ResponseEntity<ProblemDetailBody> handlePeriodClosed(
+            com.finapp.ledger.PeriodClosedException exception,
+            HttpServletRequest request) {
+        log.warn("A journal write dated into a locked accounting period was refused on {}", routeOf(request));
+        return render(
+                ProblemDetail.of(
+                        com.finapp.ledger.LedgerErrorCode.PERIOD_CLOSED,
+                        request.getRequestURI(),
+                        "The posting date is in a locked accounting period; post in the open period."));
+    }
+
+    /**
      * The initiator tried to approve their own adjustment proposal (`P3-TSK-021`,
      * {@code INV-AUD-04}) — the invariant's named negative. Nothing was written: the
      * refusal rolls the transaction back and the proposal stays standing for a second

@@ -42,6 +42,25 @@ public interface PostingObserver {
     /** Called once per command invocation, whatever the outcome. */
     void observe(Outcome outcome, Duration elapsed);
 
+    /** The journal-write command a cutoff refusal came through - the meter's tag, always an enum. */
+    enum Command {
+        POSTING,
+        REVERSAL,
+        ADJUSTMENT
+    }
+
+    /**
+     * The command was refused by the posting cutoff ({@link PeriodClosedException}, {@code ledger.PeriodClosed};
+     * `P14-TSK-004`) - observed <em>in addition to</em> {@link #observe} with {@link Outcome#REFUSED}, so
+     * {@code finapp.ledger.posting} keeps counting every refusal and {@code finapp.accounting.cutoff.refused} singles
+     * out the back-dated ones.
+     *
+     * <p>Defaulted to nothing so {@link #NONE} and the tests' lambdas stay lambdas; the production meters override it,
+     * and {@code LedgerWriteMetersTest} pins that they do. The ledger cannot name the <em>requesting</em> module - a
+     * command carries no module - so the tag is the command (an owner item for {@code P14-TSK-006}).
+     */
+    default void refusedAtTheCutoff(Command command) {}
+
     /**
      * Observes nothing — for tests and tools that measure nothing. Production wiring passes
      * the meters; this constant exists so a test asserting posting semantics does not have

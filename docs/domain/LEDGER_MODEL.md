@@ -59,6 +59,14 @@ is written here.
 6. **Its publication commits with it** (`INV-EVT-01`): the outbox row is in the same transaction.
 7. **Only the ledger writes it** (`INV-LED-04`). Other modules *request* postings through a
    command API.
+8. **It is not dated into a locked period** (`INV-ACC-03`, `INV-ACC-08`; *as built by `P14-TSK-004`*, ledger
+   `V028`, ADR-0114) - an entry whose posting date is on or before `ledger.posting_cutoff.closed_through` is refused at
+   insert for every writer (`ledger.PeriodClosed`, `PeriodClosedException`), the trigger taking advisory namespace `14`
+   key `cutoff` shared before it reads the cutoff, so the refusal is serialised with the cutoff's movement. The cutoff
+   is unset until accounting's first period lock and moves one calendar month at a time, only through
+   `PostingCutoffs` (the same key exclusive, a conditional `UPDATE`, an event row). The ledger never re-dates: a
+   back-dating poster's answer is its own module's (C3, `P14-TSK-006`). A reversal or adjustment is a posting here - one
+   dated into a locked period is refused, one dated in the open period posts.
 
 ## 4. Balances
 
@@ -89,6 +97,10 @@ ADR-0039. Two halves, and conflating them is the mistake:
   to have. No lock is taken on any account.
 - **Decisions that depend on a balance take `SELECT … FOR UPDATE` on the account row**, then
   derive, then act. This covers holds and any future non-overdraw check, and nothing else.
+- **Every entry insert takes one shared advisory lock** (*`P14-TSK-004`*): namespace `14` key `cutoff`, in `V028`'s
+  trigger, held to commit - compatible with every other posting, so postings never wait on each other for it; only a
+  posting-cutoff move (the key exclusive) waits for in-flight postings, and postings arriving during the move wait for
+  it. A transaction already holding the key never queues again for its next entry.
 
 `SERIALIZABLE` is deliberately not used: it would put a retry loop around every money-moving
 command, which is where "the database committed but the response was lost" becomes two effects.

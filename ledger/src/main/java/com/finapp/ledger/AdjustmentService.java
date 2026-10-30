@@ -303,6 +303,10 @@ public final class AdjustmentService {
             observer.observe(
                     PostingObserver.Outcome.REFUSED,
                     Duration.between(started, clock.instant()));
+            if (refusal instanceof PeriodClosedException) {
+                // P14-TSK-004: an approval whose posting date a lock has since covered, counted apart.
+                observer.refusedAtTheCutoff(PostingObserver.Command.ADJUSTMENT);
+            }
             throw refusal;
         }
     }

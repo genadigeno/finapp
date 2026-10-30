@@ -87,6 +87,15 @@ public final class JdbcJournalEntryStore implements JournalEntryStore<Connection
                 insert.executeBatch();
             }
         } catch (SQLException failure) {
+            // V028's posting cutoff (P14-TSK-004, INV-ACC-03, INV-ACC-08): the entry is dated on or before the cutoff,
+            // refused at insert under namespace 14 shared. Its own SQLSTATE, matched as the state and never the prose,
+            // so the posting, reversal and adjustment surfaces all answer ledger.PeriodClosed; the composed message
+            // carries the entry and its date, never a row or an amount (INV-AUD-02).
+            if (PostingCutoffs.PERIOD_CLOSED_SQLSTATE.equals(failure.getSQLState())) {
+                throw new PeriodClosedException(
+                        "entry " + entry.id() + " is dated " + entry.postingDate() + ", on or before the posting"
+                                + " cutoff - its accounting period is locked (INV-ACC-03, P14-TSK-004)");
+            }
             // V007's trigger refuses a line on a non-ACTIVE account with ERRCODE 23514 and a
             // stable marker; translated to a named domain refusal so a commanding flow can
             // treat "this account stopped accepting postings" as an outcome (P3-TSK-014). The

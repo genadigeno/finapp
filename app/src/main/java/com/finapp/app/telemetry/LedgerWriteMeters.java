@@ -33,7 +33,16 @@ final class LedgerWriteMeters implements PostingObserver {
     /** {@code finapp.ledger.posting.latency} — the command's duration, every outcome. */
     static final String POSTING_LATENCY = "finapp.ledger.posting.latency";
 
+    /**
+     * {@code finapp.accounting.cutoff.refused} - journal-write commands refused by the posting cutoff
+     * ({@code ledger.PeriodClosed}; `P14-TSK-004`, {@code PHASE_14_PLAN.md} section 16, alert
+     * {@code AccountingPostingIntoClosedPeriod}), by command. The plan's {@code module} tag is not knowable here - a
+     * command carries no requesting module - so the tag is the command (the recorded deviation).
+     */
+    static final String CUTOFF_REFUSED = "finapp.accounting.cutoff.refused";
+
     private final Map<Outcome, Counter> outcomes = new EnumMap<>(Outcome.class);
+    private final Map<Command, Counter> cutoffRefusals = new EnumMap<>(Command.class);
     private final Timer latency;
 
     LedgerWriteMeters(MeterRegistry registry) {
@@ -50,6 +59,17 @@ final class LedgerWriteMeters implements PostingObserver {
                                         + " sum() aggregate")
                             .register(registry));
         }
+        for (Command command : Command.values()) {
+            cutoffRefusals.put(
+                    command,
+                    Counter.builder(CUTOFF_REFUSED)
+                            .tag("command", command.name().toLowerCase(java.util.Locale.ROOT))
+                            .description(
+                                    "Journal-write commands refused by the posting cutoff (ledger.PeriodClosed):"
+                                        + " an entry dated into a locked accounting period. Also counted as"
+                                        + " finapp.ledger.posting{outcome=refused}. Per instance; sum() aggregates")
+                            .register(registry));
+        }
         this.latency =
                 Timer.builder(POSTING_LATENCY)
                         .description(
@@ -63,5 +83,10 @@ final class LedgerWriteMeters implements PostingObserver {
     public void observe(Outcome outcome, Duration elapsed) {
         outcomes.get(outcome).increment();
         latency.record(elapsed);
+    }
+
+    @Override
+    public void refusedAtTheCutoff(Command command) {
+        cutoffRefusals.get(command).increment();
     }
 }
