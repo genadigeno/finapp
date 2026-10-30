@@ -35,7 +35,36 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " dating class (P14-TSK-002, ADR-0117 decision 1; ACCOUNTING_READ). Code data, no customer's or"
                     + " merchant's figure; recorded at every serving as an audited operator read. Its target the"
                     + " catalogue version; the summary the version and the rule count.",
-            false);
+            false),
+
+    /** An accountant proposed a GL mapping version (`P14-TSK-003`, ACCOUNTING_MAPPING_PROPOSE). */
+    MAPPING_PROPOSED(
+            "accounting.MappingProposed",
+            "An accountant proposed a GL mapping version - a whole GL chart and its purpose -> GL account rules,"
+                    + " effective from a stated calendar month, immutable from this moment (P14-TSK-003, ADR-0113"
+                    + " decision 3, INV-ACC-07; POST /v1/operator/accounting/mapping-versions, ACCOUNTING_MAPPING_PROPOSE)."
+                    + " Reasoned. Its target the version; the summary its number, effective month and account and rule"
+                    + " counts - never a figure.",
+            true),
+
+    /** A second person activated a GL mapping version (`P14-TSK-003`, ACCOUNTING_MAPPING_APPROVE). */
+    MAPPING_ACTIVATED(
+            "accounting.MappingActivated",
+            "A person other than its proposer activated a GL mapping version, total over the ledger's purposes and"
+                    + " classification-compatible with each purpose's ledger type as the activation's transaction read"
+                    + " the chart, retiring the version in force in the same transaction (P14-TSK-003, INV-ACC-06,"
+                    + " INV-ACC-07, INV-AUD-04; POST .../mapping-versions/{id}/activation, ACCOUNTING_MAPPING_APPROVE)."
+                    + " Reasoned. Its target the version; the summary its number, effective month and the retired"
+                    + " predecessor's number. accounting.GlMappingVersionActivated is published with it.",
+            true),
+
+    /** A GL mapping version was rejected (`P14-TSK-003`, ACCOUNTING_MAPPING_APPROVE). */
+    MAPPING_REJECTED(
+            "accounting.MappingRejected",
+            "A holder of ACCOUNTING_MAPPING_APPROVE rejected a proposed GL mapping version - terminal; a correction is a"
+                    + " new proposal (P14-TSK-003; POST .../mapping-versions/{id}/rejection). Reasoned. Its target the"
+                    + " version; the summary its number and whether the rejecter proposed it.",
+            true);
 
     private final String code;
     private final String description;

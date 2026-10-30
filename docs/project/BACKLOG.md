@@ -25450,7 +25450,36 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   removed (1 red) - each restored byte-identical. Distributed: `PASS` vacuously - code data, no state, no writer.
   **Owed**: none (no database behaviour; the read's audit append is the platform's `AuditWriter`).
 
-**P14-TSK-003 — The GL chart and mapping as versioned data, four-eyes** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-001`'s merge, master `9c82e31e`; every dependency `COMPLETE`)
+**P14-TSK-003 — The GL chart and mapping as versioned data, four-eyes** — `COMPLETE` (2026-10-30; branch `P14-TSK-003` from master `8169d08d`; accounting `V002`; **M14.1 `CLOSED` at 3 of 3**; marks no task `READY` — the coordinator does) *(read `READY` (2026-10-30; marked by the coordinator at `P14-TSK-001`'s merge, master `9c82e31e`) until this task's gate)*
+- **As built** (2026-10-30): accounting `V002` (`gl_mapping_version` with the four-eyes and persons `CHECK`s, the partial
+  unique `gl_mapping_one_active`, the edge trigger - born `PROPOSED`, identity frozen, only the machine's edges, **never
+  retroactive** (an activation effective before a month already activated is refused for every writer) - and the deferred
+  retire-beside-successor and whole-version triggers; `gl_account` and `gl_mapping_rule` (`PRIMARY KEY (version_id,
+  ledger_purpose, owner_kind)` - the plan's `UNIQUE`) INSERT-only, born with their `PROPOSED` version; the history
+  `gl_mapping_version_event` append-only; grants `SELECT, INSERT`, `UPDATE` only of the decision and retirement columns, no
+  `DELETE`). Domain in `accounting`: `GlMappingVersion` (the content, judged coherent before anything is written),
+  `GlAccount`, `MappingRule`, `MappingJudgement` (pure: totality and compatibility), `GlMappingAdministration` (propose,
+  activate, reject under namespace `14` key `mapping`, then the row `FOR UPDATE`, then the `ACTIVE` row), `GlMappings`
+  (the reads and the diff), `JdbcGlMappingStore`, `AccountingReasons`. `LedgerChart` gains its one method; **`app`'s
+  `LedgerPurposeChart`** reads the purposes from the ledger's enum (the totality's domain, all forty), each purpose's types
+  as the ledger's rows hold them (`SELECT` only) **joined by the type the owning module declares for runtime-opened
+  accounts** (lending's and bnpl's `declaredTypeOf`, the wallet's and the merchant's `LIABILITY`) - a contradiction is two
+  types and refused, fail closed - and the counterparties as the dimension. **Compatibility is judged at activation, not at
+  proposal** (the chart may grow between); the reviewer's diff shows the live judgement. The doors:
+  `POST /v1/operator/accounting/mapping-versions` (`ACCOUNTING_MAPPING_PROPOSE`, 201), `…/{versionId}/activation` and
+  `…/rejection` (`ACCOUNTING_MAPPING_APPROVE`), `GET …/{versionId}` (`ACCOUNTING_READ`), `GET …/{versionId}/diff`
+  (`ACCOUNTING_MAPPING_APPROVE` - the controller reads what it acts on), each POST keyed `accounting.mapping:<type>:<id>`;
+  six new error codes (`MappingInvalid`, `MappingNotTotal`, `MappingIncompatible`, `MappingStale`, `MappingRetroactive`,
+  `ReasonRequired`); `accounting.MappingProposed`/`Activated`/`Rejected` audited, `accounting.SelfApprovalRefused` first
+  raised (left `AuditCompletenessTest`'s absences); `accounting.GlMappingVersionActivated` published;
+  `finapp.accounting.gl.unmapped` registered at zero (`AccountingMappingMetrics`). The **test-only reference version**
+  (`ReferenceGlMapping`, accounting's new test fixtures - 35 GL accounts, 40 rules; **reference values for qualified review,
+  C2**) is proven total and compatible against the ledger's own enum and seed migrations (`LedgerPurposeChartTest`).
+  `effective_from_period` is a calendar month, monotonic; the `OPEN`-period check is `-005`'s re-read. **Not built**: a
+  list route (the entry's "GET" read as the version by id), audited mapping reads (reference data, no figure, no person, no
+  reason served), an SQL twin of the reason screen (no cross-schema function). **Owed (C5)**:
+  `GlMappingDatabaseTest` (the four named cases and the ranks for every writer), `AccountingMigrationTest`'s updated table
+  and function lists.
 - **Objective**: GL accounts and the purpose → GL account mapping as an immutable, four-eyes-activated version, total and
   classification-compatible (ADR-0113, `INV-ACC-07`).
 - **Bounded context**: Accounting / GL.

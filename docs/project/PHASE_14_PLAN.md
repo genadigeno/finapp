@@ -162,6 +162,19 @@ boundary is the ledger's database.
   with an append-only `period_event` row.
 - **GL Mapping Version:** `PROPOSED → ACTIVE → RETIRED`; `PROPOSED → REJECTED`; immutable content from birth;
   `effective_from_period` an `OPEN` period; a period pins the version in force when it is `LOCKED`.
+  *(As built by `P14-TSK-003`, 2026-10-30, accounting `V002`: one `ACTIVE` at a time; the activation retires the
+  predecessor, which keeps its month range - `effective_to_period` = the successor's `effective_from_period` - so the
+  version in force for a month is the activated version whose range holds it (`-005`'s lock reads it). Before periods
+  exist, "an `OPEN` period" is held as: a calendar month start, **never earlier than any version already activated**
+  (`MappingRetroactive`, and the edge trigger for every writer); `-005` adds the `OPEN`-period re-read under the period
+  row. Totality and compatibility are judged **at activation** against the chart the activation's transaction reads, not
+  at proposal - the chart may grow between; the reviewer's diff shows the live judgement. A purpose's ledger type is the
+  types its accounts hold **joined by the owning module's declared type** for accounts opened at runtime (a loan's, an
+  obligation's, a wallet's, a merchant's), so a purpose with no account yet is still judged and a contradiction - two
+  types - is refused. §9's `UNIQUE (version_id, ledger_purpose, owner_kind)` is built as that primary key; §10's
+  "read, diff" as `GET …/{versionId}` (`ACCOUNTING_READ`) and `GET …/{versionId}/diff` (`ACCOUNTING_MAPPING_APPROVE`) -
+  no list route; reject is `ACCOUNTING_MAPPING_APPROVE`'s, as §5 says, so an accountant cannot withdraw their own
+  proposal unless they also hold the controller's role.)*
 - **Close Check:** `PENDING → PASSED | FAILED | DISCLOSED` (a failure the approver discloses explicitly); re-run creates a
   new attempt row, never edits.
 - **Report Run:** `GENERATING → FINAL | PROVISIONAL`, `FAILED`; `FINAL → SUPERSEDED` (on reopen); content and hash frozen

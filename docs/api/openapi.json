@@ -17,6 +17,181 @@
       }
     },
     "responses": {
+      "accounting.MappingIncompatible": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.MappingIncompatible"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.MappingIncompatible"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A rule of the GL mapping version maps a purpose to a GL account of another classification than the purpose's ledger type, or names a purpose the ledger does not hold; it was not activated.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.MappingInvalid": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.MappingInvalid"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.MappingInvalid"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The GL mapping version is not coherent - a code repeated, a rule naming an account the version does not hold, two rules for one purpose, or a section that does not admit its account's classification; nothing was proposed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.MappingNotTotal": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.MappingNotTotal"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.MappingNotTotal"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The GL mapping version does not map every purpose of the ledger's chart; it was not activated.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.MappingRetroactive": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.MappingRetroactive"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.MappingRetroactive"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The GL mapping version takes effect from a month before a version already in force; a mapping never applies retroactively.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.MappingStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.MappingStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.MappingStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The GL mapping version is no longer awaiting a decision, or is superseded by the version in force.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.NotFound": {
         "content": {
           "application/problem+json": {
@@ -43,6 +218,41 @@
           }
         },
         "description": "[404] No accounting record matches the requested identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.ReasonRequired": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.ReasonRequired"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.ReasonRequired"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A reason is required.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -17592,6 +17802,333 @@
         },
         "type": "object"
       },
+      "GlMappingAccountChangeView": {
+        "properties": {
+          "after": {
+            "$ref": "#/components/schemas/GlMappingAccountView"
+          },
+          "before": {
+            "$ref": "#/components/schemas/GlMappingAccountView"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GlMappingAccountRequest": {
+        "properties": {
+          "classification": {
+            "maxLength": 16,
+            "minLength": 1,
+            "type": "string"
+          },
+          "code": {
+            "maxLength": 8,
+            "minLength": 4,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "section": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "classification",
+          "code",
+          "name",
+          "section"
+        ],
+        "type": "object"
+      },
+      "GlMappingAccountView": {
+        "properties": {
+          "classification": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "normalBalance": {
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GlMappingCounterpartyView": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GlMappingDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GlMappingDiffView": {
+        "properties": {
+          "accountsAdded": {
+            "items": {
+              "$ref": "#/components/schemas/GlMappingAccountView"
+            },
+            "type": "array"
+          },
+          "accountsChanged": {
+            "items": {
+              "$ref": "#/components/schemas/GlMappingAccountChangeView"
+            },
+            "type": "array"
+          },
+          "accountsRemoved": {
+            "items": {
+              "$ref": "#/components/schemas/GlMappingAccountView"
+            },
+            "type": "array"
+          },
+          "activatable": {
+            "type": "boolean"
+          },
+          "againstId": {
+            "type": "string"
+          },
+          "againstVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "counterparties": {
+            "items": {
+              "$ref": "#/components/schemas/GlMappingCounterpartyView"
+            },
+            "type": "array"
+          },
+          "effectiveFromPeriod": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "incompatible": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "rulesAdded": {
+            "items": {
+              "$ref": "#/components/schemas/GlMappingRuleView"
+            },
+            "type": "array"
+          },
+          "rulesChanged": {
+            "items": {
+              "$ref": "#/components/schemas/GlMappingRuleChangeView"
+            },
+            "type": "array"
+          },
+          "rulesRemoved": {
+            "items": {
+              "$ref": "#/components/schemas/GlMappingRuleView"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "unknown": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "unmapped": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "GlMappingProposalRequest": {
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/GlMappingAccountRequest"
+            },
+            "maxItems": 400,
+            "minItems": 1,
+            "type": "array"
+          },
+          "effectiveFromPeriod": {
+            "maxLength": 7,
+            "minLength": 7,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/GlMappingRuleRequest"
+            },
+            "maxItems": 400,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "accounts",
+          "effectiveFromPeriod",
+          "rules"
+        ],
+        "type": "object"
+      },
+      "GlMappingReceipt": {
+        "properties": {
+          "effectiveFromPeriod": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "retiredVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "GlMappingRuleChangeView": {
+        "properties": {
+          "after": {
+            "type": "string"
+          },
+          "before": {
+            "type": "string"
+          },
+          "purposeAndOwnerKind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GlMappingRuleRequest": {
+        "properties": {
+          "glAccountCode": {
+            "maxLength": 8,
+            "minLength": 4,
+            "type": "string"
+          },
+          "ownerKind": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "purpose": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "glAccountCode",
+          "ownerKind",
+          "purpose"
+        ],
+        "type": "object"
+      },
+      "GlMappingRuleView": {
+        "properties": {
+          "glAccountCode": {
+            "type": "string"
+          },
+          "ownerKind": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GlMappingVersionView": {
+        "properties": {
+          "accounts": {
+            "items": {
+              "$ref": "#/components/schemas/GlMappingAccountView"
+            },
+            "type": "array"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "effectiveFromPeriod": {
+            "type": "string"
+          },
+          "effectiveToPeriod": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "retiredAt": {
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/GlMappingRuleView"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "HistoryView": {
         "properties": {
           "actor": {
@@ -30146,6 +30683,195 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TransactionsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/mapping-versions": {
+      "post": {
+        "operationId": "proposeGlMappingVersion",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GlMappingProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlMappingReceipt"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/mapping-versions/{versionId}": {
+      "get": {
+        "operationId": "readGlMappingVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlMappingVersionView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/mapping-versions/{versionId}/activation": {
+      "post": {
+        "operationId": "activateGlMappingVersion",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GlMappingDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlMappingReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/mapping-versions/{versionId}/diff": {
+      "get": {
+        "operationId": "readGlMappingVersionDiff",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "against",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlMappingDiffView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/mapping-versions/{versionId}/rejection": {
+      "post": {
+        "operationId": "rejectGlMappingVersion",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GlMappingDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlMappingReceipt"
                 }
               }
             },

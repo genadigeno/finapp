@@ -200,6 +200,9 @@ dependencies {
     // The policy v1 fixtures (RiskPolicyFixtures, P13-TSK-002, owner decision C8): the policy desk's round-trip and the
     // door tests propose exactly the content the engine and the battery evaluate - one reference, never a copy.
     testImplementation(testFixtures(project(":risk")))
+    // The GL mapping fixtures (P14-TSK-003, owner decision C2): the reference version proven total and compatible here
+    // against the ledger's own enum and seed (LedgerPurposeChartTest), and the desk's in-memory store - one reference.
+    testImplementation(testFixtures(project(":accounting")))
 
     // Architecture rules live here because `app` is the only module that sees every other
     // one — enforcing a boundary requires being able to observe both sides of it. As

@@ -747,7 +747,14 @@ class CredentialReachesNoEmittedSinkTest {
                         // ReprocessingRequest - which it shared with reconciliation's, so the contract published one
                         // schema for two doors (ApiSchemaNamesAreUniqueTest). No secret: a sequence and a REASON.
                         // The day's replay reuses RiskReplayRequest above.
-                        "RiskReprocessingRequest");
+                        "RiskReprocessingRequest",
+                        // P14-TSK-003: the GL mapping doors' bodies. No secret: a calendar month, GL accounts (a digit
+                        // code, a chart name, closed classification and section names) and rules (the ledger's purpose
+                        // and owner-kind names, a GL code) in nested schemas this list does not name, with a REASON
+                        // screened for card-number and account shapes at the domain (AccountingReasons); the
+                        // decision's body a REASON alone.
+                        "GlMappingProposalRequest",
+                        "GlMappingDecisionRequest");
     }
 
     @Test
