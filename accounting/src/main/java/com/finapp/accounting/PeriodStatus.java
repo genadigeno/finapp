@@ -49,7 +49,7 @@ public enum PeriodStatus {
     /**
      * True for the edges a second person completes: the close's approval ({@code INV-ACC-09}), an unlock and a reopen
      * ({@code INV-ACC-10}) - each proposed by one holder and approved by another, never one's own ({@code INV-AUD-04}).
-     * The lock (system, after the grace) and a close proposal's rejection are not.
+     * The lock (one accountant's act after the grace - `P14-TSK-005`) and a close proposal's rejection are not.
      */
     public boolean fourEyesTo(PeriodStatus target) {
         return canMoveTo(target) && (target == CLOSED || target == OPEN);
