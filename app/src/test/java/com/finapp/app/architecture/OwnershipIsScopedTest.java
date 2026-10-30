@@ -1913,6 +1913,37 @@ class OwnershipIsScopedTest {
                                         + " on a door behind @RequiresPermission(ACCOUNTING_READ or"
                                         + " ACCOUNTING_MAPPING_APPROVE); a mapping has no owner to scope by.")),
                     Map.entry(
+                            "com.finapp.accounting.JdbcAccountingPeriodStore.byId",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-005. find and lock's one helper: an accounting period by the id the"
+                                        + " operator's permission-guarded request named (behind"
+                                        + " @RequiresPermission(ACCOUNTING_CLOSE_PROPOSE or ACCOUNTING_CLOSE_APPROVE)) -"
+                                        + " a calendar month of the platform's books, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcAccountingPeriodStore.markLocked",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-005. The id comes only from the period row this transaction locked FOR"
+                                        + " UPDATE (lock(id)), the edge conditional on OPEN and the revision read; a"
+                                        + " period is platform-wide with no owner to scope by, behind"
+                                        + " @RequiresPermission(ACCOUNTING_CLOSE_PROPOSE).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcAccountingPeriodStore.proposeUnlock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-005. The id comes only from the period row this transaction locked FOR"
+                                        + " UPDATE, the write conditional on LOCKED, the revision and no pending"
+                                        + " proposal; behind @RequiresPermission(ACCOUNTING_CLOSE_PROPOSE).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcAccountingPeriodStore.approveUnlock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-005. The id comes only from the period row this transaction locked FOR"
+                                        + " UPDATE, the edge conditional on LOCKED, the revision and a pending"
+                                        + " proposal; four eyes by CHECK; behind"
+                                        + " @RequiresPermission(ACCOUNTING_CLOSE_APPROVE).")),
+                    Map.entry(
                             "com.finapp.accounting.JdbcGlMappingStore.one",
                             new Entry(
                                     Scope.ADMINISTERED,

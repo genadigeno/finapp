@@ -455,7 +455,17 @@ class RoutePermissionRegisterTest {
                             PermissionName.ACCOUNTING_MAPPING_APPROVE),
                     entry("GET /v1/operator/accounting/mapping-versions/{versionId}", PermissionName.ACCOUNTING_READ),
                     entry("GET /v1/operator/accounting/mapping-versions/{versionId}/diff",
-                            PermissionName.ACCOUNTING_MAPPING_APPROVE)));
+                            PermissionName.ACCOUNTING_MAPPING_APPROVE),
+                    // P14-TSK-005: the periods - the lock and the unlock's proposal the accountant's, the unlock's
+                    // approval the controller's (four eyes), the list the accountant's (identity V025's partition);
+                    // the negatives are AccountingPeriodDeskTest's route declarations.
+                    entry("GET /v1/operator/accounting/periods", PermissionName.ACCOUNTING_READ),
+                    entry("POST /v1/operator/accounting/periods/{periodId}/lock",
+                            PermissionName.ACCOUNTING_CLOSE_PROPOSE),
+                    entry("POST /v1/operator/accounting/periods/{periodId}/unlock-proposal",
+                            PermissionName.ACCOUNTING_CLOSE_PROPOSE),
+                    entry("POST /v1/operator/accounting/periods/{periodId}/unlock-approval",
+                            PermissionName.ACCOUNTING_CLOSE_APPROVE)));
 
     /**
      * The CONDITIONAL half (the Phase 12 -> 13 gate's A5-F1): a permission a route asks BESIDE its declared one when the

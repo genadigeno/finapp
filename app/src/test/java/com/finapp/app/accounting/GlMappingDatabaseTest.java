@@ -3,14 +3,18 @@ package com.finapp.app.accounting;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.accounting.AccountingPeriodId;
+import com.finapp.accounting.AccountingPeriods;
 import com.finapp.accounting.GlAccount;
 import com.finapp.accounting.GlClassification;
 import com.finapp.accounting.GlMappingAdministration;
 import com.finapp.accounting.GlMappingVersion;
 import com.finapp.accounting.GlMappingVersionId;
+import com.finapp.accounting.GlMappingVersionStatus;
 import com.finapp.accounting.JdbcGlMappingStore;
 import com.finapp.accounting.StatementSection;
 import com.finapp.accounting.testing.ReferenceGlMapping;
+import com.finapp.ledger.PostingCutoffs;
 import com.finapp.platform.audit.JdbcAuditWriter;
 import com.finapp.platform.outbox.JdbcOutboxWriter;
 import com.finapp.platform.security.Actor;
@@ -27,6 +31,7 @@ import java.time.Clock;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -178,7 +183,105 @@ class GlMappingDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("contention row 8 (P14-TSK-005): a lock behind an activation pins one version - its pin read queues on"
+            + " the activation's mapping key (shared behind exclusive) and pins what the committed ranges hold for the"
+            + " month; an activation behind a lock queues until the lock commits")
+    void aLockBehindAnActivationPinsOneVersion() throws Exception {
+        AccountingPeriodFixture.restore();
+        AccountingPeriodId january = AccountingPeriodFixture.id(AccountingPeriodFixture.JANUARY);
+        ExecutorService pool = Executors.newFixedThreadPool(3);
+        try {
+            // Order 1: the activation holds the key exclusive, uncommitted; the lock's pin read queues behind it.
+            GlMappingAdministration.Proposed first = propose(ReferenceGlMapping.version(month()), person());
+            CountDownLatch activated = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+            Future<GlMappingAdministration.Decided> activation = pool.submit(() -> inOneTransaction(uow -> {
+                GlMappingAdministration.Decided decided =
+                        ADMINISTRATION.activate(uow, first.id(), person(), "racing a lock", correlation());
+                activated.countDown();
+                awaitQuietly(release);
+                return decided;
+            }));
+            assertThat(activated.await(30, TimeUnit.SECONDS)).isTrue();
+            Actor accountant = person();
+            Future<AccountingPeriods.Acted> lock = pool.submit(() -> AccountingPeriodFixture.inScope(accountant,
+                    uow -> AccountingPeriodFixture.periods().lock(uow, january, accountant, null, correlation())));
+            awaitWaiters("ShareLock", 1);
+            assertThat(lock.isDone()).as("the pin read waits for the activation's commit").isFalse();
+            release.countDown();
+            assertThat(activation.get(60, TimeUnit.SECONDS).status()).isEqualTo(GlMappingVersionStatus.ACTIVE);
+            assertThat(lock.get(60, TimeUnit.SECONDS).pinnedVersion()).isEqualTo(inForce("1999-01-01"));
+            AccountingPeriodFixture.restore();
+
+            // Order 2: a posting holds the cutoff key shared; the lock holds the mapping key shared and queues for the
+            // cutoff; an activation queues behind the lock's shared hold and decides only after the lock commits.
+            GlMappingAdministration.Proposed second = propose(ReferenceGlMapping.version(month()), person());
+            try (Connection poster = DatabaseRoles.application()) {
+                poster.setAutoCommit(false);
+                try (Statement statement = poster.createStatement()) {
+                    statement.execute("SELECT " + PostingCutoffs.SHARED_LOCK);
+                }
+                Future<AccountingPeriods.Acted> queuedLock = pool.submit(() -> AccountingPeriodFixture.inScope(accountant,
+                        uow -> AccountingPeriodFixture.periods().lock(uow, january, accountant, null, correlation())));
+                awaitWaiters("ExclusiveLock", 1);
+                Future<GlMappingAdministration.Decided> queuedActivation = pool.submit(() -> inOneTransaction(
+                        uow -> ADMINISTRATION.activate(uow, second.id(), person(), "behind a lock", correlation())));
+                awaitWaiters("ExclusiveLock", 2);
+                assertThat(queuedActivation.isDone()).as("the activation waits for the lock's shared hold").isFalse();
+                poster.rollback();
+                AccountingPeriods.Acted locked = queuedLock.get(60, TimeUnit.SECONDS);
+                assertThat(queuedActivation.get(60, TimeUnit.SECONDS).status()).isEqualTo(GlMappingVersionStatus.ACTIVE);
+                assertThat(locked.pinnedVersion()).isEqualTo(inForce("1999-01-01"));
+                assertThat(count("SELECT count(*) FROM accounting.gl_mapping_version v, accounting.accounting_period p"
+                        + " WHERE v.id = '" + second.id().value() + "' AND p.id = '" + january.value() + "'"
+                        + " AND v.decided_at > p.locked_at")).as("the activation decided after the lock").isEqualTo(1);
+            }
+        } finally {
+            pool.shutdownNow();
+            AccountingPeriodFixture.restore();
+        }
+    }
+
     // -----------------------------------------------------------------
+
+    /** The version the committed ranges hold for {@code monthStart} - what a lock must have pinned. */
+    private static Optional<Integer> inForce(String monthStart) throws SQLException {
+        try (Connection migrator = DatabaseRoles.migrator(); Statement statement = migrator.createStatement();
+                ResultSet row = statement.executeQuery("SELECT version FROM accounting.gl_mapping_version"
+                        + " WHERE status IN ('ACTIVE', 'RETIRED') AND effective_from_period <= DATE '" + monthStart + "'"
+                        + " AND (effective_to_period IS NULL OR effective_to_period > DATE '" + monthStart + "')")) {
+            return row.next() ? Optional.of(row.getInt(1)) : Optional.empty();
+        }
+    }
+
+    /** Waits (bounded) until {@code count} requests of {@code mode} on namespace 14 are queued, not granted. */
+    private static void awaitWaiters(String mode, int count) throws Exception {
+        java.time.Instant deadline = CLOCK.instant().plusSeconds(10);
+        while (CLOCK.instant().isBefore(deadline)) {
+            try (Connection app = DatabaseRoles.application();
+                    java.sql.PreparedStatement select = app.prepareStatement("SELECT count(*) FROM pg_locks WHERE"
+                            + " locktype = 'advisory' AND classid = 14 AND objsubid = 2 AND NOT granted AND mode = ?")) {
+                select.setString(1, mode);
+                try (ResultSet row = select.executeQuery()) {
+                    row.next();
+                    if (row.getLong(1) >= count) {
+                        return;
+                    }
+                }
+            }
+            Thread.onSpinWait();
+        }
+    }
+
+    private static void awaitQuietly(CountDownLatch latch) {
+        try {
+            assertThat(latch.await(60, TimeUnit.SECONDS)).isTrue();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(interrupted);
+        }
+    }
 
     /** The month a new proposal may take effect from: the latest already in force, or the reference's. */
     private static YearMonth month() throws SQLException {

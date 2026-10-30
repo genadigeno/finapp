@@ -25580,7 +25580,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Acceptance criteria**: under ten concurrent posters no entry dated in the period commits after the cut; raw SQL refused.
 - **Definition of done**: `DOD-FIN`, `DOD-DOMAIN`. **Risk**: High (every posting crosses it). **Cx**: M.
 
-**P14-TSK-005 — Accounting periods: open, lock, unlock** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-004`'s merge, master `593b5b94`; every dependency `COMPLETE`)
+**P14-TSK-005 — Accounting periods: open, lock, unlock** — `COMPLETE` (2026-10-30; branch `P14-TSK-005` from master `17ee4d39`; accounting `V003`; **M14.2 at 2 of 3**; marks no task `READY` — the coordinator does) *(read "`READY` (2026-10-30; marked by the coordinator at `P14-TSK-004`'s merge, master `593b5b94`; every dependency `COMPLETE`)" until this task's gate)*
 - **Objective**: calendar-month periods with their machine; the lock moves the ledger cutoff and pins the mapping version
   in one transaction (ADR-0114).
 - **Bounded context**: Accounting / GL.
@@ -25607,6 +25607,30 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: lock without the cutoff call → `#aLockStopsPostingsDatedInThePeriod` red.
 - **Acceptance criteria**: the machine as `PHASE_14_PLAN.md` §6; every edge conditional, evented and audited.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- **As built** (2026-10-30): accounting `V003`: `accounting_period` (`UNIQUE (period_start)`, a calendar month by
+  `CHECK`, revision, the lock's actor and time, the nullable pin `REFERENCES gl_mapping_version`, the unlock's proposal
+  and approval columns; persons, coherence and **four eyes** `CHECK`s; partial unique `accounting_period_one_in_close`;
+  the edge trigger: born `OPEN` rev 1 and contiguous, identity frozen, `OPEN → LOCKED` only with the previous period
+  `CLOSED` or none and the pin = the version in force, `LOCKED + proposal`, `LOCKED → OPEN` only by the pending
+  proposal's approval; no `DELETE`/`TRUNCATE`), `period_event` (append-only; act on its edge, persons except the open,
+  `proposed_by <> actor` on `UNLOCKED`), and V002's mapping edge function replaced whole adding: no activation at or
+  before a period no longer `OPEN`. Code: `AccountingPeriods` (`openNext` insert-if-absent through today's month;
+  `lock` - previous `FOR SHARE`, period `FOR UPDATE`, order, grace, `mapping` shared, pin, `PostingCutoff.advance`,
+  conditional edge, history, audit, `accounting.AccountingPeriodLocked`, a second locker converging; `proposeUnlock`;
+  `approveUnlock` - four eyes, `moveBack`; `firstOpen`, the read `-011`/`-013` use; `overdueDays`), `LockGrace` (C9: N
+  business days, default 2, configuration), `JdbcAccountingPeriodStore`; `GlMappingAdministration.activate` re-reads the
+  periods under `mapping` exclusive (`MappingRetroactive`); `PostingCutoff.CutoffBusy` (`app`'s `LedgerPostingCutoff`
+  translates the ledger's busy key). Doors `AccountingPeriodController`/`AccountingPeriodDesk` (keyed per principal,
+  `accounting.PeriodStale` 409, `PeriodNotLockable` 409, `CutoffBusy` 503, the self-approval recorded `FAILED`);
+  `finapp.accounting.period.open.age` (`AccountingPeriodMetrics`). **Deviations, recorded**: the row-8 arbiter is key
+  `mapping` (shared at the pin read, exclusive at activation) rather than the period row - stronger, it covers a period
+  born after the activation's read; the pin is `NULL` when no version is in force (the lock does not wait for a GL
+  chart; the close needs one); no event for the unlock (the entry names two); `AccountingCloseSchedule` not built
+  (`-011` calls `openNext`), so until then production holds no period. C3 untouched. Tests: hermetic
+  `AccountingPeriodsTest` (9), `AccountingPeriodMigrationTest` (7), `AccountingPeriodDeskTest` (5),
+  `LedgerPostingCutoffTest#aBusyKeyIsTheCutoffBusy`; owed (C5) `AccountingPeriodDatabaseTest` (6, the entry's four named
+  plus `#aLockStopsPostingsDatedInThePeriod` and `#theProposerCannotApprove`), `GlMappingDatabaseTest#aLockBehindAnActivationPinsOneVersion`,
+  `AccountingMigrationTest`'s lists.
 
 **P14-TSK-006 — Back-dating posters made cutoff-safe (lending's accrual)** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-004`'s merge, master `593b5b94`; every dependency `COMPLETE`)
 - **Objective**: the one `ECONOMIC_DATE` poster never fails forever against a locked period (C3).

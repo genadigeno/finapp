@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.finapp.accounting.JdbcGlMappingStore;
 import com.finapp.accounting.PostingCutoff;
 import com.finapp.ledger.IllegalCutoffMoveException;
+import com.finapp.ledger.PostingCutoffBusyException;
 import com.finapp.ledger.PostingCutoffs;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.SecurityContext;
@@ -17,6 +18,7 @@ import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -75,6 +77,46 @@ class LedgerPostingCutoffTest {
                     .isInstanceOf(IllegalCutoffMoveException.class);
         }
         assertThat(IllegalStateException.class).isAssignableFrom(IllegalCutoffMoveException.class);
+    }
+
+    @Test
+    @DisplayName("P14-TSK-005: the ledger's busy key crosses as the port's CutoffBusy - retryable, told apart from a"
+            + " refused move, still the IllegalStateException the port documents")
+    void aBusyKeyIsTheCutoffBusy() throws Exception {
+        PostingCutoff port = new LedgerPostingCutoff(new PostingCutoffs(IDS, CLOCK));
+        try (SecurityContext.Scope actor = SecurityContext.enterSystem();
+                CorrelationContext.Scope flow =
+                        CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)))) {
+            assertThatThrownBy(() -> port.advance(busy(), Optional.of(JAN), FEB, "lock February 1999"))
+                    .isInstanceOf(PostingCutoff.CutoffBusy.class)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasCauseInstanceOf(PostingCutoffBusyException.class);
+            assertThatThrownBy(() -> port.moveBack(busy(), FEB, Optional.of(JAN), "unlock February 1999"))
+                    .isInstanceOf(PostingCutoff.CutoffBusy.class);
+        }
+    }
+
+    /** Every attempt at the exclusive key times out (55P03); the reads answer nothing. */
+    private static Connection busy() {
+        return (Connection) Proxy.newProxyInstance(LedgerPostingCutoffTest.class.getClassLoader(),
+                new Class<?>[] {Connection.class}, (proxy, method, args) -> {
+                    if (!method.getName().equals("prepareStatement")) {
+                        return null;
+                    }
+                    String sql = (String) args[0];
+                    return Proxy.newProxyInstance(LedgerPostingCutoffTest.class.getClassLoader(),
+                            new Class<?>[] {PreparedStatement.class}, (statement, call, values) -> {
+                                if (call.getName().equals("execute") && sql.equals(PostingCutoffs.LOCK_SQL)) {
+                                    throw new SQLException("canceling statement due to lock timeout", "55P03");
+                                }
+                                return switch (call.getName()) {
+                                    case "execute" -> Boolean.TRUE;
+                                    case "executeUpdate" -> 1;
+                                    case "executeQuery" -> rows(new Object[] {null});
+                                    default -> null;
+                                };
+                            });
+                });
     }
 
     /** MOVE answers {@code revision} (or no row); READ answers {@code standing}; everything else succeeds. */

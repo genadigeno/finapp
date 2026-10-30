@@ -23,6 +23,25 @@ public interface GlMappingStore {
     /** A2: the mapping administration lock - namespace {@code 14}, key {@code mapping}, blocking, transaction-scoped. */
     void lockMapping(Connection unitOfWork);
 
+    /**
+     * A2 shared: the same key, shared - a period lock's pin read (`P14-TSK-005`, the plan's section 8.3 row 8), so an
+     * activation (exclusive) either committed before the read or re-reads the period no longer {@code OPEN} after it.
+     */
+    void lockMappingShared(Connection unitOfWork);
+
+    /**
+     * The activated version (ACTIVE or RETIRED) whose month range holds {@code month} - the version a lock pins; empty
+     * when no version is in force for it (`P14-TSK-005`).
+     */
+    Optional<VersionRow> inForceFor(Connection unitOfWork, YearMonth month);
+
+    /**
+     * The earliest accounting period at or after {@code month} that is no longer {@code OPEN} - its mapping pinned; an
+     * activation effective from {@code month} would be retroactive for it (`P14-TSK-005`, {@code INV-ACC-07}). Read under
+     * A2 exclusive.
+     */
+    Optional<YearMonth> firstPinnedPeriodFrom(Connection unitOfWork, YearMonth month);
+
     /** The highest version number, 0 for none - read under A2. */
     int maxVersion(Connection unitOfWork);
 

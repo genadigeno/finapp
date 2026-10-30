@@ -35,6 +35,9 @@ public final class JdbcGlMappingStore implements GlMappingStore {
     /** A2's statement, pinned by {@code AccountingMappingMigrationTest#namespaceFourteenKeyMappingIsPinned}. */
     static final String LOCK_SQL = "SELECT pg_advisory_xact_lock(" + NAMESPACE + ", hashtext('" + KEY + "'))";
 
+    /** A2 shared - a period lock's pin read (`P14-TSK-005`), pinned by {@code AccountingPeriodMigrationTest}. */
+    static final String SHARED_LOCK_SQL = "SELECT pg_advisory_xact_lock_shared(" + NAMESPACE + ", hashtext('" + KEY + "'))";
+
     private static final String ROW = "SELECT id, version, status, effective_from_period, effective_to_period,"
             + " proposed_by, proposed_at, decided_by, decided_at, retired_at FROM accounting.gl_mapping_version";
 
@@ -44,6 +47,44 @@ public final class JdbcGlMappingStore implements GlMappingStore {
             lock.execute();
         } catch (SQLException failure) {
             throw failed("taking the mapping administration lock", failure);
+        }
+    }
+
+    @Override
+    public void lockMappingShared(Connection unitOfWork) {
+        try (PreparedStatement lock = unitOfWork.prepareStatement(SHARED_LOCK_SQL)) {
+            lock.execute();
+        } catch (SQLException failure) {
+            throw failed("taking the mapping lock shared", failure);
+        }
+    }
+
+    @Override
+    public Optional<VersionRow> inForceFor(Connection unitOfWork, YearMonth month) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(ROW + " WHERE status IN ('ACTIVE', 'RETIRED')"
+                + " AND effective_from_period <= ? AND (effective_to_period IS NULL OR effective_to_period > ?)")) {
+            read.setDate(1, Date.valueOf(month.atDay(1)));
+            read.setDate(2, Date.valueOf(month.atDay(1)));
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(row(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw failed("reading the mapping version in force for a month", failure);
+        }
+    }
+
+    @Override
+    public Optional<YearMonth> firstPinnedPeriodFrom(Connection unitOfWork, YearMonth month) {
+        try (PreparedStatement read = unitOfWork.prepareStatement("SELECT min(period_start)"
+                + " FROM accounting.accounting_period WHERE period_start >= ? AND status <> 'OPEN'")) {
+            read.setDate(1, Date.valueOf(month.atDay(1)));
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                Date pinned = row.getDate(1);
+                return pinned == null ? Optional.empty() : Optional.of(YearMonth.from(pinned.toLocalDate()));
+            }
+        } catch (SQLException failure) {
+            throw failed("reading the periods a mapping would reach", failure);
         }
     }
 

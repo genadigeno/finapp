@@ -1545,7 +1545,9 @@ split owns - `accounting.NotFound` and `accounting.SelfApprovalRefused`, the two
 checked against the code - and every other `accounting.*` code (`PHASE_14_PLAN.md` §10: a stale revision `409`, a close
 not ready, a mapping gap, a stale valuation rate, …) arrives with the door that raises it, so no catalogued code is one a
 client could never receive. `P14-TSK-003`'s GL mapping doors brought six: `accounting.MappingInvalid`, `MappingNotTotal`,
-`MappingIncompatible`, `MappingStale`, `MappingRetroactive` and `ReasonRequired`. `ledger.PeriodClosed` is the ledger's, not this module's (`P14-TSK-004`). Every detail is
+`MappingIncompatible`, `MappingStale`, `MappingRetroactive` and `ReasonRequired`; `P14-TSK-005`'s period doors three:
+`accounting.PeriodStale`, `PeriodNotLockable` and `CutoffBusy` (and `MappingRetroactive` gained its period case - an
+activation into a locked period). `ledger.PeriodClosed` is the ledger's, not this module's (`P14-TSK-004`). Every detail is
 stranger-safe: never an amount, a balance, a GL figure or an owner reference.
 
 | Code | Status | Meaning |
@@ -1556,7 +1558,10 @@ stranger-safe: never an amount, a balance, a GL figure or an owner reference.
 | `accounting.MappingNotTotal` | 422 | The GL mapping version does not map every purpose of the ledger's chart, as the activation's transaction read it; it was not activated (`INV-ACC-06`; the detail names the unmapped purposes - codes only). |
 | `accounting.MappingIncompatible` | 422 | A rule maps a purpose to a GL account of another classification than the purpose's ledger type (or the purpose holds no single type), or names a purpose the ledger does not hold; it was not activated (`INV-ACC-06`). |
 | `accounting.MappingStale` | 409 | The GL mapping version is no longer awaiting a decision - decided by someone else, or differently - or is superseded by the later version in force. |
-| `accounting.MappingRetroactive` | 409 | The GL mapping version takes effect from a month before a version already in force; a mapping never applies retroactively (`INV-ACC-07`). |
+| `accounting.MappingRetroactive` | 409 | The GL mapping version takes effect from a month before a version already in force, or (`P14-TSK-005`) at or before a period already locked or closed, its mapping pinned; a mapping never applies retroactively (`INV-ACC-07`). |
+| `accounting.PeriodStale` | 409 | The accounting period is not in the state the act needs - a lock of a period already closing or closed, an unlock proposal of a period not `LOCKED` or with another person's unlock pending, an approval with no unlock pending; nothing was changed (`P14-TSK-005`). A second lock of a `LOCKED` period is not refused: it answers `LOCKED`. |
+| `accounting.PeriodNotLockable` | 409 | The accounting period cannot lock yet - its grace after the month end has not passed (the detail names the first lockable day), or the previous period is not `CLOSED` (periods lock in order); nothing was changed (`P14-TSK-005`, C9). |
+| `accounting.CutoffBusy` | 503 | The posting cutoff could not be moved right now - postings held the ledger's cutoff key through every bounded attempt (`P14-TSK-004`'s five of 2 s); nothing was changed and nothing stored under the idempotency key, so the same request retried later locks or unlocks (`P14-TSK-005`). |
 | `accounting.ReasonRequired` | 422 | A reasoned accounting act carried no reason, one past 1000 characters, or one holding a card-number or bank-account shape. |
 
 ## 3a. Rejection at the boundary
