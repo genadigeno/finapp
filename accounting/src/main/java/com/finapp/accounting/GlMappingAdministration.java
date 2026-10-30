@@ -38,8 +38,9 @@ import lombok.RequiredArgsConstructor;
  * ({@link MappingStale} for the others; the partial unique {@code gl_mapping_one_active} the backstop). Activation is
  * monotonic in version number and <strong>never retroactive</strong>: a version takes effect from a month no earlier
  * than any version already activated ({@link MappingRetroactive}; {@code accounting V002}'s edge trigger for every
- * writer) - `P14-TSK-005` adds that the month is an {@code OPEN} period, re-read under the period row. A replayed
- * decision by the same person converges.
+ * writer) - and, as built by `P14-TSK-005`, from a month no period at or after which is locked or closed (its mapping
+ * pinned), re-read under A2, which a period lock's pin read takes shared ({@code accounting V003}'s edge function the
+ * backstop). A replayed decision by the same person converges.
  *
  * <p><strong>Persons only</strong>: every act is an authenticated human's ({@code CUSTOMER}-typed, as every operator
  * session is, or {@code EMPLOYEE}) - never the platform's, a service's or a merchant's; {@code V002}'s CHECK holds it
@@ -226,6 +227,14 @@ public final class GlMappingAdministration {
         if (floor.isPresent() && row.effectiveFrom().isBefore(floor.get())) {
             throw new MappingRetroactive("the version takes effect from " + row.effectiveFrom()
                     + ", before " + floor.get() + ", the month a version already in force takes effect from");
+        }
+        // P14-TSK-005: never into a period whose mapping is pinned - re-read under A2, which a lock's pin read takes
+        // shared, so a lock either committed before this read (and is seen) or reads this activation after it commits.
+        Optional<YearMonth> pinned = store.firstPinnedPeriodFrom(unitOfWork, row.effectiveFrom());
+        if (pinned.isPresent()) {
+            throw new MappingRetroactive("the version takes effect from " + row.effectiveFrom() + ", but the period "
+                    + pinned.get() + " is already locked or closed with its mapping pinned; a version takes effect from"
+                    + " an OPEN period after every locked one");
         }
         MappingJudgement judgement = MappingJudgement.judge(store.content(unitOfWork, row.id()), chart.read(unitOfWork));
         if (!judgement.total()) {

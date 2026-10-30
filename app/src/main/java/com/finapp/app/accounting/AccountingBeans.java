@@ -1,10 +1,14 @@
 package com.finapp.app.accounting;
 
+import com.finapp.accounting.AccountingPeriodStore;
+import com.finapp.accounting.AccountingPeriods;
 import com.finapp.accounting.GlMappingAdministration;
 import com.finapp.accounting.GlMappingStore;
 import com.finapp.accounting.GlMappings;
+import com.finapp.accounting.JdbcAccountingPeriodStore;
 import com.finapp.accounting.JdbcGlMappingStore;
 import com.finapp.accounting.LedgerChart;
+import com.finapp.accounting.LockGrace;
 import com.finapp.accounting.PostingCutoff;
 import com.finapp.accounting.PostingRuleRegister;
 import com.finapp.platform.audit.AuditWriter;
@@ -16,6 +20,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.Connection;
 import java.time.Clock;
 import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -99,5 +104,51 @@ public class AccountingBeans {
     @Bean
     AccountingMappingMetrics accountingMappingMetrics(MeterRegistry meterRegistry) {
         return new AccountingMappingMetrics(meterRegistry);
+    }
+
+    // ------------------------------------------------------------------ the periods (P14-TSK-005)
+
+    @Bean
+    AccountingPeriodStore accountingPeriodStore() {
+        return new JdbcAccountingPeriodStore();
+    }
+
+    /** C9's grace before a lock, in business days - configuration (default 2, 1 to 20). */
+    @Bean
+    LockGrace lockGrace(
+            @Value("${finapp.accounting.period.lock-grace-business-days:" + LockGrace.DEFAULT_BUSINESS_DAYS + "}")
+                    int businessDays) {
+        return new LockGrace(businessDays);
+    }
+
+    @Bean
+    AccountingPeriods accountingPeriods(
+            AccountingPeriodStore accountingPeriodStore,
+            GlMappingStore glMappingStore,
+            PostingCutoff postingCutoff,
+            LockGrace lockGrace,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new AccountingPeriods(accountingPeriodStore, glMappingStore, postingCutoff, lockGrace, auditWriter,
+                outboxWriter, idGenerator, clock);
+    }
+
+    @Bean
+    AccountingPeriodDesk accountingPeriodDesk(
+            AccountingPeriods accountingPeriods,
+            IdempotentExecutor idempotentExecutor,
+            AccountingTransactions accountingTransactions,
+            AccountingFlowScope accountingFlowScope) {
+        return new AccountingPeriodDesk(accountingPeriods, idempotentExecutor, accountingTransactions,
+                accountingFlowScope);
+    }
+
+    /** {@code finapp.accounting.period.open.age} - read from the database, cached 15 s. */
+    @Bean
+    AccountingPeriodMetrics accountingPeriodMetrics(
+            AccountingPeriods accountingPeriods, DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
+        return new AccountingPeriodMetrics(accountingPeriods, dataSource::getConnection, clock, meterRegistry);
     }
 }

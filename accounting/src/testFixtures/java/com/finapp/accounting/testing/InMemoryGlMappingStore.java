@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * {@link GlMappingStore} in memory (`P14-TSK-003`): the hermetic suites' store, holding the database's ranks the
@@ -28,10 +29,25 @@ public final class InMemoryGlMappingStore implements GlMappingStore {
     private final Map<GlMappingVersionId, GlMappingVersion> contents = new LinkedHashMap<>();
     private final List<HistoryRow> history = new ArrayList<>();
     private int locks;
+    private int sharedLocks;
+    private Function<YearMonth, Optional<YearMonth>> pinnedPeriods = month -> Optional.empty();
 
     /** How many times A2 was taken. */
     public int locks() {
         return locks;
+    }
+
+    /** How many times A2 was taken shared - a period lock's pin read (`P14-TSK-005`). */
+    public int sharedLocks() {
+        return sharedLocks;
+    }
+
+    /**
+     * The periods the activation re-reads (`P14-TSK-005`): given a month, the earliest period at or after it that is no
+     * longer {@code OPEN} - wired by a suite to its in-memory period store; none by default.
+     */
+    public void pinnedPeriods(Function<YearMonth, Optional<YearMonth>> source) {
+        this.pinnedPeriods = source;
     }
 
     /** The history, in order. */
@@ -47,6 +63,25 @@ public final class InMemoryGlMappingStore implements GlMappingStore {
     @Override
     public void lockMapping(Connection unitOfWork) {
         locks++;
+    }
+
+    @Override
+    public void lockMappingShared(Connection unitOfWork) {
+        sharedLocks++;
+    }
+
+    @Override
+    public Optional<VersionRow> inForceFor(Connection unitOfWork, YearMonth month) {
+        return rows.values().stream()
+                .filter(row -> row.status() == GlMappingVersionStatus.ACTIVE || row.status() == GlMappingVersionStatus.RETIRED)
+                .filter(row -> !row.effectiveFrom().isAfter(month))
+                .filter(row -> row.effectiveTo().map(month::isBefore).orElse(true))
+                .findFirst();
+    }
+
+    @Override
+    public Optional<YearMonth> firstPinnedPeriodFrom(Connection unitOfWork, YearMonth month) {
+        return pinnedPeriods.apply(month);
     }
 
     @Override

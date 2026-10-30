@@ -516,6 +516,12 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/mapping-versions/{versionId}/activation",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/mapping-versions/{versionId}/rejection",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/mapping-versions/{versionId}/diff",
+                        // P14-TSK-005: the periods - listed (ACCOUNTING_READ), locked and an unlock proposed
+                        // (ACCOUNTING_CLOSE_PROPOSE), the unlock approved (ACCOUNTING_CLOSE_APPROVE), each keyed.
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/lock",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/unlock-proposal",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/unlock-approval",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",

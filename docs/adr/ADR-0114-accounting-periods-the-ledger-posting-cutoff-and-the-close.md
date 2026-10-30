@@ -78,6 +78,18 @@ key is bounded in the ledger (`lock_timeout` 2 s per attempt inside a savepoint,
 restored), so a waiting move holds new postings for at most one attempt. Decision 6 (C3) is untouched: the
 ledger refuses and nothing else changed. Status stays `Proposed` until the phase's exit review.
 
+`P14-TSK-005` (2026-10-30), decision 3's open, lock and unlock: accounting `V003` (`accounting_period`, one per month,
+contiguous, at most one `LOCKED`/`CLOSE_PROPOSED`; `period_event`, append-only), `AccountingPeriods` over
+`JdbcAccountingPeriodStore`. The lock: the previous period `FOR SHARE` then the period `FOR UPDATE`, in order and after
+the grace (C9: N business days after the month end, default 2), namespace `14` key `mapping` **shared**, the version in
+force pinned (none when none is), the cutoff advanced through `PostingCutoff`, the conditional edge, history, audit and
+`accounting.AccountingPeriodLocked` - one transaction; a second locker converges on `LOCKED`. The unlock: a proposal on
+the `LOCKED` row, a second person's approval moving the cutoff back one period (approver ≠ proposer by `CHECK`). Beyond
+the decision text: the mapping-key arbiter for the pin (the activation re-reads the periods under `mapping` exclusive and
+refuses a month at or before a locked period - V003 replaces V002's edge function with the same rule); a busy cutoff key
+crosses the port as `PostingCutoff.CutoffBusy` (`503 accounting.CutoffBusy`, nothing stored under the key). Decision 6
+(C3) still untouched.
+
 ## Follow-up
 
 The storm (PI-004) measures the lock's pause. Daily periods if ever needed (C9 B). The calendar grace is configuration.

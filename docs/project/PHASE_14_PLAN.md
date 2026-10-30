@@ -160,6 +160,19 @@ boundary is the ledger's database.
   the next period is not `LOCKED`; `revision + 1`). Periods lock and close in order; at most one period is
   `LOCKED`/`CLOSE_PROPOSED` at a time. Every edge is a conditional `UPDATE … WHERE status = :from AND revision = :rev`
   with an append-only `period_event` row.
+  *(As built by `P14-TSK-005`, 2026-10-30, accounting `V003`: birth `OPEN` (revision 1) by the system's
+  `AccountingPeriods.openNext` - every month from the one after the latest (today's month when none exists) through
+  today's, insert-if-absent, contiguous by trigger; `OPEN → LOCKED`; the unlock as a pending proposal on the `LOCKED` row
+  (`LOCKED → LOCKED`, history act `UNLOCK_PROPOSED`) then `LOCKED → OPEN` by a second person's approval, approver ≠
+  proposer by `CHECK` on the row and on the history; the close/reject/reopen edges are `-012`'s, which replaces the edge
+  trigger. A lock with no version in force pins nothing (`NULL` - the lock is the ledger's protection and does not wait
+  for a GL chart; the close will need one). The lock reads the version in force **under namespace `14` key `mapping`
+  shared** (the activation's key, the other mode) instead of the activation re-reading the period row: the activation,
+  under `mapping` exclusive, refuses any month with a period at or after it no longer `OPEN` (`MappingRetroactive`; V003
+  replaces V002's edge function with the same rule) - which also holds for a period born after the activation's read.
+  The grace (C9): lockable from the period's last day plus N business days (Monday-Friday, no holiday calendar), N =
+  `finapp.accounting.period.lock-grace-business-days`, default 2, 1..20. No `AccountingPeriodUnlocked` event - the entry
+  names Opened and Locked; the unlock is history and audit.)*
 - **GL Mapping Version:** `PROPOSED → ACTIVE → RETIRED`; `PROPOSED → REJECTED`; immutable content from birth;
   `effective_from_period` an `OPEN` period; a period pins the version in force when it is `LOCKED`.
   *(As built by `P14-TSK-003`, 2026-10-30, accounting `V002`: one `ACTIVE` at a time; the activation retires the

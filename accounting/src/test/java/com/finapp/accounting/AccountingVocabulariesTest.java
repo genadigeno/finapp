@@ -176,7 +176,10 @@ class AccountingVocabulariesTest {
                 .containsExactly("accounting.NotFound=404", "accounting.SelfApprovalRefused=403",
                         "accounting.MappingInvalid=422", "accounting.MappingNotTotal=422",
                         "accounting.MappingIncompatible=422", "accounting.MappingStale=409",
-                        "accounting.MappingRetroactive=409", "accounting.ReasonRequired=422");
+                        "accounting.MappingRetroactive=409",
+                        // P14-TSK-005: the period doors - a stale period, a lock too early or out of order, a busy cutoff.
+                        "accounting.PeriodStale=409", "accounting.PeriodNotLockable=409", "accounting.CutoffBusy=503",
+                        "accounting.ReasonRequired=422");
         // P14-TSK-002: the posting rule register's audited read - no reason, an operator's read.
         assertThat(AccountingAuditAction.POSTING_RULES_READ.code()).isEqualTo("accounting.PostingRulesRead");
         assertThat(AccountingAuditAction.POSTING_RULES_READ.requiresReason()).isFalse();
@@ -184,7 +187,10 @@ class AccountingVocabulariesTest {
         assertThat(Arrays.stream(AccountingAuditAction.values()).map(a -> a.code() + "=" + a.requiresReason()).toList())
                 .containsExactly("accounting.SelfApprovalRefused=false", "accounting.PostingRulesRead=false",
                         "accounting.MappingProposed=true", "accounting.MappingActivated=true",
-                        "accounting.MappingRejected=true");
+                        "accounting.MappingRejected=true",
+                        // P14-TSK-005: the open (the system's) and the lock unreasoned; the unlock's two acts reasoned.
+                        "accounting.PeriodOpened=false", "accounting.PeriodLocked=false",
+                        "accounting.PeriodUnlockProposed=true", "accounting.PeriodUnlocked=true");
     }
 
     // ------------------------------------------------------------------

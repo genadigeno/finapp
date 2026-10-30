@@ -24,6 +24,19 @@ import java.util.Optional;
  */
 public interface PostingCutoff {
 
+    /**
+     * The ledger's key stayed busy through every one of its bounded attempts - postings held it; nothing moved and the
+     * act is retried later (`P14-TSK-005`: the lock's {@code accounting.CutoffBusy}, told apart from a refused move,
+     * which is a defect). Still an {@link IllegalStateException}, as the port documents every refusal.
+     */
+    final class CutoffBusy extends IllegalStateException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        public CutoffBusy(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+
     /** The cutoff now - empty until the first period lock. Reads, on {@code unitOfWork}; takes no lock. */
     Optional<LocalDate> closedThrough(Connection unitOfWork);
 

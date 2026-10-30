@@ -51,8 +51,29 @@ public enum AccountingErrorCode implements ErrorCode {
     MAPPING_RETROACTIVE(
             "accounting.MappingRetroactive",
             409,
-            "The GL mapping version takes effect from a month before a version already in force; a mapping never"
-                    + " applies retroactively."),
+            "The GL mapping version takes effect from a month before a version already in force, or at or before a"
+                    + " period already locked or closed; a mapping never applies retroactively."),
+
+    /** The period doors (`P14-TSK-005`): the period is not in the state the act needs. */
+    PERIOD_STALE(
+            "accounting.PeriodStale",
+            409,
+            "The accounting period is not in the state the act needs - past it, or awaiting another act; nothing was"
+                    + " changed."),
+
+    /** The lock (`P14-TSK-005`): the grace after the month end has not passed, or the previous period is not closed. */
+    PERIOD_NOT_LOCKABLE(
+            "accounting.PeriodNotLockable",
+            409,
+            "The accounting period cannot lock yet - its grace after the month end has not passed, or the previous"
+                    + " period is not closed (periods lock in order); nothing was changed."),
+
+    /** The lock and the unlock (`P14-TSK-005`): postings held the cutoff through the ledger's bounded attempts. */
+    CUTOFF_BUSY(
+            "accounting.CutoffBusy",
+            503,
+            "The posting cutoff could not be moved right now - postings held it through every bounded attempt; nothing"
+                    + " was changed, retry."),
 
     /** Every reasoned accounting act (`P14-TSK-003` first). */
     REASON_REQUIRED("accounting.ReasonRequired", 422, "A reason is required.");

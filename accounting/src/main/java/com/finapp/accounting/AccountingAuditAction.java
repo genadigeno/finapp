@@ -64,6 +64,43 @@ public enum AccountingAuditAction implements AuditableAction {
             "A holder of ACCOUNTING_MAPPING_APPROVE rejected a proposed GL mapping version - terminal; a correction is a"
                     + " new proposal (P14-TSK-003; POST .../mapping-versions/{id}/rejection). Reasoned. Its target the"
                     + " version; the summary its number and whether the rejecter proposed it.",
+            true),
+
+    /** The system opened an accounting period (`P14-TSK-005`). */
+    PERIOD_OPENED(
+            "accounting.PeriodOpened",
+            "The system opened an accounting period - the calendar month after the latest, insert-if-absent, one per"
+                    + " month (P14-TSK-005, ADR-0114 decision 3, C9; AccountingPeriods.openNext, scheduled by"
+                    + " P14-TSK-011). Its target the period; the summary its month and revision."
+                    + " accounting.AccountingPeriodOpened is published with it.",
+            false),
+
+    /** A person locked an accounting period (`P14-TSK-005`, ACCOUNTING_CLOSE_PROPOSE). */
+    PERIOD_LOCKED(
+            "accounting.PeriodLocked",
+            "An accountant locked an accounting period after its grace, the previous period closed: the ledger's posting"
+                    + " cutoff advanced to the period end and the GL mapping version in force pinned, in the same"
+                    + " transaction - from its commit no entry dated in the period commits (P14-TSK-005, INV-ACC-03,"
+                    + " INV-ACC-08, INV-ACC-07; POST .../periods/{id}/lock, ACCOUNTING_CLOSE_PROPOSE). Reason optional."
+                    + " Its target the period; the summary its month, revision and pinned version number."
+                    + " accounting.AccountingPeriodLocked is published with it.",
+            false),
+
+    /** A person proposed unlocking a locked period (`P14-TSK-005`, ACCOUNTING_CLOSE_PROPOSE). */
+    PERIOD_UNLOCK_PROPOSED(
+            "accounting.PeriodUnlockProposed",
+            "An accountant proposed unlocking a LOCKED accounting period - nothing moves until a second person approves"
+                    + " (P14-TSK-005, INV-AUD-04; POST .../periods/{id}/unlock-proposal, ACCOUNTING_CLOSE_PROPOSE)."
+                    + " Reasoned. Its target the period; the summary its month and revision.",
+            true),
+
+    /** A second person approved an unlock (`P14-TSK-005`, ACCOUNTING_CLOSE_APPROVE). */
+    PERIOD_UNLOCKED(
+            "accounting.PeriodUnlocked",
+            "A person other than its proposer approved an accounting period's unlock: LOCKED -> OPEN, the ledger's"
+                    + " posting cutoff moved back one period and the pin released, in the same transaction (P14-TSK-005,"
+                    + " INV-AUD-04, INV-ACC-08; POST .../periods/{id}/unlock-approval, ACCOUNTING_CLOSE_APPROVE)."
+                    + " Reasoned. Its target the period; the summary its month and revision.",
             true);
 
     private final String code;
