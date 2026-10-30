@@ -25659,7 +25659,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Acceptance criteria**: no accrual refused after a lock; value dates unchanged.
 - **Definition of done**: `DOD-FIN`. **Risk**: Medium. **Cx**: S.
 
-**P14-TSK-007 — The GL read model and drill-down** — `PLANNED`
+**P14-TSK-007 — The GL read model and drill-down** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)
 - **Objective**: GL balances and activity by period, account and currency, computed from journal lines under the pinned
   version, each figure drilling to its lines (`INV-ACC-02`, `-06`).
 - **Bounded context**: Accounting / GL.
@@ -25684,7 +25684,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Acceptance criteria**: every figure equals the sum of its drill-down lines; GL = ledger per currency.
 - **Definition of done**: `DOD-FIN`, `DOD-API`. **Risk**: Medium (query cost). **Cx**: M.
 
-**P14-TSK-008 — Report runs: immutable, reproducible** — `PLANNED`
+**P14-TSK-008 — Report runs: immutable, reproducible** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)
 - **Objective**: the report-run machinery every report uses (ADR-0115, `INV-ACC-04`).
 - **Bounded context**: Reporting (27).
 - **Dependencies**: `-005`.
@@ -25849,7 +25849,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Acceptance criteria**: corrections never re-date; every PPA traced to its period.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 
-**P14-TSK-014 — Valuation rate sets** — `PLANNED`
+**P14-TSK-014 — Valuation rate sets** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)
 - **Objective**: a frozen, provenanced, four-eyes set of reference rates per locked period (ADR-0116, `INV-ACC-11`).
 - **Bounded context**: Accounting / GL; reads FX.
 - **Dependencies**: `-005`.
