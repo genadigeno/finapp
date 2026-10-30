@@ -26,6 +26,15 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " person holding both ACCOUNTANT and FINANCIAL_CONTROLLER. Recorded FAILED in a transaction of its"
                     + " own after the act rolled back, so the attempt survives. Its target the proposal; the summary"
                     + " names it and the act - never an amount or an owner reference.",
+            false),
+
+    /** An accountant read the posting rule register (`P14-TSK-002`, ACCOUNTING_READ) - every serving recorded. */
+    POSTING_RULES_READ(
+            "accounting.PostingRulesRead",
+            "An accountant read the posting rule register - every registered namespace's rule, version, line shape and"
+                    + " dating class (P14-TSK-002, ADR-0117 decision 1; ACCOUNTING_READ). Code data, no customer's or"
+                    + " merchant's figure; recorded at every serving as an audited operator read. Its target the"
+                    + " catalogue version; the summary the version and the rule count.",
             false);
 
     private final String code;

@@ -366,6 +366,32 @@ by the version in force at its posting date. `app`'s `PostingRuleRegisterTest` f
 in any source module is unregistered or a registered purpose is not an `AccountPurpose` (the `*HasOnePosterTest`
 precedent).
 
+*(As built by `P14-TSK-002`, 2026-10-30 - **the erratum this table asked for**, read posting site by posting site at master
+`0bfac06d`: 41 poster classes in nine modules plus the ledger's manual door; `PostingRuleRegister` catalogue version 1,
+**58 rules** over 42 `POSTING` namespaces, 7 `REVERSAL` namespaces and 2 adjustment origins (`MANUAL`, `RECONCILIATION` -
+every adjustment's scope is `ledger.adjust.approve:<proposal>`, so the rule is keyed by the proposal's origin). Several
+rules may share a namespace (`payment-capture:` a top-up or a merchant-bound capture; `lending.waiver:` a fee refund or an
+interest waiver); a line names any one of its purposes and takes `DEBIT`, `CREDIT` or `EITHER` (a residual's sign, a
+statement's cash fold). Corrections to the table: (1) `transfer:` writes two wallet lines, **no fee lines**; (2)
+`wallet-withdrawal:` credits **`INSTANT_CLEARING`** (the rail's declared clearing), not `PAYOUT_CLEARING`; (3) rows the
+table lacked - `payment-execution:` (instant pay-in and the book rail), `unmatched-confirmation:`,
+`merchant-payout-return:`, `recon-suspense:`, `lending.amendment:` (rule 13), `bnpl.reversal-fee-release:` (F8a), the
+settlement batch's repudiation (a `REVERSAL` of `settlement-batch:`) and the three reconciliation resolution kinds
+(write-off, transfer, gain); (4) rule 0 has no namespace of its own - lending capital is a line of the bank statement's
+`settlement-batch:` entry, and `lending.capital-contribution:` is an expectation's family nothing posts under; (5) the
+conversion `fx-trade:` carries no fee line - only the cross-border composer adds `FEE_REVENUE`, optional; (6) **dating:**
+payments, transfers, the merchant payout, disputes, cross-border and every reversal outside lending and bnpl take today
+from the instance's UTC clock (`TODAY_CLOCK`); lending and bnpl from the database clock in the servicing zone
+(`TODAY_DATABASE`, lending's principal facts floored forward); **the back-dating posters are eleven rules, not one** -
+`ECONOMIC_DATE`: lending's accrual (`LND-2`, `LoanServicing`) **and the manual adjustment** (`ADJ-MANUAL`: the proposer's
+stated posting date, unconstrained, posted from the stored proposal at approval); `STORED_ROW`: the two settlement
+recognitions (`accepted_on`), the payout return (the item's batch `accepted_on`, applied later by the sweep),
+`recon-suspense:` and the three reconciliation adjustments (a resolution's stored proposal date, approved later), the
+conversion (`booked_on`) and the cover (`recorded_on`). C3's "the one back-dating poster" is therefore not the code's
+truth - recorded for `P14-TSK-006` and the owner, not decided here. The `ACCOUNTING` origin (`-013`) and write-off rule
+14 / F11 (C6) post nothing yet and are not registered. `GET /v1/operator/accounting/posting-rules` serves the register,
+`ACCOUNTING_READ`, audited `accounting.PostingRulesRead`.)*
+
 ### 13.3 GL ↔ ledger ↔ source reconciliation (owner brief 7.4)
 
 Three levels, each a close check producing born-once `accounting_break` rows, never a correction: (1) **GL = ledger** —

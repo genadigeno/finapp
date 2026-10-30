@@ -20781,6 +20781,89 @@
         },
         "type": "object"
       },
+      "PostingRuleLineView": {
+        "properties": {
+          "presence": {
+            "type": "string"
+          },
+          "purposes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "side": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PostingRuleRegisterView": {
+        "properties": {
+          "catalogueVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/PostingRuleView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "PostingRuleView": {
+        "properties": {
+          "authoritativeReference": {
+            "type": "string"
+          },
+          "catalogue": {
+            "type": "string"
+          },
+          "datingClass": {
+            "type": "string"
+          },
+          "economicEvent": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "entryType": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/PostingRuleLineView"
+            },
+            "type": "array"
+          },
+          "mayBackDate": {
+            "type": "boolean"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "posters": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sourceModule": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "PrepaymentView": {
         "properties": {
           "agreementVersion": {
@@ -30063,6 +30146,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TransactionsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/posting-rules": {
+      "get": {
+        "operationId": "readPostingRuleRegister",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostingRuleRegisterView"
                 }
               }
             },

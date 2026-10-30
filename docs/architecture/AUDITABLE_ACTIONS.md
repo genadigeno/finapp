@@ -820,6 +820,7 @@ accountant, controller or reporter is identity's existing `identity.RoleAssigned
 | Action code | Reason required | Description |
 |---|---|---|
 | `accounting.SelfApprovalRefused` | No | A proposer tried to approve their own accounting proposal - a mapping version's activation (`P14-TSK-003`), a period's unlock, close or reopen (`-005`, `-012`), a break's acknowledgement (`-010`), a prior-period adjustment (`-013`), a valuation rate set (`-014`) or a regulatory submission's approval (`-018`) - and was refused `403 accounting.SelfApprovalRefused` before anything was written (`INV-AUD-04`; also each four-eyes row's approver ≠ proposer `CHECK`). The roles' grants are disjoint but their holders need not be, so this binds a person holding both `ACCOUNTANT` and `FINANCIAL_CONTROLLER`. Recorded `FAILED` in a transaction of its own after the act rolled back. The summary names the proposal and the act. |
+| `accounting.PostingRulesRead` | No | An accountant read the posting rule register (`P14-TSK-002`, ADR-0117 decision 1; `GET /v1/operator/accounting/posting-rules`, `ACCOUNTING_READ`) - every registered namespace's rule, version, line shape and dating class; code data, no customer's or merchant's figure. Recorded `SUCCEEDED` at every serving, in a transaction of its own before the answer, so a record that cannot be written fails the read. Its target the catalogue version (`catalogue-<n>`); the summary the version and the rule count. |
 
 ### What is emitted, and what is declared not to be
 

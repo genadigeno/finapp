@@ -48,6 +48,9 @@ class AccountingVocabulariesTest {
         // P14-TSK-002's four dating classes.
         assertThat(names(DatingClass.values()))
                 .containsExactly("TODAY_CLOCK", "TODAY_DATABASE", "STORED_ROW", "ECONOMIC_DATE");
+        // P14-TSK-002's register: the ledger's three entry types (held equal to JournalEntryType in app) and a line's side.
+        assertThat(names(EntryType.values())).containsExactly("POSTING", "REVERSAL", "ADJUSTMENT");
+        assertThat(names(Side.values())).containsExactly("DEBIT", "CREDIT", "EITHER");
         assertThat(names(SubmissionStatus.values()))
                 .containsExactly("DRAFT", "VALIDATED", "APPROVED", "SUBMITTED", "ACKNOWLEDGED", "REJECTED");
         assertThat(StatementSection.values()).hasSize(17);
@@ -169,7 +172,10 @@ class AccountingVocabulariesTest {
         assertThat(AccountingAuditAction.SELF_APPROVAL_REFUSED.code()).isEqualTo("accounting.SelfApprovalRefused");
         assertThat(AccountingAuditAction.SELF_APPROVAL_REFUSED.requiresReason()).isFalse();
         assertThat(AccountingErrorCode.values()).hasSize(2);
-        assertThat(AccountingAuditAction.values()).hasSize(1);
+        // P14-TSK-002: the posting rule register's audited read - no reason, an operator's read.
+        assertThat(AccountingAuditAction.POSTING_RULES_READ.code()).isEqualTo("accounting.PostingRulesRead");
+        assertThat(AccountingAuditAction.POSTING_RULES_READ.requiresReason()).isFalse();
+        assertThat(AccountingAuditAction.values()).hasSize(2);
     }
 
     // ------------------------------------------------------------------

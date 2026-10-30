@@ -2,8 +2,10 @@ package com.finapp.app.accounting;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.accounting.EntryType;
 import com.finapp.accounting.GlClassification;
 import com.finapp.ledger.AccountType;
+import com.finapp.ledger.JournalEntryType;
 import com.finapp.ledger.NormalBalance;
 import com.finapp.platform.telemetry.Spans;
 import java.util.ArrayList;
@@ -39,6 +41,14 @@ class AccountingLedgerVocabularyTest {
                     .as("%s is %s-normal in the ledger", type, type.normalBalance())
                     .isEqualTo(type.normalBalance() == NormalBalance.DEBIT);
         }
+    }
+
+    @Test
+    @DisplayName("a posting rule's EntryType is exactly the ledger's JournalEntryType names, in order (P14-TSK-002)")
+    void theRuleEntryTypesAreTheLedgersEntryTypes() {
+        assertThat(Arrays.stream(EntryType.values()).map(Enum::name))
+                .as("a rule is keyed by the door that wrote the entry; a type the ledger adds is a door no rule names")
+                .containsExactlyElementsOf(Arrays.stream(JournalEntryType.values()).map(Enum::name).toList());
     }
 
     @Test

@@ -25395,7 +25395,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   `AccountingFlowScope` (the door leg) in `app`; `finapp.accounting.sweeper.enabled` reserved in the test properties.
   `PASS` vacuously at ten instances: no state, no writer, no schedule.
 
-**P14-TSK-002 — The posting rule register, as built** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-001`'s merge, master `9c82e31e`; every dependency `COMPLETE`)
+**P14-TSK-002 — The posting rule register, as built** — `COMPLETE` (2026-10-30; branch `P14-TSK-002` from master `0bfac06d`; no migration; M14.1 at 2 of 3) *(read "`READY` (2026-10-30; marked by the coordinator at `P14-TSK-001`'s merge, master `9c82e31e`; every dependency `COMPLETE`)" until its gate)*
 - **Objective**: one register of every posting namespace the platform writes, read from the code, so every entry can be
   checked against its rule (ADR-0117).
 - **Bounded context**: Accounting / GL; reads every posting module.
@@ -25423,6 +25423,32 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: remove the `transfer:` entry → red.
 - **Acceptance criteria**: every posting site registered with its dating class; the back-dating posters listed.
 - **Definition of done**: `DOD-FIN`, `DOD-ARCH`. **Risk**: Medium (completeness). **Cx**: M.
+- **As built** (2026-10-30): `PostingRuleRegister` in `accounting` - pure data, purposes as strings, catalogue version
+  1 - **58 rules** read from every posting site at master `0bfac06d` (41 poster classes in nine modules plus the ledger's
+  manual door; 50 command constructions - 41 postings, 7 reversals, the manual and the owned adjustment): 42 `POSTING` namespaces, 7 `REVERSAL` namespaces, 2 adjustment origins
+  (`MANUAL`, `RECONCILIATION` - every adjustment's scope is `ledger.adjust.approve:<proposal>`, so the rule is keyed by
+  the proposal's origin). Each rule: id and version with `effective_from` (`ORIGIN`, the epoch, for version 1), `EntryType`
+  (the ledger's three names, held equal in `app`), namespace, source module, posters, economic event, authoritative
+  reference, `DatingClass`, line shape (`LineShape`: any one of a set of purposes, `Side` `DEBIT`/`CREDIT`/`EITHER`,
+  required/optional) and the catalogue it is read against; `inForce(type, namespace, postingDate)` resolves the version per
+  rule id; the constructor refuses an incoherent catalogue. Several rules may share a namespace (one per economic event).
+  **The erratum to `PHASE_14_PLAN.md` §13.2** (recorded there): no fee lines on `transfer:`; `wallet-withdrawal:` credits
+  `INSTANT_CLEARING`; eight rows the table lacked; rule 0 rides the bank statement's `settlement-batch:` entry; the
+  conversion carries no fee line; and **eleven back-dating rules, not one** - `ECONOMIC_DATE` lending's accrual
+  (`LoanServicing`) **and the manual adjustment** (`LedgerAdjustments`: the proposer's stated posting date), `STORED_ROW`
+  the two settlement recognitions, the payout return, `recon-suspense:`, the three reconciliation adjustments, the
+  conversion and the cover - input to `-006` and owner decision C3, not decided here. `PostingRuleRegisterTest` (`app`,
+  architecture tier): prefixes both ways (five non-posting prefixes named with reasons), posters both ways with the
+  command of their type, every purpose an `AccountPurpose`, `MANUAL` = the purposes open to free adjustment, the
+  settlement sources' clearings reconciled positions, the `ECONOMIC_DATE` posters named; each guard proven in-suite.
+  `PostingRuleCatalogueTest` (`accounting`): one family per catalogue, the shapes typed from the documents. **API**:
+  `GET /v1/operator/accounting/posting-rules` (`PostingRuleController`, `PostingRuleDesk`), `ACCOUNTING_READ`, recorded
+  `accounting.PostingRulesRead` before the answer in a transaction of its own (`AccountingTransactions`,
+  `AccountingBeans`); the route pinned in `RoutePermissionRegisterTest` and `OpenApiContractTest`, `docs/api/openapi.json`
+  regenerated (compatible additions only). **Probes** (`MUTATION_TESTING.md` §2): the `transfer:` rules removed (3 of 7
+  red), a purpose misspelt (2 red), the accrual's dating class changed (1 red), `PostingRule`'s attribution refusal
+  removed (1 red) - each restored byte-identical. Distributed: `PASS` vacuously - code data, no state, no writer.
+  **Owed**: none (no database behaviour; the read's audit append is the platform's `AuditWriter`).
 
 **P14-TSK-003 — The GL chart and mapping as versioned data, four-eyes** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-001`'s merge, master `9c82e31e`; every dependency `COMPLETE`)
 - **Objective**: GL accounts and the purpose → GL account mapping as an immutable, four-eyes-activated version, total and
