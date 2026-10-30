@@ -25633,6 +25633,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   `AccountingMigrationTest`'s lists.
 
 **P14-TSK-006 — Back-dating posters made cutoff-safe (lending's accrual)** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-004`'s merge, master `593b5b94`; every dependency `COMPLETE`)
+- **Owner's C3 ratification (2026-10-30)**: the scope widens from lending's accrual to every back-dating rule `P14-TSK-002`'s register found (eleven - `PostingRuleCatalogue`'s ECONOMIC_DATE and STORED_ROW rules): system posters floor their posting date at the first open date (`PostingCutoff`/`firstOpen`) and keep their economic/value date; a MANUAL adjustment or a reconciliation resolution's adjustment dated into a locked period is refused at approval (`ledger.PeriodClosed`) and stays `PROPOSED` - the operator re-proposes it in the open period or uses a prior-period adjustment (`P14-TSK-013`); the close's readiness requires accruals caught up. Each rule's reaction is named in the register and tested; the design may split the work if it proves too large for one task (say so).
 - **Objective**: the one `ECONOMIC_DATE` poster never fails forever against a locked period (C3).
 - **Bounded context**: Lending (18), for Accounting.
 - **Dependencies**: `-002` (the list), `-004`.
