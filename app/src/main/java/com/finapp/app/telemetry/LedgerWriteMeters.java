@@ -41,8 +41,17 @@ final class LedgerWriteMeters implements PostingObserver {
      */
     static final String CUTOFF_REFUSED = "finapp.accounting.cutoff.refused";
 
+    /**
+     * {@code finapp.accounting.cutoff.floored} - postings whose stated date a lock covered, posted on the first open date
+     * because their command asked ({@code PostingCommand.Dating.FLOOR_AT_FIRST_OPEN}; `P14-TSK-006`, owner decision C3),
+     * by command - today only {@code posting}: a system poster's catch-up across a lock, which is no refusal and no
+     * defect, only a fact the close may want to see.
+     */
+    static final String CUTOFF_FLOORED = "finapp.accounting.cutoff.floored";
+
     private final Map<Outcome, Counter> outcomes = new EnumMap<>(Outcome.class);
     private final Map<Command, Counter> cutoffRefusals = new EnumMap<>(Command.class);
+    private final Map<Command, Counter> cutoffFloors = new EnumMap<>(Command.class);
     private final Timer latency;
 
     LedgerWriteMeters(MeterRegistry registry) {
@@ -69,6 +78,16 @@ final class LedgerWriteMeters implements PostingObserver {
                                         + " an entry dated into a locked accounting period. Also counted as"
                                         + " finapp.ledger.posting{outcome=refused}. Per instance; sum() aggregates")
                             .register(registry));
+            cutoffFloors.put(
+                    command,
+                    Counter.builder(CUTOFF_FLOORED)
+                            .tag("command", command.name().toLowerCase(java.util.Locale.ROOT))
+                            .description(
+                                    "Postings whose stated date lay in a locked accounting period, posted on the"
+                                        + " first open date because the poster asked (C3): a system catch-up across a"
+                                        + " lock, value date kept. Also counted as finapp.ledger.posting{outcome=posted}."
+                                        + " Per instance; sum() aggregates")
+                            .register(registry));
         }
         this.latency =
                 Timer.builder(POSTING_LATENCY)
@@ -88,5 +107,10 @@ final class LedgerWriteMeters implements PostingObserver {
     @Override
     public void refusedAtTheCutoff(Command command) {
         cutoffRefusals.get(command).increment();
+    }
+
+    @Override
+    public void flooredAtTheCutoff(Command command) {
+        cutoffFloors.get(command).increment();
     }
 }

@@ -590,7 +590,8 @@ Parks are aggregated per transaction, position and value date into one entry of 
 lines, keyed `recon-suspense:<parkId>`, each item it opens naming its park; an unpark is its own
 entry under its own park row and key, the exact inverse of the item's park, value-dated as that
 park. Each is the last contended write of its transaction and dated from stored data — the park
-row's `decided_on`, and the item's settlement date, or its business date for a line without one.
+row's `decided_on` (floored at the first open date should a period lock cover it - `P14-TSK-006`, C3), and the
+item's settlement date, or its business date for a line without one.
 *(Corrected 2026-10-01, `P8-DOC-001`: this read "per transaction and position", with unparks
 aggregated beside parks.)*
 

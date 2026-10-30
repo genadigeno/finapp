@@ -1,7 +1,10 @@
 package com.finapp.bnpl;
 
+import com.finapp.sharedkernel.money.CurrencyCode;
 import java.sql.Connection;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -26,4 +29,11 @@ public interface BnplAccrualStore {
      * {@code ACTIVE} pay-in-N obligation's accrual span that has not accrued; empty when every such date has.
      */
     Optional<Duration> oldestLag(Connection unitOfWork);
+
+    /**
+     * Per currency, the oldest elapsed date of an {@code ACTIVE} pay-in-N obligation's accrual span that has not accrued
+     * - {@link #oldestLag}'s candidates kept as dates; a currency absent has accrued every such date. BNPL's arm of
+     * accounting's {@code AccrualCompleteness} (`P14-TSK-006`, owner decision C3: the close requires accruals caught up).
+     */
+    Map<CurrencyCode, LocalDate> oldestUnaccruedByCurrency(Connection unitOfWork);
 }

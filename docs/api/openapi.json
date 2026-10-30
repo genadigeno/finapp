@@ -21576,6 +21576,9 @@
           "catalogue": {
             "type": "string"
           },
+          "cutoffReaction": {
+            "type": "string"
+          },
           "datingClass": {
             "type": "string"
           },

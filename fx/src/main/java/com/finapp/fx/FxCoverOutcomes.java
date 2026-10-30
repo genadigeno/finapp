@@ -211,9 +211,12 @@ public final class FxCoverOutcomes {
         CoverLines.Accounts accounts = CoverLines.accounts(chart, unitOfWork, clearing, locked.providerCode(),
                 plan.sold().currency(), plan.bought().currency());
         String postingKey = POSTING_PREFIX + locked.id();
+        // Dated the stored recorded_on, floored at the first open date should a lock cover it (P14-TSK-006, owner
+        // decision C3; FX-COVER version 2) - the database's today in this transaction, so defensive; the provider's value
+        // date kept.
         PostingResult posted = postings.post(unitOfWork, new PostingCommand(
                 postingKey, recorded.recordedOn(), executed.valueDate(), postingKey,
-                CoverLines.compose(plan, execution, accounts)));
+                CoverLines.compose(plan, execution, accounts), PostingCommand.Dating.FLOOR_AT_FIRST_OPEN));
         covers.attachExecutionEntry(unitOfWork, locked.id(), posted.entryId().value());
         if (!covers.transition(unitOfWork, locked.id(), locked.attempts(), locked.status(), CoverStatus.EXECUTED)) {
             throw new IllegalStateException("the locked cover did not execute beside its execution fact");

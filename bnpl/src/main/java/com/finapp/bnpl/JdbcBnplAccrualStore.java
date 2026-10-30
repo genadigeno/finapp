@@ -15,8 +15,11 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.UUID;
 
 /**
@@ -116,6 +119,33 @@ public final class JdbcBnplAccrualStore implements BnplAccrualStore {
             return row.wasNull() ? Optional.empty() : Optional.of(Duration.ofMillis(Math.max(0, millis)));
         } catch (SQLException failure) {
             throw failed("reading the oldest unaccrued BNPL date", failure);
+        }
+    }
+
+    @Override
+    public Map<CurrencyCode, LocalDate> oldestUnaccruedByCurrency(Connection unitOfWork) {
+        // oldestLag's candidates (P14-TSK-006), grouped by currency and kept as dates: the same ACTIVE pay-in-N
+        // obligations, the same next date, the same span end, the same "ended in the pinned zone on the database clock".
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT x.currency, min(x.next_date)"
+                        + " FROM (SELECT o.currency, o.servicing_zone AS zone,"
+                        + " COALESCE((SELECT max(a.accrual_date) + 1 FROM bnpl.bnpl_interest_accrual a"
+                        + " WHERE a.obligation_id = o.id), o.purchase_date) AS next_date,"
+                        + " (SELECT max(i.due_date) FROM bnpl.bnpl_instalment i JOIN bnpl.bnpl_schedule s"
+                        + " ON s.id = i.schedule_id WHERE s.obligation_id = o.id AND s.schedule_version ="
+                        + " (SELECT max(v.schedule_version) FROM bnpl.bnpl_schedule v WHERE v.obligation_id = o.id))"
+                        + " AS span_end"
+                        + " FROM bnpl.bnpl_obligation o WHERE o.status = 'ACTIVE' AND o.product = 'BNPL_PAY_IN_N') x"
+                        + " WHERE x.next_date < LEAST(bnpl.business_date(statement_timestamp(), x.zone), x.span_end)"
+                        + " GROUP BY x.currency ORDER BY x.currency");
+                ResultSet rows = select.executeQuery()) {
+            Map<CurrencyCode, LocalDate> oldest = new TreeMap<>(java.util.Comparator.comparing(CurrencyCode::code));
+            while (rows.next()) {
+                oldest.put(CurrencyCode.of(rows.getString(1).strip()), rows.getObject(2, LocalDate.class));
+            }
+            return oldest;
+        } catch (SQLException failure) {
+            throw failed("reading the oldest unaccrued BNPL date per currency", failure);
         }
     }
 

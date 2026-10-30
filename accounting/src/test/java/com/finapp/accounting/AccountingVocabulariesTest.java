@@ -48,6 +48,10 @@ class AccountingVocabulariesTest {
         // P14-TSK-002's four dating classes.
         assertThat(names(DatingClass.values()))
                 .containsExactly("TODAY_CLOCK", "TODAY_DATABASE", "STORED_ROW", "ECONOMIC_DATE");
+        // P14-TSK-006's cutoff reactions (owner decision C3).
+        assertThat(names(CutoffReaction.values()))
+                .containsExactly("NOT_REACHED", "REFUSED", "FLOORED_AT_FIRST_OPEN", "REFUSED_AT_APPROVAL");
+        assertThat(names(AccrualCompleteness.Accruer.values())).containsExactly("LENDING", "BNPL");
         // P14-TSK-002's register: the ledger's three entry types (held equal to JournalEntryType in app) and a line's side.
         assertThat(names(EntryType.values())).containsExactly("POSTING", "REVERSAL", "ADJUSTMENT");
         assertThat(names(Side.values())).containsExactly("DEBIT", "CREDIT", "EITHER");
@@ -151,6 +155,24 @@ class AccountingVocabulariesTest {
     void theBackDatingClasses() {
         assertThat(EnumSet.allOf(DatingClass.class).stream().filter(DatingClass::mayBackDate))
                 .containsExactlyInAnyOrder(DatingClass.STORED_ROW, DatingClass.ECONOMIC_DATE);
+        // C3 (P14-TSK-006): a lock reaches every reaction but NOT_REACHED - the dated-today rules.
+        assertThat(EnumSet.allOf(CutoffReaction.class).stream().filter(CutoffReaction::reachedByALock))
+                .containsExactlyInAnyOrder(CutoffReaction.REFUSED, CutoffReaction.FLOORED_AT_FIRST_OPEN,
+                        CutoffReaction.REFUSED_AT_APPROVAL);
+    }
+
+    @Test
+    @DisplayName("an accruer behind blocks every period ending on or after its oldest unaccrued date (C3, P14-TSK-006)")
+    void anAccruerBehindBlocksThePeriodsItHasNotReached() {
+        AccrualCompleteness.Lagging lagging = new AccrualCompleteness.Lagging(
+                AccrualCompleteness.Accruer.LENDING, "EUR", java.time.LocalDate.of(2026, 10, 31));
+        assertThat(lagging.accruedThrough()).isEqualTo(java.time.LocalDate.of(2026, 10, 30));
+        assertThat(lagging.blocks(java.time.LocalDate.of(2026, 10, 31))).as("the period's last day unaccrued").isTrue();
+        assertThat(lagging.blocks(java.time.LocalDate.of(2026, 11, 30))).isTrue();
+        assertThat(lagging.blocks(java.time.LocalDate.of(2026, 10, 30))).as("accrued through the period end").isFalse();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new AccrualCompleteness.Lagging(
+                AccrualCompleteness.Accruer.BNPL, "eur", java.time.LocalDate.of(2026, 10, 31)))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

@@ -53,7 +53,12 @@ import lombok.RequiredArgsConstructor;
  *   <li>The posting {@code merchant-payout-return:<payoutId>}: DR {@code PAYOUT_CLEARING} (the
  *       declared position, `INV-SET-05`) / CR the payable, dated from STORED evidence — the
  *       batch's {@code accepted_on} and the item's settlement date — so a retry on a later day
- *       converges on the key (ADR-0065 §6).
+ *       converges on the key (ADR-0065 §6). The {@code accepted_on} is floored at the first open
+ *       date when a period lock already covers it (`P14-TSK-006`, owner decision C3; rule
+ *       {@code MERCHANT-PAYOUT-RETURN} version 2): the ledger reads the cutoff under its shared
+ *       key, the value date stays the item's, the return row keeps {@code returned_on}, and the
+ *       key's fingerprint binds the stored date - so the sweep's re-drive is never refused and a
+ *       replay still converges.
  *   <li>The return row, naming the entry (append-only, so it follows the posting).
  *   <li>The {@code PAYOUT_RETURN} expectation through the port, after the posting whose line it
  *       copies — no key of its own: the rule reaching it is operation-anchored.
@@ -251,7 +256,10 @@ public final class PayoutReturns {
                                         new JournalLine(
                                                 payable.get().id(),
                                                 Direction.CREDIT,
-                                                payout.amount()))));
+                                                payout.amount())),
+                                // C3 (P14-TSK-006): a return from a batch a lock already covers posts on the first
+                                // open date, value date the item's - the sweep's re-drive is never refused.
+                                PostingCommand.Dating.FLOOR_AT_FIRST_OPEN));
 
         // 4. The fact, naming its entry.
         returns.insert(

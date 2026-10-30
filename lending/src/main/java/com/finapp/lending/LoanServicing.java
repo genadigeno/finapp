@@ -89,8 +89,9 @@ import lombok.RequiredArgsConstructor;
  * continued monthly after the final due date - {@link InstalmentCalendar}) or the line's statement cycle
  * ({@link StatementEngineV1#cycle}); {@link AccrualEngineV1} rounds within it, its predecessor the period's previous
  * accrual. Each date writes its {@code interest_accrual} row and - when it posts something - posting rule 2,
- * {@code DR LOAN_INTEREST_ACCRUED / CR LOAN_INTEREST_INCOME}, under {@code lending.accrual:<loan>:<date>}, posting date
- * = value date = {@code d}; a zero day writes the row and no entry. The row and its entry commit together, with every
+ * {@code DR LOAN_INTEREST_ACCRUED / CR LOAN_INTEREST_INCOME}, under {@code lending.accrual:<loan>:<date>}, value date
+ * {@code d} and posting date {@code d} - floored at the first open date when a period lock covers {@code d}
+ * (`P14-TSK-006`, owner decision C3; rule {@code LND-2} version 2); a zero day writes the row and no entry. The row and its entry commit together, with every
  * other date of the step, or not at all.
  *
  * <h2>Why once (scenario 4)</h2>
@@ -422,9 +423,13 @@ public final class LoanServicing {
     }
 
     /**
-     * Posting rule 2 for one date: {@code DR LOAN_INTEREST_ACCRUED / CR LOAN_INTEREST_INCOME}, dated the date, its
-     * reference the loan (rule 1's) - so a second attempt at the date is the same request under the same key, a replay
-     * the step refuses as the defect it is, never a second posting.
+     * Posting rule 2 for one date: {@code DR LOAN_INTEREST_ACCRUED / CR LOAN_INTEREST_INCOME}, value-dated the date and
+     * posted on it - or, when a period lock already covers the date, on the first open date (`P14-TSK-006`, owner
+     * decision C3: the ledger floors the stated date under the cutoff's shared key, {@code FLOOR_AT_FIRST_OPEN}), so a
+     * catch-up across a lock is recognised in the open period and never refused; its reference the loan (rule 1's) - so a
+     * second attempt at the date is the same request under the same key (the fingerprint binds the stated date, whatever
+     * the cutoff did), a replay the step refuses as the defect it is, never a second posting. The row records the entry,
+     * whose posting date is the one used.
      */
     private JournalEntryId post(
             Connection unitOfWork, LoanId loan, InterestAccrual accrual, LedgerAccountId accrued, LedgerAccountId income) {
@@ -432,7 +437,8 @@ public final class LoanServicing {
         PostingResult result = postings.post(unitOfWork, new PostingCommand(
                 POSTING_KEY_PREFIX + loan.value() + ":" + date, date, date, loan.value().toString(), List.of(
                         new JournalLine(accrued, Direction.DEBIT, accrual.posted()),
-                        new JournalLine(income, Direction.CREDIT, accrual.posted()))));
+                        new JournalLine(income, Direction.CREDIT, accrual.posted())),
+                PostingCommand.Dating.FLOOR_AT_FIRST_OPEN));
         if (result.replayed()) {
             // The key's entry exists while the date has no row: the row and its entry were not committed together.
             throw new IllegalStateException("an accrual entry exists for a date with no accrual row (INV-LND-02)");

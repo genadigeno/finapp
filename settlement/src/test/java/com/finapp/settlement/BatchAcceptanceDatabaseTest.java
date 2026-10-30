@@ -716,6 +716,53 @@ class BatchAcceptanceDatabaseTest {
     }
 
     @Test
+    @DisplayName("C3 (P14-TSK-006): an acceptance whose accepted_on a period lock already"
+            + " covers - an instance clock behind - posts on the first open date, value-dated"
+            + " the batch's business date, the batch keeping its accepted_on; never refused")
+    void anAcceptanceDatedIntoALockPostsOnTheFirstOpenDate() throws Exception {
+        // Only this file is due: the leftovers are accepted on the suite's own clock first.
+        drainDueLeftovers();
+        UUID fileId = pulled(SOURCE, report(SOURCE, "PSPB-ACC-C3", "AC3"));
+        parsing.sweep();
+        assertThat(fileColumn(fileId, "status")).isEqualTo("PARSED");
+        com.finapp.ledger.PostingCutoffs cutoffs = new com.finapp.ledger.PostingCutoffs(IDS, CLOCK);
+        LocalDate cut = LocalDate.of(1999, 1, 31);
+        try (com.finapp.platform.security.SecurityContext.Scope platform =
+                        com.finapp.platform.security.SecurityContext.enterSystem();
+                com.finapp.platform.correlation.CorrelationContext.Scope scope =
+                        com.finapp.platform.correlation.CorrelationContext.enter(
+                                Correlation.startingWith(CorrelationId.generate(IDS)))) {
+            RUNNER.inTransaction(uow -> cutoffs.advance(uow, Optional.empty(), cut,
+                    "lock January 1999 (P14-TSK-006 test)"));
+        }
+        try {
+            // The acceptance's instance clock stands in the locked month - the skew C3's floor answers.
+            Clock behind = Clock.fixed(Instant.parse("1999-01-20T10:00:00Z"), ZoneOffset.UTC);
+            acceptanceWith(intake, batches, behind).sweep();
+            assertThat(fileColumn(fileId, "status")).isEqualTo("ACCEPTED");
+            SettlementBatchStore.BatchRow batch = batchOf(fileId);
+            assertThat(columnOfBatch(batch.id(), "accepted_on")).as("the batch keeps its acceptance date")
+                    .isEqualTo("1999-01-20");
+            String entry = columnOfBatch(batch.id(), "journal_entry_id");
+            assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE id = ?::uuid"
+                            + " AND posting_date = DATE '1999-02-01' AND value_date = ?::date"
+                            + " AND idempotency_scope = ?",
+                    entry, batch.businessDate().toString(),
+                    "ledger.post:" + BatchAcceptance.POSTING_KEY_PREFIX + batch.id()))
+                    .as("floored to the first open date, value date and key unchanged").isEqualTo(1);
+        } finally {
+            try (com.finapp.platform.security.SecurityContext.Scope platform =
+                            com.finapp.platform.security.SecurityContext.enterSystem();
+                    com.finapp.platform.correlation.CorrelationContext.Scope scope =
+                            com.finapp.platform.correlation.CorrelationContext.enter(
+                                    Correlation.startingWith(CorrelationId.generate(IDS)))) {
+                RUNNER.inTransaction(uow -> cutoffs.moveBack(uow, cut, Optional.empty(),
+                        "the test restores the cutoff"));
+            }
+        }
+    }
+
+    @Test
     @DisplayName("ten acceptors on one file produce one acceptance; on ten files of one"
             + " source, ten gapless sequences")
     void tenAcceptorsProduceOneAcceptanceAndGaplessSequences() throws Exception {

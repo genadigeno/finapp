@@ -208,7 +208,10 @@ One entry per accepted batch, written by `settlement` as a system `POSTING`:
   row in the acceptance transaction and read only from the row thereafter — an open period by
   construction, never back-dated to the bank's booking date; **`value_date`** = the batch's
   stored business date. Because the posting fingerprint binds both dates, dates from stored data
-  are what make a later-day replay converge instead of conflicting (`INV-SET-04`);
+  are what make a later-day replay converge instead of conflicting (`INV-SET-04`); *as built by
+  `P14-TSK-006` (C3)*, the posting asks the ledger to floor `accepted_on` at the first open date should a
+  period lock already cover it (an instance clock behind - never in normal operation, `accepted_on` being
+  today), the batch keeping its `accepted_on` and the fingerprint binding it;
 - amounts folded with `Money` — the declared trailer net equals the fold, or the file was already
   `REJECTED(CONTROL_TOTAL_MISMATCH)`;
 - the **last contended write** of the acceptance transaction, after the run, the items, the keys
@@ -282,7 +285,9 @@ under its own `recon-suspense:<parkId>` key, the exact inverse of the item's par
 side, position and original value date — with the `suspense_release` row naming that park. The
 item's conditional transition is the arbiter; the posting is the last contended write of its
 transaction, the park and suspense-item rows — the transaction's own — inserted after it
-carrying its entry id; the posting date is the park row's `decided_on` (stamped once) and the
+carrying its entry id; the posting date is the park row's `decided_on` (stamped once; floored at the first
+open date when a period lock covers it - a resolution's manual match approved after its month's lock,
+`P14-TSK-006`, C3) and the
 value date the item's settlement date, or its business date for a line without one
 (`COALESCE(settlement_date, business_date)`). *(Corrected 2026-10-01, `P8-DOC-001`: this read
 "per transaction and position", "the park row names every suspense item", and the posting "the
@@ -1025,7 +1030,8 @@ direction mismatch (§5.4). `app`'s `PayoutReturnSchedule`, leaderless, reads re
    2. checks it is `COMPLETED`, has no return, matches in amount and currency, and that the
       payable is `ACTIVE`, read `FOR SHARE` before any posting;
    3. posts `merchant-payout-return:<payoutId>`, DR `PAYOUT_CLEARING` / CR `MERCHANT_PAYABLE`, dated
-      the item's stored batch `accepted_on` with the item's settlement date as value date;
+      the item's stored batch `accepted_on` - floored at the first open date when a period lock covers it
+      (`P14-TSK-006`, C3: the sweep's re-drive is never refused) - with the item's settlement date as value date;
    4. inserts the `payout_return` with that entry's id (`UNIQUE (payout_id)`; its money bound equal
       to the payout's by a composite foreign key onto the payout's `(id, amount_minor, currency,
       scale)` — a `CHECK` cannot read another row);

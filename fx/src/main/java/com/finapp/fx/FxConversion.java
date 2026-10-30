@@ -165,8 +165,12 @@ public final class FxConversion {
         TradeStore.Booked booked = trades.insert(unitOfWork, tradeId, plan, correlation.value());
         ConversionLines.Accounts accounts = ConversionLines.accounts(chart, unitOfWork, plan, source, destination);
         String postingKey = POSTING_PREFIX + tradeId.value();
+        // Dated the stored booked_on, floored at the first open date should a lock cover it (P14-TSK-006, owner decision
+        // C3; FX-TRADE version 2): booked_on is the database's today in this very transaction, so only a conversion
+        // straddling a month-end midnight across a lock reaches the floor - defensive, never refused.
         PostingResult posted = postings.post(unitOfWork, new PostingCommand(
-                postingKey, booked.bookedOn(), booked.bookedOn(), postingKey, ConversionLines.compose(plan, accounts)));
+                postingKey, booked.bookedOn(), booked.bookedOn(), postingKey, ConversionLines.compose(plan, accounts),
+                PostingCommand.Dating.FLOOR_AT_FIRST_OPEN));
         trades.attachEntry(unitOfWork, tradeId, posted.entryId().value());
         if (!quotes.execute(unitOfWork, quoteId)) {
             throw new IllegalStateException("the accepted, locked quote did not execute beside its trade");

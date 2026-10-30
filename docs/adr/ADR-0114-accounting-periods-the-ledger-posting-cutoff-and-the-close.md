@@ -37,9 +37,15 @@ shared/exclusive advisory lock (namespace 13). Rests on `PHASE_14_PLAN.md` §6, 
 5. **After close, corrections are prior-period adjustments** in the open period (origin `ACCOUNTING`, reason
    `PRIOR_PERIOD_ADJUSTMENT`, four-eyes) or the owning domain's own correction, never re-dated into the closed period; a
    reopen supersedes the period's FINAL report runs and never deletes them (`INV-ACC-10`).
-6. **Back-dating posters are made explicit** (C3): the ledger refuses; lending's accrual floors its posting date at the
-   first open date and keeps the accrual date as value date; close readiness requires accruals complete through the
-   period end. `P14-TSK-002`'s register classifies every poster's dating.
+6. **Back-dating posters are made explicit** (C3, ratified by the owner 2026-10-30, "Floor to first open date"): the
+   ledger refuses an entry dated into a locked or closed period; every **system** back-dating poster (lending's
+   accrual; the settlement report and statement; the merchant-payout return; reconciliation suspense; `fx-trade`;
+   `fx-cover`) posts on the first open date and keeps its economic/value date; a **person's** adjustment (`MANUAL`, or
+   a reconciliation resolution's) dated into a locked period is refused at approval and stays `PROPOSED` - re-proposed
+   in the open period or made a prior-period adjustment; close readiness requires accruals complete through the
+   period end. `P14-TSK-002`'s register classifies every poster's dating and names each rule's reaction. *(Read "the
+   ledger refuses; lending's accrual floors its posting date at the first open date and keeps the accrual date as
+   value date" until the ratification widened it to the eleven back-dating rules.)*
 
 ## Alternatives Considered
 
@@ -51,7 +57,9 @@ Pros: row-level, visible in `pg_locks`. Cons: a multixact on one hot row for eve
 advisory shared lock at higher cost. Rejected in favour of namespace 14.
 
 ### The ledger silently re-dates a back-dated posting
-Pros: no producer change. Cons: an undisclosed alteration of a domain input. Rejected (C3).
+Pros: no producer change. Cons: an undisclosed alteration of a domain input. Rejected (C3). *(The floor built by
+`P14-TSK-006` is not this: the poster asks per command, its rule registers the reaction, and the entry's audit record
+names the date it stated - see As built.)*
 
 ## Consequences
 
@@ -89,6 +97,30 @@ the decision text: the mapping-key arbiter for the pin (the activation re-reads 
 refuses a month at or before a locked period - V003 replaces V002's edge function with the same rule); a busy cutoff key
 crosses the port as `PostingCutoff.CutoffBusy` (`503 accounting.CutoffBusy`, nothing stored under the key). Decision 6
 (C3) still untouched.
+
+`P14-TSK-006` (2026-10-30), decision 6 as ratified: **the floor is the posting command's, on the poster's explicit
+request** - `PostingCommand.Dating.FLOOR_AT_FIRST_OPEN`, a sixth record component (the five-argument constructor means
+`AS_STATED`, so no other poster changed). In the posting's own effect - after the idempotency claim, one statement
+before the insert - `PostingCutoffs.firstOpenOnOrAfter` takes namespace `14` key `cutoff` **shared** (held to commit,
+re-entrant for the trigger), then reads `closed_through` (`FOR SHARE` under REPEATABLE READ/SERIALIZABLE, the
+trigger's own rule), and the entry posts on `max(stated, closed_through + 1)`; the value date, the lines and the key
+are untouched, the audit record says `flooredFrom=<stated>`, and `finapp.accounting.cutoff.floored{command}` counts
+it. **Why the ledger, and why on request**: only the ledger can read the cutoff under the key its insert's refusal
+takes - six producers each reading it first would be context 1's "a check in each caller" six times - and only the
+ledger can keep the key's fingerprint on the **stated** date (the canonical form is unchanged and carries no dating),
+so a replay converges on the first entry whatever the cutoff did since; a producer passing its own floored date would
+conflict on a replay after the next lock. A poster racing a lock posts in the period before the move commits (the
+move waits for its shared key) or reads the moved cutoff and floors - never refused. Seven rules ask (register version
+2 from 2026-10-30): `LND-2`, `SETTLEMENT-REPORT`, `SETTLEMENT-STATEMENT`, `MERCHANT-PAYOUT-RETURN`, `RECON-SUSPENSE`,
+`FX-TRADE`, `FX-COVER`. **The adjustments**: `AdjustmentService.doApprove` - both doors, the generic `MANUAL` approval
+and the resolution's `approveOwned` - reads the cutoff the same way after the proposal's row lock and refuses a
+covered posting date with `ledger.PeriodClosed` before anything is written (409; the proposal and a resolution stay
+`PROPOSED`); an adjustment is never floored - its date is part of what was approved. `V028`'s trigger stays the
+backstop for every writer. **The close's input**: accounting's `AccrualCompleteness` (lending's and bnpl's oldest
+unaccrued date per currency, `blocking(periodEnd)`), implemented in `app` over lending's `AccrualLags` and bnpl's
+`BnplAccrualStore`; `P14-TSK-011`'s `ACCRUALS_COMPLETE` reads it. No migration (the journal's three dates hold the
+floor: posting date floored, value date the economic one; each source row keeps its stated date). The meter's tag
+stays the command (a command still names no module).
 
 ## Follow-up
 

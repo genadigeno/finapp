@@ -31,14 +31,26 @@ import java.util.TreeSet;
  */
 public final class PostingRuleRegister {
 
-    /** The catalogue's version: raised whenever any rule is added, versioned or withdrawn. */
-    public static final int CATALOGUE_VERSION = 1;
+    /**
+     * The catalogue's version: raised whenever any rule is added, versioned or withdrawn. 2 since `P14-TSK-006` (owner
+     * decision C3): the seven back-dating system rules versioned to floor their posting date at the first open date, and
+     * every rule naming its {@link CutoffReaction}.
+     */
+    public static final int CATALOGUE_VERSION = 2;
 
     /**
      * The effective date of every version-1 rule: each describes the code as it has posted since its namespace's first
      * entry - a rule that later gained a line gained an <em>optional</em> one, so every earlier entry still conforms.
      */
     public static final LocalDate ORIGIN = LocalDate.EPOCH;
+
+    /**
+     * The effective date of C3's floored versions (`P14-TSK-006`): the owner's ratification of "Floor to first open date"
+     * and this change. Version 1 and version 2 of a floored rule post the same lines and value date; they differ only
+     * when a lock covers the stated date (refused, then floored) - and no period was locked before it (production holds
+     * none until `P14-TSK-011`'s schedule opens the first), so every earlier entry conforms to either.
+     */
+    public static final LocalDate C3_FLOOR = LocalDate.of(2026, 10, 30);
 
     /** The register as built. */
     public static final PostingRuleRegister CURRENT =

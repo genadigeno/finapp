@@ -12,9 +12,12 @@ import java.io.Serial;
  * of its SQLSTATE {@code LDCUT}, so the posting, the reversal and the adjustment surfaces all report one named outcome.
  * PostgreSQL has aborted the caller's transaction by then: the caller rolls back, and its idempotency claim with it.
  *
- * <p>How a back-dating poster reacts (re-date into the open period, or refuse) is its own module's decision
- * ({@code P14-TSK-006}, owner decision C3) - never the ledger's, which neither re-dates nor admits. The message names
- * the entry and its posting date, <strong>never an amount</strong> ({@code INV-AUD-02}).
+ * <p>How a back-dating poster reacts is its rule's (owner decision C3, ratified 2026-10-30; built by {@code P14-TSK-006}):
+ * a system poster asks the posting command for the floor ({@link PostingCommand.Dating#FLOOR_AT_FIRST_OPEN}) and is never
+ * refused; a person's adjustment dated into a locked period is refused at approval by
+ * {@link AdjustmentService}'s guard - this exception, raised before anything is written - and its proposal stays
+ * {@code PROPOSED}. The ledger never re-dates unasked. The message names the entry or proposal and its posting date,
+ * <strong>never an amount</strong> ({@code INV-AUD-02}).
  */
 public final class PeriodClosedException extends RuntimeException {
 

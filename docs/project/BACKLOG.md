@@ -25632,7 +25632,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   plus `#aLockStopsPostingsDatedInThePeriod` and `#theProposerCannotApprove`), `GlMappingDatabaseTest#aLockBehindAnActivationPinsOneVersion`,
   `AccountingMigrationTest`'s lists.
 
-**P14-TSK-006 — Back-dating posters made cutoff-safe (lending's accrual)** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-004`'s merge, master `593b5b94`; every dependency `COMPLETE`)
+**P14-TSK-006 — Back-dating posters made cutoff-safe (lending's accrual)** — `COMPLETE` (2026-10-30; branch `P14-TSK-006` from master `a3982a0e`; no migration; **M14.2 `CLOSED` at 3 of 3**; marks no task `READY` — the coordinator does) *(read "`READY` (2026-10-30; marked by the coordinator at `P14-TSK-004`'s merge, master `593b5b94`; every dependency `COMPLETE`)" until this task's gate)*
 - **Owner's C3 ratification (2026-10-30)**: the scope widens from lending's accrual to every back-dating rule `P14-TSK-002`'s register found (eleven - `PostingRuleCatalogue`'s ECONOMIC_DATE and STORED_ROW rules): system posters floor their posting date at the first open date (`PostingCutoff`/`firstOpen`) and keep their economic/value date; a MANUAL adjustment or a reconciliation resolution's adjustment dated into a locked period is refused at approval (`ledger.PeriodClosed`) and stays `PROPOSED` - the operator re-proposes it in the open period or uses a prior-period adjustment (`P14-TSK-013`); the close's readiness requires accruals caught up. Each rule's reaction is named in the register and tested; the design may split the work if it proves too large for one task (say so).
 - **Objective**: the one `ECONOMIC_DATE` poster never fails forever against a locked period (C3).
 - **Bounded context**: Lending (18), for Accounting.
@@ -25659,6 +25659,24 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: remove the floor → the race test sees `ledger.PeriodClosed`.
 - **Acceptance criteria**: no accrual refused after a lock; value dates unchanged.
 - **Definition of done**: `DOD-FIN`. **Risk**: Medium. **Cx**: S.
+- **As built** (2026-10-30, C3 as ratified - all eleven rules, not split): **the floor is the ledger's, on the
+  poster's explicit request** - `PostingCommand.Dating.FLOOR_AT_FIRST_OPEN` (the five-argument constructor means
+  `AS_STATED`); `PostingService` reads the cutoff in the posting's effect under namespace `14` key `cutoff` shared
+  (`PostingCutoffs.firstOpenOnOrAfter`; `FOR SHARE` under REPEATABLE READ/SERIALIZABLE), posts on
+  `max(stated, closed_through + 1)`, value date, lines and key untouched, the fingerprint the stated date's, the
+  audit record `flooredFrom=`, `finapp.accounting.cutoff.floored{command}`. *(Deviation from the scope line, recorded:
+  the read is the ledger's, not `LoanServicing`'s - a producer passing its own floored date would conflict on a replay
+  after the next lock; the ledger alone reads under the insert's key and keeps the fingerprint on the stated date.)*
+  Posters asking: `LoanServicing` (`LND-2`), `BatchAcceptance` (`SETTLEMENT-REPORT`, `-STATEMENT`), `PayoutReturns`,
+  `Suspense` (3 sites), `FxConversion`, `FxCoverOutcomes`. Adjustments: `AdjustmentService.doApprove` refuses a
+  covered posting date before any write (`PostingCutoffs.requireOpen`, `ledger.PeriodClosed` 409), both doors,
+  `PROPOSED` kept. The register: `CutoffReaction` per rule (`LND-2` and six more at version 2 from 2026-10-30,
+  version 1 `REFUSED`; `ADJ-MANUAL`, `RECON-WRITE-OFF`, `-TRANSFER`, `-GAIN` `REFUSED_AT_APPROVAL`; 47 `NOT_REACHED`;
+  catalogue version 2), served as `cutoffReaction`; the static guard holds the source to it both ways.
+  `AccrualCompleteness` implemented in `app` (`ServicingAccrualCompleteness` over lending's
+  `AccrualLags.oldestUnaccruedByCurrency` and bnpl's `BnplAccrualStore.oldestUnaccruedByCurrency`). The accrual row
+  records its entry, whose posting date is the one used (persistence none). Hermetic tests named in `CURRENT_STATE.md`;
+  owed (C5): `PostingFloorDatabaseTest` (6: `#aFlooredPostingDatedIntoALockPostsOnTheFirstOpenDate`, `#aTimelyFlooredPostingKeepsItsDate`, `#aReplayAcrossALockConvergesOnTheFirstPosting`, `#tenFlooredPostersAndALockRefuseNothing`, `#aManualAdjustmentDatedIntoALockIsRefusedAtApprovalAndStaysProposed`, `#aReconciliationAdjustmentDatedIntoALockIsRefusedAtApprovalAndStaysProposed`), `LoanAccrualCutoffDatabaseTest` (4: `#aCatchUpAcrossALockPostsInTheOpenPeriod` - both orders of row 11 - `#aCatchUpAfterALockFloorsOnlyTheLockedDates`, `#aTimelyAccrualKeepsItsDate`, `#theOldestUnaccruedDateIsReadPerCurrency`), `BatchAcceptanceDatabaseTest#anAcceptanceDatedIntoALockPostsOnTheFirstOpenDate`, `PayoutReturnDatabaseTest#aReturnFromALockedPeriodsBatchPostsOnTheFirstOpenDate`, `ResolutionMachineDatabaseTest#aWriteOffDatedIntoALockIsRefusedAtApprovalAndStaysProposed` and `#aManualMatchApprovedAfterALockFloorsItsSuspenseEntry`, `BnplAccrualDatabaseTest#theOldestUnaccruedDateIsReadPerCurrency` - 15 cases. Unblocks no task by itself: `P14-TSK-011` now waits on `-009` and `-010` only.
 
 **P14-TSK-007 — The GL read model and drill-down** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)
 - **Objective**: GL balances and activity by period, account and currency, computed from journal lines under the pinned

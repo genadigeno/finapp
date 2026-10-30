@@ -106,6 +106,15 @@ public final class PostingCutoffs {
 
     static final String READ = "SELECT closed_through FROM ledger.posting_cutoff WHERE id = 1";
 
+    /**
+     * The floor's and the approval guard's first statement (`P14-TSK-006`): the posting's shared key - re-entrant, so the
+     * insert's trigger re-takes it without queuing - and the isolation that decides how the cutoff is read next.
+     */
+    static final String SHARED_READ_LOCK = "SELECT " + SHARED_LOCK + ", current_setting('transaction_isolation')";
+
+    /** {@code current_setting('transaction_isolation')} under READ COMMITTED. */
+    static final String READ_COMMITTED = "read committed";
+
     static final String MOVE = "UPDATE ledger.posting_cutoff SET closed_through = ?, revision = revision + 1"
             + " WHERE id = 1 AND closed_through IS NOT DISTINCT FROM ? RETURNING revision";
 
@@ -129,6 +138,70 @@ public final class PostingCutoffs {
 
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
+
+    /**
+     * The date a posting stated on {@code stated} is dated by a {@link PostingCommand.Dating#FLOOR_AT_FIRST_OPEN}
+     * request (`P14-TSK-006`, owner decision C3): {@code stated} itself when the cutoff is unset or before it, else the
+     * first open date - the day after the cutoff.
+     *
+     * <p><strong>Read under the key the insert's refusal takes</strong>, and held to commit: {@link #SHARED_LOCK} first,
+     * then the cutoff - two statements, so under READ COMMITTED the read's snapshot is taken after the grant and sees a
+     * move that committed while this waited; under REPEATABLE READ or SERIALIZABLE the row is read {@code FOR SHARE},
+     * so a move committed after the snapshot is {@code 40001} (retryable), never a stale floor - {@code V028}'s own
+     * rule. While the key is held no move can commit, so the date stays open until this transaction's entry is
+     * written: a poster racing a lock posts before it (dated in the period) or after it (floored), never refused.
+     */
+    static LocalDate firstOpenOnOrAfter(Connection unitOfWork, LocalDate stated) {
+        Objects.requireNonNull(stated, "stated must not be null");
+        return cutoffUnderTheSharedKey(unitOfWork)
+                .filter(cut -> !stated.isAfter(cut))
+                .map(cut -> cut.plusDays(1))
+                .orElse(stated);
+    }
+
+    /**
+     * Refuses a date the cutoff covers ({@link PeriodClosedException}, {@code ledger.PeriodClosed}) - the adjustment's
+     * approval guard (`P14-TSK-006`, C3): a person's adjustment is never floored; dated into a locked period it is
+     * refused before anything is written and its proposal stays {@code PROPOSED}. Read as {@link #firstOpenOnOrAfter}
+     * reads, under the shared key held to commit.
+     */
+    static void requireOpen(Connection unitOfWork, LocalDate postingDate, String subject) {
+        Objects.requireNonNull(postingDate, "postingDate must not be null");
+        Objects.requireNonNull(subject, "subject must not be null");
+        Optional<LocalDate> cut = cutoffUnderTheSharedKey(unitOfWork);
+        if (cut.isPresent() && !postingDate.isAfter(cut.get())) {
+            // Identifiers and dates, never an amount (INV-AUD-02).
+            throw new PeriodClosedException(subject + " is dated " + postingDate + " - on or before the posting cutoff "
+                    + cut.get() + ": refused at approval and left PROPOSED; re-propose it in the open period, or correct"
+                    + " the closed period by a prior-period adjustment (INV-ACC-03, C3)");
+        }
+    }
+
+    /** {@link #SHARED_LOCK}, then the cutoff - {@code V028}'s trigger's own two steps, in Java. */
+    private static Optional<LocalDate> cutoffUnderTheSharedKey(Connection unitOfWork) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        try {
+            String isolation;
+            try (PreparedStatement lock = unitOfWork.prepareStatement(SHARED_READ_LOCK);
+                    ResultSet row = lock.executeQuery()) {
+                if (!row.next()) {
+                    throw new LedgerStorageException("the posting cutoff's shared key answered no row");
+                }
+                isolation = row.getString(2);
+            }
+            try (PreparedStatement read = unitOfWork.prepareStatement(
+                            READ_COMMITTED.equals(isolation) ? READ : READ + " FOR SHARE");
+                    ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    // Fail closed, the trigger's rule: an unknown cutoff floors nothing and refuses everything.
+                    throw new LedgerStorageException("the posting cutoff row is missing (ledger V028 seeds it)");
+                }
+                return Optional.ofNullable(row.getObject(1, LocalDate.class));
+            }
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(DatabaseFailure.describe("reading the posting cutoff under its key", failure));
+        }
+    }
 
     /** The cutoff now, on {@code unitOfWork} - empty until the first lock. Reads; takes no lock. */
     public Optional<LocalDate> closedThrough(Connection unitOfWork) {

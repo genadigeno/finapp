@@ -115,6 +115,21 @@ public final class JournalEntry {
     }
 
     /**
+     * The same, not-yet-written entry posted on {@code postingDate} instead (`P14-TSK-006`, C3) - its
+     * identifier, value date, lines and system time unchanged. Package-private: only the posting
+     * command's floor ({@link PostingCommand.Dating#FLOOR_AT_FIRST_OPEN}) moves a stated date, and only
+     * forward, before the entry is appended.
+     */
+    JournalEntry postedOn(LocalDate postingDate) {
+        Objects.requireNonNull(postingDate, "postingDate must not be null");
+        if (postingDate.isBefore(this.postingDate)) {
+            throw new IllegalArgumentException("a floor moves a posting date forward, never back: "
+                    + this.postingDate + " -> " + postingDate);
+        }
+        return new JournalEntry(id, postingDate, valueDate, lines, createdAt);
+    }
+
+    /**
      * Debits equal credits in every currency present. Folded through {@link Money#plus}, so a
      * mixed-scale currency refuses as {@code ScaleMismatchException} before any comparison —
      * the sum is not computable, and computing it anyway would be an implicit rescale.

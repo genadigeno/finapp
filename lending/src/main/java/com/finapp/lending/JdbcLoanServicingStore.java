@@ -20,8 +20,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.UUID;
 
 /**
@@ -224,6 +226,31 @@ public final class JdbcLoanServicingStore implements LoanServicingStore {
             return row.wasNull() ? Optional.empty() : Optional.of(Duration.ofMillis(Math.max(0, millis)));
         } catch (SQLException failure) {
             throw failed("reading the oldest unaccrued date", failure);
+        }
+    }
+
+    @Override
+    public Map<CurrencyCode, LocalDate> oldestUnaccruedByCurrency(Connection unitOfWork) {
+        // oldestUnaccruedLag's candidates, grouped by currency and kept as dates (P14-TSK-006): the same accounts in
+        // servicing with an accrual start, the same next date, the same "ended in the pinned zone on the database clock".
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT x.currency, min(x.next_date)"
+                        + " FROM (SELECT l.currency, COALESCE((SELECT max(a.accrual_date) + 1 FROM lending.interest_accrual a"
+                        + " WHERE a.loan_id = l.id), s.start_date) AS next_date, t.servicing_zone AS zone"
+                        + " FROM lending.loan l JOIN lending.accrual_start s ON s.loan_id = l.id"
+                        + " JOIN lending.loan_offer o ON o.id = l.offer_id"
+                        + " JOIN lending.loan_terms t ON t.terms_version_id = o.terms_version_id"
+                        + " WHERE l.status IN ('ACTIVE', 'CLOSING')) x"
+                        + " WHERE x.next_date < lending.business_date(statement_timestamp(), x.zone)"
+                        + " GROUP BY x.currency ORDER BY x.currency");
+                ResultSet rows = select.executeQuery()) {
+            Map<CurrencyCode, LocalDate> oldest = new TreeMap<>(java.util.Comparator.comparing(CurrencyCode::code));
+            while (rows.next()) {
+                oldest.put(CurrencyCode.of(rows.getString(1).strip()), rows.getObject(2, LocalDate.class));
+            }
+            return oldest;
+        } catch (SQLException failure) {
+            throw failed("reading the oldest unaccrued date per currency", failure);
         }
     }
 

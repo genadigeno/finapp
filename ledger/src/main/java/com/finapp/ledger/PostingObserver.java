@@ -62,6 +62,18 @@ public interface PostingObserver {
     default void refusedAtTheCutoff(Command command) {}
 
     /**
+     * The command's stated posting date lay on or before the posting cutoff and the ledger posted it on the first open
+     * date instead, because the command asked for exactly that ({@link PostingCommand.Dating#FLOOR_AT_FIRST_OPEN};
+     * `P14-TSK-006`, owner decision C3) - a system poster's catch-up across a lock, observed on
+     * {@code finapp.accounting.cutoff.floored} beside {@link #observe}'s {@link Outcome#POSTED}. Observed inside the
+     * posting's effect, so - like every observation here - an approximation the caller's rollback can falsify.
+     *
+     * <p>Defaulted to nothing for the same reason as {@link #refusedAtTheCutoff}; {@code LedgerWriteMetersTest} pins
+     * that the production meters override it.
+     */
+    default void flooredAtTheCutoff(Command command) {}
+
+    /**
      * Observes nothing — for tests and tools that measure nothing. Production wiring passes
      * the meters; this constant exists so a test asserting posting semantics does not have
      * to invent one, not so a bean can take the quiet path.

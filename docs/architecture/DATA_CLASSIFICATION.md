@@ -917,7 +917,7 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `payout_return` | `scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape - `merchant_payout.scale`'s |
 | `payout_return` | `external_item_ref` | `INTERNAL` | The reconciliation item whose evidence caused the application - an identifier of a thing |
 | `payout_return` | `journal_entry_id` | `INTERNAL` | The return's own posting - an identifier of a thing |
-| `payout_return` | `returned_on` | `CONFIDENTIAL` | The posting date - the evidence batch's stored acceptance date (`merchant_payout.created_at`'s reasoning: when money moved for a merchant) |
+| `payout_return` | `returned_on` | `CONFIDENTIAL` | The stated posting date (floored at the first open date should a lock cover it, `P14-TSK-006`) - the evidence batch's stored acceptance date (`merchant_payout.created_at`'s reasoning: when money moved for a merchant) |
 | `payout_return` | `value_date` | `CONFIDENTIAL` | The item's settlement date - the same reasoning |
 | `payout_return` | `recorded_at` | `INTERNAL` | When the platform recorded the fact |
 | `merchant_payout_event` | `id` | `INTERNAL` | A server-assigned ordinal |
@@ -1155,7 +1155,7 @@ reasoning); free text stays inside the encrypted file and has no column here.
 | `batch` | `status_changed_at` | `INTERNAL` | When the machine last moved |
 | `batch` | `correlation_id` | `INTERNAL` | The flow's correlation |
 | `batch` | `source_sequence` | `INTERNAL` | The gapless statement sequence (`P8-TSK-009`) - a counter |
-| `batch` | `accepted_on` | `CONFIDENTIAL` | The UTC day acceptance recognised it - the recognition's posting date, a fact about commercial traffic |
+| `batch` | `accepted_on` | `CONFIDENTIAL` | The UTC day acceptance recognised it - the recognition's stated posting date (floored at the first open date should a lock cover it, `P14-TSK-006`), a fact about commercial traffic |
 | `batch` | `journal_entry_id` | `INTERNAL` | The recognition entry - an identifier of a thing; NULL exactly when the posting was honestly omitted |
 | `batch` | `posting_omitted` | `INTERNAL` | Whether a zero fee omitted the entry - the honesty flag, never silent |
 | `batch` | `statement_sequence` | `INTERNAL` | A bank statement's place in its account's chain (`P8-TSK-016`, INV-SET-06) - a counter; NULL for a report |
@@ -1435,7 +1435,7 @@ counters and dates of things.
 | `park` | `kind` | `INTERNAL` | PARK or UNPARK - a closed vocabulary |
 | `park` | `position_account_id` | `INTERNAL` | The position the entry touched - an identifier of a thing |
 | `park` | `currency` | `INTERNAL` | An enumeration |
-| `park` | `decided_on` | `CONFIDENTIAL` | The deciding day - stamped once, the entry's posting date |
+| `park` | `decided_on` | `CONFIDENTIAL` | The deciding day - stamped once, the entry's stated posting date (floored at the first open date should a lock cover it, `P14-TSK-006`) |
 | `park` | `value_date` | `CONFIDENTIAL` | The items' settlement day - the entry's value date |
 | `park` | `journal_entry_id` | `INTERNAL` | The posted entry - an identifier of a thing |
 | `park` | `actor` | `CONFIDENTIAL` | Who decided (`audit_record.actor`'s reasoning) |
@@ -1820,7 +1820,7 @@ door.
 | `trade` | `residual_minor` | `RESTRICTED-FINANCIAL` | A booked plan amount - the quote's copy, posted by the trade's entry (`journal_line.amount_minor`'s reasoning) |
 | `trade` | `status` | `INTERNAL` | An enumeration member |
 | `trade` | `booked_at` | `INTERNAL` | The database's instant of booking |
-| `trade` | `booked_on` | `INTERNAL` | The booking's UTC date - the entry's posting and value date |
+| `trade` | `booked_on` | `INTERNAL` | The booking's UTC date - the entry's value date and its stated posting date (floored at the first open date should a lock cover it, `P14-TSK-006`) |
 | `trade` | `journal_entry_id` | `INTERNAL` | The entry `fx-trade:<id>` - an identifier of a thing |
 | `trade` | `correlation_id` | `INTERNAL` | The flow's correlation |
 | `trade_reversal` | `id` | `INTERNAL` | A proposal identifier (`P9-TSK-025`) |
@@ -1887,7 +1887,7 @@ door.
 | `cover_execution` | `executed_rate_coherent` | `INTERNAL` | Whether the executed rate explains the sold and bought amounts - a verdict (fx `V010`) |
 | `cover_execution` | `journal_entry_id` | `INTERNAL` | The entry `fx-cover:<coverId>` (`UNIQUE`) - an identifier of a thing |
 | `cover_execution` | `recorded_at` | `INTERNAL` | The database's instant |
-| `cover_execution` | `recorded_on` | `INTERNAL` | The database's date - the entry's posting date |
+| `cover_execution` | `recorded_on` | `INTERNAL` | The database's date - the entry's stated posting date (floored at the first open date should a lock cover it, `P14-TSK-006`) |
 | `cover_execution` | `correlation_id` | `INTERNAL` | The flow's correlation |
 
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*

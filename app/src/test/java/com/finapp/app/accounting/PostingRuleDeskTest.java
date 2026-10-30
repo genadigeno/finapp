@@ -75,6 +75,17 @@ class PostingRuleDeskTest {
         assertThat(accrual.datingClass()).isEqualTo("ECONOMIC_DATE");
         assertThat(accrual.mayBackDate()).isTrue();
         assertThat(accrual.effectiveFrom()).isEqualTo("1970-01-01");
+        // C3 (P14-TSK-006): version 1 was refused by a lock; version 2, from the ratification, floors.
+        assertThat(accrual.version()).isEqualTo(1);
+        assertThat(accrual.cutoffReaction()).isEqualTo("REFUSED");
+        PostingRuleDesk.PostingRuleView floored = view.rules().stream()
+                .filter(rule -> rule.id().equals("LND-2") && rule.version() == 2).findFirst().orElseThrow();
+        assertThat(floored.cutoffReaction()).isEqualTo("FLOORED_AT_FIRST_OPEN");
+        assertThat(floored.effectiveFrom()).isEqualTo("2026-10-30");
+        assertThat(view.rules().stream().filter(rule -> rule.id().equals("ADJ-MANUAL")).findFirst().orElseThrow()
+                .cutoffReaction()).isEqualTo("REFUSED_AT_APPROVAL");
+        assertThat(view.rules().stream().filter(rule -> rule.id().equals("TRANSFER")).findFirst().orElseThrow()
+                .cutoffReaction()).isEqualTo("NOT_REACHED");
         assertThat(accrual.posters()).containsExactly("LoanServicing");
         assertThat(accrual.lines()).extracting(PostingRuleDesk.PostingRuleLineView::side)
                 .containsExactly("DEBIT", "CREDIT");
@@ -91,10 +102,10 @@ class PostingRuleDeskTest {
             assertThat(record.operation()).isEqualTo(AccountingAuditAction.POSTING_RULES_READ);
             assertThat(record.actor()).isEqualTo(accountant);
             assertThat(record.targetType()).isEqualTo("posting_rule_register");
-            assertThat(record.targetId()).isEqualTo("catalogue-1");
+            assertThat(record.targetId()).isEqualTo("catalogue-2");
             assertThat(record.outcome()).isEqualTo(AuditOutcome.SUCCEEDED);
             assertThat(record.reason()).isEmpty();
-            assertThat(record.changeSummary()).contains("catalogueVersion=1, rules=58");
+            assertThat(record.changeSummary()).contains("catalogueVersion=2, rules=65");
             assertThat(record.occurredAt()).isEqualTo(CLOCK.instant());
         });
     }

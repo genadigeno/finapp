@@ -2,6 +2,7 @@ package com.finapp.ledger;
 
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.idempotency.CommandResult;
 import com.finapp.platform.idempotency.IdempotencyKey;
 import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.idempotency.RequestFingerprint;
@@ -16,6 +17,7 @@ import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -175,7 +177,7 @@ public final class PostingService {
                         unitOfWork,
                         key,
                         fingerprint,
-                        uow -> effect.record(uow, entry, attribution, actor, correlation));
+                        uow -> recordDated(uow, command, entry, attribution, actor, correlation));
 
         JournalEntryId posted =
                 JournalEntryId.of(
@@ -191,6 +193,45 @@ public final class PostingService {
                                                                             + " entry id")),
                                         StandardCharsets.UTF_8)));
         return new PostingResult(posted, outcome.replayed());
+    }
+
+    /**
+     * The effect, run at most once per key: the entry as stated, or - for a
+     * {@link PostingCommand.Dating#FLOOR_AT_FIRST_OPEN} request (`P14-TSK-006`, owner decision C3) - posted on the
+     * first open date when the cutoff covers its stated date, the value date, lines and key unchanged.
+     *
+     * <p><strong>Here, and not before the claim</strong>: the floor is read under the cutoff's shared key, held to
+     * commit, immediately before the journal insert whose trigger re-takes the same key - so no cutoff move commits
+     * between the read and the insert, and the lock order is the insert's own (after the caller's rows and the claim,
+     * before the projection rows). A replay never reaches this method: it returns the first entry, whatever date the
+     * first execution floored it to.
+     */
+    private CommandResult recordDated(
+            Connection unitOfWork,
+            PostingCommand command,
+            JournalEntry entry,
+            PostingAttribution attribution,
+            Actor actor,
+            Correlation correlation) {
+        if (command.dating() != PostingCommand.Dating.FLOOR_AT_FIRST_OPEN) {
+            return effect.record(unitOfWork, entry, attribution, actor, correlation);
+        }
+        LocalDate posting = PostingCutoffs.firstOpenOnOrAfter(unitOfWork, command.postingDate());
+        if (posting.equals(command.postingDate())) {
+            return effect.record(unitOfWork, entry, attribution, actor, correlation);
+        }
+        CommandResult recorded =
+                effect.record(
+                        unitOfWork,
+                        entry.postedOn(posting),
+                        attribution,
+                        actor,
+                        correlation,
+                        // The stated date, named on the entry's own audit record: the floor is disclosed, never
+                        // silent (C3). A date, never an amount (INV-AUD-02).
+                        Optional.of("flooredFrom=" + command.postingDate()));
+        observer.flooredAtTheCutoff(PostingObserver.Command.POSTING);
+        return recorded;
     }
 
     /**
@@ -218,8 +259,16 @@ public final class PostingService {
      * that changed any line, date or the reference is a materially different request
      * ({@code INV-IDEM-03}); the actor and correlation are deliberately excluded, because a
      * retry arrives on a new request with a new correlation and must still replay.
+     *
+     * <p><strong>The stated date, and not the dating</strong> (`P14-TSK-006`): a
+     * {@link PostingCommand.Dating#FLOOR_AT_FIRST_OPEN} command's form is its stated posting date's,
+     * byte for byte the form of the same command {@code AS_STATED} - the date it was floored to is
+     * a consequence of the cutoff at its first execution, not part of the request. So a replay after
+     * the cutoff moved again converges on the first entry instead of conflicting, and an entry posted
+     * before a poster asked for the floor is the same request as the floored one. Package-private for
+     * {@code PostingFloorTest}.
      */
-    private static byte[] canonicalForm(PostingCommand command) {
+    static byte[] canonicalForm(PostingCommand command) {
         StringBuilder canonical =
                 new StringBuilder("ledger.post|POSTING|")
                         .append(command.postingDate())

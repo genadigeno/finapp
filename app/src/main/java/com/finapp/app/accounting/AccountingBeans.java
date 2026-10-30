@@ -61,6 +61,17 @@ public class AccountingBeans {
         return new LedgerPostingCutoff(postingCutoffs);
     }
 
+    /**
+     * accounting's port over lending's and bnpl's accrued-through dates (`P14-TSK-006`, owner decision C3: the close
+     * requires accruals caught up) - the two modules' own reads, read-only, on the caller's unit of work.
+     */
+    @Bean
+    com.finapp.accounting.AccrualCompleteness accrualCompleteness(
+            com.finapp.lending.AccrualLags accrualLags, com.finapp.bnpl.BnplAccrualStore bnplAccrualStore) {
+        return new ServicingAccrualCompleteness(
+                accrualLags::oldestUnaccruedByCurrency, bnplAccrualStore::oldestUnaccruedByCurrency);
+    }
+
     /** accounting's port over the ledger's chart - SELECT only, on the caller's unit of work. */
     @Bean
     LedgerChart ledgerChart() {

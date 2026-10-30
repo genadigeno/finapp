@@ -43,7 +43,8 @@ cross-border entries - are §9, written as built by `P9-DOC-001` (2026-10-07).*
 **Posting date and value date are never clock reads.** A component that derives a posting date by
 calling the clock has silently decided that execution time and accounting date are the same
 thing, and no rule can catch that substitution — it is a design-review question, which is why it
-is written here.
+is written here. *(`P14-TSK-006`: a stated posting date may be **floored** - moved forward to the first open
+date, by the ledger, only when the command asks, never backward and never silently; §3 rule 8.)*
 
 ## 3. The rules a posting must satisfy
 
@@ -64,8 +65,15 @@ is written here.
    insert for every writer (`ledger.PeriodClosed`, `PeriodClosedException`), the trigger taking advisory namespace `14`
    key `cutoff` shared before it reads the cutoff, so the refusal is serialised with the cutoff's movement. The cutoff
    is unset until accounting's first period lock and moves one calendar month at a time, only through
-   `PostingCutoffs` (the same key exclusive, a conditional `UPDATE`, an event row). The ledger never re-dates: a
-   back-dating poster's answer is its own module's (C3, `P14-TSK-006`). A reversal or adjustment is a posting here - one
+   `PostingCutoffs` (the same key exclusive, a conditional `UPDATE`, an event row). The ledger never re-dates on its own: a **system**
+   back-dating poster asks for the floor (`PostingCommand.Dating.FLOOR_AT_FIRST_OPEN`; C3, *as built by
+   `P14-TSK-006`*) - the command states its economic or stored date, and the posting command posts on it or, when the
+   cutoff covers it, on the first open date (`closed_through + 1`), read in the posting's own effect under the same
+   shared key, the value date and the key untouched and the fingerprint the stated date's (a replay converges
+   whatever the cutoff did); the entry's audit record names the stated date (`flooredFrom=`). A **person's**
+   adjustment is never floored: dated into a locked period, its approval is refused before anything is written
+   (`AdjustmentService`'s guard, both doors) and the proposal stays `PROPOSED`. *(This read "The ledger never
+   re-dates: a back-dating poster's answer is its own module's (C3, `P14-TSK-006`)" until `P14-TSK-006`.)* A reversal or adjustment is a posting here - one
    dated into a locked period is refused, one dated in the open period posts.
 
 ## 4. Balances
@@ -100,7 +108,9 @@ ADR-0039. Two halves, and conflating them is the mistake:
 - **Every entry insert takes one shared advisory lock** (*`P14-TSK-004`*): namespace `14` key `cutoff`, in `V028`'s
   trigger, held to commit - compatible with every other posting, so postings never wait on each other for it; only a
   posting-cutoff move (the key exclusive) waits for in-flight postings, and postings arriving during the move wait for
-  it. A transaction already holding the key never queues again for its next entry.
+  it. A transaction already holding the key never queues again for its next entry. A floored posting
+  (*`P14-TSK-006`*) and an adjustment's approval guard take the same key one statement earlier, in the same
+  effect, to read the cutoff they judge against - so the read and the insert are one critical section.
 
 `SERIALIZABLE` is deliberately not used: it would put a retry loop around every money-moving
 command, which is where "the database committed but the response was lost" becomes two effects.
@@ -267,7 +277,9 @@ money across a rail itself. The posting rules are ADR-0096 §2's, each built by 
 every one of the ten is posted except `LOAN_WRITE_OFF_EXPENSE` - seeded, posted by nothing, its write-off
 deferred to Phase 14 - `LENDING_CAPITAL` by bank recognition alone (rule 0), the other eight by lending's own
 transactions (rules 1 to 13). *(This read "Nothing posts to any of the ten yet" until the Phase 11 exit review,
-`P11-DOC-001`, 2026-10-15.)*
+`P11-DOC-001`, 2026-10-15.)* *(`P14-TSK-006`, C3: rule 2's posting date is the accrual date floored at the first
+open date - a catch-up across a period lock is recognised in the open period, each entry value-dated its accrual
+date; the subledger proof and the base read by value date, unchanged.)*
 
 ## 11. BNPL — *as built by Phase 12*
 
