@@ -23,6 +23,11 @@ buildscript {
 plugins {
     id("finapp.java-conventions")
     alias(libs.plugins.flyway)
+    // The GL mapping fixtures (P14-TSK-003; owner decision C2 - test-only content, production activates no version): the
+    // reference version over the ledger's forty purposes and an in-memory store, shared by this module's suites and
+    // app's (the chart adapter's proof against the ledger's own enum and seed, the desk's, the database suite's) - one
+    // reference, never a copy. Test code: it ships in no jar. The risk precedent (RiskPolicyFixtures).
+    `java-test-fixtures`
 }
 
 // Connection details, resolved exactly as platform resolves them and from the same environment variables, so
@@ -83,6 +88,10 @@ dependencies {
     // The shared database harness (DatabaseUnderTest, DatabaseRoles) for the database-tier test this task ships: the
     // schema floor proven LIVE (AccountingMigrationTest). The module that owns the schema owns the proof of its floor.
     testImplementation(testFixtures(project(":platform")))
+
+    // The fixtures see this module's GL mapping types (main) and platform's Actor - nothing else, and no ledger.
+    testFixturesImplementation(project(":platform"))
+    testFixturesImplementation(platform(libs.spring.boot.bom))
 }
 
 // The `database` tier's module-specific configuration - the container image, from the version catalog, exactly as

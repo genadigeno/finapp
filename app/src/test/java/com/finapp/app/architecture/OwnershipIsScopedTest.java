@@ -1889,6 +1889,37 @@ class OwnershipIsScopedTest {
                                     "P13-TSK-002. version's own helper: the bands of the version id version answered -"
                                         + " the same read, the same door, no owner to scope by.")),
                     Map.entry(
+                            "com.finapp.accounting.JdbcGlMappingStore.decide",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-003. The id comes only from a row this transaction locked FOR UPDATE"
+                                        + " (lock(id), under namespace 14 key mapping), the move conditional on PROPOSED;"
+                                        + " a GL mapping version is platform-wide configuration with no owner to scope"
+                                        + " by, behind @RequiresPermission(ACCOUNTING_MAPPING_APPROVE), four-eyes by"
+                                        + " CHECK.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcGlMappingStore.retire",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-003. The id comes only from the ACTIVE row this transaction locked FOR"
+                                        + " UPDATE (lockActive), the move conditional on ACTIVE, and a deferred trigger"
+                                        + " refuses a retirement that commits without a later successor.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcGlMappingStore.content",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-003. A read of platform-wide mapping configuration: the version id is one"
+                                        + " the locked row or the ACTIVE status answered, or the operator's own request"
+                                        + " on a door behind @RequiresPermission(ACCOUNTING_READ or"
+                                        + " ACCOUNTING_MAPPING_APPROVE); a mapping has no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcGlMappingStore.one",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-003. find, lock and the ACTIVE reads' one helper: a version row by the id"
+                                        + " the operator's permission-guarded request named or by its ACTIVE status -"
+                                        + " platform-wide configuration, no owner to scope by.")),
+                    Map.entry(
                             "com.finapp.risk.JdbcDecisionOverrideStore.find",
                             new Entry(
                                     Scope.ADMINISTERED,

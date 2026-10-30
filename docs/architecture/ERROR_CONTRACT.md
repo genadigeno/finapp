@@ -1536,13 +1536,20 @@ merchant response ever differs by the existence of an alert, a case or a report.
 split owns - `accounting.NotFound` and `accounting.SelfApprovalRefused`, the two catalogue rows below, their statuses
 checked against the code - and every other `accounting.*` code (`PHASE_14_PLAN.md` §10: a stale revision `409`, a close
 not ready, a mapping gap, a stale valuation rate, …) arrives with the door that raises it, so no catalogued code is one a
-client could never receive. `ledger.PeriodClosed` is the ledger's, not this module's (`P14-TSK-004`). Every detail is
+client could never receive. `P14-TSK-003`'s GL mapping doors brought six: `accounting.MappingInvalid`, `MappingNotTotal`,
+`MappingIncompatible`, `MappingStale`, `MappingRetroactive` and `ReasonRequired`. `ledger.PeriodClosed` is the ledger's, not this module's (`P14-TSK-004`). Every detail is
 stranger-safe: never an amount, a balance, a GL figure or an owner reference.
 
 | Code | Status | Meaning |
 |---|---|---|
 | `accounting.NotFound` | 404 | No accounting record matches the requested identifier - an unknown or a malformed id alike. |
 | `accounting.SelfApprovalRefused` | 403 | A proposal is decided by someone other than its proposer; the proposer may reject it. *(The `credit`/`lending`/`bnpl`/`risk` precedent — a forbidden act, not a conflict. The roles' grants are disjoint but one identity may hold `ACCOUNTANT` and `FINANCIAL_CONTROLLER`, so this, with each four-eyes row's `CHECK`, is the binding control, `INV-AUD-04`.)* |
+| `accounting.MappingInvalid` | 422 | The GL mapping version is not coherent - an unparseable month, an unknown classification or section, a code repeated, a rule naming an account the version does not hold, two rules for one purpose, or a section that does not admit its account's classification; nothing was proposed (`P14-TSK-003`). |
+| `accounting.MappingNotTotal` | 422 | The GL mapping version does not map every purpose of the ledger's chart, as the activation's transaction read it; it was not activated (`INV-ACC-06`; the detail names the unmapped purposes - codes only). |
+| `accounting.MappingIncompatible` | 422 | A rule maps a purpose to a GL account of another classification than the purpose's ledger type (or the purpose holds no single type), or names a purpose the ledger does not hold; it was not activated (`INV-ACC-06`). |
+| `accounting.MappingStale` | 409 | The GL mapping version is no longer awaiting a decision - decided by someone else, or differently - or is superseded by the later version in force. |
+| `accounting.MappingRetroactive` | 409 | The GL mapping version takes effect from a month before a version already in force; a mapping never applies retroactively (`INV-ACC-07`). |
+| `accounting.ReasonRequired` | 422 | A reasoned accounting act carried no reason, one past 1000 characters, or one holding a card-number or bank-account shape. |
 
 ## 3a. Rejection at the boundary
 

@@ -171,11 +171,20 @@ class AccountingVocabulariesTest {
         assertThat(AccountingErrorCode.SELF_APPROVAL_REFUSED.status()).as("a forbidden act, not a conflict").isEqualTo(403);
         assertThat(AccountingAuditAction.SELF_APPROVAL_REFUSED.code()).isEqualTo("accounting.SelfApprovalRefused");
         assertThat(AccountingAuditAction.SELF_APPROVAL_REFUSED.requiresReason()).isFalse();
-        assertThat(AccountingErrorCode.values()).hasSize(2);
+        // P14-TSK-003: the mapping doors' six - content 422s, the stale and retroactive 409s, the reason 422.
+        assertThat(Arrays.stream(AccountingErrorCode.values()).map(c -> c.code() + "=" + c.status()).toList())
+                .containsExactly("accounting.NotFound=404", "accounting.SelfApprovalRefused=403",
+                        "accounting.MappingInvalid=422", "accounting.MappingNotTotal=422",
+                        "accounting.MappingIncompatible=422", "accounting.MappingStale=409",
+                        "accounting.MappingRetroactive=409", "accounting.ReasonRequired=422");
         // P14-TSK-002: the posting rule register's audited read - no reason, an operator's read.
         assertThat(AccountingAuditAction.POSTING_RULES_READ.code()).isEqualTo("accounting.PostingRulesRead");
         assertThat(AccountingAuditAction.POSTING_RULES_READ.requiresReason()).isFalse();
-        assertThat(AccountingAuditAction.values()).hasSize(2);
+        // P14-TSK-003: the mapping's three acts, each reasoned.
+        assertThat(Arrays.stream(AccountingAuditAction.values()).map(a -> a.code() + "=" + a.requiresReason()).toList())
+                .containsExactly("accounting.SelfApprovalRefused=false", "accounting.PostingRulesRead=false",
+                        "accounting.MappingProposed=true", "accounting.MappingActivated=true",
+                        "accounting.MappingRejected=true");
     }
 
     // ------------------------------------------------------------------

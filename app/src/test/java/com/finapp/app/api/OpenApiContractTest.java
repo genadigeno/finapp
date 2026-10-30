@@ -509,6 +509,13 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/cases/{caseId}/evidence/{evidenceKind}/{evidenceId}",
                         // P14-TSK-002: the posting rule register, an audited read (ACCOUNTING_READ, the accountant's).
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/posting-rules",
+                        // P14-TSK-003: the GL mapping versions - proposed (201, ACCOUNTING_MAPPING_PROPOSE), activated
+                        // or rejected and diffed (ACCOUNTING_MAPPING_APPROVE), read (ACCOUNTING_READ).
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/mapping-versions",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/mapping-versions/{versionId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/mapping-versions/{versionId}/activation",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/mapping-versions/{versionId}/rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/mapping-versions/{versionId}/diff",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",

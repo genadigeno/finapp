@@ -443,7 +443,19 @@ class RoutePermissionRegisterTest {
                             PermissionName.RISK_INVESTIGATE),
                     // Accounting (Phase 14): the posting rule register's audited read (P14-TSK-002) - the
                     // accountant's alone (identity V025's partition)
-                    entry("GET /v1/operator/accounting/posting-rules", PermissionName.ACCOUNTING_READ)));
+                    entry("GET /v1/operator/accounting/posting-rules", PermissionName.ACCOUNTING_READ),
+                    // P14-TSK-003: the GL mapping versions under four eyes - proposed by the accountant, activated or
+                    // rejected and reviewed (the diff against the version in force) by the controller, read whole by
+                    // the accountant (identity V025's partition); the negatives are GlMappingDeskTest's route
+                    // declarations and DenyByDefaultDatabaseTest's interceptor.
+                    entry("POST /v1/operator/accounting/mapping-versions", PermissionName.ACCOUNTING_MAPPING_PROPOSE),
+                    entry("POST /v1/operator/accounting/mapping-versions/{versionId}/activation",
+                            PermissionName.ACCOUNTING_MAPPING_APPROVE),
+                    entry("POST /v1/operator/accounting/mapping-versions/{versionId}/rejection",
+                            PermissionName.ACCOUNTING_MAPPING_APPROVE),
+                    entry("GET /v1/operator/accounting/mapping-versions/{versionId}", PermissionName.ACCOUNTING_READ),
+                    entry("GET /v1/operator/accounting/mapping-versions/{versionId}/diff",
+                            PermissionName.ACCOUNTING_MAPPING_APPROVE)));
 
     /**
      * The CONDITIONAL half (the Phase 12 -> 13 gate's A5-F1): a permission a route asks BESIDE its declared one when the

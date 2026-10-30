@@ -53,6 +53,17 @@ the audited read and the door live outside that package (`P14-TSK-008`). The tru
 (`PHASE_14_PLAN.md` §12, C12) is built as a partition: `ACCOUNTING_READ` is the `ACCOUNTANT`'s alone, because the plan's
 three-way grant failed the platform's pairwise-disjoint grants (`INV-AUD-03`).
 
+*As built by `P14-TSK-003` (2026-10-30), decision 3 - nothing here is a different decision, two things are made precise:*
+accounting `V002` holds the version, its GL accounts and its rules as decided (immutable from birth, four-eyes by `CHECK`,
+persons only, one `ACTIVE`, the activation under namespace `14` key `mapping`). **"Effective from an `OPEN` period only"**
+is held, until periods exist, as "a calendar month never earlier than any version already activated" (Java and the edge
+trigger for every writer); `P14-TSK-005` re-reads it against the period row. **"Classification-compatible with each
+purpose's ledger type"**: the ledger fixes no type per purpose, its accounts carry one each, so `LedgerChart` answers a
+purpose's types as its accounts hold them joined by the type its owning module declares for accounts opened at runtime;
+compatible means exactly one type, equal by name to the GL account's classification - a contradiction (two types) is
+refused, never passed. The reference chart (test fixtures, 35 GL accounts over the forty purposes) is the "reference
+values for qualified review" of the Follow-up; no migration activates it.
+
 ## Alternatives Considered
 
 ### A GL journal in `accounting` fed by ledger events

@@ -78,15 +78,12 @@ class AuditCompletenessTest {
                     "Recorded debt: performed today as a manual UPDATE with no tooling. Phase 15.",
                     "outbox.EventDiscarded",
                     "Recorded debt: a relay decision visible only as a log line, which ADR-0010 is"
-                        + " explicit does not count as an audit trail. Phase 15.",
-                    // The accounting role split's refusal, declared with the roles (P14-TSK-001) so the catalogue
-                    // names it from the first day; it leaves this map with the door that first raises it.
-                    "accounting.SelfApprovalRefused",
-                    "Declared by P14-TSK-001 with the accounting roles; first raised by P14-TSK-003's mapping"
-                        + " activation door, which removes this entry.");
+                        + " explicit does not count as an audit trail. Phase 15.");
     // The risk role split's two refusals, declared with the roles (P13-TSK-001) so the catalogue named them from the
     // first day, each left this map with the door that first raised it: risk.SelfApprovalRefused at P13-TSK-002 (the
-    // policy activation door), risk.SelfDealingRefused at P13-TSK-007 (the customer risk profile read).
+    // policy activation door), risk.SelfDealingRefused at P13-TSK-007 (the customer risk profile read). The accounting
+    // role split's refusal, accounting.SelfApprovalRefused (declared by P14-TSK-001), left it at P14-TSK-003 - the GL
+    // mapping activation door, GlMappingAdministration.recordRefusal.
 
     @Test
     @DisplayName("no registered action is silently unemitted")
