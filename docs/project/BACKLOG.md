@@ -25580,7 +25580,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Acceptance criteria**: under ten concurrent posters no entry dated in the period commits after the cut; raw SQL refused.
 - **Definition of done**: `DOD-FIN`, `DOD-DOMAIN`. **Risk**: High (every posting crosses it). **Cx**: M.
 
-**P14-TSK-005 — Accounting periods: open, lock, unlock** — `PLANNED`
+**P14-TSK-005 — Accounting periods: open, lock, unlock** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-004`'s merge, master `593b5b94`; every dependency `COMPLETE`)
 - **Objective**: calendar-month periods with their machine; the lock moves the ledger cutoff and pins the mapping version
   in one transaction (ADR-0114).
 - **Bounded context**: Accounting / GL.
@@ -25608,7 +25608,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Acceptance criteria**: the machine as `PHASE_14_PLAN.md` §6; every edge conditional, evented and audited.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 
-**P14-TSK-006 — Back-dating posters made cutoff-safe (lending's accrual)** — `PLANNED`
+**P14-TSK-006 — Back-dating posters made cutoff-safe (lending's accrual)** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-004`'s merge, master `593b5b94`; every dependency `COMPLETE`)
 - **Objective**: the one `ECONOMIC_DATE` poster never fails forever against a locked period (C3).
 - **Bounded context**: Lending (18), for Accounting.
 - **Dependencies**: `-002` (the list), `-004`.
