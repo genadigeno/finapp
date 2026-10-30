@@ -440,7 +440,10 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/reports/risk/velocity", PermissionName.RISK_INVESTIGATE),
                     entry("POST /v1/operator/risk/assessments/replay", PermissionName.RISK_INVESTIGATE),
                     entry("GET /v1/operator/risk/cases/{caseId}/evidence/{evidenceKind}/{evidenceId}",
-                            PermissionName.RISK_INVESTIGATE)));
+                            PermissionName.RISK_INVESTIGATE),
+                    // Accounting (Phase 14): the posting rule register's audited read (P14-TSK-002) - the
+                    // accountant's alone (identity V025's partition)
+                    entry("GET /v1/operator/accounting/posting-rules", PermissionName.ACCOUNTING_READ)));
 
     /**
      * The CONDITIONAL half (the Phase 12 -> 13 gate's A5-F1): a permission a route asks BESIDE its declared one when the
