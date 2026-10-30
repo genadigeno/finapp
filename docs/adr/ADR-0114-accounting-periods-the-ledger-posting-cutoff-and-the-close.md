@@ -64,6 +64,20 @@ unlock, close and reopen are four-eyes and audited. Financial impact: none on ba
 
 `INV-ACC-03`, `-08`, `-09`, `-10`; `INV-LED-03`; `INV-REV-04`; `INV-AUD-04`; `INV-IDEM-02`.
 
+## As built
+
+`P14-TSK-004` (2026-10-30), decisions 1-2: ledger `V028` (`posting_cutoff`, unset until the first lock;
+`posting_cutoff_event`, append-only; the `BEFORE INSERT` trigger on `journal_entry` under namespace `14` key `cutoff`
+shared, SQLSTATE `LDCUT` → `ledger.PeriodClosed`), `PostingCutoffs` (the key exclusive, the conditional `UPDATE`, the
+event; replay `UNCHANGED`), accounting's `PostingCutoff` port and `app`'s `LedgerPostingCutoff`. Beyond the decision text:
+the trigger reads `FOR SHARE` only under REPEATABLE READ/SERIALIZABLE (a cut after the poster's snapshot is `40001`, not
+a miss - the rejected alternative's cost paid by those posters alone); "one period back" is the value the latest advance
+into the cutoff came from (unset after the first lock), judged by a `BEFORE UPDATE` trigger that binds every updater, with
+a deferred trigger refusing an unevented move; the cutoff never covers today (UTC); the move's wait for the exclusive
+key is bounded in the ledger (`lock_timeout` 2 s per attempt inside a savepoint, five attempts, the caller's timeout
+restored), so a waiting move holds new postings for at most one attempt. Decision 6 (C3) is untouched: the
+ledger refuses and nothing else changed. Status stays `Proposed` until the phase's exit review.
+
 ## Follow-up
 
 The storm (PI-004) measures the lock's pause. Daily periods if ever needed (C9 B). The calendar grace is configuration.

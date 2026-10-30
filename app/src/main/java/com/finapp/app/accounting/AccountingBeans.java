@@ -5,6 +5,7 @@ import com.finapp.accounting.GlMappingStore;
 import com.finapp.accounting.GlMappings;
 import com.finapp.accounting.JdbcGlMappingStore;
 import com.finapp.accounting.LedgerChart;
+import com.finapp.accounting.PostingCutoff;
 import com.finapp.accounting.PostingRuleRegister;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.idempotency.IdempotentExecutor;
@@ -47,6 +48,12 @@ public class AccountingBeans {
     @Bean
     GlMappingStore glMappingStore() {
         return new JdbcGlMappingStore();
+    }
+
+    /** accounting's port over the ledger's posting cutoff (`P14-TSK-004`) - the ledger's own API, nothing added. */
+    @Bean
+    PostingCutoff postingCutoff(com.finapp.ledger.PostingCutoffs postingCutoffs) {
+        return new LedgerPostingCutoff(postingCutoffs);
     }
 
     /** accounting's port over the ledger's chart - SELECT only, on the caller's unit of work. */

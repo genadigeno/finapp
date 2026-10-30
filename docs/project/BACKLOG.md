@@ -25510,7 +25510,42 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Acceptance criteria**: a version covering all 40 purposes activates under four eyes; an incomplete one never does.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 
-**P14-TSK-004 — The ledger posting cutoff** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-001`'s merge, master `9c82e31e`; every dependency `COMPLETE`)
+**P14-TSK-004 — The ledger posting cutoff** — `COMPLETE` (2026-10-30; branch `P14-TSK-004` from master `ee8f9653`; ledger `V028`; **M14.2 at 1 of 3**; marks no task `READY` — the coordinator does) *(read "`READY` (2026-10-30; marked by the coordinator at `P14-TSK-001`'s merge, master `9c82e31e`; every dependency `COMPLETE`)" until this task's gate)*
+- **As built** (2026-10-30): ledger `V028`: `posting_cutoff` (one row, `CHECK (id = 1)`, `closed_through` `NULL` - nothing
+  refused until the first lock - and a month end by `CHECK`, `revision`), `posting_cutoff_event` (one per revision by
+  `UNIQUE`, movement `ADVANCE`/`MOVE_BACK` shaped by `CHECK`, actor, correlation, causation, reason, time; append-only by
+  trigger and grant). **The refusal**: `journal_entry_respects_the_posting_cutoff`, `BEFORE INSERT` on `journal_entry` -
+  `pg_advisory_xact_lock_shared(14, hashtext('cutoff'))`, then the one-row read (a fresh statement snapshot under READ
+  COMMITTED; `FOR SHARE` under REPEATABLE READ/SERIALIZABLE so a cut after the snapshot is `40001`, never missed; a missing
+  row fails closed), refusing `posting_date <= closed_through` with SQLSTATE `LDCUT`. **Every updater bound**:
+  `posting_cutoff_moves_one_period` (`BEFORE UPDATE`: the key exclusive, revision `+ 1`, forward to the next month end -
+  or from unset to any past month end - never over today (UTC), back only to the value the latest `ADVANCE` into the
+  current one came from), the deferred `posting_cutoff_move_is_evented`, no `DELETE`/`TRUNCATE` for any role. Grants:
+  `SELECT` and `UPDATE (closed_through, revision)` on the row, `SELECT, INSERT` on the history; the journal's unchanged.
+  Ledger code: `PostingCutoffs` (`closedThrough`, `advance`, `moveBack`: shape judged first, then
+  `pg_advisory_xact_lock(14, hashtext('cutoff'))` - each attempt under `lock_timeout` 2 s inside a savepoint, retried
+  five times, the caller's own `lock_timeout` restored, then `PostingCutoffBusyException` with nothing moved (the
+  entry's failure handling; the gate's finding) - the conditional `UPDATE … RETURNING revision`, the event; a replay
+  answers `UNCHANGED`, a stale expectation `IllegalCutoffMoveException` - both `IllegalStateException`s, so accounting
+  handles a JDK type); `PeriodClosedException` (`ledger.PeriodClosed`, 409, `LedgerErrorCode.PERIOD_CLOSED`, mapped in
+  `ApiErrorHandler`) translated from `LDCUT` in `JdbcJournalEntryStore` - the one append every surface uses - so
+  `PostingService`, `ReversalService` and `AdjustmentService` (`approve`, `approveOwned`) all report it, and each counts it
+  through `PostingObserver.refusedAtTheCutoff(Command)` on `finapp.accounting.cutoff.refused` (`LedgerWriteMeters`,
+  registered at zero). accounting's `PostingCutoff` port gains `closedThrough`/`advance`/`moveBack` (JDK types);
+  **`app`'s `LedgerPostingCutoff`** implements it over `PostingCutoffs` (beans in `LedgerBeans`/`AccountingBeans`).
+  Namespace `14` key `cutoff` registered from the code (`PostingCutoffs.NAMESPACE`/`KEY`/`LOCK_SQL`/`SHARED_LOCK`),
+  distinct from `-003`'s `mapping`. **Deviations**: the meter's tag is `command` (`posting`/`reversal`/`adjustment`),
+  not the plan's `module` - a command carries no requesting module (owner item, `-006`); `IllegalCutoffMoveException` and
+  `PostingCutoffBusyException` added beside the two named domain types. **Under a cutoff**: a reversal or adjustment dated on or before it is refused
+  like a posting, one dated in the open period posts; an adjustment proposed before a lock and approved after it is
+  refused and stays `PROPOSED` (rejected and re-proposed in the open period) - whether `propose` should refuse or re-date
+  is C3/`-006`'s. **Tests run** (fresh): `LedgerCutoffMigrationTest` (6), `PostingCutoffsTest` (10),
+  `PeriodClosedRefusalTest` (4), `LedgerPostingCutoffTest` (3), `LedgerWriteMetersTest` (3). **Owed** (C5):
+  `PostingCutoffDatabaseTest` (9: the named four, `#nothingOutsideTheLockedRangeIsRefused`, `#aBusyLockIsBoundedAndRetried`,
+  `#theReversalAndTheAdjustmentAnswerTheCutoff`, `#aQueuedLockNeverDeadlocksAPosterWaitingOnARow`,
+  `#theKeysDoNotCollide`) - 1999 dates only, the cutoff restored to unset around every test. Six probes performed
+  (`MUTATION_TESTING.md` §2); the entry's named probe's database half (`#tenPostersAndALockLeaveNoEntryAfterTheCut` red
+  without the shared lock) is owed.
 - **Objective**: the ledger refuses, at insert and serialised with the cutoff's movement, every entry dated on or before
   the cutoff (ADR-0114, `INV-ACC-03`, `-08`).
 - **Bounded context**: Ledger (7), for Accounting.

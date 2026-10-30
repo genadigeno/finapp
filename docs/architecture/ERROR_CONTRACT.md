@@ -601,6 +601,7 @@ one converges rather than answering `checkout.NotConfirmable`: a double-click is
 | `ledger.ProposalNotOpen` | 409 | The adjustment proposal is already decided; a new adjustment is a new proposal. |
 | `ledger.AdjustmentOnReconciledPosition` | 422 | A reconciled position cannot be adjusted here; value there moves only through a reconciliation break's resolution. |
 | `ledger.AdjustmentOriginMismatch` | 409 | The proposal belongs to another origin's door and cannot be decided here. |
+| `ledger.PeriodClosed` | 409 | The posting date is in a locked accounting period; post in the open period. |
 
 The ledger's one public surface is the adjustment (`P3-TSK-017` — plan §9: posting is an
 internal API), so its vocabulary is the adjustment's refusals. **No title or detail ever names
@@ -629,6 +630,13 @@ resolution) and never the account. `ledger.AdjustmentOriginMismatch` (409) is ea
 refusing the other origin's proposals: a reconciliation proposal is decided by the
 resolution flow that also moves the break, a manual one by the generic four-eyes door — the
 proposal is fine and still standing, which is what makes the 409 actionable.
+
+**`P14-TSK-004`** (ADR-0114, `INV-ACC-03`, `INV-ACC-08`): `ledger.PeriodClosed` (409) is the posting cutoff's
+refusal - an entry dated on or before the cutoff, in a locked accounting period, refused at insert by ledger `V028`'s
+trigger (SQLSTATE `LDCUT`, translated by `JdbcJournalEntryStore` to `PeriodClosedException`), whichever surface wrote
+it: a posting, a reversal, or an adjustment's approval whose date a lock has since covered. Actionable: post in the
+open period (after close, a prior-period adjustment, `P14-TSK-013`), or unlock under four eyes. Nothing was written;
+the detail names neither the date nor the period.
 
 ### `settlement` — `SettlementErrorCode`
 

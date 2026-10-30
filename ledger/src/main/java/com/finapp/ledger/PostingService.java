@@ -127,6 +127,10 @@ public final class PostingService {
             observer.observe(
                     PostingObserver.Outcome.REFUSED,
                     Duration.between(started, clock.instant()));
+            if (refusal instanceof PeriodClosedException) {
+                // P14-TSK-004: a back-dated posting into a locked period, counted apart.
+                observer.refusedAtTheCutoff(PostingObserver.Command.POSTING);
+            }
             throw refusal;
         }
     }

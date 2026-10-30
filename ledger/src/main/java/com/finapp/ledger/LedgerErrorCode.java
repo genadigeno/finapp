@@ -108,7 +108,21 @@ public enum LedgerErrorCode implements ErrorCode {
     ADJUSTMENT_ORIGIN_MISMATCH(
             "ledger.AdjustmentOriginMismatch",
             409,
-            "The proposal belongs to another origin's door and cannot be decided here.");
+            "The proposal belongs to another origin's door and cannot be decided here."),
+
+    /**
+     * The entry is dated on or before the posting cutoff - in a locked accounting period (`P14-TSK-004`, ADR-0114,
+     * {@code INV-ACC-03}, {@code INV-ACC-08}).
+     *
+     * <p>A {@code 409} and actionable in the {@code P1-TSK-018} sense: the request is well-formed and the world's
+     * state refuses it - a correction of a locked period lands in the open period (a prior-period adjustment after
+     * close), or the period is unlocked under four eyes. Nothing was written. Which date and which period are not
+     * echoed - the caller holds its own request.
+     */
+    PERIOD_CLOSED(
+            "ledger.PeriodClosed",
+            409,
+            "The posting date is in a locked accounting period; post in the open period.");
 
     private final String code;
     private final int status;

@@ -213,7 +213,7 @@ beside them: `INV-LED-01`…`-06`, `INV-BAL-02`, `INV-HIST-01`, `INV-HIST-04`, `
 |---|---|
 | T-map | mapping proposal insert; activation: namespace `14` key `mapping` exclusive, the version `FOR UPDATE`, totality and compatibility checked through `LedgerChart`, conditional edge, history row |
 | T-lock | (A1) the period row `FOR UPDATE` (and the previous period `FOR SHARE`: must be `CLOSED`); (A2) namespace `14` key `cutoff` **exclusive**; (A3) the ledger's `posting_cutoff` row: conditional advance of `closed_through` to the period end, its event row; the period edge `OPEN → LOCKED`, the pinned mapping version, the close run row; outbox `AccountingPeriodLocked` |
-| T-post (every existing posting) | unchanged, plus ledger `V028`'s `BEFORE INSERT` trigger on `journal_entry`: namespace `14` key `cutoff` **shared**, then refuse `posting_date <= closed_through` (SQLSTATE mapped to `ledger.PeriodClosed`) |
+| T-post (every existing posting) | unchanged, plus ledger `V028`'s `BEFORE INSERT` trigger on `journal_entry`: namespace `14` key `cutoff` **shared**, then refuse `posting_date <= closed_through` (SQLSTATE mapped to `ledger.PeriodClosed`) *(**built** by `P14-TSK-004`, 2026-10-30: SQLSTATE `LDCUT` → `PeriodClosedException` in `JdbcJournalEntryStore`; the read `FOR SHARE` under REPEATABLE READ/SERIALIZABLE so a cut after the snapshot is `40001`; the cutoff moved by `PostingCutoffs` - one period, conditional `UPDATE`, event - and bound for every updater by `V028`'s one-period trigger)* |
 | T-check | claim one `close_check` `FOR UPDATE SKIP LOCKED` with a lease; run it in `REPEATABLE READ READ ONLY` reads; record the attempt and outcome by conditional edge |
 | T-close / T-unlock / T-reopen | the period row `FOR UPDATE`; for unlock/reopen namespace `14` exclusive and the cutoff moved back by exactly one period; approver ≠ proposer `CHECK`; the report runs `SUPERSEDED` on reopen |
 | T-report | claim: insert-or-read the run row by its unique key; generate: `REPEATABLE READ READ ONLY` on a separate connection; complete: conditional `GENERATING → FINAL` with content and sha256 |
@@ -532,7 +532,7 @@ rows both ways.
 | `finapp.accounting.period.open.age` | gauge (days the oldest unclosed past period has been past its grace) | — | `AccountingCloseOverdue` |
 | `finapp.accounting.close.check` | counter | check, outcome | `AccountingCloseCheckFailed` |
 | `finapp.accounting.close.duration` | timer | — | — |
-| `finapp.accounting.cutoff.refused` | counter (postings refused `ledger.PeriodClosed`) | module | `AccountingPostingIntoClosedPeriod` |
+| `finapp.accounting.cutoff.refused` | counter (postings refused `ledger.PeriodClosed`) | module *(erratum, `P14-TSK-004`: built with tag `command` - `posting`/`reversal`/`adjustment` - because a ledger command carries no requesting module; a `module` tag needs a producer-contract change, an owner item for `-006`)* | `AccountingPostingIntoClosedPeriod` |
 | `finapp.accounting.gl.unmapped` | gauge (lines unmapped in the open period under the active version) | — | `AccountingMappingGap` |
 | `finapp.accounting.break.open` | gauge | type | `AccountingBreakAged` |
 | `finapp.accounting.report.run` | counter | definition, outcome | — |
