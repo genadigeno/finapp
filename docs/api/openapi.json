@@ -10895,6 +10895,20 @@
         },
         "type": "object"
       },
+      "AccountingBreakPage": {
+        "properties": {
+          "breaks": {
+            "items": {
+              "$ref": "#/components/schemas/AccountingBreakView"
+            },
+            "type": "array"
+          },
+          "next": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AccountingBreakReceipt": {
         "properties": {
           "acknowledgementPending": {
@@ -31705,6 +31719,14 @@
               "format": "int32",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -31712,10 +31734,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AccountingBreakView"
-                  },
-                  "type": "array"
+                  "$ref": "#/components/schemas/AccountingBreakPage"
                 }
               }
             },
