@@ -22,7 +22,9 @@ import java.util.Optional;
  *
  * <p><strong>Failures, sorted</strong>: the definition's own (a read it could not make, a write the snapshot refused,
  * {@code 25006}) is {@code DEFINITION_FAILED}; a FINAL run whose period moved is {@code PERIOD_MOVED}; a content the form
- * refuses or too large is {@code CONTENT_INVALID}; a definition no longer in the build is {@code DEFINITION_UNKNOWN} -
+ * refuses or too large is {@code CONTENT_INVALID}; a generation past its time bound - its budget spent, or a statement
+ * cancelled by the snapshot's {@code statement_timeout} ({@code 57014}) - is {@code GENERATION_TIMED_OUT}, inside its lease
+ * (`P14-TSK-008`'s review, I-1); a definition no longer in the build is {@code DEFINITION_UNKNOWN} -
  * each a {@code FAILED} run, a new revision allowed. The snapshot's own failure (the database unreachable) is none of
  * these: the run stays {@code GENERATING}, its lease runs out, and a retry or the orphan leg generates it again.
  *
@@ -77,7 +79,8 @@ public final class ReportRunGenerator {
             generated = snapshots.read(snapshot -> {
                 try {
                     return generation.generate(snapshot, definition.get(), held.inputs());
-                } catch (ReportGeneration.PeriodMoved | ReportGeneration.ContentInvalid sorted) {
+                } catch (ReportGeneration.PeriodMoved | ReportGeneration.ContentInvalid
+                        | ReportGeneration.GenerationTimedOut sorted) {
                     throw sorted;
                 } catch (RuntimeException definitionsOwn) {
                     throw new DefinitionFailed();
@@ -87,6 +90,8 @@ public final class ReportRunGenerator {
             return failed(held, RunFailure.PERIOD_MOVED, actor);
         } catch (ReportGeneration.ContentInvalid invalid) {
             return failed(held, RunFailure.CONTENT_INVALID, actor);
+        } catch (ReportGeneration.GenerationTimedOut timedOut) {
+            return failed(held, RunFailure.GENERATION_TIMED_OUT, actor);
         } catch (DefinitionFailed definitionsOwn) {
             return failed(held, RunFailure.DEFINITION_FAILED, actor);
         }

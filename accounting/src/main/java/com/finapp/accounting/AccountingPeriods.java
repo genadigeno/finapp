@@ -47,8 +47,8 @@ import lombok.RequiredArgsConstructor;
  * <strong>different</strong> person approves ({@link #approveUnlock}): the cutoff moved back exactly one period, the
  * edge {@code LOCKED -> OPEN} and the pin released - one transaction. Approver &ne; proposer is the domain's refusal and
  * {@code accounting V003}'s {@code CHECK} for every writer. The period's FINAL report runs are superseded in the same
- * transaction, before the edge (`P14-TSK-008`, {@link ReportRunSupersession}; {@code accounting V004} refuses the edge
- * otherwise).
+ * transaction, under the period's row lock and before the cutoff moves (`P14-TSK-008`, {@link ReportRunSupersession};
+ * {@code accounting V004} refuses the edge otherwise).
  *
  * <p>The close, its rejection and the reopen are `P14-TSK-012`'s. How a back-dating poster reacts to a locked period is
  * `P14-TSK-006`'s (C3): here the ledger refuses, and nothing else is decided.
@@ -324,11 +324,13 @@ public final class AccountingPeriods {
             throw new SelfApprovalRefused(id, row.month());
         }
         String proposer = row.unlockProposedBy().orElseThrow();
+        // A4 under the period's FOR UPDATE and BEFORE the cutoff's key (`P14-TSK-008`): no FINAL report run stands over a
+        // period whose range can change again - accounting V004 refuses the edge for every writer that skipped this - and
+        // the supersession's row writes are done before postings pause behind the cutoff's exclusive key. No transaction
+        // takes the cutoff (A2/A3) and then a report run (A4), so the unlock's A1 -> A4 -> A2 -> A3 closes no cycle.
+        int superseded = runs.supersedeFinal(unitOfWork, id, actor, correlation);
         cutoff.moveBack(unitOfWork, row.end(), locked.previous().map(AccountingPeriodStore.PeriodRow::end),
                 "accounting period " + row.month() + " unlocked under four eyes");
-        // A4, before the period moves (`P14-TSK-008`): no FINAL report run stands over a period whose range can change
-        // again - accounting V004 refuses the edge for every writer that skipped this.
-        int superseded = runs.supersedeFinal(unitOfWork, id, actor, correlation);
         if (!store.approveUnlock(unitOfWork, id, row.revision(), actor, reasoned)) {
             throw new IllegalStateException(
                     "the pending unlock moved under its own row lock: the FOR UPDATE protocol was bypassed");

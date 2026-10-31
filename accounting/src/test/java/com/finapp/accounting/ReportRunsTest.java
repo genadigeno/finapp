@@ -71,7 +71,7 @@ class ReportRunsTest {
     private final List<EventEnvelope> events = Collections.synchronizedList(new ArrayList<>());
     private final List<byte[]> payloads = Collections.synchronizedList(new ArrayList<>());
     private final ReportGeneration generation = new ReportGeneration((snapshot, id) -> periodStore.find(snapshot, id)
-            .map(row -> new ReportGeneration.PeriodState(row.status(), row.lockedAt())));
+            .map(row -> new ReportGeneration.PeriodState(row.status(), row.lockedAt())), Duration.ofMinutes(4));
 
     @Test
     @DisplayName("a claim is born once and read back: the second claimer answers the same run, neither born nor held")
@@ -258,7 +258,7 @@ class ReportRunsTest {
     @DisplayName("the attempts are bounded: past the bound an expired run is failed ATTEMPTS_EXHAUSTED, not reclaimed")
     void theAttemptsAreBounded() {
         AccountingPeriodId september = lockedSeptember();
-        ReportRuns bounded = runs(new ReportRuns.Leases(Duration.ofMinutes(1), 2));
+        ReportRuns bounded = runs(new ReportRuns.Leases(Duration.ofMinutes(1), 2, Duration.ofSeconds(48)));
         ReportRunStore.RunRow run = bounded.claim(UOW, TestReportDefinition.CODE, september, probe("b"), ACCOUNTANT,
                 correlation()).run();
         clock.advance(Duration.ofMinutes(2));
@@ -353,6 +353,68 @@ class ReportRunsTest {
         assertThat(store.all()).isEmpty();
     }
 
+    @Test
+    @DisplayName("the review's M-1: past the attempts' bound, a slow attempt completing FINAL between the lease's read and the"
+            + " failure is the answer - the failure moves nothing, and no second FINAL run is born for the question")
+    void aSlowLastAttemptIsTheAnswerNotASecondRun() {
+        AccountingPeriodId september = lockedSeptember();
+        ReportRuns.Leases leases = new ReportRuns.Leases(Duration.ofMinutes(1), 1, Duration.ofSeconds(48));
+        ReportRunStore.RunRow slow = runs(leases).claim(UOW, TestReportDefinition.CODE, september, probe("slow"),
+                ACCOUNTANT, correlation()).run();
+        ReportGeneration.Generated content = generation.generate(UOW, TestReportDefinition.echo(), slow.inputs());
+        clock.advance(Duration.ofMinutes(2));
+        // The slow attempt 1 completes in the instant between the claimer's lease read and its failure.
+        ReportRunStore racing = new CompletingFirst(store, slow, content);
+        ReportRuns.Claimed claimed = new ReportRuns(racing, periodStore, mappings,
+                ReportDefinitions.of(TestReportDefinition.echo()), leases, (unitOfWork, record) -> audit.add(record),
+                (unitOfWork, envelope, payload, mediaType) -> events.add(envelope), IDS, clock)
+                .claim(UOW, TestReportDefinition.CODE, september, probe("slow"), CONTROLLER, correlation());
+        assertThat(claimed.run().id()).isEqualTo(slow.id());
+        assertThat(claimed.run().status()).isEqualTo(RunStatus.FINAL);
+        assertThat(claimed.born()).isFalse();
+        assertThat(store.all()).as("one run for the question").hasSize(1);
+        assertThat(store.all()).filteredOn(row -> row.status() == RunStatus.FINAL).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("the review's M-2: the unlock supersedes the period's FINAL runs before it moves the cutoff - its row writes"
+            + " done before postings pause behind the cutoff's exclusive key")
+    void theUnlockSupersedesBeforeTheCutoffMoves() {
+        AccountingPeriodId september = lockedSeptember();
+        List<String> order = new ArrayList<>();
+        StandInCutoff recording = new StandInCutoff() {
+            @Override
+            public boolean moveBack(Connection unitOfWork, LocalDate from, Optional<LocalDate> to, String reason) {
+                order.add("cutoff.moveBack");
+                return super.moveBack(unitOfWork, from, to, reason);
+            }
+        };
+        AccountingPeriods periods = new AccountingPeriods(periodStore, mappings, recording, LockGrace.standard(),
+                (unitOfWork, record) -> {}, (unitOfWork, envelope, payload, mediaType) -> {}, IDS, clock,
+                (unitOfWork, period, actor, correlation) -> {
+                    order.add("supersedeFinal");
+                    return 0;
+                });
+        periods.proposeUnlock(UOW, september, ACCOUNTANT, "a correction", correlation());
+        periods.approveUnlock(UOW, september, CONTROLLER, "reviewed", correlation());
+        assertThat(order).containsExactly("supersedeFinal", "cutoff.moveBack");
+    }
+
+    @Test
+    @DisplayName("the review's I-1: the generation's bound must leave a fifth of the lease - a configuration where a live"
+            + " generator could outlive its lease is refused")
+    void theGenerationBoundLeavesAFifthOfTheLease() {
+        assertThat(ReportRuns.Leases.STANDARD.generationTimeout()).isEqualTo(Duration.ofMinutes(4));
+        assertThat(new ReportRuns.Leases(Duration.ofMinutes(5), 5, Duration.ofMinutes(4)).generationTimeout())
+                .isEqualTo(Duration.ofMinutes(4));
+        assertThatThrownBy(() -> new ReportRuns.Leases(Duration.ofMinutes(5), 5, Duration.ofSeconds(241)))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("inside its lease");
+        assertThatThrownBy(() -> new ReportRuns.Leases(Duration.ofMinutes(5), 5, Duration.ofMinutes(5)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ReportRuns.Leases(Duration.ofMinutes(5), 5, Duration.ZERO))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     // -----------------------------------------------------------------
 
     private ReportRuns runs() {
@@ -411,7 +473,7 @@ class ReportRunsTest {
     }
 
     /** The stand-in ledger cutoff: moves recorded, nothing refused. */
-    private static final class StandInCutoff implements PostingCutoff {
+    private static class StandInCutoff implements PostingCutoff {
         private Optional<LocalDate> closedThrough = Optional.empty();
 
         @Override
@@ -429,6 +491,79 @@ class ReportRunsTest {
         public boolean moveBack(Connection unitOfWork, LocalDate from, Optional<LocalDate> to, String reason) {
             closedThrough = to;
             return true;
+        }
+    }
+
+    /**
+     * The in-memory store with one interleaving: the slow attempt's completion lands just before the claimer's failure -
+     * the window the review's M-1 names.
+     */
+    private static final class CompletingFirst implements ReportRunStore {
+        private final InMemoryReportRunStore store;
+        private final ReportRunStore.RunRow slow;
+        private final ReportGeneration.Generated content;
+
+        CompletingFirst(InMemoryReportRunStore store, ReportRunStore.RunRow slow, ReportGeneration.Generated content) {
+            this.store = store;
+            this.slow = slow;
+            this.content = content;
+        }
+
+        @Override
+        public Optional<RunRow> latest(Connection unitOfWork, RunKey key) {
+            return store.latest(unitOfWork, key);
+        }
+
+        @Override
+        public boolean insertIfAbsent(Connection unitOfWork, NewRun run) {
+            return store.insertIfAbsent(unitOfWork, run);
+        }
+
+        @Override
+        public Optional<RunRow> at(Connection unitOfWork, RunKey key, int revision) {
+            return store.at(unitOfWork, key, revision);
+        }
+
+        @Override
+        public Optional<RunRow> find(Connection unitOfWork, ReportRunId id) {
+            return store.find(unitOfWork, id);
+        }
+
+        @Override
+        public Optional<Content> content(Connection unitOfWork, ReportRunId id) {
+            return store.content(unitOfWork, id);
+        }
+
+        @Override
+        public boolean reclaim(Connection unitOfWork, ReportRunId id, int attempt, Duration lease) {
+            return store.reclaim(unitOfWork, id, attempt, lease);
+        }
+
+        @Override
+        public boolean pastLease(Connection unitOfWork, ReportRunId id) {
+            return store.pastLease(unitOfWork, id);
+        }
+
+        @Override
+        public List<RunRow> expired(Connection unitOfWork, int limit) {
+            return store.expired(unitOfWork, limit);
+        }
+
+        @Override
+        public boolean complete(Connection unitOfWork, ReportRunId id, int attempt, RunStatus status, String text,
+                String sha256) {
+            return store.complete(unitOfWork, id, attempt, status, text, sha256);
+        }
+
+        @Override
+        public boolean fail(Connection unitOfWork, ReportRunId id, int attempt, RunFailure failure) {
+            store.complete(unitOfWork, slow.id(), slow.attempt(), RunStatus.FINAL, content.content(), content.sha256());
+            return store.fail(unitOfWork, id, attempt, failure);
+        }
+
+        @Override
+        public int supersedeFinal(Connection unitOfWork, AccountingPeriodId period, CorrelationId correlation) {
+            return store.supersedeFinal(unitOfWork, period, correlation);
         }
     }
 

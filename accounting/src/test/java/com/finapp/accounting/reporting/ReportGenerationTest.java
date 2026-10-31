@@ -43,7 +43,7 @@ class ReportGenerationTest {
     @DisplayName("the content is the definition's body inside a header naming every pinned input - fixed bytes, fixed"
             + " hash; a FINAL run's cut never shows")
     void theHeaderBindsTheQuestionToTheAnswer() {
-        ReportGeneration generation = new ReportGeneration(locked(LOCKED_AT));
+        ReportGeneration generation = generationOver(locked(LOCKED_AT));
         ReportGeneration.Generated generated = generation.generate(SNAPSHOT, TestReportDefinition.echo(), finalInputs());
         assertThat(generated.content()).isEqualTo("{\"basis\":\"FINAL\",\"body\":{\"echo\":{\"probe\":\"p-1\"},"
                 + "\"from\":\"2026-09-01\",\"through\":\"2026-09-30\",\"total\":{\"currency\":\"EUR\",\"minor\":\"0\","
@@ -60,7 +60,7 @@ class ReportGenerationTest {
     @Test
     @DisplayName("a PROVISIONAL run's header names its cut, and no lock is read")
     void aProvisionalRunNamesItsCut() {
-        ReportGeneration generation = new ReportGeneration((snapshot, id) -> {
+        ReportGeneration generation = generationOver((snapshot, id) -> {
             throw new AssertionError("a provisional run reads no lock");
         });
         ReportInputs inputs = new ReportInputs(PERIOD, YearMonth.of(2026, 10), 1, RunBasis.PROVISIONAL, Optional.empty(),
@@ -77,15 +77,15 @@ class ReportGenerationTest {
         TestReportDefinition never = TestReportDefinition.of(1, (snapshot, inputs) -> {
             throw new AssertionError("the definition never runs over a moved period");
         });
-        assertThatThrownBy(() -> new ReportGeneration((snapshot, id) -> Optional.of(
+        assertThatThrownBy(() -> generationOver((snapshot, id) -> Optional.of(
                 new ReportGeneration.PeriodState(PeriodStatus.OPEN, Optional.empty())))
                 .generate(SNAPSHOT, never, finalInputs())).isInstanceOf(ReportGeneration.PeriodMoved.class);
-        assertThatThrownBy(() -> new ReportGeneration(locked(LOCKED_AT.plusSeconds(60)))
+        assertThatThrownBy(() -> generationOver(locked(LOCKED_AT.plusSeconds(60)))
                 .generate(SNAPSHOT, never, finalInputs())).isInstanceOf(ReportGeneration.PeriodMoved.class);
-        assertThatThrownBy(() -> new ReportGeneration((snapshot, id) -> Optional.empty())
+        assertThatThrownBy(() -> generationOver((snapshot, id) -> Optional.empty())
                 .generate(SNAPSHOT, never, finalInputs())).isInstanceOf(ReportGeneration.PeriodMoved.class);
         // CLOSED under the same lock is still the lock it was claimed in.
-        assertThat(new ReportGeneration((snapshot, id) -> Optional.of(new ReportGeneration.PeriodState(
+        assertThat(generationOver((snapshot, id) -> Optional.of(new ReportGeneration.PeriodState(
                 PeriodStatus.CLOSED, Optional.of(LOCKED_AT)))).generate(SNAPSHOT, TestReportDefinition.echo(),
                 finalInputs()).content()).contains("\"basis\":\"FINAL\"");
     }
@@ -94,7 +94,7 @@ class ReportGenerationTest {
     @DisplayName("a body past the stored bound is ContentInvalid; a body never collides with the header; a definition's own"
             + " failure propagates as itself")
     void anOversizedBodyIsContentInvalid() {
-        ReportGeneration generation = new ReportGeneration(locked(LOCKED_AT));
+        ReportGeneration generation = generationOver(locked(LOCKED_AT));
         TestReportDefinition oversized = TestReportDefinition.of(1, (snapshot, inputs) -> CanonicalJson.object()
                 .put("filler", "x".repeat(ReportGeneration.MAX_CONTENT_BYTES)));
         assertThatThrownBy(() -> generation.generate(SNAPSHOT, oversized, finalInputs()))
@@ -151,6 +151,11 @@ class ReportGenerationTest {
         return new ReportInputs(PERIOD, YearMonth.of(2026, 9), 1, RunBasis.FINAL, Optional.of(LOCKED_AT),
                 Optional.of(MAPPING), Optional.of(3), Instant.parse("2026-10-05T00:00:00Z"),
                 RunParameters.of(Map.of("probe", "p-1"), Optional.empty()));
+    }
+
+    /** A generation over {@code periods} with a budget no stand-in here comes near. */
+    private static ReportGeneration generationOver(ReportGeneration.PeriodStates periods) {
+        return new ReportGeneration(periods, java.time.Duration.ofMinutes(1));
     }
 
     private static ReportGeneration.PeriodStates locked(Instant at) {

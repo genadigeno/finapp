@@ -183,12 +183,17 @@ public class AccountingBeans {
         return com.finapp.accounting.reporting.ReportDefinitions.of(definitions.orderedStream().toList());
     }
 
-    /** The generator's lease on the database clock (default 5 minutes) and its attempts' bound (default 5). */
+    /**
+     * The generator's lease on the database clock (default 5 minutes), its attempts' bound (default 5) and the
+     * generation's time bound (default 4 minutes) - refused at start-up unless it leaves a fifth of the lease
+     * (`P14-TSK-008`'s review, I-1).
+     */
     @Bean
     com.finapp.accounting.ReportRuns.Leases reportRunLeases(
             @Value("${finapp.accounting.report.lease:PT5M}") java.time.Duration lease,
-            @Value("${finapp.accounting.report.max-attempts:5}") int maxAttempts) {
-        return new com.finapp.accounting.ReportRuns.Leases(lease, maxAttempts);
+            @Value("${finapp.accounting.report.max-attempts:5}") int maxAttempts,
+            @Value("${finapp.accounting.report.generation-timeout:PT4M}") java.time.Duration generationTimeout) {
+        return new com.finapp.accounting.ReportRuns.Leases(lease, maxAttempts, generationTimeout);
     }
 
     @Bean
@@ -206,10 +211,13 @@ public class AccountingBeans {
                 reportDefinitions, reportRunLeases, auditWriter, outboxWriter, idGenerator, clock);
     }
 
-    /** Report code's reads: a separate pooled connection, one REPEATABLE READ READ ONLY transaction, rolled back. */
+    /**
+     * Report code's reads: a separate pooled connection, one REPEATABLE READ READ ONLY transaction bounded by the
+     * generation's statement timeout, rolled back.
+     */
     @Bean
-    ReportSnapshots reportSnapshots(DataSource dataSource) {
-        return new JdbcReportSnapshots(dataSource::getConnection);
+    ReportSnapshots reportSnapshots(DataSource dataSource, com.finapp.accounting.ReportRuns.Leases reportRunLeases) {
+        return new JdbcReportSnapshots(dataSource::getConnection, reportRunLeases.generationTimeout());
     }
 
     @Bean
@@ -224,10 +232,11 @@ public class AccountingBeans {
             com.finapp.accounting.ReportRuns reportRuns,
             ReportSnapshots reportSnapshots,
             AccountingTransactions accountingTransactions,
-            ReportRunMetrics reportRunMetrics) {
+            ReportRunMetrics reportRunMetrics,
+            com.finapp.accounting.ReportRuns.Leases reportRunLeases) {
         return new ReportRunGenerator(reportRuns, new com.finapp.accounting.reporting.ReportGeneration(
-                com.finapp.accounting.reporting.ReportGeneration.FROM_THE_SNAPSHOT), reportSnapshots,
-                accountingTransactions, reportRunMetrics);
+                com.finapp.accounting.reporting.ReportGeneration.FROM_THE_SNAPSHOT, reportRunLeases.generationTimeout()),
+                reportSnapshots, accountingTransactions, reportRunMetrics);
     }
 
     @Bean

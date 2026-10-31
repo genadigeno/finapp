@@ -100,6 +100,10 @@ class ReportRunDeskTest {
     private final List<String> snapshotsOpened = new ArrayList<>();
     /** What the leaky definition reads: a figure the lock does not freeze - its regeneration diverges. */
     private String leaked = "first";
+    /** The generation's monotonic clock - moved by a slow definition past its budget. */
+    private final java.util.concurrent.atomic.AtomicLong ticker = new java.util.concurrent.atomic.AtomicLong();
+    /** Whether the sometimes-slow definition spends its budget on its next generation. */
+    private boolean slow;
 
     private final TestReportDefinition echo = TestReportDefinition.echo();
     private final TestReportDefinition leaky = new TestReportDefinition("TEST_LEAKY", 1, java.util.Set.of("probe"),
@@ -108,7 +112,20 @@ class ReportRunDeskTest {
             false, (snapshot, inputs) -> {
                 throw new IllegalStateException("cannot execute UPDATE in a read-only transaction");
             });
-    private final ReportDefinitions definitions = ReportDefinitions.of(echo, leaky, throwing);
+    /** A definition that, when {@link #slow}, spends past its budget and then reads - the view refuses the read. */
+    private final TestReportDefinition sometimesSlow = new TestReportDefinition("TEST_SLOW", 1, java.util.Set.of("probe"),
+            false, (snapshot, inputs) -> {
+                if (slow) {
+                    ticker.addAndGet(ReportRuns.Leases.STANDARD.generationTimeout().plusSeconds(1).toNanos());
+                    try {
+                        snapshot.prepareStatement("SELECT 1").executeQuery();
+                    } catch (java.sql.SQLException impossible) {
+                        throw new IllegalStateException(impossible);
+                    }
+                }
+                return CanonicalJson.object().put("slow", false);
+            });
+    private final ReportDefinitions definitions = ReportDefinitions.of(echo, leaky, throwing, sometimesSlow);
 
     private final AccountingTransactions transactions = new AccountingTransactions() {
         @Override
@@ -132,7 +149,7 @@ class ReportRunDeskTest {
                 throw new com.finapp.accounting.AccountingStorageException("opening a report snapshot: 08006");
             }
             snapshotsOpened.add("snapshot");
-            return work.apply(UOW);
+            return work.apply(RAW);
         }
     };
     private final ReportRuns runs = new ReportRuns(store, periodStore, mappings, definitions,
@@ -141,8 +158,8 @@ class ReportRunDeskTest {
     private final ReportRunMetrics metrics = new ReportRunMetrics(registry, definitions);
     private final ReportRunGenerator generator = new ReportRunGenerator(runs, new ReportGeneration(
             (snapshot, id) -> periodStore.find(snapshot, id)
-                    .map(row -> new ReportGeneration.PeriodState(row.status(), row.lockedAt()))),
-            snapshots, transactions, metrics);
+                    .map(row -> new ReportGeneration.PeriodState(row.status(), row.lockedAt())),
+            ReportRuns.Leases.STANDARD.generationTimeout(), ticker::get), snapshots, transactions, metrics);
     private final ReportRunDesk desk = new ReportRunDesk(runs, generator, snapshots,
             new IdempotentExecutor(new Claims(), clock, Duration.ofDays(1), Duration.ofSeconds(30)), transactions,
             AccountingFlowScope.NONE);
@@ -212,7 +229,10 @@ class ReportRunDeskTest {
         ReportRunDesk.ReportRegenerationView diverged = as(ACCOUNTANT, () -> desk.regenerate("regen-2", leakyRun.id()));
         assertThat(diverged.result()).isEqualTo("DIVERGED");
         assertThat(diverged.regeneratedSha256()).isNotEqualTo(diverged.contentSha256());
+        int opened = snapshotsOpened.size();
         assertThat(as(ACCOUNTANT, () -> desk.regenerate("regen-2", leakyRun.id()))).isEqualTo(diverged);
+        assertThat(snapshotsOpened).as("the review's M-5: a replay answers the stored result, no snapshot opened")
+                .hasSize(opened);
         assertThat(registry.get(ReportRunMetrics.DIVERGED).tag("definition", "TEST_LEAKY").counter().count())
                 .as("counted once, the replay counting nothing").isEqualTo(1.0);
         assertThat(audited).filteredOn(record -> record.operation().code().equals("accounting.ReportRegenerated"))
@@ -221,6 +241,55 @@ class ReportRunDeskTest {
                 .anySatisfy(s -> assertThat(s).endsWith("result=DIVERGED")).hasSize(2);
         assertThat(store.find(UOW, ReportRunId.of(UUID.fromString(leakyRun.id()))).orElseThrow().contentSha256())
                 .as("never repaired").contains(leakyRun.contentSha256());
+    }
+
+    @Test
+    @DisplayName("the review's I-1: a generation past its time bound fails GENERATION_TIMED_OUT - not DEFINITION_FAILED -"
+            + " audited FAILED and counted, inside its lease; a regeneration past it is 503 accounting.ReadTimedOut and"
+            + " records nothing under its key")
+    void aGenerationPastItsBoundTimesOut() {
+        String september = lockedSeptember();
+        slow = true;
+        ReportRunDesk.ReportRunView timedOut = as(ACCOUNTANT,
+                () -> desk.generate("k1", "TEST_SLOW", september, Map.of("probe", "t"), null));
+        assertThat(timedOut.status()).isEqualTo("FAILED");
+        assertThat(timedOut.failure()).isEqualTo(RunFailure.GENERATION_TIMED_OUT.name());
+        assertThat(audited).singleElement().satisfies(record -> {
+            assertThat(record.outcome()).isEqualTo(AuditOutcome.FAILED);
+            assertThat(record.changeSummary()).hasValueSatisfying(summary -> assertThat(summary)
+                    .endsWith("failure=GENERATION_TIMED_OUT"));
+        });
+        assertThat(registry.get(ReportRunMetrics.RUN).tag("definition", "TEST_SLOW").tag("outcome", "failed").counter()
+                .count()).isEqualTo(1.0);
+        slow = false;
+        ReportRunDesk.ReportRunView fin = as(ACCOUNTANT,
+                () -> desk.generate("k2", "TEST_SLOW", september, Map.of("probe", "t"), null));
+        assertThat(fin.status()).isEqualTo("FINAL");
+        slow = true;
+        refused(() -> as(ACCOUNTANT, () -> desk.regenerate("regen-slow", fin.id())), AccountingErrorCode.READ_TIMED_OUT,
+                503);
+        assertThat(audited).noneMatch(record -> record.operation().code().equals("accounting.ReportRegenerated"));
+        // Nothing stored: the same key is still in flight - its lease runs out and it compares again, never a replay of
+        // a refusal.
+        assertThatThrownBy(() -> as(ACCOUNTANT, () -> desk.regenerate("regen-slow", fin.id())))
+                .isInstanceOf(com.finapp.platform.idempotency.IdempotencyInProgressException.class);
+        slow = false;
+        assertThat(as(ACCOUNTANT, () -> desk.regenerate("regen-again", fin.id())).result()).isEqualTo("IDENTICAL");
+    }
+
+    @Test
+    @DisplayName("a refusal the run decides is recorded under the key and replayed as itself")
+    void aRefusalIsReplayedAsItself() {
+        lockedSeptember();
+        String october = periodStore.month(YearMonth.of(2026, 10)).orElseThrow().id().value().toString();
+        ReportRunDesk.ReportRunView provisional = as(ACCOUNTANT,
+                () -> desk.generate("key-1", TestReportDefinition.CODE, october, Map.of("probe", "r"), null));
+        refused(() -> as(ACCOUNTANT, () -> desk.regenerate("same", provisional.id())),
+                AccountingErrorCode.REPORT_RUN_STALE, 409);
+        int opened = snapshotsOpened.size();
+        refused(() -> as(ACCOUNTANT, () -> desk.regenerate("same", provisional.id())),
+                AccountingErrorCode.REPORT_RUN_STALE, 409);
+        assertThat(snapshotsOpened).as("replayed from the key").hasSize(opened);
     }
 
     @Test
@@ -401,6 +470,35 @@ class ReportRunDeskTest {
             return work.get();
         }
     }
+
+    /**
+     * The snapshot's raw connection: it prepares any statement and answers one row - the view in front of it decides what
+     * may be prepared, and spends the budget.
+     */
+    private static final Connection RAW = (Connection) Proxy.newProxyInstance(ReportRunDeskTest.class.getClassLoader(),
+            new Class<?>[] {Connection.class}, (proxy, method, args) -> {
+                if (!method.getName().equals("prepareStatement")) {
+                    throw new UnsupportedOperationException("the stand-in snapshot only prepares");
+                }
+                return Proxy.newProxyInstance(ReportRunDeskTest.class.getClassLoader(),
+                        new Class<?>[] {java.sql.PreparedStatement.class}, (statement, call, values) -> switch (call.getName()) {
+                            case "setString", "close" -> null;
+                            case "executeQuery" -> {
+                                boolean[] read = {false};
+                                yield Proxy.newProxyInstance(ReportRunDeskTest.class.getClassLoader(),
+                                        new Class<?>[] {java.sql.ResultSet.class}, (row, at, none) -> switch (at.getName()) {
+                                            case "next" -> {
+                                                boolean first = !read[0];
+                                                read[0] = true;
+                                                yield first;
+                                            }
+                                            case "close" -> null;
+                                            default -> throw new UnsupportedOperationException(at.getName());
+                                        });
+                            }
+                            default -> throw new UnsupportedOperationException(call.getName());
+                        });
+            });
 
     /** The "database" clock, moved by the suite. */
     private static final class MovableClock extends Clock {

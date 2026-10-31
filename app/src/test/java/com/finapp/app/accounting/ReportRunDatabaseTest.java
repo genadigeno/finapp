@@ -88,13 +88,18 @@ class ReportRunDatabaseTest {
     /** The SQLSTATE the writer's refused statement raised - read by the case. */
     private static final AtomicReference<String> REFUSED = new AtomicReference<>();
 
-    /** A definition that tries to write inside its snapshot. */
+    /**
+     * A definition that tries to write inside its snapshot the one way its view lets a string through - a data-modifying
+     * {@code WITH}, a single statement beginning with {@code WITH} - so the database's own refusal ({@code 25006}) is what
+     * stops it.
+     */
     private static final TestReportDefinition WRITER = new TestReportDefinition("TEST_WRITER", 1, Set.of("probe"),
             false, (snapshot, inputs) -> {
-                try (PreparedStatement write = snapshot.prepareStatement(
-                        "UPDATE accounting.accounting_period SET status = status WHERE id = ?")) {
+                try (PreparedStatement write = snapshot.prepareStatement("WITH touched AS (UPDATE"
+                        + " accounting.accounting_period SET status = status WHERE id = ? RETURNING id)"
+                        + " SELECT count(*) FROM touched")) {
                     write.setObject(1, inputs.periodId().value());
-                    write.executeUpdate();
+                    write.executeQuery();
                     return CanonicalJson.object().put("wrote", true);
                 } catch (SQLException refused) {
                     REFUSED.set(refused.getSQLState());
@@ -102,8 +107,25 @@ class ReportRunDatabaseTest {
                 }
             });
 
+    /** A definition that tries to reopen its transaction writable - the view refuses it before the database sees it. */
+    private static final TestReportDefinition REOPENER = new TestReportDefinition("TEST_REOPENER", 1, Set.of("probe"),
+            false, (snapshot, inputs) -> {
+                try {
+                    snapshot.commit();
+                    snapshot.setReadOnly(false);
+                    return CanonicalJson.object().put("reopened", true);
+                } catch (SQLException impossible) {
+                    throw new IllegalStateException(impossible.getSQLState());
+                }
+            });
+
+    /** A definition whose one statement sleeps past any bound a suite sets. */
+    private static final TestReportDefinition SLEEPER = new TestReportDefinition("TEST_SLEEPER", 1, Set.of("probe"),
+            false, (snapshot, inputs) -> CanonicalJson.object().put("slept",
+                    count(snapshot, "SELECT count(*) FROM generate_series(1, 200000000)")));
+
     private static final ReportDefinitions DEFINITIONS = ReportDefinitions.of(TestReportDefinition.echo(), JOURNAL,
-            LEAKY, WRITER);
+            LEAKY, WRITER, REOPENER, SLEEPER);
 
     /** accounting's unit of work over the application role: one transaction, committed or rolled back whole. */
     private static final AccountingTransactions TRANSACTIONS = new AccountingTransactions() {
@@ -125,7 +147,8 @@ class ReportRunDatabaseTest {
         }
     };
 
-    private static final JdbcReportSnapshots SNAPSHOTS = new JdbcReportSnapshots(DatabaseRoles::application);
+    private static final JdbcReportSnapshots SNAPSHOTS = new JdbcReportSnapshots(DatabaseRoles::application,
+            ReportRuns.Leases.STANDARD.generationTimeout());
 
     @BeforeEach
     void openAndRestore() {
@@ -226,6 +249,116 @@ class ReportRunDatabaseTest {
         assertThat(run.status()).isEqualTo(RunStatus.FAILED);
         assertThat(run.failure()).contains(RunFailure.DEFINITION_FAILED);
         assertThat(count("SELECT count(*) FROM accounting.period_event WHERE actor = 'raw'")).isZero();
+        // The review's I-2: a commit and a writable reopen are refused by the view - the transaction never ends early.
+        ReportRunStore.RunRow reopened = generate(january, probe(), REOPENER.code(), ReportRuns.Leases.STANDARD);
+        assertThat(reopened.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(reopened.failure()).contains(RunFailure.DEFINITION_FAILED);
+    }
+
+    @Test
+    @DisplayName("the review's I-1: a statement past the generation's bound is cancelled by PostgreSQL (57014) and the run"
+            + " fails GENERATION_TIMED_OUT - inside its lease, never overtaken by its own reclaim")
+    void aGenerationPastItsBoundTimesOut() throws Exception {
+        AccountingPeriodId january = lockJanuary();
+        ReportRuns.Leases tight = new ReportRuns.Leases(Duration.ofSeconds(5), 5, Duration.ofMillis(300));
+        ReportRunStore.RunRow run = generate(january, probe(), SLEEPER.code(), tight);
+        assertThat(run.status()).isEqualTo(RunStatus.FAILED);
+        assertThat(run.failure()).contains(RunFailure.GENERATION_TIMED_OUT);
+        assertThat(run.attempt()).as("ended at its first attempt, not reclaimed").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("an unlock racing a FINAL claim, on separate connections: a claim holding the period FOR SHARE makes the"
+            + " unlock wait, and the run it claimed fails PERIOD_MOVED; an unlock holding it FOR UPDATE makes the claim"
+            + " wait, which then claims PROVISIONAL")
+    void anUnlockRacingAFinalClaim() throws Exception {
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            // The claim first.
+            AccountingPeriodId january = lockJanuary();
+            proposeUnlock(january);
+            ReportRuns.Claimed claimed;
+            Future<?> unlock;
+            try (Connection claimer = DatabaseRoles.application()) {
+                claimer.setAutoCommit(false);
+                claimed = runs(ReportRuns.Leases.STANDARD).claim(claimer, JOURNAL.code(), january, probe(), person(),
+                        correlation());
+                assertThat(claimed.run().basis()).isEqualTo(RunBasis.FINAL);
+                unlock = pool.submit(() -> approveUnlock(january));
+                assertThat(stillWaiting(unlock)).as("the unlock waits for the claim's FOR SHARE").isTrue();
+                claimer.commit();
+            }
+            unlock.get(2, TimeUnit.MINUTES);
+            ReportRunStore.RunRow concluded = generator(ReportRuns.Leases.STANDARD)
+                    .generateAndComplete(claimed.run(), person());
+            assertThat(concluded.status()).isEqualTo(RunStatus.FAILED);
+            assertThat(concluded.failure()).contains(RunFailure.PERIOD_MOVED);
+            // The unlock first.
+            lockJanuary();
+            proposeUnlock(january);
+            Future<ReportRuns.Claimed> waiting;
+            try (Connection unlocker = DatabaseRoles.application()) {
+                unlocker.setAutoCommit(false);
+                Actor approver = person();
+                held(approver, () -> periods().approveUnlock(unlocker, january, approver, "racing", correlation()));
+                waiting = pool.submit(() -> TRANSACTIONS.inTransaction(uow -> runs(ReportRuns.Leases.STANDARD)
+                        .claim(uow, JOURNAL.code(), january, probe(), person(), correlation())));
+                assertThat(stillWaiting(waiting)).as("the claim waits for the unlock's FOR UPDATE").isTrue();
+                unlocker.commit();
+            }
+            assertThat(waiting.get(2, TimeUnit.MINUTES).run().basis()).isEqualTo(RunBasis.PROVISIONAL);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("an unlock racing a completion, on separate connections: a completion holding the period FOR SHARE"
+            + " commits FINAL first and the unlock supersedes it; an unlock holding it FOR UPDATE commits first and the"
+            + " completion fails PERIOD_MOVED - never a FINAL run over an open period")
+    void anUnlockRacingACompletion() throws Exception {
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            // The completion first.
+            AccountingPeriodId january = lockJanuary();
+            proposeUnlock(january);
+            ReportRunStore.RunRow first = claimOnly(january);
+            ReportGeneration.Generated content = generated(first);
+            Future<?> unlock;
+            try (Connection completer = DatabaseRoles.application()) {
+                completer.setAutoCommit(false);
+                assertThat(runs(ReportRuns.Leases.STANDARD).complete(completer, first.id(), first.attempt(), content,
+                        person()).moved()).isTrue();
+                unlock = pool.submit(() -> approveUnlock(january));
+                assertThat(stillWaiting(unlock)).as("the unlock waits for the completion's FOR SHARE").isTrue();
+                completer.commit();
+            }
+            unlock.get(2, TimeUnit.MINUTES);
+            assertThat(count("SELECT count(*) FROM accounting.report_run WHERE id = '" + first.id().value()
+                    + "' AND status = 'SUPERSEDED'")).isEqualTo(1);
+            // The unlock first.
+            lockJanuary();
+            proposeUnlock(january);
+            ReportRunStore.RunRow second = claimOnly(january);
+            ReportGeneration.Generated again = generated(second);
+            Future<ReportRuns.Concluded> completing;
+            try (Connection unlocker = DatabaseRoles.application()) {
+                unlocker.setAutoCommit(false);
+                Actor approver = person();
+                held(approver, () -> periods().approveUnlock(unlocker, january, approver, "racing", correlation()));
+                completing = pool.submit(() -> TRANSACTIONS.inTransaction(uow -> runs(ReportRuns.Leases.STANDARD)
+                        .complete(uow, second.id(), second.attempt(), again, person())));
+                assertThat(stillWaiting(completing)).as("the completion waits for the unlock's FOR UPDATE").isTrue();
+                unlocker.commit();
+            }
+            ReportRuns.Concluded concluded = completing.get(2, TimeUnit.MINUTES);
+            assertThat(concluded.run().status()).isEqualTo(RunStatus.FAILED);
+            assertThat(concluded.run().failure()).contains(RunFailure.PERIOD_MOVED);
+            assertThat(count("SELECT count(*) FROM accounting.report_run r JOIN accounting.accounting_period p ON"
+                    + " p.id = r.period_id WHERE r.status = 'FINAL' AND p.status = 'OPEN'")).isZero();
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test
@@ -266,7 +399,7 @@ class ReportRunDatabaseTest {
             + " it; the dead attempt's late completion moves nothing - one run, one event")
     void aDeadGeneratorIsReclaimed() throws Exception {
         AccountingPeriodId january = lockJanuary();
-        ReportRuns.Leases short_ = new ReportRuns.Leases(Duration.ofMillis(500), 5);
+        ReportRuns.Leases short_ = new ReportRuns.Leases(Duration.ofMillis(500), 5, Duration.ofMillis(400));
         ReportRunStore.RunRow dead = TRANSACTIONS.inTransaction(uow -> runs(short_).claim(uow, JOURNAL.code(),
                 january, probe(), person(), correlation())).run();
         assertThat(dead.attempt()).isEqualTo(1);
@@ -276,7 +409,7 @@ class ReportRunDatabaseTest {
         assertThat(done.status()).isEqualTo(RunStatus.FINAL);
         assertThat(done.attempt()).isEqualTo(2);
         ReportGeneration.Generated late = SNAPSHOTS.read(snapshot -> new ReportGeneration(
-                ReportGeneration.FROM_THE_SNAPSHOT).generate(snapshot, JOURNAL, dead.inputs()));
+                ReportGeneration.FROM_THE_SNAPSHOT, short_.generationTimeout()).generate(snapshot, JOURNAL, dead.inputs()));
         assertThat(TRANSACTIONS.inTransaction(uow -> runs(short_).complete(uow, dead.id(), 1, late, person())).moved())
                 .isFalse();
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type = '" + ReportRuns.COMPLETED_EVENT
@@ -371,6 +504,48 @@ class ReportRunDatabaseTest {
 
     // -----------------------------------------------------------------
 
+    /** An unlock of {@code period} proposed by one person - the racing approval is another's. */
+    private static void proposeUnlock(AccountingPeriodId period) {
+        Actor proposer = person();
+        inScope(proposer, uow -> periods().proposeUnlock(uow, period, proposer, "a racing unlock", correlation()));
+    }
+
+    /** The unlock approved and committed by a second person. */
+    private static Object approveUnlock(AccountingPeriodId period) {
+        Actor approver = person();
+        return inScope(approver, uow -> periods().approveUnlock(uow, period, approver, "racing", correlation()));
+    }
+
+    /** {@code work} inside the actor's and a correlation's scopes, its transaction left open for the caller to commit. */
+    @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
+    private static <R> R held(Actor actor, java.util.function.Supplier<R> work) {
+        try (com.finapp.platform.security.SecurityContext.Scope who =
+                        com.finapp.platform.security.SecurityContext.enter(actor);
+                com.finapp.platform.correlation.CorrelationContext.Scope flow =
+                        com.finapp.platform.correlation.CorrelationContext.enter(
+                                com.finapp.sharedkernel.correlation.Correlation.startingWith(correlation()))) {
+            return work.get();
+        }
+    }
+
+    /** True when {@code racing} is still blocked half a second later - waiting on the other side's row lock. */
+    private static boolean stillWaiting(Future<?> racing) throws InterruptedException {
+        Thread.sleep(500);
+        return !racing.isDone();
+    }
+
+    /** A FINAL-basis run claimed and committed, not generated. */
+    private static ReportRunStore.RunRow claimOnly(AccountingPeriodId period) {
+        return TRANSACTIONS.inTransaction(uow -> runs(ReportRuns.Leases.STANDARD).claim(uow, JOURNAL.code(), period,
+                probe(), person(), correlation())).run();
+    }
+
+    /** The run's content, generated in a snapshot of its own. */
+    private static ReportGeneration.Generated generated(ReportRunStore.RunRow run) {
+        return SNAPSHOTS.read(snapshot -> new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT,
+                ReportRuns.Leases.STANDARD.generationTimeout()).generate(snapshot, JOURNAL, run.inputs()));
+    }
+
     /** January 1999 locked by a person (the grace long past on the real clock). */
     private static AccountingPeriodId lockJanuary() {
         AccountingPeriodId january = id(JANUARY);
@@ -396,7 +571,8 @@ class ReportRunDatabaseTest {
     }
 
     private static ReportRunGenerator generator(ReportRuns.Leases leases) {
-        return new ReportRunGenerator(runs(leases), new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT), SNAPSHOTS,
+        return new ReportRunGenerator(runs(leases), new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT,
+                leases.generationTimeout()), SNAPSHOTS,
                 TRANSACTIONS, new ReportRunMetrics(new SimpleMeterRegistry(), DEFINITIONS));
     }
 
@@ -404,8 +580,9 @@ class ReportRunDatabaseTest {
         return RunParameters.of(Map.of("probe", UUID.randomUUID().toString()), Optional.empty());
     }
 
+    /** A test definition's read - a prepared statement, the only kind its {@code ReadOnlySnapshot} view runs. */
     private static long count(Connection snapshot, String sql) {
-        try (Statement statement = snapshot.createStatement(); ResultSet row = statement.executeQuery(sql)) {
+        try (PreparedStatement statement = snapshot.prepareStatement(sql); ResultSet row = statement.executeQuery()) {
             row.next();
             return row.getLong(1);
         } catch (SQLException failure) {

@@ -138,34 +138,77 @@ public final class ReportRunDesk {
     /** What one snapshot read: the run and its content, if it has any. */
     private record Served(ReportRunStore.RunRow run, String content) {}
 
-    /** Regenerates a FINAL run and compares - keyed per principal; a divergence counted once. */
+    /**
+     * Regenerates a FINAL run and compares - keyed per principal (`P14-TSK-008`'s review, M-5: the key is looked up
+     * <strong>first</strong>, so a replay answers the stored result without opening a snapshot). The platform's
+     * two-transaction command: the key claimed {@code IN_PROGRESS} (Tx1), the comparison in a read-only snapshot holding no
+     * transaction of the caller's, then the result and its audit record committed together (Tx2). A refusal the run itself
+     * decides (not FINAL, unknown, no definition) is recorded under the key and replayed as itself; a timed-out comparison
+     * records nothing - the key's lease runs out and the same key compares again. A divergence is counted once.
+     */
     public ReportRegenerationView regenerate(String idempotencyKey, String rawRunId) {
         ReportRunId id = runId(rawRunId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        return flow.door(REGENERATE_SPAN, () -> guarded(() -> {
-            ReportRunGenerator.Compared compared = generator.regenerate(id);
+        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        RequestFingerprint fingerprint = RequestFingerprint.sha256(("regenerate|" + id.value())
+                .getBytes(StandardCharsets.UTF_8));
+        return flow.door(REGENERATE_SPAN, () -> {
+            IdempotentExecutor.BeginOutcome begun = transactions.inTransaction(
+                    unitOfWork -> executor.begin(unitOfWork, key, fingerprint, claimed -> new byte[] {1}));
+            if (begun.replay().isPresent()) {
+                return answered(id, begun.replay().get());
+            }
+            ReportRunGenerator.Compared compared;
+            try {
+                compared = guarded(() -> generator.regenerate(id));
+            } catch (ApiException refused) {
+                if (refused.errorCode() != AccountingErrorCode.READ_TIMED_OUT) {
+                    StoredResponse stored = StoredResponse.of((REFUSED + refused.errorCode().code())
+                            .getBytes(StandardCharsets.UTF_8), "text/plain");
+                    transactions.inTransaction(unitOfWork -> executor.complete(unitOfWork, key, false, stored));
+                }
+                throw refused;
+            }
             String result = compared.identical() ? "IDENTICAL" : "DIVERGED";
-            IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
-            RequestFingerprint fingerprint = RequestFingerprint.sha256(("regenerate|" + id.value())
-                    .getBytes(StandardCharsets.UTF_8));
-            IdempotentExecutor.ExecutionOutcome outcome = transactions.inTransaction(unitOfWork -> executor.execute(
-                    unitOfWork, key, fingerprint, uow -> {
-                        runs.recordRegeneration(uow, compared.run(), compared.identical(), actor, correlation);
-                        String stored = result + "|" + compared.run().contentSha256().orElse("") + "|"
-                                + compared.regeneratedSha256();
-                        return CommandResult.succeeded(StoredResponse.of(stored.getBytes(StandardCharsets.UTF_8),
-                                "text/plain"));
-                    }));
-            String[] stored = new String(outcome.body().orElseThrow(
-                    () -> new IllegalStateException("a regeneration stores its result")), StandardCharsets.UTF_8)
-                    .split("\\|", -1);
-            if (outcome.executed() && "DIVERGED".equals(stored[0])) {
+            StoredResponse stored = StoredResponse.of((result + "|" + compared.run().contentSha256().orElse("") + "|"
+                    + compared.regeneratedSha256()).getBytes(StandardCharsets.UTF_8), "text/plain");
+            boolean recorded = transactions.inTransaction(unitOfWork -> {
+                if (!executor.complete(unitOfWork, key, true, stored)) {
+                    return false; // a takeover recorded first: its answer is the answer, and nothing of ours is kept
+                }
+                runs.recordRegeneration(unitOfWork, compared.run(), compared.identical(), actor, correlation);
+                return true;
+            });
+            if (!recorded) {
+                return answered(id, transactions.inTransaction(unitOfWork -> executor.begin(unitOfWork, key,
+                        fingerprint, claimed -> new byte[] {1})).replay().orElseThrow(
+                                () -> new IllegalStateException("a completed regeneration replays its result")));
+            }
+            if (!compared.identical()) {
                 generator.diverged(compared.run());
             }
-            return new ReportRegenerationView(id.value().toString(), stored[0], stored[1], stored[2]);
-        }));
+            return answered(id, stored);
+        });
     }
+
+    /** The stored answer: the result and both hashes, or the refusal recorded under the key, raised again. */
+    private static ReportRegenerationView answered(ReportRunId id, StoredResponse response) {
+        String body = new String(response.bodyBytes().orElseThrow(
+                () -> new IllegalStateException("a regeneration stores its result")), StandardCharsets.UTF_8);
+        if (body.startsWith(REFUSED)) {
+            String code = body.substring(REFUSED.length());
+            AccountingErrorCode refusal = java.util.Arrays.stream(AccountingErrorCode.values())
+                    .filter(candidate -> candidate.code().equals(code)).findFirst()
+                    .orElseThrow(() -> new IllegalStateException("a stored refusal names a known code"));
+            throw new ApiException(refusal, "A report run command was refused", "the regeneration was refused.");
+        }
+        String[] stored = body.split("\\|", -1);
+        return new ReportRegenerationView(id.value().toString(), stored[0], stored[1], stored[2]);
+    }
+
+    /** A refusal's stored prefix. */
+    private static final String REFUSED = "REFUSED|";
 
     // ------------------------------------------------------------------ views
 
@@ -202,6 +245,9 @@ public final class ReportRunDesk {
             throw refused(AccountingErrorCode.REPORT_PARAMETERS_INVALID, invalid);
         } catch (ReportRunGenerator.RunNotFinal stale) {
             throw refused(AccountingErrorCode.REPORT_RUN_STALE, stale);
+        } catch (com.finapp.accounting.reporting.ReportGeneration.GenerationTimedOut timedOut) {
+            throw new ApiException(AccountingErrorCode.READ_TIMED_OUT, "A report run command was refused",
+                    "the regeneration did not finish within its time bound; nothing was recorded - retry.");
         } catch (AccountingPeriods.PeriodNotFound | ReportRuns.RunNotFound | ReportRunGenerator.RunNotFound unknown) {
             throw notFound();
         }

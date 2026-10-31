@@ -22,10 +22,14 @@
 -- so it would not retain the output as issued (INV-ACC-04's own words) and the database could not check the hash. The
 -- content is the canonical JSON text the application wrote (CanonicalJson: sorted keys, no whitespace, no JSON number -
 -- amounts as minor units in strings), checked here as a JSON object and HASHED HERE: content_sha256 is recomputed from it
--- for every writer (risk V006/V007's inputs_canonical precedent). Read it as content::jsonb.
+-- for every writer (risk V006/V007's inputs_canonical precedent). Read it as content::jsonb. The three content checks
+-- (bounded, a JSON object, the hash its own) run in the machine trigger AT THE ONE EDGE THAT SETS THE CONTENT - not as
+-- CHECKs, which PostgreSQL re-evaluates on every UPDATE of the row and would re-parse up to 8 MB at each supersession;
+-- the freeze keeps the content as checked from then on (P14-TSK-008's review, M-2).
 --
 -- THE FREEZE (report_run_content_is_frozen): once a run has content, its content, hash and completion never change - its
--- own trigger, firing first by name, so its refusal is its own (the entry's probe drops it). The machine
+-- own trigger, firing first by name and only for an UPDATE naming one of the three columns (so a supersession, which
+-- names none, never reads the content), so its refusal is its own (the entry's probe drops it). The machine
 -- (report_run_permits_only_machine_edges): GENERATING -> FINAL | PROVISIONAL (the basis) | FAILED; GENERATING ->
 -- GENERATING only as a lease's reclaim (one attempt more, only past the lease, on the database clock); FINAL ->
 -- SUPERSEDED. Never deleted, never truncated.
@@ -81,7 +85,7 @@ CREATE TABLE accounting.report_run (
     -- RunStatus, RunBasis and RunFailure.
     CONSTRAINT report_run_status_is_known CHECK (status IN ('GENERATING', 'FINAL', 'PROVISIONAL', 'FAILED', 'SUPERSEDED')),
     CONSTRAINT report_run_basis_is_known CHECK (basis IN ('FINAL', 'PROVISIONAL')),
-    CONSTRAINT report_run_failure_is_known CHECK (failure_code IS NULL OR failure_code IN ('DEFINITION_UNKNOWN', 'DEFINITION_FAILED', 'PERIOD_MOVED', 'CONTENT_INVALID', 'ATTEMPTS_EXHAUSTED')),
+    CONSTRAINT report_run_failure_is_known CHECK (failure_code IS NULL OR failure_code IN ('DEFINITION_UNKNOWN', 'DEFINITION_FAILED', 'PERIOD_MOVED', 'CONTENT_INVALID', 'ATTEMPTS_EXHAUSTED', 'GENERATION_TIMED_OUT')),
     -- ReportDefinitions.CODE and MAX_VERSION.
     CONSTRAINT report_run_definition_shaped CHECK (definition ~ '^[A-Z][A-Z0-9_]{2,63}$'),
     CONSTRAINT report_run_versions_bounded CHECK (
@@ -110,13 +114,8 @@ CREATE TABLE accounting.report_run (
         (status IN ('FINAL', 'PROVISIONAL', 'SUPERSEDED')) = (content IS NOT NULL)
         AND (content IS NULL) = (content_sha256 IS NULL)
         AND (content IS NULL) = (completed_at IS NULL)),
-    -- THE HASH IS THE CONTENT'S, for every writer (INV-ACC-04): recomputed from the stored text.
-    CONSTRAINT report_run_content_hashed CHECK (
-        content IS NULL OR (content_sha256 ~ '^[0-9a-f]{64}$'
-            AND content_sha256 = encode(sha256(convert_to(content, 'UTF8')), 'hex'))),
-    CONSTRAINT report_run_content_is_a_json_object CHECK (content IS NULL OR jsonb_typeof(content::jsonb) = 'object'),
-    -- ReportGeneration.MAX_CONTENT_BYTES.
-    CONSTRAINT report_run_content_bounded CHECK (content IS NULL OR octet_length(content) <= 8388608),
+    -- The hash's shape - cheap on every UPDATE; that it IS the content's hash is the completion edge's check (below).
+    CONSTRAINT report_run_content_hash_shaped CHECK (content_sha256 IS NULL OR content_sha256 ~ '^[0-9a-f]{64}$'),
     CONSTRAINT report_run_failure_coherent CHECK (
         (status = 'FAILED') = (failure_code IS NOT NULL) AND (failure_code IS NULL) = (failed_at IS NULL)),
     CONSTRAINT report_run_supersession_coherent CHECK (
@@ -128,7 +127,7 @@ COMMENT ON TABLE accounting.report_run IS
     'A report run (P14-TSK-008, ADR-0115, INV-ACC-04): the issued answer to one question - a report definition and version, a period, a parameter set - born once by report_run_key, generated in a REPEATABLE READ READ ONLY transaction, completed with its content (the canonical JSON text, CONFIDENTIAL aggregates) and its sha256 (recomputed here) in one statement, then frozen. FINAL for a period no longer OPEN, under the lock it read (period_locked_at) and the mapping version the lock pinned; PROVISIONAL for an OPEN period, cut at its claim. FINAL -> SUPERSEDED when its period returns to OPEN, never deleted. valuation_rate_set_id has no foreign key until P14-TSK-014''s table exists.';
 
 COMMENT ON COLUMN accounting.report_run.content IS
-    'The issued output: canonical JSON text (sorted keys, no whitespace, no JSON number - amounts as minor units in strings), CONFIDENTIAL; content_sha256 is its sha256, recomputed by report_run_content_hashed. Frozen once set (report_run_content_is_frozen).';
+    'The issued output: canonical JSON text (sorted keys, no whitespace, no JSON number - amounts as minor units in strings), CONFIDENTIAL; content_sha256 is its sha256, recomputed at the completion edge (report_run_content_hashed). Frozen once set (report_run_content_is_frozen).';
 
 COMMENT ON COLUMN accounting.report_run.valuation_rate_set_id IS
     'The valuation rate set the run pins, if any - uuid with NO foreign key: the rate set table is P14-TSK-014''s accounting V005, landing after this migration; the reference is added when it is first filled (P14-TSK-014 / -015). Equal to the parameters'' valuationRateSet by report_run_rate_set_is_a_parameter.';
@@ -156,9 +155,10 @@ BEGIN
 END;
 $$;
 
--- Named to fire first (triggers of one event fire in name order): the freeze's refusal is its own.
+-- Named to fire first (triggers of one event fire in name order): the freeze's refusal is its own. Only for an UPDATE
+-- naming the content, its hash or its completion: every way to change them names them, and a supersession names none.
 CREATE TRIGGER report_run_content_is_frozen
-    BEFORE UPDATE ON accounting.report_run
+    BEFORE UPDATE OF content, content_sha256, completed_at ON accounting.report_run
     FOR EACH ROW
     EXECUTE FUNCTION accounting.report_run_content_is_frozen();
 
@@ -236,6 +236,20 @@ BEGIN
             IF period_status = 'OPEN' OR period_locked IS DISTINCT FROM NEW.period_locked_at THEN
                 RAISE EXCEPTION 'a FINAL report run completes only while its period holds the lock it was claimed under (P14-TSK-008, INV-ACC-04)';
             END IF;
+        END IF;
+        -- THE CONTENT, checked at the one edge that sets it (the freeze keeps it so): bounded (ReportGeneration.
+        -- MAX_CONTENT_BYTES) before it is parsed, a JSON object, and THE HASH THE CONTENT'S, for every writer (INV-ACC-04).
+        IF octet_length(NEW.content) > 8388608 THEN
+            RAISE EXCEPTION 'report_run_content_bounded: a report run''s content is at most 8 MiB (P14-TSK-008)'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.content IS NOT NULL AND jsonb_typeof(NEW.content::jsonb) <> 'object' THEN
+            RAISE EXCEPTION 'report_run_content_is_a_json_object: a report run''s content is a JSON object (P14-TSK-008)'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.content IS NOT NULL AND NEW.content_sha256 IS DISTINCT FROM encode(sha256(convert_to(NEW.content, 'UTF8')), 'hex') THEN
+            RAISE EXCEPTION 'report_run_content_hashed: a report run''s content_sha256 is its content''s sha256 (P14-TSK-008, INV-ACC-04)'
+                USING ERRCODE = 'check_violation';
         END IF;
         NEW.completed_at := clock_timestamp();
         RETURN NEW;

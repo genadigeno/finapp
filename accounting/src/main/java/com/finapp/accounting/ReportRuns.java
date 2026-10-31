@@ -79,22 +79,37 @@ public final class ReportRuns implements ReportRunSupersession {
     // ------------------------------------------------------------------ configuration and outcomes
 
     /**
-     * The generator's lease (the database's clock) and how many times a run is reclaimed before it is failed
-     * {@code ATTEMPTS_EXHAUSTED}. The lease must exceed the longest generation, or a slow generator's run is reclaimed
-     * while it still works - harmless (its completion is refused at the attempt) but wasted.
+     * The generator's lease (the database's clock), how many times a run is reclaimed before it is failed
+     * {@code ATTEMPTS_EXHAUSTED}, and the generation's time bound (`P14-TSK-008`'s review, I-1). A lease cannot be renewed,
+     * so a generation that outlived it would be overtaken by its own reclaim at every attempt - each overtaken attempt's
+     * completion refused, each new one starting a long snapshot of its own, until the attempts ran out with up to that many
+     * snapshots open at once. So the generation is <strong>bounded below the lease</strong>: its snapshot spends at most
+     * {@code generationTimeout} ({@code statement_timeout} re-armed to what is left before every statement), and the
+     * configuration is refused unless that leaves a fifth of the lease ({@link #MARGIN_DIVISOR}) for the claim before it
+     * and the completion after it. A live generator ends - completed, or failed {@code GENERATION_TIMED_OUT} - inside its
+     * lease; only a dead one is reclaimed.
      */
-    public record Leases(Duration lease, int maxAttempts) {
+    public record Leases(Duration lease, int maxAttempts, Duration generationTimeout) {
 
-        /** Five minutes, five attempts. */
-        public static final Leases STANDARD = new Leases(Duration.ofMinutes(5), 5);
+        /** The lease's share kept for the claim and the completion around a generation: a fifth. */
+        public static final int MARGIN_DIVISOR = 5;
+
+        /** Five minutes, five attempts, a generation of at most four minutes. */
+        public static final Leases STANDARD = new Leases(Duration.ofMinutes(5), 5, Duration.ofMinutes(4));
 
         public Leases {
             Objects.requireNonNull(lease, "lease");
+            Objects.requireNonNull(generationTimeout, "generationTimeout");
             if (lease.isNegative() || lease.isZero() || lease.compareTo(Duration.ofHours(24)) > 0) {
                 throw new IllegalArgumentException("a report run's lease is positive and at most a day");
             }
             if (maxAttempts < 1 || maxAttempts > 100) {
                 throw new IllegalArgumentException("a report run is attempted 1 to 100 times");
+            }
+            if (generationTimeout.toMillis() < 1
+                    || generationTimeout.compareTo(lease.minus(lease.dividedBy(MARGIN_DIVISOR))) > 0) {
+                throw new IllegalArgumentException("a report generation's time bound is at least a millisecond and at"
+                        + " most the lease less a fifth of it - a generation must end inside its lease");
             }
         }
     }
@@ -172,7 +187,13 @@ public final class ReportRuns implements ReportRunSupersession {
                         .map(held -> new Claimed(held, false, true))
                         .orElseGet(() -> new Claimed(reread(unitOfWork, run.id()), false, false));
             }
-            fail(unitOfWork, run.id(), run.attempt(), RunFailure.ATTEMPTS_EXHAUSTED, actor, run.correlation());
+            Concluded exhausted = fail(unitOfWork, run.id(), run.attempt(), RunFailure.ATTEMPTS_EXHAUSTED, actor,
+                    run.correlation());
+            // The failure moved nothing: a slow attempt concluded, or another claimer reclaimed, between the lease's read
+            // and the failure. A run that still answers is the answer - never a second FINAL run for one question.
+            if (!exhausted.moved() && answers(exhausted.run(), basis, period)) {
+                return new Claimed(exhausted.run(), false, false);
+            }
         }
         int revision = latest.map(run -> run.revision() + 1).orElse(1);
         // The pin: the lock's for a FINAL run; the version in force at the claim for a PROVISIONAL one.

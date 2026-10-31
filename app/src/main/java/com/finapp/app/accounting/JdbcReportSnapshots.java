@@ -3,9 +3,11 @@ package com.finapp.app.accounting;
 import com.finapp.accounting.AccountingStorageException;
 import com.finapp.platform.persistence.DatabaseFailure;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -15,8 +17,12 @@ import java.util.function.Function;
  * caller's transaction - turns autocommit off, and makes {@link #BEGIN_SQL} the transaction's first statement, so the
  * isolation and the read-only-ness are the transaction's own and never leak into the pooled session. Then it
  * <strong>proves</strong> them ({@link #PROOF_SQL}) before any report code reads: a snapshot that is not read-only
- * {@code REPEATABLE READ} - a driver or pool configured otherwise - is refused, fail closed. The work runs; the
- * transaction is rolled back however it ends - a snapshot never commits anything, because it wrote nothing it could.
+ * {@code REPEATABLE READ} - a driver or pool configured otherwise - is refused, fail closed. Then it arms the snapshot's
+ * <strong>time bound</strong> ({@link #BOUND}: {@code statement_timeout}, local to the transaction - the
+ * {@code GlSnapshots} idiom) at the configured generation bound, which {@code ReportRuns.Leases} holds below the
+ * generator's lease (`P14-TSK-008`'s review, I-1); a report generation re-arms it to what is left of its budget before
+ * every statement ({@code ReadOnlySnapshot}). The work runs; the transaction is rolled back however it ends - a snapshot
+ * never commits anything, because it wrote nothing it could.
  *
  * <p>{@link #BEGIN_SQL} is the database half of "a write inside generation is refused": PostgreSQL answers {@code 25006
  * read_only_sql_transaction} to any {@code INSERT}, {@code UPDATE}, {@code DELETE} or DDL inside it
@@ -31,6 +37,9 @@ public final class JdbcReportSnapshots implements ReportSnapshots {
     /** What the database says the transaction is - read before any report code runs. */
     static final String PROOF_SQL =
             "SELECT current_setting('transaction_read_only'), current_setting('transaction_isolation')";
+
+    /** The bound, armed after the proof - {@code SET LOCAL statement_timeout}, gone with the rollback. */
+    static final String BOUND = "SELECT set_config('statement_timeout', ?, true)";
 
     /** A connection source - the pool, never a caller's bound connection. */
     @FunctionalInterface
@@ -48,9 +57,19 @@ public final class JdbcReportSnapshots implements ReportSnapshots {
     }
 
     private final Connections connections;
+    private final Duration statementTimeout;
 
-    public JdbcReportSnapshots(Connections connections) {
+    /**
+     * @param connections the pool
+     * @param statementTimeout the snapshot's bound - the configured generation bound, at least a millisecond
+     */
+    public JdbcReportSnapshots(Connections connections, Duration statementTimeout) {
         this.connections = Objects.requireNonNull(connections, "connections");
+        this.statementTimeout = Objects.requireNonNull(statementTimeout, "statementTimeout");
+        if (statementTimeout.toMillis() < 1) {
+            // PostgreSQL reads zero as "no timeout": a bound under a millisecond is no bound.
+            throw new IllegalArgumentException("a report snapshot's statement timeout is at least one millisecond");
+        }
     }
 
     @Override
@@ -64,12 +83,24 @@ public final class JdbcReportSnapshots implements ReportSnapshots {
                     begin.execute(BEGIN_SQL);
                 }
                 prove(snapshot);
+                bound(snapshot, statementTimeout);
                 return work.apply(snapshot);
             } finally {
                 snapshot.rollback();
             }
         } catch (SQLException failure) {
             throw new AccountingStorageException(DatabaseFailure.describe("opening a report snapshot", failure));
+        }
+    }
+
+    private static void bound(Connection snapshot, Duration statementTimeout) throws SQLException {
+        try (PreparedStatement set = snapshot.prepareStatement(BOUND)) {
+            set.setString(1, statementTimeout.toMillis() + "ms");
+            try (ResultSet armed = set.executeQuery()) {
+                if (!armed.next()) {
+                    throw new NotReadOnly("a report snapshot's statement timeout could not be armed");
+                }
+            }
         }
     }
 

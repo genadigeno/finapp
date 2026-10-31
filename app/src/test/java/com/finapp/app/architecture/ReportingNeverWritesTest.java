@@ -23,6 +23,8 @@ import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTag;
 import com.tngtech.archunit.junit.ArchTest;
+import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayDeque;
@@ -31,6 +33,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Predicate;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -59,7 +62,16 @@ import org.junit.jupiter.api.Test;
  *       {@link IdempotencyRecordStore};</li>
  *   <li>call a JDBC write - {@code Statement} / {@code PreparedStatement} {@code executeUpdate},
  *       {@code executeLargeUpdate}, {@code executeBatch}, {@code addBatch} or {@code execute} (a read is
- *       {@code executeQuery}).</li>
+ *       {@code executeQuery});</li>
+ *   <li><em>(`P14-TSK-008`'s review, I-2)</em> reach a <strong>writable path</strong> - depend on
+ *       {@code javax.sql.DataSource} or {@code java.sql.DriverManager} (a connection of its own, outside the read-only
+ *       snapshot), or call a {@code Connection} mutator: {@code setAutoCommit}, {@code setReadOnly},
+ *       {@code setTransactionIsolation}, {@code commit}, {@code rollback}, {@code setSavepoint},
+ *       {@code releaseSavepoint}, {@code abort}, {@code setSchema}, {@code setCatalog}, or open a plain or callable
+ *       statement ({@code createStatement}, {@code prepareCall} - a plain statement runs any string, a second statement
+ *       that ends the transaction included). At run time the definitions are handed {@code ReadOnlySnapshot}'s view,
+ *       which refuses the same set and screens every prepared string; this rule holds the report code that builds
+ *       it.</li>
  * </ul>
  *
  * <p><strong>Armed over an empty package.</strong> {@code com.finapp.accounting.reporting} held no class when armed;
@@ -95,6 +107,20 @@ class ReportingNeverWritesTest {
     /** The JDBC calls that write; a report reads with {@code executeQuery}. */
     static final Set<String> JDBC_WRITES = Set.of("executeUpdate", "executeLargeUpdate", "executeBatch", "addBatch",
             "execute");
+
+    /**
+     * The JDK's ways to a connection of one's own - outside the read-only snapshot (`P14-TSK-008`'s review, I-2). Held
+     * apart from {@link #WRITERS} because the census imports {@code com.finapp} only.
+     */
+    static final Set<String> WRITABLE_PATHS = Set.of("javax.sql.DataSource", "java.sql.DriverManager");
+
+    /**
+     * The {@code Connection} calls that would end, reopen or widen the read-only transaction, or run an unscreened string
+     * (`P14-TSK-008`'s review, I-2) - a report prepares its reads and nothing else.
+     */
+    static final Set<String> CONNECTION_MUTATORS = Set.of("setAutoCommit", "setReadOnly", "setTransactionIsolation",
+            "commit", "rollback", "setSavepoint", "releaseSavepoint", "abort", "setSchema", "setCatalog",
+            "createStatement", "prepareCall");
 
     @ArchTest
     static void noReportingClassReachesAWriter(JavaClasses imported) {
@@ -166,6 +192,33 @@ class ReportingNeverWritesTest {
     }
 
     @Test
+    @DisplayName("a report class ending or reopening its transaction - commit, rollback, setAutoCommit, setReadOnly - is"
+            + " refused (P14-TSK-008's review, I-2)")
+    void aConnectionMutatorIsRefused() {
+        assertThat(plantedViolations(PlantedReportCommitting.class, Connection.class))
+                .singleElement().asString().contains("PlantedReportCommitting").contains("Connection.commit");
+        assertThat(plantedViolations(PlantedReportReopening.class, Connection.class))
+                .singleElement().asString().contains("Connection.setAutoCommit").contains("Connection.setReadOnly")
+                .contains("Connection.rollback");
+    }
+
+    @Test
+    @DisplayName("a report class opening a plain statement - any string, a second statement included - is refused")
+    void aPlainStatementIsRefused() {
+        assertThat(plantedViolations(PlantedReportStatement.class, Connection.class))
+                .singleElement().asString().contains("Connection.createStatement");
+    }
+
+    @Test
+    @DisplayName("a report class reaching a connection of its own - a DataSource or the DriverManager - is refused")
+    void aWritablePathIsRefused() {
+        assertThat(plantedViolations(PlantedReportDataSource.class, DataSource.class))
+                .singleElement().asString().contains("javax.sql.DataSource");
+        assertThat(plantedViolations(PlantedReportDriverManager.class, DriverManager.class))
+                .singleElement().asString().contains("java.sql.DriverManager");
+    }
+
+    @Test
     @DisplayName("a report class that only reads - executeQuery, the journal's read port - is not flagged")
     void aReadingReportClassPasses() {
         assertThat(plantedViolations(PlantedReportReading.class, PreparedStatement.class, JournalReads.class))
@@ -198,7 +251,8 @@ class ReportingNeverWritesTest {
             }
             List<String> writers = current.getDirectDependenciesFromSelf().stream()
                     .map(Dependency::getTargetClass)
-                    .filter(target -> target.getPackageName().startsWith(LEDGER) || WRITERS.contains(target.getName()))
+                    .filter(target -> target.getPackageName().startsWith(LEDGER) || WRITERS.contains(target.getName())
+                            || WRITABLE_PATHS.contains(target.getName()))
                     .map(JavaClass::getName).distinct().sorted().toList();
             List<String> writes = current.getMethodCallsFromSelf().stream()
                     .filter(ReportingNeverWritesTest::isJdbcWrite)
@@ -220,6 +274,9 @@ class ReportingNeverWritesTest {
 
     private static boolean isJdbcWrite(JavaMethodCall call) {
         JavaClass owner = call.getTarget().getOwner();
+        if (owner.isAssignableTo(java.sql.Connection.class)) {
+            return CONNECTION_MUTATORS.contains(call.getName());
+        }
         boolean statement = owner.isAssignableTo(java.sql.Statement.class);
         return statement && JDBC_WRITES.contains(call.getName());
     }
@@ -261,6 +318,41 @@ class ReportingNeverWritesTest {
 
     static class PlantedHelper {
         OutboxWriter<?> outbox;
+    }
+
+    /** A report class committing its snapshot - ending the read-only transaction. */
+    static class PlantedReportCommitting {
+        void end(Connection snapshot) throws SQLException {
+            snapshot.commit();
+        }
+    }
+
+    /** A report class reopening its transaction writable. */
+    static class PlantedReportReopening {
+        void reopen(Connection snapshot) throws SQLException {
+            snapshot.rollback();
+            snapshot.setAutoCommit(true);
+            snapshot.setReadOnly(false);
+        }
+    }
+
+    /** A report class running a plain statement's string. */
+    static class PlantedReportStatement {
+        boolean run(Connection snapshot) throws SQLException {
+            return snapshot.createStatement().executeQuery("SELECT 1").next();
+        }
+    }
+
+    /** A report class holding a data source - a connection of its own. */
+    static class PlantedReportDataSource {
+        DataSource pool;
+    }
+
+    /** A report class opening a connection of its own through the DriverManager. */
+    static class PlantedReportDriverManager {
+        Connection open(String url) throws SQLException {
+            return DriverManager.getConnection(url);
+        }
     }
 
     /** A report class that only reads: a query and the journal's read port. */

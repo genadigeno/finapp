@@ -16,5 +16,11 @@ public enum RunFailure {
     /** The content is not canonical (a refused character) or exceeds the stored bound. */
     CONTENT_INVALID,
     /** The run was reclaimed past its lease more times than the bound allows - a generator that never finishes. */
-    ATTEMPTS_EXHAUSTED
+    ATTEMPTS_EXHAUSTED,
+    /**
+     * The generation outlived its time bound - a statement cancelled by the snapshot's {@code statement_timeout}
+     * ({@code 57014}) or the budget spent before the next statement - so it ends inside its lease instead of being
+     * overtaken by its own reclaim (`P14-TSK-008`'s review, I-1).
+     */
+    GENERATION_TIMED_OUT
 }

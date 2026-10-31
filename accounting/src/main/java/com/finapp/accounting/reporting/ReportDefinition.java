@@ -11,8 +11,10 @@ import java.util.Set;
  * ({@link ReportDefinitions}) collects.
  *
  * <p><strong>Reads only</strong> ({@code INV-ACC-14}): {@link #generate} runs on a separate connection whose transaction is
- * {@code REPEATABLE READ READ ONLY}, so a write is refused by the database; and every implementation is report code in
- * this package or below, so {@code ReportingNeverWritesTest} refuses a writer on its reach before it is ever run.
+ * {@code REPEATABLE READ READ ONLY}, so a write is refused by the database; the definition is handed a
+ * {@link ReadOnlySnapshot} view of it, which prepares reads only and refuses every mutator, so a write - or a second
+ * statement that would end the transaction - never reaches it; and every implementation is report code in this package or
+ * below, so {@code ReportingNeverWritesTest} refuses a writer on its reach before it is ever run.
  *
  * <p><strong>Reproducible</strong> ({@code INV-ACC-04}): the body is a function of {@link ReportInputs} and of what a
  * {@code FINAL} run's locked period makes immutable - the journal lines dated in its range, the pinned mapping version,
@@ -39,8 +41,10 @@ public interface ReportDefinition {
     }
 
     /**
-     * The report's body for {@code inputs}, read through {@code snapshot} - a read-only {@code REPEATABLE READ} transaction
-     * the caller opened, rolls back and never commits.
+     * The report's body for {@code inputs}, read through {@code snapshot} - a {@link ReadOnlySnapshot} view of a read-only
+     * {@code REPEATABLE READ} transaction the caller opened, rolls back and never commits: it prepares single
+     * {@code SELECT}/{@code WITH} statements and runs them by {@code executeQuery()} within the generation's time budget,
+     * and refuses everything else (`P14-TSK-008`'s review, I-1, I-2).
      */
     CanonicalJson.Obj generate(Connection snapshot, ReportInputs inputs);
 }

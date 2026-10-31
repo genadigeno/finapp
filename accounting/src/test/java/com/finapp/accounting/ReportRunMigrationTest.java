@@ -54,17 +54,32 @@ class ReportRunMigrationTest {
                 .contains("failure_code IN (" + list(RunFailure.values()) + ")");
         assertThat(sql).contains("CHECK (definition ~ '^" + ReportDefinitions.CODE.pattern() + "$')")
                 .contains("definition_version BETWEEN 1 AND " + ReportDefinitions.MAX_VERSION);
-        assertThat(sql).contains("octet_length(content) <= " + ReportGeneration.MAX_CONTENT_BYTES);
+        assertThat(sql).contains("IF octet_length(NEW.content) > " + ReportGeneration.MAX_CONTENT_BYTES + " THEN");
     }
 
     @Test
-    @DisplayName("the hashes are the database's: content_sha256 and parameters_hash recomputed from the stored text for"
-            + " every writer, each text a JSON object; the content whole with its hash and completion")
+    @DisplayName("the hashes are the database's: content_sha256 recomputed at the completion edge - the one edge that sets"
+            + " it, never by a CHECK every later UPDATE would re-run over 8 MB - and parameters_hash by CHECK, each text a"
+            + " JSON object; the content whole with its hash and completion")
     void theHashesAreRecomputed() {
         String sql = collapsed(RESOURCE);
-        assertThat(sql).contains("content_sha256 = encode(sha256(convert_to(content, 'UTF8')), 'hex')")
-                .contains("parameters_hash = encode(sha256(convert_to(parameters, 'UTF8')), 'hex')")
-                .contains("jsonb_typeof(content::jsonb) = 'object'")
+        String completion = sql.substring(sql.indexOf("IF OLD.status = 'GENERATING' AND NEW.status IN ('FINAL', 'PROVISIONAL') THEN"),
+                sql.indexOf("IF OLD.status = 'GENERATING' AND NEW.status = 'FAILED' THEN"));
+        assertThat(completion)
+                .contains("IF NEW.content IS NOT NULL AND NEW.content_sha256 IS DISTINCT FROM encode(sha256(convert_to("
+                        + "NEW.content, 'UTF8')), 'hex') THEN RAISE EXCEPTION 'report_run_content_hashed:")
+                .contains("IF NEW.content IS NOT NULL AND jsonb_typeof(NEW.content::jsonb) <> 'object' THEN RAISE"
+                        + " EXCEPTION 'report_run_content_is_a_json_object:")
+                .contains("USING ERRCODE = 'check_violation'");
+        // The bound first, so an oversized text is refused before it is parsed.
+        assertThat(completion.indexOf("octet_length(NEW.content)")).isLessThan(completion.indexOf("NEW.content::jsonb"));
+        // No CHECK re-reads the content: a supersession's UPDATE re-runs every CHECK.
+        String checks = sql.substring(sql.indexOf("CREATE TABLE accounting.report_run"), sql.indexOf("COMMENT ON TABLE"));
+        assertThat(checks).doesNotContain("content::jsonb").doesNotContain("convert_to(content")
+                .doesNotContain("octet_length(content)")
+                .contains("CONSTRAINT report_run_content_hash_shaped CHECK (content_sha256 IS NULL OR content_sha256 ~"
+                        + " '^[0-9a-f]{64}$')");
+        assertThat(sql).contains("parameters_hash = encode(sha256(convert_to(parameters, 'UTF8')), 'hex')")
                 .contains("jsonb_typeof(parameters::jsonb) = 'object'");
         assertThat(sql).contains("(status IN ('FINAL', 'PROVISIONAL', 'SUPERSEDED')) = (content IS NOT NULL)"
                 + " AND (content IS NULL) = (content_sha256 IS NULL) AND (content IS NULL) = (completed_at IS NULL)");
@@ -72,12 +87,13 @@ class ReportRunMigrationTest {
     }
 
     @Test
-    @DisplayName("THE FREEZE is its own trigger, before every update, firing first by name: once a run has content, its"
-            + " content, hash and completion never change - the entry's probe target, the hermetic half")
+    @DisplayName("THE FREEZE is its own trigger, before every update naming the content, its hash or its completion, firing"
+            + " first by name: once a run has content, they never change - the entry's probe target, the hermetic half")
     void theContentIsFrozenByItsOwnTrigger() {
         String sql = collapsed(RESOURCE);
-        assertThat(sql).contains("CREATE TRIGGER report_run_content_is_frozen BEFORE UPDATE ON accounting.report_run FOR"
-                + " EACH ROW EXECUTE FUNCTION accounting.report_run_content_is_frozen();");
+        assertThat(sql).contains("CREATE TRIGGER report_run_content_is_frozen BEFORE UPDATE OF content, content_sha256,"
+                + " completed_at ON accounting.report_run FOR EACH ROW EXECUTE FUNCTION"
+                + " accounting.report_run_content_is_frozen();");
         assertThat(sql).contains("IF OLD.content IS NOT NULL AND (NEW.content IS DISTINCT FROM OLD.content OR"
                 + " NEW.content_sha256 IS DISTINCT FROM OLD.content_sha256 OR NEW.completed_at IS DISTINCT FROM"
                 + " OLD.completed_at) THEN RAISE EXCEPTION 'report_run_content_is_frozen:");

@@ -9,9 +9,11 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.LongSupplier;
 
 /**
  * One report run's content, generated inside the caller's read-only snapshot (`P14-TSK-008`; ADR-0115 decision 2;
@@ -70,6 +72,18 @@ public final class ReportGeneration {
         }
     }
 
+    /**
+     * The generation outlived its time budget - the budget spent before a statement, or a statement cancelled by the
+     * snapshot's {@code statement_timeout} ({@code 57014}); the run fails {@code GENERATION_TIMED_OUT}, inside its lease.
+     */
+    public static final class GenerationTimedOut extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        GenerationTimedOut() {
+            super("the report generation outlived its time budget (SQLSTATE 57014 or the budget spent)");
+        }
+    }
+
     /** A run's content and its SHA-256. */
     public record Generated(String content, String sha256) {
 
@@ -80,15 +94,35 @@ public final class ReportGeneration {
     }
 
     private final PeriodStates periods;
+    private final Duration budget;
+    private final LongSupplier ticker;
 
-    public ReportGeneration(PeriodStates periods) {
+    /**
+     * @param periods how the run's period is read in the snapshot
+     * @param budget the whole generation's time - the configuration holds it below the generator's lease
+     *     ({@code ReportRuns.Leases})
+     */
+    public ReportGeneration(PeriodStates periods, Duration budget) {
+        this(periods, budget, System::nanoTime);
+    }
+
+    /** As above, on {@code ticker} - a monotonic nanosecond clock a suite can move. */
+    public ReportGeneration(PeriodStates periods, Duration budget, LongSupplier ticker) {
         this.periods = Objects.requireNonNull(periods, "periods");
+        this.budget = Objects.requireNonNull(budget, "budget");
+        this.ticker = Objects.requireNonNull(ticker, "ticker");
+        if (budget.toMillis() < 1) {
+            throw new IllegalArgumentException("a report generation's budget is at least one millisecond");
+        }
     }
 
     /**
-     * {@code definition}'s content for {@code inputs}, read through {@code snapshot}.
+     * {@code definition}'s content for {@code inputs}, read through {@code snapshot} - which neither this class nor the
+     * definition touches directly: every read goes through its {@link ReadOnlySnapshot}, prepared reads only, within the
+     * budget.
      *
      * @throws PeriodMoved when a FINAL run's period is not locked under the run's lock in the snapshot
+     * @throws GenerationTimedOut when the budget was spent or a statement cancelled - whatever the definition did with it
      * @throws ContentInvalid when the content holds a character the form refuses, or is larger than its bound
      * @throws RuntimeException whatever the definition throws - a read it could not make, or a write refused
      */
@@ -96,15 +130,28 @@ public final class ReportGeneration {
         Objects.requireNonNull(snapshot, "snapshot");
         Objects.requireNonNull(definition, "definition");
         Objects.requireNonNull(inputs, "inputs");
-        if (inputs.basis() == RunBasis.FINAL) {
-            PeriodState state = periods.read(snapshot, inputs.periodId())
-                    .orElseThrow(() -> new PeriodMoved("the run's period is not in the snapshot"));
-            if (state.status() == PeriodStatus.OPEN || !state.lockedAt().equals(inputs.periodLockedAt())) {
-                throw new PeriodMoved("the run's period is no longer locked under the lock it was claimed under");
+        ReadOnlySnapshot view = new ReadOnlySnapshot(snapshot, budget, ticker);
+        CanonicalJson.Obj body;
+        try {
+            if (inputs.basis() == RunBasis.FINAL) {
+                PeriodState state = periods.read(view.connection(), inputs.periodId())
+                        .orElseThrow(() -> new PeriodMoved("the run's period is not in the snapshot"));
+                if (state.status() == PeriodStatus.OPEN || !state.lockedAt().equals(inputs.periodLockedAt())) {
+                    throw new PeriodMoved("the run's period is no longer locked under the lock it was claimed under");
+                }
             }
+            body = definition.generate(view.connection(), inputs);
+        } catch (RuntimeException failed) {
+            if (view.timedOut()) {
+                throw new GenerationTimedOut();
+            }
+            throw failed;
         }
-        CanonicalJson.Obj body = Objects.requireNonNull(definition.generate(snapshot, inputs),
-                "a definition answers a body");
+        // A definition that caught the timeout and answered anyway answered from a partial read: never content.
+        if (view.timedOut()) {
+            throw new GenerationTimedOut();
+        }
+        Objects.requireNonNull(body, "a definition answers a body");
         String content;
         try {
             content = CanonicalJson.text(header(definition, inputs).put("body", body));
@@ -157,7 +204,8 @@ public final class ReportGeneration {
                         lockedAt == null ? Optional.empty() : Optional.of(lockedAt.toInstant())));
             }
         } catch (SQLException failure) {
-            throw new IllegalStateException("the run's period could not be read in the snapshot: " + failure.getSQLState());
+            throw new IllegalStateException("the run's period could not be read in the snapshot: "
+                    + failure.getSQLState());
         }
     }
 }
