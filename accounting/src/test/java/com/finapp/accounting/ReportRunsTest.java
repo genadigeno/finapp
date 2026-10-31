@@ -71,7 +71,8 @@ class ReportRunsTest {
     private final List<EventEnvelope> events = Collections.synchronizedList(new ArrayList<>());
     private final List<byte[]> payloads = Collections.synchronizedList(new ArrayList<>());
     private final ReportGeneration generation = new ReportGeneration((snapshot, id) -> periodStore.find(snapshot, id)
-            .map(row -> new ReportGeneration.PeriodState(row.status(), row.lockedAt())), Duration.ofMinutes(4));
+            .map(row -> new ReportGeneration.PeriodState(row.status(), row.lockedAt())), Duration.ofMinutes(4),
+            () -> 0L);
 
     @Test
     @DisplayName("a claim is born once and read back: the second claimer answers the same run, neither born nor held")
