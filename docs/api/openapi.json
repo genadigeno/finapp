@@ -227,6 +227,41 @@
           }
         }
       },
+      "accounting.NoActiveMapping": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.NoActiveMapping"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.NoActiveMapping"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] No GL mapping version is pinned by, or in force for, the period - the GL cannot be read for it until a version is activated under four eyes.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.NotFound": {
         "content": {
           "application/problem+json": {
@@ -18020,6 +18055,282 @@
         },
         "type": "object"
       },
+      "GlActivityView": {
+        "properties": {
+          "figure": {
+            "$ref": "#/components/schemas/GlFigureView"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/GlLineView"
+            },
+            "type": "array"
+          },
+          "mappingVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "mappingVersionId": {
+            "type": "string"
+          },
+          "next": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodStatus": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GlAgreementView": {
+        "properties": {
+          "agrees": {
+            "type": "boolean"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "glCredits": {
+            "type": "string"
+          },
+          "glDebits": {
+            "type": "string"
+          },
+          "glLines": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ledgerCredits": {
+            "type": "string"
+          },
+          "ledgerDebits": {
+            "type": "string"
+          },
+          "ledgerLines": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "unmappedCredits": {
+            "type": "string"
+          },
+          "unmappedDebits": {
+            "type": "string"
+          },
+          "unmappedLines": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "GlBalancesView": {
+        "properties": {
+          "agreement": {
+            "items": {
+              "$ref": "#/components/schemas/GlAgreementView"
+            },
+            "type": "array"
+          },
+          "agrees": {
+            "type": "boolean"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "figures": {
+            "items": {
+              "$ref": "#/components/schemas/GlFigureView"
+            },
+            "type": "array"
+          },
+          "mappingVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "mappingVersionId": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodStatus": {
+            "type": "string"
+          },
+          "unmapped": {
+            "items": {
+              "$ref": "#/components/schemas/GlUnmappedView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "GlComponentView": {
+        "properties": {
+          "counterparty": {
+            "type": "string"
+          },
+          "credits": {
+            "type": "string"
+          },
+          "debits": {
+            "type": "string"
+          },
+          "lines": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ownerKind": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GlEntryView": {
+        "properties": {
+          "entryId": {
+            "type": "string"
+          },
+          "entryType": {
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/GlLineView"
+            },
+            "type": "array"
+          },
+          "mappingVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "mappingVersionId": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodStatus": {
+            "type": "string"
+          },
+          "postingDate": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "reversesEntryId": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GlFigureView": {
+        "properties": {
+          "balance": {
+            "type": "string"
+          },
+          "classification": {
+            "type": "string"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/GlComponentView"
+            },
+            "type": "array"
+          },
+          "credits": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "debits": {
+            "type": "string"
+          },
+          "glAccountCode": {
+            "type": "string"
+          },
+          "lines": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "mappingVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "mappingVersionId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "normalBalance": {
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GlLineView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "counterparty": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "entryType": {
+            "type": "string"
+          },
+          "glAccountCode": {
+            "type": "string"
+          },
+          "ledgerAccountId": {
+            "type": "string"
+          },
+          "ownerKind": {
+            "type": "string"
+          },
+          "ownerRef": {
+            "type": "string"
+          },
+          "postingDate": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "seq": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "side": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "GlMappingAccountChangeView": {
         "properties": {
           "after": {
@@ -18343,6 +18654,30 @@
           "version": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "GlUnmappedView": {
+        "properties": {
+          "credits": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "debits": {
+            "type": "string"
+          },
+          "lines": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ownerKind": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -30904,6 +31239,128 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TransactionsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/gl/accounts/{code}/activity": {
+      "get": {
+        "operationId": "readGeneralLedgerAccountActivity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "currency",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlActivityView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/gl/balances": {
+      "get": {
+        "operationId": "readGeneralLedgerBalances",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "period",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "currency",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlBalancesView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/gl/entries/{entryId}": {
+      "get": {
+        "operationId": "readGeneralLedgerEntry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entryId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlEntryView"
                 }
               }
             },

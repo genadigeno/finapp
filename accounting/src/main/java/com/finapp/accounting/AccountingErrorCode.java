@@ -76,7 +76,14 @@ public enum AccountingErrorCode implements ErrorCode {
                     + " was changed, retry."),
 
     /** Every reasoned accounting act (`P14-TSK-003` first). */
-    REASON_REQUIRED("accounting.ReasonRequired", 422, "A reason is required.");
+    REASON_REQUIRED("accounting.ReasonRequired", 422, "A reason is required."),
+
+    /** The GL doors (`P14-TSK-007`): no mapping version is pinned by, or in force for, the period. */
+    NO_ACTIVE_MAPPING(
+            "accounting.NoActiveMapping",
+            409,
+            "No GL mapping version is pinned by, or in force for, the period - the GL cannot be read for it until a"
+                    + " version is activated under four eyes.");
 
     private final String code;
     private final int status;

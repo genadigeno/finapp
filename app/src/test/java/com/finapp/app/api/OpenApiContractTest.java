@@ -522,6 +522,11 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/lock",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/unlock-proposal",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/unlock-approval",
+                        // P14-TSK-007: the GL read model - balances, an account's activity (keyset paged) and an
+                        // entry's GL view; ACCOUNTING_READ, read-only snapshots, audited accounting.GlRead.
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/gl/balances",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/gl/accounts/{code}/activity",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/gl/entries/{entryId}",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",

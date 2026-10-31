@@ -2484,7 +2484,9 @@ its task and read against it by `P14-DOC-001`.*
 ### GL Account
 **Is:** an account of the General Ledger's reference chart — code, name, classification (`ASSET`, `LIABILITY`,
 `EQUITY`, `REVENUE`, `EXPENSE`), statement section and normal balance — defined inside a GL Mapping Version
-(`P14-TSK-003`). Its figures are always computed from journal lines whose ledger purposes map to it (`INV-ACC-06`).
+(`P14-TSK-003`). Its figures are always computed from journal lines whose ledger purposes map to it (`INV-ACC-06`) -
+by the GL read model (`P14-TSK-007`): a period's movement per GL account and currency, under the version the period
+pins, each figure drilling to its lines.
 **Not:** a Ledger Account — it holds no balance, receives no posting and is never written by a posting flow; nor a
 statutory chart (the codes are reference values for qualified review, owner decision C2).
 **Owned by:** `accounting`
