@@ -233,9 +233,11 @@ public class AccountingBeans {
             ReportSnapshots reportSnapshots,
             AccountingTransactions accountingTransactions,
             ReportRunMetrics reportRunMetrics,
-            com.finapp.accounting.ReportRuns.Leases reportRunLeases) {
+            com.finapp.accounting.ReportRuns.Leases reportRunLeases,
+            Clock clock) {
         return new ReportRunGenerator(reportRuns, new com.finapp.accounting.reporting.ReportGeneration(
-                com.finapp.accounting.reporting.ReportGeneration.FROM_THE_SNAPSHOT, reportRunLeases.generationTimeout()),
+                com.finapp.accounting.reporting.ReportGeneration.FROM_THE_SNAPSHOT, reportRunLeases.generationTimeout(),
+                clock),
                 reportSnapshots, accountingTransactions, reportRunMetrics);
     }
 

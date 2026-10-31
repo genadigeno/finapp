@@ -409,7 +409,8 @@ class ReportRunDatabaseTest {
         assertThat(done.status()).isEqualTo(RunStatus.FINAL);
         assertThat(done.attempt()).isEqualTo(2);
         ReportGeneration.Generated late = SNAPSHOTS.read(snapshot -> new ReportGeneration(
-                ReportGeneration.FROM_THE_SNAPSHOT, short_.generationTimeout()).generate(snapshot, JOURNAL, dead.inputs()));
+                ReportGeneration.FROM_THE_SNAPSHOT, short_.generationTimeout(), NOW).generate(snapshot, JOURNAL,
+                dead.inputs()));
         assertThat(TRANSACTIONS.inTransaction(uow -> runs(short_).complete(uow, dead.id(), 1, late, person())).moved())
                 .isFalse();
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type = '" + ReportRuns.COMPLETED_EVENT
@@ -543,7 +544,7 @@ class ReportRunDatabaseTest {
     /** The run's content, generated in a snapshot of its own. */
     private static ReportGeneration.Generated generated(ReportRunStore.RunRow run) {
         return SNAPSHOTS.read(snapshot -> new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT,
-                ReportRuns.Leases.STANDARD.generationTimeout()).generate(snapshot, JOURNAL, run.inputs()));
+                ReportRuns.Leases.STANDARD.generationTimeout(), NOW).generate(snapshot, JOURNAL, run.inputs()));
     }
 
     /** January 1999 locked by a person (the grace long past on the real clock). */
@@ -572,7 +573,7 @@ class ReportRunDatabaseTest {
 
     private static ReportRunGenerator generator(ReportRuns.Leases leases) {
         return new ReportRunGenerator(runs(leases), new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT,
-                leases.generationTimeout()), SNAPSHOTS,
+                leases.generationTimeout(), NOW), SNAPSHOTS,
                 TRANSACTIONS, new ReportRunMetrics(new SimpleMeterRegistry(), DEFINITIONS));
     }
 
