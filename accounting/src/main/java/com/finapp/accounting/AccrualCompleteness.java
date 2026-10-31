@@ -13,8 +13,13 @@ import java.util.Objects;
  * caught up"; the check that reads it is `P14-TSK-011`'s.)*
  *
  * <p>Why the close needs this beside C3's floor: an accrual the servicing step has not yet run for a date of the locked
- * period will - once it runs - post on the first open date (lending's rule {@code LND-2} version 2), so the locked
- * period's interest income is complete only when every account in servicing has accrued through the period's end.
+ * period will - once it runs - post on the first open date (lending's rule {@code LND-2} version 2). <strong>After that
+ * catch-up, accrued-through no longer tells whether the interest landed in the period</strong>: {@link #blocking} reads
+ * empty while the locked period's income is short by exactly the floored amounts. So the reading only means "complete"
+ * when judged before any catch-up can floor into the next period - inside the lock's transaction, with the cutoff key
+ * held exclusive - or the close must also find the {@code LND-2} entries with {@code value_date <= period end <
+ * posting_date} (they carry {@code flooredFrom=}). Which of the two is `P14-TSK-011`'s design (the review of
+ * `P14-TSK-006`, finding I-1, 2026-10-31).
  *
  * <p><strong>Read-only</strong>, on the caller's unit of work: one statement per accruer and arm, each its own snapshot of
  * the servicing rows under READ COMMITTED - the close check runs it in {@code REPEATABLE READ READ ONLY} (C10), which

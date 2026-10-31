@@ -25783,6 +25783,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Definition of done**: `DOD-FIN`, `DOD-DOMAIN`. **Risk**: Medium. **Cx**: L.
 
 **P14-TSK-011 — The close run and its readiness checks** — `PLANNED`
+- **Routed by `P14-TSK-006`'s review (2026-10-31)**: (I-1, IMPORTANT) `ACCRUALS_COMPLETE` judged after the lock can pass while the locked period is short of interest - a catch-up after the lock floors the period's accrual dates (`LND-2` v2) to the first open date and `AccrualCompleteness.blocking(periodEnd)` then reads empty; judge it inside the lock's transaction with the cutoff key exclusive (and refuse the lock while it is non-empty), or find and disclose the `LND-2` entries with `value_date <= period end < posting_date` (they carry `flooredFrom=`) - decide in the design. (M-1) lending posts "today" on the servicing zone's business date (zones to -14:00): a lock under a 1-business-day grace at 00:00 UTC can refuse a western zone's same-day postings for hours - make `lockableFrom` account for the westernmost servicing zone or raise the grace minimum to 2 (default 2 is safe). (M-2) the reconciliation expectation reads the floored posting date while `ReconciliationReports.providerCosts` groups by the batch's stated `accepted_on` - align or disclose.
 - **Objective**: a resumable, leaderless run of recorded checks per locked period (`INV-ACC-09`, `PHASE_14_PLAN.md` §13.5).
 - **Bounded context**: Accounting / GL.
 - **Dependencies**: `-006`, `-009`, `-010`.
