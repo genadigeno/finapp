@@ -50,7 +50,10 @@ final class AccountingPeriodFixture {
     /** The machine judged on {@code clock} - the grace, the open - over the ledger's own cutoff API on the real clock. */
     static AccountingPeriods periods(Clock clock) {
         return new AccountingPeriods(STORE, new JdbcGlMappingStore(), new LedgerPostingCutoff(new PostingCutoffs(IDS, NOW)),
-                LockGrace.standard(), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, clock);
+                LockGrace.standard(), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, clock,
+                // P14-TSK-008: the unlock supersedes the period's FINAL report runs (accounting V004 refuses it otherwise).
+                (unitOfWork, period, actor, correlation) -> new com.finapp.accounting.JdbcReportRunStore()
+                        .supersedeFinal(unitOfWork, period, correlation));
     }
 
     static AccountingPeriods periods() {

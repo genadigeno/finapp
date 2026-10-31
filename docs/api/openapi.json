@@ -507,6 +507,111 @@
           }
         }
       },
+      "accounting.ReportDefinitionUnknown": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.ReportDefinitionUnknown"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.ReportDefinitionUnknown"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] No report definition of this code (or of the run's version) is held by this build; nothing was generated.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.ReportParametersInvalid": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.ReportParametersInvalid"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.ReportParametersInvalid"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The report parameters are not a bounded set of plain values the definition takes, or the valuation rate set is missing where the definition translates or given where it does not; nothing was claimed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.ReportRunStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.ReportRunStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.ReportRunStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The report run is not FINAL - generating, provisional, failed or superseded - or its period no longer holds the lock it was generated under; only a FINAL run is regenerated and compared.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.SelfApprovalRefused": {
         "content": {
           "application/problem+json": {
@@ -22971,6 +23076,127 @@
         },
         "type": "object"
       },
+      "ReportRegenerationView": {
+        "properties": {
+          "contentSha256": {
+            "type": "string"
+          },
+          "regeneratedSha256": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ReportRunContentView": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "run": {
+            "$ref": "#/components/schemas/ReportRunView"
+          }
+        },
+        "type": "object"
+      },
+      "ReportRunRequest": {
+        "properties": {
+          "definition": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "periodId": {
+            "maxLength": 36,
+            "minLength": 0,
+            "type": "string"
+          },
+          "valuationRateSetId": {
+            "maxLength": 36,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "definition",
+          "periodId"
+        ],
+        "type": "object"
+      },
+      "ReportRunView": {
+        "properties": {
+          "basis": {
+            "type": "string"
+          },
+          "claimedAt": {
+            "type": "string"
+          },
+          "completedAt": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string"
+          },
+          "definition": {
+            "type": "string"
+          },
+          "definitionVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "failure": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "mappingVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodId": {
+            "type": "string"
+          },
+          "periodRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "revision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "supersededAt": {
+            "type": "string"
+          },
+          "valuationRateSetId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ReprocessingReceipt": {
         "properties": {
           "itemCount": {
@@ -32146,6 +32372,105 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PostingRuleRegisterView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/report-runs": {
+      "post": {
+        "operationId": "generateReportRun",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportRunView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/report-runs/{runId}": {
+      "get": {
+        "operationId": "readReportRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportRunContentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/report-runs/{runId}/regeneration": {
+      "post": {
+        "operationId": "regenerateReportRun",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportRegenerationView"
                 }
               }
             },

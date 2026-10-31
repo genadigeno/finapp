@@ -758,6 +758,10 @@ class CredentialReachesNoEmittedSinkTest {
                         // P14-TSK-005: the period doors' body - a REASON alone (optional for the lock), screened at the
                         // domain (AccountingReasons).
                         "AccountingPeriodActRequest",
+                        // P14-TSK-008: the report run generation's body - a definition's code, a period's id, plain
+                        // bounded parameters screened for card-number and account shapes at the domain (RunParameters)
+                        // and a valuation rate set's id; no reason, no person's data.
+                        "ReportRunRequest",
                         // P14-TSK-010: the break doors' bodies. No secret: a disclosure and REASONs screened for
                         // card-number and account shapes at the domain (AccountingReasons), and a journal entry's id.
                         "BreakAcknowledgementProposal",

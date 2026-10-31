@@ -30,7 +30,8 @@ class AccountingBreakMigrationTest {
     private static final List<String> EARLIER = List.of(
             "db/migration/accounting/V001__initialise_accounting_schema.sql",
             "db/migration/accounting/V002__the_gl_chart_and_mapping_as_versioned_data.sql",
-            "db/migration/accounting/V003__accounting_periods_open_lock_unlock.sql");
+            "db/migration/accounting/V003__accounting_periods_open_lock_unlock.sql",
+            "db/migration/accounting/V004__report_runs_immutable_reproducible.sql");
 
     @Test
     @DisplayName("born once per (period, check, subject) - the constraint the store's insert-if-absent names")

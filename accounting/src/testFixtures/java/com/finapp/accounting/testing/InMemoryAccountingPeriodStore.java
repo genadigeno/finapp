@@ -25,6 +25,8 @@ public final class InMemoryAccountingPeriodStore implements AccountingPeriodStor
     private final TreeMap<YearMonth, PeriodRow> rows = new TreeMap<>();
     private final List<EventRow> history = new ArrayList<>();
     private int rowLocks;
+    /** Each lock's own stamp, as the database's clock_timestamp() would give it (`P14-TSK-008`: a lock instance). */
+    private long lockInstances;
 
     /** The history, in order. */
     public List<EventRow> history() {
@@ -123,7 +125,8 @@ public final class InMemoryAccountingPeriodStore implements AccountingPeriodStor
             throw new IllegalStateException("accounting_period_one_in_close");
         }
         rows.put(row.month(), new PeriodRow(id, row.month(), PeriodStatus.LOCKED, revision, row.openedAt(),
-                Optional.of(Instant.EPOCH), pin, Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()));
+                Optional.of(Instant.EPOCH.plusMillis(++lockInstances)), pin, Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty()));
         return true;
     }
 

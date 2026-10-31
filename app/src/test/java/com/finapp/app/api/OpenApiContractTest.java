@@ -535,6 +535,11 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/gl/balances",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/gl/accounts/{code}/activity",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/gl/entries/{entryId}",
+                        // P14-TSK-008: the report runs - generated and regenerated (ACCOUNTING_REPORT_GENERATE, keyed),
+                        // read with their content (ACCOUNTING_READ, audited).
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/report-runs",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/report-runs/{runId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/report-runs/{runId}/regeneration",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",
