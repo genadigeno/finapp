@@ -38,7 +38,8 @@ public class ReportRunController {
 
     /**
      * Generates the run answering a definition for a period and parameters - or answers the run that already does: its
-     * status GENERATING (another request holds it), FINAL, PROVISIONAL or FAILED (a new request asks a new revision).
+     * status GENERATING (another request holds it), FINAL, PROVISIONAL (reused within its freshness window, `P14-TSK-009`)
+     * or FAILED (a new request asks a new revision).
      */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_REPORT_GENERATE)

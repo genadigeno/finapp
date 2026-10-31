@@ -155,7 +155,7 @@ class ReportGenerationTest {
 
     /** A generation over {@code periods} with a budget no stand-in here comes near. */
     private static ReportGeneration generationOver(ReportGeneration.PeriodStates periods) {
-        return new ReportGeneration(periods, java.time.Duration.ofMinutes(1));
+        return new ReportGeneration(periods, java.time.Duration.ofMinutes(1), System::nanoTime);
     }
 
     private static ReportGeneration.PeriodStates locked(Instant at) {

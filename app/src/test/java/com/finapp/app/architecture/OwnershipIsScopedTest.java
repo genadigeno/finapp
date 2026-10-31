@@ -2011,6 +2011,27 @@ class OwnershipIsScopedTest {
                                         + " run pinned at its claim - the lock it was claimed under; a calendar month of"
                                         + " the platform's books, no owner to scope by.")),
                     Map.entry(
+                            "com.finapp.accounting.JdbcReportRunStore.cutWithin",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-009. The id comes only from the latest run the claim read at its own key"
+                                        + " under the period FOR SHARE; a freshness read on the database's clock, no"
+                                        + " owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.app.accounting.LedgerTrialBalanceReads.period",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-009. The trial balance's own period, read in the run's read-only snapshot"
+                                        + " by the id the run pinned at its claim - its bounds, status and pin; a"
+                                        + " calendar month of the platform's books, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.app.accounting.LedgerTrialBalanceReads.ledger",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-009. The ledger's own totals over the windows of the period the run pinned"
+                                        + " at its claim, its bounds read from that period's row - whole-journal"
+                                        + " aggregates of the platform's books, no owner to scope by.")),
+                    Map.entry(
                             "com.finapp.risk.JdbcDecisionOverrideStore.find",
                             new Entry(
                                     Scope.ADMINISTERED,

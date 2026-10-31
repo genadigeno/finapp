@@ -62,6 +62,12 @@ public interface ReportRunStore {
     /** Every {@code FINAL} run of the period -> {@code SUPERSEDED}; how many. */
     int supersedeFinal(Connection unitOfWork, AccountingPeriodId period, CorrelationId correlation);
 
+    /**
+     * Whether the run's cut is younger than {@code window} on the database's clock - a completed PROVISIONAL run's
+     * freshness (`P14-TSK-009`, `ReportRuns.Provisional`); {@code false} for no such run.
+     */
+    boolean cutWithin(Connection unitOfWork, ReportRunId id, Duration window);
+
     // ------------------------------------------------------------------ rows
 
     /** The plan's run key less its revision: one question. */

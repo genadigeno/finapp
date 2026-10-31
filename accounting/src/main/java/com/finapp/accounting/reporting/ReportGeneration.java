@@ -101,12 +101,10 @@ public final class ReportGeneration {
      * @param periods how the run's period is read in the snapshot
      * @param budget the whole generation's time - the configuration holds it below the generator's lease
      *     ({@code ReportRuns.Leases})
+     * @param ticker a monotonic nanosecond clock - injected by the composition root, moved by a suite; never read here
+     *     from the environment (`NoAmbientTimeRulesTest`: the two-argument form that defaulted it to
+     *     {@code System::nanoTime} was removed at `P14-TSK-009`'s gate)
      */
-    public ReportGeneration(PeriodStates periods, Duration budget) {
-        this(periods, budget, System::nanoTime);
-    }
-
-    /** As above, on {@code ticker} - a monotonic nanosecond clock a suite can move. */
     public ReportGeneration(PeriodStates periods, Duration budget, LongSupplier ticker) {
         this.periods = Objects.requireNonNull(periods, "periods");
         this.budget = Objects.requireNonNull(budget, "budget");

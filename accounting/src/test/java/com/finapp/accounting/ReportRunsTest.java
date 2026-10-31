@@ -71,7 +71,8 @@ class ReportRunsTest {
     private final List<EventEnvelope> events = Collections.synchronizedList(new ArrayList<>());
     private final List<byte[]> payloads = Collections.synchronizedList(new ArrayList<>());
     private final ReportGeneration generation = new ReportGeneration((snapshot, id) -> periodStore.find(snapshot, id)
-            .map(row -> new ReportGeneration.PeriodState(row.status(), row.lockedAt())), Duration.ofMinutes(4));
+            .map(row -> new ReportGeneration.PeriodState(row.status(), row.lockedAt())), Duration.ofMinutes(4),
+            System::nanoTime);
 
     @Test
     @DisplayName("a claim is born once and read back: the second claimer answers the same run, neither born nor held")
@@ -317,8 +318,8 @@ class ReportRunsTest {
     }
 
     @Test
-    @DisplayName("an open period's generating run answers concurrent claimers; a completed PROVISIONAL run does not - a"
-            + " later ask is a new snapshot")
+    @DisplayName("an open period's generating run answers concurrent claimers; a completed PROVISIONAL run does not once"
+            + " its freshness window has passed (P14-TSK-009) - a later ask is a new snapshot")
     void aCompletedProvisionalIsANewSnapshot() {
         AccountingPeriodId october = lockedSeptemberAndOctober();
         ReportRunStore.RunRow first = runs().claim(UOW, TestReportDefinition.CODE, october, probe("p"), ACCOUNTANT,
@@ -326,6 +327,7 @@ class ReportRunsTest {
         assertThat(runs().claim(UOW, TestReportDefinition.CODE, october, probe("p"), CONTROLLER, correlation()).run()
                 .id()).isEqualTo(first.id());
         complete(first);
+        clock.advance(ReportRuns.Provisional.STANDARD.freshness().plusSeconds(1));
         ReportRuns.Claimed later = runs().claim(UOW, TestReportDefinition.CODE, october, probe("p"), ACCOUNTANT,
                 correlation());
         assertThat(later.born()).isTrue();
@@ -564,6 +566,11 @@ class ReportRunsTest {
         @Override
         public int supersedeFinal(Connection unitOfWork, AccountingPeriodId period, CorrelationId correlation) {
             return store.supersedeFinal(unitOfWork, period, correlation);
+        }
+
+        @Override
+        public boolean cutWithin(Connection unitOfWork, ReportRunId id, Duration window) {
+            return store.cutWithin(unitOfWork, id, window);
         }
     }
 
