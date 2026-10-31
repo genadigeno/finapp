@@ -24,7 +24,6 @@ import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTag;
 import com.tngtech.archunit.junit.ArchTest;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayDeque;
@@ -33,7 +32,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Predicate;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -212,9 +210,11 @@ class ReportingNeverWritesTest {
     @Test
     @DisplayName("a report class reaching a connection of its own - a DataSource or the DriverManager - is refused")
     void aWritablePathIsRefused() {
-        assertThat(plantedViolations(PlantedReportDataSource.class, DataSource.class))
+        assertThat(plantedViolations(ReportingWritablePathProbes.PlantedReportDataSource.class,
+                ReportingWritablePathProbes.DATA_SOURCE))
                 .singleElement().asString().contains("javax.sql.DataSource");
-        assertThat(plantedViolations(PlantedReportDriverManager.class, DriverManager.class))
+        assertThat(plantedViolations(ReportingWritablePathProbes.PlantedReportDriverManager.class,
+                ReportingWritablePathProbes.DRIVER_MANAGER))
                 .singleElement().asString().contains("java.sql.DriverManager");
     }
 
@@ -340,18 +340,6 @@ class ReportingNeverWritesTest {
     static class PlantedReportStatement {
         boolean run(Connection snapshot) throws SQLException {
             return snapshot.createStatement().executeQuery("SELECT 1").next();
-        }
-    }
-
-    /** A report class holding a data source - a connection of its own. */
-    static class PlantedReportDataSource {
-        DataSource pool;
-    }
-
-    /** A report class opening a connection of its own through the DriverManager. */
-    static class PlantedReportDriverManager {
-        Connection open(String url) throws SQLException {
-            return DriverManager.getConnection(url);
         }
     }
 

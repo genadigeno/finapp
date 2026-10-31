@@ -25744,7 +25744,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   `#theEntryViewMapsEveryLine`, `#theMonthIsInclusiveOfItsLastDayOnly`, `#twoLinesOfOneEntryPageByLineOrder`,
   `#sameDateEntriesPageInIdOrder`, `#aStatementPastTheBoundIsCancelled`).
 
-**P14-TSK-008 — Report runs: immutable, reproducible** — `COMPLETE` (2026-10-31; wave D beside `-007` and `-014`, branch `P14-TSK-008` from master `18c4935c`, master `9e1497f2` (`-007`) merged in; accounting `V004`; **M14.3 at 2 of 3** (with `-007`); marks no task `READY` — the coordinator does) *(read "`READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)" until this task's gate)*
+**P14-TSK-008 — Report runs: immutable, reproducible** — `COMPLETE` (2026-10-31; wave D beside `-007` and `-014`, branch `P14-TSK-008` from master `18c4935c`, master `54d0986e` (`-007`'s merge) merged in; accounting `V004`; **M14.3 at 2 of 3** (with `-007`); marks no task `READY` — the coordinator does) *(read "`READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)" until this task's gate)*
 - **Objective**: the report-run machinery every report uses (ADR-0115, `INV-ACC-04`).
 - **Bounded context**: Reporting (27).
 - **Dependencies**: `-005`.
@@ -25794,7 +25794,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   summary gains `supersededRuns=N`). `app`: `JdbcReportSnapshots` (a separate pooled connection, `SET TRANSACTION
   ISOLATION LEVEL REPEATABLE READ, READ ONLY` first, proven by `current_setting` before any read, always rolled back),
   `ReportRunGenerator` (T-report's legs; the failures sorted; the snapshot's own failure leaves the run to its lease;
-  `completeOrphaned(limit)`, the callable `-011` schedules; `regenerate`), `ReportRunDesk` / `ReportRunController`
+  `completeOrphaned(limit, actor)`, the callable `-011` schedules under its system scope; `regenerate`), `ReportRunDesk` / `ReportRunController`
   (`POST /v1/operator/accounting/report-runs` keyed, the stored response the run's id, never the content;
   `GET …/{runId}` audited `accounting.ReportRead` before it is served; `POST …/{runId}/regeneration` keyed, `IDENTICAL |
   DIVERGED`, audited `accounting.ReportRegenerated`), `ReportRunMetrics` (`finapp.accounting.report.run{definition,
@@ -25811,6 +25811,35 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   `#regenerationIsIdentical`, `#aDeadGeneratorIsReclaimed`, `#contentIsFrozen` - plus `#tenClaimersOneRun`,
   `#aDivergenceIsDetectedAndNeverRepaired`, `#anUnlockSupersedesTheFinalRuns`, `#anOpenPeriodGetsAProvisionalRun`,
   `#theDatabaseVerifiesTheHash`) and `AccountingMigrationTest`'s census.
+- **As built - the independent review's fixes** (2026-10-31, before the merge; branch head after master `54d0986e`):
+  **I-1** the generation bounded below its lease - `ReportRuns.Leases` gains `generationTimeout`
+  (`finapp.accounting.report.generation-timeout`, default 4 minutes, refused unless it leaves a fifth of the lease);
+  `JdbcReportSnapshots` arms it as the snapshot's `statement_timeout` (`set_config(..., true)`, the `GlSnapshots` idiom)
+  and the definition's view re-arms it to what is left before every statement; a spent budget or a cancelled statement
+  (`57014`) is `ReportGeneration.GenerationTimedOut` -> the run `FAILED` `GENERATION_TIMED_OUT` (a new `RunFailure`, V004's
+  list fixed in place), never `DEFINITION_FAILED`; a regeneration past it answers `accounting.ReadTimedOut` 503 and records
+  nothing under its key. **I-2** a definition is handed `reporting.ReadOnlySnapshot`'s view, never the raw connection:
+  single `SELECT`/`WITH` statements (no `;`, none of `set_config`, `pg_advisory*`, `pg_notify`, `pg_sleep`, `dblink`,
+  `lo_*`), executed by `executeQuery()` only; every connection mutator, plain or callable statement, statement or
+  result-set write and `unwrap` refused; `ReportingNeverWritesTest` now refuses `javax.sql.DataSource`,
+  `java.sql.DriverManager` and the `Connection` mutators (`setAutoCommit`, `setReadOnly`, `setTransactionIsolation`,
+  `commit`, `rollback`, `setSavepoint`, `releaseSavepoint`, `abort`, `setSchema`, `setCatalog`, `createStatement`,
+  `prepareCall`) in report code, with planted probes (the `DataSource` and `DriverManager` ones in the non-test holder
+  `ReportingWritablePathProbes`: `TestTaxonomyTest` folds a suite's nested classes into its tier and reads either as
+  acquiring a database). **M-1** past the attempts' bound, a failure that moved nothing re-reads
+  the run and answers it if it still answers - no second FINAL run. **M-2** the unlock supersedes under the period's
+  `FOR UPDATE` before the cutoff moves; V004's content checks (bounded, a JSON object, the hash its own) moved from `CHECK`s
+  to the completion edge, the freeze firing only for an `UPDATE` naming the content, its hash or its completion - a
+  supersession never re-reads 8 MB. **M-5** the regeneration looks its key up first (`IdempotentExecutor.begin` /
+  `complete`): a replay opens no snapshot; a refusal the run decides is stored and replayed as itself. **M-9** the records
+  corrected (the lock order, `completeOrphaned(limit, actor)`, `BOUNDED_CONTEXTS.md`, the merge's parent `54d0986e`).
+  Owed cases added: `ReportRunDatabaseTest#anUnlockRacingAFinalClaim`, `#anUnlockRacingACompletion` (both orders, separate
+  connections), `#aGenerationPastItsBoundTimesOut`. Hermetic: `ReadOnlySnapshotTest` (6), `ReportRunsTest` +3,
+  `ReportRunDeskTest` +2, `JdbcReportSnapshotsTest` +1, `ReportingNeverWritesTest` +3. Eight probes (`MUTATION_TESTING.md`
+  §2). **Routed by the coordinator, not built here**: M-3 (no event or per-run audit record at `FINAL -> SUPERSEDED`) ->
+  `P14-TSK-012`; M-4 (`locked_at` kept by trigger through the close) -> `P14-TSK-012`; M-6 (the orphan leg completes one run
+  at a time) -> `P14-TSK-011`; M-7 (the failure classification of a snapshot's own failure) -> `P14-TSK-011`; M-8 (the
+  PROVISIONAL cut's label, and PROVISIONAL revisions unbounded) -> `P14-TSK-009`, and an owner item.
 
 **P14-TSK-009 — The period trial balance** — `PLANNED`
 - **Objective**: per GL account × currency opening, debits, credits, closing for a period; zero per currency; equal to the

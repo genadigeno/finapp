@@ -125,7 +125,7 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " completed FINAL (a period no longer OPEN, under the lock it was claimed in) or PROVISIONAL (an OPEN"
                     + " period) with its content and content_sha256 in one conditional edge - recorded SUCCEEDED with"
                     + " accounting.ReportRunCompleted in the same commit - or failed with a closed code (DEFINITION_UNKNOWN,"
-                    + " DEFINITION_FAILED, PERIOD_MOVED, CONTENT_INVALID, ATTEMPTS_EXHAUSTED) - recorded FAILED. Its target"
+                    + " DEFINITION_FAILED, PERIOD_MOVED, CONTENT_INVALID, ATTEMPTS_EXHAUSTED, GENERATION_TIMED_OUT) - recorded FAILED. Its target"
                     + " the run; the summary its definition, version, period, revision and basis with the status or the"
                     + " failure code - never a figure or the content.",
             false),

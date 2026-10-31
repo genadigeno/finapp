@@ -67,7 +67,7 @@ the snapshot and a FINAL run whose lock moved is `PERIOD_MOVED`. **Completion** 
 and hash, with `accounting.ReportGenerated` and `accounting.ReportRunCompleted` in the same commit. **The lease**: a
 generator holds the run at its attempt; past `lease_until` (database clock, default 5 minutes) any instance reclaims it by
 the conditional `attempt + 1` - never a second run; the dead attempt's completion moves nothing; past the bound (default
-5) the run fails `ATTEMPTS_EXHAUSTED`. The orphan leg is the callable `ReportRunGenerator.completeOrphaned(limit)`
+5) the run fails `ATTEMPTS_EXHAUSTED`. The orphan leg is the callable `ReportRunGenerator.completeOrphaned(limit, actor)`
 (`FOR UPDATE SKIP LOCKED` + the reclaim); `P14-TSK-011` schedules it.
 
 **Three corrections, recorded.** (1) **The content is stored as its canonical text, not `jsonb`**: `jsonb` re-orders and
@@ -91,6 +91,21 @@ set's table is `P14-TSK-014`'s `V005`, landing after) and is a hashed parameter 
 counted `finapp.accounting.report.diverged`, never repaired). `P14-TSK-012`'s close must keep `locked_at` through
 `CLOSE_PROPOSED` and `CLOSED` (V003's `accounting_period_lock_coherent` already requires it): it is the lock instance a
 FINAL run reproduces under.
+
+**The independent review's fixes** (2026-10-31, before the merge). *I-1 - a time bound*: a lease cannot be renewed, so a
+generation that outlived it would be overtaken by its own reclaim at every attempt; the generation is now bounded below
+the lease - `finapp.accounting.report.generation-timeout` (default 4 minutes; refused unless it leaves a fifth of the
+lease) is armed as the snapshot's `statement_timeout` and re-armed to what is left before every statement, and a spent
+budget or a cancelled statement (`57014`) fails the run `GENERATION_TIMED_OUT`, inside its lease. *I-2 - the write paths
+closed*: a definition is handed a `ReadOnlySnapshot` view, not the raw connection - single `SELECT`/`WITH` statements
+only (no `;`, no `set_config`, `pg_advisory*`, `pg_notify`, `pg_sleep`, `dblink`, `lo_*`), executed by
+`executeQuery()` only, every connection mutator, plain or callable statement, statement or result write and `unwrap`
+refused; `ReportingNeverWritesTest` refuses `DataSource`, `DriverManager` and the `Connection` mutators in report code.
+*M-1*: past the attempts' bound, a failure that moved nothing re-reads the run and returns it if it still answers - never
+a second FINAL run. *M-2*: the unlock supersedes before the cutoff moves, under the period's `FOR UPDATE`, and the content
+checks (bounded, a JSON object, the hash its own) run at the completion edge instead of as `CHECK`s every later `UPDATE`
+would re-run; the freeze fires only for an `UPDATE` naming the content, its hash or its completion. *M-5*: the
+regeneration looks its key up first (the platform's two-transaction command), so a replay opens no snapshot.
 
 ## Follow-up
 
