@@ -25795,7 +25795,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Acceptance criteria**: every locked period has a FINAL trial balance zero per currency and equal to the ledger.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Low. **Cx**: S.
 
-**P14-TSK-010 — Rule conformance, source completeness and accounting breaks** — `READY` (2026-10-31; marked by the coordinator at `P14-TSK-007`'s merge, master `9e1497f2`; every dependency `COMPLETE`)
+**P14-TSK-010 — Rule conformance, source completeness and accounting breaks** — `IN_PROGRESS` (2026-10-31; designed in wave D beside `-008` and `-014`, branch `P14-TSK-010` from master `54d0986e`; accounting `V006`) *(read "`READY` (2026-10-31; marked by the coordinator at `P14-TSK-007`'s merge, master `9e1497f2`; every dependency `COMPLETE`)" until its design)*
 - **Objective**: detect every GL-side discrepancy and record it once, never correct it (ADR-0117, `INV-ACC-12`).
 - **Bounded context**: Accounting / GL; reads reconciliation's proofs and the product proofs.
 - **Dependencies**: `-002`, `-007`.
