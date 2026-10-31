@@ -25841,7 +25841,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   at a time) -> `P14-TSK-011`; M-7 (the failure classification of a snapshot's own failure) -> `P14-TSK-011`; M-8 (the
   PROVISIONAL cut's label, and PROVISIONAL revisions unbounded) -> `P14-TSK-009`, and an owner item.
 
-**P14-TSK-009 — The period trial balance** — `READY` (2026-10-31; marked by the coordinator at `P14-TSK-008`'s merge, master `8c53f760`; every dependency `COMPLETE`)
+**P14-TSK-009 — The period trial balance** — `IN_PROGRESS` (2026-10-31; design done, branch `P14-TSK-009` from master `ddcb45cd`) *(read "`READY` (2026-10-31; marked by the coordinator at `P14-TSK-008`'s merge, master `8c53f760`; every dependency `COMPLETE`)" until this task's design)*
 - **Objective**: per GL account × currency opening, debits, credits, closing for a period; zero per currency; equal to the
   ledger.
 - **Bounded context**: Reporting / Accounting.
