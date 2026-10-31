@@ -339,7 +339,8 @@ class ValuationRateSetsTest {
             }
         };
         return new AccountingPeriods(periodStore, mappings, cutoff, LockGrace.standard(), (unitOfWork, record) -> { },
-                (unitOfWork, envelope, payload, mediaType) -> { }, IDS, clock);
+                (unitOfWork, envelope, payload, mediaType) -> { }, IDS, clock,
+                (unitOfWork, period, actor, correlation) -> 0);
     }
 
     private AccountingPeriodId open(YearMonth month) {

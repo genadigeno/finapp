@@ -25678,7 +25678,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   records its entry, whose posting date is the one used (persistence none). Hermetic tests named in `CURRENT_STATE.md`;
   owed (C5): `PostingFloorDatabaseTest` (6: `#aFlooredPostingDatedIntoALockPostsOnTheFirstOpenDate`, `#aTimelyFlooredPostingKeepsItsDate`, `#aReplayAcrossALockConvergesOnTheFirstPosting`, `#tenFlooredPostersAndALockRefuseNothing`, `#aManualAdjustmentDatedIntoALockIsRefusedAtApprovalAndStaysProposed`, `#aReconciliationAdjustmentDatedIntoALockIsRefusedAtApprovalAndStaysProposed`), `LoanAccrualCutoffDatabaseTest` (4: `#aCatchUpAcrossALockPostsInTheOpenPeriod` - both orders of row 11 - `#aCatchUpAfterALockFloorsOnlyTheLockedDates`, `#aTimelyAccrualKeepsItsDate`, `#theOldestUnaccruedDateIsReadPerCurrency`), `BatchAcceptanceDatabaseTest#anAcceptanceDatedIntoALockPostsOnTheFirstOpenDate`, `PayoutReturnDatabaseTest#aReturnFromALockedPeriodsBatchPostsOnTheFirstOpenDate`, `ResolutionMachineDatabaseTest#aWriteOffDatedIntoALockIsRefusedAtApprovalAndStaysProposed` and `#aManualMatchApprovedAfterALockFloorsItsSuspenseEntry`, `BnplAccrualDatabaseTest#theOldestUnaccruedDateIsReadPerCurrency` - 15 cases. Unblocks no task by itself: `P14-TSK-011` now waits on `-009` and `-010` only.
 
-**P14-TSK-007 — The GL read model and drill-down** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)
+**P14-TSK-007 — The GL read model and drill-down** — `COMPLETE` (2026-10-31; built and gated in wave D beside `-008` and `-014`; branch `P14-TSK-007` from master `18c4935c`; ledger `V029`; **M14.3 at 1 of 3**; marks no task `READY` — the coordinator does) *(read "`READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)" until this task's gate)*
 - **Objective**: GL balances and activity by period, account and currency, computed from journal lines under the pinned
   version, each figure drilling to its lines (`INV-ACC-02`, `-06`).
 - **Bounded context**: Accounting / GL.
@@ -25702,8 +25702,49 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: double-count a purpose → `#glEqualsLedgerPerCurrency` red.
 - **Acceptance criteria**: every figure equals the sum of its drill-down lines; GL = ledger per currency.
 - **Definition of done**: `DOD-FIN`, `DOD-API`. **Risk**: Medium (query cost). **Cx**: M.
+- **As built** (2026-10-31): ledger `V029` - `journal_entry_by_posting_date` on `journal_entry (posting_date, id)`, in the
+  migration's transaction (no production journal yet; a live one would take a non-transactional `CONCURRENTLY` build),
+  nothing else changed. **Port** `JournalReads` (accounting, its first methods): `aggregates` (lines summed per purpose,
+  owner kind, counterparty, currency, scale, side over a `Range` of at most 366 days), `totals` (the ledger's own per
+  currency, scale and side - no account join), `lines` (a keyset page, `LineCursor` posting date / entry id / seq in
+  PostgreSQL's unsigned uuid order, 1-500), `entry`, `countLines`; `app`'s `LedgerJournalReads` answers it with `SELECT`s
+  only (never the entry's `reference`, reason or actor; lines carry owner references). **Fold** `GeneralLedger` in
+  `com.finapp.accounting.reporting` (the first report code `ReportingNeverWritesTest` guards - its census now asserts it):
+  `GlFigure` (a period's movement per GL account x currency - debits, credits, `netMovement` on the normal side, lines,
+  components by purpose / owner kind / counterparty, **its version**), `GlBalances` (figures, an explicit unmapped bucket,
+  `Agreement` per currency - GL, unmapped and ledger debits, credits and lines), `GlActivity` (the figure and one page,
+  the page checked against the figure's selection and its cursor inside the period), `GlEntry`, `PinnedMapping`.
+  **Version** `GlPins` (+ `JdbcPeriodPins`, a plain read): a non-`OPEN` period's pin, else the version in force; none - or
+  a period locked with no version - `accounting.NoActiveMapping` 409. **Doors** `GeneralLedgerController` /
+  `GeneralLedgerDesk` (`ACCOUNTING_READ`): `GET /v1/operator/accounting/gl/balances`, `…/gl/accounts/{code}/activity`,
+  `…/gl/entries/{entryId}`; one verified, bounded `REPEATABLE READ READ ONLY` snapshot per request (`GlSnapshots`: a
+  connection of its own, the settings read back by the first statement - fail closed - `statement_timeout` armed by the
+  second, `finapp.accounting.gl.statement-timeout`, 10 s; a cancelled statement `accounting.ReadTimedOut` 503; always
+  rolled back); `accounting.GlRead` recorded in its own transaction before the answer; a cursor outside the period 422.
+  `finapp.accounting.gl.unmapped` fed (`GlMappingGap` + `AccountingMappingMetrics`, on the same bounded snapshot: the open
+  period's lines the active version does not map, 0 without a journal read under a total version, cached 60 s). Wiring in
+  `GeneralLedgerBeans` (the module's parallel tasks each add theirs). **Clarifications, recorded**: "balances" are the
+  period's movement (`netMovement`) - opening and closing are the trial balance's (`-009`), so a live read never
+  re-aggregates from inception; the version is read through the period's pin (equal to the version in force by
+  construction); the pages of an `OPEN` period are separate snapshots, so only a locked period's pages are its whole
+  figure. **The independent review's fixes** (`MERGE`, fixed before it): I-1 the entry's `reference` dropped from the entry
+  view - `RESTRICTED-FINANCIAL`, and free text on a `MANUAL` adjustment (`AdjustmentRequest` checks only its size), so a
+  name could reach every accountant; whether a later task serves it, and under what control, is an owner item; I-2 the
+  statement timeout and `accounting.ReadTimedOut`; M-1 the guard's census; M-2 the cursor's date range-checked (422); M-5
+  `balance` renamed `netMovement`; M-3, M-4, M-8 the javadoc and audit description; M-7 the owed suite's bound, tie-break
+  and id-order cases. **M-6 routed** to `-009` and `P14-TST-002`: GL = ledger cannot catch a wrong range bound - both
+  sides read the same range - so the trial balance's comparison and the battery's oracle own it. Tests: hermetic
+  `GeneralLedgerTest` (10: `#everyLineMapsOnce`, `#glEqualsLedgerPerCurrency`, `#aFigureDrillsToItsLines`,
+  `#anUnmappedLineIsCountedNeverDropped`, `#everyFigureNamesItsVersion`, `#aCursorOutsideThePeriodIsRefused`, ...),
+  `GlPinsTest` (4), `GlMappingGapTest` (4), `JournalReadsTest` (5), `LedgerPostingDateIndexMigrationTest` (3),
+  `GeneralLedgerDeskTest` (10), `GlSnapshotsTest` (5), `LedgerJournalReadsTest` (3), `AccountingMappingMetricsTest` (4);
+  sixteen probes in `MUTATION_TESTING.md` §2 (the entry's: a purpose double counted → `GeneralLedgerTest#glEqualsLedgerPerCurrency`
+  red); owed (C5) `GlReadModelDatabaseTest` (10: `#everyLineMapsOnce`, `#aFigureDrillsToItsLines`,
+  `#glEqualsLedgerPerCurrency`, `#aGlReadCannotWrite`, `#theMonthReadUsesThePostingDateIndex`,
+  `#theEntryViewMapsEveryLine`, `#theMonthIsInclusiveOfItsLastDayOnly`, `#twoLinesOfOneEntryPageByLineOrder`,
+  `#sameDateEntriesPageInIdOrder`, `#aStatementPastTheBoundIsCancelled`).
 
-**P14-TSK-008 — Report runs: immutable, reproducible** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)
+**P14-TSK-008 — Report runs: immutable, reproducible** — `COMPLETE` (2026-10-31; wave D beside `-007` and `-014`, branch `P14-TSK-008` from master `18c4935c`, master `54d0986e` (`-007`'s merge) merged in; accounting `V004`; **M14.3 at 2 of 3** (with `-007`); marks no task `READY` — the coordinator does) *(read "`READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)" until this task's gate)*
 - **Objective**: the report-run machinery every report uses (ADR-0115, `INV-ACC-04`).
 - **Bounded context**: Reporting (27).
 - **Dependencies**: `-005`.
@@ -25729,8 +25770,78 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: drop the freeze trigger → `#contentIsFrozen` red.
 - **Acceptance criteria**: FINAL runs regenerate `IDENTICAL`; no write possible during generation.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`. **Risk**: Medium. **Cx**: M.
+- **As built** (2026-10-31): accounting `V004`: `report_run` - the plan's key verbatim `report_run_key UNIQUE
+  (definition, definition_version, period_id, revision, parameters_hash)` with `revision` the **run's** own (1, then one
+  more each time the latest run no longer answers its question - `FAILED`, `SUPERSEDED`, a completed PROVISIONAL
+  snapshot, the other basis) and `period_revision` an input; `basis`, `period_locked_at` (the lock a FINAL run read
+  under), `mapping_version_id` (the lock's pin for FINAL, the version in force for PROVISIONAL), `valuation_rate_set_id`
+  **uuid NULL with no foreign key** (`-014`'s table lands after; a hashed parameter of the question by `CHECK`) *(keyed by `P14-TSK-014`'s `V005` at its integration, 2026-10-31: `report_run_valuation_rate_set_fk`)*, `cut_at`,
+  the requester, `attempt` and `lease_until`, `content` + `content_sha256` + `completed_at` (whole or absent), the failure
+  code, the supersession; the content and parameters hashes **recomputed by the database**; triggers
+  `report_run_content_is_frozen` (the freeze, its own, firing first), `report_run_permits_only_machine_edges` (birth
+  coherent with the period - FINAL only under its present lock and pin, PROVISIONAL only for `OPEN`; the reclaim only
+  past the lease; a FINAL completion only under the claimed lock, the period `FOR SHARE`; `FINAL -> SUPERSEDED`; no
+  delete), `report_run_is_never_truncated`, and on `accounting_period` `accounting_period_reopens_with_its_runs_superseded`;
+  grants `SELECT, INSERT` + the machine's and output's columns. Code (`accounting`): `reporting.CanonicalJson` (sorted
+  keys in UTF-16 order, no whitespace, no JSON number - amounts as minor units in strings - ECMAScript escaping;
+  `U+0000` and unpaired surrogates refused), `RunParameters`, `ReportDefinition` / `ReportDefinitions` (code + version,
+  every version kept), `ReportInputs`, `ReportGeneration` (the lock re-read in the snapshot, the header binding every
+  pinned input to the body); `ReportRuns` (claim - period `FOR SHARE`, insert-or-read; `takeOver`, `reclaimExpired` - the
+  orphan leg's reclaim, `ATTEMPTS_EXHAUSTED` past the bound; `complete` - period `FOR SHARE`, `PERIOD_MOVED`, one
+  conditional edge, `accounting.ReportGenerated` + `accounting.ReportRunCompleted`; `fail`; `supersedeFinal`),
+  `ReportRunStore` / `JdbcReportRunStore` (the conditional statements pinned), `RunBasis`, `RunFailure`, `ReportRunId`,
+  `ReportRunSupersession`; `AccountingPeriods.approveUnlock` supersedes the period's FINAL runs before its edge (its audit
+  summary gains `supersededRuns=N`). `app`: `JdbcReportSnapshots` (a separate pooled connection, `SET TRANSACTION
+  ISOLATION LEVEL REPEATABLE READ, READ ONLY` first, proven by `current_setting` before any read, always rolled back),
+  `ReportRunGenerator` (T-report's legs; the failures sorted; the snapshot's own failure leaves the run to its lease;
+  `completeOrphaned(limit, actor)`, the callable `-011` schedules under its system scope; `regenerate`), `ReportRunDesk` / `ReportRunController`
+  (`POST /v1/operator/accounting/report-runs` keyed, the stored response the run's id, never the content;
+  `GET …/{runId}` audited `accounting.ReportRead` before it is served; `POST …/{runId}/regeneration` keyed, `IDENTICAL |
+  DIVERGED`, audited `accounting.ReportRegenerated`), `ReportRunMetrics` (`finapp.accounting.report.run{definition,
+  outcome}`, `finapp.accounting.report.diverged{definition}`, eager per definition held; `definition` added to
+  `MetricNames.ALLOWED_TAG_KEYS`). Codes `accounting.ReportDefinitionUnknown` 422, `ReportParametersInvalid` 422,
+  `ReportRunStale` 409. Production holds **no definition** (`-009` is the first): every generation answers
+  `ReportDefinitionUnknown` until then; the machinery is proven with the test-only `TestReportDefinition`.
+  **Corrections, recorded** (ADR-0115 As built, `PHASE_14_PLAN.md` §6, §9): content stored as its **canonical text**
+  (DB-verified hash, the issued bytes retained) instead of `jsonb`; the **unlock supersedes** FINAL runs (the plan had
+  only the reopen) with the database backstop; `revision` read as the run's own. Tests: hermetic `CanonicalJsonTest` (9,
+  fixed vectors), `ReportGenerationTest` (6), `ReportRunsTest` (11, ten threaded claimers and completers),
+  `ReportRunMigrationTest` (9), `ReportRunStatementsTest` (4), `JdbcReportSnapshotsTest` (4), `ReportRunDeskTest` (10);
+  owed (C5) `ReportRunDatabaseTest` (10: the entry's five - `#twoGeneratorsOneRun`, `#aWriteInsideGenerationIsRefused`,
+  `#regenerationIsIdentical`, `#aDeadGeneratorIsReclaimed`, `#contentIsFrozen` - plus `#tenClaimersOneRun`,
+  `#aDivergenceIsDetectedAndNeverRepaired`, `#anUnlockSupersedesTheFinalRuns`, `#anOpenPeriodGetsAProvisionalRun`,
+  `#theDatabaseVerifiesTheHash`) and `AccountingMigrationTest`'s census.
+- **As built - the independent review's fixes** (2026-10-31, before the merge; branch head after master `54d0986e`):
+  **I-1** the generation bounded below its lease - `ReportRuns.Leases` gains `generationTimeout`
+  (`finapp.accounting.report.generation-timeout`, default 4 minutes, refused unless it leaves a fifth of the lease);
+  `JdbcReportSnapshots` arms it as the snapshot's `statement_timeout` (`set_config(..., true)`, the `GlSnapshots` idiom)
+  and the definition's view re-arms it to what is left before every statement; a spent budget or a cancelled statement
+  (`57014`) is `ReportGeneration.GenerationTimedOut` -> the run `FAILED` `GENERATION_TIMED_OUT` (a new `RunFailure`, V004's
+  list fixed in place), never `DEFINITION_FAILED`; a regeneration past it answers `accounting.ReadTimedOut` 503 and records
+  nothing under its key. **I-2** a definition is handed `reporting.ReadOnlySnapshot`'s view, never the raw connection:
+  single `SELECT`/`WITH` statements (no `;`, none of `set_config`, `pg_advisory*`, `pg_notify`, `pg_sleep`, `dblink`,
+  `lo_*`), executed by `executeQuery()` only; every connection mutator, plain or callable statement, statement or
+  result-set write and `unwrap` refused; `ReportingNeverWritesTest` now refuses `javax.sql.DataSource`,
+  `java.sql.DriverManager` and the `Connection` mutators (`setAutoCommit`, `setReadOnly`, `setTransactionIsolation`,
+  `commit`, `rollback`, `setSavepoint`, `releaseSavepoint`, `abort`, `setSchema`, `setCatalog`, `createStatement`,
+  `prepareCall`) in report code, with planted probes (the `DataSource` and `DriverManager` ones in the non-test holder
+  `ReportingWritablePathProbes`: `TestTaxonomyTest` folds a suite's nested classes into its tier and reads either as
+  acquiring a database). **M-1** past the attempts' bound, a failure that moved nothing re-reads
+  the run and answers it if it still answers - no second FINAL run. **M-2** the unlock supersedes under the period's
+  `FOR UPDATE` before the cutoff moves; V004's content checks (bounded, a JSON object, the hash its own) moved from `CHECK`s
+  to the completion edge, the freeze firing only for an `UPDATE` naming the content, its hash or its completion - a
+  supersession never re-reads 8 MB. **M-5** the regeneration looks its key up first (`IdempotentExecutor.begin` /
+  `complete`): a replay opens no snapshot; a refusal the run decides is stored and replayed as itself. **M-9** the records
+  corrected (the lock order, `completeOrphaned(limit, actor)`, `BOUNDED_CONTEXTS.md`, the merge's parent `54d0986e`).
+  Owed cases added: `ReportRunDatabaseTest#anUnlockRacingAFinalClaim`, `#anUnlockRacingACompletion` (both orders, separate
+  connections), `#aGenerationPastItsBoundTimesOut`. Hermetic: `ReadOnlySnapshotTest` (6), `ReportRunsTest` +3,
+  `ReportRunDeskTest` +2, `JdbcReportSnapshotsTest` +1, `ReportingNeverWritesTest` +3. Eight probes (`MUTATION_TESTING.md`
+  §2). **Routed by the coordinator, not built here**: M-3 (no event or per-run audit record at `FINAL -> SUPERSEDED`) ->
+  `P14-TSK-012`; M-4 (`locked_at` kept by trigger through the close) -> `P14-TSK-012`; M-6 (the orphan leg completes one run
+  at a time) -> `P14-TSK-011`; M-7 (the failure classification of a snapshot's own failure) -> `P14-TSK-011`; M-8 (the
+  PROVISIONAL cut's label, and PROVISIONAL revisions unbounded) -> `P14-TSK-009`, and an owner item.
 
-**P14-TSK-009 — The period trial balance** — `PLANNED`
+**P14-TSK-009 — The period trial balance** — `READY` (2026-10-31; marked by the coordinator at `P14-TSK-008`'s merge, master `8c53f760`; every dependency `COMPLETE`)
 - **Objective**: per GL account × currency opening, debits, credits, closing for a period; zero per currency; equal to the
   ledger.
 - **Bounded context**: Reporting / Accounting.
@@ -25754,7 +25865,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Acceptance criteria**: every locked period has a FINAL trial balance zero per currency and equal to the ledger.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Low. **Cx**: S.
 
-**P14-TSK-010 — Rule conformance, source completeness and accounting breaks** — `PLANNED`
+**P14-TSK-010 — Rule conformance, source completeness and accounting breaks** — `READY` (2026-10-31; marked by the coordinator at `P14-TSK-007`'s merge, master `9e1497f2`; every dependency `COMPLETE`)
 - **Objective**: detect every GL-side discrepancy and record it once, never correct it (ADR-0117, `INV-ACC-12`).
 - **Bounded context**: Accounting / GL; reads reconciliation's proofs and the product proofs.
 - **Dependencies**: `-002`, `-007`.
@@ -25920,9 +26031,9 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   `ValuationSetStale` (409); `PeriodStale` gained the not-`LOCKED` case. Audited `accounting.ValuationSetCaptured`
   (reason optional), `ValuationSetApproved`, `ValuationSetRejected` (reasoned); the capturer's approval
   `accounting.SelfApprovalRefused` `FAILED` in its own transaction. Events: none. No history table - the frozen row and
-  the audit trail are the history. **The report-run FK: not added** - `accounting.report_run` (`P14-TSK-008`'s `V004`) was not on master at this task's integration (master `18c4935c`), so `V005` names no other table; `report_run.valuation_rate_set_id → valuation_rate_set (id)` is a recorded follow-up (`-015`, which pins the set, or the next accounting migration after both merge). Tests: `ValuationRateSetsTest` (11),
+  the audit trail are the history. **The report-run FK: added at the integration** (master `ddcb45cd`, `P14-TSK-008`'s `V004` on it): `V005` ends with `ALTER TABLE accounting.report_run ADD CONSTRAINT report_run_valuation_rate_set_fk FOREIGN KEY (valuation_rate_set_id) REFERENCES accounting.valuation_rate_set (id)` and restates the column's comment - `V004` untouched; no grant added (the check runs as the referenced table's owner); a run's insert takes the pinned set `FOR KEY SHARE` after its period `FOR SHARE`, an approval the period `FOR UPDATE` before the set, so the two meet on the period row (`ValuationRateSetMigrationTest#theReportRunsPinIsAKey`). *(Read "not added … a recorded follow-up" until the integration.)* Tests: `ValuationRateSetsTest` (11),
   `ValuationRateSetTest` (6), `ValuationRateSetMigrationTest` (6), `FxReferenceValuationRatesTest` (3),
-  `ValuationRateSetDeskTest` (6; 7 after the review round's fingerprint case) - fresh: `:accounting:test` 93/0, `:identity:test` 144/0 (the javadoc), the app filters and guards 163/0, `:app:architectureTest` 216/0; **owed (C5)**: `ValuationRateSetDatabaseTest#provenanceIsKept`, `#aStalePairIsRefused`,
+  `ValuationRateSetDeskTest` (6; 7 after the review round's fingerprint case) - fresh: `:accounting:test` 93/0, `:identity:test` 144/0 (the javadoc), the app filters and guards 163/0, `:app:architectureTest` 216/0; after the integration with master `ddcb45cd`: `:accounting:test` 165/0 (30 classes), the app accounting tests and the guards by name 219 run, 1 failed (37 classes) and `:app:architectureTest` 219 run, 1 failed (38 classes) - the one failure in both `NoAmbientTimeRulesTest#noAmbientTimeIsRead`, `P14-TSK-008`'s `ReportGeneration` constructor referencing `System::nanoTime` on master, untouched here; **owed (C5)**: `ValuationRateSetDatabaseTest#provenanceIsKept`, `#aStalePairIsRefused`,
   `#aMissingPairIsRefused`, `#aSetIsImmutable`, `#theProposerCannotApprove`, `#aCaptureRacingAnUnlock`,
   `#anApprovalRacingAnUnlock` (both added by the review round: the unlock waits on the capture's `FOR SHARE`; the approval
   waits on the unlock's row lock and is refused), `#oneApprovedPerPeriod` (two captures, ten concurrent approvals - ordered

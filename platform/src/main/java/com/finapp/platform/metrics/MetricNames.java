@@ -248,7 +248,15 @@ public final class MetricNames {
                     // section 15: finapp.risk.rule.hit{operation, rule}); a name-split would invent a series per kind
                     // and make "which rules are firing" unanswerable in one query. Registered eagerly per operation and
                     // the kinds written for it. No decision-shaped key joins it (C9).
-                    "rule");
+                    "rule",
+                    // Which report definition (P14-TSK-008): a definition's code - TRIAL_BALANCE and the other
+                    // ReportKind names, each a report compiled into the build and collected by ReportDefinitions, a
+                    // reviewed code change, never a request's value (a request naming an unknown code is refused before
+                    // anything is counted), a period, a run or a figure. The plan's own series carry it
+                    // (PHASE_14_PLAN.md section 16: finapp.accounting.report.run{definition, outcome},
+                    // finapp.accounting.report.diverged{definition}); a name-split would invent a series per report and
+                    // make "which report diverged" unanswerable in one query. Registered eagerly per definition held.
+                    "definition");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling

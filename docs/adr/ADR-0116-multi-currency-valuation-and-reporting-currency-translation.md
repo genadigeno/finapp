@@ -69,7 +69,9 @@ propose/approve pair, no new permission; approver ≠ capturer by the domain and
 every approval of a period serialised on the period row (`FOR UPDATE`), the set row after it, the conditional edge; the
 partial unique the backstop for every writer (`409 accounting.ValuationSetStale`). Beyond the decision text: no
 supersession of an approved set (owner item); no history table - the set row's frozen capture and decision columns and
-the audit trail are the history. Status stays `Proposed` until the phase's exit review.
+the audit trail are the history. **Pinned by runs**: at its integration with `P14-TSK-008` the same migration keys a report
+run's pin - `report_run_valuation_rate_set_fk`, `report_run.valuation_rate_set_id → valuation_rate_set (id)` - so a run
+can pin only a set that exists. Status stays `Proposed` until the phase's exit review.
 
 ## Follow-up
 

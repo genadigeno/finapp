@@ -64,6 +64,25 @@ compatible means exactly one type, equal by name to the GL account's classificat
 refused, never passed. The reference chart (test fixtures, 35 GL accounts over the forty purposes) is the "reference
 values for qualified review" of the Follow-up; no migration activates it.
 
+*As built by `P14-TSK-007` (2026-10-31), decisions 2 and 5 - nothing here is a different decision, four things are made
+precise:* (1) **"A GL figure"** is a period's **movement** per GL account × currency - debits, credits, the net on the
+account's normal side (`netMovement`), the line count and the components by purpose, owner kind and counterparty (the dimension) -
+recomputed from the journal on every read; the cumulative opening and closing balances are the trial balance's
+(`P14-TSK-009`, a FINAL run), so a live read never re-aggregates the journal from inception. (2) **"The version pinned
+by the period"** is resolved by `GlPins`: a `LOCKED`/`CLOSE_PROPOSED`/`CLOSED` period's pin, else the version in force
+for the month (equal by construction - the lock pins `inForceFor`, and no activation reaches a locked month); none, or
+a period locked with no version, is `accounting.NoActiveMapping` (409). (3) **The fold is a partition, and proves it in
+every answer**: `GeneralLedger` (in `com.finapp.accounting.reporting`, so `ReportingNeverWritesTest` now guards real
+report code) folds `JournalReads`' aggregates through the version's rules - a map, so every line lands in one GL account
+or in an explicit unmapped bucket - and returns, per currency, the GL's debits, credits and lines beside the ledger's own
+totals over the same range, read by a statement that joins no account; a figure's drill-down selects exactly its keys,
+currency and range, keyset-paged on ledger `V029`'s `journal_entry (posting_date, id)`. (4) **Decision 5's read-only
+transaction** is a connection of its own per request, `REPEATABLE READ` and read-only, **verified by its first
+statement** (fail closed), every statement bounded by `statement_timeout` armed by the second (a cancelled one `accounting.ReadTimedOut`), always rolled back; the audit record `accounting.GlRead` is written in a separate transaction
+after the read and before the answer. `JournalReads` is `app`'s `LedgerJournalReads` (SELECT only; lines carry owner
+references, never names, never the entry's `reference` - free text on a `MANUAL` adjustment, an owner item - reason or actor). `finapp.accounting.gl.unmapped` is fed from the database
+(the open period's lines the active version does not map; 0 without a journal read when the version is total).
+
 ## Alternatives Considered
 
 ### A GL journal in `accounting` fed by ledger events

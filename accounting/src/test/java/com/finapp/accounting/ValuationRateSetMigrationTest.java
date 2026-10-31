@@ -30,7 +30,8 @@ class ValuationRateSetMigrationTest {
     private static final List<String> EARLIER = List.of(
             "db/migration/accounting/V001__initialise_accounting_schema.sql",
             "db/migration/accounting/V002__the_gl_chart_and_mapping_as_versioned_data.sql",
-            "db/migration/accounting/V003__accounting_periods_open_lock_unlock.sql");
+            "db/migration/accounting/V003__accounting_periods_open_lock_unlock.sql",
+            "db/migration/accounting/V004__report_runs_immutable_reproducible.sql");
 
     @Test
     @DisplayName("the status list is ValuationRateSetStatus; one APPROVED set per period by partial unique; four eyes and"
@@ -105,6 +106,24 @@ class ValuationRateSetMigrationTest {
                         + " make_interval(hours => held_hours)) THEN");
         assertThat(sql).contains("CREATE CONSTRAINT TRIGGER valuation_rate_set_commits_whole AFTER INSERT ON"
                 + " accounting.valuation_rate_set DEFERRABLE INITIALLY DEFERRED");
+    }
+
+    @Test
+    @DisplayName("a report run's pinned set is a key into the sets (P14-TSK-008's bare uuid, keyed here): V004 untouched,"
+            + " no grant added, the column's comment restated")
+    void theReportRunsPinIsAKey() {
+        String sql = collapsed(RESOURCE);
+        assertThat(sql).contains("ALTER TABLE accounting.report_run ADD CONSTRAINT report_run_valuation_rate_set_fk FOREIGN"
+                + " KEY (valuation_rate_set_id) REFERENCES accounting.valuation_rate_set (id);");
+        assertThat(sql).as("restrict on delete and update - a set is never deleted and its id frozen")
+                .doesNotContain("ON DELETE").doesNotContain("ON UPDATE");
+        assertThat(sql).contains("COMMENT ON COLUMN accounting.report_run.valuation_rate_set_id IS")
+                .contains("REFERENCES accounting.valuation_rate_set (id) by report_run_valuation_rate_set_fk");
+        // V004 declared the column a bare uuid and still does - the key is this migration's, so V004's text is history.
+        String v004 = collapsed(EARLIER.get(3));
+        assertThat(v004).contains("valuation_rate_set_id uuid,")
+                .doesNotContain("REFERENCES accounting.valuation_rate_set");
+        assertThat(sql).as("the key adds no grant on report_run").doesNotContain("ON accounting.report_run TO");
     }
 
     @Test

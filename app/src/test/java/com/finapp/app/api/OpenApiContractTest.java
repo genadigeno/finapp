@@ -522,6 +522,16 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/lock",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/unlock-proposal",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/unlock-approval",
+                        // P14-TSK-007: the GL read model - balances, an account's activity (keyset paged) and an
+                        // entry's GL view; ACCOUNTING_READ, read-only snapshots, audited accounting.GlRead.
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/gl/balances",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/gl/accounts/{code}/activity",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/gl/entries/{entryId}",
+                        // P14-TSK-008: the report runs - generated and regenerated (ACCOUNTING_REPORT_GENERATE, keyed),
+                        // read with their content (ACCOUNTING_READ, audited).
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/report-runs",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/report-runs/{runId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/report-runs/{runId}/regeneration",
                         // P14-TSK-014: the valuation rate sets - captured (201, ACCOUNTING_CLOSE_PROPOSE), approved,
                         // rejected and read (ACCOUNTING_CLOSE_APPROVE), each POST keyed.
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/valuation-rate-sets",

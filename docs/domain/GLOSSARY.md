@@ -2484,7 +2484,9 @@ its task and read against it by `P14-DOC-001`.*
 ### GL Account
 **Is:** an account of the General Ledger's reference chart — code, name, classification (`ASSET`, `LIABILITY`,
 `EQUITY`, `REVENUE`, `EXPENSE`), statement section and normal balance — defined inside a GL Mapping Version
-(`P14-TSK-003`). Its figures are always computed from journal lines whose ledger purposes map to it (`INV-ACC-06`).
+(`P14-TSK-003`). Its figures are always computed from journal lines whose ledger purposes map to it (`INV-ACC-06`) -
+by the GL read model (`P14-TSK-007`): a period's movement per GL account and currency, under the version the period
+pins, each figure drilling to its lines.
 **Not:** a Ledger Account — it holds no balance, receives no posting and is never written by a posting flow; nor a
 statutory chart (the codes are reference values for qualified review, owner decision C2).
 **Owned by:** `accounting`
@@ -2553,7 +2555,10 @@ never self-corrects; nor a stored balance.
 **Is:** one generation of one report definition and version for one period, revision and parameter set, born once,
 generated in a read-only transaction, its content and sha256 frozen at completion, recording its mapping version,
 valuation rate set and journal cut; FINAL for a locked or closed period, PROVISIONAL otherwise; superseded, never deleted,
-on a reopen (`INV-ACC-04`, ADR-0115, `P14-TSK-008`).
+on a reopen (`INV-ACC-04`, ADR-0115, `P14-TSK-008`). *(As built, `P14-TSK-008`, accounting `V004`: the revision is the
+run's own - a new one when the latest run no longer answers its question; a FINAL run records the lock it read under and
+is superseded when its period returns to `OPEN` by an unlock as well as a reopen; its content is stored as the issued
+canonical JSON text, the hash recomputed by the database.)*
 **Not:** a source of truth (it is output; the journal is truth), nor an operational report (a live, unissued read).
 **Owned by:** `accounting`
 

@@ -103,6 +103,52 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " Reasoned. Its target the period; the summary its month and revision.",
             true),
 
+    /** An accountant read the GL - balances, an account's activity or an entry (`P14-TSK-007`, ACCOUNTING_READ). */
+    GL_READ(
+            "accounting.GlRead",
+            "An accountant read the General Ledger - a period's GL figures, one GL account's activity drilled to its"
+                    + " journal lines, or one journal entry's GL view - computed from the journal in one REPEATABLE READ"
+                    + " READ ONLY snapshot under the mapping version the period pins (P14-TSK-007, INV-ACC-02,"
+                    + " INV-ACC-06, INV-ACC-14; GET /v1/operator/accounting/gl/..., ACCOUNTING_READ). Recorded at every"
+                    + " serving, in a transaction of its own after the read and before the answer. Its target the"
+                    + " period, the GL account or the entry; the summary the door, the period, the currency, the"
+                    + " version number and its counts - figures= and unmapped= for the balances, lines= and"
+                    + " page=first|next for an activity page, lines= for an entry - never an amount or an owner"
+                    + " reference.",
+            false),
+
+    /** A report run completed FINAL or PROVISIONAL, or failed (`P14-TSK-008`, ACCOUNTING_REPORT_GENERATE). */
+    REPORT_GENERATED(
+            "accounting.ReportGenerated",
+            "A report run concluded (P14-TSK-008, ADR-0115, INV-ACC-04, INV-ACC-14; POST"
+                    + " /v1/operator/accounting/report-runs, ACCOUNTING_REPORT_GENERATE, or the orphan leg as the platform):"
+                    + " completed FINAL (a period no longer OPEN, under the lock it was claimed in) or PROVISIONAL (an OPEN"
+                    + " period) with its content and content_sha256 in one conditional edge - recorded SUCCEEDED with"
+                    + " accounting.ReportRunCompleted in the same commit - or failed with a closed code (DEFINITION_UNKNOWN,"
+                    + " DEFINITION_FAILED, PERIOD_MOVED, CONTENT_INVALID, ATTEMPTS_EXHAUSTED, GENERATION_TIMED_OUT) - recorded FAILED. Its target"
+                    + " the run; the summary its definition, version, period, revision and basis with the status or the"
+                    + " failure code - never a figure or the content.",
+            false),
+
+    /** A FINAL report run was regenerated and compared (`P14-TSK-008`, ACCOUNTING_REPORT_GENERATE). */
+    REPORT_REGENERATED(
+            "accounting.ReportRegenerated",
+            "An accountant regenerated a FINAL report run from its pinned inputs in a read-only snapshot and compared the"
+                    + " hashes (P14-TSK-008, INV-ACC-04; POST .../report-runs/{runId}/regeneration,"
+                    + " ACCOUNTING_REPORT_GENERATE): IDENTICAL, or DIVERGED - metered finapp.accounting.report.diverged and"
+                    + " never repaired. Its target the run; the summary its definition, version, period, revision and the"
+                    + " result.",
+            false),
+
+    /** An accountant read a report run's content (`P14-TSK-008`, ACCOUNTING_READ) - every serving recorded. */
+    REPORT_READ(
+            "accounting.ReportRead",
+            "An accountant read a report run with its content - CONFIDENTIAL aggregates (P14-TSK-008, PHASE_14_PLAN.md"
+                    + " section 12; GET /v1/operator/accounting/report-runs/{runId}, ACCOUNTING_READ); recorded before it is"
+                    + " served, in a transaction of its own, so nothing is served unrecorded. Its target the run; the summary"
+                    + " its definition, version, period, revision, basis and status - never the content.",
+            false),
+
     /** A person captured a valuation rate set for a locked period (`P14-TSK-014`, ACCOUNTING_CLOSE_PROPOSE). */
     VALUATION_SET_CAPTURED(
             "accounting.ValuationSetCaptured",

@@ -111,10 +111,11 @@ public class AccountingBeans {
                 accountingFlowScope);
     }
 
-    /** {@code finapp.accounting.gl.unmapped}, registered at zero (`-010` feeds it). */
+    /** {@code finapp.accounting.gl.unmapped} - fed from the database by `P14-TSK-007` (registered at zero by `-003`). */
     @Bean
-    AccountingMappingMetrics accountingMappingMetrics(MeterRegistry meterRegistry) {
-        return new AccountingMappingMetrics(meterRegistry);
+    AccountingMappingMetrics accountingMappingMetrics(com.finapp.accounting.GlMappingGap glMappingGap,
+            GlSnapshots glSnapshots, Clock clock, MeterRegistry meterRegistry) {
+        return new AccountingMappingMetrics(glMappingGap, glSnapshots, clock, meterRegistry);
     }
 
     // ------------------------------------------------------------------ the periods (P14-TSK-005)
@@ -141,9 +142,11 @@ public class AccountingBeans {
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
-            Clock clock) {
+            Clock clock,
+            com.finapp.accounting.ReportRuns reportRuns) {
+        // P14-TSK-008: the unlock supersedes the period's FINAL report runs in its own transaction.
         return new AccountingPeriods(accountingPeriodStore, glMappingStore, postingCutoff, lockGrace, auditWriter,
-                outboxWriter, idGenerator, clock);
+                outboxWriter, idGenerator, clock, reportRuns);
     }
 
     @Bean
@@ -161,5 +164,90 @@ public class AccountingBeans {
     AccountingPeriodMetrics accountingPeriodMetrics(
             AccountingPeriods accountingPeriods, DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
         return new AccountingPeriodMetrics(accountingPeriods, dataSource::getConnection, clock, meterRegistry);
+    }
+
+    // ------------------------------------------------------------------ the report runs (P14-TSK-008)
+
+    @Bean
+    com.finapp.accounting.ReportRunStore reportRunStore() {
+        return new com.finapp.accounting.JdbcReportRunStore();
+    }
+
+    /**
+     * The definitions this build holds - every {@code ReportDefinition} bean, none until `P14-TSK-009`'s trial balance; a
+     * definition joins by being declared, with no edit here.
+     */
+    @Bean
+    com.finapp.accounting.reporting.ReportDefinitions reportDefinitions(
+            org.springframework.beans.factory.ObjectProvider<com.finapp.accounting.reporting.ReportDefinition> definitions) {
+        return com.finapp.accounting.reporting.ReportDefinitions.of(definitions.orderedStream().toList());
+    }
+
+    /**
+     * The generator's lease on the database clock (default 5 minutes), its attempts' bound (default 5) and the
+     * generation's time bound (default 4 minutes) - refused at start-up unless it leaves a fifth of the lease
+     * (`P14-TSK-008`'s review, I-1).
+     */
+    @Bean
+    com.finapp.accounting.ReportRuns.Leases reportRunLeases(
+            @Value("${finapp.accounting.report.lease:PT5M}") java.time.Duration lease,
+            @Value("${finapp.accounting.report.max-attempts:5}") int maxAttempts,
+            @Value("${finapp.accounting.report.generation-timeout:PT4M}") java.time.Duration generationTimeout) {
+        return new com.finapp.accounting.ReportRuns.Leases(lease, maxAttempts, generationTimeout);
+    }
+
+    @Bean
+    com.finapp.accounting.ReportRuns reportRuns(
+            com.finapp.accounting.ReportRunStore reportRunStore,
+            AccountingPeriodStore accountingPeriodStore,
+            GlMappingStore glMappingStore,
+            com.finapp.accounting.reporting.ReportDefinitions reportDefinitions,
+            com.finapp.accounting.ReportRuns.Leases reportRunLeases,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.accounting.ReportRuns(reportRunStore, accountingPeriodStore, glMappingStore,
+                reportDefinitions, reportRunLeases, auditWriter, outboxWriter, idGenerator, clock);
+    }
+
+    /**
+     * Report code's reads: a separate pooled connection, one REPEATABLE READ READ ONLY transaction bounded by the
+     * generation's statement timeout, rolled back.
+     */
+    @Bean
+    ReportSnapshots reportSnapshots(DataSource dataSource, com.finapp.accounting.ReportRuns.Leases reportRunLeases) {
+        return new JdbcReportSnapshots(dataSource::getConnection, reportRunLeases.generationTimeout());
+    }
+
+    @Bean
+    ReportRunMetrics reportRunMetrics(
+            MeterRegistry meterRegistry, com.finapp.accounting.reporting.ReportDefinitions reportDefinitions) {
+        return new ReportRunMetrics(meterRegistry, reportDefinitions);
+    }
+
+    /** T-report's legs, and the orphan leg `P14-TSK-011` schedules in AccountingCloseSchedule. */
+    @Bean
+    ReportRunGenerator reportRunGenerator(
+            com.finapp.accounting.ReportRuns reportRuns,
+            ReportSnapshots reportSnapshots,
+            AccountingTransactions accountingTransactions,
+            ReportRunMetrics reportRunMetrics,
+            com.finapp.accounting.ReportRuns.Leases reportRunLeases) {
+        return new ReportRunGenerator(reportRuns, new com.finapp.accounting.reporting.ReportGeneration(
+                com.finapp.accounting.reporting.ReportGeneration.FROM_THE_SNAPSHOT, reportRunLeases.generationTimeout()),
+                reportSnapshots, accountingTransactions, reportRunMetrics);
+    }
+
+    @Bean
+    ReportRunDesk reportRunDesk(
+            com.finapp.accounting.ReportRuns reportRuns,
+            ReportRunGenerator reportRunGenerator,
+            ReportSnapshots reportSnapshots,
+            IdempotentExecutor idempotentExecutor,
+            AccountingTransactions accountingTransactions,
+            AccountingFlowScope accountingFlowScope) {
+        return new ReportRunDesk(reportRuns, reportRunGenerator, reportSnapshots, idempotentExecutor,
+                accountingTransactions, accountingFlowScope);
     }
 }

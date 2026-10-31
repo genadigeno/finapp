@@ -192,6 +192,19 @@ boundary is the ledger's database.
   new attempt row, never edits.
 - **Report Run:** `GENERATING → FINAL | PROVISIONAL`, `FAILED`; `FINAL → SUPERSEDED` (on reopen); content and hash frozen
   at completion.
+  *(As built by `P14-TSK-008`, 2026-10-31, accounting `V004`: born `GENERATING` at attempt 1 by insert-or-read on the
+  plan's key, whose `revision` is the **run's** own - one more each time the latest run no longer answers its question
+  (`FAILED`, `SUPERSEDED`, a completed PROVISIONAL snapshot, the other basis); `GENERATING → GENERATING` is the lease's
+  reclaim (attempt + 1, only past `lease_until`), `GENERATING → FINAL | PROVISIONAL` the completion as the run's basis,
+  carrying content and hash in one statement. A FINAL run records the lock it read under (`period_locked_at`); **the
+  unlock supersedes too** - `P14-TSK-005`'s four-eyes unlock returns a `LOCKED` period to `OPEN` without a new revision, so
+  `AccountingPeriods.approveUnlock` supersedes the period's FINAL runs before its edge (`ReportRunSupersession`, which the
+  reopen reuses) and `V004` refuses any return to `OPEN` leaving one. The content is stored as its **canonical text**
+  (`CanonicalJson` - sorted keys, no whitespace, no JSON number), not `jsonb`, so the issued bytes are retained and the
+  database recomputes `content_sha256`; freeze trigger `report_run_content_is_frozen`. Doors `POST
+  /v1/operator/accounting/report-runs` (keyed, `ACCOUNTING_REPORT_GENERATE`), `GET …/{runId}` (`ACCOUNTING_READ`, audited
+  `accounting.ReportRead`), `POST …/{runId}/regeneration` (keyed). `-012`'s close keeps `locked_at` through `CLOSED` - the
+  lock instance a FINAL run reproduces under.)*
 - **Valuation Rate Set:** `PROPOSED → APPROVED | REJECTED`; immutable. *(As built by `P14-TSK-014`, 2026-10-31: captured
   and approved only while the period is `LOCKED`, rejected in any state; both decisions terminal; one `APPROVED` per period
   for good - no supersession edge, an owner item.)*
@@ -231,7 +244,7 @@ beside them: `INV-LED-01`…`-06`, `INV-BAL-02`, `INV-HIST-01`, `INV-HIST-04`, `
 | T-post (every existing posting) | unchanged, plus ledger `V028`'s `BEFORE INSERT` trigger on `journal_entry`: namespace `14` key `cutoff` **shared**, then refuse `posting_date <= closed_through` (SQLSTATE mapped to `ledger.PeriodClosed`) *(**built** by `P14-TSK-004`, 2026-10-30: SQLSTATE `LDCUT` → `PeriodClosedException` in `JdbcJournalEntryStore`; the read `FOR SHARE` under REPEATABLE READ/SERIALIZABLE so a cut after the snapshot is `40001`; the cutoff moved by `PostingCutoffs` - one period, conditional `UPDATE`, event - and bound for every updater by `V028`'s one-period trigger)* |
 | T-check | claim one `close_check` `FOR UPDATE SKIP LOCKED` with a lease; run it in `REPEATABLE READ READ ONLY` reads; record the attempt and outcome by conditional edge |
 | T-close / T-unlock / T-reopen | the period row `FOR UPDATE`; for unlock/reopen namespace `14` exclusive and the cutoff moved back by exactly one period; approver ≠ proposer `CHECK`; the report runs `SUPERSEDED` on reopen |
-| T-report | claim: insert-or-read the run row by its unique key; generate: `REPEATABLE READ READ ONLY` on a separate connection; complete: conditional `GENERATING → FINAL` with content and sha256 |
+| T-report | claim: insert-or-read the run row by its unique key; generate: `REPEATABLE READ READ ONLY` on a separate connection; complete: conditional `GENERATING → FINAL` with content and sha256 *(as built by `P14-TSK-008`: claim under the period row `FOR SHARE` (A1) then the run (A4); generate on its own pooled connection, `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY` first and proven; complete under the period `FOR SHARE` again, conditional on `GENERATING` and the held attempt, `accounting.ReportGenerated` and `accounting.ReportRunCompleted` in the same commit)* |
 | T-ppa | the target `OPEN` period `FOR SHARE`; the proposal; at approval `PriorPeriodPostings.approveOwned` posts the `ACCOUNTING` adjustment (posting date in the open period) and the PPA row commits with it |
 
 ### 8.2 The Phase 14 lock order (planned — `DISTRIBUTED_EXECUTION.md` §3's row, built by `-004`, `-005`, `-012`, `-013`)
@@ -253,7 +266,7 @@ longest in-flight posting transaction, and T-lock runs under a `lock_timeout` an
 | 4 | Proposer approves own close / mapping / PPA / submission | `CHECK (approved_by <> proposed_by)` | `*#theProposerCannotApprove` |
 | 5 | Ten instances claim one close check | `FOR UPDATE SKIP LOCKED` + lease | `CloseRunDatabaseTest#tenWorkersOneAttempt` |
 | 6 | A worker dies mid-check | lease expiry, attempt row | `CloseRunDatabaseTest#aDeadWorkersCheckIsReclaimed` |
-| 7 | Two instances generate the same report | unique run key, insert-or-read | `ReportRunDatabaseTest#twoGeneratorsOneRun` |
+| 7 | Two instances generate the same report | unique run key, insert-or-read | `ReportRunDatabaseTest#twoGeneratorsOneRun` *(built by `P14-TSK-008` with `#tenClaimersOneRun` - owed, C5; hermetic `ReportRunsTest#tenClaimersOneRun`)* |
 | 8 | Mapping activation vs a lock pinning a version | namespace `14` `mapping` exclusive vs the lock's read of the active version under the period row | `GlMappingDatabaseTest#aLockBehindAnActivationPinsOneVersion` |
 | 9 | Reopen vs a posting into the next period | reopen moves the cutoff back one period only; postings dated after are unaffected | `PeriodReopenDatabaseTest#aReopenRefusesNothingOutsideItsPeriod` |
 | 10 | The same break raised by two checks / instances | `UNIQUE (period_id, check_code, subject_ref)` | `AccountingBreakDatabaseTest#twoRaisesOneBreak` |
@@ -266,7 +279,7 @@ longest in-flight posting transaction, and T-lock runs under a `lock_timeout` an
 
 One leaderless schedule, **`AccountingCloseSchedule`** (`LEASE_PROTECTED_SCHEDULERS` 31 → 32, re-verified at `-011`):
 legs (a) open the next period when the current month begins (insert-if-absent, unique by month); (b) claim and run close
-checks; (c) complete claimed report runs whose generator died (lease expiry); (d) regulatory inquiry for `SUBMITTED`
+checks; (c) complete claimed report runs whose generator died (lease expiry) *(built by `P14-TSK-008` as the callable `ReportRunGenerator.completeOrphaned(limit, actor)` - expired runs `FOR UPDATE SKIP LOCKED`, reclaimed by `attempt + 1` or failed `ATTEMPTS_EXHAUSTED` past the bound; `-011` schedules it under its system scope)*; (d) regulatory inquiry for `SUBMITTED`
 rows past their answer horizon (`-018`). Every leg meters its claim failures from its first task; each is a
 `SmartLifecycle`, off in test contexts, with its `finapp.accounting.sweeper.enabled` gauge. Nothing else schedules.
 
@@ -287,11 +300,11 @@ Schema `accounting` (`REVOKE ALL FROM PUBLIC`; the application role `SELECT, INS
 status columns of the machine rows through conditional edges, no `DELETE`): `gl_mapping_version`, `gl_account`,
 `gl_mapping_rule` (`UNIQUE (version_id, ledger_purpose, owner_kind)`), `accounting_period` (`UNIQUE (period_start)`,
 `CHECK` months contiguous), `period_event`, `close_run`, `close_check` (`UNIQUE (close_run_id, check_code, attempt)`),
-`report_run` (`UNIQUE (definition, definition_version, period_id, revision, parameters_hash)`, content `jsonb` frozen by
+`report_run` (`UNIQUE (definition, definition_version, period_id, revision, parameters_hash)`, content `jsonb` *(as built: its canonical text, the hash recomputed by the database, `valuation_rate_set_id` with no foreign key until `-014`'s table - §6's note; keyed by `-014`'s `V005`, `report_run_valuation_rate_set_fk`)* frozen by
 trigger, `content_sha256`), `valuation_rate_set`, `valuation_rate` (snapshot ids and provenance), `accounting_break`,
 `prior_period_adjustment`, `regulatory_obligation`, `regulatory_submission`. Ledger: `V028` `posting_cutoff` (one row,
 `closed_through date`) + `posting_cutoff_event` (append-only) + the trigger; `V029` index `journal_entry (posting_date,
-id)`; `V030` origin `ACCOUNTING` + reason `PRIOR_PERIOD_ADJUSTMENT`. Identity `V025`: the permissions and roles (C12).
+id)` *(built by `P14-TSK-007`, 2026-10-31: `journal_entry_by_posting_date`, in the migration's transaction - no production journal yet)*; `V030` origin `ACCOUNTING` + reason `PRIOR_PERIOD_ADJUSTMENT`. Identity `V025`: the permissions and roles (C12).
 Lending: no migration for `-006` (code only); `-021` (if C6 A) takes lending and bnpl migrations then numbered.
 Migration numbers are assigned in landing order (Flyway out-of-order off); next free re-verified at the transition:
 accounting `V001`, ledger `V028`, identity `V025`, lending `V032`, bnpl `V020`. Amounts: `BIGINT` minor units + `CHAR(3)` +
@@ -303,7 +316,7 @@ All operator surfaces under `/v1/operator/accounting/…` and `/v1/operator/regu
 `POST`, `409` on a stale revision, errors in `ERROR_CONTRACT.md` (`accounting.*`): periods (list, lock, unlock and
 reopen proposals and approvals, close proposal/approval/rejection); mapping versions (propose, activate, reject, read,
 diff); GL (`/gl/balances?period&currency`, `/gl/accounts/{code}/activity?period` paged to journal lines, `/gl/entries/{id}`
-the GL view of one entry); report runs (generate, read, `…/regeneration` answering `IDENTICAL | DIVERGED`); valuation
+the GL view of one entry) *(as built by `P14-TSK-007`, 2026-10-31, all `ACCOUNTING_READ` and audited `accounting.GlRead`: `GET …/gl/balances?period=YYYY-MM[&currency]` - the period's movement per GL account × currency with its components, the unmapped lines and GL = ledger per currency; `GET …/gl/accounts/{code}/activity?period&currency[&after][&limit]` - the figure and one keyset page of its lines (1-500, default 100); `GET …/gl/entries/{entryId}` - each line's GL account under its month's version; one `REPEATABLE READ READ ONLY` snapshot per request, every statement bounded by `statement_timeout` (`accounting.ReadTimedOut` 503); `accounting.NoActiveMapping` 409 without a version; the entry's free-text `reference` not served - an owner item)*; report runs (generate, read, `…/regeneration` answering `IDENTICAL | DIVERGED`); valuation
 rate sets; breaks; prior-period adjustments; regulatory submissions. No customer or merchant surface reads `accounting`
 (`NoCustomerSurfaceReadsAccountingTest`). Every read of a report or GL drill-down is an audited operator read.
 
@@ -568,10 +581,10 @@ rows both ways.
 | `finapp.accounting.close.duration` | timer | — | — |
 | `finapp.accounting.cutoff.floored` | counter (postings floored to the first open date because their command asked, C3 - *added by `P14-TSK-006`*) | command | — |
 | `finapp.accounting.cutoff.refused` | counter (postings refused `ledger.PeriodClosed`) | module *(erratum, `P14-TSK-004`: built with tag `command` - `posting`/`reversal`/`adjustment` - because a ledger command carries no requesting module; a `module` tag needs a producer-contract change, an owner item for `-006`)* | `AccountingPostingIntoClosedPeriod` |
-| `finapp.accounting.gl.unmapped` | gauge (lines unmapped in the open period under the active version) | — | `AccountingMappingGap` |
+| `finapp.accounting.gl.unmapped` | gauge (lines unmapped in the open period under the active version) *(fed by `P14-TSK-007` from the database: the chart's keys the ACTIVE version does not map - 0 without a journal read when it is total, 0 with no version - their lines counted from the first open period's start, never before the version's month; cached 60 s)* | — | `AccountingMappingGap` |
 | `finapp.accounting.break.open` | gauge | type | `AccountingBreakAged` |
-| `finapp.accounting.report.run` | counter | definition, outcome | — |
-| `finapp.accounting.report.diverged` | counter | definition | `AccountingReportDiverged` |
+| `finapp.accounting.report.run` | counter | definition, outcome *(built by `P14-TSK-008`; outcome `final`, `provisional`, `failed`; `definition` added to `MetricNames.ALLOWED_TAG_KEYS`)* | — |
+| `finapp.accounting.report.diverged` | counter | definition *(built by `P14-TSK-008`, counted once per keyed regeneration)* | `AccountingReportDiverged` |
 | `finapp.accounting.regulatory.submission` | counter | outcome | `RegulatorySubmissionRejected` |
 | `finapp.accounting.sweeper.enabled` | gauge | — | — |
 

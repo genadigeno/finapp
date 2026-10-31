@@ -1325,7 +1325,7 @@ five.)*
 composing it.
 **Why:** A report that cannot be substantiated is not auditable.
 **Enforce:** `DOMAIN` (derived read models only).
-**Verify:** Drill-down tests from report to lines.
+**Verify:** Drill-down tests from report to lines. *(`P14-TSK-007`: the GL door's figure equals the sum of its keyset-paged lines - `GeneralLedgerTest#aFigureDrillsToItsLines`, `GlReadModelDatabaseTest#aFigureDrillsToItsLines` (owed, C5); every figure and every entry view names its mapping version.)*
 **Phase:** 14
 
 ### INV-ACC-03 — Closed periods reject postings
@@ -1345,7 +1345,10 @@ held to the source - `PostingRuleRegisterTest#theFloorAgreesWithTheSource`.)*
 originally issued output is retained.
 **Why:** Two different answers to the same question destroys confidence in all of them.
 **Enforce:** `DOMAIN` (immutable report runs) + `INV-HIST-04` (mapping version pinning).
-**Verify:** Regeneration comparison tests.
+**Verify:** Regeneration comparison tests. *(As built, `P14-TSK-008`: `ReportRunDatabaseTest#regenerationIsIdentical`,
+`#contentIsFrozen`, `#anUnlockSupersedesTheFinalRuns` (owed, C5); hermetic `CanonicalJsonTest` (fixed vectors - the
+bytes and hashes stable across JVMs), `ReportRunsTest`, `ReportRunDeskTest#regenerationIsComparedAndDivergenceCounted`,
+`ReportRunMigrationTest#theContentIsFrozenByItsOwnTrigger`.)*
 **Phase:** 14
 
 ### INV-ACC-05 — Unreconciled positions are disclosed
@@ -1373,7 +1376,7 @@ amount except a report run's frozen output.
 **Enforce:** `STATIC` (`accounting` has no ledger edge; `AccountingModuleIsolationTest`) + `DOMAIN` (activation refuses a
 non-total or incompatible version through `LedgerChart`).
 **Verify:** `GlReadModelDatabaseTest#everyLineMapsOnce`, the close check `GL_EQUALS_LEDGER` per period and currency
-(`P14-TSK-007`, `-010`); the battery's independent GL oracle (`P14-TST-002`).
+(`P14-TSK-007`, `-010`); the battery's independent GL oracle (`P14-TST-002`). *(`P14-TSK-007`: built - the fold a partition over the version's rules with an explicit unmapped bucket, GL = ledger per currency against a mapping-independent statement in every answer: `GeneralLedgerTest#everyLineMapsOnce`, `#glEqualsLedgerPerCurrency`, `#anUnmappedLineIsCountedNeverDropped`; the database cases owed, C5.)*
 **Phase:** 14
 
 ### INV-ACC-07 — A mapping version is immutable, four-eyes, and never retroactive
@@ -1459,7 +1462,7 @@ ledger's `ACCOUNTING`-origin adjustment door.
 **Why:** A reporting path that can write is a back door into the authoritative record.
 **Enforce:** `DB-CONSTRAINT` (the read-only transaction refuses writes) + `STATIC` (`ReportingNeverWritesTest`,
 `AccountingModuleIsolationTest`).
-**Verify:** `ReportingNeverWritesTest`, `ReportRunDatabaseTest#aWriteInsideGenerationIsRefused` (`P14-TSK-001`, `-008`).
+**Verify:** `ReportingNeverWritesTest`, `ReportRunDatabaseTest#aWriteInsideGenerationIsRefused` (`P14-TSK-001`, `-008`). *(`P14-TSK-007`: the GL doors - one verified `REPEATABLE READ READ ONLY` snapshot per request, `GlSnapshotsTest`, `GlReadModelDatabaseTest#aGlReadCannotWrite` (owed, C5); the GL fold in `com.finapp.accounting.reporting`, the first report code the static guard covers.)*
 **Phase:** 14
 
 ---

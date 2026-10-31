@@ -140,7 +140,8 @@ class ValuationRateSetDeskTest {
         }
     };
     private final AccountingPeriods periods = new AccountingPeriods(periodStore, new InMemoryGlMappingStore(), cutoff,
-            LockGrace.standard(), (uow, record) -> { }, (uow, envelope, payload, mediaType) -> { }, IDS, CLOCK);
+            LockGrace.standard(), (uow, record) -> { }, (uow, envelope, payload, mediaType) -> { }, IDS, CLOCK,
+            (uow, period, actor, correlation) -> 0);
     private final ValuationRateSets sets = new ValuationRateSets(store, periodStore, reference,
             ValuationStaleness.standard(), (uow, record) -> audited.add(record), IDS, CLOCK);
     private final ValuationRateSetDesk desk = new ValuationRateSetDesk(sets,
@@ -315,7 +316,7 @@ class ValuationRateSetDeskTest {
     private String openSeptember() {
         new AccountingPeriods(periodStore, new InMemoryGlMappingStore(), cutoff, LockGrace.standard(), (uow, record) -> { },
                 (uow, envelope, payload, mediaType) -> { }, IDS,
-                Clock.fixed(Instant.parse("2026-09-15T09:00:00Z"), ZoneOffset.UTC))
+                Clock.fixed(Instant.parse("2026-09-15T09:00:00Z"), ZoneOffset.UTC), (uow, period, actor, correlation) -> 0)
                 .openNext(UOW, Actor.SYSTEM, CorrelationId.generate(IDS));
         return periodStore.month(SEPTEMBER).orElseThrow().id().value().toString();
     }

@@ -78,6 +78,40 @@ public enum AccountingErrorCode implements ErrorCode {
     /** Every reasoned accounting act (`P14-TSK-003` first). */
     REASON_REQUIRED("accounting.ReasonRequired", 422, "A reason is required."),
 
+    /** The GL doors (`P14-TSK-007`): no mapping version is pinned by, or in force for, the period. */
+    NO_ACTIVE_MAPPING(
+            "accounting.NoActiveMapping",
+            409,
+            "No GL mapping version is pinned by, or in force for, the period - the GL cannot be read for it until a"
+                    + " version is activated under four eyes."),
+
+    /** The GL doors (`P14-TSK-007`): a statement of the read outlived the snapshot's statement timeout. */
+    READ_TIMED_OUT(
+            "accounting.ReadTimedOut",
+            503,
+            "The accounting read did not finish within its statement timeout; nothing was served - retry, or narrow"
+                    + " the read."),
+
+    /** The report run doors (`P14-TSK-008`): the build holds no definition of the code (or the run's version). */
+    REPORT_DEFINITION_UNKNOWN(
+            "accounting.ReportDefinitionUnknown",
+            422,
+            "No report definition of this code (or of the run's version) is held by this build; nothing was generated."),
+
+    /** The generation door (`P14-TSK-008`): the parameters are not a bounded, plain set the definition takes. */
+    REPORT_PARAMETERS_INVALID(
+            "accounting.ReportParametersInvalid",
+            422,
+            "The report parameters are not a bounded set of plain values the definition takes, or the valuation rate set"
+                    + " is missing where the definition translates or given where it does not; nothing was claimed."),
+
+    /** The regeneration door (`P14-TSK-008`): only a FINAL run, its period still under the lock it was generated in. */
+    REPORT_RUN_STALE(
+            "accounting.ReportRunStale",
+            409,
+            "The report run is not FINAL - generating, provisional, failed or superseded - or its period no longer holds"
+                    + " the lock it was generated under; only a FINAL run is regenerated and compared."),
+
     /**
      * The valuation rate set's capture (`P14-TSK-014`): a valued pair has no reference observation at or before the
      * period's end within the staleness bound. A past instant's data, not a transient outage - fx's {@code 503} does not

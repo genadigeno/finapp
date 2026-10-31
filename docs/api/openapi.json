@@ -227,6 +227,41 @@
           }
         }
       },
+      "accounting.NoActiveMapping": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.NoActiveMapping"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.NoActiveMapping"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] No GL mapping version is pinned by, or in force for, the period - the GL cannot be read for it until a version is activated under four eyes.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.NotFound": {
         "content": {
           "application/problem+json": {
@@ -332,6 +367,41 @@
           }
         }
       },
+      "accounting.ReadTimedOut": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.ReadTimedOut"
+                    },
+                    "status": {
+                      "const": 503
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.ReadTimedOut"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[503] The accounting read did not finish within its statement timeout; nothing was served - retry, or narrow the read.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.ReasonRequired": {
         "content": {
           "application/problem+json": {
@@ -358,6 +428,111 @@
           }
         },
         "description": "[422] A reason is required.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.ReportDefinitionUnknown": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.ReportDefinitionUnknown"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.ReportDefinitionUnknown"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] No report definition of this code (or of the run's version) is held by this build; nothing was generated.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.ReportParametersInvalid": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.ReportParametersInvalid"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.ReportParametersInvalid"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The report parameters are not a bounded set of plain values the definition takes, or the valuation rate set is missing where the definition translates or given where it does not; nothing was claimed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.ReportRunStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.ReportRunStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.ReportRunStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The report run is not FINAL - generating, provisional, failed or superseded - or its period no longer holds the lock it was generated under; only a FINAL run is regenerated and compared.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -18090,6 +18265,279 @@
         },
         "type": "object"
       },
+      "GlActivityView": {
+        "properties": {
+          "figure": {
+            "$ref": "#/components/schemas/GlFigureView"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/GlLineView"
+            },
+            "type": "array"
+          },
+          "mappingVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "mappingVersionId": {
+            "type": "string"
+          },
+          "next": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodStatus": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GlAgreementView": {
+        "properties": {
+          "agrees": {
+            "type": "boolean"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "glCredits": {
+            "type": "string"
+          },
+          "glDebits": {
+            "type": "string"
+          },
+          "glLines": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ledgerCredits": {
+            "type": "string"
+          },
+          "ledgerDebits": {
+            "type": "string"
+          },
+          "ledgerLines": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "unmappedCredits": {
+            "type": "string"
+          },
+          "unmappedDebits": {
+            "type": "string"
+          },
+          "unmappedLines": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "GlBalancesView": {
+        "properties": {
+          "agreement": {
+            "items": {
+              "$ref": "#/components/schemas/GlAgreementView"
+            },
+            "type": "array"
+          },
+          "agrees": {
+            "type": "boolean"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "figures": {
+            "items": {
+              "$ref": "#/components/schemas/GlFigureView"
+            },
+            "type": "array"
+          },
+          "mappingVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "mappingVersionId": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodStatus": {
+            "type": "string"
+          },
+          "unmapped": {
+            "items": {
+              "$ref": "#/components/schemas/GlUnmappedView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "GlComponentView": {
+        "properties": {
+          "counterparty": {
+            "type": "string"
+          },
+          "credits": {
+            "type": "string"
+          },
+          "debits": {
+            "type": "string"
+          },
+          "lines": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ownerKind": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GlEntryView": {
+        "properties": {
+          "entryId": {
+            "type": "string"
+          },
+          "entryType": {
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/GlLineView"
+            },
+            "type": "array"
+          },
+          "mappingVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "mappingVersionId": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodStatus": {
+            "type": "string"
+          },
+          "postingDate": {
+            "type": "string"
+          },
+          "reversesEntryId": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GlFigureView": {
+        "properties": {
+          "classification": {
+            "type": "string"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/GlComponentView"
+            },
+            "type": "array"
+          },
+          "credits": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "debits": {
+            "type": "string"
+          },
+          "glAccountCode": {
+            "type": "string"
+          },
+          "lines": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "mappingVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "mappingVersionId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "netMovement": {
+            "type": "string"
+          },
+          "normalBalance": {
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GlLineView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "counterparty": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "entryType": {
+            "type": "string"
+          },
+          "glAccountCode": {
+            "type": "string"
+          },
+          "ledgerAccountId": {
+            "type": "string"
+          },
+          "ownerKind": {
+            "type": "string"
+          },
+          "ownerRef": {
+            "type": "string"
+          },
+          "postingDate": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "seq": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "side": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "GlMappingAccountChangeView": {
         "properties": {
           "after": {
@@ -18413,6 +18861,30 @@
           "version": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "GlUnmappedView": {
+        "properties": {
+          "credits": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "debits": {
+            "type": "string"
+          },
+          "lines": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ownerKind": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -22497,6 +22969,127 @@
             "type": "string"
           },
           "currency": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ReportRegenerationView": {
+        "properties": {
+          "contentSha256": {
+            "type": "string"
+          },
+          "regeneratedSha256": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ReportRunContentView": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "run": {
+            "$ref": "#/components/schemas/ReportRunView"
+          }
+        },
+        "type": "object"
+      },
+      "ReportRunRequest": {
+        "properties": {
+          "definition": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "periodId": {
+            "maxLength": 36,
+            "minLength": 0,
+            "type": "string"
+          },
+          "valuationRateSetId": {
+            "maxLength": 36,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "definition",
+          "periodId"
+        ],
+        "type": "object"
+      },
+      "ReportRunView": {
+        "properties": {
+          "basis": {
+            "type": "string"
+          },
+          "claimedAt": {
+            "type": "string"
+          },
+          "completedAt": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string"
+          },
+          "definition": {
+            "type": "string"
+          },
+          "definitionVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "failure": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "mappingVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodId": {
+            "type": "string"
+          },
+          "periodRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "revision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "supersededAt": {
+            "type": "string"
+          },
+          "valuationRateSetId": {
             "type": "string"
           }
         },
@@ -31102,6 +31695,128 @@
         }
       }
     },
+    "/v1/operator/accounting/gl/accounts/{code}/activity": {
+      "get": {
+        "operationId": "readGeneralLedgerAccountActivity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "currency",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlActivityView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/gl/balances": {
+      "get": {
+        "operationId": "readGeneralLedgerBalances",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "period",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "currency",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlBalancesView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/gl/entries/{entryId}": {
+      "get": {
+        "operationId": "readGeneralLedgerEntry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entryId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GlEntryView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/accounting/mapping-versions": {
       "post": {
         "operationId": "proposeGlMappingVersion",
@@ -31466,6 +32181,105 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PostingRuleRegisterView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/report-runs": {
+      "post": {
+        "operationId": "generateReportRun",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportRunView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/report-runs/{runId}": {
+      "get": {
+        "operationId": "readReportRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportRunContentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/report-runs/{runId}/regeneration": {
+      "post": {
+        "operationId": "regenerateReportRun",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportRegenerationView"
                 }
               }
             },

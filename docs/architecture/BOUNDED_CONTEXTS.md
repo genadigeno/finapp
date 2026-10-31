@@ -557,7 +557,7 @@ disclosure and fx's reference rates through ports `app` implements.
   copied); write-off (lending's and bnpl's event, owner decision C6). *Transaction boundary:* own; the lock, unlock and
   reopen edges carry the ledger's cutoff edge in the same transaction under namespace `14` (ADR-0114). *Consistency:*
   strong at the edges (conditional `UPDATE`s, unique births), derived for every figure. *APIs:*
-  `/v1/operator/accounting/…`. *Events:* `AccountingPeriod*`, `GlMappingVersionActivated`, `AccountingBreakRaised`,
+  `/v1/operator/accounting/…`. *Events:* `AccountingPeriod*`, `GlMappingVersionActivated`, `ReportRunCompleted` (Reporting's - `P14-TSK-008`), `AccountingBreakRaised`,
   `PriorPeriodAdjustmentPosted`; consumes none for correctness. *Failure:* a posting dated into a locked period is
   refused by the ledger; a crashed check is re-claimed by lease. *Security:* `ACCOUNTANT` proposes,
   `FINANCIAL_CONTROLLER` approves, four-eyes by `CHECK` *(`P14-TSK-001`: the grants a partition - `ACCOUNTING_READ` the

@@ -256,3 +256,22 @@ GRANT SELECT, INSERT ON accounting.valuation_rate_set TO finapp_app;
 GRANT UPDATE (status, decided_by, decided_by_type, decided_at, decision_reason)
     ON accounting.valuation_rate_set TO finapp_app;
 GRANT SELECT, INSERT ON accounting.valuation_rate TO finapp_app;
+
+-- ---------------------------------------------------------------------------------------------
+-- The report run's pinned set: P14-TSK-008's V004 left report_run.valuation_rate_set_id a bare uuid until the rate set's
+-- table landed; from here every pin names a valuation rate set that exists, for every writer (INV-ACC-11: a translated
+-- figure names its set). V004 is not edited - this migration adds the key and restates the column's comment.
+--
+-- No grant is added: PostgreSQL runs the referential check as the referenced table's owner (the migrator), and the
+-- application role already holds SELECT and the decision columns' UPDATE here. ON DELETE and ON UPDATE never fire - a set
+-- is never deleted and its id is frozen (valuation_rate_set_permits_only_machine_edges), and V004's machine trigger
+-- freezes a run's pin after its birth. The locks: a run's claim holds its period FOR SHARE (A1) and its insert takes the
+-- pinned set row FOR KEY SHARE (A4); an approval holds the period FOR UPDATE (A1) before the set row (A4) - the two meet
+-- on the period row first, so no cycle forms.
+-- ---------------------------------------------------------------------------------------------
+ALTER TABLE accounting.report_run
+    ADD CONSTRAINT report_run_valuation_rate_set_fk FOREIGN KEY (valuation_rate_set_id)
+        REFERENCES accounting.valuation_rate_set (id);
+
+COMMENT ON COLUMN accounting.report_run.valuation_rate_set_id IS
+    'The valuation rate set the run pins, if any - REFERENCES accounting.valuation_rate_set (id) by report_run_valuation_rate_set_fk, added by accounting V005 (P14-TSK-014; V004 left it a bare uuid until the table landed). Equal to the parameters'' valuationRateSet by report_run_rate_set_is_a_parameter; frozen after the run''s birth.';

@@ -46,6 +46,14 @@ thing, and no rule can catch that substitution — it is a design-review questio
 is written here. *(`P14-TSK-006`: a stated posting date may be **floored** - moved forward to the first open
 date, by the ledger, only when the command asks, never backward and never silently; §3 rule 8.)*
 
+**The journal is indexed by posting date** (*`P14-TSK-007`*, ledger `V029`): `journal_entry_by_posting_date` on
+`journal_entry (posting_date, id)` serves "the entries of a period" - the General Ledger's month aggregate and its
+drill-down's keyset (`ORDER BY posting_date, id`, then the line's `seq`), and every report run of a locked period. It
+was built in the migration's own transaction (no production journal existed; `DATA_MIGRATIONS.md` §4.4): a deployment
+over a large live journal would build it `CONCURRENTLY` in a non-transactional migration instead. Accounting reads the
+journal through it only in `REPEATABLE READ READ ONLY` snapshots (`INV-ACC-14`) and stores nothing it reads
+(`INV-ACC-06`).
+
 ## 3. The rules a posting must satisfy
 
 1. **It balances, per currency** (`INV-LED-01`) — enforced by the domain *and* by the database,
