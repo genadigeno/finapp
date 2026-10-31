@@ -235,15 +235,17 @@ class AccountingBreakDatabaseTest {
     void aResolutionPostsNothing() throws Exception {
         UUID planted = post("transfer:" + IDS.next(), wallet(), operational(AccountPurpose.FEE_REVENUE));
         UUID correcting = post("p14-010-correction:" + IDS.next(), operational(AccountPurpose.FEE_REVENUE), wallet());
-        long journal = count("SELECT count(*) FROM ledger.journal_entry");
+        // The month's own count: no other suite dates into it, so a concurrent suite's postings cannot move it.
+        String monthsEntries = "SELECT count(*) FROM ledger.journal_entry WHERE posting_date BETWEEN '"
+                + month.atDay(1) + "' AND '" + month.atEndOfMonth() + "'";
+        long journal = count(monthsEntries);
         checks().run(month, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation());
         AccountingBreakId id = AccountingBreakId.of(UUID.fromString(breakOf("shape:" + planted)));
         Actor controller = person();
         inScope(controller, uow -> breaks().resolve(uow, id, controller, correcting, "reversed by its correction",
                 correlation()));
 
-        assertThat(count("SELECT count(*) FROM ledger.journal_entry")).as("nothing posted (INV-ACC-12)")
-                .isEqualTo(journal);
+        assertThat(count(monthsEntries)).as("nothing posted (INV-ACC-12)").isEqualTo(journal);
         assertThat(column("SELECT status || '|' || resolving_entry_id FROM accounting.accounting_break WHERE id = '"
                 + id.value() + "'")).isEqualTo("RESOLVED|" + correcting);
     }

@@ -757,7 +757,12 @@ class CredentialReachesNoEmittedSinkTest {
                         "GlMappingDecisionRequest",
                         // P14-TSK-005: the period doors' body - a REASON alone (optional for the lock), screened at the
                         // domain (AccountingReasons).
-                        "AccountingPeriodActRequest");
+                        "AccountingPeriodActRequest",
+                        // P14-TSK-010: the break doors' bodies. No secret: a disclosure and REASONs screened for
+                        // card-number and account shapes at the domain (AccountingReasons), and a journal entry's id.
+                        "BreakAcknowledgementProposal",
+                        "BreakActRequest",
+                        "BreakResolution");
     }
 
     @Test
