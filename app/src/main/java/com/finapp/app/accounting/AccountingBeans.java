@@ -141,9 +141,11 @@ public class AccountingBeans {
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
-            Clock clock) {
+            Clock clock,
+            com.finapp.accounting.ReportRuns reportRuns) {
+        // P14-TSK-008: the unlock supersedes the period's FINAL report runs in its own transaction.
         return new AccountingPeriods(accountingPeriodStore, glMappingStore, postingCutoff, lockGrace, auditWriter,
-                outboxWriter, idGenerator, clock);
+                outboxWriter, idGenerator, clock, reportRuns);
     }
 
     @Bean
@@ -161,5 +163,81 @@ public class AccountingBeans {
     AccountingPeriodMetrics accountingPeriodMetrics(
             AccountingPeriods accountingPeriods, DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
         return new AccountingPeriodMetrics(accountingPeriods, dataSource::getConnection, clock, meterRegistry);
+    }
+
+    // ------------------------------------------------------------------ the report runs (P14-TSK-008)
+
+    @Bean
+    com.finapp.accounting.ReportRunStore reportRunStore() {
+        return new com.finapp.accounting.JdbcReportRunStore();
+    }
+
+    /**
+     * The definitions this build holds - every {@code ReportDefinition} bean, none until `P14-TSK-009`'s trial balance; a
+     * definition joins by being declared, with no edit here.
+     */
+    @Bean
+    com.finapp.accounting.reporting.ReportDefinitions reportDefinitions(
+            org.springframework.beans.factory.ObjectProvider<com.finapp.accounting.reporting.ReportDefinition> definitions) {
+        return com.finapp.accounting.reporting.ReportDefinitions.of(definitions.orderedStream().toList());
+    }
+
+    /** The generator's lease on the database clock (default 5 minutes) and its attempts' bound (default 5). */
+    @Bean
+    com.finapp.accounting.ReportRuns.Leases reportRunLeases(
+            @Value("${finapp.accounting.report.lease:PT5M}") java.time.Duration lease,
+            @Value("${finapp.accounting.report.max-attempts:5}") int maxAttempts) {
+        return new com.finapp.accounting.ReportRuns.Leases(lease, maxAttempts);
+    }
+
+    @Bean
+    com.finapp.accounting.ReportRuns reportRuns(
+            com.finapp.accounting.ReportRunStore reportRunStore,
+            AccountingPeriodStore accountingPeriodStore,
+            GlMappingStore glMappingStore,
+            com.finapp.accounting.reporting.ReportDefinitions reportDefinitions,
+            com.finapp.accounting.ReportRuns.Leases reportRunLeases,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.accounting.ReportRuns(reportRunStore, accountingPeriodStore, glMappingStore,
+                reportDefinitions, reportRunLeases, auditWriter, outboxWriter, idGenerator, clock);
+    }
+
+    /** Report code's reads: a separate pooled connection, one REPEATABLE READ READ ONLY transaction, rolled back. */
+    @Bean
+    ReportSnapshots reportSnapshots(DataSource dataSource) {
+        return new JdbcReportSnapshots(dataSource::getConnection);
+    }
+
+    @Bean
+    ReportRunMetrics reportRunMetrics(
+            MeterRegistry meterRegistry, com.finapp.accounting.reporting.ReportDefinitions reportDefinitions) {
+        return new ReportRunMetrics(meterRegistry, reportDefinitions);
+    }
+
+    /** T-report's legs, and the orphan leg `P14-TSK-011` schedules in AccountingCloseSchedule. */
+    @Bean
+    ReportRunGenerator reportRunGenerator(
+            com.finapp.accounting.ReportRuns reportRuns,
+            ReportSnapshots reportSnapshots,
+            AccountingTransactions accountingTransactions,
+            ReportRunMetrics reportRunMetrics) {
+        return new ReportRunGenerator(reportRuns, new com.finapp.accounting.reporting.ReportGeneration(
+                com.finapp.accounting.reporting.ReportGeneration.FROM_THE_SNAPSHOT), reportSnapshots,
+                accountingTransactions, reportRunMetrics);
+    }
+
+    @Bean
+    ReportRunDesk reportRunDesk(
+            com.finapp.accounting.ReportRuns reportRuns,
+            ReportRunGenerator reportRunGenerator,
+            ReportSnapshots reportSnapshots,
+            IdempotentExecutor idempotentExecutor,
+            AccountingTransactions accountingTransactions,
+            AccountingFlowScope accountingFlowScope) {
+        return new ReportRunDesk(reportRuns, reportRunGenerator, reportSnapshots, idempotentExecutor,
+                accountingTransactions, accountingFlowScope);
     }
 }

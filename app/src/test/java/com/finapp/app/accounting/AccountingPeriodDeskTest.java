@@ -117,7 +117,8 @@ class AccountingPeriodDeskTest {
     };
     private final AccountingPeriods periods = new AccountingPeriods(store, new InMemoryGlMappingStore(), cutoff,
             LockGrace.standard(), (uow, record) -> audited.add(record),
-            (uow, envelope, payload, mediaType) -> events.add(envelope.eventType()), IDS, CLOCK);
+            (uow, envelope, payload, mediaType) -> events.add(envelope.eventType()), IDS, CLOCK,
+            (uow, period, actor, correlation) -> 0);
     private final AccountingPeriodDesk desk = new AccountingPeriodDesk(periods,
             new IdempotentExecutor(new Claims(), CLOCK, Duration.ofDays(1), Duration.ofSeconds(30)), unitOfWork,
             AccountingFlowScope.NONE);
@@ -222,7 +223,8 @@ class AccountingPeriodDeskTest {
     private String september() {
         new AccountingPeriods(store, new InMemoryGlMappingStore(), cutoff, LockGrace.standard(), (uow, record) -> {},
                 (uow, envelope, payload, mediaType) -> events.add(envelope.eventType()), IDS,
-                Clock.fixed(Instant.parse("2026-09-15T09:00:00Z"), ZoneOffset.UTC))
+                Clock.fixed(Instant.parse("2026-09-15T09:00:00Z"), ZoneOffset.UTC),
+                (uow, period, actor, correlation) -> 0)
                 .openNext(UOW, Actor.SYSTEM, CorrelationId.generate(IDS));
         return store.month(SEPTEMBER).orElseThrow().id().value().toString();
     }

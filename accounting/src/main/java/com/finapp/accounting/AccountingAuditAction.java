@@ -101,7 +101,39 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " posting cutoff moved back one period and the pin released, in the same transaction (P14-TSK-005,"
                     + " INV-AUD-04, INV-ACC-08; POST .../periods/{id}/unlock-approval, ACCOUNTING_CLOSE_APPROVE)."
                     + " Reasoned. Its target the period; the summary its month and revision.",
-            true);
+            true),
+
+    /** A report run completed FINAL or PROVISIONAL, or failed (`P14-TSK-008`, ACCOUNTING_REPORT_GENERATE). */
+    REPORT_GENERATED(
+            "accounting.ReportGenerated",
+            "A report run concluded (P14-TSK-008, ADR-0115, INV-ACC-04, INV-ACC-14; POST"
+                    + " /v1/operator/accounting/report-runs, ACCOUNTING_REPORT_GENERATE, or the orphan leg as the platform):"
+                    + " completed FINAL (a period no longer OPEN, under the lock it was claimed in) or PROVISIONAL (an OPEN"
+                    + " period) with its content and content_sha256 in one conditional edge - recorded SUCCEEDED with"
+                    + " accounting.ReportRunCompleted in the same commit - or failed with a closed code (DEFINITION_UNKNOWN,"
+                    + " DEFINITION_FAILED, PERIOD_MOVED, CONTENT_INVALID, ATTEMPTS_EXHAUSTED) - recorded FAILED. Its target"
+                    + " the run; the summary its definition, version, period, revision and basis with the status or the"
+                    + " failure code - never a figure or the content.",
+            false),
+
+    /** A FINAL report run was regenerated and compared (`P14-TSK-008`, ACCOUNTING_REPORT_GENERATE). */
+    REPORT_REGENERATED(
+            "accounting.ReportRegenerated",
+            "An accountant regenerated a FINAL report run from its pinned inputs in a read-only snapshot and compared the"
+                    + " hashes (P14-TSK-008, INV-ACC-04; POST .../report-runs/{runId}/regeneration,"
+                    + " ACCOUNTING_REPORT_GENERATE): IDENTICAL, or DIVERGED - metered finapp.accounting.report.diverged and"
+                    + " never repaired. Its target the run; the summary its definition, version, period, revision and the"
+                    + " result.",
+            false),
+
+    /** An accountant read a report run's content (`P14-TSK-008`, ACCOUNTING_READ) - every serving recorded. */
+    REPORT_READ(
+            "accounting.ReportRead",
+            "An accountant read a report run with its content - CONFIDENTIAL aggregates (P14-TSK-008, PHASE_14_PLAN.md"
+                    + " section 12; GET /v1/operator/accounting/report-runs/{runId}, ACCOUNTING_READ); recorded before it is"
+                    + " served, in a transaction of its own, so nothing is served unrecorded. Its target the run; the summary"
+                    + " its definition, version, period, revision, basis and status - never the content.",
+            false);
 
     private final String code;
     private final String description;

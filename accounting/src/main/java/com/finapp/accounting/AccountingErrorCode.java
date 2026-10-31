@@ -76,7 +76,27 @@ public enum AccountingErrorCode implements ErrorCode {
                     + " was changed, retry."),
 
     /** Every reasoned accounting act (`P14-TSK-003` first). */
-    REASON_REQUIRED("accounting.ReasonRequired", 422, "A reason is required.");
+    REASON_REQUIRED("accounting.ReasonRequired", 422, "A reason is required."),
+
+    /** The report run doors (`P14-TSK-008`): the build holds no definition of the code (or the run's version). */
+    REPORT_DEFINITION_UNKNOWN(
+            "accounting.ReportDefinitionUnknown",
+            422,
+            "No report definition of this code (or of the run's version) is held by this build; nothing was generated."),
+
+    /** The generation door (`P14-TSK-008`): the parameters are not a bounded, plain set the definition takes. */
+    REPORT_PARAMETERS_INVALID(
+            "accounting.ReportParametersInvalid",
+            422,
+            "The report parameters are not a bounded set of plain values the definition takes, or the valuation rate set"
+                    + " is missing where the definition translates or given where it does not; nothing was claimed."),
+
+    /** The regeneration door (`P14-TSK-008`): only a FINAL run, its period still under the lock it was generated in. */
+    REPORT_RUN_STALE(
+            "accounting.ReportRunStale",
+            409,
+            "The report run is not FINAL - generating, provisional, failed or superseded - or its period no longer holds"
+                    + " the lock it was generated under; only a FINAL run is regenerated and compared.");
 
     private final String code;
     private final int status;
