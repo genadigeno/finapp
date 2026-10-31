@@ -25678,7 +25678,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   records its entry, whose posting date is the one used (persistence none). Hermetic tests named in `CURRENT_STATE.md`;
   owed (C5): `PostingFloorDatabaseTest` (6: `#aFlooredPostingDatedIntoALockPostsOnTheFirstOpenDate`, `#aTimelyFlooredPostingKeepsItsDate`, `#aReplayAcrossALockConvergesOnTheFirstPosting`, `#tenFlooredPostersAndALockRefuseNothing`, `#aManualAdjustmentDatedIntoALockIsRefusedAtApprovalAndStaysProposed`, `#aReconciliationAdjustmentDatedIntoALockIsRefusedAtApprovalAndStaysProposed`), `LoanAccrualCutoffDatabaseTest` (4: `#aCatchUpAcrossALockPostsInTheOpenPeriod` - both orders of row 11 - `#aCatchUpAfterALockFloorsOnlyTheLockedDates`, `#aTimelyAccrualKeepsItsDate`, `#theOldestUnaccruedDateIsReadPerCurrency`), `BatchAcceptanceDatabaseTest#anAcceptanceDatedIntoALockPostsOnTheFirstOpenDate`, `PayoutReturnDatabaseTest#aReturnFromALockedPeriodsBatchPostsOnTheFirstOpenDate`, `ResolutionMachineDatabaseTest#aWriteOffDatedIntoALockIsRefusedAtApprovalAndStaysProposed` and `#aManualMatchApprovedAfterALockFloorsItsSuspenseEntry`, `BnplAccrualDatabaseTest#theOldestUnaccruedDateIsReadPerCurrency` - 15 cases. Unblocks no task by itself: `P14-TSK-011` now waits on `-009` and `-010` only.
 
-**P14-TSK-007 — The GL read model and drill-down** — `IN_PROGRESS` (2026-10-31; designed in wave D beside `-008` and `-014`, branch `P14-TSK-007` from master `18c4935c`; ledger `V029`) *(read "`READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)" until its design)*
+**P14-TSK-007 — The GL read model and drill-down** — `COMPLETE` (2026-10-31; built and gated in wave D beside `-008` and `-014`; branch `P14-TSK-007` from master `18c4935c`; ledger `V029`; **M14.3 at 1 of 3**; marks no task `READY` — the coordinator does) *(read "`READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)" until this task's gate)*
 - **Objective**: GL balances and activity by period, account and currency, computed from journal lines under the pinned
   version, each figure drilling to its lines (`INV-ACC-02`, `-06`).
 - **Bounded context**: Accounting / GL.
@@ -25702,6 +25702,29 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: double-count a purpose → `#glEqualsLedgerPerCurrency` red.
 - **Acceptance criteria**: every figure equals the sum of its drill-down lines; GL = ledger per currency.
 - **Definition of done**: `DOD-FIN`, `DOD-API`. **Risk**: Medium (query cost). **Cx**: M.
+- **As built** (2026-10-31): ledger `V029` - `journal_entry_by_posting_date` on `journal_entry (posting_date, id)`, in the
+  migration's transaction (no production journal yet; a live one would take a non-transactional `CONCURRENTLY` build),
+  nothing else changed. **Port** `JournalReads` (accounting, its first methods): `aggregates` (lines summed per purpose,
+  owner kind, counterparty, currency, scale, side over a `Range` of at most 366 days), `totals` (the ledger's own per
+  currency, scale and side - no account join), `lines` (a keyset page, `LineCursor` posting date / entry id / seq in
+  PostgreSQL's unsigned uuid order, 1-500), `entry`, `countLines`; `app`'s `LedgerJournalReads` answers it with `SELECT`s
+  only (never the entry's reason or actor; lines carry owner references). **Fold** `GeneralLedger` in
+  `com.finapp.accounting.reporting` (the first report code `ReportingNeverWritesTest` guards): `GlFigure` (a period's
+  movement per GL account x currency - debits, credits, the net on the normal side, lines, components by purpose / owner
+  kind / counterparty, **its version**), `GlBalances` (figures, an explicit unmapped bucket, `Agreement` per currency -
+  GL, unmapped and ledger debits, credits and lines), `GlActivity` (the figure and one page, the page checked against the
+  figure's selection), `GlEntry`, `PinnedMapping`. **Version** `GlPins` (+ `JdbcPeriodPins`, a plain read): a non-`OPEN`
+  period's pin, else the version in force; none - or a period locked with no version - `accounting.NoActiveMapping` 409.
+  **Doors** `GeneralLedgerController`/`GeneralLedgerDesk` (`ACCOUNTING_READ`): `GET /v1/operator/accounting/gl/balances`,
+  `…/gl/accounts/{code}/activity`, `…/gl/entries/{entryId}`; one verified `REPEATABLE READ READ ONLY` snapshot per request
+  (`GlSnapshots`: a connection of its own, the settings read back by the first statement - fail closed - always rolled
+  back); `accounting.GlRead` recorded in its own transaction before the answer. `finapp.accounting.gl.unmapped` fed
+  (`GlMappingGap` + `AccountingMappingMetrics`: the open period's lines the active version does not map, 0 without a
+  journal read under a total version, cached 60 s). Wiring in `GeneralLedgerBeans` (the module's parallel tasks each
+  add theirs). **Clarifications, recorded**: "balances" are the period's movement - opening and closing are the trial
+  balance's (`-009`), so a live read never re-aggregates from inception; the version is read through the period's pin
+  (equal to the version in force by construction); the GL view of an entry carries its economic event's `reference`
+  (`RESTRICTED-FINANCIAL`, as the amounts).
 
 **P14-TSK-008 — Report runs: immutable, reproducible** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)
 - **Objective**: the report-run machinery every report uses (ADR-0115, `INV-ACC-04`).
