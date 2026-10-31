@@ -1951,6 +1951,66 @@ class OwnershipIsScopedTest {
                                         + " the operator's permission-guarded request named or by its ACTIVE status -"
                                         + " platform-wide configuration, no owner to scope by.")),
                     Map.entry(
+                            "com.finapp.accounting.JdbcReportRunStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-008. A report run by the id the operator's permission-guarded request"
+                                        + " named (behind @RequiresPermission(ACCOUNTING_READ or"
+                                        + " ACCOUNTING_REPORT_GENERATE)), or the id its own claim, reclaim or key"
+                                        + " answered - an issued answer about the platform's books, no owner to scope"
+                                        + " by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcReportRunStore.content",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-008. A run's content by the id the operator's request named, behind"
+                                        + " @RequiresPermission(ACCOUNTING_READ) and audited accounting.ReportRead before"
+                                        + " it is served, or by the id a regeneration read - CONFIDENTIAL aggregates of"
+                                        + " the platform's books, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcReportRunStore.pastLease",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-008. The id comes only from a run the flow claimed, read back at its key or"
+                                        + " named by its stored idempotency response; a lease read on the database's"
+                                        + " clock, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcReportRunStore.reclaim",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-008. The id comes only from a run read back at its key, named by its stored"
+                                        + " response or taken FOR UPDATE SKIP LOCKED by the orphan leg; the move"
+                                        + " conditional on GENERATING, the attempt read and an expired lease.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcReportRunStore.complete",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-008. The id comes only from the run this generator holds - born by its"
+                                        + " claim or reclaimed at its attempt; the edge conditional on GENERATING and"
+                                        + " that attempt, the period FOR SHARE before it.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcReportRunStore.fail",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-008. The id comes only from the run this generator holds, or one the"
+                                        + " orphan leg found past its attempts' bound; the edge conditional on"
+                                        + " GENERATING and the attempt.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcReportRunStore.supersedeFinal",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-008. The period id comes only from the period row the unlock locked FOR"
+                                        + " UPDATE (AccountingPeriods.approveUnlock, behind"
+                                        + " @RequiresPermission(ACCOUNTING_CLOSE_APPROVE)); only that period's FINAL"
+                                        + " runs move.")),
+                    Map.entry(
+                            "com.finapp.accounting.reporting.ReportGeneration.readPeriod",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-008. The run's own period, re-read in its read-only snapshot by the id the"
+                                        + " run pinned at its claim - the lock it was claimed under; a calendar month of"
+                                        + " the platform's books, no owner to scope by.")),
+                    Map.entry(
                             "com.finapp.risk.JdbcDecisionOverrideStore.find",
                             new Entry(
                                     Scope.ADMINISTERED,

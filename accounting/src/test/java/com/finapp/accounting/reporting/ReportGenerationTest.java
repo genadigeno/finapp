@@ -64,7 +64,7 @@ class ReportGenerationTest {
             throw new AssertionError("a provisional run reads no lock");
         });
         ReportInputs inputs = new ReportInputs(PERIOD, YearMonth.of(2026, 10), 1, RunBasis.PROVISIONAL, Optional.empty(),
-                Optional.empty(), Optional.empty(), Instant.parse("2026-10-20T10:15:30.000001Z"), RunParameters.NONE);
+                Optional.empty(), Optional.empty(), Instant.parse("2026-10-20T10:15:30.000001Z"), RunParameters.none());
         assertThat(generation.generate(SNAPSHOT, TestReportDefinition.echo(), inputs).content())
                 .contains("\"basis\":\"PROVISIONAL\"").contains("\"cut\":\"2026-10-20T10:15:30.000001Z\"")
                 .contains("\"mappingVersion\":null");
@@ -116,13 +116,13 @@ class ReportGenerationTest {
             + " its id and number together")
     void theInputsAreCoherent() {
         assertThatThrownBy(() -> new ReportInputs(PERIOD, YearMonth.of(2026, 9), 1, RunBasis.FINAL, Optional.empty(),
-                Optional.empty(), Optional.empty(), LOCKED_AT, RunParameters.NONE))
+                Optional.empty(), Optional.empty(), LOCKED_AT, RunParameters.none()))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new ReportInputs(PERIOD, YearMonth.of(2026, 9), 1, RunBasis.PROVISIONAL,
-                Optional.of(LOCKED_AT), Optional.empty(), Optional.empty(), LOCKED_AT, RunParameters.NONE))
+                Optional.of(LOCKED_AT), Optional.empty(), Optional.empty(), LOCKED_AT, RunParameters.none()))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new ReportInputs(PERIOD, YearMonth.of(2026, 9), 1, RunBasis.PROVISIONAL,
-                Optional.empty(), Optional.of(MAPPING), Optional.empty(), LOCKED_AT, RunParameters.NONE))
+                Optional.empty(), Optional.of(MAPPING), Optional.empty(), LOCKED_AT, RunParameters.none()))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

@@ -34,8 +34,6 @@ public record RunParameters(SortedMap<String, String> values, Optional<UUID> val
     private static final Pattern NAME = Pattern.compile("[a-z][A-Za-z0-9]{0,31}");
     private static final Pattern VALUE = Pattern.compile("[A-Za-z0-9][A-Za-z0-9 _.:,/=+-]{0,127}");
 
-    /** No values and no rate set - a definition that takes no parameters. */
-    public static final RunParameters NONE = new RunParameters(new TreeMap<>(), Optional.empty());
 
     /** The parameters are not a bounded, plain, instrument-free set. */
     public static final class Invalid extends RuntimeException {
@@ -93,6 +91,11 @@ public record RunParameters(SortedMap<String, String> values, Optional<UUID> val
             whole.putNull("valuationRateSet");
         }
         return CanonicalJson.text(whole);
+    }
+
+    /** No values and no rate set - a definition that takes no parameters (a method: no static state, ADR-0014). */
+    public static RunParameters none() {
+        return new RunParameters(new TreeMap<>(), Optional.empty());
     }
 
     /** The SHA-256 of {@link #canonical} - the run key's last member. */

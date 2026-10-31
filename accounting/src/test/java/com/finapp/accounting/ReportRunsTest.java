@@ -231,7 +231,7 @@ class ReportRunsTest {
         AccountingPeriodId september = lockedSeptember();
         ReportRunStore.RunRow dead = runs().claim(UOW, TestReportDefinition.CODE, september, probe("d"), ACCOUNTANT,
                 correlation()).run();
-        assertThat(runs().reclaimExpired(UOW, 10)).as("a live lease is not reclaimed").isEmpty();
+        assertThat(runs().reclaimExpired(UOW, 10, Actor.SYSTEM)).as("a live lease is not reclaimed").isEmpty();
         clock.advance(ReportRuns.Leases.STANDARD.lease().plusSeconds(1));
         // A claim of the same question now takes the expired run over rather than racing it with a new revision.
         ReportRuns.Claimed retaken = runs().claim(UOW, TestReportDefinition.CODE, september, probe("d"), CONTROLLER,
@@ -241,7 +241,7 @@ class ReportRunsTest {
         assertThat(retaken.run().id()).isEqualTo(dead.id());
         assertThat(retaken.run().attempt()).isEqualTo(2);
         clock.advance(ReportRuns.Leases.STANDARD.lease().plusSeconds(1));
-        List<ReportRunStore.RunRow> held = runs().reclaimExpired(UOW, 10);
+        List<ReportRunStore.RunRow> held = runs().reclaimExpired(UOW, 10, Actor.SYSTEM);
         assertThat(held).singleElement().satisfies(run -> {
             assertThat(run.id()).isEqualTo(dead.id());
             assertThat(run.attempt()).isEqualTo(3);
@@ -262,10 +262,10 @@ class ReportRunsTest {
         ReportRunStore.RunRow run = bounded.claim(UOW, TestReportDefinition.CODE, september, probe("b"), ACCOUNTANT,
                 correlation()).run();
         clock.advance(Duration.ofMinutes(2));
-        assertThat(bounded.reclaimExpired(UOW, 5)).singleElement().extracting(ReportRunStore.RunRow::attempt)
+        assertThat(bounded.reclaimExpired(UOW, 5, Actor.SYSTEM)).singleElement().extracting(ReportRunStore.RunRow::attempt)
                 .isEqualTo(2);
         clock.advance(Duration.ofMinutes(2));
-        assertThat(bounded.reclaimExpired(UOW, 5)).isEmpty();
+        assertThat(bounded.reclaimExpired(UOW, 5, Actor.SYSTEM)).isEmpty();
         assertThat(store.find(UOW, run.id()).orElseThrow().failure()).contains(RunFailure.ATTEMPTS_EXHAUSTED);
         assertThat(audit).singleElement().satisfies(record -> assertThat(record.actor()).isEqualTo(Actor.SYSTEM));
     }
@@ -337,7 +337,7 @@ class ReportRunsTest {
             + " a rate set it does not want, an unknown period, a service as the requester")
     void theRequestIsScreened() {
         AccountingPeriodId september = lockedSeptember();
-        assertThatThrownBy(() -> runs().claim(UOW, "TRIAL_BALANCE", september, RunParameters.NONE, ACCOUNTANT,
+        assertThatThrownBy(() -> runs().claim(UOW, "TRIAL_BALANCE", september, RunParameters.none(), ACCOUNTANT,
                 correlation())).isInstanceOf(ReportRuns.DefinitionUnknown.class);
         assertThatThrownBy(() -> runs().claim(UOW, TestReportDefinition.CODE, september,
                 RunParameters.of(Map.of("currency", "EUR"), Optional.empty()), ACCOUNTANT, correlation()))

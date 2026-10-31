@@ -1547,7 +1547,9 @@ not ready, a mapping gap, a stale valuation rate, …) arrives with the door tha
 client could never receive. `P14-TSK-003`'s GL mapping doors brought six: `accounting.MappingInvalid`, `MappingNotTotal`,
 `MappingIncompatible`, `MappingStale`, `MappingRetroactive` and `ReasonRequired`; `P14-TSK-005`'s period doors three:
 `accounting.PeriodStale`, `PeriodNotLockable` and `CutoffBusy` (and `MappingRetroactive` gained its period case - an
-activation into a locked period). `ledger.PeriodClosed` is the ledger's, not this module's (`P14-TSK-004`). Every detail is
+activation into a locked period); `P14-TSK-008`'s report run doors three: `accounting.ReportDefinitionUnknown`,
+`ReportParametersInvalid` and `ReportRunStale` (an unknown run or period is `accounting.NotFound`; a generation that
+fails is not an error but a run answered `FAILED`, a new revision allowed). `ledger.PeriodClosed` is the ledger's, not this module's (`P14-TSK-004`). Every detail is
 stranger-safe: never an amount, a balance, a GL figure or an owner reference.
 
 | Code | Status | Meaning |
@@ -1563,6 +1565,9 @@ stranger-safe: never an amount, a balance, a GL figure or an owner reference.
 | `accounting.PeriodNotLockable` | 409 | The accounting period cannot lock yet - its grace after the month end has not passed (the detail names the first lockable day), or the previous period is not `CLOSED` (periods lock in order); nothing was changed (`P14-TSK-005`, C9). |
 | `accounting.CutoffBusy` | 503 | The posting cutoff could not be moved right now - postings held the ledger's cutoff key through every bounded attempt (`P14-TSK-004`'s five of 2 s); nothing was changed and nothing stored under the idempotency key, so the same request retried later locks or unlocks (`P14-TSK-005`). |
 | `accounting.ReasonRequired` | 422 | A reasoned accounting act carried no reason, one past 1000 characters, or one holding a card-number or bank-account shape. |
+| `accounting.ReportDefinitionUnknown` | 422 | No report definition of this code - or, for a regeneration, of the run's code and version - is held by this build; nothing was generated (`P14-TSK-008`, ADR-0115 decision 1). Until `P14-TSK-009` the build holds none, so every generation answers this: the machinery exists, no report does. |
+| `accounting.ReportParametersInvalid` | 422 | The report parameters are not a bounded set of plain values the definition takes - a name it does not take, more than 16, a value outside its alphabet or holding a card-number or bank-account shape - or the valuation rate set is missing where the definition translates, given where it does not, or not an id; nothing was claimed (`P14-TSK-008`). |
+| `accounting.ReportRunStale` | 409 | The report run is not FINAL - generating, provisional, failed or superseded - or its period no longer holds the lock it was generated under; only a FINAL run is regenerated and compared (`P14-TSK-008`, `INV-ACC-04`). |
 
 ## 3a. Rejection at the boundary
 

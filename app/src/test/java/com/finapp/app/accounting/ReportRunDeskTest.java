@@ -305,14 +305,14 @@ class ReportRunDeskTest {
         ReportRunStore.RunRow dead = transactions.inTransaction(uow -> runs.claim(uow, TestReportDefinition.CODE,
                 september, com.finapp.accounting.reporting.RunParameters.of(Map.of("probe", "o"), Optional.empty()),
                 ACCOUNTANT, CorrelationId.generate(IDS))).run();
-        assertThat(generator.completeOrphaned(10)).as("a live lease").isZero();
+        assertThat(generator.completeOrphaned(10, Actor.SYSTEM)).as("a live lease").isZero();
         clock.advance(ReportRuns.Leases.STANDARD.lease().plusSeconds(1));
-        assertThat(generator.completeOrphaned(10)).isEqualTo(1);
+        assertThat(generator.completeOrphaned(10, Actor.SYSTEM)).isEqualTo(1);
         ReportRunStore.RunRow done = store.find(UOW, dead.id()).orElseThrow();
         assertThat(done.status().name()).isEqualTo("FINAL");
         assertThat(done.attempt()).isEqualTo(2);
         assertThat(audited).singleElement().satisfies(record -> assertThat(record.actor()).isEqualTo(Actor.SYSTEM));
-        assertThat(generator.completeOrphaned(10)).isZero();
+        assertThat(generator.completeOrphaned(10, Actor.SYSTEM)).isZero();
     }
 
     @Test

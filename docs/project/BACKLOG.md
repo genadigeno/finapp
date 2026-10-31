@@ -25703,7 +25703,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Acceptance criteria**: every figure equals the sum of its drill-down lines; GL = ledger per currency.
 - **Definition of done**: `DOD-FIN`, `DOD-API`. **Risk**: Medium (query cost). **Cx**: M.
 
-**P14-TSK-008 — Report runs: immutable, reproducible** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)
+**P14-TSK-008 — Report runs: immutable, reproducible** — `COMPLETE` (2026-10-31; wave D beside `-007` and `-014`, branch `P14-TSK-008` from master `18c4935c`; accounting `V004`; **M14.3 at 1 of 3**; marks no task `READY` — the coordinator does) *(read "`READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)" until this task's gate)*
 - **Objective**: the report-run machinery every report uses (ADR-0115, `INV-ACC-04`).
 - **Bounded context**: Reporting (27).
 - **Dependencies**: `-005`.
@@ -25729,6 +25729,47 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: drop the freeze trigger → `#contentIsFrozen` red.
 - **Acceptance criteria**: FINAL runs regenerate `IDENTICAL`; no write possible during generation.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`. **Risk**: Medium. **Cx**: M.
+- **As built** (2026-10-31): accounting `V004`: `report_run` - the plan's key verbatim `report_run_key UNIQUE
+  (definition, definition_version, period_id, revision, parameters_hash)` with `revision` the **run's** own (1, then one
+  more each time the latest run no longer answers its question - `FAILED`, `SUPERSEDED`, a completed PROVISIONAL
+  snapshot, the other basis) and `period_revision` an input; `basis`, `period_locked_at` (the lock a FINAL run read
+  under), `mapping_version_id` (the lock's pin for FINAL, the version in force for PROVISIONAL), `valuation_rate_set_id`
+  **uuid NULL with no foreign key** (`-014`'s table lands after; a hashed parameter of the question by `CHECK`), `cut_at`,
+  the requester, `attempt` and `lease_until`, `content` + `content_sha256` + `completed_at` (whole or absent), the failure
+  code, the supersession; the content and parameters hashes **recomputed by the database**; triggers
+  `report_run_content_is_frozen` (the freeze, its own, firing first), `report_run_permits_only_machine_edges` (birth
+  coherent with the period - FINAL only under its present lock and pin, PROVISIONAL only for `OPEN`; the reclaim only
+  past the lease; a FINAL completion only under the claimed lock, the period `FOR SHARE`; `FINAL -> SUPERSEDED`; no
+  delete), `report_run_is_never_truncated`, and on `accounting_period` `accounting_period_reopens_with_its_runs_superseded`;
+  grants `SELECT, INSERT` + the machine's and output's columns. Code (`accounting`): `reporting.CanonicalJson` (sorted
+  keys in UTF-16 order, no whitespace, no JSON number - amounts as minor units in strings - ECMAScript escaping;
+  `U+0000` and unpaired surrogates refused), `RunParameters`, `ReportDefinition` / `ReportDefinitions` (code + version,
+  every version kept), `ReportInputs`, `ReportGeneration` (the lock re-read in the snapshot, the header binding every
+  pinned input to the body); `ReportRuns` (claim - period `FOR SHARE`, insert-or-read; `takeOver`, `reclaimExpired` - the
+  orphan leg's reclaim, `ATTEMPTS_EXHAUSTED` past the bound; `complete` - period `FOR SHARE`, `PERIOD_MOVED`, one
+  conditional edge, `accounting.ReportGenerated` + `accounting.ReportRunCompleted`; `fail`; `supersedeFinal`),
+  `ReportRunStore` / `JdbcReportRunStore` (the conditional statements pinned), `RunBasis`, `RunFailure`, `ReportRunId`,
+  `ReportRunSupersession`; `AccountingPeriods.approveUnlock` supersedes the period's FINAL runs before its edge (its audit
+  summary gains `supersededRuns=N`). `app`: `JdbcReportSnapshots` (a separate pooled connection, `SET TRANSACTION
+  ISOLATION LEVEL REPEATABLE READ, READ ONLY` first, proven by `current_setting` before any read, always rolled back),
+  `ReportRunGenerator` (T-report's legs; the failures sorted; the snapshot's own failure leaves the run to its lease;
+  `completeOrphaned(limit)`, the callable `-011` schedules; `regenerate`), `ReportRunDesk` / `ReportRunController`
+  (`POST /v1/operator/accounting/report-runs` keyed, the stored response the run's id, never the content;
+  `GET …/{runId}` audited `accounting.ReportRead` before it is served; `POST …/{runId}/regeneration` keyed, `IDENTICAL |
+  DIVERGED`, audited `accounting.ReportRegenerated`), `ReportRunMetrics` (`finapp.accounting.report.run{definition,
+  outcome}`, `finapp.accounting.report.diverged{definition}`, eager per definition held; `definition` added to
+  `MetricNames.ALLOWED_TAG_KEYS`). Codes `accounting.ReportDefinitionUnknown` 422, `ReportParametersInvalid` 422,
+  `ReportRunStale` 409. Production holds **no definition** (`-009` is the first): every generation answers
+  `ReportDefinitionUnknown` until then; the machinery is proven with the test-only `TestReportDefinition`.
+  **Corrections, recorded** (ADR-0115 As built, `PHASE_14_PLAN.md` §6, §9): content stored as its **canonical text**
+  (DB-verified hash, the issued bytes retained) instead of `jsonb`; the **unlock supersedes** FINAL runs (the plan had
+  only the reopen) with the database backstop; `revision` read as the run's own. Tests: hermetic `CanonicalJsonTest` (9,
+  fixed vectors), `ReportGenerationTest` (6), `ReportRunsTest` (11, ten threaded claimers and completers),
+  `ReportRunMigrationTest` (9), `ReportRunStatementsTest` (4), `JdbcReportSnapshotsTest` (4), `ReportRunDeskTest` (10);
+  owed (C5) `ReportRunDatabaseTest` (10: the entry's five - `#twoGeneratorsOneRun`, `#aWriteInsideGenerationIsRefused`,
+  `#regenerationIsIdentical`, `#aDeadGeneratorIsReclaimed`, `#contentIsFrozen` - plus `#tenClaimersOneRun`,
+  `#aDivergenceIsDetectedAndNeverRepaired`, `#anUnlockSupersedesTheFinalRuns`, `#anOpenPeriodGetsAProvisionalRun`,
+  `#theDatabaseVerifiesTheHash`) and `AccountingMigrationTest`'s census.
 
 **P14-TSK-009 — The period trial balance** — `PLANNED`
 - **Objective**: per GL account × currency opening, debits, credits, closing for a period; zero per currency; equal to the

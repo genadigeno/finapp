@@ -172,7 +172,7 @@ public final class ReportRuns implements ReportRunSupersession {
                         .map(held -> new Claimed(held, false, true))
                         .orElseGet(() -> new Claimed(reread(unitOfWork, run.id()), false, false));
             }
-            fail(unitOfWork, run.id(), run.attempt(), RunFailure.ATTEMPTS_EXHAUSTED, Actor.SYSTEM, run.correlation());
+            fail(unitOfWork, run.id(), run.attempt(), RunFailure.ATTEMPTS_EXHAUSTED, actor, run.correlation());
         }
         int revision = latest.map(run -> run.revision() + 1).orElse(1);
         // The pin: the lock's for a FINAL run; the version in force at the claim for a PROVISIONAL one.
@@ -199,17 +199,19 @@ public final class ReportRuns implements ReportRunSupersession {
      * disjoint rows; each reclaimed by the conditional {@code UPDATE} - one attempt more, a new lease - or, past the
      * attempts' bound, failed {@code ATTEMPTS_EXHAUSTED}.
      *
+     * @param actor the leg's actor - the platform's, established by the schedule's system scope
      * @return the runs this call now holds - the caller generates and completes each
      */
-    public List<ReportRunStore.RunRow> reclaimExpired(Connection unitOfWork, int limit) {
+    public List<ReportRunStore.RunRow> reclaimExpired(Connection unitOfWork, int limit, Actor actor) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
+        requester(actor);
         if (limit < 1) {
             throw new IllegalArgumentException("the orphan leg takes at least one run");
         }
         List<ReportRunStore.RunRow> held = new ArrayList<>();
         for (ReportRunStore.RunRow run : store.expired(unitOfWork, limit)) {
             if (run.attempt() >= leases.maxAttempts()) {
-                fail(unitOfWork, run.id(), run.attempt(), RunFailure.ATTEMPTS_EXHAUSTED, Actor.SYSTEM, run.correlation());
+                fail(unitOfWork, run.id(), run.attempt(), RunFailure.ATTEMPTS_EXHAUSTED, actor, run.correlation());
                 continue;
             }
             reclaimed(unitOfWork, run).ifPresent(held::add);
@@ -224,14 +226,15 @@ public final class ReportRuns implements ReportRunSupersession {
      * @return the run this call now holds - empty when it is live, concluded, exhausted, or another reclaimer won
      * @throws RunNotFound when no run has this id
      */
-    public Optional<ReportRunStore.RunRow> takeOver(Connection unitOfWork, ReportRunId id) {
+    public Optional<ReportRunStore.RunRow> takeOver(Connection unitOfWork, ReportRunId id, Actor actor) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
+        requester(actor);
         ReportRunStore.RunRow run = store.find(unitOfWork, id).orElseThrow(RunNotFound::new);
         if (run.status() != RunStatus.GENERATING || !expired(unitOfWork, run)) {
             return Optional.empty();
         }
         if (run.attempt() >= leases.maxAttempts()) {
-            fail(unitOfWork, run.id(), run.attempt(), RunFailure.ATTEMPTS_EXHAUSTED, Actor.SYSTEM, run.correlation());
+            fail(unitOfWork, run.id(), run.attempt(), RunFailure.ATTEMPTS_EXHAUSTED, actor, run.correlation());
             return Optional.empty();
         }
         return reclaimed(unitOfWork, run);

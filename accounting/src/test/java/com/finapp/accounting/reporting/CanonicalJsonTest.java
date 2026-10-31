@@ -143,7 +143,7 @@ class CanonicalJsonTest {
         UUID set = UUID.fromString("0190f0c4-1d2e-7a00-8000-000000000001");
         assertThat(RunParameters.of(Map.of(), Optional.of(set)).canonical())
                 .isEqualTo("{\"valuationRateSet\":\"" + set + "\",\"values\":{}}");
-        assertThat(RunParameters.NONE.canonical()).isEqualTo("{\"valuationRateSet\":null,\"values\":{}}");
+        assertThat(RunParameters.none().canonical()).isEqualTo("{\"valuationRateSet\":null,\"values\":{}}");
     }
 
     @Test

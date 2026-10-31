@@ -104,7 +104,8 @@ public final class ReportRunGenerator {
      */
     public ReportRunStore.RunRow drive(ReportRunId id, Actor actor) {
         Objects.requireNonNull(id, "id");
-        Optional<ReportRunStore.RunRow> held = transactions.inTransaction(unitOfWork -> runs.takeOver(unitOfWork, id));
+        Optional<ReportRunStore.RunRow> held = transactions.inTransaction(
+                unitOfWork -> runs.takeOver(unitOfWork, id, actor));
         if (held.isPresent()) {
             return generateAndComplete(held.get(), actor);
         }
@@ -115,14 +116,17 @@ public final class ReportRunGenerator {
     /**
      * The orphan leg (`P14-TSK-011` schedules it; {@code PHASE_14_PLAN.md} section 8.4 (c)): up to {@code limit} runs past
      * their lease reclaimed - or failed past the attempts' bound - in one short transaction, then each generated and
-     * completed as the platform.
+     * completed as {@code actor} - the platform's, which the schedule establishes by its system scope
+     * ({@code SecurityContext.enterSystem}) and passes in; this class never names the system actor itself.
      *
      * @return how many runs this call reclaimed
      */
-    public int completeOrphaned(int limit) {
-        List<ReportRunStore.RunRow> held = transactions.inTransaction(unitOfWork -> runs.reclaimExpired(unitOfWork, limit));
+    public int completeOrphaned(int limit, Actor actor) {
+        Objects.requireNonNull(actor, "actor");
+        List<ReportRunStore.RunRow> held = transactions.inTransaction(
+                unitOfWork -> runs.reclaimExpired(unitOfWork, limit, actor));
         for (ReportRunStore.RunRow run : held) {
-            generateAndComplete(run, Actor.SYSTEM);
+            generateAndComplete(run, actor);
         }
         return held.size();
     }

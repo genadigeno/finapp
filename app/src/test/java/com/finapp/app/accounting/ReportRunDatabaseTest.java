@@ -271,7 +271,7 @@ class ReportRunDatabaseTest {
                 january, probe(), person(), correlation())).run();
         assertThat(dead.attempt()).isEqualTo(1);
         Thread.sleep(800);
-        assertThat(generator(short_).completeOrphaned(100)).isPositive();
+        assertThat(generator(short_).completeOrphaned(100, Actor.SYSTEM)).isPositive();
         ReportRunStore.RunRow done = TRANSACTIONS.inTransaction(uow -> runs(short_).find(uow, dead.id())).orElseThrow();
         assertThat(done.status()).isEqualTo(RunStatus.FINAL);
         assertThat(done.attempt()).isEqualTo(2);
@@ -343,7 +343,7 @@ class ReportRunDatabaseTest {
         assertThat(run.basis()).isEqualTo(RunBasis.PROVISIONAL);
         assertThat(run.status()).isEqualTo(RunStatus.PROVISIONAL);
         assertThat(run.periodLockedAt()).isEmpty();
-        String parameters = RunParameters.NONE.canonical();
+        String parameters = RunParameters.none().canonical();
         try (Connection owner = DatabaseRoles.migrator()) {
             refusedBy(owner, "INSERT INTO accounting.report_run (id, definition, definition_version, period_id, revision,"
                     + " parameters, parameters_hash, period_revision, basis, period_locked_at, cut_at, requested_by,"
