@@ -232,7 +232,7 @@ is the lawful basis the gate queries (`INV-CNS-01`), the audit record is the tra
 
 | Code | Reason required | What it is |
 |---|---|---|
-| `ledger.JournalEntryPosted` | No | A balanced journal entry was posted to the ledger; the record names the entry, never an amount. |
+| `ledger.JournalEntryPosted` | No | A balanced journal entry was posted to the ledger; the record names the entry, never an amount. *(`P14-TSK-006`, C3: an entry floored to the first open date at its poster's request carries `flooredFrom=<the stated date>` in its change summary - a date, never an amount.)* |
 | `ledger.AdjustmentPosted` | **Yes** | A person posted a manual adjusting entry; the reason and the authorising actor are recorded. |
 | `ledger.AdjustmentProposed` | **Yes** | A person proposed a manual adjustment for a second person's approval; the reason and the initiator are recorded. |
 | `ledger.AdjustmentRejected` | No | A standing adjustment proposal was rejected or withdrawn; the record names the proposal and who declined it. |

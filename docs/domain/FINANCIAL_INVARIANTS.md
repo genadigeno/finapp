@@ -1333,7 +1333,11 @@ composing it.
 prior-period adjustment in an open period.
 **Why:** Back-dated postings change reports that have already been issued.
 **Enforce:** `DOMAIN` + `DB-CONSTRAINT`.
-**Verify:** Closed-period rejection tests; prior-period adjustment tests.
+**Verify:** Closed-period rejection tests; prior-period adjustment tests. *(`P14-TSK-006`, C3: a system poster
+floored to the first open date, never into the locked period - `PostingFloorTest`, `PostingFloorDatabaseTest`,
+`LoanAccrualCutoffDatabaseTest`; an adjustment refused at approval, `PROPOSED` kept - `AdjustmentApprovalCutoffTest`,
+`PostingFloorDatabaseTest#aManualAdjustmentDatedIntoALockIsRefusedAtApprovalAndStaysProposed`; every rule's reaction
+held to the source - `PostingRuleRegisterTest#theFloorAgreesWithTheSource`.)*
 **Phase:** 14
 
 ### INV-ACC-04 — Reports are reproducible

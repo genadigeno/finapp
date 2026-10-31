@@ -25,6 +25,7 @@ import java.util.regex.Pattern;
  * @param economicEvent what happened, in the domain's words
  * @param authoritativeReference the source record the entry answers to ({@code INV-LED-05}: every posting attributable)
  * @param dating where the posting date comes from
+ * @param cutoff what its poster does when that date lies in a locked period (`P14-TSK-006`, owner decision C3)
  * @param lines the line shape
  * @param catalogue the document the shape is read against
  */
@@ -39,6 +40,7 @@ public record PostingRule(
         String economicEvent,
         String authoritativeReference,
         DatingClass dating,
+        CutoffReaction cutoff,
         List<LineShape> lines,
         String catalogue) {
 
@@ -58,6 +60,7 @@ public record PostingRule(
         Objects.requireNonNull(economicEvent, "economicEvent");
         Objects.requireNonNull(authoritativeReference, "authoritativeReference");
         Objects.requireNonNull(dating, "dating");
+        Objects.requireNonNull(cutoff, "cutoff");
         lines = List.copyOf(Objects.requireNonNull(lines, "lines"));
         Objects.requireNonNull(catalogue, "catalogue");
         if (!id.matches("[A-Z][A-Z0-9]*(-[A-Za-z0-9]+)*")) {
@@ -73,6 +76,19 @@ public record PostingRule(
         }
         if (posters.isEmpty() || posters.stream().anyMatch(poster -> !poster.matches("[A-Z][A-Za-z0-9]*"))) {
             throw new IllegalArgumentException(id + ": a rule names its posters by class: " + posters);
+        }
+        // C3's coherence (P14-TSK-006): a lock reaches exactly the rules that may date into the past; the floor is the
+        // posting command's alone, and the refusal at approval the adjustment door's alone.
+        if (cutoff.reachedByALock() != dating.mayBackDate()) {
+            throw new IllegalArgumentException(id + ": a " + dating + " rule's cutoff reaction cannot be " + cutoff
+                    + " - a lock reaches exactly the rules that may date into the past");
+        }
+        if (cutoff == CutoffReaction.FLOORED_AT_FIRST_OPEN && type != EntryType.POSTING) {
+            throw new IllegalArgumentException(id + ": only a POSTING asks the ledger for the floor, not a " + type);
+        }
+        if ((cutoff == CutoffReaction.REFUSED_AT_APPROVAL) != (type == EntryType.ADJUSTMENT && cutoff.reachedByALock())) {
+            throw new IllegalArgumentException(id + ": a back-dating ADJUSTMENT, and only one, is refused at approval: "
+                    + type + " " + cutoff);
         }
         if (economicEvent.isBlank() || authoritativeReference.isBlank() || catalogue.isBlank()
                 || sourceModule.isBlank()) {
@@ -93,5 +109,10 @@ public record PostingRule(
     /** True when the rule may date an entry before today ({@link DatingClass#mayBackDate()}). */
     public boolean mayBackDate() {
         return dating.mayBackDate();
+    }
+
+    /** True when its poster asks the ledger to floor its date at the first open date (C3; `P14-TSK-006`). */
+    public boolean floored() {
+        return cutoff == CutoffReaction.FLOORED_AT_FIRST_OPEN;
     }
 }

@@ -107,6 +107,12 @@ class BnplAccrualMetricsTest {
             public Optional<Duration> oldestLag(Connection unitOfWork) {
                 return lag.get();
             }
+
+            @Override
+            public java.util.Map<com.finapp.sharedkernel.money.CurrencyCode, java.time.LocalDate>
+                    oldestUnaccruedByCurrency(Connection unitOfWork) {
+                throw new UnsupportedOperationException("the meters read the lag, not the close's dates");
+            }
         };
     }
 

@@ -353,6 +353,23 @@ class BnplAccrualDatabaseTest {
         assertThat(lag.get()).isGreaterThanOrEqualTo(Duration.ofHours(36));
     }
 
+    @Test
+    @DisplayName("the close's read (P14-TSK-006, C3): an obligation behind makes EUR lag on or before its purchase date"
+            + " - the oldest unaccrued date per currency, the lag's candidates kept as dates; EUR the product's only"
+            + " currency")
+    void theOldestUnaccruedDateIsReadPerCurrency() throws SQLException {
+        BnplBillingDatabaseTest.World world = new BnplBillingDatabaseTest.World();
+        BnplBillingDatabaseTest.Purchased bought = world.purchase(BnplProduct.BNPL_PAY_IN_N, BnplPlan.PAY_IN_3_MONTHS);
+        com.finapp.sharedkernel.money.CurrencyCode eur = com.finapp.sharedkernel.money.CurrencyCode.of("EUR");
+        java.util.Map<com.finapp.sharedkernel.money.CurrencyCode, java.time.LocalDate> behind =
+                BnplClockFrame.inOneTransaction(world.frameOn(bought.purchaseDate().plusDays(2)),
+                        ACCRUALS::oldestUnaccruedByCurrency);
+        // The tier shares one database: another suite's obligation may lag further back - "on or before", never "equal".
+        assertThat(behind).containsKey(eur);
+        assertThat(behind.get(eur)).isBeforeOrEqualTo(bought.purchaseDate());
+        assertThat(behind.keySet()).allMatch(currency -> currency.equals(eur));
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     private static BnplAccruals accruals(BnplBook book) {

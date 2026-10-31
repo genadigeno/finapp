@@ -73,6 +73,13 @@ import lombok.RequiredArgsConstructor;
  * EXACT inverse — the item's frozen side, position and original value date — under a new
  * {@code recon-suspense:<parkId>} key.
  *
+ * <p><strong>Floored at the first open date</strong> (`P14-TSK-006`, owner decision C3; rule
+ * {@code RECON-SUSPENSE} version 2): every suspense posting asks the ledger for
+ * {@code FLOOR_AT_FIRST_OPEN}, so a deciding act's date a period lock already covers - a
+ * resolution's manual match approved after the lock of the month it was proposed in - posts on
+ * the first open date instead of being refused; the value date is the items' as above, and the
+ * park row keeps {@code decided_on}.
+ *
  * <p><strong>The key converges nothing.</strong> Every {@code <parkId>} is freshly minted by
  * the id generator, so a retry or a racer would post under a different key: a park's once-ness
  * rests on the external item's conditional transition, decided on the locked row before any
@@ -529,7 +536,9 @@ public final class Suspense {
                                 command.decidedOn(),
                                 key.valueDate(),
                                 parkId.toString(),
-                                lines));
+                                lines,
+                                // C3 (P14-TSK-006): never refused by a lock - see the class comment.
+                                PostingCommand.Dating.FLOOR_AT_FIRST_OPEN));
         UUID entryId = posted.entryId().value();
         insertPark(
                 unitOfWork, parkId, command.sourceId(), ParkKind.PARK,
@@ -625,7 +634,9 @@ public final class Suspense {
                                 decidedOn,
                                 valueDate,
                                 parkId.toString(),
-                                lines));
+                                lines,
+                                // C3 (P14-TSK-006): never refused by a lock - see the class comment.
+                                PostingCommand.Dating.FLOOR_AT_FIRST_OPEN));
         UUID entryId = posted.entryId().value();
         insertPark(
                 unitOfWork, parkId, breakSource(unitOfWork, item.breakId()), ParkKind.UNPARK,
@@ -686,7 +697,9 @@ public final class Suspense {
                                 decidedOn,
                                 valueDate,
                                 parkId.toString(),
-                                lines));
+                                lines,
+                                // C3 (P14-TSK-006): never refused by a lock - see the class comment.
+                                PostingCommand.Dating.FLOOR_AT_FIRST_OPEN));
         UUID entryId = posted.entryId().value();
         insertPark(
                 unitOfWork, parkId, breakSource(unitOfWork, item.breakId()), ParkKind.UNPARK,

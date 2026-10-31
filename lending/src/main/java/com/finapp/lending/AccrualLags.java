@@ -6,16 +6,20 @@ import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PurposeBalances;
 import com.finapp.lending.LoanServicingStore.LineAwaitingAccrual;
+import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
@@ -39,6 +43,11 @@ import lombok.RequiredArgsConstructor;
  * The line arm is one ledger read per candidate line - lines ever drawn and not accrued through yesterday - a cost the
  * meter's refresh floor bounds; a published read joining the journal lines is `P11-TSK-030`'s to choose if the fleet's
  * size asks for it (recorded).
+ *
+ * <p><strong>The dated twin</strong> (`P14-TSK-006`, owner decision C3 - "the close requires accruals caught up"):
+ * {@link #oldestUnaccruedByCurrency} answers the same question as dates per currency - lending's arm of accounting's
+ * {@code AccrualCompleteness}, which the close's {@code ACCRUALS_COMPLETE} check compares with a period's end. One rule
+ * for both: the line's first unaccrued date with principal outstanding ({@link #firstUnaccrued}).
  */
 @RequiredArgsConstructor
 public final class AccrualLags {
@@ -61,8 +70,38 @@ public final class AccrualLags {
         return oldest;
     }
 
+    /**
+     * Per currency, the oldest elapsed date some account in servicing should have accrued and has not - the instalment
+     * arm ({@link LoanServicingStore#oldestUnaccruedByCurrency}) and the line arm ({@link #firstUnaccrued}) merged, the
+     * earlier date winning; a currency absent is caught up. Read-only, lock-free, one statement per arm plus one ledger
+     * read per candidate line (`P14-TSK-006`).
+     */
+    public Map<CurrencyCode, LocalDate> oldestUnaccruedByCurrency(Connection unitOfWork) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Map<CurrencyCode, LocalDate> oldest = new TreeMap<>(Comparator.comparing(CurrencyCode::code));
+        oldest.putAll(store.oldestUnaccruedByCurrency(unitOfWork));
+        for (LineAwaitingAccrual line : store.linesAwaitingAccrual(unitOfWork)) {
+            firstUnaccrued(unitOfWork, line).ifPresent(date -> oldest.merge(line.currency(), date,
+                    (one, other) -> one.isBefore(other) ? one : other));
+        }
+        return oldest;
+    }
+
     /** The line's lag: from the end of its first unaccrued date with principal outstanding; empty when there is none. */
     Optional<Duration> lineLag(Connection unitOfWork, LineAwaitingAccrual line, Instant now) {
+        return firstUnaccrued(unitOfWork, line).map(date -> {
+            Instant endOfDate = date.plusDays(1).atStartOfDay(ZoneId.of(line.zone())).toInstant();
+            Duration lag = Duration.between(endOfDate, now);
+            return lag.isNegative() ? Duration.ZERO : lag;
+        });
+    }
+
+    /**
+     * The line's first date from its next accrual date up to (excluding) its today whose base -
+     * {@code LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE} over the lines valued on or before it, ONE read - is positive: the first
+     * date the accrual step would accrue and has not. Empty when there is none (a line at zero drawn is not lagging).
+     */
+    Optional<LocalDate> firstUnaccrued(Connection unitOfWork, LineAwaitingAccrual line) {
         Optional<LedgerAccountId> principal = owned(unitOfWork, line, AccountPurpose.LOAN_PRINCIPAL);
         Optional<LedgerAccountId> principalDue = owned(unitOfWork, line, AccountPurpose.LOAN_PRINCIPAL_DUE);
         if (principal.isEmpty() || principalDue.isEmpty()) {
@@ -81,9 +120,7 @@ public final class AccrualLags {
                 base = posted.direction() == Direction.DEBIT ? from.plus(amount) : from.minus(amount);
             }
             if (base != null && base.isPositive()) {
-                Instant endOfDate = date.plusDays(1).atStartOfDay(ZoneId.of(line.zone())).toInstant();
-                Duration lag = Duration.between(endOfDate, now);
-                return Optional.of(lag.isNegative() ? Duration.ZERO : lag);
+                return Optional.of(date);
             }
         }
         return Optional.empty();

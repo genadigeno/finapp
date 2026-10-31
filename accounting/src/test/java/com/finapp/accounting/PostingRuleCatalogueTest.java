@@ -6,7 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
@@ -35,15 +37,18 @@ class PostingRuleCatalogueTest {
     class TheRegister {
 
         @Test
-        @DisplayName("catalogue version 1: 58 rules, each at version 1 from the origin, each id once")
-        void isVersionOneOfFiftyEightRules() {
-            assertThat(REGISTER.catalogueVersion()).isEqualTo(PostingRuleRegister.CATALOGUE_VERSION).isEqualTo(1);
-            assertThat(REGISTER.rules()).hasSize(58);
-            assertThat(REGISTER.rules()).allSatisfy(rule -> {
-                assertThat(rule.version()).isEqualTo(1);
-                assertThat(rule.effectiveFrom()).isEqualTo(PostingRuleRegister.ORIGIN);
-            });
+        @DisplayName("catalogue version 2: 58 rules in 65 versions - every rule at version 1 from the origin, and C3's"
+                + " seven floored system rules at version 2 from 2026-10-30 (P14-TSK-006)")
+        void isVersionTwoOfFiftyEightRules() {
+            assertThat(REGISTER.catalogueVersion()).isEqualTo(PostingRuleRegister.CATALOGUE_VERSION).isEqualTo(2);
+            assertThat(REGISTER.rules()).hasSize(65);
             assertThat(REGISTER.rules().stream().map(PostingRule::id).distinct()).hasSize(58);
+            assertThat(REGISTER.rules().stream().filter(rule -> rule.version() == 1)).hasSize(58)
+                    .allSatisfy(rule -> assertThat(rule.effectiveFrom()).isEqualTo(PostingRuleRegister.ORIGIN));
+            assertThat(REGISTER.rules().stream().filter(rule -> rule.version() == 2)).hasSize(7)
+                    .allSatisfy(rule -> assertThat(rule.effectiveFrom()).isEqualTo(PostingRuleRegister.C3_FLOOR));
+            assertThat(PostingRuleRegister.C3_FLOOR).isEqualTo(LocalDate.of(2026, 10, 30));
+            assertThat(REGISTER.rules()).allSatisfy(rule -> assertThat(rule.version()).isBetween(1, 2));
         }
 
         @Test
@@ -72,12 +77,12 @@ class PostingRuleCatalogueTest {
         void namesTheBackDatingPosters() {
             assertThat(ids(DatingClass.ECONOMIC_DATE)).containsExactly("ADJ-MANUAL", "LND-2");
             assertThat(REGISTER.rules().stream().filter(rule -> rule.dating() == DatingClass.ECONOMIC_DATE)
-                    .flatMap(rule -> rule.posters().stream())).containsExactlyInAnyOrder("LoanServicing",
+                    .flatMap(rule -> rule.posters().stream()).distinct()).containsExactlyInAnyOrder("LoanServicing",
                     "LedgerAdjustments");
             assertThat(ids(DatingClass.STORED_ROW)).containsExactly(
                     "FX-COVER", "FX-TRADE", "MERCHANT-PAYOUT-RETURN", "RECON-GAIN", "RECON-SUSPENSE",
                     "RECON-TRANSFER", "RECON-WRITE-OFF", "SETTLEMENT-REPORT", "SETTLEMENT-STATEMENT");
-            assertThat(REGISTER.rules().stream().filter(PostingRule::mayBackDate).map(PostingRule::id))
+            assertThat(REGISTER.rules().stream().filter(PostingRule::mayBackDate).map(PostingRule::id).distinct())
                     .hasSize(11);
             // Lending dates by the database clock in its servicing zone except the accrual; bnpl always does.
             assertThat(ids(DatingClass.TODAY_DATABASE)).allMatch(id -> id.startsWith("LND-") || id.startsWith("BNPL-"))
@@ -160,20 +165,20 @@ class PostingRuleCatalogueTest {
             assertThatThrownBy(() -> rule("R-1", 1, PostingRuleRegister.ORIGIN, "Not A Key",
                     LineShape.required(Side.DEBIT, "A_X"))).hasMessageContaining("namespace must match");
             assertThatThrownBy(() -> new PostingRule("R-1", 1, PostingRuleRegister.ORIGIN, EntryType.ADJUSTMENT,
-                    "sample:", "m", List.of("Poster"), "e", "r", DatingClass.TODAY_CLOCK,
+                    "sample:", "m", List.of("Poster"), "e", "r", DatingClass.TODAY_CLOCK, CutoffReaction.NOT_REACHED,
                     List.of(LineShape.required(Side.EITHER, "A_X")), "c"))
                     .hasMessageContaining("namespace must match");
             assertThatThrownBy(() -> new PostingRule("R-1", 1, PostingRuleRegister.ORIGIN, EntryType.POSTING,
-                    "sample:", "m", List.of("Poster"), "e", "r", DatingClass.TODAY_CLOCK,
+                    "sample:", "m", List.of("Poster"), "e", "r", DatingClass.TODAY_CLOCK, CutoffReaction.NOT_REACHED,
                     List.of(LineShape.required(Side.DEBIT, "A_X")), "c"))
                     .hasMessageContaining("admits a debit and a credit");
             // INV-LED-05: a rule nobody can attribute - no authoritative reference, no source - is no rule.
             assertThatThrownBy(() -> new PostingRule("R-1", 1, PostingRuleRegister.ORIGIN, EntryType.POSTING,
-                    "sample:", "m", List.of("Poster"), "e", " ", DatingClass.TODAY_CLOCK,
+                    "sample:", "m", List.of("Poster"), "e", " ", DatingClass.TODAY_CLOCK, CutoffReaction.NOT_REACHED,
                     List.of(LineShape.required(Side.DEBIT, "A_X"), LineShape.required(Side.CREDIT, "B_X")), "c"))
                     .hasMessageContaining("states its source, event, reference and catalogue");
             assertThatThrownBy(() -> new PostingRule("R-1", 1, PostingRuleRegister.ORIGIN, EntryType.POSTING,
-                    "sample:", " ", List.of("Poster"), "e", "r", DatingClass.TODAY_CLOCK,
+                    "sample:", " ", List.of("Poster"), "e", "r", DatingClass.TODAY_CLOCK, CutoffReaction.NOT_REACHED,
                     List.of(LineShape.required(Side.DEBIT, "A_X"), LineShape.required(Side.CREDIT, "B_X")), "c"))
                     .hasMessageContaining("states its source, event, reference and catalogue");
             assertThat(REGISTER.rules()).allSatisfy(rule -> {
@@ -188,8 +193,117 @@ class PostingRuleCatalogueTest {
 
         private PostingRule rule(String id, int version, LocalDate from, String namespace, LineShape line) {
             return new PostingRule(id, version, from, EntryType.POSTING, namespace, "sample", List.of("SamplePoster"),
-                    "a sample event", "a sample record", DatingClass.TODAY_CLOCK,
+                    "a sample event", "a sample record", DatingClass.TODAY_CLOCK, CutoffReaction.NOT_REACHED,
                     List.of(line, LineShape.required(Side.CREDIT, "Z_X")), "a sample catalogue");
+        }
+    }
+
+    // ------------------------------------------------------------------ the cutoff reactions (C3, P14-TSK-006)
+
+    @Nested
+    @DisplayName("the cutoff reactions (owner decision C3, P14-TSK-006)")
+    class CutoffReactions {
+
+        private final LocalDate floor = PostingRuleRegister.C3_FLOOR;
+
+        @Test
+        @DisplayName("each of the eleven back-dating rules names its reaction: seven system rules floored from 2026-10-30"
+                + " (refused before), four adjustments refused at approval; every other rule is dated today - no lock"
+                + " reaches it")
+        void theElevenBackDatingRulesNameTheirReaction() {
+            Map<String, CutoffReaction> inForce = new TreeMap<>();
+            for (PostingRule rule : REGISTER.rules()) {
+                REGISTER.inForce(rule.type(), rule.namespace(), floor).stream()
+                        .filter(judging -> judging.id().equals(rule.id()))
+                        .forEach(judging -> inForce.put(judging.id(), judging.cutoff()));
+            }
+            assertThat(inForce).hasSize(58);
+            assertThat(inForce).containsAllEntriesOf(Map.of(
+                    "LND-2", CutoffReaction.FLOORED_AT_FIRST_OPEN,
+                    "SETTLEMENT-REPORT", CutoffReaction.FLOORED_AT_FIRST_OPEN,
+                    "SETTLEMENT-STATEMENT", CutoffReaction.FLOORED_AT_FIRST_OPEN,
+                    "MERCHANT-PAYOUT-RETURN", CutoffReaction.FLOORED_AT_FIRST_OPEN,
+                    "RECON-SUSPENSE", CutoffReaction.FLOORED_AT_FIRST_OPEN,
+                    "FX-TRADE", CutoffReaction.FLOORED_AT_FIRST_OPEN,
+                    "FX-COVER", CutoffReaction.FLOORED_AT_FIRST_OPEN));
+            assertThat(inForce).containsAllEntriesOf(Map.of(
+                    "ADJ-MANUAL", CutoffReaction.REFUSED_AT_APPROVAL,
+                    "RECON-WRITE-OFF", CutoffReaction.REFUSED_AT_APPROVAL,
+                    "RECON-TRANSFER", CutoffReaction.REFUSED_AT_APPROVAL,
+                    "RECON-GAIN", CutoffReaction.REFUSED_AT_APPROVAL));
+            assertThat(inForce.entrySet().stream().filter(entry -> entry.getValue() != CutoffReaction.NOT_REACHED))
+                    .as("exactly the eleven back-dating rules are reached by a lock").hasSize(11);
+            assertThat(inForce.values()).as("nothing in force is still refused by a lock").doesNotContain(
+                    CutoffReaction.REFUSED);
+            assertThat(REGISTER.rules()).allSatisfy(rule -> assertThat(rule.cutoff().reachedByALock())
+                    .as(rule.id() + " v" + rule.version()).isEqualTo(rule.mayBackDate()));
+        }
+
+        @Test
+        @DisplayName("a floored version is version 1 re-dated, nothing else: the same type, namespace, posters, dating and"
+                + " lines; the day before 2026-10-30 judges by version 1 (REFUSED), from it by version 2 (FLOORED)")
+        void aFlooredVersionChangesOnlyTheReaction() {
+            assertThat(REGISTER.rules().stream().filter(rule -> rule.version() == 2).map(PostingRule::id))
+                    .containsExactlyInAnyOrder("LND-2", "SETTLEMENT-REPORT", "SETTLEMENT-STATEMENT",
+                            "MERCHANT-PAYOUT-RETURN", "RECON-SUSPENSE", "FX-TRADE", "FX-COVER");
+            for (PostingRule two : REGISTER.rules().stream().filter(rule -> rule.version() == 2).toList()) {
+                PostingRule one = REGISTER.rule(two.id(), 1).orElseThrow();
+                assertThat(one.cutoff()).as(two.id() + " v1").isEqualTo(CutoffReaction.REFUSED);
+                assertThat(two.cutoff()).as(two.id() + " v2").isEqualTo(CutoffReaction.FLOORED_AT_FIRST_OPEN);
+                assertThat(two.floored()).isTrue();
+                assertThat(one.floored()).isFalse();
+                assertThat(two.type()).isEqualTo(EntryType.POSTING).isEqualTo(one.type());
+                assertThat(two.namespace()).isEqualTo(one.namespace());
+                assertThat(two.posters()).isEqualTo(one.posters());
+                assertThat(two.dating()).isEqualTo(one.dating());
+                assertThat(two.lines()).isEqualTo(one.lines());
+                assertThat(two.sourceModule()).isEqualTo(one.sourceModule());
+                assertThat(two.authoritativeReference()).isEqualTo(one.authoritativeReference());
+                assertThat(two.economicEvent()).contains("first open date");
+                assertThat(versionInForce(two, floor.minusDays(1))).isEqualTo(1);
+                assertThat(versionInForce(two, floor)).isEqualTo(2);
+            }
+            assertThat(REGISTER.rule("LND-2", 2).orElseThrow().economicEvent())
+                    .startsWith("A day's interest earned - value-dated the accrual date;")
+                    .doesNotContain("posted dated the accrual date itself");
+        }
+
+        @Test
+        @DisplayName("an incoherent reaction is refused at construction: a dated-today rule reached by a lock, a"
+                + " back-dating rule not reached, a floored reversal or adjustment, a back-dating adjustment not refused"
+                + " at approval, a posting refused at approval")
+        void anIncoherentReactionIsRefused() {
+            assertThatThrownBy(() -> sample(EntryType.POSTING, "sample:", DatingClass.TODAY_CLOCK,
+                    CutoffReaction.FLOORED_AT_FIRST_OPEN)).hasMessageContaining("cutoff reaction cannot be");
+            assertThatThrownBy(() -> sample(EntryType.POSTING, "sample:", DatingClass.STORED_ROW,
+                    CutoffReaction.NOT_REACHED)).hasMessageContaining("cutoff reaction cannot be");
+            assertThatThrownBy(() -> sample(EntryType.REVERSAL, "sample:", DatingClass.STORED_ROW,
+                    CutoffReaction.FLOORED_AT_FIRST_OPEN)).hasMessageContaining("only a POSTING asks");
+            assertThatThrownBy(() -> sample(EntryType.ADJUSTMENT, "SAMPLE", DatingClass.ECONOMIC_DATE,
+                    CutoffReaction.FLOORED_AT_FIRST_OPEN)).hasMessageContaining("only a POSTING asks");
+            assertThatThrownBy(() -> sample(EntryType.ADJUSTMENT, "SAMPLE", DatingClass.ECONOMIC_DATE,
+                    CutoffReaction.REFUSED)).hasMessageContaining("refused at approval");
+            assertThatThrownBy(() -> sample(EntryType.POSTING, "sample:", DatingClass.ECONOMIC_DATE,
+                    CutoffReaction.REFUSED_AT_APPROVAL)).hasMessageContaining("refused at approval");
+            // The coherent ones build.
+            assertThat(sample(EntryType.POSTING, "sample:", DatingClass.ECONOMIC_DATE,
+                    CutoffReaction.FLOORED_AT_FIRST_OPEN).floored()).isTrue();
+            assertThat(sample(EntryType.ADJUSTMENT, "SAMPLE", DatingClass.ECONOMIC_DATE,
+                    CutoffReaction.REFUSED_AT_APPROVAL).floored()).isFalse();
+            assertThat(sample(EntryType.ADJUSTMENT, "SAMPLE", DatingClass.TODAY_CLOCK, CutoffReaction.NOT_REACHED)
+                    .mayBackDate()).isFalse();
+        }
+
+        private int versionInForce(PostingRule rule, LocalDate postingDate) {
+            return REGISTER.inForce(rule.type(), rule.namespace(), postingDate).stream()
+                    .filter(judging -> judging.id().equals(rule.id())).findFirst().orElseThrow().version();
+        }
+
+        private PostingRule sample(EntryType type, String namespace, DatingClass dating, CutoffReaction cutoff) {
+            return new PostingRule("R-1", 1, PostingRuleRegister.ORIGIN, type, namespace, "sample",
+                    List.of("SamplePoster"), "a sample event", "a sample record", dating, cutoff,
+                    List.of(LineShape.required(Side.DEBIT, "A_X"), LineShape.required(Side.CREDIT, "Z_X")),
+                    "a sample catalogue");
         }
     }
 
@@ -335,7 +449,8 @@ class PostingRuleCatalogueTest {
             assertThat(rule("LND-10").type()).isEqualTo(EntryType.REVERSAL);
             assertThat(rule("LND-2").dating()).as("posting = value = the accrual date").isEqualTo(
                     DatingClass.ECONOMIC_DATE);
-            assertThat(REGISTER.rules().stream().filter(rule -> rule.id().startsWith("LND-"))).hasSize(14)
+            assertThat(REGISTER.rules().stream().filter(rule -> rule.id().startsWith("LND-") && rule.version() == 1))
+                    .hasSize(14)
                     .allSatisfy(rule -> assertThat(rule.purposes()).noneMatch(purpose ->
                             purpose.equals("LOAN_WRITE_OFF_EXPENSE") || purpose.startsWith("BNPL_")));
         }

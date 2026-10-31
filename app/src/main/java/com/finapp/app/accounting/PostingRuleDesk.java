@@ -85,7 +85,9 @@ public final class PostingRuleDesk {
     /**
      * One rule: its identity and version with the first posting date it judges ({@code YYYY-MM-DD}); the ledger door
      * ({@code POSTING}, {@code REVERSAL}, {@code ADJUSTMENT}) and the namespace - a key prefix, or an adjustment's
-     * origin; where it comes from; its dating class and whether that class may date an entry before today.
+     * origin; where it comes from; its dating class and whether that class may date an entry before today; and its
+     * cutoff reaction - what its poster does when a period lock covers its date ({@code NOT_REACHED}, {@code REFUSED},
+     * {@code FLOORED_AT_FIRST_OPEN}, {@code REFUSED_AT_APPROVAL}; `P14-TSK-006`, owner decision C3).
      */
     public record PostingRuleView(
             String id,
@@ -99,13 +101,14 @@ public final class PostingRuleDesk {
             String authoritativeReference,
             String datingClass,
             boolean mayBackDate,
+            String cutoffReaction,
             List<PostingRuleLineView> lines,
             String catalogue) {
 
         static PostingRuleView of(PostingRule rule) {
             return new PostingRuleView(rule.id(), rule.version(), rule.effectiveFrom().toString(), rule.type().name(),
                     rule.namespace(), rule.sourceModule(), rule.posters(), rule.economicEvent(),
-                    rule.authoritativeReference(), rule.dating().name(), rule.mayBackDate(),
+                    rule.authoritativeReference(), rule.dating().name(), rule.mayBackDate(), rule.cutoff().name(),
                     rule.lines().stream().map(PostingRuleLineView::of).toList(), rule.catalogue());
         }
     }

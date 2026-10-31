@@ -33,7 +33,11 @@ and park value in suspense; a GL-side discrepancy has neither.
    its rule's command), the manual adjustment to exactly the purposes open to free adjustment, and the back-dating
    posters by name: `ECONOMIC_DATE` is lending's accrual **and the manual adjustment**; nine more rules are
    `STORED_ROW` - input to `P14-TSK-006` and owner decision C3. Served at `GET /v1/operator/accounting/posting-rules`,
-   `ACCOUNTING_READ`, audited.)*
+   `ACCOUNTING_READ`, audited.)* *(And by `P14-TSK-006`, 2026-10-30, C3 ratified: each rule names its **cutoff
+   reaction** - `NOT_REACHED` (dated today), `REFUSED` (a back-dating system rule as it posted until C3),
+   `FLOORED_AT_FIRST_OPEN` (its poster asks the ledger for the floor), `REFUSED_AT_APPROVAL` (a person's adjustment) -
+   coherent with its dating by construction; the seven system rules versioned to 2, effective 2026-10-30; catalogue
+   version 2, 65 rule versions; `PostingRuleRegisterTest` holds the floor to the source both ways.)*
 2. **Three checks per period**, each a close check: GL = ledger (mapping totality, no double mapping, sums equal per
    currency); rule conformance (namespace registered, shape conforming); source completeness (the existing proofs'
    verdicts through `SourceProofs`, never re-implemented).

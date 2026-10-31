@@ -344,6 +344,15 @@ public final class AdjustmentService {
             requireOffReconciledPositions(unitOfWork, proposal.lines());
         }
 
+        // C3 (P14-TSK-006): a person's adjustment is never floored - its posting date is part of what the approver
+        // approves. Dated on or before the posting cutoff, the approval is refused HERE, before anything is written
+        // (ledger.PeriodClosed), and the proposal stays PROPOSED: the operator re-proposes it in the open period or
+        // corrects the closed period by a prior-period adjustment (P14-TSK-013). Read under the cutoff's shared key,
+        // held to commit, so a lock cannot commit between this judgement and the insert below (whose trigger re-judges
+        // it for every writer). Both doors: MANUAL and the reconciliation resolution's approveOwned.
+        PostingCutoffs.requireOpen(
+                unitOfWork, proposal.postingDate(), proposal.origin() + " adjustment proposal " + proposal.id());
+
         // The entry is built from the STORED rows - what the approver read is what posts,
         // with the payload frozen by V010's trigger beneath (TOCTOU closed at the schema).
         JournalEntry entry =

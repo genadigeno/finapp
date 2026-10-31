@@ -1431,6 +1431,49 @@ class PayoutReturnDatabaseTest {
         assertTrialBalance();
     }
 
+    // ----------------------------------------------------------------- C3 (P14-TSK-006)
+
+    @Test
+    @Order(19)
+    @DisplayName("C3 (P14-TSK-006): a return whose batch's accepted_on a period lock already covers is"
+            + " applied, never refused - posted on the first open date, value-dated the item's"
+            + " settlement date, the return row keeping returned_on - and its replay converges")
+    void aReturnFromALockedPeriodsBatchPostsOnTheFirstOpenDate() throws Exception {
+        Waiting waiting = waitingReturn(EUR, "60.00", "14.00");
+        UUID payout = waiting.payout();
+        PayoutReturns.ReturnEvidence read = evidenceOf(waiting, 0);
+        // The month before the database's UTC today is the latest a lock may cover; the evidence's stored
+        // accepted_on is planted in it - a return applied after its batch's month was locked.
+        LocalDate today = date("SELECT (statement_timestamp() AT TIME ZONE 'UTC')::date");
+        LocalDate cut = today.withDayOfMonth(1).minusDays(1);
+        LocalDate stated = cut.minusDays(2);
+        PayoutReturns.ReturnEvidence late = new PayoutReturns.ReturnEvidence(read.externalItemRef(),
+                read.providerReference(), read.ourReference(), read.amount(), stated, read.valueDate(),
+                read.correlation());
+        com.finapp.ledger.PostingCutoffs cutoffs = new com.finapp.ledger.PostingCutoffs(IDS, CLOCK);
+        asPlatform(uow -> cutoffs.advance(uow, Optional.empty(), cut, "lock the previous month (P14-TSK-006)"));
+        try {
+            PayoutReturns.Applied applied = asPlatform(uow -> payoutReturns.apply(uow, late, NO_PERSON));
+            assertThat(applied.outcome()).as("never refused by the lock").isEqualTo(PayoutReturns.Outcome.APPLIED);
+            UUID entry = returnEntry(payout);
+            assertThat(date("SELECT posting_date FROM ledger.journal_entry WHERE id = ?", entry))
+                    .as("the first open date").isEqualTo(cut.plusDays(1));
+            assertThat(date("SELECT value_date FROM ledger.journal_entry WHERE id = ?", entry))
+                    .as("the item's settlement date, untouched").isEqualTo(read.valueDate());
+            assertThat(date("SELECT returned_on FROM merchant.payout_return WHERE payout_id = ?", payout))
+                    .as("the stored date kept on the fact").isEqualTo(stated);
+            PayoutReturns.Applied again = asPlatform(uow -> payoutReturns.apply(uow, late, NO_PERSON));
+            assertThat(again.outcome()).isEqualTo(PayoutReturns.Outcome.ALREADY_RETURNED);
+            assertThat(returnEntry(payout)).isEqualTo(entry);
+        } finally {
+            asPlatform(uow -> cutoffs.moveBack(uow, cut, Optional.empty(), "the test restores the cutoff"));
+        }
+        matchUntilQuiet();
+        assertThat(itemStatus(waiting.item())).isEqualTo("MATCHED");
+        assertThat(payableOf(waiting.merchant()).payoutsReturned().minorUnits()).isEqualTo(14_00);
+        assertTrialBalance();
+    }
+
     /**
      * The suite's discipline (the class comment): every case leaves each of its RETURNED lines
      * MATCHED, PARKED or RESOLVED, so a later tick's tallies are its own case's.

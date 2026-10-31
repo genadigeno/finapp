@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -48,6 +49,15 @@ public interface LoanServicingStore {
      * clock in its pinned zone - from the end of that date; empty when every elapsed date is accrued.
      */
     Optional<Duration> oldestUnaccruedLag(Connection unitOfWork);
+
+    /**
+     * Per currency, the oldest elapsed date an instalment loan in servicing has not accrued - the day after its latest
+     * accrual, or its accrual start - on the database clock in its pinned zone; a currency absent has accrued every
+     * elapsed date. The instalment arm of accounting's {@code AccrualCompleteness} (`P14-TSK-006`, owner decision C3: the
+     * close requires accruals caught up), the dated twin of {@link #oldestUnaccruedLag}; the line arm is
+     * {@link AccrualLags}'s.
+     */
+    Map<CurrencyCode, LocalDate> oldestUnaccruedByCurrency(Connection unitOfWork);
 
     /**
      * The credit lines in servicing ({@code ACTIVE} or {@code CLOSING}) ever drawn whose next accrual date - the day after

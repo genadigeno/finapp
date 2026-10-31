@@ -1386,6 +1386,112 @@ class ResolutionMachineDatabaseTest {
                 ambiguous)).isZero();
     }
 
+    // ----------------------------------------------------------------- C3 (P14-TSK-006)
+
+    /** The suite's proposal date - its fixed clock's - and the month a C3 case locks around it. */
+    private static final LocalDate SEPTEMBER_END = LocalDate.of(2026, 9, 30);
+
+    /** Real time: the cutoff never covers today, judged on the instance's and the database's clocks. */
+    private static final com.finapp.ledger.PostingCutoffs CUTOFFS =
+            new com.finapp.ledger.PostingCutoffs(IDS, Clock.systemUTC());
+
+    @Test
+    @Order(21)
+    @DisplayName("C3 (P14-TSK-006): a write-off proposed on a date a lock has since covered is refused"
+            + " at approval - ledger.PeriodClosed, nothing written, the resolution, its ledger"
+            + " proposal and its break left PROPOSED; with the lock undone the same approval posts")
+    void aWriteOffDatedIntoALockIsRefusedAtApprovalAndStaysProposed() throws Exception {
+        Seeded expectation = openExpectation("WO-C3", 45_00, ExpectationDirection.INBOUND);
+        UUID breakId = raise(BreakType.MISSING_EXTERNAL, BreakCause.EXPECTATION_OVERDUE,
+                BreakRegister.Subject.expectation(expectation.id()), 45_00, SOURCE, RULE_SET);
+        ResolutionMachine.Proposed proposed = propose(PROPOSER, breakId, ResolutionKind.WRITE_OFF,
+                ResolutionReasonCode.LOSS_ACCEPTED, Optional.empty());
+        UUID proposal = proposed.adjustmentProposalId().orElseThrow();
+        assertThat(string("SELECT posting_date FROM ledger.adjustment_proposal WHERE id = ?", proposal))
+                .as("dated the resolution's proposal date").isEqualTo(SEPTEMBER_END.toString());
+
+        lockSeptember();
+        try {
+            assertThatThrownBy(() -> approve(APPROVER, proposed.resolutionId()))
+                    .isInstanceOf(com.finapp.ledger.PeriodClosedException.class)
+                    .hasMessageContaining("RECONCILIATION adjustment proposal")
+                    .hasMessageContaining("left PROPOSED");
+            assertThat(string("SELECT status FROM reconciliation.resolution WHERE id = ?",
+                    proposed.resolutionId())).isEqualTo("PROPOSED");
+            assertThat(string("SELECT status FROM ledger.adjustment_proposal WHERE id = ?", proposal))
+                    .isEqualTo("PROPOSED");
+            assertThat(string("SELECT status FROM reconciliation.break WHERE id = ?", breakId))
+                    .isEqualTo("RESOLUTION_PROPOSED");
+            assertThat(string("SELECT status FROM reconciliation.expectation WHERE id = ?",
+                    expectation.id())).as("the closing effects rolled back with it").isNotEqualTo(
+                    "RESOLVED_BY_ADJUSTMENT");
+            assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE reference = ?",
+                    proposed.resolutionId().toString())).as("nothing posted").isZero();
+        } finally {
+            unlockSeptember();
+        }
+        ResolutionMachine.Decided approved = approve(APPROVER, proposed.resolutionId());
+        assertThat(string("SELECT posting_date FROM ledger.journal_entry WHERE id = ?",
+                approved.journalEntryId().orElseThrow())).as("never floored - an adjustment posts as"
+                + " proposed").isEqualTo(SEPTEMBER_END.toString());
+        assertThat(string("SELECT status FROM reconciliation.break WHERE id = ?", breakId))
+                .isEqualTo("RESOLVED");
+    }
+
+    @Test
+    @Order(22)
+    @DisplayName("C3 (P14-TSK-006): a manual match approved after the lock of the month it was"
+            + " proposed in is applied - its suspense entry (recon-suspense:, a system posting)"
+            + " floored to the first open date, value-dated the park's own value date, the park"
+            + " row keeping its decided_on")
+    void aManualMatchApprovedAfterALockFloorsItsSuspenseEntry() throws Exception {
+        Seeded chosen = openExpectation("MM-C3-A", 25_00, ExpectationDirection.INBOUND);
+        Seeded other = openExpectation("MM-C3-B", 25_00, ExpectationDirection.INBOUND);
+        UUID run = seedRun(SOURCE, RULE_SET, new Line(1, ExternalLineType.CAPTURE, 25_00,
+                ItemKeyKind.PSP_CAPTURE_REF, "MM-C3-ITEM-" + UUID.randomUUID()));
+        UUID item = itemOf(run, 1);
+        plantAmbiguous(run, item, chosen.id(), other.id(), 25_00);
+        UUID ambiguous = raise(BreakType.AMBIGUOUS_MATCH, BreakCause.MULTIPLE_CANDIDATES,
+                BreakRegister.Subject.externalItem(item), 25_00, SOURCE, RULE_SET);
+        park(SOURCE, item, ambiguous, 25_00);
+        completeRun(run);
+        ResolutionMachine.Proposed manual = proposeManual(PROPOSER, ambiguous, chosen.id());
+
+        lockSeptember();
+        ResolutionMachine.Decided approved;
+        try {
+            approved = approve(APPROVER, manual.resolutionId());
+        } finally {
+            unlockSeptember();
+        }
+        UUID unpark = approved.journalEntryId().orElseThrow();
+        assertThat(string("SELECT posting_date FROM ledger.journal_entry WHERE id = ?", unpark))
+                .as("the first open date").isEqualTo(SEPTEMBER_END.plusDays(1).toString());
+        assertThat(string("SELECT value_date FROM ledger.journal_entry WHERE id = ?", unpark))
+                .as("the park's own value date, untouched").isEqualTo(string(
+                        "SELECT p.value_date FROM reconciliation.park p JOIN reconciliation.suspense_item s"
+                                + " ON s.park_id = p.id WHERE s.external_item_id = ? AND p.kind = 'PARK'", item));
+        assertThat(string("SELECT decided_on FROM reconciliation.park WHERE id = (SELECT park_id"
+                + " FROM reconciliation.resolution WHERE id = ?)", manual.resolutionId()))
+                .as("the deciding act's date kept on the park row").isEqualTo(SEPTEMBER_END.toString());
+        assertThat(string("SELECT change_summary FROM platform.audit_record WHERE target_id = ?",
+                unpark.toString())).contains("flooredFrom=" + SEPTEMBER_END);
+        assertThat(string("SELECT status FROM reconciliation.external_item WHERE id = ?", item))
+                .isEqualTo("MATCHED");
+        assertThat(string("SELECT status FROM reconciliation.break WHERE id = ?", ambiguous))
+                .isEqualTo("RESOLVED");
+    }
+
+    private static void lockSeptember() {
+        as(PLATFORM, uow -> CUTOFFS.advance(uow, Optional.empty(), SEPTEMBER_END,
+                "lock September 2026 (P14-TSK-006 test)"));
+    }
+
+    private static void unlockSeptember() {
+        as(PLATFORM, uow -> CUTOFFS.moveBack(uow, SEPTEMBER_END, Optional.empty(),
+                "the test restores the cutoff"));
+    }
+
     // ----------------------------------------------------------------- seeding
 
     private record Seeded(UUID id, String operationRef, String key) {}

@@ -30,6 +30,14 @@ import java.util.List;
  * {@code principalValueDate}); {@link DatingClass#STORED_ROW} a date stamped on a source row and possibly days old when
  * the entry posts; {@link DatingClass#ECONOMIC_DATE} the event's own date - lending's accrual and the manual adjustment's
  * proposer-stated accounting date. The last two are the back-dating posters.
+ *
+ * <p><strong>The cutoff reaction</strong> (`P14-TSK-006`; owner decision C3, ratified 2026-10-30) - what each rule's poster
+ * does when a period lock covers its date: {@link CutoffReaction#NOT_REACHED} for every rule dated today; version 1 of the
+ * seven back-dating <em>system</em> rules {@link CutoffReaction#REFUSED} (as they posted until C3) and their version 2,
+ * effective {@link PostingRuleRegister#C3_FLOOR}, {@link CutoffReaction#FLOORED_AT_FIRST_OPEN} ({@link #floored}); the
+ * four back-dating adjustments - the manual one and the reconciliation resolution's three - one version,
+ * {@link CutoffReaction#REFUSED_AT_APPROVAL}: the refusal at approval is how they have answered a lock since the cutoff
+ * exists (`P14-TSK-004`'s trigger, the approval rolled back) and the entry they post is unchanged.
  */
 final class PostingRuleCatalogue {
 
@@ -106,6 +114,7 @@ final class PostingRuleCatalogue {
         lending(rules);
         bnpl(rules);
         adjustments(rules);
+        floored(rules);
         return List.copyOf(rules);
     }
 
@@ -484,6 +493,44 @@ final class PostingRuleCatalogue {
                 required(DEBIT, SUSPENSE_UNMATCHED), required(CREDIT, RECONCILIATION_GAINS)));
     }
 
+    // ------------------------------------------------------------------ C3: the system posters floored (P14-TSK-006)
+
+    /**
+     * The rules whose version 2 (effective {@link PostingRuleRegister#C3_FLOOR}) floors the posting date at the first open
+     * date - the seven back-dating system rules, each poster asking the ledger for {@code FLOOR_AT_FIRST_OPEN}
+     * ({@code PostingRuleRegisterTest} holds the source to it both ways).
+     */
+    static final List<String> FLOORED = List.of(
+            "MERCHANT-PAYOUT-RETURN", "SETTLEMENT-REPORT", "SETTLEMENT-STATEMENT", "RECON-SUSPENSE", "FX-TRADE",
+            "FX-COVER", "LND-2");
+
+    /**
+     * Version 2 of each {@link #FLOORED} rule: version 1's shape, event, reference and dating, the reaction
+     * {@link CutoffReaction#FLOORED_AT_FIRST_OPEN} - the stated date (the accrual date, the stored {@code accepted_on},
+     * {@code decided_on}, {@code booked_on}, {@code recorded_on}) posted as it is, or on the first open date when a lock
+     * covers it, the value date unchanged.
+     */
+    private static void floored(List<PostingRule> rules) {
+        List<PostingRule> versionOne = List.copyOf(rules);
+        for (String id : FLOORED) {
+            PostingRule one = versionOne.stream().filter(rule -> rule.id().equals(id) && rule.version() == 1)
+                    .findFirst().orElseThrow(() -> new IllegalStateException("C3 floors a registered rule: " + id));
+            rules.add(new PostingRule(id, 2, PostingRuleRegister.C3_FLOOR, one.type(), one.namespace(),
+                    one.sourceModule(), one.posters(), floorOf(one.economicEvent()), one.authoritativeReference(),
+                    one.dating(), CutoffReaction.FLOORED_AT_FIRST_OPEN, one.lines(),
+                    one.catalogue() + "; C3 (P14-TSK-006): floored at the first open date, value date kept"));
+        }
+    }
+
+    private static String floorOf(String economicEvent) {
+        String asStated = " - posted dated the accrual date itself (the back-dating poster, C3)";
+        String event = economicEvent.endsWith(asStated)
+                ? economicEvent.substring(0, economicEvent.length() - asStated.length())
+                        + " - value-dated the accrual date"
+                : economicEvent;
+        return event + "; posted on its stated date, or on the first open date when a period lock covers it";
+    }
+
     // ------------------------------------------------------------------
 
     private static List<String> posters(String... posters) {
@@ -502,6 +549,17 @@ final class PostingRuleCatalogue {
             String catalogue,
             LineShape... lines) {
         return new PostingRule(id, 1, PostingRuleRegister.ORIGIN, type, namespace, sourceModule, posters,
-                economicEvent, authoritativeReference, dating, List.of(lines), catalogue);
+                economicEvent, authoritativeReference, dating, versionOne(type, dating), List.of(lines), catalogue);
+    }
+
+    /**
+     * A version-1 rule's cutoff reaction, from its type and dating (`P14-TSK-006`): dated today, no lock reaches it; a
+     * back-dating adjustment is refused at approval; a back-dating system posting was refused until C3's version 2.
+     */
+    private static CutoffReaction versionOne(EntryType type, DatingClass dating) {
+        if (!dating.mayBackDate()) {
+            return CutoffReaction.NOT_REACHED;
+        }
+        return type == ADJUSTMENT ? CutoffReaction.REFUSED_AT_APPROVAL : CutoffReaction.REFUSED;
     }
 }

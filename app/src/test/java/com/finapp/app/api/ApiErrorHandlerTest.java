@@ -76,6 +76,14 @@ class ApiErrorHandlerTest {
             throw new IllegalStateException("ledger posting failed for " + SECRET);
         }
 
+        /** An approval refused by the cutoff (`P14-TSK-006`, C3): the guard's own message names the proposal and dates. */
+        @PostMapping(path = "/probe/period-closed", consumes = MediaType.APPLICATION_JSON_VALUE)
+        String periodClosed(@RequestBody String body) {
+            throw new com.finapp.ledger.PeriodClosedException("MANUAL adjustment proposal " + SECRET
+                    + " is dated 1999-01-20 - on or before the posting cutoff 1999-01-31: refused at approval and left"
+                    + " PROPOSED");
+        }
+
         @PostMapping(path = "/probe/body", consumes = MediaType.APPLICATION_JSON_VALUE)
         String body(@RequestBody Payload payload) {
             return "ok";
@@ -108,6 +116,17 @@ class ApiErrorHandlerTest {
         assertThat(response.body())
                 .contains("\"instance\":\"" + ApiVersion.CURRENT_PREFIX + "/probe/api-exception\"");
         assertThat(response.body()).doesNotContain(SECRET);
+    }
+
+    @Test
+    @DisplayName("an approval refused by the posting cutoff is 409 ledger.PeriodClosed - actionable, nothing of the"
+            + " proposal or its dates echoed (P14-TSK-006, C3)")
+    void aPeriodClosedRefusalIs409() throws Exception {
+        HttpResponse<String> response = postJson("/probe/period-closed", "{}");
+
+        assertContract(response, 409, "ledger.PeriodClosed");
+        assertThat(response.body()).contains("post in the open period");
+        assertThat(response.body()).doesNotContain(SECRET).doesNotContain("1999-01-20").doesNotContain("PROPOSED");
     }
 
     // -----------------------------------------------------------------

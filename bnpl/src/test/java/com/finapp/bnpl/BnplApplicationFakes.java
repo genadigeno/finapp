@@ -2112,6 +2112,30 @@ final class BnplApplicationFakes {
             }
             return Optional.ofNullable(oldest);
         }
+
+        /** {@link #oldestLag}'s candidates kept as dates, the oldest per currency (`P14-TSK-006`). */
+        @Override
+        public java.util.Map<com.finapp.sharedkernel.money.CurrencyCode, java.time.LocalDate> oldestUnaccruedByCurrency(
+                Connection unitOfWork) {
+            java.util.Map<com.finapp.sharedkernel.money.CurrencyCode, java.time.LocalDate> oldest =
+                    new java.util.TreeMap<>(java.util.Comparator.comparing(com.finapp.sharedkernel.money.CurrencyCode::code));
+            java.time.LocalDate today = java.time.LocalDate.ofInstant(now, java.time.ZoneOffset.UTC);
+            for (BnplObligation obligation : purchases.obligations.values()) {
+                if (obligation.status() != BnplObligationStatus.ACTIVE
+                        || obligation.product() != BnplProduct.BNPL_PAY_IN_N) {
+                    continue;
+                }
+                java.time.LocalDate next = latest(unitOfWork, obligation.id())
+                        .map(row -> row.accrual().date().plusDays(1)).orElse(obligation.purchaseDate());
+                List<com.finapp.creditmath.AccrualPeriod> periods =
+                        BnplAccruals.periodsOf(purchases.schedules.get(obligation.id().value()));
+                java.time.LocalDate spanEnd = periods.get(periods.size() - 1).endExclusive();
+                if (next.isBefore(today) && next.isBefore(spanEnd)) {
+                    oldest.merge(obligation.currency(), next, (one, other) -> one.isBefore(other) ? one : other);
+                }
+            }
+            return oldest;
+        }
     }
 
     /**

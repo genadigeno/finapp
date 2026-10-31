@@ -792,6 +792,12 @@ class InterestAccrualDatabaseTest {
         }
 
         @Override
+        public java.util.Map<com.finapp.sharedkernel.money.CurrencyCode, LocalDate> oldestUnaccruedByCurrency(
+                Connection unitOfWork) {
+            return delegate.oldestUnaccruedByCurrency(unitOfWork);
+        }
+
+        @Override
         public List<LineAwaitingAccrual> linesAwaitingAccrual(Connection unitOfWork) {
             return delegate.linesAwaitingAccrual(unitOfWork);
         }

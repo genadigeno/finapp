@@ -50,6 +50,10 @@ import org.junit.jupiter.api.Test;
  *       position.
  *   <li><strong>The back-dating posters are named</strong>: {@code ECONOMIC_DATE} is lending's accrual
  *       ({@code LoanServicing}) and the manual adjustment ({@code LedgerAdjustments}), no other.
+ *   <li><strong>The floor, both ways</strong> (`P14-TSK-006`, owner decision C3): every {@code new PostingCommand(} of
+ *       a poster whose rule in force is {@code FLOORED_AT_FIRST_OPEN} asks the ledger for
+ *       {@code FLOOR_AT_FIRST_OPEN}, and no other production construction does - so a system poster cannot forget the
+ *       floor and be refused by a lock forever, and no dated-today poster re-dates what the register says it does not.
  * </ul>
  *
  * <p>A source scan, not a classpath rule: ArchUnit cannot read a constant's value, and the namespace is a value. Each
@@ -182,13 +186,60 @@ class PostingRuleRegisterTest {
                 Map.entry("ADJ-MANUAL", List.of("LedgerAdjustments")),
                 Map.entry("LND-2", List.of("LoanServicing")));
         assertThat(REGISTER.rules()).allSatisfy(rule -> assertThat(rule.dating()).isNotNull());
-        assertThat(REGISTER.rules().stream().filter(PostingRule::mayBackDate).map(PostingRule::id))
+        assertThat(REGISTER.rules().stream().filter(PostingRule::mayBackDate).map(PostingRule::id).distinct())
                 .containsExactlyInAnyOrder("ADJ-MANUAL", "LND-2", "SETTLEMENT-REPORT", "SETTLEMENT-STATEMENT",
                         "MERCHANT-PAYOUT-RETURN", "RECON-SUSPENSE", "RECON-WRITE-OFF", "RECON-TRANSFER", "RECON-GAIN",
                         "FX-TRADE", "FX-COVER");
     }
 
+    @Test
+    @DisplayName("C3's floor agrees with the source both ways: every PostingCommand of a FLOORED rule's poster asks for"
+            + " FLOOR_AT_FIRST_OPEN, and no other production construction does (P14-TSK-006)")
+    void theFloorAgreesWithTheSource() {
+        Map<String, List<Boolean>> floorings = floorings(mainSources());
+        assertThat(floorings).as("the scan must see the posting sites").hasSizeGreaterThan(25);
+        assertThat(flooringMismatches(floorings, REGISTER)).as("a system back-dating poster that does not ask for the"
+                + " floor is refused by a lock and re-driven forever (C3); a dated-today poster that asks re-dates what"
+                + " the register says it does not - correct the poster or the rule's cutoff reaction").isEmpty();
+        Set<String> floored = flooredPosters(REGISTER);
+        assertThat(floored).containsExactlyInAnyOrder("BatchAcceptance", "FxConversion", "FxCoverOutcomes",
+                "LoanServicing", "PayoutReturns", "Suspense");
+        assertThat(floored).allSatisfy(poster -> assertThat(floorings.get(poster)).as(poster).isNotEmpty()
+                .containsOnly(true));
+        assertThat(floorings.get("Suspense")).as("park and the two unparks").hasSize(3);
+    }
+
     // ------------------------------------------------------------------ the guards proven able to fail
+
+    @Test
+    @DisplayName("a planted floored poster that forgets the floor is caught, as is a dated-today poster that asks for it;"
+            + " a construction's arguments are read whole - across lines, comments and nested calls")
+    void aPlantedFlooringMismatchIsCaught() {
+        Map<String, String> planted = new LinkedHashMap<>();
+        planted.put("x/merchant/src/main/java/com/finapp/merchant/PayoutReturns.java", """
+                PostingResult posted = postings.post(unitOfWork, new PostingCommand(
+                        postingKey, evidence.returnedOn(), evidence.valueDate(), ref(payout.id()),
+                        // FLOOR_AT_FIRST_OPEN only in a comment does not count
+                        List.of(line(clearing.id()), line(payable.get().id()))));
+                """);
+        planted.put("x/transfers/src/main/java/com/finapp/transfers/TransferExecution.java", """
+                new PostingCommand("transfer:" + id, today, today, reference, lines,
+                        PostingCommand.Dating.FLOOR_AT_FIRST_OPEN)
+                """);
+        planted.put("x/fx/src/main/java/com/finapp/fx/FxConversion.java", """
+                PostingResult posted = postings.post(unitOfWork, new PostingCommand(
+                        postingKey, booked.bookedOn(), booked.bookedOn(), postingKey, compose(plan, accounts(a, b)),
+                        PostingCommand.Dating.FLOOR_AT_FIRST_OPEN));
+                """);
+        Map<String, List<Boolean>> floorings = floorings(planted);
+        assertThat(floorings).containsOnlyKeys("PayoutReturns", "TransferExecution", "FxConversion");
+        assertThat(floorings.get("PayoutReturns")).containsExactly(false);
+        assertThat(floorings.get("TransferExecution")).containsExactly(true);
+        assertThat(floorings.get("FxConversion")).containsExactly(true);
+        assertThat(flooringMismatches(floorings, REGISTER)).containsExactly(
+                "PayoutReturns: a FLOORED rule's poster constructs a PostingCommand without FLOOR_AT_FIRST_OPEN",
+                "TransferExecution: asks for FLOOR_AT_FIRST_OPEN, but no rule it posts is FLOORED");
+    }
 
     @Test
     @DisplayName("a planted unregistered prefix is caught - as a constant, inline at a posting and at a reversal - and a"
@@ -225,7 +276,7 @@ class PostingRuleRegisterTest {
     void aPlantedUnknownPurposeIsCaught() {
         PostingRule planted = new PostingRule("PLANTED", 1, PostingRuleRegister.ORIGIN, EntryType.POSTING, "planted:",
                 "payments", List.of("Planted"), "a planted event", "a planted record", DatingClass.TODAY_CLOCK,
-                List.of(LineShape.required(Side.DEBIT, "CUSTOMER_WALLET"),
+                com.finapp.accounting.CutoffReaction.NOT_REACHED, List.of(LineShape.required(Side.DEBIT, "CUSTOMER_WALLET"),
                         LineShape.required(Side.CREDIT, "CUSTOMER_WALLETS", "MERCHANT_PAYABLE")),
                 "planted");
         assertThat(unknownPurposes(List.of(planted))).containsExactly("PLANTED: CUSTOMER_WALLETS");
@@ -298,7 +349,73 @@ class PostingRuleRegisterTest {
         };
     }
 
+    /**
+     * The posters of the rules in force today whose reaction is {@code FLOORED_AT_FIRST_OPEN} (`P14-TSK-006`) - every
+     * rule id's latest version on {@link PostingRuleRegister#C3_FLOOR} or after.
+     */
+    private static Set<String> flooredPosters(PostingRuleRegister register) {
+        return inForceToday(register).stream().filter(PostingRule::floored).flatMap(rule -> rule.posters().stream())
+                .collect(Collectors.toCollection(TreeSet::new));
+    }
+
+    private static List<PostingRule> inForceToday(PostingRuleRegister register) {
+        java.time.LocalDate today = PostingRuleRegister.C3_FLOOR;
+        return register.rules().stream().map(rule -> List.of(rule.type(), rule.namespace())).distinct()
+                .flatMap(key -> register.inForce((EntryType) key.get(0), (String) key.get(1), today).stream())
+                .distinct().toList();
+    }
+
+    /** The floor's two directions over the scan (`P14-TSK-006`): a floored poster not flooring, or a today one flooring. */
+    private static List<String> flooringMismatches(Map<String, List<Boolean>> floorings, PostingRuleRegister register) {
+        Set<String> floored = flooredPosters(register);
+        List<String> mismatches = new java.util.ArrayList<>();
+        floorings.forEach((poster, constructions) -> {
+            if (floored.contains(poster) && constructions.contains(false)) {
+                mismatches.add(poster + ": a FLOORED rule's poster constructs a PostingCommand without"
+                        + " FLOOR_AT_FIRST_OPEN");
+            }
+            if (!floored.contains(poster) && constructions.contains(true)) {
+                mismatches.add(poster + ": asks for FLOOR_AT_FIRST_OPEN, but no rule it posts is FLOORED");
+            }
+        });
+        return mismatches;
+    }
+
     // ------------------------------------------------------------------ the scan
+
+    /**
+     * Class simple name -> for each {@code new PostingCommand(} it makes, whether its arguments ask for
+     * {@code FLOOR_AT_FIRST_OPEN} (`P14-TSK-006`): the arguments read whole, to the construction's closing parenthesis,
+     * across lines, with comment lines and trailing {@code //} comments dropped.
+     */
+    private static Map<String, List<Boolean>> floorings(Map<String, String> sources) {
+        Map<String, List<Boolean>> found = new TreeMap<>();
+        Pattern posting = Pattern.compile("new PostingCommand\\(");
+        sources.forEach((path, text) -> {
+            String code = text.lines().filter(line -> !comment(line)).map(line -> {
+                int trailing = line.indexOf("//");
+                return trailing < 0 ? line : line.substring(0, trailing);
+            }).collect(Collectors.joining("\n"));
+            Matcher construction = posting.matcher(code);
+            while (construction.find()) {
+                int depth = 1;
+                int at = construction.end();
+                while (at < code.length() && depth > 0) {
+                    char c = code.charAt(at++);
+                    if (c == '(') {
+                        depth++;
+                    } else if (c == ')') {
+                        depth--;
+                    }
+                }
+                String arguments = code.substring(construction.end(), at);
+                String file = Path.of(path).getFileName().toString();
+                found.computeIfAbsent(file.substring(0, file.length() - ".java".length()), k -> new java.util.ArrayList<>())
+                        .add(arguments.contains("FLOOR_AT_FIRST_OPEN"));
+            }
+        });
+        return found;
+    }
 
     /** Prefix -> where it was first declared. */
     private static TreeMap<String, String> declaredPrefixes(Map<String, String> sources) {

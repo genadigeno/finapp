@@ -57,6 +57,14 @@ import lombok.extern.slf4j.Slf4j;
  * {@code INV-IDEM-02}). *(Corrected 2026-10-01, `P8-DOC-001`: this read "binds only STORED
  * dates", though {@code accepted_on} is stored by this transaction, not read from a row.)*
  *
+ * <p><strong>Floored at the first open date</strong> (`P14-TSK-006`, owner decision C3; rules
+ * {@code SETTLEMENT-REPORT} and {@code SETTLEMENT-STATEMENT} version 2): the posting asks the ledger
+ * for {@code FLOOR_AT_FIRST_OPEN}, so an {@code accepted_on} a period lock already covers - an
+ * instance clock behind, or an acceptance straddling a month end - posts on the first open date
+ * instead of being refused, its value date the batch's business date unchanged and the batch's
+ * {@code accepted_on} keeping the acceptance date; the key and its fingerprint bind the stated
+ * {@code accepted_on}, so the converging replay above still converges.
+ *
  * <h2>The posting's seat (the design's D3, recorded)</h2>
  *
  * <p>The recognition posts BEFORE the batch's accepting {@code UPDATE}, because `V004`'s
@@ -320,7 +328,9 @@ public final class BatchAcceptance {
                                     acceptedOn,
                                     valueDate,
                                     batch.id().toString(),
-                                    recognised.entryLines()));
+                                    recognised.entryLines(),
+                                    // C3 (P14-TSK-006): never refused by a lock - see the class comment.
+                                    PostingCommand.Dating.FLOOR_AT_FIRST_OPEN));
             entryId = Optional.of(posted.entryId().value());
         }
         // The rows that carry the entry whole - this transaction's own (P8-TSK-016).
