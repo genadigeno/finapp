@@ -12,14 +12,18 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.YearMonth;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -164,6 +168,42 @@ class ReadOnlySnapshotTest {
                 .generate(raw(), writing, inputs())).isInstanceOf(ReadOnlySnapshot.Refused.class);
     }
 
+
+    @Test
+    @DisplayName("the production generation spends its budget on the injected clock - moved past the budget, the next"
+            + " statement is refused and the generation timed out")
+    void theBudgetIsSpentOnTheInjectedClock() {
+        Clock moving = new Clock() {
+            @Override
+            public ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(ZoneId zone) {
+                return this;
+            }
+
+            @Override
+            public Instant instant() {
+                return Instant.ofEpochMilli(TimeUnit.NANOSECONDS.toMillis(ticker.get()));
+            }
+        };
+        ReportGeneration generation = new ReportGeneration((snapshot, id) -> Optional.of(
+                new ReportGeneration.PeriodState(PeriodStatus.LOCKED, Optional.of(LOCKED_AT))), Duration.ofSeconds(10),
+                moving);
+        TestReportDefinition late = TestReportDefinition.of(1, (snapshot, inputs) -> {
+            ticker.addAndGet(Duration.ofSeconds(11).toNanos());
+            try {
+                snapshot.prepareStatement("SELECT 7").executeQuery();
+            } catch (SQLException unexpected) {
+                throw new IllegalStateException(unexpected);
+            }
+            return CanonicalJson.object();
+        });
+        assertThatThrownBy(() -> generation.generate(raw(), late, inputs()))
+                .isInstanceOf(ReportGeneration.GenerationTimedOut.class);
+    }
     // -----------------------------------------------------------------
 
     private static final Instant LOCKED_AT = Instant.parse("2026-10-03T09:00:00.123456Z");

@@ -343,7 +343,7 @@ class TrialBalanceRunDatabaseTest {
 
     private static ReportRunGenerator generator() {
         return new ReportRunGenerator(runs(), new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT,
-                ReportRuns.Leases.STANDARD.generationTimeout(), System::nanoTime), SNAPSHOTS, TRANSACTIONS,
+                ReportRuns.Leases.STANDARD.generationTimeout(), NOW), SNAPSHOTS, TRANSACTIONS,
                 new ReportRunMetrics(new SimpleMeterRegistry(), DEFINITIONS));
     }
 
@@ -354,7 +354,7 @@ class TrialBalanceRunDatabaseTest {
     }
 
     private static Connection view(Connection snapshot) {
-        return new ReadOnlySnapshot(snapshot, ReportRuns.Leases.STANDARD.generationTimeout(), System::nanoTime)
+        return new ReadOnlySnapshot(snapshot, ReportRuns.Leases.STANDARD.generationTimeout(), () -> 0L)
                 .connection();
     }
 

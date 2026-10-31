@@ -119,8 +119,7 @@ A FINAL run reads its period's pin and refuses another version. **Two refinement
 cut_at`) - the content is the journal as asked, whenever generated; and a completed PROVISIONAL run **keeps answering its
 question** while its cut is younger than `finapp.accounting.report.provisional-freshness` (default 15 minutes) on the
 database's clock and its period's revision is unchanged - at most one PROVISIONAL row per question per window (an owner
-item: the window, against a cap or a retention sweep). `ReportGeneration` takes its ticker from the composition root
-(the meter registry's monotonic clock) - its default of `System::nanoTime` broke `NoAmbientTimeRulesTest`.
+item: the window, against a cap or a retention sweep).
 
 ## Follow-up
 

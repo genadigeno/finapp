@@ -74,7 +74,7 @@ class TrialBalanceRunsTest {
     private final List<byte[]> payloads = Collections.synchronizedList(new ArrayList<>());
     private final ReportGeneration generation = new ReportGeneration((snapshot, id) -> periodStore.find(snapshot, id)
             .map(row -> new ReportGeneration.PeriodState(row.status(), row.lockedAt())), Duration.ofMinutes(4),
-            System::nanoTime);
+            () -> 0L);
     private GlMappingVersionId version;
     private AccountingPeriodId february;
     private AccountingPeriodId march;

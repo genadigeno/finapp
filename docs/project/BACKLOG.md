@@ -25887,10 +25887,11 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   content is the journal as asked, not as generated; (2) the bound - a completed PROVISIONAL run answers its question
   while its cut is younger than `finapp.accounting.report.provisional-freshness` (`ReportRuns.Provisional`, default 15
   minutes, one second to a day) on the **database's** clock (`ReportRunStore.cutWithin`) and its period's revision is
-  unchanged - at most one PROVISIONAL row per question per window; an owner item. **Found at the gate and fixed**:
-  `NoAmbientTimeRulesTest` red on master since `-008`'s I-1 - `ReportGeneration(PeriodStates, Duration)` defaulted its
-  ticker to `System::nanoTime`; the two-argument form removed, the composition root passing the meter registry's
-  monotonic clock, the suites an explicit ticker. **Not done, recorded**: consolidating `GlSnapshots` and
+  unchanged - at most one PROVISIONAL row per question per window; an owner item. **Found at the gate**:
+  `NoAmbientTimeRulesTest` red on the base `ddcb45cd` (`-008`'s I-1: `ReportGeneration(PeriodStates, Duration)`
+  defaulted its ticker to `System::nanoTime`) - not this task's; fixed on the branch, then superseded at the integration
+  by the coordinator's fix on master (`971d3e27`, the `Clock` constructor), which this branch takes - the new suites name
+  a ticker or the clock. **Not done, recorded**: consolidating `GlSnapshots` and
   `JdbcReportSnapshots` (two exception vocabularies, two doors' behaviours and their suites - not small) - a follow-up;
   a chained opening (the previous FINAL run's closing) - the cumulative fold is independent each time and costs O(history)
   per generation, bounded by the 4-minute budget. Tests: hermetic `TrialBalanceOracleTest` (6, generated journals over

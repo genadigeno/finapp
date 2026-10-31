@@ -58,7 +58,7 @@ class LedgerTrialBalanceReadsTest {
             + " reference, reason or actor_id; created_at only as the cut's filter")
     void everyStatementOnlyReads() {
         Connection view = new ReadOnlySnapshot(recording(new ArrayList<>(), new ArrayList<>()), Duration.ofSeconds(5),
-                System::nanoTime).connection();
+                () -> 0L).connection();
         for (String sql : statements()) {
             String upper = sql.toUpperCase(Locale.ROOT);
             assertThat(upper).startsWith("SELECT ");
@@ -146,7 +146,7 @@ class LedgerTrialBalanceReadsTest {
     void everyReadPassesTheView() {
         List<String> prepared = new ArrayList<>();
         Connection view = new ReadOnlySnapshot(recording(prepared, new ArrayList<>()), Duration.ofSeconds(5),
-                System::nanoTime).connection();
+                () -> 0L).connection();
         LedgerTrialBalanceReads reads = new LedgerTrialBalanceReads(new JdbcGlMappingStore());
         AccountingPeriodId period = AccountingPeriodId.next(IDS);
         assertThat(reads.period(view, period)).isEmpty();

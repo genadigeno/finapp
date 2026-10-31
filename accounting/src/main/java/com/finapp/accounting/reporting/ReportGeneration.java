@@ -9,10 +9,12 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.function.LongSupplier;
 
 /**
@@ -101,10 +103,15 @@ public final class ReportGeneration {
      * @param periods how the run's period is read in the snapshot
      * @param budget the whole generation's time - the configuration holds it below the generator's lease
      *     ({@code ReportRuns.Leases})
-     * @param ticker a monotonic nanosecond clock - injected by the composition root, moved by a suite; never read here
-     *     from the environment (`NoAmbientTimeRulesTest`: the two-argument form that defaulted it to
-     *     {@code System::nanoTime} was removed at `P14-TSK-009`'s gate)
+     * @param clock the injected clock the budget is spent on - never {@code System::nanoTime}: ambient time is a
+     *     build failure ({@code NoAmbientTimeRulesTest}), as at {@code PostingService}. A wall clock stepped back
+     *     lengthens the budget by the step; each statement's {@code statement_timeout} still bounds what it is given.
      */
+    public ReportGeneration(PeriodStates periods, Duration budget, Clock clock) {
+        this(periods, budget, ticking(clock));
+    }
+
+    /** As above, on {@code ticker} - a nanosecond reading a suite can move. */
     public ReportGeneration(PeriodStates periods, Duration budget, LongSupplier ticker) {
         this.periods = Objects.requireNonNull(periods, "periods");
         this.budget = Objects.requireNonNull(budget, "budget");
@@ -112,6 +119,11 @@ public final class ReportGeneration {
         if (budget.toMillis() < 1) {
             throw new IllegalArgumentException("a report generation's budget is at least one millisecond");
         }
+    }
+
+    private static LongSupplier ticking(Clock clock) {
+        Objects.requireNonNull(clock, "clock");
+        return () -> TimeUnit.MILLISECONDS.toNanos(clock.millis());
     }
 
     /**

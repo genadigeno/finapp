@@ -90,7 +90,7 @@ public final class ReadOnlySnapshot {
     /**
      * @param snapshot the read-only {@code REPEATABLE READ} transaction's connection - never handed out
      * @param budget the whole generation's time, at least a millisecond
-     * @param ticker a monotonic nanosecond clock ({@code System::nanoTime} in production)
+     * @param ticker a nanosecond reading - the injected clock's in production ({@code ReportGeneration})
      */
     public ReadOnlySnapshot(Connection snapshot, Duration budget, LongSupplier ticker) {
         this.snapshot = Objects.requireNonNull(snapshot, "snapshot");

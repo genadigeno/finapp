@@ -409,7 +409,7 @@ class ReportRunDatabaseTest {
         assertThat(done.status()).isEqualTo(RunStatus.FINAL);
         assertThat(done.attempt()).isEqualTo(2);
         ReportGeneration.Generated late = SNAPSHOTS.read(snapshot -> new ReportGeneration(
-                ReportGeneration.FROM_THE_SNAPSHOT, short_.generationTimeout(), System::nanoTime).generate(snapshot, JOURNAL,
+                ReportGeneration.FROM_THE_SNAPSHOT, short_.generationTimeout(), NOW).generate(snapshot, JOURNAL,
                 dead.inputs()));
         assertThat(TRANSACTIONS.inTransaction(uow -> runs(short_).complete(uow, dead.id(), 1, late, person())).moved())
                 .isFalse();
@@ -544,7 +544,7 @@ class ReportRunDatabaseTest {
     /** The run's content, generated in a snapshot of its own. */
     private static ReportGeneration.Generated generated(ReportRunStore.RunRow run) {
         return SNAPSHOTS.read(snapshot -> new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT,
-                ReportRuns.Leases.STANDARD.generationTimeout(), System::nanoTime).generate(snapshot, JOURNAL, run.inputs()));
+                ReportRuns.Leases.STANDARD.generationTimeout(), NOW).generate(snapshot, JOURNAL, run.inputs()));
     }
 
     /** January 1999 locked by a person (the grace long past on the real clock). */
@@ -573,7 +573,7 @@ class ReportRunDatabaseTest {
 
     private static ReportRunGenerator generator(ReportRuns.Leases leases) {
         return new ReportRunGenerator(runs(leases), new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT,
-                leases.generationTimeout(), System::nanoTime), SNAPSHOTS,
+                leases.generationTimeout(), NOW), SNAPSHOTS,
                 TRANSACTIONS, new ReportRunMetrics(new SimpleMeterRegistry(), DEFINITIONS));
     }
 

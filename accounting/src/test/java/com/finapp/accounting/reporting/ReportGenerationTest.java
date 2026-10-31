@@ -153,9 +153,9 @@ class ReportGenerationTest {
                 RunParameters.of(Map.of("probe", "p-1"), Optional.empty()));
     }
 
-    /** A generation over {@code periods} with a budget no stand-in here comes near. */
+    /** A generation over {@code periods} with a budget no stand-in here comes near - its ticker never moves. */
     private static ReportGeneration generationOver(ReportGeneration.PeriodStates periods) {
-        return new ReportGeneration(periods, java.time.Duration.ofMinutes(1), System::nanoTime);
+        return new ReportGeneration(periods, java.time.Duration.ofMinutes(1), () -> 0L);
     }
 
     private static ReportGeneration.PeriodStates locked(Instant at) {

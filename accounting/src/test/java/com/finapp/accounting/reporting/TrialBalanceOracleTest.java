@@ -201,7 +201,7 @@ class TrialBalanceOracleTest {
     void regeneratesByteIdentical() {
         ReportGeneration generation = new ReportGeneration((snapshot, id) -> Optional.of(
                 new ReportGeneration.PeriodState(PeriodStatus.LOCKED, Optional.of(Instant.EPOCH))), Duration.ofMinutes(4),
-                System::nanoTime);
+                () -> 0L);
         for (int seed = 1; seed <= SEEDS; seed++) {
             InMemoryTrialBalanceReads ordered = journal(seed, true);
             List<InMemoryTrialBalanceReads.JournalLine> shuffled = new ArrayList<>(ordered.lines());

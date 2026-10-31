@@ -233,11 +233,7 @@ public class AccountingBeans {
         return new ReportRunMetrics(meterRegistry, reportDefinitions);
     }
 
-    /**
-     * T-report's legs, and the orphan leg `P14-TSK-011` schedules in AccountingCloseSchedule. The generation's budget is
-     * spent on the meter registry's monotonic clock - an injected source, as `NoAmbientTimeRulesTest` requires of every
-     * production class (`P14-TSK-009`'s gate: the generation no longer defaults to {@code System::nanoTime}).
-     */
+    /** T-report's legs, and the orphan leg `P14-TSK-011` schedules in AccountingCloseSchedule. */
     @Bean
     ReportRunGenerator reportRunGenerator(
             com.finapp.accounting.ReportRuns reportRuns,
@@ -245,10 +241,10 @@ public class AccountingBeans {
             AccountingTransactions accountingTransactions,
             ReportRunMetrics reportRunMetrics,
             com.finapp.accounting.ReportRuns.Leases reportRunLeases,
-            MeterRegistry meterRegistry) {
+            Clock clock) {
         return new ReportRunGenerator(reportRuns, new com.finapp.accounting.reporting.ReportGeneration(
                 com.finapp.accounting.reporting.ReportGeneration.FROM_THE_SNAPSHOT, reportRunLeases.generationTimeout(),
-                meterRegistry.config().clock()::monotonicTime),
+                clock),
                 reportSnapshots, accountingTransactions, reportRunMetrics);
     }
 

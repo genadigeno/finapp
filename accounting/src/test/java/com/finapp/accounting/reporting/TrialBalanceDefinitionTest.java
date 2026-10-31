@@ -173,7 +173,7 @@ class TrialBalanceDefinitionTest {
         InMemoryTrialBalanceReads reads = books(PeriodStatus.LOCKED, Optional.of(pinned));
         ReportGeneration generation = new ReportGeneration((snapshot, id) -> Optional.of(
                 new ReportGeneration.PeriodState(PeriodStatus.LOCKED, Optional.of(Instant.EPOCH))), Duration.ofMinutes(4),
-                System::nanoTime);
+                () -> 0L);
         String content = generation.generate(SNAPSHOT, new TrialBalanceDefinition(reads),
                 inputs(RunBasis.FINAL, Optional.of(pinned))).content();
         assertThat(content).startsWith("{\"basis\":\"FINAL\",\"body\":{")
