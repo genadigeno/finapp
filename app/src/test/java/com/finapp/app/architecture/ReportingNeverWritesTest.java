@@ -6,6 +6,7 @@ import com.finapp.accounting.JournalReads;
 import com.finapp.accounting.PostingCutoff;
 import com.finapp.accounting.PriorPeriodPostings;
 import com.finapp.accounting.RegulatoryReportingProvider;
+import com.finapp.accounting.reporting.GeneralLedger;
 import com.finapp.ledger.PostingService;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.audit.JdbcAuditWriter;
@@ -61,11 +62,12 @@ import org.junit.jupiter.api.Test;
  *       {@code executeQuery}).</li>
  * </ul>
  *
- * <p><strong>Armed over an empty package.</strong> {@code com.finapp.accounting.reporting} holds no class today, so the
- * rule passes vacuously on production code - and is phrased over every imported class rather than a {@code that()}
+ * <p><strong>Armed over an empty package.</strong> {@code com.finapp.accounting.reporting} held no class when armed;
+ * its first report code is the GL fold (`P14-TSK-007`: {@code GeneralLedger} and its values) - and the rule is phrased
+ * over every imported class rather than a {@code that()}
  * clause that would select nothing (the {@code ModuleBoundaryRulesTest} convention: no {@code allowEmptyShould}), so it
- * gains reach the moment `P14-TSK-008` adds a class, with no edit here. The census proves the guard sees the module and
- * every writer it names; the planted probes in this source prove each refusal able to fail, one hop and two, and a
+ * gained reach the moment the first class landed, with no edit here. The census proves the guard sees the module,
+ * every writer it names and the report code it is armed over (the GL fold); the planted probes in this source prove each refusal able to fail, one hop and two, and a
  * reading report class not flagged.
  */
 @Tag("architecture")
@@ -113,8 +115,13 @@ class ReportingNeverWritesTest {
         assertThat(imported.contain(PostingService.class.getName()))
                 .as("the ledger's writers the package refusal stands for are imported")
                 .isTrue();
-        // How much report code is guarded is deliberately NOT asserted: none until P14-TSK-008, and the guard needs no
-        // edit when the first report class lands.
+        // The report code the guard is armed over (P14-TSK-007's review, M-1): the GL fold is report code, and a move
+        // out of the package - or a package renamed under the rule - would leave the reach rule passing over nothing it
+        // was written for. How much MORE report code exists is deliberately not asserted: the next class lands with no
+        // edit here.
+        assertThat(imported.stream().filter(ReportingNeverWritesTest::isReportingClass).map(JavaClass::getName))
+                .as("the GL fold is report code - the reach rule is armed over it (INV-ACC-14)")
+                .contains(GeneralLedger.class.getName());
     }
 
     @Test

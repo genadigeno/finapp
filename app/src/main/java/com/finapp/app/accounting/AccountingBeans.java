@@ -111,10 +111,11 @@ public class AccountingBeans {
                 accountingFlowScope);
     }
 
-    /** {@code finapp.accounting.gl.unmapped}, registered at zero (`-010` feeds it). */
+    /** {@code finapp.accounting.gl.unmapped} - fed from the database by `P14-TSK-007` (registered at zero by `-003`). */
     @Bean
-    AccountingMappingMetrics accountingMappingMetrics(MeterRegistry meterRegistry) {
-        return new AccountingMappingMetrics(meterRegistry);
+    AccountingMappingMetrics accountingMappingMetrics(com.finapp.accounting.GlMappingGap glMappingGap,
+            GlSnapshots glSnapshots, Clock clock, MeterRegistry meterRegistry) {
+        return new AccountingMappingMetrics(glMappingGap, glSnapshots, clock, meterRegistry);
     }
 
     // ------------------------------------------------------------------ the periods (P14-TSK-005)

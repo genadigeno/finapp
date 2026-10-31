@@ -154,7 +154,8 @@ class LedgerCutoffMigrationTest {
         assertThat(directory).as("the ledger migrations on the test classpath").isNotNull();
         try (Stream<Path> files = Files.list(Path.of(directory.toURI()))) {
             List<String> earlier = files.map(path -> path.getFileName().toString())
-                    .filter(name -> name.matches("V0\\d\\d__.*\\.sql") && !name.startsWith("V028__"))
+                    // Earlier than V028 - a later migration (V029, P14-TSK-007) is not an earlier one.
+                    .filter(name -> name.matches("V0\\d\\d__.*\\.sql") && name.compareTo("V028__") < 0)
                     .map(name -> DIRECTORY + "/" + name)
                     .sorted()
                     .toList();

@@ -465,7 +465,13 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/accounting/periods/{periodId}/unlock-proposal",
                             PermissionName.ACCOUNTING_CLOSE_PROPOSE),
                     entry("POST /v1/operator/accounting/periods/{periodId}/unlock-approval",
-                            PermissionName.ACCOUNTING_CLOSE_APPROVE)));
+                            PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    // P14-TSK-007: the GL read model - a period's figures, an account's activity drilled to its
+                    // lines and an entry's GL view, each the accountant's (identity V025's partition), audited
+                    // accounting.GlRead; the negatives are GeneralLedgerDeskTest's route declarations.
+                    entry("GET /v1/operator/accounting/gl/balances", PermissionName.ACCOUNTING_READ),
+                    entry("GET /v1/operator/accounting/gl/accounts/{code}/activity", PermissionName.ACCOUNTING_READ),
+                    entry("GET /v1/operator/accounting/gl/entries/{entryId}", PermissionName.ACCOUNTING_READ)));
 
     /**
      * The CONDITIONAL half (the Phase 12 -> 13 gate's A5-F1): a permission a route asks BESIDE its declared one when the

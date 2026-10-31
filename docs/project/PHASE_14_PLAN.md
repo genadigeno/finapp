@@ -288,7 +288,7 @@ status columns of the machine rows through conditional edges, no `DELETE`): `gl_
 trigger, `content_sha256`), `valuation_rate_set`, `valuation_rate` (snapshot ids and provenance), `accounting_break`,
 `prior_period_adjustment`, `regulatory_obligation`, `regulatory_submission`. Ledger: `V028` `posting_cutoff` (one row,
 `closed_through date`) + `posting_cutoff_event` (append-only) + the trigger; `V029` index `journal_entry (posting_date,
-id)`; `V030` origin `ACCOUNTING` + reason `PRIOR_PERIOD_ADJUSTMENT`. Identity `V025`: the permissions and roles (C12).
+id)` *(built by `P14-TSK-007`, 2026-10-31: `journal_entry_by_posting_date`, in the migration's transaction - no production journal yet)*; `V030` origin `ACCOUNTING` + reason `PRIOR_PERIOD_ADJUSTMENT`. Identity `V025`: the permissions and roles (C12).
 Lending: no migration for `-006` (code only); `-021` (if C6 A) takes lending and bnpl migrations then numbered.
 Migration numbers are assigned in landing order (Flyway out-of-order off); next free re-verified at the transition:
 accounting `V001`, ledger `V028`, identity `V025`, lending `V032`, bnpl `V020`. Amounts: `BIGINT` minor units + `CHAR(3)` +
@@ -300,7 +300,7 @@ All operator surfaces under `/v1/operator/accounting/…` and `/v1/operator/regu
 `POST`, `409` on a stale revision, errors in `ERROR_CONTRACT.md` (`accounting.*`): periods (list, lock, unlock and
 reopen proposals and approvals, close proposal/approval/rejection); mapping versions (propose, activate, reject, read,
 diff); GL (`/gl/balances?period&currency`, `/gl/accounts/{code}/activity?period` paged to journal lines, `/gl/entries/{id}`
-the GL view of one entry); report runs (generate, read, `…/regeneration` answering `IDENTICAL | DIVERGED`); valuation
+the GL view of one entry) *(as built by `P14-TSK-007`, 2026-10-31, all `ACCOUNTING_READ` and audited `accounting.GlRead`: `GET …/gl/balances?period=YYYY-MM[&currency]` - the period's movement per GL account × currency with its components, the unmapped lines and GL = ledger per currency; `GET …/gl/accounts/{code}/activity?period&currency[&after][&limit]` - the figure and one keyset page of its lines (1-500, default 100); `GET …/gl/entries/{entryId}` - each line's GL account under its month's version; one `REPEATABLE READ READ ONLY` snapshot per request, every statement bounded by `statement_timeout` (`accounting.ReadTimedOut` 503); `accounting.NoActiveMapping` 409 without a version; the entry's free-text `reference` not served - an owner item)*; report runs (generate, read, `…/regeneration` answering `IDENTICAL | DIVERGED`); valuation
 rate sets; breaks; prior-period adjustments; regulatory submissions. No customer or merchant surface reads `accounting`
 (`NoCustomerSurfaceReadsAccountingTest`). Every read of a report or GL drill-down is an audited operator read.
 
@@ -560,7 +560,7 @@ rows both ways.
 | `finapp.accounting.close.duration` | timer | — | — |
 | `finapp.accounting.cutoff.floored` | counter (postings floored to the first open date because their command asked, C3 - *added by `P14-TSK-006`*) | command | — |
 | `finapp.accounting.cutoff.refused` | counter (postings refused `ledger.PeriodClosed`) | module *(erratum, `P14-TSK-004`: built with tag `command` - `posting`/`reversal`/`adjustment` - because a ledger command carries no requesting module; a `module` tag needs a producer-contract change, an owner item for `-006`)* | `AccountingPostingIntoClosedPeriod` |
-| `finapp.accounting.gl.unmapped` | gauge (lines unmapped in the open period under the active version) | — | `AccountingMappingGap` |
+| `finapp.accounting.gl.unmapped` | gauge (lines unmapped in the open period under the active version) *(fed by `P14-TSK-007` from the database: the chart's keys the ACTIVE version does not map - 0 without a journal read when it is total, 0 with no version - their lines counted from the first open period's start, never before the version's month; cached 60 s)* | — | `AccountingMappingGap` |
 | `finapp.accounting.break.open` | gauge | type | `AccountingBreakAged` |
 | `finapp.accounting.report.run` | counter | definition, outcome | — |
 | `finapp.accounting.report.diverged` | counter | definition | `AccountingReportDiverged` |

@@ -1547,7 +1547,7 @@ not ready, a mapping gap, a stale valuation rate, …) arrives with the door tha
 client could never receive. `P14-TSK-003`'s GL mapping doors brought six: `accounting.MappingInvalid`, `MappingNotTotal`,
 `MappingIncompatible`, `MappingStale`, `MappingRetroactive` and `ReasonRequired`; `P14-TSK-005`'s period doors three:
 `accounting.PeriodStale`, `PeriodNotLockable` and `CutoffBusy` (and `MappingRetroactive` gained its period case - an
-activation into a locked period). `ledger.PeriodClosed` is the ledger's, not this module's (`P14-TSK-004`). Every detail is
+activation into a locked period); `P14-TSK-007`'s GL doors two: `accounting.NoActiveMapping` and `accounting.ReadTimedOut` (a GL account or entry the read cannot find is `accounting.NotFound`; a malformed period, currency, page size or cursor - a cursor of another month included - `api.ValidationFailed`). `ledger.PeriodClosed` is the ledger's, not this module's (`P14-TSK-004`). Every detail is
 stranger-safe: never an amount, a balance, a GL figure or an owner reference.
 
 | Code | Status | Meaning |
@@ -1563,6 +1563,8 @@ stranger-safe: never an amount, a balance, a GL figure or an owner reference.
 | `accounting.PeriodNotLockable` | 409 | The accounting period cannot lock yet - its grace after the month end has not passed (the detail names the first lockable day), or the previous period is not `CLOSED` (periods lock in order); nothing was changed (`P14-TSK-005`, C9). |
 | `accounting.CutoffBusy` | 503 | The posting cutoff could not be moved right now - postings held the ledger's cutoff key through every bounded attempt (`P14-TSK-004`'s five of 2 s); nothing was changed and nothing stored under the idempotency key, so the same request retried later locks or unlocks (`P14-TSK-005`). |
 | `accounting.ReasonRequired` | 422 | A reasoned accounting act carried no reason, one past 1000 characters, or one holding a card-number or bank-account shape. |
+| `accounting.NoActiveMapping` | 409 | No GL mapping version is pinned by, or in force for, the period read - before the first version is activated under four eyes (the production state after deployment), for a month before the first version's, or for a period that locked with no version in force; the GL cannot be read for it (`P14-TSK-007`, `INV-ACC-06`, `INV-ACC-07`). The detail names the month - never a figure. |
+| `accounting.ReadTimedOut` | 503 | A statement of an accounting read outlived the read-only snapshot's `statement_timeout` (`finapp.accounting.gl.statement-timeout`, 10 s by default) and PostgreSQL cancelled it; the snapshot rolled back, nothing was served and nothing recorded - retry, or narrow the read (one currency, a smaller page) (`P14-TSK-007`, the review's I-2). |
 
 ## 3a. Rejection at the boundary
 
