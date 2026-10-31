@@ -183,7 +183,8 @@ class ValuationRateSetDatabaseTest {
 
         try (Connection app = DatabaseRoles.application()) {
             DatabaseRoles.assertCannotBypassPrivileges(app);
-            refused(app, "UPDATE accounting.valuation_rate SET rate = rate + 1 WHERE set_id = '" + set + "'", "P0001");
+            // The application role holds no UPDATE or DELETE on a rate, and only the decision columns of a set.
+            refused(app, "UPDATE accounting.valuation_rate SET rate = rate + 1 WHERE set_id = '" + set + "'", "42501");
             refused(app, "DELETE FROM accounting.valuation_rate WHERE set_id = '" + set + "'", "42501");
             refused(app, "DELETE FROM accounting.valuation_rate_set WHERE id = '" + set + "'", "42501");
             refused(app, "UPDATE accounting.valuation_rate_set SET max_age_hours = 1 WHERE id = '" + set + "'", "42501");

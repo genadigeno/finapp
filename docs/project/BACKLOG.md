@@ -25920,9 +25920,9 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   `ValuationSetStale` (409); `PeriodStale` gained the not-`LOCKED` case. Audited `accounting.ValuationSetCaptured`
   (reason optional), `ValuationSetApproved`, `ValuationSetRejected` (reasoned); the capturer's approval
   `accounting.SelfApprovalRefused` `FAILED` in its own transaction. Events: none. No history table - the frozen row and
-  the audit trail are the history. The report-run FK: see the integration note. Tests: `ValuationRateSetsTest` (11),
+  the audit trail are the history. **The report-run FK: not added** - `accounting.report_run` (`P14-TSK-008`'s `V004`) was not on master at this task's integration (master `18c4935c`), so `V005` names no other table; `report_run.valuation_rate_set_id → valuation_rate_set (id)` is a recorded follow-up (`-015`, which pins the set, or the next accounting migration after both merge). Tests: `ValuationRateSetsTest` (11),
   `ValuationRateSetTest` (6), `ValuationRateSetMigrationTest` (6), `FxReferenceValuationRatesTest` (3),
-  `ValuationRateSetDeskTest` (6); **owed (C5)**: `ValuationRateSetDatabaseTest#provenanceIsKept`, `#aStalePairIsRefused`,
+  `ValuationRateSetDeskTest` (6) - fresh: `:accounting:test` 93/0, `:identity:test` 144/0 (the javadoc), the app filters and guards 163/0, `:app:architectureTest` 216/0; **owed (C5)**: `ValuationRateSetDatabaseTest#provenanceIsKept`, `#aStalePairIsRefused`,
   `#aMissingPairIsRefused`, `#aSetIsImmutable`, `#theProposerCannotApprove`, `#oneApprovedPerPeriod` (two captures, ten
   concurrent approvals - ordered last: January 1999 admits one approved set per database) and `AccountingMigrationTest`'s
   lists. Probes: six, all caught (`MUTATION_TESTING.md` §2). **Owner items**: the staleness default (96 h); no
