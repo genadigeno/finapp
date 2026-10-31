@@ -1,0 +1,28 @@
+-- The journal by posting date (P14-TSK-007, ADR-0113's Consequences; PHASE_14_PLAN.md section 9).
+--
+-- WHAT READS IT
+--   The General Ledger is a function of the journal, not a store (INV-ACC-06): every GL figure is
+--   recomputed from journal lines whose posting date falls in the period read, and every figure
+--   drills to those lines (INV-ACC-02). Until now the journal had only its primary key (UUIDv7,
+--   creation order) and the per-account index - nothing served "the entries of a posting-date
+--   range", so a month's GL would have read the whole journal. This index serves exactly that:
+--     - a period's aggregate - a range scan on posting_date, then each entry's lines through
+--       journal_line_seq_is_unique_per_entry (entry_id, seq);
+--     - the drill-down's keyset - ORDER BY posting_date, id (then the line's seq), resumed after
+--       the last line served by the row predicate (posting_date, id) >= (:date, :entry), which a
+--       btree on (posting_date, id) answers without a sort.
+--   The posting date decides the accounting period (LEDGER_MODEL.md section 2), and a locked
+--   period's range is immutable after the cutoff (INV-ACC-08) - so this is also the index a FINAL
+--   report run of a closed period reads (P14-TSK-008, -009).
+--
+-- IN THE MIGRATION'S TRANSACTION, NOT CONCURRENTLY
+--   DATA_MIGRATIONS.md section 4.4 and the checkout V003 precedent: CONCURRENTLY needs a
+--   non-transactional migration that can leave an invalid index behind. The platform holds no
+--   production journal yet, so the brief SHARE lock of a plain build (postings wait, reads do not)
+--   is the smaller risk. A deployment over a large live journal would build it CONCURRENTLY in a
+--   non-transactional migration instead - recorded in LEDGER_MODEL.md section 2.
+--
+-- NOTHING ELSE CHANGES
+--   No column, no constraint, no trigger, no grant: the journal stays SELECT, INSERT for the
+--   application role (V004), and an index is not a privilege.
+CREATE INDEX journal_entry_by_posting_date ON ledger.journal_entry (posting_date, id);

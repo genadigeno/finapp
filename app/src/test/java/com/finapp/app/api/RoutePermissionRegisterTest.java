@@ -466,6 +466,12 @@ class RoutePermissionRegisterTest {
                             PermissionName.ACCOUNTING_CLOSE_PROPOSE),
                     entry("POST /v1/operator/accounting/periods/{periodId}/unlock-approval",
                             PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    // P14-TSK-007: the GL read model - a period's figures, an account's activity drilled to its
+                    // lines and an entry's GL view, each the accountant's (identity V025's partition), audited
+                    // accounting.GlRead; the negatives are GeneralLedgerDeskTest's route declarations.
+                    entry("GET /v1/operator/accounting/gl/balances", PermissionName.ACCOUNTING_READ),
+                    entry("GET /v1/operator/accounting/gl/accounts/{code}/activity", PermissionName.ACCOUNTING_READ),
+                    entry("GET /v1/operator/accounting/gl/entries/{entryId}", PermissionName.ACCOUNTING_READ),
                     // P14-TSK-008: the report runs - generation and regeneration the accountant's
                     // ACCOUNTING_REPORT_GENERATE, the audited read of a run's content the accountant's ACCOUNTING_READ
                     // (identity V025's partition); the negatives are ReportRunDeskTest's route declarations.

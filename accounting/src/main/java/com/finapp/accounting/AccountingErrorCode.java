@@ -78,6 +78,20 @@ public enum AccountingErrorCode implements ErrorCode {
     /** Every reasoned accounting act (`P14-TSK-003` first). */
     REASON_REQUIRED("accounting.ReasonRequired", 422, "A reason is required."),
 
+    /** The GL doors (`P14-TSK-007`): no mapping version is pinned by, or in force for, the period. */
+    NO_ACTIVE_MAPPING(
+            "accounting.NoActiveMapping",
+            409,
+            "No GL mapping version is pinned by, or in force for, the period - the GL cannot be read for it until a"
+                    + " version is activated under four eyes."),
+
+    /** The GL doors (`P14-TSK-007`): a statement of the read outlived the snapshot's statement timeout. */
+    READ_TIMED_OUT(
+            "accounting.ReadTimedOut",
+            503,
+            "The accounting read did not finish within its statement timeout; nothing was served - retry, or narrow"
+                    + " the read."),
+
     /** The report run doors (`P14-TSK-008`): the build holds no definition of the code (or the run's version). */
     REPORT_DEFINITION_UNKNOWN(
             "accounting.ReportDefinitionUnknown",

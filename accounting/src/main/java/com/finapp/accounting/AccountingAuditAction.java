@@ -103,6 +103,20 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " Reasoned. Its target the period; the summary its month and revision.",
             true),
 
+    /** An accountant read the GL - balances, an account's activity or an entry (`P14-TSK-007`, ACCOUNTING_READ). */
+    GL_READ(
+            "accounting.GlRead",
+            "An accountant read the General Ledger - a period's GL figures, one GL account's activity drilled to its"
+                    + " journal lines, or one journal entry's GL view - computed from the journal in one REPEATABLE READ"
+                    + " READ ONLY snapshot under the mapping version the period pins (P14-TSK-007, INV-ACC-02,"
+                    + " INV-ACC-06, INV-ACC-14; GET /v1/operator/accounting/gl/..., ACCOUNTING_READ). Recorded at every"
+                    + " serving, in a transaction of its own after the read and before the answer. Its target the"
+                    + " period, the GL account or the entry; the summary the door, the period, the currency, the"
+                    + " version number and its counts - figures= and unmapped= for the balances, lines= and"
+                    + " page=first|next for an activity page, lines= for an entry - never an amount or an owner"
+                    + " reference.",
+            false),
+
     /** A report run completed FINAL or PROVISIONAL, or failed (`P14-TSK-008`, ACCOUNTING_REPORT_GENERATE). */
     REPORT_GENERATED(
             "accounting.ReportGenerated",
