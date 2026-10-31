@@ -681,14 +681,18 @@ public enum PermissionName {
     /**
      * Lock a period, propose its close, unlock or reopen, and re-run a close check (`P14-TSK-001`; ADR-0114;
      * {@code INV-ACC-09}, {@code -10}): a close only with every readiness check passed or disclosed by a reasoned
-     * record. The routes are `-005`'s, `-011`'s and `-012`'s. <strong>Held by {@code ACCOUNTANT}.</strong>
+     * record. Also captures a LOCKED period's valuation rate set - a close-preparation act (`P14-TSK-014`; ADR-0116;
+     * {@code INV-ACC-11}). The routes are `-005`'s, `-011`'s, `-012`'s and `-014`'s.
+     * <strong>Held by {@code ACCOUNTANT}.</strong>
      */
     ACCOUNTING_CLOSE_PROPOSE,
 
     /**
      * Approve or reject a period's close, unlock or reopen (`P14-TSK-001`; ADR-0114; {@code INV-ACC-09}, {@code -10},
-     * {@code INV-AUD-04}): never one's own proposal. Serves the close run and the checks it decides. The routes are
-     * `-005`'s and `-012`'s. <strong>Held by {@code FINANCIAL_CONTROLLER}.</strong>
+     * {@code INV-AUD-04}): never one's own proposal. Serves the close run and the checks it decides. Also approves or
+     * rejects a period's valuation rate set, never one's own capture, and serves the set it decides (`P14-TSK-014`;
+     * ADR-0116; {@code INV-ACC-11}). The routes are `-005`'s, `-012`'s and `-014`'s.
+     * <strong>Held by {@code FINANCIAL_CONTROLLER}.</strong>
      */
     ACCOUNTING_CLOSE_APPROVE,
 

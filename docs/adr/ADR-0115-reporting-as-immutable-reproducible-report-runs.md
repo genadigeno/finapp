@@ -84,7 +84,7 @@ to `OPEN` without a new revision - a FINAL run left standing would stop reproduc
 `accounting_period_reopens_with_its_runs_superseded` refuses any return to `OPEN` that leaves one - for every writer.
 (3) **The freeze is its own trigger** (`report_run_content_is_frozen`, firing before the machine's by name), so its
 refusal is its own. The valuation rate set is pinned as `valuation_rate_set_id uuid NULL` with **no foreign key** (the
-set's table is `P14-TSK-014`'s `V005`, landing after) and is a hashed parameter of the question. Doors:
+set's table is `P14-TSK-014`'s `V005`, landing after) *(keyed by `P14-TSK-014`'s `V005` at its integration, 2026-10-31: `report_run_valuation_rate_set_fk`)* and is a hashed parameter of the question. Doors:
 `POST /v1/operator/accounting/report-runs` (keyed, `ACCOUNTING_REPORT_GENERATE`; the run, never its content),
 `GET …/{runId}` (`ACCOUNTING_READ`; the content, recorded `accounting.ReportRead` before it is served),
 `POST …/{runId}/regeneration` (keyed; `IDENTICAL | DIVERGED`, recorded `accounting.ReportRegenerated`, a divergence

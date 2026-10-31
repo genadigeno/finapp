@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
  * C5): the plan's key verbatim, the value lists the enums', the shapes the code's bounds, the hashes recomputed from the
  * stored text, <strong>the freeze its own trigger</strong> (the entry's probe target - the hermetic half beside
  * {@code ReportRunDatabaseTest#contentIsFrozen}), the machine's edges, the period's return to {@code OPEN} only with its
- * FINAL runs superseded, the rate set with no foreign key, nothing seeded, no DELETE, no other schema, every constraint
+ * FINAL runs superseded, the rate set with no foreign key in V004 (P14-TSK-014's V005 adds it), nothing seeded, no DELETE, no other schema, every constraint
  * name held once.
  */
 @DisplayName("accounting V004 holds the report run's ranks as the code declares them (P14-TSK-008)")
@@ -139,8 +139,9 @@ class ReportRunMigrationTest {
     }
 
     @Test
-    @DisplayName("the valuation rate set is a uuid with NO foreign key - P14-TSK-014's table lands after - and is the"
-            + " question's own parameter")
+    @DisplayName("the valuation rate set is a uuid with NO foreign key in V004 - P14-TSK-014's table lands after, and its"
+            + " V005 adds report_run_valuation_rate_set_fk (ValuationRateSetMigrationTest) - and is the question's own"
+            + " parameter")
     void theRateSetHasNoForeignKey() {
         String sql = collapsed(RESOURCE);
         assertThat(sql).contains("valuation_rate_set_id uuid,");
