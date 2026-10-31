@@ -61,10 +61,11 @@ import org.junit.jupiter.api.Test;
  *       {@code executeQuery}).</li>
  * </ul>
  *
- * <p><strong>Armed over an empty package.</strong> {@code com.finapp.accounting.reporting} holds no class today, so the
- * rule passes vacuously on production code - and is phrased over every imported class rather than a {@code that()}
+ * <p><strong>Armed over an empty package.</strong> {@code com.finapp.accounting.reporting} held no class when armed;
+ * its first report code is the GL fold (`P14-TSK-007`: {@code GeneralLedger} and its values) - and the rule is phrased
+ * over every imported class rather than a {@code that()}
  * clause that would select nothing (the {@code ModuleBoundaryRulesTest} convention: no {@code allowEmptyShould}), so it
- * gains reach the moment `P14-TSK-008` adds a class, with no edit here. The census proves the guard sees the module and
+ * gained reach the moment the first class landed, with no edit here. The census proves the guard sees the module and
  * every writer it names; the planted probes in this source prove each refusal able to fail, one hop and two, and a
  * reading report class not flagged.
  */
@@ -113,8 +114,8 @@ class ReportingNeverWritesTest {
         assertThat(imported.contain(PostingService.class.getName()))
                 .as("the ledger's writers the package refusal stands for are imported")
                 .isTrue();
-        // How much report code is guarded is deliberately NOT asserted: none until P14-TSK-008, and the guard needs no
-        // edit when the first report class lands.
+        // How much report code is guarded is deliberately NOT asserted: the first report class (P14-TSK-007's GL fold)
+        // landed with no edit here, and neither will the next.
     }
 
     @Test

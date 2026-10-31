@@ -25724,7 +25724,13 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   add theirs). **Clarifications, recorded**: "balances" are the period's movement - opening and closing are the trial
   balance's (`-009`), so a live read never re-aggregates from inception; the version is read through the period's pin
   (equal to the version in force by construction); the GL view of an entry carries its economic event's `reference`
-  (`RESTRICTED-FINANCIAL`, as the amounts).
+  (`RESTRICTED-FINANCIAL`, as the amounts). Tests: hermetic `GeneralLedgerTest` (9: `#everyLineMapsOnce`,
+  `#glEqualsLedgerPerCurrency`, `#aFigureDrillsToItsLines`, `#anUnmappedLineIsCountedNeverDropped`, `#everyFigureNamesItsVersion`, ...), `GlPinsTest` (4),
+  `GlMappingGapTest` (4), `JournalReadsTest` (5), `LedgerPostingDateIndexMigrationTest` (3), `GeneralLedgerDeskTest` (9),
+  `GlSnapshotsTest` (3), `LedgerJournalReadsTest` (3), `AccountingMappingMetricsTest` (3); eleven probes in `MUTATION_TESTING.md` §2 (the
+  entry's: a purpose double counted → `GeneralLedgerTest#glEqualsLedgerPerCurrency` red); owed (C5) `GlReadModelDatabaseTest` (6:
+  `#everyLineMapsOnce`, `#aFigureDrillsToItsLines`, `#glEqualsLedgerPerCurrency`, `#aGlReadCannotWrite`,
+  `#theMonthReadUsesThePostingDateIndex`, `#theEntryViewMapsEveryLine`).
 
 **P14-TSK-008 — Report runs: immutable, reproducible** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)
 - **Objective**: the report-run machinery every report uses (ADR-0115, `INV-ACC-04`).
