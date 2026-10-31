@@ -4731,7 +4731,7 @@ earlier `accounting` tables are classified in the next section, added beside thi
 | `report_run` | `basis` | `INTERNAL` | A closed code - `FINAL` or `PROVISIONAL` |
 | `report_run` | `period_locked_at` | `INTERNAL` | The lock a FINAL run was claimed under - the period's own stamp |
 | `report_run` | `mapping_version_id` | `INTERNAL` | The GL mapping version pinned - accounting's own row |
-| `report_run` | `valuation_rate_set_id` | `INTERNAL` | The valuation rate set pinned - by id, no foreign key until `P14-TSK-014`'s table |
+| `report_run` | `valuation_rate_set_id` | `INTERNAL` | The valuation rate set pinned - by id; a key into `valuation_rate_set` from `P14-TSK-014`'s `V005` (`report_run_valuation_rate_set_fk`) |
 | `report_run` | `cut_at` | `INTERNAL` | The claim's database clock - a PROVISIONAL run's journal cut |
 | `report_run` | `requested_by` | `CONFIDENTIAL` | Who asked - an accountant, or the platform |
 | `report_run` | `requested_by_type` | `INTERNAL` | A closed actor type - a person's or `SYSTEM`, by `CHECK` |
@@ -4829,6 +4829,45 @@ platform's own identifiers, months, versions, counters and the database's stamps
 | `period_event` | `reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
 | `period_event` | `occurred_at` | `INTERNAL` | The database's stamp |
 | `period_event` | `correlation_id` | `INTERNAL` | The act's correlation |
+
+### `accounting.valuation_rate_set` and `valuation_rate` - the valuation rate set - *added by `P14-TSK-014`*
+
+`accounting V005`: a LOCKED period's frozen valuation input (ADR-0116 decision 2, `INV-ACC-11`) - born `PROPOSED` with all
+its rates, `PROPOSED → APPROVED | REJECTED`, four eyes by `valuation_rate_set_four_eyes`, one approved per period
+(`valuation_rate_set_one_approved_per_period`), the rates `INSERT`-only for every writer, no `DELETE` for any role. **No
+money, no customer, no figure of the platform's books.** The rates are copies of fx's reference observations -
+`fx.rate_snapshot`'s `rate` is `INTERNAL` market data, and a copy is classified as its source; the provenance (source,
+snapshot id, instants) `INTERNAL` as fx's. Person-written reasons `RESTRICTED-PII` (screened by `AccountingReasons`,
+never served); the persons `CONFIDENTIAL`; identifiers, closed codes, counts, configuration and the database's stamps
+`INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `valuation_rate_set` | `id` | `INTERNAL` | Generated |
+| `valuation_rate_set` | `period_id` | `INTERNAL` | The accounting period valued - accounting's own row |
+| `valuation_rate_set` | `functional_currency` | `INTERNAL` | ISO 4217 - `EUR` by `CHECK` (owner decision C1) |
+| `valuation_rate_set` | `as_of` | `INTERNAL` | The first instant after the period, UTC - derived from the period by the trigger |
+| `valuation_rate_set` | `max_age_hours` | `INTERNAL` | The staleness bound the capture applied - configuration |
+| `valuation_rate_set` | `rate_count` | `INTERNAL` | A count - the rates the set holds |
+| `valuation_rate_set` | `status` | `INTERNAL` | The machine's state |
+| `valuation_rate_set` | `captured_by` | `CONFIDENTIAL` | The accountant who captured it |
+| `valuation_rate_set` | `captured_by_type` | `INTERNAL` | A closed actor type - a person's, by `CHECK` |
+| `valuation_rate_set` | `captured_at` | `INTERNAL` | The database's stamp |
+| `valuation_rate_set` | `capture_reason` | `RESTRICTED-PII` | Person-written, optional; screened for instrument shapes; never served |
+| `valuation_rate_set` | `decided_by` | `CONFIDENTIAL` | The controller who approved or rejected it - never the capturer for an approval, by `CHECK` |
+| `valuation_rate_set` | `decided_by_type` | `INTERNAL` | A closed actor type - a person's, by `CHECK` |
+| `valuation_rate_set` | `decided_at` | `INTERNAL` | The database's stamp, after the lock |
+| `valuation_rate_set` | `decision_reason` | `RESTRICTED-PII` | As `capture_reason`, required |
+| `valuation_rate_set` | `correlation_id` | `INTERNAL` | The capturing request's correlation |
+| `valuation_rate` | `set_id` | `INTERNAL` | The set - accounting's own row |
+| `valuation_rate` | `position` | `INTERNAL` | The rate's place in the capture's order |
+| `valuation_rate` | `base_currency` | `INTERNAL` | ISO 4217 - `EUR` by `CHECK` |
+| `valuation_rate` | `quote_currency` | `INTERNAL` | ISO 4217 - the valued currency |
+| `valuation_rate` | `rate` | `INTERNAL` | The reference's published mid-market rate, copied exactly - market data (as `rate_snapshot.rate`), never a quote or an executed rate |
+| `valuation_rate` | `source` | `INTERNAL` | The reference source's code - an organisation, never a person |
+| `valuation_rate` | `snapshot_id` | `INTERNAL` | fx's snapshot identifier, by value - no cross-schema key |
+| `valuation_rate` | `observed_at` | `INTERNAL` | When the source says it observed the rate |
+| `valuation_rate` | `received_at` | `INTERNAL` | When fx's database received it |
 
 ### Free text, classified at its ceiling
 
