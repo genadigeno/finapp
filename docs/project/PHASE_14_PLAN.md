@@ -501,6 +501,14 @@ notes disclosing suspense, open breaks, PPAs and the deferred treatments of C6/C
 live operator reports and gauges) stay operational and are labelled so; no cache, projection or gauge is a financial
 figure's source (`INV-BAL-05`).
 
+*(As built, `P14-TSK-009`, 2026-11-01: the **trial balance** is `TRIAL_BALANCE` v1 - the opening a cumulative fold from
+inception under the period's own version; every unmapped line an explicit row; zero per currency (cumulative debits =
+credits, closing balances footing) and equal to the ledger over three windows against a `TrialBalance.sweep`-shaped
+statement bounded by the period row - so a wrong range bound is caught (`-007`'s M-6); the verdict at
+`{body,verdict,passes}`, which `-011` reads after claiming the FINAL run at lock. "Cut at the journal's settle horizon"
+reads, as built, **created at or before the run's claim** (`created_at <= cut_at`), and a completed PROVISIONAL run is
+reused within `finapp.accounting.report.provisional-freshness` (15 minutes) - `-008`'s review, M-8; an owner item.)*
+
 ### 13.7 Regulatory reporting (owner brief 7.8)
 
 A **regulatory obligation** is configuration data: jurisdiction code, form code and version, period type, the report

@@ -1,8 +1,11 @@
 package com.finapp.app.accounting;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.accounting.AccountingPeriodId;
+import com.finapp.accounting.GlMappingVersionId;
+import com.finapp.accounting.JdbcGlMappingStore;
 import com.finapp.accounting.JournalReads;
 import com.finapp.accounting.reporting.ReadOnlySnapshot;
 import com.finapp.accounting.reporting.ReportDefinitions;
@@ -137,20 +140,42 @@ class LedgerTrialBalanceReadsTest {
         assertThat(registry.codes()).containsExactly("TRIAL_BALANCE");
     }
 
-    /** A connection whose statements record their SQL and bound values and answer no rows. */
+    @Test
+    @DisplayName("every read reaches the database through the definition's restricted view: the period, the journal's"
+            + " three statements and the mapping store's own version read - each admitted, each run inside the bound")
+    void everyReadPassesTheView() {
+        List<String> prepared = new ArrayList<>();
+        Connection view = new ReadOnlySnapshot(recording(prepared, new ArrayList<>()), Duration.ofSeconds(5),
+                System::nanoTime).connection();
+        LedgerTrialBalanceReads reads = new LedgerTrialBalanceReads(new JdbcGlMappingStore());
+        AccountingPeriodId period = AccountingPeriodId.next(IDS);
+        assertThat(reads.period(view, period)).isEmpty();
+        assertThat(reads.before(view, LocalDate.of(2097, 6, 1), Optional.of(Instant.EPOCH))).isEmpty();
+        assertThat(reads.within(view, JournalReads.Range.of(YearMonth.of(2097, 6)), Optional.empty())).isEmpty();
+        assertThat(reads.ledger(view, period, Optional.of(Instant.EPOCH))).isEmpty();
+        assertThatThrownBy(() -> reads.version(view, GlMappingVersionId.next(IDS)))
+                .as("the store's own read admitted and run - it then finds no version, never a refusal")
+                .isInstanceOf(IllegalStateException.class).isNotInstanceOf(ReadOnlySnapshot.Refused.class)
+                .hasMessageContaining("a version that exists");
+        assertThat(prepared).filteredOn(sql -> sql.contains("set_config")).as("the bound armed before each read")
+                .hasSize(5);
+        assertThat(prepared).anyMatch(sql -> sql.contains("FROM accounting.gl_mapping_version"));
+    }
+
+    /** A connection whose statements record their SQL and bound values; the view's bound answers one row, all else none. */
     private static Connection recording(List<String> prepared, List<Object> bound) {
         return (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(), new Class<?>[] {Connection.class},
                 (proxy, method, args) -> switch (method.getName()) {
                     case "prepareStatement" -> {
                         prepared.add((String) args[0]);
-                        yield statement(bound);
+                        yield statement(bound, ((String) args[0]).contains("set_config"));
                     }
                     case "toString" -> "a recording connection";
                     default -> throw new UnsupportedOperationException(method.getName());
                 });
     }
 
-    private static PreparedStatement statement(List<Object> bound) {
+    private static PreparedStatement statement(List<Object> bound, boolean oneRow) {
         return (PreparedStatement) Proxy.newProxyInstance(PreparedStatement.class.getClassLoader(),
                 new Class<?>[] {PreparedStatement.class}, (proxy, method, args) -> {
                     String name = method.getName();
@@ -159,7 +184,7 @@ class LedgerTrialBalanceReadsTest {
                         return null;
                     }
                     return switch (name) {
-                        case "executeQuery" -> empty();
+                        case "executeQuery" -> rows(oneRow ? 1 : 0);
                         case "close" -> null;
                         case "toString" -> "a recording statement";
                         default -> throw new UnsupportedOperationException(name);
@@ -167,10 +192,11 @@ class LedgerTrialBalanceReadsTest {
                 });
     }
 
-    private static ResultSet empty() {
+    private static ResultSet rows(int count) {
+        int[] left = {count};
         return (ResultSet) Proxy.newProxyInstance(ResultSet.class.getClassLoader(), new Class<?>[] {ResultSet.class},
                 (proxy, method, args) -> switch (method.getName()) {
-                    case "next" -> false;
+                    case "next" -> left[0]-- > 0;
                     case "close" -> null;
                     default -> throw new UnsupportedOperationException(method.getName());
                 });

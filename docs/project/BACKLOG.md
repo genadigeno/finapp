@@ -25841,7 +25841,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   at a time) -> `P14-TSK-011`; M-7 (the failure classification of a snapshot's own failure) -> `P14-TSK-011`; M-8 (the
   PROVISIONAL cut's label, and PROVISIONAL revisions unbounded) -> `P14-TSK-009`, and an owner item.
 
-**P14-TSK-009 — The period trial balance** — `IN_PROGRESS` (2026-10-31; design done, branch `P14-TSK-009` from master `ddcb45cd`) *(read "`READY` (2026-10-31; marked by the coordinator at `P14-TSK-008`'s merge, master `8c53f760`; every dependency `COMPLETE`)" until this task's design)*
+**P14-TSK-009 — The period trial balance** — `COMPLETE` (2026-11-01; branch `P14-TSK-009` from master `ddcb45cd`; no migration; **M14.3 at 3 of 3 - closed**; marks no task `READY` — the coordinator does) *(read "`READY` (2026-10-31; marked by the coordinator at `P14-TSK-008`'s merge, master `8c53f760`; every dependency `COMPLETE`)" until this task's gate)*
 - **Objective**: per GL account × currency opening, debits, credits, closing for a period; zero per currency; equal to the
   ledger.
 - **Bounded context**: Reporting / Accounting.
@@ -25864,6 +25864,46 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: drop the opening fold → `#openingIsThePreviousClosing` red.
 - **Acceptance criteria**: every locked period has a FINAL trial balance zero per currency and equal to the ledger.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Low. **Cx**: S.
+- **As built** (2026-11-01; no migration): **the definition** `reporting.TrialBalanceDefinition` - `TRIAL_BALANCE`
+  (`ReportKind`'s name) version 1, no parameters, no rate set - the platform's first production definition, declared by
+  `app`'s `TrialBalanceBeans` so `POST /v1/operator/accounting/report-runs` serves it. **The port** `TrialBalanceReads`
+  (accounting, beside `JournalReads`, which is untouched) and `app`'s `LedgerTrialBalanceReads`: the period row (bounds,
+  status, pin), the pinned version's content (`GlMappingStore.content`), the **GL side** - lines per purpose, owner kind,
+  currency, scale and side **before** the period's first day (the opening: a cumulative fold from inception) and
+  **within** `Range.of(month)` - and the **ledger side** in `TrialBalance.sweep`'s shape (`journal_line` per currency,
+  scale, direction, no account joined) over three windows (before, within, through the end) split by `FILTER`, **its
+  bounds read by the statement from `accounting.accounting_period`**, never from the code that bounded the GL side.
+  **The fold** `reporting.TrialBalance`: per GL account × currency the opening (debit-positive), debits, credits, closing;
+  every line the version does not map in an explicit unmapped row (all of them when no version is pinned -
+  `fullyMapped=false`); per currency the totals beside the ledger's windows; `zero` = cumulative debits equal credits
+  **and** the closing balances foot (`INV-ACC-01`, reported - a non-zero currency is listed and fails the check, the run
+  still completes, nothing corrected); `equalsLedger` over all three windows (catching a wrong range bound on either
+  side - `-007`'s M-6); `rangeIsThePeriods` (the code's range against the row's bounds); `passes` = the three. The body:
+  canonical JSON, one scale per currency (the largest it carries, never below ISO), minor units as exact integers of any
+  size, sorted rows; the verdict at `{body,verdict,passes}` - what `-011` reads after claiming `TRIAL_BALANCE` for the
+  locked period and generating the run it holds. **The version is the pin**: a FINAL run whose period row pins another
+  version is refused (`PinMismatch` → `DEFINITION_FAILED`); a PROVISIONAL run reads its claim's version. **M-8, routed
+  by `-008`'s review**: (1) the cut - every read of a PROVISIONAL run counts only entries `created_at <= cut_at`, so its
+  content is the journal as asked, not as generated; (2) the bound - a completed PROVISIONAL run answers its question
+  while its cut is younger than `finapp.accounting.report.provisional-freshness` (`ReportRuns.Provisional`, default 15
+  minutes, one second to a day) on the **database's** clock (`ReportRunStore.cutWithin`) and its period's revision is
+  unchanged - at most one PROVISIONAL row per question per window; an owner item. **Found at the gate and fixed**:
+  `NoAmbientTimeRulesTest` red on master since `-008`'s I-1 - `ReportGeneration(PeriodStates, Duration)` defaulted its
+  ticker to `System::nanoTime`; the two-argument form removed, the composition root passing the meter registry's
+  monotonic clock, the suites an explicit ticker. **Not done, recorded**: consolidating `GlSnapshots` and
+  `JdbcReportSnapshots` (two exception vocabularies, two doors' behaviours and their suites - not small) - a follow-up;
+  a chained opening (the previous FINAL run's closing) - the cumulative fold is independent each time and costs O(history)
+  per generation, bounded by the 4-minute budget. Tests: hermetic `TrialBalanceOracleTest` (6, generated journals over
+  24 seeds - five currencies at three scales and EUR at a fourth, mapped and unmapped keys, the boundary days loaded -
+  against a line-by-line oracle: `#theTrialBalanceIsTheOracles`, `#zeroPerCurrency`, `#equalsTheLedger`,
+  `#openingIsThePreviousClosing`, `#aWrongRangeBoundIsCaught`, `#regeneratesByteIdentical`), `TrialBalanceDefinitionTest`
+  (7), `TrialBalanceRunsTest` (5, through `-008`'s machine; ten claimers past the window one revision),
+  `LedgerTrialBalanceReadsTest` (5), `ReportRunsTest` (one case past the window); eight probes in `MUTATION_TESTING.md`
+  §2 (the entry's: the opening fold dropped → `TrialBalanceOracleTest#openingIsThePreviousClosing` red, the hermetic side
+  demonstrated); owed (C5) `TrialBalanceRunDatabaseTest` (7: `#zeroPerCurrency`, `#equalsTheLedger`,
+  `#openingIsThePreviousClosing`, `#aWrongRangeBoundIsCaught`, `#aFinalRunRegeneratesIdentical`,
+  `#aProvisionalRunReadsAtItsCut`, `#aFreshProvisionalIsReused` - the fixture's January and February 1999 periods,
+  entries dated 1998-12-15, 1999-01-01, 1999-01-31 and 1999-02-01).
 
 **P14-TSK-010 — Rule conformance, source completeness and accounting breaks** — `READY` (2026-10-31; marked by the coordinator at `P14-TSK-007`'s merge, master `9e1497f2`; every dependency `COMPLETE`)
 - **Objective**: detect every GL-side discrepancy and record it once, never correct it (ADR-0117, `INV-ACC-12`).

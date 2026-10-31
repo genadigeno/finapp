@@ -107,6 +107,23 @@ checks (bounded, a JSON object, the hash its own) run at the completion edge ins
 would re-run; the freeze fires only for an `UPDATE` naming the content, its hash or its completion. *M-5*: the
 regeneration looks its key up first (the platform's two-transaction command), so a replay opens no snapshot.
 
+*(`P14-TSK-009`, 2026-11-01, no migration - the first definition.)* **`TRIAL_BALANCE` v1** (`TrialBalanceDefinition`,
+declared by `app`'s `TrialBalanceBeans`): per GL account × currency the opening (a cumulative fold of every line before the
+period, from inception, under the period's own version), debits, credits and closing, debit-positive; every line the
+version does not map in an explicit unmapped row; per currency **zero** (cumulative debits = credits and the closing
+balances foot - `INV-ACC-01` reported, never corrected) and **equal to the ledger** over three windows (before, within,
+through the end) read by a `TrialBalance.sweep`-shaped statement that joins no account and **takes its bounds from the
+period's row**, so a wrong range bound on either side is caught (`-007`'s M-6); the verdict at `{body,verdict,passes}`.
+A FINAL run reads its period's pin and refuses another version. **Two refinements of decision 3 for PROVISIONAL runs**
+(`-008`'s review, M-8): the definition counts only entries **created at or before the run's cut** (`created_at <=
+cut_at`) - the content is the journal as asked, whenever generated; and a completed PROVISIONAL run **keeps answering its
+question** while its cut is younger than `finapp.accounting.report.provisional-freshness` (default 15 minutes) on the
+database's clock and its period's revision is unchanged - at most one PROVISIONAL row per question per window (an owner
+item: the window, against a cap or a retention sweep). `ReportGeneration` takes its ticker from the composition root
+(the meter registry's monotonic clock) - its default of `System::nanoTime` broke `NoAmbientTimeRulesTest`.
+
 ## Follow-up
 
-Retention of runs with Phase 15's data-retention work; export formats beyond JSON.
+Retention of runs with Phase 15's data-retention work; export formats beyond JSON. *(`P14-TSK-009`: a chained
+opening - the previous FINAL trial balance's closing, sound only under one version and a kept `locked_at` - if the
+cumulative fold's cost grows; consolidating `GlSnapshots` and `JdbcReportSnapshots`.)*
