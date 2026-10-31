@@ -101,6 +101,33 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " posting cutoff moved back one period and the pin released, in the same transaction (P14-TSK-005,"
                     + " INV-AUD-04, INV-ACC-08; POST .../periods/{id}/unlock-approval, ACCOUNTING_CLOSE_APPROVE)."
                     + " Reasoned. Its target the period; the summary its month and revision.",
+            true),
+
+    /** A person captured a valuation rate set for a locked period (`P14-TSK-014`, ACCOUNTING_CLOSE_PROPOSE). */
+    VALUATION_SET_CAPTURED(
+            "accounting.ValuationSetCaptured",
+            "An accountant captured a valuation rate set for a LOCKED accounting period - per valued currency the"
+                    + " reference's last EUR-based observation before the period's end, within the staleness bound, with"
+                    + " its source, observed_at and snapshot id; PROPOSED and immutable from this moment (P14-TSK-014,"
+                    + " ADR-0116 decision 2, INV-ACC-11, INV-FX-05; POST /v1/operator/accounting/valuation-rate-sets,"
+                    + " ACCOUNTING_CLOSE_PROPOSE). Reason optional. Its target the set; the summary its period, as-of"
+                    + " instant, pair count and bound - never a rate.",
+            false),
+
+    /** A second person approved a valuation rate set (`P14-TSK-014`, ACCOUNTING_CLOSE_APPROVE). */
+    VALUATION_SET_APPROVED(
+            "accounting.ValuationSetApproved",
+            "A person other than its capturer approved a valuation rate set - the period's one approved set, while the"
+                    + " period is LOCKED (P14-TSK-014, INV-ACC-11, INV-AUD-04; POST .../valuation-rate-sets/{setId}/approval,"
+                    + " ACCOUNTING_CLOSE_APPROVE). Reasoned. Its target the set; the summary its period and pair count.",
+            true),
+
+    /** A valuation rate set was rejected (`P14-TSK-014`, ACCOUNTING_CLOSE_APPROVE). */
+    VALUATION_SET_REJECTED(
+            "accounting.ValuationSetRejected",
+            "A holder of ACCOUNTING_CLOSE_APPROVE rejected a proposed valuation rate set - terminal; a correction is a"
+                    + " new capture (P14-TSK-014; POST .../valuation-rate-sets/{setId}/rejection). Reasoned. Its target"
+                    + " the set; the summary its period and whether the rejecter captured it.",
             true);
 
     private final String code;

@@ -192,7 +192,9 @@ boundary is the ledger's database.
   new attempt row, never edits.
 - **Report Run:** `GENERATING → FINAL | PROVISIONAL`, `FAILED`; `FINAL → SUPERSEDED` (on reopen); content and hash frozen
   at completion.
-- **Valuation Rate Set:** `PROPOSED → APPROVED | REJECTED`; immutable.
+- **Valuation Rate Set:** `PROPOSED → APPROVED | REJECTED`; immutable. *(As built by `P14-TSK-014`, 2026-10-31: captured
+  and approved only while the period is `LOCKED`, rejected in any state; both decisions terminal; one `APPROVED` per period
+  for good - no supersession edge, an owner item.)*
 - **Accounting Break:** `OPEN → ACKNOWLEDGED (disclosed) → RESOLVED`; `OPEN → RESOLVED`; never deleted.
 - **Regulatory Submission:** `DRAFT → VALIDATED → APPROVED → SUBMITTED → ACKNOWLEDGED | REJECTED`; a rejection or a
   correction is a new submission referencing the original; `SUBMITTED` immutable; an unknown provider answer is an
@@ -258,6 +260,7 @@ longest in-flight posting transaction, and T-lock runs under a `lock_timeout` an
 | 11 | A lending accrual catch-up racing the lock | the floor read under the shared lock (C3) | `LoanAccrualCutoffDatabaseTest#aCatchUpAcrossALockPostsInTheOpenPeriod` *(built by `P14-TSK-006`: the ledger's floor serves every back-dating system poster; also `PostingFloorDatabaseTest#tenFlooredPostersAndALockRefuseNothing` - both owed, C5)* |
 | 12 | Duplicate PPA approval | the ledger's adjustment key + conditional edge | `PriorPeriodAdjustmentDatabaseTest#aReplayedApprovalPostsOnce` |
 | 13 | Duplicate submission | the provider idempotency key = submission id; `SUBMITTED` committed before the call | `RegulatorySubmissionDatabaseTest#aRetriedSubmitSubmitsOnce` |
+| 14 | Two captures for one period, ten approvers *(added by `P14-TSK-014`)* | every approval of the period serialised on the period row `FOR UPDATE`, the conditional edge, `valuation_rate_set_one_approved_per_period` the backstop | `ValuationRateSetDatabaseTest#oneApprovedPerPeriod` (owed, C5) |
 
 ### 8.4 Schedules
 
@@ -324,7 +327,8 @@ Roles (C12): `ACCOUNTANT` — `ACCOUNTING_READ`, `ACCOUNTING_MAPPING_PROPOSE`, `
 `ACCOUNTANT`'s alone, the `FINANCIAL_CONTROLLER` reading what it decides under its approve permissions and the
 `REGULATORY_REPORTER` the FINAL runs it drafts from under `REGULATORY_REPORT_PREPARE`; still eleven permissions. The
 lock and a close check's re-run are `ACCOUNTING_CLOSE_PROPOSE` (`-005`, `-011`), a break's acknowledgement
-`ACCOUNTING_ADJUST_PROPOSE` / `_APPROVE` (`-010`). The grants are disjoint, the holders need not be - identity's
+`ACCOUNTING_ADJUST_PROPOSE` / `_APPROVE` (`-010`). A valuation rate set's capture is `ACCOUNTING_CLOSE_PROPOSE`, its approval, rejection and
+review read `ACCOUNTING_CLOSE_APPROVE` (`-014`, 2026-10-31 - a close-preparation pair, no new permission). The grants are disjoint, the holders need not be - identity's
 arbiter is one live assignment of each role - so approver ≠ proposer stays the `CHECK` and `accounting.SelfApprovalRefused`;
 `RoleNameTest#noRoleProposesAndApprovesTheSameAct` holds the four propose/approve pairs apart.)* No role proposes and
 approves the same act; approver ≠ proposer by `CHECK` on every four-eyes row (`INV-AUD-04`). Every act in
@@ -453,7 +457,11 @@ Transaction currency = the line's (ledger, one per account); functional = report
 lock from `fx.rate_snapshot` reference rates (source, pair, rate, `observed_at`, snapshot id — the last observation at or
 before the period end, a staleness bound refusing older), approved four-eyes, immutable, pinned by every FINAL run; it
 is never a customer quote or an executed rate, and a customer's executed rate is never re-read for valuation
-(`INV-FX-05` kept). Translation: per line group, `HALF_EVEN` to the reporting currency's minor unit, the sum's
+(`INV-FX-05` kept). *(As built by `P14-TSK-014`, 2026-10-31: "at lock" is "once LOCKED" - an operator's capture after the
+lock under `ACCOUNTING_CLOSE_PROPOSE`, approved under `ACCOUNTING_CLOSE_APPROVE`, so a stale reference never blocks the
+cutoff; the period's end is `as_of`, the first instant of the next month UTC, an observation admitted strictly before it
+and within the bound (96 h default); the valued currencies the ledger's postable ones but EUR, each read as the
+reference's canonical `EUR/<currency>` from `fx.rate_snapshot` alone - accounting `V005`, ADR-0116 As built.)* Translation: per line group, `HALF_EVEN` to the reporting currency's minor unit, the sum's
 difference from the translated total shown as an explicit **translation difference** line (C7) — never absorbed.
 Realised FX results are reported from their posted purposes; unrealised results are not posted (C7 A).
 

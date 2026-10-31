@@ -1547,7 +1547,8 @@ not ready, a mapping gap, a stale valuation rate, …) arrives with the door tha
 client could never receive. `P14-TSK-003`'s GL mapping doors brought six: `accounting.MappingInvalid`, `MappingNotTotal`,
 `MappingIncompatible`, `MappingStale`, `MappingRetroactive` and `ReasonRequired`; `P14-TSK-005`'s period doors three:
 `accounting.PeriodStale`, `PeriodNotLockable` and `CutoffBusy` (and `MappingRetroactive` gained its period case - an
-activation into a locked period). `ledger.PeriodClosed` is the ledger's, not this module's (`P14-TSK-004`). Every detail is
+activation into a locked period); `P14-TSK-014`'s valuation rate set doors two: `accounting.ValuationRateStale` and
+`ValuationSetStale` (and `PeriodStale` gained the capture's and the approval's case - a period not `LOCKED`). `ledger.PeriodClosed` is the ledger's, not this module's (`P14-TSK-004`). Every detail is
 stranger-safe: never an amount, a balance, a GL figure or an owner reference.
 
 | Code | Status | Meaning |
@@ -1559,10 +1560,12 @@ stranger-safe: never an amount, a balance, a GL figure or an owner reference.
 | `accounting.MappingIncompatible` | 422 | A rule maps a purpose to a GL account of another classification than the purpose's ledger type (or the purpose holds no single type), or names a purpose the ledger does not hold; it was not activated (`INV-ACC-06`). |
 | `accounting.MappingStale` | 409 | The GL mapping version is no longer awaiting a decision - decided by someone else, or differently - or is superseded by the later version in force. |
 | `accounting.MappingRetroactive` | 409 | The GL mapping version takes effect from a month before a version already in force, or (`P14-TSK-005`) at or before a period already locked or closed, its mapping pinned; a mapping never applies retroactively (`INV-ACC-07`). |
-| `accounting.PeriodStale` | 409 | The accounting period is not in the state the act needs - a lock of a period already closing or closed, an unlock proposal of a period not `LOCKED` or with another person's unlock pending, an approval with no unlock pending; nothing was changed (`P14-TSK-005`). A second lock of a `LOCKED` period is not refused: it answers `LOCKED`. |
+| `accounting.PeriodStale` | 409 | The accounting period is not in the state the act needs - a lock of a period already closing or closed, an unlock proposal of a period not `LOCKED` or with another person's unlock pending, an approval with no unlock pending, or (`P14-TSK-014`) a valuation rate set's capture or approval for a period not `LOCKED`; nothing was changed (`P14-TSK-005`). A second lock of a `LOCKED` period is not refused: it answers `LOCKED`. |
 | `accounting.PeriodNotLockable` | 409 | The accounting period cannot lock yet - its grace after the month end has not passed (the detail names the first lockable day), or the previous period is not `CLOSED` (periods lock in order); nothing was changed (`P14-TSK-005`, C9). |
 | `accounting.CutoffBusy` | 503 | The posting cutoff could not be moved right now - postings held the ledger's cutoff key through every bounded attempt (`P14-TSK-004`'s five of 2 s); nothing was changed and nothing stored under the idempotency key, so the same request retried later locks or unlocks (`P14-TSK-005`). |
 | `accounting.ReasonRequired` | 422 | A reasoned accounting act carried no reason, one past 1000 characters, or one holding a card-number or bank-account shape. |
+| `accounting.ValuationRateStale` | 422 | A valued currency pair has no reference observation at or before the accounting period's end within the staleness bound, or none at all; nothing was captured (`P14-TSK-014`, ADR-0116 decision 2, `INV-ACC-11`; the detail names the pairs and instants - never a rate). A past instant's data, not a transient outage, so not fx's `503`: a late older observation cannot be backfilled into fx, and the remedy is the configured bound or the close's disclosure. |
+| `accounting.ValuationSetStale` | 409 | The valuation rate set is no longer awaiting a decision - decided by someone else, or differently - or its accounting period already has an approved valuation rate set (one per period, for good); nothing was changed (`P14-TSK-014`). A repeated decision by the same person is not refused: it answers the decided set. |
 
 ## 3a. Rejection at the boundary
 

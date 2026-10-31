@@ -76,7 +76,25 @@ public enum AccountingErrorCode implements ErrorCode {
                     + " was changed, retry."),
 
     /** Every reasoned accounting act (`P14-TSK-003` first). */
-    REASON_REQUIRED("accounting.ReasonRequired", 422, "A reason is required.");
+    REASON_REQUIRED("accounting.ReasonRequired", 422, "A reason is required."),
+
+    /**
+     * The valuation rate set's capture (`P14-TSK-014`): a valued pair has no reference observation at or before the
+     * period's end within the staleness bound. A past instant's data, not a transient outage - fx's {@code 503} does not
+     * apply.
+     */
+    VALUATION_RATE_STALE(
+            "accounting.ValuationRateStale",
+            422,
+            "A valued currency pair has no reference observation at or before the accounting period's end within the"
+                    + " staleness bound, or none at all; nothing was captured."),
+
+    /** The valuation rate set doors (`P14-TSK-014`): no longer PROPOSED, or the period already has an approved set. */
+    VALUATION_SET_STALE(
+            "accounting.ValuationSetStale",
+            409,
+            "The valuation rate set is no longer awaiting a decision, or the accounting period already has an approved"
+                    + " valuation rate set; nothing was changed.");
 
     private final String code;
     private final int status;

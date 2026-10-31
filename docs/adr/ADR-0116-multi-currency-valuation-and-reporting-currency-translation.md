@@ -48,6 +48,31 @@ impact: none on balances.
 
 `INV-ACC-11`; `INV-FX-05`; `INV-MON-02`…`-04`.
 
+## As built
+
+`P14-TSK-014` (2026-10-31), decision 2: accounting `V005` (`valuation_rate_set` - born `PROPOSED` with all its rates, the
+period `LOCKED`, `as_of` the first instant after the period's end (UTC), `max_age_hours`, persons and four-eyes `CHECK`s,
+the partial unique `valuation_rate_set_one_approved_per_period`, the edge trigger, a deferred whole-set check;
+`valuation_rate` - `EUR`-based, `NUMERIC(20,10)`, source, bare snapshot id, `observed_at`, `received_at`, born only with
+its `PROPOSED` set inside its window, `INSERT`-only), `ValuationRateSets` over `JdbcValuationRateSetStore`, and the
+`ValuationRates` port's `app` adapter `FxReferenceValuationRates`, which reads `fx.rate_snapshot` alone for the declared
+reference source - never a quote, a trade's executed or customer rate, a cover or the provider's evidence (`INV-FX-05`).
+**Which period**: a set is captured and approved only while its period is `LOCKED` ("captured when a period locks" read
+as "once it is locked": an operator act after the lock, so a stale reference never blocks the cutoff); a rejection is
+allowed in any state; an unlock does not void an approved set - its rates are the period end's. **The window**: per valued
+currency (the ledger's postable currencies but EUR, each a pair the reference publishes from EUR, so nothing is inverted)
+the last observation strictly before `as_of` and no older than the staleness bound
+(`finapp.accounting.valuation.max-age-hours`, default 96, 1 to 336 - a weekend after a bank holiday; owner item), judged
+against `as_of`, never the capture's clock; one stale or missing pair refuses the whole capture (`422 accounting.ValuationRateStale`). **Four eyes**: capture
+`ACCOUNTING_CLOSE_PROPOSE`, approval, rejection and the review read `ACCOUNTING_CLOSE_APPROVE` - the close's existing
+propose/approve pair, no new permission; approver ≠ capturer by the domain and the `CHECK`. **One approved per period**:
+every approval of a period serialised on the period row (`FOR UPDATE`), the set row after it, the conditional edge; the
+partial unique the backstop for every writer (`409 accounting.ValuationSetStale`). Beyond the decision text: no
+supersession of an approved set (owner item); no history table - the set row's frozen capture and decision columns and
+the audit trail are the history. Status stays `Proposed` until the phase's exit review.
+
 ## Follow-up
 
 C7 B with qualified review; a reporting currency other than the functional one, if a jurisdiction requires it.
+Superseding an approved valuation rate set (an `APPROVED → SUPERSEDED` edge under four eyes) if a wrong approved set must
+ever be replaced (`P14-TSK-014`'s owner item).

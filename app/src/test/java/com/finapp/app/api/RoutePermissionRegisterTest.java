@@ -465,6 +465,16 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/accounting/periods/{periodId}/unlock-proposal",
                             PermissionName.ACCOUNTING_CLOSE_PROPOSE),
                     entry("POST /v1/operator/accounting/periods/{periodId}/unlock-approval",
+                            PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    // P14-TSK-014: the valuation rate sets - captured by the accountant (a close-preparation act on a
+                    // LOCKED period), approved, rejected and reviewed by the controller (the close's decision; four
+                    // eyes) - no new permission; the negatives are ValuationRateSetDeskTest's route declarations.
+                    entry("POST /v1/operator/accounting/valuation-rate-sets", PermissionName.ACCOUNTING_CLOSE_PROPOSE),
+                    entry("POST /v1/operator/accounting/valuation-rate-sets/{setId}/approval",
+                            PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    entry("POST /v1/operator/accounting/valuation-rate-sets/{setId}/rejection",
+                            PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    entry("GET /v1/operator/accounting/valuation-rate-sets/{setId}",
                             PermissionName.ACCOUNTING_CLOSE_APPROVE)));
 
     /**

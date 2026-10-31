@@ -25869,7 +25869,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Acceptance criteria**: corrections never re-date; every PPA traced to its period.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 
-**P14-TSK-014 — Valuation rate sets** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)
+**P14-TSK-014 — Valuation rate sets** — `COMPLETE` (2026-10-31; wave D beside `P14-TSK-007` and `-008`; branch `P14-TSK-014` from master `18c4935c`; accounting `V005`; **M14.5 at 1 of 2**; marks no task `READY` — the coordinator does) *(read "`READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)" until this task's gate)*
 - **Objective**: a frozen, provenanced, four-eyes set of reference rates per locked period (ADR-0116, `INV-ACC-11`).
 - **Bounded context**: Accounting / GL; reads FX.
 - **Dependencies**: `-005`.
@@ -25891,6 +25891,44 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: read `fx` trades' executed rates → a test asserting the snapshot source red.
 - **Acceptance criteria**: every pair EUR-based with provenance; immutable.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`. **Risk**: Low. **Cx**: S.
+- **As built** (2026-10-31): accounting `V005`: `valuation_rate_set` (the period `REFERENCES accounting_period`,
+  `functional_currency = 'EUR'`, `as_of`, `max_age_hours` 1..336, `rate_count`, status `PROPOSED | APPROVED | REJECTED`,
+  the capture's and the decision's actor, time and reason; persons, coherence and **four-eyes** `CHECK`s; the partial
+  unique `valuation_rate_set_one_approved_per_period`; the edge trigger: born `PROPOSED` undecided for a `LOCKED` period,
+  `as_of` = the day after the period end at midnight UTC, the capture frozen, only `PROPOSED → APPROVED | REJECTED`, the
+  approval only while the period is `LOCKED` and the set whole; a deferred trigger: a set commits with exactly its
+  `rate_count` rates; no `DELETE`/`TRUNCATE`) and `valuation_rate` (PK `(set_id, quote_currency)`, `EUR`-based,
+  `NUMERIC(20,10)` > 0, fx's source shape, the bare snapshot id once per set, `observed_at`, `received_at`; born only
+  with its `PROPOSED` set, below its count, observed strictly before `as_of` and within the bound - the set row locked;
+  `INSERT`-only for every writer). Code: `ValuationRateSet.judge` (per valued currency the port's observation re-judged -
+  the EUR pair, strictly before `as_of`, within `ValuationStaleness` (96 h default, `finapp.accounting.valuation.max-age-hours`),
+  `NUMERIC(20,10)`-exact, a source's code - one stale or missing pair refusing all), `ValuationRateSets` (capture: the
+  period `FOR SHARE`, `LOCKED`, no approved set, judge, insert, audit; approve: the period `FOR UPDATE` then the set
+  `FOR UPDATE`, replay converges, capturer refused, `LOCKED`, no other approved set, conditional edge, audit; reject:
+  the set `FOR UPDATE`, any period state, terminal; `read`; `approvedFor` - the read `-011`'s `VALUATION_SET_APPROVED` and
+  `-015` use), `JdbcValuationRateSetStore`, the port's methods (`valued`, `lastObservedBefore`) and `app`'s
+  `FxReferenceValuationRates` - `fx.rate_snapshot` alone, the declared reference source, the ledger's postable
+  currencies but EUR each as its canonical `EUR/<currency>` (nothing inverted; a currency the reference does not publish
+  from EUR refuses startup), the row's `BigDecimal` untouched. Doors: `POST /v1/operator/accounting/valuation-rate-sets`
+  (`ACCOUNTING_CLOSE_PROPOSE`, 201), `…/{setId}/approval`, `…/{setId}/rejection` and - added so the four eyes see what
+  they approve - `GET …/{setId}` (`ACCOUNTING_CLOSE_APPROVE`), keyed per principal (`accounting.valuation:<type>:<id>`),
+  rates as decimal strings with their provenance; `AccountingValuationBeans` (a configuration of its own). **Which
+  period**: `LOCKED` only for the capture and the approval (the plan's "captured at lock" read as "once locked" - an
+  operator act after the lock, never inside it, so a stale reference cannot block the cutoff); a rejection in any
+  state; an unlock leaves an approved set approved. **Permission**: the close's existing pair, no new one (identity
+  `V026` not used) - `PermissionName`'s javadoc names the routes. Errors `accounting.ValuationRateStale` (422) and
+  `ValuationSetStale` (409); `PeriodStale` gained the not-`LOCKED` case. Audited `accounting.ValuationSetCaptured`
+  (reason optional), `ValuationSetApproved`, `ValuationSetRejected` (reasoned); the capturer's approval
+  `accounting.SelfApprovalRefused` `FAILED` in its own transaction. Events: none. No history table - the frozen row and
+  the audit trail are the history. The report-run FK: see the integration note. Tests: `ValuationRateSetsTest` (11),
+  `ValuationRateSetTest` (6), `ValuationRateSetMigrationTest` (6), `FxReferenceValuationRatesTest` (3),
+  `ValuationRateSetDeskTest` (6); **owed (C5)**: `ValuationRateSetDatabaseTest#provenanceIsKept`, `#aStalePairIsRefused`,
+  `#aMissingPairIsRefused`, `#aSetIsImmutable`, `#theProposerCannotApprove`, `#oneApprovedPerPeriod` (two captures, ten
+  concurrent approvals - ordered last: January 1999 admits one approved set per database) and `AccountingMigrationTest`'s
+  lists. Probes: six, all caught (`MUTATION_TESTING.md` §2). **Owner items**: the staleness default (96 h); no
+  supersession of an approved set (a wrong approved set cannot be replaced - an `APPROVED → SUPERSEDED` edge is ADR-0116's
+  follow-up); a reference outage at a month end longer than the bound leaves the period without a capturable set (fx
+  refuses a late older observation), the remedy the bound or `-011`'s disclosure.
 
 **P14-TSK-015 — Reporting-currency translation** — `PLANNED`
 - **Objective**: EUR translation in every run that asks, originals beside, the difference explicit (C1, C7).

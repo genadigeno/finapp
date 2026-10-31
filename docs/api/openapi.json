@@ -402,6 +402,76 @@
           }
         }
       },
+      "accounting.ValuationRateStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.ValuationRateStale"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.ValuationRateStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A valued currency pair has no reference observation at or before the accounting period's end within the staleness bound, or none at all; nothing was captured.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.ValuationSetStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.ValuationSetStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.ValuationSetStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The valuation rate set is no longer awaiting a decision, or the accounting period already has an approved valuation rate set; nothing was changed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounts.AccountNotActive": {
         "content": {
           "application/problem+json": {
@@ -27164,6 +27234,126 @@
         },
         "type": "object"
       },
+      "ValuationRateSetCaptureRequest": {
+        "properties": {
+          "periodId": {
+            "maxLength": 36,
+            "minLength": 36,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "periodId"
+        ],
+        "type": "object"
+      },
+      "ValuationRateSetDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ValuationRateSetReceipt": {
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "maxAgeHours": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodId": {
+            "type": "string"
+          },
+          "rates": {
+            "items": {
+              "$ref": "#/components/schemas/ValuationRateView"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ValuationRateSetView": {
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "capturedAt": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "maxAgeHours": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodId": {
+            "type": "string"
+          },
+          "rates": {
+            "items": {
+              "$ref": "#/components/schemas/ValuationRateView"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ValuationRateView": {
+        "properties": {
+          "baseCurrency": {
+            "type": "string"
+          },
+          "observedAt": {
+            "type": "string"
+          },
+          "quoteCurrency": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "type": "string"
+          },
+          "snapshotId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "VerificationAnswer": {
         "properties": {
           "fileId": {
@@ -31276,6 +31466,160 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PostingRuleRegisterView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/valuation-rate-sets": {
+      "post": {
+        "operationId": "captureValuationRateSet",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValuationRateSetCaptureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValuationRateSetReceipt"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/valuation-rate-sets/{setId}": {
+      "get": {
+        "operationId": "readValuationRateSet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "setId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValuationRateSetView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/valuation-rate-sets/{setId}/approval": {
+      "post": {
+        "operationId": "approveValuationRateSet",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "setId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValuationRateSetDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValuationRateSetReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/valuation-rate-sets/{setId}/rejection": {
+      "post": {
+        "operationId": "rejectValuationRateSet",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "setId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValuationRateSetDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValuationRateSetReceipt"
                 }
               }
             },
