@@ -49,7 +49,7 @@ class AccountingMappingMetricsTest {
     void theUnmappedLinesAreTheReading() {
         activate(ReferenceGlMapping.without(NOVEMBER, Set.of("SUSPENSE_UNMATCHED")));
         suspense();
-        metrics(new GlSnapshots(() -> new SnapshotSession().connection()));
+        metrics(new GlSnapshots(() -> new SnapshotSession().connection(), GlSnapshots.STATEMENT_TIMEOUT));
         assertThat(gauge()).isEqualTo(1.0);
         suspense();
         clock.advance(Duration.ofSeconds(59));
@@ -62,7 +62,7 @@ class AccountingMappingMetricsTest {
     @DisplayName("a total version reads zero; no version reads zero")
     void zeroUnderATotalVersionOrNone() {
         suspense();
-        metrics(new GlSnapshots(() -> new SnapshotSession().connection()));
+        metrics(new GlSnapshots(() -> new SnapshotSession().connection(), GlSnapshots.STATEMENT_TIMEOUT));
         assertThat(gauge()).isZero();
         activate(ReferenceGlMapping.version(NOVEMBER));
         clock.advance(Duration.ofMinutes(2));
@@ -70,11 +70,35 @@ class AccountingMappingMetricsTest {
     }
 
     @Test
+    @DisplayName("the gauge's reading is one read-only snapshot armed with the statement timeout (the review's I-2); a"
+            + " reading the timeout cancelled is no value")
+    void theReadingIsBounded() {
+        activate(ReferenceGlMapping.without(NOVEMBER, Set.of("SUSPENSE_UNMATCHED")));
+        suspense();
+        java.util.List<SnapshotSession> sessions = new java.util.ArrayList<>();
+        metrics(new GlSnapshots(() -> {
+            SnapshotSession session = new SnapshotSession();
+            sessions.add(session);
+            return session.connection();
+        }, Duration.ofSeconds(3)));
+        assertThat(gauge()).isEqualTo(1.0);
+        assertThat(sessions).singleElement().satisfies(session -> assertThat(session.calls)
+                .containsSubsequence("readOnly=true", "verify", "timeout=3000ms", "rollback"));
+        SimpleMeterRegistry cancelled = new SimpleMeterRegistry();
+        new AccountingMappingMetrics(new GlMappingGap(mappings, unused -> {
+            throw new com.finapp.accounting.AccountingStorageException(
+                    "reading the ledger's chart (SQLState 57014)");
+        }, new InMemoryAccountingPeriodStore(), journal), new GlSnapshots(() -> new SnapshotSession().connection(),
+                Duration.ofSeconds(3)), clock, cancelled);
+        assertThat(cancelled.get(AccountingMappingMetrics.UNMAPPED).gauge().value()).isNaN();
+    }
+
+    @Test
     @DisplayName("an unreadable database is no value, never a zero")
     void anUnreadableReadIsNoValue() {
         metrics(new GlSnapshots(() -> {
             throw new java.sql.SQLException("down", "08006");
-        }));
+        }, GlSnapshots.STATEMENT_TIMEOUT));
         assertThat(gauge()).isNaN();
     }
 

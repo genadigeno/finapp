@@ -12,7 +12,9 @@ import com.finapp.platform.audit.AuditWriter;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
 import java.time.Clock;
+import java.time.Duration;
 import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -41,10 +43,16 @@ public class GeneralLedgerBeans {
         return new GlPins(glMappingStore, new JdbcPeriodPins());
     }
 
-    /** One verified {@code REPEATABLE READ READ ONLY} snapshot per GL read, on a connection of its own. */
+    /**
+     * One verified {@code REPEATABLE READ READ ONLY} snapshot per GL read - and per reading of the unmapped gauge - on a
+     * connection of its own, every statement bounded by {@code finapp.accounting.gl.statement-timeout} (10 s by
+     * default).
+     */
     @Bean
-    GlSnapshots glSnapshots(DataSource dataSource) {
-        return new GlSnapshots(dataSource::getConnection);
+    GlSnapshots glSnapshots(
+            DataSource dataSource,
+            @Value("${finapp.accounting.gl.statement-timeout:PT10S}") Duration statementTimeout) {
+        return new GlSnapshots(dataSource::getConnection, statementTimeout);
     }
 
     /** The reading behind {@code finapp.accounting.gl.unmapped} - read on a {@link GlSnapshots} snapshot. */

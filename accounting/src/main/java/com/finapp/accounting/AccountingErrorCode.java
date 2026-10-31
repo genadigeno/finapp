@@ -83,7 +83,14 @@ public enum AccountingErrorCode implements ErrorCode {
             "accounting.NoActiveMapping",
             409,
             "No GL mapping version is pinned by, or in force for, the period - the GL cannot be read for it until a"
-                    + " version is activated under four eyes.");
+                    + " version is activated under four eyes."),
+
+    /** The GL doors (`P14-TSK-007`): a statement of the read outlived the snapshot's statement timeout. */
+    READ_TIMED_OUT(
+            "accounting.ReadTimedOut",
+            503,
+            "The accounting read did not finish within its statement timeout; nothing was served - retry, or narrow"
+                    + " the read.");
 
     private final String code;
     private final int status;

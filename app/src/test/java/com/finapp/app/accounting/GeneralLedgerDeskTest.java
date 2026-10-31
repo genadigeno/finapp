@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.accounting.AccountingAuditAction;
 import com.finapp.accounting.AccountingErrorCode;
+import com.finapp.accounting.AccountingStorageException;
 import com.finapp.accounting.GlMappingStore;
 import com.finapp.accounting.GlMappingVersionId;
 import com.finapp.accounting.GlMappingVersionStatus;
@@ -24,6 +25,7 @@ import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.persistence.DatabaseFailure;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
 import com.finapp.platform.security.SecurityContext;
@@ -34,6 +36,7 @@ import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -103,7 +106,7 @@ class GeneralLedgerDeskTest {
                 .filter(f -> f.glAccountCode().equals("2000") && f.currency().equals("EUR")).findFirst().orElseThrow();
         assertThat(wallets.credits()).isEqualTo("100.00");
         assertThat(wallets.debits()).isEqualTo("2.50");
-        assertThat(wallets.balance()).isEqualTo("97.50");
+        assertThat(wallets.netMovement()).isEqualTo("97.50");
         assertThat(wallets.normalBalance()).isEqualTo("CREDIT");
         assertThat(view.agreement()).extracting(GeneralLedgerDesk.GlAgreementView::currency).containsExactly("EUR", "USD");
         assertThat(sessions).as("one snapshot for the whole read").hasSize(1);
@@ -162,15 +165,14 @@ class GeneralLedgerDeskTest {
     }
 
     @Test
-    @DisplayName("an entry's GL view maps each line under its posting month's version and carries its economic event's"
-            + " reference - recorded against the entry")
+    @DisplayName("an entry's GL view maps each line under its posting month's version - never the entry's reference, free"
+            + " text on a manual adjustment (the review's I-1) - recorded against the entry")
     void anEntryIsMappedAndRecorded() {
         activate();
         JournalReads.Entry entry = journal.post(LocalDate.of(2026, 11, 3), "EUR", 2, 10000, "SETTLEMENT_CLEARING",
                 "OPERATIONAL", "CUSTOMER_WALLET", "CUSTOMER");
         GeneralLedgerDesk.GlEntryView view = as(accountant, () -> desk().entry(entry.id().toString()));
         assertThat(view.lines()).extracting(GeneralLedgerDesk.GlLineView::glAccountCode).containsExactly("1100", "2000");
-        assertThat(view.reference()).isEqualTo(entry.reference());
         assertThat(view.period()).isEqualTo("2026-11");
         assertThat(view.mappingVersion()).isEqualTo(1);
         assertThat(audit).singleElement().satisfies(record -> {
@@ -242,7 +244,10 @@ class GeneralLedgerDeskTest {
                 () -> desk().activity("2000", "2026-11", null, null, null),
                 () -> desk().activity("2000", "2026-11", "EUR", null, 0),
                 () -> desk().activity("2000", "2026-11", "EUR", null, 501),
-                () -> desk().activity("2000", "2026-11", "EUR", "garbage!", null))) {
+                () -> desk().activity("2000", "2026-11", "EUR", "garbage!", null),
+                // A well-formed cursor of another month, or of a year far outside the calendar (the review's M-2).
+                () -> desk().activity("2000", "2026-11", "EUR", cursor(LocalDate.of(2026, 12, 1)), null),
+                () -> desk().activity("2000", "2026-11", "EUR", cursor(LocalDate.of(999_999, 1, 1)), null))) {
             refused(() -> as(accountant, call), PlatformErrorCode.VALIDATION_FAILED, 422);
         }
         assertThat(journal.reads()).isZero();
@@ -267,7 +272,53 @@ class GeneralLedgerDeskTest {
                 PermissionName.ACCOUNTING_READ))).containsExactly(RoleName.ACCOUNTANT);
     }
 
+    @Test
+    @DisplayName("a statement the snapshot's timeout cancelled: 503 accounting.ReadTimedOut, the snapshot rolled back,"
+            + " nothing recorded (the review's I-2)")
+    void aTimedOutReadIsReadTimedOut() {
+        activate();
+        postNovember();
+        JournalReads slow = new JournalReads() {
+            @Override
+            public List<Aggregate> aggregates(Connection snapshot, Range range) {
+                throw new AccountingStorageException(DatabaseFailure.describe(
+                        "reading the journal's aggregates for a posting-date range",
+                        new SQLException("canceling statement due to statement timeout", "57014")));
+            }
+
+            @Override
+            public List<Total> totals(Connection snapshot, Range range) {
+                return journal.totals(snapshot, range);
+            }
+
+            @Override
+            public List<Line> lines(Connection snapshot, LineQuery query) {
+                return journal.lines(snapshot, query);
+            }
+
+            @Override
+            public Optional<Entry> entry(Connection snapshot, UUID entryId) {
+                return journal.entry(snapshot, entryId);
+            }
+
+            @Override
+            public long countLines(Connection snapshot, java.util.Set<String> keys, LocalDate fromInclusive) {
+                return journal.countLines(snapshot, keys, fromInclusive);
+            }
+        };
+        GeneralLedgerDesk desk = new GeneralLedgerDesk(new GeneralLedger(slow), pins(), snapshots(), transactions,
+                (unitOfWork, record) -> audit.add(record), AccountingFlowScope.NONE, IDS, CLOCK);
+        refused(() -> as(accountant, () -> desk.balances("2026-11", null)), AccountingErrorCode.READ_TIMED_OUT, 503);
+        assertThat(sessions).singleElement().satisfies(session -> assertThat(session.calls)
+                .contains("timeout=" + GlSnapshots.STATEMENT_TIMEOUT.toMillis() + "ms").endsWith("rollback", "close"));
+        assertThat(audit).isEmpty();
+    }
+
     // ------------------------------------------------------------------
+
+    private static String cursor(LocalDate day) {
+        return new JournalReads.LineCursor(day, UUID.randomUUID(), 0).encoded();
+    }
 
     private GeneralLedgerDesk desk() {
         return new GeneralLedgerDesk(new GeneralLedger(journal), pins(), snapshots(), transactions,
@@ -283,7 +334,7 @@ class GeneralLedgerDeskTest {
             SnapshotSession session = new SnapshotSession();
             sessions.add(session);
             return session.connection();
-        });
+        }, GlSnapshots.STATEMENT_TIMEOUT);
     }
 
     private void activate() {
@@ -301,7 +352,7 @@ class GeneralLedgerDeskTest {
         journal.post(LocalDate.of(2026, 11, 9), "USD", 2, 700, "SETTLEMENT_CLEARING", "OPERATIONAL", "CUSTOMER_WALLET",
                 "CUSTOMER");
         journal.post(new JournalReads.Entry(UUID.randomUUID(), "POSTING", LocalDate.of(2026, 12, 1),
-                LocalDate.of(2026, 12, 1), "december", Optional.empty(), List.of(
+                LocalDate.of(2026, 12, 1), Optional.empty(), List.of(
                         InMemoryJournal.line(UUID.randomUUID(), 0, LocalDate.of(2026, 12, 1), "CUSTOMER_WALLET",
                                 "CUSTOMER", Optional.empty(), Side.DEBIT, 5, "EUR", 2),
                         InMemoryJournal.line(UUID.randomUUID(), 1, LocalDate.of(2026, 12, 1), "FEE_REVENUE",

@@ -10,8 +10,8 @@ import java.util.Optional;
 /**
  * One GL figure (`P14-TSK-007`; {@code INV-ACC-02}, {@code INV-ACC-06}, {@code INV-ACC-07}): the movement of one GL
  * account in one transaction currency over one accounting period - the debits and credits of every journal line whose
- * account's purpose and owner kind the version maps to it, their count, and the net on the account's normal side. It
- * <strong>names its mapping version</strong> and is the exact sum of its {@link Component}s and of its drill-down lines
+ * account's purpose and owner kind the version maps to it, their count, and the net movement on the account's normal
+ * side. It <strong>names its mapping version</strong> and is the exact sum of its {@link Component}s and of its drill-down lines
  * ({@code GeneralLedger#activity}). Nothing here is stored: it is computed from the journal in one snapshot, every time.
  *
  * <p>A period's <em>movement</em>, not a cumulative balance: the opening and closing balances are the trial balance's
@@ -40,10 +40,11 @@ public record GlFigure(
     }
 
     /**
-     * The net movement on the account's normal side - debits less credits for a debit-normal classification, credits
-     * less debits otherwise; negative when the period moved the account against its normal side.
+     * The period's net movement on the account's normal side - debits less credits for a debit-normal classification,
+     * credits less debits otherwise; negative when the period moved the account against its normal side. Not a balance:
+     * the opening and closing balances are the trial balance's (`P14-TSK-009`).
      */
-    public BigDecimal balance() {
+    public BigDecimal netMovement() {
         return account.classification().debitNormal() ? debits.subtract(credits) : credits.subtract(debits);
     }
 

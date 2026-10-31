@@ -25708,29 +25708,41 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   owner kind, counterparty, currency, scale, side over a `Range` of at most 366 days), `totals` (the ledger's own per
   currency, scale and side - no account join), `lines` (a keyset page, `LineCursor` posting date / entry id / seq in
   PostgreSQL's unsigned uuid order, 1-500), `entry`, `countLines`; `app`'s `LedgerJournalReads` answers it with `SELECT`s
-  only (never the entry's reason or actor; lines carry owner references). **Fold** `GeneralLedger` in
-  `com.finapp.accounting.reporting` (the first report code `ReportingNeverWritesTest` guards): `GlFigure` (a period's
-  movement per GL account x currency - debits, credits, the net on the normal side, lines, components by purpose / owner
-  kind / counterparty, **its version**), `GlBalances` (figures, an explicit unmapped bucket, `Agreement` per currency -
-  GL, unmapped and ledger debits, credits and lines), `GlActivity` (the figure and one page, the page checked against the
-  figure's selection), `GlEntry`, `PinnedMapping`. **Version** `GlPins` (+ `JdbcPeriodPins`, a plain read): a non-`OPEN`
-  period's pin, else the version in force; none - or a period locked with no version - `accounting.NoActiveMapping` 409.
-  **Doors** `GeneralLedgerController`/`GeneralLedgerDesk` (`ACCOUNTING_READ`): `GET /v1/operator/accounting/gl/balances`,
-  `…/gl/accounts/{code}/activity`, `…/gl/entries/{entryId}`; one verified `REPEATABLE READ READ ONLY` snapshot per request
-  (`GlSnapshots`: a connection of its own, the settings read back by the first statement - fail closed - always rolled
-  back); `accounting.GlRead` recorded in its own transaction before the answer. `finapp.accounting.gl.unmapped` fed
-  (`GlMappingGap` + `AccountingMappingMetrics`: the open period's lines the active version does not map, 0 without a
-  journal read under a total version, cached 60 s). Wiring in `GeneralLedgerBeans` (the module's parallel tasks each
-  add theirs). **Clarifications, recorded**: "balances" are the period's movement - opening and closing are the trial
-  balance's (`-009`), so a live read never re-aggregates from inception; the version is read through the period's pin
-  (equal to the version in force by construction); the GL view of an entry carries its economic event's `reference`
-  (`RESTRICTED-FINANCIAL`, as the amounts). Tests: hermetic `GeneralLedgerTest` (9: `#everyLineMapsOnce`,
-  `#glEqualsLedgerPerCurrency`, `#aFigureDrillsToItsLines`, `#anUnmappedLineIsCountedNeverDropped`, `#everyFigureNamesItsVersion`, ...), `GlPinsTest` (4),
-  `GlMappingGapTest` (4), `JournalReadsTest` (5), `LedgerPostingDateIndexMigrationTest` (3), `GeneralLedgerDeskTest` (9),
-  `GlSnapshotsTest` (3), `LedgerJournalReadsTest` (3), `AccountingMappingMetricsTest` (3); eleven probes in `MUTATION_TESTING.md` §2 (the
-  entry's: a purpose double counted → `GeneralLedgerTest#glEqualsLedgerPerCurrency` red); owed (C5) `GlReadModelDatabaseTest` (6:
-  `#everyLineMapsOnce`, `#aFigureDrillsToItsLines`, `#glEqualsLedgerPerCurrency`, `#aGlReadCannotWrite`,
-  `#theMonthReadUsesThePostingDateIndex`, `#theEntryViewMapsEveryLine`).
+  only (never the entry's `reference`, reason or actor; lines carry owner references). **Fold** `GeneralLedger` in
+  `com.finapp.accounting.reporting` (the first report code `ReportingNeverWritesTest` guards - its census now asserts it):
+  `GlFigure` (a period's movement per GL account x currency - debits, credits, `netMovement` on the normal side, lines,
+  components by purpose / owner kind / counterparty, **its version**), `GlBalances` (figures, an explicit unmapped bucket,
+  `Agreement` per currency - GL, unmapped and ledger debits, credits and lines), `GlActivity` (the figure and one page,
+  the page checked against the figure's selection and its cursor inside the period), `GlEntry`, `PinnedMapping`.
+  **Version** `GlPins` (+ `JdbcPeriodPins`, a plain read): a non-`OPEN` period's pin, else the version in force; none - or
+  a period locked with no version - `accounting.NoActiveMapping` 409. **Doors** `GeneralLedgerController` /
+  `GeneralLedgerDesk` (`ACCOUNTING_READ`): `GET /v1/operator/accounting/gl/balances`, `…/gl/accounts/{code}/activity`,
+  `…/gl/entries/{entryId}`; one verified, bounded `REPEATABLE READ READ ONLY` snapshot per request (`GlSnapshots`: a
+  connection of its own, the settings read back by the first statement - fail closed - `statement_timeout` armed by the
+  second, `finapp.accounting.gl.statement-timeout`, 10 s; a cancelled statement `accounting.ReadTimedOut` 503; always
+  rolled back); `accounting.GlRead` recorded in its own transaction before the answer; a cursor outside the period 422.
+  `finapp.accounting.gl.unmapped` fed (`GlMappingGap` + `AccountingMappingMetrics`, on the same bounded snapshot: the open
+  period's lines the active version does not map, 0 without a journal read under a total version, cached 60 s). Wiring in
+  `GeneralLedgerBeans` (the module's parallel tasks each add theirs). **Clarifications, recorded**: "balances" are the
+  period's movement (`netMovement`) - opening and closing are the trial balance's (`-009`), so a live read never
+  re-aggregates from inception; the version is read through the period's pin (equal to the version in force by
+  construction); the pages of an `OPEN` period are separate snapshots, so only a locked period's pages are its whole
+  figure. **The independent review's fixes** (`MERGE`, fixed before it): I-1 the entry's `reference` dropped from the entry
+  view - `RESTRICTED-FINANCIAL`, and free text on a `MANUAL` adjustment (`AdjustmentRequest` checks only its size), so a
+  name could reach every accountant; whether a later task serves it, and under what control, is an owner item; I-2 the
+  statement timeout and `accounting.ReadTimedOut`; M-1 the guard's census; M-2 the cursor's date range-checked (422); M-5
+  `balance` renamed `netMovement`; M-3, M-4, M-8 the javadoc and audit description; M-7 the owed suite's bound, tie-break
+  and id-order cases. **M-6 routed** to `-009` and `P14-TST-002`: GL = ledger cannot catch a wrong range bound - both
+  sides read the same range - so the trial balance's comparison and the battery's oracle own it. Tests: hermetic
+  `GeneralLedgerTest` (10: `#everyLineMapsOnce`, `#glEqualsLedgerPerCurrency`, `#aFigureDrillsToItsLines`,
+  `#anUnmappedLineIsCountedNeverDropped`, `#everyFigureNamesItsVersion`, `#aCursorOutsideThePeriodIsRefused`, ...),
+  `GlPinsTest` (4), `GlMappingGapTest` (4), `JournalReadsTest` (5), `LedgerPostingDateIndexMigrationTest` (3),
+  `GeneralLedgerDeskTest` (10), `GlSnapshotsTest` (5), `LedgerJournalReadsTest` (3), `AccountingMappingMetricsTest` (4);
+  sixteen probes in `MUTATION_TESTING.md` §2 (the entry's: a purpose double counted → `GeneralLedgerTest#glEqualsLedgerPerCurrency`
+  red); owed (C5) `GlReadModelDatabaseTest` (10: `#everyLineMapsOnce`, `#aFigureDrillsToItsLines`,
+  `#glEqualsLedgerPerCurrency`, `#aGlReadCannotWrite`, `#theMonthReadUsesThePostingDateIndex`,
+  `#theEntryViewMapsEveryLine`, `#theMonthIsInclusiveOfItsLastDayOnly`, `#twoLinesOfOneEntryPageByLineOrder`,
+  `#sameDateEntriesPageInIdOrder`, `#aStatementPastTheBoundIsCancelled`).
 
 **P14-TSK-008 — Report runs: immutable, reproducible** — `READY` (2026-10-30; marked by the coordinator at `P14-TSK-005`'s merge, master `441c3fe6`; every dependency `COMPLETE`)
 - **Objective**: the report-run machinery every report uses (ADR-0115, `INV-ACC-04`).

@@ -42,7 +42,7 @@ public final class InMemoryJournal implements JournalReads {
     public Entry post(LocalDate date, String currency, int scale, long minorUnits, String debitPurpose,
             String debitOwnerKind, String creditPurpose, String creditOwnerKind) {
         UUID id = UUID.randomUUID();
-        Entry entry = new Entry(id, "POSTING", date, date, "ref-" + id, Optional.empty(), List.of(
+        Entry entry = new Entry(id, "POSTING", date, date, Optional.empty(), List.of(
                 line(id, 0, date, debitPurpose, debitOwnerKind, Optional.empty(), Side.DEBIT, minorUnits, currency, scale),
                 line(id, 1, date, creditPurpose, creditOwnerKind, Optional.empty(), Side.CREDIT, minorUnits, currency,
                         scale)));

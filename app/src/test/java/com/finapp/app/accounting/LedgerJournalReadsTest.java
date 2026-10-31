@@ -22,13 +22,14 @@ class LedgerJournalReadsTest {
             LedgerJournalReads.ENTRY_LINES, LedgerJournalReads.COUNT);
 
     @Test
-    @DisplayName("every statement is a SELECT that writes and locks nothing, and never reads reason or actor_id")
+    @DisplayName("every statement is a SELECT that writes and locks nothing, and never reads the entry's reference, reason"
+            + " or actor_id")
     void everyStatementOnlyReads() {
         for (String sql : STATEMENTS) {
             String upper = sql.toUpperCase(Locale.ROOT);
             assertThat(upper).startsWith("SELECT ");
             for (String forbidden : List.of("INSERT", "UPDATE", "DELETE", "FOR SHARE", "FOR UPDATE", "PG_ADVISORY",
-                    "REASON", "ACTOR_ID", "CREATED_AT")) {
+                    "REASON", "ACTOR_ID", "CREATED_AT", "REFERENCE")) {
                 assertThat(upper).as("%s in %s", forbidden, sql).doesNotContain(forbidden);
             }
         }

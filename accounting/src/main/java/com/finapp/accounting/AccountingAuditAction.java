@@ -112,7 +112,9 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " INV-ACC-06, INV-ACC-14; GET /v1/operator/accounting/gl/..., ACCOUNTING_READ). Recorded at every"
                     + " serving, in a transaction of its own after the read and before the answer. Its target the"
                     + " period, the GL account or the entry; the summary the door, the period, the currency, the"
-                    + " version number and the page size - never an amount or an owner reference.",
+                    + " version number and its counts - figures= and unmapped= for the balances, lines= and"
+                    + " page=first|next for an activity page, lines= for an entry - never an amount or an owner"
+                    + " reference.",
             false);
 
     private final String code;

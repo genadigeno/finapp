@@ -28,10 +28,11 @@ import java.util.UUID;
  *
  * <p><strong>The fold is a partition.</strong> A version's rules are a map keyed by (purpose, owner kind), so every
  * aggregate - and so every journal line - lands in exactly one GL account, or in the explicit unmapped bucket; nothing is
- * dropped and nothing counted twice. The proof is carried in every answer: per currency, the GL's debits, credits and line
- * count against the ledger's own totals over the same range, read by a statement that never joins an account
- * ({@link GlBalances.Agreement}). A drill-down selects exactly a figure's keys, currency and range, so its lines sum to
- * the figure.
+ * dropped and nothing counted twice. The proof is carried in every {@link #balances} answer (the activity and the entry
+ * view carry none): per currency, the GL's debits, credits and line count against the ledger's own totals over the same
+ * range, read by a statement that never joins an account ({@link GlBalances.Agreement}). A drill-down selects exactly a
+ * figure's keys, currency and range, so its lines are the figure's - all of them, page after page, for a period no longer
+ * {@code OPEN} ({@link GlActivity}).
  *
  * <p><strong>Report code: it reads, it never writes.</strong> It lives in {@code com.finapp.accounting.reporting}, the
  * package {@code ReportingNeverWritesTest} holds to no writer, and reaches the journal only through {@link JournalReads}
@@ -71,6 +72,9 @@ public final class GeneralLedger {
         GlAccount account = mapping.content().account(code)
                 .orElseThrow(() -> new GlAccountNotFound(code, mapping.version()));
         JournalReads.Range range = mapping.range();
+        if (after.isPresent() && !range.holds(after.get().postingDate())) {
+            throw new IllegalArgumentException("a drill-down cursor is a position inside its period");
+        }
         Set<String> keys = keysOf(mapping.content(), code);
         GlFigure figure = fold(mapping, journal.aggregates(snapshot, range), List.of(), Optional.of(currency))
                 .figure(code, currency)

@@ -27,8 +27,9 @@ import java.util.UUID;
  * <p><strong>{@code SELECT} only, on the caller's snapshot.</strong> Every statement is a read under the application
  * role's existing grants on {@code journal_entry}, {@code journal_line}, {@code ledger_account} and
  * {@code counterparty}; none locks a row or takes an advisory key; the caller's {@code REPEATABLE READ READ ONLY}
- * transaction refuses a write at the database. The entry's {@code reason} and {@code actor_id} ({@code RESTRICTED-PII})
- * are never selected; a line carries its account's {@code owner_ref} - a reference, never a name.
+ * transaction refuses a write at the database. The entry's {@code reference} ({@code RESTRICTED-FINANCIAL}; free text
+ * on a {@code MANUAL} adjustment), {@code reason} and {@code actor_id} ({@code RESTRICTED-PII}) are never selected; a
+ * line carries its account's {@code owner_ref} - a reference, never a name.
  *
  * <p><strong>Sums.</strong> {@code SUM(amount_minor)} over {@code bigint} is {@code numeric} - exact, read back as a
  * {@code BigDecimal} and carried as a {@code BigInteger} - and {@code scale} is a grouping key, so no SQL addition
@@ -80,8 +81,8 @@ public final class LedgerJournalReads implements JournalReads {
 
     static final String PAGE = " ORDER BY entry.posting_date, entry.id, line.seq LIMIT ?";
 
-    /** One entry's header - never its reason or actor. */
-    static final String ENTRY = "SELECT id, entry_type, posting_date, value_date, reference, reverses_entry_id"
+    /** One entry's header - never its reference (free text on a MANUAL adjustment), reason or actor. */
+    static final String ENTRY = "SELECT id, entry_type, posting_date, value_date, reverses_entry_id"
             + " FROM ledger.journal_entry WHERE id = ?";
 
     /** One entry's lines, in order. */
@@ -171,7 +172,6 @@ public final class LedgerJournalReads implements JournalReads {
             String type;
             LocalDate posted;
             LocalDate valued;
-            String reference;
             Optional<UUID> reverses;
             try (PreparedStatement read = snapshot.prepareStatement(ENTRY)) {
                 read.setObject(1, entryId);
@@ -183,7 +183,6 @@ public final class LedgerJournalReads implements JournalReads {
                     type = row.getString("entry_type");
                     posted = row.getDate("posting_date").toLocalDate();
                     valued = row.getDate("value_date").toLocalDate();
-                    reference = row.getString("reference");
                     reverses = Optional.ofNullable(row.getObject("reverses_entry_id", UUID.class));
                 }
             }
@@ -196,7 +195,7 @@ public final class LedgerJournalReads implements JournalReads {
                     }
                 }
             }
-            return Optional.of(new Entry(id, type, posted, valued, reference, reverses, lines));
+            return Optional.of(new Entry(id, type, posted, valued, reverses, lines));
         } catch (SQLException failure) {
             throw failed("reading a journal entry's GL view", failure);
         }

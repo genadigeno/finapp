@@ -45,11 +45,14 @@ import java.util.regex.Pattern;
  * the journal reads), then <strong>record {@code accounting.GlRead} before answering</strong>, in a transaction of its own
  * that holds nothing but the audit row - a failed record fails the read, nothing is served unrecorded (the
  * {@code PostingRuleDesk} order). Refusals: {@code accounting.NoActiveMapping} 409 when no version is pinned by or in
- * force for the period; {@code accounting.NotFound} 404 for a GL account the version does not hold or an unknown entry.
+ * force for the period; {@code accounting.NotFound} 404 for a GL account the version does not hold or an unknown entry;
+ * {@code accounting.ReadTimedOut} 503 when a statement outlives the snapshot's {@code statement_timeout} - nothing served,
+ * nothing recorded.
  *
- * <p>What leaves: GL figures and journal lines with their owner <em>references</em> (UUIDs), counterparty codes and the
- * entry's economic-event reference - never a name, never the entry's reason or actor. The audit summary carries the door,
- * the period, the currency, the version and a count - never an amount or an owner reference ({@code INV-AUD-02}).
+ * <p>What leaves: GL figures and journal lines with their owner <em>references</em> (UUIDs) and counterparty codes - never
+ * a name, never the entry's {@code reference} (free text on a {@code MANUAL} adjustment), reason or actor. The audit
+ * summary carries the door, the period, the currency, the version and a count - never an amount or an owner reference
+ * ({@code INV-AUD-02}).
  */
 public final class GeneralLedgerDesk {
 
@@ -115,7 +118,7 @@ public final class GeneralLedgerDesk {
             throw invalid("a GL account's activity is read in one currency");
         }
         String currency = currency(rawCurrency);
-        Optional<JournalReads.LineCursor> after = after(rawAfter);
+        Optional<JournalReads.LineCursor> after = after(rawAfter, period);
         int limit = limit(rawLimit);
         GlActivity activity = guarded(() -> flow.door(ACTIVITY_SPAN, () -> snapshots.read(snapshot ->
                 ledger.activity(snapshot, pins.forPeriod(snapshot, period), code, currency, after, limit))));
@@ -182,15 +185,24 @@ public final class GeneralLedgerDesk {
         return raw;
     }
 
-    static Optional<JournalReads.LineCursor> after(String raw) {
+    /**
+     * The cursor, which must be a position inside {@code period}'s posting-date range: a forged or stale cursor - another
+     * month, a year far outside the calendar - is a 422, never a read and never a 5xx.
+     */
+    static Optional<JournalReads.LineCursor> after(String raw, YearMonth period) {
         if (raw == null) {
             return Optional.empty();
         }
+        JournalReads.LineCursor cursor;
         try {
-            return Optional.of(JournalReads.LineCursor.parse(raw));
+            cursor = JournalReads.LineCursor.parse(raw);
         } catch (IllegalArgumentException malformed) {
             throw invalid("after is the next cursor of a previous page");
         }
+        if (!JournalReads.Range.of(period).holds(cursor.postingDate())) {
+            throw invalid("after is a cursor of this period's drill-down");
+        }
+        return Optional.of(cursor);
     }
 
     private static String code(String raw) {
@@ -218,6 +230,9 @@ public final class GeneralLedgerDesk {
         } catch (GeneralLedger.GlAccountNotFound unknown) {
             throw new ApiException(AccountingErrorCode.NOT_FOUND, "No GL account answers the request",
                     unknown.getMessage());
+        } catch (GlSnapshots.ReadTimedOut timedOut) {
+            throw new ApiException(AccountingErrorCode.READ_TIMED_OUT, "A GL read outlived its statement timeout",
+                    "the read did not finish within its bound; nothing was served - retry, or narrow it (one currency).");
         }
     }
 
@@ -270,7 +285,7 @@ public final class GeneralLedgerDesk {
 
     /**
      * One GL figure: the account, the currency, the period's debits and credits, the net on the account's normal side
-     * ({@code balance}), the line count, its components by purpose, owner kind and counterparty, and the mapping version
+     * ({@code netMovement} - the period's movement, not a cumulative balance), the line count, its components by purpose, owner kind and counterparty, and the mapping version
      * it is computed under.
      */
     public record GlFigureView(
@@ -282,7 +297,7 @@ public final class GeneralLedgerDesk {
             String currency,
             String debits,
             String credits,
-            String balance,
+            String netMovement,
             long lines,
             List<GlComponentView> components,
             String mappingVersionId,
@@ -292,7 +307,7 @@ public final class GeneralLedgerDesk {
             GlAccount account = figure.account();
             return new GlFigureView(account.code(), account.name(), account.classification().name(),
                     account.section().name(), account.normalBalance(), figure.currency(), amount(figure.debits()),
-                    amount(figure.credits()), amount(figure.balance()), figure.lines(),
+                    amount(figure.credits()), amount(figure.netMovement()), figure.lines(),
                     figure.components().stream().map(GlComponentView::of).toList(),
                     figure.versionId().value().toString(), figure.version());
         }
@@ -394,7 +409,6 @@ public final class GeneralLedgerDesk {
             String entryType,
             String postingDate,
             String valueDate,
-            String reference,
             String reversesEntryId,
             String period,
             String periodStatus,
@@ -406,7 +420,7 @@ public final class GeneralLedgerDesk {
             JournalReads.Entry entry = view.entry();
             PinnedMapping mapping = view.mapping();
             return new GlEntryView(entry.id().toString(), entry.entryType(), entry.postingDate().toString(),
-                    entry.valueDate().toString(), entry.reference(), entry.reverses().map(UUID::toString).orElse(null),
+                    entry.valueDate().toString(), entry.reverses().map(UUID::toString).orElse(null),
                     mapping.period().toString(), status(mapping), mapping.versionId().value().toString(),
                     mapping.version(), view.lines().stream().map(mapped -> GlLineView.of(mapped.line(),
                             mapped.glAccountCode().orElse("UNMAPPED"))).toList());

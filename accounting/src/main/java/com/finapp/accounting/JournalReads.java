@@ -268,15 +268,16 @@ public interface JournalReads {
     }
 
     /**
-     * One journal entry: its type, its two business dates, its originating economic event's reference
-     * ({@code INV-LED-05}), the entry it reverses, and every line in order.
+     * One journal entry: its type, its two business dates, the entry it reverses, and every line in order. Not its
+     * {@code reference} ({@code RESTRICTED-FINANCIAL}; for a {@code MANUAL} adjustment free text an operator typed, which
+     * may name a person), nor its reason or actor ({@code RESTRICTED-PII}) - whether a later task serves the reference,
+     * and under what control, is an owner item (`P14-TSK-007`'s review, I-1).
      */
     record Entry(
             UUID id,
             String entryType,
             LocalDate postingDate,
             LocalDate valueDate,
-            String reference,
             Optional<UUID> reverses,
             List<Line> lines) {
 
@@ -285,7 +286,6 @@ public interface JournalReads {
             Objects.requireNonNull(entryType, "entryType");
             Objects.requireNonNull(postingDate, "postingDate");
             Objects.requireNonNull(valueDate, "valueDate");
-            Objects.requireNonNull(reference, "reference");
             Objects.requireNonNull(reverses, "reverses");
             lines = List.copyOf(lines);
         }

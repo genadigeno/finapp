@@ -70,8 +70,10 @@ import org.junit.jupiter.api.Test;
  * The GL read model against a real journal (`P14-TSK-007`; ADR-0113 decision 2; {@code INV-ACC-02}, {@code INV-ACC-06},
  * {@code INV-ACC-14}; ledger {@code V029}): the entry's three named cases - every line in the period maps exactly once,
  * a figure drills to its lines, GL = ledger per currency - each judged against the database's own raw counts and sums,
- * not against the read model's; and the read-only snapshot refusing a write, the drill-down's pages neither repeating nor
- * skipping, the range served by {@code journal_entry_by_posting_date}, an entry's GL view. <strong>Written and owed</strong>
+ * not against the read model's; and the read-only snapshot refusing a write and cancelling a statement past its bound,
+ * the drill-down's pages neither repeating nor skipping - the month's last day in and the next month's first out, two
+ * lines of one entry by line order, two entries of one date by id - the range served by
+ * {@code journal_entry_by_posting_date}, an entry's GL view. <strong>Written and owed</strong>
  * (owner decision C5: the database tiers are skipped per task; the owner-authorised pass before the exit review runs
  * it).
  *
@@ -95,7 +97,7 @@ class GlReadModelDatabaseTest {
     private final JdbcLedgerAccountStore accounts = new JdbcLedgerAccountStore();
     private final GeneralLedger ledger = new GeneralLedger(new LedgerJournalReads());
     private final GlPins pins = new GlPins(MAPPINGS, new JdbcPeriodPins());
-    private final GlSnapshots snapshots = new GlSnapshots(DatabaseRoles::application);
+    private final GlSnapshots snapshots = new GlSnapshots(DatabaseRoles::application, GlSnapshots.STATEMENT_TIMEOUT);
 
     @BeforeEach
     void aVersionIsInForceAndTheMonthHasPostings() throws Exception {
@@ -235,7 +237,104 @@ class GlReadModelDatabaseTest {
         assertThat(view.lines().get(1).line().ownerRef()).isPresent();
     }
 
+    @Test
+    @DisplayName("the month is inclusive of its last day and of nothing after it: a line on 2096-02-29 (a leap day) is"
+            + " in February's figure and drill-down, one on 2096-03-01 is not (the review's M-7)")
+    void theMonthIsInclusiveOfItsLastDayOnly() throws Exception {
+        LedgerAccount wallet = wallet(EUR);
+        LedgerAccount clearing = operational(AccountPurpose.SETTLEMENT_CLEARING, EUR);
+        UUID lastDay = post(MONTH.atEndOfMonth(), clearing, wallet, 2929, EUR).entryId().value();
+        UUID nextMonth = post(MONTH.plusMonths(1).atDay(1), clearing, wallet, 301, EUR).entryId().value();
+        assertThat(MONTH.atEndOfMonth()).isEqualTo(LocalDate.of(2096, 2, 29));
+        PinnedMapping mapping = read(snapshot -> pins.forPeriod(snapshot, MONTH));
+        List<JournalReads.Line> lines = drill(mapping, "2000", "EUR", 7);
+        assertThat(lines).extracting(JournalReads.Line::entryId).contains(lastDay).doesNotContain(nextMonth);
+        assertThat(rawLinesPerCurrency().get("EUR")).as("the raw month agrees on the bound")
+                .isEqualTo(read(snapshot -> ledger.balances(snapshot, mapping, Optional.of("EUR"))).figures().stream()
+                        .mapToLong(GlFigure::lines).sum());
+    }
+
+    @Test
+    @DisplayName("a figure holding two lines of one entry pages through them by line order: page size one, each line"
+            + " served once, the entry's two wallet lines adjacent and in seq order (the review's M-7)")
+    void twoLinesOfOneEntryPageByLineOrder() throws Exception {
+        LedgerAccount first = wallet(EUR);
+        LedgerAccount second = wallet(EUR);
+        LedgerAccount clearing = operational(AccountPurpose.SETTLEMENT_CLEARING, EUR);
+        UUID split = postLines(MONTH.atDay(17), EUR, List.of(
+                new JournalLine(clearing.id(), Direction.DEBIT, Money.ofMinorUnits(200, EUR)),
+                new JournalLine(first.id(), Direction.CREDIT, Money.ofMinorUnits(120, EUR)),
+                new JournalLine(second.id(), Direction.CREDIT, Money.ofMinorUnits(80, EUR))), IDS, CLOCK);
+        PinnedMapping mapping = read(snapshot -> pins.forPeriod(snapshot, MONTH));
+        List<JournalReads.Line> lines = drill(mapping, "2000", "EUR", 1);
+        List<JournalReads.Line> ofSplit = lines.stream().filter(line -> line.entryId().equals(split)).toList();
+        assertThat(ofSplit).extracting(JournalReads.Line::seq).containsExactly(1, 2);
+        int at = lines.indexOf(ofSplit.get(0));
+        assertThat(lines.get(at + 1)).as("the tie-break on seq keeps the entry's lines together").isEqualTo(ofSplit.get(1));
+    }
+
+    @Test
+    @DisplayName("two entries on one date page in id order, not insertion order: the later-minted id inserted first is"
+            + " served second (ids minted explicitly on clocks two seconds apart; the review's M-7)")
+    void sameDateEntriesPageInIdOrder() throws Exception {
+        LedgerAccount wallet = wallet(EUR);
+        LedgerAccount clearing = operational(AccountPurpose.SETTLEMENT_CLEARING, EUR);
+        java.time.Instant now = CLOCK.instant();
+        Clock later = Clock.fixed(now.plusSeconds(2), java.time.ZoneOffset.UTC);
+        Clock earlier = Clock.fixed(now, java.time.ZoneOffset.UTC);
+        LocalDate day = MONTH.atDay(23);
+        List<JournalLine> lines = List.of(new JournalLine(clearing.id(), Direction.DEBIT, Money.ofMinorUnits(23, EUR)),
+                new JournalLine(wallet.id(), Direction.CREDIT, Money.ofMinorUnits(23, EUR)));
+        UUID insertedFirst = postLines(day, EUR, lines, new IdGenerator(later, new SecureRandom()), later);
+        UUID insertedSecond = postLines(day, EUR, lines, new IdGenerator(earlier, new SecureRandom()), earlier);
+        assertThat(JournalReads.LineCursor.compareIds(insertedSecond, insertedFirst))
+                .as("the second insert carries the smaller id").isNegative();
+        PinnedMapping mapping = read(snapshot -> pins.forPeriod(snapshot, MONTH));
+        List<UUID> served = drill(mapping, "2000", "EUR", 2).stream().map(JournalReads.Line::entryId)
+                .filter(id -> id.equals(insertedFirst) || id.equals(insertedSecond)).toList();
+        assertThat(served).containsExactly(insertedSecond, insertedFirst);
+    }
+
+    @Test
+    @DisplayName("a statement past the snapshot's bound is cancelled by PostgreSQL and the read ends ReadTimedOut, rolled"
+            + " back; the next read on the pool is bounded afresh (the review's I-2)")
+    void aStatementPastTheBoundIsCancelled() {
+        GlSnapshots bounded = new GlSnapshots(DatabaseRoles::application, Duration.ofMillis(50));
+        assertThatThrownBy(() -> bounded.read(snapshot -> {
+            try (PreparedStatement sleep = snapshot.prepareStatement("SELECT pg_sleep(2)");
+                    ResultSet row = sleep.executeQuery()) {
+                return row.next();
+            } catch (SQLException failure) {
+                throw new com.finapp.accounting.AccountingStorageException(
+                        com.finapp.platform.persistence.DatabaseFailure.describe("sleeping past the bound", failure));
+            }
+        })).isInstanceOf(GlSnapshots.ReadTimedOut.class);
+        String timeout = snapshots.read(snapshot -> {
+            try (Statement statement = snapshot.createStatement();
+                    ResultSet row = statement.executeQuery("SELECT current_setting('statement_timeout')")) {
+                row.next();
+                return row.getString(1);
+            } catch (SQLException failure) {
+                throw new IllegalStateException(failure);
+            }
+        });
+        assertThat(timeout).as("the configured bound, local to the transaction").isEqualTo("10s");
+    }
+
     // ------------------------------------------------------------------ the database's own answers
+
+    /** Every line of a figure, paged {@code size} at a time through the real keyset. */
+    private List<JournalReads.Line> drill(PinnedMapping mapping, String code, String currency, int size) {
+        List<JournalReads.Line> lines = new java.util.ArrayList<>();
+        Optional<JournalReads.LineCursor> after = Optional.empty();
+        do {
+            Optional<JournalReads.LineCursor> position = after;
+            GlActivity page = read(snapshot -> ledger.activity(snapshot, mapping, code, currency, position, size));
+            lines.addAll(page.lines());
+            after = page.next();
+        } while (after.isPresent());
+        return lines;
+    }
 
     private static Map<String, Long> rawLinesPerCurrency() throws SQLException {
         Map<String, Long> counts = new TreeMap<>();
@@ -360,10 +459,29 @@ class GlReadModelDatabaseTest {
         }
     }
 
+    /** One entry of {@code lines} on {@code day}, through the ledger's own door, its id minted by {@code ids}. */
+    private static UUID postLines(LocalDate day, CurrencyCode currency, List<JournalLine> lines, IdGenerator ids,
+            Clock clock) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                CorrelationContext.Scope flow = CorrelationContext.enter(
+                        Correlation.startingWith(CorrelationId.generate(IDS)))) {
+            app.setAutoCommit(false);
+            PostingResult result = postings(ids, clock).post(app, new PostingCommand("gl-read-" + IDS.next() + "-"
+                    + currency.code(), day, day, "gl-read-model", lines));
+            app.commit();
+            return result.entryId().value();
+        }
+    }
+
     private static PostingService postings() {
-        return new PostingService(new IdempotentExecutor(new JdbcIdempotencyRecordStore(), CLOCK, Duration.ofDays(1),
-                Duration.ofMinutes(5)), new JdbcJournalEntryStore(IDS), new JdbcAuditWriter(), new JdbcOutboxWriter(),
-                new JdbcBalanceProjection(), IDS, CLOCK, PostingObserver.NONE);
+        return postings(IDS, CLOCK);
+    }
+
+    private static PostingService postings(IdGenerator ids, Clock clock) {
+        return new PostingService(new IdempotentExecutor(new JdbcIdempotencyRecordStore(), clock, Duration.ofDays(1),
+                Duration.ofMinutes(5)), new JdbcJournalEntryStore(ids), new JdbcAuditWriter(), new JdbcOutboxWriter(),
+                new JdbcBalanceProjection(), ids, clock, PostingObserver.NONE);
     }
 
     private static <R> R inOneTransaction(java.util.function.Function<Connection, R> work) {

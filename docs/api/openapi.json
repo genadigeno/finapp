@@ -367,6 +367,41 @@
           }
         }
       },
+      "accounting.ReadTimedOut": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.ReadTimedOut"
+                    },
+                    "status": {
+                      "const": 503
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.ReadTimedOut"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[503] The accounting read did not finish within its statement timeout; nothing was served - retry, or narrow the read.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.ReasonRequired": {
         "content": {
           "application/problem+json": {
@@ -18222,9 +18257,6 @@
           "postingDate": {
             "type": "string"
           },
-          "reference": {
-            "type": "string"
-          },
           "reversesEntryId": {
             "type": "string"
           },
@@ -18236,9 +18268,6 @@
       },
       "GlFigureView": {
         "properties": {
-          "balance": {
-            "type": "string"
-          },
           "classification": {
             "type": "string"
           },
@@ -18272,6 +18301,9 @@
             "type": "string"
           },
           "name": {
+            "type": "string"
+          },
+          "netMovement": {
             "type": "string"
           },
           "normalBalance": {

@@ -202,8 +202,9 @@ class AccountingVocabulariesTest {
                         // P14-TSK-005: the period doors - a stale period, a lock too early or out of order, a busy cutoff.
                         "accounting.PeriodStale=409", "accounting.PeriodNotLockable=409", "accounting.CutoffBusy=503",
                         "accounting.ReasonRequired=422",
-                        // P14-TSK-007: the GL doors - no version pinned or in force for the period.
-                        "accounting.NoActiveMapping=409");
+                        // P14-TSK-007: the GL doors - no version pinned or in force for the period; a read past its
+                        // statement timeout (the review's I-2).
+                        "accounting.NoActiveMapping=409", "accounting.ReadTimedOut=503");
         // P14-TSK-002: the posting rule register's audited read - no reason, an operator's read.
         assertThat(AccountingAuditAction.POSTING_RULES_READ.code()).isEqualTo("accounting.PostingRulesRead");
         assertThat(AccountingAuditAction.POSTING_RULES_READ.requiresReason()).isFalse();

@@ -107,11 +107,11 @@ class GeneralLedgerTest {
         assertThat(wallets.debits()).as("two fees, the 31 October and 1 December ones outside the month")
                 .isEqualByComparingTo("3.25");
         assertThat(wallets.credits()).isEqualByComparingTo("100.00");
-        assertThat(wallets.balance()).as("a liability's net on its credit side").isEqualByComparingTo("96.75");
+        assertThat(wallets.netMovement()).as("a liability's net on its credit side").isEqualByComparingTo("96.75");
         GlFigure loans = balances.figure("1300", "EUR").orElseThrow();
         assertThat(loans.components()).extracting(GlFigure.Component::purpose)
                 .as("two purposes, one GL account").containsExactly("LOAN_PRINCIPAL", "LOAN_PRINCIPAL_DUE");
-        assertThat(loans.balance()).as("an asset's net on its debit side").isEqualByComparingTo("5000.00");
+        assertThat(loans.netMovement()).as("an asset's net on its debit side").isEqualByComparingTo("5000.00");
     }
 
     @Test
@@ -202,7 +202,7 @@ class GeneralLedgerTest {
     void mixedScalesFoldExactly() {
         UUID id = UUID.randomUUID();
         LocalDate day = LocalDate.of(2026, 11, 10);
-        journal.post(new JournalReads.Entry(id, "POSTING", day, day, "ref", Optional.empty(), List.of(
+        journal.post(new JournalReads.Entry(id, "POSTING", day, day, Optional.empty(), List.of(
                 InMemoryJournal.line(id, 0, day, "FEE_REVENUE", "OPERATIONAL", Optional.empty(), Side.CREDIT, 12345,
                         "EUR", 3),
                 InMemoryJournal.line(id, 1, day, "CASH_AT_BANK", "OPERATIONAL", Optional.empty(), Side.DEBIT, 12345,
@@ -242,6 +242,25 @@ class GeneralLedgerTest {
     }
 
     @Test
+    @DisplayName("a cursor positioned outside the period is refused before the journal is read (the review's M-2)")
+    void aCursorOutsideThePeriodIsRefused() {
+        postNovember();
+        PinnedMapping mapping = pinned(ReferenceGlMapping.version());
+        int before = journal.reads();
+        for (LocalDate outside : List.of(LocalDate.of(2026, 10, 31), LocalDate.of(2026, 12, 1),
+                LocalDate.of(999_999, 1, 1))) {
+            Optional<JournalReads.LineCursor> forged = Optional.of(new JournalReads.LineCursor(outside,
+                    UUID.randomUUID(), 0));
+            assertThatThrownBy(() -> ledger.activity(SNAPSHOT, mapping, "2000", "EUR", forged, 10))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+        assertThat(journal.reads()).isEqualTo(before);
+        Optional<JournalReads.LineCursor> inside = Optional.of(new JournalReads.LineCursor(LocalDate.of(2026, 11, 30),
+                UUID.randomUUID(), 0));
+        assertThat(ledger.activity(SNAPSHOT, mapping, "2000", "EUR", inside, 10).figure().lines()).isEqualTo(3);
+    }
+
+    @Test
     @DisplayName("a journal serving a drill-down line outside the figure's keys, currency or order is refused - the"
             + " drill-down proves the figure or nothing")
     void aDrillDownOutsideTheSelectionIsRefused() {
@@ -277,7 +296,7 @@ class GeneralLedgerTest {
                 "OPERATIONAL");
         UUID fx = UUID.randomUUID();
         LocalDate day = LocalDate.of(2026, 11, 12);
-        journal.post(new JournalReads.Entry(fx, "POSTING", day, day, "fx", Optional.empty(), List.of(
+        journal.post(new JournalReads.Entry(fx, "POSTING", day, day, Optional.empty(), List.of(
                 InMemoryJournal.line(fx, 0, day, "FX_PROVIDER_CLEARING", "COUNTERPARTY", Optional.of("fx-sim-a"),
                         Side.DEBIT, 5000, "USD", 2),
                 InMemoryJournal.line(fx, 1, day, "FX_POSITION", "OPERATIONAL", Optional.empty(), Side.CREDIT, 5000,
