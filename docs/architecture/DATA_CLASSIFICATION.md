@@ -4703,6 +4703,60 @@ provider's version label, the other closed codes, the platform's identifiers, co
 | `rescreening_permit` | `concluded_at` | `INTERNAL` | The database's stamp |
 | `rescreening_permit` | `correlation_id` | `INTERNAL` | The activation's correlation |
 
+### `accounting.accounting_break` and `break_event` - the accounting break - *added by `P14-TSK-010`*
+
+`accounting V006`: one row per (period month, check, subject) - `accounting_break_born_once`, `INV-ACC-12` - raised by
+one of the three GL-side checks (GL = ledger, rule conformance, source completeness), never corrected; its machine
+`OPEN → ACKNOWLEDGED → RESOLVED` (the acknowledgement four-eyes, the resolution by reference to a correcting journal
+entry) and its append-only case file; no `DELETE` for any role. **No money**: the evidence is closed codes, the
+platform's own identifiers and counts - never an amount, a balance, a name or an entry's free-text reference (built so
+by `RuleConformance`, `GlEqualsLedger` and `ProductSourceProofs`). The finding is `CONFIDENTIAL` - which entry, loan,
+merchant payable or ledger account the books do not explain is an operator-only fact (no customer or merchant route
+reads accounting, `NoCustomerSurfaceReadsAccountingTest`) - as is the disclosure, which exists to be disclosed at close
+and in the statements' notes (`INV-ACC-05`) but is a person's text: screened for instrument shapes
+(`AccountingReasons`). Every other person-written text is `RESTRICTED-PII` and never served; the people are
+`CONFIDENTIAL`; closed codes and the database's stamps `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `accounting_break` | `id` | `INTERNAL` | Generated - the break's identity |
+| `accounting_break` | `period_start` | `INTERNAL` | The judged month's first day - the accounting period's identity (one period per month) |
+| `accounting_break` | `check_code` | `INTERNAL` | A closed `CloseCheckCode` - one of the three that raise |
+| `accounting_break` | `break_type` | `INTERNAL` | A closed `BreakType`, each on its check by `CHECK` |
+| `accounting_break` | `subject_ref` | `CONFIDENTIAL` | What the discrepancy is about by identifier - an entry id, a namespace, a purpose/owner-kind key, a currency, a proof's subject (a loan, obligation, merchant payable or ledger account id) |
+| `accounting_break` | `evidence` | `CONFIDENTIAL` | Codes, identifiers and counts only - the rules tried, the lines' purposes and sides, a proof's failing arms; never an amount |
+| `accounting_break` | `judged_by` | `INTERNAL` | The register version the check judged by - `posting-rules:v<n>`, `gl-mapping:v<n>`, `source-proofs:v<n>` |
+| `accounting_break` | `status` | `INTERNAL` | The machine's state - `OPEN`, `ACKNOWLEDGED`, `RESOLVED` |
+| `accounting_break` | `raised_at` | `INTERNAL` | The database's stamp of the birth |
+| `accounting_break` | `raised_by` | `CONFIDENTIAL` | The run's actor - the platform (`system`) for the close schedule, a person for a re-run |
+| `accounting_break` | `raised_by_type` | `INTERNAL` | A closed actor type - `SYSTEM`, `CUSTOMER` or `EMPLOYEE` by `CHECK` |
+| `accounting_break` | `correlation_id` | `INTERNAL` | The raising run's correlation |
+| `accounting_break` | `ack_proposed_by` | `CONFIDENTIAL` | The accountant who proposed the acknowledgement |
+| `accounting_break` | `ack_proposed_by_type` | `INTERNAL` | A closed actor type - a person's by `CHECK` |
+| `accounting_break` | `ack_proposed_at` | `INTERNAL` | The database's stamp of the proposal |
+| `accounting_break` | `disclosure` | `CONFIDENTIAL` | Person-written, screened for instrument shapes; served to the accountant and the controller, disclosed at close (`INV-ACC-05`), never logged |
+| `accounting_break` | `ack_approved_by` | `CONFIDENTIAL` | The second person who approved it - never the proposer, by `CHECK` |
+| `accounting_break` | `ack_approved_by_type` | `INTERNAL` | A closed actor type - a person's by `CHECK` |
+| `accounting_break` | `ack_approved_at` | `INTERNAL` | The database's stamp of the approval, after the row lock |
+| `accounting_break` | `ack_approval_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served |
+| `accounting_break` | `resolved_by` | `CONFIDENTIAL` | The controller who resolved it |
+| `accounting_break` | `resolved_by_type` | `INTERNAL` | A closed actor type - a person's by `CHECK` |
+| `accounting_break` | `resolved_at` | `INTERNAL` | The database's stamp of the resolution |
+| `accounting_break` | `resolving_entry_id` | `INTERNAL` | The correcting journal entry's id - the ledger's own row, by reference (no cross-schema key) |
+| `accounting_break` | `resolution_reason` | `RESTRICTED-PII` | As `ack_approval_reason` |
+| `break_event` | `id` | `INTERNAL` | Generated - the case-file row's identity |
+| `break_event` | `break_id` | `INTERNAL` | The break - accounting's own row |
+| `break_event` | `act` | `INTERNAL` | A closed `AccountingBreakStore.Act`, each on its edge by `CHECK` |
+| `break_event` | `from_status` | `INTERNAL` | A closed `BreakStatus` |
+| `break_event` | `to_status` | `INTERNAL` | A closed `BreakStatus` |
+| `break_event` | `actor` | `CONFIDENTIAL` | Who acted - the run's actor for the raise, a person otherwise |
+| `break_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `break_event` | `proposed_by` | `CONFIDENTIAL` | On the acknowledgement: its proposer - never the actor, by `CHECK` |
+| `break_event` | `resolving_entry_id` | `INTERNAL` | On the resolution: the correcting journal entry's id |
+| `break_event` | `reason` | `RESTRICTED-PII` | Person-written - the proposal's row carries the disclosure, which is `CONFIDENTIAL` on the break's row and kept at the ceiling here; never served from the case file |
+| `break_event` | `occurred_at` | `INTERNAL` | The database's stamp |
+| `break_event` | `correlation_id` | `INTERNAL` | The act's correlation |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

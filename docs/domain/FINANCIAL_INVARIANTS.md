@@ -1443,6 +1443,11 @@ discrepancy is an accounting break born once per (period, check, subject), never
 `#twoRaisesOneBreak` (`P14-TSK-002`, `-010`).
 **Phase:** 14
 
+*(`P14-TSK-010`, 2026-10-31 - the runtime half built: `AccountingChecks` (GL = ledger, rule conformance, source
+completeness) raising through `accounting_break_born_once`, nothing posted (`BreaksNeverPostTest`); hermetic
+demonstrations `RuleConformanceTest#aPlantedShapeMismatchIsOneFindingPerEntry`, `AccountingChecksTest`,
+`AccountingBreaksTest#twoRaisesOneBreak`; the database cases `AccountingBreakDatabaseTest` written and owed (C5).)*
+
 ### INV-ACC-13 — A regulatory submission comes only from FINAL figures, four-eyes, with lineage
 **Statement:** A submission is drafted only from FINAL report runs of `CLOSED` periods and records each run's id and hash;
 it is approved by a second holder; `SUBMITTED` commits before the provider call and is immutable; it is submitted at most

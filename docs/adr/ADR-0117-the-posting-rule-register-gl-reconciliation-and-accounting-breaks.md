@@ -45,6 +45,19 @@ and park value in suspense; a GL-side discrepancy has neither.
    `MAPPING_GAP`, `DOUBLE_MAPPING`, `UNREGISTERED_POSTING`, `SHAPE_MISMATCH`, `UNBALANCED_ENTRY`, `SOURCE_DISCREPANCY`,
    `SOURCE_DELAYED`; `OPEN → ACKNOWLEDGED → RESOLVED`; acknowledgement four-eyes with a disclosure; resolution only by
    reference to a correcting entry posted through the owning domain's door. Never deleted, never self-corrected.
+   *(As built by `P14-TSK-010`, 2026-10-31, accounting `V006`: decisions 2 and 3 as one callable the close run invokes
+   per check, `AccountingChecks.run` → `CheckOutcome` (`PASSED` only when the judge read everything and found nothing;
+   any discrepancy, unavailable proof, unreadable judge or month without a mapping version `FAILED` with its reason;
+   every outcome and break naming the register version it judged by - `posting-rules:v<n>`, `gl-mapping:v<n>`,
+   `source-proofs:v1`). The judges read only, each on a verified, statement-bounded `REPEATABLE READ READ ONLY`
+   snapshot - source completeness on one per source; every new finding is raised in its own transaction with its
+   case-file row, audit record and `AccountingBreakRaised`, born once by `accounting_break_born_once UNIQUE
+   (period_start, check_code, subject_ref)` - the period held as its month. `SourceProofs` is given its method (one
+   reading per source, the nine proofs over seven sources) and `app`'s `ProductSourceProofs` its implementation, every
+   verdict the proof's own. Acknowledgement is a disclosed proposal and a different person's approval (`CHECK`
+   `accounting_break_acknowledgement_four_eyes`); resolution names an existing correcting entry other than the subject;
+   `BreaksNeverPostTest` holds the machinery to no ledger writer, cutoff or prior-period door. `PHASE_14_PLAN.md` §13.3's
+   note records the subject granularity and the deviations.)*
 4. **Reconciliation's own breaks and suspense are read and disclosed** at close (`ReconciliationDisclosure`), not copied.
 
 ## Alternatives Considered

@@ -194,6 +194,11 @@ boundary is the ledger's database.
   at completion.
 - **Valuation Rate Set:** `PROPOSED → APPROVED | REJECTED`; immutable.
 - **Accounting Break:** `OPEN → ACKNOWLEDGED (disclosed) → RESOLVED`; `OPEN → RESOLVED`; never deleted.
+  *(As built by `P14-TSK-010`, 2026-10-31, accounting `V006`: born `OPEN` once per (period month, check, subject); the
+  acknowledgement a pending proposal with its disclosure on the `OPEN` row, then a different person's approval `OPEN →
+  ACKNOWLEDGED`; `OPEN | ACKNOWLEDGED → RESOLVED` naming an existing correcting journal entry other than the subject - a
+  pending proposal lapses; `RESOLVED` final; the case file `break_event` append-only; every act behind the row's
+  `FOR UPDATE`, conditional, audited; section 13.3's note.)*
 - **Regulatory Submission:** `DRAFT → VALIDATED → APPROVED → SUBMITTED → ACKNOWLEDGED | REJECTED`; a rejection or a
   correction is a new submission referencing the original; `SUBMITTED` immutable; an unknown provider answer is an
   inquiry permit on the `SUBMITTED` row, never a re-submit.
@@ -446,6 +451,40 @@ evidence. Delays: an entry expected but not yet posted (accrual lag, a batch acc
 owning domain's existing door (reversal, waiver, reconciliation resolution, PPA), referenced by the break; reconciliation's
 own breaks and suspense are disclosed, not copied (C11, `INV-ACC-05`).
 
+*(As built by `P14-TSK-010`, 2026-10-31 - accounting `V006` (`accounting_break`, `break_event`):* **the three checks are
+one callable**, `AccountingChecks.run(period, check, actor, correlation) → CheckOutcome`, which `-011`'s close-run worker
+invokes per claimed `GL_EQUALS_LEDGER`, `RULE_CONFORMANCE` or `SOURCE_COMPLETENESS` (the other six checks refuse it);
+nothing here schedules and no door runs it (`-011`'s re-run is the operator's). Each judge reads on a verified,
+statement-bounded `REPEATABLE READ READ ONLY` snapshot (`finapp.accounting.checks.statement-timeout`, 30 s default) and
+writes nothing - GL = ledger on one (`-007`'s fold under the period's pin or the version in force), conformance on one
+for the month (keyset pages of 500 entries through a new port, `JournalShapes`, which reads each entry's command-key
+namespace from the ledger's `idempotency_scope` and an adjustment's rule from its proposal's `origin`), source
+completeness on **one per source** (a timed-out proof aborts only its own transaction) - then each new finding is raised
+in a transaction of its own: the break, its `RAISED` case-file row, `accounting.BreakRaised` and
+`accounting.AccountingBreakRaised` in one commit, `INSERT … ON CONFLICT ON CONSTRAINT accounting_break_born_once DO
+NOTHING` - two checks or ten instances, one break (section 8.3 row 10). **Deviations recorded:** the plan's
+`(period_id, check, subject)` is held as `(period_start, check_code, subject_ref)` - the month is the period's identity
+(one period per month), held by value so a check judges a month whether or not its period is born; the subject is per
+entry for `SHAPE_MISMATCH`/`UNBALANCED_ENTRY`, per type and namespace for `UNREGISTERED_POSTING` (a key without a
+namespace folded under `(none)`), per purpose/owner-kind key for `MAPPING_GAP`, per currency for a GL ≠ ledger
+difference the unmapped bucket does not explain (`DOUBLE_MAPPING` when the GL counts more, `MAPPING_GAP` when fewer), per
+proof subject for `SOURCE_DISCREPANCY`; shape conformance is classification - every line admitted by a shape line of a
+rule in force at its posting date, every required line present - not cardinality or amount (ADR-0117's follow-up).
+`SourceProofs` reads seven sources answering the entry's nine proofs (`ProductSourceProofs` in `app`, every verdict the
+proof's own: the merchant payable's terms against its position per merchant and currency, the projection per posted
+account by `ProjectionVerification.verdictOf`, an account `IN_FLIGHT` making the reading incomplete). **No false pass:**
+a source that throws, a reading incomplete or missing, a judge that cannot read, a month with no mapping version - each
+`FAILED` with its reason, never `PASSED`; every outcome and break names the register version it judged by
+(`posting-rules:v2`, `gl-mapping:v<n>`, `source-proofs:v1`); at most 1,000 new findings per run (`FINDINGS_CAPPED`, the
+next run raises the rest). `SOURCE_DELAYED` is not raised: no built proof tells a delay from a discrepancy - accrual lag
+is `-011`'s `ACCRUALS_COMPLETE`. **The breaks' doors** (section 10): `GET /v1/operator/accounting/breaks?period[&status]
+[&limit]` (`ACCOUNTING_READ`), `GET …/breaks/{breakId}` (`ACCOUNTING_ADJUST_APPROVE` - the controller's read of what it
+decides; the partition gives it no `ACCOUNTING_READ` - a fifth route beyond the entry's four), `POST
+…/acknowledgement-proposal` (`ACCOUNTING_ADJUST_PROPOSE`, the disclosure), `…/acknowledgement-approval` and
+`…/resolution` (`ACCOUNTING_ADJUST_APPROVE`; the correcting entry must exist and not be the subject); approver ≠
+proposer by the domain and `accounting_break_acknowledgement_four_eyes`; nothing posts (`BreaksNeverPostTest`).
+`finapp.accounting.break.open{type}` is fed from the database; `finapp.accounting.gl.unmapped` stays `-007`'s.)*
+
 ### 13.4 Multi-currency (owner brief 7.5)
 
 Transaction currency = the line's (ledger, one per account); functional = reporting = **EUR** (C1); settlement currency
@@ -561,7 +600,7 @@ rows both ways.
 | `finapp.accounting.cutoff.floored` | counter (postings floored to the first open date because their command asked, C3 - *added by `P14-TSK-006`*) | command | — |
 | `finapp.accounting.cutoff.refused` | counter (postings refused `ledger.PeriodClosed`) | module *(erratum, `P14-TSK-004`: built with tag `command` - `posting`/`reversal`/`adjustment` - because a ledger command carries no requesting module; a `module` tag needs a producer-contract change, an owner item for `-006`)* | `AccountingPostingIntoClosedPeriod` |
 | `finapp.accounting.gl.unmapped` | gauge (lines unmapped in the open period under the active version) *(fed by `P14-TSK-007` from the database: the chart's keys the ACTIVE version does not map - 0 without a journal read when it is total, 0 with no version - their lines counted from the first open period's start, never before the version's month; cached 60 s)* | — | `AccountingMappingGap` |
-| `finapp.accounting.break.open` | gauge | type | `AccountingBreakAged` |
+| `finapp.accounting.break.open` | gauge (breaks not `RESOLVED` per type) *(fed by `P14-TSK-010` from the database, every `BreakType` registered at 0, no value when unreadable, cached 15 s)* | type | `AccountingBreakAged` |
 | `finapp.accounting.report.run` | counter | definition, outcome | — |
 | `finapp.accounting.report.diverged` | counter | definition | `AccountingReportDiverged` |
 | `finapp.accounting.regulatory.submission` | counter | outcome | `RegulatorySubmissionRejected` |

@@ -25822,6 +25822,34 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: skip the shape comparison → the planted mismatch passes, red.
 - **Acceptance criteria**: every planted discrepancy class raises exactly one break; nothing posts.
 - **Definition of done**: `DOD-FIN`, `DOD-DOMAIN`. **Risk**: Medium. **Cx**: L.
+- **As built** (2026-10-31, accounting `V006`): `accounting_break` (born once by `accounting_break_born_once UNIQUE
+  (period_start, check_code, subject_ref)` - the plan's `period_id` held as the period's month, its identity, so a check
+  judges a month whether or not its period is born; each type on its check, four-eyes and persons `CHECK`s, an edge
+  trigger - born `OPEN`, the finding frozen, `RESOLVED` final; no `DELETE`) and `break_event` (the case file,
+  append-only). **The checks are one callable**, `AccountingChecks.run(period, check, actor, correlation) →
+  CheckOutcome`, for `-011`'s close-run worker - no schedule, no run door (the entry and plan name none; `-011`'s
+  re-run is the operator's). Judges, read-only on verified, statement-bounded `REPEATABLE READ READ ONLY` snapshots
+  (`finapp.accounting.checks.statement-timeout`, 30 s): `GlEqualsLedger` over `-007`'s fold (a `MAPPING_GAP` per unmapped
+  key, a GL ≠ ledger difference the unmapped bucket does not explain `DOUBLE_MAPPING` or `MAPPING_GAP` per currency);
+  `RuleConformance` over `PostingRuleRegister.CURRENT` through a new port `JournalShapes` (`app`'s `LedgerJournalShapes`:
+  the month's entries in keyset pages of 500, each entry's command-key namespace from `idempotency_scope`, an
+  adjustment's origin from its proposal; `UNREGISTERED_POSTING` per type and namespace, `SHAPE_MISMATCH` and
+  `UNBALANCED_ENTRY` per entry); `SourceCompleteness` over `SourceProofs` (given its method; `app`'s
+  `ProductSourceProofs` over the nine proofs in seven readings, every verdict the proof's own; one snapshot per source).
+  Each new finding raised in its own transaction - break + `RAISED` row + `accounting.BreakRaised` +
+  `accounting.AccountingBreakRaised` - by `ON CONFLICT DO NOTHING`. `PASSED` only when everything was judged and nothing
+  found; an unavailable source, an incomplete reading, an unreadable judge or no mapping version `FAILED`; every outcome
+  and break names its register version (`posting-rules:v2`, `gl-mapping:v<n>`, `source-proofs:v1`); at most 1,000 new
+  breaks a run (`FINDINGS_CAPPED`). **Doors** (`AccountingBreakController`/`Desk`, wiring `AccountingBreakBeans`):
+  `GET /v1/operator/accounting/breaks?period[&status][&limit]` (`ACCOUNTING_READ`), **`GET …/breaks/{breakId}`
+  (`ACCOUNTING_ADJUST_APPROVE` - a fifth route: the partition gives the controller no `ACCOUNTING_READ`)**, `POST
+  …/acknowledgement-proposal` (`ACCOUNTING_ADJUST_PROPOSE`, the disclosure), `…/acknowledgement-approval` and
+  `…/resolution` (`ACCOUNTING_ADJUST_APPROVE`; the correcting entry must exist and not be the subject), keyed per
+  principal; new codes `accounting.BreakStale` 409, `accounting.CorrectingEntryInvalid` 422; audited
+  `accounting.BreakRaised`, `BreakAcknowledgementProposed`, `BreakAcknowledged`, `BreakResolved`; the gauge
+  `finapp.accounting.break.open{type}` (`AccountingBreakMetrics`, database, 15 s). Nothing posts
+  (`BreaksNeverPostTest`). `SOURCE_DELAYED` not raised (no built proof tells a delay from a discrepancy - `-011`'s
+  `ACCRUALS_COMPLETE`). The database cases are written and owed (C5).
 
 **P14-TSK-011 — The close run and its readiness checks** — `PLANNED`
 - **Routed by `P14-TSK-006`'s review (2026-10-31)**: (I-1, IMPORTANT) `ACCRUALS_COMPLETE` judged after the lock can pass while the locked period is short of interest - a catch-up after the lock floors the period's accrual dates (`LND-2` v2) to the first open date and `AccrualCompleteness.blocking(periodEnd)` then reads empty; judge it inside the lock's transaction with the cutoff key exclusive (and refuse the lock while it is non-empty), or find and disclose the `LND-2` entries with `value_date <= period end < posting_date` (they carry `flooredFrom=`) - decide in the design. (M-1) lending posts "today" on the servicing zone's business date (zones to -14:00): a lock under a 1-business-day grace at 00:00 UTC can refuse a western zone's same-day postings for hours - make `lockableFrom` account for the westernmost servicing zone or raise the grace minimum to 2 (default 2 is safe). (M-2) the reconciliation expectation reads the floored posting date while `ReconciliationReports.providerCosts` groups by the batch's stated `accepted_on` - align or disclose.

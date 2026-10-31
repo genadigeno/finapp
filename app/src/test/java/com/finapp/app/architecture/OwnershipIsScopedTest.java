@@ -1944,6 +1944,35 @@ class OwnershipIsScopedTest {
                                         + " proposal; four eyes by CHECK; behind"
                                         + " @RequiresPermission(ACCOUNTING_CLOSE_APPROVE).")),
                     Map.entry(
+                            "com.finapp.accounting.JdbcAccountingBreakStore.byId",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-010. find and lock's one helper: an accounting break by the id the"
+                                        + " operator's permission-guarded request named (behind"
+                                        + " @RequiresPermission(ACCOUNTING_ADJUST_PROPOSE or ACCOUNTING_ADJUST_APPROVE))"
+                                        + " - a GL-side discrepancy of the platform's books, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcAccountingBreakStore.proposeAcknowledgement",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-010. The id comes only from the break row this transaction locked FOR"
+                                        + " UPDATE (lock(id)), the write conditional on OPEN and no pending proposal;"
+                                        + " behind @RequiresPermission(ACCOUNTING_ADJUST_PROPOSE).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcAccountingBreakStore.approveAcknowledgement",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-010. The id comes only from the break row this transaction locked FOR"
+                                        + " UPDATE, the edge conditional on OPEN and a pending proposal; four eyes by"
+                                        + " CHECK; behind @RequiresPermission(ACCOUNTING_ADJUST_APPROVE).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcAccountingBreakStore.resolve",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-010. The id comes only from the break row this transaction locked FOR"
+                                        + " UPDATE, the edge conditional on the status read; resolution by reference,"
+                                        + " nothing posted; behind @RequiresPermission(ACCOUNTING_ADJUST_APPROVE).")),
+                    Map.entry(
                             "com.finapp.accounting.JdbcGlMappingStore.one",
                             new Entry(
                                     Scope.ADMINISTERED,

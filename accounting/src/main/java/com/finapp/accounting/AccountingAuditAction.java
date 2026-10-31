@@ -115,7 +115,46 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " version number and its counts - figures= and unmapped= for the balances, lines= and"
                     + " page=first|next for an activity page, lines= for an entry - never an amount or an owner"
                     + " reference.",
-            false);
+            false),
+
+    /** A check raised an accounting break (`P14-TSK-010`) - the run's actor, the platform's for the close schedule. */
+    BREAK_RAISED(
+            "accounting.BreakRaised",
+            "A GL-side check - GL = ledger, rule conformance or source completeness - found a discrepancy no break of the"
+                    + " period and check yet held and raised it, born OPEN once per (period, check, subject), never"
+                    + " corrected (P14-TSK-010, ADR-0117 decision 3, INV-ACC-12, INV-REC-02; AccountingChecks.run, invoked"
+                    + " by the close run, P14-TSK-011). Recorded in the raise's own transaction with the break, its"
+                    + " RAISED case-file row and accounting.AccountingBreakRaised - a second raiser records nothing. Its"
+                    + " target the break; the summary the period, check, type and the register version judged by -"
+                    + " never an amount.",
+            false),
+
+    /** An accountant proposed acknowledging a break with a disclosure (`P14-TSK-010`, ACCOUNTING_ADJUST_PROPOSE). */
+    BREAK_ACKNOWLEDGEMENT_PROPOSED(
+            "accounting.BreakAcknowledgementProposed",
+            "An accountant proposed acknowledging an OPEN accounting break with a written disclosure - nothing moves until"
+                    + " a second person approves (P14-TSK-010, INV-ACC-05, INV-AUD-04; POST"
+                    + " /v1/operator/accounting/breaks/{breakId}/acknowledgement-proposal, ACCOUNTING_ADJUST_PROPOSE)."
+                    + " Reasoned: the disclosure. Its target the break; the summary its period, check and type.",
+            true),
+
+    /** A second person approved a break's acknowledgement (`P14-TSK-010`, ACCOUNTING_ADJUST_APPROVE). */
+    BREAK_ACKNOWLEDGED(
+            "accounting.BreakAcknowledged",
+            "A person other than its proposer approved an accounting break's acknowledgement: OPEN -> ACKNOWLEDGED, its"
+                    + " disclosure what the close discloses (P14-TSK-010, INV-ACC-05, INV-AUD-04; POST"
+                    + " .../breaks/{breakId}/acknowledgement-approval, ACCOUNTING_ADJUST_APPROVE). Reasoned. Its target the"
+                    + " break; the summary its period, check and type.",
+            true),
+
+    /** A break was resolved by reference to its correcting entry (`P14-TSK-010`, ACCOUNTING_ADJUST_APPROVE). */
+    BREAK_RESOLVED(
+            "accounting.BreakResolved",
+            "A financial controller resolved an accounting break by reference to the correcting journal entry the owning"
+                    + " domain posted through its own door - nothing is posted here (P14-TSK-010, INV-ACC-12; POST"
+                    + " .../breaks/{breakId}/resolution, ACCOUNTING_ADJUST_APPROVE). Reasoned. Its target the break; the"
+                    + " summary its period, check, type, the status it left and the correcting entry's id.",
+            true);
 
     private final String code;
     private final String description;

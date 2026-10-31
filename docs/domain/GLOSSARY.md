@@ -2601,6 +2601,12 @@ disclosure under four eyes or resolved by reference to a correcting entry (ADR-0
 **Not:** a Reconciliation Break (external evidence against an expectation, with suspense), nor a correction: it posts
 nothing and is never deleted (owner decision C11).
 **Owned by:** `accounting`
+*(As built by `P14-TSK-010`, 2026-10-31, accounting `V006`: the period is held as its month; the subject is per entry for
+a shape mismatch or an unbalanced entry, per type and namespace for an unregistered posting, per purpose/owner-kind key
+for a mapping gap, per currency for a GL ≠ ledger difference the unmapped lines do not explain, per proof subject for a
+source discrepancy; every break records the register version it was judged by - `posting-rules:v<n>`,
+`gl-mapping:v<n>`, `source-proofs:v<n>`. `SOURCE_DELAYED` is declared and not yet raised: no built proof tells a delay
+from a discrepancy.)*
 
 ### Prior-Period Adjustment
 **Is:** the correction of an error found in a closed period by a ledger adjustment of origin `ACCOUNTING`, reason

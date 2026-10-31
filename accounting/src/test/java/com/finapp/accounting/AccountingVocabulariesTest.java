@@ -204,7 +204,9 @@ class AccountingVocabulariesTest {
                         "accounting.ReasonRequired=422",
                         // P14-TSK-007: the GL doors - no version pinned or in force for the period; a read past its
                         // statement timeout (the review's I-2).
-                        "accounting.NoActiveMapping=409", "accounting.ReadTimedOut=503");
+                        "accounting.NoActiveMapping=409", "accounting.ReadTimedOut=503",
+                        // P14-TSK-010: the break doors - a break past the act; a correcting entry absent or the subject.
+                        "accounting.BreakStale=409", "accounting.CorrectingEntryInvalid=422");
         // P14-TSK-002: the posting rule register's audited read - no reason, an operator's read.
         assertThat(AccountingAuditAction.POSTING_RULES_READ.code()).isEqualTo("accounting.PostingRulesRead");
         assertThat(AccountingAuditAction.POSTING_RULES_READ.requiresReason()).isFalse();
@@ -217,7 +219,11 @@ class AccountingVocabulariesTest {
                         "accounting.PeriodOpened=false", "accounting.PeriodLocked=false",
                         "accounting.PeriodUnlockProposed=true", "accounting.PeriodUnlocked=true",
                         // P14-TSK-007: the GL read, an operator's read - no reason.
-                        "accounting.GlRead=false");
+                        "accounting.GlRead=false",
+                        // P14-TSK-010: the raise (the run's) unreasoned; the acknowledgement's two acts and the
+                        // resolution reasoned.
+                        "accounting.BreakRaised=false", "accounting.BreakAcknowledgementProposed=true",
+                        "accounting.BreakAcknowledged=true", "accounting.BreakResolved=true");
     }
 
     // ------------------------------------------------------------------
