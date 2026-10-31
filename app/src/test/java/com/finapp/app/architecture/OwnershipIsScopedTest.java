@@ -2025,13 +2025,6 @@ class OwnershipIsScopedTest {
                                         + " by the id the run pinned at its claim - its bounds, status and pin; a"
                                         + " calendar month of the platform's books, no owner to scope by.")),
                     Map.entry(
-                            "com.finapp.app.accounting.LedgerTrialBalanceReads.ledger",
-                            new Entry(
-                                    Scope.ADMINISTERED,
-                                    "P14-TSK-009. The ledger's own totals over the windows of the period the run pinned"
-                                        + " at its claim, its bounds read from that period's row - whole-journal"
-                                        + " aggregates of the platform's books, no owner to scope by.")),
-                    Map.entry(
                             "com.finapp.risk.JdbcDecisionOverrideStore.find",
                             new Entry(
                                     Scope.ADMINISTERED,

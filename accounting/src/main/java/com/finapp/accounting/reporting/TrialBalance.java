@@ -2,11 +2,11 @@ package com.finapp.accounting.reporting;
 
 import com.finapp.accounting.GlAccount;
 import com.finapp.accounting.GlMappingVersion;
+import com.finapp.accounting.GlMappingVersionId;
 import com.finapp.accounting.JournalReads;
 import com.finapp.accounting.MappingRule;
 import com.finapp.accounting.Side;
 import com.finapp.accounting.TrialBalanceReads;
-import com.finapp.sharedkernel.money.CurrencyCode;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -31,18 +31,28 @@ import java.util.function.Consumer;
  * are signed {@link #SIGN debit-positive} - a credit balance is negative - so the rows foot with no convention left to the
  * reader. Exact decimal arithmetic on minor units summed per scale; no floating point ({@code INV-MON-01}).
  *
- * <p><strong>Zero per currency</strong> ({@code INV-ACC-01}, reported - never corrected): the cumulative debits through
- * the period's end equal its credits, <em>and</em> the closing debit balances foot to the closing credit balances. A
- * currency failing either is {@link CurrencyCheck#zero() not zero}, listed in the verdict, and fails the close's check -
- * the run still completes: it is the evidence.
+ * <p><strong>Zero per currency, cumulative and for the period</strong> ({@code INV-ACC-01}, reported - never corrected;
+ * {@code CloseCheckCode.LEDGER_TRIAL_BALANCE}): three legs, each its own verdict - the <em>opening</em>'s debits equal
+ * its credits ({@link CurrencyCheck#openingZero()}), the <em>period</em>'s debits equal its credits
+ * ({@link CurrencyCheck#periodZero()}), and the cumulative debits through the period's end equal its credits with the
+ * closing debit balances footing to the closing credit balances ({@link CurrencyCheck#zero()}). The cumulative leg alone
+ * would pass an imbalance dated in an earlier period and offset in this one (`P14-TSK-009`'s review, I-1). A currency
+ * failing any leg is listed in the verdict and fails the close's check - the run still completes: it is the evidence.
  *
  * <p><strong>Equal to the ledger</strong> ({@code INV-ACC-06}): the trial balance's totals per currency - every row,
  * mapped and unmapped - equal the ledger's own, read in {@code TrialBalance.sweep}'s shape by a statement joining no
  * account, over <strong>three windows</strong>: before the period (the opening), within it (the movement), through its end
  * (the closing, computed here as opening plus movement). The ledger's windows take their bounds from the period's row,
- * not from {@link #range}, which this side computed - so a wrong range bound on either side lands a boundary day's lines
- * in the wrong window and turns a comparison false (`P14-TSK-007`'s review, M-6); {@link #rangeIsThePeriods()} compares
- * the two bounds directly, so the defect shows even on a month with no line on its boundary days.
+ * not from {@link #range}, which this side computed - so a wrong bound in the movement's range, or in either side's
+ * statements, lands a boundary day's lines in the wrong window and turns a comparison false (`P14-TSK-007`'s review, M-6,
+ * for the trial balance's own reads); {@link #rangeIsThePeriods()} compares the movement's range to the row's bounds
+ * directly, so that defect shows even on a month with no line on its boundary days. (The opening's bound is the run's
+ * first day, {@code ReportInputs.start()}; it is checked by the ledger comparison only.)
+ *
+ * <p><strong>The version.</strong> Every row - opening included - is under the run's version. When the previous period
+ * pinned another, the opening restates that period's closing under this version: the per-currency totals agree, the
+ * per-account figures move between accounts - a reclassification the statements bridge ({@link #openingReclassified()},
+ * ADR-0115; `P14-TSK-009`'s review, M-5).
  *
  * <p>Report code: a value and a pure fold; it reads and writes nothing ({@code ReportingNeverWritesTest}).
  *
@@ -50,14 +60,16 @@ import java.util.function.Consumer;
  * @param range the GL side's posting-date range - the run's month as this code computes it
  * @param periodStart the period row's {@code period_start}, as the database holds it
  * @param periodEnd the period row's {@code period_end}
- * @param mapped whether a mapping version was pinned - without one every line is in an unmapped row
+ * @param version the mapping version every row is read under - empty when none was pinned (every line unmapped)
+ * @param previousPeriodPin the version the previous period pins, when it pins one
  */
 public record TrialBalance(
         YearMonth period,
         JournalReads.Range range,
         LocalDate periodStart,
         LocalDate periodEnd,
-        boolean mapped,
+        Optional<GlMappingVersionId> version,
+        Optional<GlMappingVersionId> previousPeriodPin,
         List<AccountRow> accounts,
         List<UnmappedRow> unmapped,
         List<CurrencyCheck> currencies) {
@@ -70,9 +82,24 @@ public record TrialBalance(
         Objects.requireNonNull(range, "range");
         Objects.requireNonNull(periodStart, "periodStart");
         Objects.requireNonNull(periodEnd, "periodEnd");
+        Objects.requireNonNull(version, "version");
+        Objects.requireNonNull(previousPeriodPin, "previousPeriodPin");
         accounts = List.copyOf(accounts);
         unmapped = List.copyOf(unmapped);
         currencies = List.copyOf(currencies);
+    }
+
+    /** Whether a mapping version was pinned - without one every line is in an unmapped row. */
+    public boolean mapped() {
+        return version.isPresent();
+    }
+
+    /**
+     * The opening restates the previous period's closing under another version: the previous period pins a version, and
+     * it is not this run's. Reported - the statements' reclassification bridge (`-016`, `-017`) - never a failure.
+     */
+    public boolean openingReclassified() {
+        return previousPeriodPin.isPresent() && !previousPeriodPin.equals(version);
     }
 
     // ------------------------------------------------------------------ the values
@@ -190,13 +217,28 @@ public record TrialBalance(
         }
 
         /**
-         * {@code INV-ACC-01} for the period: the cumulative debits equal the credits, and the closing debit balances foot
-         * to the closing credit balances.
+         * {@code INV-ACC-01} cumulative through the period's end: the debits equal the credits, and the closing debit
+         * balances foot to the closing credit balances.
          */
         public boolean zero() {
             Sides closing = closing();
             return closing.debits().compareTo(closing.credits()) == 0
                     && closingDebitBalances.compareTo(closingCreditBalances) == 0;
+        }
+
+        /** {@code INV-ACC-01} before the period: the opening's debits equal its credits. */
+        public boolean openingZero() {
+            return opening.debits().compareTo(opening.credits()) == 0;
+        }
+
+        /** {@code INV-ACC-01} for the period: its debits equal its credits. */
+        public boolean periodZero() {
+            return movement.debits().compareTo(movement.credits()) == 0;
+        }
+
+        /** Every leg zero - the opening, the period and the cumulative closing. */
+        public boolean zeroEveryWay() {
+            return openingZero() && periodZero() && zero();
         }
 
         /** The trial balance equals the ledger over all three windows - debits, credits and lines. */
@@ -212,9 +254,19 @@ public record TrialBalance(
         return range.from().equals(periodStart) && range.to().equals(periodEnd);
     }
 
-    /** Every currency zero ({@code INV-ACC-01}). */
+    /** Every currency zero cumulatively through the period's end ({@code INV-ACC-01}). */
     public boolean balanced() {
         return currencies.stream().allMatch(CurrencyCheck::zero);
+    }
+
+    /** Every currency's opening zero. */
+    public boolean openingBalanced() {
+        return currencies.stream().allMatch(CurrencyCheck::openingZero);
+    }
+
+    /** Every currency's period zero. */
+    public boolean periodBalanced() {
+        return currencies.stream().allMatch(CurrencyCheck::periodZero);
     }
 
     /** Every currency equal to the ledger over the three windows. */
@@ -224,12 +276,12 @@ public record TrialBalance(
 
     /** No line outside the version's rules - reported; judged by the close's {@code GL_EQUALS_LEDGER}. */
     public boolean fullyMapped() {
-        return mapped && unmapped.isEmpty();
+        return mapped() && unmapped.isEmpty();
     }
 
-    /** The currencies not zero, sorted. */
+    /** The currencies failing any leg - opening, period or cumulative - sorted. */
     public List<String> outOfBalance() {
-        return currencies.stream().filter(check -> !check.zero()).map(CurrencyCheck::currency).toList();
+        return currencies.stream().filter(check -> !check.zeroEveryWay()).map(CurrencyCheck::currency).toList();
     }
 
     /** The currencies whose totals differ from the ledger's, sorted. */
@@ -238,11 +290,12 @@ public record TrialBalance(
     }
 
     /**
-     * The close's first check: zero per currency, equal to the ledger, over the period's own bounds. A {@code false} is
-     * reported and fails the check; nothing is corrected.
+     * The close's first check: zero per currency - before the period, for the period and cumulatively - equal to the
+     * ledger, over the period's own bounds. A {@code false} is reported and fails the check; nothing is corrected. Not the
+     * whole close: mapping completeness ({@link #fullyMapped()}) is {@code GL_EQUALS_LEDGER}'s.
      */
     public boolean passes() {
-        return rangeIsThePeriods() && balanced() && equalsLedger();
+        return rangeIsThePeriods() && openingBalanced() && periodBalanced() && balanced() && equalsLedger();
     }
 
     // ------------------------------------------------------------------ the fold
@@ -255,16 +308,22 @@ public record TrialBalance(
      *
      * @param period the run's month
      * @param range the GL side's range, as the caller read the movement
-     * @param row the period's row, as the database holds it
-     * @param version the pinned version's content - empty when none was pinned
+     * @param row the period's row, as the database holds it - its bounds and its predecessor's pin
+     * @param versionId the pinned version - empty when none was pinned
+     * @param version its content - present exactly when {@code versionId} is
      */
     public static TrialBalance fold(YearMonth period, JournalReads.Range range, TrialBalanceReads.Period row,
-            Optional<GlMappingVersion> version, List<JournalReads.Aggregate> opening,
-            List<JournalReads.Aggregate> movement, List<TrialBalanceReads.LedgerWindows> ledger) {
+            Optional<GlMappingVersionId> versionId, Optional<GlMappingVersion> version,
+            List<JournalReads.Aggregate> opening, List<JournalReads.Aggregate> movement,
+            List<TrialBalanceReads.LedgerWindows> ledger) {
         Objects.requireNonNull(period, "period");
         Objects.requireNonNull(range, "range");
         Objects.requireNonNull(row, "row");
+        Objects.requireNonNull(versionId, "versionId");
         Objects.requireNonNull(version, "version");
+        if (versionId.isPresent() != version.isPresent()) {
+            throw new IllegalArgumentException("a pinned version names its id and its content together");
+        }
         Map<String, MappingRule> rules = version.map(GlMappingVersion::rulesByKey).orElse(Map.of());
         Map<String, Building> accounts = new TreeMap<>();
         Map<String, Building> unmapped = new TreeMap<>();
@@ -321,8 +380,8 @@ public record TrialBalance(
         checks.forEach((currency, checking) -> currencyChecks.add(new CurrencyCheck(currency, checking.opening,
                 checking.movement, checking.ledgerOpening, checking.ledgerMovement, checking.ledgerClosing,
                 checking.debitBalances, checking.creditBalances, checking.unmappedLines)));
-        return new TrialBalance(period, range, row.start(), row.end(), version.isPresent(), accountRows, unmappedRows,
-                currencyChecks);
+        return new TrialBalance(period, range, row.start(), row.end(), versionId, row.previousPin(), accountRows,
+                unmappedRows, currencyChecks);
     }
 
     /** One aggregate on its way into a row - the opening's or the movement's. */
@@ -373,10 +432,13 @@ public record TrialBalance(
     // ------------------------------------------------------------------ the body
 
     /**
-     * The report's body, canonical: the rows, the unmapped rows, the per-currency proofs, the two ranges, the sign and the
-     * verdict. Every amount is written as minor units in a string beside its currency and scale - one scale per currency,
-     * the largest any of its amounts carries and never below its ISO minor unit, reached by an exact rescale - so a sum
-     * past {@code long} and a currency held at two scales are both written exactly.
+     * The report's body, canonical: the rows, the unmapped rows, the per-currency proofs, the two ranges, the version the
+     * previous period pins and whether the opening restates it, the sign and the verdict. Every amount is written as minor
+     * units in a string beside its currency and scale - one scale per currency, <strong>the largest its own amounts
+     * carry</strong>, reached by an exact rescale - so a sum past {@code long} and a currency held at two scales are both
+     * written exactly, and nothing outside the pinned inputs and the journal decides a byte: no JDK currency table
+     * (`P14-TSK-009`'s review, M-3; ADR-0003 - a JDK's currency data changing would otherwise change a FINAL run's
+     * regeneration).
      */
     public CanonicalJson.Obj body() {
         Map<String, Integer> scales = scales();
@@ -424,6 +486,8 @@ public record TrialBalance(
                             .put("closing", sides(check.ledgerClosing(), currency, scale)))
                     .put("closingDebitBalances", money(check.closingDebitBalances(), currency, scale))
                     .put("closingCreditBalances", money(check.closingCreditBalances(), currency, scale))
+                    .put("openingZero", check.openingZero())
+                    .put("periodZero", check.periodZero())
                     .put("zero", check.zero())
                     .put("equalsLedger", check.equalsLedger())
                     .put("unmappedLines", check.unmappedLines()));
@@ -432,7 +496,7 @@ public record TrialBalance(
         outOfBalance().forEach(outOfBalance::add);
         CanonicalJson.Arr disagreeing = CanonicalJson.array();
         disagreeing().forEach(disagreeing::add);
-        return CanonicalJson.object()
+        CanonicalJson.Obj body = CanonicalJson.object()
                 .put("sign", SIGN)
                 .put("range", CanonicalJson.object()
                         .put("from", range.from().toString())
@@ -443,7 +507,15 @@ public record TrialBalance(
                 .put("accounts", accountsOut)
                 .put("unmapped", unmappedOut)
                 .put("currencies", currenciesOut)
-                .put("verdict", CanonicalJson.object()
+                .put("openingReclassified", openingReclassified());
+        if (previousPeriodPin.isPresent()) {
+            body.put("previousPeriodPin", previousPeriodPin.get().value().toString());
+        } else {
+            body.putNull("previousPeriodPin");
+        }
+        return body.put("verdict", CanonicalJson.object()
+                        .put("openingBalanced", openingBalanced())
+                        .put("periodBalanced", periodBalanced())
                         .put("balanced", balanced())
                         .put("equalsLedger", equalsLedger())
                         .put("rangeIsThePeriods", rangeIsThePeriods())
@@ -457,7 +529,7 @@ public record TrialBalance(
     private Map<String, Integer> scales() {
         Map<String, Integer> scales = new TreeMap<>();
         for (CurrencyCheck check : currencies) {
-            int scale = isoMinorUnits(check.currency());
+            int scale = 0;
             for (Sides sides : List.of(check.opening(), check.movement(), check.ledgerOpening(), check.ledgerMovement(),
                     check.ledgerClosing())) {
                 scale = Math.max(scale, Math.max(sides.debits().scale(), sides.credits().scale()));
@@ -479,13 +551,6 @@ public record TrialBalance(
                 Math.max(movement.debits().scale(), movement.credits().scale()));
     }
 
-    private static int isoMinorUnits(String currency) {
-        try {
-            return CurrencyCode.of(currency).minorUnits();
-        } catch (IllegalArgumentException unknown) {
-            return 0;
-        }
-    }
 
     private static CanonicalJson.Obj sides(Sides sides, String currency, int scale) {
         return CanonicalJson.object()

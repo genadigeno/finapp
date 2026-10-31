@@ -238,7 +238,7 @@ class TrialBalanceRunDatabaseTest {
             }
 
             @Override
-            public List<LedgerWindows> ledger(Connection snapshot, AccountingPeriodId period, Optional<Instant> cut) {
+            public List<LedgerWindows> ledger(Connection snapshot, Period period, Optional<Instant> cut) {
                 return READS.ledger(snapshot, period, cut);
             }
         };

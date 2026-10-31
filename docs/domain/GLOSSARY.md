@@ -2547,9 +2547,10 @@ operational, a check is the close's evidence).
 **Is:** for a period, per GL Account and currency, the opening balance, debits, credits and closing balance, summing to
 zero per currency and equal to the ledger's own figures — a FINAL Report Run of kind `TRIAL_BALANCE` once the period is
 locked (`P14-TSK-009`). *(As built, `P14-TSK-009`: the opening a cumulative fold from inception under the period's own
-mapping version, balances debit-positive; every unmapped line an explicit row, never dropped; "equal to the ledger" over
-three windows - before, within, through the period's end - against the ledger's own totals bounded by the period row; a
-PROVISIONAL one, for an open period, counts the journal as of its claim.)*
+mapping version, balances debit-positive; every unmapped line an explicit row, never dropped; "zero per currency"
+before the period, for the period and cumulatively; "equal to the ledger" over three windows - before, within, through
+the period's end - against the ledger's own totals bounded by the period row; a PROVISIONAL one, for an open period,
+counts the journal as of its claim.)*
 **Not:** the ledger's continuous per-currency check (`TrialBalance.sweep`, `INV-ACC-01`), which stays the ledger's and
 never self-corrects; nor a stored balance.
 **Owned by:** `accounting`

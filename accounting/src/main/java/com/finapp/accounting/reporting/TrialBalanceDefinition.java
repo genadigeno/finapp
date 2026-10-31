@@ -17,10 +17,10 @@ import java.util.Optional;
  * definition: a period's {@link TrialBalance}, generated inside the run's read-only snapshot through
  * {@link TrialBalanceReads}.
  *
- * <p><strong>What it reads, in one snapshot.</strong> The period's row (its bounds, status and pin); the pinned version's
- * content; the opening's lines - every line dated before the period, from inception; the movement's lines - the period's
- * month, {@code JournalReads.Range.of}; and the ledger's own three windows, whose bounds the statement takes from the
- * period's row. Then the pure fold ({@link TrialBalance#fold}) and its canonical body.
+ * <p><strong>What it reads, in one snapshot.</strong> The period's row (its bounds, status, pin and its predecessor's
+ * pin); the pinned version's content; the opening's lines - every line dated before the period, from inception; the
+ * movement's lines - the period's month, {@code JournalReads.Range.of}; and the ledger's own three windows, bounded by
+ * the period's row as read. Then the pure fold ({@link TrialBalance#fold}) and its canonical body.
  *
  * <p><strong>The version is the run's pin.</strong> A FINAL run reads the version its period's lock pinned - and refuses
  * to answer if the period's row in the snapshot pins another ({@link PinMismatch}, the run fails
@@ -30,14 +30,20 @@ import java.util.Optional;
  * row, so zero and equality are still judged and {@code fullyMapped} is false.
  *
  * <p><strong>The cut</strong> (`P14-TSK-008`'s review, M-8): a PROVISIONAL run is labelled with its claim's instant, and
- * every read of it counts only entries created at or before that instant - so its content is the journal as asked, not
- * as it stood whenever the run was generated (a reclaimed run's generation can be minutes later). A FINAL run's range is
- * immutable after its lock: it reads no cut, and its content never names one.
+ * every read of it counts only entries created at or before that instant - so its content is approximately the journal
+ * as asked, not as it stood whenever the run was generated (a reclaimed run's generation can be minutes later). The cut is
+ * fuzzy both ways (`P14-TSK-009`'s review, M-2): {@code created_at} is the posting instance's clock, minted before its
+ * commit, so an entry minted before the cut but committed after the snapshot opened is absent, and an instance's clock
+ * skew moves an entry across the cut - a never-issued snapshot's labelled imprecision; only FINAL runs regenerate, so no
+ * false divergence follows. A FINAL run's range is immutable after its lock: it reads no cut, and its content never names
+ * one.
  *
  * <p><strong>For the close</strong> (`P14-TSK-011` triggers the FINAL run at lock, not this task): it claims
  * {@link #CODE} for the locked period with no parameters ({@code RunParameters.none()}), generates the run it holds
  * ({@code ReportRunGenerator.generateAndComplete}), and reads the verdict from the stored, frozen content - {@link
- * #VERDICT_PATH}, {@code true} or {@code false}. A {@code false} fails the close's check and is never corrected.
+ * #VERDICT_PATH}, {@code true} or {@code false} - having checked the run is FINAL and of this code and version. A
+ * {@code false} fails the close's check and is never corrected. {@code passes} is the trial balance's check only:
+ * mapping completeness is {@code GL_EQUALS_LEDGER}'s.
  *
  * <p>Report code: it reads through its port on the snapshot it is handed and writes nothing
  * ({@code ReportingNeverWritesTest}). A change to its output is a new {@link #VERSION}, the old one kept for
@@ -105,9 +111,9 @@ public final class TrialBalanceDefinition implements ReportDefinition {
         Optional<GlMappingVersion> version = pinned.map(id -> reads.version(snapshot, id));
         Optional<Instant> cut = inputs.basis() == RunBasis.PROVISIONAL ? Optional.of(inputs.cutAt()) : Optional.empty();
         JournalReads.Range range = JournalReads.Range.of(inputs.period());
-        return TrialBalance.fold(inputs.period(), range, period, version,
+        return TrialBalance.fold(inputs.period(), range, period, pinned, version,
                 reads.before(snapshot, inputs.start(), cut),
                 reads.within(snapshot, range, cut),
-                reads.ledger(snapshot, inputs.periodId(), cut));
+                reads.ledger(snapshot, period, cut));
     }
 }

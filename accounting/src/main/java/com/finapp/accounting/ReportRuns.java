@@ -42,8 +42,9 @@ import lombok.RequiredArgsConstructor;
  * one {@code INSERT}, nine read-backs (A4). The caller generates only a run it {@link Claimed#mine holds}.
  *
  * <p><strong>Which run answers.</strong> A {@code FINAL}-basis run answers while it is {@code GENERATING} or
- * {@code FINAL} under the period's present lock; a {@code PROVISIONAL}-basis run only while {@code GENERATING} (a
- * completed one is a snapshot of an earlier moment - a later ask is a new snapshot); a {@code FAILED} or
+ * {@code FINAL} under the period's present lock; a {@code PROVISIONAL}-basis run while {@code GENERATING}, and once
+ * completed only while its cut is younger than the freshness window on the database's clock and its period's revision is
+ * unchanged ({@link Provisional}, `P14-TSK-009`) - past it a later ask is a new snapshot; a {@code FAILED} or
  * {@code SUPERSEDED} run never - "a new revision allowed".
  *
  * <p><strong>Complete</strong> ({@link #complete}, T-complete): the period {@code FOR SHARE} again and the lock re-checked

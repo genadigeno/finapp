@@ -3,6 +3,8 @@ package com.finapp.accounting.reporting;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.accounting.AccountingPeriodId;
+import com.finapp.accounting.GlAccount;
+import com.finapp.accounting.GlClassification;
 import com.finapp.accounting.GlMappingVersion;
 import com.finapp.accounting.GlMappingVersionId;
 import com.finapp.accounting.JournalReads;
@@ -10,6 +12,7 @@ import com.finapp.accounting.MappingRule;
 import com.finapp.accounting.PeriodStatus;
 import com.finapp.accounting.RunBasis;
 import com.finapp.accounting.Side;
+import com.finapp.accounting.StatementSection;
 import com.finapp.accounting.TrialBalanceReads;
 import com.finapp.accounting.testing.InMemoryTrialBalanceReads;
 import com.finapp.accounting.testing.ReferenceGlMapping;
@@ -155,6 +158,70 @@ class TrialBalanceOracleTest {
                 assertThat(opened).as("seed %d, %s: March opens where February closed", seed, key)
                         .isEqualByComparingTo(closed);
             }
+        }
+    }
+
+    @Test
+    @DisplayName("zero cumulatively and for the period (the review's I-1): +X dated in January and -X in February offset"
+            + " in the cumulative sum, but February's opening and February's period are each out of balance - listed,"
+            + " the check failed; March, whose opening holds both, passes")
+    void offsettingImbalancesAcrossPeriodsAreCaught() {
+        for (int seed = 1; seed <= SEEDS; seed++) {
+            InMemoryTrialBalanceReads journal = journal(seed, true);
+            journal.line(new InMemoryTrialBalanceReads.JournalLine(LocalDate.of(2096, 1, 15), MINTED_FROM,
+                    "FEE_REVENUE", "OPERATIONAL", "JPY", 0, Side.DEBIT, 900));
+            journal.line(new InMemoryTrialBalanceReads.JournalLine(FEBRUARY.atDay(10), MINTED_FROM, "FEE_REVENUE",
+                    "OPERATIONAL", "JPY", 0, Side.CREDIT, 900));
+            TrialBalance february = definition(journal).trialBalance(SNAPSHOT, finalInputs(FEBRUARY));
+            assertThat(february.balanced()).as("seed %d: the cumulative leg alone is satisfied", seed).isTrue();
+            assertThat(february.openingBalanced()).isFalse();
+            assertThat(february.periodBalanced()).isFalse();
+            assertThat(february.outOfBalance()).containsExactly("JPY");
+            assertThat(february.equalsLedger()).as("reported as the ledger holds it - never corrected").isTrue();
+            assertThat(february.passes()).isFalse();
+            assertThat(CanonicalJson.text(february.body())).contains("\"openingBalanced\":false")
+                    .contains("\"periodBalanced\":false").contains("\"outOfBalance\":[\"JPY\"]");
+            assertThat(definition(journal).trialBalance(SNAPSHOT, finalInputs(MARCH)).passes())
+                    .as("seed %d: March's opening holds both lines and its period neither", seed).isTrue();
+        }
+    }
+
+    @Test
+    @DisplayName("a version change (the review's M-5): March under a version mapping FEE_REVENUE to a new account restates"
+            + " February's closing - the per-currency totals still agree, the per-account figures move from 4000 to the"
+            + " new account, both pass, and March names the reclassification")
+    void aVersionChangeReclassifiesTheOpening() {
+        GlMappingVersion second = ReferenceGlMapping.remapped(MARCH, "FEE_REVENUE", new GlAccount("4090",
+                "Fee income - restated", GlClassification.REVENUE, StatementSection.FEE_AND_COMMISSION_INCOME));
+        GlMappingVersionId secondId = GlMappingVersionId.next(IDS);
+        for (int seed = 1; seed <= SEEDS; seed++) {
+            InMemoryTrialBalanceReads journal = journal(seed, true).version(secondId, second)
+                    .period(new TrialBalanceReads.Period(march, MARCH.atDay(1), MARCH.atEndOfMonth(),
+                            PeriodStatus.LOCKED, Optional.of(secondId), Optional.of(VERSION_ID)))
+                    .post(FEBRUARY.atDay(12), MINTED_FROM, "EUR", 2, 4_200, "CASH_AT_BANK/OPERATIONAL",
+                            "FEE_REVENUE/OPERATIONAL");
+            TrialBalance closed = definition(journal).trialBalance(SNAPSHOT, finalInputs(FEBRUARY));
+            TrialBalance opened = definition(journal).trialBalance(SNAPSHOT, new ReportInputs(march, MARCH, 1,
+                    RunBasis.FINAL, Optional.of(Instant.EPOCH), Optional.of(secondId), Optional.of(2), Instant.EPOCH,
+                    RunParameters.none()));
+            assertThat(closed.passes()).isTrue();
+            assertThat(opened.passes()).as("seed %d", seed).isTrue();
+            assertThat(closed.openingReclassified()).isFalse();
+            assertThat(opened.openingReclassified()).isTrue();
+            assertThat(CanonicalJson.text(opened.body())).contains("\"openingReclassified\":true")
+                    .contains("\"previousPeriodPin\":\"" + VERSION_ID.value() + "\"");
+            for (TrialBalance.CurrencyCheck check : opened.currencies()) {
+                TrialBalance.Sides before = closed.currencies().stream()
+                        .filter(other -> other.currency().equals(check.currency())).findFirst()
+                        .map(TrialBalance.CurrencyCheck::closing).orElse(TrialBalance.Sides.NONE);
+                assertThat(check.opening().sameAs(before))
+                        .as("seed %d %s: the totals carry over whatever the version", seed, check.currency()).isTrue();
+            }
+            Map<String, BigDecimal[]> closings = rows(closed);
+            Map<String, BigDecimal[]> openings = rows(opened);
+            assertThat(openings.get("A:4090|EUR")[0]).as("the new account opens with what 4000 closed on")
+                    .isEqualByComparingTo(closings.get("A:4000|EUR")[3]);
+            assertThat(openings).doesNotContainKey("A:4000|EUR");
         }
     }
 
@@ -396,7 +463,7 @@ class TrialBalanceOracleTest {
             }
 
             @Override
-            public List<LedgerWindows> ledger(Connection snapshot, AccountingPeriodId period, Optional<Instant> cut) {
+            public List<LedgerWindows> ledger(Connection snapshot, Period period, Optional<Instant> cut) {
                 return reads.ledger(snapshot, period, cut);
             }
         };

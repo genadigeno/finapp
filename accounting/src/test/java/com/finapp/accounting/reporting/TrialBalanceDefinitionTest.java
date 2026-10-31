@@ -137,6 +137,8 @@ class TrialBalanceDefinitionTest {
         reads.post(MONTH.atDay(5), CUT, "EUR", 3, 1, CASH, FEES); // EUR at a second scale: 0.001
         reads.post(MONTH.atDay(6), CUT, "JPY", 0, 9_000_000_000_000_000_000L, CASH, WALLET);
         reads.post(MONTH.atDay(7), CUT, "JPY", 0, 9_000_000_000_000_000_000L, CASH, WALLET);
+        // BHD's own lines at scale 2: the content says 2 - the data's scale, never a JDK currency table's 3 (M-3).
+        reads.post(MONTH.atDay(8), CUT, "BHD", 2, 150, CASH, WALLET);
         String body = CanonicalJson.text(new TrialBalanceDefinition(reads).generate(SNAPSHOT,
                 inputs(RunBasis.FINAL, Optional.of(pinned))));
         assertThat(body)
@@ -151,8 +153,12 @@ class TrialBalanceDefinitionTest {
                 .contains("\"sign\":\"DEBIT_POSITIVE\"")
                 .contains("\"range\":{\"from\":\"2097-06-01\",\"through\":\"2097-06-30\"}")
                 .contains("\"periodBounds\":{\"from\":\"2097-06-01\",\"through\":\"2097-06-30\"}")
+                .contains("{\"currency\":\"BHD\",\"minor\":\"150\",\"scale\":\"2\"}")
+                .doesNotContain("\"currency\":\"BHD\",\"minor\":\"1500\",\"scale\":\"3\"")
+                .contains("\"openingReclassified\":false,\"periodBounds\"").contains("\"previousPeriodPin\":null")
                 .contains("\"verdict\":{\"balanced\":true,\"disagreeing\":[],\"equalsLedger\":true,\"fullyMapped\":true,"
-                        + "\"outOfBalance\":[],\"passes\":true,\"rangeIsThePeriods\":true}")
+                        + "\"openingBalanced\":true,\"outOfBalance\":[],\"passes\":true,\"periodBalanced\":true,"
+                        + "\"rangeIsThePeriods\":true}")
                 .doesNotContain(".0").doesNotContain("E+");
     }
 

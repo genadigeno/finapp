@@ -7,6 +7,8 @@ import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.GlMappingVersionId;
 import com.finapp.accounting.JdbcGlMappingStore;
 import com.finapp.accounting.JournalReads;
+import com.finapp.accounting.PeriodStatus;
+import com.finapp.accounting.TrialBalanceReads;
 import com.finapp.accounting.reporting.ReadOnlySnapshot;
 import com.finapp.accounting.reporting.ReportDefinitions;
 import com.finapp.accounting.reporting.TrialBalanceDefinition;
@@ -87,7 +89,8 @@ class LedgerTrialBalanceReadsTest {
         assertThat(LedgerTrialBalanceReads.GL_GROUPS)
                 .startsWith(" GROUP BY account.purpose, account.owner_kind, line.currency, line.scale, line.direction");
         assertThat(LedgerTrialBalanceReads.LEDGER).doesNotContain("ledger_account").doesNotContain("account.")
-                .contains("JOIN accounting.accounting_period bounds ON bounds.id = ?")
+                .as("no accounting table in a ledger statement (ADR-0006, the review's M-4)").doesNotContain("accounting.")
+                .contains("CROSS JOIN (SELECT CAST(? AS date) AS period_start, CAST(? AS date) AS period_end) bounds")
                 .contains("FILTER (WHERE entry.posting_date < bounds.period_start)")
                 .contains("FILTER (WHERE entry.posting_date >= bounds.period_start)")
                 .endsWith("WHERE entry.posting_date <= bounds.period_end");
@@ -97,8 +100,8 @@ class LedgerTrialBalanceReadsTest {
     }
 
     @Test
-    @DisplayName("the binding: the opening's bound and the cut, the movement's two days, the ledger's period id alone - its"
-            + " bounds never passed in; a FINAL run's read carries no cut")
+    @DisplayName("the binding: the opening's bound and the cut, the movement's two days, the ledger's the period row's own"
+            + " bounds - never the code's range; a FINAL run's read carries no cut; the period read with its predecessor")
     void theBinding() {
         List<String> prepared = new ArrayList<>();
         List<Object> bound = new ArrayList<>();
@@ -119,13 +122,21 @@ class LedgerTrialBalanceReadsTest {
 
         prepared.clear();
         bound.clear();
-        assertThat(reads.ledger(snapshot, period, Optional.empty())).isEmpty();
-        assertThat(bound).containsExactly(period.value());
+        // A row whose bounds differ from Range.of's month: the ledger binds the row's, whatever the code computes.
+        TrialBalanceReads.Period row = new TrialBalanceReads.Period(period, LocalDate.of(2097, 6, 1),
+                LocalDate.of(2097, 6, 29), PeriodStatus.LOCKED, Optional.empty());
+        assertThat(reads.ledger(snapshot, row, Optional.empty())).isEmpty();
+        assertThat(prepared.get(0)).doesNotContain("created_at");
+        assertThat(bound).containsExactly(java.sql.Date.valueOf("2097-06-01"), java.sql.Date.valueOf("2097-06-29"));
 
         prepared.clear();
         bound.clear();
         assertThat(reads.period(snapshot, period)).isEmpty();
         assertThat(prepared).containsExactly(LedgerTrialBalanceReads.PERIOD);
+        assertThat(bound).containsExactly(period.value());
+        assertThat(LedgerTrialBalanceReads.PERIOD).contains("LEFT JOIN accounting.accounting_period previous")
+                .contains("previous.period_start = (period.period_start - interval '1 month')::date")
+                .endsWith("WHERE period.id = ?");
     }
 
     @Test
@@ -152,7 +163,8 @@ class LedgerTrialBalanceReadsTest {
         assertThat(reads.period(view, period)).isEmpty();
         assertThat(reads.before(view, LocalDate.of(2097, 6, 1), Optional.of(Instant.EPOCH))).isEmpty();
         assertThat(reads.within(view, JournalReads.Range.of(YearMonth.of(2097, 6)), Optional.empty())).isEmpty();
-        assertThat(reads.ledger(view, period, Optional.of(Instant.EPOCH))).isEmpty();
+        assertThat(reads.ledger(view, new TrialBalanceReads.Period(period, LocalDate.of(2097, 6, 1),
+                LocalDate.of(2097, 6, 30), PeriodStatus.OPEN, Optional.empty()), Optional.of(Instant.EPOCH))).isEmpty();
         assertThatThrownBy(() -> reads.version(view, GlMappingVersionId.next(IDS)))
                 .as("the store's own read admitted and run - it then finds no version, never a refusal")
                 .isInstanceOf(IllegalStateException.class).isNotInstanceOf(ReadOnlySnapshot.Refused.class)

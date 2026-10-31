@@ -24,8 +24,8 @@ import java.util.function.Predicate;
  * {@link TrialBalanceReads} in memory (`P14-TSK-009`): the hermetic suites' journal, periods and versions, answering the
  * port the way {@code app}'s {@code LedgerTrialBalanceReads} answers it over the database - the GL side's lines grouped
  * by purpose, owner kind, currency, scale and side before a date or within a range; the ledger side per currency, scale
- * and side over the three windows of a period, <strong>its bounds taken from the period held here</strong>, never from
- * the caller; every read honouring the cut on the line's creation instant. The SQL's own behaviour is
+ * and side over the three windows of a period, <strong>its bounds the period row's</strong> - the row {@link #period}
+ * served, never the caller's month; every read honouring the cut on the line's creation instant. The SQL's own behaviour is
  * {@code TrialBalanceRunDatabaseTest}'s (owed, C5).
  */
 public final class InMemoryTrialBalanceReads implements TrialBalanceReads {
@@ -122,11 +122,8 @@ public final class InMemoryTrialBalanceReads implements TrialBalanceReads {
     }
 
     @Override
-    public List<LedgerWindows> ledger(Connection snapshot, AccountingPeriodId id, Optional<Instant> cut) {
-        Period period = periods.get(id);
-        if (period == null) {
-            return List.of();
-        }
+    public List<LedgerWindows> ledger(Connection snapshot, Period period, Optional<Instant> cut) {
+        Objects.requireNonNull(period, "period");
         Map<String, long[]> counts = new TreeMap<>();
         Map<String, BigInteger[]> sums = new TreeMap<>();
         Map<String, JournalLine> exemplars = new TreeMap<>();

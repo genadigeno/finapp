@@ -17,13 +17,15 @@ import java.util.Optional;
  *
  * <p><strong>Two sides, read independently.</strong> The <em>GL side</em> - the journal lines summed per purpose, owner
  * kind, currency, scale and side, {@link #before} a date (the opening: a cumulative fold from inception) and
- * {@link #within} a range (the movement) - takes its bounds from the caller, which computes them from the run's month.
- * The <em>ledger side</em> ({@link #ledger}) is the ledger's own trial balance in {@code TrialBalance.sweep}'s shape - per
- * currency, scale and side, no account joined, so no purpose and no mapping can bend it - over three windows (before
- * the period, within it, through its end) whose bounds the statement reads <strong>itself</strong> from the period's row
- * ({@code accounting V003}'s {@code period_start} and {@code period_end}). A wrong range bound on either side lands a
- * boundary day's lines in the wrong window, and the comparison of the two sides turns false (`P14-TSK-007`'s review,
- * M-6: GL = ledger over one shared range cannot catch it).
+ * {@link #within} a range (the movement) - takes its bounds from the caller, which computes them from the run's month
+ * ({@code JournalReads.Range.of}). The <em>ledger side</em> ({@link #ledger}) is the ledger's own trial balance in
+ * {@code TrialBalance.sweep}'s shape - per currency, scale and side, no account joined, so no purpose and no mapping can
+ * bend it - over three windows (before the period, within it, through its end) bounded by <strong>the period's row as
+ * the database holds it</strong> ({@link #period}: {@code accounting V003}'s {@code period_start} and
+ * {@code period_end}, read in the same snapshot), never by the code that bounded the GL side. A wrong range bound on
+ * either side lands a boundary day's lines in the wrong window, and the comparison of the two sides turns false
+ * (`P14-TSK-007`'s review, M-6: GL = ledger over one shared range cannot catch it). The ledger's statement names no
+ * {@code accounting} table: the row's bounds are bound to it as values (`P14-TSK-009`'s review, M-4; ADR-0006).
  *
  * <p><strong>The cut.</strong> A PROVISIONAL run is cut at its claim (`P14-TSK-008`'s review, M-8): every journal read
  * of it takes {@code cut} and counts only entries created at or before it - the journal as it stood when the run was
@@ -36,7 +38,10 @@ import java.util.Optional;
  */
 public interface TrialBalanceReads {
 
-    /** The period's row as the database holds it - its bounds, status and pinned version; empty when none has the id. */
+    /**
+     * The period's row as the database holds it - its bounds, status and pinned version, and the pin of the period before
+     * it, if there is one and it pins a version; empty when no period has the id.
+     */
     Optional<Period> period(Connection snapshot, AccountingPeriodId id);
 
     /** The content of mapping version {@code id}, as born - immutable ({@code INV-ACC-07}). */
@@ -54,16 +59,20 @@ public interface TrialBalanceReads {
 
     /**
      * The ledger's own totals per currency, scale and side over three windows of {@code period} - dated before its
-     * start, within it, and through its end - the bounds read by the statement from the period's row, no account joined;
-     * only entries created at or before {@code cut} when one is given.
+     * {@link Period#start()}, within it, and through its {@link Period#end()} - the bounds the period's row holds, no
+     * account joined; only entries created at or before {@code cut} when one is given.
      */
-    List<LedgerWindows> ledger(Connection snapshot, AccountingPeriodId period, Optional<Instant> cut);
+    List<LedgerWindows> ledger(Connection snapshot, Period period, Optional<Instant> cut);
 
     // ------------------------------------------------------------------ the values
 
-    /** A period's row: its bounds (V003 holds them a calendar month), its status and the version its lock pinned. */
+    /**
+     * A period's row: its bounds (V003 holds them a calendar month), its status, the version its lock pinned, and the pin
+     * of the period before it - the version the previous closing was read under, when it has one (`P14-TSK-009`'s review,
+     * M-5: an opening under another version is a reclassification of that closing).
+     */
     record Period(AccountingPeriodId id, LocalDate start, LocalDate end, PeriodStatus status,
-            Optional<GlMappingVersionId> pin) {
+            Optional<GlMappingVersionId> pin, Optional<GlMappingVersionId> previousPin) {
 
         public Period {
             Objects.requireNonNull(id, "id");
@@ -71,6 +80,13 @@ public interface TrialBalanceReads {
             Objects.requireNonNull(end, "end");
             Objects.requireNonNull(status, "status");
             Objects.requireNonNull(pin, "pin");
+            Objects.requireNonNull(previousPin, "previousPin");
+        }
+
+        /** A period whose predecessor pins nothing (or does not exist). */
+        public Period(AccountingPeriodId id, LocalDate start, LocalDate end, PeriodStatus status,
+                Optional<GlMappingVersionId> pin) {
+            this(id, start, end, status, pin, Optional.empty());
         }
     }
 

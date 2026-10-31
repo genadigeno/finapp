@@ -25872,19 +25872,28 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   currency, scale and side **before** the period's first day (the opening: a cumulative fold from inception) and
   **within** `Range.of(month)` - and the **ledger side** in `TrialBalance.sweep`'s shape (`journal_line` per currency,
   scale, direction, no account joined) over three windows (before, within, through the end) split by `FILTER`, **its
-  bounds read by the statement from `accounting.accounting_period`**, never from the code that bounded the GL side.
+  bounds the period row's** (`period_start`, `period_end`, read in the same snapshot and bound as values - no
+  `accounting` table in the `ledger` statement, the review's M-4), never the code's `Range.of` that bounded the GL side.
   **The fold** `reporting.TrialBalance`: per GL account × currency the opening (debit-positive), debits, credits, closing;
   every line the version does not map in an explicit unmapped row (all of them when no version is pinned -
-  `fullyMapped=false`); per currency the totals beside the ledger's windows; `zero` = cumulative debits equal credits
-  **and** the closing balances foot (`INV-ACC-01`, reported - a non-zero currency is listed and fails the check, the run
-  still completes, nothing corrected); `equalsLedger` over all three windows (catching a wrong range bound on either
-  side - `-007`'s M-6); `rangeIsThePeriods` (the code's range against the row's bounds); `passes` = the three. The body:
-  canonical JSON, one scale per currency (the largest it carries, never below ISO), minor units as exact integers of any
-  size, sorted rows; the verdict at `{body,verdict,passes}` - what `-011` reads after claiming `TRIAL_BALANCE` for the
+  `fullyMapped=false`); per currency the totals beside the ledger's windows; **zero in three legs** (the review's I-1):
+  the opening's debits = credits (`openingBalanced`), the period's (`periodBalanced`), and cumulatively through the end
+  with the closing balances footing (`balanced`) - `INV-ACC-01`, reported: a currency failing any leg is listed and fails
+  the check, the run still completes, nothing corrected; `equalsLedger` over all three windows (a wrong bound caught for
+  the trial balance's own reads and `Range.of` - `-007`'s M-6; `-007`'s GL-door statements stay `P14-TST-002`'s);
+  `rangeIsThePeriods` (the movement's range against the row's bounds - the opening's bound, `ReportInputs.start()`, is
+  checked by the ledger comparison only); `passes` = all of them. The body: canonical JSON, one scale per currency - the
+  largest its own amounts carry, no JDK currency table (the review's M-3) - minor units as exact integers of any size,
+  sorted rows, the previous period's pin and `openingReclassified` (the review's M-5); the verdict at
+  `{body,verdict,passes}` - what `-011` reads after claiming `TRIAL_BALANCE` for the
   locked period and generating the run it holds. **The version is the pin**: a FINAL run whose period row pins another
   version is refused (`PinMismatch` → `DEFINITION_FAILED`); a PROVISIONAL run reads its claim's version. **M-8, routed
   by `-008`'s review**: (1) the cut - every read of a PROVISIONAL run counts only entries `created_at <= cut_at`, so its
-  content is the journal as asked, not as generated; (2) the bound - a completed PROVISIONAL run answers its question
+  content is approximately the journal as asked, not as generated - fuzzy both ways (the review's M-2: `created_at` is
+  the posting instance's clock, minted before its commit, and entries in flight at the snapshot are absent); a
+  deviation from the plan's "cut at the journal's settle horizon" - the alternatives `cut_at` less the settle horizon
+  (ADR-0111's shape) or labelling the run with its snapshot's instant; no false divergence follows, only FINAL runs
+  regenerate; (2) the bound - a completed PROVISIONAL run answers its question
   while its cut is younger than `finapp.accounting.report.provisional-freshness` (`ReportRuns.Provisional`, default 15
   minutes, one second to a day) on the **database's** clock (`ReportRunStore.cutWithin`) and its period's revision is
   unchanged - at most one PROVISIONAL row per question per window; an owner item. **Found at the gate**:
@@ -25894,17 +25903,38 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   a ticker or the clock. **Not done, recorded**: consolidating `GlSnapshots` and
   `JdbcReportSnapshots` (two exception vocabularies, two doors' behaviours and their suites - not small) - a follow-up;
   a chained opening (the previous FINAL run's closing) - the cumulative fold is independent each time and costs O(history)
-  per generation, bounded by the 4-minute budget. Tests: hermetic `TrialBalanceOracleTest` (6, generated journals over
-  24 seeds - five currencies at three scales and EUR at a fourth, mapped and unmapped keys, the boundary days loaded -
-  against a line-by-line oracle: `#theTrialBalanceIsTheOracles`, `#zeroPerCurrency`, `#equalsTheLedger`,
-  `#openingIsThePreviousClosing`, `#aWrongRangeBoundIsCaught`, `#regeneratesByteIdentical`), `TrialBalanceDefinitionTest`
-  (7), `TrialBalanceRunsTest` (5, through `-008`'s machine; ten claimers past the window one revision),
-  `LedgerTrialBalanceReadsTest` (5), `ReportRunsTest` (one case past the window); eight probes in `MUTATION_TESTING.md`
-  §2 (the entry's: the opening fold dropped → `TrialBalanceOracleTest#openingIsThePreviousClosing` red, the hermetic side
-  demonstrated); owed (C5) `TrialBalanceRunDatabaseTest` (7: `#zeroPerCurrency`, `#equalsTheLedger`,
+  per generation: two whole-history scans (the opening's and the ledger's), bounded by the 4-minute budget, so at volume
+  `GENERATION_TIMED_OUT` would block the closes - `P14-TST-002` or the phase-exit database pass states a volume (the
+  review's M-7). Tests: hermetic `TrialBalanceOracleTest` (8, generated journals over 24 seeds - five currencies at three
+  scales and EUR at a fourth, mapped and unmapped keys, the boundary days loaded - against a line-by-line oracle:
+  `#theTrialBalanceIsTheOracles`, `#zeroPerCurrency`, `#offsettingImbalancesAcrossPeriodsAreCaught`, `#equalsTheLedger`,
+  `#openingIsThePreviousClosing`, `#aVersionChangeReclassifiesTheOpening`, `#aWrongRangeBoundIsCaught`,
+  `#regeneratesByteIdentical`), `TrialBalanceDefinitionTest` (7), `TrialBalanceRunsTest` (5, through `-008`'s machine; ten
+  claimers past the window one revision), `LedgerTrialBalanceReadsTest` (5), `ReportRunsTest` (one case past the
+  window); eleven probes in `MUTATION_TESTING.md` §2, re-performed after the review's fixes (the entry's: the opening fold
+  dropped → `TrialBalanceOracleTest#openingIsThePreviousClosing` red, the hermetic side demonstrated); owed (C5)
+  `TrialBalanceRunDatabaseTest` (7: `#zeroPerCurrency`, `#equalsTheLedger`,
   `#openingIsThePreviousClosing`, `#aWrongRangeBoundIsCaught`, `#aFinalRunRegeneratesIdentical`,
   `#aProvisionalRunReadsAtItsCut`, `#aFreshProvisionalIsReused` - the fixture's January and February 1999 periods,
   entries dated 1998-12-15, 1999-01-01, 1999-01-31 and 1999-02-01).
+- **As built - the independent review** (2026-11-01, `MERGE`, nothing CRITICAL; applied on the branch before the merge,
+  since a FINAL run freezes v1's body): **I-1** zero per currency "cumulative and for the period"
+  (`CloseCheckCode.LEDGER_TRIAL_BALANCE`): the cumulative leg alone restated itself (the rows partition the aggregates)
+  and passed +X dated in January offset by -X in February - the opening's and the period's debits = credits added as
+  their own verdict fields (`openingBalanced`, `periodBalanced`, per currency `openingZero`, `periodZero`) and folded into
+  `passes`; `#offsettingImbalancesAcrossPeriodsAreCaught`, probed (both legs answering `true` → red). **M-3** the output
+  scale no longer floors at the JDK's ISO minor units - the data's own scales only, so a JDK currency-data change cannot
+  make a FINAL regeneration `DIVERGED`; probed. **M-4** the ledger statement no longer joins `accounting.accounting_period`
+  (ADR-0006): the period row is read once in the snapshot and its `period_start`/`period_end` bound as values - as
+  independent of `Range.of`; `rangeIsThePeriods` and the wrong-bound probes kept; a new probe (the end bound from the
+  month, not the row). **M-5** a mapping-version change restates the opening per GL account (the per-currency totals
+  still agree) - recorded in ADR-0115 as the reclassification bridge `-016`/`-017` need; the content names the previous
+  period's pin and `openingReclassified`; `#aVersionChangeReclassifiesTheOpening`. **M-8** `ReportRuns`' stale javadoc
+  corrected. Recorded only: **M-1** the M-6 claims narrowed to the trial balance's own reads and `Range.of` (the
+  opening's bound outside `rangeIsThePeriods`); **M-2** the PROVISIONAL cut's fuzziness and its deviation from the plan
+  (above, owner item 4); **M-6** routed to `P14-TSK-011`'s entry; **M-7** the O(history) scans (above, owner item 2).
+  The review's routing: M-6 → `-011`; the reclassification bridge → `-016`/`-017`; a volume → `P14-TST-002` / the
+  phase-exit database pass.
 
 **P14-TSK-010 — Rule conformance, source completeness and accounting breaks** — `READY` (2026-10-31; marked by the coordinator at `P14-TSK-007`'s merge, master `9e1497f2`; every dependency `COMPLETE`)
 - **Objective**: detect every GL-side discrepancy and record it once, never correct it (ADR-0117, `INV-ACC-12`).
@@ -25936,6 +25966,12 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 
 **P14-TSK-011 — The close run and its readiness checks** — `PLANNED`
 - **Routed by `P14-TSK-006`'s review (2026-10-31)**: (I-1, IMPORTANT) `ACCRUALS_COMPLETE` judged after the lock can pass while the locked period is short of interest - a catch-up after the lock floors the period's accrual dates (`LND-2` v2) to the first open date and `AccrualCompleteness.blocking(periodEnd)` then reads empty; judge it inside the lock's transaction with the cutoff key exclusive (and refuse the lock while it is non-empty), or find and disclose the `LND-2` entries with `value_date <= period end < posting_date` (they carry `flooredFrom=`) - decide in the design. (M-1) lending posts "today" on the servicing zone's business date (zones to -14:00): a lock under a 1-business-day grace at 00:00 UTC can refuse a western zone's same-day postings for hours - make `lockableFrom` account for the westernmost servicing zone or raise the grace minimum to 2 (default 2 is safe). (M-2) the reconciliation expectation reads the floored posting date while `ReconciliationReports.providerCosts` groups by the batch's stated `accepted_on` - align or disclose.
+- **Routed by `P14-TSK-009`'s review (2026-11-01, M-6)**: the `TRIAL_BALANCE` verdict's `passes` is not sufficient for
+  the close - `GL_EQUALS_LEDGER` must fail when the period pins no version or `fullyMapped` is false; before reading
+  `{body,verdict,passes}` the check confirms the run is `FINAL` (not `SUPERSEDED`) and of the definition code and version
+  it expects; `LEDGER_TRIAL_BALANCE` is that verdict, with I-1's legs (`openingBalanced`, `periodBalanced`, `balanced`);
+  and gate criterion 1's planted unbalanced fixture cannot be seen from a separate snapshot (the ledger's balance trigger
+  is deferred to commit, so an unbalanced entry never commits) - this task designs how the planted case is made visible.
 - **Objective**: a resumable, leaderless run of recorded checks per locked period (`INV-ACC-09`, `PHASE_14_PLAN.md` §13.5).
 - **Bounded context**: Accounting / GL.
 - **Dependencies**: `-006`, `-009`, `-010`.

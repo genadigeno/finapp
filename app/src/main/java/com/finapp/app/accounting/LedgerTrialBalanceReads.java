@@ -39,16 +39,21 @@ import java.util.UUID;
  * <p><strong>The two sides.</strong> {@link #BEFORE} and {@link #WITHIN} are the GL side - the account joined for its
  * purpose and owner kind, grouped by scale so no sum crosses one, bounded by the caller's dates. {@link #LEDGER} is the
  * ledger's own trial balance in {@code TrialBalance.sweep}'s shape - {@code journal_line} grouped by currency, scale and
- * direction, <strong>no account joined</strong> - over three windows it splits with {@code FILTER}, its bounds read by
- * the statement itself from {@code accounting.accounting_period} ({@code period_start}, {@code period_end}), so they
- * never pass through the code that bounded the GL side (`P14-TSK-007`'s review, M-6). The version's content is the
- * mapping store's own read ({@link GlMappingStore#content} - plain {@code SELECT}s).
+ * direction, <strong>no account joined</strong> - over three windows it splits with {@code FILTER}, its bounds the
+ * period row's {@code period_start} and {@code period_end} as {@link #PERIOD} read them in the same snapshot, bound as
+ * values - never the code's {@code Range.of} that bounded the GL side (`P14-TSK-007`'s review, M-6), and no
+ * {@code accounting} table named in a {@code ledger} statement (ADR-0006; `P14-TSK-009`'s review, M-4). The version's
+ * content is the mapping store's own read ({@link GlMappingStore#content} - plain {@code SELECT}s).
  */
 public final class LedgerTrialBalanceReads implements TrialBalanceReads {
 
-    /** The period's row - its bounds, status and pin. */
-    static final String PERIOD = "SELECT period_start, period_end, status, pinned_mapping_version_id"
-            + " FROM accounting.accounting_period WHERE id = ?";
+    /** The period's row - its bounds, status and pin - and the pin of the period before it (one month earlier). */
+    static final String PERIOD = "SELECT period.period_start, period.period_end, period.status,"
+            + " period.pinned_mapping_version_id, previous.pinned_mapping_version_id AS previous_pin"
+            + " FROM accounting.accounting_period period"
+            + " LEFT JOIN accounting.accounting_period previous"
+            + " ON previous.period_start = (period.period_start - interval '1 month')::date"
+            + " WHERE period.id = ?";
 
     private static final String GL_COLUMNS = "SELECT account.purpose, account.owner_kind, line.currency, line.scale,"
             + " line.direction, SUM(line.amount_minor) AS total, COUNT(*) AS lines";
@@ -71,7 +76,8 @@ public final class LedgerTrialBalanceReads implements TrialBalanceReads {
 
     /**
      * The ledger's own windows - before the period, within it, through its end - per currency, scale and direction, no
-     * account joined, the bounds the period row's.
+     * account joined, the bounds the period row's, bound as values: the statement names no {@code accounting} table
+     * (ADR-0006; `P14-TSK-009`'s review, M-4).
      */
     static final String LEDGER = "SELECT line.currency, line.scale, line.direction,"
             + " SUM(line.amount_minor) FILTER (WHERE entry.posting_date < bounds.period_start) AS before_total,"
@@ -81,7 +87,7 @@ public final class LedgerTrialBalanceReads implements TrialBalanceReads {
             + " SUM(line.amount_minor) AS through_total, COUNT(*) AS through_lines"
             + " FROM ledger.journal_line line"
             + " JOIN ledger.journal_entry entry ON entry.id = line.entry_id"
-            + " JOIN accounting.accounting_period bounds ON bounds.id = ?"
+            + " CROSS JOIN (SELECT CAST(? AS date) AS period_start, CAST(? AS date) AS period_end) bounds"
             + " WHERE entry.posting_date <= bounds.period_end";
 
     static final String LEDGER_GROUPS = " GROUP BY line.currency, line.scale, line.direction"
@@ -102,10 +108,9 @@ public final class LedgerTrialBalanceReads implements TrialBalanceReads {
                 if (!row.next()) {
                     return Optional.empty();
                 }
-                UUID pin = row.getObject("pinned_mapping_version_id", UUID.class);
                 return Optional.of(new Period(id, row.getDate("period_start").toLocalDate(),
                         row.getDate("period_end").toLocalDate(), PeriodStatus.valueOf(row.getString("status")),
-                        pin == null ? Optional.empty() : Optional.of(GlMappingVersionId.of(pin))));
+                        version(row, "pinned_mapping_version_id"), version(row, "previous_pin")));
             }
         } catch (SQLException failure) {
             throw failed("reading the trial balance's period", failure);
@@ -151,14 +156,15 @@ public final class LedgerTrialBalanceReads implements TrialBalanceReads {
     }
 
     @Override
-    public List<LedgerWindows> ledger(Connection snapshot, AccountingPeriodId period, Optional<Instant> cut) {
+    public List<LedgerWindows> ledger(Connection snapshot, Period period, Optional<Instant> cut) {
         Objects.requireNonNull(period, "period");
         Objects.requireNonNull(cut, "cut");
         try (PreparedStatement read = snapshot.prepareStatement(LEDGER + (cut.isPresent() ? AT_THE_CUT : "")
                 + LEDGER_GROUPS)) {
-            read.setObject(1, period.value());
+            read.setDate(1, Date.valueOf(period.start()));
+            read.setDate(2, Date.valueOf(period.end()));
             if (cut.isPresent()) {
-                read.setTimestamp(2, Timestamp.from(cut.get()));
+                read.setTimestamp(3, Timestamp.from(cut.get()));
             }
             List<LedgerWindows> windows = new ArrayList<>();
             try (ResultSet row = read.executeQuery()) {
@@ -187,6 +193,11 @@ public final class LedgerTrialBalanceReads implements TrialBalanceReads {
             }
         }
         return aggregates;
+    }
+
+    private static Optional<GlMappingVersionId> version(ResultSet row, String column) throws SQLException {
+        UUID id = row.getObject(column, UUID.class);
+        return id == null ? Optional.empty() : Optional.of(GlMappingVersionId.of(id));
     }
 
     /** A {@code SUM(bigint)} - {@code numeric}, exact; {@code NULL} (a window no line fell in) is zero. */
