@@ -290,7 +290,7 @@ class AccountingPeriodsTest {
                     events.add(envelope);
                     payloads.add(payload);
                 },
-                IDS, clock);
+                IDS, clock, (unitOfWork, period, actor, correlation) -> 0);
     }
 
     /** Opens {@code month} - the first period when none exists - and answers its id. */

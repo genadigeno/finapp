@@ -2555,7 +2555,10 @@ never self-corrects; nor a stored balance.
 **Is:** one generation of one report definition and version for one period, revision and parameter set, born once,
 generated in a read-only transaction, its content and sha256 frozen at completion, recording its mapping version,
 valuation rate set and journal cut; FINAL for a locked or closed period, PROVISIONAL otherwise; superseded, never deleted,
-on a reopen (`INV-ACC-04`, ADR-0115, `P14-TSK-008`).
+on a reopen (`INV-ACC-04`, ADR-0115, `P14-TSK-008`). *(As built, `P14-TSK-008`, accounting `V004`: the revision is the
+run's own - a new one when the latest run no longer answers its question; a FINAL run records the lock it read under and
+is superseded when its period returns to `OPEN` by an unlock as well as a reopen; its content is stored as the issued
+canonical JSON text, the hash recomputed by the database.)*
 **Not:** a source of truth (it is output; the journal is truth), nor an operational report (a live, unissued read).
 **Owned by:** `accounting`
 

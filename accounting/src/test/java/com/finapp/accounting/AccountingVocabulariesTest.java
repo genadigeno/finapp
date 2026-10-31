@@ -204,7 +204,11 @@ class AccountingVocabulariesTest {
                         "accounting.ReasonRequired=422",
                         // P14-TSK-007: the GL doors - no version pinned or in force for the period; a read past its
                         // statement timeout (the review's I-2).
-                        "accounting.NoActiveMapping=409", "accounting.ReadTimedOut=503");
+                        "accounting.NoActiveMapping=409", "accounting.ReadTimedOut=503",
+                        // P14-TSK-008: the report run doors - an unknown definition, parameters it does not take, a
+                        // regeneration of a run that is not FINAL.
+                        "accounting.ReportDefinitionUnknown=422", "accounting.ReportParametersInvalid=422",
+                        "accounting.ReportRunStale=409");
         // P14-TSK-002: the posting rule register's audited read - no reason, an operator's read.
         assertThat(AccountingAuditAction.POSTING_RULES_READ.code()).isEqualTo("accounting.PostingRulesRead");
         assertThat(AccountingAuditAction.POSTING_RULES_READ.requiresReason()).isFalse();
@@ -217,7 +221,10 @@ class AccountingVocabulariesTest {
                         "accounting.PeriodOpened=false", "accounting.PeriodLocked=false",
                         "accounting.PeriodUnlockProposed=true", "accounting.PeriodUnlocked=true",
                         // P14-TSK-007: the GL read, an operator's read - no reason.
-                        "accounting.GlRead=false");
+                        "accounting.GlRead=false",
+                        // P14-TSK-008: a run's conclusion, a regeneration's comparison and an audited read - no reason.
+                        "accounting.ReportGenerated=false", "accounting.ReportRegenerated=false",
+                        "accounting.ReportRead=false");
     }
 
     // ------------------------------------------------------------------

@@ -4703,6 +4703,133 @@ provider's version label, the other closed codes, the platform's identifiers, co
 | `rescreening_permit` | `concluded_at` | `INTERNAL` | The database's stamp |
 | `rescreening_permit` | `correlation_id` | `INTERNAL` | The activation's correlation |
 
+### `accounting.report_run` - the report run - *added by `P14-TSK-008`*
+
+`accounting V004`: the issued answer to one question - a report definition and version, a period, a parameter set -
+born once by the plan's key, generated in a `REPEATABLE READ READ ONLY` transaction, completed with its content and its
+`content_sha256` in one statement, then frozen (`report_run_content_is_frozen`); `FINAL → SUPERSEDED` when its period
+returns to `OPEN`, never deleted. **No money is stored as truth**: the **content** is output - aggregates of the
+platform's books (GL figures per account and currency, counts) - `CONFIDENTIAL` (`PHASE_14_PLAN.md` §12), served only
+by the audited operator read (`accounting.ReportRead`), never logged, announced (the event carries the hash, not the
+content) or put in a span or a meter; its hash `INTERNAL` (a SHA-256 digest reveals nothing of the content - it is the
+issued output's identifier, published in `accounting.ReportRunCompleted` for lineage). The **parameters** are an accountant's request - plain codes, dates and
+currencies, screened for instrument shapes - `INTERNAL`. The requester `CONFIDENTIAL` (a person's identifier, or the
+platform's); closed codes, the platform's own identifiers, counters and the database's stamps `INTERNAL`. *(The six
+earlier `accounting` tables are classified in the next section, added beside this one at the coordinator's request after
+`P14-TSK-008`'s review.)*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `report_run` | `id` | `INTERNAL` | The run's identity - the event's aggregate |
+| `report_run` | `definition` | `INTERNAL` | A definition's code - a `ReportKind` name for a production report |
+| `report_run` | `definition_version` | `INTERNAL` | The definition's version, pinned |
+| `report_run` | `period_id` | `INTERNAL` | The accounting period - accounting's own row |
+| `report_run` | `revision` | `INTERNAL` | The run's revision for its question |
+| `report_run` | `parameters` | `INTERNAL` | The question's canonical parameters - the values a definition declares (codes, dates, currencies; never a person's identifier), plain, bounded and screened for instrument shapes, and the pinned rate set's id |
+| `report_run` | `parameters_hash` | `INTERNAL` | The parameters' sha256 - the key's last member, recomputed by the database |
+| `report_run` | `period_revision` | `INTERNAL` | The period's revision at the claim |
+| `report_run` | `basis` | `INTERNAL` | A closed code - `FINAL` or `PROVISIONAL` |
+| `report_run` | `period_locked_at` | `INTERNAL` | The lock a FINAL run was claimed under - the period's own stamp |
+| `report_run` | `mapping_version_id` | `INTERNAL` | The GL mapping version pinned - accounting's own row |
+| `report_run` | `valuation_rate_set_id` | `INTERNAL` | The valuation rate set pinned - by id, no foreign key until `P14-TSK-014`'s table |
+| `report_run` | `cut_at` | `INTERNAL` | The claim's database clock - a PROVISIONAL run's journal cut |
+| `report_run` | `requested_by` | `CONFIDENTIAL` | Who asked - an accountant, or the platform |
+| `report_run` | `requested_by_type` | `INTERNAL` | A closed actor type - a person's or `SYSTEM`, by `CHECK` |
+| `report_run` | `claimed_at` | `INTERNAL` | The database's stamp |
+| `report_run` | `status` | `INTERNAL` | The machine's state |
+| `report_run` | `attempt` | `INTERNAL` | A count - the generator's attempts, one more per reclaim |
+| `report_run` | `lease_until` | `INTERNAL` | The generator's lease - the database's clock plus the configured lease |
+| `report_run` | `content` | `CONFIDENTIAL` | The issued output - aggregates of the platform's books in canonical JSON; served only by the audited read, never logged, announced or metered |
+| `report_run` | `content_sha256` | `INTERNAL` | The content's sha256, recomputed by the database - a digest that reveals nothing of the content, the issued output's identifier, published in the completion event for lineage |
+| `report_run` | `completed_at` | `INTERNAL` | The database's stamp |
+| `report_run` | `failure_code` | `INTERNAL` | A closed code - why the run failed |
+| `report_run` | `failed_at` | `INTERNAL` | The database's stamp |
+| `report_run` | `superseded_at` | `INTERNAL` | The database's stamp - its period returned to `OPEN` |
+| `report_run` | `superseded_correlation_id` | `INTERNAL` | The unlock's (or reopen's) correlation |
+| `report_run` | `correlation_id` | `INTERNAL` | The claiming flow's correlation |
+
+### `accounting.gl_mapping_version`, `gl_account`, `gl_mapping_rule`, `gl_mapping_version_event`, `accounting_period` and `period_event` - the GL mapping and the periods - *classified by `P14-TSK-008` at the coordinator's request; built by `P14-TSK-003` (`V002`) and `P14-TSK-005` (`V003`)*
+
+`accounting V002`: a GL mapping version - the GL chart and its purpose -> GL account rules, proposed by an accountant,
+activated by a second person (four eyes by `CHECK`), immutable from birth, retired beside its successor, with its
+history. `accounting V003`: the accounting period - a calendar month of `posting_date`, opened by the system, locked by
+an accountant (the ledger's cutoff advanced and the version in force pinned), unlocked under four eyes - with its
+history. **No money, no customer**: a GL chart is the platform's own configuration (codes, names, classifications and
+statement sections of a reference chart - `INTERNAL`), a rule names a ledger purpose and an owner kind, never an owner;
+a period is a month. The **persons** - proposers, deciders, lockers, the unlock's two, every history actor - are
+`CONFIDENTIAL` (who acted on the books' controls), their closed actor types `INTERNAL`; every **reason** is a person's
+text, `RESTRICTED-PII`, screened for instrument shapes (`AccountingReasons`), never served or logged; closed codes, the
+platform's own identifiers, months, versions, counters and the database's stamps `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `gl_mapping_version` | `id` | `INTERNAL` | The version's identity |
+| `gl_mapping_version` | `version` | `INTERNAL` | Its number - what every GL figure names |
+| `gl_mapping_version` | `status` | `INTERNAL` | The machine's state |
+| `gl_mapping_version` | `effective_from_period` | `INTERNAL` | The month it takes effect from |
+| `gl_mapping_version` | `effective_to_period` | `INTERNAL` | The month its successor took over - set at its retirement |
+| `gl_mapping_version` | `proposed_by` | `CONFIDENTIAL` | The accountant who proposed it |
+| `gl_mapping_version` | `proposed_by_type` | `INTERNAL` | A closed actor type - a person's, by `CHECK` |
+| `gl_mapping_version` | `proposed_at` | `INTERNAL` | The database's stamp |
+| `gl_mapping_version` | `proposal_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
+| `gl_mapping_version` | `decided_by` | `CONFIDENTIAL` | The second person who activated or rejected it - never the proposer to activate, by `CHECK` |
+| `gl_mapping_version` | `decided_by_type` | `INTERNAL` | A closed actor type - a person's |
+| `gl_mapping_version` | `decided_at` | `INTERNAL` | The database's stamp |
+| `gl_mapping_version` | `decision_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
+| `gl_mapping_version` | `retired_at` | `INTERNAL` | The database's stamp of its retirement |
+| `gl_mapping_version` | `correlation_id` | `INTERNAL` | The proposing flow's correlation |
+| `gl_account` | `version_id` | `INTERNAL` | The version it belongs to - accounting's own row |
+| `gl_account` | `code` | `INTERNAL` | The GL account's code in the reference chart - four to eight digits, by `CHECK` |
+| `gl_account` | `name` | `INTERNAL` | The GL account's name in the reference chart - configuration, never a customer's or a merchant's |
+| `gl_account` | `classification` | `INTERNAL` | A closed code - asset, liability, equity, revenue or expense |
+| `gl_account` | `statement_section` | `INTERNAL` | A closed code - the statement section it presents in |
+| `gl_account` | `normal_balance` | `INTERNAL` | A closed code - debit or credit |
+| `gl_mapping_rule` | `version_id` | `INTERNAL` | The version it belongs to - accounting's own row |
+| `gl_mapping_rule` | `ledger_purpose` | `INTERNAL` | The ledger's purpose name, as shape-checked text (no cross-schema key) |
+| `gl_mapping_rule` | `owner_kind` | `INTERNAL` | The ledger's owner kind, as shape-checked text - a kind, never an owner |
+| `gl_mapping_rule` | `gl_account_code` | `INTERNAL` | The GL account it maps to |
+| `gl_mapping_version_event` | `id` | `INTERNAL` | The history row's identity |
+| `gl_mapping_version_event` | `version_id` | `INTERNAL` | The version - accounting's own row |
+| `gl_mapping_version_event` | `from_status` | `INTERNAL` | The status left |
+| `gl_mapping_version_event` | `to_status` | `INTERNAL` | The status reached |
+| `gl_mapping_version_event` | `actor` | `CONFIDENTIAL` | Who moved it there - a person, by `CHECK` |
+| `gl_mapping_version_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `gl_mapping_version_event` | `reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
+| `gl_mapping_version_event` | `occurred_at` | `INTERNAL` | The database's stamp |
+| `gl_mapping_version_event` | `correlation_id` | `INTERNAL` | The step's correlation |
+| `accounting_period` | `id` | `INTERNAL` | The period's identity |
+| `accounting_period` | `period_start` | `INTERNAL` | The month's first day |
+| `accounting_period` | `period_end` | `INTERNAL` | The month's last day - where a lock puts the ledger's cutoff |
+| `accounting_period` | `status` | `INTERNAL` | The machine's state |
+| `accounting_period` | `revision` | `INTERNAL` | A count - a reopen moves it |
+| `accounting_period` | `opened_at` | `INTERNAL` | The database's stamp |
+| `accounting_period` | `correlation_id` | `INTERNAL` | The opening flow's correlation |
+| `accounting_period` | `locked_by` | `CONFIDENTIAL` | The accountant who locked it |
+| `accounting_period` | `locked_by_type` | `INTERNAL` | A closed actor type - a person's, by `CHECK` |
+| `accounting_period` | `locked_at` | `INTERNAL` | The database's stamp - the lock a FINAL report run reproduces under |
+| `accounting_period` | `pinned_mapping_version_id` | `INTERNAL` | The GL mapping version the lock pinned - accounting's own row |
+| `accounting_period` | `unlock_proposed_by` | `CONFIDENTIAL` | The accountant who proposed the unlock |
+| `accounting_period` | `unlock_proposed_by_type` | `INTERNAL` | A closed actor type - a person's |
+| `accounting_period` | `unlock_proposed_at` | `INTERNAL` | The database's stamp |
+| `accounting_period` | `unlock_proposal_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
+| `accounting_period` | `unlock_approved_by` | `CONFIDENTIAL` | The second person who approved the unlock - never the proposer, by `CHECK` |
+| `accounting_period` | `unlock_approved_by_type` | `INTERNAL` | A closed actor type - a person's |
+| `accounting_period` | `unlock_approved_at` | `INTERNAL` | The database's stamp |
+| `accounting_period` | `unlock_approval_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
+| `period_event` | `id` | `INTERNAL` | The history row's identity |
+| `period_event` | `period_id` | `INTERNAL` | The period - accounting's own row |
+| `period_event` | `act` | `INTERNAL` | A closed code - the act recorded |
+| `period_event` | `from_status` | `INTERNAL` | The status left |
+| `period_event` | `to_status` | `INTERNAL` | The status reached |
+| `period_event` | `revision` | `INTERNAL` | The period's revision at the act |
+| `period_event` | `actor` | `CONFIDENTIAL` | Who acted - the platform only for the open, a person otherwise, by `CHECK` |
+| `period_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `period_event` | `proposed_by` | `CONFIDENTIAL` | The unlock's proposer, named on its approval - never the approver, by `CHECK` |
+| `period_event` | `pinned_mapping_version_id` | `INTERNAL` | The version a lock pinned - accounting's own row |
+| `period_event` | `reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
+| `period_event` | `occurred_at` | `INTERNAL` | The database's stamp |
+| `period_event` | `correlation_id` | `INTERNAL` | The act's correlation |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

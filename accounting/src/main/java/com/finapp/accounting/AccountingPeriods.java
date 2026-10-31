@@ -46,7 +46,9 @@ import lombok.RequiredArgsConstructor;
  * <p><strong>Unlock</strong> (four eyes): a person proposes ({@link #proposeUnlock} - nothing moves); a
  * <strong>different</strong> person approves ({@link #approveUnlock}): the cutoff moved back exactly one period, the
  * edge {@code LOCKED -> OPEN} and the pin released - one transaction. Approver &ne; proposer is the domain's refusal and
- * {@code accounting V003}'s {@code CHECK} for every writer.
+ * {@code accounting V003}'s {@code CHECK} for every writer. The period's FINAL report runs are superseded in the same
+ * transaction, under the period's row lock and before the cutoff moves (`P14-TSK-008`, {@link ReportRunSupersession};
+ * {@code accounting V004} refuses the edge otherwise).
  *
  * <p>The close, its rejection and the reopen are `P14-TSK-012`'s. How a back-dating poster reacts to a locked period is
  * `P14-TSK-006`'s (C3): here the ledger refuses, and nothing else is decided.
@@ -74,6 +76,8 @@ public final class AccountingPeriods {
     @NonNull private final OutboxWriter<Connection> outbox;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
+    /** The period's FINAL report runs, superseded when it returns to {@code OPEN} (`P14-TSK-008`, {@code INV-ACC-04}). */
+    @NonNull private final ReportRunSupersession runs;
 
     // ------------------------------------------------------------------ outcomes
 
@@ -320,6 +324,11 @@ public final class AccountingPeriods {
             throw new SelfApprovalRefused(id, row.month());
         }
         String proposer = row.unlockProposedBy().orElseThrow();
+        // A4 under the period's FOR UPDATE and BEFORE the cutoff's key (`P14-TSK-008`): no FINAL report run stands over a
+        // period whose range can change again - accounting V004 refuses the edge for every writer that skipped this - and
+        // the supersession's row writes are done before postings pause behind the cutoff's exclusive key. No transaction
+        // takes the cutoff (A2/A3) and then a report run (A4), so the unlock's A1 -> A4 -> A2 -> A3 closes no cycle.
+        int superseded = runs.supersedeFinal(unitOfWork, id, actor, correlation);
         cutoff.moveBack(unitOfWork, row.end(), locked.previous().map(AccountingPeriodStore.PeriodRow::end),
                 "accounting period " + row.month() + " unlocked under four eyes");
         if (!store.approveUnlock(unitOfWork, id, row.revision(), actor, reasoned)) {
@@ -330,7 +339,7 @@ public final class AccountingPeriods {
                 AccountingPeriodStore.Act.UNLOCKED, Optional.of(PeriodStatus.LOCKED), PeriodStatus.OPEN, row.revision(),
                 actor, Optional.of(proposer), Optional.empty(), Optional.of(reasoned), correlation));
         audit(unitOfWork, actor, AccountingAuditAction.PERIOD_UNLOCKED, id, Optional.of(reasoned),
-                "period=" + row.month() + ", revision=" + row.revision(), correlation);
+                "period=" + row.month() + ", revision=" + row.revision() + ", supersededRuns=" + superseded, correlation);
         return new Acted(id, row.month(), PeriodStatus.OPEN, row.revision(), Optional.empty(), false, false);
     }
 

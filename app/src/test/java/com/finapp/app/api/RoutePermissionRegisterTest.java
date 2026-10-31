@@ -471,7 +471,14 @@ class RoutePermissionRegisterTest {
                     // accounting.GlRead; the negatives are GeneralLedgerDeskTest's route declarations.
                     entry("GET /v1/operator/accounting/gl/balances", PermissionName.ACCOUNTING_READ),
                     entry("GET /v1/operator/accounting/gl/accounts/{code}/activity", PermissionName.ACCOUNTING_READ),
-                    entry("GET /v1/operator/accounting/gl/entries/{entryId}", PermissionName.ACCOUNTING_READ)));
+                    entry("GET /v1/operator/accounting/gl/entries/{entryId}", PermissionName.ACCOUNTING_READ),
+                    // P14-TSK-008: the report runs - generation and regeneration the accountant's
+                    // ACCOUNTING_REPORT_GENERATE, the audited read of a run's content the accountant's ACCOUNTING_READ
+                    // (identity V025's partition); the negatives are ReportRunDeskTest's route declarations.
+                    entry("POST /v1/operator/accounting/report-runs", PermissionName.ACCOUNTING_REPORT_GENERATE),
+                    entry("GET /v1/operator/accounting/report-runs/{runId}", PermissionName.ACCOUNTING_READ),
+                    entry("POST /v1/operator/accounting/report-runs/{runId}/regeneration",
+                            PermissionName.ACCOUNTING_REPORT_GENERATE)));
 
     /**
      * The CONDITIONAL half (the Phase 12 -> 13 gate's A5-F1): a permission a route asks BESIDE its declared one when the

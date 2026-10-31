@@ -1345,7 +1345,10 @@ held to the source - `PostingRuleRegisterTest#theFloorAgreesWithTheSource`.)*
 originally issued output is retained.
 **Why:** Two different answers to the same question destroys confidence in all of them.
 **Enforce:** `DOMAIN` (immutable report runs) + `INV-HIST-04` (mapping version pinning).
-**Verify:** Regeneration comparison tests.
+**Verify:** Regeneration comparison tests. *(As built, `P14-TSK-008`: `ReportRunDatabaseTest#regenerationIsIdentical`,
+`#contentIsFrozen`, `#anUnlockSupersedesTheFinalRuns` (owed, C5); hermetic `CanonicalJsonTest` (fixed vectors - the
+bytes and hashes stable across JVMs), `ReportRunsTest`, `ReportRunDeskTest#regenerationIsComparedAndDivergenceCounted`,
+`ReportRunMigrationTest#theContentIsFrozenByItsOwnTrigger`.)*
 **Phase:** 14
 
 ### INV-ACC-05 — Unreconciled positions are disclosed
