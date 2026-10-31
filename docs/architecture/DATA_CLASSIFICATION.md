@@ -4711,8 +4711,8 @@ born once by the plan's key, generated in a `REPEATABLE READ READ ONLY` transact
 returns to `OPEN`, never deleted. **No money is stored as truth**: the **content** is output - aggregates of the
 platform's books (GL figures per account and currency, counts) - `CONFIDENTIAL` (`PHASE_14_PLAN.md` §12), served only
 by the audited operator read (`accounting.ReportRead`), never logged, announced (the event carries the hash, not the
-content) or put in a span or a meter; its hash `CONFIDENTIAL` with it (a fingerprint of the content, published in
-`accounting.ReportRunCompleted` for lineage). The **parameters** are an accountant's request - plain codes, dates and
+content) or put in a span or a meter; its hash `INTERNAL` (a SHA-256 digest reveals nothing of the content - it is the
+issued output's identifier, published in `accounting.ReportRunCompleted` for lineage). The **parameters** are an accountant's request - plain codes, dates and
 currencies, screened for instrument shapes - `INTERNAL`. The requester `CONFIDENTIAL` (a person's identifier, or the
 platform's); closed codes, the platform's own identifiers, counters and the database's stamps `INTERNAL`. *(The other
 `accounting` tables - `gl_mapping_version`, `gl_account`, `gl_mapping_rule`, `gl_mapping_version_event`,
@@ -4726,7 +4726,7 @@ database suite owed under C5, will name them at the Phase 14 database pass - an 
 | `report_run` | `definition_version` | `INTERNAL` | The definition's version, pinned |
 | `report_run` | `period_id` | `INTERNAL` | The accounting period - accounting's own row |
 | `report_run` | `revision` | `INTERNAL` | The run's revision for its question |
-| `report_run` | `parameters` | `INTERNAL` | The question's canonical parameters - plain bounded values screened for instrument shapes, and the pinned rate set's id |
+| `report_run` | `parameters` | `INTERNAL` | The question's canonical parameters - the values a definition declares (codes, dates, currencies; never a person's identifier), plain, bounded and screened for instrument shapes, and the pinned rate set's id |
 | `report_run` | `parameters_hash` | `INTERNAL` | The parameters' sha256 - the key's last member, recomputed by the database |
 | `report_run` | `period_revision` | `INTERNAL` | The period's revision at the claim |
 | `report_run` | `basis` | `INTERNAL` | A closed code - `FINAL` or `PROVISIONAL` |
@@ -4741,7 +4741,7 @@ database suite owed under C5, will name them at the Phase 14 database pass - an 
 | `report_run` | `attempt` | `INTERNAL` | A count - the generator's attempts, one more per reclaim |
 | `report_run` | `lease_until` | `INTERNAL` | The generator's lease - the database's clock plus the configured lease |
 | `report_run` | `content` | `CONFIDENTIAL` | The issued output - aggregates of the platform's books in canonical JSON; served only by the audited read, never logged, announced or metered |
-| `report_run` | `content_sha256` | `CONFIDENTIAL` | The content's sha256, recomputed by the database - published in the completion event for lineage |
+| `report_run` | `content_sha256` | `INTERNAL` | The content's sha256, recomputed by the database - a digest that reveals nothing of the content, the issued output's identifier, published in the completion event for lineage |
 | `report_run` | `completed_at` | `INTERNAL` | The database's stamp |
 | `report_run` | `failure_code` | `INTERNAL` | A closed code - why the run failed |
 | `report_run` | `failed_at` | `INTERNAL` | The database's stamp |

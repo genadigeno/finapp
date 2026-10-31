@@ -61,12 +61,13 @@ import org.junit.jupiter.api.Test;
  *       {@code executeQuery}).</li>
  * </ul>
  *
- * <p><strong>Armed over an empty package.</strong> {@code com.finapp.accounting.reporting} holds no class today, so the
- * rule passes vacuously on production code - and is phrased over every imported class rather than a {@code that()}
- * clause that would select nothing (the {@code ModuleBoundaryRulesTest} convention: no {@code allowEmptyShould}), so it
- * gains reach the moment `P14-TSK-008` adds a class, with no edit here. The census proves the guard sees the module and
- * every writer it names; the planted probes in this source prove each refusal able to fail, one hop and two, and a
- * reading report class not flagged.
+ * <p><strong>Armed over an empty package.</strong> {@code com.finapp.accounting.reporting} held no class at
+ * `P14-TSK-001`, so the rule passed vacuously on production code - and is phrased over every imported class rather than a
+ * {@code that()} clause that would select nothing (the {@code ModuleBoundaryRulesTest} convention: no
+ * {@code allowEmptyShould}), so it gained reach when `P14-TSK-008` added the report-run code (the canonical writer, the
+ * definitions, the generation), with no edit here. The census proves the guard sees the module and every writer it
+ * names; the planted probes in this source prove each refusal able to fail, one hop and two, and a reading report class
+ * not flagged.
  */
 @Tag("architecture")
 // ArchUnit's own engine reads ArchTag, not JUnit's Tag (P1-TSK-025; TestTaxonomyTest requires the pair).
