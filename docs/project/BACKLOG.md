@@ -25922,13 +25922,20 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   `accounting.SelfApprovalRefused` `FAILED` in its own transaction. Events: none. No history table - the frozen row and
   the audit trail are the history. **The report-run FK: not added** - `accounting.report_run` (`P14-TSK-008`'s `V004`) was not on master at this task's integration (master `18c4935c`), so `V005` names no other table; `report_run.valuation_rate_set_id → valuation_rate_set (id)` is a recorded follow-up (`-015`, which pins the set, or the next accounting migration after both merge). Tests: `ValuationRateSetsTest` (11),
   `ValuationRateSetTest` (6), `ValuationRateSetMigrationTest` (6), `FxReferenceValuationRatesTest` (3),
-  `ValuationRateSetDeskTest` (6) - fresh: `:accounting:test` 93/0, `:identity:test` 144/0 (the javadoc), the app filters and guards 163/0, `:app:architectureTest` 216/0; **owed (C5)**: `ValuationRateSetDatabaseTest#provenanceIsKept`, `#aStalePairIsRefused`,
-  `#aMissingPairIsRefused`, `#aSetIsImmutable`, `#theProposerCannotApprove`, `#oneApprovedPerPeriod` (two captures, ten
-  concurrent approvals - ordered last: January 1999 admits one approved set per database) and `AccountingMigrationTest`'s
-  lists. Probes: six, all caught (`MUTATION_TESTING.md` §2). **Owner items**: the staleness default (96 h); no
+  `ValuationRateSetDeskTest` (6; 7 after the review round's fingerprint case) - fresh: `:accounting:test` 93/0, `:identity:test` 144/0 (the javadoc), the app filters and guards 163/0, `:app:architectureTest` 216/0; **owed (C5)**: `ValuationRateSetDatabaseTest#provenanceIsKept`, `#aStalePairIsRefused`,
+  `#aMissingPairIsRefused`, `#aSetIsImmutable`, `#theProposerCannotApprove`, `#aCaptureRacingAnUnlock`,
+  `#anApprovalRacingAnUnlock` (both added by the review round: the unlock waits on the capture's `FOR SHARE`; the approval
+  waits on the unlock's row lock and is refused), `#oneApprovedPerPeriod` (two captures, ten concurrent approvals - ordered
+  last) and `AccountingMigrationTest`'s lists. **January 1999 ends that suite with an approved set for good** (a set is
+  never deleted; one approved per period), and it is the only period the fixtures can lock until `-012` can close it - so a
+  later database suite that approves a set of its own (`-011`, `-015`) uses February once January can close, or runs
+  first; one that needs only an approved set reads January's. `DATA_CLASSIFICATION.md` classifies the two tables' 25
+  columns (added by the review round). Probes: six, all caught (`MUTATION_TESTING.md` §2). **Owner items**: the staleness default (96 h); no
   supersession of an approved set (a wrong approved set cannot be replaced - an `APPROVED → SUPERSEDED` edge is ADR-0116's
   follow-up); a reference outage at a month end longer than the bound leaves the period without a capturable set (fx
-  refuses a late older observation), the remedy the bound or `-011`'s disclosure.
+  refuses a late older observation), the remedy the bound or `-011`'s disclosure; **the review read is reachable only by
+  id** - the controller cannot discover a period's sets and the capturer cannot re-read its own (its receipt carries the
+  rates): a follow-up for `-011`, whose close shows the period's sets (no endpoint added here).
 
 **P14-TSK-015 — Reporting-currency translation** — `PLANNED`
 - **Objective**: EUR translation in every run that asks, originals beside, the difference explicit (C1, C7).

@@ -55,13 +55,21 @@ import org.junit.jupiter.api.TestMethodOrder;
  * {@code INV-ACC-11}, {@code INV-FX-05}, {@code INV-AUD-04}) - the backlog entry's named cases and the design's: every
  * stored rate equal to its {@code fx.rate_snapshot} row (provenance kept, the rate's text included), the observation
  * after the period's end never chosen; a stale and a missing pair refused with nothing written; the set and its rates
- * immutable for every writer; the capturer refused as approver, by the domain and by the {@code CHECK}; and - last, since a
- * period admits one approved set for good - two captures and <strong>ten concurrent approvals</strong> leaving exactly one
- * approved set, a raw second approval refused by the partial unique.
+ * immutable for every writer; the capturer refused as approver, by the domain and by the {@code CHECK}; a capture racing
+ * an unlock (the unlock waits on the capture's {@code FOR SHARE}, then opens the period - the set stays, unapprovable) and
+ * an approval racing an unlock (the approval waits on the unlock's row lock, then re-reads {@code OPEN} and is refused);
+ * and - last, since a period admits one approved set for good - two captures and <strong>ten concurrent approvals</strong>
+ * leaving exactly one approved set, a raw second approval refused by the partial unique.
  *
- * <p>January 1999 is the one period the fixtures can lock (the first; February would need January {@code CLOSED}), so
- * each case locks it and {@link AccountingPeriodFixture#restore} returns it to {@code OPEN}; each case's reference is a
- * source of its own ({@code valuation-test-<uuid>}), so fx's newer-than-latest rule never meets another suite's rows.
+ * <p>January 1999 is the one period the fixtures can lock (the first; February would need January {@code CLOSED}, which
+ * `P14-TSK-012` builds, and the contiguity trigger refuses a far period without every month before it), so each case
+ * locks it and {@link AccountingPeriodFixture#restore} returns it to {@code OPEN}; each case's reference is a source of
+ * its own ({@code valuation-test-<uuid>}), so fx's newer-than-latest rule never meets another suite's rows.
+ * <strong>January 1999 ends this suite with an approved set for good</strong> - a set is never deleted and a period has
+ * one approved set - so a later database suite that must approve a set of its own (`-011`'s close, `-015`'s translation)
+ * either uses another period (February, once `-012` can close January) or runs before this one; one that needs only
+ * <em>an</em> approved set can read January's ({@code ValuationRateSets.approvedFor}). Only {@link #oneApprovedPerPeriod},
+ * ordered last, approves; every race before it is arranged so that no approval succeeds.
  * <strong>Written and owed</strong> (owner decision C5: the database tiers are skipped per task).
  */
 @Tag("database")
@@ -244,6 +252,76 @@ class ValuationRateSetDatabaseTest {
 
     @Test
     @Order(6)
+    @DisplayName("a capture racing an unlock: the unlock's approval waits on the capture's FOR SHARE and opens the period"
+            + " after it commits - the set stays PROPOSED and unapprovable; an unlock committed first refuses the capture")
+    void aCaptureRacingAnUnlock() throws Exception {
+        plantAll(MONTH_END);
+        AccountingPeriodId january = id(JANUARY);
+        inScope(person(), uow -> periods().proposeUnlock(uow, january, SecurityContext.require(), "a late invoice",
+                correlation()));
+        Actor accountant = person();
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection capturing = held(accountant,
+                uow -> sets().capture(uow, january, accountant, null, correlation()))) {
+            Future<?> unlock = pool.submit(() -> inScope(person(), uow -> periods().approveUnlock(uow, january,
+                    SecurityContext.require(), "agreed", correlation())));
+            awaitAWaiter(unlock);
+            capturing.commit();
+            unlock.get(2, TimeUnit.MINUTES);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(count("SELECT count(*) FROM accounting.accounting_period WHERE id = '" + january.value()
+                + "' AND status = 'OPEN'")).isEqualTo(1);
+        UUID captured = latestSet();
+        assertThat(count("SELECT count(*) FROM accounting.valuation_rate_set WHERE id = '" + captured
+                + "' AND status = 'PROPOSED' AND rate_count = 4")).isEqualTo(1);
+        assertThatThrownBy(() -> inScope(person(), uow -> sets().approve(uow,
+                com.finapp.accounting.ValuationRateSetId.of(captured), SecurityContext.require(), "late",
+                correlation()))).isInstanceOf(com.finapp.accounting.AccountingPeriods.PeriodStale.class);
+
+        assertThatThrownBy(() -> capture(person())).as("the unlock committed first: the capture reads OPEN")
+                .isInstanceOf(com.finapp.accounting.AccountingPeriods.PeriodStale.class);
+    }
+
+    @Test
+    @Order(7)
+    @DisplayName("an approval racing an unlock: the approval waits on the unlock's row lock, re-reads the period OPEN and"
+            + " is refused - nothing approved")
+    void anApprovalRacingAnUnlock() throws Exception {
+        plantAll(MONTH_END);
+        AccountingPeriodId january = id(JANUARY);
+        ValuationRateSets.Valued captured = capture(person());
+        inScope(person(), uow -> periods().proposeUnlock(uow, january, SecurityContext.require(), "a late invoice",
+                correlation()));
+        Actor approver = person();
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        Future<Object> approval;
+        try (Connection unlocking = held(person(), uow -> periods().approveUnlock(uow, january,
+                SecurityContext.require(), "agreed", correlation()))) {
+            approval = pool.submit(() -> {
+                try {
+                    return inScope(approver, uow -> sets().approve(uow, captured.id(), approver, "racing",
+                            correlation()));
+                } catch (RuntimeException refused) {
+                    return refused;
+                }
+            });
+            awaitAWaiter(approval);
+            unlocking.commit();
+            assertThat(approval.get(2, TimeUnit.MINUTES))
+                    .isInstanceOf(com.finapp.accounting.AccountingPeriods.PeriodStale.class);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(count("SELECT count(*) FROM accounting.valuation_rate_set WHERE id = '" + captured.id().value()
+                + "' AND status = 'PROPOSED'")).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'accounting.ValuationSetApproved'"
+                + " AND target_id = '" + captured.id().value() + "'")).isZero();
+    }
+
+    @Test
+    @Order(100)
     @DisplayName("one approved per period: two captures, ten approvers on ten connections - exactly one approved set, nine"
             + " refused stale, one audit record; a raw second approval refused by the partial unique; no further capture")
     void oneApprovedPerPeriod() throws Exception {
@@ -304,6 +382,49 @@ class ValuationRateSetDatabaseTest {
 
     private ValuationRateSets.Valued capture(Actor accountant) {
         return inScope(accountant, uow -> sets().capture(uow, id(JANUARY), accountant, null, correlation()));
+    }
+
+    /**
+     * {@code work} on a connection of its own, as {@code actor} in a correlation scope (the ledger's move reads both),
+     * <strong>left uncommitted</strong> - its row locks held until the caller commits or closes it.
+     */
+    @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
+    private static Connection held(Actor actor, java.util.function.Function<Connection, ?> work) throws SQLException {
+        Connection connection = DatabaseRoles.application();
+        connection.setAutoCommit(false);
+        try (SecurityContext.Scope who = SecurityContext.enter(actor);
+                com.finapp.platform.correlation.CorrelationContext.Scope flow =
+                        com.finapp.platform.correlation.CorrelationContext.enter(
+                                com.finapp.sharedkernel.correlation.Correlation.startingWith(correlation()))) {
+            work.apply(connection);
+            return connection;
+        } catch (RuntimeException failed) {
+            connection.rollback();
+            connection.close();
+            throw failed;
+        }
+    }
+
+    /** Waits until a backend waits on a row lock - the racing thread blocked behind the held transaction. */
+    private static void awaitAWaiter(Future<?> racing) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
+        while (count("SELECT count(*) FROM pg_locks WHERE NOT granted") == 0) {
+            assertThat(racing.isDone()).as("the racer waits on the held row - it must not finish first").isFalse();
+            assertThat(System.nanoTime()).as("a waiter within a minute").isLessThan(deadline);
+            Thread.sleep(50);
+        }
+        assertThat(racing.isDone()).isFalse();
+    }
+
+    /** The newest set of January 1999 - the one a case just captured. */
+    private static UUID latestSet() throws SQLException {
+        try (Connection migrator = DatabaseRoles.migrator(); Statement statement = migrator.createStatement();
+                ResultSet row = statement.executeQuery("SELECT s.id FROM accounting.valuation_rate_set s"
+                        + " JOIN accounting.accounting_period p ON p.id = s.period_id"
+                        + " WHERE p.period_start = DATE '1999-01-01' ORDER BY s.captured_at DESC LIMIT 1")) {
+            row.next();
+            return row.getObject(1, UUID.class);
+        }
     }
 
     private void plantAll(Instant observedAt) throws SQLException {

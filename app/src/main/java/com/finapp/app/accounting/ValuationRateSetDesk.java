@@ -96,7 +96,7 @@ public final class ValuationRateSetDesk {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         return flow.door(CAPTURE_SPAN, () -> keyed(actor, idempotencyKey,
-                "capture|" + periodId.value() + "|" + reason,
+                fingerprinted("capture", periodId.value().toString(), reason),
                 uow -> receipt(sets.capture(uow, periodId, actor, reason, correlation))));
     }
 
@@ -104,7 +104,8 @@ public final class ValuationRateSetDesk {
         ValuationRateSetId id = setId(rawSetId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        return flow.door(APPROVE_SPAN, () -> keyed(actor, idempotencyKey, "approve|" + id.value() + "|" + reason,
+        return flow.door(APPROVE_SPAN, () -> keyed(actor, idempotencyKey,
+                fingerprinted("approve", id.value().toString(), reason),
                 uow -> receipt(sets.approve(uow, id, actor, reason, correlation))));
     }
 
@@ -112,8 +113,18 @@ public final class ValuationRateSetDesk {
         ValuationRateSetId id = setId(rawSetId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        return flow.door(REJECT_SPAN, () -> keyed(actor, idempotencyKey, "reject|" + id.value() + "|" + reason,
+        return flow.door(REJECT_SPAN, () -> keyed(actor, idempotencyKey,
+                fingerprinted("reject", id.value().toString(), reason),
                 uow -> receipt(sets.reject(uow, id, actor, reason, correlation))));
+    }
+
+    /**
+     * What a keyed act's fingerprint covers: the act, its target and its reason - an absent reason marked {@code -}, a
+     * present one length-prefixed ({@code 4:null}), so no absent, empty or literal reason ever fingerprints as another and
+     * a key reused with a different reason is a conflict, never a replay.
+     */
+    static String fingerprinted(String act, String target, String reason) {
+        return act + "|" + target + "|" + (reason == null ? "-" : reason.length() + ":" + reason);
     }
 
     /** One set by id - a read, unkeyed, in one transaction. */

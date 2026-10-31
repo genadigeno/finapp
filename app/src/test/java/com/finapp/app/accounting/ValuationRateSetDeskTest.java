@@ -253,6 +253,28 @@ class ValuationRateSetDeskTest {
     }
 
     @Test
+    @DisplayName("the fingerprint tells an absent reason from the word \"null\", an empty one and a dash: the same key"
+            + " reused with any of them is a conflict, never a replay of another request's receipt")
+    void theFingerprintTellsAnAbsentReasonFromTheWordNull() {
+        String target = UUID.randomUUID().toString();
+        List<String> fingerprints = new ArrayList<>();
+        for (String reason : java.util.Arrays.asList(null, "null", "", "-", "0:", "1:-")) {
+            fingerprints.add(ValuationRateSetDesk.fingerprinted("capture", target, reason));
+        }
+        assertThat(fingerprints).doesNotHaveDuplicates();
+        assertThat(ValuationRateSetDesk.fingerprinted("approve", target, "x|y"))
+                .isNotEqualTo(ValuationRateSetDesk.fingerprinted("approve", target + "|x", "y"));
+
+        String september = lockedSeptember();
+        ValuationRateSetDesk.ValuationRateSetReceipt captured =
+                as(ACCOUNTANT, () -> desk.capture("key-null", september, null));
+        assertThatThrownBy(() -> as(ACCOUNTANT, () -> desk.capture("key-null", september, "null")))
+                .isInstanceOf(com.finapp.platform.idempotency.IdempotencyConflictException.class);
+        assertThat(as(ACCOUNTANT, () -> desk.capture("key-null", september, null))).isEqualTo(captured);
+        assertThat(store.all()).hasSize(1);
+    }
+
+    @Test
     @DisplayName("the stored receipt reads back exactly - every rate and its provenance")
     void theStoredReceiptRoundTrips() {
         ValuationRateSetDesk.ValuationRateSetReceipt receipt = new ValuationRateSetDesk.ValuationRateSetReceipt(
