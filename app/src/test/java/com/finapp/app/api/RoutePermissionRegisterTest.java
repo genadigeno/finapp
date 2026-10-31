@@ -490,7 +490,17 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/accounting/report-runs", PermissionName.ACCOUNTING_REPORT_GENERATE),
                     entry("GET /v1/operator/accounting/report-runs/{runId}", PermissionName.ACCOUNTING_READ),
                     entry("POST /v1/operator/accounting/report-runs/{runId}/regeneration",
-                            PermissionName.ACCOUNTING_REPORT_GENERATE)));
+                            PermissionName.ACCOUNTING_REPORT_GENERATE),
+                    // P14-TSK-014: the valuation rate sets - captured by the accountant (a close-preparation act on a
+                    // LOCKED period), approved, rejected and reviewed by the controller (the close's decision; four
+                    // eyes) - no new permission; the negatives are ValuationRateSetDeskTest's route declarations.
+                    entry("POST /v1/operator/accounting/valuation-rate-sets", PermissionName.ACCOUNTING_CLOSE_PROPOSE),
+                    entry("POST /v1/operator/accounting/valuation-rate-sets/{setId}/approval",
+                            PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    entry("POST /v1/operator/accounting/valuation-rate-sets/{setId}/rejection",
+                            PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    entry("GET /v1/operator/accounting/valuation-rate-sets/{setId}",
+                            PermissionName.ACCOUNTING_CLOSE_APPROVE)));
 
     /**
      * The CONDITIONAL half (the Phase 12 -> 13 gate's A5-F1): a permission a route asks BESIDE its declared one when the

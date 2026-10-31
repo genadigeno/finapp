@@ -540,6 +540,12 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/report-runs",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/report-runs/{runId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/report-runs/{runId}/regeneration",
+                        // P14-TSK-014: the valuation rate sets - captured (201, ACCOUNTING_CLOSE_PROPOSE), approved,
+                        // rejected and read (ACCOUNTING_CLOSE_APPROVE), each POST keyed.
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/valuation-rate-sets",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/valuation-rate-sets/{setId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/valuation-rate-sets/{setId}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/valuation-rate-sets/{setId}/rejection",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",

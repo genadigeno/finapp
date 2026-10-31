@@ -163,8 +163,8 @@ class RuleConformanceTest {
         tally.add(entry(EntryType.POSTING, "p14-010-probe:", line("CUSTOMER_WALLET", Side.DEBIT, 1),
                 line("FEE_REVENUE", Side.CREDIT, 1)));
         assertThat(tally.findings()).extracting(BreakFinding::subject).containsExactly(
-                "namespace:POSTING " + RuleConformance.ID_TOKEN + ":",
-                "namespace:POSTING order-" + RuleConformance.ID_TOKEN + ":", "namespace:POSTING p14-010-probe:");
+                "namespace:POSTING " + RuleConformance.ID_PLACEHOLDER + ":",
+                "namespace:POSTING order-" + RuleConformance.ID_PLACEHOLDER + ":", "namespace:POSTING p14-010-probe:");
         assertThat(tally.findings().get(0).evidence()).contains("entries=2");
         assertThat(RuleConformance.folded("bnpl.financing:")).isEqualTo("bnpl.financing:");
     }

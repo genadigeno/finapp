@@ -762,6 +762,11 @@ class CredentialReachesNoEmittedSinkTest {
                         // bounded parameters screened for card-number and account shapes at the domain (RunParameters)
                         // and a valuation rate set's id; no reason, no person's data.
                         "ReportRunRequest",
+                        // P14-TSK-014: the valuation rate set doors' bodies. No secret: a period's identifier and an
+                        // optional REASON for the capture, a REASON alone for the decisions - screened at the domain
+                        // (AccountingReasons).
+                        "ValuationRateSetCaptureRequest",
+                        "ValuationRateSetDecisionRequest",
                         // P14-TSK-010: the break doors' bodies. No secret: a disclosure and REASONs screened for
                         // card-number and account shapes at the domain (AccountingReasons), and a journal entry's id.
                         "BreakAcknowledgementProposal",

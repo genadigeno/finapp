@@ -2573,6 +2573,10 @@ ledger's per-account statement).
 ### Valuation Rate Set
 **Is:** the immutable, four-eyes-approved set of reference rates captured for a period from `fx.rate_snapshot` (source,
 `observed_at`, snapshot id per pair), pinned by every FINAL run that translates (`INV-ACC-11`, ADR-0116, `P14-TSK-014`).
+*(As built by `P14-TSK-014`, accounting `V005`, 2026-10-31: for a `LOCKED` period, per postable currency but EUR the
+reference's last `EUR/<currency>` observation strictly before the first instant after the period, within the staleness
+bound (96 h by default) - one stale or missing pair refuses the whole capture; `PROPOSED → APPROVED | REJECTED`, approved
+by a person other than its capturer while the period is `LOCKED`, at most one approved per period.)*
 **Not:** an Exchange Rate a customer was quoted or a conversion executed at, nor a Reference Rate read live — it is a
 frozen valuation input, never an execution input.
 **Owned by:** `accounting`

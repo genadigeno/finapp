@@ -31,7 +31,9 @@ class AccountingBreakMigrationTest {
             "db/migration/accounting/V001__initialise_accounting_schema.sql",
             "db/migration/accounting/V002__the_gl_chart_and_mapping_as_versioned_data.sql",
             "db/migration/accounting/V003__accounting_periods_open_lock_unlock.sql",
-            "db/migration/accounting/V004__report_runs_immutable_reproducible.sql");
+            "db/migration/accounting/V004__report_runs_immutable_reproducible.sql",
+            // The independent review's M-11: P14-TSK-014's V005, landed before this one.
+            "db/migration/accounting/V005__valuation_rate_sets.sql");
 
     @Test
     @DisplayName("born once per (period, check, subject) - the constraint the store's insert-if-absent names")

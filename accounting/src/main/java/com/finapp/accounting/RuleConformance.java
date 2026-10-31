@@ -21,8 +21,8 @@ import java.util.stream.Collectors;
  *       namespace (or adjustment origin) at its posting date. One finding per {@code (type, namespace)} - a registration
  *       gap is a namespace's fact: subject {@code namespace:<TYPE> <namespace>}, a key with no {@code ':'} (or an
  *       adjustment with no proposal) folded under {@link #UNNAMED}, and an identifier-like segment of a namespace - a
- *       UUID, or a segment of six or more characters holding a digit - folded to {@link #ID_TOKEN} (the review's M-12),
- *       so a stray key per entry cannot flood the register.
+ *       UUID, or a segment of six or more characters holding a digit - folded to {@link #ID_PLACEHOLDER} (the
+ *       review's M-12), so a stray key per entry cannot flood the register.
  *   <li><strong>{@link BreakType#SHAPE_MISMATCH}</strong> - rules are in force and the entry matches none of them: a rule
  *       matches when <em>every</em> line is admitted by one of its shape lines (the purpose is one the shape line names
  *       and the side one it takes) and <em>every required</em> shape line is present. Classification, not cardinality or
@@ -42,7 +42,7 @@ public final class RuleConformance {
     public static final String UNNAMED = "(none)";
 
     /** What an identifier-like segment of an unregistered namespace is folded to. */
-    public static final String ID_TOKEN = "{id}";
+    public static final String ID_PLACEHOLDER = "{id}";
 
     /** A UUID anywhere in a namespace. */
     private static final java.util.regex.Pattern UUID_LIKE = java.util.regex.Pattern.compile(
@@ -233,12 +233,12 @@ public final class RuleConformance {
     }
 
     /**
-     * An unregistered namespace with its identifier-like parts folded to {@link #ID_TOKEN} - a UUID, or a segment of six
-     * or more characters holding a digit - so keys that carry an id in their namespace position file under one subject
-     * (the review's M-12). A registered namespace never reaches here; an origin has no such segment.
+     * An unregistered namespace with its identifier-like parts folded to {@link #ID_PLACEHOLDER} - a UUID, or a segment
+     * of six or more characters holding a digit - so keys that carry an id in their namespace position file under one
+     * subject (the review's M-12). A registered namespace never reaches here; an origin has no such segment.
      */
     static String folded(String namespace) {
-        return ID_SEGMENT.matcher(UUID_LIKE.matcher(namespace).replaceAll(ID_TOKEN)).replaceAll(ID_TOKEN);
+        return ID_SEGMENT.matcher(UUID_LIKE.matcher(namespace).replaceAll(ID_PLACEHOLDER)).replaceAll(ID_PLACEHOLDER);
     }
 
     /** A key namespace ends in {@code ':'} and an origin is an upper-case word; anything else is folded. */

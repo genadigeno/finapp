@@ -1944,6 +1944,30 @@ class OwnershipIsScopedTest {
                                         + " proposal; four eyes by CHECK; behind"
                                         + " @RequiresPermission(ACCOUNTING_CLOSE_APPROVE).")),
                     Map.entry(
+                            "com.finapp.accounting.JdbcValuationRateSetStore.byId",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-014. find, lock and approvedFor's one helper: a valuation rate set by the id"
+                                        + " the operator's permission-guarded request named (behind"
+                                        + " @RequiresPermission(ACCOUNTING_CLOSE_APPROVE)), or a period's APPROVED set"
+                                        + " by the period id its own row answered - the platform's valuation input for a"
+                                        + " month of its books, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcValuationRateSetStore.decide",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-014. The id comes only from the set row this transaction locked FOR UPDATE"
+                                        + " (lock(id), after its period row), the move conditional on PROPOSED; four eyes"
+                                        + " by CHECK, one approved per period by partial unique; behind"
+                                        + " @RequiresPermission(ACCOUNTING_CLOSE_APPROVE).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcValuationRateSetStore.rates",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-014. The rates of a set id a row read answered (the act's locked row or the"
+                                        + " reviewer's guarded read) - reference market rates with their provenance, no"
+                                        + " customer's figure and no owner to scope by.")),
+                    Map.entry(
                             "com.finapp.accounting.JdbcAccountingBreakStore.byId",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -1951,6 +1975,17 @@ class OwnershipIsScopedTest {
                                         + " operator's permission-guarded request named (behind"
                                         + " @RequiresPermission(ACCOUNTING_ADJUST_PROPOSE or ACCOUNTING_ADJUST_APPROVE))"
                                         + " - a GL-side discrepancy of the platform's books, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcAccountingBreakStore.list",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-010 (the independent review's M-4, when the list became a keyset page):"
+                                        + " the Optional identifier is a paging cursor, never a target - rows are"
+                                        + " selected by the period month (and status) the request named, the cursor"
+                                        + " only bounding the next page by id, behind"
+                                        + " @RequiresPermission(ACCOUNTING_READ); the page is recorded"
+                                        + " accounting.BreakRead before it is served - GL-side discrepancies of the"
+                                        + " platform's books, no owner to scope by.")),
                     Map.entry(
                             "com.finapp.accounting.JdbcAccountingBreakStore.proposeAcknowledgement",
                             new Entry(
