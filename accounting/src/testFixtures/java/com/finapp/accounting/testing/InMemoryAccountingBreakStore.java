@@ -16,8 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -85,21 +84,30 @@ public final class InMemoryAccountingBreakStore implements AccountingBreakStore 
     }
 
     @Override
-    public List<BreakRow> list(Connection unitOfWork, YearMonth period, Optional<BreakStatus> status, int limit) {
+    public List<BreakRow> list(Connection unitOfWork, YearMonth period, Optional<BreakStatus> status,
+            Optional<AccountingBreakId> after, int limit) {
+        // PostgreSQL's uuid order - unsigned, big-endian - which the ids' birth order follows (UUIDv7).
+        Comparator<BreakRow> byId = (left, right) -> compare(left.id().value(), right.id().value());
         return rows.values().stream()
                 .filter(row -> row.period().equals(period))
                 .filter(row -> status.map(wanted -> row.status() == wanted).orElse(true))
-                .sorted(Comparator.comparing(BreakRow::raisedAt))
+                .filter(row -> after.map(cursor -> compare(row.id().value(), cursor.value()) > 0).orElse(true))
+                .sorted(byId)
                 .limit(limit)
                 .toList();
     }
 
     @Override
-    public Set<String> subjects(Connection unitOfWork, YearMonth period, CloseCheckCode check) {
-        Set<String> subjects = new TreeSet<>();
+    public Map<String, BreakStatus> held(Connection unitOfWork, YearMonth period, CloseCheckCode check) {
+        Map<String, BreakStatus> held = new TreeMap<>();
         rows.values().stream().filter(row -> row.period().equals(period) && row.check() == check)
-                .forEach(row -> subjects.add(row.subject()));
-        return subjects;
+                .forEach(row -> held.put(row.subject(), row.status()));
+        return held;
+    }
+
+    private static int compare(UUID left, UUID right) {
+        int high = Long.compareUnsigned(left.getMostSignificantBits(), right.getMostSignificantBits());
+        return high != 0 ? high : Long.compareUnsigned(left.getLeastSignificantBits(), right.getLeastSignificantBits());
     }
 
     @Override

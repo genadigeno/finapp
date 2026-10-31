@@ -7,11 +7,15 @@ import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.sql.Connection;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * The three break-raising close checks as one callable (`P14-TSK-010`; ADR-0117 decision 2; {@code PHASE_14_PLAN.md}
@@ -29,13 +33,23 @@ import java.util.function.Function;
  *
  * <p><strong>Ten instances, one break per discrepancy.</strong> Any number of instances may run the same check for the
  * same period at once: the judges only read, and the raises converge on {@code accounting_break_born_once}. Subjects
- * already raised are counted, never raised again; a run keeps at most {@link #MAX_NEW_FINDINGS} new ones
- * ({@link CheckOutcome#FINDINGS_CAPPED} - the next run raises the next).
+ * already raised are counted by their break's status - open, acknowledged, or resolved and so <strong>recurred</strong>
+ * ({@link CheckOutcome#RECURRED}, the review's I-1) - never raised again; a run keeps at most {@link #MAX_NEW_FINDINGS}
+ * new ones ({@link CheckOutcome#FINDINGS_CAPPED} - the next run raises the next).
  *
  * <p><strong>No false pass.</strong> {@link CheckOutcome.Result#PASSED} only when the judge read everything and found
  * nothing: a source unread, a reading incomplete, a judge that threw or timed out, a month with no mapping version - each
- * {@code FAILED} with its reason. Every outcome names the register version it judged by.
+ * {@code FAILED} with its reason, the exception's class logged (never its message, which may carry data). Every outcome
+ * names the register version it judged by.
+ *
+ * <p><strong>The caller's contract</strong> (`P14-TSK-011`, the review's M-1): call {@link #run} <em>outside</em> any
+ * transaction - each judge opens its own read-only snapshot and each raise its own transaction, so a surrounding
+ * transaction would hold a connection idle for the whole run and could not see a raise roll back alone. A run is bounded
+ * per statement ({@code finapp.accounting.checks.statement-timeout}) and per page, <strong>not in total</strong>: source
+ * completeness reads the whole book through the proofs, so the close run's lease must exceed a run, or its worker must
+ * renew it while the run lasts.
  */
+@Slf4j
 public final class AccountingChecks {
 
     /** The entries of one conformance page. */
@@ -78,7 +92,8 @@ public final class AccountingChecks {
     }
 
     /**
-     * Runs {@code check} for {@code period}: judges, raises every new finding, answers the outcome.
+     * Runs {@code check} for {@code period}: judges, raises every new finding, answers the outcome. Call it outside any
+     * transaction (the class's contract).
      *
      * @param actor the run's - the platform for the close schedule, a person for a re-run
      * @throws IllegalArgumentException for a check that raises no breaks - the close run's other six are `P14-TSK-011`'s
@@ -102,43 +117,57 @@ public final class AccountingChecks {
             if (transactions.inTransaction(uow -> breaks.raise(uow, period, finding, actor, correlation))) {
                 raised++;
             } else {
+                // A concurrent run raised it between our read and our insert: a newborn, OPEN break.
                 lost++;
             }
         }
-        int findings = judgement.fresh().size() + judgement.known();
+        int knownOpen = judgement.known(BreakStatus.OPEN) + lost;
+        int knownAcknowledged = judgement.known(BreakStatus.ACKNOWLEDGED);
+        int knownResolved = judgement.known(BreakStatus.RESOLVED);
+        int findings = judgement.fresh().size() + judgement.known(BreakStatus.OPEN) + knownAcknowledged + knownResolved;
         List<String> failures = new ArrayList<>();
         if (findings > 0) {
             failures.add(CheckOutcome.DISCREPANCIES);
         }
+        if (knownResolved > 0) {
+            failures.add(CheckOutcome.RECURRED);
+        }
         failures.addAll(judgement.failures());
         return new CheckOutcome(period, check, failures.isEmpty() ? CheckOutcome.Result.PASSED
-                : CheckOutcome.Result.FAILED, judgement.judgedBy(), findings, raised, judgement.known() + lost, failures);
+                : CheckOutcome.Result.FAILED, judgement.judgedBy(), findings, raised, knownOpen, knownAcknowledged,
+                knownResolved, failures);
     }
 
     // ------------------------------------------------------------------ the judges
 
-    /** What a judge found: the new findings to raise, how many known ones it counted, why it could not pass. */
-    private record Judgement(String judgedBy, List<BreakFinding> fresh, int known, List<String> failures) {}
+    /** What a judge found: the new findings to raise, the known ones counted per status, why it could not pass. */
+    private record Judgement(String judgedBy, List<BreakFinding> fresh, Map<BreakStatus, Integer> knownByStatus,
+            List<String> failures) {
+
+        int known(BreakStatus status) {
+            return knownByStatus.getOrDefault(status, 0);
+        }
+    }
 
     private Judgement judgeGl(YearMonth period) {
         try {
             return snapshots.read(snapshot -> {
                 GlBalances balances = ledger.balances(snapshot, pins.forPeriod(snapshot, period), Optional.empty());
-                Set<String> known = breaks.subjects(snapshot, period, CloseCheckCode.GL_EQUALS_LEDGER);
-                return split(GlEqualsLedger.judgedBy(balances), glEqualsLedger.judge(balances), known, List.of());
+                Map<String, BreakStatus> held = breaks.held(snapshot, period, CloseCheckCode.GL_EQUALS_LEDGER);
+                return split(GlEqualsLedger.judgedBy(balances), glEqualsLedger.judge(balances), held, List.of());
             });
         } catch (GlPins.NoActiveMapping none) {
-            return new Judgement("gl-mapping:none", List.of(), 0, List.of(CheckOutcome.NO_MAPPING));
+            return new Judgement("gl-mapping:none", List.of(), Map.of(), List.of(CheckOutcome.NO_MAPPING));
         } catch (RuntimeException unreadable) {
-            return unavailable("gl-mapping:none", CloseCheckCode.GL_EQUALS_LEDGER.name());
+            return unavailable("gl-mapping:none", CloseCheckCode.GL_EQUALS_LEDGER.name(), unreadable);
         }
     }
 
     private Judgement judgeConformance(YearMonth period) {
         try {
             return snapshots.read(snapshot -> {
-                Set<String> known = breaks.subjects(snapshot, period, CloseCheckCode.RULE_CONFORMANCE);
-                RuleConformance.Tally tally = conformance.tally(known::contains, MAX_NEW_FINDINGS);
+                Map<String, BreakStatus> held = breaks.held(snapshot, period, CloseCheckCode.RULE_CONFORMANCE);
+                RuleConformance.Tally tally = conformance.tally(held, MAX_NEW_FINDINGS);
                 JournalReads.Range range = JournalReads.Range.of(period);
                 Optional<JournalShapes.EntryCursor> after = Optional.empty();
                 List<JournalShapes.EntryShape> page;
@@ -159,16 +188,16 @@ public final class AccountingChecks {
                         tally.capped() ? List.of(CheckOutcome.FINDINGS_CAPPED) : List.of());
             });
         } catch (RuntimeException unreadable) {
-            return unavailable(conformance.judgedBy(), CloseCheckCode.RULE_CONFORMANCE.name());
+            return unavailable(conformance.judgedBy(), CloseCheckCode.RULE_CONFORMANCE.name(), unreadable);
         }
     }
 
     private Judgement judgeSources(YearMonth period) {
-        Set<String> known;
+        Map<String, BreakStatus> held;
         try {
-            known = snapshots.read(snapshot -> breaks.subjects(snapshot, period, CloseCheckCode.SOURCE_COMPLETENESS));
+            held = snapshots.read(snapshot -> breaks.held(snapshot, period, CloseCheckCode.SOURCE_COMPLETENESS));
         } catch (RuntimeException unreadable) {
-            return unavailable(SourceCompleteness.JUDGED_BY, CloseCheckCode.SOURCE_COMPLETENESS.name());
+            return unavailable(SourceCompleteness.JUDGED_BY, CloseCheckCode.SOURCE_COMPLETENESS.name(), unreadable);
         }
         List<BreakFinding> found = new ArrayList<>();
         List<String> failures = new ArrayList<>();
@@ -178,26 +207,29 @@ public final class AccountingChecks {
                 judged = completeness.judge(source, snapshots.read(snapshot -> proofs.read(snapshot, source)));
             } catch (RuntimeException unreadable) {
                 // Never a pass: a source that cannot be read leaves every proof it covers unavailable.
+                logUnavailable(source.name(), unreadable);
                 judged = completeness.unreadable(source);
             }
             found.addAll(judged.findings());
             judged.unavailable().forEach(proof -> failures.add(CheckOutcome.UNAVAILABLE + proof.name()));
         }
-        return split(SourceCompleteness.JUDGED_BY, found, known, failures);
+        return split(SourceCompleteness.JUDGED_BY, found, held, failures);
     }
 
-    /** {@code found} split into the new (first {@link #MAX_NEW_FINDINGS}) and the known, with the failures. */
-    private static Judgement split(String judgedBy, List<BreakFinding> found, Set<String> known, List<String> failures) {
+    /** {@code found} split into the new (first {@link #MAX_NEW_FINDINGS}) and the known per status, with the failures. */
+    private static Judgement split(String judgedBy, List<BreakFinding> found, Map<String, BreakStatus> held,
+            List<String> failures) {
         List<BreakFinding> fresh = new ArrayList<>();
-        Set<String> seen = new java.util.HashSet<>();
-        int counted = 0;
+        Map<BreakStatus, Integer> known = new EnumMap<>(BreakStatus.class);
+        Set<String> seen = new HashSet<>();
         boolean capped = false;
         for (BreakFinding finding : found) {
             if (!seen.add(finding.subject())) {
                 continue;
             }
-            if (known.contains(finding.subject())) {
-                counted++;
+            BreakStatus holder = held.get(finding.subject());
+            if (holder != null) {
+                known.merge(holder, 1, Integer::sum);
             } else if (fresh.size() < MAX_NEW_FINDINGS) {
                 fresh.add(finding);
             } else {
@@ -208,11 +240,18 @@ public final class AccountingChecks {
         if (capped) {
             all.add(CheckOutcome.FINDINGS_CAPPED);
         }
-        return new Judgement(judgedBy, fresh, counted, all);
+        return new Judgement(judgedBy, fresh, known, all);
     }
 
-    private static Judgement unavailable(String judgedBy, String what) {
-        return new Judgement(judgedBy, List.of(), 0, List.of(CheckOutcome.UNAVAILABLE + what));
+    private static Judgement unavailable(String judgedBy, String what, RuntimeException unreadable) {
+        logUnavailable(what, unreadable);
+        return new Judgement(judgedBy, List.of(), Map.of(), List.of(CheckOutcome.UNAVAILABLE + what));
+    }
+
+    /** The review's M-2: the judge's exception by class - never its message, which may carry a figure or an id. */
+    private static void logUnavailable(String what, RuntimeException unreadable) {
+        log.warn("An accounting check's judge could not read {} - the check is FAILED, never passed: {}", what,
+                unreadable.getClass().getName());
     }
 
     /** True when {@code entry} comes after {@code previous} in {@code (posting_date, id)} order (PostgreSQL's uuid order). */

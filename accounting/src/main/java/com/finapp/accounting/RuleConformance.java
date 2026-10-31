@@ -8,8 +8,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
-import java.util.TreeSet;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
@@ -22,7 +20,9 @@ import java.util.stream.Collectors;
  *   <li><strong>{@link BreakType#UNREGISTERED_POSTING}</strong> - no rule of the entry's type is in force for its
  *       namespace (or adjustment origin) at its posting date. One finding per {@code (type, namespace)} - a registration
  *       gap is a namespace's fact: subject {@code namespace:<TYPE> <namespace>}, a key with no {@code ':'} (or an
- *       adjustment with no proposal) folded under {@link #UNNAMED}, so a stray key per entry cannot flood the register.
+ *       adjustment with no proposal) folded under {@link #UNNAMED}, and an identifier-like segment of a namespace - a
+ *       UUID, or a segment of six or more characters holding a digit - folded to {@link #ID_TOKEN} (the review's M-12),
+ *       so a stray key per entry cannot flood the register.
  *   <li><strong>{@link BreakType#SHAPE_MISMATCH}</strong> - rules are in force and the entry matches none of them: a rule
  *       matches when <em>every</em> line is admitted by one of its shape lines (the purpose is one the shape line names
  *       and the side one it takes) and <em>every required</em> shape line is present. Classification, not cardinality or
@@ -41,6 +41,17 @@ public final class RuleConformance {
     /** The namespace an entry with no namespace is filed under. */
     public static final String UNNAMED = "(none)";
 
+    /** What an identifier-like segment of an unregistered namespace is folded to. */
+    public static final String ID_TOKEN = "{id}";
+
+    /** A UUID anywhere in a namespace. */
+    private static final java.util.regex.Pattern UUID_LIKE = java.util.regex.Pattern.compile(
+            "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+
+    /** A segment (between {@code .}, {@code -} and the colon) of six or more characters holding a digit. */
+    private static final java.util.regex.Pattern ID_SEGMENT = java.util.regex.Pattern.compile(
+            "(?<=^|[.-])(?=[a-z0-9]*[0-9])[a-z0-9]{6,}(?=[.-]|:$)");
+
     /** How many entry ids an unregistered namespace's evidence names. */
     static final int NAMED_ENTRIES = 5;
 
@@ -55,9 +66,12 @@ public final class RuleConformance {
         return "posting-rules:v" + register.catalogueVersion();
     }
 
-    /** A fresh tally for one run - {@code known} subjects counted, never re-raised; new ones kept up to {@code cap}. */
-    public Tally tally(Predicate<String> known, int cap) {
-        return new Tally(known, cap);
+    /**
+     * A fresh tally for one run - the subjects {@code held} by a break counted by that break's status, never re-raised;
+     * new ones kept up to {@code cap}.
+     */
+    public Tally tally(Map<String, BreakStatus> held, int cap) {
+        return new Tally(held, cap);
     }
 
     /** True when {@code rule}'s shape admits {@code lines} - every line admitted, every required line present. */
@@ -104,8 +118,8 @@ public final class RuleConformance {
                 : List.of();
         if (inForce.isEmpty()) {
             findings.add(new BreakFinding(CloseCheckCode.RULE_CONFORMANCE, BreakType.UNREGISTERED_POSTING,
-                    unregisteredSubject(entry), "type=" + entry.type() + ", namespace=" + namespace + ", entries="
-                            + entry.id() + " (" + entry.postingDate() + ")", judgedBy()));
+                    unregisteredSubject(entry), "type=" + entry.type() + ", namespace=" + folded(namespace)
+                            + ", entries=" + entry.id() + " (" + entry.postingDate() + ")", judgedBy()));
         } else if (inForce.stream().noneMatch(rule -> matches(rule, entry.lines()))) {
             findings.add(new BreakFinding(CloseCheckCode.RULE_CONFORMANCE, BreakType.SHAPE_MISMATCH,
                     "shape:" + entry.id(), "entry=" + entry.id() + ", type=" + entry.type() + ", namespace=" + namespace
@@ -124,21 +138,21 @@ public final class RuleConformance {
 
     /**
      * One run's findings over a period's entries, entry by entry: the per-entry findings kept as found, the unregistered
-     * namespaces folded with their counts and first entries. Known subjects are counted, never kept; past {@code cap} new
-     * subjects the tally only counts ({@link #capped()}). Per run, never shared.
+     * namespaces folded with their counts and first entries. Subjects a break already holds are counted by its status,
+     * never kept; past {@code cap} new subjects the tally only counts ({@link #capped()}). Per run, never shared.
      */
     public final class Tally {
 
-        private final Predicate<String> known;
+        private final Map<String, BreakStatus> held;
         private final int cap;
         private final Map<String, BreakFinding> kept = new LinkedHashMap<>();
         private final Map<String, Unregistered> namespaces = new LinkedHashMap<>();
-        private final TreeSet<String> knownSeen = new TreeSet<>();
+        private final Map<String, BreakStatus> knownSeen = new TreeMap<>();
         private long entries;
         private boolean capped;
 
-        private Tally(Predicate<String> known, int cap) {
-            this.known = Objects.requireNonNull(known, "known");
+        private Tally(Map<String, BreakStatus> held, int cap) {
+            this.held = Map.copyOf(Objects.requireNonNull(held, "held"));
             if (cap < 1) {
                 throw new IllegalArgumentException("a tally keeps at least one finding");
             }
@@ -149,20 +163,21 @@ public final class RuleConformance {
         public void add(JournalShapes.EntryShape entry) {
             entries++;
             for (BreakFinding finding : judge(entry)) {
-                if (known.test(finding.subject())) {
-                    knownSeen.add(finding.subject());
+                BreakStatus holder = held.get(finding.subject());
+                if (holder != null) {
+                    knownSeen.put(finding.subject(), holder);
                     continue;
                 }
                 if (finding.type() == BreakType.UNREGISTERED_POSTING) {
-                    Unregistered folded = namespaces.get(finding.subject());
-                    if (folded == null) {
+                    Unregistered tallied = namespaces.get(finding.subject());
+                    if (tallied == null) {
                         if (!room()) {
                             continue;
                         }
-                        folded = new Unregistered(entry.type(), namespaceOf(entry));
-                        namespaces.put(finding.subject(), folded);
+                        tallied = new Unregistered(entry.type(), folded(namespaceOf(entry)));
+                        namespaces.put(finding.subject(), tallied);
                     }
-                    folded.add(entry);
+                    tallied.add(entry);
                     continue;
                 }
                 if (!kept.containsKey(finding.subject()) && room()) {
@@ -179,9 +194,11 @@ public final class RuleConformance {
             return findings;
         }
 
-        /** Subjects found that were already known - counted, not re-raised. */
-        public int known() {
-            return knownSeen.size();
+        /** Subjects found that a break already held, counted per that break's status - never re-raised. */
+        public Map<BreakStatus, Integer> known() {
+            Map<BreakStatus, Integer> known = new java.util.EnumMap<>(BreakStatus.class);
+            knownSeen.values().forEach(status -> known.merge(status, 1, Integer::sum));
+            return known;
         }
 
         /** Entries judged. */
@@ -210,9 +227,18 @@ public final class RuleConformance {
         return entry.namespace().filter(RuleConformance::named).orElse(UNNAMED);
     }
 
-    /** {@code namespace:<TYPE> <namespace>} - one subject per type and namespace. */
+    /** {@code namespace:<TYPE> <namespace>} - one subject per type and (folded) namespace. */
     static String unregisteredSubject(JournalShapes.EntryShape entry) {
-        return BreakFinding.cut("namespace:" + entry.type() + " " + namespaceOf(entry), BreakFinding.MAX_SUBJECT);
+        return BreakFinding.cut("namespace:" + entry.type() + " " + folded(namespaceOf(entry)), BreakFinding.MAX_SUBJECT);
+    }
+
+    /**
+     * An unregistered namespace with its identifier-like parts folded to {@link #ID_TOKEN} - a UUID, or a segment of six
+     * or more characters holding a digit - so keys that carry an id in their namespace position file under one subject
+     * (the review's M-12). A registered namespace never reaches here; an origin has no such segment.
+     */
+    static String folded(String namespace) {
+        return ID_SEGMENT.matcher(UUID_LIKE.matcher(namespace).replaceAll(ID_TOKEN)).replaceAll(ID_TOKEN);
     }
 
     /** A key namespace ends in {@code ':'} and an origin is an upper-case word; anything else is folded. */

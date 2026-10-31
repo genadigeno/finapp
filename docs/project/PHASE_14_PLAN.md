@@ -496,7 +496,15 @@ decides; the partition gives it no `ACCOUNTING_READ` - a fifth route beyond the 
 …/acknowledgement-proposal` (`ACCOUNTING_ADJUST_PROPOSE`, the disclosure), `…/acknowledgement-approval` and
 `…/resolution` (`ACCOUNTING_ADJUST_APPROVE`; the correcting entry must exist and not be the subject); approver ≠
 proposer by the domain and `accounting_break_acknowledgement_four_eyes`; nothing posts (`BreaksNeverPostTest`).
-`finapp.accounting.break.open{type}` is fed from the database; `finapp.accounting.gl.unmapped` stays `-007`'s.)*
+`finapp.accounting.break.open{type}` is fed from the database; `finapp.accounting.gl.unmapped` stays `-007`'s.
+**The independent review's fix round** (2026-11-01): a known finding is counted by its break's status
+(`knownOpen`/`knownAcknowledged`/`knownResolved`) and one a `RESOLVED` break holds is `RECURRED` - the key and the
+re-raise rule unchanged, ADR-0117's open question for the owner and `-011`; a resolution's entry must not predate the
+subject entry (the period, for another subject), be the subject or be listed in the break's evidence - refused and
+recorded `FAILED`; the break list is a keyset page (`after`, `next`) and every break read is audited
+`accounting.BreakRead`; a repeated proposal with another disclosure is stale; identifier-like namespace segments fold
+to `{id}`. For `-011`: call `AccountingChecks.run` outside any transaction; a whole run is unbounded in total (its lease
+must outlast one); reconciliation's `suspenseUnowned` is a `RECONCILIATION_DISCLOSURE` candidate.)*
 
 ### 13.4 Multi-currency (owner brief 7.5)
 

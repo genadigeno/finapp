@@ -185,8 +185,22 @@ public enum AccountingAuditAction implements AuditableAction {
             "A financial controller resolved an accounting break by reference to the correcting journal entry the owning"
                     + " domain posted through its own door - nothing is posted here (P14-TSK-010, INV-ACC-12; POST"
                     + " .../breaks/{breakId}/resolution, ACCOUNTING_ADJUST_APPROVE). Reasoned. Its target the break; the"
-                    + " summary its period, check, type, the status it left and the correcting entry's id.",
-            true);
+                    + " summary its period, check, type, the status it left and the correcting entry's id. A refused"
+                    + " resolution - the entry unknown, the subject itself, named in the break's evidence, or posted"
+                    + " before what it would correct - is recorded FAILED in a transaction of its own, nothing changed.",
+            true),
+
+    /** An operator read the accounting breaks - a period's page or one break (`P14-TSK-010`, the review's M-5). */
+    BREAK_READ(
+            "accounting.BreakRead",
+            "An accountant read a page of a period's accounting breaks (GET /v1/operator/accounting/breaks,"
+                    + " ACCOUNTING_READ) or a financial controller read one break with its pending disclosure (GET"
+                    + " .../breaks/{breakId}, ACCOUNTING_ADJUST_APPROVE) - CONFIDENTIAL findings (P14-TSK-010, the"
+                    + " independent review's M-5; the GlRead and ReportRead precedent). Recorded SUCCEEDED in a"
+                    + " transaction of its own before the answer, so nothing is served unrecorded; an unknown break"
+                    + " records nothing. Its target the period or the break; the summary the door, the period, the status"
+                    + " asked, the count and page=first|next - never a subject, evidence or a disclosure.",
+            false);
 
     private final String code;
     private final String description;

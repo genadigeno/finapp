@@ -216,18 +216,90 @@ class AccountingBreaksTest {
     }
 
     @Test
+    @DisplayName("a resolution must be a plausible correction (the review's I-2): an entry posted before the subject"
+            + " entry, before the period for another subject, or named in the break's evidence is refused - nothing"
+            + " changed, the refusal recordable FAILED")
+    void aResolutionMustBeAPlausibleCorrection() {
+        JournalReads.Entry subject = journal.post(LocalDate.of(2097, 3, 20), "EUR", 2, 100, "CUSTOMER_WALLET",
+                "CUSTOMER", "FEE_REVENUE", "OPERATIONAL");
+        AccountingBreakId entryBreak = raised(shapeMismatch(subject.id()));
+        JournalReads.Entry earlier = journal.post(LocalDate.of(2097, 3, 10), "EUR", 2, 100, "FEE_REVENUE",
+                "OPERATIONAL", "CUSTOMER_WALLET", "CUSTOMER");
+        AccountingBreaks.CorrectingEntryInvalid beforeSubject = org.junit.jupiter.api.Assertions.assertThrows(
+                AccountingBreaks.CorrectingEntryInvalid.class,
+                () -> breaks.resolve(UOW, entryBreak, controller, earlier.id(), "an earlier entry", correlation()));
+        assertThat(beforeSubject.summary()).contains("refused=BEFORE_SUBJECT").contains(earlier.id().toString());
+
+        JournalReads.Entry listed = journal.post(LocalDate.of(2097, 4, 1), "EUR", 2, 7, "CUSTOMER_WALLET", "CUSTOMER",
+                "FEE_REVENUE", "OPERATIONAL");
+        AccountingBreakId namespaceBreak = raised(new BreakFinding(CloseCheckCode.RULE_CONFORMANCE,
+                BreakType.UNREGISTERED_POSTING, "namespace:POSTING probe:", "type=POSTING, namespace=probe:, entries=3,"
+                        + " first=[" + listed.id() + "]", "posting-rules:v2"));
+        assertThatThrownBy(() -> breaks.resolve(UOW, namespaceBreak, controller, listed.id(), "one of its own",
+                correlation())).isInstanceOfSatisfying(AccountingBreaks.CorrectingEntryInvalid.class, refused ->
+                assertThat(refused.summary()).contains("refused=IN_EVIDENCE"));
+
+        AccountingBreakId keyBreak = raised(new BreakFinding(CloseCheckCode.GL_EQUALS_LEDGER, BreakType.MAPPING_GAP,
+                "key:PROBE/OPERATIONAL", "key=PROBE/OPERATIONAL", "gl-mapping:v1"));
+        JournalReads.Entry february = journal.post(LocalDate.of(2097, 2, 27), "EUR", 2, 1, "CUSTOMER_WALLET",
+                "CUSTOMER", "FEE_REVENUE", "OPERATIONAL");
+        assertThatThrownBy(() -> breaks.resolve(UOW, keyBreak, controller, february.id(), "before the period",
+                correlation())).isInstanceOfSatisfying(AccountingBreaks.CorrectingEntryInvalid.class, refused ->
+                assertThat(refused.summary()).contains("refused=BEFORE_SUBJECT"));
+
+        assertThat(store.rows()).extracting(AccountingBreakStore.BreakRow::status).containsOnly(BreakStatus.OPEN);
+        assertThat(store.history()).extracting(AccountingBreakStore.EventRow::act)
+                .containsOnly(AccountingBreakStore.Act.RAISED);
+
+        breaks.recordRefusal(UOW, beforeSubject, controller, correlation());
+        assertThat(audit).last().satisfies(record -> {
+            assertThat(record.operation().code()).isEqualTo("accounting.BreakResolved");
+            assertThat(record.outcome()).isEqualTo(AuditOutcome.FAILED);
+            assertThat(record.targetId()).isEqualTo(entryBreak.value().toString());
+            assertThat(record.reason()).contains("an earlier entry");
+        });
+        // The same day as the subject, and any later day, is a correction's.
+        JournalReads.Entry sameDay = journal.post(LocalDate.of(2097, 3, 20), "EUR", 2, 100, "FEE_REVENUE",
+                "OPERATIONAL", "CUSTOMER_WALLET", "CUSTOMER");
+        assertThat(breaks.resolve(UOW, entryBreak, controller, sameDay.id(), "reversed the same day", correlation())
+                .status()).isEqualTo(BreakStatus.RESOLVED);
+    }
+
+    @Test
+    @DisplayName("a repeated proposal carrying another disclosure is refused as stale - never answered as done while"
+            + " the earlier text stands (the review's M-6)")
+    void aRepeatWithAnotherDisclosureIsStale() {
+        AccountingBreakId id = raised();
+        breaks.proposeAcknowledgement(UOW, id, accountant, "the first disclosure", correlation());
+        assertThatThrownBy(() -> breaks.proposeAcknowledgement(UOW, id, accountant, "a second disclosure",
+                correlation())).isInstanceOf(AccountingBreaks.BreakStale.class);
+        assertThat(breaks.proposeAcknowledgement(UOW, id, accountant, "the first disclosure", correlation()).replayed())
+                .isTrue();
+        assertThat(store.find(UOW, id)).hasValueSatisfying(row ->
+                assertThat(row.disclosure()).contains("the first disclosure"));
+    }
+
+    @Test
     @DisplayName("the reads: a period's breaks, the subjects a run counts, the open ones per type")
     void theReads() {
         AccountingBreakId first = raised();
         raised();
-        assertThat(breaks.list(UOW, MARCH, java.util.Optional.empty(), 10)).hasSize(2);
-        assertThat(breaks.subjects(UOW, MARCH, CloseCheckCode.RULE_CONFORMANCE)).hasSize(2);
-        assertThat(breaks.subjects(UOW, MARCH, CloseCheckCode.GL_EQUALS_LEDGER)).isEmpty();
+        assertThat(breaks.list(UOW, MARCH, java.util.Optional.empty(), java.util.Optional.empty(), 10)).hasSize(2);
+        // Keyset pages: one at a time, the second after the first, none after the last (the review's M-4).
+        java.util.List<AccountingBreakStore.BreakRow> firstPage =
+                breaks.list(UOW, MARCH, java.util.Optional.empty(), java.util.Optional.empty(), 1);
+        java.util.List<AccountingBreakStore.BreakRow> secondPage = breaks.list(UOW, MARCH, java.util.Optional.empty(),
+                java.util.Optional.of(firstPage.get(0).id()), 1);
+        assertThat(secondPage).singleElement().satisfies(row -> assertThat(row.id()).isNotEqualTo(firstPage.get(0).id()));
+        assertThat(breaks.list(UOW, MARCH, java.util.Optional.empty(), java.util.Optional.of(secondPage.get(0).id()), 1))
+                .isEmpty();
+        assertThat(breaks.held(UOW, MARCH, CloseCheckCode.RULE_CONFORMANCE)).hasSize(2).containsValue(BreakStatus.OPEN);
+        assertThat(breaks.held(UOW, MARCH, CloseCheckCode.GL_EQUALS_LEDGER)).isEmpty();
         assertThat(breaks.openByType(UOW)).containsEntry(BreakType.SHAPE_MISMATCH, 2L);
         breaks.resolve(UOW, first, controller, journal.post(LocalDate.of(2097, 4, 2), "EUR", 2, 1, "CUSTOMER_WALLET",
                 "CUSTOMER", "FEE_REVENUE", "OPERATIONAL").id(), "corrected", correlation());
         assertThat(breaks.openByType(UOW)).containsEntry(BreakType.SHAPE_MISMATCH, 1L);
-        assertThat(breaks.list(UOW, MARCH, java.util.Optional.of(BreakStatus.RESOLVED), 10)).hasSize(1);
+        assertThat(breaks.list(UOW, MARCH, java.util.Optional.of(BreakStatus.RESOLVED), java.util.Optional.empty(), 10)).hasSize(1);
     }
 
     // ------------------------------------------------------------------ fixtures

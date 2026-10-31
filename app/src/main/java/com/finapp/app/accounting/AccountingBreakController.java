@@ -7,7 +7,6 @@ import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
-import java.util.List;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -40,19 +39,24 @@ public class AccountingBreakController {
     @NonNull private final AccountingBreakDesk desk;
 
     /**
-     * A period's breaks ({@code period} a calendar month {@code YYYY-MM}; {@code status} optional; {@code limit} 1 to 500,
-     * default 100), oldest first: each finding with the register version it was judged by, its status and its acts.
+     * One keyset page of a period's breaks ({@code period} a calendar month {@code YYYY-MM}; {@code status} optional;
+     * {@code limit} 1 to 500, default 100; {@code after} the previous page's {@code next}), in birth order: each finding
+     * with the register version it was judged by, its status and its acts. Audited {@code accounting.BreakRead}.
      */
     @GetMapping
     @RequiresPermission(PermissionName.ACCOUNTING_READ)
-    public List<AccountingBreakDesk.AccountingBreakView> listAccountingBreaks(
+    public AccountingBreakDesk.AccountingBreakPage listAccountingBreaks(
             @RequestParam("period") String period,
             @RequestParam(name = "status", required = false) String status,
-            @RequestParam(name = "limit", required = false) Integer limit) {
-        return desk.list(period, status, limit);
+            @RequestParam(name = "limit", required = false) Integer limit,
+            @RequestParam(name = "after", required = false) String after) {
+        return desk.list(period, status, limit, after);
     }
 
-    /** One break, with its pending acknowledgement's disclosure - the controller's read of what it decides. */
+    /**
+     * One break, with its pending acknowledgement's disclosure - the controller's read of what it decides. Audited
+     * {@code accounting.BreakRead}.
+     */
     @GetMapping("/{breakId}")
     @RequiresPermission(PermissionName.ACCOUNTING_ADJUST_APPROVE)
     public AccountingBreakDesk.AccountingBreakView readAccountingBreak(@PathVariable("breakId") String breakId) {

@@ -109,8 +109,12 @@ public class AccountingBreakBeans {
             AccountingBreaks accountingBreaks,
             IdempotentExecutor idempotentExecutor,
             AccountingTransactions accountingTransactions,
-            AccountingFlowScope accountingFlowScope) {
-        return new AccountingBreakDesk(accountingBreaks, idempotentExecutor, accountingTransactions, accountingFlowScope);
+            AccountingFlowScope accountingFlowScope,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new AccountingBreakDesk(accountingBreaks, idempotentExecutor, accountingTransactions, accountingFlowScope,
+                auditWriter, idGenerator, clock);
     }
 
     /** {@code finapp.accounting.break.open{type}} - read from the database, cached 15 s. */

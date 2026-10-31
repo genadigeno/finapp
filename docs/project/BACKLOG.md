@@ -25920,6 +25920,23 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   `finapp.accounting.break.open{type}` (`AccountingBreakMetrics`, database, 15 s). Nothing posts
   (`BreaksNeverPostTest`). `SOURCE_DELAYED` not raised (no built proof tells a delay from a discrepancy - `-011`'s
   `ACCRUALS_COMPLETE`). The database cases are written and owed (C5).
+- **The independent review** (2026-11-01, FIX FIRST - no false-pass path, no posting path; born-once, fail-closed, four
+  eyes, one snapshot across pages, no floating point and the module boundaries confirmed). Fixed on the branch: **I-1**
+  known findings counted by their break's status in `CheckOutcome` (`knownOpen`, `knownAcknowledged`, `knownResolved`)
+  and a `RESOLVED` break's still-present discrepancy reported `RECURRED` (the key and re-raise rule unchanged - an owner
+  item, ADR-0117's open question, `-011` the consumer); **I-2** a resolution refused, nothing changed and the refusal
+  recorded `accounting.BreakResolved` `FAILED`, when its entry predates the subject entry (the period, for another
+  subject), is the subject, or is listed in the break's evidence (the residual - one person, any later entry, reuse
+  across breaks - an owner item); **I-3** `AccountingSourceProofsDatabaseTest` (owed) runs the wired `ProductSourceProofs`
+  through `SOURCE_COMPLETENESS` on the real snapshot, asserting no `UNAVAILABLE` - by reading, no source locks, writes or
+  needs a read-write transaction; **M-2** a judge's exception logged by class; **M-3** the month's boundary days in
+  `AccountingBreakDatabaseTest#theMonthsBoundariesAreTheRealSqls`; **M-4** the break list a keyset page (`after`,
+  `next`); **M-5** `accounting.BreakRead` on the list and the read; **M-6** a repeated proposal with another disclosure
+  `accounting.BreakStale`; **M-12** identifier-like namespace segments folded to `{id}`. Routed: **M-1** and **M-10** to
+  `P14-TSK-011` (`run` outside any transaction, a whole run unbounded below the lease - in `AccountingChecks`' javadoc;
+  `suspenseUnowned` → `RECONCILIATION_DISCLOSURE`?); **M-7** to the owner (a mirror reversal judged against its own rule
+  at the reversal's date); **M-8** a known limitation (offsetting differences within one currency cancel); **M-9** in
+  `BreaksNeverPostTest`'s javadoc; **M-11** at the integration merge. Three probes added (`MUTATION_TESTING.md` §2).
 
 **P14-TSK-011 — The close run and its readiness checks** — `PLANNED`
 - **Routed by `P14-TSK-006`'s review (2026-10-31)**: (I-1, IMPORTANT) `ACCRUALS_COMPLETE` judged after the lock can pass while the locked period is short of interest - a catch-up after the lock floors the period's accrual dates (`LND-2` v2) to the first open date and `AccrualCompleteness.blocking(periodEnd)` then reads empty; judge it inside the lock's transaction with the cutoff key exclusive (and refuse the lock while it is non-empty), or find and disclose the `LND-2` entries with `value_date <= period end < posting_date` (they carry `flooredFrom=`) - decide in the design. (M-1) lending posts "today" on the servicing zone's business date (zones to -14:00): a lock under a 1-business-day grace at 00:00 UTC can refuse a western zone's same-day postings for hours - make `lockableFrom` account for the westernmost servicing zone or raise the grace minimum to 2 (default 2 is safe). (M-2) the reconciliation expectation reads the floored posting date while `ReconciliationReports.providerCosts` groups by the batch's stated `accepted_on` - align or disclose.

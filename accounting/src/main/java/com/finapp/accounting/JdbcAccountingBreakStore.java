@@ -15,8 +15,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.TreeMap;
 import java.util.UUID;
 
 /**
@@ -65,14 +64,18 @@ public final class JdbcAccountingBreakStore implements AccountingBreakStore {
     }
 
     @Override
-    public List<BreakRow> list(Connection unitOfWork, YearMonth period, Optional<BreakStatus> status, int limit) {
+    public List<BreakRow> list(Connection unitOfWork, YearMonth period, Optional<BreakStatus> status,
+            Optional<AccountingBreakId> after, int limit) {
         String sql = ROW + " WHERE period_start = ?" + (status.isPresent() ? " AND status = ?" : "")
-                + " ORDER BY raised_at, id LIMIT ?";
+                + (after.isPresent() ? " AND id > ?" : "") + " ORDER BY id LIMIT ?";
         try (PreparedStatement read = unitOfWork.prepareStatement(sql)) {
             int at = 1;
             read.setDate(at++, Date.valueOf(period.atDay(1)));
             if (status.isPresent()) {
                 read.setString(at++, status.get().name());
+            }
+            if (after.isPresent()) {
+                read.setObject(at++, after.get().value());
             }
             read.setInt(at, limit);
             List<BreakRow> rows = new ArrayList<>();
@@ -88,15 +91,15 @@ public final class JdbcAccountingBreakStore implements AccountingBreakStore {
     }
 
     @Override
-    public Set<String> subjects(Connection unitOfWork, YearMonth period, CloseCheckCode check) {
-        try (PreparedStatement read = unitOfWork.prepareStatement("SELECT subject_ref FROM accounting.accounting_break"
-                + " WHERE period_start = ? AND check_code = ?")) {
+    public Map<String, BreakStatus> held(Connection unitOfWork, YearMonth period, CloseCheckCode check) {
+        try (PreparedStatement read = unitOfWork.prepareStatement("SELECT subject_ref, status FROM"
+                + " accounting.accounting_break WHERE period_start = ? AND check_code = ?")) {
             read.setDate(1, Date.valueOf(period.atDay(1)));
             read.setString(2, check.name());
-            Set<String> subjects = new TreeSet<>();
+            Map<String, BreakStatus> subjects = new TreeMap<>();
             try (ResultSet row = read.executeQuery()) {
                 while (row.next()) {
-                    subjects.add(row.getString(1));
+                    subjects.put(row.getString(1), BreakStatus.valueOf(row.getString(2)));
                 }
             }
             return subjects;

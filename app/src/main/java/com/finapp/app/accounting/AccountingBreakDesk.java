@@ -1,5 +1,6 @@
 package com.finapp.app.accounting;
 
+import com.finapp.accounting.AccountingAuditAction;
 import com.finapp.accounting.AccountingBreakId;
 import com.finapp.accounting.AccountingBreakStore;
 import com.finapp.accounting.AccountingBreaks;
@@ -8,6 +9,10 @@ import com.finapp.accounting.AccountingReasons;
 import com.finapp.accounting.BreakStatus;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
+import com.finapp.platform.audit.AuditId;
+import com.finapp.platform.audit.AuditOutcome;
+import com.finapp.platform.audit.AuditRecord;
+import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.CommandResult;
 import com.finapp.platform.idempotency.IdempotencyKey;
@@ -17,8 +22,10 @@ import com.finapp.platform.idempotency.StoredResponse;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.CorrelationId;
+import com.finapp.sharedkernel.id.IdGenerator;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.YearMonth;
 import java.util.List;
@@ -54,10 +61,22 @@ public final class AccountingBreakDesk {
     static final int DEFAULT_LIMIT = 100;
     static final int MAX_LIMIT = 500;
 
+    /** The audit record's target type for a period's page. */
+    static final String PERIOD_TARGET = "accounting_break_period";
+
     @NonNull private final AccountingBreaks breaks;
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final AccountingTransactions transactions;
     @NonNull private final AccountingFlowScope flow;
+    @NonNull private final AuditWriter<Connection> audit;
+    @NonNull private final IdGenerator ids;
+    @NonNull private final Clock clock;
+
+    /**
+     * One keyset page of a period's breaks: the breaks in birth order and, when the page is full, the cursor the next
+     * page starts after ({@code after}) - so a run's thousand breaks can all be reached and decided (the review's M-4).
+     */
+    public record AccountingBreakPage(List<AccountingBreakView> breaks, String next) {}
 
     /** An act's receipt: the break as the act left it. */
     public record AccountingBreakReceipt(String id, String period, String status, boolean acknowledgementPending) {}
@@ -80,20 +99,40 @@ public final class AccountingBreakDesk {
             String resolvedAt,
             String correctingEntryId) {}
 
-    /** A period's breaks, oldest first - a read, unkeyed, in one transaction; {@code limit} 1 to 500. */
-    public List<AccountingBreakView> list(String rawPeriod, String rawStatus, Integer rawLimit) {
+    /**
+     * One keyset page of a period's breaks in birth order - a read, unkeyed, in one transaction; {@code limit} 1 to 500,
+     * {@code after} the previous page's {@code next}. Recorded {@code accounting.BreakRead} in a transaction of its own
+     * before the answer (the review's M-5).
+     */
+    public AccountingBreakPage list(String rawPeriod, String rawStatus, Integer rawLimit, String rawAfter) {
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
         YearMonth period = GeneralLedgerDesk.period(rawPeriod);
         Optional<BreakStatus> status = status(rawStatus);
         int limit = limit(rawLimit);
-        return flow.door(READ_SPAN, () -> transactions.inTransaction(uow ->
-                breaks.list(uow, period, status, limit).stream().map(AccountingBreakDesk::view).toList()));
+        Optional<AccountingBreakId> after = after(rawAfter);
+        List<AccountingBreakView> page = flow.door(READ_SPAN, () -> transactions.inTransaction(uow ->
+                breaks.list(uow, period, status, after, limit).stream().map(AccountingBreakDesk::view).toList()));
+        String next = page.size() == limit ? page.get(page.size() - 1).id() : null;
+        recordRead(actor, correlation, PERIOD_TARGET, period.toString(), "door=list, period=" + period + ", status="
+                + status.map(Enum::name).orElse("ALL") + ", breaks=" + page.size() + ", page="
+                + (after.isPresent() ? "next" : "first"));
+        return new AccountingBreakPage(page, next);
     }
 
-    /** One break - the controller's read of what they decide. */
+    /**
+     * One break - the controller's read of what they decide. Recorded {@code accounting.BreakRead} before the answer; an
+     * unknown break records nothing.
+     */
     public AccountingBreakView one(String rawId) {
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
         AccountingBreakId id = breakId(rawId);
-        return flow.door(READ_SPAN, () -> transactions.inTransaction(uow ->
+        AccountingBreakView view = flow.door(READ_SPAN, () -> transactions.inTransaction(uow ->
                 breaks.find(uow, id).map(AccountingBreakDesk::view).orElseThrow(AccountingBreakDesk::notFound)));
+        recordRead(actor, correlation, AccountingBreaks.TARGET_TYPE, view.id(), "door=one, period=" + view.period()
+                + ", check=" + view.check() + ", type=" + view.type() + ", status=" + view.status());
+        return view;
     }
 
     public AccountingBreakReceipt proposeAcknowledgement(String idempotencyKey, String rawId, String disclosure) {
@@ -154,13 +193,13 @@ public final class AccountingBreakDesk {
 
     /**
      * One keyed act in one transaction - a lost response replays the stored receipt; a refusal stores nothing, a
-     * self-approval is recorded {@code FAILED} in a transaction of its own.
+     * self-approval or a refused resolution is recorded {@code FAILED} in a transaction of its own.
      */
     private AccountingBreakReceipt keyed(
             Actor actor, String idempotencyKey, String fingerprinted, Function<Connection, AccountingBreakReceipt> act) {
         IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
-        IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> selfApprovalRecorded(actor,
+        IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> refusalsRecorded(actor,
                 () -> transactions.inTransaction(unitOfWork -> executor.execute(unitOfWork, key, fingerprint, uow -> {
                     AccountingBreakReceipt receipt = act.apply(uow);
                     String stored = receipt.id() + "|" + receipt.period() + "|" + receipt.status() + "|"
@@ -174,8 +213,11 @@ public final class AccountingBreakDesk {
         return new AccountingBreakReceipt(stored[0], stored[1], stored[2], Boolean.parseBoolean(stored[3]));
     }
 
-    /** {@code work}, a refused self-approval recorded {@code FAILED} after the act rolled back, then refused as before. */
-    private <R> R selfApprovalRecorded(Actor actor, Supplier<R> work) {
+    /**
+     * {@code work}, a refused self-approval or a refused resolution (the review's I-2) recorded {@code FAILED} after the
+     * act rolled back with nothing changed, then refused as before.
+     */
+    private <R> R refusalsRecorded(Actor actor, Supplier<R> work) {
         try {
             return work.get();
         } catch (AccountingBreaks.SelfApprovalRefused self) {
@@ -185,6 +227,35 @@ public final class AccountingBreakDesk {
                 return null;
             });
             throw self;
+        } catch (AccountingBreaks.CorrectingEntryInvalid invalid) {
+            CorrelationId correlation = correlation();
+            transactions.inTransaction(uow -> {
+                breaks.recordRefusal(uow, invalid, actor, correlation);
+                return null;
+            });
+            throw invalid;
+        }
+    }
+
+    /** {@code accounting.BreakRead}, SUCCEEDED, in a transaction of its own - before the answer leaves. */
+    private void recordRead(Actor actor, CorrelationId correlation, String targetType, String targetId, String summary) {
+        transactions.inTransaction(unitOfWork -> {
+            audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, Instant.now(clock),
+                    AccountingAuditAction.BREAK_READ, targetType, targetId, Optional.empty(), AuditOutcome.SUCCEEDED,
+                    correlation, Optional.of(summary)));
+            return null;
+        });
+    }
+
+    /** The previous page's {@code next}: a break's id; anything else {@code api.ValidationFailed}. */
+    static Optional<AccountingBreakId> after(String raw) {
+        if (raw == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(AccountingBreakId.of(UUID.fromString(raw)));
+        } catch (IllegalArgumentException malformed) {
+            throw invalid("after is the next cursor of a previous page");
         }
     }
 

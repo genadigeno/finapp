@@ -48,6 +48,14 @@ import org.junit.jupiter.api.Test;
  * dependencies (they hold ledger <em>readers</em> - {@code ProjectionVerification}, {@code LedgerAccountId} - which is
  * their job). The database half - the journal's count unchanged by a check run and a resolution - is
  * {@code AccountingBreakDatabaseTest#aResolutionPostsNothing}'s (owed, C5).
+ *
+ * <p><strong>What this does not see</strong> (the independent review's M-9): the reach follows {@code accounting}
+ * classes only, never {@code app}'s - so the proofs {@code ProductSourceProofs} is handed are not walked, and one of them,
+ * reconciliation's {@code PositionProof}, holds the ledger's {@code JournalEntryStore} (for its line keys - a read). The
+ * runtime defence there is the snapshot every judge reads on: {@code REPEATABLE READ READ ONLY}, verified by its first
+ * statement ({@code GlSnapshots}), so a write a proof attempted would be refused by PostgreSQL ({@code 25006}) and the
+ * check would answer {@code UNAVAILABLE}, never post - {@code AccountingSourceProofsDatabaseTest} proves no real source
+ * needs more than that snapshot (owed, C5).
  */
 @Tag("architecture")
 @DisplayName("the break machinery never posts: no ledger writer, no cutoff, no prior-period door (P14-TSK-010)")

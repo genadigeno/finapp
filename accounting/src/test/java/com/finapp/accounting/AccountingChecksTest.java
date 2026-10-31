@@ -110,10 +110,40 @@ class AccountingChecksTest {
 
         CheckOutcome second = checks.run(MARCH, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation());
         assertThat(second.raised()).isZero();
-        assertThat(second.known()).isEqualTo(1);
+        assertThat(second.knownOpen()).isEqualTo(1);
         assertThat(second.passed()).as("a known discrepancy still fails the check").isFalse();
         assertThat(store.rows()).hasSize(1);
         assertThat(events).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a known finding is counted by its break's status (the review's I-1): acknowledged is disclosed; a"
+            + " discrepancy still present after its break was resolved is RECURRED - never folded into 'disclosed'")
+    void aResolvedBreaksDiscrepancyStillPresentIsRecurred() {
+        entry("transfer:", "CUSTOMER_WALLET", "FEE_REVENUE");
+        checks.run(MARCH, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation());
+        AccountingBreakId id = store.rows().get(0).id();
+        Actor accountant = new Actor("accountant-1", ActorType.CUSTOMER);
+        Actor controller = new Actor("controller-1", ActorType.CUSTOMER);
+        breaks.proposeAcknowledgement(SNAPSHOT, id, accountant, "a fee line, corrected next month", correlation());
+        breaks.approveAcknowledgement(SNAPSHOT, id, controller, "disclosed", correlation());
+
+        CheckOutcome acknowledged = checks.run(MARCH, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation());
+        assertThat(acknowledged.knownAcknowledged()).isEqualTo(1);
+        assertThat(acknowledged.knownResolved()).isZero();
+        assertThat(acknowledged.failures()).containsExactly(CheckOutcome.DISCREPANCIES);
+
+        JournalReads.Entry correcting = journal.post(DAY.plusDays(5), "EUR", 2, 10, "FEE_REVENUE", "OPERATIONAL",
+                "CUSTOMER_WALLET", "CUSTOMER");
+        breaks.resolve(SNAPSHOT, id, controller, correcting.id(), "reversed", correlation());
+
+        CheckOutcome recurred = checks.run(MARCH, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation());
+        assertThat(recurred.result()).isEqualTo(CheckOutcome.Result.FAILED);
+        assertThat(recurred.knownResolved()).isEqualTo(1);
+        assertThat(recurred.knownOpen()).isZero();
+        assertThat(recurred.failures()).containsExactly(CheckOutcome.DISCREPANCIES, CheckOutcome.RECURRED);
+        assertThat(recurred.raised()).as("the key and the re-raise rule are unchanged - an owner item").isZero();
+        assertThat(store.rows()).hasSize(1);
     }
 
     @Test
@@ -215,7 +245,7 @@ class AccountingChecksTest {
         assertThat(first.raised()).isEqualTo(1);
         assertThat(first.judgedBy()).isEqualTo("source-proofs:v1");
         assertThat(second.raised()).isZero();
-        assertThat(second.known()).isEqualTo(1);
+        assertThat(second.knownOpen()).isEqualTo(1);
         assertThat(store.rows()).singleElement().satisfies(row -> {
             assertThat(row.type()).isEqualTo(BreakType.SOURCE_DISCREPANCY);
             assertThat(row.subject()).isEqualTo("LOAN_SUBLEDGER:loan-9");

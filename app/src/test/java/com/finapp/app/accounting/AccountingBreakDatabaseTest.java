@@ -52,7 +52,6 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -164,7 +163,8 @@ class AccountingBreakDatabaseTest {
     @Test
     @DisplayName("an unregistered namespace raises one UNREGISTERED_POSTING however many entries carry it")
     void anUnregisteredNamespaceRaisesOneBreak() throws Exception {
-        String namespace = "p14-010-" + HexFormat.of().formatHex(RANDOM.generateSeed(4)) + ":";
+        // Letters only: an id-like segment would fold to one subject across runs (the review's M-12).
+        String namespace = "p14-010-" + letters(8) + ":";
         LedgerAccount wallet = wallet();
         for (int i = 0; i < 3; i++) {
             post(namespace + IDS.next(), wallet, operational(AccountPurpose.FEE_REVENUE));
@@ -234,7 +234,9 @@ class AccountingBreakDatabaseTest {
             + " names the correcting entry")
     void aResolutionPostsNothing() throws Exception {
         UUID planted = post("transfer:" + IDS.next(), wallet(), operational(AccountPurpose.FEE_REVENUE));
-        UUID correcting = post("p14-010-correction:" + IDS.next(), operational(AccountPurpose.FEE_REVENUE), wallet());
+        // On the month's last day: a correction comes after what it corrects (the review's I-2).
+        UUID correcting = post("p14-010-correction:" + IDS.next(), operational(AccountPurpose.FEE_REVENUE), wallet(),
+                month.atEndOfMonth());
         // The month's own count: no other suite dates into it, so a concurrent suite's postings cannot move it.
         String monthsEntries = "SELECT count(*) FROM ledger.journal_entry WHERE posting_date BETWEEN '"
                 + month.atDay(1) + "' AND '" + month.atEndOfMonth() + "'";
@@ -267,7 +269,36 @@ class AccountingBreakDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("the month's boundaries against the real SQL (the review's M-3): a mismatch on its last day is judged in"
+            + " it; one on the next month's first day is not - it is the next month's")
+    void theMonthsBoundariesAreTheRealSqls() throws Exception {
+        LedgerAccount wallet = wallet();
+        UUID lastDay = post("transfer:" + IDS.next(), wallet, operational(AccountPurpose.FEE_REVENUE),
+                month.atEndOfMonth());
+        UUID nextFirst = post("transfer:" + IDS.next(), wallet, operational(AccountPurpose.FEE_REVENUE),
+                month.plusMonths(1).atDay(1));
+
+        checks().run(month, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation());
+
+        assertThat(count("SELECT count(*) FROM accounting.accounting_break WHERE period_start = '" + month.atDay(1)
+                + "' AND subject_ref = 'shape:" + lastDay + "'")).as("the last day is the month's").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM accounting.accounting_break WHERE subject_ref = 'shape:" + nextFirst
+                + "'")).as("the next month's first day is not judged in this month").isZero();
+        checks().run(month.plusMonths(1), CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation());
+        assertThat(count("SELECT count(*) FROM accounting.accounting_break WHERE period_start = '"
+                + month.plusMonths(1).atDay(1) + "' AND subject_ref = 'shape:" + nextFirst + "'")).isEqualTo(1);
+    }
+
     // ------------------------------------------------------------------ fixtures
+
+    private static String letters(int length) {
+        StringBuilder letters = new StringBuilder();
+        for (int i = 0; i < length; i++) {
+            letters.append((char) ('g' + RANDOM.nextInt(20)));
+        }
+        return letters.toString();
+    }
 
     private AccountingChecks checks() {
         return new AccountingChecks(new GeneralLedger(new LedgerJournalReads()),
@@ -322,7 +353,11 @@ class AccountingBreakDatabaseTest {
 
     /** One balanced entry keyed {@code key}, dated in this case's month, through the ledger's own door - its id. */
     private UUID post(String key, LedgerAccount debit, LedgerAccount credit) throws SQLException {
-        LocalDate day = month.atDay(1 + RANDOM.nextInt(28));
+        return post(key, debit, credit, month.atDay(1 + RANDOM.nextInt(28)));
+    }
+
+    /** One balanced entry keyed {@code key}, dated {@code day}, through the ledger's own door - its id. */
+    private UUID post(String key, LedgerAccount debit, LedgerAccount credit, LocalDate day) throws SQLException {
         try (Connection app = DatabaseRoles.application();
                 SecurityContext.Scope actor = SecurityContext.enterSystem();
                 CorrelationContext.Scope flow = CorrelationContext.enter(

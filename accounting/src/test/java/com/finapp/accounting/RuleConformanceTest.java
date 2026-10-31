@@ -7,7 +7,6 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -67,7 +66,7 @@ class RuleConformanceTest {
     @DisplayName("an unregistered namespace is one UNREGISTERED_POSTING per type and namespace, whatever its entries -"
             + " counted, its first entries named; a key with no namespace and an adjustment with no origin folded")
     void anUnregisteredNamespaceIsOneFindingPerNamespace() {
-        RuleConformance.Tally tally = conformance.tally(subject -> false, 100);
+        RuleConformance.Tally tally = conformance.tally(java.util.Map.of(), 100);
         List<UUID> planted = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
             JournalShapes.EntryShape entry = entry(EntryType.POSTING, "p14-010-probe:",
@@ -138,16 +137,36 @@ class RuleConformanceTest {
     @DisplayName("a run counts the subjects already raised and never keeps them; past its cap it only counts")
     void knownSubjectsAreCountedAndTheCapHolds() {
         JournalShapes.EntryShape known = mismatch();
-        RuleConformance.Tally tally = conformance.tally(Set.of("shape:" + known.id())::contains, 2);
+        RuleConformance.Tally tally =
+                conformance.tally(java.util.Map.of("shape:" + known.id(), BreakStatus.RESOLVED), 2);
         tally.add(known);
         tally.add(mismatch());
         tally.add(mismatch());
-        assertThat(tally.known()).isEqualTo(1);
+        assertThat(tally.known()).containsExactly(java.util.Map.entry(BreakStatus.RESOLVED, 1));
         assertThat(tally.findings()).hasSize(2).noneMatch(finding -> finding.subject().equals("shape:" + known.id()));
         assertThat(tally.capped()).isFalse();
         tally.add(mismatch());
         assertThat(tally.findings()).hasSize(2);
         assertThat(tally.capped()).isTrue();
+    }
+
+    @Test
+    @DisplayName("an identifier in a namespace's position folds to one subject (the review's M-12): a UUID prefix or an"
+            + " id-like segment, never one break per entry; a namespace without one is kept as it is")
+    void anIdentifierLikeNamespaceFoldsToOneSubject() {
+        RuleConformance.Tally tally = conformance.tally(java.util.Map.of(), 100);
+        for (String namespace : java.util.List.of("abcdef01-2345-4678-9abc-def012345678:",
+                "abcdef99-2345-4678-9abc-def012345678:", "order-123456:", "order-987654:")) {
+            tally.add(entry(EntryType.POSTING, namespace, line("CUSTOMER_WALLET", Side.DEBIT, 1),
+                    line("FEE_REVENUE", Side.CREDIT, 1)));
+        }
+        tally.add(entry(EntryType.POSTING, "p14-010-probe:", line("CUSTOMER_WALLET", Side.DEBIT, 1),
+                line("FEE_REVENUE", Side.CREDIT, 1)));
+        assertThat(tally.findings()).extracting(BreakFinding::subject).containsExactly(
+                "namespace:POSTING " + RuleConformance.ID_TOKEN + ":",
+                "namespace:POSTING order-" + RuleConformance.ID_TOKEN + ":", "namespace:POSTING p14-010-probe:");
+        assertThat(tally.findings().get(0).evidence()).contains("entries=2");
+        assertThat(RuleConformance.folded("bnpl.financing:")).isEqualTo("bnpl.financing:");
     }
 
     // ------------------------------------------------------------------ fixtures

@@ -100,7 +100,7 @@ class AccountingBreakDeskTest {
             (uow, envelope, payload, mediaType) -> { }, IDS, CLOCK);
     private final AccountingBreakDesk desk = new AccountingBreakDesk(breaks,
             new IdempotentExecutor(new Claims(), CLOCK, Duration.ofDays(1), Duration.ofSeconds(30)), unitOfWork,
-            AccountingFlowScope.NONE);
+            AccountingFlowScope.NONE, (uow, record) -> audited.add(record), IDS, CLOCK);
 
     @Test
     @DisplayName("acknowledgement is four-eyes over the doors: the proposer's approval is 403 and recorded FAILED in its"
@@ -141,6 +141,15 @@ class AccountingBreakDeskTest {
                 "CUSTOMER", "FEE_REVENUE", "OPERATIONAL");
         refused(() -> as(CONTROLLER, () -> desk.resolve("r-1", id, UUID.randomUUID().toString(), "fixed")),
                 AccountingErrorCode.CORRECTING_ENTRY_INVALID, 422);
+        // The review's I-2: the refused resolution recorded FAILED in a transaction of its own, nothing changed.
+        assertThat(audited).filteredOn(record -> record.outcome() == AuditOutcome.FAILED).singleElement()
+                .satisfies(record -> {
+                    assertThat(record.operation().code()).isEqualTo("accounting.BreakResolved");
+                    assertThat(record.targetId()).isEqualTo(id);
+                    assertThat(record.changeSummary()).hasValueSatisfying(summary ->
+                            assertThat(summary).contains("refused=UNKNOWN"));
+                });
+        assertThat(store.history()).hasSize(1);
         assertThatThrownBy(() -> as(CONTROLLER, () -> desk.resolve("r-2", id, "not-an-entry", "fixed")))
                 .isInstanceOfSatisfying(ApiException.class, refused ->
                         assertThat(refused.errorCode()).isEqualTo(PlatformErrorCode.VALIDATION_FAILED));
@@ -164,19 +173,65 @@ class AccountingBreakDeskTest {
                 AccountingErrorCode.REASON_REQUIRED, 422);
         refused(() -> as(CONTROLLER, () -> desk.approveAcknowledgement("k-a", id, "none proposed")),
                 AccountingErrorCode.BREAK_STALE, 409);
-        for (Supplier<?> malformed : List.<Supplier<?>>of(() -> desk.list("2097-3", null, null),
-                () -> desk.list("2097-03", "CLOSED", null), () -> desk.list("2097-03", null, 0))) {
-            assertThatThrownBy(malformed::get).isInstanceOfSatisfying(ApiException.class, refused ->
+        for (Supplier<?> malformed : List.<Supplier<?>>of(() -> desk.list("2097-3", null, null, null),
+                () -> desk.list("2097-03", "CLOSED", null, null), () -> desk.list("2097-03", null, 0, null),
+                () -> desk.list("2097-03", null, null, "not-a-cursor"))) {
+            assertThatThrownBy(() -> as(ACCOUNTANT, malformed)).isInstanceOfSatisfying(ApiException.class, refused ->
                     assertThat(refused.errorCode()).isEqualTo(PlatformErrorCode.VALIDATION_FAILED));
         }
-        assertThat(desk.list("2097-03", null, null)).singleElement().satisfies(view -> {
+        AccountingBreakDesk.AccountingBreakPage page = as(ACCOUNTANT, () -> desk.list("2097-03", null, null, null));
+        assertThat(page.next()).isNull();
+        assertThat(page.breaks()).singleElement().satisfies(view -> {
             assertThat(view.id()).isEqualTo(id);
             assertThat(view.type()).isEqualTo("SHAPE_MISMATCH");
             assertThat(view.check()).isEqualTo("RULE_CONFORMANCE");
             assertThat(view.status()).isEqualTo("OPEN");
         });
-        assertThat(desk.list("2097-03", "RESOLVED", 10)).isEmpty();
-        assertThat(desk.list("2097-04", null, null)).isEmpty();
+        assertThat(as(ACCOUNTANT, () -> desk.list("2097-03", "RESOLVED", 10, null)).breaks()).isEmpty();
+        assertThat(as(ACCOUNTANT, () -> desk.list("2097-04", null, null, null)).breaks()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the list is a keyset page (the review's M-4): a full page names its next cursor and the pages together"
+            + " are every break once; every served read - a page or one break - is recorded accounting.BreakRead first,"
+            + " an unknown break records nothing (M-5)")
+    void theListPagesAndEveryReadIsRecorded() {
+        java.util.Set<String> raised = new java.util.TreeSet<>();
+        for (int i = 0; i < 5; i++) {
+            raised.add(raised());
+        }
+        java.util.Set<String> served = new java.util.TreeSet<>();
+        String after = null;
+        int pages = 0;
+        do {
+            String cursor = after;
+            AccountingBreakDesk.AccountingBreakPage page = as(ACCOUNTANT, () -> desk.list("2097-03", null, 2, cursor));
+            page.breaks().forEach(view -> assertThat(served.add(view.id())).as("no break served twice").isTrue());
+            after = page.next();
+            pages++;
+        } while (after != null);
+        assertThat(served).isEqualTo(raised);
+        assertThat(pages).isEqualTo(3);
+        List<AuditRecord> reads = audited.stream()
+                .filter(record -> record.operation().code().equals("accounting.BreakRead")).toList();
+        assertThat(reads).hasSize(3).allSatisfy(record -> {
+            assertThat(record.outcome()).isEqualTo(AuditOutcome.SUCCEEDED);
+            assertThat(record.targetId()).isEqualTo("2097-03");
+            assertThat(record.changeSummary()).hasValueSatisfying(summary ->
+                    assertThat(summary).contains("door=list").doesNotContain("shape:"));
+        });
+        assertThat(reads.get(1).changeSummary()).hasValueSatisfying(summary -> assertThat(summary).contains("page=next"));
+
+        String one = raised.iterator().next();
+        as(CONTROLLER, () -> desk.one(one));
+        assertThat(audited).last().satisfies(record -> {
+            assertThat(record.operation().code()).isEqualTo("accounting.BreakRead");
+            assertThat(record.targetId()).isEqualTo(one);
+            assertThat(record.actor()).isEqualTo(CONTROLLER);
+        });
+        int recorded = audited.size();
+        refused(() -> as(CONTROLLER, () -> desk.one(IDS.next().toString())), AccountingErrorCode.NOT_FOUND, 404);
+        assertThat(audited).as("an unknown break records nothing").hasSize(recorded);
     }
 
     @Test

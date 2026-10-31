@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -125,11 +124,18 @@ public interface AccountingBreakStore {
     /** The break {@code FOR UPDATE} - every act's first statement. */
     Optional<BreakRow> lock(Connection unitOfWork, AccountingBreakId id);
 
-    /** A period's breaks, oldest first, narrowed to {@code status} when named, at most {@code limit}. */
-    List<BreakRow> list(Connection unitOfWork, YearMonth period, Optional<BreakStatus> status, int limit);
+    /**
+     * One keyset page of a period's breaks in id order (a UUIDv7 - birth order), narrowed to {@code status} when named,
+     * after {@code after} when given, at most {@code limit}.
+     */
+    List<BreakRow> list(Connection unitOfWork, YearMonth period, Optional<BreakStatus> status,
+            Optional<AccountingBreakId> after, int limit);
 
-    /** The subjects already raised for {@code period} and {@code check} - what a run counts, never re-raises. */
-    Set<String> subjects(Connection unitOfWork, YearMonth period, CloseCheckCode check);
+    /**
+     * The subjects already raised for {@code period} and {@code check}, each with its break's status - what a run counts
+     * and never re-raises, a {@code RESOLVED} one reported as a recurrence (the review's I-1).
+     */
+    Map<String, BreakStatus> held(Connection unitOfWork, YearMonth period, CloseCheckCode check);
 
     /** How many breaks are not {@code RESOLVED}, per type - {@code finapp.accounting.break.open{type}}. */
     Map<BreakType, Long> openByType(Connection unitOfWork);

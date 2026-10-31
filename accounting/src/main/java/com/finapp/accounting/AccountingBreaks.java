@@ -20,7 +20,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -92,12 +91,40 @@ public final class AccountingBreaks {
         }
     }
 
-    /** The correcting entry does not exist, or is the break's own subject. */
+    /**
+     * The correcting entry cannot be the correction (the review's I-2): it does not exist, it is the break's own subject,
+     * the break's evidence lists it, or it was posted before the subject entry (or, for another subject, before the
+     * period's first day). Nothing was changed; the refusal is recorded {@code FAILED} in a transaction of its own
+     * ({@link #recordRefusal(Connection, CorrectingEntryInvalid, Actor, CorrelationId)}).
+     */
     public static final class CorrectingEntryInvalid extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
-        CorrectingEntryInvalid(String detail) {
+        private final String target;
+        private final String summary;
+        private final String reason;
+
+        CorrectingEntryInvalid(AccountingBreakStore.BreakRow row, UUID correctingEntry, String code, String detail,
+                String reason) {
             super(detail);
+            this.target = row.id().value().toString();
+            this.summary = "period=" + row.period() + ", check=" + row.check().name() + ", type=" + row.type().name()
+                    + ", refused=" + code + ", correctingEntry=" + correctingEntry;
+            this.reason = reason;
+        }
+
+        /** The break - the refusal record's target. */
+        public String target() {
+            return target;
+        }
+
+        /** What the refusal record names: the break's finding, the refusal's code and the entry offered. */
+        public String summary() {
+            return summary;
+        }
+
+        String reason() {
+            return reason;
         }
     }
 
@@ -188,6 +215,12 @@ public final class AccountingBreaks {
         String disclosed = AccountingReasons.reasoned(disclosure);
         AccountingBreakStore.BreakRow row = store.lock(unitOfWork, id).orElseThrow(BreakNotFound::new);
         if (row.acknowledgementPending() && row.ackProposedBy().filter(actor.id()::equals).isPresent()) {
+            if (row.disclosure().filter(disclosed::equals).isEmpty()) {
+                // The review's M-6: a repeat carrying another disclosure is not the same act - never answered as done
+                // while the earlier text stands.
+                throw new BreakStale("an acknowledgement with a different disclosure is already proposed; it stands"
+                        + " until a second person decides it");
+            }
             return Acted.of(row, true);
         }
         if (row.status() != BreakStatus.OPEN) {
@@ -262,13 +295,32 @@ public final class AccountingBreaks {
     // ------------------------------------------------------------------ resolve (by reference)
 
     /**
+     * Records a refused resolution {@code FAILED} ({@link AccountingAuditAction#BREAK_RESOLVED}) on {@code unitOfWork} -
+     * the caller's own transaction, after the act rolled back with nothing changed, so the attempt is kept.
+     */
+    public void recordRefusal(Connection unitOfWork, CorrectingEntryInvalid refused, Actor actor,
+            CorrelationId correlation) {
+        Objects.requireNonNull(refused, "refused");
+        audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, clock.instant(),
+                AccountingAuditAction.BREAK_RESOLVED, TARGET_TYPE, refused.target(), Optional.of(refused.reason()),
+                AuditOutcome.FAILED, correlation, Optional.of(refused.summary())));
+    }
+
+    /** The subject prefixes whose subject is one journal entry (rule conformance's per-entry findings). */
+    static final List<String> ENTRY_SUBJECTS = List.of("shape:", "unbalanced:");
+
+    /**
      * Resolves an {@code OPEN} or {@code ACKNOWLEDGED} break by reference to {@code correctingEntry} - a journal entry
-     * the owning domain posted, which must exist and must not be the break's own subject. Posts nothing. The same
-     * person's repeat with the same entry converges.
+     * the owning domain posted. Posts nothing. The entry must be a plausible correction (the review's I-2): it exists; it
+     * is not the break's own subject; the break's evidence does not list it (a nonconforming entry of the same finding);
+     * and it was posted on or after the subject entry's posting date - or, for a subject that is not one entry (a
+     * namespace, a key, a currency, a proof's subject), on or after the period's first day. What remains unprovable -
+     * that it corrects <em>this</em> discrepancy, that it is not reused across breaks - is the controller's judgement,
+     * audited (an owner item). The same person's repeat with the same entry converges.
      *
      * @throws BreakNotFound when no break has this id
      * @throws BreakStale when the break is already {@code RESOLVED} (otherwise)
-     * @throws CorrectingEntryInvalid when the entry does not exist or is the subject
+     * @throws CorrectingEntryInvalid when the entry cannot be the correction - nothing changed; the caller records it
      */
     public Acted resolve(Connection unitOfWork, AccountingBreakId id, Actor actor, UUID correctingEntry, String reason,
             CorrelationId correlation) {
@@ -286,11 +338,27 @@ public final class AccountingBreaks {
             }
             throw new BreakStale("the break is already RESOLVED");
         }
-        if (row.subject().endsWith(":" + correctingEntry)) {
-            throw new CorrectingEntryInvalid("a break is resolved by another entry than the one it is about");
+        Optional<UUID> subjectEntry = subjectEntry(row);
+        if (subjectEntry.filter(correctingEntry::equals).isPresent()
+                || row.subject().endsWith(":" + correctingEntry)) {
+            throw new CorrectingEntryInvalid(row, correctingEntry, "SUBJECT",
+                    "a break is resolved by another entry than the one it is about", reasoned);
         }
-        if (journal.entry(unitOfWork, correctingEntry).isEmpty()) {
-            throw new CorrectingEntryInvalid("no journal entry has the correcting entry's id");
+        JournalReads.Entry correcting = journal.entry(unitOfWork, correctingEntry).orElseThrow(() ->
+                new CorrectingEntryInvalid(row, correctingEntry, "UNKNOWN",
+                        "no journal entry has the correcting entry's id", reasoned));
+        if (row.evidence().contains(correctingEntry.toString())) {
+            throw new CorrectingEntryInvalid(row, correctingEntry, "IN_EVIDENCE",
+                    "the break's own evidence names this entry - it is part of the discrepancy, not its correction",
+                    reasoned);
+        }
+        java.time.LocalDate notBefore = subjectEntry.flatMap(subject -> journal.entry(unitOfWork, subject))
+                .map(JournalReads.Entry::postingDate)
+                .orElse(row.period().atDay(1));
+        if (correcting.postingDate().isBefore(notBefore)) {
+            throw new CorrectingEntryInvalid(row, correctingEntry, "BEFORE_SUBJECT",
+                    "the correcting entry was posted on " + correcting.postingDate() + ", before " + notBefore
+                            + " - a correction comes after what it corrects", reasoned);
         }
         if (!store.resolve(unitOfWork, id, row.status(), actor, correctingEntry, reasoned)) {
             throw new IllegalStateException("the locked break moved under its own row lock: the FOR UPDATE protocol was"
@@ -312,15 +380,15 @@ public final class AccountingBreaks {
         return store.find(unitOfWork, id);
     }
 
-    /** A period's breaks, oldest first. */
+    /** One keyset page of a period's breaks, in birth (id) order, after {@code after} when given. */
     public List<AccountingBreakStore.BreakRow> list(Connection unitOfWork, YearMonth period, Optional<BreakStatus> status,
-            int limit) {
-        return store.list(unitOfWork, period, status, limit);
+            Optional<AccountingBreakId> after, int limit) {
+        return store.list(unitOfWork, period, status, after, limit);
     }
 
-    /** The subjects already raised for a period's check. */
-    public Set<String> subjects(Connection unitOfWork, YearMonth period, CloseCheckCode check) {
-        return store.subjects(unitOfWork, period, check);
+    /** The subjects already raised for a period's check, each with its break's status. */
+    public Map<String, BreakStatus> held(Connection unitOfWork, YearMonth period, CloseCheckCode check) {
+        return store.held(unitOfWork, period, check);
     }
 
     /** Breaks not {@code RESOLVED}, per type. */
@@ -329,6 +397,20 @@ public final class AccountingBreaks {
     }
 
     // ------------------------------------------------------------------ plumbing
+
+    /** The journal entry a per-entry finding is about, when the subject is one. */
+    static Optional<UUID> subjectEntry(AccountingBreakStore.BreakRow row) {
+        for (String prefix : ENTRY_SUBJECTS) {
+            if (row.subject().startsWith(prefix)) {
+                try {
+                    return Optional.of(UUID.fromString(row.subject().substring(prefix.length())));
+                } catch (IllegalArgumentException notAnId) {
+                    return Optional.empty();
+                }
+            }
+        }
+        return Optional.empty();
+    }
 
     /** An authenticated human - {@code CUSTOMER}-typed (every operator session) or {@code EMPLOYEE}; fail closed. */
     private static void person(Actor actor) {

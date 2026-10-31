@@ -82,3 +82,30 @@ detective only; nothing posts.
 ## Follow-up
 
 Line-shape conformance for amounts (e.g. fee ≤ gross) as rule predicates, if the battery shows value.
+
+## Open questions
+
+- **A recurrence after resolution** (`P14-TSK-010`'s independent review, I-1; the owner's, its consumer `P14-TSK-011`):
+  the key `(period, check, subject)` holds one break for good, so a discrepancy still present after its break was
+  resolved - or a new discrepancy under an aggregate subject (`namespace:`, `key:`, `currency:`, a proof's subject) -
+  raises nothing new. As built it is never hidden: `CheckOutcome` counts known findings by their break's status and
+  reports a `RESOLVED` one as `RECURRED`, so the close can tell "all disclosed" from "a resolved break's discrepancy is
+  still present". Whether it should instead raise a new break - re-raise on `RESOLVED`, or a generation in the key - is
+  open; the key and the re-raise rule were deliberately left unchanged.
+- **Resolution's residual** (I-2): a correction must exist, not be the subject or listed in the break's evidence, and
+  not predate what it corrects; that it corrects *this* discrepancy, that it is not reused across breaks, and that one
+  person decides it remain the controller's audited judgement.
+- **A mirror reversal** (M-7): a reversal of a nonconforming entry is judged against its own REVERSAL rule at the
+  reversal's date, so it raises its own break - whether a reversal should instead be judged as its original's mirror is
+  open.
+
+*(The independent review of `P14-TSK-010`, 2026-11-01, said FIX FIRST; fixed on the branch: I-1 (`RECURRED`, the known
+findings split by status), I-2 (the correcting entry's plausibility, a refusal recorded `FAILED`), I-3 (a database case
+running the wired `ProductSourceProofs` through `SOURCE_COMPLETENESS`; by reading, no source locks, writes or needs a
+read-write transaction), M-2 (a judge's exception logged by class), M-3 (the month's boundary days in the database
+suite), M-4 (the break list a keyset page), M-5 (`accounting.BreakRead`), M-6 (a repeated proposal with another
+disclosure stale), M-12 (identifier-like namespace segments folded). Routed: M-1 (no bound on a whole run below the close
+run's lease; `run` called outside any transaction) and M-10 (reconciliation's `suspenseUnowned` as a
+`RECONCILIATION_DISCLOSURE` input) to `P14-TSK-011`; M-7 to the owner; M-8 (offsetting differences within one currency
+cancel in GL = ledger's per-currency sums and in the per-currency balance check) a known limitation; M-9 documented in
+`BreaksNeverPostTest`; M-11 at the integration merge.)*
