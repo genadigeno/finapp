@@ -1311,7 +1311,11 @@ all times.
 **Why:** The system-level expression of `INV-LED-01`; the primary continuous correctness
 signal.
 **Enforce:** `DOMAIN` (per entry) aggregated system-wide.
-**Verify:** Continuous job with alerting; gate criterion F1.
+**Verify:** Continuous job with alerting; gate criterion F1. *(`P14-TSK-009`, reported per period: the FINAL
+`TRIAL_BALANCE` run - per currency zero cumulatively and for the period: the opening's debits equal its credits, the
+period's, and the cumulative through the end with the closing balances footing; a currency failing any leg listed in the
+verdict, failing the close's check, never corrected - `TrialBalanceOracleTest#zeroPerCurrency`,
+`#offsettingImbalancesAcrossPeriodsAreCaught`, `TrialBalanceRunDatabaseTest#zeroPerCurrency` (owed, C5).)*
 **Phase:** 3, 9 (per currency), 14 (reported)
 
 *(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0074 (`Proposed`), in force when
@@ -1348,7 +1352,9 @@ originally issued output is retained.
 **Verify:** Regeneration comparison tests. *(As built, `P14-TSK-008`: `ReportRunDatabaseTest#regenerationIsIdentical`,
 `#contentIsFrozen`, `#anUnlockSupersedesTheFinalRuns` (owed, C5); hermetic `CanonicalJsonTest` (fixed vectors - the
 bytes and hashes stable across JVMs), `ReportRunsTest`, `ReportRunDeskTest#regenerationIsComparedAndDivergenceCounted`,
-`ReportRunMigrationTest#theContentIsFrozenByItsOwnTrigger`.)*
+`ReportRunMigrationTest#theContentIsFrozenByItsOwnTrigger`. `P14-TSK-009`: the trial balance regenerates byte-identical
+whatever order its reads serve - `TrialBalanceOracleTest#regeneratesByteIdentical`, `TrialBalanceRunsTest`,
+`TrialBalanceRunDatabaseTest#aFinalRunRegeneratesIdentical` (owed, C5); a FINAL one only under its period's pin.)*
 **Phase:** 14
 
 ### INV-ACC-05 — Unreconciled positions are disclosed
@@ -1376,7 +1382,7 @@ amount except a report run's frozen output.
 **Enforce:** `STATIC` (`accounting` has no ledger edge; `AccountingModuleIsolationTest`) + `DOMAIN` (activation refuses a
 non-total or incompatible version through `LedgerChart`).
 **Verify:** `GlReadModelDatabaseTest#everyLineMapsOnce`, the close check `GL_EQUALS_LEDGER` per period and currency
-(`P14-TSK-007`, `-010`); the battery's independent GL oracle (`P14-TST-002`). *(`P14-TSK-007`: built - the fold a partition over the version's rules with an explicit unmapped bucket, GL = ledger per currency against a mapping-independent statement in every answer: `GeneralLedgerTest#everyLineMapsOnce`, `#glEqualsLedgerPerCurrency`, `#anUnmappedLineIsCountedNeverDropped`; the database cases owed, C5.)*
+(`P14-TSK-007`, `-010`); the battery's independent GL oracle (`P14-TST-002`). *(`P14-TSK-007`: built - the fold a partition over the version's rules with an explicit unmapped bucket, GL = ledger per currency against a mapping-independent statement in every answer: `GeneralLedgerTest#everyLineMapsOnce`, `#glEqualsLedgerPerCurrency`, `#anUnmappedLineIsCountedNeverDropped`; the database cases owed, C5. `P14-TSK-009`: the trial balance equal to the ledger over three windows, the ledger's bounded by the period row - a wrong bound caught for the trial balance's own reads and `Range.of` (`-007`'s GL-door statements stay `P14-TST-002`'s; the opening's bound is checked by the comparison, not by `rangeIsThePeriods`): `TrialBalanceOracleTest#equalsTheLedger`, `#aWrongRangeBoundIsCaught`, `TrialBalanceRunDatabaseTest#equalsTheLedger` (owed, C5).)*
 **Phase:** 14
 
 ### INV-ACC-07 — A mapping version is immutable, four-eyes, and never retroactive

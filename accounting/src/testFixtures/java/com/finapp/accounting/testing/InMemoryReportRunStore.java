@@ -187,6 +187,11 @@ public final class InMemoryReportRunStore implements ReportRunStore {
         return superseded;
     }
 
+    @Override
+    public boolean cutWithin(Connection unitOfWork, ReportRunId id, Duration window) {
+        return find(unitOfWork, id).filter(row -> row.cutAt().isAfter(clock.instant().minus(window))).isPresent();
+    }
+
     // -----------------------------------------------------------------
 
     /** One atomic move of the row; {@code true} when {@code edge} answered a different row. */

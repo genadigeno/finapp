@@ -174,8 +174,8 @@ public class AccountingBeans {
     }
 
     /**
-     * The definitions this build holds - every {@code ReportDefinition} bean, none until `P14-TSK-009`'s trial balance; a
-     * definition joins by being declared, with no edit here.
+     * The definitions this build holds - every {@code ReportDefinition} bean: the trial balance first (`P14-TSK-009`,
+     * {@link TrialBalanceBeans}); a definition joins by being declared, with no edit here.
      */
     @Bean
     com.finapp.accounting.reporting.ReportDefinitions reportDefinitions(
@@ -196,6 +196,11 @@ public class AccountingBeans {
         return new com.finapp.accounting.ReportRuns.Leases(lease, maxAttempts, generationTimeout);
     }
 
+    /**
+     * The machine; a completed PROVISIONAL run answers its question while its cut is younger than
+     * {@code finapp.accounting.report.provisional-freshness} (default 15 minutes, one second to a day - `P14-TSK-009`,
+     * the bound `P14-TSK-008`'s review M-8 asked for).
+     */
     @Bean
     com.finapp.accounting.ReportRuns reportRuns(
             com.finapp.accounting.ReportRunStore reportRunStore,
@@ -206,9 +211,11 @@ public class AccountingBeans {
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
-            Clock clock) {
+            Clock clock,
+            @Value("${finapp.accounting.report.provisional-freshness:PT15M}") java.time.Duration provisionalFreshness) {
         return new com.finapp.accounting.ReportRuns(reportRunStore, accountingPeriodStore, glMappingStore,
-                reportDefinitions, reportRunLeases, auditWriter, outboxWriter, idGenerator, clock);
+                reportDefinitions, reportRunLeases, auditWriter, outboxWriter, idGenerator, clock,
+                new com.finapp.accounting.ReportRuns.Provisional(provisionalFreshness));
     }
 
     /**

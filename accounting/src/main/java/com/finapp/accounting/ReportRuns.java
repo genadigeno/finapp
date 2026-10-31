@@ -42,8 +42,9 @@ import lombok.RequiredArgsConstructor;
  * one {@code INSERT}, nine read-backs (A4). The caller generates only a run it {@link Claimed#mine holds}.
  *
  * <p><strong>Which run answers.</strong> A {@code FINAL}-basis run answers while it is {@code GENERATING} or
- * {@code FINAL} under the period's present lock; a {@code PROVISIONAL}-basis run only while {@code GENERATING} (a
- * completed one is a snapshot of an earlier moment - a later ask is a new snapshot); a {@code FAILED} or
+ * {@code FINAL} under the period's present lock; a {@code PROVISIONAL}-basis run while {@code GENERATING}, and once
+ * completed only while its cut is younger than the freshness window on the database's clock and its period's revision is
+ * unchanged ({@link Provisional}, `P14-TSK-009`) - past it a later ask is a new snapshot; a {@code FAILED} or
  * {@code SUPERSEDED} run never - "a new revision allowed".
  *
  * <p><strong>Complete</strong> ({@link #complete}, T-complete): the period {@code FOR SHARE} again and the lock re-checked
@@ -75,8 +76,39 @@ public final class ReportRuns implements ReportRunSupersession {
     @NonNull private final OutboxWriter<Connection> outbox;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
+    @NonNull private final Provisional provisional;
+
+    /** As the generated constructor, a completed PROVISIONAL run reused within {@link Provisional#STANDARD}'s window. */
+    public ReportRuns(ReportRunStore store, AccountingPeriodStore periods, GlMappingStore mappings,
+            ReportDefinitions definitions, Leases leases, AuditWriter<Connection> audit, OutboxWriter<Connection> outbox,
+            IdGenerator ids, Clock clock) {
+        this(store, periods, mappings, definitions, leases, audit, outbox, ids, clock, Provisional.STANDARD);
+    }
 
     // ------------------------------------------------------------------ configuration and outcomes
+
+    /**
+     * How long a completed PROVISIONAL run keeps answering its question (`P14-TSK-009`, routed by `P14-TSK-008`'s review,
+     * M-8): every ask after a completion used to birth a new revision - a new snapshot of up to 8 MB - so an open period
+     * asked in a loop grew without bound. Now the latest PROVISIONAL run answers while its cut is younger than
+     * {@code freshness} on the <strong>database's</strong> clock (never an instance's) and its period's revision is
+     * unchanged; past it the next ask is a new revision, as before. So a question costs at most one PROVISIONAL row per
+     * window, ten claimers past the window still birth one (the key's insert-or-read). An owner item: the window's length,
+     * against a hard cap per question or a retention sweep.
+     */
+    public record Provisional(Duration freshness) {
+
+        /** Fifteen minutes - at most 96 PROVISIONAL revisions a day for one question asked without pause. */
+        public static final Provisional STANDARD = new Provisional(Duration.ofMinutes(15));
+
+        public Provisional {
+            Objects.requireNonNull(freshness, "freshness");
+            if (freshness.compareTo(Duration.ofSeconds(1)) < 0 || freshness.compareTo(Duration.ofHours(24)) > 0) {
+                throw new IllegalArgumentException("a PROVISIONAL run's freshness is one second to a day - a window of"
+                        + " none would leave the revisions unbounded");
+            }
+        }
+    }
 
     /**
      * The generator's lease (the database's clock), how many times a run is reclaimed before it is failed
@@ -177,7 +209,7 @@ public final class ReportRuns implements ReportRunSupersession {
         ReportRunStore.RunKey key = new ReportRunStore.RunKey(definition.code(), definition.version(), periodId,
                 parameters.hash());
         Optional<ReportRunStore.RunRow> latest = store.latest(unitOfWork, key);
-        if (latest.isPresent() && answers(latest.get(), basis, period)) {
+        if (latest.isPresent() && (answers(latest.get(), basis, period) || fresh(unitOfWork, latest.get(), period))) {
             ReportRunStore.RunRow run = latest.get();
             if (run.status() != RunStatus.GENERATING || !expired(unitOfWork, run)) {
                 return new Claimed(run, false, false);
@@ -382,6 +414,16 @@ public final class ReportRuns implements ReportRunSupersession {
                     + " supersession of the period's return to OPEN was bypassed");
         }
         return underThisLock && (run.status() == RunStatus.GENERATING || run.status() == RunStatus.FINAL);
+    }
+
+    /**
+     * A completed PROVISIONAL run still answering an ask for its {@code OPEN} period: its cut inside the freshness window on
+     * the database's clock, the period's revision unchanged (`P14-TSK-009`, M-8 - {@link Provisional}).
+     */
+    private boolean fresh(Connection unitOfWork, ReportRunStore.RunRow run, AccountingPeriodStore.PeriodRow period) {
+        return period.status() == PeriodStatus.OPEN && run.basis() == RunBasis.PROVISIONAL
+                && run.status() == RunStatus.PROVISIONAL && run.periodRevision() == period.revision()
+                && store.cutWithin(unitOfWork, run.id(), provisional.freshness());
     }
 
     /** A FINAL-basis run's period is not {@code OPEN} and holds the very lock the run was claimed under. */

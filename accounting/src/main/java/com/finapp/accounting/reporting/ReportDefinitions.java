@@ -15,9 +15,8 @@ import java.util.regex.Pattern;
  * highest version. Immutable; identical on every instance of one build (a rolling deploy can hold two builds, and a run
  * pins the version it was generated from, so the two never mix in one run).
  *
- * <p>Production holds the {@link ReportDefinition} beans the composition root collects - none until `P14-TSK-009`'s trial
- * balance, so until then every generation is refused {@code accounting.ReportDefinitionUnknown}: the machinery exists,
- * no report does, and nothing pretends otherwise.
+ * <p>Production holds the {@link ReportDefinition} beans the composition root collects - the first is `P14-TSK-009`'s
+ * {@link TrialBalanceDefinition}; a code no bean declares is refused {@code accounting.ReportDefinitionUnknown}.
  */
 public final class ReportDefinitions {
 

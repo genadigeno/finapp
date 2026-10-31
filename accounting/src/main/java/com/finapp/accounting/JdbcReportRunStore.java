@@ -48,6 +48,13 @@ public final class JdbcReportRunStore implements ReportRunStore {
     static final String SUPERSEDE_SQL = "UPDATE accounting.report_run SET status = 'SUPERSEDED',"
             + " superseded_at = clock_timestamp(), superseded_correlation_id = ? WHERE period_id = ? AND status = 'FINAL'";
 
+    /**
+     * A completed PROVISIONAL run's freshness (`P14-TSK-009`): its cut younger than the window on the database's clock -
+     * never an instance's.
+     */
+    static final String CUT_WITHIN_SQL = "SELECT cut_at > clock_timestamp() - ? * interval '1 millisecond'"
+            + " FROM accounting.report_run WHERE id = ?";
+
     /** The birth: insert-or-read on the plan's key. */
     static final String INSERT_SQL = "INSERT INTO accounting.report_run (id, definition, definition_version, period_id,"
             + " revision, parameters, parameters_hash, period_revision, basis, period_locked_at, mapping_version_id,"
@@ -219,6 +226,19 @@ public final class JdbcReportRunStore implements ReportRunStore {
             return update.executeUpdate();
         } catch (SQLException failure) {
             throw failed("superseding a period's FINAL report runs", failure);
+        }
+    }
+
+    @Override
+    public boolean cutWithin(Connection unitOfWork, ReportRunId id, Duration window) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(CUT_WITHIN_SQL)) {
+            read.setLong(1, window.toMillis());
+            read.setObject(2, id.value());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() && row.getBoolean(1);
+            }
+        } catch (SQLException failure) {
+            throw failed("reading a report run's freshness", failure);
         }
     }
 
