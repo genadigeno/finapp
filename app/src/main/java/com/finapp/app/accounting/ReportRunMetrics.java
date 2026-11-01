@@ -19,8 +19,8 @@ import java.util.Objects;
  *
  * <p>The {@code definition} tag is a definition's code - {@code MetricNames.ALLOWED_TAG_KEYS}' deliberate addition by this
  * task, bounded by the definitions compiled into the build, never a request's value; {@code outcome} a closed set. No tag
- * carries a period, an id, a figure or a hash. Registered eagerly for every definition the build holds (none until
- * `P14-TSK-009`), so a dashboard sees a zero rather than an absence.
+ * carries a period, an id, a figure or a hash. Registered eagerly for every definition the build holds (from
+ * `P14-TSK-009`, {@code TRIAL_BALANCE}), so a dashboard sees a zero rather than an absence.
  */
 public final class ReportRunMetrics {
 

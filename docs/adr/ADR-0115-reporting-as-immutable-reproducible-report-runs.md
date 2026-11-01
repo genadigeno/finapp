@@ -107,6 +107,37 @@ checks (bounded, a JSON object, the hash its own) run at the completion edge ins
 would re-run; the freeze fires only for an `UPDATE` naming the content, its hash or its completion. *M-5*: the
 regeneration looks its key up first (the platform's two-transaction command), so a replay opens no snapshot.
 
+*(`P14-TSK-009`, 2026-11-01, no migration - the first definition.)* **`TRIAL_BALANCE` v1** (`TrialBalanceDefinition`,
+declared by `app`'s `TrialBalanceBeans`): per GL account × currency the opening (a cumulative fold of every line before the
+period, from inception, under the period's own version), debits, credits and closing, debit-positive; every line the
+version does not map in an explicit unmapped row; per currency **zero in three legs** - the opening's debits = credits,
+the period's, and cumulatively through the end with the closing balances footing (`INV-ACC-01` reported, never
+corrected; "cumulative and for the period", `CloseCheckCode.LEDGER_TRIAL_BALANCE`) - and **equal to the ledger** over
+three windows (before, within, through the end) read by a `TrialBalance.sweep`-shaped statement that joins no account,
+**bounded by the period's row** read in the same snapshot and bound as values (the `ledger` statement names no
+`accounting` table, ADR-0006), so a wrong bound is caught for the trial balance's own reads and `Range.of` (`-007`'s M-6;
+`-007`'s GL-door statements stay `P14-TST-002`'s; the opening's bound is checked by the ledger comparison, not by
+`rangeIsThePeriods`); the verdict at `{body,verdict,passes}`. The output scale per currency is the data's own - no JDK
+currency table decides a FINAL run's bytes (ADR-0003). A FINAL run reads its period's pin and refuses another version.
+**The reclassification bridge**: every row - the opening included - is under the run's version, so when the previous
+period pinned another version the opening **restates** that period's closing per GL account (the per-currency totals
+still agree; figures move between accounts); the content names the previous period's pin and `openingReclassified`, and
+the statements (`-016`, `-017`) owe the bridge from the previous closing to this opening. **Two refinements of decision
+3 for PROVISIONAL runs** (`-008`'s review, M-8): the definition counts only entries **created at or before the run's
+cut** (`created_at <= cut_at`) - approximately the journal as asked, whenever generated, and fuzzy both ways (the posting
+instance's clock, minted before its commit; entries in flight at the snapshot absent) - a deviation from decision 3's
+"cut at the journal's settle horizon", whose alternatives are `cut_at` less the settle horizon (ADR-0111's shape) or
+labelling the run with its snapshot's instant; no false divergence follows, only FINAL runs regenerate; and a completed
+PROVISIONAL run **keeps answering its question** while its cut is younger than
+`finapp.accounting.report.provisional-freshness` (default 15 minutes) on the database's clock and its period's revision
+is unchanged - at most one PROVISIONAL row per question per window (an owner item: the window, against a cap or a
+retention sweep). *The independent review* (2026-11-01, `MERGE`, applied before the merge): I-1 the period and opening
+legs, M-3 the data's scales, M-4 the bounds bound as values, M-5 the bridge, M-8 a javadoc - fixed; M-1, M-2, M-7
+recorded; M-6 routed to `P14-TSK-011` (`passes` is not the whole close: `GL_EQUALS_LEDGER` fails an unpinned or
+not fully mapped period; the run checked FINAL and of its code and version).
+
 ## Follow-up
 
-Retention of runs with Phase 15's data-retention work; export formats beyond JSON.
+Retention of runs with Phase 15's data-retention work; export formats beyond JSON. *(`P14-TSK-009`: a chained
+opening - the previous FINAL trial balance's closing, sound only under one version and a kept `locked_at` - if the
+cumulative fold's cost grows; consolidating `GlSnapshots` and `JdbcReportSnapshots`.)*
