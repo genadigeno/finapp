@@ -26125,7 +26125,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   id** - the controller cannot discover a period's sets and the capturer cannot re-read its own (its receipt carries the
   rates): a follow-up for `-011`, whose close shows the period's sets (no endpoint added here).
 
-**P14-TSK-015 — Reporting-currency translation** — `PLANNED`
+**P14-TSK-015 — Reporting-currency translation** — `READY` (2026-11-01; marked by the coordinator at `P14-TSK-009`'s merge, master `76a2c58e`; every dependency `COMPLETE`)
 - **Objective**: EUR translation in every run that asks, originals beside, the difference explicit (C1, C7).
 - **Bounded context**: Reporting.
 - **Dependencies**: `-009`, `-014`.
