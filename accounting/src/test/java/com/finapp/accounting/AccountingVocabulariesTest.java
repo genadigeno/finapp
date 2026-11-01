@@ -210,7 +210,9 @@ class AccountingVocabulariesTest {
                         "accounting.ReportDefinitionUnknown=422", "accounting.ReportParametersInvalid=422",
                         "accounting.ReportRunStale=409",
                         // P14-TSK-014: the valuation doors - a stale or missing reference pair, a decided set.
-                        "accounting.ValuationRateStale=422", "accounting.ValuationSetStale=409");
+                        "accounting.ValuationRateStale=422", "accounting.ValuationSetStale=409",
+                        // P14-TSK-010: the break doors - a break past the act; a correcting entry absent or the subject.
+                        "accounting.BreakStale=409", "accounting.CorrectingEntryInvalid=422");
         // P14-TSK-002: the posting rule register's audited read - no reason, an operator's read.
         assertThat(AccountingAuditAction.POSTING_RULES_READ.code()).isEqualTo("accounting.PostingRulesRead");
         assertThat(AccountingAuditAction.POSTING_RULES_READ.requiresReason()).isFalse();
@@ -229,7 +231,13 @@ class AccountingVocabulariesTest {
                         "accounting.ReportRead=false",
                         // P14-TSK-014: the capture unreasoned (the lock's precedent); the two decisions reasoned.
                         "accounting.ValuationSetCaptured=false", "accounting.ValuationSetApproved=true",
-                        "accounting.ValuationSetRejected=true");
+                        "accounting.ValuationSetRejected=true",
+                        // P14-TSK-010: the raise (the run's) unreasoned; the acknowledgement's two acts and the
+                        // resolution reasoned.
+                        "accounting.BreakRaised=false", "accounting.BreakAcknowledgementProposed=true",
+                        "accounting.BreakAcknowledged=true", "accounting.BreakResolved=true",
+                        // The independent review's M-5: the break reads, audited like the GL's and the reports'.
+                        "accounting.BreakRead=false");
     }
 
     // ------------------------------------------------------------------

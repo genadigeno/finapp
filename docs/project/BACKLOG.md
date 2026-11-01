@@ -25936,7 +25936,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   The review's routing: M-6 → `-011`; the reclassification bridge → `-016`/`-017`; a volume → `P14-TST-002` / the
   phase-exit database pass.
 
-**P14-TSK-010 — Rule conformance, source completeness and accounting breaks** — `READY` (2026-10-31; marked by the coordinator at `P14-TSK-007`'s merge, master `9e1497f2`; every dependency `COMPLETE`)
+**P14-TSK-010 — Rule conformance, source completeness and accounting breaks** — `COMPLETE` (2026-10-31; built and gated in wave D beside `-008` and `-014`, branch `P14-TSK-010` from master `54d0986e`; accounting `V006`; database cases owed, C5) *(read "`IN_PROGRESS`" from its design, and "`READY` (2026-10-31; marked by the coordinator at `P14-TSK-007`'s merge, master `9e1497f2`; every dependency `COMPLETE`)" before it)*
 - **Objective**: detect every GL-side discrepancy and record it once, never correct it (ADR-0117, `INV-ACC-12`).
 - **Bounded context**: Accounting / GL; reads reconciliation's proofs and the product proofs.
 - **Dependencies**: `-002`, `-007`.
@@ -25963,6 +25963,51 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: skip the shape comparison → the planted mismatch passes, red.
 - **Acceptance criteria**: every planted discrepancy class raises exactly one break; nothing posts.
 - **Definition of done**: `DOD-FIN`, `DOD-DOMAIN`. **Risk**: Medium. **Cx**: L.
+- **As built** (2026-10-31, accounting `V006`): `accounting_break` (born once by `accounting_break_born_once UNIQUE
+  (period_start, check_code, subject_ref)` - the plan's `period_id` held as the period's month, its identity, so a check
+  judges a month whether or not its period is born; each type on its check, four-eyes and persons `CHECK`s, an edge
+  trigger - born `OPEN`, the finding frozen, `RESOLVED` final; no `DELETE`) and `break_event` (the case file,
+  append-only). **The checks are one callable**, `AccountingChecks.run(period, check, actor, correlation) →
+  CheckOutcome`, for `-011`'s close-run worker - no schedule, no run door (the entry and plan name none; `-011`'s
+  re-run is the operator's). Judges, read-only on verified, statement-bounded `REPEATABLE READ READ ONLY` snapshots
+  (`finapp.accounting.checks.statement-timeout`, 30 s): `GlEqualsLedger` over `-007`'s fold (a `MAPPING_GAP` per unmapped
+  key, a GL ≠ ledger difference the unmapped bucket does not explain `DOUBLE_MAPPING` or `MAPPING_GAP` per currency);
+  `RuleConformance` over `PostingRuleRegister.CURRENT` through a new port `JournalShapes` (`app`'s `LedgerJournalShapes`:
+  the month's entries in keyset pages of 500, each entry's command-key namespace from `idempotency_scope`, an
+  adjustment's origin from its proposal; `UNREGISTERED_POSTING` per type and namespace, `SHAPE_MISMATCH` and
+  `UNBALANCED_ENTRY` per entry); `SourceCompleteness` over `SourceProofs` (given its method; `app`'s
+  `ProductSourceProofs` over the nine proofs in seven readings, every verdict the proof's own; one snapshot per source).
+  Each new finding raised in its own transaction - break + `RAISED` row + `accounting.BreakRaised` +
+  `accounting.AccountingBreakRaised` - by `ON CONFLICT DO NOTHING`. `PASSED` only when everything was judged and nothing
+  found; an unavailable source, an incomplete reading, an unreadable judge or no mapping version `FAILED`; every outcome
+  and break names its register version (`posting-rules:v2`, `gl-mapping:v<n>`, `source-proofs:v1`); at most 1,000 new
+  breaks a run (`FINDINGS_CAPPED`). **Doors** (`AccountingBreakController`/`Desk`, wiring `AccountingBreakBeans`):
+  `GET /v1/operator/accounting/breaks?period[&status][&limit]` (`ACCOUNTING_READ`), **`GET …/breaks/{breakId}`
+  (`ACCOUNTING_ADJUST_APPROVE` - a fifth route: the partition gives the controller no `ACCOUNTING_READ`)**, `POST
+  …/acknowledgement-proposal` (`ACCOUNTING_ADJUST_PROPOSE`, the disclosure), `…/acknowledgement-approval` and
+  `…/resolution` (`ACCOUNTING_ADJUST_APPROVE`; the correcting entry must exist and not be the subject), keyed per
+  principal; new codes `accounting.BreakStale` 409, `accounting.CorrectingEntryInvalid` 422; audited
+  `accounting.BreakRaised`, `BreakAcknowledgementProposed`, `BreakAcknowledged`, `BreakResolved`; the gauge
+  `finapp.accounting.break.open{type}` (`AccountingBreakMetrics`, database, 15 s). Nothing posts
+  (`BreaksNeverPostTest`). `SOURCE_DELAYED` not raised (no built proof tells a delay from a discrepancy - `-011`'s
+  `ACCRUALS_COMPLETE`). The database cases are written and owed (C5).
+- **The independent review** (2026-11-01, FIX FIRST - no false-pass path, no posting path; born-once, fail-closed, four
+  eyes, one snapshot across pages, no floating point and the module boundaries confirmed). Fixed on the branch: **I-1**
+  known findings counted by their break's status in `CheckOutcome` (`knownOpen`, `knownAcknowledged`, `knownResolved`)
+  and a `RESOLVED` break's still-present discrepancy reported `RECURRED` (the key and re-raise rule unchanged - an owner
+  item, ADR-0117's open question, `-011` the consumer); **I-2** a resolution refused, nothing changed and the refusal
+  recorded `accounting.BreakResolved` `FAILED`, when its entry predates the subject entry (the period, for another
+  subject), is the subject, or is listed in the break's evidence (the residual - one person, any later entry, reuse
+  across breaks - an owner item); **I-3** `AccountingSourceProofsDatabaseTest` (owed) runs the wired `ProductSourceProofs`
+  through `SOURCE_COMPLETENESS` on the real snapshot, asserting no `UNAVAILABLE` - by reading, no source locks, writes or
+  needs a read-write transaction; **M-2** a judge's exception logged by class; **M-3** the month's boundary days in
+  `AccountingBreakDatabaseTest#theMonthsBoundariesAreTheRealSqls`; **M-4** the break list a keyset page (`after`,
+  `next`); **M-5** `accounting.BreakRead` on the list and the read; **M-6** a repeated proposal with another disclosure
+  `accounting.BreakStale`; **M-12** identifier-like namespace segments folded to `{id}`. Routed: **M-1** and **M-10** to
+  `P14-TSK-011` (`run` outside any transaction, a whole run unbounded below the lease - in `AccountingChecks`' javadoc;
+  `suspenseUnowned` → `RECONCILIATION_DISCLOSURE`?); **M-7** to the owner (a mirror reversal judged against its own rule
+  at the reversal's date); **M-8** a known limitation (offsetting differences within one currency cancel); **M-9** in
+  `BreaksNeverPostTest`'s javadoc; **M-11** at the integration merge. Three probes added (`MUTATION_TESTING.md` §2).
 
 **P14-TSK-011 — The close run and its readiness checks** — `PLANNED`
 - **Routed by `P14-TSK-006`'s review (2026-10-31)**: (I-1, IMPORTANT) `ACCRUALS_COMPLETE` judged after the lock can pass while the locked period is short of interest - a catch-up after the lock floors the period's accrual dates (`LND-2` v2) to the first open date and `AccrualCompleteness.blocking(periodEnd)` then reads empty; judge it inside the lock's transaction with the cutoff key exclusive (and refuse the lock while it is non-empty), or find and disclose the `LND-2` entries with `value_date <= period end < posting_date` (they carry `flooredFrom=`) - decide in the design. (M-1) lending posts "today" on the servicing zone's business date (zones to -14:00): a lock under a 1-business-day grace at 00:00 UTC can refuse a western zone's same-day postings for hours - make `lockableFrom` account for the westernmost servicing zone or raise the grace minimum to 2 (default 2 is safe). (M-2) the reconciliation expectation reads the floored posting date while `ReconciliationReports.providerCosts` groups by the batch's stated `accepted_on` - align or disclose.
@@ -25972,6 +26017,13 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   it expects; `LEDGER_TRIAL_BALANCE` is that verdict, with I-1's legs (`openingBalanced`, `periodBalanced`, `balanced`);
   and gate criterion 1's planted unbalanced fixture cannot be seen from a separate snapshot (the ledger's balance trigger
   is deferred to commit, so an unbalanced entry never commits) - this task designs how the planted case is made visible.
+- **Routed by `P14-TSK-010`'s review (2026-11-01, M-1, M-10, I-1)**: (M-1) `AccountingChecks.run` is called outside any
+  transaction - each judge reads on its own read-only snapshot and each new break is raised in a transaction of its own -
+  and a run is bounded per statement (`finapp.accounting.checks.statement-timeout`) and per page, not in total, so the
+  check leg's lease must outlast a whole run or the worker bounds it (`AccountingChecks`' javadoc); (M-10) reconciliation's
+  `suspenseUnowned` as a `RECONCILIATION_DISCLOSURE` input; (I-1) `CheckOutcome` reports a `RESOLVED` break's
+  still-present discrepancy as `RECURRED` with `knownResolved` (the check `FAILED`, nothing new raised) - this task is its
+  consumer, and whether to re-raise on `RESOLVED` or add a generation to the key is the owner's (ADR-0117's open question).
 - **Objective**: a resumable, leaderless run of recorded checks per locked period (`INV-ACC-09`, `PHASE_14_PLAN.md` §13.5).
 - **Bounded context**: Accounting / GL.
 - **Dependencies**: `-006`, `-009`, `-010`.

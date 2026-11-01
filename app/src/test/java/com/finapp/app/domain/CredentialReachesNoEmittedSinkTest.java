@@ -766,7 +766,12 @@ class CredentialReachesNoEmittedSinkTest {
                         // optional REASON for the capture, a REASON alone for the decisions - screened at the domain
                         // (AccountingReasons).
                         "ValuationRateSetCaptureRequest",
-                        "ValuationRateSetDecisionRequest");
+                        "ValuationRateSetDecisionRequest",
+                        // P14-TSK-010: the break doors' bodies. No secret: a disclosure and REASONs screened for
+                        // card-number and account shapes at the domain (AccountingReasons), and a journal entry's id.
+                        "BreakAcknowledgementProposal",
+                        "BreakActRequest",
+                        "BreakResolution");
     }
 
     @Test

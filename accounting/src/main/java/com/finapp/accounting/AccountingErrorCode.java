@@ -128,7 +128,21 @@ public enum AccountingErrorCode implements ErrorCode {
             "accounting.ValuationSetStale",
             409,
             "The valuation rate set is no longer awaiting a decision, or the accounting period already has an approved"
-                    + " valuation rate set; nothing was changed.");
+                    + " valuation rate set; nothing was changed."),
+
+    /** The break doors (`P14-TSK-010`): the break is not in the state the act needs. */
+    BREAK_STALE(
+            "accounting.BreakStale",
+            409,
+            "The accounting break is not in the state the act needs - resolved, acknowledged, or awaiting another"
+                    + " person's acknowledgement; nothing was changed."),
+
+    /** The resolution (`P14-TSK-010`): the correcting entry named does not exist, or is the break's own subject. */
+    CORRECTING_ENTRY_INVALID(
+            "accounting.CorrectingEntryInvalid",
+            422,
+            "The correcting entry named does not exist in the journal, or is the entry the break is about; the break"
+                    + " was not resolved.");
 
     private final String code;
     private final int status;

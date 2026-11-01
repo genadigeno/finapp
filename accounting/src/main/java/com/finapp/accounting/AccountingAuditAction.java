@@ -174,7 +174,60 @@ public enum AccountingAuditAction implements AuditableAction {
             "A holder of ACCOUNTING_CLOSE_APPROVE rejected a proposed valuation rate set - terminal; a correction is a"
                     + " new capture (P14-TSK-014; POST .../valuation-rate-sets/{setId}/rejection). Reasoned. Its target"
                     + " the set; the summary its period and whether the rejecter captured it.",
-            true);
+            true),
+
+    /** A check raised an accounting break (`P14-TSK-010`) - the run's actor, the platform's for the close schedule. */
+    BREAK_RAISED(
+            "accounting.BreakRaised",
+            "A GL-side check - GL = ledger, rule conformance or source completeness - found a discrepancy no break of the"
+                    + " period and check yet held and raised it, born OPEN once per (period, check, subject), never"
+                    + " corrected (P14-TSK-010, ADR-0117 decision 3, INV-ACC-12, INV-REC-02; AccountingChecks.run, invoked"
+                    + " by the close run, P14-TSK-011). Recorded in the raise's own transaction with the break, its"
+                    + " RAISED case-file row and accounting.AccountingBreakRaised - a second raiser records nothing. Its"
+                    + " target the break; the summary the period, check, type and the register version judged by -"
+                    + " never an amount.",
+            false),
+
+    /** An accountant proposed acknowledging a break with a disclosure (`P14-TSK-010`, ACCOUNTING_ADJUST_PROPOSE). */
+    BREAK_ACKNOWLEDGEMENT_PROPOSED(
+            "accounting.BreakAcknowledgementProposed",
+            "An accountant proposed acknowledging an OPEN accounting break with a written disclosure - nothing moves until"
+                    + " a second person approves (P14-TSK-010, INV-ACC-05, INV-AUD-04; POST"
+                    + " /v1/operator/accounting/breaks/{breakId}/acknowledgement-proposal, ACCOUNTING_ADJUST_PROPOSE)."
+                    + " Reasoned: the disclosure. Its target the break; the summary its period, check and type.",
+            true),
+
+    /** A second person approved a break's acknowledgement (`P14-TSK-010`, ACCOUNTING_ADJUST_APPROVE). */
+    BREAK_ACKNOWLEDGED(
+            "accounting.BreakAcknowledged",
+            "A person other than its proposer approved an accounting break's acknowledgement: OPEN -> ACKNOWLEDGED, its"
+                    + " disclosure what the close discloses (P14-TSK-010, INV-ACC-05, INV-AUD-04; POST"
+                    + " .../breaks/{breakId}/acknowledgement-approval, ACCOUNTING_ADJUST_APPROVE). Reasoned. Its target the"
+                    + " break; the summary its period, check and type.",
+            true),
+
+    /** A break was resolved by reference to its correcting entry (`P14-TSK-010`, ACCOUNTING_ADJUST_APPROVE). */
+    BREAK_RESOLVED(
+            "accounting.BreakResolved",
+            "A financial controller resolved an accounting break by reference to the correcting journal entry the owning"
+                    + " domain posted through its own door - nothing is posted here (P14-TSK-010, INV-ACC-12; POST"
+                    + " .../breaks/{breakId}/resolution, ACCOUNTING_ADJUST_APPROVE). Reasoned. Its target the break; the"
+                    + " summary its period, check, type, the status it left and the correcting entry's id. A refused"
+                    + " resolution - the entry unknown, the subject itself, named in the break's evidence, or posted"
+                    + " before what it would correct - is recorded FAILED in a transaction of its own, nothing changed.",
+            true),
+
+    /** An operator read the accounting breaks - a period's page or one break (`P14-TSK-010`, the review's M-5). */
+    BREAK_READ(
+            "accounting.BreakRead",
+            "An accountant read a page of a period's accounting breaks (GET /v1/operator/accounting/breaks,"
+                    + " ACCOUNTING_READ) or a financial controller read one break with its pending disclosure (GET"
+                    + " .../breaks/{breakId}, ACCOUNTING_ADJUST_APPROVE) - CONFIDENTIAL findings (P14-TSK-010, the"
+                    + " independent review's M-5; the GlRead and ReportRead precedent). Recorded SUCCEEDED in a"
+                    + " transaction of its own before the answer, so nothing is served unrecorded; an unknown break"
+                    + " records nothing. Its target the period or the break; the summary the door, the period, the status"
+                    + " asked, the count and page=first|next - never a subject, evidence or a disclosure.",
+            false);
 
     private final String code;
     private final String description;

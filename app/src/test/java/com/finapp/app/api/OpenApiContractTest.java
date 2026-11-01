@@ -522,6 +522,14 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/lock",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/unlock-proposal",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/unlock-approval",
+                        // P14-TSK-010: the accounting breaks - listed (ACCOUNTING_READ), one read by the controller,
+                        // the acknowledgement proposed (ACCOUNTING_ADJUST_PROPOSE) and approved, the resolution by
+                        // reference (ACCOUNTING_ADJUST_APPROVE), each act keyed.
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/breaks",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/breaks/{breakId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/breaks/{breakId}/acknowledgement-proposal",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/breaks/{breakId}/acknowledgement-approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/breaks/{breakId}/resolution",
                         // P14-TSK-007: the GL read model - balances, an account's activity (keyset paged) and an
                         // entry's GL view; ACCOUNTING_READ, read-only snapshots, audited accounting.GlRead.
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/gl/balances",

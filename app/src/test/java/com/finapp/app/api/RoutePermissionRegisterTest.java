@@ -466,6 +466,18 @@ class RoutePermissionRegisterTest {
                             PermissionName.ACCOUNTING_CLOSE_PROPOSE),
                     entry("POST /v1/operator/accounting/periods/{periodId}/unlock-approval",
                             PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    // P14-TSK-010: the accounting breaks - the list the accountant's, the acknowledgement's proposal
+                    // ACCOUNTING_ADJUST_PROPOSE, the controller's read of one break, the approval (four eyes) and the
+                    // resolution by reference ACCOUNTING_ADJUST_APPROVE (identity V025's partition); the negatives are
+                    // AccountingBreakDeskTest's route declarations.
+                    entry("GET /v1/operator/accounting/breaks", PermissionName.ACCOUNTING_READ),
+                    entry("GET /v1/operator/accounting/breaks/{breakId}", PermissionName.ACCOUNTING_ADJUST_APPROVE),
+                    entry("POST /v1/operator/accounting/breaks/{breakId}/acknowledgement-proposal",
+                            PermissionName.ACCOUNTING_ADJUST_PROPOSE),
+                    entry("POST /v1/operator/accounting/breaks/{breakId}/acknowledgement-approval",
+                            PermissionName.ACCOUNTING_ADJUST_APPROVE),
+                    entry("POST /v1/operator/accounting/breaks/{breakId}/resolution",
+                            PermissionName.ACCOUNTING_ADJUST_APPROVE),
                     // P14-TSK-007: the GL read model - a period's figures, an account's activity drilled to its
                     // lines and an entry's GL view, each the accountant's (identity V025's partition), audited
                     // accounting.GlRead; the negatives are GeneralLedgerDeskTest's route declarations.
