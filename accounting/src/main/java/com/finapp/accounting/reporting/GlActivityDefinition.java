@@ -10,9 +10,10 @@ import com.finapp.accounting.TrialBalanceReads;
 import java.sql.Connection;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The {@code GL_ACTIVITY} report definition, version 1 (`P14-TSK-017`; {@code PHASE_14_PLAN.md} section 13.6; ADR-0115 decision 4;
@@ -31,6 +32,7 @@ import java.util.TreeMap;
  * <p>FINAL by construction: the month's lines and the version its lock pinned are immutable under that lock. Report code: it reads
  * through its port on the snapshot it is handed. No rate set.
  */
+@RequiredArgsConstructor
 public final class GlActivityDefinition implements ReportDefinition {
 
     /** The definition's code - {@code ReportKind.GL_ACTIVITY}. */
@@ -53,11 +55,7 @@ public final class GlActivityDefinition implements ReportDefinition {
             "FINAL for a period no longer OPEN: byte-identical on regeneration while its lock stands, superseded by an unlock or a"
                     + " reopen. PROVISIONAL for an OPEN period: labelled, reused within its freshness window, never issued.");
 
-    private final TrialBalanceReads reads;
-
-    public GlActivityDefinition(TrialBalanceReads reads) {
-        this.reads = Objects.requireNonNull(reads, "reads");
-    }
+    @NonNull private final TrialBalanceReads reads;
 
     @Override
     public String code() {

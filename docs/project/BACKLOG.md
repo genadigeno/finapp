@@ -26109,6 +26109,13 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: drop the four-eyes `CHECK` → `#theProposerCannotApprove` red.
 - **Acceptance criteria**: the machine closed and reopened only as `PHASE_14_PLAN.md` §6.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P14-TSK-017` (2026-11-02), status unchanged:* **the read the owner's ruling needs is built**: `ReconciliationRunCoverage.ofMonth(Connection snapshot, YearMonth month)` →
+  `Coverage(month, lines)`, per source, kind, status and business date, `batchRuns()`, `noRun()` - true when the month has no `BATCH` run (an accepted batch's own; a `REPROCESS` alone is no run of the month:
+  this task's reading, yours to change) - on the check's own snapshot, `app`'s `ReconciliationMonthReads`, the bean of that name. Beside `ReconciliationDisclosure`, which stays functional (`CloseChecksTest`'s lambdas);
+  the check is untouched. **M-2**: `PastTheCutoffPostings.pastTheCutoff(snapshot, cutoff)` splits `postedPastTheCutoff`'s count per namespace into `floored` (the entry's audit record's `flooredFrom=`) and
+  `ownValueDate`, and `RECONCILIATION_STATUS` reports it; **the check's read was not narrowed**, so `PASSED` stays nearly unreachable: narrowing `nothingToDisclose` to the floored is this task's to decide, the
+  owner's if it changes what the close discloses. `finapp.accounting.close.run.stalled` counts only `LOCKED`, under the present lock, so a reopen's new lock falls under it unchanged; `CLOSE_STATUS.runState` reads `CONCLUDED`
+  through `CLOSE_PROPOSED` and `CLOSED` while the run answers the lock.
 
 **P14-TSK-013 — Prior-period adjustments** — `PLANNED`
 - **Objective**: correct a closed period's error in an open period, four-eyes, linked to the period it corrects
@@ -26335,6 +26342,12 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - *Routed by `P14-TSK-015`'s review, M-7 (2026-11-02), for the C7 note:* the translated content does not say that a translated row
   need not cross-foot, nor name the unrealised effect (a translated opening is not the previous translated closing when rates moved;
   a reader finds it by comparing two runs). Decide whether the statements' C7 note, or the content, says so.
+- *Routed by `P14-TSK-017` (2026-11-02), status unchanged:* (a) `ReportDefinition.statement()` is abstract and a body writes it: `BALANCE_SHEET` and `INCOME_STATEMENT` state their five facts. (b) **The notes cannot read
+  `ReconciliationDisclosure.asOfCutoff` into a FINAL body**: `raisedSinceStillOpen` and `postedPastTheCutoff` move after the lock and an adoption joins its suspense read dated inside the period, so
+  `ReportingNeverWritesTest#onlyAnOperationalDefinitionReadsWhatMoves` refuses it. Suspense and ageing: `SuspenseAsOfCutoff`, which is frozen. Open breaks as of the cutoff need a port of their own over
+  `ReportReadings.eachBreakAround(asOf, asOf)` - frozen in its raise, resolution and value at issue, not its present status or severity. (c) **The bridge**: `Reclassification.between` is public and pure; `GL_ACTIVITY` prints it
+  (`P14-TSK-009`'s review, M-5). (d) `JournalWindow` and `PurposeRows` are the journal's read and fold, package-private beside your definitions; read `TrialBalanceReads`, never `GeneralLedger`
+  (`ReportingNeverWritesTest#noReportDefinitionReachesTheGeneralLedger`).
 
 **P14-TSK-017 — Operational financial reports** — `READY` (2026-11-02; marked by the coordinator at `P14-TSK-015`'s merge, master `310aba65`; every dependency `COMPLETE`)
 - **Routed by `P14-TSK-011`'s independent review (2026-11-02); status unchanged**: (M-2) `RECONCILIATION_DISCLOSURE`'s `postedPastTheCutoff` does not
@@ -26399,6 +26412,8 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: allow a PROVISIONAL run → `#onlyFinalRunsFeedADraft` red.
 - **Acceptance criteria**: every submitted line traced to a FINAL figure; no compliance claimed.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P14-TSK-017` (2026-11-02), status unchanged:* `ReportDefinition.statement()` is abstract, so a form's definition states its five facts. `RECONCILIATION_STATUS` and `CLOSE_STATUS` are never a run
+  (`accounting.ReportDoorMismatch`), so no obligation can draw from them: a submission's lineage is FINAL runs only, and every other definition of this phase is one.
 
 **P14-TSK-019 — The safeguarding position return (C13)** — `PLANNED` (cut candidate)
 - **Objective**: the reference safeguarding return comparing customer and merchant liabilities with cash and clearing,
@@ -26436,6 +26451,9 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: remove a meter → `AccountingMetersTest` red.
 - **Acceptance criteria**: the table exact both ways; every alert fires on its break and only then.
 - **Definition of done**: `DOD-OBS`. **Risk**: Low. **Cx**: M.
+- *Routed by `P14-TSK-017` (2026-11-02), status unchanged:* `infra/prometheus/rules/accounting.yml` and `AccountingAlertRulesTest` exist, holding `AccountingCloseRunStalled` and `AccountingCloseRunStallUnreadable`; `OPERATIONS_RUNBOOK.md`
+  section 10 exists with 10.1. Grow them, and add `finapp.accounting.close.run.stalled` to `AccountingMetersTest` and `AlertRulesResolveTest#theAccountingRulesResolve`, which are still yours. Not covered, named: a leg that stalls after the
+  run's birth - an attempt nobody claims - shows only in `period.open.age` and `close.leg.failed`.
 
 **P14-TSK-021 — Loan and BNPL write-off under four eyes (C6)** — `PLANNED` (optional, first cut candidate; only if the
 owner ratifies C6 A)

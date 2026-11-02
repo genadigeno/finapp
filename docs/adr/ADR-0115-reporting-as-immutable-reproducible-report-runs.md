@@ -136,8 +136,35 @@ legs, M-3 the data's scales, M-4 the bounds bound as values, M-5 the bridge, M-8
 recorded; M-6 routed to `P14-TSK-011` (`passes` is not the whole close: `GL_EQUALS_LEDGER` fails an unpinned or
 not fully mapped period; the run checked FINAL and of its code and version).
 
+*(`P14-TSK-017`, 2026-11-02, no migration - the operational reports.)* **A definition now says whether it can keep the promise.** Decision 3
+reads as if every definition's FINAL run were reproducible; that holds for what a locked period makes immutable, and two of the ten read what
+keeps moving under one lock. `ReportDefinition.operational()` (default false; `OperationalReportDefinition` true) names them, and **an operational
+definition is never a run**: `ReportRuns.claim` refuses it before anything is read or locked (`DefinitionIsOperational`, `409
+accounting.ReportDoorMismatch`); `OperationalReports` generates it through the same `ReportGeneration` - canonical form, sha256, time budget - on a
+verified snapshot, its header's `basis` `OPERATIONAL`, its cut the database's instant, nothing stored but the read's audit record
+(`accounting.OperationalReportRead`), at `GET /v1/operator/accounting/periods/{periodId}/operational-reports/{definition}`. **Why not a run of
+either kind**: `V004`'s birth trigger holds a PROVISIONAL run to an `OPEN` period and `report_run_basis_coherent` a completed run's status to its basis,
+so a run of a locked period can only be a row saying `FINAL`; and `ReportRuns.answers` keeps a FINAL run answering for the life of its lock, so
+`CLOSE_STATUS` would say nine checks `PENDING` for good. Why no migration: `V008`-`V010` are reserved and Flyway runs in order, and a report that
+stores nothing needs none. Nothing moved for any other definition: its question, key, basis and bytes are as they were. **The eight FINAL
+definitions**: `PurposeReportDefinition` (six, tables of purposes over `TrialBalanceReads`, the trial balance's own statements), `GlActivityDefinition`,
+`SuspenseDefinition`. Their bodies write `ReportDefinition.statement()`, whose five facts the method's abstractness and `ReportStatement`'s
+constructor make unomittable (`TRIAL_BALANCE` states them too and writes none: version 1's bytes are fixed). **Held statically**:
+`ReportingNeverWritesTest` - no definition has a path to `GeneralLedger` (`P14-TSK-015`'s review, M-6: the fold's `zero` is a JDK's table, the exception's
+reach closed); only an operational definition reads what moves; a report port's adapter writes nothing and holds no product's reports. **`SUSPENSE`'s register
+is FINAL by a new read**: `ReportReadings.eachSuspenseItemBornAsOf` narrows the as-of read to items whose owning break was raised before the
+instant, because an adopted parking's `opened_on` is its entry's posting date (ADR-0070 section 2) and it would otherwise join a locked month; the disclosure's
+read is unchanged, the close wanting that item as `suspenseUnowned`. **The reclassification bridge lands in `GL_ACTIVITY`**: `Reclassification.between`, a
+pure fold of the opening's aggregates through both versions - each moved purpose's balance, per GL account the previous closing beside this opening, footing
+to zero per currency - exact because the lines before this period's first day are the lines through the previous period's last, and read only
+when the versions differ; `-016` may call it as it stands. **Costs**: the heaviest statement of a balance report is `TrialBalanceReads.BEFORE`, from inception,
+`journal_entry_by_posting_date`, the trial balance's own cost; of `RECONCILIATION_STATUS` the past-the-cutoff scan, the same index from the cutoff
+forward, then one probe of `audit_record_by_target` per entry it keeps; both inside the 4-minute budget, a read past it `503`, never a partial answer.
+
 ## Follow-up
 
 Retention of runs with Phase 15's data-retention work; export formats beyond JSON. *(`P14-TSK-009`: a chained
 opening - the previous FINAL trial balance's closing, sound only under one version and a kept `locked_at` - if the
-cumulative fold's cost grows; consolidating `GlSnapshots` and `JdbcReportSnapshots`.)*
+cumulative fold's cost grows; consolidating `GlSnapshots` and `JdbcReportSnapshots`.)* *(`P14-TSK-017`: a stalled check leg after the run's birth - an
+attempt nobody claims - shows only in `period.open.age` and `close.leg.failed`; a labelled operational run of a locked period, if storing them is ever wanted, is
+a change to `V004`'s trigger.)*

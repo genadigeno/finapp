@@ -5,7 +5,8 @@ import com.finapp.accounting.ReconciliationDisclosure;
 import com.finapp.accounting.ReconciliationRunCoverage;
 import com.finapp.accounting.ReportKind;
 import java.sql.Connection;
-import java.util.Objects;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The {@code RECONCILIATION_STATUS} report definition, version 1, <strong>operational and never a run</strong> (`P14-TSK-017`;
@@ -24,6 +25,7 @@ import java.util.Objects;
  * <p>Why it cannot be FINAL: every one of those three moves after the lock, by design. What it reads is on one snapshot, so it agrees
  * with itself; {@code asOf} (the database's instant, {@link ReportInputs#cutAt()}) says when. No rate set; no person; no reference.
  */
+@RequiredArgsConstructor
 public final class ReconciliationStatusDefinition implements OperationalReportDefinition {
 
     /** The definition's code - {@code ReportKind.RECONCILIATION_STATUS}. */
@@ -46,16 +48,9 @@ public final class ReconciliationStatusDefinition implements OperationalReportDe
             "OPERATIONAL: never FINAL and never a report run, because a late batch, a run's status, a resolved break and every"
                     + " later posting move it after any lock. Generated at each read, stored nowhere, each read audited.");
 
-    private final ReconciliationDisclosure disclosure;
-    private final ReconciliationRunCoverage coverage;
-    private final PastTheCutoffPostings postings;
-
-    public ReconciliationStatusDefinition(ReconciliationDisclosure disclosure, ReconciliationRunCoverage coverage,
-            PastTheCutoffPostings postings) {
-        this.disclosure = Objects.requireNonNull(disclosure, "disclosure");
-        this.coverage = Objects.requireNonNull(coverage, "coverage");
-        this.postings = Objects.requireNonNull(postings, "postings");
-    }
+    @NonNull private final ReconciliationDisclosure disclosure;
+    @NonNull private final ReconciliationRunCoverage coverage;
+    @NonNull private final PastTheCutoffPostings postings;
 
     @Override
     public String code() {

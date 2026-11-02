@@ -8,8 +8,9 @@ import com.finapp.accounting.ReportKind;
 import java.sql.Connection;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /**
  * The {@code CLOSE_STATUS} report definition, version 1, <strong>operational and never a run</strong> (`P14-TSK-017`;
@@ -28,6 +29,7 @@ import java.util.Optional;
  * it reads through {@link CloseStatusReads} on the snapshot it is handed; every age is from {@link ReportInputs#cutAt()}, the database's
  * instant.
  */
+@RequiredArgsConstructor
 public final class CloseStatusDefinition implements OperationalReportDefinition {
 
     /** The definition's code - {@code ReportKind.CLOSE_STATUS}. */
@@ -63,13 +65,8 @@ public final class CloseStatusDefinition implements OperationalReportDefinition 
             "OPERATIONAL: never FINAL and never a report run, because attempts, the period's status, breaks and the approved set all"
                     + " move under one lock. Generated at each read, stored nowhere, each read audited.");
 
-    private final CloseStatusReads reads;
-    private final CloseRunStall stall;
-
-    public CloseStatusDefinition(CloseStatusReads reads, CloseRunStall stall) {
-        this.reads = Objects.requireNonNull(reads, "reads");
-        this.stall = Objects.requireNonNull(stall, "stall");
-    }
+    @NonNull private final CloseStatusReads reads;
+    @NonNull private final CloseRunStall stall;
 
     @Override
     public String code() {
