@@ -25,13 +25,15 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 /**
- * {@link CloseRunStore} in memory (`P14-TSK-011`): the hermetic suites' store, holding the ranks the machine relies on - one run per lock
- * instance, one attempt per {@code (run, check, attempt)} with no gap, at most one {@code PENDING} per check, the claim's own conditions (past the
- * lease, the period under the run's lock, the breaks after the raising checks), the holder's fence, a concluded attempt frozen, {@code DISCLOSED}
- * only where the check admits it - so a defect the database would refuse is refused here too, as an {@link IllegalStateException} naming the
- * rank. <strong>One statement at a time</strong>, as the row locks would have it (a {@link ConcurrentHashMap#compute compute} on one key: the
- * architecture's rules hold this class to no {@code synchronized} and no process-local lock, like any other), so the ten-worker suites race for
- * real. Its clock is the test's ({@link #advance}). The real ranks are {@code accounting V007}'s, proven by {@code CloseRunDatabaseTest} (owed, C5).
+ * {@link CloseRunStore} in memory (`P14-TSK-011`): the hermetic suites' store, holding the ranks the machine relies on
+ * - one run per lock instance, one attempt per {@code (run, check, attempt)} with no gap, at most one {@code PENDING}
+ * per check, the claim's own conditions (past the lease, the period under the run's lock, the breaks after the raising
+ * checks), the holder's fence, a concluded attempt frozen, {@code DISCLOSED} only where the check admits it - so a
+ * defect the database would refuse is refused here too, as an {@link IllegalStateException} naming the rank.
+ * <strong>One statement at a time</strong>, as the row locks would have it (a {@link ConcurrentHashMap#compute compute}
+ * on one key: the architecture's rules hold this class to no {@code synchronized} and no process-local lock, like any
+ * other), so the ten-worker suites race for real. Its clock is the test's ({@link #advance}). The real ranks are {@code
+ * accounting V007}'s, proven by {@code CloseRunDatabaseTest} (owed, C5).
  */
 public final class InMemoryCloseRunStore implements CloseRunStore {
 

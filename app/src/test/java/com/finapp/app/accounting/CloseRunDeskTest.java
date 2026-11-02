@@ -54,10 +54,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The close run's doors (`P14-TSK-011`; {@code PHASE_14_PLAN.md} sections 10, 12): the read on {@code ACCOUNTING_READ}, audited before it is
- * served, carrying every check's evidence and never a person or a reason; the re-run on {@code ACCOUNTING_CLOSE_PROPOSE}, keyed, reasoned,
- * a new attempt, replayed as itself; the refusals on the contract. The routes' 401/403 over HTTP are the interceptor's, held by
- * {@code RoutePermissionRegisterTest}.
+ * The close run's doors (`P14-TSK-011`; {@code PHASE_14_PLAN.md} sections 10, 12): the read on {@code ACCOUNTING_READ},
+ * audited before it is served, carrying every check's evidence and never a person or a reason; the re-run on {@code
+ * ACCOUNTING_CLOSE_PROPOSE}, keyed, reasoned, a new attempt, replayed as itself; the refusals on the contract. The
+ * routes' 401/403 over HTTP are the interceptor's, held by {@code RoutePermissionRegisterTest}.
  */
 @DisplayName("the close run doors (P14-TSK-011)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).

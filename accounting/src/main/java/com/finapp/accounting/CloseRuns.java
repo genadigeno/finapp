@@ -26,39 +26,42 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 /**
- * The close run's machine - start, claim, renew, defer, conclude, re-run (`P14-TSK-011`; ADR-0114 decision 4;
- * {@code PHASE_14_PLAN.md} sections 6, 8.1 T-check, 8.3 rows 5-6, 13.5; {@code INV-ACC-09}, {@code INV-ACC-05}). Every method runs
- * on the caller's writable unit of work; the judgement itself is not here ({@link CloseChecks}) and runs outside any transaction
- * of the machine's, between a claim's commit and a conclusion's. Nothing here posts.
+ * The close run's machine - start, claim, renew, defer, conclude, re-run (`P14-TSK-011`; ADR-0114 decision 4; {@code
+ * PHASE_14_PLAN.md} sections 6, 8.1 T-check, 8.3 rows 5-6, 13.5; {@code INV-ACC-09}, {@code INV-ACC-05}). Every method
+ * runs on the caller's writable unit of work; the judgement itself is not here ({@link CloseChecks}) and runs outside
+ * any transaction of the machine's, between a claim's commit and a conclusion's. Nothing here posts.
  *
- * <p><strong>Start</strong> ({@link #startMissing}): every {@code LOCKED} period under a lock no run answers - the period
- * {@code FOR SHARE} (A1), the run insert-if-absent on {@code close_run_one_per_lock}, then its nine attempts, one transaction:
- * ten instances, one run. Born by the schedule rather than inside T-lock (a recorded deviation): the lock is the ledger's
- * protection and waits for nothing.
+ * <p><strong>Start</strong> ({@link #startMissing}): every {@code LOCKED} period under a lock no run answers - the
+ * period {@code FOR SHARE} (A1), the run insert-if-absent on {@code close_run_one_per_lock}, then its nine attempts,
+ * one transaction: ten instances, one run. Born by the schedule rather than inside T-lock (a recorded deviation): the
+ * lock is the ledger's protection and waits for nothing.
  *
- * <p><strong>Claim</strong> ({@link #claim}): one statement - {@code FOR UPDATE SKIP LOCKED} under a lease on the database's clock -
- * so ten workers take disjoint attempts and no row is held across a judgement. A dead worker's lease lapses and the next claim
- * takes the attempt with one reclaim more; past {@link Leases#maxReclaims} the claim comes back {@link ClaimedCheck#exhausted()}, to be
- * concluded {@code FAILED} unjudged - a check whose workers keep dying never passes and never hangs.
+ * <p><strong>Claim</strong> ({@link #claim}): one statement - {@code FOR UPDATE SKIP LOCKED} under a lease on the
+ * database's clock - so ten workers take disjoint attempts and no row is held across a judgement. A dead worker's lease
+ * lapses and the next claim takes the attempt with one reclaim more; past {@link Leases#maxReclaims} the claim comes
+ * back {@link ClaimedCheck#exhausted()}, to be concluded {@code FAILED} unjudged - a check whose workers keep dying
+ * never passes and never hangs.
  *
- * <p><strong>The lease and a long run</strong> (`P14-TSK-010`'s review, M-1: {@code AccountingChecks.run} is bounded per statement and
- * page, not in total). Decided: <strong>the worker renews, and the renewal is bounded</strong>. A short lease reclaims a dead worker's check
- * quickly; a live worker renews it ({@link #renew}) for as long as the run lasts, up to {@link Leases#maxRun} from its claim on the
- * database's clock. Past that the renewal is refused, the lease lapses, another worker reclaims and the slow worker's conclusion
- * is refused by the fence - so a run of any length is held while it lives, a hung one is overtaken, and every path ends in a
- * verdict or {@code WORKERS_EXHAUSTED}, none in a pass.
+ * <p><strong>The lease and a long run</strong> (`P14-TSK-010`'s review, M-1: {@code AccountingChecks.run} is bounded
+ * per statement and page, not in total). Decided: <strong>the worker renews, and the renewal is bounded</strong>. A
+ * short lease reclaims a dead worker's check quickly; a live worker renews it ({@link #renew}) for as long as the run
+ * lasts, up to {@link Leases#maxRun} from its claim on the database's clock. Past that the renewal is refused, the
+ * lease lapses, another worker reclaims and the slow worker's conclusion is refused by the fence - so a run of any
+ * length is held while it lives, a hung one is overtaken, and every path ends in a verdict or {@code
+ * WORKERS_EXHAUSTED}, none in a pass.
  *
- * <p><strong>Conclude</strong> ({@link #conclude}, one check per transaction): (A1) the period {@code FOR SHARE}, (A4) the run
- * {@code FOR UPDATE}, then one conditional edge naming the {@code holder} - a claim overtaken moves nothing. A period no longer under
- * the run's lock concludes {@code FAILED} {@link #PERIOD_MOVED}, whatever the judge found.
+ * <p><strong>Conclude</strong> ({@link #conclude}, one check per transaction): (A1) the period {@code FOR SHARE}, (A4)
+ * the run {@code FOR UPDATE}, then one conditional edge naming the {@code holder} - a claim overtaken moves nothing. A
+ * period no longer under the run's lock concludes {@code FAILED} {@link #PERIOD_MOVED}, whatever the judge found.
  *
- * <p><strong>{@code OPEN_ACCOUNTING_BREAKS} has no stale pass</strong>: judged before a raising check raised, it would pass while a
- * break is open. So it is not claimable while a raising check of its run is {@code PENDING}; it is judged <em>inside</em> its own
- * conclusion, after the run's row lock ({@link #concludeOpenBreaks}); and any later conclusion of a raising check - serialised on
- * the same row - births a new attempt of it when its latest has concluded. Either order, the last judgement saw every raise.
+ * <p><strong>{@code OPEN_ACCOUNTING_BREAKS} has no stale pass</strong>: judged before a raising check raised, it would
+ * pass while a break is open. So it is not claimable while a raising check of its run is {@code PENDING}; it is judged
+ * <em>inside</em> its own conclusion, after the run's row lock ({@link #concludeOpenBreaks}); and any later conclusion
+ * of a raising check - serialised on the same row - births a new attempt of it when its latest has concluded. Either
+ * order, the last judgement saw every raise.
  *
- * <p><strong>Re-run</strong> ({@link #rerun}, a person's): a new attempt, never an edit; at most one {@code PENDING} per check. Conditional
- * outcomes, attempt rows unique, history frozen by {@code accounting V007}.
+ * <p><strong>Re-run</strong> ({@link #rerun}, a person's): a new attempt, never an edit; at most one {@code PENDING}
+ * per check. Conditional outcomes, attempt rows unique, history frozen by {@code accounting V007}.
  */
 @RequiredArgsConstructor
 public final class CloseRuns {
@@ -92,10 +95,10 @@ public final class CloseRuns {
     // ------------------------------------------------------------------ configuration and outcomes
 
     /**
-     * The check leg's lease (the database's clock), how often a live worker renews it, how long in all it may ({@code maxRun}), how
-     * many times an attempt is reclaimed before it is failed, and how long a deferred attempt waits. Refused at start-up unless a
-     * renewal comes at least three times per lease - one lost renewal must not cost the lease - and the run's bound is at least
-     * one lease.
+     * The check leg's lease (the database's clock), how often a live worker renews it, how long in all it may ({@code
+     * maxRun}), how many times an attempt is reclaimed before it is failed, and how long a deferred attempt waits.
+     * Refused at start-up unless a renewal comes at least three times per lease - one lost renewal must not cost the
+     * lease - and the run's bound is at least one lease.
      */
     public record Leases(Duration lease, Duration renewEvery, Duration maxRun, int maxReclaims, Duration deferral) {
 
@@ -150,9 +153,9 @@ public final class CloseRuns {
             long openBreaks, List<CheckView> checks) {}
 
     /**
-     * Whether a close may be proposed on this run (`P14-TSK-012`'s read, {@code INV-ACC-09}): the run answers the period's present
-     * lock, every check's latest attempt is {@code PASSED} or {@code DISCLOSED}, and - re-read live, so a stale attempt can never
-     * make a run ready - no break of the month is {@code OPEN}.
+     * Whether a close may be proposed on this run (`P14-TSK-012`'s read, {@code INV-ACC-09}): the run answers the
+     * period's present lock, every check's latest attempt is {@code PASSED} or {@code DISCLOSED}, and - re-read live,
+     * so a stale attempt can never make a run ready - no break of the month is {@code OPEN}.
      */
     public record Readiness(Optional<CloseRunId> run, boolean complete, List<CloseCheckCode> notReady, long openBreaks) {
 
@@ -184,8 +187,8 @@ public final class CloseRuns {
     // ------------------------------------------------------------------ start
 
     /**
-     * Births the run and its nine attempts of every {@code LOCKED} period under a lock no run answers - insert-if-absent, so ten
-     * instances, one run; a loser writes nothing.
+     * Births the run and its nine attempts of every {@code LOCKED} period under a lock no run answers -
+     * insert-if-absent, so ten instances, one run; a loser writes nothing.
      *
      * @param actor the platform's - the schedule's system scope; every attempt's first requester
      * @return the runs this call started
@@ -221,7 +224,8 @@ public final class CloseRuns {
     // ------------------------------------------------------------------ the claim and the lease
 
     /**
-     * One claimable attempt, held by this call for one lease - the caller commits at once and judges outside the transaction.
+     * One claimable attempt, held by this call for one lease - the caller commits at once and judges outside the
+     * transaction.
      *
      * @return the attempt as claimed; empty when nothing is claimable for this worker
      */
@@ -339,8 +343,8 @@ public final class CloseRuns {
     // ------------------------------------------------------------------ re-run
 
     /**
-     * A person's re-run: the check's next attempt, {@code PENDING} - a worker claims it. Under (A1) the period {@code FOR SHARE}
-     * and (A4) the run {@code FOR UPDATE}: two re-runs, one new attempt.
+     * A person's re-run: the check's next attempt, {@code PENDING} - a worker claims it. Under (A1) the period {@code
+     * FOR SHARE} and (A4) the run {@code FOR UPDATE}: two re-runs, one new attempt.
      *
      * @throws AccountingPeriods.PeriodNotFound when no period has this id
      * @throws AccountingPeriods.PeriodStale when the period is not {@code LOCKED}

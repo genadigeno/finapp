@@ -16,26 +16,29 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * The close run's judges (`P14-TSK-011`; {@code PHASE_14_PLAN.md} sections 8.1 T-check, 13.5; {@code INV-ACC-05}, {@code INV-ACC-09}):
- * one claimed attempt to one {@link CheckVerdict}, each read through its port, {@code REPEATABLE READ READ ONLY}, and writing nothing but
- * the breaks {@link AccountingChecks} raises. Called <strong>outside any transaction</strong> (its contract); {@code
- * OPEN_ACCOUNTING_BREAKS} is judged in its own conclusion instead ({@link CloseRuns#concludeOpenBreaks}).
+ * The close run's judges (`P14-TSK-011`; {@code PHASE_14_PLAN.md} sections 8.1 T-check, 13.5; {@code INV-ACC-05},
+ * {@code INV-ACC-09}): one claimed attempt to one {@link CheckVerdict}, each read through its port, {@code REPEATABLE
+ * READ READ ONLY}, and writing nothing but the breaks {@link AccountingChecks} raises. Called <strong>outside any
+ * transaction</strong> (its contract); {@code OPEN_ACCOUNTING_BREAKS} is judged in its own conclusion instead ({@link
+ * CloseRuns#concludeOpenBreaks}).
  *
- * <p><strong>No false pass.</strong> {@code PASSED} only when the judge read everything it covers and found nothing. An exception, a
- * timeout, an incomplete proof, a reading missing, a verdict member absent: {@code FAILED} with its reason, the exception's class
- * logged (never its message, which may carry data). A {@code RECURRED} outcome - a {@code RESOLVED} break's discrepancy still present - is
- * {@code FAILED} and never {@code DISCLOSED}, whatever the owner rules on re-raising (ADR-0117's open question): a re-raise would
- * make it a new {@code OPEN} break, {@code FAILED} just the same.
+ * <p><strong>No false pass.</strong> {@code PASSED} only when the judge read everything it covers and found nothing. An
+ * exception, a timeout, an incomplete proof, a reading missing, a verdict member absent: {@code FAILED} with its
+ * reason, the exception's class logged (never its message, which may carry data). A {@code RECURRED} outcome - a {@code
+ * RESOLVED} break's discrepancy still present - is {@code FAILED} and never {@code DISCLOSED}, whatever the owner rules
+ * on re-raising (ADR-0117's open question): a re-raise would make it a new {@code OPEN} break, {@code FAILED} just the
+ * same.
  *
- * <p><strong>{@code DISCLOSED}</strong> only as {@link CloseCheckCode#disclosable()} admits: a raising check every one of whose findings an
- * {@code ACKNOWLEDGED} break holds, and nothing else failing; {@code ACCRUALS_COMPLETE} with nothing behind and floored entries found;
- * {@code RECONCILIATION_DISCLOSURE} read whole and not clean.
+ * <p><strong>{@code DISCLOSED}</strong> only as {@link CloseCheckCode#disclosable()} admits: a raising check every one
+ * of whose findings an {@code ACKNOWLEDGED} break holds, and nothing else failing; {@code ACCRUALS_COMPLETE} with
+ * nothing behind and floored entries found; {@code RECONCILIATION_DISCLOSURE} read whole and not clean.
  *
- * <p><strong>{@code ACCRUALS_COMPLETE} after the lock</strong> (`P14-TSK-006`'s review, I-1): a catch-up after the lock floors the period's
- * accrual dates to the first open date, and {@link AccrualCompleteness#blocking} then reads empty while the period is short of that
- * interest. So both legs are read on <em>one snapshot</em>: an accrual either has not committed (behind: {@code FAILED}) or has
- * (floored: {@code DISCLOSED}, with the figures) - no third state, and never {@code PASSED} on a period short of interest. Not judged inside
- * T-lock: that would pause every posting for an O(servicing) read and hold the ledger's protection hostage to one stuck loan.
+ * <p><strong>{@code ACCRUALS_COMPLETE} after the lock</strong> (`P14-TSK-006`'s review, I-1): a catch-up after the lock
+ * floors the period's accrual dates to the first open date, and {@link AccrualCompleteness#blocking} then reads empty
+ * while the period is short of that interest. So both legs are read on <em>one snapshot</em>: an accrual either has not
+ * committed (behind: {@code FAILED}) or has (floored: {@code DISCLOSED}, with the figures) - no third state, and never
+ * {@code PASSED} on a period short of interest. Not judged inside T-lock: that would pause every posting for an
+ * O(servicing) read and hold the ledger's protection hostage to one stuck loan.
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -92,7 +95,8 @@ public final class CloseChecks {
     /**
      * The attempt's verdict.
      *
-     * @return empty when the judge cannot answer <em>yet</em> (a report run another worker generates): the caller defers
+     * @return empty when the judge cannot answer <em>yet</em> (a report run another worker generates): the caller
+     * defers
      * @throws IllegalArgumentException for {@code OPEN_ACCOUNTING_BREAKS}, judged in its conclusion
      */
     public Optional<CheckVerdict> judge(CloseRuns.ClaimedCheck claimed) {
@@ -139,10 +143,10 @@ public final class CloseChecks {
     }
 
     /**
-     * {@code GL_EQUALS_LEDGER} (`P14-TSK-009`'s review, M-6): {@code passes} is not sufficient for the close, and neither is this
-     * check's own run - {@link AccountingChecks#run} falls back to the version in force for a period that pins none, so the pin is
-     * read here, and the FINAL trial balance's {@code fullyMapped} beside it. Never {@code DISCLOSED}: both are the close's
-     * preconditions ({@code INV-ACC-09}).
+     * {@code GL_EQUALS_LEDGER} (`P14-TSK-009`'s review, M-6): {@code passes} is not sufficient for the close, and
+     * neither is this check's own run - {@link AccountingChecks#run} falls back to the version in force for a period
+     * that pins none, so the pin is read here, and the FINAL trial balance's {@code fullyMapped} beside it. Never
+     * {@code DISCLOSED}: both are the close's preconditions ({@code INV-ACC-09}).
      */
     private Optional<CheckVerdict> glEqualsLedger(CloseRuns.ClaimedCheck claimed, Actor actor) {
         FinalTrialBalance.Reading reading = trialBalance.read(claimed.period(), actor, claimed.correlation());
@@ -180,9 +184,10 @@ public final class CloseChecks {
     }
 
     /**
-     * An outcome as an attempt's verdict: {@code DISCLOSED} only when the sole failure is {@link CheckOutcome#DISCREPANCIES} and an
-     * {@code ACKNOWLEDGED} break - four eyes, a disclosure - holds every finding. {@link CheckOutcome#RECURRED},
-     * {@code UNAVAILABLE:*}, {@code NO_MAPPING} and {@code FINDINGS_CAPPED} are each another failure, so never.
+     * An outcome as an attempt's verdict: {@code DISCLOSED} only when the sole failure is {@link
+     * CheckOutcome#DISCREPANCIES} and an {@code ACKNOWLEDGED} break - four eyes, a disclosure - holds every finding.
+     * {@link CheckOutcome#RECURRED}, {@code UNAVAILABLE:*}, {@code NO_MAPPING} and {@code FINDINGS_CAPPED} are each
+     * another failure, so never.
      */
     static CheckVerdict verdictOf(CheckOutcome outcome) {
         CanonicalJson.Obj evidence = evidence(outcome);
@@ -269,9 +274,10 @@ public final class CloseChecks {
     private record SetReading(Optional<ValuationRateSets.Valued> approved, List<ValuationRateSetStore.SetRow> all) {}
 
     /**
-     * The period's approved set, read afresh per attempt and pinned nowhere - whichever way the owner rules on superseding an
-     * approved set (ADR-0116), the check reads what {@code approvedFor} answers then. The period's sets are named in the evidence so a
-     * {@code FAILED} check says which proposal awaits a decision (`P14-TSK-014`'s review, M-5).
+     * The period's approved set, read afresh per attempt and pinned nowhere - whichever way the owner rules on
+     * superseding an approved set (ADR-0116), the check reads what {@code approvedFor} answers then. The period's sets
+     * are named in the evidence so a {@code FAILED} check says which proposal awaits a decision (`P14-TSK-014`'s
+     * review, M-5).
      */
     private CheckVerdict valuationSetApproved(CloseRuns.ClaimedCheck claimed) {
         SetReading reading = snapshots.read(snapshot -> new SetReading(valuationSets.approvedFor(snapshot, claimed.period()),

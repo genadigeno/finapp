@@ -14,16 +14,19 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * One worker's T-check (`P14-TSK-011`; {@code PHASE_14_PLAN.md} section 8.1; {@code INV-ACC-09}): claim one attempt in a short
- * transaction; judge it <strong>holding no transaction</strong> ({@code AccountingChecks}' contract, `P14-TSK-010`'s review, M-1), a
- * heartbeat renewing the lease for as long as it lasts; conclude it in one transaction of its own. Every instance runs this with no
- * leader: the claim's {@code SKIP LOCKED} gives each attempt to one worker, the fence refuses an overtaken one's conclusion.
+ * One worker's T-check (`P14-TSK-011`; {@code PHASE_14_PLAN.md} section 8.1; {@code INV-ACC-09}): claim one attempt in
+ * a short transaction; judge it <strong>holding no transaction</strong> ({@code AccountingChecks}' contract,
+ * `P14-TSK-010`'s review, M-1), a heartbeat renewing the lease for as long as it lasts; conclude it in one transaction
+ * of its own. Every instance runs this with no leader: the claim's {@code SKIP LOCKED} gives each attempt to one
+ * worker, the fence refuses an overtaken one's conclusion.
  *
- * <p><strong>A kill at any point resumes</strong>: before the conclusion nothing of the attempt is recorded, every break already raised
- * stands, and the lease lapses; the next worker reclaims, finds those breaks known, and concludes. A failure of the conclusion's own
- * transaction is the same case - counted, logged by class, the lease left to lapse; never a pass.
+ * <p><strong>A kill at any point resumes</strong>: before the conclusion nothing of the attempt is recorded, every
+ * break already raised stands, and the lease lapses; the next worker reclaims, finds those breaks known, and concludes.
+ * A failure of the conclusion's own transaction is the same case - counted, logged by class, the lease left to lapse;
+ * never a pass.
  *
- * <p>The heartbeat is liveness only: it never decides anything. A lost renewal costs at most the lease, and the fence makes that harmless.
+ * <p>The heartbeat is liveness only: it never decides anything. A lost renewal costs at most the lease, and the fence
+ * makes that harmless.
  */
 @Slf4j
 @RequiredArgsConstructor

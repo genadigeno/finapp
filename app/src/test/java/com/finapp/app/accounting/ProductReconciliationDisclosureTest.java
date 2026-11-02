@@ -35,10 +35,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Reconciliation's disclosure at the close (`P14-TSK-011`; {@code INV-ACC-05}; gate criterion 5; `P14-TSK-010`'s review, M-10;
- * `P14-TSK-006`'s, M-2) and the journal's postings past the cutoff (I-1): every figure as of the cutoff's instant, gross and per currency, what the
- * grace days added counted apart, the unowned counted as of the cutoff. Hermetic: reconciliation's reads and the two SQL statements scripted; the
- * statements against PostgreSQL are {@code CloseRunDatabaseTest#suspenseIsDisclosed}'s (owed, C5).
+ * Reconciliation's disclosure at the close (`P14-TSK-011`; {@code INV-ACC-05}; gate criterion 5; `P14-TSK-010`'s
+ * review, M-10; `P14-TSK-006`'s, M-2) and the journal's postings past the cutoff (I-1): every figure as of the cutoff's
+ * instant, gross and per currency, what the grace days added counted apart, the unowned counted as of the cutoff.
+ * Hermetic: reconciliation's reads and the two SQL statements scripted; the statements against PostgreSQL are {@code
+ * CloseRunDatabaseTest#suspenseIsDisclosed}'s (owed, C5).
  */
 @DisplayName("reconciliation's disclosure as of the cutoff (P14-TSK-011)")
 class ProductReconciliationDisclosureTest {

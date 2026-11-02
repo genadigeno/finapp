@@ -6,8 +6,8 @@ import java.util.Objects;
 
 /**
  * The period's FINAL {@code TRIAL_BALANCE} run, as the close reads it (`P14-TSK-011`; `P14-TSK-009`'s review, M-6;
- * {@code INV-ACC-01} reported, {@code INV-ACC-09}) - a port, because a report's generation is {@code app}'s
- * ({@code ReportRunGenerator}): claimed with no parameters, generated when this caller holds it, and read only once it is
+ * {@code INV-ACC-01} reported, {@code INV-ACC-09}) - a port, because a report's generation is {@code app}'s ({@code
+ * ReportRunGenerator}): claimed with no parameters, generated when this caller holds it, and read only once it is
  * confirmed {@code FINAL} and of the definition's own code and version. Called outside any transaction.
  */
 @FunctionalInterface
@@ -28,9 +28,10 @@ public interface FinalTrialBalance {
     }
 
     /**
-     * The run's stored verdict: each flag exactly {@code true} in the content, never assumed - a member missing is false. {@code
-     * passes} the trial balance's own; {@code openingBalanced}, {@code periodBalanced} and {@code balanced} its three legs
-     * (`P14-TSK-009`'s review, I-1); {@code fullyMapped} what {@code GL_EQUALS_LEDGER} needs beside it.
+     * The run's stored verdict: each flag exactly {@code true} in the content, never assumed - a member missing is
+     * false. {@code passes} the trial balance's own; {@code openingBalanced}, {@code periodBalanced} and {@code
+     * balanced} its three legs (`P14-TSK-009`'s review, I-1); {@code fullyMapped} what {@code GL_EQUALS_LEDGER} needs
+     * beside it.
      *
      * @param run the run's id as text
      */

@@ -6,13 +6,13 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
- * What one close check attempt concluded (`P14-TSK-011`; {@code PHASE_14_PLAN.md} sections 6, 13.5; {@code INV-ACC-09}): its
- * status, the versions it read ({@code judgedBy}), why it failed and its evidence - canonical JSON text ({@link CanonicalJson},
- * no JSON number): codes, ids, counts and, for a disclosure, aggregate figures per currency in minor units. Never an owner
- * reference, a person or a reason.
+ * What one close check attempt concluded (`P14-TSK-011`; {@code PHASE_14_PLAN.md} sections 6, 13.5; {@code
+ * INV-ACC-09}): its status, the versions it read ({@code judgedBy}), why it failed and its evidence - canonical JSON
+ * text ({@link CanonicalJson}, no JSON number): codes, ids, counts and, for a disclosure, aggregate figures per
+ * currency in minor units. Never an owner reference, a person or a reason.
  *
- * <p><strong>A verdict that could lie refuses to exist</strong>: {@link CloseCheckStatus#FAILED} exactly when {@code failures}
- * is not empty, never {@link CloseCheckStatus#PENDING}, and {@link CloseCheckStatus#DISCLOSED} only for a
+ * <p><strong>A verdict that could lie refuses to exist</strong>: {@link CloseCheckStatus#FAILED} exactly when {@code
+ * failures} is not empty, never {@link CloseCheckStatus#PENDING}, and {@link CloseCheckStatus#DISCLOSED} only for a
  * {@link CloseCheckCode#disclosable() disclosable} check - {@code accounting V007} holds the same for every writer.
  */
 public record CheckVerdict(

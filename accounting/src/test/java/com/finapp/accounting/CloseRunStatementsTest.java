@@ -6,10 +6,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The close run store's arbiters, pinned (`P14-TSK-011`; {@code PHASE_14_PLAN.md} section 8.3 rows 5-6; {@code INV-ACC-09}): the statements that
- * make "one attempt, one holder, one conclusion" true against PostgreSQL - the claim {@code FOR UPDATE SKIP LOCKED} under a lease on the
- * database's clock, the renewal and the conclusion fenced by {@code holder}. The hermetic half; the database half is
- * {@code CloseRunDatabaseTest#tenWorkersOneAttempt}, {@code #aDeadWorkersCheckIsReclaimed} and {@code #aLiveWorkerOutlastsItsLease} (owed, C5).
+ * The close run store's arbiters, pinned (`P14-TSK-011`; {@code PHASE_14_PLAN.md} section 8.3 rows 5-6; {@code
+ * INV-ACC-09}): the statements that make "one attempt, one holder, one conclusion" true against PostgreSQL - the claim
+ * {@code FOR UPDATE SKIP LOCKED} under a lease on the database's clock, the renewal and the conclusion fenced by {@code
+ * holder}. The hermetic half; the database half is {@code CloseRunDatabaseTest#tenWorkersOneAttempt}, {@code
+ * #aDeadWorkersCheckIsReclaimed} and {@code #aLiveWorkerOutlastsItsLease} (owed, C5).
  */
 @DisplayName("the close run store's conditional statements (P14-TSK-011)")
 class CloseRunStatementsTest {

@@ -97,18 +97,21 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * The close run against a live PostgreSQL (`P14-TSK-011`; {@code PHASE_14_PLAN.md} sections 8.3 rows 5-6, 13.5, 14.2 scenarios 8 and 9;
- * {@code INV-ACC-05}, {@code INV-ACC-09}) - the entry's five named cases and what the design needs: the claim's {@code SKIP LOCKED} over ten
- * connections, a dead worker reclaimed and fenced, a live worker renewing past its lease, postings during the run, the accruals, the disclosure, the
- * planted imbalance, and the ranks for every writer. <strong>Written and owed</strong> (owner decision C5: the database tiers are skipped per task).
+ * The close run against a live PostgreSQL (`P14-TSK-011`; {@code PHASE_14_PLAN.md} sections 8.3 rows 5-6, 13.5, 14.2
+ * scenarios 8 and 9; {@code INV-ACC-05}, {@code INV-ACC-09}) - the entry's five named cases and what the design needs:
+ * the claim's {@code SKIP LOCKED} over ten connections, a dead worker reclaimed and fenced, a live worker renewing past
+ * its lease, postings during the run, the accruals, the disclosure, the planted imbalance, and the ranks for every
+ * writer. <strong>Written and owed</strong> (owner decision C5: the database tiers are skipped per task).
  *
- * <p><strong>The books it uses.</strong> The fixture's <strong>January 1999</strong> ({@link AccountingPeriodFixture}: before `P14-TSK-012` builds the
- * close it is the only period the fixtures can lock); every case returns it to {@code OPEN} and each lock is a new run, so a rerun on a kept database
- * starts clean. It approves <strong>no valuation set</strong> - January ends {@code ValuationRateSetDatabaseTest} with one approved for good, so no case
- * asserts {@code VALUATION_SET_APPROVED}'s status. <strong>What cannot be committed is planted in one transaction</strong> and rolled back: a real
- * product discrepancy, or a line on {@code SUSPENSE_UNMATCHED}, would fail every other suite's proof for good. <strong>The planted imbalance</strong> (gate
- * criterion 1; `P14-TSK-009`'s review, M-6): the balance trigger is deferred to commit, so an unbalanced entry is visible only on its own connection - and
- * is therefore read there: planted, locked, claimed, generated and judged on that one connection, then rolled back, nothing left behind.
+ * <p><strong>The books it uses.</strong> The fixture's <strong>January 1999</strong> ({@link AccountingPeriodFixture}:
+ * before `P14-TSK-012` builds the close it is the only period the fixtures can lock); every case returns it to {@code
+ * OPEN} and each lock is a new run, so a rerun on a kept database starts clean. It approves <strong>no valuation
+ * set</strong> - January ends {@code ValuationRateSetDatabaseTest} with one approved for good, so no case asserts
+ * {@code VALUATION_SET_APPROVED}'s status. <strong>What cannot be committed is planted in one transaction</strong> and
+ * rolled back: a real product discrepancy, or a line on {@code SUSPENSE_UNMATCHED}, would fail every other suite's
+ * proof for good. <strong>The planted imbalance</strong> (gate criterion 1; `P14-TSK-009`'s review, M-6): the balance
+ * trigger is deferred to commit, so an unbalanced entry is visible only on its own connection - and is therefore read
+ * there: planted, locked, claimed, generated and judged on that one connection, then rolled back, nothing left behind.
  */
 @Tag("database")
 @DisplayName("the close run against the database (P14-TSK-011)")
@@ -297,24 +300,55 @@ class CloseRunDatabaseTest {
     // ------------------------------------------------------------------ scenario 8
 
     @Test
-    @DisplayName("scenario 8: postings during the run change nothing dated in the period - one dated in January refused, one dated after it"
-            + " committed; the FINAL trial balance the same run, regenerating byte-identical")
+    @DisplayName("scenario 8: ten posters while a check is in flight change nothing dated in the period - those dated in January refused, none"
+            + " committed, those dated after it committed; the FINAL trial balance the same run, regenerating byte-identical, the check concluding")
     void postingsDuringTheRunChangeNothing() throws Exception {
-        AccountingPeriodId january = lockJanuary();
+        CloseRuns runs = runs(CloseRuns.Leases.STANDARD);
+        startedJanuary(runs);
+        AccountingPeriodId january = id(JANUARY);
+        CloseRuns.ClaimedCheck held = TRANSACTIONS.inTransaction(uow -> runs.claim(uow, Actor.SYSTEM)).orElseThrow();
+        assertThat(held.check()).isEqualTo(CloseCheckCode.LEDGER_TRIAL_BALANCE);
         LedgerAccount wallet = wallet();
         LedgerAccount revenue = operational(AccountPurpose.FEE_REVENUE);
         FinalTrialBalance reader = reader();
         FinalTrialBalance.Verdict before = (FinalTrialBalance.Verdict) reader.read(january, Actor.SYSTEM, correlation());
+        String datedInJanuary = "SELECT count(*) FROM ledger.journal_entry WHERE posting_date BETWEEN '" + JANUARY.atDay(1) + "' AND '"
+                + JANUARY.atEndOfMonth() + "'";
+        long entriesBefore = count(datedInJanuary);
 
-        assertThatThrownBy(() -> post(IN_JANUARY, wallet, revenue, 25, PostingCommand.Dating.AS_STATED, "close-run-refused-"))
-                .isInstanceOf(PeriodClosedException.class);
-        post(DAY_AFTER, wallet, revenue, 25, PostingCommand.Dating.AS_STATED, "close-run-after-");
+        ExecutorService pool = Executors.newFixedThreadPool(WORKERS);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<Boolean>> racing = new ArrayList<>();
+        try {
+            for (int poster = 0; poster < WORKERS; poster++) {
+                LocalDate day = poster % 2 == 0 ? IN_JANUARY : DAY_AFTER;
+                racing.add(pool.submit(() -> {
+                    start.await();
+                    try {
+                        post(day, wallet, revenue, 25, PostingCommand.Dating.AS_STATED, "close-run-scenario-8-");
+                        return true;
+                    } catch (PeriodClosedException refused) {
+                        return false;
+                    }
+                }));
+            }
+            start.countDown();
+            for (int poster = 0; poster < WORKERS; poster++) {
+                assertThat(racing.get(poster).get(2, TimeUnit.MINUTES)).as("poster %d", poster).isEqualTo(poster % 2 != 0);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
 
+        assertThat(count(datedInJanuary)).as("nothing dated in the period committed").isEqualTo(entriesBefore);
         FinalTrialBalance.Verdict after = (FinalTrialBalance.Verdict) reader.read(january, Actor.SYSTEM, correlation());
         assertThat(after).as("the same run, the same frozen content").isEqualTo(before);
         ReportRunStore.RunRow run = TRANSACTIONS.inTransaction(uow -> REPORT_RUNS.find(uow,
                 com.finapp.accounting.ReportRunId.of(UUID.fromString(before.run())))).orElseThrow();
         assertThat(generator().regenerate(run.id()).identical()).as("the period's range is immutable under the lock").isTrue();
+        CheckVerdict verdict = checks(caughtUp(), (snapshot, month) -> noDisclosure(month), reader).judge(held).orElseThrow();
+        assertThat(verdict.status()).isEqualTo(CloseCheckStatus.PASSED);
+        assertThat(TRANSACTIONS.inTransaction(uow -> runs.conclude(uow, held, verdict)).moved()).isTrue();
     }
 
     // ------------------------------------------------------------------ the accruals

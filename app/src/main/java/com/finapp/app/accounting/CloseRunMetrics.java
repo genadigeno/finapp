@@ -11,12 +11,13 @@ import java.util.Locale;
 import java.util.Objects;
 
 /**
- * The close run's meters (`P14-TSK-011`; {@code PHASE_14_PLAN.md} sections 8.4, 16): {@code finapp.accounting.close.check}{check,
- * outcome} - one count per attempt this instance concluded ({@code passed}, {@code failed}, {@code disclosed}), gave back
- * ({@code deferred}) or found overtaken ({@code overtaken}), after the commit; {@code finapp.accounting.close.duration} - a run's start to
- * its checks' first full conclusion, once per run across instances; {@code finapp.accounting.close.leg.failed}{leg} - a schedule's leg that
- * failed, the plan's "every leg meters its claim failures". Tags closed in the code - never a period, an id or a figure. Registered
- * eagerly, so a dashboard sees a zero rather than an absence.
+ * The close run's meters (`P14-TSK-011`; {@code PHASE_14_PLAN.md} sections 8.4, 16): {@code
+ * finapp.accounting.close.check}{check, outcome} - one count per attempt this instance concluded ({@code passed},
+ * {@code failed}, {@code disclosed}), gave back ({@code deferred}) or found overtaken ({@code overtaken}), after the
+ * commit; {@code finapp.accounting.close.duration} - a run's start to its checks' first full conclusion, once per run
+ * across instances; {@code finapp.accounting.close.leg.failed}{leg} - a schedule's leg that failed, the plan's "every
+ * leg meters its claim failures". Tags closed in the code - never a period, an id or a figure. Registered eagerly, so a
+ * dashboard sees a zero rather than an absence.
  */
 public final class CloseRunMetrics {
 

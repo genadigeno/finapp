@@ -8,10 +8,10 @@ import java.util.Objects;
 
 /**
  * How far lending's and BNPL's daily accruals have run (`P14-TSK-001`; {@code PHASE_14_PLAN.md} sections 3, 13.5; owner
- * decision C3) - the accrued-through dates the {@link CloseCheckCode#ACCRUALS_COMPLETE} check compares with the period's
- * end, because a period may not close while interest earned in it is still unposted. *(Declared empty by `P14-TSK-001`;
- * given its methods and {@code app}'s implementation by `P14-TSK-006`, owner decision C3 - "the close requires accruals
- * caught up"; the check that reads it is `P14-TSK-011`'s.)*
+ * decision C3) - the accrued-through dates the {@link CloseCheckCode#ACCRUALS_COMPLETE} check compares with the
+ * period's end, because a period may not close while interest earned in it is still unposted. *(Declared empty by
+ * `P14-TSK-001`; given its methods and {@code app}'s implementation by `P14-TSK-006`, owner decision C3 - "the close
+ * requires accruals caught up"; the check that reads it is `P14-TSK-011`'s.)*
  *
  * <p>Why the close needs this beside C3's floor: an accrual the servicing step has not yet run for a date of the locked
  * period will - once it runs - post on the first open date (lending's rule {@code LND-2} version 2). <strong>After that
@@ -19,14 +19,14 @@ import java.util.Objects;
  * empty while the locked period's income is short by exactly the floored amounts. So the reading only means "complete"
  * when judged before any catch-up can floor into the next period - inside the lock's transaction, with the cutoff key
  * held exclusive - or the close must also find the {@code LND-2} entries with {@code value_date <= period end <
- * posting_date} (they carry {@code flooredFrom=}). *(Decided by `P14-TSK-011`, the review of `P14-TSK-006`'s finding I-1: find and
- * disclose - {@link #flooredPast} - on the same snapshot as {@link #blocking}, so an accrual is either still behind or already
- * floored and never neither; judging inside the lock would pause every posting for this read.)*
+ * posting_date} (they carry {@code flooredFrom=}). *(Decided by `P14-TSK-011`, the review of `P14-TSK-006`'s finding
+ * I-1: find and disclose - {@link #flooredPast} - on the same snapshot as {@link #blocking}, so an accrual is either
+ * still behind or already floored and never neither; judging inside the lock would pause every posting for this read.)*
  *
- * <p><strong>Read-only</strong>, on the caller's unit of work: one statement per accruer and arm, each its own snapshot of
- * the servicing rows under READ COMMITTED - the close check runs it in {@code REPEATABLE READ READ ONLY} (C10), which
- * makes it one. Lock-free: it judges, it never waits for a servicing step. Implemented by {@code app}'s
- * {@code ServicingAccrualCompleteness} over lending's {@code AccrualLags} and bnpl's {@code BnplAccrualStore}.
+ * <p><strong>Read-only</strong>, on the caller's unit of work: one statement per accruer and arm, each its own snapshot
+ * of the servicing rows under READ COMMITTED - the close check runs it in {@code REPEATABLE READ READ ONLY} (C10),
+ * which makes it one. Lock-free: it judges, it never waits for a servicing step. Implemented by {@code app}'s {@code
+ * ServicingAccrualCompleteness} over lending's {@code AccrualLags} and bnpl's {@code BnplAccrualStore}.
  */
 public interface AccrualCompleteness {
 
@@ -68,15 +68,15 @@ public interface AccrualCompleteness {
     }
 
     /**
-     * Every (accruer, currency) with an account behind - ordered by accruer, then currency. An (accruer, currency) absent
-     * has accrued every elapsed date: caught up through yesterday in each account's zone.
+     * Every (accruer, currency) with an account behind - ordered by accruer, then currency. An (accruer, currency)
+     * absent has accrued every elapsed date: caught up through yesterday in each account's zone.
      */
     List<Lagging> lagging(Connection unitOfWork);
 
     /**
-     * The positions that keep a period ending on {@code periodEnd} from closing ({@code ACCRUALS_COMPLETE}): an unaccrued
-     * date on or before it. Empty: every date has been accrued - <em>not</em> that the interest landed in the period, which
-     * {@link #flooredPast} answers.
+     * The positions that keep a period ending on {@code periodEnd} from closing ({@code ACCRUALS_COMPLETE}): an
+     * unaccrued date on or before it. Empty: every date has been accrued - <em>not</em> that the interest landed in the
+     * period, which {@link #flooredPast} answers.
      */
     default List<Lagging> blocking(Connection unitOfWork, LocalDate periodEnd) {
         Objects.requireNonNull(periodEnd, "periodEnd");
@@ -84,8 +84,8 @@ public interface AccrualCompleteness {
     }
 
     /**
-     * One accruer's entries floored past a cutoff, one currency and scale: interest earned on or before the period's end and posted
-     * after it - the amount the period is short by (`P14-TSK-006`'s review, I-1).
+     * One accruer's entries floored past a cutoff, one currency and scale: interest earned on or before the period's
+     * end and posted after it - the amount the period is short by (`P14-TSK-006`'s review, I-1).
      *
      * @param interestMinor the interest income the entries credit, in minor units
      */
@@ -102,11 +102,11 @@ public interface AccrualCompleteness {
     }
 
     /**
-     * The accrual entries whose value date is on or before {@code periodEnd} and whose posting date is after it - only a floor
-     * puts them there (lending's {@code LND-2} posts dated its accrual date otherwise). Bnpl's {@code BNPL-F2a} is not among them:
-     * by its own rule it posts today and is valued the accrual date, so every month end's last day falls after the end by design
-     * - a structural shift of a day, not a floor (an owner item, `P14-TSK-011`). Read on the same unit of work as
-     * {@link #blocking}, one snapshot.
+     * The accrual entries whose value date is on or before {@code periodEnd} and whose posting date is after it - only
+     * a floor puts them there (lending's {@code LND-2} posts dated its accrual date otherwise). Bnpl's {@code BNPL-F2a}
+     * is not among them: by its own rule it posts today and is valued the accrual date, so every month end's last day
+     * falls after the end by design - a structural shift of a day, not a floor (an owner item, `P14-TSK-011`). Read on
+     * the same unit of work as {@link #blocking}, one snapshot.
      */
     List<Floored> flooredPast(Connection unitOfWork, LocalDate periodEnd);
 }

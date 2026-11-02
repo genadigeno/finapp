@@ -12,9 +12,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * The close runs' store (`P14-TSK-011`; {@code accounting V007}): the run, born insert-if-absent per lock instance; its attempts,
- * each born once per {@code (run, check, attempt)}. Every lease on the database's clock; every later move conditional on the
- * status and the {@code holder} that made the claim. No delete exists; an edge trigger judges every writer again.
+ * The close runs' store (`P14-TSK-011`; {@code accounting V007}): the run, born insert-if-absent per lock instance; its
+ * attempts, each born once per {@code (run, check, attempt)}. Every lease on the database's clock; every later move
+ * conditional on the status and the {@code holder} that made the claim. No delete exists; an edge trigger judges every
+ * writer again.
  */
 public interface CloseRunStore {
 
@@ -43,18 +44,18 @@ public interface CloseRunStore {
     Optional<RunRow> lockRun(Connection unitOfWork, CloseRunId id);
 
     /**
-     * One claimable attempt - {@code PENDING}, past its lease, of a run whose period is {@code LOCKED} under that run's lock, and,
-     * for {@code OPEN_ACCOUNTING_BREAKS}, with no break-raising check of its run still {@code PENDING} - taken {@code FOR UPDATE
-     * SKIP LOCKED} and held by {@code holder} for {@code lease} on the database's clock, in one statement; {@code reclaims + 1}
-     * when another claim had lapsed.
+     * One claimable attempt - {@code PENDING}, past its lease, of a run whose period is {@code LOCKED} under that run's
+     * lock, and, for {@code OPEN_ACCOUNTING_BREAKS}, with no break-raising check of its run still {@code PENDING} -
+     * taken {@code FOR UPDATE SKIP LOCKED} and held by {@code holder} for {@code lease} on the database's clock, in one
+     * statement; {@code reclaims + 1} when another claim had lapsed.
      *
      * @return the attempt as claimed - empty when nothing is claimable for this worker
      */
     Optional<AttemptRow> claimNext(Connection unitOfWork, UUID holder, Duration lease);
 
     /**
-     * A live holder's new lease - only while it still holds the attempt and within {@code maxRun} of its claim, on the database's
-     * clock; {@code false} otherwise, and the holder stops renewing.
+     * A live holder's new lease - only while it still holds the attempt and within {@code maxRun} of its claim, on the
+     * database's clock; {@code false} otherwise, and the holder stops renewing.
      */
     boolean renew(Connection unitOfWork, CloseCheckId id, UUID holder, Duration lease, Duration maxRun);
 
@@ -73,7 +74,8 @@ public interface CloseRunStore {
     /**
      * Stamps the run's checks concluded the first time no attempt of it is {@code PENDING}.
      *
-     * @return the time from the run's start to that instant, on the database's clock - empty when this call stamped nothing
+     * @return the time from the run's start to that instant, on the database's clock - empty when this call stamped
+     * nothing
      */
     Optional<Duration> markChecksConcluded(Connection unitOfWork, CloseRunId run);
 

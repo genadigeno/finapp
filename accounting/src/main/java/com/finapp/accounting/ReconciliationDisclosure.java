@@ -14,19 +14,22 @@ import java.util.TreeMap;
 
 /**
  * Reconciliation's open breaks, suspense balance and ageing as of the cutoff (`P14-TSK-001`; {@code PHASE_14_PLAN.md}
- * sections 3, 13.3, 13.5; owner decision C11; {@code INV-ACC-05}) - read and <strong>disclosed</strong> at close and in the
- * statements' notes, never copied into accounting's breaks and never resolved from here. *(Declared empty by `P14-TSK-001`; given
- * its method by `P14-TSK-011`; {@code app}'s {@code ProductReconciliationDisclosure} implements it.)*
+ * sections 3, 13.3, 13.5; owner decision C11; {@code INV-ACC-05}) - read and <strong>disclosed</strong> at close and in
+ * the statements' notes, never copied into accounting's breaks and never resolved from here. *(Declared empty by
+ * `P14-TSK-001`; given its method by `P14-TSK-011`; {@code app}'s {@code ProductReconciliationDisclosure} implements
+ * it.)*
  *
- * <p><strong>As of the cutoff.</strong> The cutoff is the period's last day; its instant the first one after it, UTC. Every figure is the
- * stored facts' answer at that instant, so a re-run reads the same: a break standing open then (raised before it, resolved at or
- * after it or not at all), a suspense item opened by then less what had been released by then, the
- * {@code SUSPENSE_UNMATCHED} lines dated through the last day. What the grace days brought is named apart, never folded in:
- * the breaks raised since and still open.
+ * <p><strong>As of the cutoff.</strong> The cutoff is the period's last day; its instant the first one after it, UTC.
+ * Every figure is the stored facts' answer at that instant, so a re-run reads the same: a break standing open then
+ * (raised before it, resolved at or after it or not at all), a suspense item opened by then less what had been released
+ * by then, the {@code SUSPENSE_UNMATCHED} lines dated through the last day. What the grace days brought is named apart,
+ * never folded in: the breaks raised since and still open.
  *
- * <p><strong>Never netted</strong> ({@code INV-ACC-05}): a suspense item's sides are gross; figures per currency and scale.
+ * <p><strong>Never netted</strong> ({@code INV-ACC-05}): a suspense item's sides are gross; figures per currency and
+ * scale.
  *
- * <p><strong>Read-only</strong>, on the caller's {@code REPEATABLE READ READ ONLY} snapshot - one reading of one instant.
+ * <p><strong>Read-only</strong>, on the caller's {@code REPEATABLE READ READ ONLY} snapshot - one reading of one
+ * instant.
  */
 public interface ReconciliationDisclosure {
 
@@ -56,8 +59,9 @@ public interface ReconciliationDisclosure {
     }
 
     /**
-     * {@code SUSPENSE_UNMATCHED} at the cutoff, one currency and scale: the ledger's debits and credits through the last day, the
-     * register's items unreleased at that instant - CREDIT and DEBIT gross, never netted - their ageing and the oldest.
+     * {@code SUSPENSE_UNMATCHED} at the cutoff, one currency and scale: the ledger's debits and credits through the
+     * last day, the register's items unreleased at that instant - CREDIT and DEBIT gross, never netted - their ageing
+     * and the oldest.
      */
     record Suspense(String currency, int scale, BigInteger ledgerDebitsMinor, BigInteger ledgerCreditsMinor, long creditItems,
             BigInteger creditUnreleasedMinor, long debitItems, BigInteger debitUnreleasedMinor,
@@ -92,13 +96,16 @@ public interface ReconciliationDisclosure {
     /**
      * The whole disclosure.
      *
-     * @param raisedSinceStillOpen breaks raised after the cutoff's instant and open at the reading - apart, never folded into {@code breaks}
-     * @param suspenseUnowned items unreleased at the cutoff whose owning break was not standing open then - the
-     *     {@code suspense.unowned} defect, as of the cutoff (`P14-TSK-010`'s review, M-10): frozen facts, so disclosed, never passed
-     * @param postedPastTheCutoff entries of the floored rules other than {@code LND-2} (that one is {@code ACCRUALS_COMPLETE}'s) whose value
-     *     date is at or before the cutoff and whose posting date is after it, per key namespace - a floor puts them there, or a
-     *     rule's own value date before its accepted date: the journal holds them in a later period while a report grouped by the
-     *     stated date ({@code ReconciliationReports.providerCosts}) can hold them in this one (`P14-TSK-006`'s review, M-2: disclosed)
+     * @param raisedSinceStillOpen breaks raised after the cutoff's instant and open at the reading - apart, never
+     * folded into {@code breaks}
+     * @param suspenseUnowned items unreleased at the cutoff whose owning break was not standing open then - the {@code
+     * suspense.unowned} defect, as of the cutoff (`P14-TSK-010`'s review, M-10): frozen facts, so disclosed, never
+     * passed
+     * @param postedPastTheCutoff entries of the floored rules other than {@code LND-2} (that one is {@code
+     * ACCRUALS_COMPLETE}'s) whose value date is at or before the cutoff and whose posting date is after it, per key
+     * namespace - a floor puts them there, or a rule's own value date before its accepted date: the journal holds them
+     * in a later period while a report grouped by the stated date ({@code ReconciliationReports.providerCosts}) can
+     * hold them in this one (`P14-TSK-006`'s review, M-2: disclosed)
      */
     record Disclosure(LocalDate cutoff, Instant asOf, List<OpenBreaks> breaks, long raisedSinceStillOpen, List<Suspense> suspense,
             long suspenseUnowned, SortedMap<String, Long> postedPastTheCutoff) {

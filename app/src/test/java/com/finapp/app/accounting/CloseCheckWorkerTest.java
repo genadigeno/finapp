@@ -50,9 +50,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * One worker's T-check (`P14-TSK-011`; `P14-TSK-010`'s review, M-1; {@code PHASE_14_PLAN.md} section 8.1): the judgement outside any
- * transaction, the heartbeat renewing the lease for as long as it runs, the conclusion fenced - so a long run keeps its check, a killed worker's
- * check resumes on the next, a failed conclusion passes nothing. Hermetic: stores in memory, the heartbeat driven by the test.
+ * One worker's T-check (`P14-TSK-011`; `P14-TSK-010`'s review, M-1; {@code PHASE_14_PLAN.md} section 8.1): the
+ * judgement outside any transaction, the heartbeat renewing the lease for as long as it runs, the conclusion fenced -
+ * so a long run keeps its check, a killed worker's check resumes on the next, a failed conclusion passes nothing.
+ * Hermetic: stores in memory, the heartbeat driven by the test.
  */
 @DisplayName("the close check worker: a long run keeps its lease, a kill resumes (P14-TSK-011)")
 class CloseCheckWorkerTest {

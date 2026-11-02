@@ -21,23 +21,26 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
 
 /**
- * Accounting's one leaderless schedule (`P14-TSK-011`; {@code PHASE_14_PLAN.md} section 8.4; {@code INV-ACC-09}): every instance runs
- * every leg with no leader; each writes only through insert-if-absent, a {@code SKIP LOCKED} claim under a lease or a conditional edge.
- * Registered in {@code DISTRIBUTED_EXECUTION.md} section 3 and {@code NoSingleInstanceAssumptionRulesTest.LEASE_PROTECTED_SCHEDULERS}.
+ * Accounting's one leaderless schedule (`P14-TSK-011`; {@code PHASE_14_PLAN.md} section 8.4; {@code INV-ACC-09}): every
+ * instance runs every leg with no leader; each writes only through insert-if-absent, a {@code SKIP LOCKED} claim under
+ * a lease or a conditional edge. Registered in {@code DISTRIBUTED_EXECUTION.md} section 3 and {@code
+ * NoSingleInstanceAssumptionRulesTest.LEASE_PROTECTED_SCHEDULERS}.
  *
  * <ul>
- *   <li><strong>Open</strong> ({@link #openOnce}): {@code AccountingPeriods.openNext} - insert-if-absent, one month per month however many
- *       instances ask.
- *   <li><strong>Checks</strong> ({@link #checksOnce}): every lock with no run gets one, then a {@link CloseCheckWorker} takes attempts
- *       one at a time until none is claimable, up to a batch.
- *   <li><strong>Orphans</strong> ({@link #orphansOnce}): {@code ReportRunGenerator.completeOrphaned(1, ...)} until none is left, up to a
- *       batch - <strong>one run per call</strong> (`P14-TSK-008`'s review, M-6): a call reclaims its runs in one transaction and generates
- *       them in turn, so a limit above one would start every later run's lease before its generation and let another instance overtake it.
+ *   <li><strong>Open</strong> ({@link #openOnce}): {@code AccountingPeriods.openNext} - insert-if-absent, one month per
+ * month however many instances ask.
+ *   <li><strong>Checks</strong> ({@link #checksOnce}): every lock with no run gets one, then a {@link CloseCheckWorker}
+ * takes attempts one at a time until none is claimable, up to a batch.
+ *   <li><strong>Orphans</strong> ({@link #orphansOnce}): {@code ReportRunGenerator.completeOrphaned(1, ...)} until none
+ * is left, up to a batch - <strong>one run per call</strong> (`P14-TSK-008`'s review, M-6): a call reclaims its runs in
+ * one transaction and generates them in turn, so a limit above one would start every later run's lease before its
+ * generation and let another instance overtake it.
  * </ul>
  *
- * <p>A leg on its own thread, so a two-hour check never delays the opening of a month; one thread more for the heartbeats, so no busy leg
- * can starve a lease. A leg that fails is counted and logged by class, and ends only itself. Off in test contexts
- * ({@code finapp.accounting.sweeper.enabled}); the suites drive the legs directly. The regulatory inquiry leg is `P14-TSK-018`'s.
+ * <p>A leg on its own thread, so a two-hour check never delays the opening of a month; one thread more for the
+ * heartbeats, so no busy leg can starve a lease. A leg that fails is counted and logged by class, and ends only itself.
+ * Off in test contexts ({@code finapp.accounting.sweeper.enabled}); the suites drive the legs directly. The regulatory
+ * inquiry leg is `P14-TSK-018`'s.
  */
 @Slf4j
 public final class AccountingCloseSchedule implements SmartLifecycle {
@@ -113,7 +116,8 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
     }
 
     /**
-     * The check leg, under the system actor: every lock's run started, then attempts until none is claimable or the batch is done.
+     * The check leg, under the system actor: every lock's run started, then attempts until none is claimable or the
+     * batch is done.
      *
      * @return how many attempts this call took
      */

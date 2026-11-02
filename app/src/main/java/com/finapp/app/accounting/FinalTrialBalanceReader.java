@@ -27,17 +27,21 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * {@link FinalTrialBalance} over the report run machine (`P14-TSK-011`; `P14-TSK-009`'s review, M-6; {@code PHASE_14_PLAN.md} section 13.5):
- * the period's run claimed - {@link TrialBalanceDefinition#CODE}, {@code RunParameters.none()}, in a short transaction - generated when
- * this call holds it, or read as it stands. <strong>Code, version and verdict path are {@link TrialBalanceDefinition}'s constants</strong>; the
- * run must be {@code FINAL}, of that code and that version, on the {@code FINAL} basis, with its hash stored, before a member of its content
- * is read, and each member is read from the frozen content by SQL on a read-only snapshot: exactly {@code true} or false.
+ * {@link FinalTrialBalance} over the report run machine (`P14-TSK-011`; `P14-TSK-009`'s review, M-6; {@code
+ * PHASE_14_PLAN.md} section 13.5): the period's run claimed - {@link TrialBalanceDefinition#CODE}, {@code
+ * RunParameters.none()}, in a short transaction - generated when this call holds it, or read as it stands.
+ * <strong>Code, version and verdict path are {@link TrialBalanceDefinition}'s constants</strong>; the run must be
+ * {@code FINAL}, of that code and that version, on the {@code FINAL} basis, with its hash stored, before a member of
+ * its content is read, and each member is read from the frozen content by SQL on a read-only snapshot: exactly {@code
+ * true} or false.
  *
- * <p><strong>Failures, sorted</strong> (`P14-TSK-008`'s review, M-7): a run another holder generates is {@link InProgress}, deferred by the
- * caller, no thread held; a run {@code FAILED} is {@code REPORT_RUN_FAILED:<code>}, whatever the definition's failure was; a run not FINAL
- * or of another version is {@code REPORT_RUN_NOT_FINAL}; anything thrown - the snapshot's own failure, which leaves the run {@code GENERATING}
- * for the orphan leg - is {@code UNAVAILABLE:TRIAL_BALANCE}, with its class logged. No new {@code RunFailure} code: a database failure
- * inside the definition reads {@code DEFINITION_FAILED} on the run, a new revision allowed; the check fails closed in every one of them.
+ * <p><strong>Failures, sorted</strong> (`P14-TSK-008`'s review, M-7): a run another holder generates is {@link
+ * InProgress}, deferred by the caller, no thread held; a run {@code FAILED} is {@code REPORT_RUN_FAILED:<code>},
+ * whatever the definition's failure was; a run not FINAL or of another version is {@code REPORT_RUN_NOT_FINAL};
+ * anything thrown - the snapshot's own failure, which leaves the run {@code GENERATING} for the orphan leg - is {@code
+ * UNAVAILABLE:TRIAL_BALANCE}, with its class logged. No new {@code RunFailure} code: a database failure inside the
+ * definition reads {@code DEFINITION_FAILED} on the run, a new revision allowed; the check fails closed in every one of
+ * them.
  */
 @Slf4j
 @RequiredArgsConstructor

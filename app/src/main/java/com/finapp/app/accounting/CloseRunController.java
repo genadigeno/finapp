@@ -19,12 +19,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The close run's doors (`P14-TSK-011`; ADR-0114 decision 4; {@code PHASE_14_PLAN.md} sections 10, 12, 13.5; {@code INV-ACC-09},
- * {@code INV-ACC-05}): an accountant reads a period's close run under {@code ACCOUNTING_READ} - every check's attempts with their evidence -
- * and asks a check's next attempt under {@code ACCOUNTING_CLOSE_PROPOSE}, keyed and reasoned. The checks themselves run on the schedule
- * ({@code AccountingCloseSchedule}), never at a door, so a re-run's answer is a {@code PENDING} attempt a worker claims. Proposal and approval
- * are `P14-TSK-012`'s, and with them a controller's read (identity {@code V025}'s partition gives the controller no {@code ACCOUNTING_READ}).
- * The handlers' names are distinctive (the springdoc {@code operationId} rule).
+ * The close run's doors (`P14-TSK-011`; ADR-0114 decision 4; {@code PHASE_14_PLAN.md} sections 10, 12, 13.5; {@code
+ * INV-ACC-09}, {@code INV-ACC-05}): an accountant reads a period's close run under {@code ACCOUNTING_READ} - every
+ * check's attempts with their evidence - and asks a check's next attempt under {@code ACCOUNTING_CLOSE_PROPOSE}, keyed
+ * and reasoned. The checks themselves run on the schedule ({@code AccountingCloseSchedule}), never at a door, so a
+ * re-run's answer is a {@code PENDING} attempt a worker claims. Proposal and approval are `P14-TSK-012`'s, and with
+ * them a controller's read (identity {@code V025}'s partition gives the controller no {@code ACCOUNTING_READ}). The
+ * handlers' names are distinctive (the springdoc {@code operationId} rule).
  */
 @RestController
 @RequestMapping(path = "/operator/accounting/periods", produces = MediaType.APPLICATION_JSON_VALUE)

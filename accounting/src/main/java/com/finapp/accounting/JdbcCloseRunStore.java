@@ -17,21 +17,21 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * {@link CloseRunStore} over plain JDBC (`P14-TSK-011`, ADR-0033; {@code JdbcReportRunStore}'s shape): the arbiters are these
- * statements - pinned by {@code CloseRunStatementsTest} and proven against PostgreSQL by {@code CloseRunDatabaseTest} (owed, C5).
- * Every lease and every stamp the database's clock; every failure its operation and SQLSTATE only
- * ({@link AccountingStorageException}).
+ * {@link CloseRunStore} over plain JDBC (`P14-TSK-011`, ADR-0033; {@code JdbcReportRunStore}'s shape): the arbiters are
+ * these statements - pinned by {@code CloseRunStatementsTest} and proven against PostgreSQL by {@code
+ * CloseRunDatabaseTest} (owed, C5). Every lease and every stamp the database's clock; every failure its operation and
+ * SQLSTATE only ({@link AccountingStorageException}).
  */
 public final class JdbcCloseRunStore implements CloseRunStore {
 
     private static final String LEASE = "clock_timestamp() + ? * interval '1 millisecond'";
 
     /**
-     * The claim: one statement, so no row is held past it. The subselect takes one claimable row {@code FOR UPDATE SKIP LOCKED}
-     * - ten workers take disjoint rows and none waits on another - and the {@code UPDATE} makes this worker its holder; a holder
-     * still on the row had lapsed, so it counts one reclaim. The period's present lock is read here too: a run an unlock left
-     * behind is never claimed. {@code OPEN_ACCOUNTING_BREAKS} waits for the run's raising checks: it would otherwise pass before
-     * they raise.
+     * The claim: one statement, so no row is held past it. The subselect takes one claimable row {@code FOR UPDATE SKIP
+     * LOCKED} - ten workers take disjoint rows and none waits on another - and the {@code UPDATE} makes this worker its
+     * holder; a holder still on the row had lapsed, so it counts one reclaim. The period's present lock is read here
+     * too: a run an unlock left behind is never claimed. {@code OPEN_ACCOUNTING_BREAKS} waits for the run's raising
+     * checks: it would otherwise pass before they raise.
      */
     static final String CLAIM_SQL = "UPDATE accounting.close_check attempt"
             + " SET reclaims = attempt.reclaims + CASE WHEN attempt.holder IS NULL THEN 0 ELSE 1 END, holder = ?,"

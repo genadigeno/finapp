@@ -26,13 +26,14 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 /**
- * The boundary half of the close run's doors (`P14-TSK-011`; {@code AccountingBreakDesk}'s shape): parse the request exactly, key the re-run
- * per principal ({@code accounting.closerun:<type>:<id>}), run it in one transaction under its span, translate the domain's refusals onto the
- * error contract; a read recorded {@code accounting.CloseRunRead} in a transaction of its own before the answer. The machine, the attempts and
- * the lease are the domain's and {@code accounting V007}'s; nothing here judges a check and nothing here posts.
+ * The boundary half of the close run's doors (`P14-TSK-011`; {@code AccountingBreakDesk}'s shape): parse the request
+ * exactly, key the re-run per principal ({@code accounting.closerun:<type>:<id>}), run it in one transaction under its
+ * span, translate the domain's refusals onto the error contract; a read recorded {@code accounting.CloseRunRead} in a
+ * transaction of its own before the answer. The machine, the attempts and the lease are the domain's and {@code
+ * accounting V007}'s; nothing here judges a check and nothing here posts.
  *
- * <p>What leaves: each check's attempts - status, what failed, the versions read, the evidence (canonical JSON text, aggregates at most) and
- * their instants. Never a person, never a reason.
+ * <p>What leaves: each check's attempts - status, what failed, the versions read, the evidence (canonical JSON text,
+ * aggregates at most) and their instants. Never a person, never a reason.
  */
 @RequiredArgsConstructor
 public final class CloseRunDesk {
@@ -65,8 +66,9 @@ public final class CloseRunDesk {
     public record CloseCheckView(String check, int attempts, String status, List<CloseCheckAttemptView> history) {}
 
     /**
-     * A period's latest close run. {@code current} when the period still holds the run's lock; {@code complete} when a close may be
-     * proposed on it - every check's latest attempt {@code PASSED} or {@code DISCLOSED}, and, read live, no break of the month open.
+     * A period's latest close run. {@code current} when the period still holds the run's lock; {@code complete} when a
+     * close may be proposed on it - every check's latest attempt {@code PASSED} or {@code DISCLOSED}, and, read live,
+     * no break of the month open.
      */
     public record CloseRunView(
             String runId,

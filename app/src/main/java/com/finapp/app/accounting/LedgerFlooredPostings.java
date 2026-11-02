@@ -23,20 +23,23 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 /**
- * The journal's entries valued at or before a period's end and posted after it (`P14-TSK-011`; `P14-TSK-006`'s review, I-1 and
- * M-2; owner decision C3; {@code LedgerJournalShapes}' precedent of an {@code app} read over the ledger's own tables and of reading
- * the command key from {@code idempotency_scope}). The journal's three dates hold a floor - posting date floored, value date the economic
- * one - and nothing else marks it on the journal; the entry's audit record carries {@code flooredFrom=}.
+ * The journal's entries valued at or before a period's end and posted after it (`P14-TSK-011`; `P14-TSK-006`'s review,
+ * I-1 and M-2; owner decision C3; {@code LedgerJournalShapes}' precedent of an {@code app} read over the ledger's own
+ * tables and of reading the command key from {@code idempotency_scope}). The journal's three dates hold a floor -
+ * posting date floored, value date the economic one - and nothing else marks it on the journal; the entry's audit
+ * record carries {@code flooredFrom=}.
  *
  * <ul>
- *   <li>{@link #accruals}: lending's {@code LND-2}, whose posting date equals its value date unless floored - so these <em>are</em> the
- *       interest the period is short by, per currency and scale, the income line's amount ({@code SUM(bigint)} exact).
- *   <li>{@link #others}: the other floored rules' entries, counted per key namespace - {@code RECONCILIATION_DISCLOSURE}'s note that
- *       the journal holds them in a later period while a report by stated date may not.
+ *   <li>{@link #accruals}: lending's {@code LND-2}, whose posting date equals its value date unless floored - so these
+ * <em>are</em> the interest the period is short by, per currency and scale, the income line's amount ({@code
+ * SUM(bigint)} exact).
+ *   <li>{@link #others}: the other floored rules' entries, counted per key namespace - {@code
+ * RECONCILIATION_DISCLOSURE}'s note that the journal holds them in a later period while a report by stated date may
+ * not.
  * </ul>
  *
- * <p>{@code SELECT} only, on the caller's snapshot; no reference, reason or actor is read. The posting date's own range: {@code
- * journal_entry (posting_date, id)} (ledger {@code V029}).
+ * <p>{@code SELECT} only, on the caller's snapshot; no reference, reason or actor is read. The posting date's own
+ * range: {@code journal_entry (posting_date, id)} (ledger {@code V029}).
  */
 public final class LedgerFlooredPostings {
 

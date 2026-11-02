@@ -39,10 +39,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The FINAL trial balance as the close reads it (`P14-TSK-011`; `P14-TSK-009`'s review, M-6; `P14-TSK-008`'s, M-7): claimed with no parameters,
- * under the definition's own constants; generated when held; read only when {@code FINAL} and of that code and version, each member exactly
- * {@code true}; every other standing named, never a pass. Hermetic; the path against PostgreSQL is
- * {@code CloseRunDatabaseTest}'s (owed, C5).
+ * The FINAL trial balance as the close reads it (`P14-TSK-011`; `P14-TSK-009`'s review, M-6; `P14-TSK-008`'s, M-7):
+ * claimed with no parameters, under the definition's own constants; generated when held; read only when {@code FINAL}
+ * and of that code and version, each member exactly {@code true}; every other standing named, never a pass. Hermetic;
+ * the path against PostgreSQL is {@code CloseRunDatabaseTest}'s (owed, C5).
  */
 @DisplayName("the FINAL trial balance, as the close reads it (P14-TSK-011)")
 class FinalTrialBalanceReaderTest {

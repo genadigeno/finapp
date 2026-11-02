@@ -30,9 +30,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Wiring for the close run (`P14-TSK-011`) - its own configuration beside {@link AccountingBeans} and {@link AccountingBreakBeans}, so the
- * module's parallel tasks each add theirs without editing one file: the store and the machine, the judges and what they read through, the doors,
- * the meters, and the leaderless schedule with its eager {@code finapp.accounting.sweeper.enabled} gauge.
+ * Wiring for the close run (`P14-TSK-011`) - its own configuration beside {@link AccountingBeans} and {@link
+ * AccountingBreakBeans}, so the module's parallel tasks each add theirs without editing one file: the store and the
+ * machine, the judges and what they read through, the doors, the meters, and the leaderless schedule with its eager
+ * {@code finapp.accounting.sweeper.enabled} gauge.
  */
 @Configuration(proxyBeanMethods = false)
 public class AccountingCloseBeans {
@@ -43,8 +44,9 @@ public class AccountingCloseBeans {
     }
 
     /**
-     * The check leg's lease on the database clock (2 minutes), its renewal (every 30 seconds), the run's bound (2 hours), the reclaims
-     * (3) and a deferral's wait (30 seconds) - refused at start-up unless a lease holds three renewals and the bound a lease.
+     * The check leg's lease on the database clock (2 minutes), its renewal (every 30 seconds), the run's bound (2
+     * hours), the reclaims (3) and a deferral's wait (30 seconds) - refused at start-up unless a lease holds three
+     * renewals and the bound a lease.
      */
     @Bean
     CloseRuns.Leases closeRunLeases(
@@ -84,8 +86,9 @@ public class AccountingCloseBeans {
     }
 
     /**
-     * The judges. Each read on its own verified {@code REPEATABLE READ READ ONLY} snapshot ({@link GlSnapshots}, private to this bean),
-     * every statement bounded by {@code finapp.accounting.checks.statement-timeout} - the three raising checks' own bound.
+     * The judges. Each read on its own verified {@code REPEATABLE READ READ ONLY} snapshot ({@link GlSnapshots},
+     * private to this bean), every statement bounded by {@code finapp.accounting.checks.statement-timeout} - the three
+     * raising checks' own bound.
      */
     @Bean
     CloseChecks closeChecks(

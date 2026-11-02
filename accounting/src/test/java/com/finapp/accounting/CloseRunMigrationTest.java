@@ -16,10 +16,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@code accounting V007}'s text held to the code (`P14-TSK-011`; {@code AccountingBreakMigrationTest}'s idiom - hermetic, so it runs on every
- * build while the live ranks are {@code CloseRunDatabaseTest}'s, owed under C5): one run per lock instance; the plan's attempt key; one
- * {@code PENDING} per check; the code and status lists the enums'; {@code DISCLOSED} only where the check admits it; the machine's triggers; nothing
- * seeded, no {@code DELETE}, only the moving columns updatable, no other schema; every constraint name held once.
+ * {@code accounting V007}'s text held to the code (`P14-TSK-011`; {@code AccountingBreakMigrationTest}'s idiom -
+ * hermetic, so it runs on every build while the live ranks are {@code CloseRunDatabaseTest}'s, owed under C5): one run
+ * per lock instance; the plan's attempt key; one {@code PENDING} per check; the code and status lists the enums';
+ * {@code DISCLOSED} only where the check admits it; the machine's triggers; nothing seeded, no {@code DELETE}, only the
+ * moving columns updatable, no other schema; every constraint name held once.
  */
 @DisplayName("accounting V007 holds the close run's ranks as the code declares them (P14-TSK-011)")
 class CloseRunMigrationTest {

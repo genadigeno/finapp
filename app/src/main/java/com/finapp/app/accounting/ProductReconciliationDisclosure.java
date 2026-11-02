@@ -31,20 +31,22 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Reconciliation's disclosure at a period's close (`P14-TSK-011`; {@code PHASE_14_PLAN.md} sections 13.3, 13.5; owner decision C11;
- * {@code INV-ACC-05}; gate criterion 5) - in {@code app}, the one module that sees reconciliation and the ledger: reconciliation's own
- * {@link ReportReadings} (its frozen stamps answer "as of" exactly), the {@code SUSPENSE_UNMATCHED} lines dated through the last day and the
- * journal's postings past the cutoff ({@link LedgerFlooredPostings}, `P14-TSK-006`'s review, M-2). Read, disclosed, never copied: no
- * row of reconciliation is touched and nothing here raises an accounting break.
+ * Reconciliation's disclosure at a period's close (`P14-TSK-011`; {@code PHASE_14_PLAN.md} sections 13.3, 13.5; owner
+ * decision C11; {@code INV-ACC-05}; gate criterion 5) - in {@code app}, the one module that sees reconciliation and the
+ * ledger: reconciliation's own {@link ReportReadings} (its frozen stamps answer "as of" exactly), the {@code
+ * SUSPENSE_UNMATCHED} lines dated through the last day and the journal's postings past the cutoff ({@link
+ * LedgerFlooredPostings}, `P14-TSK-006`'s review, M-2). Read, disclosed, never copied: no row of reconciliation is
+ * touched and nothing here raises an accounting break.
  *
- * <p><strong>As of the cutoff</strong>: the breaks standing open at the first instant after the last day, UTC
- * ({@code eachBreakAround} over an empty window - its third arm, raised before and not resolved before); the items opened through the
- * last day less their releases before that instant; both aged at the last day in the operator reports' bands. An item whose owning
- * break was not standing open then is {@code suspenseUnowned} (`P14-TSK-010`'s review, M-10). What the grace days added is counted apart.
+ * <p><strong>As of the cutoff</strong>: the breaks standing open at the first instant after the last day, UTC ({@code
+ * eachBreakAround} over an empty window - its third arm, raised before and not resolved before); the items opened
+ * through the last day less their releases before that instant; both aged at the last day in the operator reports'
+ * bands. An item whose owning break was not standing open then is {@code suspenseUnowned} (`P14-TSK-010`'s review,
+ * M-10). What the grace days added is counted apart.
  *
- * <p>Figures per currency and scale, gross and in minor units ({@link Money}'s own, {@link BigInteger} folds - never floating point, never
- * netted across sides). Read-only, on the caller's {@code REPEATABLE READ READ ONLY} snapshot; a read that fails throws, so the check
- * is {@code FAILED}, never an empty pass.
+ * <p>Figures per currency and scale, gross and in minor units ({@link Money}'s own, {@link BigInteger} folds - never
+ * floating point, never netted across sides). Read-only, on the caller's {@code REPEATABLE READ READ ONLY} snapshot; a
+ * read that fails throws, so the check is {@code FAILED}, never an empty pass.
  */
 @RequiredArgsConstructor
 public final class ProductReconciliationDisclosure implements ReconciliationDisclosure {

@@ -36,10 +36,11 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The close run's machine (`P14-TSK-011`; ADR-0114 decision 4; {@code PHASE_14_PLAN.md} sections 6, 8.3 rows 5-6, 13.5;
- * {@code INV-ACC-09}): one run per lock, one attempt per check under ten racing workers, a dead worker's check reclaimed and its
- * conclusion fenced, a live worker's lease renewed within its bound, a check whose workers keep dying {@code FAILED}, a deferral no death, a
- * conclusion after an unlock {@code PERIOD_MOVED}, the open breaks judged after every raise, a re-run a new row with history frozen.
- * Hermetic: the stores in memory, holding the database's ranks; {@code CloseRunDatabaseTest} is the live half (owed, C5).
+ * {@code INV-ACC-09}): one run per lock, one attempt per check under ten racing workers, a dead worker's check
+ * reclaimed and its conclusion fenced, a live worker's lease renewed within its bound, a check whose workers keep dying
+ * {@code FAILED}, a deferral no death, a conclusion after an unlock {@code PERIOD_MOVED}, the open breaks judged after
+ * every raise, a re-run a new row with history frozen. Hermetic: the stores in memory, holding the database's ranks;
+ * {@code CloseRunDatabaseTest} is the live half (owed, C5).
  */
 @DisplayName("the close run: one attempt per check, reclaimed when its worker dies, never rewritten (P14-TSK-011)")
 class CloseRunsTest {
