@@ -4924,6 +4924,44 @@ never served); the persons `CONFIDENTIAL`; identifiers, closed codes, counts, co
 | `valuation_rate` | `observed_at` | `INTERNAL` | When the source says it observed the rate |
 | `valuation_rate` | `received_at` | `INTERNAL` | When fx's database received it |
 
+### `accounting.close_run` and `close_check` - the close run - *added by `P14-TSK-011`*
+
+`accounting V007`: one run per lock instance of a `LOCKED` period (`close_run_one_per_lock`), one row per attempt of each of its nine
+checks (`close_check_attempt_once`, `INV-ACC-09`), concluded once and frozen; no `DELETE` for any role. **No money moves here, but
+figures are recorded**: `evidence` is canonical JSON text - closed codes, ids and counts, and for `RECONCILIATION_DISCLOSURE` and
+`ACCRUALS_COMPLETE` aggregates per currency in minor units (`INV-ACC-05` asks for exactly that) - never an owner reference, a name or a line,
+so it is `CONFIDENTIAL`, served to an operator under `ACCOUNTING_READ` and read audited; no customer or merchant route reads it
+(`NoCustomerSurfaceReadsAccountingTest`). A re-run's reason is a person's text, screened and never served: `RESTRICTED-PII`; the requester
+`CONFIDENTIAL` and never served; closed codes, the lease's columns and the database's stamps `INTERNAL`.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `close_run` | `id` | `INTERNAL` | Generated - the run's identity |
+| `close_run` | `period_id` | `INTERNAL` | The accounting period |
+| `close_run` | `period_locked_at` | `INTERNAL` | The lock instance the run answers - with the period, its key |
+| `close_run` | `period_revision` | `INTERNAL` | The period's revision at the run's birth |
+| `close_run` | `started_at` | `INTERNAL` | The database's stamp |
+| `close_run` | `checks_concluded_at` | `INTERNAL` | The database's stamp, the first time nothing of the run was pending |
+| `close_run` | `correlation_id` | `INTERNAL` | The run's correlation |
+| `close_check` | `id` | `INTERNAL` | Generated - the attempt's identity |
+| `close_check` | `close_run_id` | `INTERNAL` | The run |
+| `close_check` | `check_code` | `INTERNAL` | `CloseCheckCode` - a closed code |
+| `close_check` | `attempt` | `INTERNAL` | The attempt's number, no gap |
+| `close_check` | `status` | `INTERNAL` | `CloseCheckStatus` - a closed code |
+| `close_check` | `requested_by` | `CONFIDENTIAL` | The platform, or the person who asked the re-run - never served |
+| `close_check` | `requested_by_type` | `INTERNAL` | The actor type |
+| `close_check` | `request_reason` | `RESTRICTED-PII` | A person's reason, screened by `AccountingReasons` - never served |
+| `close_check` | `born_at` | `INTERNAL` | The database's stamp |
+| `close_check` | `holder` | `INTERNAL` | The present claim's generated token - the fence |
+| `close_check` | `reclaims` | `INTERNAL` | How many lapsed claims were replaced |
+| `close_check` | `lease_until` | `INTERNAL` | The instant from which the attempt is claimable, on the database's clock |
+| `close_check` | `claimed_at` | `INTERNAL` | The database's stamp |
+| `close_check` | `judged_by` | `INTERNAL` | The versions the attempt read - codes and a set's id |
+| `close_check` | `failures` | `INTERNAL` | Closed codes |
+| `close_check` | `evidence` | `CONFIDENTIAL` | Canonical JSON: codes, ids, counts and aggregates per currency in minor units - never an owner reference or a name |
+| `close_check` | `concluded_at` | `INTERNAL` | The database's stamp |
+| `close_check` | `correlation_id` | `INTERNAL` | The run's, or the re-run request's |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

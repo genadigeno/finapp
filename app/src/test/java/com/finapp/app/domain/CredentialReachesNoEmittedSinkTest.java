@@ -771,7 +771,9 @@ class CredentialReachesNoEmittedSinkTest {
                         // card-number and account shapes at the domain (AccountingReasons), and a journal entry's id.
                         "BreakAcknowledgementProposal",
                         "BreakActRequest",
-                        "BreakResolution");
+                        "BreakResolution",
+                        // P14-TSK-011: a close check's re-run - a reason, screened by AccountingReasons, never served.
+                        "CloseCheckRerunRequest");
     }
 
     @Test

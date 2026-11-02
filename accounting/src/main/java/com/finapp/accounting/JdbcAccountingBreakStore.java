@@ -91,15 +91,15 @@ public final class JdbcAccountingBreakStore implements AccountingBreakStore {
     }
 
     @Override
-    public Map<String, BreakStatus> held(Connection unitOfWork, YearMonth period, CloseCheckCode check) {
-        try (PreparedStatement read = unitOfWork.prepareStatement("SELECT subject_ref, status FROM"
+    public Map<String, Held> held(Connection unitOfWork, YearMonth period, CloseCheckCode check) {
+        try (PreparedStatement read = unitOfWork.prepareStatement("SELECT subject_ref, status, evidence FROM"
                 + " accounting.accounting_break WHERE period_start = ? AND check_code = ?")) {
             read.setDate(1, Date.valueOf(period.atDay(1)));
             read.setString(2, check.name());
-            Map<String, BreakStatus> subjects = new TreeMap<>();
+            Map<String, Held> subjects = new TreeMap<>();
             try (ResultSet row = read.executeQuery()) {
                 while (row.next()) {
-                    subjects.put(row.getString(1), BreakStatus.valueOf(row.getString(2)));
+                    subjects.put(row.getString(1), new Held(BreakStatus.valueOf(row.getString(2)), row.getString(3)));
                 }
             }
             return subjects;
@@ -120,6 +120,23 @@ public final class JdbcAccountingBreakStore implements AccountingBreakStore {
             return open;
         } catch (SQLException failure) {
             throw failed("counting the open accounting breaks", failure);
+        }
+    }
+
+    @Override
+    public Map<BreakStatus, Long> countByStatus(Connection unitOfWork, YearMonth period) {
+        try (PreparedStatement read = unitOfWork.prepareStatement("SELECT status, count(*) FROM accounting.accounting_break"
+                + " WHERE period_start = ? GROUP BY status")) {
+            read.setDate(1, Date.valueOf(period.atDay(1)));
+            Map<BreakStatus, Long> counts = new EnumMap<>(BreakStatus.class);
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    counts.put(BreakStatus.valueOf(row.getString(1)), row.getLong(2));
+                }
+            }
+            return counts;
+        } catch (SQLException failure) {
+            throw failed("counting a period's accounting breaks", failure);
         }
     }
 

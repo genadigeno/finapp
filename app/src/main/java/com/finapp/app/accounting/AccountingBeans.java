@@ -69,7 +69,8 @@ public class AccountingBeans {
     com.finapp.accounting.AccrualCompleteness accrualCompleteness(
             com.finapp.lending.AccrualLags accrualLags, com.finapp.bnpl.BnplAccrualStore bnplAccrualStore) {
         return new ServicingAccrualCompleteness(
-                accrualLags::oldestUnaccruedByCurrency, bnplAccrualStore::oldestUnaccruedByCurrency);
+                accrualLags::oldestUnaccruedByCurrency, bnplAccrualStore::oldestUnaccruedByCurrency,
+                new LedgerFlooredPostings()::accruals);
     }
 
     /** accounting's port over the ledger's chart - SELECT only, on the caller's unit of work. */
@@ -125,7 +126,7 @@ public class AccountingBeans {
         return new JdbcAccountingPeriodStore();
     }
 
-    /** C9's grace before a lock, in business days - configuration (default 2, 1 to 20). */
+    /** C9's grace before a lock, in business days - configuration (default 2, 2 to 20: `P14-TSK-011`, a grace of one could cover a western zone's today). */
     @Bean
     LockGrace lockGrace(
             @Value("${finapp.accounting.period.lock-grace-business-days:" + LockGrace.DEFAULT_BUSINESS_DAYS + "}")

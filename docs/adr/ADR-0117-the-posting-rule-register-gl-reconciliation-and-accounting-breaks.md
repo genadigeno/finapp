@@ -59,6 +59,9 @@ and park value in suspense; a GL-side discrepancy has neither.
    `BreaksNeverPostTest` holds the machinery to no ledger writer, cutoff or prior-period door. `PHASE_14_PLAN.md` §13.3's
    note records the subject granularity and the deviations.)*
 4. **Reconciliation's own breaks and suspense are read and disclosed** at close (`ReconciliationDisclosure`), not copied.
+   *(As built by `P14-TSK-011`, 2026-11-02: as of the cutoff's instant, from reconciliation's frozen stamps and the
+   append-only releases - `app`'s `ProductReconciliationDisclosure`, the `RECONCILIATION_DISCLOSURE` check `DISCLOSED` when
+   anything stands; `PHASE_14_PLAN.md` §13.5's note.)*
 
 ## Alternatives Considered
 
@@ -91,7 +94,21 @@ Line-shape conformance for amounts (e.g. fee ≤ gross) as rule predicates, if t
   raises nothing new. As built it is never hidden: `CheckOutcome` counts known findings by their break's status and
   reports a `RESOLVED` one as `RECURRED`, so the close can tell "all disclosed" from "a resolved break's discrepancy is
   still present". Whether it should instead raise a new break - re-raise on `RESOLVED`, or a generation in the key - is
-  open; the key and the re-raise rule were deliberately left unchanged.
+  open; the key and the re-raise rule were deliberately left unchanged. *(`P14-TSK-011`, 2026-11-02, its consumer: the
+  default until the owner rules - a `RECURRED` outcome is `FAILED` and never `DISCLOSED`, whatever else it holds. *Corrected by its
+  independent review, 2026-11-02, I-2: this text read "blocked until the discrepancy is really gone. Either answer fits", which does not hold for an
+  immutable subject.* A journal entry never changes and `RESOLVED` is final, so a `RESOLVED` `shape:<entry>`, `unbalanced:<entry>` or `namespace:` break is
+  `RECURRED` on every re-run: that discrepancy is never gone, and the close of its period - periods closing in order, of every later one - is blocked for
+  good. So the answer is a precondition of `P14-TSK-012`, not a refinement: a re-raise or a generation gives the finding a new break to acknowledge; the
+  default gives it no way out.)*
+- **What an acknowledgement holds** (`P14-TSK-011`'s review, I-1; open, the same owner decision as the recurrence above): four eyes acknowledge what a
+  break's evidence says, and the key holds only a subject, so `namespace:<TYPE> <ns>` and `<PROOF>:<subject>` could change after the acknowledgement and
+  still read disclosed, across an unlock too. **The safe default as built**: `held` answers the break's evidence, and a finding differing from it is
+  `FAILED ACKNOWLEDGED_CHANGED`, never `DISCLOSED`, its subject on the attempt; nothing is re-raised and the break stays what it was. Evidence of unchanged
+  facts is stable - lines by sequence, rules in the register's order, first entries in keyset order and capped, sorted currencies and keys, no clock.
+  **Its limits**: evidence holds no amounts, so a change of amount alone is not seen. And a source proof reading the live book (`POSITION`'s open
+  counts, a `CASH_AT_BANK` `latestSequence`, a loan's status) can move on every re-run with no door to re-acknowledge, so this default may wedge it as
+  `RECURRED` wedges an immutable subject. Which granularity is right - the exact evidence, a stable part of it, a re-acknowledgement - is the owner's.
 - **Resolution's residual** (I-2): a correction must exist, not be the subject or listed in the break's evidence, and
   not predate what it corrects; that it corrects *this* discrepancy, that it is not reused across breaks, and that one
   person decides it remain the controller's audited judgement.

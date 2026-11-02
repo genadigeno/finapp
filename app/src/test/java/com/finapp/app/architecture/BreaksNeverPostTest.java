@@ -4,15 +4,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.accounting.AccountingBreaks;
 import com.finapp.accounting.AccountingChecks;
+import com.finapp.accounting.CloseChecks;
+import com.finapp.accounting.CloseRuns;
 import com.finapp.accounting.GlEqualsLedger;
 import com.finapp.accounting.JdbcAccountingBreakStore;
+import com.finapp.accounting.JdbcCloseRunStore;
 import com.finapp.accounting.PostingCutoff;
 import com.finapp.accounting.PriorPeriodPostings;
 import com.finapp.accounting.RuleConformance;
 import com.finapp.accounting.SourceCompleteness;
 import com.finapp.app.accounting.AccountingBreakController;
 import com.finapp.app.accounting.AccountingBreakDesk;
+import com.finapp.app.accounting.CloseCheckWorker;
+import com.finapp.app.accounting.CloseRunController;
+import com.finapp.app.accounting.CloseRunDesk;
+import com.finapp.app.accounting.FinalTrialBalanceReader;
+import com.finapp.app.accounting.LedgerFlooredPostings;
 import com.finapp.app.accounting.LedgerJournalShapes;
+import com.finapp.app.accounting.ProductReconciliationDisclosure;
 import com.finapp.app.accounting.ProductSourceProofs;
 import com.finapp.ledger.AdjustmentService;
 import com.finapp.ledger.JdbcJournalEntryStore;
@@ -78,7 +87,11 @@ class BreaksNeverPostTest {
     static final List<Class<?>> MACHINERY = List.of(AccountingBreaks.class, AccountingChecks.class,
             RuleConformance.class, GlEqualsLedger.class, SourceCompleteness.class, JdbcAccountingBreakStore.class,
             AccountingBreakDesk.class, AccountingBreakController.class, LedgerJournalShapes.class,
-            ProductSourceProofs.class);
+            ProductSourceProofs.class,
+            // P14-TSK-011: the close run judges and records - it never posts, and neither do its reads of the journal.
+            CloseRuns.class, CloseChecks.class, JdbcCloseRunStore.class, CloseRunDesk.class, CloseRunController.class,
+            CloseCheckWorker.class, FinalTrialBalanceReader.class, ProductReconciliationDisclosure.class,
+            LedgerFlooredPostings.class);
 
     @Test
     @DisplayName("no class of the break machinery reaches a journal writer, the cutoff or the prior-period door")

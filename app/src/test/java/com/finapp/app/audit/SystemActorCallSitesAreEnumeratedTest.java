@@ -464,6 +464,13 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " system, recorded bnpl.DisputeResolved with actor SYSTEM, its refund under the purchase's one"
                         + " bound. The customer's, the merchant's and the operator's acts on a dispute are theirs."),
                     Map.entry(
+                            "com.finapp.app.accounting.AccountingCloseSchedule.inSystemScope",
+                    "Accounting's leaderless close schedule (P14-TSK-011, PHASE_14_PLAN.md section 8.4; INV-ACC-09): nobody commands"
+                        + " a month's opening, a check's judgement or an orphaned report run's completion - the calendar and the"
+                        + " rows do. The platform opens the month, starts the run and judges each attempt as the system, the"
+                        + " attempt row its trail; a person's acts on the close - the lock, a re-run, the proposal - are theirs,"
+                        + " and a re-run names its person and reason."),
+                    Map.entry(
                             "com.finapp.app.risk.RiskMonitoringSchedule.sweepOnce",
                     "The risk monitoring sweep's intake leg (P13-TSK-019, PHASE_13_PLAN.md section 7.1 T-mon, ADR-0111"
                         + " decision 3: monitoring is retrospective and never a person's act): nobody commands a journal"

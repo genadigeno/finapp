@@ -166,7 +166,9 @@ class AccountingPeriodsTest {
                 .isEqualTo(PeriodStatus.LOCKED);
         // October 2026 ends on a Saturday: Monday 2 and Tuesday 3 November.
         assertThat(LockGrace.standard().lockableFrom(YearMonth.of(2026, 10))).isEqualTo(LocalDate.of(2026, 11, 3));
-        assertThat(new LockGrace(1).lockableFrom(YearMonth.of(2026, 10))).isEqualTo(LocalDate.of(2026, 11, 2));
+        assertThat(new LockGrace(3).lockableFrom(YearMonth.of(2026, 10))).isEqualTo(LocalDate.of(2026, 11, 4));
+        // P14-TSK-011 (P14-TSK-006's review, M-1): a grace of one could cover a western servicing zone's today.
+        assertThatThrownBy(() -> new LockGrace(1)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new LockGrace(0)).isInstanceOf(IllegalArgumentException.class);
     }
 

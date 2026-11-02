@@ -89,6 +89,23 @@ public final class JdbcValuationRateSetStore implements ValuationRateSetStore {
     }
 
     @Override
+    public List<SetRow> ofPeriod(Connection unitOfWork, AccountingPeriodId period, int limit) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(ROW + " WHERE s.period_id = ? ORDER BY s.id LIMIT ?")) {
+            read.setObject(1, period.value());
+            read.setInt(2, limit);
+            List<SetRow> sets = new ArrayList<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    sets.add(row(row));
+                }
+            }
+            return sets;
+        } catch (SQLException failure) {
+            throw failed("reading a period's valuation rate sets", failure);
+        }
+    }
+
+    @Override
     public List<ValuationRate> rates(Connection unitOfWork, ValuationRateSetId id) {
         try (PreparedStatement read = unitOfWork.prepareStatement("SELECT base_currency, quote_currency, rate, source,"
                 + " snapshot_id, observed_at, received_at FROM accounting.valuation_rate WHERE set_id = ?"

@@ -147,6 +147,65 @@ class AccountingChecksTest {
     }
 
     @Test
+    @DisplayName("I-1: an acknowledgement holds the finding, not only its subject: an acknowledged namespace with one more entry is"
+            + " ACKNOWLEDGED_CHANGED, its subject named, nothing raised; the same facts walked again are not")
+    void anAcknowledgedNamespaceThatGrewHasChanged() {
+        for (int i = 0; i < 2; i++) {
+            entry("p14-011-probe:", "CUSTOMER_WALLET", "FEE_REVENUE");
+        }
+        checks.run(MARCH, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation());
+        acknowledge(store.rows().get(0).id());
+
+        CheckOutcome same = checks.run(MARCH, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation());
+        assertThat(same.failures()).containsExactly(CheckOutcome.DISCREPANCIES);
+        assertThat(same.knownAcknowledged()).isEqualTo(1);
+        assertThat(same.acknowledgedChanged()).isEmpty();
+
+        entry("p14-011-probe:", "CUSTOMER_WALLET", "FEE_REVENUE");
+        CheckOutcome grown = checks.run(MARCH, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation());
+        assertThat(grown.result()).isEqualTo(CheckOutcome.Result.FAILED);
+        assertThat(grown.failures()).containsExactly(CheckOutcome.DISCREPANCIES, CheckOutcome.ACKNOWLEDGED_CHANGED);
+        assertThat(grown.acknowledgedChanged()).containsExactly("namespace:POSTING p14-011-probe:");
+        assertThat(grown.raised()).isZero();
+        assertThat(store.rows()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("I-1: an acknowledged proof subject whose evidence moved is ACKNOWLEDGED_CHANGED; the same evidence is not, and one still OPEN is"
+            + " simply a discrepancy")
+    void anAcknowledgedProofSubjectThatMovedHasChanged() {
+        sources.put(SourceProofs.Source.LENDING, lending("fails=[UNEXPLAINED_ENTRIES]"));
+        checks.run(MARCH, CloseCheckCode.SOURCE_COMPLETENESS, Actor.SYSTEM, correlation());
+
+        sources.put(SourceProofs.Source.LENDING, lending("fails=[UNEXPLAINED_ENTRIES, NEGATIVE]"));
+        CheckOutcome open = checks.run(MARCH, CloseCheckCode.SOURCE_COMPLETENESS, Actor.SYSTEM, correlation());
+        assertThat(open.failures()).as("awaiting a decision, whatever it reads").containsExactly(CheckOutcome.DISCREPANCIES);
+        assertThat(open.acknowledgedChanged()).isEmpty();
+
+        sources.put(SourceProofs.Source.LENDING, lending("fails=[UNEXPLAINED_ENTRIES]"));
+        acknowledge(store.rows().get(0).id());
+        assertThat(checks.run(MARCH, CloseCheckCode.SOURCE_COMPLETENESS, Actor.SYSTEM, correlation()).failures())
+                .containsExactly(CheckOutcome.DISCREPANCIES);
+
+        sources.put(SourceProofs.Source.LENDING, lending("fails=[UNEXPLAINED_ENTRIES, NEGATIVE]"));
+        CheckOutcome moved = checks.run(MARCH, CloseCheckCode.SOURCE_COMPLETENESS, Actor.SYSTEM, correlation());
+        assertThat(moved.failures()).containsExactly(CheckOutcome.DISCREPANCIES, CheckOutcome.ACKNOWLEDGED_CHANGED);
+        assertThat(moved.acknowledgedChanged()).containsExactly("LOAN_SUBLEDGER:loan-9");
+    }
+
+    private static java.util.function.Function<Connection, List<SourceProofs.Reading>> lending(String evidence) {
+        return snapshot -> List.of(
+                new SourceProofs.Reading(SourceProofs.Proof.LOAN_SUBLEDGER, true, List.of(new SourceProofs.Discrepancy("loan-9", evidence))),
+                new SourceProofs.Reading(SourceProofs.Proof.LOAN_REPLAY, true, List.of()));
+    }
+
+    /** Four eyes on {@code id}: an accountant's disclosure, a controller's approval. */
+    private void acknowledge(AccountingBreakId id) {
+        breaks.proposeAcknowledgement(SNAPSHOT, id, new Actor("accountant-1", ActorType.CUSTOMER), "disclosed for the probe", correlation());
+        breaks.approveAcknowledgement(SNAPSHOT, id, new Actor("controller-1", ActorType.CUSTOMER), "disclosed", correlation());
+    }
+
+    @Test
     @DisplayName("an unregistered namespace raises one break however many entries carry it")
     void anUnregisteredNamespaceRaisesOneBreak() {
         for (int i = 0; i < 4; i++) {

@@ -753,6 +753,12 @@ public class ReconciliationReports {
      * repudiated a month later shows as a negative cost in the later month. Reports and bank
      * statements alike; grouped by source code, never by a rail's name ({@code INV-RAIL-01}).
      * Refused with the 422 before anything is read when the month is not a reportable one.
+     *
+     * <p>The stated date, never the journal's (`P14-TSK-006`'s review, M-2): a batch accepted on a
+     * date a lock already covers posts on the first open date, so this report can hold a cost in
+     * the month before the one the GL holds it in. Disclosed at close, not aligned: the close's
+     * {@code RECONCILIATION_DISCLOSURE} counts {@code settlement-batch} entries valued at or before
+     * the cutoff and posted after it (`P14-TSK-011`).
      */
     public ProviderCostsReport providerCosts(String month) {
         YearMonth period = month == null ? currentMonth() : parsedMonth(month);

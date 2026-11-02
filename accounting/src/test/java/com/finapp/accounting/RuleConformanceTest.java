@@ -139,7 +139,7 @@ class RuleConformanceTest {
     void knownSubjectsAreCountedAndTheCapHolds() {
         JournalShapes.EntryShape known = mismatch();
         RuleConformance.Tally tally =
-                conformance.tally(java.util.Map.of("shape:" + known.id(), BreakStatus.RESOLVED), 2);
+                conformance.tally(java.util.Map.of("shape:" + known.id(), new AccountingBreakStore.Held(BreakStatus.RESOLVED, "raised")), 2);
         tally.add(known);
         tally.add(mismatch());
         tally.add(mismatch());
@@ -171,6 +171,47 @@ class RuleConformanceTest {
     }
 
     // ------------------------------------------------------------------ fixtures
+
+    @Test
+    @DisplayName("I-1: the evidence of unchanged facts is stable - lines in their sequence, rules in the register's order, no clock, the first"
+            + " entries in the walk's order - so an ACKNOWLEDGED subject reading the same has not changed and one reading differently has; a shape"
+            + " held OPEN or RESOLVED is not compared")
+    void anAcknowledgementIsComparedWithTheFinding() {
+        JournalShapes.EntryShape shaped = mismatch();
+        String subject = "shape:" + shaped.id();
+        String evidence = conformance.judge(shaped).get(0).evidence();
+        assertThat(conformance.judge(shaped).get(0).evidence()).as("the same facts, the same text").isEqualTo(evidence);
+        assertThat(changedOver(subject, BreakStatus.ACKNOWLEDGED, evidence, shaped)).isEmpty();
+        assertThat(changedOver(subject, BreakStatus.ACKNOWLEDGED, evidence + " once", shaped)).containsExactly(subject);
+        assertThat(changedOver(subject, BreakStatus.OPEN, evidence + " once", shaped)).isEmpty();
+        assertThat(changedOver(subject, BreakStatus.RESOLVED, evidence + " once", shaped)).isEmpty();
+
+        List<JournalShapes.EntryShape> month = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            month.add(entry(EntryType.POSTING, "p14-011-probe:", line("CUSTOMER_WALLET", Side.DEBIT, 7), line("FEE_REVENUE", Side.CREDIT, 7)));
+        }
+        RuleConformance.Tally raising = conformance.tally(java.util.Map.of(), 100);
+        month.forEach(raising::add);
+        BreakFinding raised = raising.findings().get(0);
+        JournalShapes.EntryShape[] walked = month.toArray(new JournalShapes.EntryShape[0]);
+        assertThat(changedOver(raised.subject(), BreakStatus.ACKNOWLEDGED, raised.evidence(), walked)).as("the month walked again").isEmpty();
+
+        RuleConformance.Tally grown = conformance.tally(java.util.Map.of(raised.subject(),
+                new AccountingBreakStore.Held(BreakStatus.ACKNOWLEDGED, raised.evidence())), 100);
+        month.forEach(grown::add);
+        grown.add(entry(EntryType.POSTING, "p14-011-probe:", line("CUSTOMER_WALLET", Side.DEBIT, 7), line("FEE_REVENUE", Side.CREDIT, 7)));
+        assertThat(grown.changed()).as("one more entry under an acknowledged namespace").containsExactly(raised.subject());
+        assertThat(grown.findings()).as("counted, never raised again").isEmpty();
+        assertThat(grown.known()).containsExactly(java.util.Map.entry(BreakStatus.ACKNOWLEDGED, 1));
+    }
+
+    private List<String> changedOver(String subject, BreakStatus status, String evidence, JournalShapes.EntryShape... entries) {
+        RuleConformance.Tally tally = conformance.tally(java.util.Map.of(subject, new AccountingBreakStore.Held(status, evidence)), 100);
+        for (JournalShapes.EntryShape entry : entries) {
+            tally.add(entry);
+        }
+        return tally.changed();
+    }
 
     private static JournalShapes.EntryShape mismatch() {
         return entry(EntryType.POSTING, "transfer:", line("CUSTOMER_WALLET", Side.DEBIT, 2),

@@ -50,6 +50,9 @@ public final class ValuationRateSets {
     /** The audit record's target type. */
     public static final String TARGET_TYPE = "valuation_rate_set";
 
+    /** The most sets {@link #ofPeriod} names. */
+    static final int OF_PERIOD_LIMIT = 20;
+
     @NonNull private final ValuationRateSetStore store;
     @NonNull private final AccountingPeriodStore periods;
     @NonNull private final ValuationRates rates;
@@ -283,6 +286,15 @@ public final class ValuationRateSets {
      */
     public Optional<Valued> approvedFor(Connection unitOfWork, AccountingPeriodId period) {
         return store.approvedFor(unitOfWork, period).map(row -> valued(unitOfWork, row, false));
+    }
+
+    /**
+     * The period's sets in birth order, whatever their status, at most {@value #OF_PERIOD_LIMIT} - what the close's
+     * {@code VALUATION_SET_APPROVED} names, so a {@code FAILED} check says which proposal awaits a decision (`P14-TSK-011`;
+     * `P14-TSK-014`'s review, M-5). Unlocked; no person is served from it.
+     */
+    public List<ValuationRateSetStore.SetRow> ofPeriod(Connection unitOfWork, AccountingPeriodId period) {
+        return store.ofPeriod(unitOfWork, period, OF_PERIOD_LIMIT);
     }
 
     // ------------------------------------------------------------------ plumbing

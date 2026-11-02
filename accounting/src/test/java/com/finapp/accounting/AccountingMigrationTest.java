@@ -105,13 +105,15 @@ class AccountingMigrationTest {
     @Test
     @DisplayName("the schema holds Flyway's history - which the application cannot read - and the GL mapping's tables and"
             + " functions (P14-TSK-003's V002), the periods' (P14-TSK-005's V003), the report run's (P14-TSK-008's"
-            + " V004), the valuation rate sets' (P14-TSK-014's V005) and the breaks' (P14-TSK-010's V006), nothing else")
+            + " V004), the valuation rate sets' (P14-TSK-014's V005), the breaks' (P14-TSK-010's V006) and the close"
+            + " run's (P14-TSK-011's V007), nothing else")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. Each later task rewrites
         // this list with its own tables, views and functions.
         // P14-TSK-010's V006: the breaks and their case file; P14-TSK-014's V005: the valuation rate sets and rates.
-        assertThat(tablesIn(SCHEMA)).containsExactly("accounting_break", "accounting_period", "break_event",
+        assertThat(tablesIn(SCHEMA)).containsExactly("accounting_break", "accounting_period", "break_event", "close_check",
+                "close_run",
                 "flyway_schema_history", "gl_account", "gl_mapping_rule", "gl_mapping_version",
                 "gl_mapping_version_event", "period_event", "report_run", "valuation_rate", "valuation_rate_set");
         assertThat(column("SELECT viewname FROM pg_views WHERE schemaname = '" + SCHEMA + "'")).isEmpty();
@@ -120,6 +122,9 @@ class AccountingMigrationTest {
                 "accounting_break_is_never_truncated", "accounting_break_permits_only_machine_edges",
                 "accounting_period_is_never_truncated", "accounting_period_permits_only_machine_edges",
                 "accounting_period_reopens_with_its_runs_superseded", "break_event_is_append_only",
+                // P14-TSK-011's V007.
+                "close_check_permits_only_machine_edges", "close_run_is_never_truncated",
+                "close_run_permits_only_machine_edges",
                 "gl_mapping_content_is_born_once", "gl_mapping_is_never_truncated",
                 "gl_mapping_version_event_is_append_only", "gl_mapping_version_has_its_content",
                 "gl_mapping_version_permits_only_machine_edges", "gl_mapping_version_retires_only_beside_its_successor",

@@ -98,10 +98,10 @@ public final class InMemoryAccountingBreakStore implements AccountingBreakStore 
     }
 
     @Override
-    public Map<String, BreakStatus> held(Connection unitOfWork, YearMonth period, CloseCheckCode check) {
-        Map<String, BreakStatus> held = new TreeMap<>();
+    public Map<String, Held> held(Connection unitOfWork, YearMonth period, CloseCheckCode check) {
+        Map<String, Held> held = new TreeMap<>();
         rows.values().stream().filter(row -> row.period().equals(period) && row.check() == check)
-                .forEach(row -> held.put(row.subject(), row.status()));
+                .forEach(row -> held.put(row.subject(), new Held(row.status(), row.evidence())));
         return held;
     }
 
@@ -116,6 +116,14 @@ public final class InMemoryAccountingBreakStore implements AccountingBreakStore 
         rows.values().stream().filter(row -> row.status() != BreakStatus.RESOLVED)
                 .forEach(row -> open.merge(row.type(), 1L, Long::sum));
         return open;
+    }
+
+    @Override
+    public Map<BreakStatus, Long> countByStatus(Connection unitOfWork, YearMonth period) {
+        Map<BreakStatus, Long> counts = new EnumMap<>(BreakStatus.class);
+        rows.values().stream().filter(row -> row.period().equals(period))
+                .forEach(row -> counts.merge(row.status(), 1L, Long::sum));
+        return counts;
     }
 
     @Override

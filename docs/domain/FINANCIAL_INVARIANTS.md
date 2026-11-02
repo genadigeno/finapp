@@ -1362,8 +1362,11 @@ whatever order its reads serve - `TrialBalanceOracleTest#regeneratesByteIdentica
 never netted away or omitted.
 **Why:** Hiding unreconciled positions is the mechanism by which small breaks become
 material losses.
-**Enforce:** `PROCESS` + `DOMAIN`.
-**Verify:** Close-report content tests.
+**Enforce:** `PROCESS` + `DOMAIN`. *(`P14-TSK-011`: the `RECONCILIATION_DISCLOSURE` check records reconciliation's open breaks and
+`SUSPENSE_UNMATCHED` balance and ageing as of the cutoff, gross per currency, in its attempt's evidence - `DISCLOSED`, never `PASSED`, when
+anything stands; a read that fails `FAILED`. Printed in the statements' notes by `-016`.)*
+**Verify:** Close-report content tests. *(`CloseChecksTest#suspenseIsDisclosed`, `ProductReconciliationDisclosureTest#suspenseIsDisclosedGross`,
+`CloseRunDatabaseTest#suspenseIsDisclosed` - owed, C5.)*
 **Phase:** 14
 
 *(The Phase 13 → 14 transition, 2026-10-29 — ADR-0113…0118 (`Proposed`), `PHASE_14_PLAN.md` §7: `INV-ACC-01`…`-05`
@@ -1415,7 +1418,11 @@ the event table `INSERT`-only).
 **Enforce:** `DB-CONSTRAINT` (conditional edges; `CHECK (approved_by <> proposed_by)`) + `DOMAIN` (the proposal refuses
 an incomplete run).
 **Verify:** `PeriodCloseDatabaseTest#anIncompleteRunCannotBeProposed`, `#twoApprovalsOneClose`,
-`#theProposerCannotApprove` (`P14-TSK-011`, `-012`).
+`#theProposerCannotApprove` (`P14-TSK-011`, `-012`). *(`P14-TSK-011`, the recorded half: `CloseRunsTest`, `CloseChecksTest`,
+`CloseCheckWorkerTest`, `CloseRunDatabaseTest` - owed, C5; `accounting V007`'s attempts frozen, `DISCLOSED` only where the check admits it. The
+proposal's refusal is `-012`'s, on `CloseRuns.readiness`. **Unmet as built**: floored accruals and reconciliation positions conclude `DISCLOSED` with no person and no
+reason, so "with a reason" holds only once `-012`'s proposal carries one per `DISCLOSED` attempt, or the owner amends this statement - the review's I-3, `-012`'s
+precondition.)*
 **Phase:** 14
 
 ### INV-ACC-10 — After close, corrections are prior-period adjustments; a reopen supersedes, never deletes

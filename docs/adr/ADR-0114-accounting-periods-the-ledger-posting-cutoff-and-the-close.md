@@ -122,6 +122,23 @@ unaccrued date per currency, `blocking(periodEnd)`), implemented in `app` over l
 floor: posting date floored, value date the economic one; each source row keeps its stated date). The meter's tag
 stays the command (a command still names no module).
 
+*`P14-TSK-011`, 2026-11-02 - decision 4, the close run (accounting `V007`):* one run per lock instance, born by the schedule's
+check leg insert-if-absent rather than in T-lock - **a recorded deviation** from the plan's T-lock: the lock is the ledger's
+protection and waits for nothing, as with the pin and the rate set. Nine checks, each an attempt row with its evidence and the
+versions it read, claimed by one `FOR UPDATE SKIP LOCKED` statement under a lease on the database's clock, judged with no
+transaction held, concluded by one conditional edge naming the claim's `holder`. **A run of any length keeps its lease**: a short
+lease, renewed by a heartbeat, bounded by `max-run` on the database's clock; a dead worker's check is reclaimed within one lease, a hung
+one past the bound, and `reclaims` past its bound is `FAILED WORKERS_EXHAUSTED`. No path turns an exception, a timeout, an incomplete
+proof or an empty read into a pass. **"Explicitly `DISCLOSED`"** is `close_check_disclosed_only_where_it_may`: the trial balance, GL = ledger,
+the projections and the valuation set are `PASSED` or they block; a raising check is `DISCLOSED` only when acknowledged breaks hold every
+finding as acknowledged (`ACKNOWLEDGED_CHANGED` otherwise, ADR-0117); the accruals when entries of either accruer lie past the cutoff and nothing is behind; the disclosure when read whole and not clean; the open breaks when
+none is `OPEN` and some acknowledged. `C3`'s "close readiness requires accruals complete": `blocking` and `flooredPast` on one snapshot -
+find and disclose, never `PASSED` on a period short of interest. `BNPL-F2a` has no floor and the same shortfall: it posts today valued the accrual date, so the month's last day
+always posts after the month and a lagging sweep posts older dates there too; the read holds it beside `LND-2`, the last day apart from anything older, so a period with an active
+pay-in-N obligation reads `DISCLOSED` and carving the last day out is the owner's (`P14-TSK-011`'s review, C-1). The grace's minimum raised to two business days (`LockGrace`), so a lock
+never covers a western servicing zone's today (`P14-TSK-006`'s review, M-1). Proposal and approval are `-012`'s, reading
+`CloseRuns.readiness`.
+
 ## Follow-up
 
 The storm (PI-004) measures the lock's pause. Daily periods if ever needed (C9 B). The calendar grace is configuration.

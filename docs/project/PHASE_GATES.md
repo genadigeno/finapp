@@ -2164,7 +2164,10 @@ are `PHASE_14_PLAN.md`'s, a bare `-nnn` meaning `P14-TSK-nnn`; scenario numbers 
 1. *Trial balance zero per currency, continuously verified.* `finapp.ledger.trial.balance{currency}` stays the continuous
    signal (`INV-ACC-01`, unchanged); in addition every `LOCKED` period has a FINAL `TRIAL_BALANCE` run, per GL account ×
    currency, summing to zero per currency and equal to the ledger's own per-currency totals over the same posting-date
-   range, a planted unbalanced fixture (raw SQL past the trigger, test-only) failing `LEDGER_TRIAL_BALANCE` and only then;
+   range, a planted unbalanced fixture (raw SQL past the trigger, test-only) failing `LEDGER_TRIAL_BALANCE` and only then
+   *(`P14-TSK-011`: the balance trigger is deferred to commit, so an unbalanced entry is visible only on its own connection and is
+   read there - planted, locked, generated and judged on one connection, then rolled back,
+   `CloseRunDatabaseTest#aPlantedImbalanceFailsOnlyItsOwnTransaction`, owed C5)*;
    the battery's independent oracle agreeing across ≥ 10,000 entries, five currencies, twelve periods. **Owners**:
    `-009`, `-011`, `P14-TST-002`.
 2. *Any GL figure drills down to its journal lines.* For every figure of every FINAL run, the drill-down door returns the

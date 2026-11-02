@@ -2008,6 +2008,64 @@ class OwnershipIsScopedTest {
                                         + " UPDATE, the edge conditional on the status read; resolution by reference,"
                                         + " nothing posted; behind @RequiresPermission(ACCOUNTING_ADJUST_APPROVE).")),
                     Map.entry(
+                            "com.finapp.app.accounting.FinalTrialBalanceReader.read",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-011. The verdict of a report run by the id this call's own claim answered, on a"
+                                        + " read-only snapshot - never a request's identifier, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcCloseRunStore.runUnder",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-011. The run of a lock instance: the period the operator's permission-guarded"
+                                        + " request named (behind @RequiresPermission(ACCOUNTING_CLOSE_PROPOSE)), the instant"
+                                        + " read from its row under FOR SHARE - the platform's books, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcCloseRunStore.latestAttempt",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-011. A run's latest attempt of a check: the id comes only from the run row this"
+                                        + " transaction locked FOR UPDATE, itself named by the period's present lock - the"
+                                        + " platform's books, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcCloseRunStore.attempts",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-011. A run's attempts: the id comes only from the period's latest run, the period"
+                                        + " the operator's permission-guarded request named (behind"
+                                        + " @RequiresPermission(ACCOUNTING_READ)) - no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcCloseRunStore.renew",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-011. The system's: the id and the holder come only from the claim this worker"
+                                        + " made, never a request; conditional on the holder, the fence - no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcCloseRunStore.defer",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-011. The system's: the id and the holder come only from the claim this worker"
+                                        + " made, never a request; conditional on the holder, the fence - no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcCloseRunStore.conclude",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-011. The system's: the id and the holder come only from the claim this worker"
+                                        + " made, never a request; conditional on the holder, the fence - no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcCloseRunStore.markChecksConcluded",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-011. The system's: the id comes only from the run row this transaction locked FOR"
+                                        + " UPDATE behind a claim - the platform's books, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcValuationRateSetStore.ofPeriod",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-011 (P14-TSK-014's review, M-5). The sets of the period the claimed check names -"
+                                        + " the system's read, ids and statuses only - platform-wide configuration, no owner to"
+                                        + " scope by.")),
+                    Map.entry(
                             "com.finapp.accounting.JdbcGlMappingStore.one",
                             new Entry(
                                     Scope.ADMINISTERED,

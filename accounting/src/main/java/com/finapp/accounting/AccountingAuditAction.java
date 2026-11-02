@@ -227,6 +227,26 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " transaction of its own before the answer, so nothing is served unrecorded; an unknown break"
                     + " records nothing. Its target the period or the break; the summary the door, the period, the status"
                     + " asked, the count and page=first|next - never a subject, evidence or a disclosure.",
+            false),
+
+    /** A person asked a close check's next attempt (`P14-TSK-011`, ACCOUNTING_CLOSE_PROPOSE). */
+    CLOSE_CHECK_RERUN(
+            "accounting.CloseCheckRerun",
+            "An accountant asked a close check's next attempt: a new PENDING row a worker claims, the earlier attempts"
+                    + " frozen (P14-TSK-011, INV-ACC-09; POST /v1/operator/accounting/periods/{periodId}/close-run/checks/"
+                    + "{check}/rerun, ACCOUNTING_CLOSE_PROPOSE). Reasoned. Its target the run; the summary the period, the"
+                    + " check and the attempt - never a figure.",
+            true),
+
+    /** An operator read a close run with its evidence (`P14-TSK-011`, ACCOUNTING_READ). */
+    CLOSE_RUN_READ(
+            "accounting.CloseRunRead",
+            "An accountant read a period's close run - each check's attempts with their evidence, CONFIDENTIAL aggregates"
+                    + " (P14-TSK-011; GET /v1/operator/accounting/periods/{periodId}/close-run, ACCOUNTING_READ; the"
+                    + " ReportRead and BreakRead precedent). Recorded SUCCEEDED in a transaction of its own before the"
+                    + " answer, so nothing is served unrecorded; a period with no run records nothing. Its target the run;"
+                    + " the summary the period, whether the run answers the present lock and whether it is complete -"
+                    + " never evidence or a figure.",
             false);
 
     private final String code;

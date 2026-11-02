@@ -387,7 +387,7 @@ public final class AccountingBreaks {
     }
 
     /** The subjects already raised for a period's check, each with its break's status. */
-    public Map<String, BreakStatus> held(Connection unitOfWork, YearMonth period, CloseCheckCode check) {
+    public Map<String, AccountingBreakStore.Held> held(Connection unitOfWork, YearMonth period, CloseCheckCode check) {
         return store.held(unitOfWork, period, check);
     }
 

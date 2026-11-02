@@ -419,7 +419,17 @@ class NoSingleInstanceAssumptionRulesTest {
                     // question and its conditional dispatch one provider effect, and the conclusion is conditional on
                     // PENDING and the claimed attempt. Ten instances rescreen each party once:
                     // RescreeningDatabaseTest#tenSweepersRescreenEveryActivePartyOnceThroughKyc (owed - C5).
-                    "com.finapp.app.risk.RiskActionSchedule");
+                    "com.finapp.app.risk.RiskActionSchedule",
+                    // P14-TSK-011, the 32nd: accounting's one leaderless schedule, on the lease half of the bar. No external
+                    // call and no money row. The open leg is insert-if-absent per month. The check leg's claim is ONE
+                    // statement FOR UPDATE SKIP LOCKED where lease_until has passed on the DATABASE clock, committed before the
+                    // judgement, so ten workers take disjoint attempts; a live worker's renewal and its conclusion are each
+                    // conditional on holder, so an overtaken worker moves nothing, and a dead one's lease lapses and the
+                    // attempt is reclaimed, bounded by max-reclaims (CloseRunDatabaseTest#tenWorkersOneAttempt and
+                    // #aDeadWorkersCheckIsReclaimed - owed, C5). The heartbeat is liveness only. The orphan leg's
+                    // completeOrphaned(1, ...) is FOR UPDATE SKIP LOCKED past a lease, its completion conditional on the
+                    // attempt (ReportRunDatabaseTest - owed, C5). Register row: DISTRIBUTED_EXECUTION.md section 3.
+                    "com.finapp.app.accounting.AccountingCloseSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

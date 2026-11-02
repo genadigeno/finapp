@@ -293,7 +293,10 @@ class AccountingBreaksTest {
         assertThat(secondPage).singleElement().satisfies(row -> assertThat(row.id()).isNotEqualTo(firstPage.get(0).id()));
         assertThat(breaks.list(UOW, MARCH, java.util.Optional.empty(), java.util.Optional.of(secondPage.get(0).id()), 1))
                 .isEmpty();
-        assertThat(breaks.held(UOW, MARCH, CloseCheckCode.RULE_CONFORMANCE)).hasSize(2).containsValue(BreakStatus.OPEN);
+        assertThat(breaks.held(UOW, MARCH, CloseCheckCode.RULE_CONFORMANCE)).hasSize(2).allSatisfy((subject, held) -> {
+            assertThat(held.status()).isEqualTo(BreakStatus.OPEN);
+            assertThat(held.evidence()).as("the evidence it was raised with").isNotBlank();
+        });
         assertThat(breaks.held(UOW, MARCH, CloseCheckCode.GL_EQUALS_LEDGER)).isEmpty();
         assertThat(breaks.openByType(UOW)).containsEntry(BreakType.SHAPE_MISMATCH, 2L);
         breaks.resolve(UOW, first, controller, journal.post(LocalDate.of(2097, 4, 2), "EUR", 2, 1, "CUSTOMER_WALLET",

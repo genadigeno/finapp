@@ -256,7 +256,15 @@ public final class MetricNames {
                     // (PHASE_14_PLAN.md section 16: finapp.accounting.report.run{definition, outcome},
                     // finapp.accounting.report.diverged{definition}); a name-split would invent a series per report and
                     // make "which report diverged" unanswerable in one query. Registered eagerly per definition held.
-                    "definition");
+                    "definition",
+                    // Which close check (P14-TSK-011). Bounded by accounting's closed CloseCheckCode - nine names in the
+                    // code, never a request's value, a period or a figure. The plan's own series carries it
+                    // (PHASE_14_PLAN.md section 16: finapp.accounting.close.check{check, outcome}).
+                    "check",
+                    // Which leg of a leaderless schedule (P14-TSK-011): a closed set of a class's own constants - open,
+                    // checks, orphans - so a failing leg is named in one query (the plan's "every leg meters its claim
+                    // failures"; section 8.4).
+                    "leg");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling

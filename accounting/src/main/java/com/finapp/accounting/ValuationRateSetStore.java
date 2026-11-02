@@ -31,6 +31,12 @@ public interface ValuationRateSetStore {
     /** The period's {@code APPROVED} set, unlocked - at most one exists. */
     Optional<SetRow> approvedFor(Connection unitOfWork, AccountingPeriodId period);
 
+    /**
+     * The period's sets in birth order, whatever their status, at most {@code limit} - what the close names so a proposal can be
+     * found (`P14-TSK-011`; `P14-TSK-014`'s review, M-5). Unlocked.
+     */
+    List<SetRow> ofPeriod(Connection unitOfWork, AccountingPeriodId period, int limit);
+
     /** The set's rates, in their capture order. */
     List<ValuationRate> rates(Connection unitOfWork, ValuationRateSetId id);
 

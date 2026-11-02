@@ -478,6 +478,11 @@ class RoutePermissionRegisterTest {
                             PermissionName.ACCOUNTING_ADJUST_APPROVE),
                     entry("POST /v1/operator/accounting/breaks/{breakId}/resolution",
                             PermissionName.ACCOUNTING_ADJUST_APPROVE),
+                    // P14-TSK-011: the close run - read by the accountant (audited accounting.CloseRunRead), a check's next
+                    // attempt asked under the close's proposer; the negatives are CloseRunDeskTest's route declarations.
+                    entry("GET /v1/operator/accounting/periods/{periodId}/close-run", PermissionName.ACCOUNTING_READ),
+                    entry("POST /v1/operator/accounting/periods/{periodId}/close-run/checks/{check}/rerun",
+                            PermissionName.ACCOUNTING_CLOSE_PROPOSE),
                     // P14-TSK-007: the GL read model - a period's figures, an account's activity drilled to its
                     // lines and an entry's GL view, each the accountant's (identity V025's partition), audited
                     // accounting.GlRead; the negatives are GeneralLedgerDeskTest's route declarations.
