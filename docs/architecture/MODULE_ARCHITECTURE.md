@@ -1256,6 +1256,12 @@ empty, so each is proven able to fail by probes planted in its own source.
 - The reporting guard sees what it guards: the `accounting` package and every writer it names are in the import, and
   the ledger's `PostingService` stands for the package refusal - or the rule above guards nothing.
   *(ArchUnit: `theReportingGuardSeesTheAccountingModule`)*
+- A report run's content never depends on a JDK's currency table (`P14-TSK-015`, `INV-ACC-04`, ADR-0003): no report class
+  depends on `java.util.Currency` or calls `CurrencyCode.minorUnits`, so a JDK's data changing cannot change a FINAL run's
+  regeneration - scales are the data's own and the reporting minor unit is `Translation.REPORTING_SCALE`, a literal.
+  `GeneralLedger` is the named exception: the live GL doors' zero at a currency's minor unit, never a run's content.
+  Proven able to fail by planted report classes; one holding a `CurrencyCode` only as a code is not flagged.
+  *(ArchUnit: `noReportContentReadsTheJdksCurrencyTable`)*
 
 ### Persistence boundary
 

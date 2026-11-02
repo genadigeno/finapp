@@ -130,6 +130,17 @@ public enum AccountingErrorCode implements ErrorCode {
             "The valuation rate set is no longer awaiting a decision, or the accounting period already has an approved"
                     + " valuation rate set; nothing was changed."),
 
+    /**
+     * The generation door (`P14-TSK-015`): a run asks for translation by naming its period's approved valuation rate set,
+     * and the set named is not it - or the period has none. FINAL or PROVISIONAL: an open period normally has none, since a
+     * set is captured and approved only while its period is locked. A state to resolve, not a malformed request.
+     */
+    VALUATION_SET_NOT_APPROVED(
+            "accounting.ValuationSetNotApproved",
+            409,
+            "A translated report run names its accounting period's approved valuation rate set, and the set named is not"
+                    + " it, or the period has none; nothing was claimed."),
+
     /** The break doors (`P14-TSK-010`): the break is not in the state the act needs. */
     BREAK_STALE(
             "accounting.BreakStale",

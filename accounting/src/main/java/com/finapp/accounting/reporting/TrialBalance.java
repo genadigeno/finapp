@@ -438,14 +438,31 @@ public record TrialBalance(
      * carry</strong>, reached by an exact rescale - so a sum past {@code long} and a currency held at two scales are both
      * written exactly, and nothing outside the pinned inputs and the journal decides a byte: no JDK currency table
      * (`P14-TSK-009`'s review, M-3; ADR-0003 - a JDK's currency data changing would otherwise change a FINAL run's
-     * regeneration).
+     * regeneration). This is the plain run's body: {@code RunParameters.none()} reads no rate and writes no translation.
      */
     public CanonicalJson.Obj body() {
+        return written(Optional.empty());
+    }
+
+    /**
+     * The translated run's body (`P14-TSK-015`; {@code INV-ACC-11}): {@link #body()}'s every member as it is, each row gaining
+     * a {@code translated} member beside its originals and the body a {@code translation} member ({@link Translation#section}).
+     * The verdict is the same object - translation does not enter {@link #passes()}, whose legs read this record's fields
+     * alone.
+     *
+     * @param rates the run's pinned set ({@link Translation.Rates#pinnedBy})
+     */
+    public CanonicalJson.Obj body(Translation.Rates rates) {
+        return written(Optional.of(new TrialBalanceTranslation(this, rates)));
+    }
+
+    private CanonicalJson.Obj written(Optional<TrialBalanceTranslation> translation) {
         Map<String, Integer> scales = scales();
+        int index = 0;
         CanonicalJson.Arr accountsOut = CanonicalJson.array();
         for (AccountRow row : accounts) {
             int scale = scales.get(row.currency());
-            accountsOut.add(CanonicalJson.object()
+            CanonicalJson.Obj out = CanonicalJson.object()
                     .put("account", row.account().code())
                     .put("name", row.account().name())
                     .put("classification", row.account().classification().name())
@@ -455,12 +472,15 @@ public record TrialBalance(
                     .put("debits", money(row.movement().debits(), row.currency(), scale))
                     .put("credits", money(row.movement().credits(), row.currency(), scale))
                     .put("closing", money(row.closingBalance(), row.currency(), scale))
-                    .put("lines", row.movement().lines()));
+                    .put("lines", row.movement().lines());
+            int rowIndex = index++;
+            translation.ifPresent(columns -> columns.writeRow(out, rowIndex));
+            accountsOut.add(out);
         }
         CanonicalJson.Arr unmappedOut = CanonicalJson.array();
         for (UnmappedRow row : unmapped) {
             int scale = scales.get(row.currency());
-            unmappedOut.add(CanonicalJson.object()
+            CanonicalJson.Obj out = CanonicalJson.object()
                     .put("purpose", row.purpose())
                     .put("ownerKind", row.ownerKind())
                     .put("currency", row.currency())
@@ -468,7 +488,10 @@ public record TrialBalance(
                     .put("debits", money(row.movement().debits(), row.currency(), scale))
                     .put("credits", money(row.movement().credits(), row.currency(), scale))
                     .put("closing", money(row.closingBalance(), row.currency(), scale))
-                    .put("lines", row.movement().lines()));
+                    .put("lines", row.movement().lines());
+            int rowIndex = index++;
+            translation.ifPresent(columns -> columns.writeRow(out, rowIndex));
+            unmappedOut.add(out);
         }
         CanonicalJson.Arr currenciesOut = CanonicalJson.array();
         for (CurrencyCheck check : currencies) {
@@ -513,6 +536,7 @@ public record TrialBalance(
         } else {
             body.putNull("previousPeriodPin");
         }
+        translation.ifPresent(columns -> body.put("translation", columns.section(scales)));
         return body.put("verdict", CanonicalJson.object()
                         .put("openingBalanced", openingBalanced())
                         .put("periodBalanced", periodBalanced())

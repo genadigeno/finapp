@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
@@ -54,6 +55,12 @@ import lombok.RequiredArgsConstructor;
  * converges on the row, writing nothing. Never a half run.
  *
  * <p><strong>Supersede</strong> ({@link #supersedeFinal}): the unlock's (and the reopen's) - every FINAL run of the period.
+ *
+ * <p><strong>A translated run</strong> (`P14-TSK-015`; ADR-0116 decision 3): a run asks for translation by naming a
+ * valuation rate set in its parameters, where its definition {@link ReportDefinition#takesValuationRateSet takes one}. The
+ * claim refuses it unless the set is the period's approved one ({@link ValuationSetNotApproved}), FINAL or PROVISIONAL,
+ * under the period row {@code FOR SHARE}: an approval takes that row {@code FOR UPDATE}, so the read cannot race one, and
+ * approved is terminal, so it cannot go stale. A plain run reads no set.
  */
 @RequiredArgsConstructor
 public final class ReportRuns implements ReportRunSupersession {
@@ -77,6 +84,7 @@ public final class ReportRuns implements ReportRunSupersession {
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
     @NonNull private final Provisional provisional;
+    @NonNull private final ApprovedSets approvedSets;
 
     /** As the generated constructor, a completed PROVISIONAL run reused within {@link Provisional#STANDARD}'s window. */
     public ReportRuns(ReportRunStore store, AccountingPeriodStore periods, GlMappingStore mappings,
@@ -85,7 +93,31 @@ public final class ReportRuns implements ReportRunSupersession {
         this(store, periods, mappings, definitions, leases, audit, outbox, ids, clock, Provisional.STANDARD);
     }
 
+    /** As the generated constructor, with no way to a period's approved set: every run naming one is refused. */
+    public ReportRuns(ReportRunStore store, AccountingPeriodStore periods, GlMappingStore mappings,
+            ReportDefinitions definitions, Leases leases, AuditWriter<Connection> audit, OutboxWriter<Connection> outbox,
+            IdGenerator ids, Clock clock, Provisional provisional) {
+        this(store, periods, mappings, definitions, leases, audit, outbox, ids, clock, provisional, ApprovedSets.NONE);
+    }
+
     // ------------------------------------------------------------------ configuration and outcomes
+
+    /** A period's approved valuation rate set, read on the caller's unit of work - the claim's check (`P14-TSK-015`). */
+    @FunctionalInterface
+    public interface ApprovedSets {
+
+        /** Fail closed: no period has an approved set, so every run naming one is refused. */
+        ApprovedSets NONE = (unitOfWork, period) -> Optional.empty();
+
+        /** The id of {@code period}'s approved set, when it has one - at most one exists. */
+        Optional<UUID> of(Connection unitOfWork, AccountingPeriodId period);
+
+        /** The store's reading - production's. */
+        static ApprovedSets of(ValuationRateSetStore store) {
+            Objects.requireNonNull(store, "store");
+            return (unitOfWork, period) -> store.approvedFor(unitOfWork, period).map(row -> row.id().value());
+        }
+    }
 
     /**
      * How long a completed PROVISIONAL run keeps answering its question (`P14-TSK-009`, routed by `P14-TSK-008`'s review,
@@ -173,6 +205,19 @@ public final class ReportRuns implements ReportRunSupersession {
         }
     }
 
+    /**
+     * The run names a valuation rate set that is not its period's approved one, or the period has none. Names the period,
+     * never a rate.
+     */
+    public static final class ValuationSetNotApproved extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        ValuationSetNotApproved(YearMonth month) {
+            super("a translated report run names its period's approved valuation rate set, and " + month
+                    + " holds no such approved set");
+        }
+    }
+
     /** No report run has this id. */
     public static final class RunNotFound extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
@@ -191,6 +236,7 @@ public final class ReportRuns implements ReportRunSupersession {
      * @throws ParametersInvalid when the parameters name what the definition does not take, or the rate set is missing
      *     or unwanted
      * @throws AccountingPeriods.PeriodNotFound when no period has this id
+     * @throws ValuationSetNotApproved when the rate set named is not the period's approved one - FINAL or PROVISIONAL
      */
     public Claimed claim(Connection unitOfWork, String code, AccountingPeriodId periodId, RunParameters parameters,
             Actor actor, CorrelationId correlation) {
@@ -206,6 +252,11 @@ public final class ReportRuns implements ReportRunSupersession {
         AccountingPeriodStore.PeriodRow period = periods.lockShared(unitOfWork, month)
                 .orElseThrow(AccountingPeriods.PeriodNotFound::new);
         RunBasis basis = RunBasis.of(period.status());
+        // Under the row an approval takes FOR UPDATE; approved is terminal. Nothing written, the same for either basis.
+        if (parameters.valuationRateSet().isPresent()
+                && !parameters.valuationRateSet().equals(approvedSets.of(unitOfWork, periodId))) {
+            throw new ValuationSetNotApproved(month);
+        }
         ReportRunStore.RunKey key = new ReportRunStore.RunKey(definition.code(), definition.version(), periodId,
                 parameters.hash());
         Optional<ReportRunStore.RunRow> latest = store.latest(unitOfWork, key);
@@ -333,6 +384,9 @@ public final class ReportRuns implements ReportRunSupersession {
         if (done.mappingVersion().isPresent()) {
             payload = payload.with("mappingVersion", Integer.toString(done.mappingVersion().get()));
         }
+        if (done.valuationRateSetId().isPresent()) {
+            payload = payload.with("valuationRateSet", done.valuationRateSetId().get().toString());
+        }
         publish(unitOfWork, done, payload);
         return new Concluded(done, true);
     }
@@ -447,7 +501,7 @@ public final class ReportRuns implements ReportRunSupersession {
         return store.find(unitOfWork, id).orElseThrow(RunNotFound::new);
     }
 
-    /** The definition takes exactly these parameters, and the rate set exactly when it translates. */
+    /** The definition takes these parameters; a rate set only where it may translate, and always where it must. */
     private static void accepts(ReportDefinition definition, RunParameters parameters) {
         Set<String> taken = definition.parameterNames();
         for (String name : parameters.values().keySet()) {
@@ -455,10 +509,11 @@ public final class ReportRuns implements ReportRunSupersession {
                 throw new ParametersInvalid("the definition takes no parameter named " + name);
             }
         }
-        if (definition.needsValuationRateSet() != parameters.valuationRateSet().isPresent()) {
-            throw new ParametersInvalid(definition.needsValuationRateSet()
-                    ? "the definition translates and needs a valuation rate set"
-                    : "the definition does not translate and takes no valuation rate set");
+        if (definition.needsValuationRateSet() && parameters.valuationRateSet().isEmpty()) {
+            throw new ParametersInvalid("the definition translates and needs a valuation rate set");
+        }
+        if (parameters.valuationRateSet().isPresent() && !definition.takesValuationRateSet()) {
+            throw new ParametersInvalid("the definition does not translate and takes no valuation rate set");
         }
     }
 
@@ -473,7 +528,8 @@ public final class ReportRuns implements ReportRunSupersession {
 
     private static String summary(ReportRunStore.RunRow run) {
         return "definition=" + run.definition() + ", version=" + run.definitionVersion() + ", period=" + run.period()
-                + ", revision=" + run.revision() + ", basis=" + run.basis().name();
+                + ", revision=" + run.revision() + ", basis=" + run.basis().name()
+                + run.valuationRateSetId().map(set -> ", valuationRateSet=" + set).orElse("");
     }
 
     private void publish(Connection unitOfWork, ReportRunStore.RunRow run, EventPayload payload) {

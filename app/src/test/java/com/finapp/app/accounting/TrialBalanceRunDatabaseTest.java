@@ -122,7 +122,7 @@ class TrialBalanceRunDatabaseTest {
         }
     };
 
-    private final JdbcLedgerAccountStore accounts = new JdbcLedgerAccountStore();
+    private static final JdbcLedgerAccountStore ACCOUNTS = new JdbcLedgerAccountStore();
 
     @BeforeEach
     void theBooksAreOpenAndHoldTheBoundaryDays() throws SQLException {
@@ -410,24 +410,24 @@ class TrialBalanceRunDatabaseTest {
 
     // ------------------------------------------------------------------ the journal
 
-    private LedgerAccount wallet(CurrencyCode currency) throws SQLException {
+    static LedgerAccount wallet(CurrencyCode currency) throws SQLException {
         try (Connection app = DatabaseRoles.application()) {
             app.setAutoCommit(false);
-            LedgerAccount account = accounts.createOrConverge(app, LedgerAccount.owned(IDS, NOW, AccountType.LIABILITY,
+            LedgerAccount account = ACCOUNTS.createOrConverge(app, LedgerAccount.owned(IDS, NOW, AccountType.LIABILITY,
                     AccountPurpose.CUSTOMER_WALLET, currency, IDS.next())).account();
             app.commit();
             return account;
         }
     }
 
-    private LedgerAccount operational(AccountPurpose purpose, CurrencyCode currency) throws SQLException {
+    static LedgerAccount operational(AccountPurpose purpose, CurrencyCode currency) throws SQLException {
         try (Connection app = DatabaseRoles.application()) {
-            return accounts.findOperational(app, purpose, currency).orElseThrow();
+            return ACCOUNTS.findOperational(app, purpose, currency).orElseThrow();
         }
     }
 
     /** One balanced entry through the ledger's own door, created on {@code clock}. */
-    private static void post(LocalDate day, LedgerAccount debit, LedgerAccount credit, long minor, CurrencyCode currency,
+    static void post(LocalDate day, LedgerAccount debit, LedgerAccount credit, long minor, CurrencyCode currency,
             Clock clock) throws SQLException {
         try (Connection app = DatabaseRoles.application();
                 SecurityContext.Scope actor = SecurityContext.enterSystem();

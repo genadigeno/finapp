@@ -23,15 +23,27 @@ public final class TestReportDefinition implements ReportDefinition {
     private final int version;
     private final Set<String> parameterNames;
     private final boolean needsValuationRateSet;
+    private final boolean takesValuationRateSet;
     private final BiFunction<Connection, ReportInputs, CanonicalJson.Obj> body;
 
     public TestReportDefinition(String code, int version, Set<String> parameterNames, boolean needsValuationRateSet,
             BiFunction<Connection, ReportInputs, CanonicalJson.Obj> body) {
+        this(code, version, parameterNames, needsValuationRateSet, needsValuationRateSet, body);
+    }
+
+    private TestReportDefinition(String code, int version, Set<String> parameterNames, boolean needsValuationRateSet,
+            boolean takesValuationRateSet, BiFunction<Connection, ReportInputs, CanonicalJson.Obj> body) {
         this.code = Objects.requireNonNull(code, "code");
         this.version = version;
         this.parameterNames = Set.copyOf(parameterNames);
         this.needsValuationRateSet = needsValuationRateSet;
+        this.takesValuationRateSet = takesValuationRateSet;
         this.body = Objects.requireNonNull(body, "body");
+    }
+
+    /** This definition, a run of which may name a valuation rate set (`P14-TSK-015`). */
+    public TestReportDefinition takingARateSet() {
+        return new TestReportDefinition(code, version, parameterNames, needsValuationRateSet, true, body);
     }
 
     /** {@link #CODE} version 1, taking {@code probe} and {@code mode}, its body an echo of the inputs. */
@@ -73,6 +85,11 @@ public final class TestReportDefinition implements ReportDefinition {
     @Override
     public boolean needsValuationRateSet() {
         return needsValuationRateSet;
+    }
+
+    @Override
+    public boolean takesValuationRateSet() {
+        return takesValuationRateSet;
     }
 
     @Override

@@ -125,7 +125,10 @@ class ReportRunDeskTest {
                 }
                 return CanonicalJson.object().put("slow", false);
             });
-    private final ReportDefinitions definitions = ReportDefinitions.of(echo, leaky, throwing, sometimesSlow);
+    /** A definition a run of which may name a valuation rate set (`P14-TSK-015`). */
+    private final TestReportDefinition translating = new TestReportDefinition("TEST_TRANSLATING", 1, java.util.Set.of(),
+            false, (snapshot, inputs) -> CanonicalJson.object().put("translated", true)).takingARateSet();
+    private final ReportDefinitions definitions = ReportDefinitions.of(echo, leaky, throwing, sometimesSlow, translating);
 
     private final AccountingTransactions transactions = new AccountingTransactions() {
         @Override
@@ -343,6 +346,21 @@ class ReportRunDeskTest {
                 () -> desk.generate("k2", "TEST_THROWING", september, Map.of(), null));
         assertThat(next.revision()).isEqualTo(2);
         assertThat(events).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a translated run naming anything but its period's approved set is refused 409, nothing claimed - FINAL or"
+            + " PROVISIONAL; a definition that takes no set still answers 422 (P14-TSK-015)")
+    void aTranslatedRunWithNoApprovedSetIsRefused() {
+        String september = lockedSeptember();
+        String named = UUID.randomUUID().toString();
+        refused(() -> as(ACCOUNTANT, () -> desk.generate("set-1", "TEST_TRANSLATING", september, Map.of(), named)),
+                AccountingErrorCode.VALUATION_SET_NOT_APPROVED, 409);
+        refused(() -> as(ACCOUNTANT, () -> desk.generate("set-2", TestReportDefinition.CODE, september, Map.of(), named)),
+                AccountingErrorCode.REPORT_PARAMETERS_INVALID, 422);
+        assertThat(store.all()).isEmpty();
+        assertThat(as(ACCOUNTANT, () -> desk.generate("set-3", "TEST_TRANSLATING", september, Map.of(), null)).status())
+                .as("the same definition, asked plain").isEqualTo("FINAL");
     }
 
     @Test
