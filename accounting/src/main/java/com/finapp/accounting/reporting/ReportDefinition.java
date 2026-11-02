@@ -36,20 +36,21 @@ public interface ReportDefinition {
     }
 
     /**
-     * Whether a run must pin a valuation rate set - a report that exists only translated. Never true of {@code TRIAL_BALANCE}:
-     * the close asks it plain.
+     * Whether a run must pin a valuation rate set - a report that exists only translated. Never true of
+     * {@code TRIAL_BALANCE}: the close asks it plain.
      */
     default boolean needsValuationRateSet() {
         return false;
     }
 
     /**
-     * Whether a run may pin a valuation rate set and be translated (`P14-TSK-015`; ADR-0116 decision 3): <strong>a run asks
-     * for translation by naming its period's approved set</strong> in its parameters. The set is in the parameters' canonical
-     * text, so in the run's key: the translated run and the plain one are two questions and two runs. The claim refuses a
-     * set that is not the period's approved one, whatever the basis ({@code ReportRuns.ValuationSetNotApproved}); the body
-     * reads the rates through {@link Translation.Rates#pinnedBy} and {@link Translation} - and, for a run naming none, must
-     * write what it always wrote. A definition refusing a set overrides nothing; one that may take it overrides this.
+     * Whether a run may pin a valuation rate set and be translated (`P14-TSK-015`; ADR-0116 decision 3): <strong>a run
+     * asks for translation by naming its period's approved set</strong> in its parameters. The set is in the parameters'
+     * canonical text, so in the run's key: the translated run and the plain one are two questions and two runs. The claim
+     * refuses a set that is not the period's approved one, whatever the basis ({@code ReportRuns.ValuationSetNotApproved});
+     * the body reads the rates through {@link Translation.Rates#pinnedBy} and {@link Translation} - and, for a run naming
+     * none, must write what it always wrote. A definition refusing a set overrides nothing; one that may take it overrides
+     * this.
      */
     default boolean takesValuationRateSet() {
         return needsValuationRateSet();

@@ -109,7 +109,8 @@ public final class Translation {
      * @param maxAgeHours the staleness bound it was captured under
      * @param pinned its rates by quote currency - with their source, observation instant and snapshot id
      */
-    public record Rates(UUID setId, YearMonth month, Instant asOf, int maxAgeHours, SortedMap<String, ValuationRate> pinned) {
+    public record Rates(
+            UUID setId, YearMonth month, Instant asOf, int maxAgeHours, SortedMap<String, ValuationRate> pinned) {
 
         public Rates {
             Objects.requireNonNull(setId, "setId");
@@ -137,8 +138,8 @@ public final class Translation {
 
         /**
          * The rates a run pins - read on {@code snapshot} and judged: the set the run names exists, is {@code APPROVED}, and
-         * values the run's own period. The claim judged the same under the period's row (`ReportRuns`); this rank holds for a
-         * reclaimed run and for any writer that bypassed the claim.
+         * values the run's own period. The claim judged the same under the period's row (`ReportRuns`); this rank holds for
+         * a reclaimed run and for any writer that bypassed the claim.
          *
          * @throws NotPinned when the run names no set, or one that is not its period's approved set
          */

@@ -63,7 +63,7 @@ public final class TrialBalanceDefinition implements ReportDefinition {
     /** The definition's code - {@code ReportKind.TRIAL_BALANCE}. */
     public static final String CODE = ReportKind.TRIAL_BALANCE.name();
 
-    /** The definition's version: the bodies {@link TrialBalance#body()} and {@link TrialBalance#body(Translation.Rates)} write. */
+    /** The definition's version: what {@link TrialBalance#body()} and {@link TrialBalance#body(Translation.Rates)} write. */
     public static final int VERSION = 1;
 
     /**

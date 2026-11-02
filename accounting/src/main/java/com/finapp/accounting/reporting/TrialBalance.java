@@ -445,10 +445,10 @@ public record TrialBalance(
     }
 
     /**
-     * The translated run's body (`P14-TSK-015`; {@code INV-ACC-11}): {@link #body()}'s every member as it is, each row gaining
-     * a {@code translated} member beside its originals and the body a {@code translation} member ({@link Translation#section}).
-     * The verdict is the same object - translation does not enter {@link #passes()}, whose legs read this record's fields
-     * alone.
+     * The translated run's body (`P14-TSK-015`; {@code INV-ACC-11}): {@link #body()}'s every member as it is, each row
+     * gaining a {@code translated} member beside its originals and the body a {@code translation} member
+     * ({@link Translation#section}). The verdict is the same object - translation does not enter {@link #passes()}, whose
+     * legs read this record's fields alone.
      *
      * @param rates the run's pinned set ({@link Translation.Rates#pinnedBy})
      */
