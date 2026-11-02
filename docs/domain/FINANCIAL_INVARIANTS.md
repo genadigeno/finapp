@@ -1422,7 +1422,7 @@ an incomplete run).
 `CloseCheckWorkerTest`, `CloseRunDatabaseTest` - owed, C5; `accounting V007`'s attempts frozen, `DISCLOSED` only where the check admits it. The
 proposal's refusal is `-012`'s, on `CloseRuns.readiness`. **Unmet as built**: floored accruals and reconciliation positions conclude `DISCLOSED` with no person and no
 reason, so "with a reason" holds only once `-012`'s proposal carries one per `DISCLOSED` attempt, or the owner amends this statement - the review's I-3, `-012`'s
-precondition.)*
+precondition. *The owner ruled, 2026-11-02: this statement stands, unamended; `-012`'s proposal carries a person's reason per `DISCLOSED` attempt.*)*
 **Phase:** 14
 
 ### INV-ACC-10 — After close, corrections are prior-period adjustments; a reopen supersedes, never deletes

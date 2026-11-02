@@ -191,14 +191,14 @@ boundary is the ledger's database.
 - **Close Check:** `PENDING → PASSED | FAILED | DISCLOSED` (a failure the approver discloses explicitly); re-run creates a
   new attempt row, never edits.
   *(As built by `P14-TSK-011`, 2026-11-02, accounting `V007`: one run per lock instance, born by the check leg
-  insert-if-absent; attempts one per `(run, check, attempt)`, at most one `PENDING` per check; `PENDING → PENDING` only as
+  insert-if-absent - not in T-lock as section 8.1 planned, a deviation the owner ratified on 2026-11-02, with `P14-TSK-017`'s `CLOSE_STATUS` signal for a stalled leg; attempts one per `(run, check, attempt)`, at most one `PENDING` per check; `PENDING → PENDING` only as
   a claim, a reclaim, a renewal or a deferral, each moving the lease's columns; concluded once and frozen. **Which may be
   `DISCLOSED`** - the rule `CloseCheckCode` left to this task, held by `close_check_disclosed_only_where_it_may`: never
   `LEDGER_TRIAL_BALANCE`, `GL_EQUALS_LEDGER`, `PROJECTION_VERIFIED`, `VALUATION_SET_APPROVED`; `RULE_CONFORMANCE` and
   `SOURCE_COMPLETENESS` when an `ACKNOWLEDGED` break - four eyes, a disclosure - holds every finding and nothing else
   failed; `OPEN_ACCOUNTING_BREAKS` when none is `OPEN` and some `ACKNOWLEDGED`; `ACCRUALS_COMPLETE` when nothing is behind and
   entries were floored past the cutoff; `RECONCILIATION_DISCLOSURE` when read whole and not clean. No door discloses a
-  `FAILED` must-pass check - an owner item.)*
+  `FAILED` must-pass check - the owner ruled, 2026-11-02, that none will: the way on is to unlock and correct.)*
 - **Report Run:** `GENERATING → FINAL | PROVISIONAL`, `FAILED`; `FINAL → SUPERSEDED` (on reopen); content and hash frozen
   at completion.
   *(As built by `P14-TSK-008`, 2026-10-31, accounting `V004`: born `GENERATING` at attempt 1 by insert-or-read on the

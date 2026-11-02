@@ -26073,6 +26073,16 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   unlocked (`periods.find`), so an unlock can land between the read and the proposal's edge. (M-6) `VALUATION_SET_APPROVED` is `FAILED` on
   every first attempt - a set is captured only after the lock, and an approval births no new attempt - so `AccountingCloseCheckFailed` fires at
   every close and a person must re-run the check: decide whether the approval births the attempt, or the alert waits.
+- **The owner's decisions (2026-11-02), binding on this task; I-2 and I-3 above are decided and block nothing now**: (1) I-2 and `-011`'s I-1, one rule
+  (ADR-0117): a finding unchanged from the evidence a person decided on counts as disclosed - a `RESOLVED` break's by its correcting entry, an `ACKNOWLEDGED`
+  break's as today; a changed finding becomes a new break under a generation in the key (this task's migration), needing its own four-eyes acknowledgement, and the
+  check is `FAILED` until then. Accepted limit: evidence holds no amounts. `GL_EQUALS_LEDGER` and `LEDGER_TRIAL_BALANCE` stay never disclosable. (2) I-3:
+  `INV-ACC-09` stands; the proposal carries a person's reason per `DISCLOSED` attempt and refuses without one. (3) The run stays born by the check leg, the plan's
+  deviation ratified; this task still refuses a lock with no run. (4) A month with no reconciliation run must fail `RECONCILIATION_DISCLOSURE`, built here (`-011`'s
+  owner item 8: `ProductReconciliationDisclosure` reads no run, so empty reads pass). The design says what counts as a run for a month (`reconciliation_batch`,
+  its status and `business_date`) and how a month with no activity gets one, because with (5) a month that cannot have a run would wedge as I-2 did. (5) No door
+  discloses a `FAILED` must-pass check: the way on is to unlock and correct. (6) `BNPL-F2a`'s structural last day stays `DISCLOSED`, no carve-out; `lastDay` stays
+  reported apart, and such a close carries its reason through (2).
 - **Objective**: close only from a complete run under four eyes; reopen supersedes, never deletes (`INV-ACC-09`, `-10`).
 - **Bounded context**: Accounting / GL.
 - **Dependencies**: `-011`.
@@ -26332,6 +26342,8 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   the 31st counts and `PASSED` becomes nearly unreachable - `RECONCILIATION_STATUS` says which is which, or the read narrows. (`CLOSE_STATUS`) a
   signal for a period `LOCKED` with no run past N polls: the run is born by the schedule, not in T-lock (the plan's recorded deviation, the condition
   the reviewer attaches to it), so a stalled check leg is otherwise silent.
+- **The owner's decisions (2026-11-02)**: the deviation is ratified, so the `CLOSE_STATUS` signal above is its standing condition. A month with no reconciliation
+  run must fail `RECONCILIATION_DISCLOSURE`: the check is `P14-TSK-012`'s, and `RECONCILIATION_STATUS` reports the month's runs, read where `-012` can reuse it.
 - **Objective**: the operational financial reports as definitions (`PHASE_14_PLAN.md` §13.6), labelled FINAL or
   operational.
 - **Bounded context**: Reporting; reads lending, bnpl, reconciliation, merchant through ports.

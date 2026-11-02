@@ -1230,6 +1230,11 @@ line shape and dating class; GL = ledger, conformance and source completeness ch
 born-once accounting breaks, never corrections; reconciliation's breaks and suspense disclosed, not copied (C11). →
 [ADR-0117](../adr/ADR-0117-the-posting-rule-register-gl-reconciliation-and-accounting-breaks.md)
 
+**What the close accepts (the owner, 2026-11-02; built by `P14-TSK-012`).** A finding unchanged from what a person decided on counts as disclosed; a changed one
+is a new break needing its own four-eyes acknowledgement. Every `DISCLOSED` check carries a person's reason in the proposal, `INV-ACC-09` unamended. A month with no
+reconciliation run fails its check. No door discloses a failed must-pass check: the way on is to unlock and correct. The close run stays born by the check leg, not
+in the lock's transaction. `BNPL-F2a`'s month-end shift stays disclosed. → [ADR-0117](../adr/ADR-0117-the-posting-rule-register-gl-reconciliation-and-accounting-breaks.md)
+
 **Regulatory reporting behind adapters.** Obligations as configuration; submissions only from FINAL runs, four-eyes,
 with lineage, corrected by resubmission; a simulated reference adapter; the reference safeguarding return subtracting
 `lending_funded` (C4, C13). → [ADR-0118](../adr/ADR-0118-regulatory-reporting-behind-jurisdiction-adapters.md)

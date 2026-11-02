@@ -1385,6 +1385,8 @@ Resolved during initiation:
 
 ## Next Task
 
+**The owner's decisions (2026-11-02):** I-2 and I-3 are decided, so `P14-TSK-012` no longer waits on them: its entry holds all six, with ADR-0117 and `INV-ACC-09`. `P14-TSK-017` started, on the owner's word; `-012` stays `READY`, not started. The three questions `P14-TSK-015` raised stay open.
+
 **After `P14-TSK-011`'s merge (2026-11-02):** newly `READY`: `P14-TSK-012`. Phase 14 continues in its waves (`PHASE_14_PLAN.md` §18).
 
 **After `P14-TSK-015`'s merge (2026-11-02):** newly `READY`: `P14-TSK-017`. Phase 14 continues in its waves (`PHASE_14_PLAN.md` §18).

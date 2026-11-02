@@ -88,6 +88,12 @@ Line-shape conformance for amounts (e.g. fee ≤ gross) as rule predicates, if t
 
 ## Open questions
 
+- **Ruled by the owner, 2026-11-02: the two questions below are one rule, built by `P14-TSK-012`.** A finding is compared with the evidence a person decided
+  on. **Unchanged**: it counts as disclosed - a `RESOLVED` break's by its correcting entry, so it no longer reads `RECURRED`; an `ACKNOWLEDGED` break's as today.
+  **Changed**: it becomes a new break under a generation in the key, needing its own four-eyes acknowledgement; until then the check is `FAILED`. So an immutable
+  subject no longer wedges a close, and a proof over the live book that moves has a door. **The limit, accepted**: evidence holds no amounts, so a change of amount
+  alone is not seen. The rule changes no row of which checks may be `DISCLOSED`: `GL_EQUALS_LEDGER` and `LEDGER_TRIAL_BALANCE` never may. The two entries below
+  stand as the question's history.
 - **A recurrence after resolution** (`P14-TSK-010`'s independent review, I-1; the owner's, its consumer `P14-TSK-011`):
   the key `(period, check, subject)` holds one break for good, so a discrepancy still present after its break was
   resolved - or a new discrepancy under an aggregate subject (`namespace:`, `key:`, `currency:`, a proof's subject) -
