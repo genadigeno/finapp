@@ -83,7 +83,11 @@ public final class CloseRunDesk {
             long openBreaks,
             List<CloseCheckView> checks) {}
 
-    /** The period's latest run. A period with none - not yet locked, or locked within a poll - is {@code accounting.NotFound}. */
+    /**
+     * The period's latest run. A period with none - never locked, or locked for the first time within a poll - is {@code
+     * accounting.NotFound}; after an unlock and a new lock it is the old run, {@code current} false, until a poll starts the
+     * new one.
+     */
     public CloseRunView closeRun(String rawPeriodId) {
         AccountingPeriodId id = periodId(rawPeriodId);
         Actor actor = SecurityContext.require();

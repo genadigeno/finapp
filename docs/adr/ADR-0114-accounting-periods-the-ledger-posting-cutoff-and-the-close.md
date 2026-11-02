@@ -131,9 +131,11 @@ lease, renewed by a heartbeat, bounded by `max-run` on the database's clock; a d
 one past the bound, and `reclaims` past its bound is `FAILED WORKERS_EXHAUSTED`. No path turns an exception, a timeout, an incomplete
 proof or an empty read into a pass. **"Explicitly `DISCLOSED`"** is `close_check_disclosed_only_where_it_may`: the trial balance, GL = ledger,
 the projections and the valuation set are `PASSED` or they block; a raising check is `DISCLOSED` only when acknowledged breaks hold every
-finding; the accruals when floored past the cutoff and nothing behind; the disclosure when read whole and not clean; the open breaks when
+finding as acknowledged (`ACKNOWLEDGED_CHANGED` otherwise, ADR-0117); the accruals when entries of either accruer lie past the cutoff and nothing is behind; the disclosure when read whole and not clean; the open breaks when
 none is `OPEN` and some acknowledged. `C3`'s "close readiness requires accruals complete": `blocking` and `flooredPast` on one snapshot -
-find and disclose, never `PASSED` on a period short of interest. The grace's minimum raised to two business days (`LockGrace`), so a lock
+find and disclose, never `PASSED` on a period short of interest. `BNPL-F2a` has no floor and the same shortfall: it posts today valued the accrual date, so the month's last day
+always posts after the month and a lagging sweep posts older dates there too; the read holds it beside `LND-2`, the last day apart from anything older, so a period with an active
+pay-in-N obligation reads `DISCLOSED` and carving the last day out is the owner's (`P14-TSK-011`'s review, C-1). The grace's minimum raised to two business days (`LockGrace`), so a lock
 never covers a western servicing zone's today (`P14-TSK-006`'s review, M-1). Proposal and approval are `-012`'s, reading
 `CloseRuns.readiness`.
 

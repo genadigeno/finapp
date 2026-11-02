@@ -231,7 +231,8 @@ class ProductReconciliationDisclosureTest {
             }
         }
         assertThat(LedgerFlooredPostings.ACCRUALS_SQL).contains("entry.posting_date > ? AND entry.value_date <= ?")
-                .contains("line.direction = 'CREDIT'").contains("FILTER (WHERE entry.value_date = ?)");
+                .contains("line.direction = 'CREDIT'").contains("count(*) FILTER (WHERE entry.value_date = ?)")
+                .contains("sum(line.amount_minor) FILTER (WHERE entry.value_date = ?)");
         assertThat(LedgerFlooredPostings.BY_NAMESPACE_SQL).contains("entry.posting_date > ? AND entry.value_date <= ?");
         assertThat(ProductReconciliationDisclosure.SUSPENSE_LEDGER_SQL).contains("account.purpose = ? AND entry.posting_date <= ?");
     }

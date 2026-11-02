@@ -1420,7 +1420,9 @@ an incomplete run).
 **Verify:** `PeriodCloseDatabaseTest#anIncompleteRunCannotBeProposed`, `#twoApprovalsOneClose`,
 `#theProposerCannotApprove` (`P14-TSK-011`, `-012`). *(`P14-TSK-011`, the recorded half: `CloseRunsTest`, `CloseChecksTest`,
 `CloseCheckWorkerTest`, `CloseRunDatabaseTest` - owed, C5; `accounting V007`'s attempts frozen, `DISCLOSED` only where the check admits it. The
-proposal's refusal is `-012`'s, on `CloseRuns.readiness`.)*
+proposal's refusal is `-012`'s, on `CloseRuns.readiness`. **Unmet as built**: floored accruals and reconciliation positions conclude `DISCLOSED` with no person and no
+reason, so "with a reason" holds only once `-012`'s proposal carries one per `DISCLOSED` attempt, or the owner amends this statement - the review's I-3, `-012`'s
+precondition.)*
 **Phase:** 14
 
 ### INV-ACC-10 — After close, corrections are prior-period adjustments; a reopen supersedes, never deletes
