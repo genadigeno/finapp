@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.GlMappingVersion;
 import com.finapp.accounting.GlMappingVersionId;
+import com.finapp.accounting.JournalReads;
 import com.finapp.accounting.PeriodStatus;
 import com.finapp.accounting.ReportKind;
 import com.finapp.accounting.RunBasis;
@@ -25,6 +26,7 @@ import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
@@ -288,6 +290,55 @@ class TrialBalanceDefinitionTest {
     }
 
     @Test
+    @DisplayName("a retired currency at zero is not a hole: its rows persist from inception at zero, so they translate to zero"
+            + " with no rate, the translation stays complete and the totals stand - every later period can still read whole")
+    void aRetiredCurrencyAtZeroKeepsTheTranslationWhole() {
+        InMemoryTrialBalanceReads reads = mixedBooks();
+        reads.post(MONTH.minusMonths(1).atDay(3), CUT.minusSeconds(60), "CHF", 2, 5_000, CASH, CASH);
+        String body = CanonicalJson.text(new TrialBalanceDefinition(reads, rates()).generate(SNAPSHOT, translatedInputs()));
+        assertThat(body)
+                .contains("\"complete\":true").contains("\"untranslated\":[]")
+                .contains("\"passes\":true")
+                .contains("\"basis\":\"ZERO_NO_RATE\"")
+                .contains("\"currency\":\"CHF\",\"rate\":null}")
+                .doesNotContain("\"translated\":null")
+                .doesNotContain("\"total\":{\"closing\":null")
+                .doesNotContain("EUR/CHF");
+    }
+
+    @Test
+    @DisplayName("the same currency with a movement that nets to zero stays a hole: debits and credits are figures, whatever"
+            + " the balances say - never a zero translation of money that moved")
+    void aMovementAtAZeroBalanceKeepsTheHole() {
+        InMemoryTrialBalanceReads reads = mixedBooks();
+        reads.post(MONTH.atDay(3), CUT, "CHF", 2, 5_000, CASH, CASH);
+        String body = CanonicalJson.text(new TrialBalanceDefinition(reads, rates()).generate(SNAPSHOT, translatedInputs()));
+        assertThat(body)
+                .contains("\"complete\":false").contains("\"untranslated\":[\"CHF\"]")
+                .contains("\"basis\":\"NO_RATE\"")
+                .contains("\"translated\":null")
+                .contains("\"total\":{\"closing\":null,\"credits\":null,\"debits\":null,\"opening\":null}");
+    }
+
+    @Test
+    @DisplayName("a currency only the ledger holds is a hole (the review's M-1): a read that lost its rows reads complete false,"
+            + " the currency named and the totals withheld, even with a rate in the set; the verdict is the plain run's,"
+            + " already failed by the ledger comparison")
+    void aCurrencyOnlyTheLedgerHoldsIsAHole() {
+        TrialBalanceReads losing = losingARow(mixedBooks(), "USD");
+        TrialBalanceDefinition definition = new TrialBalanceDefinition(losing, rates());
+        CanonicalJson.Obj translated = definition.generate(SNAPSHOT, translatedInputs());
+        assertThat(CanonicalJson.text(translated))
+                .contains("\"complete\":false").contains("\"untranslated\":[\"USD\"]")
+                .contains("\"total\":{\"closing\":null,\"credits\":null,\"debits\":null,\"opening\":null}")
+                .contains("\"basis\":\"NO_PARTS\"").contains("\"currency\":\"USD\",\"rate\":null}");
+        assertThat(CanonicalJson.text(translated.members().get("verdict")))
+                .isEqualTo(CanonicalJson.text(definition.generate(SNAPSHOT,
+                        inputs(RunBasis.FINAL, Optional.of(pinned))).members().get("verdict")))
+                .contains("\"passes\":false").contains("\"disagreeing\":[\"USD\"]");
+    }
+
+    @Test
     @DisplayName("translation never plugs an imbalance: books out of balance stay so in EUR - the verdict false, the same"
             + " bytes as the plain run's, the translated debits and credits apart, no difference line closing the gap")
     void aTranslationNeverPlugsAnImbalance() {
@@ -384,6 +435,38 @@ class TrialBalanceDefinitionTest {
         reads.post(MONTH.atDay(9), CUT, "USD", 2, 12_345, WALLET, FEES);
         reads.post(MONTH.atDay(10), CUT, "GBP", 2, 777, "UNCHARTED_PURPOSE/OPERATIONAL", CASH);
         return reads;
+    }
+
+    /** {@code books} with {@code currency}'s GL rows lost and the ledger's own windows intact - a read defect, planted. */
+    private static TrialBalanceReads losingARow(TrialBalanceReads books, String currency) {
+        return new TrialBalanceReads() {
+            @Override
+            public Optional<Period> period(Connection snapshot, AccountingPeriodId id) {
+                return books.period(snapshot, id);
+            }
+
+            @Override
+            public GlMappingVersion version(Connection snapshot, GlMappingVersionId id) {
+                return books.version(snapshot, id);
+            }
+
+            @Override
+            public List<JournalReads.Aggregate> before(Connection snapshot, LocalDate before, Optional<Instant> cut) {
+                return books.before(snapshot, before, cut).stream()
+                        .filter(aggregate -> !aggregate.currency().equals(currency)).toList();
+            }
+
+            @Override
+            public List<JournalReads.Aggregate> within(Connection snapshot, JournalReads.Range range, Optional<Instant> cut) {
+                return books.within(snapshot, range, cut).stream()
+                        .filter(aggregate -> !aggregate.currency().equals(currency)).toList();
+            }
+
+            @Override
+            public List<LedgerWindows> ledger(Connection snapshot, Period period, Optional<Instant> cut) {
+                return books.ledger(snapshot, period, cut);
+            }
+        };
     }
 
     /** The approved set the translated inputs name. */

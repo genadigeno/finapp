@@ -12,10 +12,12 @@ import java.time.Instant;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.TreeSet;
@@ -48,6 +50,15 @@ import java.util.regex.Pattern;
  * balance's unmapped row: the gap between a pinned input and the journal is explicit and the run still completes, as the
  * evidence. A definition whose content cannot stand with a hole refuses on {@link Translated#complete()} itself.
  *
+ * <p><strong>Zero needs no rate</strong> ({@link Basis#ZERO_NO_RATE}): a currency with no rate whose every figure, in every
+ * column translated together, is zero translates to zero and is no hole - a retired currency's rows persist from inception, and
+ * every later period must not read incomplete for good. It says so: no rate, never one of one. A single non-zero figure in
+ * any column makes the whole currency {@link Basis#NO_RATE}.
+ *
+ * <p><strong>A currency the report holds and no part carries</strong> ({@link Basis#NO_PARTS}) is a hole too, whatever the
+ * set values: a read that lost a currency's rows must not leave {@code complete} true over a partial total
+ * ({@link Rates#translate(SortedMap, Set)}'s {@code required}).
+ *
  * <p><strong>Never across currencies</strong> ({@code INV-MON-04}): originals are summed within one currency's group; only
  * reporting-currency figures are summed across groups.
  *
@@ -56,8 +67,9 @@ import java.util.regex.Pattern;
  * is an exact integer, a fixed-scale decimal or a code. A change to anything here is a new definition version.
  *
  * <p><strong>How a definition asks</strong>: {@link ReportDefinition#takesValuationRateSet()} (or {@code needs...}), then
- * {@link Rates#pinnedBy} on its snapshot, {@link Rates#translate} per column, and {@link #section} for the content's
- * {@code translation} member. Nothing is posted, no journal line or balance changes (C7 A; {@code INV-ACC-14}).
+ * {@link Rates#pinnedBy} on its snapshot, {@link Rates#translate(SortedMap, Set)} over its columns, and {@link #section} for
+ * the content's {@code translation} member. Nothing is posted, no journal line or balance changes (C7 A;
+ * {@code INV-ACC-14}).
  */
 public final class Translation {
 
@@ -75,6 +87,9 @@ public final class Translation {
 
     private static final String IDENTITY_RATE = "1";
 
+    /** The one column's name when a caller translates a column on its own. */
+    private static final String ONE_COLUMN = "column";
+
     private static final Pattern CURRENCY = Pattern.compile("[A-Z]{3}");
 
     private Translation() {}
@@ -85,8 +100,21 @@ public final class Translation {
         IDENTITY,
         /** The pinned set's {@code EUR/<currency>} rate. */
         PINNED_RATE,
-        /** The pinned set values no such currency: untranslated, originals kept, the report-wide total withheld. */
-        NO_RATE
+        /**
+         * The pinned set values no such currency and every figure of it is zero: a zero needs no rate, so it translates to
+         * zero, is no hole and withholds nothing. No rate is used or implied.
+         */
+        ZERO_NO_RATE,
+        /**
+         * The pinned set values no such currency and a figure of it is not zero: untranslated, originals kept, the
+         * report-wide total withheld.
+         */
+        NO_RATE,
+        /**
+         * The report holds the currency and no part carries it: nothing to translate from, whatever the set values -
+         * untranslated, the report-wide total withheld.
+         */
+        NO_PARTS
     }
 
     /** The run's valuation rate set is not its period's approved one in the snapshot - nothing is issued. */
@@ -158,7 +186,10 @@ public final class Translation {
             return of(set);
         }
 
-        /** How {@code currency} is translated at this set. */
+        /**
+         * How this set reaches {@code currency} - {@link Basis#IDENTITY}, {@link Basis#PINNED_RATE} or {@link Basis#NO_RATE}.
+         * What a translation made of it depends on the figures too: {@link Group#basis()}.
+         */
         public Basis basis(String currency) {
             if (REPORTING_CURRENCY.equals(currency)) {
                 return Basis.IDENTITY;
@@ -167,30 +198,76 @@ public final class Translation {
         }
 
         /**
-         * {@code parts}, translated: one {@link Line} per part in its order, one {@link Group} per currency in currency
-         * order. Total: a currency with no rate is reported, never refused.
+         * One column, on its own: {@link #translate(SortedMap, Set)} with this column as the whole of the evidence and no
+         * currency required.
          */
         public Translated translate(List<Part> parts) {
             Objects.requireNonNull(parts, "parts");
+            TreeMap<String, List<Part>> one = new TreeMap<>();
+            one.put(ONE_COLUMN, parts);
+            return translate(one, Set.of()).get(ONE_COLUMN);
+        }
+
+        /**
+         * A report's columns, translated together: each column one {@link Line} per part in its order and one {@link Group}
+         * per currency in currency order. Total: a hole is reported, never refused. A currency's basis is decided over
+         * <strong>every</strong> column - one non-zero figure anywhere makes a currency with no rate a hole in all of them.
+         *
+         * @param columns the report's columns, by name
+         * @param required the currencies the report holds whether or not a part carries them: one no part carries is a
+         *     {@link Basis#NO_PARTS} group in every column
+         */
+        public SortedMap<String, Translated> translate(SortedMap<String, List<Part>> columns, Set<String> required) {
+            Objects.requireNonNull(columns, "columns");
+            Objects.requireNonNull(required, "required");
+            TreeSet<String> notZero = new TreeSet<>();
+            TreeSet<String> lost = new TreeSet<>(required);
+            for (List<Part> parts : columns.values()) {
+                for (Part part : parts) {
+                    lost.remove(part.currency());
+                    if (part.amount().signum() != 0) {
+                        notZero.add(part.currency());
+                    }
+                }
+            }
+            TreeMap<String, Translated> translated = new TreeMap<>();
+            columns.forEach((name, parts) -> translated.put(name, column(parts, notZero, lost)));
+            return Collections.unmodifiableSortedMap(translated);
+        }
+
+        private Translated column(List<Part> parts, Set<String> notZero, Set<String> lost) {
             List<Line> lines = new ArrayList<>(parts.size());
             Map<String, Grouping> grouping = new TreeMap<>();
             for (Part part : parts) {
-                Optional<BigDecimal> translated = translated(part.currency(), part.amount());
+                String currency = part.currency();
+                Optional<BigDecimal> translated = translated(figured(currency, notZero), currency, part.amount());
                 lines.add(new Line(part, translated));
-                grouping.computeIfAbsent(part.currency(), ignored -> new Grouping()).add(part.amount(), translated);
+                grouping.computeIfAbsent(currency, ignored -> new Grouping()).add(part.amount(), translated);
             }
-            List<Group> groups = new ArrayList<>(grouping.size());
-            grouping.forEach((currency, group) -> groups.add(new Group(currency, basis(currency), group.original,
-                    translated(currency, group.original).map(total -> Figures.of(group.parts, total)))));
+            List<Group> groups = new ArrayList<>(grouping.size() + lost.size());
+            grouping.forEach((currency, group) -> {
+                Basis basis = figured(currency, notZero);
+                groups.add(new Group(currency, basis, group.original, translated(basis, currency, group.original)
+                        .map(total -> Figures.of(group.parts, total))));
+            });
+            lost.forEach(currency -> groups.add(new Group(currency, Basis.NO_PARTS, BigDecimal.ZERO, Optional.empty())));
+            groups.sort(Comparator.comparing(Group::currency));
             return new Translated(lines, groups);
         }
 
-        /** {@code amount} in {@code currency} at the reporting scale - empty when the set values no such currency. */
-        private Optional<BigDecimal> translated(String currency, BigDecimal amount) {
-            return switch (basis(currency)) {
+        /** How a currency held by the parts is translated: this set's basis, a no-rate one all at zero stated as such. */
+        private Basis figured(String currency, Set<String> notZero) {
+            Basis basis = basis(currency);
+            return basis == Basis.NO_RATE && !notZero.contains(currency) ? Basis.ZERO_NO_RATE : basis;
+        }
+
+        /** {@code amount} in {@code currency} at the reporting scale - empty for a hole. */
+        private Optional<BigDecimal> translated(Basis basis, String currency, BigDecimal amount) {
+            return switch (basis) {
                 case IDENTITY -> Optional.of(amount.setScale(REPORTING_SCALE, ROUNDING));
                 case PINNED_RATE -> Optional.of(amount.divide(pinned.get(currency).rate(), REPORTING_SCALE, ROUNDING));
-                case NO_RATE -> Optional.empty();
+                case ZERO_NO_RATE -> Optional.of(reporting(BigDecimal.ZERO));
+                case NO_RATE, NO_PARTS -> Optional.empty();
             };
         }
     }
@@ -229,7 +306,7 @@ public final class Translation {
      * A part translated: its original kept beside it ({@code INV-ACC-11}).
      *
      * @param original the part, exactly as given
-     * @param translated its reporting-currency figure - empty when the set values no such currency
+     * @param translated its reporting-currency figure - empty when its currency is a hole
      */
     public record Line(Part original, Optional<BigDecimal> translated) {
 
@@ -268,9 +345,9 @@ public final class Translation {
      * One currency's translation.
      *
      * @param currency the currency - every part of the group is in it
-     * @param basis how it reaches the reporting currency
-     * @param original the exact total of its parts, in it
-     * @param figures its reporting-currency figures - empty when the set values no such currency
+     * @param basis how it reached the reporting currency
+     * @param original the exact total of its parts, in it - zero when no part carries it ({@link Basis#NO_PARTS})
+     * @param figures its reporting-currency figures - empty when it is a hole
      */
     public record Group(String currency, Basis basis, BigDecimal original, Optional<Figures> figures) {
 
@@ -295,7 +372,7 @@ public final class Translation {
             return groups.stream().allMatch(group -> group.figures().isPresent());
         }
 
-        /** The currencies with no rate, sorted. */
+        /** The currencies that are holes, sorted. */
         public List<String> untranslated() {
             return groups.stream().filter(group -> group.figures().isEmpty()).map(Group::currency).toList();
         }
@@ -323,8 +400,9 @@ public final class Translation {
     /**
      * The content's {@code translation} member, for {@code columns} translated at {@code rates}: the reporting currency, its
      * scale and the rounding; the pinned set and every rate with its provenance, {@code EUR}'s identity stated; per currency
-     * and column the original total beside the translated parts, the difference line and the translated total; the
-     * report-wide figures per column, withheld when incomplete; and whether the translation is complete, naming what is not.
+     * its basis, and per column the original total beside the translated parts, the difference line and the translated total;
+     * the report-wide figures per column, withheld when incomplete; and whether the translation is complete, naming what is
+     * not. A currency no part carries has no original total to write: it is {@code null}, not a zero.
      *
      * @param columns the report's translated columns, by name
      * @param scales per currency, the scale its original totals are written at - the report's own, the data's
@@ -401,13 +479,13 @@ public final class Translation {
 
     private static CanonicalJson.Obj currencySection(Rates rates, String currency,
             SortedMap<String, Translated> columns, Map<String, Integer> scales) {
-        Basis basis = rates.basis(currency);
-        int scale = Objects.requireNonNull(scales.get(currency), "a currency's scale");
+        Basis basis = columns.values().stream().map(column -> column.group(currency)).flatMap(Optional::stream)
+                .map(Group::basis).findFirst().orElseThrow();
         CanonicalJson.Obj perColumn = CanonicalJson.object();
         columns.forEach((name, column) -> {
             Optional<Group> group = column.group(currency);
             if (group.isPresent()) {
-                perColumn.put(name, groupSection(group.get(), scale));
+                perColumn.put(name, groupSection(group.get(), scales));
             } else {
                 perColumn.putNull(name);
             }
@@ -419,14 +497,19 @@ public final class Translation {
         switch (basis) {
             case IDENTITY -> out.put("rate", IDENTITY_RATE);
             case PINNED_RATE -> out.put("rate", written(rates.pinned().get(currency)));
-            case NO_RATE -> out.putNull("rate");
+            case ZERO_NO_RATE, NO_RATE, NO_PARTS -> out.putNull("rate");
         }
         return out;
     }
 
-    private static CanonicalJson.Obj groupSection(Group group, int scale) {
-        CanonicalJson.Obj out = CanonicalJson.object()
-                .put("original", TrialBalance.money(group.original(), group.currency(), scale));
+    private static CanonicalJson.Obj groupSection(Group group, Map<String, Integer> scales) {
+        CanonicalJson.Obj out = CanonicalJson.object();
+        if (group.basis() == Basis.NO_PARTS) {
+            out.putNull("original");
+        } else {
+            out.put("original", TrialBalance.money(group.original(), group.currency(),
+                    Objects.requireNonNull(scales.get(group.currency()), "a currency's scale")));
+        }
         if (group.figures().isPresent()) {
             Figures figures = group.figures().get();
             out.put("translatedParts", reportingMoney(figures.parts()))

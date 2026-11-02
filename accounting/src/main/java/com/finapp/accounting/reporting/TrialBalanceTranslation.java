@@ -6,16 +6,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.function.Function;
 
 /**
  * A trial balance's translated columns (`P14-TSK-015`; {@code INV-ACC-11}): its four columns - the opening and closing
  * balances (signed, a credit balance negative), the period's debits and credits - each translated on its own by
  * {@link Translation}, the rows the parts in {@link TrialBalance}'s own order, the account rows then the unmapped ones, so
- * an unmapped line is translated like any other and each currency's total is the whole of its books. It reads nothing
- * and judges nothing: {@link TrialBalance#passes()} is the trial balance's, and translation does not enter it.
+ * an unmapped line is translated like any other and each currency's total is the whole of its books. Every currency the
+ * trial balance holds is required, the ledger's own included: a currency with ledger lines and no row - a read that lost
+ * its rows, which {@link TrialBalance#equalsLedger()} fails - is a hole here too, never a {@code complete} translation over
+ * a partial total. It reads nothing and judges nothing: {@link TrialBalance#passes()} is the trial balance's, and
+ * translation does not enter it.
  */
 final class TrialBalanceTranslation {
 
@@ -30,12 +35,14 @@ final class TrialBalanceTranslation {
                 row.movement().debits(), row.movement().credits(), row.closingBalance())));
         balance.unmapped().forEach(row -> rows.add(new Row(row.currency(), row.openingBalance(),
                 row.movement().debits(), row.movement().credits(), row.closingBalance())));
-        TreeMap<String, Translation.Translated> translated = new TreeMap<>();
-        translated.put("opening", translate(rates, rows, Row::opening));
-        translated.put("debits", translate(rates, rows, Row::debits));
-        translated.put("credits", translate(rates, rows, Row::credits));
-        translated.put("closing", translate(rates, rows, Row::closing));
-        this.columns = translated;
+        TreeMap<String, List<Translation.Part>> parts = new TreeMap<>();
+        parts.put("opening", parts(rows, Row::opening));
+        parts.put("debits", parts(rows, Row::debits));
+        parts.put("credits", parts(rows, Row::credits));
+        parts.put("closing", parts(rows, Row::closing));
+        Set<String> held = new TreeSet<>();
+        balance.currencies().forEach(check -> held.add(check.currency()));
+        this.columns = rates.translate(parts, held);
     }
 
     /**
@@ -66,11 +73,8 @@ final class TrialBalanceTranslation {
         return columns.get(name);
     }
 
-    private static Translation.Translated translate(Translation.Rates rates, List<Row> rows,
-            Function<Row, BigDecimal> figure) {
-        return rates.translate(rows.stream()
-                .map(row -> new Translation.Part(row.currency(), figure.apply(row)))
-                .toList());
+    private static List<Translation.Part> parts(List<Row> rows, Function<Row, BigDecimal> figure) {
+        return rows.stream().map(row -> new Translation.Part(row.currency(), figure.apply(row))).toList();
     }
 
     /** One row's four originals. */

@@ -364,6 +364,20 @@ class ReportRunDeskTest {
     }
 
     @Test
+    @DisplayName("a blank valuation rate set is no absent one (the review's M-3): the field means translate this, so a blank is"
+            + " refused 422 at the door, nothing claimed - only null asks the plain run")
+    void aBlankRateSetIsNotAPlainRun() {
+        String september = lockedSeptember();
+        for (String blank : java.util.List.of("", " ", "   ")) {
+            refused(() -> as(ACCOUNTANT, () -> desk.generate("blank-" + blank.length(), "TEST_TRANSLATING", september,
+                    Map.of(), blank)), AccountingErrorCode.REPORT_PARAMETERS_INVALID, 422);
+        }
+        assertThat(store.all()).isEmpty();
+        assertThat(as(ACCOUNTANT, () -> desk.generate("absent", "TEST_TRANSLATING", september, Map.of(), null)).status())
+                .isEqualTo("FINAL");
+    }
+
+    @Test
     @DisplayName("the snapshot's own failure is not the definition's: the run stays GENERATING under its lease; the replay"
             + " past the lease takes it over and completes it")
     void aSnapshotFailureLeavesTheRunToItsLease() {

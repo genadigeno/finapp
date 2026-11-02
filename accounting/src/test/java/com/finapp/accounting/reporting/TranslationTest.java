@@ -25,6 +25,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
+import java.util.Set;
+import java.util.SortedMap;
 import java.util.TimeZone;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -281,6 +283,81 @@ class TranslationTest {
                 .contains("{\"basis\":\"NO_RATE\",\"columns\":{\"closing\":{\"original\":{\"currency\":\"CHF\","
                         + "\"minor\":\"10000\",\"scale\":\"2\"},\"translatedParts\":null,\"translatedTotal\":null,"
                         + "\"translationDifference\":null}},\"currency\":\"CHF\",\"rate\":null}");
+    }
+
+    @Test
+    @DisplayName("a zero needs no rate: a currency with no rate whose every figure is zero translates to zero, stays out of"
+            + " untranslated, keeps complete true and withholds nothing - by a basis of its own, with no rate and never one of"
+            + " one")
+    void aCurrencyWithNoRateAllAtZeroIsNotAHole() {
+        Translation.Translated translated = rates().translate(List.of(part("CHF", "0.00"), part("CHF", "0"),
+                part("EUR", "50.00")));
+        assertThat(translated.lines()).extracting(line -> line.translated().orElseThrow().toPlainString())
+                .containsExactly("0.00", "0.00", "50.00");
+        group(translated, "CHF", Translation.Basis.ZERO_NO_RATE, "0.00", "0.00", "0.00", "0.00");
+        assertThat(translated.complete()).isTrue();
+        assertThat(translated.untranslated()).isEmpty();
+        assertThat(translated.total().orElseThrow().total()).isEqualTo(new BigDecimal("50.00"));
+
+        String section = CanonicalJson.text(Translation.section(rates(), new TreeMap<>(Map.of("closing", translated)),
+                Map.of("CHF", 2, "EUR", 2)));
+        assertThat(section)
+                .contains("\"complete\":true").contains("\"untranslated\":[]")
+                .contains("{\"basis\":\"ZERO_NO_RATE\",\"columns\":{\"closing\":{\"original\":{\"currency\":\"CHF\","
+                        + "\"minor\":\"0\",\"scale\":\"2\"},\"translatedParts\":{\"currency\":\"EUR\",\"minor\":\"0\","
+                        + "\"scale\":\"2\"},\"translatedTotal\":{\"currency\":\"EUR\",\"minor\":\"0\",\"scale\":\"2\"},"
+                        + "\"translationDifference\":{\"currency\":\"EUR\",\"minor\":\"0\",\"scale\":\"2\"}}},"
+                        + "\"currency\":\"CHF\",\"rate\":null}")
+                .as("no rate listed for it").doesNotContain("EUR/CHF");
+    }
+
+    @Test
+    @DisplayName("any figure that is not zero, in any column, leaves a currency with no rate a hole in every column - zero"
+            + " figures included, every total withheld")
+    void anyFigureNotZeroInAnyColumnKeepsTheHole() {
+        TreeMap<String, List<Translation.Part>> columns = new TreeMap<>();
+        columns.put("closing", List.of(part("CHF", "0.00"), part("EUR", "1.00")));
+        columns.put("debits", List.of(part("CHF", "5.00"), part("EUR", "1.00")));
+        columns.put("opening", List.of(part("CHF", "0.00"), part("EUR", "1.00")));
+        SortedMap<String, Translation.Translated> translated = rates().translate(columns, Set.of());
+        assertThat(translated).containsOnlyKeys("closing", "debits", "opening");
+        translated.forEach((name, column) -> {
+            assertThat(column.lines().get(0).translated()).as(name).isEmpty();
+            assertThat(column.lines().get(1).translated()).as(name).contains(new BigDecimal("1.00"));
+            assertThat(column.groups().get(0).basis()).as(name).isEqualTo(Translation.Basis.NO_RATE);
+            assertThat(column.complete()).as(name).isFalse();
+            assertThat(column.untranslated()).as(name).containsExactly("CHF");
+            assertThat(column.total()).as(name).isEmpty();
+        });
+    }
+
+    @Test
+    @DisplayName("a currency the report holds and no part carries is a hole, in every column and whatever the set values:"
+            + " named untranslated, complete false, the totals withheld, its original no invented zero")
+    void aCurrencyTheReportHoldsAndNoPartCarriesIsAHole() {
+        TreeMap<String, List<Translation.Part>> columns = new TreeMap<>();
+        columns.put("closing", List.of(part("EUR", "1.00")));
+        columns.put("debits", List.of(part("EUR", "2.00")));
+        SortedMap<String, Translation.Translated> translated = rates().translate(columns, Set.of("EUR", "USD"));
+        translated.forEach((name, column) -> {
+            assertThat(column.lines()).as(name).hasSize(1);
+            assertThat(column.groups()).extracting(Translation.Group::currency).containsExactly("EUR", "USD");
+            Translation.Group usd = column.groups().get(1);
+            assertThat(usd.basis()).as(name).isEqualTo(Translation.Basis.NO_PARTS);
+            assertThat(usd.figures()).as(name).isEmpty();
+            assertThat(column.complete()).as(name).isFalse();
+            assertThat(column.untranslated()).as(name).containsExactly("USD");
+            assertThat(column.total()).as(name).isEmpty();
+        });
+        assertThat(CanonicalJson.text(Translation.section(rates(), translated, Map.of("EUR", 2))))
+                .contains("\"complete\":false").contains("\"untranslated\":[\"USD\"]")
+                .contains("\"total\":{\"closing\":null,\"debits\":null}")
+                .contains("{\"basis\":\"NO_PARTS\",\"columns\":{\"closing\":{\"original\":null,\"translatedParts\":null,"
+                        + "\"translatedTotal\":null,\"translationDifference\":null},\"debits\":{\"original\":null,"
+                        + "\"translatedParts\":null,\"translatedTotal\":null,\"translationDifference\":null}},"
+                        + "\"currency\":\"USD\",\"rate\":null}");
+        assertThat(rates().translate(columns, Set.of("EUR")).get("closing").complete())
+                .as("a required currency a part carries is no hole").isTrue();
     }
 
     @Test

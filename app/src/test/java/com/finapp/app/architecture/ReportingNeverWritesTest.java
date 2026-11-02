@@ -17,7 +17,7 @@ import com.finapp.sharedkernel.money.CurrencyCode;
 import com.tngtech.archunit.core.domain.Dependency;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
-import com.tngtech.archunit.core.domain.JavaMethodCall;
+import com.tngtech.archunit.core.domain.JavaCodeUnitAccess;
 import com.tngtech.archunit.core.domain.JavaModifier;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
@@ -132,7 +132,8 @@ class ReportingNeverWritesTest {
     /**
      * <strong>A run's content never depends on a JDK's currency table</strong> (`P14-TSK-015`; `P14-TSK-009`'s review, M-3;
      * ADR-0003; {@code INV-ACC-04}): a JDK's data changing would otherwise change a FINAL run's regeneration. No report class
-     * depends on {@code java.util.Currency} or calls {@link CurrencyCode#minorUnits()}; scales are the data's own, and the
+     * depends on {@code java.util.Currency} or reaches {@link CurrencyCode#minorUnits()}, by a call or a method reference
+     * (the review's M-6); scales are the data's own, and the
      * reporting minor unit is {@code Translation.REPORTING_SCALE}, a literal. {@link GeneralLedger} is the one exception, and
      * it is not a run's content: the live GL doors' zero at a currency's minor unit.
      */
@@ -190,6 +191,13 @@ class ReportingNeverWritesTest {
     }
 
     @Test
+    @DisplayName("a report class writing by a method reference, not a call, is refused (P14-TSK-015's review, M-6)")
+    void aJdbcWriteByReferenceIsRefused() {
+        assertThat(plantedViolations(PlantedReportUpdatingByReference.class, PreparedStatement.class))
+                .singleElement().asString().contains("PlantedReportUpdatingByReference").contains("executeUpdate");
+    }
+
+    @Test
     @DisplayName("a report class holding the audit writer or accounting's prior-period door is refused")
     void aPlatformWriterOrAWriterPortIsRefused() {
         assertThat(plantedViolations(PlantedReportAuditing.class, AuditWriter.class))
@@ -239,11 +247,14 @@ class ReportingNeverWritesTest {
             + " (P14-TSK-015), and one holding a CurrencyCode only as a code is not")
     void aCurrencyTableReaderIsRefused() {
         JavaClasses planted = new ClassFileImporter().importClasses(PlantedReportCurrencyTable.class,
-                PlantedReportMinorUnits.class, PlantedReportCurrencyCode.class, CurrencyCode.class);
+                PlantedReportMinorUnits.class, PlantedReportCurrencyCode.class, PlantedReportMinorUnitsReference.class,
+                PlantedReportCurrencyTableReference.class, CurrencyCode.class);
         assertThat(currencyTableReaders(planted, candidate -> candidate.getSimpleName().startsWith("PlantedReport")))
-                .hasSize(2)
+                .hasSize(4)
                 .anySatisfy(found -> assertThat(found).contains("PlantedReportCurrencyTable"))
-                .anySatisfy(found -> assertThat(found).contains("PlantedReportMinorUnits"));
+                .anySatisfy(found -> assertThat(found).contains("PlantedReportMinorUnits"))
+                .anySatisfy(found -> assertThat(found).contains("PlantedReportMinorUnitsReference"))
+                .anySatisfy(found -> assertThat(found).contains("PlantedReportCurrencyTableReference"));
     }
 
     @Test
@@ -282,7 +293,8 @@ class ReportingNeverWritesTest {
                     .filter(target -> target.getPackageName().startsWith(LEDGER) || WRITERS.contains(target.getName())
                             || WRITABLE_PATHS.contains(target.getName()))
                     .map(JavaClass::getName).distinct().sorted().toList();
-            List<String> writes = current.getMethodCallsFromSelf().stream()
+            // Code unit accesses, not calls alone: a method reference (PreparedStatement::executeUpdate) is no call.
+            List<String> writes = current.getCodeUnitAccessesFromSelf().stream()
                     .filter(ReportingNeverWritesTest::isJdbcWrite)
                     .map(call -> call.getTarget().getOwner().getSimpleName() + "." + call.getName())
                     .distinct().sorted().toList();
@@ -306,7 +318,8 @@ class ReportingNeverWritesTest {
         classes.stream().filter(reporting).forEach(candidate -> {
             boolean table = candidate.getDirectDependenciesFromSelf().stream()
                     .anyMatch(dependency -> dependency.getTargetClass().getName().equals("java.util.Currency"));
-            boolean minorUnits = candidate.getMethodCallsFromSelf().stream()
+            // Code unit accesses, not calls alone: CurrencyCode::minorUnits is a method reference, which is no call.
+            boolean minorUnits = candidate.getCodeUnitAccessesFromSelf().stream()
                     .anyMatch(call -> call.getName().equals("minorUnits")
                             && call.getTarget().getOwner().getName().equals(CurrencyCode.class.getName()));
             if (table || minorUnits) {
@@ -316,7 +329,7 @@ class ReportingNeverWritesTest {
         return readers;
     }
 
-    private static boolean isJdbcWrite(JavaMethodCall call) {
+    private static boolean isJdbcWrite(JavaCodeUnitAccess<?> call) {
         JavaClass owner = call.getTarget().getOwner();
         if (owner.isAssignableTo(java.sql.Connection.class)) {
             return CONNECTION_MUTATORS.contains(call.getName());
@@ -342,6 +355,19 @@ class ReportingNeverWritesTest {
     static class PlantedReportUpdating {
         int touch(PreparedStatement statement) throws SQLException {
             return statement.executeUpdate();
+        }
+    }
+
+    /** A statement's act, by a method reference. */
+    @FunctionalInterface
+    interface PlantedStatementAct {
+        int act(PreparedStatement statement) throws SQLException;
+    }
+
+    /** A report class running an UPDATE by a method reference - no call in its bytecode. */
+    static class PlantedReportUpdatingByReference {
+        PlantedStatementAct touch() {
+            return PreparedStatement::executeUpdate;
         }
     }
 
@@ -398,6 +424,20 @@ class ReportingNeverWritesTest {
     static class PlantedReportMinorUnits {
         int digits(CurrencyCode code) {
             return code.minorUnits();
+        }
+    }
+
+    /** A report class asking a currency code for its minor units by a method reference, not a call. */
+    static class PlantedReportMinorUnitsReference {
+        java.util.function.ToIntFunction<CurrencyCode> digits() {
+            return CurrencyCode::minorUnits;
+        }
+    }
+
+    /** A report class reaching the JDK's table by a method reference, not a call. */
+    static class PlantedReportCurrencyTableReference {
+        java.util.function.Function<String, Object> table() {
+            return java.util.Currency::getInstance;
         }
     }
 

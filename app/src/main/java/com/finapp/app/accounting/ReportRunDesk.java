@@ -280,8 +280,12 @@ public final class ReportRunDesk {
         }
     }
 
+    /**
+     * The set a run names - absent only when the field is absent: it means "translate this" (`P14-TSK-015`), so a blank is
+     * no plain run but a malformed ask.
+     */
     private static Optional<UUID> rateSet(String raw) {
-        if (raw == null || raw.isBlank()) {
+        if (raw == null) {
             return Optional.empty();
         }
         try {

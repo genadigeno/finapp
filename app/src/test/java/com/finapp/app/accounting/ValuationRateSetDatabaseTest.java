@@ -39,6 +39,9 @@ import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.math.RoundingMode;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -52,7 +55,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -85,14 +87,17 @@ import org.junit.jupiter.api.TestMethodOrder;
  * one approved set - so a later database suite that must approve a set of its own (`-011`'s close, `-015`'s translation)
  * either uses another period (February, once `-012` can close January) or runs before this one; one that needs only
  * <em>an</em> approved set can read January's ({@code ValuationRateSets.approvedFor}). Only {@link #oneApprovedPerPeriod},
- * ordered last, approves; every race before it is arranged so that no approval succeeds.
+ * ordered after every case that needs January with no approved set and before every case that reads its set, approves;
+ * every race before it is arranged so that no approval succeeds.
  *
  * <p><strong>Translation (`P14-TSK-015`) lives here for that order</strong>: the suite holds the one sequence in which
  * January 1999 has no approved set and then has exactly one, so a refusal "no approved set" and a pin of a real approved
  * set are both proven, whatever other suites ran. Before {@link #oneApprovedPerPeriod}: a FINAL translated run naming a
- * proposed or an unknown set refused, with nothing written, and a PROVISIONAL one in an open February refused. After it: a
- * FINAL translated run pinning January's set - the key to it, the journal untouched, regenerating IDENTICAL - beside the
- * plain run, and a PROVISIONAL one at the set an unlock left approved.
+ * proposed or an unknown set refused, with nothing written; a PROVISIONAL one in an open February refused; and a claim queued
+ * behind an approval that rolls back, refused. In it: a claim queued behind the approval that commits, which reads it. After
+ * it: a FINAL translated run pinning January's set - the key to it, the journal untouched, regenerating IDENTICAL - beside
+ * the plain run; a PROVISIONAL one at the set an unlock left approved; February refused January's approved set; and a stored
+ * figure and rate's text against the journal.
  * <strong>Written and owed</strong> (owner decision C5: the database tiers are skipped per task).
  */
 @Tag("database")
@@ -405,6 +410,40 @@ class ValuationRateSetDatabaseTest {
     }
 
     @Test
+    @Order(10)
+    @DisplayName("P14-TSK-015: a claim racing an approval waits on the row the approval holds, and reads what it left: the"
+            + " approval rolled back, so the claim is refused and the set stays proposed")
+    void aClaimRacingAnApprovalThatRollsBackIsRefused() throws Exception {
+        plantAll(MONTH_END);
+        AccountingPeriodId january = id(JANUARY);
+        ValuationRateSets.Valued captured = capture(person());
+        Actor approver = person();
+        Actor accountant = person();
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        Future<Object> claim;
+        try (Connection approving = held(approver, uow -> sets().approve(uow, captured.id(), approver, "racing",
+                correlation()))) {
+            claim = pool.submit(() -> {
+                try {
+                    return inScope(accountant, uow -> reportRuns().claim(uow, TrialBalanceDefinition.CODE, january,
+                            RunParameters.of(Map.of(), Optional.of(captured.id().value())), accountant, correlation()));
+                } catch (RuntimeException refused) {
+                    return refused;
+                }
+            });
+            awaitAWaiter(claim);
+            approving.rollback();
+            assertThat(claim.get(2, TimeUnit.MINUTES)).isInstanceOf(ReportRuns.ValuationSetNotApproved.class);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(count("SELECT count(*) FROM accounting.valuation_rate_set WHERE id = '" + captured.id().value()
+                + "' AND status = 'PROPOSED'")).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM accounting.report_run WHERE valuation_rate_set_id = '" + captured.id().value()
+                + "'")).isZero();
+    }
+
+    @Test
     @Order(100)
     @DisplayName("one approved per period: two captures, ten approvers on ten connections - exactly one approved set, nine"
             + " refused stale, one audit record; a raw second approval refused by the partial unique; no further capture")
@@ -412,15 +451,26 @@ class ValuationRateSetDatabaseTest {
         plantAll(MONTH_END);
         AccountingPeriodId january = id(JANUARY);
         List<ValuationRateSets.Valued> captured = List.of(capture(person()), capture(person()));
+        // January's one approval, so the one chance to race a claim against an approval that commits (P14-TSK-015): the
+        // first approver holds the period row, the translated run's claim queues behind it, the other nine race behind both.
+        ValuationRateSets.Valued named = captured.get(0);
+        Actor first = person();
+        Actor accountant = person();
         ExecutorService pool = Executors.newFixedThreadPool(APPROVERS);
-        CountDownLatch start = new CountDownLatch(1);
         List<Object> outcomes = new ArrayList<>();
-        try {
+        ReportRuns.Claimed claimed;
+        try (Connection approving = held(first, uow -> {
+            outcomes.add(sets().approve(uow, named.id(), first, "racing", correlation()));
+            return null;
+        })) {
+            Future<ReportRuns.Claimed> claim = pool.submit(() -> inScope(accountant, uow -> reportRuns().claim(uow,
+                    TrialBalanceDefinition.CODE, january, RunParameters.of(Map.of(), Optional.of(named.id().value())),
+                    accountant, correlation())));
+            awaitAWaiter(claim);
             List<Future<Object>> racing = new ArrayList<>();
-            for (int i = 0; i < APPROVERS; i++) {
+            for (int i = 1; i < APPROVERS; i++) {
                 ValuationRateSets.Valued target = captured.get(i % 2);
                 racing.add(pool.submit(() -> {
-                    start.await();
                     Actor controller = person();
                     try {
                         return inScope(controller, uow -> sets().approve(uow, target.id(), controller, "racing",
@@ -430,13 +480,19 @@ class ValuationRateSetDatabaseTest {
                     }
                 }));
             }
-            start.countDown();
+            approving.commit();
+            claimed = claim.get(2, TimeUnit.MINUTES);
             for (Future<Object> outcome : racing) {
                 outcomes.add(outcome.get(2, TimeUnit.MINUTES));
             }
         } finally {
             pool.shutdownNow();
         }
+        // The claim waited on the approval's row lock and read the approval it waited for: a read before the lock would
+        // have found none and refused.
+        assertThat(claimed.born()).isTrue();
+        assertThat(claimed.run().valuationRateSetId()).contains(named.id().value());
+        assertThat(generator().generateAndComplete(claimed.run(), accountant).status()).isEqualTo(RunStatus.FINAL);
         assertThat(outcomes).filteredOn(ValuationRateSets.Valued.class::isInstance).hasSize(1);
         assertThat(outcomes).filteredOn(ValuationRateSets.ValuationSetStale.class::isInstance).hasSize(APPROVERS - 1);
         assertThat(count("SELECT count(*) FROM accounting.valuation_rate_set WHERE period_id = '" + january.value()
@@ -462,17 +518,7 @@ class ValuationRateSetDatabaseTest {
             + " set, the originals beside the translation, translated debits equal to credits, the verdict at its path, not"
             + " one journal line added or changed - beside the plain run, a question of its own")
     void aFinalTranslatedRunPinsItsSetAndRegeneratesIdentical() throws SQLException {
-        // Lines in every currency, dated inside January: the month reopens through the unlock, its approved set stays.
-        AccountingPeriodFixture.restore();
-        for (Map.Entry<String, Long> posted : Map.of("EUR", 100_001L, "GBP", 12_345L, "USD", 20_003L, "JPY", 1_234L, "BHD",
-                12_345L).entrySet()) {
-            CurrencyCode currency = CurrencyCode.of(posted.getKey());
-            LedgerAccount clearing = TrialBalanceRunDatabaseTest.operational(AccountPurpose.SETTLEMENT_CLEARING, currency);
-            TrialBalanceRunDatabaseTest.post(JANUARY.atDay(15), clearing, TrialBalanceRunDatabaseTest.wallet(currency),
-                    posted.getValue(), currency, NOW);
-        }
-        inScope(person(), uow -> periods(on("1999-02-15")).lock(uow, id(JANUARY), SecurityContext.require(),
-                "translation test", correlation()));
+        postInEveryCurrencyAndLock();
         AccountingPeriodId january = id(JANUARY);
         UUID set = inScope(person(), uow -> sets().approvedFor(uow, january)).orElseThrow().id().value();
         long lines = count("SELECT count(*) FROM ledger.journal_line");
@@ -528,6 +574,72 @@ class ValuationRateSetDatabaseTest {
         assertThat(stored(run, "{body,translation,rateSet,id}")).isEqualTo(set.toString());
     }
 
+    @Test
+    @Order(103)
+    @DisplayName("P14-TSK-015: another period's rates are refused against the real set: an open February naming January's"
+            + " approved set is not translated at it, and no run of February pins it")
+    void aRunInFebruaryNamingJanuarysApprovedSetIsRefused() throws SQLException {
+        AccountingPeriodId january = id(JANUARY);
+        AccountingPeriodId february = id(FEBRUARY);
+        UUID set = inScope(person(), uow -> sets().approvedFor(uow, january)).orElseThrow().id().value();
+        Actor accountant = person();
+        assertThatThrownBy(() -> inScope(accountant, uow -> reportRuns().claim(uow, TrialBalanceDefinition.CODE, february,
+                RunParameters.of(Map.of(), Optional.of(set)), accountant, correlation())))
+                .isInstanceOf(ReportRuns.ValuationSetNotApproved.class);
+        assertThat(count("SELECT count(*) FROM accounting.report_run WHERE valuation_rate_set_id = '" + set
+                + "' AND period_id = '" + february.value() + "'")).isZero();
+    }
+
+    @Test
+    @Order(104)
+    @DisplayName("P14-TSK-015: the stored content holds the rate's text as fx stored it and a figure the journal gives: JPY's"
+            + " debits at 131.2500000000, HALF_EVEN at two places, worked here from a raw sum of the lines")
+    void theStoredContentHoldsTheFigureAndTheRatesText() throws SQLException {
+        postInEveryCurrencyAndLock();
+        AccountingPeriodId january = id(JANUARY);
+        UUID set = inScope(person(), uow -> sets().approvedFor(uow, january)).orElseThrow().id().value();
+        ReportRunStore.RunRow run = ask(january, RunParameters.of(Map.of(), Optional.of(set)));
+        assertThat(run.status()).isEqualTo(RunStatus.FINAL);
+
+        assertThat(storedAt(run, "$.body.translation.rates[*] ? (@.currency == \"JPY\").rate"))
+                .isEqualTo("131.2500000000").isEqualTo(RATES.get("JPY"));
+        assertThat(storedAt(run, "$.body.translation.rates[*] ? (@.currency == \"BHD\").rate"))
+                .isEqualTo("0.4358123456").isEqualTo(RATES.get("BHD"));
+        assertThat(storedAt(run, "$.body.translation.rates[*] ? (@.currency == \"JPY\").pair")).isEqualTo("EUR/JPY");
+        assertThat(storedAt(run, "$.body.translation.currencies[*] ? (@.currency == \"JPY\").basis"))
+                .isEqualTo("PINNED_RATE");
+
+        BigDecimal debits;
+        try (Connection migrator = DatabaseRoles.migrator();
+                PreparedStatement read = migrator.prepareStatement("SELECT SUM(line.amount_minor) FROM ledger.journal_line"
+                        + " line JOIN ledger.journal_entry entry ON entry.id = line.entry_id WHERE line.currency = 'JPY'"
+                        + " AND line.direction = 'DEBIT' AND entry.posting_date BETWEEN DATE '1999-01-01' AND DATE"
+                        + " '1999-01-31'");
+                ResultSet row = read.executeQuery()) {
+            row.next();
+            debits = row.getBigDecimal(1);
+        }
+        assertThat(storedAt(run, "$.body.translation.currencies[*] ? (@.currency == \"JPY\").columns.debits.original.minor"))
+                .isEqualTo(debits.toPlainString());
+        BigDecimal figure = new BigDecimal(new BigInteger(storedAt(run,
+                "$.body.translation.currencies[*] ? (@.currency == \"JPY\").columns.debits.translatedTotal.minor")), 2);
+        assertThat(figure).isEqualByComparingTo(debits.divide(new BigDecimal("131.25"), 2, RoundingMode.HALF_EVEN));
+    }
+
+    /** Lines in every currency, dated inside January: the month reopens through the unlock, its approved set stays. */
+    private static void postInEveryCurrencyAndLock() throws SQLException {
+        AccountingPeriodFixture.restore();
+        for (Map.Entry<String, Long> posted : Map.of("EUR", 100_001L, "GBP", 12_345L, "USD", 20_003L, "JPY", 1_234L, "BHD",
+                12_345L).entrySet()) {
+            CurrencyCode currency = CurrencyCode.of(posted.getKey());
+            LedgerAccount clearing = TrialBalanceRunDatabaseTest.operational(AccountPurpose.SETTLEMENT_CLEARING, currency);
+            TrialBalanceRunDatabaseTest.post(JANUARY.atDay(15), clearing, TrialBalanceRunDatabaseTest.wallet(currency),
+                    posted.getValue(), currency, NOW);
+        }
+        inScope(person(), uow -> periods(on("1999-02-15")).lock(uow, id(JANUARY), SecurityContext.require(),
+                "translation test", correlation()));
+    }
+
     // ------------------------------------------------------------------ the report runs (P14-TSK-015)
 
     private static ReportRuns reportRuns() {
@@ -549,6 +661,19 @@ class ValuationRateSetDatabaseTest {
                 parameters, accountant, correlation()));
         return claimed.mine() ? generator().generateAndComplete(claimed.run(), accountant)
                 : generator().drive(claimed.run().id(), accountant);
+    }
+
+    /** The stored content's text at a {@code jsonpath} - {@code null} when the content holds nothing there. */
+    private static String storedAt(ReportRunStore.RunRow run, String jsonPath) throws SQLException {
+        try (Connection migrator = DatabaseRoles.migrator();
+                PreparedStatement read = migrator.prepareStatement("SELECT jsonb_path_query_first(content::jsonb,"
+                        + " ?::jsonpath) #>> '{}' FROM accounting.report_run WHERE id = ?")) {
+            read.setString(1, jsonPath);
+            read.setObject(2, run.id().value());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? row.getString(1) : null;
+            }
+        }
     }
 
     /** The stored content at {@code path}, read by the database - {@code null} when the content holds nothing there. */
