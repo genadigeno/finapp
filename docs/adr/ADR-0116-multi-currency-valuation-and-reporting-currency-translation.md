@@ -91,15 +91,25 @@ places, the reporting minor unit a literal, never a JDK's table (a guard holds i
 per currency `translated parts + translation difference = translated total`, the total translated once from the exact original
 total, so a balanced currency's translated debits equal its credits through the difference lines. Every column of a run is at
 its one set: a translated row need not cross-foot by a cent, and a translated opening differs from the previous period's translated
-closing when rates moved - decision 4's unrealised effect, shown and not posted. **A currency the set does not value**: never
+closing when rates moved. That is decision 4's unrealised effect: not posted, and, as built, named by no member of the content, so
+"disclosed" holds only in that a reader can find it by comparing two runs; the cross-foot caveat is likewise in these documents, not
+the content. Both are `-016`'s C7 note to settle. **A currency the set does not value, with a figure that is not zero**: never
 dropped, never at one - originals kept, translated figures `null`, named in `translation.untranslated`, `translation.complete`
 false, the report-wide totals withheld, the run completed; the unmapped row's shape, since a failed run would carry no reason,
-fail identically at every revision and, with no supersession edge, never be cured. **The trial balance**: plain content
-byte-identical (a golden computed before the change), version 1 unchanged - nothing it ever issued changes and a run naming a set
-was refused until now; translation is outside `passes`, the verdict the same bytes at the same path. **The port**:
+fail identically at every revision and, with no supersession edge, never be cured (whether a FINAL run with a real hole should be
+issued at all is the owner's). **A zero needs no rate**: a currency with no rate whose every figure, in every column, is zero
+translates to zero under a basis of its own (`ZERO_NO_RATE`, `rate` null - no rate of one stated or implied), stays out of
+`untranslated`, keeps `complete` true and withholds nothing: a retired currency's rows persist from inception, so otherwise every
+later period would read incomplete and `-016` refuse for good. **A currency the trial balance holds and no row carries** - a read
+that lost its rows, the ledger's windows still holding it - is a hole whatever the set values (`NO_PARTS`, `original` and `rate`
+null), never `complete` over a partial total. **The trial balance**: plain content byte-identical - a golden whose provenance is
+shown by running it on master `a184bed2`'s main code in a throwaway worktree - version 1 unchanged: nothing it ever issued changes
+and a run naming a set was refused until now; translation is outside `passes`, the verdict the same bytes at the same path. **The
+port**:
 `ValuationRateReads`, `app`'s `PinnedValuationRates`, because `ReportingNeverWritesTest` follows accounting's implementations of a
-port a report class holds. `accounting.ReportRunCompleted` and `accounting.ReportGenerated`'s summary name the set on a translated
-run only, so the two runs of one definition stay distinguishable. **Supersession does not change this design**: it would mint a new
+port a report class holds. `accounting.ReportRunCompleted` and the summaries of `accounting.ReportGenerated`, `ReportRead` and
+`ReportRegenerated` name the set on a translated run only, so the two runs of one definition stay distinguishable. **Supersession
+does not change this design**: it would mint a new
 set id, a new parameters hash, a new question and a new run; the one touch point is `pinnedBy`, which would have to admit a
 superseded set for the regeneration of a run that pinned it.
 

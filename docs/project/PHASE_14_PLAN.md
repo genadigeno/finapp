@@ -533,11 +533,15 @@ period `FOR SHARE`; the generation re-judges in its snapshot. An open period the
 left it an approved set - never another period's rates (an accounting policy the plan does not make; owner item).
 `reporting.Translation`, pure: `amount / rate` by exact division, `HALF_EVEN` to two places, `EUR` at a stated identity; per
 currency `parts + difference = total`; every column of a run at its one set, so a translated row need not cross-foot by a cent
-and a translated opening is not the previous period's translated closing when rates moved - the unrealised effect, shown and
-not posted. **A currency the set does not value** is never dropped or translated at one: its originals stay, its translated
-figures are `null`, it is named in `translation.untranslated`, `translation.complete` is false and the report-wide totals are
-withheld - the run completes, as the unmapped row's does; `-016` reads `complete`. Translation does not enter `passes` and the
-plain content is byte-identical, pinned - ADR-0116 As built.)*
+and a translated opening is not the previous period's translated closing when rates moved - the unrealised effect, not posted and
+named by no member of the content: a reader finds it by comparing two runs (`-016`'s C7 note decides whether the content says
+so). **A currency the set does not value, with a figure that is not zero**, is never dropped or translated at one: its originals
+stay, its translated figures are `null`, it is named in `translation.untranslated`, `translation.complete` is false and the
+report-wide totals are withheld - the run completes, as the unmapped row's does; `-016` reads `complete`. **A zero needs no rate**:
+such a currency with every figure zero, in every column, translates to zero under a basis of its own (`ZERO_NO_RATE`, no rate),
+and is no hole - a retired currency's rows persist from inception. **A currency the trial balance holds and no row carries** (a
+read that lost its rows) is a hole, whatever the set values (`NO_PARTS`). Translation does not enter `passes` and the plain content
+is byte-identical, pinned - ADR-0116 As built.)*
 
 ### 13.5 Period close (owner brief 7.6)
 

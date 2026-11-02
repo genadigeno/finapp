@@ -1246,7 +1246,8 @@ empty, so each is proven able to fail by probes planted in its own source.
   implementations of an accounting interface reached) holds no class that depends on a `com.finapp.ledger` type, on
   accounting's writer ports (`PostingCutoff`, `PriorPeriodPostings`, `RegulatoryReportingProvider`), on the platform's
   writers (`AuditWriter`, `OutboxWriter`, their JDBC implementations, `IdempotencyRecordStore`), or that calls a JDBC
-  write (`executeUpdate`, `executeLargeUpdate`, `executeBatch`, `addBatch`, `execute` on a `Statement`). Phrased over
+  write (`executeUpdate`, `executeLargeUpdate`, `executeBatch`, `addBatch`, `execute` on a `Statement`) - or names one by a method
+  reference (`P14-TSK-015`'s review, M-6). Phrased over
   every imported class, never a `that()` selecting nothing, so it gains reach the moment `P14-TSK-008` adds a report
   class - which is also why the run store, the audited read and the door live outside the report package. The database
   half is `-008`'s `REPEATABLE READ READ ONLY` transaction. Proven able to fail by planted report classes holding the
@@ -1257,10 +1258,12 @@ empty, so each is proven able to fail by probes planted in its own source.
   the ledger's `PostingService` stands for the package refusal - or the rule above guards nothing.
   *(ArchUnit: `theReportingGuardSeesTheAccountingModule`)*
 - A report run's content never depends on a JDK's currency table (`P14-TSK-015`, `INV-ACC-04`, ADR-0003): no report class
-  depends on `java.util.Currency` or calls `CurrencyCode.minorUnits`, so a JDK's data changing cannot change a FINAL run's
-  regeneration - scales are the data's own and the reporting minor unit is `Translation.REPORTING_SCALE`, a literal.
-  `GeneralLedger` is the named exception: the live GL doors' zero at a currency's minor unit, never a run's content.
-  Proven able to fail by planted report classes; one holding a `CurrencyCode` only as a code is not flagged.
+  depends on `java.util.Currency` or reaches `CurrencyCode.minorUnits`, by a call or a method reference, so a JDK's data changing
+  cannot change a FINAL run's regeneration - scales are the data's own and the reporting minor unit is
+  `Translation.REPORTING_SCALE`, a literal. `GeneralLedger` is the named exception: the live GL doors' zero at a currency's minor
+  unit, never a run's content; the rule checks a report class's own accesses, so a definition calling `GeneralLedger.fold` would
+  escape it (routed to `-017`). Proven able to fail by planted report classes; one holding a `CurrencyCode` only as a code is not
+  flagged.
   *(ArchUnit: `noReportContentReadsTheJdksCurrencyTable`)*
 
 ### Persistence boundary
