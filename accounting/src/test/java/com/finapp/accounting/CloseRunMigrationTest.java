@@ -93,6 +93,10 @@ class CloseRunMigrationTest {
                 .contains("a close check attempt''s request is frozen from its birth")
                 .contains("a close check attempt is reclaimed one claim at a time")
                 .contains("a PENDING close check attempt records no outcome")
+                .contains("NEW.holder IS NOT NULL AND NEW.holder IS DISTINCT FROM OLD.holder AND OLD.lease_until > clock_timestamp()")
+                .contains("a close check attempt is claimed only once its lease has passed")
+                .contains("(NEW.reclaims = OLD.reclaims + 1) <> (OLD.holder IS NOT NULL AND NEW.holder IS NOT NULL AND NEW.holder <> OLD.holder)")
+                .contains("a lapsed holder is replaced with reclaims + 1, and nothing else moves reclaims")
                 .contains("a close check attempt is concluded by the claim that holds it")
                 .contains("a close run is never deleted")
                 .contains("a close check attempt is never deleted");

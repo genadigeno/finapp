@@ -93,7 +93,7 @@ class CloseCheckWorkerTest {
     private FinalTrialBalance trialBalance =
             (id, actor, correlation) -> new FinalTrialBalance.Verdict("run-1", 1, 1, "abc", true, true, true, true, true);
     private CloseChecks.BreakChecks breakChecks = (month, check, actor, correlation) -> new CheckOutcome(month, check,
-            CheckOutcome.Result.PASSED, "posting-rules:v2", 0, 0, 0, 0, 0, List.of());
+            CheckOutcome.Result.PASSED, "posting-rules:v2", 0, 0, 0, 0, 0, List.of(), List.of());
 
     private final List<BooleanSupplier> beats = new ArrayList<>();
     private int heartbeatsStopped;
@@ -148,7 +148,7 @@ class CloseCheckWorkerTest {
                 assertThat(beats.get(beats.size() - 1).getAsBoolean()).as("the renewal").isTrue();
                 stolen.add(runs.claim(UOW, Actor.SYSTEM));
             }
-            return new CheckOutcome(month, check, CheckOutcome.Result.PASSED, "posting-rules:v2", 0, 0, 0, 0, 0, List.of());
+            return new CheckOutcome(month, check, CheckOutcome.Result.PASSED, "posting-rules:v2", 0, 0, 0, 0, 0, List.of(), List.of());
         };
 
         assertThat(worker().workOne(Actor.SYSTEM)).isTrue();
@@ -170,7 +170,7 @@ class CloseCheckWorkerTest {
             assertThat(next.reclaims()).isEqualTo(1);
             runs.conclude(UOW, next, CheckVerdict.failed(check, "posting-rules:v2", List.of("DISCREPANCIES"),
                     CanonicalJson.object().put("by", "the next worker")));
-            return new CheckOutcome(month, check, CheckOutcome.Result.PASSED, "posting-rules:v2", 0, 0, 0, 0, 0, List.of());
+            return new CheckOutcome(month, check, CheckOutcome.Result.PASSED, "posting-rules:v2", 0, 0, 0, 0, 0, List.of(), List.of());
         };
 
         assertThat(worker().workOne(Actor.SYSTEM)).isTrue();
@@ -245,7 +245,7 @@ class CloseCheckWorkerTest {
             };
             assertThat(beats.get(beats.size() - 1).getAsBoolean()).isTrue();
             duringRenewal = () -> { };
-            return new CheckOutcome(month, check, CheckOutcome.Result.PASSED, "posting-rules:v2", 0, 0, 0, 0, 0, List.of());
+            return new CheckOutcome(month, check, CheckOutcome.Result.PASSED, "posting-rules:v2", 0, 0, 0, 0, 0, List.of(), List.of());
         };
         assertThat(worker().workOne(Actor.SYSTEM)).isTrue();
         assertThat(latest(CloseCheckCode.RULE_CONFORMANCE).status()).isEqualTo(CloseCheckStatus.PASSED);

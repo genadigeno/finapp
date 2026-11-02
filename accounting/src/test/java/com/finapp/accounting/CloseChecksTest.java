@@ -216,7 +216,7 @@ class CloseChecksTest {
     void otherFailuresNeverDisclose() {
         for (String failure : List.of(CheckOutcome.UNAVAILABLE + "POSITION", CheckOutcome.FINDINGS_CAPPED, CheckOutcome.NO_MAPPING)) {
             breakChecks = (month, code, actor, correlation) -> new CheckOutcome(month, code, CheckOutcome.Result.FAILED, "source-proofs:v1",
-                    1, 0, 0, 1, 0, List.of(CheckOutcome.DISCREPANCIES, failure));
+                    1, 0, 0, 1, 0, List.of(), List.of(CheckOutcome.DISCREPANCIES, failure));
             CheckVerdict verdict = judge(CloseCheckCode.SOURCE_COMPLETENESS).orElseThrow();
             assertThat(verdict.status()).as(failure).isEqualTo(CloseCheckStatus.FAILED);
             assertThat(verdict.failures()).contains(failure);
@@ -272,7 +272,8 @@ class CloseChecksTest {
     @DisplayName("ACCRUALS_COMPLETE after the lock (P14-TSK-006's I-1): the catch-up floored past the cutoff leaves nothing behind and the"
             + " period short of interest - DISCLOSED with the figure, never PASSED")
     void aFlooredAccrualIsDisclosedNeverPassed() {
-        floored = List.of(new AccrualCompleteness.Floored(AccrualCompleteness.Accruer.LENDING, "EUR", 2, 3, BigInteger.valueOf(4_250)));
+        floored = List.of(new AccrualCompleteness.Floored(AccrualCompleteness.Accruer.LENDING, "EUR", 2, 3, BigInteger.valueOf(4_250), 0,
+                BigInteger.ZERO));
         CheckVerdict verdict = judge(CloseCheckCode.ACCRUALS_COMPLETE).orElseThrow();
         assertThat(verdict.status()).isEqualTo(CloseCheckStatus.DISCLOSED);
         assertThat(verdict.evidence()).contains("\"interestMinor\":\"4250\"", "\"entries\":\"3\"");
@@ -280,6 +281,45 @@ class CloseChecksTest {
         behind = List.of(new AccrualCompleteness.Lagging(AccrualCompleteness.Accruer.LENDING, "USD", MARCH.atDay(2)));
         assertThat(judge(CloseCheckCode.ACCRUALS_COMPLETE).orElseThrow().status())
                 .as("and behind besides: blocked").isEqualTo(CloseCheckStatus.FAILED);
+    }
+
+    @Test
+    @DisplayName("C-1: a BNPL sweep's catch-up past the cutoff reads nothing behind and the period short - DISCLOSED with the figures, never"
+            + " PASSED, the structural last day apart from anything older")
+    void aBnplCatchUpIsDisclosedTheLastDayApart() {
+        floored = List.of(new AccrualCompleteness.Floored(AccrualCompleteness.Accruer.BNPL, "EUR", 2, 7, BigInteger.valueOf(70), 1,
+                BigInteger.TEN));
+        CheckVerdict verdict = judge(CloseCheckCode.ACCRUALS_COMPLETE).orElseThrow();
+        assertThat(verdict.status()).isEqualTo(CloseCheckStatus.DISCLOSED);
+        assertThat(verdict.evidence()).contains("\"accruer\":\"BNPL\"", "\"entries\":\"7\"", "\"interestMinor\":\"70\"",
+                "\"lastDay\":{\"entries\":\"1\",\"interestMinor\":\"10\"}", "\"older\":{\"entries\":\"6\",\"interestMinor\":\"60\"}");
+
+        assertThatThrownBy(() -> new AccrualCompleteness.Floored(AccrualCompleteness.Accruer.BNPL, "EUR", 2, 1, BigInteger.TEN, 2, BigInteger.ONE))
+                .as("more entries on the last day than in all").isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AccrualCompleteness.Floored(AccrualCompleteness.Accruer.BNPL, "EUR", 2, 1, BigInteger.ONE, 1, BigInteger.TEN))
+                .as("more interest on the last day than in all").isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("I-1: a finding an ACKNOWLEDGED break holds that now reads differently is FAILED ACKNOWLEDGED_CHANGED, its subject recorded,"
+            + " however many findings are acknowledged - never DISCLOSED")
+    void anAcknowledgedFindingThatChangedIsNeverDisclosed() {
+        CheckOutcome changed = new CheckOutcome(MARCH, CloseCheckCode.RULE_CONFORMANCE, CheckOutcome.Result.FAILED, "posting-rules:v2", 2, 0, 0,
+                2, 0, List.of("namespace:POSTING probe:"), List.of(CheckOutcome.DISCREPANCIES, CheckOutcome.ACKNOWLEDGED_CHANGED));
+        CheckVerdict verdict = CloseChecks.verdictOf(changed);
+        assertThat(verdict.status()).isEqualTo(CloseCheckStatus.FAILED);
+        assertThat(verdict.failures()).containsExactly(CheckOutcome.DISCREPANCIES, CheckOutcome.ACKNOWLEDGED_CHANGED);
+        assertThat(verdict.evidence()).contains("\"acknowledgedChanged\":\"1\"", "\"changedSubjects\":[\"namespace:POSTING probe:\"]");
+
+        assertThatThrownBy(() -> new CheckOutcome(MARCH, CloseCheckCode.RULE_CONFORMANCE, CheckOutcome.Result.FAILED, "posting-rules:v2", 1, 0, 0,
+                1, 0, List.of("shape:1"), List.of(CheckOutcome.DISCREPANCIES))).as("a changed subject with no failure")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new CheckOutcome(MARCH, CloseCheckCode.RULE_CONFORMANCE, CheckOutcome.Result.FAILED, "posting-rules:v2", 1, 0, 0,
+                1, 0, List.of(), List.of(CheckOutcome.DISCREPANCIES, CheckOutcome.ACKNOWLEDGED_CHANGED))).as("a failure with no subject")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new CheckOutcome(MARCH, CloseCheckCode.RULE_CONFORMANCE, CheckOutcome.Result.FAILED, "posting-rules:v2", 1, 0, 1,
+                0, 0, List.of("shape:1"), List.of(CheckOutcome.DISCREPANCIES, CheckOutcome.ACKNOWLEDGED_CHANGED))).as("nothing acknowledged")
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     // ------------------------------------------------------------------ projections
@@ -448,7 +488,7 @@ class CloseChecksTest {
     }
 
     private static CheckOutcome clean(CloseCheckCode check) {
-        return new CheckOutcome(MARCH, check, CheckOutcome.Result.PASSED, "posting-rules:v2", 0, 0, 0, 0, 0, List.of());
+        return new CheckOutcome(MARCH, check, CheckOutcome.Result.PASSED, "posting-rules:v2", 0, 0, 0, 0, 0, List.of(), List.of());
     }
 
     private static CheckOutcome outcome(CloseCheckCode check, int findings, int raised, int open, int acknowledged, int resolved) {
@@ -457,7 +497,7 @@ class CloseChecksTest {
             failures.add(CheckOutcome.RECURRED);
         }
         return new CheckOutcome(MARCH, check, CheckOutcome.Result.FAILED, "posting-rules:v2", findings, raised, open, acknowledged,
-                resolved, failures);
+                resolved, List.of(), failures);
     }
 
     private static ReconciliationDisclosure.Disclosure nothing() {

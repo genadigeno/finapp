@@ -116,8 +116,10 @@ class AccountingCloseScheduleTest {
         AccountingCloseSchedule schedule = schedule();
         schedule.start();
         try {
-            assertThat(schedule.checksOnce()).isEqualTo(9);
+            awaitEveryCheckConcluded();
             assertThat(seenWhileJudging[0]).as("renewed while the judge held its check").isGreaterThanOrEqualTo(3);
+            // The leg stops the beat just after its last conclusion: past that, the count stays.
+            java.util.concurrent.locks.LockSupport.parkNanos(Duration.ofMillis(100).toNanos());
             int after = renewals.get();
             java.util.concurrent.locks.LockSupport.parkNanos(Duration.ofMillis(200).toNanos());
             assertThat(renewals.get()).as("no heartbeat outlives its check").isEqualTo(after);
@@ -134,6 +136,7 @@ class AccountingCloseScheduleTest {
         closeRuns = new CloseRuns(counted, periods, new InMemoryAccountingBreakStore(), new CloseRuns.Leases(Duration.ofMinutes(3),
                 Duration.ofMillis(10), maxRun, 3, Duration.ofSeconds(30)), (uow, record) -> { }, IDS, CLOCK);
         int[] stoppedAt = new int[2];
+        CountDownLatch judged = new CountDownLatch(1);
         FinalTrialBalance clean = trialBalance;
         trialBalance = (id, actor, correlation) -> {
             awaitRenewals(1);
@@ -143,17 +146,57 @@ class AccountingCloseScheduleTest {
             stoppedAt[0] = renewals.get();
             java.util.concurrent.locks.LockSupport.parkNanos(Duration.ofMillis(200).toNanos());
             stoppedAt[1] = renewals.get();
+            judged.countDown();
             return clean.read(id, actor, correlation);
         };
         cadence = new AccountingCloseSchedule.Cadence(Duration.ofHours(1), Duration.ofHours(1), Duration.ofHours(1), 1, 10);
         AccountingCloseSchedule schedule = schedule();
         schedule.start();
         try {
-            assertThat(schedule.checksOnce()).isEqualTo(1);
+            assertThat(judged.await(30, TimeUnit.SECONDS)).as("the check leg judged, at start").isTrue();
             assertThat(stoppedAt[1]).as("the heartbeat ended at the bound").isEqualTo(stoppedAt[0]);
         } finally {
             schedule.stop();
         }
+    }
+
+    @Test
+    @DisplayName("M-7: start runs every leg at once, not a poll later - an hour's open leg would never run on a fleet restarted within the hour")
+    void everyLegRunsAtStart() throws Exception {
+        lockedMarch();
+        CountDownLatch orphaned = new CountDownLatch(1);
+        orphans = (limit, actor) -> {
+            orphaned.countDown();
+            return 0;
+        };
+        cadence = new AccountingCloseSchedule.Cadence(Duration.ofHours(1), Duration.ofHours(1), Duration.ofHours(1), 18, 10);
+        AccountingCloseSchedule schedule = schedule();
+        schedule.start();
+        try {
+            assertThat(orphaned.await(30, TimeUnit.SECONDS)).as("the orphan leg").isTrue();
+            awaitEveryCheckConcluded();
+            long waited = 0;
+            while (periods.month(YearMonth.of(2097, 4)).isEmpty() && waited++ < 3000) {
+                java.util.concurrent.locks.LockSupport.parkNanos(Duration.ofMillis(10).toNanos());
+            }
+            assertThat(periods.month(YearMonth.of(2097, 4))).as("the open leg").isPresent();
+        } finally {
+            schedule.stop();
+        }
+    }
+
+    /** The check leg's first pass, on the schedule's own executor: one run, all nine concluded. */
+    private void awaitEveryCheckConcluded() {
+        long waited = 0;
+        while (!everyCheckConcluded() && waited++ < 6000) {
+            java.util.concurrent.locks.LockSupport.parkNanos(Duration.ofMillis(10).toNanos());
+        }
+        assertThat(everyCheckConcluded()).as("the check leg ran at start and concluded every check").isTrue();
+    }
+
+    private boolean everyCheckConcluded() {
+        return !store.runs().isEmpty() && store.all(store.runs().get(0).id()).size() == 9 && store.all(store.runs().get(0).id()).stream()
+                .noneMatch(attempt -> attempt.status() == CloseCheckStatus.PENDING);
     }
 
     private void awaitRenewals(int atLeast) {
@@ -310,7 +353,7 @@ class AccountingCloseScheduleTest {
 
     private CloseChecks checks() {
         CloseChecks.BreakChecks clean = (month, check, actor, correlation) -> new CheckOutcome(month, check,
-                CheckOutcome.Result.PASSED, "posting-rules:v2", 0, 0, 0, 0, 0, List.of());
+                CheckOutcome.Result.PASSED, "posting-rules:v2", 0, 0, 0, 0, 0, List.of(), List.of());
         AccrualCompleteness caughtUp = new AccrualCompleteness() {
             @Override
             public List<Lagging> lagging(Connection unitOfWork) {

@@ -5,6 +5,7 @@ import com.finapp.accounting.AccrualCompleteness;
 import com.finapp.accounting.CutoffReaction;
 import com.finapp.accounting.PostingRule;
 import com.finapp.accounting.PostingRuleRegister;
+import com.finapp.bnpl.BnplAccruals;
 import com.finapp.ledger.PostingService;
 import com.finapp.lending.LoanServicing;
 import com.finapp.platform.persistence.DatabaseFailure;
@@ -30,9 +31,10 @@ import java.util.stream.Collectors;
  * record carries {@code flooredFrom=}.
  *
  * <ul>
- *   <li>{@link #accruals}: lending's {@code LND-2}, whose posting date equals its value date unless floored - so these
- * <em>are</em> the interest the period is short by, per currency and scale, the income line's amount ({@code
- * SUM(bigint)} exact).
+ *   <li>{@link #accruals}: lending's {@code LND-2}, whose posting date equals its value date unless floored, and bnpl's
+ * {@code BNPL-F2a}, which posts today valued the accrual date (`P14-TSK-011`'s review, C-1) - so these <em>are</em> the
+ * interest the period is short by, per accruer, currency and scale, the income line's amount ({@code SUM(bigint)} exact),
+ * the period's last day apart from anything older.
  *   <li>{@link #others}: the other floored rules' entries, counted per key namespace - {@code
  * RECONCILIATION_DISCLOSURE}'s note that the journal holds them in a later period while a report by stated date may
  * not.
@@ -44,14 +46,24 @@ import java.util.stream.Collectors;
 public final class LedgerFlooredPostings {
 
     /** Lending's accrual entries' scope - {@code ledger.post:lending.accrual:<loan>:<date>}. */
-    static final String ACCRUAL_SCOPE = PostingService.IDEMPOTENCY_SCOPE + ":" + LoanServicing.POSTING_KEY_PREFIX + "%";
+    static final String LENDING_SCOPE = PostingService.IDEMPOTENCY_SCOPE + ":" + LoanServicing.POSTING_KEY_PREFIX + "%";
 
-    /** The accruals past the cutoff: the income line of each - exactly one per entry, by the rule's shape. */
-    static final String ACCRUALS_SQL = "SELECT line.currency, line.scale, count(*) AS entries,"
-            + " sum(line.amount_minor) AS interest FROM ledger.journal_entry entry"
+    /** Bnpl's accrual entries' scope - {@code ledger.post:bnpl.accrual:<obligation>:<date>}; a correction's is its own. */
+    static final String BNPL_SCOPE = PostingService.IDEMPOTENCY_SCOPE + ":" + BnplAccruals.KEY_PREFIX + "%";
+
+    /**
+     * The accruals past the cutoff, in one statement: the income line of each - exactly one per entry, by each rule's
+     * shape - with those valued the period's last day counted apart.
+     */
+    static final String ACCRUALS_SQL = "SELECT split_part(entry.idempotency_scope, ':', 2) AS namespace, line.currency, line.scale,"
+            + " count(*) AS entries, sum(line.amount_minor) AS interest,"
+            + " count(*) FILTER (WHERE entry.value_date = ?) AS last_day_entries,"
+            + " coalesce(sum(line.amount_minor) FILTER (WHERE entry.value_date = ?), 0) AS last_day_interest"
+            + " FROM ledger.journal_entry entry"
             + " JOIN ledger.journal_line line ON line.entry_id = entry.id AND line.direction = 'CREDIT'"
-            + " WHERE entry.posting_date > ? AND entry.value_date <= ? AND entry.idempotency_scope LIKE ?"
-            + " GROUP BY line.currency, line.scale ORDER BY line.currency, line.scale";
+            + " WHERE entry.posting_date > ? AND entry.value_date <= ?"
+            + " AND (entry.idempotency_scope LIKE ? OR entry.idempotency_scope LIKE ?)"
+            + " GROUP BY 1, line.currency, line.scale ORDER BY 1, line.currency, line.scale";
 
     /** Every posted entry past the cutoff per key namespace - what is reported is filtered to the floored rules. */
     static final String BY_NAMESPACE_SQL = "SELECT split_part(entry.idempotency_scope, ':', 2) AS namespace, count(*) AS entries"
@@ -74,19 +86,22 @@ public final class LedgerFlooredPostings {
                 .collect(Collectors.toUnmodifiableSet());
     }
 
-    /** {@code LND-2}'s entries past {@code periodEnd} - the interest the period is short by. */
+    /** {@code LND-2}'s and {@code BNPL-F2a}'s entries past {@code periodEnd} - the interest the period is short by. */
     public List<AccrualCompleteness.Floored> accruals(Connection snapshot, LocalDate periodEnd) {
         Objects.requireNonNull(periodEnd, "periodEnd");
         try (PreparedStatement read = snapshot.prepareStatement(ACCRUALS_SQL)) {
-            read.setDate(1, Date.valueOf(periodEnd));
-            read.setDate(2, Date.valueOf(periodEnd));
-            read.setString(3, ACCRUAL_SCOPE);
+            for (int bound = 1; bound <= 4; bound++) {
+                read.setDate(bound, Date.valueOf(periodEnd));
+            }
+            read.setString(5, LENDING_SCOPE);
+            read.setString(6, BNPL_SCOPE);
             List<AccrualCompleteness.Floored> floored = new ArrayList<>();
             try (ResultSet row = read.executeQuery()) {
                 while (row.next()) {
-                    floored.add(new AccrualCompleteness.Floored(AccrualCompleteness.Accruer.LENDING,
+                    floored.add(new AccrualCompleteness.Floored(accruer(row.getString("namespace")),
                             row.getString("currency").stripTrailing(), row.getInt("scale"), row.getLong("entries"),
-                            row.getBigDecimal("interest").toBigIntegerExact()));
+                            row.getBigDecimal("interest").toBigIntegerExact(), row.getLong("last_day_entries"),
+                            row.getBigDecimal("last_day_interest").toBigIntegerExact()));
                 }
             }
             return floored;
@@ -115,6 +130,17 @@ public final class LedgerFlooredPostings {
         } catch (SQLException failure) {
             throw failed("reading the floored rules' entries past a cutoff", failure);
         }
+    }
+
+    /** The accruer a namespace of {@link #ACCRUALS_SQL}'s belongs to; anything else is this read's defect, never a figure. */
+    private static AccrualCompleteness.Accruer accruer(String namespace) {
+        if ((namespace + ":").equals(LoanServicing.POSTING_KEY_PREFIX)) {
+            return AccrualCompleteness.Accruer.LENDING;
+        }
+        if ((namespace + ":").equals(BnplAccruals.KEY_PREFIX)) {
+            return AccrualCompleteness.Accruer.BNPL;
+        }
+        throw new IllegalStateException("not an accrual namespace: " + namespace);
     }
 
     private static AccountingStorageException failed(String operation, SQLException failure) {

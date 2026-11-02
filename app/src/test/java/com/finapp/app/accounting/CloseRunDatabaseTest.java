@@ -11,14 +11,20 @@ import static com.finapp.app.accounting.AccountingPeriodFixture.person;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.accounting.AccountingBreakId;
+import com.finapp.accounting.AccountingBreakStore;
 import com.finapp.accounting.AccountingChecks;
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.AccrualCompleteness;
+import com.finapp.accounting.BreakFinding;
+import com.finapp.accounting.BreakStatus;
+import com.finapp.accounting.BreakType;
 import com.finapp.accounting.CheckVerdict;
 import com.finapp.accounting.CloseCheckCode;
 import com.finapp.accounting.CloseCheckStatus;
 import com.finapp.accounting.CloseChecks;
 import com.finapp.accounting.CloseRunId;
+import com.finapp.accounting.CloseRunStore;
 import com.finapp.accounting.CloseRuns;
 import com.finapp.accounting.FinalTrialBalance;
 import com.finapp.accounting.JdbcAccountingBreakStore;
@@ -30,6 +36,7 @@ import com.finapp.accounting.ReconciliationDisclosure;
 import com.finapp.accounting.ReportRunStore;
 import com.finapp.accounting.ReportRuns;
 import com.finapp.accounting.SourceProofs;
+import com.finapp.accounting.ValuationRateSetStore;
 import com.finapp.accounting.ValuationRateSets;
 import com.finapp.accounting.ValuationRates;
 import com.finapp.accounting.ValuationStaleness;
@@ -37,18 +44,23 @@ import com.finapp.accounting.reporting.CanonicalJson;
 import com.finapp.accounting.reporting.ReportDefinitions;
 import com.finapp.accounting.reporting.ReportGeneration;
 import com.finapp.accounting.reporting.TrialBalanceDefinition;
+import com.finapp.bnpl.BnplAccruals;
+import com.finapp.bnpl.JdbcBnplAccrualStore;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AccountType;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JdbcBalanceProjection;
 import com.finapp.ledger.JdbcJournalEntryStore;
 import com.finapp.ledger.JdbcLedgerAccountStore;
+import com.finapp.ledger.JdbcPurposeBalances;
 import com.finapp.ledger.JournalLine;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.PeriodClosedException;
 import com.finapp.ledger.PostingCommand;
 import com.finapp.ledger.PostingObserver;
 import com.finapp.ledger.PostingService;
+import com.finapp.lending.AccrualLags;
+import com.finapp.lending.JdbcLoanServicingStore;
 import com.finapp.platform.audit.JdbcAuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.IdempotentExecutor;
@@ -79,6 +91,7 @@ import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -112,6 +125,13 @@ import org.junit.jupiter.api.Test;
  * proof for good. <strong>The planted imbalance</strong> (gate criterion 1; `P14-TSK-009`'s review, M-6): the balance
  * trigger is deferred to commit, so an unbalanced entry is visible only on its own connection - and is therefore read
  * there: planted, locked, claimed, generated and judged on that one connection, then rolled back, nothing left behind.
+ *
+ * <p><strong>The independent review's cases</strong> (I-4): every statement the first nine did not execute - {@code rerun},
+ * {@code view}, {@code readiness}, {@code concludeOpenBreaks}, {@code countByStatus}, {@code defer}, {@code ATTEMPTS_SQL},
+ * {@code latestRun}, {@code runUnder}, {@code latestAttempt}, {@code ofPeriod}, {@code held}'s evidence - and the reads run
+ * on the connection production reads on: the real {@link ServicingAccrualCompleteness} and the disclosure on a verified
+ * {@code REPEATABLE READ READ ONLY} snapshot. What is planted is read on its own connection, {@code REPEATABLE READ} and
+ * set {@code READ ONLY} before the read.
  */
 @Tag("database")
 @DisplayName("the close run against the database (P14-TSK-011)")
@@ -388,6 +408,274 @@ class CloseRunDatabaseTest {
         assertThat(disclosed.evidence()).contains("\"accruer\":\"LENDING\"", "\"currency\":\"EUR\"", "interestMinor");
     }
 
+    @Test
+    @DisplayName("C-1: a BNPL sweep down 25-31 January catching up on 2 February, BNPL-F2a's own dating - posted the 2nd, valued each date: nothing"
+            + " behind and the period short, DISCLOSED with the figures, never PASSED, the last day apart from anything older; a correction's"
+            + " namespace and an entry valued after the end not counted; planted in one transaction and rolled back")
+    void aBnplCatchUpIsDisclosed() throws Exception {
+        AccountingPeriodId january = lockJanuary();
+        LedgerAccount wallet = wallet();
+        LedgerAccount revenue = operational(AccountPurpose.FEE_REVENUE);
+        LocalDate second = JANUARY.plusMonths(1).atDay(2);
+        LedgerFlooredPostings floored = new LedgerFlooredPostings();
+        try (Connection plant = DatabaseRoles.application();
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)))) {
+            plant.setAutoCommit(false);
+            plant.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            for (int day = 25; day <= 31; day++) {
+                accrual(plant, BnplAccruals.KEY_PREFIX, second, JANUARY.atDay(day), wallet, revenue, 10);
+            }
+            accrual(plant, BnplAccruals.KEY_PREFIX, second, JANUARY.plusMonths(1).atDay(1), wallet, revenue, 99);
+            accrual(plant, BnplAccruals.CORRECTION_KEY_PREFIX, second, JANUARY.atDay(25), wallet, revenue, 99);
+            readOnlyFromHere(plant);
+
+            assertThat(floored.accruals(plant, JANUARY.atEndOfMonth()))
+                    .filteredOn(position -> position.accruer() == AccrualCompleteness.Accruer.BNPL)
+                    .containsExactly(new AccrualCompleteness.Floored(AccrualCompleteness.Accruer.BNPL, "EUR", 2, 7, BigInteger.valueOf(70), 1,
+                            BigInteger.TEN));
+            AccrualCompleteness onThePlant = new AccrualCompleteness() {
+                @Override
+                public List<Lagging> lagging(Connection unitOfWork) {
+                    return List.of();
+                }
+
+                @Override
+                public List<Floored> flooredPast(Connection unitOfWork, LocalDate periodEnd) {
+                    return floored.accruals(plant, periodEnd);
+                }
+            };
+            CheckVerdict verdict = checks(onThePlant, (snapshot, month) -> noDisclosure(month), reader())
+                    .judge(claimed(CloseCheckCode.ACCRUALS_COMPLETE, january)).orElseThrow();
+            assertThat(verdict.status()).isEqualTo(CloseCheckStatus.DISCLOSED);
+            assertThat(verdict.evidence()).contains("\"accruer\":\"BNPL\"", "\"lastDay\":{\"entries\":\"1\",\"interestMinor\":\"10\"}",
+                    "\"older\":{\"entries\":\"6\",\"interestMinor\":\"60\"}");
+            plant.rollback();
+        }
+    }
+
+    @Test
+    @DisplayName("I-4: ACCRUALS_COMPLETE over the real servicing reads, on the read-only snapshot production judges on: every read answers - a lock or"
+            + " a write would be refused - and the verdict is what they say, never UNAVAILABLE")
+    void theRealAccrualReadsRunOnAReadOnlySnapshot() throws Exception {
+        AccountingPeriodId january = lockJanuary();
+        AccrualLags lags = new AccrualLags(new JdbcLoanServicingStore(), accounts, new JdbcPurposeBalances());
+        AccrualCompleteness real = new ServicingAccrualCompleteness(lags::oldestUnaccruedByCurrency,
+                new JdbcBnplAccrualStore()::oldestUnaccruedByCurrency, new LedgerFlooredPostings()::accruals);
+        LocalDate end = JANUARY.atEndOfMonth();
+
+        List<AccrualCompleteness.Lagging> behind = SNAPSHOTS.read(snapshot -> real.blocking(snapshot, end));
+        List<AccrualCompleteness.Floored> past = SNAPSHOTS.read(snapshot -> real.flooredPast(snapshot, end));
+        CheckVerdict verdict = checks(real, (snapshot, month) -> noDisclosure(month), reader())
+                .judge(claimed(CloseCheckCode.ACCRUALS_COMPLETE, january)).orElseThrow();
+
+        assertThat(verdict.failures()).noneMatch(failure -> failure.startsWith(CloseChecks.UNAVAILABLE));
+        assertThat(verdict.status()).isEqualTo(!behind.isEmpty() ? CloseCheckStatus.FAILED
+                : past.isEmpty() ? CloseCheckStatus.PASSED : CloseCheckStatus.DISCLOSED);
+    }
+
+    // ------------------------------------------------------------------ the rest of the run's statements
+
+    @Test
+    @DisplayName("M-3: the trigger holds the lease for every writer: a live holder is not replaced, with reclaims + 1 or without; a lapsed one only"
+            + " with reclaims + 1; nothing else moves reclaims")
+    void aLiveClaimIsNotReplaced() throws Exception {
+        CloseRuns runs = runs(new CloseRuns.Leases(Duration.ofSeconds(2), Duration.ofMillis(600), Duration.ofHours(1), 3, Duration.ofSeconds(1)));
+        startedJanuary(runs);
+        CloseRuns.ClaimedCheck held = TRANSACTIONS.inTransaction(uow -> runs.claim(uow, Actor.SYSTEM)).orElseThrow();
+        String attempt = " WHERE id = '" + held.id().value() + "'";
+        String other = "'" + UUID.randomUUID() + "'";
+        String live = "claimed only once its lease has passed";
+        String counted = "nothing else moves reclaims";
+
+        refusedSaying("UPDATE accounting.close_check SET holder = " + other + attempt, live);
+        refusedSaying("UPDATE accounting.close_check SET holder = " + other + ", reclaims = reclaims + 1" + attempt, live);
+        refusedSaying("UPDATE accounting.close_check SET reclaims = reclaims + 1" + attempt, counted);
+        refusedSaying("UPDATE accounting.close_check SET reclaims = reclaims + 2, holder = " + other + attempt, "one claim at a time");
+
+        LockSupport.parkNanos(Duration.ofMillis(2500).toNanos());
+        refusedSaying("UPDATE accounting.close_check SET holder = " + other + attempt, counted);
+        refusedSaying("UPDATE accounting.close_check SET holder = NULL, reclaims = reclaims + 1" + attempt, counted);
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement replaced = app.prepareStatement("UPDATE accounting.close_check SET holder = " + other
+                        + ", reclaims = reclaims + 1, lease_until = clock_timestamp() + interval '1 hour'" + attempt)) {
+            assertThat(replaced.executeUpdate()).as("a lapsed holder, replaced and counted").isEqualTo(1);
+        }
+    }
+
+    @Test
+    @DisplayName("a deferral through the real SQL: the attempt given back, nobody's, claimable only after the wait - the trigger holds the wait for"
+            + " every writer - and not a reclaim; the same attempt, and a second deferral by the old holder moves nothing")
+    void aDeferralIsNotADeath() throws Exception {
+        CloseRuns runs = runs(new CloseRuns.Leases(Duration.ofMinutes(2), Duration.ofSeconds(30), Duration.ofHours(1), 3, Duration.ofSeconds(2)));
+        startedJanuary(runs);
+        CloseRuns.ClaimedCheck held = TRANSACTIONS.inTransaction(uow -> runs.claim(uow, Actor.SYSTEM)).orElseThrow();
+        boolean deferred = TRANSACTIONS.inTransaction(uow -> runs.defer(uow, held));
+        assertThat(deferred).isTrue();
+        boolean deferredAgain = TRANSACTIONS.inTransaction(uow -> runs.defer(uow, held));
+        assertThat(deferredAgain).as("no longer its holder").isFalse();
+        refusedSaying("UPDATE accounting.close_check SET holder = '" + UUID.randomUUID() + "' WHERE id = '" + held.id().value() + "'",
+                "claimed only once its lease has passed");
+        assertThat(claimAll(runs)).extracting(CloseRuns.ClaimedCheck::id).as("within the wait").doesNotContain(held.id());
+
+        LockSupport.parkNanos(Duration.ofMillis(2500).toNanos());
+        CloseRuns.ClaimedCheck again = claimAll(runs).stream().filter(claimed -> claimed.id().equals(held.id())).findFirst().orElseThrow();
+        assertThat(again.reclaims()).as("a deferral is not a death").isZero();
+        assertThat(again.attempt()).isEqualTo(held.attempt());
+    }
+
+    @Test
+    @DisplayName("a re-run through the real SQL (runUnder, the run FOR UPDATE, latestAttempt, the attempt's insert, its audit record): refused while"
+            + " the check is pending, one new attempt, the view's history newest first (latestRun, ATTEMPTS_SQL)")
+    void aRerunIsANewAttempt() throws Exception {
+        CloseRuns runs = runs(CloseRuns.Leases.STANDARD);
+        CloseRunId run = startedJanuary(runs);
+        AccountingPeriodId january = id(JANUARY);
+        Actor accountant = person();
+        CloseCheckCode check = CloseCheckCode.PROJECTION_VERIFIED;
+        assertThatThrownBy(() -> rerun(runs, january, check, accountant)).as("still pending").isInstanceOf(CloseRuns.CheckPending.class);
+
+        CloseRuns.ClaimedCheck held = claimAll(runs).stream().filter(claimed -> claimed.check() == check).findFirst().orElseThrow();
+        CheckVerdict drifting = CheckVerdict.failed(check, "source-proofs:v1", List.of(CloseChecks.PROJECTION_DRIFT),
+                CanonicalJson.object().put("read", "whole"));
+        assertThat(TRANSACTIONS.inTransaction(uow -> runs.conclude(uow, held, drifting)).moved()).isTrue();
+
+        CloseRuns.Rerun rerun = rerun(runs, january, check, accountant);
+        assertThat(rerun.run()).isEqualTo(run);
+        assertThat(rerun.attempt()).isEqualTo(2);
+        assertThatThrownBy(() -> rerun(runs, january, check, accountant)).as("two re-runs, one new attempt")
+                .isInstanceOf(CloseRuns.CheckPending.class);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'accounting.CloseCheckRerun' AND target_id = '"
+                + run.value() + "'")).isEqualTo(1);
+
+        CloseRuns.RunView view = TRANSACTIONS.inTransaction(uow -> runs.view(uow, january)).orElseThrow();
+        assertThat(view.run().id()).isEqualTo(run);
+        assertThat(view.current()).isTrue();
+        assertThat(view.complete()).isFalse();
+        assertThat(view.checks()).hasSize(CloseCheckCode.values().length);
+        CloseRuns.CheckView rerunCheck = view.checks().stream().filter(seen -> seen.check() == check).findFirst().orElseThrow();
+        assertThat(rerunCheck.attempts()).isEqualTo(2);
+        assertThat(rerunCheck.latest().status()).isEqualTo(CloseCheckStatus.PENDING);
+        assertThat(rerunCheck.history()).extracting(CloseRunStore.AttemptRow::attempt).containsExactly(2, 1);
+        CloseRunStore.AttemptRow first = rerunCheck.history().get(1);
+        assertThat(first.status()).isEqualTo(CloseCheckStatus.FAILED);
+        assertThat(first.failures()).containsExactly(CloseChecks.PROJECTION_DRIFT);
+        assertThat(first.judgedBy()).contains("source-proofs:v1");
+        assertThat(first.evidence()).contains("{\"read\":\"whole\"}");
+    }
+
+    @Test
+    @DisplayName("the breaks' judgement and readiness through the real SQL (concludeOpenBreaks, countByStatus): a break planted in one transaction is"
+            + " counted and fails it there, rolled back; the committed books judge it; readiness answers the present lock")
+    void theBreaksJudgementAndReadinessReadTheMonth() throws Exception {
+        CloseRuns runs = runs(CloseRuns.Leases.STANDARD);
+        CloseRunId run = startedJanuary(runs);
+        AccountingPeriodId january = id(JANUARY);
+        JdbcAccountingBreakStore breaks = new JdbcAccountingBreakStore();
+        for (CloseRuns.ClaimedCheck claimed : claimAll(runs)) {
+            assertThat(TRANSACTIONS.inTransaction(uow -> runs.conclude(uow, claimed, passed(claimed.check()))).moved()).isTrue();
+        }
+        CloseRuns.Readiness pending = TRANSACTIONS.inTransaction(uow -> runs.readiness(uow, january));
+        assertThat(pending.run()).contains(run);
+        assertThat(pending.complete()).isFalse();
+        assertThat(pending.notReady()).containsExactly(CloseCheckCode.OPEN_ACCOUNTING_BREAKS);
+        CloseRuns.ClaimedCheck judged = TRANSACTIONS.inTransaction(uow -> runs.claim(uow, Actor.SYSTEM)).orElseThrow();
+        assertThat(judged.check()).isEqualTo(CloseCheckCode.OPEN_ACCOUNTING_BREAKS);
+
+        try (Connection plant = DatabaseRoles.application()) {
+            plant.setAutoCommit(false);
+            Map<BreakStatus, Long> before = breaks.countByStatus(plant, JANUARY);
+            plantBreak(breaks, plant, "shape:" + IDS.next(), "entry planted");
+            assertThat(breaks.countByStatus(plant, JANUARY).getOrDefault(BreakStatus.OPEN, 0L))
+                    .isEqualTo(before.getOrDefault(BreakStatus.OPEN, 0L) + 1);
+            CloseRuns.Concluded failed = runs.concludeOpenBreaks(plant, judged);
+            assertThat(failed.moved()).isTrue();
+            assertThat(failed.status()).isEqualTo(CloseCheckStatus.FAILED);
+            plant.rollback();
+        }
+
+        String ofJanuary = "SELECT count(*) FROM accounting.accounting_break WHERE period_start = '" + JANUARY.atDay(1) + "' AND status = ";
+        long open = count(ofJanuary + "'OPEN'");
+        long acknowledged = count(ofJanuary + "'ACKNOWLEDGED'");
+        CloseRuns.Concluded concluded = TRANSACTIONS.inTransaction(uow -> runs.concludeOpenBreaks(uow, judged));
+        assertThat(concluded.status()).isEqualTo(open > 0 ? CloseCheckStatus.FAILED
+                : acknowledged > 0 ? CloseCheckStatus.DISCLOSED : CloseCheckStatus.PASSED);
+        assertThat(concluded.tookFor()).as("the run's last check: observed once").isPresent();
+        CloseRuns.Readiness ready = TRANSACTIONS.inTransaction(uow -> runs.readiness(uow, january));
+        assertThat(ready.complete()).isEqualTo(open == 0);
+        assertThat(ready.openBreaks()).isEqualTo(open);
+    }
+
+    @Test
+    @DisplayName("an unlock and a new lock: the read serves the old run with current=false until a poll starts the new one, readiness names none, a"
+            + " re-run has none to name; the new run is the present lock's, the old rows stay and are never claimable")
+    void aNewLockIsANewRun() throws Exception {
+        CloseRuns runs = runs(CloseRuns.Leases.STANDARD);
+        CloseRunId first = startedJanuary(runs);
+        AccountingPeriodId january = id(JANUARY);
+        AccountingPeriodFixture.restore();
+        lockJanuary();
+
+        CloseRuns.RunView stale = TRANSACTIONS.inTransaction(uow -> runs.view(uow, january)).orElseThrow();
+        assertThat(stale.run().id()).isEqualTo(first);
+        assertThat(stale.current()).isFalse();
+        assertThat(stale.complete()).isFalse();
+        CloseRuns.Readiness none = TRANSACTIONS.inTransaction(uow -> runs.readiness(uow, january));
+        assertThat(none.run()).isEmpty();
+        assertThat(none.complete()).isFalse();
+        assertThat(none.notReady()).containsExactly(CloseCheckCode.values());
+        assertThatThrownBy(() -> rerun(runs, january, CloseCheckCode.PROJECTION_VERIFIED, person()))
+                .isInstanceOf(CloseRuns.RunNotStarted.class);
+        assertThat(claimAll(runs)).as("the old lock's attempts are never claimable").isEmpty();
+
+        List<CloseRunId> started = TRANSACTIONS.inTransaction(uow -> runs.startMissing(uow, Actor.SYSTEM));
+        assertThat(started).singleElement().isNotEqualTo(first);
+        CloseRuns.RunView present = TRANSACTIONS.inTransaction(uow -> runs.view(uow, january)).orElseThrow();
+        assertThat(present.run().id()).isEqualTo(started.get(0));
+        assertThat(present.current()).isTrue();
+        assertThat(count("SELECT count(*) FROM accounting.close_check WHERE close_run_id = '" + first.value() + "'")).as("the old rows stay")
+                .isEqualTo(9);
+    }
+
+    @Test
+    @DisplayName("VALUATION_SET_APPROVED through the real SQL, on the read-only snapshot (ofPeriod): the period's sets named, the verdict what the table"
+            + " says - January ends another suite with one approved, so the verdict is read off the table")
+    void theValuationCheckReadsThePeriodsSets() throws Exception {
+        AccountingPeriodId january = lockJanuary();
+        String ofJanuary = "SELECT count(*) FROM accounting.valuation_rate_set WHERE period_id = '" + january.value() + "'";
+        long all = count(ofJanuary);
+        long approved = count(ofJanuary + " AND status = 'APPROVED'");
+        List<ValuationRateSetStore.SetRow> sets = SNAPSHOTS.read(snapshot -> new JdbcValuationRateSetStore().ofPeriod(snapshot, january, 20));
+        assertThat(sets).hasSize((int) Math.min(all, 20)).allSatisfy(set -> {
+            assertThat(set.period()).isEqualTo(january);
+            assertThat(set.month()).isEqualTo(JANUARY);
+        });
+
+        CheckVerdict verdict = checks(caughtUp(), (snapshot, month) -> noDisclosure(month), reader())
+                .judge(claimed(CloseCheckCode.VALUATION_SET_APPROVED, january)).orElseThrow();
+        assertThat(verdict.failures()).noneMatch(failure -> failure.startsWith(CloseChecks.UNAVAILABLE));
+        if (approved == 0) {
+            assertThat(verdict.status()).isEqualTo(CloseCheckStatus.FAILED);
+            assertThat(verdict.failures()).containsExactly(CloseChecks.NO_APPROVED_SET);
+        }
+    }
+
+    @Test
+    @DisplayName("I-1 through the real SQL: held answers the evidence a break was raised with, byte for byte, beside its status, per check")
+    void theHeldEvidenceIsWhatWasRaised() throws Exception {
+        JdbcAccountingBreakStore breaks = new JdbcAccountingBreakStore();
+        try (Connection plant = DatabaseRoles.application()) {
+            plant.setAutoCommit(false);
+            String subject = "shape:" + IDS.next();
+            String evidence = "entry=planted, lines=[DEBIT CUSTOMER_WALLET, CREDIT FEE_REVENUE]";
+            plantBreak(breaks, plant, subject, evidence);
+            assertThat(breaks.held(plant, JANUARY, CloseCheckCode.RULE_CONFORMANCE))
+                    .containsEntry(subject, new AccountingBreakStore.Held(BreakStatus.OPEN, evidence));
+            assertThat(breaks.held(plant, JANUARY, CloseCheckCode.GL_EQUALS_LEDGER)).doesNotContainKey(subject);
+            plant.rollback();
+        }
+    }
+
     // ------------------------------------------------------------------ the disclosure
 
     @Test
@@ -397,30 +685,28 @@ class CloseRunDatabaseTest {
         ReconciliationDisclosure disclosure = new ProductReconciliationDisclosure(new JdbcReportReadings(), new LedgerFlooredPostings());
         // A cutoff past everything: as of it, the reading is the books as they stand - compared with reconciliation's own reads.
         YearMonth future = YearMonth.of(2099, 12);
-        try (Connection app = DatabaseRoles.application()) {
-            app.setAutoCommit(false);
-            ReconciliationDisclosure.Disclosure read = disclosure.asOfCutoff(app, future);
-            SuspenseReadings suspense = new JdbcSuspenseReadings();
-            BigInteger credit = BigInteger.ZERO;
-            BigInteger debit = BigInteger.ZERO;
-            for (SuspenseReadings.OpenSuspenseRemainder remainder : suspense.openRemainders(app)) {
-                if (remainder.remainder().currency().equals(EUR)) {
-                    BigInteger minor = BigInteger.valueOf(remainder.remainder().minorUnits());
-                    credit = remainder.side() == SuspenseSide.CREDIT ? credit.add(minor) : credit;
-                    debit = remainder.side() == SuspenseSide.DEBIT ? debit.add(minor) : debit;
-                }
+        // On the connection production judges on: REPEATABLE READ READ ONLY, both reads one snapshot - a lock or a write is refused.
+        record Whole(ReconciliationDisclosure.Disclosure read, List<SuspenseReadings.OpenSuspenseRemainder> remainders) {}
+        Whole whole = SNAPSHOTS.read(snapshot -> new Whole(disclosure.asOfCutoff(snapshot, future),
+                new JdbcSuspenseReadings().openRemainders(snapshot)));
+        BigInteger credit = BigInteger.ZERO;
+        BigInteger debit = BigInteger.ZERO;
+        for (SuspenseReadings.OpenSuspenseRemainder remainder : whole.remainders()) {
+            if (remainder.remainder().currency().equals(EUR)) {
+                BigInteger minor = BigInteger.valueOf(remainder.remainder().minorUnits());
+                credit = remainder.side() == SuspenseSide.CREDIT ? credit.add(minor) : credit;
+                debit = remainder.side() == SuspenseSide.DEBIT ? debit.add(minor) : debit;
             }
-            BigInteger disclosedCredit = read.suspense().stream().filter(item -> item.currency().equals("EUR"))
-                    .map(ReconciliationDisclosure.Suspense::creditUnreleasedMinor).reduce(BigInteger.ZERO, BigInteger::add);
-            BigInteger disclosedDebit = read.suspense().stream().filter(item -> item.currency().equals("EUR"))
-                    .map(ReconciliationDisclosure.Suspense::debitUnreleasedMinor).reduce(BigInteger.ZERO, BigInteger::add);
-            assertThat(disclosedCredit).isEqualTo(credit);
-            assertThat(disclosedDebit).isEqualTo(debit);
-            assertThat(read.breaks().stream().mapToLong(ReconciliationDisclosure.OpenBreaks::breaks).sum())
-                    .isEqualTo(count("SELECT count(*) FROM reconciliation.break WHERE status <> 'RESOLVED'"));
-            assertThat(read.raisedSinceStillOpen()).isZero();
-            app.rollback();
         }
+        BigInteger disclosedCredit = whole.read().suspense().stream().filter(item -> item.currency().equals("EUR"))
+                .map(ReconciliationDisclosure.Suspense::creditUnreleasedMinor).reduce(BigInteger.ZERO, BigInteger::add);
+        BigInteger disclosedDebit = whole.read().suspense().stream().filter(item -> item.currency().equals("EUR"))
+                .map(ReconciliationDisclosure.Suspense::debitUnreleasedMinor).reduce(BigInteger.ZERO, BigInteger::add);
+        assertThat(disclosedCredit).isEqualTo(credit);
+        assertThat(disclosedDebit).isEqualTo(debit);
+        assertThat(whole.read().breaks().stream().mapToLong(ReconciliationDisclosure.OpenBreaks::breaks).sum())
+                .isEqualTo(count("SELECT count(*) FROM reconciliation.break WHERE status <> 'RESOLVED'"));
+        assertThat(whole.read().raisedSinceStillOpen()).isZero();
 
         LedgerAccount suspenseAccount = operational(AccountPurpose.SUSPENSE_UNMATCHED);
         LedgerAccount wallet = wallet();
@@ -428,10 +714,12 @@ class CloseRunDatabaseTest {
                 SecurityContext.Scope actor = SecurityContext.enterSystem();
                 CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)))) {
             plant.setAutoCommit(false);
+            plant.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
             BigInteger creditsBefore = ledgerCredits(disclosure.asOfCutoff(plant, JANUARY));
             posting().post(plant, new PostingCommand("close-run-suspense-" + IDS.next(), IN_JANUARY, IN_JANUARY, "close-run-suite",
                     List.of(new JournalLine(wallet.id(), Direction.DEBIT, Money.ofMinorUnits(700, EUR)),
                             new JournalLine(suspenseAccount.id(), Direction.CREDIT, Money.ofMinorUnits(700, EUR)))));
+            readOnlyFromHere(plant);
 
             ReconciliationDisclosure.Disclosure planted = disclosure.asOfCutoff(plant, JANUARY);
             assertThat(ledgerCredits(planted)).isEqualTo(creditsBefore.add(BigInteger.valueOf(700)));
@@ -558,6 +846,31 @@ class CloseRunDatabaseTest {
             claimed.add(next.get());
         }
         return claimed;
+    }
+
+    private static CloseRuns.Rerun rerun(CloseRuns runs, AccountingPeriodId period, CloseCheckCode check, Actor actor) {
+        return TRANSACTIONS.inTransaction(uow -> runs.rerun(uow, period, check, actor, "the projection was repaired", correlation()));
+    }
+
+    /** One break of January on {@code plant}, for its transaction alone. */
+    private static void plantBreak(JdbcAccountingBreakStore breaks, Connection plant, String subject, String evidence) {
+        breaks.insertIfAbsent(plant, new AccountingBreakStore.NewBreak(AccountingBreakId.next(IDS), JANUARY, new BreakFinding(
+                CloseCheckCode.RULE_CONFORMANCE, BreakType.SHAPE_MISMATCH, subject, evidence, "posting-rules:v2"), Actor.SYSTEM, correlation()));
+    }
+
+    /** The rest of {@code plant}'s transaction reads only, as a judge's snapshot does - its own writes still visible to it. */
+    private static void readOnlyFromHere(Connection plant) throws SQLException {
+        try (PreparedStatement readOnly = plant.prepareStatement("SET TRANSACTION READ ONLY")) {
+            readOnly.execute();
+        }
+    }
+
+    /** One accrual entry in an accruer's own dating - posted {@code posted}, valued {@code valued} - on {@code plant}. */
+    private static void accrual(Connection plant, String keyPrefix, LocalDate posted, LocalDate valued, LedgerAccount debit, LedgerAccount credit,
+            long minor) {
+        posting().post(plant, new PostingCommand(keyPrefix + IDS.next() + ":" + valued, posted, valued, "close-run-suite",
+                List.of(new JournalLine(debit.id(), Direction.DEBIT, Money.ofMinorUnits(minor, EUR)),
+                        new JournalLine(credit.id(), Direction.CREDIT, Money.ofMinorUnits(minor, EUR)))));
     }
 
     private static CheckVerdict passed(CloseCheckCode check) {
@@ -705,6 +1018,17 @@ class CloseRunDatabaseTest {
                 ResultSet row = read.executeQuery()) {
             row.next();
             return row.getLong(1);
+        }
+    }
+
+    /** {@code sql} as the application refused by the machine's trigger, in the words given, and rolled back. */
+    private static void refusedSaying(String sql, String words) throws SQLException {
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            try (PreparedStatement statement = app.prepareStatement(sql)) {
+                assertThatThrownBy(statement::executeUpdate).as(sql).isInstanceOf(SQLException.class).hasMessageContaining(words);
+            }
+            app.rollback();
         }
     }
 

@@ -22,7 +22,9 @@ import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -248,6 +250,40 @@ class CloseRunsTest {
         raiseOpenBreak();
         runs.conclude(UOW, rerun, failed(rerun.check()));
 
+        CloseRunStore.AttemptRow again = latest(run, CloseCheckCode.OPEN_ACCOUNTING_BREAKS);
+        assertThat(again.attempt()).isEqualTo(2);
+        assertThat(again.status()).isEqualTo(CloseCheckStatus.PENDING);
+        assertThat(runs.concludeOpenBreaks(UOW, runs.claim(UOW, Actor.SYSTEM).orElseThrow()).status())
+                .as("judged after the raise").isEqualTo(CloseCheckStatus.FAILED);
+    }
+
+    @Test
+    @DisplayName("M-1: a raise by an overtaken worker births a new judgement too: its conclusion moves nothing, and no stale PASSED stands beside"
+            + " the break; an overtaken check that raises nothing births none")
+    void aRaiseByAnOvertakenWorkerBirthsANewJudgement() {
+        CloseRunId run = started();
+        Map<CloseCheckCode, CloseRuns.ClaimedCheck> overtaken = new EnumMap<>(CloseCheckCode.class);
+        Optional<CloseRuns.ClaimedCheck> next;
+        while ((next = runs.claim(UOW, Actor.SYSTEM)).isPresent()) {
+            overtaken.put(next.get().check(), next.get());
+        }
+        store.advance(leases.lease());
+        concludeAll(run);
+        assertThat(latest(run, CloseCheckCode.RULE_CONFORMANCE).status()).isEqualTo(CloseCheckStatus.PASSED);
+        assertThat(latest(run, CloseCheckCode.OPEN_ACCOUNTING_BREAKS).status()).isEqualTo(CloseCheckStatus.PASSED);
+
+        CloseRuns.ClaimedCheck quiet = overtaken.get(CloseCheckCode.PROJECTION_VERIFIED);
+        assertThat(runs.conclude(UOW, quiet, passed(quiet.check())).moved()).isFalse();
+        assertThat(latest(run, CloseCheckCode.OPEN_ACCOUNTING_BREAKS).attempt()).as("it raises nothing").isEqualTo(1);
+
+        // The overtaken worker's judgement raised this before it reached its conclusion.
+        raiseOpenBreak();
+        CloseRuns.ClaimedCheck raising = overtaken.get(CloseCheckCode.RULE_CONFORMANCE);
+        CloseRuns.Concluded refused = runs.conclude(UOW, raising, failed(raising.check()));
+
+        assertThat(refused.moved()).as("the fence still refuses it").isFalse();
+        assertThat(refused.tookFor()).isEmpty();
+        assertThat(latest(run, CloseCheckCode.RULE_CONFORMANCE).status()).as("the reclaimer's conclusion stands").isEqualTo(CloseCheckStatus.PASSED);
         CloseRunStore.AttemptRow again = latest(run, CloseCheckCode.OPEN_ACCOUNTING_BREAKS);
         assertThat(again.attempt()).isEqualTo(2);
         assertThat(again.status()).isEqualTo(CloseCheckStatus.PENDING);

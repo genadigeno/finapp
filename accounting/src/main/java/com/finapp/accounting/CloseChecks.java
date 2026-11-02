@@ -25,20 +25,25 @@ import lombok.extern.slf4j.Slf4j;
  * <p><strong>No false pass.</strong> {@code PASSED} only when the judge read everything it covers and found nothing. An
  * exception, a timeout, an incomplete proof, a reading missing, a verdict member absent: {@code FAILED} with its
  * reason, the exception's class logged (never its message, which may carry data). A {@code RECURRED} outcome - a {@code
- * RESOLVED} break's discrepancy still present - is {@code FAILED} and never {@code DISCLOSED}, whatever the owner rules
- * on re-raising (ADR-0117's open question): a re-raise would make it a new {@code OPEN} break, {@code FAILED} just the
- * same.
+ * RESOLVED} break's discrepancy still present - is {@code FAILED} and never {@code DISCLOSED}, the default until the
+ * owner rules on re-raising (ADR-0117's open question). That answer also decides whether such a close can ever pass: the
+ * subject of an immutable journal entry never goes away, so as built a {@code RESOLVED} conformance break fails every
+ * re-run for good (`P14-TSK-012`'s precondition, I-2).
  *
  * <p><strong>{@code DISCLOSED}</strong> only as {@link CloseCheckCode#disclosable()} admits: a raising check every one
- * of whose findings an {@code ACKNOWLEDGED} break holds, and nothing else failing; {@code ACCRUALS_COMPLETE} with
- * nothing behind and floored entries found; {@code RECONCILIATION_DISCLOSURE} read whole and not clean.
+ * of whose findings an {@code ACKNOWLEDGED} break holds <em>as acknowledged</em> ({@link
+ * CheckOutcome#ACKNOWLEDGED_CHANGED}), and nothing else failing; {@code ACCRUALS_COMPLETE} with nothing behind and
+ * entries found past the cutoff; {@code RECONCILIATION_DISCLOSURE} read whole and not clean.
  *
  * <p><strong>{@code ACCRUALS_COMPLETE} after the lock</strong> (`P14-TSK-006`'s review, I-1): a catch-up after the lock
  * floors the period's accrual dates to the first open date, and {@link AccrualCompleteness#blocking} then reads empty
  * while the period is short of that interest. So both legs are read on <em>one snapshot</em>: an accrual either has not
- * committed (behind: {@code FAILED}) or has (floored: {@code DISCLOSED}, with the figures) - no third state, and never
- * {@code PASSED} on a period short of interest. Not judged inside T-lock: that would pause every posting for an
- * O(servicing) read and hold the ledger's protection hostage to one stuck loan.
+ * committed (behind: {@code FAILED}) or has (past the cutoff: {@code DISCLOSED}, with the figures) - no third state, and
+ * never {@code PASSED} on a period short of interest. Not judged inside T-lock: that would pause every posting for an
+ * O(servicing) read and hold the ledger's protection hostage to one stuck loan. <strong>Bnpl has no floor and the same
+ * shortfall</strong> (`P14-TSK-011`'s review, C-1): {@code BNPL-F2a} posts today valued the accrual date, so a lagging sweep
+ * is read by the same leg, and the month's last day posts after the month by the rule itself. So a period with an active
+ * pay-in-N obligation reads {@code DISCLOSED}; the evidence keeps {@code lastDay} apart from {@code older}, the lag.
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -186,8 +191,8 @@ public final class CloseChecks {
     /**
      * An outcome as an attempt's verdict: {@code DISCLOSED} only when the sole failure is {@link
      * CheckOutcome#DISCREPANCIES} and an {@code ACKNOWLEDGED} break - four eyes, a disclosure - holds every finding.
-     * {@link CheckOutcome#RECURRED}, {@code UNAVAILABLE:*}, {@code NO_MAPPING} and {@code FINDINGS_CAPPED} are each
-     * another failure, so never.
+     * {@link CheckOutcome#RECURRED}, {@link CheckOutcome#ACKNOWLEDGED_CHANGED}, {@code UNAVAILABLE:*}, {@code NO_MAPPING}
+     * and {@code FINDINGS_CAPPED} are each another failure, so never.
      */
     static CheckVerdict verdictOf(CheckOutcome outcome) {
         CanonicalJson.Obj evidence = evidence(outcome);
@@ -202,9 +207,12 @@ public final class CloseChecks {
     }
 
     private static CanonicalJson.Obj evidence(CheckOutcome outcome) {
+        CanonicalJson.Arr changed = CanonicalJson.array();
+        outcome.acknowledgedChanged().stream().limit(MAX_SUBJECTS).forEach(changed::add);
         return CanonicalJson.object().put("findings", outcome.findings()).put("raised", outcome.raised())
                 .put("knownOpen", outcome.knownOpen()).put("knownAcknowledged", outcome.knownAcknowledged())
-                .put("recurred", outcome.knownResolved());
+                .put("recurred", outcome.knownResolved()).put("acknowledgedChanged", outcome.acknowledgedChanged().size())
+                .put("changedSubjects", changed);
     }
 
     // ------------------------------------------------------------------ accruals
@@ -221,7 +229,11 @@ public final class CloseChecks {
         CanonicalJson.Arr floored = CanonicalJson.array();
         reading.floored().forEach(entry -> floored.add(CanonicalJson.object().put("accruer", entry.accruer().name())
                 .put("currency", entry.currency()).put("scale", entry.scale()).put("entries", entry.entries())
-                .put("interestMinor", entry.interestMinor().toString())));
+                .put("interestMinor", entry.interestMinor().toString())
+                .put("lastDay", CanonicalJson.object().put("entries", entry.lastDayEntries())
+                        .put("interestMinor", entry.lastDayInterestMinor().toString()))
+                .put("older", CanonicalJson.object().put("entries", entry.olderEntries())
+                        .put("interestMinor", entry.olderInterestMinor().toString()))));
         CanonicalJson.Obj evidence = CanonicalJson.object().put("periodEnd", end.toString()).put("behind", behind)
                 .put("flooredPastTheCutoff", floored);
         if (!reading.behind().isEmpty()) {

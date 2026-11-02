@@ -132,10 +132,25 @@ public interface AccountingBreakStore {
             Optional<AccountingBreakId> after, int limit);
 
     /**
-     * The subjects already raised for {@code period} and {@code check}, each with its break's status - what a run counts
-     * and never re-raises, a {@code RESOLVED} one reported as a recurrence (the review's I-1).
+     * The subjects already raised for {@code period} and {@code check}, each with its break's status and evidence - what
+     * a run counts and never re-raises, a {@code RESOLVED} one reported as a recurrence (the review's I-1), an {@code
+     * ACKNOWLEDGED} one whose finding now reads differently as changed (`P14-TSK-011`'s review, I-1).
      */
-    Map<String, BreakStatus> held(Connection unitOfWork, YearMonth period, CloseCheckCode check);
+    Map<String, Held> held(Connection unitOfWork, YearMonth period, CloseCheckCode check);
+
+    /** What a raised subject's break holds: its status, and the evidence it was raised with - never rewritten. */
+    record Held(BreakStatus status, String evidence) {
+
+        public Held {
+            Objects.requireNonNull(status, "status");
+            Objects.requireNonNull(evidence, "evidence");
+        }
+
+        /** True when {@code finding} is one an acknowledgement did not see: acknowledged, and now reading differently. */
+        boolean changedBy(BreakFinding finding) {
+            return status == BreakStatus.ACKNOWLEDGED && !evidence.equals(finding.evidence());
+        }
+    }
 
     /** How many breaks are not {@code RESOLVED}, per type - {@code finapp.accounting.break.open{type}}. */
     Map<BreakType, Long> openByType(Connection unitOfWork);

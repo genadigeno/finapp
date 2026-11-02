@@ -193,8 +193,8 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
         executor.set(started);
         for (Leg leg : List.of(new Leg(cadence.openPoll(), this::openOnce), new Leg(cadence.checksPoll(), this::checksOnce),
                 new Leg(cadence.orphansPoll(), this::orphansOnce))) {
-            started.scheduleWithFixedDelay(leg.work()::getAsInt, leg.poll().toMillis(), leg.poll().toMillis(),
-                    TimeUnit.MILLISECONDS);
+            // At once, not after a poll: an hour's open leg would otherwise never run on a fleet restarted within the hour.
+            started.scheduleWithFixedDelay(leg.work()::getAsInt, 0, leg.poll().toMillis(), TimeUnit.MILLISECONDS);
         }
     }
 

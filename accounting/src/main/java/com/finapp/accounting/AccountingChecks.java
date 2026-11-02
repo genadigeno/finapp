@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.Function;
 import lombok.extern.slf4j.Slf4j;
 
@@ -132,17 +133,20 @@ public final class AccountingChecks {
         if (knownResolved > 0) {
             failures.add(CheckOutcome.RECURRED);
         }
+        if (!judgement.changed().isEmpty()) {
+            failures.add(CheckOutcome.ACKNOWLEDGED_CHANGED);
+        }
         failures.addAll(judgement.failures());
         return new CheckOutcome(period, check, failures.isEmpty() ? CheckOutcome.Result.PASSED
                 : CheckOutcome.Result.FAILED, judgement.judgedBy(), findings, raised, knownOpen, knownAcknowledged,
-                knownResolved, failures);
+                knownResolved, judgement.changed(), failures);
     }
 
     // ------------------------------------------------------------------ the judges
 
     /** What a judge found: the new findings to raise, the known ones counted per status, why it could not pass. */
     private record Judgement(String judgedBy, List<BreakFinding> fresh, Map<BreakStatus, Integer> knownByStatus,
-            List<String> failures) {
+            List<String> changed, List<String> failures) {
 
         int known(BreakStatus status) {
             return knownByStatus.getOrDefault(status, 0);
@@ -153,11 +157,11 @@ public final class AccountingChecks {
         try {
             return snapshots.read(snapshot -> {
                 GlBalances balances = ledger.balances(snapshot, pins.forPeriod(snapshot, period), Optional.empty());
-                Map<String, BreakStatus> held = breaks.held(snapshot, period, CloseCheckCode.GL_EQUALS_LEDGER);
+                Map<String, AccountingBreakStore.Held> held = breaks.held(snapshot, period, CloseCheckCode.GL_EQUALS_LEDGER);
                 return split(GlEqualsLedger.judgedBy(balances), glEqualsLedger.judge(balances), held, List.of());
             });
         } catch (GlPins.NoActiveMapping none) {
-            return new Judgement("gl-mapping:none", List.of(), Map.of(), List.of(CheckOutcome.NO_MAPPING));
+            return new Judgement("gl-mapping:none", List.of(), Map.of(), List.of(), List.of(CheckOutcome.NO_MAPPING));
         } catch (RuntimeException unreadable) {
             return unavailable("gl-mapping:none", CloseCheckCode.GL_EQUALS_LEDGER.name(), unreadable);
         }
@@ -166,7 +170,7 @@ public final class AccountingChecks {
     private Judgement judgeConformance(YearMonth period) {
         try {
             return snapshots.read(snapshot -> {
-                Map<String, BreakStatus> held = breaks.held(snapshot, period, CloseCheckCode.RULE_CONFORMANCE);
+                Map<String, AccountingBreakStore.Held> held = breaks.held(snapshot, period, CloseCheckCode.RULE_CONFORMANCE);
                 RuleConformance.Tally tally = conformance.tally(held, MAX_NEW_FINDINGS);
                 JournalReads.Range range = JournalReads.Range.of(period);
                 Optional<JournalShapes.EntryCursor> after = Optional.empty();
@@ -184,7 +188,7 @@ public final class AccountingChecks {
                     }
                     after = page.isEmpty() ? after : Optional.of(page.get(page.size() - 1).cursor());
                 } while (page.size() == PAGE);
-                return new Judgement(conformance.judgedBy(), tally.findings(), tally.known(),
+                return new Judgement(conformance.judgedBy(), tally.findings(), tally.known(), tally.changed(),
                         tally.capped() ? List.of(CheckOutcome.FINDINGS_CAPPED) : List.of());
             });
         } catch (RuntimeException unreadable) {
@@ -193,7 +197,7 @@ public final class AccountingChecks {
     }
 
     private Judgement judgeSources(YearMonth period) {
-        Map<String, BreakStatus> held;
+        Map<String, AccountingBreakStore.Held> held;
         try {
             held = snapshots.read(snapshot -> breaks.held(snapshot, period, CloseCheckCode.SOURCE_COMPLETENESS));
         } catch (RuntimeException unreadable) {
@@ -217,19 +221,23 @@ public final class AccountingChecks {
     }
 
     /** {@code found} split into the new (first {@link #MAX_NEW_FINDINGS}) and the known per status, with the failures. */
-    private static Judgement split(String judgedBy, List<BreakFinding> found, Map<String, BreakStatus> held,
+    private static Judgement split(String judgedBy, List<BreakFinding> found, Map<String, AccountingBreakStore.Held> held,
             List<String> failures) {
         List<BreakFinding> fresh = new ArrayList<>();
         Map<BreakStatus, Integer> known = new EnumMap<>(BreakStatus.class);
+        Set<String> changed = new TreeSet<>();
         Set<String> seen = new HashSet<>();
         boolean capped = false;
         for (BreakFinding finding : found) {
             if (!seen.add(finding.subject())) {
                 continue;
             }
-            BreakStatus holder = held.get(finding.subject());
+            AccountingBreakStore.Held holder = held.get(finding.subject());
             if (holder != null) {
-                known.merge(holder, 1, Integer::sum);
+                known.merge(holder.status(), 1, Integer::sum);
+                if (holder.changedBy(finding)) {
+                    changed.add(finding.subject());
+                }
             } else if (fresh.size() < MAX_NEW_FINDINGS) {
                 fresh.add(finding);
             } else {
@@ -240,12 +248,12 @@ public final class AccountingChecks {
         if (capped) {
             all.add(CheckOutcome.FINDINGS_CAPPED);
         }
-        return new Judgement(judgedBy, fresh, known, all);
+        return new Judgement(judgedBy, fresh, known, List.copyOf(changed), all);
     }
 
     private static Judgement unavailable(String judgedBy, String what, RuntimeException unreadable) {
         logUnavailable(what, unreadable);
-        return new Judgement(judgedBy, List.of(), Map.of(), List.of(CheckOutcome.UNAVAILABLE + what));
+        return new Judgement(judgedBy, List.of(), Map.of(), List.of(), List.of(CheckOutcome.UNAVAILABLE + what));
     }
 
     /** The review's M-2: the judge's exception by class - never its message, which may carry a figure or an id. */

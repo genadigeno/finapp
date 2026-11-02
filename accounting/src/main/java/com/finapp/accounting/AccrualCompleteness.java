@@ -23,6 +23,10 @@ import java.util.Objects;
  * I-1: find and disclose - {@link #flooredPast} - on the same snapshot as {@link #blocking}, so an accrual is either
  * still behind or already floored and never neither; judging inside the lock would pause every posting for this read.)*
  *
+ * <p><strong>The same holds for bnpl, without a floor</strong> (`P14-TSK-011`'s review, C-1): {@code BNPL-F2a} posts on
+ * the business date and is valued the accrual date, so a sweep down 25-31 January that catches up on 2 February reads
+ * nothing behind and puts seven days of January's interest in February's GL. {@link #flooredPast} reads both accruers.
+ *
  * <p><strong>Read-only</strong>, on the caller's unit of work: one statement per accruer and arm, each its own snapshot
  * of the servicing rows under READ COMMITTED - the close check runs it in {@code REPEATABLE READ READ ONLY} (C10),
  * which makes it one. Lock-free: it judges, it never waits for a servicing step. Implemented by {@code app}'s {@code
@@ -87,26 +91,48 @@ public interface AccrualCompleteness {
      * One accruer's entries floored past a cutoff, one currency and scale: interest earned on or before the period's
      * end and posted after it - the amount the period is short by (`P14-TSK-006`'s review, I-1).
      *
-     * @param interestMinor the interest income the entries credit, in minor units
+     * @param entries every entry of the position, the period's last day and anything older
+     * @param interestMinor the interest income they credit, in minor units
+     * @param lastDayEntries those valued the period's last day: for {@code BNPL-F2a} the structural day's shift - a date
+     *     accrues only once it has ended, so a month's last day always posts after the month - which the owner may carve
+     *     out later, so it is reported apart from {@link #olderEntries() anything older}, which is a lag
+     * @param lastDayInterestMinor the interest income those credit
      */
-    record Floored(Accruer accruer, String currency, int scale, long entries, BigInteger interestMinor) {
+    record Floored(Accruer accruer, String currency, int scale, long entries, BigInteger interestMinor, long lastDayEntries,
+            BigInteger lastDayInterestMinor) {
 
         public Floored {
             Objects.requireNonNull(accruer, "accruer");
             Objects.requireNonNull(currency, "currency");
             Objects.requireNonNull(interestMinor, "interestMinor");
+            Objects.requireNonNull(lastDayInterestMinor, "lastDayInterestMinor");
             if (entries < 1 || interestMinor.signum() < 0) {
                 throw new IllegalArgumentException("a floored position holds an entry and no negative interest");
             }
+            if (lastDayEntries < 0 || lastDayEntries > entries || lastDayInterestMinor.signum() < 0
+                    || lastDayInterestMinor.compareTo(interestMinor) > 0) {
+                throw new IllegalArgumentException("a floored position's last day is part of it");
+            }
+        }
+
+        /** The entries valued before the period's last day - interest that was not merely a day late. */
+        public long olderEntries() {
+            return entries - lastDayEntries;
+        }
+
+        /** The interest income {@link #olderEntries} credit, in minor units. */
+        public BigInteger olderInterestMinor() {
+            return interestMinor.subtract(lastDayInterestMinor);
         }
     }
 
     /**
-     * The accrual entries whose value date is on or before {@code periodEnd} and whose posting date is after it - only
-     * a floor puts them there (lending's {@code LND-2} posts dated its accrual date otherwise). Bnpl's {@code BNPL-F2a}
-     * is not among them: by its own rule it posts today and is valued the accrual date, so every month end's last day
-     * falls after the end by design - a structural shift of a day, not a floor (an owner item, `P14-TSK-011`). Read on
-     * the same unit of work as {@link #blocking}, one snapshot.
+     * The accrual entries whose value date is on or before {@code periodEnd} and whose posting date is after it. For
+     * lending's {@code LND-2}, which posts dated its accrual date otherwise, only a floor puts them there. For bnpl's
+     * {@code BNPL-F2a}, which posts today valued the accrual date, a day's shift of the month's last day always does and
+     * a lagging sweep puts any older date there too, so a period with an active pay-in-N obligation is not {@code PASSED}:
+     * {@link Floored} reports the last day apart from anything older (`P14-TSK-011`'s review, C-1; carving the last day
+     * out is the owner's). Read on the same unit of work as {@link #blocking}, one snapshot.
      */
     List<Floored> flooredPast(Connection unitOfWork, LocalDate periodEnd);
 }

@@ -19,6 +19,12 @@ import java.util.Objects;
  * should instead raise a new break (a generation in the key, or re-raise on {@code RESOLVED}) is an owner item for
  * `-011`, ADR-0117's open question.
  *
+ * <p><strong>An acknowledgement holds a finding, not only a subject</strong> (`P14-TSK-011`'s review, I-1): four eyes
+ * disclosed what the break's evidence says, so a finding under an {@code ACKNOWLEDGED} break whose evidence now differs is
+ * {@link #ACKNOWLEDGED_CHANGED} - never disclosed - and names its subject. Evidence holds codes, ids and counts and
+ * never an amount, so a change of amount alone is not seen; which granularity is right is the owner's, this is the safe
+ * default (ADR-0117).
+ *
  * @param judgedBy the register version: {@code posting-rules:v<n>}, {@code gl-mapping:v<n>} ({@code gl-mapping:none}
  *     when no version applies), {@code source-proofs:v<n>}
  * @param findings every discrepancy the run found - new or already a break
@@ -26,8 +32,9 @@ import java.util.Objects;
  * @param knownOpen findings an {@code OPEN} break already held (a concurrent run's newborn among them)
  * @param knownAcknowledged findings an {@code ACKNOWLEDGED} break held - disclosed
  * @param knownResolved findings a {@code RESOLVED} break held - a recurrence ({@link #RECURRED})
+ * @param acknowledgedChanged the subjects of those findings whose evidence differs from what was acknowledged, sorted
  * @param failures why the check did not pass, each a code: {@link #DISCREPANCIES}, {@link #RECURRED},
- *     {@link #NO_MAPPING}, {@link #FINDINGS_CAPPED}, {@code UNAVAILABLE:<proof or judge>}
+ *     {@link #ACKNOWLEDGED_CHANGED}, {@link #NO_MAPPING}, {@link #FINDINGS_CAPPED}, {@code UNAVAILABLE:<proof or judge>}
  */
 public record CheckOutcome(
         YearMonth period,
@@ -39,6 +46,7 @@ public record CheckOutcome(
         int knownOpen,
         int knownAcknowledged,
         int knownResolved,
+        List<String> acknowledgedChanged,
         List<String> failures) {
 
     /** The run found discrepancies - each a break, new or known. */
@@ -46,6 +54,9 @@ public record CheckOutcome(
 
     /** A discrepancy a {@code RESOLVED} break holds is still present - its correction did not remove it. */
     public static final String RECURRED = "RECURRED";
+
+    /** A finding an {@code ACKNOWLEDGED} break holds no longer reads as what was acknowledged. */
+    public static final String ACKNOWLEDGED_CHANGED = "ACKNOWLEDGED_CHANGED";
 
     /** No GL mapping version is pinned by, or in force for, the period - the GL cannot be judged. */
     public static final String NO_MAPPING = "NO_MAPPING";
@@ -67,6 +78,7 @@ public record CheckOutcome(
         Objects.requireNonNull(check, "check");
         Objects.requireNonNull(result, "result");
         Objects.requireNonNull(judgedBy, "judgedBy");
+        acknowledgedChanged = List.copyOf(acknowledgedChanged);
         failures = List.copyOf(failures);
         if ((result == Result.PASSED) != failures.isEmpty()) {
             throw new IllegalArgumentException("a check passes exactly when nothing failed it");
@@ -81,6 +93,11 @@ public record CheckOutcome(
         if ((knownResolved > 0) != failures.contains(RECURRED)) {
             throw new IllegalArgumentException("a check says RECURRED exactly when a resolved break's discrepancy is"
                     + " still present");
+        }
+        if (acknowledgedChanged.isEmpty() == failures.contains(ACKNOWLEDGED_CHANGED)
+                || acknowledgedChanged.size() > knownAcknowledged) {
+            throw new IllegalArgumentException("a check says ACKNOWLEDGED_CHANGED exactly when an acknowledged finding"
+                    + " differs, and names only those");
         }
     }
 

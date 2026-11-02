@@ -296,13 +296,14 @@ public final class CloseRuns {
         boolean holdsTheLock = holdsTheLock(run, period);
         CheckVerdict verdict = holdsTheLock ? judged.get() : CheckVerdict.failed(claimed.check(), JUDGED_BY,
                 List.of(PERIOD_MOVED), CanonicalJson.object().put("period", claimed.month().toString()));
-        if (!store.conclude(unitOfWork, claimed.id(), claimed.holder(), verdict)) {
-            return new Concluded(verdict.status(), false, Optional.empty());
-        }
+        boolean moved = store.conclude(unitOfWork, claimed.id(), claimed.holder(), verdict);
         if (claimed.check().raisesBreaks() && holdsTheLock) {
+            // Overtaken or not: this worker's judgement may have raised a break the last judgement of them did not see.
             rejudgeOpenBreaks(unitOfWork, run, claimed.actor());
         }
-        return new Concluded(verdict.status(), true, store.markChecksConcluded(unitOfWork, run.id()));
+        return moved
+                ? new Concluded(verdict.status(), true, store.markChecksConcluded(unitOfWork, run.id()))
+                : new Concluded(verdict.status(), false, Optional.empty());
     }
 
     /** A raising check concluded under the run's lock: the breaks' last judgement may not have seen it - judge them again. */

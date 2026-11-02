@@ -187,18 +187,35 @@ class ProductReconciliationDisclosureTest {
     }
 
     @Test
-    @DisplayName("I-1: the accrual entries past the cutoff are LND-2's alone, by the rule's own key prefix: the interest per currency and scale,"
-            + " the income line's amount")
-    void theFlooredAccrualsAreLnd2s() {
-        rows.put(LedgerFlooredPostings.ACCRUALS_SQL, List.of(row("currency", "EUR", "scale", 2, "entries", 3L, "interest", new BigDecimal(4_250))));
+    @DisplayName("I-1 and C-1: the accrual entries past the cutoff are LND-2's and BNPL-F2a's, by each rule's own key prefix: the interest per"
+            + " accruer, currency and scale, the income line's amount, the period's last day apart from anything older")
+    void theAccrualsPastTheCutoffAreBothAccruers() {
+        rows.put(LedgerFlooredPostings.ACCRUALS_SQL, List.of(
+                row("namespace", "bnpl.accrual", "currency", "EUR", "scale", 2, "entries", 7L, "interest", new BigDecimal(70),
+                        "last_day_entries", 1L, "last_day_interest", new BigDecimal(10)),
+                row("namespace", "lending.accrual", "currency", "EUR", "scale", 2, "entries", 3L, "interest", new BigDecimal(4_250),
+                        "last_day_entries", 0L, "last_day_interest", BigDecimal.ZERO)));
         List<AccrualCompleteness.Floored> floored = new LedgerFlooredPostings().accruals(connection(), CUTOFF);
-        assertThat(floored).containsExactly(new AccrualCompleteness.Floored(AccrualCompleteness.Accruer.LENDING, "EUR", 2, 3,
-                BigInteger.valueOf(4_250)));
-        assertThat(LedgerFlooredPostings.ACCRUAL_SCOPE).isEqualTo("ledger.post:lending.accrual:%");
+        assertThat(floored).containsExactly(
+                new AccrualCompleteness.Floored(AccrualCompleteness.Accruer.BNPL, "EUR", 2, 7, BigInteger.valueOf(70), 1, BigInteger.TEN),
+                new AccrualCompleteness.Floored(AccrualCompleteness.Accruer.LENDING, "EUR", 2, 3, BigInteger.valueOf(4_250), 0, BigInteger.ZERO));
+        assertThat(LedgerFlooredPostings.LENDING_SCOPE).isEqualTo("ledger.post:lending.accrual:%");
+        assertThat(LedgerFlooredPostings.BNPL_SCOPE).as("a correction's bnpl.accrual-correction: is not this").isEqualTo("ledger.post:bnpl.accrual:%");
         assertThat(PostingRuleRegister.CURRENT.rule("LND-2", 2).orElseThrow().namespace()).as("the register's own namespace")
                 .isEqualTo("lending.accrual:");
-        assertThat(asked).as("both date bounds are the period's end").containsExactly(java.sql.Date.valueOf(CUTOFF), java.sql.Date.valueOf(CUTOFF),
-                LedgerFlooredPostings.ACCRUAL_SCOPE);
+        assertThat(PostingRuleRegister.CURRENT.rule("BNPL-F2a", 1).orElseThrow().namespace()).as("the register's own namespace")
+                .isEqualTo("bnpl.accrual:");
+        java.sql.Date end = java.sql.Date.valueOf(CUTOFF);
+        assertThat(asked).as("every date bound is the period's end, both scopes").containsExactly(end, end, end, end,
+                LedgerFlooredPostings.LENDING_SCOPE, LedgerFlooredPostings.BNPL_SCOPE);
+    }
+
+    @Test
+    @DisplayName("C-1: a namespace the statement was not asked for is this read's defect, never a figure")
+    void anUnknownNamespaceIsNotAFigure() {
+        rows.put(LedgerFlooredPostings.ACCRUALS_SQL, List.of(row("namespace", "transfer", "currency", "EUR", "scale", 2, "entries", 1L, "interest",
+                new BigDecimal(1), "last_day_entries", 0L, "last_day_interest", BigDecimal.ZERO)));
+        assertThatThrownBy(() -> new LedgerFlooredPostings().accruals(connection(), CUTOFF)).isInstanceOf(IllegalStateException.class);
     }
 
     @Test
@@ -214,7 +231,7 @@ class ProductReconciliationDisclosureTest {
             }
         }
         assertThat(LedgerFlooredPostings.ACCRUALS_SQL).contains("entry.posting_date > ? AND entry.value_date <= ?")
-                .contains("line.direction = 'CREDIT'");
+                .contains("line.direction = 'CREDIT'").contains("FILTER (WHERE entry.value_date = ?)");
         assertThat(LedgerFlooredPostings.BY_NAMESPACE_SQL).contains("entry.posting_date > ? AND entry.value_date <= ?");
         assertThat(ProductReconciliationDisclosure.SUSPENSE_LEDGER_SQL).contains("account.purpose = ? AND entry.posting_date <= ?");
     }

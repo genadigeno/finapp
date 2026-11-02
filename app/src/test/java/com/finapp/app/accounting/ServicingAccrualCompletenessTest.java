@@ -84,7 +84,7 @@ class ServicingAccrualCompletenessTest {
     @DisplayName("the entries floored past a period's end, on the caller's unit of work - the one snapshot blocking reads on (P14-TSK-011)")
     void theFlooredEntriesAreReadOnTheCallersUnitOfWork() {
         List<AccrualCompleteness.Floored> floored = List.of(new AccrualCompleteness.Floored(Accruer.LENDING, "EUR", 2, 1,
-                java.math.BigInteger.TEN));
+                java.math.BigInteger.TEN, 0, java.math.BigInteger.ZERO));
         AccrualCompleteness completeness = new ServicingAccrualCompleteness(read(Map.of()), read(Map.of()), (connection, periodEnd) -> {
             assertThat(connection).isSameAs(unitOfWork);
             assertThat(periodEnd).isEqualTo(OCTOBER_END);

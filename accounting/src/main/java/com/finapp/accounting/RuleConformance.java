@@ -7,7 +7,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 /**
@@ -67,10 +69,10 @@ public final class RuleConformance {
     }
 
     /**
-     * A fresh tally for one run - the subjects {@code held} by a break counted by that break's status, never re-raised;
-     * new ones kept up to {@code cap}.
+     * A fresh tally for one run - the subjects {@code held} by a break counted by that break's status, never re-raised,
+     * those an acknowledgement no longer describes named ({@link Tally#changed()}); new ones kept up to {@code cap}.
      */
-    public Tally tally(Map<String, BreakStatus> held, int cap) {
+    public Tally tally(Map<String, AccountingBreakStore.Held> held, int cap) {
         return new Tally(held, cap);
     }
 
@@ -143,15 +145,17 @@ public final class RuleConformance {
      */
     public final class Tally {
 
-        private final Map<String, BreakStatus> held;
+        private final Map<String, AccountingBreakStore.Held> held;
         private final int cap;
         private final Map<String, BreakFinding> kept = new LinkedHashMap<>();
         private final Map<String, Unregistered> namespaces = new LinkedHashMap<>();
         private final Map<String, BreakStatus> knownSeen = new TreeMap<>();
+        private final Set<String> changedEntries = new TreeSet<>();
+        private final Map<String, Unregistered> heldNamespaces = new LinkedHashMap<>();
         private long entries;
         private boolean capped;
 
-        private Tally(Map<String, BreakStatus> held, int cap) {
+        private Tally(Map<String, AccountingBreakStore.Held> held, int cap) {
             this.held = Map.copyOf(Objects.requireNonNull(held, "held"));
             if (cap < 1) {
                 throw new IllegalArgumentException("a tally keeps at least one finding");
@@ -163,9 +167,16 @@ public final class RuleConformance {
         public void add(JournalShapes.EntryShape entry) {
             entries++;
             for (BreakFinding finding : judge(entry)) {
-                BreakStatus holder = held.get(finding.subject());
+                AccountingBreakStore.Held holder = held.get(finding.subject());
                 if (holder != null) {
-                    knownSeen.put(finding.subject(), holder);
+                    knownSeen.put(finding.subject(), holder.status());
+                    if (finding.type() == BreakType.UNREGISTERED_POSTING) {
+                        // Its evidence is folded over the month, so it is compared when the walk has ended.
+                        heldNamespaces.computeIfAbsent(finding.subject(),
+                                subject -> new Unregistered(entry.type(), folded(namespaceOf(entry)))).add(entry);
+                    } else if (holder.changedBy(finding)) {
+                        changedEntries.add(finding.subject());
+                    }
                     continue;
                 }
                 if (finding.type() == BreakType.UNREGISTERED_POSTING) {
@@ -189,9 +200,24 @@ public final class RuleConformance {
         /** Every new finding, in the order first seen - each unregistered namespace once, with its count. */
         public List<BreakFinding> findings() {
             List<BreakFinding> findings = new ArrayList<>(kept.values());
-            namespaces.forEach((subject, folded) -> findings.add(new BreakFinding(CloseCheckCode.RULE_CONFORMANCE,
-                    BreakType.UNREGISTERED_POSTING, subject, folded.evidence(), judgedBy())));
+            namespaces.forEach((subject, folded) -> findings.add(unregistered(subject, folded)));
             return findings;
+        }
+
+        /** The subjects found whose {@code ACKNOWLEDGED} break no longer reads as they do - sorted. */
+        public List<String> changed() {
+            Set<String> changed = new TreeSet<>(changedEntries);
+            heldNamespaces.forEach((subject, folded) -> {
+                if (held.get(subject).changedBy(unregistered(subject, folded))) {
+                    changed.add(subject);
+                }
+            });
+            return List.copyOf(changed);
+        }
+
+        private BreakFinding unregistered(String subject, Unregistered folded) {
+            return new BreakFinding(CloseCheckCode.RULE_CONFORMANCE, BreakType.UNREGISTERED_POSTING, subject, folded.evidence(),
+                    judgedBy());
         }
 
         /** Subjects found that a break already held, counted per that break's status - never re-raised. */

@@ -213,6 +213,14 @@ BEGIN
                 OR NEW.concluded_at IS NOT NULL THEN
             RAISE EXCEPTION 'a PENDING close check attempt records no outcome (P14-TSK-011)';
         END IF;
+        -- A live claim is its holder's: anyone else takes the row only once its lease has passed on this clock.
+        IF NEW.holder IS NOT NULL AND NEW.holder IS DISTINCT FROM OLD.holder AND OLD.lease_until > clock_timestamp() THEN
+            RAISE EXCEPTION 'a close check attempt is claimed only once its lease has passed (P14-TSK-011)';
+        END IF;
+        -- reclaims counts replaced holders, exactly: not a first claim, a renewal or a deferral.
+        IF (NEW.reclaims = OLD.reclaims + 1) <> (OLD.holder IS NOT NULL AND NEW.holder IS NOT NULL AND NEW.holder <> OLD.holder) THEN
+            RAISE EXCEPTION 'a lapsed holder is replaced with reclaims + 1, and nothing else moves reclaims (P14-TSK-011)';
+        END IF;
         RETURN NEW;
     END IF;
     IF NEW.status IN ('PASSED', 'FAILED', 'DISCLOSED') THEN

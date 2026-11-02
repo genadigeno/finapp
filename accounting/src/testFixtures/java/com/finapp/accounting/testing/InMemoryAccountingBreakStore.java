@@ -98,10 +98,10 @@ public final class InMemoryAccountingBreakStore implements AccountingBreakStore 
     }
 
     @Override
-    public Map<String, BreakStatus> held(Connection unitOfWork, YearMonth period, CloseCheckCode check) {
-        Map<String, BreakStatus> held = new TreeMap<>();
+    public Map<String, Held> held(Connection unitOfWork, YearMonth period, CloseCheckCode check) {
+        Map<String, Held> held = new TreeMap<>();
         rows.values().stream().filter(row -> row.period().equals(period) && row.check() == check)
-                .forEach(row -> held.put(row.subject(), row.status()));
+                .forEach(row -> held.put(row.subject(), new Held(row.status(), row.evidence())));
         return held;
     }
 
