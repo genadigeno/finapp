@@ -26057,7 +26057,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Acceptance criteria**: every check recorded with evidence; resumable after a kill.
 - **Definition of done**: `DOD-FIN`, `DOD-DOMAIN`. **Risk**: Medium. **Cx**: L.
 
-**P14-TSK-012 — Four-eyes close, rejection and reopen** — `PLANNED`
+**P14-TSK-012 — Four-eyes close, rejection and reopen** — `READY` (2026-11-02; marked by the coordinator at `P14-TSK-011`'s merge, master `411eaebc`; every dependency `COMPLETE`)
 - **Routed by `P14-TSK-011` (2026-11-02)**: the proposal asks `CloseRuns.readiness` - the run answers the present lock, every check's
   latest attempt `PASSED` or `DISCLOSED`, and, read live, no break of the month `OPEN` - and refuses otherwise (`accounting.CloseNotReady`);
   a run is born by the schedule, so a lock with none yet is simply not ready. A controller holds no `ACCOUNTING_READ`, so its read of the run it
