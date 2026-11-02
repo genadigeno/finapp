@@ -17,14 +17,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.CloseRunStall;
 import com.finapp.accounting.CloseRuns;
+import com.finapp.accounting.CounterpartyPositionReads;
 import com.finapp.accounting.JdbcAccountingBreakStore;
 import com.finapp.accounting.JdbcCloseRunStore;
 import com.finapp.accounting.JdbcGlMappingStore;
 import com.finapp.accounting.JdbcReportRunStore;
 import com.finapp.accounting.JdbcValuationRateSetStore;
+import com.finapp.accounting.JournalReads;
+import com.finapp.accounting.OperationalDoorBound;
 import com.finapp.accounting.OperationalReports;
 import com.finapp.accounting.PastTheCutoffPostings;
-import com.finapp.accounting.ReconciliationRunCoverage;
 import com.finapp.accounting.ReportRunStore;
 import com.finapp.accounting.ReportRuns;
 import com.finapp.accounting.RunStatus;
@@ -99,15 +101,21 @@ import org.junit.jupiter.api.Test;
  * currency; a FINAL run regenerating identical while the register behind it moves; the two operational ones refused a run and answered
  * live on the real statements.
  *
+ * <p><strong>A database of its own</strong> ({@code own-container}; `P14-TSK-017`'s review, I-2): it commits lines straight onto {@code
+ * SETTLEMENT_CLEARING}, {@code SUSPENSE_UNMATCHED} and the counterparties' clearing accounts, and a parking with no line behind it. Journal
+ * lines are immutable, no expectation names these and no backfill can adopt them, so in the shared container they would fail {@code
+ * ReconciledPositionResidueDatabaseTest#noSuiteLeftAnUnexplainedLine} for good. The rule is {@code CloseRunDatabaseTest}'s; this suite cannot
+ * roll them back, because a run reads them on a snapshot of its own.
+ *
  * <p><strong>The books it uses.</strong> Only the fixture's <strong>January and February 1999</strong>
- * ({@link AccountingPeriodFixture}: before `P14-TSK-012` builds the close only January can be locked, shared with {@code
- * TrialBalanceRunDatabaseTest} and {@code CloseRunDatabaseTest}); it approves no valuation rate set, reading January's as it finds it
- * (`P14-TSK-014`'s note); every comparison is a relation that holds whatever else those months hold on a rerun. Each case returns the
- * periods to {@code OPEN}, superseding its FINAL runs. An adopted parking it opens stays - an item is never deleted - and is dated in
- * January with a raise of today, so it never enters January's frozen read. <strong>Written and owed</strong> (owner decision C5: the
- * database tiers are skipped per task).
+ * ({@link AccountingPeriodFixture}: before `P14-TSK-012` builds the close only January can be locked); it approves no valuation rate set,
+ * reading January's as it finds it (`P14-TSK-014`'s note); every comparison is a relation that holds whatever else those months hold,
+ * this suite's own earlier cases included, whose lines stay. Each case returns the periods to {@code OPEN}, superseding its FINAL runs. An
+ * adopted parking it opens stays - an item is never deleted - and is dated in January with a raise of today, so it never enters January's
+ * frozen read. <strong>Written and owed</strong> (owner decision C5: the database tiers are skipped per task).
  */
 @Tag("database")
+@Tag("own-container") // its own JVM and database: ownContainerDatabaseTest, the javadoc says why
 @DisplayName("the operational financial reports against the database (P14-TSK-017)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 class OperationalReportsDatabaseTest {
@@ -121,6 +129,7 @@ class OperationalReportsDatabaseTest {
     private static final UUID RULE_SET = UUID.fromString("01a0e2bd-8300-7001-8000-000000000001");
     private static final JdbcLedgerAccountStore ACCOUNTS = new JdbcLedgerAccountStore();
     private static final TrialBalanceReads READS = new LedgerTrialBalanceReads(new JdbcGlMappingStore());
+    private static final CounterpartyPositionReads POSITIONS = new LedgerCounterpartyPositionReads();
     private static final ReconciliationMonthReads MONTH_READS = new ReconciliationMonthReads(new JdbcReportReadings());
     private static final LedgerFlooredPostings POSTINGS = new LedgerFlooredPostings();
     private static final ProductReconciliationDisclosure DISCLOSURE =
@@ -146,13 +155,16 @@ class OperationalReportsDatabaseTest {
     };
     private static final JdbcReportSnapshots SNAPSHOTS = new JdbcReportSnapshots(DatabaseRoles::application,
             ReportRuns.Leases.STANDARD.generationTimeout());
+    private static final OperationalDoorBound DOOR = new OperationalDoorBound(Duration.parse(OperationalDoorBound.STANDARD_TIMEOUT),
+            OperationalDoorBound.STANDARD_PERMITS);
+    private static final JdbcReportSnapshots DOOR_SNAPSHOTS = new JdbcReportSnapshots(DatabaseRoles::application, DOOR.timeout());
     private static final CloseRuns CLOSE_RUNS = new CloseRuns(new JdbcCloseRunStore(), AccountingPeriodFixture.STORE,
             new JdbcAccountingBreakStore(), CloseRuns.Leases.STANDARD, new JdbcAuditWriter(), IDS, NOW);
     private static final ReportDefinitions DEFINITIONS = ReportDefinitions.of(
-            new GlActivityDefinition(READS),
+            new GlActivityDefinition(READS, POSITIONS),
             PurposeReportDefinition.revenue(READS),
             PurposeReportDefinition.receivablesPayables(READS),
-            PurposeReportDefinition.settlementPositions(READS),
+            PurposeReportDefinition.settlementPositions(READS, POSITIONS),
             PurposeReportDefinition.fxResults(READS),
             PurposeReportDefinition.loanPortfolio(READS),
             PurposeReportDefinition.bnplExposure(READS),
@@ -212,7 +224,7 @@ class OperationalReportsDatabaseTest {
         assertThat(writtenCredits).isEqualByComparingTo(credits);
         for (JsonNode account : body.get("accounts")) {
             for (JsonNode component : account.get("components")) {
-                BigDecimal[] raw = byPurpose.get(component.get("purpose").asText() + "|" + account.get("currency").asText());
+                BigDecimal[] raw = byPurpose.get(keyOf(component, account.get("currency").asText()));
                 assertThat(amount(component.get("debits"))).isEqualByComparingTo(raw[0]);
                 assertThat(amount(component.get("credits"))).isEqualByComparingTo(raw[1]);
             }
@@ -234,7 +246,81 @@ class OperationalReportsDatabaseTest {
     @Test
     @DisplayName("SETTLEMENT_POSITIONS' balances equal the ledger by purpose")
     void settlementPositionsEqualTheLedger() throws Exception {
-        figuresEqualTheLedger(PurposeReportDefinition.settlementPositions(READS));
+        figuresEqualTheLedger(PurposeReportDefinition.settlementPositions(READS, POSITIONS));
+    }
+
+    @Test
+    @DisplayName("I-1, INV-RAIL-04: over the real join two counterparties' opposite positions stay two rows, each this suite's own raw sum, and two"
+            + " components in GL_ACTIVITY; CLEARING has no total; and the trial balance's read still has no such dimension")
+    void theCounterpartiesStayApart() throws Exception {
+        post(LAST_DAY, counterpartyAccount("fx-sim-a"), cash, 1_000);
+        post(LAST_DAY, cash, counterpartyAccount("fx-sim-b"), 1_000);
+        AccountingPeriodId january = lockJanuary();
+        JsonNode body = bodyOf(askFinal("SETTLEMENT_POSITIONS", january));
+        Map<String, BigDecimal[]> opening = ledger("entry.posting_date < '" + FIRST_DAY + "'");
+        Map<String, BigDecimal[]> movement = ledger(months());
+        JsonNode clearing = null;
+        List<String> seen = new ArrayList<>();
+        for (JsonNode section : body.get("sections")) {
+            if (section.get("section").asText().equals("CLEARING")) {
+                clearing = section;
+            }
+            for (JsonNode row : section.get("rows")) {
+                assertFigures(row, opening, movement, true);
+                if (row.get("purpose").asText().equals("FX_PROVIDER_CLEARING") && row.get("currency").asText().equals("EUR")) {
+                    seen.add(row.get("counterparty").asText());
+                }
+            }
+        }
+        assertThat(seen).as("one row per counterparty, whatever else they hold").contains("fx-sim-a", "fx-sim-b");
+        assertThat(clearing.get("totals").isNull()).as("assets and liabilities: no total").isTrue();
+
+        List<String> components = new ArrayList<>();
+        for (JsonNode account : bodyOf(askFinal(GlActivityDefinition.CODE, january)).get("accounts")) {
+            for (JsonNode component : account.get("components")) {
+                if (component.get("purpose").asText().equals("FX_PROVIDER_CLEARING") && account.get("currency").asText().equals("EUR")) {
+                    components.add(component.get("counterparty").asText());
+                }
+            }
+        }
+        assertThat(components).contains("fx-sim-a", "fx-sim-b");
+        List<JournalReads.Aggregate> trialBalances = SNAPSHOTS.read(snapshot -> READS.within(snapshot, JournalReads.Range.of(JANUARY),
+                Optional.empty()));
+        assertThat(trialBalances).as("TRIAL_BALANCE's statements are left alone")
+                .allSatisfy(line -> assertThat(line.counterparty()).isEmpty());
+    }
+
+    @Test
+    @DisplayName("I-1: the two reads agree on the real journal, opening and movement: what a report folds per counterparty is what the trial balance"
+            + " read of the same purpose, per currency, scale and side")
+    void theTwoReadsAgree() {
+        SNAPSHOTS.read(snapshot -> {
+            Map<String, BigInteger> byPurpose = new TreeMap<>();
+            READS.before(snapshot, FIRST_DAY, Optional.empty()).stream().filter(line -> line.ownerKind().equals("COUNTERPARTY"))
+                    .forEach(line -> byPurpose.merge(line.key() + line.currency() + line.scale() + line.side(), line.minorUnits(), BigInteger::add));
+            Map<String, BigInteger> byCounterparty = new TreeMap<>();
+            POSITIONS.before(snapshot, FIRST_DAY, Optional.empty()).forEach(line -> {
+                assertThat(line.counterparty()).as("every counterparty's account names one").isPresent();
+                byCounterparty.merge(line.key() + line.currency() + line.scale() + line.side(), line.minorUnits(), BigInteger::add);
+            });
+            assertThat(byCounterparty).isEqualTo(byPurpose);
+            return null;
+        });
+    }
+
+    @Test
+    @DisplayName("I-3: the door's snapshot is armed at its own bound, not the report runs' four minutes - read back from the database")
+    void theDoorsSnapshotIsArmedAtItsBound() {
+        String armed = DOOR_SNAPSHOTS.read(snapshot -> {
+            try (PreparedStatement read = snapshot.prepareStatement("SELECT current_setting('statement_timeout')");
+                    ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getString(1);
+            } catch (SQLException failure) {
+                throw new IllegalStateException(failure);
+            }
+        });
+        assertThat(armed).isEqualTo("30s");
     }
 
     @Test
@@ -302,8 +388,7 @@ class OperationalReportsDatabaseTest {
         JsonNode body = bodyOf(answer(ReconciliationStatusDefinition.CODE, january));
         assertThat(body.get("coverage").get("batchRuns").asLong()).isEqualTo(count("SELECT count(*) FROM reconciliation.reconciliation_batch"
                 + " WHERE kind = 'BATCH' AND business_date BETWEEN '" + FIRST_DAY + "' AND '" + LAST_DAY + "'"));
-        ReconciliationRunCoverage.Coverage coverage = SNAPSHOTS.read(snapshot -> MONTH_READS.ofMonth(snapshot, JANUARY));
-        assertThat(coverage.noRun()).isEqualTo(body.get("coverage").get("noRun").asBoolean());
+        assertThat(body.get("coverage").has("noRun")).as("I-4: a count, and no verdict on the month").isFalse();
         Map<String, BigDecimal[]> through = ledger("entry.posting_date <= '" + LAST_DAY + "'");
         for (JsonNode suspense : body.get("disclosure").get("suspense")) {
             BigDecimal[] raw = through.get("SUSPENSE_UNMATCHED|" + suspense.get("currency").asText());
@@ -330,6 +415,11 @@ class OperationalReportsDatabaseTest {
                 + "' AND status = 'APPROVED'");
         JsonNode set = firstBody.get("approvedValuationRateSet");
         assertThat(set.isNull() ? null : set.get("id").asText()).isEqualTo(approved);
+        for (String status : List.of("PROPOSED", "APPROVED", "REJECTED")) {
+            assertThat(firstBody.get("valuationRateSets").get(status).asLong()).as("M-11: counted by the database, %s", status)
+                    .isEqualTo(count("SELECT count(*) FROM accounting.valuation_rate_set WHERE period_id = '" + january.value()
+                            + "' AND status = '" + status + "'"));
+        }
 
         TRANSACTIONS.inTransaction(uow -> CLOSE_RUNS.startMissing(uow, Actor.SYSTEM));
         OperationalReports.Answer second = answer(CloseStatusDefinition.CODE, january);
@@ -422,18 +512,18 @@ class OperationalReportsDatabaseTest {
             for (String key : section.keys()) {
                 String purpose = key.substring(0, key.indexOf('/'));
                 for (String held : movement.keySet()) {
-                    if (held.startsWith(purpose + "|")) {
-                        assertThat(has(body, purpose, held.substring(held.indexOf('|') + 1))).as(held).isTrue();
+                    if (held.startsWith(purpose + "|") || held.startsWith(purpose + "#")) {
+                        assertThat(has(body, held)).as(held).isTrue();
                     }
                 }
             }
         }
     }
 
-    private static boolean has(JsonNode body, String purpose, String currency) {
+    private static boolean has(JsonNode body, String key) {
         for (JsonNode section : body.get("sections")) {
             for (JsonNode row : section.get("rows")) {
-                if (row.get("purpose").asText().equals(purpose) && row.get("currency").asText().equals(currency)) {
+                if (keyOf(row, row.get("currency").asText()).equals(key)) {
                     return true;
                 }
             }
@@ -441,9 +531,19 @@ class OperationalReportsDatabaseTest {
         return false;
     }
 
+    /** A figure's key in {@link #ledger}: its purpose, its counterparty where it has one, its currency. */
+    private static String keyOf(JsonNode figure, String currency) {
+        return keyOf(figure.get("purpose").asText(), figure.get("counterparty").isNull() ? null : figure.get("counterparty").asText(),
+                currency);
+    }
+
+    private static String keyOf(String purpose, String counterparty, String currency) {
+        return purpose + (counterparty == null ? "" : "#" + counterparty) + "|" + currency;
+    }
+
     private static void assertFigures(JsonNode row, Map<String, BigDecimal[]> opening, Map<String, BigDecimal[]> movement,
             boolean balances) {
-        String key = row.get("purpose").asText() + "|" + row.get("currency").asText();
+        String key = keyOf(row, row.get("currency").asText());
         BigDecimal[] moved = movement.getOrDefault(key, new BigDecimal[] {BigDecimal.ZERO, BigDecimal.ZERO});
         assertThat(amount(row.get("debits"))).as(key).isEqualByComparingTo(moved[0]);
         assertThat(amount(row.get("credits"))).as(key).isEqualByComparingTo(moved[1]);
@@ -463,20 +563,22 @@ class OperationalReportsDatabaseTest {
         return "entry.posting_date >= '" + FIRST_DAY + "' AND entry.posting_date <= '" + LAST_DAY + "'";
     }
 
-    /** This suite's own sums, read as the migrator: per purpose and currency, debits then credits. */
+    /** This suite's own sums, read as the migrator: per purpose, counterparty where it has one, and currency, debits then credits. */
     private static Map<String, BigDecimal[]> ledger(String predicate) throws SQLException {
         Map<String, BigDecimal[]> sums = new TreeMap<>();
         try (Connection migrator = DatabaseRoles.migrator();
-                PreparedStatement read = migrator.prepareStatement("SELECT account.purpose, line.currency, line.scale, line.direction,"
-                        + " SUM(line.amount_minor) FROM ledger.journal_line line JOIN ledger.journal_entry entry"
+                PreparedStatement read = migrator.prepareStatement("SELECT account.purpose, counterparty.code, line.currency, line.scale,"
+                        + " line.direction, SUM(line.amount_minor) FROM ledger.journal_line line JOIN ledger.journal_entry entry"
                         + " ON entry.id = line.entry_id JOIN ledger.ledger_account account ON account.id = line.ledger_account_id"
-                        + " WHERE " + predicate + " GROUP BY 1, 2, 3, 4");
+                        + " LEFT JOIN ledger.counterparty counterparty ON account.owner_kind = 'COUNTERPARTY'"
+                        + " AND counterparty.id = account.owner_ref"
+                        + " WHERE " + predicate + " GROUP BY 1, 2, 3, 4, 5");
                 ResultSet row = read.executeQuery()) {
             while (row.next()) {
-                String key = row.getString(1) + "|" + row.getString(2).stripTrailing();
-                BigDecimal amount = new BigDecimal(row.getBigDecimal(5).toBigIntegerExact(), row.getInt(3));
+                String key = keyOf(row.getString(1), row.getString(2), row.getString(3).stripTrailing());
+                BigDecimal amount = new BigDecimal(row.getBigDecimal(6).toBigIntegerExact(), row.getInt(4));
                 BigDecimal[] sides = sums.computeIfAbsent(key, ignored -> new BigDecimal[] {BigDecimal.ZERO, BigDecimal.ZERO});
-                int side = "DEBIT".equals(row.getString(4)) ? 0 : 1;
+                int side = "DEBIT".equals(row.getString(5)) ? 0 : 1;
                 sides[side] = sides[side].add(amount);
             }
         }
@@ -532,8 +634,8 @@ class OperationalReportsDatabaseTest {
 
     private static OperationalReports.Answer answer(String code, AccountingPeriodId period) {
         OperationalReports reports = new OperationalReports(DEFINITIONS, AccountingPeriodFixture.STORE, new ReportGeneration(
-                ReportGeneration.FROM_THE_SNAPSHOT, ReportRuns.Leases.STANDARD.generationTimeout(), NOW), new JdbcAuditWriter(), IDS, NOW);
-        return SNAPSHOTS.read(snapshot -> reports.answer(snapshot, code, period));
+                ReportGeneration.FROM_THE_SNAPSHOT, DOOR.timeout(), NOW), new JdbcAuditWriter(), IDS, NOW);
+        return DOOR_SNAPSHOTS.read(snapshot -> reports.answer(snapshot, code, period));
     }
 
     private static ReportRuns runs() {
@@ -561,6 +663,12 @@ class OperationalReportsDatabaseTest {
     private static LedgerAccount operational(AccountPurpose purpose) throws SQLException {
         try (Connection app = DatabaseRoles.application()) {
             return ACCOUNTS.findOperational(app, purpose, EUR).orElseThrow();
+        }
+    }
+
+    private static LedgerAccount counterpartyAccount(String code) throws SQLException {
+        try (Connection app = DatabaseRoles.application()) {
+            return ACCOUNTS.findCounterpartyAccount(app, AccountPurpose.FX_PROVIDER_CLEARING, code, EUR).orElseThrow();
         }
     }
 

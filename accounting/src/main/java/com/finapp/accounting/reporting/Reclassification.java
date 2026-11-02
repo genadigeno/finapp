@@ -24,11 +24,16 @@ import java.util.TreeMap;
  * here and nothing is rounded. Per currency the accounts' differences foot to zero ({@link #footsToZero()}): a reclassification moves
  * value between accounts and creates none. A purpose neither version maps stays unmapped, and is no move.
  *
- * <p>{@code GL_ACTIVITY} prints it. {@code P14-TSK-016}'s statements owe the same bridge and may call {@link #between} as it stands.
+ * <p><strong>Per counterparty</strong> (`P14-TSK-017`'s review, I-1): {@code fx-sim-a} at +1,000 and {@code fx-sim-b} at -1,000 moved are
+ * two moves. Summed under their purpose they would net to no move at all, and the bridge would say nothing moved. So the aggregates are
+ * handed over per counterparty ({@code PurposeRows.perCounterparty}); an account's bridge row is the account's, whoever's its parts are.
+ *
+ * <p>{@code GL_ACTIVITY} prints it. {@code P14-TSK-016}'s statements owe the same bridge and may call {@link #between} as it stands, handing
+ * it the same aggregates.
  *
  * @param previous the version the previous period pins
  * @param version this run's version - empty when none was pinned (every line unmapped)
- * @param moves per purpose, owner kind and currency whose account differs, with a balance: sorted, never a zero
+ * @param moves per purpose, owner kind, counterparty and currency whose account differs, with a balance: sorted, never a zero
  * @param accounts per GL account (or the unmapped bucket) and currency whose figure differs: sorted
  */
 public record Reclassification(
@@ -45,12 +50,13 @@ public record Reclassification(
     }
 
     /** One purpose's balance, carried from one account to another; an empty account is the unmapped bucket. */
-    public record Move(String purpose, String ownerKind, String currency, Optional<String> from, Optional<String> to,
-            BigDecimal balance) {
+    public record Move(String purpose, String ownerKind, Optional<String> counterparty, String currency, Optional<String> from,
+            Optional<String> to, BigDecimal balance) {
 
         public Move {
             Objects.requireNonNull(purpose, "purpose");
             Objects.requireNonNull(ownerKind, "ownerKind");
+            Objects.requireNonNull(counterparty, "counterparty");
             Objects.requireNonNull(currency, "currency");
             Objects.requireNonNull(from, "from");
             Objects.requireNonNull(to, "to");
@@ -93,7 +99,7 @@ public record Reclassification(
         Map<String, MappingRule> after = versionContent.map(GlMappingVersion::rulesByKey).orElse(Map.of());
         Map<String, Balance> byKey = new TreeMap<>();
         for (JournalReads.Aggregate aggregate : aggregates) {
-            byKey.computeIfAbsent(aggregate.key() + "\u0000" + aggregate.currency(),
+            byKey.computeIfAbsent(aggregate.key() + "\u0000" + aggregate.counterparty().orElse("") + "\u0000" + aggregate.currency(),
                     ignored -> new Balance(aggregate)).add(aggregate);
         }
         List<Move> moves = new ArrayList<>();
@@ -106,7 +112,8 @@ public record Reclassification(
             bridges.computeIfAbsent(to.orElse("") + "\u0000" + balance.currency,
                     ignored -> new Building(to, balance.currency)).opening.add(balance.net);
             if (!from.equals(to) && balance.net.signum() != 0) {
-                moves.add(new Move(balance.purpose, balance.ownerKind, balance.currency, from, to, balance.net));
+                moves.add(new Move(balance.purpose, balance.ownerKind, balance.counterparty, balance.currency, from, to,
+                        balance.net));
             }
         }
         List<Bridge> accounts = bridges.values().stream()
@@ -151,11 +158,12 @@ public record Reclassification(
     CanonicalJson.Obj asValue(Map<String, Integer> scales) {
         CanonicalJson.Arr movesOut = CanonicalJson.array();
         for (Move move : moves) {
-            CanonicalJson.Obj out = CanonicalJson.object()
+            CanonicalJson.Obj out = PurposeRows.withCounterparty(CanonicalJson.object()
                     .put("purpose", move.purpose())
                     .put("ownerKind", move.ownerKind())
                     .put("currency", move.currency())
-                    .put("balance", TrialBalance.money(move.balance(), move.currency(), scales.get(move.currency())));
+                    .put("balance", TrialBalance.money(move.balance(), move.currency(), scales.get(move.currency()))),
+                    move.counterparty());
             accountOrNull(out, "from", move.from());
             accountOrNull(out, "to", move.to());
             movesOut.add(out);
@@ -194,16 +202,18 @@ public record Reclassification(
         return Optional.ofNullable(rules.get(key)).map(MappingRule::glAccountCode);
     }
 
-    /** One purpose's net in one currency, exact. */
+    /** One purpose's net in one currency, one counterparty's where it has them; exact. */
     private static final class Balance {
         private final String purpose;
         private final String ownerKind;
+        private final Optional<String> counterparty;
         private final String currency;
         private BigDecimal net = BigDecimal.ZERO;
 
         Balance(JournalReads.Aggregate first) {
             this.purpose = first.purpose();
             this.ownerKind = first.ownerKind();
+            this.counterparty = first.counterparty();
             this.currency = first.currency();
         }
 

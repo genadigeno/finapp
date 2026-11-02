@@ -1511,3 +1511,15 @@ cutoff back and answers a different question.
 
 **`AccountingCloseRunStallUnreadable`** is the gauge's read failing for 15 minutes: no value, never a reassuring zero. Whether a close has stalled is then unknown: treat the database's reachability from the
 application first; `CLOSE_STATUS` answers per period meanwhile, or refuses.
+
+### 10.2 An operational report answered `503 accounting.ReadTimedOut`
+
+**What it means.** `GET .../periods/{periodId}/operational-reports/{definition}` served nothing and recorded nothing, for one of two reasons, which the response's detail names. **Its time bound**: the read outlived
+`finapp.accounting.report.operational-timeout` (default 30 s, generation and `statement_timeout` alike). **Its permits**: this instance was already answering `finapp.accounting.report.operational-permits` (default 2)
+of them, and the door refuses the next rather than queue it, because each read holds a connection of the instance's pool (8, a 5 s wait) that postings need. Neither is a defect, and no figure is affected.
+
+**A known limit.** `RECONCILIATION_STATUS` reads every entry posted after the month's cutoff, so its cost grows with the journal and with the age of the month. **A long-past month may no longer answer inside 30 s, and the door then answers 503 honestly**, every time, on every instance.
+That is not a transient to retry. `CLOSE_STATUS` holds no journal read and is not expected to reach it.
+
+**Act.** On a refusal for permits: retry, it is a new answer as of its own instant; another instance may have one free. On the time bound, for a recent month: look for what is slow on the database. For a long-past month: raise `finapp.accounting.report.operational-timeout`
+for an operator's read, and keep the permits low, since the two together are what the door can hold of a pool. Rising refusals are the owner's question of whether these reports should be stored (`P14-TSK-012`'s entry). **Never** raise the permits to or near the pool's size: that is the outage the bound exists to prevent.

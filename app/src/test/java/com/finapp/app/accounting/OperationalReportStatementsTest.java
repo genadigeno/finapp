@@ -6,11 +6,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.CloseRunStall;
 import com.finapp.accounting.CloseRuns;
+import com.finapp.accounting.CounterpartyPositionReads;
 import com.finapp.accounting.JdbcAccountingBreakStore;
 import com.finapp.accounting.JdbcAccountingPeriodStore;
 import com.finapp.accounting.JdbcCloseRunStore;
 import com.finapp.accounting.JdbcGlMappingStore;
 import com.finapp.accounting.JdbcValuationRateSetStore;
+import com.finapp.accounting.JournalReads;
 import com.finapp.accounting.RunBasis;
 import com.finapp.accounting.TrialBalanceReads;
 import com.finapp.accounting.reporting.CloseStatusDefinition;
@@ -19,12 +21,15 @@ import com.finapp.accounting.reporting.PurposeReportDefinition;
 import com.finapp.accounting.reporting.ReconciliationStatusDefinition;
 import com.finapp.accounting.reporting.ReportDefinition;
 import com.finapp.accounting.reporting.ReportGeneration;
+import com.finapp.accounting.reporting.ReadOnlySnapshot;
 import com.finapp.accounting.reporting.ReportInputs;
 import com.finapp.accounting.reporting.RunParameters;
 import com.finapp.accounting.reporting.SuspenseDefinition;
 import com.finapp.reconciliation.JdbcReportReadings;
 import com.finapp.sharedkernel.id.IdGenerator;
+import java.math.BigDecimal;
 import java.security.SecureRandom;
+import java.sql.Connection;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.time.Clock;
@@ -57,6 +62,7 @@ class OperationalReportStatementsTest {
     private static final UUID PERIOD = IDS.next();
 
     private final TrialBalanceReads reads = new LedgerTrialBalanceReads(new JdbcGlMappingStore());
+    private final CounterpartyPositionReads positions = new LedgerCounterpartyPositionReads();
     private final ReconciliationMonthReads monthReads = new ReconciliationMonthReads(new JdbcReportReadings());
     private final LedgerFlooredPostings postings = new LedgerFlooredPostings();
     private final CloseRuns closeRuns = new CloseRuns(new JdbcCloseRunStore(), new JdbcAccountingPeriodStore(),
@@ -88,8 +94,8 @@ class OperationalReportStatementsTest {
     @Test
     @DisplayName("the eight FINAL definitions: each generated through the view, with no statement refused")
     void theEightPassTheView() {
-        for (ReportDefinition definition : List.of(new GlActivityDefinition(reads), PurposeReportDefinition.revenue(reads),
-                PurposeReportDefinition.receivablesPayables(reads), PurposeReportDefinition.settlementPositions(reads),
+        for (ReportDefinition definition : List.of(new GlActivityDefinition(reads, positions), PurposeReportDefinition.revenue(reads),
+                PurposeReportDefinition.receivablesPayables(reads), PurposeReportDefinition.settlementPositions(reads, positions),
                 PurposeReportDefinition.fxResults(reads), PurposeReportDefinition.loanPortfolio(reads),
                 PurposeReportDefinition.bnplExposure(reads), new SuspenseDefinition(reads, monthReads))) {
             assertThat(generate(definition, new ReportInputs(AccountingPeriodId.of(PERIOD), MARCH, 1, RunBasis.FINAL,
@@ -98,6 +104,9 @@ class OperationalReportStatementsTest {
         }
         assertThat(script.prepared).as("the frozen register's own read was among them")
                 .anySatisfy(sql -> assertThat(sql).contains("b.raised_at < ?"));
+        assertThat(script.prepared).as("so were the counterparties'")
+                .anySatisfy(sql -> assertThat(sql).startsWith(LedgerCounterpartyPositionReads.BEFORE))
+                .anySatisfy(sql -> assertThat(sql).startsWith(LedgerCounterpartyPositionReads.WITHIN));
     }
 
     @Test
@@ -106,10 +115,12 @@ class OperationalReportStatementsTest {
         ReportInputs live = new ReportInputs(AccountingPeriodId.of(PERIOD), MARCH, 1, RunBasis.PROVISIONAL, Optional.empty(),
                 Optional.empty(), Optional.empty(), AS_OF, RunParameters.none());
         assertThat(generate(new ReconciliationStatusDefinition(new ProductReconciliationDisclosure(new JdbcReportReadings(), postings),
-                monthReads, postings), live)).contains("\"basis\":\"OPERATIONAL\"").contains("\"noRun\":true");
+                monthReads, postings), live)).contains("\"basis\":\"OPERATIONAL\"").contains("\"batchRuns\":\"0\"");
         assertThat(generate(new CloseStatusDefinition(new AccountingCloseStatusReads(new JdbcAccountingPeriodStore(), closeRuns,
                 new JdbcAccountingBreakStore(), new JdbcValuationRateSetStore()), new CloseRunStall(Duration.ofSeconds(30),
                 CloseRunStall.STANDARD_POLLS)), live)).contains("\"basis\":\"OPERATIONAL\"").contains("\"runState\":\"RUNNING\"");
+        assertThat(script.prepared).as("M-11: the sets counted by the database, with no bound to truncate them")
+                .anySatisfy(sql -> assertThat(sql).contains("count(*)").contains("accounting.valuation_rate_set").doesNotContain("LIMIT"));
     }
 
     @Test
@@ -125,6 +136,37 @@ class OperationalReportStatementsTest {
             }
             assertThat(sql).as(sql).doesNotContain("lending.").doesNotContain("bnpl.");
         });
+    }
+
+    @Test
+    @DisplayName("I-1: the counterparties' read is the journal's on COUNTERPARTY-owned accounts, grouped by the ledger's code on a LEFT JOIN, so a"
+            + " missing code is read and refused and never dropped; it honours the cut; it names no reference, reason or actor; and the trial"
+            + " balance's own statements still carry no counterparty")
+    void theCounterpartiesStatements() throws java.sql.SQLException {
+        for (String sql : List.of(LedgerCounterpartyPositionReads.BEFORE, LedgerCounterpartyPositionReads.WITHIN)) {
+            assertThat(sql).contains("LEFT JOIN ledger.counterparty counterparty ON counterparty.id = account.owner_ref")
+                    .contains("WHERE account.owner_kind = 'COUNTERPARTY'")
+                    .contains("counterparty.code AS counterparty");
+            assertThat(sql.toUpperCase(Locale.ROOT)).doesNotContain("REFERENCE").doesNotContain("REASON").doesNotContain("ACTOR_ID");
+        }
+        assertThat(LedgerCounterpartyPositionReads.GROUPS).contains("GROUP BY account.purpose, account.owner_kind, counterparty.code,");
+        assertThat(LedgerTrialBalanceReads.BEFORE + LedgerTrialBalanceReads.WITHIN + LedgerTrialBalanceReads.GL_GROUPS
+                + LedgerTrialBalanceReads.LEDGER).as("TRIAL_BALANCE's statements are left alone").doesNotContain("counterparty");
+
+        ScriptedStatements journal = new ScriptedStatements(sql -> List.of(
+                row("purpose", "FX_PROVIDER_CLEARING", "owner_kind", "COUNTERPARTY", "counterparty", "fx-sim-a", "currency", "EUR", "scale", 2,
+                        "direction", "DEBIT", "total", new BigDecimal("100000"), "lines", 1L),
+                row("purpose", "CORRIDOR_CLEARING", "owner_kind", "COUNTERPARTY", "counterparty", null, "currency", "USD", "scale", 2,
+                        "direction", "CREDIT", "total", new BigDecimal("7"), "lines", 2L)));
+        Connection view = new ReadOnlySnapshot(journal.connection(), Duration.ofSeconds(5), () -> 0L).connection();
+        List<JournalReads.Aggregate> before = positions.before(view, MARCH.atDay(1), Optional.of(AS_OF));
+        assertThat(before.get(0).counterparty()).contains("fx-sim-a");
+        assertThat(before.get(0).minorUnits()).isEqualTo(java.math.BigInteger.valueOf(100_000));
+        assertThat(before.get(1).counterparty()).as("a missing code reaches the report, which refuses it").isEmpty();
+        assertThat(journal.prepared).contains(LedgerCounterpartyPositionReads.BEFORE + LedgerCounterpartyPositionReads.AT_THE_CUT
+                + LedgerCounterpartyPositionReads.GROUPS);
+        positions.within(view, JournalReads.Range.of(MARCH), Optional.empty());
+        assertThat(journal.prepared).contains(LedgerCounterpartyPositionReads.WITHIN + LedgerCounterpartyPositionReads.GROUPS);
     }
 
     private String generate(ReportDefinition definition, ReportInputs inputs) {

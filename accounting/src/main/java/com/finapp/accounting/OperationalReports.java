@@ -30,7 +30,8 @@ import lombok.RequiredArgsConstructor;
  * INV-ACC-14}): the machine's half of the door an {@code OperationalReportDefinition} is read at. A report that reads what keeps
  * moving after a lock can be neither a FINAL run (it would not regenerate, and would answer forever) nor a PROVISIONAL one of a
  * locked period ({@code accounting V004} refuses it for every writer), so it is no run at all: generated on the caller's verified
- * read-only snapshot by the same {@link ReportGeneration} - the same canonical form, hash and time budget - and handed back.
+ * read-only snapshot by the same {@link ReportGeneration} - the same canonical form and hash, under the door's own time budget
+ * ({@link OperationalDoorBound}) - and handed back.
  *
  * <p><strong>The instant it is as of</strong> is the database's, read first on that snapshot; the definition measures every age
  * from it and has no clock of its own. <strong>The read is recorded</strong> ({@link #recordRead}) in a transaction of its own

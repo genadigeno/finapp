@@ -80,7 +80,7 @@ class ReconciliationMonthReadsTest {
     }
 
     @Test
-    @DisplayName("the month's runs: its first to last business date, per source, kind, status and day - and a month with none is noRun")
+    @DisplayName("the month's runs: its first to last business date, per source, kind, status and day - a count of what stands, with no verdict")
     void theMonthsRuns() {
         UUID source = UUID.randomUUID();
         runs.add(new ReportReadings.RunLine(source, RunKind.BATCH, RunStatus.COMPLETED, MARCH.atDay(30), 2));
@@ -94,15 +94,14 @@ class ReconciliationMonthReadsTest {
                 new ReconciliationRunCoverage.Line(source, "BATCH", "COMPLETED", MARCH.atDay(30), 2),
                 new ReconciliationRunCoverage.Line(source, "REPROCESS", "OPEN", MARCH.atDay(31), 1));
         assertThat(coverage.batchRuns()).isEqualTo(2);
-        assertThat(coverage.noRun()).isFalse();
 
         runs.clear();
-        assertThat(reads().ofMonth(NO_CONNECTION, MARCH).noRun()).isTrue();
+        assertThat(reads().ofMonth(NO_CONNECTION, MARCH).batchRuns()).isZero();
     }
 
     @Test
     @DisplayName("the register as of the cutoff, through the frozen read alone: the first instant after the last day; CREDIT and DEBIT gross per"
-            + " currency and scale, never netted; ageing in the operator reports' bands, every band named; the oldest")
+            + " currency and scale, never netted; ageing in the definition's own bands, every band named; the oldest")
     void theRegisterAsOfTheCutoff() {
         born.add(line(SuspenseSide.CREDIT, 1_000, EUR, LocalDate.of(2097, 2, 1)));
         born.add(line(SuspenseSide.CREDIT, 500, EUR, LocalDate.of(2097, 3, 30)));
@@ -138,6 +137,15 @@ class ReconciliationMonthReadsTest {
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> new ReconciliationMonthReads(failing).ofMonth(NO_CONNECTION, MARCH))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("M-10: the ageing is SUSPENSE's own table, its edges pinned; that the frozen read depends on no part of the disclosure's is"
+            + " ReportingNeverWritesTest's")
+    void theBandsAreTheDefinitions() {
+        assertThat(SuspenseAsOfCutoff.AGEING_BANDS).containsExactly("0-2", "3-7", "8-30", "over-30");
+        assertThat(List.of(0L, 2L, 3L, 7L, 8L, 30L, 31L).stream().map(SuspenseAsOfCutoff::ageingBand))
+                .containsExactly("0-2", "0-2", "3-7", "3-7", "8-30", "8-30", "over-30");
     }
 
     // ------------------------------------------------------------------ M-2

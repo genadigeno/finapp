@@ -15,6 +15,10 @@ import java.util.UUID;
  * <strong>{@code P14-TSK-012}'s check reads it</strong>, on its own snapshot, by this port - the check is that task's, and
  * nothing here changes {@code -011}'s.
  *
+ * <p><strong>It judges nothing</strong> (`P14-TSK-017`'s review, I-4): it says which runs exist, and leaves what makes a month "run" to
+ * {@code -012} and the owner, who has yet to rule whether a run that is not {@code COMPLETED} counts and whether each active source needs
+ * one. An earlier {@code noRun()} answered both by accident: one {@code BLOCKED} run of one source on one day read as a month that ran.
+ *
  * <p>Moving, by nature: a batch for the month's last days is accepted in the next, a run's status moves, a late batch joins
  * the month at any time. So it is an operational read, and a FINAL body may not read it.
  */
@@ -56,22 +60,19 @@ public interface ReconciliationRunCoverage {
             lines = List.copyOf(lines);
         }
 
-        /** How many runs of accepted batches the month holds. */
+        /**
+         * How many runs of accepted batches the month holds, <strong>in any status, of any source</strong>: a {@code BLOCKED} or
+         * {@code OPEN} run counts, and so does a repudiated batch's, whose run stands. A count, and no verdict on the month.
+         */
         public long batchRuns() {
             return lines.stream().filter(line -> BATCH.equals(line.kind())).mapToLong(Line::runs).sum();
-        }
-
-        /** True when no batch of the month was accepted - what the owner's ruling asks {@code -012}'s check to fail. */
-        public boolean noRun() {
-            return batchRuns() == 0;
         }
 
         /** The content's {@code coverage} member. */
         public CanonicalJson.Obj asValue() {
             CanonicalJson.Arr runs = CanonicalJson.array();
             lines.forEach(line -> runs.add(line.asValue()));
-            return CanonicalJson.object().put("month", month.toString()).put("batchRuns", batchRuns())
-                    .put("noRun", noRun()).put("runs", runs);
+            return CanonicalJson.object().put("month", month.toString()).put("batchRuns", batchRuns()).put("runs", runs);
         }
     }
 }

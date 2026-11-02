@@ -1,5 +1,6 @@
 package com.finapp.accounting.reporting;
 
+import com.finapp.accounting.CounterpartyPositionReads;
 import com.finapp.accounting.GlAccount;
 import com.finapp.accounting.GlMappingVersion;
 import com.finapp.accounting.GlMappingVersionId;
@@ -22,6 +23,10 @@ import lombok.RequiredArgsConstructor;
  * themselves are not in the content (bounded: the GL door's keyset pages list them): each figure's (GL account, currency, period) is the
  * key {@code GET .../gl/accounts/{code}/activity} drills by, and those pages sum to the figure for a period no longer {@code OPEN}.
  *
+ * <p><strong>Nothing nets between counterparties</strong> (`P14-TSK-017`'s review, I-1; {@code INV-RAIL-04}): a component, an unmapped row
+ * and a bridge's move are each per counterparty on a {@code COUNTERPARTY}-owned purpose, so {@link CounterpartyPositionReads} stands beside
+ * the trial balance's read. An account's own figure and a currency's totals are gross debits and credits: the balance proof, netting nobody.
+ *
  * <p><strong>The data's scale, never the JDK's</strong> (`P14-TSK-015`'s review, M-6): it folds {@link TrialBalanceReads#within}
  * itself. {@code GeneralLedger.fold} would write {@code GeneralLedger.zero}'s scale - {@code CurrencyCode.minorUnits}, a JDK table - into
  * FINAL content, unflagged; {@code ReportingNeverWritesTest} now refuses every definition a path to it.
@@ -42,11 +47,13 @@ public final class GlActivityDefinition implements ReportDefinition {
     public static final int VERSION = 1;
 
     private static final ReportStatement STATEMENT = new ReportStatement(
-            "The ledger's journal lines by posting date, each read with its ledger account's purpose and owner kind, through the"
-                    + " pinned GL mapping version; no projection, cache or gauge.",
-            "Per GL account and currency the period's debits, credits and line count, with components by purpose and owner kind;"
-                    + " every line the version does not map an explicit row. When the previous period pins another version, the"
-                    + " balances the change moved between accounts - a restatement, never a figure in the movement.",
+            "The ledger's journal lines by posting date, each read with its ledger account's purpose and owner kind, a"
+                    + " counterparty's account also with the counterparty's code, through the pinned GL mapping version; no"
+                    + " projection, cache or gauge.",
+            "Per GL account and currency the period's debits, credits and line count, with components by purpose and owner kind,"
+                    + " and by counterparty on a counterparty's purpose, because nothing nets between them; every line the version"
+                    + " does not map an explicit row. When the previous period pins another version, the balances the change moved"
+                    + " between accounts, debit-positive - a restatement, never a figure in the movement.",
             "A line counts by its posting date, inside the period's calendar month. A FINAL run is as of its period's lock; a"
                     + " PROVISIONAL one as of its cut, entries created at or before its claim.",
             "Per currency, one scale: the largest its own amounts in this report carry, an exact rescale, no JDK currency table."
@@ -56,6 +63,7 @@ public final class GlActivityDefinition implements ReportDefinition {
                     + " reopen. PROVISIONAL for an OPEN period: labelled, reused within its freshness window, never issued.");
 
     @NonNull private final TrialBalanceReads reads;
+    @NonNull private final CounterpartyPositionReads positions;
 
     @Override
     public String code() {
@@ -76,7 +84,8 @@ public final class GlActivityDefinition implements ReportDefinition {
     public CanonicalJson.Obj generate(Connection snapshot, ReportInputs inputs) {
         JournalWindow read = JournalWindow.of(reads, snapshot, inputs);
         Map<String, MappingRule> rules = read.version().map(GlMappingVersion::rulesByKey).orElse(Map.of());
-        List<JournalReads.Aggregate> movement = reads.within(snapshot, read.range(), read.cut());
+        List<JournalReads.Aggregate> movement = PurposeRows.perCounterparty(reads.within(snapshot, read.range(), read.cut()),
+                positions.within(snapshot, read.range(), read.cut()));
 
         Map<String, Row> accounts = new TreeMap<>();
         Map<String, Components> unmapped = new TreeMap<>();
@@ -88,8 +97,8 @@ public final class GlActivityDefinition implements ReportDefinition {
             scales.merge(aggregate.currency(), aggregate.scale(), Math::max);
             MappingRule rule = rules.get(aggregate.key());
             if (rule == null) {
-                unmapped.computeIfAbsent(aggregate.key() + "\u0000" + aggregate.currency(),
-                        ignored -> new Components(aggregate.purpose(), aggregate.ownerKind())).add(aggregate);
+                unmapped.computeIfAbsent(Components.keyOf(aggregate) + "\u0000" + aggregate.currency(),
+                        ignored -> new Components(aggregate)).add(aggregate);
                 continue;
             }
             GlAccount account = read.version().orElseThrow().account(rule.glAccountCode()).orElseThrow(() ->
@@ -104,10 +113,8 @@ public final class GlActivityDefinition implements ReportDefinition {
         CanonicalJson.Arr accountsOut = CanonicalJson.array();
         accounts.values().forEach(row -> accountsOut.add(row.asValue(scales.get(row.currency))));
         CanonicalJson.Arr unmappedOut = CanonicalJson.array();
-        unmapped.forEach((key, row) -> {
-            String currency = key.substring(key.indexOf('\u0000') + 1);
-            unmappedOut.add(row.asValue(currency, scales.get(currency)).put("currency", currency));
-        });
+        unmapped.values().forEach(row -> unmappedOut.add(row.asValue(row.currency, scales.get(row.currency))
+                .put("currency", row.currency)));
         CanonicalJson.Arr currenciesOut = CanonicalJson.array();
         currencies.forEach((currency, sides) -> currenciesOut.add(CanonicalJson.object()
                 .put("currency", currency)
@@ -118,6 +125,7 @@ public final class GlActivityDefinition implements ReportDefinition {
                 .put("balanced", sides.debits().compareTo(sides.credits()) == 0)));
         CanonicalJson.Obj body = read.ranges(CanonicalJson.object()
                 .put("statement", STATEMENT.asValue())
+                .put("sign", TrialBalance.SIGN)
                 .put("accounts", accountsOut)
                 .put("unmapped", unmappedOut)
                 .put("currencies", currenciesOut)
@@ -135,18 +143,28 @@ public final class GlActivityDefinition implements ReportDefinition {
             return Optional.empty();
         }
         return Optional.of(Reclassification.between(previous.get(), reads.version(snapshot, previous.get()),
-                inputs.mappingVersionId(), read.version(), reads.before(snapshot, inputs.start(), read.cut())));
+                inputs.mappingVersionId(), read.version(), PurposeRows.perCounterparty(
+                        reads.before(snapshot, inputs.start(), read.cut()),
+                        positions.before(snapshot, inputs.start(), read.cut()))));
     }
 
-    /** One purpose's movement in one currency. */
+    /** One purpose's movement in one currency, one counterparty's where it has them. */
     private static final class Components {
         private final String purpose;
         private final String ownerKind;
+        private final Optional<String> counterparty;
+        private final String currency;
         private TrialBalance.Sides sides = TrialBalance.Sides.NONE;
 
-        Components(String purpose, String ownerKind) {
-            this.purpose = purpose;
-            this.ownerKind = ownerKind;
+        Components(JournalReads.Aggregate first) {
+            this.purpose = first.purpose();
+            this.ownerKind = first.ownerKind();
+            this.counterparty = first.counterparty();
+            this.currency = first.currency();
+        }
+
+        static String keyOf(JournalReads.Aggregate aggregate) {
+            return aggregate.key() + "\u0000" + aggregate.counterparty().orElse("");
         }
 
         void add(JournalReads.Aggregate aggregate) {
@@ -154,12 +172,12 @@ public final class GlActivityDefinition implements ReportDefinition {
         }
 
         CanonicalJson.Obj asValue(String currency, int scale) {
-            return CanonicalJson.object()
+            return PurposeRows.withCounterparty(CanonicalJson.object()
                     .put("purpose", purpose)
                     .put("ownerKind", ownerKind)
                     .put("debits", TrialBalance.money(sides.debits(), currency, scale))
                     .put("credits", TrialBalance.money(sides.credits(), currency, scale))
-                    .put("lines", sides.lines());
+                    .put("lines", sides.lines()), counterparty);
         }
     }
 
@@ -177,8 +195,7 @@ public final class GlActivityDefinition implements ReportDefinition {
 
         void add(JournalReads.Aggregate aggregate) {
             sides = sides.plus(aggregate.side(), aggregate.amount(), aggregate.lines());
-            components.computeIfAbsent(aggregate.key(),
-                    ignored -> new Components(aggregate.purpose(), aggregate.ownerKind())).add(aggregate);
+            components.computeIfAbsent(Components.keyOf(aggregate), ignored -> new Components(aggregate)).add(aggregate);
         }
 
         CanonicalJson.Obj asValue(int scale) {

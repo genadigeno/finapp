@@ -140,26 +140,29 @@ not fully mapped period; the run checked FINAL and of its code and version).
 reads as if every definition's FINAL run were reproducible; that holds for what a locked period makes immutable, and two of the ten read what
 keeps moving under one lock. `ReportDefinition.operational()` (default false; `OperationalReportDefinition` true) names them, and **an operational
 definition is never a run**: `ReportRuns.claim` refuses it before anything is read or locked (`DefinitionIsOperational`, `409
-accounting.ReportDoorMismatch`); `OperationalReports` generates it through the same `ReportGeneration` - canonical form, sha256, time budget - on a
-verified snapshot, its header's `basis` `OPERATIONAL`, its cut the database's instant, nothing stored but the read's audit record
+accounting.ReportDoorMismatch`); `OperationalReports` generates it through the same `ReportGeneration` - canonical form, sha256 - on a
+verified snapshot under the door's own bound (`OperationalDoorBound`: 30 seconds, 2 permits per instance, the next refused `503`), its header's `basis` `OPERATIONAL`, its cut the database's instant, nothing stored but the read's audit record
 (`accounting.OperationalReportRead`), at `GET /v1/operator/accounting/periods/{periodId}/operational-reports/{definition}`. **Why not a run of
 either kind**: `V004`'s birth trigger holds a PROVISIONAL run to an `OPEN` period and `report_run_basis_coherent` a completed run's status to its basis,
 so a run of a locked period can only be a row saying `FINAL`; and `ReportRuns.answers` keeps a FINAL run answering for the life of its lock, so
 `CLOSE_STATUS` would say nine checks `PENDING` for good. Why no migration: `V008`-`V010` are reserved and Flyway runs in order, and a report that
 stores nothing needs none. Nothing moved for any other definition: its question, key, basis and bytes are as they were. **The eight FINAL
-definitions**: `PurposeReportDefinition` (six, tables of purposes over `TrialBalanceReads`, the trial balance's own statements), `GlActivityDefinition`,
-`SuspenseDefinition`. Their bodies write `ReportDefinition.statement()`, whose five facts the method's abstractness and `ReportStatement`'s
+definitions**: `PurposeReportDefinition` (six, tables of purposes over `TrialBalanceReads`, the trial balance's own statements, with
+`CounterpartyPositionReads` beside them wherever a purpose is a counterparty's: nothing nets between counterparties, `INV-RAIL-04`; and a section
+totals only figures of one normal side), `GlActivityDefinition`, `SuspenseDefinition`. Their bodies write `ReportDefinition.statement()`, whose five facts the method's abstractness and `ReportStatement`'s
 constructor make unomittable (`TRIAL_BALANCE` states them too and writes none: version 1's bytes are fixed). **Held statically**:
 `ReportingNeverWritesTest` - no definition has a path to `GeneralLedger` (`P14-TSK-015`'s review, M-6: the fold's `zero` is a JDK's table, the exception's
 reach closed); only an operational definition reads what moves; a report port's adapter writes nothing and holds no product's reports. **`SUSPENSE`'s register
 is FINAL by a new read**: `ReportReadings.eachSuspenseItemBornAsOf` narrows the as-of read to items whose owning break was raised before the
 instant, because an adopted parking's `opened_on` is its entry's posting date (ADR-0070 section 2) and it would otherwise join a locked month; the disclosure's
 read is unchanged, the close wanting that item as `suspenseUnowned`. **The reclassification bridge lands in `GL_ACTIVITY`**: `Reclassification.between`, a
-pure fold of the opening's aggregates through both versions - each moved purpose's balance, per GL account the previous closing beside this opening, footing
+pure fold of the opening's aggregates through both versions - each moved purpose's balance, per counterparty where it has them, per GL account the previous closing beside this opening, footing
 to zero per currency - exact because the lines before this period's first day are the lines through the previous period's last, and read only
 when the versions differ; `-016` may call it as it stands. **Costs**: the heaviest statement of a balance report is `TrialBalanceReads.BEFORE`, from inception,
 `journal_entry_by_posting_date`, the trial balance's own cost; of `RECONCILIATION_STATUS` the past-the-cutoff scan, the same index from the cutoff
-forward, then one probe of `audit_record_by_target` per entry it keeps; both inside the 4-minute budget, a read past it `503`, never a partial answer.
+forward, then one probe of `audit_record_by_target` per entry it keeps; a run inside the 4-minute budget, a read at the door inside 30 seconds, past it `503`, never a
+partial answer. A long-past month may no longer answer at the door, and says so: an owner item. **Version 1's bodies changed in `P14-TSK-017`'s fix round and stay version 1, because
+no FINAL run has been issued anywhere.**
 
 ## Follow-up
 

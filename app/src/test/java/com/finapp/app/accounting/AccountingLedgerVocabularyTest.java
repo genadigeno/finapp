@@ -2,10 +2,12 @@ package com.finapp.app.accounting;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.accounting.CounterpartyPositionReads;
 import com.finapp.accounting.EntryType;
 import com.finapp.accounting.GlClassification;
 import com.finapp.accounting.TrialBalanceReads;
 import com.finapp.accounting.reporting.PurposeReportDefinition;
+import com.finapp.accounting.reporting.SuspenseDefinition;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AccountType;
 import com.finapp.ledger.JournalEntryType;
@@ -16,6 +18,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -67,6 +71,38 @@ class AccountingLedgerVocabularyTest {
                 });
             }
         }
+        String[] suspense = SuspenseDefinition.LEDGER_KEY.split("/", 2);
+        assertThat(AccountPurpose.valueOf(suspense[0]).ownerKind().name()).isEqualTo(suspense[1]);
+    }
+
+    /**
+     * The purposes no report's section names, each with why. {@code GL_ACTIVITY} reads every line, these among them, and {@code
+     * P14-TSK-016}'s statements carry them; none is silently absent. A purpose the ledger adds lands in a section or here, by a decision.
+     */
+    private static final Map<String, String> NOT_IN_A_SECTION = Map.of(
+            "DISPUTE_COSTS", "a cost: REVENUE reports income, and the statements carry the expense",
+            "PROCESSING_COSTS", "a cost: REVENUE reports income, and the statements carry the expense",
+            "RECONCILIATION_LOSSES", "a reconciliation's own result: RECONCILIATION_STATUS reports the breaks, and the statements the expense",
+            "RECONCILIATION_GAINS", "a reconciliation's own result, no fee, interest or spread: the statements carry it as other income",
+            "LOAN_WRITE_OFF_EXPENSE", "a credit loss: LOAN_PORTFOLIO is the book's balances, and the statements carry the expense",
+            "BNPL_WRITE_OFF_EXPENSE", "a credit loss: BNPL_EXPOSURE is the book's balances, and the statements carry the expense",
+            "FX_POSITION", "the platform's own currency inventory: a balance, so no FX result, and neither clearing nor cash",
+            "LENDING_CAPITAL", "equity: no report here covers it, and the balance sheet does");
+
+    @Test
+    @DisplayName("M-4, the census: every ledger purpose is in a section of some report - SUSPENSE's among them - or on a named list with its reason,"
+            + " never both, and the list names only what the ledger holds (P14-TSK-017)")
+    void everyPurposeIsReportedOrSaidNotToBe() {
+        Set<String> inASection = new TreeSet<>(Set.of(SuspenseDefinition.LEDGER_KEY));
+        reports().forEach(definition -> inASection.addAll(keys(definition)));
+        for (AccountPurpose purpose : AccountPurpose.values()) {
+            assertThat(inASection.contains(purpose.name() + "/" + purpose.ownerKind().name())
+                    ^ NOT_IN_A_SECTION.containsKey(purpose.name()))
+                    .as("%s is in a section of a report or named as not, and never both", purpose)
+                    .isTrue();
+        }
+        assertThat(NOT_IN_A_SECTION.keySet()).allSatisfy(name -> assertThat(AccountPurpose.valueOf(name)).isNotNull());
+        assertThat(NOT_IN_A_SECTION.values()).allSatisfy(reason -> assertThat(reason).hasSizeGreaterThan(20));
     }
 
     @Test
@@ -84,9 +120,14 @@ class AccountingLedgerVocabularyTest {
                 throw new UnsupportedOperationException("the sections are read, not the journal");
             });
 
+    private static final CounterpartyPositionReads NO_POSITIONS = (CounterpartyPositionReads) java.lang.reflect.Proxy.newProxyInstance(
+            CounterpartyPositionReads.class.getClassLoader(), new Class<?>[] {CounterpartyPositionReads.class}, (proxy, method, args) -> {
+                throw new UnsupportedOperationException("the sections are read, not the journal");
+            });
+
     private static List<PurposeReportDefinition> reports() {
         return List.of(PurposeReportDefinition.revenue(NO_READS), PurposeReportDefinition.receivablesPayables(NO_READS),
-                PurposeReportDefinition.settlementPositions(NO_READS), PurposeReportDefinition.fxResults(NO_READS),
+                PurposeReportDefinition.settlementPositions(NO_READS, NO_POSITIONS), PurposeReportDefinition.fxResults(NO_READS),
                 PurposeReportDefinition.loanPortfolio(NO_READS), PurposeReportDefinition.bnplExposure(NO_READS));
     }
 

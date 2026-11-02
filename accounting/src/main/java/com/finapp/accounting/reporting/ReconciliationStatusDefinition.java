@@ -38,15 +38,19 @@ public final class ReconciliationStatusDefinition implements OperationalReportDe
             "Reconciliation's own runs, breaks, suspense items and releases through its report readings, the ledger's"
                     + " SUSPENSE_UNMATCHED lines and past-the-cutoff entries with their audit marks. Read here, copied nowhere; no"
                     + " accounting break raised; no projection, cache or gauge.",
-            "The month's runs per source, kind, status and business date; the close's disclosure, gross per currency and scale; per"
-                    + " floored rule's namespace the entries valued by the cutoff and posted after it, split into floored"
-                    + " (flooredFrom= on the entry's audit record) and the rule's own dating.",
+            "The month's runs per source, kind, status and business date, of any status and with no verdict on the month; the"
+                    + " close's disclosure, gross per currency and scale; per key namespace of the floored rules other than LND-2 (whose"
+                    + " entries are ACCRUALS_COMPLETE's) the entries valued by the cutoff and posted after it, split into floored"
+                    + " (flooredFrom= on the entry's audit record) and ownValueDate, the rest: inferred from that mark's absence, and"
+                    + " stated by nothing.",
             "Runs by their business date within the calendar month. Breaks and suspense as of the first instant after the last day,"
                     + " UTC; what the grace days added apart. The whole as of asOf, the database's instant at the read.",
             "Per currency and scale as stored; never summed across currencies, sides or scales; never netted. Minor units in"
                     + " strings. Not translated.",
             "OPERATIONAL: never FINAL and never a report run, because a late batch, a run's status, a resolved break and every"
-                    + " later posting move it after any lock. Generated at each read, stored nowhere, each read audited.");
+                    + " later posting move it after any lock. Generated at each read, stored nowhere, each read audited. Answered"
+                    + " within the door's time bound, 30 seconds unless configured, or refused and nothing served: a long-past month"
+                    + " reads every entry posted since, and may no longer answer inside it.");
 
     @NonNull private final ReconciliationDisclosure disclosure;
     @NonNull private final ReconciliationRunCoverage coverage;

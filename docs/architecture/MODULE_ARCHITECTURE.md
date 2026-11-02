@@ -1278,6 +1278,9 @@ empty, so each is proven able to fail by probes planted in its own source.
   references alike - no JDBC write, no `Connection` mutator, no writer type, nothing of `com.finapp.lending`, `com.finapp.bnpl` or
   their `app` desks, and of a store or `CloseRuns` only the reads named. Planted: an `UPDATE` both ways, lending's report, a store's write.
   *(ArchUnit: `noReportPortAdapterWrites`)*
+- The frozen suspense register ages in its own bands (`P14-TSK-017`'s review M-10, `INV-ACC-04`): `ReconciliationMonthReads` and its fold depend on
+  no part of `ProductReconciliationDisclosure`, whose table may change without moving a FINAL body.
+  *(ArchUnit: `theFrozenRegisterAgesInItsOwnBands`)*
 
 ### Persistence boundary
 

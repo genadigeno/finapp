@@ -148,8 +148,7 @@ class ReportingNeverWritesTest {
     static final Set<String> LEDGER_WRITERS = Set.of(PostingService.class.getName());
 
     /** What a report port's adapter may call of a store or of {@code CloseRuns}: reads, on the snapshot it is handed. */
-    static final Set<String> ADAPTER_STORE_READS = Set.of("find", "view", "content", "rates", "approvedFor", "ofPeriod",
-            "countByStatus");
+    static final Set<String> ADAPTER_STORE_READS = Set.of("find", "view", "content", "rates", "approvedFor", "countByStatus");
 
     @ArchTest
     static void noReportingClassReachesAWriter(JavaClasses imported) {
@@ -216,11 +215,31 @@ class ReportingNeverWritesTest {
     static void noReportPortAdapterWrites(JavaClasses imported) {
         Set<String> adapters = reportPortAdapters(imported, ReportingNeverWritesTest::isReportingClass);
         assertThat(adapters).as("the census: the adapters this rule is armed over").contains(
-                "com.finapp.app.accounting.LedgerTrialBalanceReads", "com.finapp.app.accounting.ReconciliationMonthReads",
+                "com.finapp.app.accounting.LedgerTrialBalanceReads", "com.finapp.app.accounting.LedgerCounterpartyPositionReads",
+                "com.finapp.app.accounting.ReconciliationMonthReads",
                 "com.finapp.app.accounting.AccountingCloseStatusReads", "com.finapp.app.accounting.LedgerFlooredPostings",
                 "com.finapp.app.accounting.ProductReconciliationDisclosure");
         assertThat(adapterViolations(imported, adapters)).as("a report port's adapter that can write, or reads a product's reports")
                 .isEmpty();
+    }
+
+    /**
+     * <strong>The frozen register ages in its own bands</strong> (`P14-TSK-017`'s review, M-10; {@code INV-ACC-04}): what a FINAL body holds
+     * cannot move with a table it does not own. {@code ReconciliationMonthReads} and its fold depend on no part of {@code
+     * ProductReconciliationDisclosure}, whose table the close's disclosure may change; {@code SuspenseAsOfCutoff.AGEING_BANDS} is {@code
+     * SUSPENSE} version 1's.
+     */
+    @ArchTest
+    static void theFrozenRegisterAgesInItsOwnBands(JavaClasses imported) {
+        String reads = "com.finapp.app.accounting.ReconciliationMonthReads";
+        List<JavaClass> found = imported.stream()
+                .filter(candidate -> candidate.getName().equals(reads) || candidate.getName().startsWith(reads + "$"))
+                .toList();
+        assertThat(found).as("the census: the class and its fold").hasSizeGreaterThanOrEqualTo(2);
+        assertThat(found.stream().flatMap(candidate -> candidate.getDirectDependenciesFromSelf().stream())
+                .map(dependency -> dependency.getTargetClass().getName()))
+                .as("a FINAL body's ageing reading the close disclosure's table (INV-ACC-04)")
+                .doesNotContain("com.finapp.app.accounting.ProductReconciliationDisclosure");
     }
 
     /** The census: the guard sees accounting, every writer it names, and the ledger's writers it refuses by package. */

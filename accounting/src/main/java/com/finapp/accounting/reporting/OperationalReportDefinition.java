@@ -8,7 +8,7 @@ package com.finapp.accounting.reporting;
  * {@code OPEN} period for every writer.
  *
  * <p>So nothing of it is stored. {@code ReportRuns.claim} refuses it; the operational door generates it on a verified
- * read-only snapshot, in the same canonical form and under the same time budget, records the read and serves it, and the
+ * read-only snapshot, in the same canonical form and under the door's own time budget, records the read and serves it, and the
  * content's {@code basis} says {@code OPERATIONAL}. Its {@link ReportInputs} carry the snapshot's database instant as
  * {@code cutAt}, which is what every age and "as of" in its body is measured from - never a clock of its own.
  *

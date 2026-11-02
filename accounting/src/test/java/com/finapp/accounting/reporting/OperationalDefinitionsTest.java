@@ -1,6 +1,5 @@
 package com.finapp.accounting.reporting;
 
-import static com.finapp.accounting.testing.ReportBodies.flag;
 import static com.finapp.accounting.testing.ReportBodies.isNull;
 import static com.finapp.accounting.testing.ReportBodies.object;
 import static com.finapp.accounting.testing.ReportBodies.objects;
@@ -85,7 +84,7 @@ class OperationalDefinitionsTest {
 
         CanonicalJson.Obj coverage = object(body, "coverage");
         assertThat(text(coverage, "batchRuns")).isEqualTo("2");
-        assertThat(flag(coverage, "noRun")).isFalse();
+        assertThat(coverage.members()).as("I-4: a count, and no verdict on the month").doesNotContainKey("noRun");
         assertThat(objects(coverage, "runs")).hasSize(2);
         assertThat(text(objects(coverage, "runs").get(0), "sourceId")).isEqualTo(SOURCE.toString());
 
@@ -98,14 +97,21 @@ class OperationalDefinitionsTest {
     }
 
     @Test
-    @DisplayName("the coverage -012 reads: only a REPROCESS, or nothing at all, is no run of an accepted batch; a split's floored are among"
-            + " its entries")
+    @DisplayName("I-4: the coverage -012 reads counts and does not judge - a REPROCESS is no accepted batch's run, a BLOCKED or OPEN one is counted,"
+            + " and what makes a month run is -012's and the owner's; a split's floored are among its entries; M-3: the rest is said to be inferred")
     void theCoverage() {
-        assertThat(new ReconciliationRunCoverage.Coverage(MONTH, List.of()).noRun()).isTrue();
+        assertThat(new ReconciliationRunCoverage.Coverage(MONTH, List.of()).batchRuns()).isZero();
         assertThat(new ReconciliationRunCoverage.Coverage(MONTH, List.of(
-                new ReconciliationRunCoverage.Line(SOURCE, "REPROCESS", "OPEN", MONTH.atDay(1), 3))).noRun()).isTrue();
-        assertThat(new ReconciliationRunCoverage.Coverage(MONTH, List.of(
-                new ReconciliationRunCoverage.Line(SOURCE, "BATCH", "BLOCKED", MONTH.atDay(1), 1))).noRun()).isFalse();
+                new ReconciliationRunCoverage.Line(SOURCE, "REPROCESS", "OPEN", MONTH.atDay(1), 3))).batchRuns()).isZero();
+        ReconciliationRunCoverage.Coverage standing = new ReconciliationRunCoverage.Coverage(MONTH, List.of(
+                new ReconciliationRunCoverage.Line(SOURCE, "BATCH", "BLOCKED", MONTH.atDay(1), 1),
+                new ReconciliationRunCoverage.Line(SOURCE, "BATCH", "OPEN", MONTH.atDay(2), 2)));
+        assertThat(standing.batchRuns()).isEqualTo(3);
+        assertThat(CanonicalJson.text(standing.asValue())).doesNotContain("noRun");
+        assertThat(CanonicalJson.text(new ReconciliationStatusDefinition((snapshot, period) -> {
+            throw new AssertionError("the statement is read, not the disclosure");
+        }, (snapshot, month) -> standing, (snapshot, cutoff) -> new java.util.TreeMap<>()).statement().asValue()))
+                .contains("other than LND-2").contains("inferred from that mark's absence").doesNotContain("per floored rule's namespace");
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> new PastTheCutoffPostings.Split(1, 2))
                 .isInstanceOf(IllegalArgumentException.class);
     }

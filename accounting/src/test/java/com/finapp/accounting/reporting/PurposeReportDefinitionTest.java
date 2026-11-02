@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.accounting.AccountingPeriodId;
+import com.finapp.accounting.CounterpartyPositionReads;
 import com.finapp.accounting.GlMappingVersion;
 import com.finapp.accounting.GlMappingVersionId;
 import com.finapp.accounting.JournalReads;
@@ -34,7 +35,9 @@ import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -61,11 +64,12 @@ class PurposeReportDefinitionTest {
     private static final String CASH = "CASH_AT_BANK/OPERATIONAL";
     private static final String LOAN_PRINCIPAL = "LOAN_PRINCIPAL/LOAN";
     private static final String FEES = "FEE_REVENUE/OPERATIONAL";
+    private static final String FX_CLEARING = "FX_PROVIDER_CLEARING/COUNTERPARTY";
 
-    private static final Map<String, Function<TrialBalanceReads, PurposeReportDefinition>> SIX = Map.of(
+    private static final Map<String, Function<InMemoryTrialBalanceReads, PurposeReportDefinition>> SIX = Map.of(
             "REVENUE", PurposeReportDefinition::revenue,
             "RECEIVABLES_PAYABLES", PurposeReportDefinition::receivablesPayables,
-            "SETTLEMENT_POSITIONS", PurposeReportDefinition::settlementPositions,
+            "SETTLEMENT_POSITIONS", reads -> PurposeReportDefinition.settlementPositions(reads, reads.counterparties()),
             "FX_RESULTS", PurposeReportDefinition::fxResults,
             "LOAN_PORTFOLIO", PurposeReportDefinition::loanPortfolio,
             "BNPL_EXPOSURE", PurposeReportDefinition::bnplExposure);
@@ -160,6 +164,90 @@ class PurposeReportDefinitionTest {
         assertThat(scale(totals.get(0), "closing")).isEqualTo(3);
         assertThat(minor(totals.get(1), "closing")).isEqualTo(BigInteger.valueOf(150));
         assertThat(scale(totals.get(1), "closing")).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("I-1: nothing nets between counterparties (INV-RAIL-04, ledger V025): fx-sim-a at +1,000 and fx-sim-b at -1,000 stay two rows,"
+            + " never a position of 0, each naming its counterparty and the one account; an account no counterparty owns names none")
+    void theCounterpartiesStayApart() {
+        InMemoryTrialBalanceReads reads = books();
+        reads.postFor("fx-sim-a", MONTH.atDay(1).minusDays(1), EARLY, "EUR", 2, 1_000, FX_CLEARING, CASH);
+        reads.postFor("fx-sim-b", MONTH.atDay(3), EARLY, "EUR", 2, 1_000, CASH, FX_CLEARING);
+        CanonicalJson.Obj body = PurposeReportDefinition.settlementPositions(reads, reads.counterparties())
+                .generate(SNAPSHOT, inputs(RunBasis.FINAL));
+
+        List<CanonicalJson.Obj> positions = objects(section(body, "CLEARING"), "rows");
+        assertThat(positions).as("two rows, not a summed one").hasSize(2)
+                .extracting(position -> text(position, "counterparty")).containsExactly("fx-sim-a", "fx-sim-b");
+        CanonicalJson.Obj first = row(body, "FX_PROVIDER_CLEARING", "fx-sim-a", "EUR").orElseThrow();
+        assertThat(minor(first, "opening")).isEqualTo(BigInteger.valueOf(1_000));
+        assertThat(minor(first, "closing")).isEqualTo(BigInteger.valueOf(1_000));
+        CanonicalJson.Obj second = row(body, "FX_PROVIDER_CLEARING", "fx-sim-b", "EUR").orElseThrow();
+        assertThat(minor(second, "credits")).isEqualTo(BigInteger.valueOf(1_000));
+        assertThat(minor(second, "closing")).isEqualTo(BigInteger.valueOf(-1_000));
+        assertThat(text(first, "glAccount")).isEqualTo(text(second, "glAccount")).isEqualTo("1120");
+        assertThat(isNull(row(body, "CASH_AT_BANK", "EUR").orElseThrow(), "counterparty")).isTrue();
+    }
+
+    @Test
+    @DisplayName("I-1: the counterparty's opening honours the same cut as the rest of a PROVISIONAL run")
+    void theCounterpartiesHonourTheCut() {
+        InMemoryTrialBalanceReads reads = books();
+        reads.postFor("fx-sim-a", MONTH.atDay(1).minusDays(1), CUT, "EUR", 2, 100, FX_CLEARING, CASH);
+        reads.postFor("fx-sim-a", MONTH.atDay(1).minusDays(1), CUT.plusSeconds(1), "EUR", 2, 40, FX_CLEARING, CASH);
+        reads.postFor("fx-sim-a", MONTH.atDay(3), CUT.plusSeconds(1), "EUR", 2, 9, FX_CLEARING, CASH);
+        CanonicalJson.Obj body = PurposeReportDefinition.settlementPositions(reads, reads.counterparties())
+                .generate(SNAPSHOT, inputs(RunBasis.PROVISIONAL));
+        CanonicalJson.Obj position = row(body, "FX_PROVIDER_CLEARING", "fx-sim-a", "EUR").orElseThrow();
+        assertThat(minor(position, "opening")).isEqualTo(BigInteger.valueOf(100));
+        assertThat(minor(position, "debits")).isEqualTo(BigInteger.ZERO);
+    }
+
+    @Test
+    @DisplayName("I-1, fail closed: a counterparty's purpose with no counterparty read is refused at construction; a position naming nobody, or two"
+            + " reads of one snapshot that disagree, fail the report rather than fold")
+    void theCounterpartyDimensionFailsClosed() {
+        ReportStatement statement = PurposeReportDefinition.statement("a rule stated at length", PurposeReportDefinition.Window.BALANCES);
+        assertThatThrownBy(() -> new PurposeReportDefinition("TEST_REPORT", PurposeReportDefinition.Window.BALANCES, List.of(
+                PurposeReportDefinition.Section.ofBothSides("A", List.of(FX_CLEARING))), statement, books()))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        InMemoryTrialBalanceReads reads = books();
+        reads.postFor("fx-sim-a", MONTH.atDay(3), EARLY, "EUR", 2, 100, FX_CLEARING, CASH);
+        JournalReads.Aggregate unnamed = new JournalReads.Aggregate("FX_PROVIDER_CLEARING", "COUNTERPARTY", Optional.empty(), "EUR", 2,
+                Side.DEBIT, BigInteger.valueOf(100), 1);
+        assertThatThrownBy(() -> PurposeReportDefinition.settlementPositions(reads, answering(List.of(unnamed)))
+                .generate(SNAPSHOT, inputs(RunBasis.FINAL))).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> PurposeReportDefinition.settlementPositions(reads, answering(List.of()))
+                .generate(SNAPSHOT, inputs(RunBasis.FINAL))).isInstanceOf(IllegalStateException.class);
+        JournalReads.Aggregate short_ = new JournalReads.Aggregate("FX_PROVIDER_CLEARING", "COUNTERPARTY", Optional.of("fx-sim-a"), "EUR", 2,
+                Side.DEBIT, BigInteger.valueOf(99), 1);
+        assertThatThrownBy(() -> PurposeReportDefinition.settlementPositions(reads, answering(List.of(short_)))
+                .generate(SNAPSHOT, inputs(RunBasis.FINAL))).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("I-1: a total adds one normal side - held against the reference chart for every section of the six, both ways: a section of both"
+            + " sides writes none, and a section of one side keeps its total")
+    void aTotalAddsOneNormalSide() {
+        InMemoryTrialBalanceReads reads = books();
+        SIX.forEach((code, factory) -> factory.apply(reads).sections().forEach(section -> {
+            Set<Boolean> sides = section.keys().stream()
+                    .map(key -> VERSION.account(VERSION.rulesByKey().get(key).glAccountCode()).orElseThrow().classification().debitNormal())
+                    .collect(Collectors.toSet());
+            assertThat(section.totalled()).as("%s %s: %s", code, section.name(), sides).isEqualTo(sides.size() == 1);
+        }));
+        reads.post(MONTH.atDay(3), EARLY, "EUR", 2, 100, "SETTLEMENT_CLEARING/OPERATIONAL", "PAYOUT_CLEARING/OPERATIONAL");
+        reads.post(MONTH.atDay(3), EARLY, "EUR", 2, 7, "FX_REALISED_LOSSES/OPERATIONAL", "FX_REALISED_GAINS/OPERATIONAL");
+        CanonicalJson.Obj positions = PurposeReportDefinition.settlementPositions(reads, reads.counterparties())
+                .generate(SNAPSHOT, inputs(RunBasis.FINAL));
+        assertThat(isNull(section(positions, "CLEARING"), "totals")).as("assets and liabilities").isTrue();
+        CanonicalJson.Obj results = PurposeReportDefinition.fxResults(reads).generate(SNAPSHOT, inputs(RunBasis.FINAL));
+        assertThat(isNull(section(results, "REALISED"), "totals")).as("a revenue and an expense").isTrue();
+        assertThat(objects(section(results, "REALISED"), "rows")).hasSize(2);
+        reads.post(MONTH.atDay(3), EARLY, "EUR", 2, 5, "LOAN_PRINCIPAL/LOAN", CASH);
+        assertThat(objects(section(PurposeReportDefinition.receivablesPayables(reads).generate(SNAPSHOT, inputs(RunBasis.FINAL)),
+                "RECEIVABLES"), "totals")).hasSize(1);
     }
 
     @Test
@@ -285,8 +373,8 @@ class PurposeReportDefinitionTest {
     void aPurposeIsInOneSection() {
         ReportStatement statement = PurposeReportDefinition.statement("a rule stated at length", PurposeReportDefinition.Window.MOVEMENT);
         assertThatThrownBy(() -> new PurposeReportDefinition("TEST_REPORT", PurposeReportDefinition.Window.MOVEMENT, List.of(
-                new PurposeReportDefinition.Section("A", List.of(FEES)),
-                new PurposeReportDefinition.Section("B", List.of(FEES))), statement, books()))
+                PurposeReportDefinition.Section.ofOneSide("A", List.of(FEES)),
+                PurposeReportDefinition.Section.ofOneSide("B", List.of(FEES))), statement, books()))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -301,7 +389,7 @@ class PurposeReportDefinitionTest {
         assertThat(text(object(body, "range"), "from")).isEqualTo("2097-06-01");
         assertThat(text(object(body, "periodBounds"), "through")).isEqualTo("2097-06-30");
         assertThat(row(body, "LOAN_PRINCIPAL", "EUR").orElseThrow().members().keySet()).containsExactlyInAnyOrder("purpose",
-                "ownerKind", "currency", "glAccount", "opening", "debits", "credits", "closing", "lines");
+                "ownerKind", "counterparty", "currency", "glAccount", "opening", "debits", "credits", "closing", "lines");
     }
 
     // -----------------------------------------------------------------
@@ -316,6 +404,21 @@ class PurposeReportDefinitionTest {
     private ReportInputs inputs(RunBasis basis) {
         return new ReportInputs(periodId, MONTH, 1, basis, basis == RunBasis.FINAL ? Optional.of(CUT) : Optional.empty(),
                 Optional.of(pinned), Optional.of(1), CUT, RunParameters.none());
+    }
+
+    /** A counterparty read answering {@code aggregates} for the month, and nothing before it. */
+    private static CounterpartyPositionReads answering(List<JournalReads.Aggregate> aggregates) {
+        return new CounterpartyPositionReads() {
+            @Override
+            public List<JournalReads.Aggregate> before(Connection snapshot, LocalDate before, Optional<Instant> cut) {
+                return List.of();
+            }
+
+            @Override
+            public List<JournalReads.Aggregate> within(Connection snapshot, JournalReads.Range range, Optional<Instant> cut) {
+                return aggregates;
+            }
+        };
     }
 
     /** The independent fold: over the journal's lines themselves, no aggregate, no report code. */

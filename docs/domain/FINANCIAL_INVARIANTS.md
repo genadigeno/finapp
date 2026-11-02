@@ -1357,6 +1357,10 @@ whatever order its reads serve - `TrialBalanceOracleTest#regeneratesByteIdentica
 `TrialBalanceRunDatabaseTest#aFinalRunRegeneratesIdentical` (owed, C5); a FINAL one only under its period's pin. `P14-TSK-017`: a body that could differ on regeneration is not FINAL - `ReportingNeverWritesTest#onlyAnOperationalDefinitionReadsWhatMoves`, `OperationalReportsTest#theClaimRefusesIt`, `OperationalReportsTest#itIsNeverGeneratedFinal`; the eight that are: `PurposeReportDefinitionTest#aFinalBodyIgnoresWhatComesAfterItsPeriod`, `GlActivityDefinitionTest#aFinalBodyIgnoresWhatComesAfterItsPeriod`, `SuspenseDefinitionTest#regeneratesIdentical`, `OperationalReportsDatabaseTest#everyFinalRunRegeneratesIdentical` and `#aFinalSuspenseRunRegeneratesIdenticalAfterAnAdoption` (owed, C5).)*
 **Phase:** 14
 
+*(`P14-TSK-017`'s review, M-12: `RECONCILIATION_STATUS` and `CLOSE_STATUS` are never issued and nothing is filed from them, pending the owner's ruling on whether they are ever
+stored. They read what moves under one lock, so they are answered live and stored nowhere, and this Statement is not claimed of them; `ReportRuns.claim` refuses them a run, so no obligation can
+draw from them.)*
+
 ### INV-ACC-05 — Unreconciled positions are disclosed
 **Statement:** Open breaks and suspense balances are explicitly disclosed at period close,
 never netted away or omitted.
@@ -4478,7 +4482,9 @@ break unexplainable (`INV-SET-01`, ADR-0059 §4).
 **Enforce:** `DOMAIN` — the rail's descriptor names its clearing purpose; postings assert it
 (`DIRECTION:PURPOSE`).
 **Verify:** Per-rail posting tests asserting the purpose; the multi-rail storm reconciling each
-clearing position against its own rail's records.
+clearing position against its own rail's records. *(`P14-TSK-017`'s review, I-1: a report holds the same line - one row per counterparty,
+`PurposeReportDefinitionTest#theCounterpartiesStayApart`, `GlActivityDefinitionTest#theCounterpartiesStayApart`, `GlActivityDefinitionTest#theBridgeMovesEachCounterparty`;
+`OperationalReportsDatabaseTest#theCounterpartiesStayApart`, owed, C5.)*
 **Phase:** 7
 
 *(Phase 8's discharge side, as built by `P8-TSK-017`: the scheme's evidence — its report's fees and

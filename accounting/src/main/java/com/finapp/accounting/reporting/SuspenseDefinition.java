@@ -27,27 +27,31 @@ public final class SuspenseDefinition implements ReportDefinition {
     /** The definition's version: what {@link #generate} writes. */
     public static final int VERSION = 1;
 
+    /** The one purpose its ledger side reads - what {@code AccountingLedgerVocabularyTest} holds to the ledger's enum. */
+    public static final String LEDGER_KEY = "SUSPENSE_UNMATCHED/SUSPENSE";
+
     private static final ReportStatement STATEMENT = new ReportStatement(
             "The ledger's SUSPENSE_UNMATCHED journal lines by posting date, and reconciliation's suspense items, their append-only"
                     + " releases and their owning breaks' frozen raise stamps; no projection, cache or gauge.",
             "Per currency the ledger's opening, debits, credits and closing, debit-positive. Per currency and scale the register's"
                     + " items with a remainder at the cutoff's instant - opened through the last day, the owning break raised"
                     + " before the instant, less releases before it - CREDIT and DEBIT gross, never netted, aged from the day"
-                    + " opened to the last day in the operator reports' bands.",
+                    + " opened to the last day in this definition's own bands: 0-2, 3-7, 8-30 and over-30 days.",
             "The ledger's lines by posting date through the period's last day. The register as of the first instant after that"
                     + " day, UTC - at least the lock's grace in the past, so no later act can move it.",
             "Per currency and scale, as stored; the ledger's rows at the largest scale their own amounts carry. Never summed across"
                     + " currencies, sides or scales. Minor units in strings. Not translated: no run takes a valuation rate set.",
             "FINAL for a period no longer OPEN: byte-identical on regeneration while its lock stands, superseded by an unlock or a"
-                    + " reopen. PROVISIONAL for an OPEN period: the register as things stand, labelled, never issued.");
+                    + " reopen. PROVISIONAL for an OPEN period: the ledger's figures cut at its claim, and the same as-of read of"
+                    + " the register, made when it is generated and not cut, so while the instant is still ahead it holds what has"
+                    + " been raised so far; labelled, reused within its freshness window, never issued.");
 
     private final PurposeReportDefinition ledger;
     private final SuspenseAsOfCutoff register;
 
     public SuspenseDefinition(TrialBalanceReads reads, SuspenseAsOfCutoff register) {
         this.ledger = new PurposeReportDefinition(CODE, PurposeReportDefinition.Window.BALANCES,
-                List.of(new PurposeReportDefinition.Section("LEDGER", List.of("SUSPENSE_UNMATCHED/SUSPENSE"))), STATEMENT,
-                reads);
+                List.of(PurposeReportDefinition.Section.ofOneSide("LEDGER", List.of(LEDGER_KEY))), STATEMENT, reads);
         this.register = Objects.requireNonNull(register, "register");
     }
 

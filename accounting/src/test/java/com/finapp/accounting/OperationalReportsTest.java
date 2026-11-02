@@ -140,6 +140,16 @@ class OperationalReportsTest {
     }
 
     @Test
+    @DisplayName("I-3: the door's bound - thirty seconds and two permits unless configured, each refused at start-up when it could bound nothing")
+    void theDoorsBound() {
+        assertThat(new OperationalDoorBound(Duration.parse(OperationalDoorBound.STANDARD_TIMEOUT), OperationalDoorBound.STANDARD_PERMITS))
+                .isEqualTo(new OperationalDoorBound(Duration.ofSeconds(30), 2));
+        assertThatThrownBy(() -> new OperationalDoorBound(Duration.ZERO, 2)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new OperationalDoorBound(Duration.ofNanos(999_999), 2)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new OperationalDoorBound(Duration.ofSeconds(30), 0)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     @DisplayName("the stalled gauge's read: a lock within the bound and a lock with a run are not stalled; a lock past the bound with none is,"
             + " on the store's clock; an unlock clears it - and the bound refuses to be shorter than the ordinary gap")
     void theStall() {

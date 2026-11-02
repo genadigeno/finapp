@@ -18,7 +18,10 @@ import java.util.SortedMap;
 @FunctionalInterface
 public interface PastTheCutoffPostings {
 
-    /** Per key namespace of the floored rules other than {@code LND-2}; a namespace with none is absent. */
+    /**
+     * Per key namespace of the floored rules other than {@code LND-2}, whose entries are {@code ACCRUALS_COMPLETE}'s; a namespace with
+     * none is absent.
+     */
     SortedMap<String, Split> pastTheCutoff(Connection snapshot, LocalDate cutoff);
 
     /**
@@ -36,7 +39,10 @@ public interface PastTheCutoffPostings {
             }
         }
 
-        /** The rule's own dating: stated past the cutoff and posted as stated, valued earlier. */
+        /**
+         * The rest: taken to be the rule's own dating, stated past the cutoff and posted as stated, valued earlier. <strong>Inferred from
+         * the absence of {@code flooredFrom=}</strong>, and stated by nothing: an entry whose audit record had gone would read here too.
+         */
         public long ownValueDate() {
             return entries - floored;
         }

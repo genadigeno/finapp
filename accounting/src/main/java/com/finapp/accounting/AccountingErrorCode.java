@@ -85,7 +85,10 @@ public enum AccountingErrorCode implements ErrorCode {
             "No GL mapping version is pinned by, or in force for, the period - the GL cannot be read for it until a"
                     + " version is activated under four eyes."),
 
-    /** The GL doors (`P14-TSK-007`): a statement of the read outlived the snapshot's statement timeout. */
+    /**
+     * The GL doors (`P14-TSK-007`): a statement of the read outlived the snapshot's statement timeout. The operational report door
+     * (`P14-TSK-017`): the same, or its instance's permits all held.
+     */
     READ_TIMED_OUT(
             "accounting.ReadTimedOut",
             503,

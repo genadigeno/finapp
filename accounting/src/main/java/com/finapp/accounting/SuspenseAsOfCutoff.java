@@ -27,10 +27,27 @@ import java.util.TreeMap;
 @FunctionalInterface
 public interface SuspenseAsOfCutoff {
 
+    /**
+     * {@code SUSPENSE} version 1's ageing bands, in days from opened to cutoff (`P14-TSK-017`'s review, M-10): its own table, never the
+     * close disclosure's, whose table may change without moving a FINAL body. They agree today, by choice; a change here is a new version.
+     */
+    List<String> AGEING_BANDS = List.of("0-2", "3-7", "8-30", "over-30");
+
+    /** The band of an item {@code days} old, from {@link #AGEING_BANDS}. */
+    static String ageingBand(long days) {
+        if (days <= 2) {
+            return AGEING_BANDS.get(0);
+        }
+        if (days <= 7) {
+            return AGEING_BANDS.get(1);
+        }
+        return days <= 30 ? AGEING_BANDS.get(2) : AGEING_BANDS.get(3);
+    }
+
     /** The register of {@code period}'s cutoff. */
     Register ofCutoff(Connection snapshot, YearMonth period);
 
-    /** One currency and scale: items and remainders per side, their ageing in the operator reports' bands and the oldest. */
+    /** One currency and scale: items and remainders per side, their ageing in {@link #AGEING_BANDS} and the oldest. */
     record Group(String currency, int scale, long creditItems, BigInteger creditUnreleasedMinor, long debitItems,
             BigInteger debitUnreleasedMinor, SortedMap<String, Long> ageing, Optional<LocalDate> oldestOpenedOn) {
 

@@ -6,10 +6,11 @@ import com.finapp.accounting.CloseRunStall;
 import com.finapp.accounting.CloseRunStore;
 import com.finapp.accounting.CloseRuns;
 import com.finapp.accounting.CloseStatusReads;
+import com.finapp.accounting.CounterpartyPositionReads;
+import com.finapp.accounting.OperationalDoorBound;
 import com.finapp.accounting.OperationalReports;
 import com.finapp.accounting.PastTheCutoffPostings;
 import com.finapp.accounting.ReconciliationDisclosure;
-import com.finapp.accounting.ReportRuns;
 import com.finapp.accounting.TrialBalanceReads;
 import com.finapp.accounting.ValuationRateSetStore;
 import com.finapp.accounting.reporting.CloseStatusDefinition;
@@ -42,9 +43,15 @@ public class OperationalReportBeans {
 
     // ------------------------------------------------------------------ the journal's
 
+    /** The counterparty's dimension the trial balance's statements do not carry: nothing nets between them. */
     @Bean
-    GlActivityDefinition glActivityDefinition(TrialBalanceReads trialBalanceReads) {
-        return new GlActivityDefinition(trialBalanceReads);
+    CounterpartyPositionReads counterpartyPositionReads() {
+        return new LedgerCounterpartyPositionReads();
+    }
+
+    @Bean
+    GlActivityDefinition glActivityDefinition(TrialBalanceReads trialBalanceReads, CounterpartyPositionReads counterpartyPositionReads) {
+        return new GlActivityDefinition(trialBalanceReads, counterpartyPositionReads);
     }
 
     @Bean
@@ -58,8 +65,9 @@ public class OperationalReportBeans {
     }
 
     @Bean
-    PurposeReportDefinition settlementPositionsDefinition(TrialBalanceReads trialBalanceReads) {
-        return PurposeReportDefinition.settlementPositions(trialBalanceReads);
+    PurposeReportDefinition settlementPositionsDefinition(TrialBalanceReads trialBalanceReads,
+            CounterpartyPositionReads counterpartyPositionReads) {
+        return PurposeReportDefinition.settlementPositions(trialBalanceReads, counterpartyPositionReads);
     }
 
     @Bean
@@ -134,16 +142,35 @@ public class OperationalReportBeans {
 
     // ------------------------------------------------------------------ the door
 
+    /**
+     * What the door may hold of this instance: {@code finapp.accounting.report.operational-timeout} (default 30 seconds) per read and
+     * {@code finapp.accounting.report.operational-permits} (default 2) at once - never the report runs' generation budget, which sits
+     * under a lease and was sized for a run nobody waits on.
+     */
     @Bean
-    OperationalReports operationalReports(ReportDefinitions reportDefinitions, AccountingPeriodStore accountingPeriodStore,
-            ReportRuns.Leases reportRunLeases, AuditWriter<Connection> auditWriter, IdGenerator idGenerator, Clock clock) {
-        return new OperationalReports(reportDefinitions, accountingPeriodStore, new ReportGeneration(
-                ReportGeneration.FROM_THE_SNAPSHOT, reportRunLeases.generationTimeout(), clock), auditWriter, idGenerator, clock);
+    OperationalDoorBound operationalDoorBound(
+            @Value("${finapp.accounting.report.operational-timeout:" + OperationalDoorBound.STANDARD_TIMEOUT + "}") Duration timeout,
+            @Value("${finapp.accounting.report.operational-permits:" + OperationalDoorBound.STANDARD_PERMITS + "}") int permits) {
+        return new OperationalDoorBound(timeout, permits);
     }
 
     @Bean
-    OperationalReportDesk operationalReportDesk(OperationalReports operationalReports, ReportSnapshots reportSnapshots,
-            AccountingTransactions accountingTransactions, AccountingFlowScope accountingFlowScope) {
-        return new OperationalReportDesk(operationalReports, reportSnapshots, accountingTransactions, accountingFlowScope);
+    OperationalReports operationalReports(ReportDefinitions reportDefinitions, AccountingPeriodStore accountingPeriodStore,
+            OperationalDoorBound operationalDoorBound, AuditWriter<Connection> auditWriter, IdGenerator idGenerator, Clock clock) {
+        return new OperationalReports(reportDefinitions, accountingPeriodStore, new ReportGeneration(
+                ReportGeneration.FROM_THE_SNAPSHOT, operationalDoorBound.timeout(), clock), auditWriter, idGenerator, clock);
+    }
+
+    /** The door's snapshots, armed at its bound: the shared {@code ReportSnapshots} bean is armed at the runs' four minutes. */
+    static ReportSnapshots doorSnapshots(JdbcReportSnapshots.Connections connections, OperationalDoorBound bound) {
+        return new JdbcReportSnapshots(connections, bound.timeout());
+    }
+
+    @Bean
+    OperationalReportDesk operationalReportDesk(OperationalReports operationalReports, DataSource dataSource,
+            AccountingTransactions accountingTransactions, AccountingFlowScope accountingFlowScope,
+            OperationalDoorBound operationalDoorBound) {
+        return new OperationalReportDesk(operationalReports, doorSnapshots(dataSource::getConnection, operationalDoorBound),
+                accountingTransactions, accountingFlowScope, operationalDoorBound);
     }
 }

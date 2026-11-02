@@ -25,8 +25,8 @@ import lombok.RequiredArgsConstructor;
  * Two of accounting's reads of a month over reconciliation's own {@link ReportReadings} (`P14-TSK-017`; {@code INV-ACC-04},
  * {@code INV-ACC-05}; owner decision C11) - in {@code app}, the one module that sees both: the month's runs, which {@code
  * RECONCILIATION_STATUS} reports and {@code P14-TSK-012}'s check reads, and the suspense register as of the cutoff through the
- * read that cannot move after a lock, which {@code SUSPENSE}'s FINAL body reads. {@code ProductReconciliationDisclosure} and the
- * check it answers are untouched.
+ * read that cannot move after a lock, which {@code SUSPENSE}'s FINAL body reads, aged in that definition's own bands. {@code
+ * ProductReconciliationDisclosure} and the check it answers are untouched, and nothing here reads that class's table.
  *
  * <p>Every read on the caller's snapshot; a read that fails throws, so a report fails rather than says nothing is there. Never a
  * reason, requester or reference; figures gross per currency and scale, in minor units ({@link BigInteger} folds, never floating
@@ -75,7 +75,7 @@ public final class ReconciliationMonthReads implements ReconciliationRunCoverage
         Fold(Money first) {
             this.currency = first.currency().code();
             this.scale = first.scale();
-            ProductReconciliationDisclosure.BANDS.forEach(band -> ageing.put(band, 0L));
+            SuspenseAsOfCutoff.AGEING_BANDS.forEach(band -> ageing.put(band, 0L));
         }
 
         void add(ReportReadings.SuspenseAsOfLine line, long days) {
@@ -87,7 +87,7 @@ public final class ReconciliationMonthReads implements ReconciliationRunCoverage
                 debitItems++;
                 debitUnreleased = debitUnreleased.add(remainder);
             }
-            ageing.merge(ProductReconciliationDisclosure.band(days), 1L, Long::sum);
+            ageing.merge(SuspenseAsOfCutoff.ageingBand(days), 1L, Long::sum);
             oldest = oldest.filter(held -> !held.isAfter(line.openedOn())).or(() -> Optional.of(line.openedOn()));
         }
 

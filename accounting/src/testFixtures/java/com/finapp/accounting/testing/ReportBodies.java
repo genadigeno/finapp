@@ -76,4 +76,13 @@ public final class ReportBodies {
                 .filter(row -> text(row, "purpose").equals(purpose) && text(row, "currency").equals(currency))
                 .findFirst();
     }
+
+    /** One counterparty's row of a purpose report, when it has one. */
+    public static Optional<CanonicalJson.Obj> row(CanonicalJson.Obj body, String purpose, String counterparty, String currency) {
+        return objects(body, "sections").stream()
+                .flatMap(section -> objects(section, "rows").stream())
+                .filter(row -> text(row, "purpose").equals(purpose) && text(row, "currency").equals(currency)
+                        && !isNull(row, "counterparty") && text(row, "counterparty").equals(counterparty))
+                .findFirst();
+    }
 }

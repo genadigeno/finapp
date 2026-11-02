@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.accounting.AccountingPeriodId;
+import com.finapp.accounting.CounterpartyPositionReads;
 import com.finapp.accounting.GlAccount;
 import com.finapp.accounting.GlClassification;
 import com.finapp.accounting.GlMappingVersion;
@@ -32,6 +33,7 @@ import java.security.SecureRandom;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Optional;
@@ -61,6 +63,7 @@ class GlActivityDefinitionTest {
     private static final String FEES = "FEE_REVENUE/OPERATIONAL";
     private static final String LOAN_PRINCIPAL = "LOAN_PRINCIPAL/LOAN";
     private static final String LOAN_DUE = "LOAN_PRINCIPAL_DUE/LOAN";
+    private static final String FX_CLEARING = "FX_PROVIDER_CLEARING/COUNTERPARTY";
 
     private final AccountingPeriodId periodId = AccountingPeriodId.next(IDS);
     private final GlMappingVersionId pinned = GlMappingVersionId.next(IDS);
@@ -68,7 +71,8 @@ class GlActivityDefinitionTest {
     @Test
     @DisplayName("the definition: its ReportKind's name, version 1, no rate set, FINAL by default")
     void theDefinition() {
-        GlActivityDefinition definition = new GlActivityDefinition(books(Optional.empty()));
+        InMemoryTrialBalanceReads reads = books(Optional.empty());
+        GlActivityDefinition definition = new GlActivityDefinition(reads, reads.counterparties());
         assertThat(definition.code()).isEqualTo(ReportKind.GL_ACTIVITY.name());
         assertThat(definition.version()).isEqualTo(1);
         assertThat(definition.takesValuationRateSet()).isFalse();
@@ -85,7 +89,7 @@ class GlActivityDefinitionTest {
         reads.post(MONTH.atDay(1), EARLY, "EUR", 2, 100, LOAN_PRINCIPAL, CASH);
         reads.post(MONTH.atEndOfMonth(), EARLY, "EUR", 2, 50, LOAN_DUE, LOAN_PRINCIPAL);
         reads.post(MONTH.atDay(3), EARLY, "BHD", 3, 7_000, LOAN_PRINCIPAL, CASH);
-        CanonicalJson.Obj body = new GlActivityDefinition(reads).generate(SNAPSHOT, inputs(RunBasis.FINAL));
+        CanonicalJson.Obj body = new GlActivityDefinition(reads, reads.counterparties()).generate(SNAPSHOT, inputs(RunBasis.FINAL));
 
         CanonicalJson.Obj loans = account(body, "1300", "EUR");
         assertThat(text(loans, "name")).isEqualTo("Loans - principal");
@@ -102,6 +106,7 @@ class GlActivityDefinitionTest {
         assertThat(currencies).allSatisfy(currency -> assertThat(flag(currency, "balanced")).isTrue());
         assertThat(flag(body, "fullyMapped")).isTrue();
         assertThat(isNull(body, "reclassification")).as("no version change, no bridge").isTrue();
+        assertThat(text(body, "sign")).as("M-5: a bridge's amounts are signed, and the body says how").isEqualTo(TrialBalance.SIGN);
     }
 
     @Test
@@ -113,7 +118,7 @@ class GlActivityDefinitionTest {
         reads.post(MONTH.atDay(1), EARLY, "EUR", 2, 100, LOAN_PRINCIPAL, CASH);
         reads.post(MONTH.atDay(9), EARLY, "EUR", 2, 60, LOAN_DUE, CASH);
         reads.post(MONTH.atEndOfMonth(), EARLY, "EUR", 2, 15, CASH, LOAN_PRINCIPAL);
-        CanonicalJson.Obj figure = account(new GlActivityDefinition(reads).generate(SNAPSHOT, inputs(RunBasis.FINAL)), "1300", "EUR");
+        CanonicalJson.Obj figure = account(new GlActivityDefinition(reads, reads.counterparties()).generate(SNAPSHOT, inputs(RunBasis.FINAL)), "1300", "EUR");
 
         BigInteger debits = BigInteger.ZERO;
         BigInteger credits = BigInteger.ZERO;
@@ -144,7 +149,7 @@ class GlActivityDefinitionTest {
     void aFinalBodyIgnoresWhatComesAfterItsPeriod() {
         InMemoryTrialBalanceReads reads = books(Optional.empty());
         reads.post(MONTH.atDay(1), EARLY, "EUR", 2, 100, LOAN_PRINCIPAL, CASH);
-        GlActivityDefinition definition = new GlActivityDefinition(reads);
+        GlActivityDefinition definition = new GlActivityDefinition(reads, reads.counterparties());
         String issued = CanonicalJson.text(definition.generate(SNAPSHOT, inputs(RunBasis.FINAL)));
         reads.post(MONTH.atEndOfMonth().plusDays(1), CUT.plusSeconds(60), "EUR", 2, 999, LOAN_PRINCIPAL, CASH);
         assertThat(CanonicalJson.text(definition.generate(SNAPSHOT, inputs(RunBasis.FINAL)))).isEqualTo(issued);
@@ -157,7 +162,7 @@ class GlActivityDefinitionTest {
                 MONTH.atDay(1), MONTH.atEndOfMonth(), PeriodStatus.LOCKED, Optional.of(pinned)));
         reads.version(pinned, ReferenceGlMapping.without(YearMonth.of(2097, 1), Set.of("FEE_REVENUE")));
         reads.post(MONTH.atDay(3), EARLY, "EUR", 2, 25, CASH, FEES);
-        CanonicalJson.Obj body = new GlActivityDefinition(reads).generate(SNAPSHOT, inputs(RunBasis.FINAL));
+        CanonicalJson.Obj body = new GlActivityDefinition(reads, reads.counterparties()).generate(SNAPSHOT, inputs(RunBasis.FINAL));
         assertThat(flag(body, "fullyMapped")).isFalse();
         CanonicalJson.Obj gap = objects(body, "unmapped").get(0);
         assertThat(text(gap, "purpose")).isEqualTo("FEE_REVENUE");
@@ -172,7 +177,7 @@ class GlActivityDefinitionTest {
     void theDatasScale() {
         InMemoryTrialBalanceReads reads = books(Optional.empty());
         reads.post(MONTH.atDay(3), EARLY, "JPY", 2, 150, LOAN_PRINCIPAL, CASH);
-        CanonicalJson.Obj body = new GlActivityDefinition(reads).generate(SNAPSHOT, inputs(RunBasis.FINAL));
+        CanonicalJson.Obj body = new GlActivityDefinition(reads, reads.counterparties()).generate(SNAPSHOT, inputs(RunBasis.FINAL));
         assertThat(scale(account(body, "1300", "JPY"), "credits")).as("an empty side at the data's scale").isEqualTo(2);
         assertThat(text(objects(body, "currencies").get(0), "scale")).isEqualTo("2");
     }
@@ -186,12 +191,12 @@ class GlActivityDefinitionTest {
         InMemoryTrialBalanceReads backward = books(Optional.empty());
         backward.post(MONTH.atDay(2), EARLY, "USD", 2, 70, CASH, FEES);
         backward.post(MONTH.atDay(1), EARLY, "EUR", 2, 100, LOAN_PRINCIPAL, CASH);
-        assertThat(CanonicalJson.text(new GlActivityDefinition(forward).generate(SNAPSHOT, inputs(RunBasis.FINAL))))
-                .isEqualTo(CanonicalJson.text(new GlActivityDefinition(backward).generate(SNAPSHOT, inputs(RunBasis.FINAL))));
+        assertThat(CanonicalJson.text(new GlActivityDefinition(forward, forward.counterparties()).generate(SNAPSHOT, inputs(RunBasis.FINAL))))
+                .isEqualTo(CanonicalJson.text(new GlActivityDefinition(backward, backward.counterparties()).generate(SNAPSHOT, inputs(RunBasis.FINAL))));
 
         GlMappingVersionId other = GlMappingVersionId.next(IDS);
         forward.version(other, VERSION);
-        assertThatThrownBy(() -> new GlActivityDefinition(forward).generate(SNAPSHOT, new ReportInputs(periodId, MONTH, 1,
+        assertThatThrownBy(() -> new GlActivityDefinition(forward, forward.counterparties()).generate(SNAPSHOT, new ReportInputs(periodId, MONTH, 1,
                 RunBasis.FINAL, Optional.of(CUT), Optional.of(other), Optional.of(2), CUT, RunParameters.none())))
                 .isInstanceOf(TrialBalanceDefinition.PinMismatch.class);
     }
@@ -209,7 +214,7 @@ class GlActivityDefinitionTest {
         reads.post(MONTH.atDay(1).minusDays(5), EARLY, "EUR", 2, 1_000, LOAN_PRINCIPAL, CASH);
         reads.post(MONTH.atDay(1).minusDays(4), EARLY, "EUR", 2, 300, LOAN_DUE, CASH);
         reads.post(MONTH.atDay(3), EARLY, "EUR", 2, 40, LOAN_PRINCIPAL, CASH);
-        CanonicalJson.Obj body = new GlActivityDefinition(reads).generate(SNAPSHOT, inputs(RunBasis.FINAL));
+        CanonicalJson.Obj body = new GlActivityDefinition(reads, reads.counterparties()).generate(SNAPSHOT, inputs(RunBasis.FINAL));
 
         assertThat(minor(account(body, "1399", "EUR"), "debits")).as("the movement under this period's version")
                 .isEqualTo(BigInteger.valueOf(40));
@@ -232,14 +237,75 @@ class GlActivityDefinitionTest {
     }
 
     @Test
-    @DisplayName("the walk from inception is paid only for a version change: the same version, or none before it, reads no opening")
+    @DisplayName("I-1: nothing nets between counterparties here either - a component and an unmapped row per counterparty, the account's own figure"
+            + " gross; a counterparty's purpose always carries its code, any other purpose none")
+    void theCounterpartiesStayApart() {
+        InMemoryTrialBalanceReads reads = books(Optional.empty());
+        reads.postFor("fx-sim-a", MONTH.atDay(3), EARLY, "EUR", 2, 1_000, FX_CLEARING, CASH);
+        reads.postFor("fx-sim-b", MONTH.atDay(4), EARLY, "EUR", 2, 1_000, CASH, FX_CLEARING);
+        CanonicalJson.Obj figure = account(new GlActivityDefinition(reads, reads.counterparties()).generate(SNAPSHOT,
+                inputs(RunBasis.FINAL)), "1120", "EUR");
+        assertThat(minor(figure, "debits")).isEqualTo(BigInteger.valueOf(1_000));
+        assertThat(minor(figure, "credits")).isEqualTo(BigInteger.valueOf(1_000));
+        List<CanonicalJson.Obj> components = objects(figure, "components");
+        assertThat(components).extracting(component -> text(component, "counterparty")).containsExactly("fx-sim-a", "fx-sim-b");
+        assertThat(minor(components.get(0), "debits")).isEqualTo(BigInteger.valueOf(1_000));
+        assertThat(minor(components.get(0), "credits")).isEqualTo(BigInteger.ZERO);
+        assertThat(minor(components.get(1), "credits")).isEqualTo(BigInteger.valueOf(1_000));
+        assertThat(isNull(objects(account(new GlActivityDefinition(reads, reads.counterparties()).generate(SNAPSHOT,
+                inputs(RunBasis.FINAL)), "1000", "EUR"), "components").get(0), "counterparty")).isTrue();
+
+        InMemoryTrialBalanceReads unmapped = new InMemoryTrialBalanceReads().period(new TrialBalanceReads.Period(periodId,
+                MONTH.atDay(1), MONTH.atEndOfMonth(), PeriodStatus.LOCKED, Optional.of(pinned)));
+        unmapped.version(pinned, ReferenceGlMapping.without(YearMonth.of(2097, 1), Set.of("FX_PROVIDER_CLEARING")));
+        unmapped.postFor("fx-sim-a", MONTH.atDay(3), EARLY, "EUR", 2, 1_000, FX_CLEARING, CASH);
+        unmapped.postFor("fx-sim-b", MONTH.atDay(4), EARLY, "EUR", 2, 1_000, CASH, FX_CLEARING);
+        assertThat(objects(new GlActivityDefinition(unmapped, unmapped.counterparties()).generate(SNAPSHOT, inputs(RunBasis.FINAL)),
+                "unmapped")).extracting(row -> text(row, "counterparty")).containsExactly("fx-sim-a", "fx-sim-b");
+    }
+
+    @Test
+    @DisplayName("I-1: the bridge moves each counterparty's balance: +1,000 and -1,000 moved are two moves - summed under the purpose they would be"
+            + " none, and the bridge would say nothing moved")
+    void theBridgeMovesEachCounterparty() {
+        GlMappingVersionId previous = GlMappingVersionId.next(IDS);
+        InMemoryTrialBalanceReads reads = books(Optional.of(previous));
+        reads.version(previous, ReferenceGlMapping.version(YearMonth.of(2097, 1)));
+        GlAccount extra = new GlAccount("1199", "FX provider clearing, restated", GlClassification.ASSET,
+                StatementSection.CLEARING_AND_SETTLEMENT_RECEIVABLES);
+        reads.version(pinned, ReferenceGlMapping.remapped(YearMonth.of(2097, 1), "FX_PROVIDER_CLEARING", extra));
+        reads.postFor("fx-sim-a", MONTH.atDay(1).minusDays(5), EARLY, "EUR", 2, 1_000, FX_CLEARING, CASH);
+        reads.postFor("fx-sim-b", MONTH.atDay(1).minusDays(4), EARLY, "EUR", 2, 1_000, CASH, FX_CLEARING);
+        CanonicalJson.Obj bridge = object(new GlActivityDefinition(reads, reads.counterparties()).generate(SNAPSHOT,
+                inputs(RunBasis.FINAL)), "reclassification");
+
+        List<CanonicalJson.Obj> moves = objects(bridge, "moves");
+        assertThat(moves).extracting(move -> text(move, "counterparty")).containsExactly("fx-sim-a", "fx-sim-b");
+        assertThat(minor(moves.get(0), "balance")).isEqualTo(BigInteger.valueOf(1_000));
+        assertThat(minor(moves.get(1), "balance")).isEqualTo(BigInteger.valueOf(-1_000));
+        assertThat(flag(bridge, "footsToZero")).isTrue();
+    }
+
+    @Test
+    @DisplayName("the walk from inception is paid only for a version change: the same version, or none before it, reads no opening of either read")
     void theOpeningIsReadOnlyForABridge() {
+        CounterpartyPositionReads noWalk = new CounterpartyPositionReads() {
+            @Override
+            public List<JournalReads.Aggregate> before(Connection snapshot, LocalDate before, Optional<Instant> cut) {
+                throw new AssertionError("no bridge, no walk from inception");
+            }
+
+            @Override
+            public List<JournalReads.Aggregate> within(Connection snapshot, JournalReads.Range range, Optional<Instant> cut) {
+                return List.of();
+            }
+        };
         InMemoryTrialBalanceReads held = books(Optional.of(pinned));
         Counting counting = new Counting(held);
-        new GlActivityDefinition(counting).generate(SNAPSHOT, inputs(RunBasis.FINAL));
+        new GlActivityDefinition(counting, noWalk).generate(SNAPSHOT, inputs(RunBasis.FINAL));
         assertThat(counting.befores).as("the previous period pins this version").isZero();
         Counting none = new Counting(books(Optional.empty()));
-        new GlActivityDefinition(none).generate(SNAPSHOT, inputs(RunBasis.FINAL));
+        new GlActivityDefinition(none, noWalk).generate(SNAPSHOT, inputs(RunBasis.FINAL));
         assertThat(none.befores).as("no previous pin").isZero();
     }
 

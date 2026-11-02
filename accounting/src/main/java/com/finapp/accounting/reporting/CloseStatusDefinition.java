@@ -63,7 +63,8 @@ public final class CloseStatusDefinition implements OperationalReportDefinition 
             "Holds no amount, in any currency: codes, counts and instants only. The valuation rate set is named by its id, never a"
                     + " rate. Nothing to translate.",
             "OPERATIONAL: never FINAL and never a report run, because attempts, the period's status, breaks and the approved set all"
-                    + " move under one lock. Generated at each read, stored nowhere, each read audited.");
+                    + " move under one lock. Generated at each read, stored nowhere, each read audited. Answered within the door's"
+                    + " time bound, 30 seconds unless configured, or refused and nothing served.");
 
     @NonNull private final CloseStatusReads reads;
     @NonNull private final CloseRunStall stall;

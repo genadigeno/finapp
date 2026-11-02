@@ -8,7 +8,6 @@ import com.finapp.accounting.CloseStatusReads;
 import com.finapp.accounting.ValuationRateSetStatus;
 import com.finapp.accounting.ValuationRateSetStore;
 import java.sql.Connection;
-import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.SortedMap;
@@ -25,9 +24,6 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public final class AccountingCloseStatusReads implements CloseStatusReads {
 
-    /** The most sets of a period counted - a period holds a handful; {@code ValuationRateSets.ofPeriod}'s own bound is lower. */
-    static final int SETS_COUNTED = 100;
-
     @NonNull private final AccountingPeriodStore periods;
     @NonNull private final CloseRuns runs;
     @NonNull private final AccountingBreakStore breaks;
@@ -41,12 +37,11 @@ public final class AccountingCloseStatusReads implements CloseStatusReads {
         Optional<CloseRuns.RunView> view = runs.view(snapshot, id);
         AccountingPeriodStore.PeriodRow period = periods.find(snapshot, id).orElseThrow(() -> new IllegalStateException(
                 "a period the snapshot just answered is in the snapshot"));
-        List<ValuationRateSetStore.SetRow> ofPeriod = sets.ofPeriod(snapshot, id, SETS_COUNTED);
         SortedMap<String, Long> byStatus = new TreeMap<>();
         for (ValuationRateSetStatus status : ValuationRateSetStatus.values()) {
             byStatus.put(status.name(), 0L);
         }
-        ofPeriod.forEach(set -> byStatus.merge(set.status().name(), 1L, Long::sum));
+        sets.countByStatus(snapshot, id).forEach((status, count) -> byStatus.put(status.name(), count));
         return new Reading(period.month(), period.status(), period.revision(), period.lockedAt(),
                 period.pinned().map(AccountingPeriodStore.Pin::version), view.map(AccountingCloseStatusReads::run),
                 breaks.countByStatus(snapshot, period.month()),

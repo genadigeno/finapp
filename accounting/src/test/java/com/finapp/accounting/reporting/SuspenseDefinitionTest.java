@@ -65,6 +65,10 @@ class SuspenseDefinitionTest {
         assertThat(definition.version()).isEqualTo(1);
         assertThat(definition.operational()).isFalse();
         assertThat(definition.takesValuationRateSet()).isFalse();
+        assertThat(CanonicalJson.text(definition.statement().asValue()))
+                .as("M-13: a PROVISIONAL body makes the same as-of read, and says so").contains("the same as-of read")
+                .doesNotContain("as things stand")
+                .as("M-10: the bands are this definition's").contains("this definition's own bands");
     }
 
     @Test

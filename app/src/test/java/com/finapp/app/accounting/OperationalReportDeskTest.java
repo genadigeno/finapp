@@ -9,6 +9,7 @@ import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.AccountingPeriodStore;
 import com.finapp.accounting.CloseRunStall;
 import com.finapp.accounting.CloseRuns;
+import com.finapp.accounting.OperationalDoorBound;
 import com.finapp.accounting.OperationalReports;
 import com.finapp.accounting.ValuationRateSetStatus;
 import com.finapp.accounting.ValuationRateSetStore;
@@ -36,6 +37,9 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.security.SecureRandom;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
@@ -43,6 +47,7 @@ import java.time.Instant;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -52,6 +57,7 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Value;
 
 /**
  * The operational report door (`P14-TSK-017`; ADR-0115 As built; {@code PHASE_14_PLAN.md} sections 10, 12): {@code CLOSE_STATUS} read
@@ -70,6 +76,7 @@ class OperationalReportDeskTest {
     private static final YearMonth MARCH = YearMonth.of(2097, 3);
     private static final Instant DATABASE_NOW = Instant.parse("2097-04-05T09:30:00Z");
     private static final UUID APPROVED = IDS.next();
+    private static final OperationalDoorBound BOUND = new OperationalDoorBound(Duration.ofSeconds(30), 2);
 
     private final InMemoryAccountingPeriodStore periods = new InMemoryAccountingPeriodStore();
     private final InMemoryCloseRunStore store = new InMemoryCloseRunStore(periods);
@@ -83,7 +90,11 @@ class OperationalReportDeskTest {
     private final ValuationRateSetStore rateSets = (ValuationRateSetStore) Proxy.newProxyInstance(
             ValuationRateSetStore.class.getClassLoader(), new Class<?>[] {ValuationRateSetStore.class},
             (proxy, method, args) -> switch (method.getName()) {
-                case "ofPeriod" -> sets;
+                case "countByStatus" -> {
+                    Map<ValuationRateSetStatus, Long> counts = new EnumMap<>(ValuationRateSetStatus.class);
+                    sets.forEach(set -> counts.merge(set.status(), 1L, Long::sum));
+                    yield counts;
+                }
                 case "approvedFor" -> sets.stream().filter(set -> set.status() == ValuationRateSetStatus.APPROVED).findFirst();
                 default -> throw new AssertionError("close status only reads: " + method.getName());
             });
@@ -111,7 +122,7 @@ class OperationalReportDeskTest {
                 }
                 audited.add(record);
             }, IDS, CLOCK);
-    private final OperationalReportDesk desk = new OperationalReportDesk(reports, snapshots, transactions, AccountingFlowScope.NONE);
+    private final OperationalReportDesk desk = new OperationalReportDesk(reports, snapshots, transactions, AccountingFlowScope.NONE, BOUND);
     private AccountingPeriodId march;
 
     @BeforeEach
@@ -201,10 +212,133 @@ class OperationalReportDeskTest {
                 }, new CloseRunStall(Duration.ofSeconds(30), CloseRunStall.STANDARD_POLLS))), periods,
                 new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT, Duration.ofMillis(1), () -> ticks[0]++ * 2_000_000L),
                 (uow, record) -> audited.add(record), IDS, CLOCK);
-        OperationalReportDesk spending = new OperationalReportDesk(spent, snapshots, transactions, AccountingFlowScope.NONE);
+        OperationalReportDesk spending = new OperationalReportDesk(spent, snapshots, transactions, AccountingFlowScope.NONE, BOUND);
         refused(() -> as(ACCOUNTANT, () -> spending.read(march.value().toString(), CloseStatusDefinition.CODE)),
                 AccountingErrorCode.READ_TIMED_OUT, 503);
         assertThat(audited).isEmpty();
+    }
+
+    @Test
+    @DisplayName("M-11: a period's sets are counted by the store, whatever their number - never a list that truncates")
+    void theSetsAreCountedNotListed() {
+        for (int i = 0; i < 150; i++) {
+            sets.add(set(ValuationRateSetStatus.REJECTED, IDS.next()));
+        }
+        OperationalReportDesk.OperationalReportView view = as(ACCOUNTANT, () -> desk.read(march.value().toString(),
+                CloseStatusDefinition.CODE));
+        assertThat(view.content()).contains("\"REJECTED\":\"150\"").contains("\"PROPOSED\":\"0\"");
+    }
+
+    @Test
+    @DisplayName("I-3: at most the bound's permits at once on this instance, each configurable: the next is refused 503 before a connection is"
+            + " borrowed, never queued, recording nothing - and a permit comes back however its read ends")
+    void thePermits() {
+        for (int permits : List.of(1, 2, 3)) {
+            audited.clear();
+            int[] opened = new int[1];
+            List<ApiException> refusedAtTheDoor = new ArrayList<>();
+            OperationalReportDesk[] door = new OperationalReportDesk[1];
+            ReportSnapshots holding = new ReportSnapshots() {
+                @Override
+                public <R> R read(Function<Connection, R> work) {
+                    opened[0]++;
+                    if (refusedAtTheDoor.isEmpty()) { // Each read still held when the next arrives.
+                        try {
+                            door[0].read(march.value().toString(), CloseStatusDefinition.CODE);
+                        } catch (ApiException refused) {
+                            refusedAtTheDoor.add(refused);
+                        }
+                    }
+                    return work.apply(databaseClock());
+                }
+            };
+            door[0] = new OperationalReportDesk(reports, holding, transactions, AccountingFlowScope.NONE,
+                    new OperationalDoorBound(Duration.ofSeconds(30), permits));
+
+            as(ACCOUNTANT, () -> door[0].read(march.value().toString(), CloseStatusDefinition.CODE));
+
+            assertThat(opened[0]).as("%s permits: none borrowed past them", permits).isEqualTo(permits);
+            assertThat(refusedAtTheDoor).singleElement().satisfies(refused -> {
+                assertThat(refused.errorCode()).isEqualTo(AccountingErrorCode.READ_TIMED_OUT);
+                assertThat(refused.errorCode().status()).isEqualTo(503);
+            });
+            assertThat(audited).as("only what was served is recorded").hasSize(permits);
+            // Every read ended: the permits are all back, as many as ever.
+            for (int again = 0; again < permits + 2; again++) {
+                as(ACCOUNTANT, () -> door[0].read(march.value().toString(), CloseStatusDefinition.CODE));
+            }
+            assertThat(opened[0]).isEqualTo(permits + permits + 2);
+        }
+    }
+
+    @Test
+    @DisplayName("I-3: a permit comes back after every refusal: a read that throws holds nothing afterwards")
+    void aFailedReadReturnsItsPermit() {
+        for (int refusal = 0; refusal < 5; refusal++) {
+            refused(() -> as(ACCOUNTANT, () -> desk.read(march.value().toString(), "NO_SUCH_REPORT")),
+                    AccountingErrorCode.REPORT_DEFINITION_UNKNOWN, 422);
+            refused(() -> as(ACCOUNTANT, () -> desk.read(march.value().toString(), TestReportDefinition.CODE)),
+                    AccountingErrorCode.REPORT_DOOR_MISMATCH, 409);
+        }
+        ReportSnapshots failing = new ReportSnapshots() {
+            @Override
+            public <R> R read(Function<Connection, R> work) {
+                throw new IllegalStateException("the pool is away");
+            }
+        };
+        OperationalReportDesk away = new OperationalReportDesk(reports, failing, transactions, AccountingFlowScope.NONE, BOUND);
+        for (int failure = 0; failure < 5; failure++) {
+            assertThatThrownBy(() -> as(ACCOUNTANT, () -> away.read(march.value().toString(), CloseStatusDefinition.CODE)))
+                    .isInstanceOf(IllegalStateException.class);
+        }
+        assertThat(as(ACCOUNTANT, () -> desk.read(march.value().toString(), CloseStatusDefinition.CODE)).basis()).isEqualTo("OPERATIONAL");
+    }
+
+    @Test
+    @DisplayName("I-3: the door's budget is its own - the beans hand the generation the bound, so a read past 30 s is refused 503 where the runs'"
+            + " four minutes would have let it run on, and one inside it is not")
+    void theBudgetIsTheDoors() {
+        MovingClock moved = new MovingClock();
+        OperationalReports bounded = new OperationalReportBeans().operationalReports(ReportDefinitions.of(new CloseStatusDefinition(
+                (snapshot, id) -> {
+                    moved.advance(moved.step);
+                    try (var read = snapshot.prepareStatement("SELECT 1"); var rows = read.executeQuery()) {
+                        throw new IllegalArgumentException("inside its bound");
+                    } catch (java.sql.SQLException impossible) {
+                        throw new AssertionError(impossible);
+                    }
+                }, new CloseRunStall(Duration.ofSeconds(30), CloseRunStall.STANDARD_POLLS))), periods, BOUND,
+                (uow, record) -> audited.add(record), IDS, moved);
+        OperationalReportDesk door = new OperationalReportDesk(bounded, snapshots, transactions, AccountingFlowScope.NONE, BOUND);
+
+        moved.step = Duration.ofSeconds(29);
+        assertThatThrownBy(() -> as(ACCOUNTANT, () -> door.read(march.value().toString(), CloseStatusDefinition.CODE)))
+                .isInstanceOf(IllegalArgumentException.class).hasMessage("inside its bound");
+        moved.step = Duration.ofSeconds(31);
+        refused(() -> as(ACCOUNTANT, () -> door.read(march.value().toString(), CloseStatusDefinition.CODE)),
+                AccountingErrorCode.READ_TIMED_OUT, 503);
+    }
+
+    @Test
+    @DisplayName("I-3: the door's snapshots are its own - its statement_timeout armed at the bound, never the shared snapshots' four minutes")
+    void theSnapshotsAreTheDoors() {
+        List<String> armed = new ArrayList<>();
+        OperationalReportDesk door = new OperationalReportDesk(reports, OperationalReportBeans.doorSnapshots(() -> arming(armed), BOUND),
+                transactions, AccountingFlowScope.NONE, BOUND);
+        refused(() -> as(ACCOUNTANT, () -> door.read(march.value().toString(), "NO_SUCH_REPORT")),
+                AccountingErrorCode.REPORT_DEFINITION_UNKNOWN, 422);
+        assertThat(armed).containsExactly("30000ms");
+    }
+
+    @Test
+    @DisplayName("I-3: both bounds are configured under the module's report properties, defaulting to the standard")
+    void theBoundsAreConfigured() throws NoSuchMethodException {
+        java.lang.reflect.Parameter[] parameters = OperationalReportBeans.class
+                .getDeclaredMethod("operationalDoorBound", Duration.class, int.class).getParameters();
+        assertThat(parameters[0].getAnnotation(Value.class).value()).isEqualTo("${finapp.accounting.report.operational-timeout:PT30S}");
+        assertThat(parameters[1].getAnnotation(Value.class).value()).isEqualTo("${finapp.accounting.report.operational-permits:2}");
+        assertThat(new OperationalReportBeans().operationalDoorBound(Duration.ofSeconds(7), 5))
+                .isEqualTo(new OperationalDoorBound(Duration.ofSeconds(7), 5));
     }
 
     @Test
@@ -223,6 +357,72 @@ class OperationalReportDeskTest {
     }
 
     // ------------------------------------------------------------------ plumbing
+
+    /** A clock a suite moves. */
+    private static final class MovingClock extends Clock {
+        private Instant now = Instant.parse("2097-04-05T09:00:00Z");
+        private Duration step = Duration.ZERO;
+
+        void advance(Duration by) {
+            now = now.plus(by);
+        }
+
+        @Override
+        public java.time.ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(java.time.ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return now;
+        }
+    }
+
+    /** A pooled connection a real {@code JdbcReportSnapshots} can open: its proof passes, and the bound it arms is recorded. */
+    private Connection arming(List<String> armed) {
+        return (Connection) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] {Connection.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "setAutoCommit", "setReadOnly", "rollback", "close" -> null;
+                    case "createStatement" -> Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] {Statement.class},
+                            (statement, call, values) -> switch (call.getName()) {
+                                case "execute" -> false;
+                                case "executeQuery" -> proof();
+                                case "close" -> null;
+                                default -> throw new UnsupportedOperationException(call.getName());
+                            });
+                    case "prepareStatement" -> Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] {PreparedStatement.class},
+                            (statement, call, values) -> switch (call.getName()) {
+                                case "setString" -> {
+                                    armed.add((String) values[1]);
+                                    yield null;
+                                }
+                                case "executeQuery" -> proof();
+                                case "close" -> null;
+                                default -> throw new UnsupportedOperationException(call.getName());
+                            });
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
+    }
+
+    private ResultSet proof() {
+        boolean[] read = {false};
+        return (ResultSet) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] {ResultSet.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "next" -> {
+                        boolean first = !read[0];
+                        read[0] = true;
+                        yield first;
+                    }
+                    case "getString" -> (int) args[0] == 1 ? "on" : "repeatable read";
+                    case "close" -> null;
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
+    }
 
     /** A stand-in on which only the database's instant is ever read: the stores in memory never touch it. */
     private Connection databaseClock() {
