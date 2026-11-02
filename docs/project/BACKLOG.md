@@ -26249,7 +26249,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   300 seeds past `long`, ties, the rate's direction, identity, no rate, cross-currency, locale and zone with a pinned hash),
   `TranslatedTrialBalanceRunsTest` (11), `TrialBalanceDefinitionTest` (+10), `TrialBalanceOracleTest` (+1, every seed),
   `PinnedValuationRatesTest` (2), `ReportRunDeskTest` (+2), `ReportingNeverWritesTest` (+3) - fresh, after the fix round:
-  `:accounting:test` ACCFIX, the app accounting suites and named guards APPFIX, `:app:architectureTest` ARCHFIX. **Owed (C5)**, in
+  `:accounting:test` 260/0 (41 classes), the app accounting suites and named guards 256/0 (44 classes), `:app:architectureTest` 224/0 (39 classes). **Owed (C5)**, in
   `ValuationRateSetDatabaseTest`, which holds January's order: before `#oneApprovedPerPeriod`,
   `#aFinalTranslatedRunWithNoApprovedSetIsRefused`, `#aProvisionalTranslatedRunInAnOpenPeriodIsRefused` and
   `#aClaimRacingAnApprovalThatRollsBackIsRefused` (the claim waits on the row the approval holds, then is refused); in it, January's
