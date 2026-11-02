@@ -60,7 +60,8 @@ import org.junit.jupiter.api.Test;
  *
  * <p><strong>The reach.</strong> From every report class, every {@code accounting} class it depends on and on from
  * those - and, for an accounting interface or abstract class reached, every accounting implementation of it. The reach
- * stays inside {@code accounting}: a port's {@code app} adapter is held by the read-only transaction, not by this rule,
+ * stays inside {@code accounting}: a port's {@code app} adapter is held by the read-only transaction and, by its own accesses, by
+ * {@link #noReportPortAdapterWrites} (`P14-TSK-017`), not by this rule,
  * and the read ports ({@link JournalReads} and its siblings) are the only way out. No class on the reach may
  * <ul>
  *   <li>depend on a {@code com.finapp.ledger} type - the ledger's writers above all ({@code PostingService},
@@ -180,12 +181,13 @@ class ReportingNeverWritesTest {
      * {@code INV-ACC-04}): {@code GeneralLedger.fold} writes {@code GeneralLedger.zero}'s scale - {@code CurrencyCode.minorUnits},
      * a JDK's table - so a definition calling it would put that scale into FINAL content, and the rule above, which checks a report
      * class's own accesses and names {@code GeneralLedger} as its exception, would not see it. Here the exception's reach is closed:
-     * from every definition, through every report class it depends on, by a call or a method reference.
+     * from every definition, through every {@code accounting} class it depends on - {@code GlEqualsLedger} folds through it too, and
+     * is no report class - and every accounting implementation of an interface it reaches, by a call or a method reference.
      */
     @ArchTest
     static void noReportDefinitionReachesTheGeneralLedger(JavaClasses imported) {
         assertThat(definitionsReaching(imported, ReportDefinition.class.getName(), GeneralLedger.class.getName(),
-                ReportingNeverWritesTest::isReportingClass))
+                candidate -> candidate.getPackageName().startsWith(ACCOUNTING)))
                 .as("a report definition with a path to GeneralLedger (INV-ACC-04, the JDK's scale in FINAL content)")
                 .isEmpty();
     }
@@ -450,14 +452,14 @@ class ReportingNeverWritesTest {
     }
 
     /**
-     * Every class implementing {@code definitionType} (and selected by {@code reports}) from which {@code target} is reachable,
-     * through the report classes it depends on.
+     * Every class implementing {@code definitionType} (and selected by {@code followed}) from which {@code target} is reachable,
+     * through the classes {@code followed} selects and their implementations.
      */
     static Set<String> definitionsReaching(JavaClasses classes, String definitionType, String target,
-            Predicate<JavaClass> reports) {
+            Predicate<JavaClass> followed) {
         Set<String> reaching = new TreeSet<>();
         classes.stream()
-                .filter(candidate -> !candidate.getName().equals(definitionType) && reports.test(candidate)
+                .filter(candidate -> !candidate.getName().equals(definitionType) && followed.test(candidate)
                         && candidate.isAssignableTo(definitionType) && !candidate.isInterface())
                 .forEach(definition -> {
                     Set<String> reached = new TreeSet<>();
@@ -467,14 +469,20 @@ class ReportingNeverWritesTest {
                         if (!reached.add(current.getName())) {
                             continue;
                         }
+                        // The definition's own interface is no path: from it every other definition is an implementation.
                         current.getDirectDependenciesFromSelf().stream()
                                 .map(Dependency::getTargetClass)
-                                .filter(next -> next.getName().equals(target) || reports.test(next))
+                                .filter(next -> !next.getName().equals(definitionType))
+                                .filter(next -> next.getName().equals(target) || followed.test(next))
                                 .forEach(pending::add);
                         current.getCodeUnitAccessesFromSelf().stream()
                                 .map(access -> access.getTarget().getOwner())
-                                .filter(next -> next.getName().equals(target) || reports.test(next))
+                                .filter(next -> !next.getName().equals(definitionType))
+                                .filter(next -> next.getName().equals(target) || followed.test(next))
                                 .forEach(pending::add);
+                        if (current.isInterface() || current.getModifiers().contains(JavaModifier.ABSTRACT)) {
+                            current.getAllSubclasses().stream().filter(followed).forEach(pending::add);
+                        }
                     }
                     if (reached.contains(target)) {
                         reaching.add(definition.getName());

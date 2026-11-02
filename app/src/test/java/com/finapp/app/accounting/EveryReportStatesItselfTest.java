@@ -7,7 +7,6 @@ import com.finapp.accounting.reporting.OperationalReportDefinition;
 import com.finapp.accounting.reporting.ReportDefinition;
 import com.finapp.accounting.reporting.ReportDefinitions;
 import java.util.List;
-import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -59,6 +58,6 @@ class EveryReportStatesItselfTest {
     @DisplayName("translation is a decision too: the owner has not settled the translated layout, so none of the ten takes a rate set")
     void noneOfTheTenTranslates() {
         assertThat(definitions.codes().stream().filter(code -> definitions.current(code).orElseThrow().takesValuationRateSet()).toList())
-                .isEqualTo(List.copyOf(Set.of("TRIAL_BALANCE")));
+                .containsExactly("TRIAL_BALANCE");
     }
 }

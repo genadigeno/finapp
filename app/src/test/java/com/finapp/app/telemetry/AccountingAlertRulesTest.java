@@ -51,6 +51,16 @@ class AccountingAlertRulesTest {
     }
 
     @Test
+    @DisplayName("the plan's meters table names the series and both its alerts - PlannedMetersExistTest reads it once the phase is complete,"
+            + " and until then this holds it")
+    void thePlanNamesIt() throws java.io.IOException {
+        String row = java.nio.file.Files.readAllLines(RepositoryPaths.locate("docs/project/PHASE_14_PLAN.md")).stream()
+                .filter(line -> line.startsWith("| `" + CloseRunStallMetrics.STALLED + "` |")).findFirst()
+                .orElseThrow(() -> new AssertionError("the plan's table has no row for " + CloseRunStallMetrics.STALLED));
+        assertThat(row).contains("`AccountingCloseRunStalled`").contains("`AccountingCloseRunStallUnreadable`");
+    }
+
+    @Test
     @DisplayName("healthy, nothing fires; one stalled lock fires the stall alone, an unreadable gauge the unreadable rule alone - the threshold"
             + " rule never reads NaN - and two instances publishing one number page once")
     void itFiresOnItsBreakAlone() {

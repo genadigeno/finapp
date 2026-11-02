@@ -226,6 +226,7 @@ Close Check
 Close Run
 Trial Balance
 Report Run
+Operational Report
 Financial Statement
 Valuation Rate Set
 Functional Currency
