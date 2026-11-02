@@ -288,6 +288,27 @@ class TrialBalanceDefinitionTest {
     }
 
     @Test
+    @DisplayName("translation never plugs an imbalance: books out of balance stay so in EUR - the verdict false, the same"
+            + " bytes as the plain run's, the translated debits and credits apart, no difference line closing the gap")
+    void aTranslationNeverPlugsAnImbalance() {
+        InMemoryTrialBalanceReads reads = mixedBooks();
+        reads.line(new InMemoryTrialBalanceReads.JournalLine(MONTH.atDay(12), CUT, "CASH_AT_BANK", "OPERATIONAL", "USD", 2,
+                Side.DEBIT, 12_345));
+        TrialBalanceDefinition definition = new TrialBalanceDefinition(reads, rates());
+        CanonicalJson.Obj translated = definition.generate(SNAPSHOT, translatedInputs());
+        assertThat(CanonicalJson.text(translated.members().get("verdict")))
+                .isEqualTo(CanonicalJson.text(definition.generate(SNAPSHOT,
+                        inputs(RunBasis.FINAL, Optional.of(pinned))).members().get("verdict")))
+                .contains("\"passes\":false").contains("\"outOfBalance\":[\"USD\"]");
+        TrialBalanceTranslation translation = new TrialBalanceTranslation(
+                definition.trialBalance(SNAPSHOT, translatedInputs()),
+                Translation.Rates.pinnedBy(rates(), SNAPSHOT, translatedInputs()));
+        Translation.Figures debits = translation.column("debits").total().orElseThrow();
+        Translation.Figures credits = translation.column("credits").total().orElseThrow();
+        assertThat(debits.total().subtract(credits.total())).as("123.45 USD at 1.1561").isEqualByComparingTo("106.78");
+    }
+
+    @Test
     @DisplayName("through the report generation: the header names the pinned set, a regeneration is byte-identical, and a"
             + " PROVISIONAL run at its period's approved set names its cut - the set read by the same judged way")
     void theHeaderNamesThePinnedSet() {

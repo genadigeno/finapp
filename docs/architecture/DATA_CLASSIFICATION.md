@@ -4709,7 +4709,9 @@ provider's version label, the other closed codes, the platform's identifiers, co
 born once by the plan's key, generated in a `REPEATABLE READ READ ONLY` transaction, completed with its content and its
 `content_sha256` in one statement, then frozen (`report_run_content_is_frozen`); `FINAL → SUPERSEDED` when its period
 returns to `OPEN`, never deleted. **No money is stored as truth**: the **content** is output - aggregates of the
-platform's books (GL figures per account and currency, counts) - `CONFIDENTIAL` (`PHASE_14_PLAN.md` §12), served only
+platform's books (GL figures per account and currency, counts; on a translated run their EUR translation, the reference rates
+and those rates' source, instant and snapshot id - `P14-TSK-015`, no person and no customer rate) - `CONFIDENTIAL`
+(`PHASE_14_PLAN.md` §12), served only
 by the audited operator read (`accounting.ReportRead`), never logged, announced (the event carries the hash, not the
 content) or put in a span or a meter; its hash `INTERNAL` (a SHA-256 digest reveals nothing of the content - it is the
 issued output's identifier, published in `accounting.ReportRunCompleted` for lineage). The **parameters** are an accountant's request - plain codes, dates and
