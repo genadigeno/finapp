@@ -19,9 +19,9 @@ class ReportReadingsStatementsTest {
     @Test
     @DisplayName("born as of: the as-of read plus the owner's frozen raise before the instant - nothing else differs")
     void bornAsOfIsTheAsOfReadAndTheOwnersRaise() {
-        assertThat(JdbcReportReadings.SUSPENSE_BORN_AS_OF.replace(
-                        " JOIN reconciliation.break b ON b.id = s.break_id AND b.raised_at < ?", ""))
-                .isEqualTo(JdbcReportReadings.SUSPENSE_AS_OF);
+        String raise = " JOIN reconciliation.break b ON b.id = s.break_id AND b.raised_at < ?";
+        assertThat(JdbcReportReadings.SUSPENSE_BORN_AS_OF).contains(raise);
+        assertThat(JdbcReportReadings.SUSPENSE_BORN_AS_OF.replace(raise, "")).isEqualTo(JdbcReportReadings.SUSPENSE_AS_OF);
     }
 
     @Test

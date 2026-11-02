@@ -105,6 +105,52 @@ class GlActivityDefinitionTest {
     }
 
     @Test
+    @DisplayName("INV-ACC-02: a figure's key is what the GL door drills by - its keys' lines in the month and currency sum to its debits and credits,"
+            + " and a purpose report's row names the account whose keys hold it")
+    void aFigureDrillsToItsLines() {
+        InMemoryTrialBalanceReads reads = books(Optional.empty());
+        reads.post(MONTH.atDay(1).minusDays(1), EARLY, "EUR", 2, 9_999, LOAN_PRINCIPAL, CASH);
+        reads.post(MONTH.atDay(1), EARLY, "EUR", 2, 100, LOAN_PRINCIPAL, CASH);
+        reads.post(MONTH.atDay(9), EARLY, "EUR", 2, 60, LOAN_DUE, CASH);
+        reads.post(MONTH.atEndOfMonth(), EARLY, "EUR", 2, 15, CASH, LOAN_PRINCIPAL);
+        CanonicalJson.Obj figure = account(new GlActivityDefinition(reads).generate(SNAPSHOT, inputs(RunBasis.FINAL)), "1300", "EUR");
+
+        BigInteger debits = BigInteger.ZERO;
+        BigInteger credits = BigInteger.ZERO;
+        long lines = 0;
+        Set<String> keys = GeneralLedger.keysOf(VERSION, "1300");
+        for (InMemoryTrialBalanceReads.JournalLine line : reads.lines()) {
+            if (keys.contains(line.key()) && line.currency().equals("EUR") && JournalReads.Range.of(MONTH).holds(line.postingDate())) {
+                lines++;
+                if (line.side() == Side.DEBIT) {
+                    debits = debits.add(BigInteger.valueOf(line.minorUnits()));
+                } else {
+                    credits = credits.add(BigInteger.valueOf(line.minorUnits()));
+                }
+            }
+        }
+        assertThat(minor(figure, "debits")).isEqualTo(debits).isEqualTo(BigInteger.valueOf(160));
+        assertThat(minor(figure, "credits")).isEqualTo(credits).isEqualTo(BigInteger.valueOf(15));
+        assertThat(text(figure, "lines")).isEqualTo(Long.toString(lines)).isEqualTo("3");
+
+        CanonicalJson.Obj row = com.finapp.accounting.testing.ReportBodies.row(
+                PurposeReportDefinition.loanPortfolio(reads).generate(SNAPSHOT, inputs(RunBasis.FINAL)), "LOAN_PRINCIPAL_DUE", "EUR")
+                .orElseThrow();
+        assertThat(GeneralLedger.keysOf(VERSION, text(row, "glAccount"))).contains(LOAN_DUE);
+    }
+
+    @Test
+    @DisplayName("INV-ACC-04: lines dated after the period, whenever created, move no byte of a FINAL body")
+    void aFinalBodyIgnoresWhatComesAfterItsPeriod() {
+        InMemoryTrialBalanceReads reads = books(Optional.empty());
+        reads.post(MONTH.atDay(1), EARLY, "EUR", 2, 100, LOAN_PRINCIPAL, CASH);
+        GlActivityDefinition definition = new GlActivityDefinition(reads);
+        String issued = CanonicalJson.text(definition.generate(SNAPSHOT, inputs(RunBasis.FINAL)));
+        reads.post(MONTH.atEndOfMonth().plusDays(1), CUT.plusSeconds(60), "EUR", 2, 999, LOAN_PRINCIPAL, CASH);
+        assertThat(CanonicalJson.text(definition.generate(SNAPSHOT, inputs(RunBasis.FINAL)))).isEqualTo(issued);
+    }
+
+    @Test
     @DisplayName("every line the version does not map is an explicit row - never dropped; with no version, all of them")
     void unmappedIsExplicit() {
         InMemoryTrialBalanceReads reads = new InMemoryTrialBalanceReads().period(new TrialBalanceReads.Period(periodId,

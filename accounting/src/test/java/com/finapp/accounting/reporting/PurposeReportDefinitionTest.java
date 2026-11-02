@@ -253,6 +253,22 @@ class PurposeReportDefinitionTest {
     }
 
     @Test
+    @DisplayName("INV-ACC-04: a FINAL body is a function of what the lock makes immutable - lines dated after the period, whenever created,"
+            + " move no byte of any report")
+    void aFinalBodyIgnoresWhatComesAfterItsPeriod() {
+        SIX.forEach((code, factory) -> {
+            InMemoryTrialBalanceReads reads = books();
+            List<String> keys = factory.apply(reads).sections().stream().flatMap(section -> section.keys().stream()).toList();
+            keys.forEach(key -> reads.post(MONTH.atDay(5), EARLY, "EUR", 2, 100, key, CASH));
+            PurposeReportDefinition definition = factory.apply(reads);
+            String issued = CanonicalJson.text(definition.generate(SNAPSHOT, inputs(RunBasis.FINAL)));
+            keys.forEach(key -> reads.post(MONTH.atEndOfMonth().plusDays(1), CUT.plusSeconds(3_600), "EUR", 2, 999, key, CASH));
+            keys.forEach(key -> reads.post(MONTH.plusMonths(1).atDay(15), CUT.plusSeconds(7_200), "USD", 2, 999, CASH, key));
+            assertThat(CanonicalJson.text(definition.generate(SNAPSHOT, inputs(RunBasis.FINAL)))).as(code).isEqualTo(issued);
+        });
+    }
+
+    @Test
     @DisplayName("a movement report never reads from inception - revenue and FX results are bounded by the month; a balance report is what"
             + " pays for the opening")
     void aMovementReportReadsNoOpening() {

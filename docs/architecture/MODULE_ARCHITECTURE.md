@@ -1261,10 +1261,23 @@ empty, so each is proven able to fail by probes planted in its own source.
   depends on `java.util.Currency` or reaches `CurrencyCode.minorUnits`, by a call or a method reference, so a JDK's data changing
   cannot change a FINAL run's regeneration - scales are the data's own and the reporting minor unit is
   `Translation.REPORTING_SCALE`, a literal. `GeneralLedger` is the named exception: the live GL doors' zero at a currency's minor
-  unit, never a run's content; the rule checks a report class's own accesses, so a definition calling `GeneralLedger.fold` would
-  escape it (routed to `-017`). Proven able to fail by planted report classes; one holding a `CurrencyCode` only as a code is not
-  flagged.
+  unit, never a run's content; the rule checks a report class's own accesses, and the next rule closes the path a definition
+  calling `GeneralLedger.fold` would have taken. Proven able to fail by planted report classes; one holding a `CurrencyCode` only
+  as a code is not flagged.
   *(ArchUnit: `noReportContentReadsTheJdksCurrencyTable`)*
+- No report definition has a path to `GeneralLedger` (`P14-TSK-017`, `P14-TSK-015`'s review M-6, `INV-ACC-04`): from every
+  `ReportDefinition`, through every report class it depends on, by a call or a method reference, so `GeneralLedger.zero`'s JDK
+  scale can never reach FINAL content. Planted: directly, by a method reference, through a helper; one folding its own reads passes.
+  *(ArchUnit: `noReportDefinitionReachesTheGeneralLedger`)*
+- What moves after a lock is read only by a report that is never FINAL (`P14-TSK-017`, `INV-ACC-04`): a report class that is no
+  `OperationalReportDefinition` depends on none of `ReconciliationDisclosure`, `ReconciliationRunCoverage`, `PastTheCutoffPostings`
+  and `CloseStatusReads`. `SuspenseAsOfCutoff` is what a FINAL body has instead. Planted both ways.
+  *(ArchUnit: `onlyAnOperationalDefinitionReadsWhatMoves`)*
+- A report port's adapter never writes and reads no product's reports (`P14-TSK-017`, `INV-ACC-14`, `INV-BAL-05`): the reach above
+  stops at `accounting`, so every `app` class implementing a port report code depends on is held by its own accesses, calls and method
+  references alike - no JDBC write, no `Connection` mutator, no writer type, nothing of `com.finapp.lending`, `com.finapp.bnpl` or
+  their `app` desks, and of a store or `CloseRuns` only the reads named. Planted: an `UPDATE` both ways, lending's report, a store's write.
+  *(ArchUnit: `noReportPortAdapterWrites`)*
 
 ### Persistence boundary
 

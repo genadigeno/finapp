@@ -698,6 +698,7 @@ rows both ways.
 |---|---|---|---|
 | `finapp.accounting.period.open.age` | gauge (days the oldest unclosed past period has been past its grace) | — | `AccountingCloseOverdue` |
 | `finapp.accounting.close.check` | counter | check, outcome | `AccountingCloseCheckFailed` |
+| `finapp.accounting.close.run.stalled` | gauge (periods `LOCKED` past the bound with no run under their present lock, the standing condition of the run's birth by the schedule - *added by `P14-TSK-017`*: from the database on the database's clock, the bound `finapp.accounting.close.run-stalled-polls` (default 10, never under 3) polls of the check leg, registered whether or not the schedule runs, no value when unreadable, cached 15 s; aggregate with `max()`) | — | `AccountingCloseRunStalled`, `AccountingCloseRunStallUnreadable` |
 | `finapp.accounting.close.duration` | timer *(built by `P14-TSK-011`: a run's start to its checks' first full conclusion, once per run across instances; `close.check`'s outcomes `passed`, `failed`, `disclosed`, `deferred`, `overtaken`)* | — | — |
 | `finapp.accounting.close.leg.failed` | counter (a close schedule leg that failed - section 8.4's "every leg meters its claim failures", *added by `P14-TSK-011`*) | leg | — |
 | `finapp.accounting.cutoff.floored` | counter (postings floored to the first open date because their command asked, C3 - *added by `P14-TSK-006`*) | command | — |

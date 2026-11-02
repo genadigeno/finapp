@@ -128,7 +128,30 @@ class ReportRunDeskTest {
     /** A definition a run of which may name a valuation rate set (`P14-TSK-015`). */
     private final TestReportDefinition translating = new TestReportDefinition("TEST_TRANSLATING", 1, java.util.Set.of(),
             false, (snapshot, inputs) -> CanonicalJson.object().put("translated", true)).takingARateSet();
-    private final ReportDefinitions definitions = ReportDefinitions.of(echo, leaky, throwing, sometimesSlow, translating);
+    /** A definition reading what moves after a lock: never a run (`P14-TSK-017`). */
+    private final com.finapp.accounting.reporting.OperationalReportDefinition moving =
+            new com.finapp.accounting.reporting.OperationalReportDefinition() {
+                @Override
+                public String code() {
+                    return "TEST_MOVING";
+                }
+
+                @Override
+                public int version() {
+                    return 1;
+                }
+
+                @Override
+                public com.finapp.accounting.reporting.ReportStatement statement() {
+                    return echo.statement();
+                }
+
+                @Override
+                public CanonicalJson.Obj generate(java.sql.Connection snapshot, com.finapp.accounting.reporting.ReportInputs inputs) {
+                    throw new AssertionError("an operational definition is never generated as a run");
+                }
+            };
+    private final ReportDefinitions definitions = ReportDefinitions.of(echo, leaky, throwing, sometimesSlow, translating, moving);
 
     private final AccountingTransactions transactions = new AccountingTransactions() {
         @Override
@@ -314,6 +337,10 @@ class ReportRunDeskTest {
             + " unknown period 404 - nothing claimed")
     void theRefusals() {
         String september = lockedSeptember();
+        // P14-TSK-017: an operational definition is never a run - refused at this door, nothing claimed, the key not spent.
+        refused(() -> as(ACCOUNTANT, () -> desk.generate("k0", moving.code(), september, Map.of(), null)),
+                AccountingErrorCode.REPORT_DOOR_MISMATCH, 409);
+        assertThat(store.all()).isEmpty();
         refused(() -> as(ACCOUNTANT, () -> desk.generate("k1", "TRIAL_BALANCE", september, Map.of(), null)),
                 AccountingErrorCode.REPORT_DEFINITION_UNKNOWN, 422);
         refused(() -> as(ACCOUNTANT, () -> desk.generate("k2", TestReportDefinition.CODE, september,
