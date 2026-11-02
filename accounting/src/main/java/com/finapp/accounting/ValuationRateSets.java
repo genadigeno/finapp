@@ -277,11 +277,12 @@ public final class ValuationRateSets {
     }
 
     /**
-     * The period's approved set, when it has one. Read by the close (`P14-TSK-011`'s {@code VALUATION_SET_APPROVED}
-     * check) and by the report-run machinery (`-008`, `-015`) - both outside {@code accounting.reporting} - which pins the
-     * set's id on a FINAL run and passes its rates into the report's inputs <strong>as data</strong>. Report code never
-     * reaches this class: it holds the audit writer, so {@code ReportingNeverWritesTest} refuses any reporting class on a
-     * path to it. Unlocked; a writer that depends on it re-reads it under its own lock.
+     * The period's approved set, when it has one - with its id, what an operator or the close names to ask for a translated
+     * run. Read by the close (`P14-TSK-011`'s {@code VALUATION_SET_APPROVED} check), outside {@code accounting.reporting}.
+     * Report code never reaches this class: it holds the audit writer, so {@code ReportingNeverWritesTest} refuses any
+     * reporting class on a path to it - a translated report reads its pinned set through {@link ValuationRateReads}
+     * (`P14-TSK-015`), and the claim's own check is the store's read under the period row. Unlocked; a writer that depends
+     * on it re-reads it under its own lock.
      */
     public Optional<Valued> approvedFor(Connection unitOfWork, AccountingPeriodId period) {
         return store.approvedFor(unitOfWork, period).map(row -> valued(unitOfWork, row, false));

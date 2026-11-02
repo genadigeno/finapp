@@ -286,6 +286,68 @@ class TrialBalanceOracleTest {
         }
     }
 
+    /**
+     * The translated columns against the same journals (`P14-TSK-015`; {@code INV-ACC-11}), the oracle sharing nothing with
+     * {@link Translation}: per column and currency, each row divided exactly in {@code BigInteger}s and rounded half-even by
+     * hand, the total rounded from the exact total, the difference their gap - and, the books being balanced, each currency's
+     * translated debits equal to its translated credits and its translated opening and closing nets zero, through the
+     * difference lines alone. The verdict never moves.
+     */
+    @Test
+    @DisplayName("the translated columns are the oracle's, every seed: each row and total rounded half-even from the exact"
+            + " quotient, the difference their gap, translated debits equal to credits through it")
+    void theTranslationIsTheOracles() {
+        Translation.Rates rates = TranslationTest.rates();
+        for (int seed = 1; seed <= SEEDS; seed++) {
+            TrialBalance balance = definition(journal(seed, true)).trialBalance(SNAPSHOT, finalInputs(FEBRUARY));
+            TrialBalanceTranslation translation = new TrialBalanceTranslation(balance, rates);
+            List<Figures> rows = new ArrayList<>();
+            balance.accounts().forEach(row -> rows.add(new Figures(row.currency(), row.openingBalance(),
+                    row.movement().debits(), row.movement().credits(), row.closingBalance())));
+            balance.unmapped().forEach(row -> rows.add(new Figures(row.currency(), row.openingBalance(),
+                    row.movement().debits(), row.movement().credits(), row.closingBalance())));
+            Map<String, java.util.function.Function<Figures, BigDecimal>> columns = Map.of(
+                    "opening", Figures::opening, "debits", Figures::debits, "credits", Figures::credits,
+                    "closing", Figures::closing);
+            columns.forEach((name, column) -> {
+                Translation.Translated translated = translation.column(name);
+                for (int i = 0; i < rows.size(); i++) {
+                    assertThat(translated.lines().get(i).translated()).as("seed row %s", name)
+                            .contains(TranslationTest.exactly(column.apply(rows.get(i)), rows.get(i).currency()));
+                }
+                for (Translation.Group group : translated.groups()) {
+                    BigDecimal exactTotal = rows.stream().filter(row -> row.currency().equals(group.currency()))
+                            .map(column).reduce(BigDecimal.ZERO, BigDecimal::add);
+                    BigDecimal parts = rows.stream().filter(row -> row.currency().equals(group.currency()))
+                            .map(row -> TranslationTest.exactly(column.apply(row), row.currency()))
+                            .reduce(new BigDecimal("0.00"), BigDecimal::add);
+                    BigDecimal total = TranslationTest.exactly(exactTotal, group.currency());
+                    Translation.Figures figures = group.figures().orElseThrow();
+                    assertThat(figures.total()).as(group.currency()).isEqualByComparingTo(total);
+                    assertThat(figures.parts()).as(group.currency()).isEqualByComparingTo(parts);
+                    assertThat(figures.difference()).as(group.currency()).isEqualByComparingTo(total.subtract(parts));
+                    assertThat(group.original()).as(group.currency()).isEqualByComparingTo(exactTotal);
+                }
+            });
+            for (Translation.Group group : translation.column("debits").groups()) {
+                Translation.Group credits = translation.column("credits").groups().stream()
+                        .filter(other -> other.currency().equals(group.currency())).findFirst().orElseThrow();
+                assertThat(group.figures().orElseThrow().total()).as("balanced in " + group.currency())
+                        .isEqualByComparingTo(credits.figures().orElseThrow().total());
+            }
+            for (String net : List.of("opening", "closing")) {
+                translation.column(net).groups().forEach(group -> assertThat(group.figures().orElseThrow().total())
+                        .as(net + " nets to zero in " + group.currency()).isZero());
+            }
+            assertThat(balance.passes()).as("the verdict is the trial balance's").isTrue();
+            assertThat(translation.column("debits").total().orElseThrow().total())
+                    .isEqualByComparingTo(translation.column("credits").total().orElseThrow().total());
+        }
+    }
+
+    /** One row's four originals. */
+    private record Figures(String currency, BigDecimal opening, BigDecimal debits, BigDecimal credits, BigDecimal closing) {}
+
     // ------------------------------------------------------------------ the generator
 
     /** A balanced journal of {@link #ENTRIES} entries for {@code seed}; the boundary days loaded when {@code edges}. */

@@ -211,6 +211,8 @@ class AccountingVocabulariesTest {
                         "accounting.ReportRunStale=409",
                         // P14-TSK-014: the valuation doors - a stale or missing reference pair, a decided set.
                         "accounting.ValuationRateStale=422", "accounting.ValuationSetStale=409",
+                        // P14-TSK-015: a translated run naming anything but its period's approved set.
+                        "accounting.ValuationSetNotApproved=409",
                         // P14-TSK-010: the break doors - a break past the act; a correcting entry absent or the subject.
                         "accounting.BreakStale=409", "accounting.CorrectingEntryInvalid=422",
                         // P14-TSK-011: the re-run door - the latest attempt has not concluded.

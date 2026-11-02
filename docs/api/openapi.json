@@ -717,6 +717,41 @@
           }
         }
       },
+      "accounting.ValuationSetNotApproved": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.ValuationSetNotApproved"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.ValuationSetNotApproved"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A translated report run names its accounting period's approved valuation rate set, and the set named is not it, or the period has none; nothing was claimed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.ValuationSetStale": {
         "content": {
           "application/problem+json": {

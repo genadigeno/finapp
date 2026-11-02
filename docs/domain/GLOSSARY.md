@@ -2604,8 +2604,12 @@ converted into it.
 
 ### Reporting Currency
 **Is:** the currency statements are presented in — EUR, equal to the Functional Currency (C1) — every figure translated
-at the period's Valuation Rate Set with its original beside it.
-**Not:** a currency anything is posted or settled in.
+at the period's Valuation Rate Set with its original beside it. A run asks for translation by naming its period's approved set
+(`P14-TSK-015`, ADR-0116 decision 3): `amount / rate`, `HALF_EVEN` to two places, each line group on its own, every column of the
+run at its one set, the opening included; a run naming none is the plain run, which is never translated.
+**Not:** a currency anything is posted or settled in. Translating into it is not a revaluation or any posting (C7 A: no line or
+balance moves), nor a customer's conversion (two posted legs meeting on `FX_POSITION`), and it never enters a trial balance's
+verdict.
 **Owned by:** `accounting`
 
 ### Translation Difference

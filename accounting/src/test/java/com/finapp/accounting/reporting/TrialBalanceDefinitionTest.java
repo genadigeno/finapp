@@ -6,22 +6,32 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.GlMappingVersion;
 import com.finapp.accounting.GlMappingVersionId;
+import com.finapp.accounting.JournalReads;
 import com.finapp.accounting.PeriodStatus;
 import com.finapp.accounting.ReportKind;
 import com.finapp.accounting.RunBasis;
 import com.finapp.accounting.Side;
 import com.finapp.accounting.TrialBalanceReads;
+import com.finapp.accounting.ValuationRate;
+import com.finapp.accounting.ValuationRateReads;
+import com.finapp.accounting.ValuationRateSetStatus;
 import com.finapp.accounting.testing.InMemoryTrialBalanceReads;
 import com.finapp.accounting.testing.ReferenceGlMapping;
 import com.finapp.sharedkernel.id.IdGenerator;
+import com.finapp.sharedkernel.money.CurrencyCode;
 import java.lang.reflect.Proxy;
+import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -46,6 +56,8 @@ class TrialBalanceDefinitionTest {
     private static final String CASH = "CASH_AT_BANK/OPERATIONAL";
     private static final String WALLET = "CUSTOMER_WALLET/CUSTOMER";
     private static final String FEES = "FEE_REVENUE/OPERATIONAL";
+    private static final UUID SET = UUID.fromString("00000000-0000-4000-8000-000000000015");
+    private static final UUID SNAPSHOT_ID = UUID.fromString("00000000-0000-4000-8000-000000000016");
 
     private final AccountingPeriodId periodId = AccountingPeriodId.next(IDS);
     private final GlMappingVersionId pinned = GlMappingVersionId.next(IDS);
@@ -163,6 +175,213 @@ class TrialBalanceDefinitionTest {
     }
 
     @Test
+    @DisplayName("a plain run's content is what it always was (P14-TSK-015): the bytes of a FINAL and a PROVISIONAL run, with"
+            + " no rate set, pinned by the hash computed on the code before translation existed - TRIAL_BALANCE stays version 1")
+    void aPlainRunsContentIsUnchanged() {
+        InMemoryTrialBalanceReads reads = books(PeriodStatus.LOCKED, Optional.of(pinned));
+        reads.post(MONTH.atDay(5), CUT, "EUR", 3, 1, CASH, FEES);
+        reads.post(MONTH.atDay(6), CUT, "JPY", 0, 9_000_000_000_000_000_000L, CASH, WALLET);
+        reads.post(MONTH.atDay(7), CUT, "JPY", 0, 9_000_000_000_000_000_000L, CASH, WALLET);
+        reads.post(MONTH.atDay(8), CUT, "BHD", 3, 1_501, CASH, WALLET);
+        reads.post(MONTH.atDay(9), CUT, "USD", 2, 12_345, WALLET, FEES);
+        reads.post(MONTH.atDay(10), CUT, "GBP", 2, 777, "UNCHARTED_PURPOSE/OPERATIONAL", CASH);
+        ReportGeneration generation = new ReportGeneration((snapshot, id) -> Optional.of(
+                new ReportGeneration.PeriodState(PeriodStatus.LOCKED, Optional.of(Instant.EPOCH))), Duration.ofMinutes(4),
+                () -> 0L);
+        ValuationRateReads untouched = (snapshot, id) -> {
+            throw new AssertionError("a plain run reads no rate");
+        };
+        TrialBalanceDefinition definition = new TrialBalanceDefinition(reads, untouched);
+        assertThat(generation.generate(SNAPSHOT, definition, inputs(RunBasis.FINAL, Optional.of(pinned))).sha256())
+                .isEqualTo("fa8a8e52d286d5a2281f7b691b206d7740e69186d03744f6438b1be868fda957");
+        assertThat(generation.generate(SNAPSHOT, definition, inputs(RunBasis.PROVISIONAL, Optional.of(pinned))).sha256())
+                .isEqualTo("f63da63808b49befa09de119106f33557d3eee6b771aa634ccb7dfebdbb3b838");
+        assertThat(TrialBalanceDefinition.VERSION).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("how a run asks (P14-TSK-015): the production definition may take a rate set and never needs one; one with"
+            + " no way to the rates takes none - its claim refuses")
+    void aRunAsksByNamingTheSet() {
+        InMemoryTrialBalanceReads reads = new InMemoryTrialBalanceReads();
+        TrialBalanceDefinition plain = new TrialBalanceDefinition(reads);
+        assertThat(plain.takesValuationRateSet()).isFalse();
+        TrialBalanceDefinition production = new TrialBalanceDefinition(reads, (snapshot, id) -> Optional.empty());
+        assertThat(production.takesValuationRateSet()).isTrue();
+        assertThat(production.needsValuationRateSet()).as("the close asks it plain").isFalse();
+        assertThat(production.code()).isEqualTo(TrialBalanceDefinition.CODE);
+        assertThat(production.version()).isEqualTo(TrialBalanceDefinition.VERSION).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("translation does not touch the trial balance: the translated body holds every plain member as it is, the"
+            + " verdict the same bytes at the same path, each row its originals with a translated member beside them")
+    void aTranslatedBodyKeepsThePlainOneWhole() {
+        InMemoryTrialBalanceReads reads = mixedBooks();
+        CanonicalJson.Obj plain = new TrialBalanceDefinition(reads).generate(SNAPSHOT,
+                inputs(RunBasis.FINAL, Optional.of(pinned)));
+        CanonicalJson.Obj translated = new TrialBalanceDefinition(reads, rates()).generate(SNAPSHOT, translatedInputs());
+        assertThat(CanonicalJson.text(translated.members().get("verdict")))
+                .isEqualTo(CanonicalJson.text(plain.members().get("verdict")))
+                .contains("\"passes\":true");
+        assertThat(translated.members().keySet()).containsAll(plain.members().keySet()).contains("translation")
+                .hasSize(plain.members().size() + 1);
+        for (String member : plain.members().keySet()) {
+            if (!member.equals("accounts") && !member.equals("unmapped")) {
+                assertThat(CanonicalJson.text(translated.members().get(member))).as(member)
+                        .isEqualTo(CanonicalJson.text(plain.members().get(member)));
+            }
+        }
+        for (String rows : List.of("accounts", "unmapped")) {
+            List<CanonicalJson.Value> plainRows = ((CanonicalJson.Arr) plain.members().get(rows)).elements();
+            List<CanonicalJson.Value> translatedRows = ((CanonicalJson.Arr) translated.members().get(rows)).elements();
+            assertThat(translatedRows).hasSameSizeAs(plainRows).isNotEmpty();
+            for (int i = 0; i < plainRows.size(); i++) {
+                Map<String, CanonicalJson.Value> originals = ((CanonicalJson.Obj) plainRows.get(i)).members();
+                Map<String, CanonicalJson.Value> beside = ((CanonicalJson.Obj) translatedRows.get(i)).members();
+                assertThat(beside.keySet()).containsAll(originals.keySet()).contains("translated");
+                originals.forEach((name, value) -> assertThat(CanonicalJson.text(beside.get(name))).as(name)
+                        .isEqualTo(CanonicalJson.text(value)));
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("the translated content: each row's columns in EUR at two places beside its originals, past long included;"
+            + " per currency the original total, the translated parts, the difference line and the translated total; the"
+            + " set, every rate with its provenance, EUR's identity stated, the rounding named")
+    void theTranslatedContentIsExact() {
+        String body = CanonicalJson.text(new TrialBalanceDefinition(mixedBooks(), rates()).generate(SNAPSHOT,
+                translatedInputs()));
+        assertThat(body)
+                // JPY's 18000000000000000000 at 131.25: 137142857142857142.857... rounds to ...142.86 - past long in minor.
+                .contains("\"translated\":{\"closing\":{\"currency\":\"EUR\",\"minor\":\"-13714285714285714286\","
+                        + "\"scale\":\"2\"},\"credits\":{\"currency\":\"EUR\",\"minor\":\"13714285714285714286\","
+                        + "\"scale\":\"2\"},\"debits\":{\"currency\":\"EUR\",\"minor\":\"0\",\"scale\":\"2\"},"
+                        + "\"opening\":{\"currency\":\"EUR\",\"minor\":\"0\",\"scale\":\"2\"}}")
+                .contains("\"reportingCurrency\":\"EUR\"").contains("\"rounding\":\"HALF_EVEN\"")
+                .contains("\"complete\":true").contains("\"untranslated\":[]")
+                .contains("{\"basis\":\"IDENTITY\",\"currency\":\"EUR\",\"rate\":\"1\"}")
+                .contains("{\"basis\":\"PINNED_RATE\",\"currency\":\"JPY\",\"observedAt\":\"2097-06-30T16:00:00Z\","
+                        + "\"pair\":\"EUR/JPY\",\"rate\":\"131.2500000000\",\"snapshot\":\"" + SNAPSHOT_ID + "\","
+                        + "\"source\":\"reference.test\"}")
+                .contains("\"rateSet\":{\"asOf\":\"2097-07-01T00:00:00Z\",\"id\":\"" + SET + "\",\"maxAgeHours\":\"96\","
+                        + "\"period\":\"2097-06\"}")
+                .contains("\"translationDifference\":{\"currency\":\"EUR\"")
+                .doesNotContain("E+");
+    }
+
+    @Test
+    @DisplayName("a currency the pinned set does not value: its row keeps its originals, translated null, named untranslated,"
+            + " the EUR totals withheld - never dropped, never at one; the run completes; the verdict does not move")
+    void aCurrencyWithNoRateIsDisclosed() {
+        InMemoryTrialBalanceReads reads = mixedBooks();
+        reads.post(MONTH.atDay(11), CUT, "CHF", 2, 12_345, CASH, WALLET);
+        String body = CanonicalJson.text(new TrialBalanceDefinition(reads, rates()).generate(SNAPSHOT, translatedInputs()));
+        assertThat(body)
+                .contains("\"complete\":false").contains("\"untranslated\":[\"CHF\"]")
+                .contains("{\"basis\":\"NO_RATE\",\"columns\":{\"closing\":{\"original\":{\"currency\":\"CHF\","
+                        + "\"minor\":\"0\",\"scale\":\"2\"},\"translatedParts\":null,\"translatedTotal\":null,"
+                        + "\"translationDifference\":null}")
+                .contains("\"total\":{\"closing\":null,\"credits\":null,\"debits\":null,\"opening\":null}")
+                .contains("\"currency\":\"CHF\",\"debits\":{\"currency\":\"CHF\",\"minor\":\"12345\",\"scale\":\"2\"}")
+                .contains("\"translated\":null")
+                .contains("\"passes\":true");
+    }
+
+    @Test
+    @DisplayName("a retired currency at zero is not a hole: its rows persist from inception at zero, so they translate to zero"
+            + " with no rate, the translation stays complete and the totals stand - every later period can still read whole")
+    void aRetiredCurrencyAtZeroKeepsTheTranslationWhole() {
+        InMemoryTrialBalanceReads reads = mixedBooks();
+        reads.post(MONTH.minusMonths(1).atDay(3), CUT.minusSeconds(60), "CHF", 2, 5_000, CASH, CASH);
+        String body = CanonicalJson.text(new TrialBalanceDefinition(reads, rates()).generate(SNAPSHOT, translatedInputs()));
+        assertThat(body)
+                .contains("\"complete\":true").contains("\"untranslated\":[]")
+                .contains("\"passes\":true")
+                .contains("\"basis\":\"ZERO_NO_RATE\"")
+                .contains("\"currency\":\"CHF\",\"rate\":null}")
+                .doesNotContain("\"translated\":null")
+                .doesNotContain("\"total\":{\"closing\":null")
+                .doesNotContain("EUR/CHF");
+    }
+
+    @Test
+    @DisplayName("the same currency with a movement that nets to zero stays a hole: debits and credits are figures, whatever"
+            + " the balances say - never a zero translation of money that moved")
+    void aMovementAtAZeroBalanceKeepsTheHole() {
+        InMemoryTrialBalanceReads reads = mixedBooks();
+        reads.post(MONTH.atDay(3), CUT, "CHF", 2, 5_000, CASH, CASH);
+        String body = CanonicalJson.text(new TrialBalanceDefinition(reads, rates()).generate(SNAPSHOT, translatedInputs()));
+        assertThat(body)
+                .contains("\"complete\":false").contains("\"untranslated\":[\"CHF\"]")
+                .contains("\"basis\":\"NO_RATE\"")
+                .contains("\"translated\":null")
+                .contains("\"total\":{\"closing\":null,\"credits\":null,\"debits\":null,\"opening\":null}");
+    }
+
+    @Test
+    @DisplayName("a currency only the ledger holds is a hole (the review's M-1): a read that lost its rows reads complete false,"
+            + " the currency named and the totals withheld, even with a rate in the set; the verdict is the plain run's,"
+            + " already failed by the ledger comparison")
+    void aCurrencyOnlyTheLedgerHoldsIsAHole() {
+        TrialBalanceReads losing = losingARow(mixedBooks(), "USD");
+        TrialBalanceDefinition definition = new TrialBalanceDefinition(losing, rates());
+        CanonicalJson.Obj translated = definition.generate(SNAPSHOT, translatedInputs());
+        assertThat(CanonicalJson.text(translated))
+                .contains("\"complete\":false").contains("\"untranslated\":[\"USD\"]")
+                .contains("\"total\":{\"closing\":null,\"credits\":null,\"debits\":null,\"opening\":null}")
+                .contains("\"basis\":\"NO_PARTS\"").contains("\"currency\":\"USD\",\"rate\":null}");
+        assertThat(CanonicalJson.text(translated.members().get("verdict")))
+                .isEqualTo(CanonicalJson.text(definition.generate(SNAPSHOT,
+                        inputs(RunBasis.FINAL, Optional.of(pinned))).members().get("verdict")))
+                .contains("\"passes\":false").contains("\"disagreeing\":[\"USD\"]");
+    }
+
+    @Test
+    @DisplayName("translation never plugs an imbalance: books out of balance stay so in EUR - the verdict false, the same"
+            + " bytes as the plain run's, the translated debits and credits apart, no difference line closing the gap")
+    void aTranslationNeverPlugsAnImbalance() {
+        InMemoryTrialBalanceReads reads = mixedBooks();
+        reads.line(new InMemoryTrialBalanceReads.JournalLine(MONTH.atDay(12), CUT, "CASH_AT_BANK", "OPERATIONAL", "USD", 2,
+                Side.DEBIT, 12_345));
+        TrialBalanceDefinition definition = new TrialBalanceDefinition(reads, rates());
+        CanonicalJson.Obj translated = definition.generate(SNAPSHOT, translatedInputs());
+        assertThat(CanonicalJson.text(translated.members().get("verdict")))
+                .isEqualTo(CanonicalJson.text(definition.generate(SNAPSHOT,
+                        inputs(RunBasis.FINAL, Optional.of(pinned))).members().get("verdict")))
+                .contains("\"passes\":false").contains("\"outOfBalance\":[\"USD\"]");
+        TrialBalanceTranslation translation = new TrialBalanceTranslation(
+                definition.trialBalance(SNAPSHOT, translatedInputs()),
+                Translation.Rates.pinnedBy(rates(), SNAPSHOT, translatedInputs()));
+        Translation.Figures debits = translation.column("debits").total().orElseThrow();
+        Translation.Figures credits = translation.column("credits").total().orElseThrow();
+        assertThat(debits.total().subtract(credits.total())).as("123.45 USD at 1.1561").isEqualByComparingTo("106.78");
+    }
+
+    @Test
+    @DisplayName("through the report generation: the header names the pinned set, a regeneration is byte-identical, and a"
+            + " PROVISIONAL run at its period's approved set names its cut - the set read by the same judged way")
+    void theHeaderNamesThePinnedSet() {
+        ReportGeneration generation = new ReportGeneration((snapshot, id) -> Optional.of(
+                new ReportGeneration.PeriodState(PeriodStatus.LOCKED, Optional.of(Instant.EPOCH))), Duration.ofMinutes(4),
+                () -> 0L);
+        TrialBalanceDefinition definition = new TrialBalanceDefinition(mixedBooks(), rates());
+        ReportGeneration.Generated first = generation.generate(SNAPSHOT, definition, translatedInputs());
+        assertThat(first.content()).contains("\"valuationRateSet\":\"" + SET + "\"").contains("\"basis\":\"FINAL\"")
+                .contains("\"definitionVersion\":\"1\"");
+        ReportGeneration.Generated again = generation.generate(SNAPSHOT,
+                new TrialBalanceDefinition(mixedBooks(), rates()), translatedInputs());
+        assertThat(again.content()).isEqualTo(first.content());
+        assertThat(again.sha256()).isEqualTo(first.sha256());
+        ReportInputs provisional = new ReportInputs(periodId, MONTH, 1, RunBasis.PROVISIONAL, Optional.empty(),
+                Optional.of(pinned), Optional.of(1), CUT, RunParameters.of(Map.of(), Optional.of(SET)));
+        assertThat(generation.generate(SNAPSHOT, definition, provisional).content())
+                .contains("\"basis\":\"PROVISIONAL\"").contains("\"cut\":\"" + CUT + "\"")
+                .contains("\"translation\":{");
+    }
+
+    @Test
     @DisplayName("the snapshot's period is required: a run whose period row the snapshot does not hold fails the"
             + " generation - never a trial balance without the period's own bounds")
     void aMissingPeriodFailsTheGeneration() {
@@ -204,6 +423,67 @@ class TrialBalanceDefinitionTest {
                         "EUR", 2, Side.DEBIT, 1))
                 .line(new InMemoryTrialBalanceReads.JournalLine(MONTH.atDay(2), CUT, "CUSTOMER_WALLET", "CUSTOMER",
                         "EUR", 2, Side.CREDIT, 1));
+    }
+
+    /** The base books plus four other currencies at three scales, an unmapped line among them and a sum past long. */
+    private InMemoryTrialBalanceReads mixedBooks() {
+        InMemoryTrialBalanceReads reads = books(PeriodStatus.LOCKED, Optional.of(pinned));
+        reads.post(MONTH.atDay(5), CUT, "EUR", 3, 1, CASH, FEES);
+        reads.post(MONTH.atDay(6), CUT, "JPY", 0, 9_000_000_000_000_000_000L, WALLET, FEES);
+        reads.post(MONTH.atDay(7), CUT, "JPY", 0, 9_000_000_000_000_000_000L, WALLET, FEES);
+        reads.post(MONTH.atDay(8), CUT, "BHD", 3, 1_501, CASH, WALLET);
+        reads.post(MONTH.atDay(9), CUT, "USD", 2, 12_345, WALLET, FEES);
+        reads.post(MONTH.atDay(10), CUT, "GBP", 2, 777, "UNCHARTED_PURPOSE/OPERATIONAL", CASH);
+        return reads;
+    }
+
+    /** {@code books} with {@code currency}'s GL rows lost and the ledger's own windows intact - a read defect, planted. */
+    private static TrialBalanceReads losingARow(TrialBalanceReads books, String currency) {
+        return new TrialBalanceReads() {
+            @Override
+            public Optional<Period> period(Connection snapshot, AccountingPeriodId id) {
+                return books.period(snapshot, id);
+            }
+
+            @Override
+            public GlMappingVersion version(Connection snapshot, GlMappingVersionId id) {
+                return books.version(snapshot, id);
+            }
+
+            @Override
+            public List<JournalReads.Aggregate> before(Connection snapshot, LocalDate before, Optional<Instant> cut) {
+                return books.before(snapshot, before, cut).stream()
+                        .filter(aggregate -> !aggregate.currency().equals(currency)).toList();
+            }
+
+            @Override
+            public List<JournalReads.Aggregate> within(Connection snapshot, JournalReads.Range range, Optional<Instant> cut) {
+                return books.within(snapshot, range, cut).stream()
+                        .filter(aggregate -> !aggregate.currency().equals(currency)).toList();
+            }
+
+            @Override
+            public List<LedgerWindows> ledger(Connection snapshot, Period period, Optional<Instant> cut) {
+                return books.ledger(snapshot, period, cut);
+            }
+        };
+    }
+
+    /** The approved set the translated inputs name. */
+    private ValuationRateReads rates() {
+        return (snapshot, id) -> Optional.of(new ValuationRateReads.PinnedSet(id, periodId, MONTH,
+                ValuationRateSetStatus.APPROVED, Instant.parse("2097-07-01T00:00:00Z"), 96, List.of(
+                        rate("GBP", "0.7012"), rate("USD", "1.1561"), rate("JPY", "131.25"), rate("BHD", "0.4358123456"))));
+    }
+
+    private static ValuationRate rate(String quote, String value) {
+        return new ValuationRate(CurrencyCode.of("EUR"), CurrencyCode.of(quote), new BigDecimal(value), "reference.test",
+                SNAPSHOT_ID, Instant.parse("2097-06-30T16:00:00Z"), Instant.parse("2097-06-30T16:00:01Z"));
+    }
+
+    private ReportInputs translatedInputs() {
+        return new ReportInputs(periodId, MONTH, 1, RunBasis.FINAL, Optional.of(Instant.EPOCH), Optional.of(pinned),
+                Optional.of(1), CUT, RunParameters.of(Map.of(), Optional.of(SET)));
     }
 
     private ReportInputs inputs(RunBasis basis, Optional<GlMappingVersionId> version) {

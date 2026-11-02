@@ -51,8 +51,8 @@ class RuleConformanceTest {
             assertThat(finding.check()).isEqualTo(CloseCheckCode.RULE_CONFORMANCE);
             assertThat(finding.type()).isEqualTo(BreakType.SHAPE_MISMATCH);
             assertThat(finding.subject()).isEqualTo("shape:" + planted.id());
-            assertThat(finding.evidence()).contains("TRANSFER v1").contains("CREDIT FEE_REVENUE")
-                    .doesNotContain("4321").doesNotContain("43.21");
+            assertThat(finding.evidence()).contains("TRANSFER v1").contains("CREDIT FEE_REVENUE");
+            assertThat(withoutTheId(finding, planted)).doesNotContain("4321").doesNotContain("43.21");
             assertThat(finding.judgedBy()).isEqualTo("posting-rules:v" + PostingRuleRegister.CATALOGUE_VERSION);
         });
         // A required line missing is a mismatch too, every line admitted and the entry balanced: a cover that closed one
@@ -101,7 +101,8 @@ class RuleConformanceTest {
         assertThat(conformance.judge(lopsided)).singleElement().satisfies(finding -> {
             assertThat(finding.type()).isEqualTo(BreakType.UNBALANCED_ENTRY);
             assertThat(finding.subject()).isEqualTo("unbalanced:" + lopsided.id());
-            assertThat(finding.evidence()).contains("EUR@2").doesNotContain("100").doesNotContain("90");
+            assertThat(finding.evidence()).contains("EUR@2");
+            assertThat(withoutTheId(finding, lopsided)).doesNotContain("100").doesNotContain("90");
         });
         // Balanced per currency is balanced: two currencies each netting to zero raise nothing.
         assertThat(RuleConformance.unbalanced(List.of(line("CUSTOMER_WALLET", Side.DEBIT, 5),
@@ -215,6 +216,11 @@ class RuleConformanceTest {
     private static JournalShapes.EntryShape mismatch() {
         return entry(EntryType.POSTING, "transfer:", line("CUSTOMER_WALLET", Side.DEBIT, 2),
                 line("FEE_REVENUE", Side.CREDIT, 2));
+    }
+
+    /** The evidence an amount is looked for in: the entry's id is random hex, and about one in ten holds a "90". */
+    private static String withoutTheId(BreakFinding finding, JournalShapes.EntryShape entry) {
+        return finding.evidence().replace(entry.id().toString(), "");
     }
 
     private static JournalShapes.EntryShape entry(EntryType type, String namespace, JournalShapes.ShapeLine... lines) {

@@ -6,6 +6,7 @@ import com.finapp.accounting.JournalReads;
 import com.finapp.accounting.ReportKind;
 import com.finapp.accounting.RunBasis;
 import com.finapp.accounting.TrialBalanceReads;
+import com.finapp.accounting.ValuationRateReads;
 import java.sql.Connection;
 import java.time.Instant;
 import java.util.Objects;
@@ -45,16 +46,24 @@ import java.util.Optional;
  * {@code false} fails the close's check and is never corrected. {@code passes} is the trial balance's check only:
  * mapping completeness is {@code GL_EQUALS_LEDGER}'s.
  *
- * <p>Report code: it reads through its port on the snapshot it is handed and writes nothing
+ * <p><strong>Plain or translated</strong> (`P14-TSK-015`; ADR-0116 decision 3): a run naming no valuation rate set - the
+ * close's, {@code RunParameters.none()}, which never needs one - reads no rate and writes {@link TrialBalance#body()},
+ * byte for byte what version 1 always wrote. A run naming its period's approved set ({@link #takesValuationRateSet()}) is
+ * another question and another run of the same version: the same body with the translated columns and the
+ * {@code translation} member ({@link TrialBalance#body(Translation.Rates)}), its verdict the same object at the same path
+ * - translation does not enter {@code passes}.
+ *
+ * <p>Report code: it reads through its ports on the snapshot it is handed and writes nothing
  * ({@code ReportingNeverWritesTest}). A change to its output is a new {@link #VERSION}, the old one kept for
- * regeneration.
+ * regeneration. <strong>Translation did not move the version</strong>: nothing version 1 ever issued changes, and a run
+ * naming a set was refused until translation existed, so no such run exists to regenerate.
  */
 public final class TrialBalanceDefinition implements ReportDefinition {
 
     /** The definition's code - {@code ReportKind.TRIAL_BALANCE}. */
     public static final String CODE = ReportKind.TRIAL_BALANCE.name();
 
-    /** The definition's version: the body {@link TrialBalance#body()} writes. */
+    /** The definition's version: what {@link TrialBalance#body()} and {@link TrialBalance#body(Translation.Rates)} write. */
     public static final int VERSION = 1;
 
     /**
@@ -73,9 +82,18 @@ public final class TrialBalanceDefinition implements ReportDefinition {
     }
 
     private final TrialBalanceReads reads;
+    private final Optional<ValuationRateReads> rates;
 
+    /** The trial balance with no way to the rates: a run naming a valuation rate set is refused at its claim. */
     public TrialBalanceDefinition(TrialBalanceReads reads) {
         this.reads = Objects.requireNonNull(reads, "reads");
+        this.rates = Optional.empty();
+    }
+
+    /** The trial balance that may be translated - production's. */
+    public TrialBalanceDefinition(TrialBalanceReads reads, ValuationRateReads rates) {
+        this.reads = Objects.requireNonNull(reads, "reads");
+        this.rates = Optional.of(Objects.requireNonNull(rates, "rates"));
     }
 
     @Override
@@ -89,8 +107,18 @@ public final class TrialBalanceDefinition implements ReportDefinition {
     }
 
     @Override
+    public boolean takesValuationRateSet() {
+        return rates.isPresent();
+    }
+
+    @Override
     public CanonicalJson.Obj generate(Connection snapshot, ReportInputs inputs) {
-        return trialBalance(snapshot, inputs).body();
+        TrialBalance balance = trialBalance(snapshot, inputs);
+        if (inputs.parameters().valuationRateSet().isEmpty()) {
+            return balance.body();
+        }
+        return balance.body(Translation.Rates.pinnedBy(rates.orElseThrow(() -> new IllegalStateException(
+                "a run named a valuation rate set this definition cannot read")), snapshot, inputs));
     }
 
     /**

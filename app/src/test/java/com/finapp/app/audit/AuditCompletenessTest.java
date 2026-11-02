@@ -85,6 +85,15 @@ class AuditCompletenessTest {
     // role split's refusal, accounting.SelfApprovalRefused (declared by P14-TSK-001), left it at P14-TSK-003 - the GL
     // mapping activation door, GlMappingAdministration.recordRefusal.
 
+    /**
+     * Imported once: {@link #isReferencedByProductionCode} asks per action, in two of these tests,
+     * and the classes cannot change within a run.
+     */
+    private static final JavaClasses PRODUCTION_CLASSES =
+            new ClassFileImporter()
+                    .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+                    .importPackages("com.finapp");
+
     @Test
     @DisplayName("no registered action is silently unemitted")
     void everyActionIsEmittedOrDeclaredNotToBe() {
@@ -123,7 +132,7 @@ class AuditCompletenessTest {
     @DisplayName("every module with production code is within reach of this rule")
     void everyModuleWithProductionCodeIsAnalysed() {
         java.util.Set<String> analysed =
-                productionClasses().stream()
+                PRODUCTION_CLASSES.stream()
                         .map(com.finapp.app.architecture.ProductionModules::of)
                         .filter(java.util.Objects::nonNull)
                         .collect(java.util.stream.Collectors.toUnmodifiableSet());
@@ -188,7 +197,7 @@ class AuditCompletenessTest {
         String declaringType = ((Enum<?>) action).getDeclaringClass().getName();
         String constant = ((Enum<?>) action).name();
 
-        for (JavaClass javaClass : productionClasses()) {
+        for (JavaClass javaClass : PRODUCTION_CLASSES) {
             if (javaClass.getName().equals(declaringType)) {
                 continue;
             }
@@ -204,7 +213,7 @@ class AuditCompletenessTest {
 
     private static java.util.List<AuditableAction> actions() {
         java.util.List<AuditableAction> actions = new java.util.ArrayList<>();
-        for (JavaClass javaClass : productionClasses()) {
+        for (JavaClass javaClass : PRODUCTION_CLASSES) {
             if (!javaClass.isAssignableTo(AuditableAction.class)
                     || javaClass.getName().equals(AuditableAction.class.getName())) {
                 continue;
@@ -218,11 +227,5 @@ class AuditCompletenessTest {
             }
         }
         return actions;
-    }
-
-    private static JavaClasses productionClasses() {
-        return new ClassFileImporter()
-                .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
-                .importPackages("com.finapp");
     }
 }

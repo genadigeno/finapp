@@ -213,10 +213,12 @@ public class AccountingBeans {
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
             Clock clock,
-            @Value("${finapp.accounting.report.provisional-freshness:PT15M}") java.time.Duration provisionalFreshness) {
+            @Value("${finapp.accounting.report.provisional-freshness:PT15M}") java.time.Duration provisionalFreshness,
+            com.finapp.accounting.ValuationRateSetStore valuationRateSetStore) {
         return new com.finapp.accounting.ReportRuns(reportRunStore, accountingPeriodStore, glMappingStore,
                 reportDefinitions, reportRunLeases, auditWriter, outboxWriter, idGenerator, clock,
-                new com.finapp.accounting.ReportRuns.Provisional(provisionalFreshness));
+                new com.finapp.accounting.ReportRuns.Provisional(provisionalFreshness),
+                com.finapp.accounting.ReportRuns.ApprovedSets.of(valuationRateSetStore));
     }
 
     /**
