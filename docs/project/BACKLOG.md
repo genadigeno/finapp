@@ -26305,7 +26305,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   need not cross-foot, nor name the unrealised effect (a translated opening is not the previous translated closing when rates moved;
   a reader finds it by comparing two runs). Decide whether the statements' C7 note, or the content, says so.
 
-**P14-TSK-017 — Operational financial reports** — `PLANNED`
+**P14-TSK-017 — Operational financial reports** — `READY` (2026-11-02; marked by the coordinator at `P14-TSK-015`'s merge, master `310aba65`; every dependency `COMPLETE`)
 - **Objective**: the operational financial reports as definitions (`PHASE_14_PLAN.md` §13.6), labelled FINAL or
   operational.
 - **Bounded context**: Reporting; reads lending, bnpl, reconciliation, merchant through ports.
