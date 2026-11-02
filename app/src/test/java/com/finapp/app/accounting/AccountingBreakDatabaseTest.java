@@ -156,8 +156,10 @@ class AccountingBreakDatabaseTest {
         assertThat(column("SELECT break_type || '|' || judged_by || '|' || status FROM accounting.accounting_break"
                 + " WHERE id = '" + breakId + "'")).isEqualTo("SHAPE_MISMATCH|posting-rules:v"
                 + PostingRuleRegister.CATALOGUE_VERSION + "|OPEN");
-        assertThat(column("SELECT evidence FROM accounting.accounting_break WHERE id = '" + breakId + "'"))
-                .contains("TRANSFER v1").contains("CREDIT FEE_REVENUE").doesNotContain("1234");
+        String evidence = column("SELECT evidence FROM accounting.accounting_break WHERE id = '" + breakId + "'");
+        assertThat(evidence).contains("TRANSFER v1").contains("CREDIT FEE_REVENUE");
+        // The entry's id is random hex, so an amount is looked for in everything else.
+        assertThat(evidence.replace(planted.toString(), "")).doesNotContain("1234");
     }
 
     @Test
