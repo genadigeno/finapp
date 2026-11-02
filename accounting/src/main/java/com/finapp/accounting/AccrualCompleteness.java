@@ -1,5 +1,6 @@
 package com.finapp.accounting;
 
+import java.math.BigInteger;
 import java.sql.Connection;
 import java.time.LocalDate;
 import java.util.List;
@@ -18,8 +19,9 @@ import java.util.Objects;
  * empty while the locked period's income is short by exactly the floored amounts. So the reading only means "complete"
  * when judged before any catch-up can floor into the next period - inside the lock's transaction, with the cutoff key
  * held exclusive - or the close must also find the {@code LND-2} entries with {@code value_date <= period end <
- * posting_date} (they carry {@code flooredFrom=}). Which of the two is `P14-TSK-011`'s design (the review of
- * `P14-TSK-006`, finding I-1, 2026-10-31).
+ * posting_date} (they carry {@code flooredFrom=}). *(Decided by `P14-TSK-011`, the review of `P14-TSK-006`'s finding I-1: find and
+ * disclose - {@link #flooredPast} - on the same snapshot as {@link #blocking}, so an accrual is either still behind or already
+ * floored and never neither; judging inside the lock would pause every posting for this read.)*
  *
  * <p><strong>Read-only</strong>, on the caller's unit of work: one statement per accruer and arm, each its own snapshot of
  * the servicing rows under READ COMMITTED - the close check runs it in {@code REPEATABLE READ READ ONLY} (C10), which
@@ -73,10 +75,38 @@ public interface AccrualCompleteness {
 
     /**
      * The positions that keep a period ending on {@code periodEnd} from closing ({@code ACCRUALS_COMPLETE}): an unaccrued
-     * date on or before it. Empty: the period's accruals are complete.
+     * date on or before it. Empty: every date has been accrued - <em>not</em> that the interest landed in the period, which
+     * {@link #flooredPast} answers.
      */
     default List<Lagging> blocking(Connection unitOfWork, LocalDate periodEnd) {
         Objects.requireNonNull(periodEnd, "periodEnd");
         return lagging(unitOfWork).stream().filter(lagging -> lagging.blocks(periodEnd)).toList();
     }
+
+    /**
+     * One accruer's entries floored past a cutoff, one currency and scale: interest earned on or before the period's end and posted
+     * after it - the amount the period is short by (`P14-TSK-006`'s review, I-1).
+     *
+     * @param interestMinor the interest income the entries credit, in minor units
+     */
+    record Floored(Accruer accruer, String currency, int scale, long entries, BigInteger interestMinor) {
+
+        public Floored {
+            Objects.requireNonNull(accruer, "accruer");
+            Objects.requireNonNull(currency, "currency");
+            Objects.requireNonNull(interestMinor, "interestMinor");
+            if (entries < 1 || interestMinor.signum() < 0) {
+                throw new IllegalArgumentException("a floored position holds an entry and no negative interest");
+            }
+        }
+    }
+
+    /**
+     * The accrual entries whose value date is on or before {@code periodEnd} and whose posting date is after it - only a floor
+     * puts them there (lending's {@code LND-2} posts dated its accrual date otherwise). Bnpl's {@code BNPL-F2a} is not among them:
+     * by its own rule it posts today and is valued the accrual date, so every month end's last day falls after the end by design
+     * - a structural shift of a day, not a floor (an owner item, `P14-TSK-011`). Read on the same unit of work as
+     * {@link #blocking}, one snapshot.
+     */
+    List<Floored> flooredPast(Connection unitOfWork, LocalDate periodEnd);
 }

@@ -142,7 +142,14 @@ public enum AccountingErrorCode implements ErrorCode {
             "accounting.CorrectingEntryInvalid",
             422,
             "The correcting entry named does not exist in the journal, or is the entry the break is about; the break"
-                    + " was not resolved.");
+                    + " was not resolved."),
+
+    /** The re-run door (`P14-TSK-011`): the check's latest attempt has not concluded. */
+    CLOSE_CHECK_PENDING(
+            "accounting.CloseCheckPending",
+            409,
+            "The close check's latest attempt has not concluded; a re-run is a new attempt after it, and nothing was"
+                    + " changed.");
 
     private final String code;
     private final int status;

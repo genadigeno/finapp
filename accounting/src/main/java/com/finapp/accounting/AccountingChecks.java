@@ -47,7 +47,7 @@ import lombok.extern.slf4j.Slf4j;
  * transaction would hold a connection idle for the whole run and could not see a raise roll back alone. A run is bounded
  * per statement ({@code finapp.accounting.checks.statement-timeout}) and per page, <strong>not in total</strong>: source
  * completeness reads the whole book through the proofs, so the close run's lease must exceed a run, or its worker must
- * renew it while the run lasts.
+ * renew it while the run lasts - *decided by `P14-TSK-011`: the worker renews, the renewal bounded ({@link CloseRuns}).*
  */
 @Slf4j
 public final class AccountingChecks {

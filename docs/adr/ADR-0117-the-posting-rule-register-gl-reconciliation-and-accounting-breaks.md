@@ -59,6 +59,9 @@ and park value in suspense; a GL-side discrepancy has neither.
    `BreaksNeverPostTest` holds the machinery to no ledger writer, cutoff or prior-period door. `PHASE_14_PLAN.md` §13.3's
    note records the subject granularity and the deviations.)*
 4. **Reconciliation's own breaks and suspense are read and disclosed** at close (`ReconciliationDisclosure`), not copied.
+   *(As built by `P14-TSK-011`, 2026-11-02: as of the cutoff's instant, from reconciliation's frozen stamps and the
+   append-only releases - `app`'s `ProductReconciliationDisclosure`, the `RECONCILIATION_DISCLOSURE` check `DISCLOSED` when
+   anything stands; `PHASE_14_PLAN.md` §13.5's note.)*
 
 ## Alternatives Considered
 
@@ -91,7 +94,10 @@ Line-shape conformance for amounts (e.g. fee ≤ gross) as rule predicates, if t
   raises nothing new. As built it is never hidden: `CheckOutcome` counts known findings by their break's status and
   reports a `RESOLVED` one as `RECURRED`, so the close can tell "all disclosed" from "a resolved break's discrepancy is
   still present". Whether it should instead raise a new break - re-raise on `RESOLVED`, or a generation in the key - is
-  open; the key and the re-raise rule were deliberately left unchanged.
+  open; the key and the re-raise rule were deliberately left unchanged. *(`P14-TSK-011`, 2026-11-02, its consumer: the
+  default until the owner rules - a `RECURRED` outcome is `FAILED` and never `DISCLOSED`, whatever else it holds, so the close
+  is blocked until the discrepancy is really gone. Either answer fits: a re-raise would make it a new `OPEN` break, `FAILED`
+  just the same, and `OPEN_ACCOUNTING_BREAKS` would count it.)*
 - **Resolution's residual** (I-2): a correction must exist, not be the subject or listed in the break's evidence, and
   not predate what it corrects; that it corrects *this* discrepancy, that it is not reused across breaks, and that one
   person decides it remain the controller's audited judgement.

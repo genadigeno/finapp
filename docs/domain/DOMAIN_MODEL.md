@@ -223,6 +223,7 @@ Posting Cutoff
 Accounting Period
 Period Close
 Close Check
+Close Run
 Trial Balance
 Report Run
 Financial Statement

@@ -124,6 +124,23 @@ public final class JdbcAccountingBreakStore implements AccountingBreakStore {
     }
 
     @Override
+    public Map<BreakStatus, Long> countByStatus(Connection unitOfWork, YearMonth period) {
+        try (PreparedStatement read = unitOfWork.prepareStatement("SELECT status, count(*) FROM accounting.accounting_break"
+                + " WHERE period_start = ? GROUP BY status")) {
+            read.setDate(1, Date.valueOf(period.atDay(1)));
+            Map<BreakStatus, Long> counts = new EnumMap<>(BreakStatus.class);
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    counts.put(BreakStatus.valueOf(row.getString(1)), row.getLong(2));
+                }
+            }
+            return counts;
+        } catch (SQLException failure) {
+            throw failed("counting a period's accounting breaks", failure);
+        }
+    }
+
+    @Override
     public boolean proposeAcknowledgement(Connection unitOfWork, AccountingBreakId id, Actor actor, String disclosure) {
         try (PreparedStatement update = unitOfWork.prepareStatement("UPDATE accounting.accounting_break"
                 + " SET ack_proposed_by = ?, ack_proposed_by_type = ?, ack_proposed_at = clock_timestamp(), disclosure = ?"

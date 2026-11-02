@@ -140,6 +140,9 @@ public interface AccountingBreakStore {
     /** How many breaks are not {@code RESOLVED}, per type - {@code finapp.accounting.break.open{type}}. */
     Map<BreakType, Long> openByType(Connection unitOfWork);
 
+    /** How many breaks of {@code period} per status - a status with none absent ({@code OPEN_ACCOUNTING_BREAKS}, `P14-TSK-011`). */
+    Map<BreakStatus, Long> countByStatus(Connection unitOfWork, YearMonth period);
+
     /** Records the acknowledgement proposal - conditional on {@code OPEN} with none pending. */
     boolean proposeAcknowledgement(Connection unitOfWork, AccountingBreakId id, Actor actor, String disclosure);
 

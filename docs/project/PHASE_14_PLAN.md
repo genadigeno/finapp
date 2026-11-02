@@ -171,7 +171,7 @@ boundary is the ledger's database.
   under `mapping` exclusive, refuses any month with a period at or after it no longer `OPEN` (`MappingRetroactive`; V003
   replaces V002's edge function with the same rule) - which also holds for a period born after the activation's read.
   The grace (C9): lockable from the period's last day plus N business days (Monday-Friday, no holiday calendar), N =
-  `finapp.accounting.period.lock-grace-business-days`, default 2, 1..20. No `AccountingPeriodUnlocked` event - the entry
+  `finapp.accounting.period.lock-grace-business-days`, default 2, 2..20 *(the minimum raised from 1 by `P14-TSK-011`, `P14-TSK-006`'s review M-1: a grace of one could cover a western servicing zone's today)*. No `AccountingPeriodUnlocked` event - the entry
   names Opened and Locked; the unlock is history and audit.)*
 - **GL Mapping Version:** `PROPOSED → ACTIVE → RETIRED`; `PROPOSED → REJECTED`; immutable content from birth;
   `effective_from_period` an `OPEN` period; a period pins the version in force when it is `LOCKED`.
@@ -190,6 +190,15 @@ boundary is the ledger's database.
   proposal unless they also hold the controller's role.)*
 - **Close Check:** `PENDING → PASSED | FAILED | DISCLOSED` (a failure the approver discloses explicitly); re-run creates a
   new attempt row, never edits.
+  *(As built by `P14-TSK-011`, 2026-11-02, accounting `V007`: one run per lock instance, born by the check leg
+  insert-if-absent; attempts one per `(run, check, attempt)`, at most one `PENDING` per check; `PENDING → PENDING` only as
+  a claim, a reclaim, a renewal or a deferral, each moving the lease's columns; concluded once and frozen. **Which may be
+  `DISCLOSED`** - the rule `CloseCheckCode` left to this task, held by `close_check_disclosed_only_where_it_may`: never
+  `LEDGER_TRIAL_BALANCE`, `GL_EQUALS_LEDGER`, `PROJECTION_VERIFIED`, `VALUATION_SET_APPROVED`; `RULE_CONFORMANCE` and
+  `SOURCE_COMPLETENESS` when an `ACKNOWLEDGED` break - four eyes, a disclosure - holds every finding and nothing else
+  failed; `OPEN_ACCOUNTING_BREAKS` when none is `OPEN` and some `ACKNOWLEDGED`; `ACCRUALS_COMPLETE` when nothing is behind and
+  entries were floored past the cutoff; `RECONCILIATION_DISCLOSURE` when read whole and not clean. No door discloses a
+  `FAILED` must-pass check - an owner item.)*
 - **Report Run:** `GENERATING → FINAL | PROVISIONAL`, `FAILED`; `FINAL → SUPERSEDED` (on reopen); content and hash frozen
   at completion.
   *(As built by `P14-TSK-008`, 2026-10-31, accounting `V004`: born `GENERATING` at attempt 1 by insert-or-read on the
@@ -247,7 +256,7 @@ beside them: `INV-LED-01`…`-06`, `INV-BAL-02`, `INV-HIST-01`, `INV-HIST-04`, `
 | T-map | mapping proposal insert; activation: namespace `14` key `mapping` exclusive, the version `FOR UPDATE`, totality and compatibility checked through `LedgerChart`, conditional edge, history row |
 | T-lock | (A1) the period row `FOR UPDATE` (and the previous period `FOR SHARE`: must be `CLOSED`); (A2) namespace `14` key `cutoff` **exclusive**; (A3) the ledger's `posting_cutoff` row: conditional advance of `closed_through` to the period end, its event row; the period edge `OPEN → LOCKED`, the pinned mapping version, the close run row; outbox `AccountingPeriodLocked` |
 | T-post (every existing posting) | unchanged, plus ledger `V028`'s `BEFORE INSERT` trigger on `journal_entry`: namespace `14` key `cutoff` **shared**, then refuse `posting_date <= closed_through` (SQLSTATE mapped to `ledger.PeriodClosed`) *(**built** by `P14-TSK-004`, 2026-10-30: SQLSTATE `LDCUT` → `PeriodClosedException` in `JdbcJournalEntryStore`; the read `FOR SHARE` under REPEATABLE READ/SERIALIZABLE so a cut after the snapshot is `40001`; the cutoff moved by `PostingCutoffs` - one period, conditional `UPDATE`, event - and bound for every updater by `V028`'s one-period trigger)* |
-| T-check | claim one `close_check` `FOR UPDATE SKIP LOCKED` with a lease; run it in `REPEATABLE READ READ ONLY` reads; record the attempt and outcome by conditional edge |
+| T-check | claim one `close_check` `FOR UPDATE SKIP LOCKED` with a lease; run it in `REPEATABLE READ READ ONLY` reads; record the attempt and outcome by conditional edge *(as built by `P14-TSK-011`: the claim one statement, committed before the judgement, no transaction held across it (`AccountingChecks`' contract); a heartbeat renews the lease, conditional on `holder` and bounded by `max-run` on the database's clock; the conclusion (A1) the period `FOR SHARE`, (A4) the run `FOR UPDATE`, one conditional edge naming `holder`. **Deviation from T-lock's "the close run row"**: the run is born by the check leg, insert-if-absent - the lock is the ledger's protection and waits for nothing, as with the pin and the rate set; a defect here must never fail a lock holding the cutoff key exclusive, and it births runs for periods locked before `V007` too. `LOCKED` with no run is a one-poll gap: the read answers 404, `-012` refuses)* |
 | T-close / T-unlock / T-reopen | the period row `FOR UPDATE`; for unlock/reopen namespace `14` exclusive and the cutoff moved back by exactly one period; approver ≠ proposer `CHECK`; the report runs `SUPERSEDED` on reopen |
 | T-report | claim: insert-or-read the run row by its unique key; generate: `REPEATABLE READ READ ONLY` on a separate connection; complete: conditional `GENERATING → FINAL` with content and sha256 *(as built by `P14-TSK-008`: claim under the period row `FOR SHARE` (A1) then the run (A4); generate on its own pooled connection, `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY` first and proven; complete under the period `FOR SHARE` again, conditional on `GENERATING` and the held attempt, `accounting.ReportGenerated` and `accounting.ReportRunCompleted` in the same commit)* |
 | T-ppa | the target `OPEN` period `FOR SHARE`; the proposal; at approval `PriorPeriodPostings.approveOwned` posts the `ACCOUNTING` adjustment (posting date in the open period) and the PPA row commits with it |
@@ -269,8 +278,8 @@ longest in-flight posting transaction, and T-lock runs under a `lock_timeout` an
 | 2 | Two instances lock the same period | conditional edge `OPEN → LOCKED` | `AccountingPeriodDatabaseTest#twoLocksOneEdge` |
 | 3 | Two approvers approve one close | conditional edge, revision | `PeriodCloseDatabaseTest#twoApprovalsOneClose` |
 | 4 | Proposer approves own close / mapping / PPA / submission | `CHECK (approved_by <> proposed_by)` | `*#theProposerCannotApprove` |
-| 5 | Ten instances claim one close check | `FOR UPDATE SKIP LOCKED` + lease | `CloseRunDatabaseTest#tenWorkersOneAttempt` |
-| 6 | A worker dies mid-check | lease expiry, attempt row | `CloseRunDatabaseTest#aDeadWorkersCheckIsReclaimed` |
+| 5 | Ten instances claim one close check | `FOR UPDATE SKIP LOCKED` + lease | `CloseRunDatabaseTest#tenWorkersOneAttempt` *(built by `P14-TSK-011` - owed, C5; hermetic `CloseRunsTest#tenWorkersOneAttempt`)* |
+| 6 | A worker dies mid-check | lease expiry, attempt row | `CloseRunDatabaseTest#aDeadWorkersCheckIsReclaimed` *(built by `P14-TSK-011`, with `#aLiveWorkerOutlastsItsLease` - owed, C5; hermetic `CloseRunsTest#aDeadWorkersCheckIsReclaimed`, `CloseCheckWorkerTest#aKilledWorkerResumes`; the same attempt row, `reclaims + 1`, the dead worker's conclusion fenced)* |
 | 7 | Two instances generate the same report | unique run key, insert-or-read | `ReportRunDatabaseTest#twoGeneratorsOneRun` *(built by `P14-TSK-008` with `#tenClaimersOneRun` - owed, C5; hermetic `ReportRunsTest#tenClaimersOneRun`)* |
 | 8 | Mapping activation vs a lock pinning a version | namespace `14` `mapping` exclusive vs the lock's read of the active version under the period row | `GlMappingDatabaseTest#aLockBehindAnActivationPinsOneVersion` |
 | 9 | Reopen vs a posting into the next period | reopen moves the cutoff back one period only; postings dated after are unaffected | `PeriodReopenDatabaseTest#aReopenRefusesNothingOutsideItsPeriod` |
@@ -287,6 +296,11 @@ legs (a) open the next period when the current month begins (insert-if-absent, u
 checks; (c) complete claimed report runs whose generator died (lease expiry) *(built by `P14-TSK-008` as the callable `ReportRunGenerator.completeOrphaned(limit, actor)` - expired runs `FOR UPDATE SKIP LOCKED`, reclaimed by `attempt + 1` or failed `ATTEMPTS_EXHAUSTED` past the bound; `-011` schedules it under its system scope)*; (d) regulatory inquiry for `SUBMITTED`
 rows past their answer horizon (`-018`). Every leg meters its claim failures from its first task; each is a
 `SmartLifecycle`, off in test contexts, with its `finapp.accounting.sweeper.enabled` gauge. Nothing else schedules.
+*(As built by `P14-TSK-011`, 2026-11-02: one `SmartLifecycle`, `AccountingCloseSchedule`, a thread per leg and one for the
+heartbeats; legs (a), (b) and (c), the last `completeOrphaned(1, ...)` per step - `P14-TSK-008`'s review, M-6; a failing leg
+counted `finapp.accounting.close.leg.failed{leg}`, ending only itself. Cadences and leases configuration:
+`finapp.accounting.close.{open-poll, checks-poll, orphans-poll, checks-batch, orphans-batch, lease, renew-every, max-run,
+max-reclaims, deferral}`.)*
 
 ### 8.5 The ten-instance answer, per concern
 
@@ -541,6 +555,33 @@ corrections are prior-period adjustments (`-013`); a reopen (four-eyes, latest o
 supersedes (never deletes) its FINAL runs, and re-runs the close with `revision + 1` (`INV-ACC-10`). No silent alteration
 is possible: the ledger refuses the posting, the run's content is frozen by trigger, and every edge is evented and audited.
 
+*(As built by `P14-TSK-011`, 2026-11-02 - accounting `V007`:* **no path turns an exception, a timeout, an incomplete proof or
+an empty read into a pass** (`CloseChecks`). Each check, what it reads, and what fails it:
+`LEDGER_TRIAL_BALANCE` - the FINAL `TRIAL_BALANCE` run (`RunParameters.none()`; code, version and verdict path
+`TrialBalanceDefinition`'s constants; confirmed `FINAL` and of that version before a member is read, each member read from the
+frozen content, exactly `true`): the verdict and its three legs; `GL_EQUALS_LEDGER` - `AccountingChecks.run` and beside it the
+period's pin and the FINAL run's `fullyMapped` (`run` falls back to the version in force, so `passes` and `run` are each not
+sufficient, `P14-TSK-009`'s review, M-6); `RULE_CONFORMANCE`, `SOURCE_COMPLETENESS` - `AccountingChecks.run`, `RECURRED` a failure
+never disclosed; `ACCRUALS_COMPLETE` - `blocking` and `flooredPast` **on one snapshot**, so an accrual is behind (`FAILED`) or floored
+(`DISCLOSED`, the interest figure on the record) and never neither (`P14-TSK-006`'s review, I-1: find and disclose, not inside T-lock,
+which would pause every posting for an O(servicing) read and hold the ledger's protection hostage to one stuck loan; `BNPL-F2a` posts
+today by its own rule, a structural day's shift, not a floor - an owner item); `PROJECTION_VERIFIED` - the projection proof through
+`SourceProofs`, a reading missing or incomplete `FAILED`; `RECONCILIATION_DISCLOSURE` - `ReconciliationDisclosure` **as of the cutoff**, the
+first instant after the last day UTC, frozen facts so a re-run reads the same: breaks standing open then, suspense items opened by then less
+releases by then, CREDIT and DEBIT gross, the `SUSPENSE_UNMATCHED` lines through the last day, ageing in the operator reports' bands, what
+the grace days raised apart, `suspenseUnowned` as of the cutoff (`P14-TSK-010`'s review, M-10 - disclosed: a `FAILED` on frozen facts could
+never clear), entries of the floored rules valued in and posted past the period (`P14-TSK-006`'s review, M-2 - disclosed, not aligned);
+`VALUATION_SET_APPROVED` - `approvedFor` afresh per attempt, pinned nowhere (either answer to ADR-0116's question fits), the period's sets
+named so a proposal can be found (`ValuationRateSets.ofPeriod`, `P14-TSK-014`'s review, M-5); `OPEN_ACCOUNTING_BREAKS` - the month's
+breaks per status, inside its own conclusion. Every attempt names the versions it read (`judged_by`) and carries its evidence. **Doors**:
+`GET /v1/operator/accounting/periods/{periodId}/close-run` (`ACCOUNTING_READ`, audited `accounting.CloseRunRead`), `POST
+.../close-run/checks/{check}/rerun` (`ACCOUNTING_CLOSE_PROPOSE`, keyed, reasoned, audited `accounting.CloseCheckRerun`). **For `-012`**:
+`CloseRuns.readiness` - the run answers the present lock, every latest attempt `PASSED` or `DISCLOSED`, and, read live so a stale attempt
+cannot make a run ready, no break of the month `OPEN`; the controller holds no `ACCOUNTING_READ`, so its read of what it approves is `-012`'s.
+**The planted imbalance** (gate criterion 1; `P14-TSK-009`'s review, M-6): the balance trigger is deferred to commit, so an unbalanced entry
+is visible only on its own connection and is read there - planted, locked, generated and judged on one connection, then rolled back
+(`CloseRunDatabaseTest#aPlantedImbalanceFailsOnlyItsOwnTransaction`, owed C5).)*
+
 ### 13.6 Financial reporting (owner brief 7.7)
 
 Every report is a **report definition** (code, versioned) producing a **report run**: FINAL for a `LOCKED`/`CLOSED`
@@ -636,7 +677,8 @@ rows both ways.
 |---|---|---|---|
 | `finapp.accounting.period.open.age` | gauge (days the oldest unclosed past period has been past its grace) | — | `AccountingCloseOverdue` |
 | `finapp.accounting.close.check` | counter | check, outcome | `AccountingCloseCheckFailed` |
-| `finapp.accounting.close.duration` | timer | — | — |
+| `finapp.accounting.close.duration` | timer *(built by `P14-TSK-011`: a run's start to its checks' first full conclusion, once per run across instances; `close.check`'s outcomes `passed`, `failed`, `disclosed`, `deferred`, `overtaken`)* | — | — |
+| `finapp.accounting.close.leg.failed` | counter (a close schedule leg that failed - section 8.4's "every leg meters its claim failures", *added by `P14-TSK-011`*) | leg | — |
 | `finapp.accounting.cutoff.floored` | counter (postings floored to the first open date because their command asked, C3 - *added by `P14-TSK-006`*) | command | — |
 | `finapp.accounting.cutoff.refused` | counter (postings refused `ledger.PeriodClosed`) | module *(erratum, `P14-TSK-004`: built with tag `command` - `posting`/`reversal`/`adjustment` - because a ledger command carries no requesting module; a `module` tag needs a producer-contract change, an owner item for `-006`)* | `AccountingPostingIntoClosedPeriod` |
 | `finapp.accounting.gl.unmapped` | gauge (lines unmapped in the open period under the active version) *(fed by `P14-TSK-007` from the database: the chart's keys the ACTIVE version does not map - 0 without a journal read when it is total, 0 with no version - their lines counted from the first open period's start, never before the version's month; cached 60 s)* | — | `AccountingMappingGap` |

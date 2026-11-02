@@ -43,6 +43,11 @@ public final class InMemoryValuationRateSetStore implements ValuationRateSetStor
         return List.copyOf(rows.values());
     }
 
+    @Override
+    public List<SetRow> ofPeriod(Connection unitOfWork, AccountingPeriodId period, int limit) {
+        return rows.values().stream().filter(row -> row.period().equals(period)).limit(limit).toList();
+    }
+
     /** The capture reason stored with the set - held, never served. */
     public Optional<String> captureReason(ValuationRateSetId id) {
         return reasons.getOrDefault(id, Optional.empty());

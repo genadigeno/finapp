@@ -52,6 +52,41 @@
           }
         }
       },
+      "accounting.CloseCheckPending": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.CloseCheckPending"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.CloseCheckPending"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The close check's latest attempt has not concluded; a re-run is a new attempt after it, and nothing was changed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.CorrectingEntryInvalid": {
         "content": {
           "application/problem+json": {
@@ -15259,6 +15294,135 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CloseCheckAttemptView": {
+        "properties": {
+          "attempt": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "bornAt": {
+            "type": "string"
+          },
+          "concludedAt": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "failures": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "judgedBy": {
+            "type": "string"
+          },
+          "reclaims": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CloseCheckRerunReceipt": {
+        "properties": {
+          "attempt": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "check": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CloseCheckRerunRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CloseCheckView": {
+        "properties": {
+          "attempts": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "check": {
+            "type": "string"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/CloseCheckAttemptView"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CloseRunView": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CloseCheckView"
+            },
+            "type": "array"
+          },
+          "checksConcludedAt": {
+            "type": "string"
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "current": {
+            "type": "boolean"
+          },
+          "lockedAt": {
+            "type": "string"
+          },
+          "openBreaks": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "periodStatus": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "startedAt": {
             "type": "string"
           }
         },
@@ -32429,6 +32593,86 @@
                     "$ref": "#/components/schemas/AccountingPeriodView"
                   },
                   "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/periods/{periodId}/close-run": {
+      "get": {
+        "operationId": "readAccountingCloseRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "periodId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloseRunView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/periods/{periodId}/close-run/checks/{check}/rerun": {
+      "post": {
+        "operationId": "rerunAccountingCloseCheck",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "periodId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "check",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseCheckRerunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloseCheckRerunReceipt"
                 }
               }
             },

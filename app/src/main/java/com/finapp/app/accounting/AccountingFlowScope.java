@@ -1,6 +1,10 @@
 package com.finapp.app.accounting;
 
+import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.telemetry.Spans;
+import com.finapp.sharedkernel.correlation.CausationId;
+import com.finapp.sharedkernel.correlation.Correlation;
+import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -11,12 +15,10 @@ import java.util.function.Supplier;
  * report or submission identifier reaches the trace backend ({@code INV-AUD-02}; report content is
  * {@code CONFIDENTIAL}).
  *
- * <p>Only the door leg exists so far - a span in the request's own scope. The legs that link a step to a stored
- * correlation (a close check inside its close run's flow, a report generation in its run's, a submission's inquiry in
- * the submission's) arrive with the tasks that create those rows (`-008`, `-011`, `-018`), on the {@code BnplFlowScope}
- * shape: one read on a read-only snapshot, never a lock, a lookup that fails leaving the step to run unlinked - a span is
- * telemetry, never the work's precondition. The close schedule's gauge, {@code finapp.accounting.sweeper.enabled}, is
- * reserved with its property and registered by the schedule's task (`-011`).
+ * <p>Two legs exist: a door's span in the request's own scope, and a sweep leg's in the flow its row stored ({@link #inFlow},
+ * `P14-TSK-011`: a close check in its attempt's correlation - the claim hands it over, so no lookup is made). A report generation
+ * on the orphan leg runs under that leg's own span, unlinked: {@code completeOrphaned} names no run to its caller; the run's audit
+ * record and event carry its stored correlation all the same. A submission's inquiry arrives with `-018`.
  */
 public final class AccountingFlowScope {
 
@@ -32,5 +34,15 @@ public final class AccountingFlowScope {
     /** A door: the span in the request's own scope, no attribute. */
     public <T> T door(String span, Supplier<T> work) {
         return spans.within(span, Map.of(), work);
+    }
+
+    /** A sweep leg's step: the span in the flow its row stored, no attribute - so it joins the request that began it. */
+    @SuppressWarnings("try") // The scope is used for its close side effect.
+    public <T> T inFlow(String span, CorrelationId stored, Supplier<T> work) {
+        Objects.requireNonNull(stored, "stored");
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(
+                Correlation.startingWith(stored).causing(CausationId.of(stored.value())))) {
+            return spans.within(span, Map.of(), work);
+        }
     }
 }

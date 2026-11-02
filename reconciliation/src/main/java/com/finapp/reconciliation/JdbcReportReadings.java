@@ -46,6 +46,18 @@ public final class JdbcReportReadings implements ReportReadings {
                     + " WHEN 'MEDIUM' THEN 2 ELSE 3 END, b.raised_at, b.id"
                     + " LIMIT 1) ob ON true";
 
+    /**
+     * An item's remainder at an instant, from the append-only releases. An item {@code RELEASED} before the instant is left out by
+     * its own stamp, so the scan does not grow with history.
+     */
+    static final String SUSPENSE_AS_OF =
+            "SELECT s.id, s.side, s.amount_minor, s.currency, s.scale, s.opened_on, s.break_id,"
+                    + " COALESCE((SELECT sum(r.amount_minor) FROM reconciliation.suspense_release r"
+                    + " WHERE r.item_id = s.id AND r.released_at < ?), 0) AS released_then"
+                    + " FROM reconciliation.suspense_item s"
+                    + " WHERE s.opened_on <= ? AND (s.status <> 'RELEASED' OR s.status_changed_at >= ?)"
+                    + " ORDER BY s.opened_on, s.id";
+
     private static final String BREAK_COLUMNS =
             "SELECT id, source_id, type, severity, status, value_at_issue_minor, currency,"
                     + " scale, raised_at, resolved_at FROM reconciliation.break";
@@ -88,6 +100,46 @@ public final class JdbcReportReadings implements ReportReadings {
         } catch (SQLException failure) {
             throw new ReconciliationStorageException(
                     "could not read the open suspense items for the report", failure);
+        }
+    }
+
+    @Override
+    public void eachSuspenseItemAsOf(
+            Connection unitOfWork,
+            LocalDate openedThrough,
+            Instant asOf,
+            Consumer<SuspenseAsOfLine> visitor) {
+        Objects.requireNonNull(openedThrough, "openedThrough must not be null");
+        Objects.requireNonNull(asOf, "asOf must not be null");
+        Objects.requireNonNull(visitor, "visitor must not be null");
+        try (PreparedStatement read = unitOfWork.prepareStatement(SUSPENSE_AS_OF)) {
+            OffsetDateTime instant = OffsetDateTime.ofInstant(asOf, ZoneOffset.UTC);
+            read.setObject(1, instant);
+            read.setObject(2, openedThrough);
+            read.setObject(3, instant);
+            read.setFetchSize(FETCH_SIZE);
+            try (ResultSet rows = read.executeQuery()) {
+                while (rows.next()) {
+                    long amount = rows.getLong("amount_minor");
+                    long released = rows.getLong("released_then");
+                    if (released >= amount) {
+                        continue;
+                    }
+                    CurrencyCode currency = currencyOf(rows);
+                    int scale = rows.getInt("scale");
+                    visitor.accept(
+                            new SuspenseAsOfLine(
+                                    rows.getObject("id", UUID.class),
+                                    SuspenseSide.valueOf(rows.getString("side")),
+                                    Money.ofPersisted(amount, currency, scale)
+                                            .minus(Money.ofPersisted(released, currency, scale)),
+                                    rows.getObject("opened_on", LocalDate.class),
+                                    rows.getObject("break_id", UUID.class)));
+                }
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the suspense items as of an instant", failure);
         }
     }
 

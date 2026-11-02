@@ -9,6 +9,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 /**
@@ -27,12 +28,22 @@ public final class ServicingAccrualCompleteness implements AccrualCompleteness {
 
     private final Function<Connection, Map<CurrencyCode, LocalDate>> lending;
     private final Function<Connection, Map<CurrencyCode, LocalDate>> bnpl;
+    private final BiFunction<Connection, LocalDate, List<Floored>> floored;
 
+    /** @param floored the accrual entries floored past a period's end - {@link LedgerFlooredPostings#accruals} (`P14-TSK-011`) */
     public ServicingAccrualCompleteness(
             Function<Connection, Map<CurrencyCode, LocalDate>> lending,
-            Function<Connection, Map<CurrencyCode, LocalDate>> bnpl) {
+            Function<Connection, Map<CurrencyCode, LocalDate>> bnpl,
+            BiFunction<Connection, LocalDate, List<Floored>> floored) {
         this.lending = Objects.requireNonNull(lending, "lending must not be null");
         this.bnpl = Objects.requireNonNull(bnpl, "bnpl must not be null");
+        this.floored = Objects.requireNonNull(floored, "floored must not be null");
+    }
+
+    @Override
+    public List<Floored> flooredPast(Connection unitOfWork, LocalDate periodEnd) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        return List.copyOf(floored.apply(unitOfWork, Objects.requireNonNull(periodEnd, "periodEnd must not be null")));
     }
 
     @Override

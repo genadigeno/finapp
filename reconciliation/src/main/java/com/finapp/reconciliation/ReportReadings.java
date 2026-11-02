@@ -67,6 +67,29 @@ public interface ReportReadings {
      */
     void eachOpenSuspenseItem(Connection unitOfWork, Consumer<OpenSuspenseLine> visitor);
 
+    /**
+     * One suspense item as it stood at an instant (`P14-TSK-011`; {@code INV-ACC-05}): its remainder then - its amount less the
+     * {@code suspense_release} rows dated before the instant, append-only history, so the answer is exact whatever has happened
+     * since - its side, its opening date and the break that owns it.
+     */
+    record SuspenseAsOfLine(UUID id, SuspenseSide side, Money unreleased, LocalDate openedOn, UUID breakId) {
+
+        public SuspenseAsOfLine {
+            Objects.requireNonNull(id, "id must not be null");
+            Objects.requireNonNull(side, "side must not be null");
+            Objects.requireNonNull(unreleased, "unreleased must not be null");
+            Objects.requireNonNull(openedOn, "openedOn must not be null");
+            Objects.requireNonNull(breakId, "breakId must not be null");
+        }
+    }
+
+    /**
+     * Every item opened on or before {@code openedThrough} with a remainder at {@code asOf} (accounting's close, as of its
+     * cutoff), oldest {@code opened_on} first, then by id. An item released whole before the instant is not read at all.
+     */
+    void eachSuspenseItemAsOf(
+            Connection unitOfWork, LocalDate openedThrough, Instant asOf, Consumer<SuspenseAsOfLine> visitor);
+
     // ----------------------------------------------------------------- unexplained value
 
     /**

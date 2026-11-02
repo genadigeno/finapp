@@ -2539,8 +2539,18 @@ owner decision C8), nor irreversible — a reopen is four-eyes and supersedes, n
 **Is:** one recorded readiness test of a close run — `LEDGER_TRIAL_BALANCE`, `GL_EQUALS_LEDGER`, `RULE_CONFORMANCE`,
 `SOURCE_COMPLETENESS`, `ACCRUALS_COMPLETE`, `PROJECTION_VERIFIED`, `RECONCILIATION_DISCLOSURE`,
 `VALUATION_SET_APPROVED`, `OPEN_ACCOUNTING_BREAKS` — claimed leaderlessly, each attempt and outcome a row (`P14-TSK-011`).
+*(As built: `PENDING → PASSED | FAILED | DISCLOSED`, concluded once and frozen, naming the versions it read; a re-run is a new
+attempt. `DISCLOSED` is a discrepancy on the record, never a pass, and only where the check admits it.)*
 **Not:** a proof of its own: the product checks read the existing proofs' verdicts; nor a gauge (a gauge is
 operational, a check is the close's evidence).
+**Owned by:** `accounting`
+
+### Close Run
+**Is:** the readiness evidence of one lock instance of a `LOCKED` Accounting Period: its nine Close Checks, born together by the schedule
+and worked leaderlessly, each attempt held by a lease (`INV-ACC-09`, `P14-TSK-011`). An unlock and a new lock are a new run; the old run's
+rows stay.
+**Not:** the Period Close (a person proposes and a second person approves from it, `P14-TSK-012`), nor a Report Run (its trial balance check reads
+one), nor a correction: nothing it does posts or resolves anything.
 **Owned by:** `accounting`
 
 ### Trial Balance

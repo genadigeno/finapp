@@ -30,6 +30,8 @@ class ServicingAccrualCompletenessTest {
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
     private static final CurrencyCode USD = CurrencyCode.of("USD");
     private static final LocalDate OCTOBER_END = LocalDate.of(2026, 10, 31);
+    private static final java.util.function.BiFunction<Connection, LocalDate, List<AccrualCompleteness.Floored>> NONE_FLOORED =
+            (connection, periodEnd) -> List.of();
 
     private final Connection unitOfWork = unused();
     private final List<Connection> seen = new ArrayList<>();
@@ -40,7 +42,7 @@ class ServicingAccrualCompletenessTest {
     void eachAccruerBehindIsOnePositionPerCurrency() {
         AccrualCompleteness completeness = new ServicingAccrualCompleteness(
                 read(Map.of(USD, LocalDate.of(2026, 11, 2), EUR, LocalDate.of(2026, 10, 29))),
-                read(Map.of(EUR, LocalDate.of(2026, 11, 1))));
+                read(Map.of(EUR, LocalDate.of(2026, 11, 1))), NONE_FLOORED);
         List<Lagging> lagging = completeness.lagging(unitOfWork);
         assertThat(lagging).containsExactly(
                 new Lagging(Accruer.LENDING, "EUR", LocalDate.of(2026, 10, 29)),
@@ -54,7 +56,7 @@ class ServicingAccrualCompletenessTest {
     @DisplayName("a period blocks while an accruer has an unaccrued date on or before its end - and only then")
     void aPeriodBlocksOnlyWhileAnAccruerHasNotReachedItsEnd() {
         AccrualCompleteness completeness = new ServicingAccrualCompleteness(
-                read(Map.of(EUR, LocalDate.of(2026, 10, 31))), read(Map.of(EUR, LocalDate.of(2026, 11, 1))));
+                read(Map.of(EUR, LocalDate.of(2026, 10, 31))), read(Map.of(EUR, LocalDate.of(2026, 11, 1))), NONE_FLOORED);
         assertThat(completeness.blocking(unitOfWork, OCTOBER_END))
                 .as("lending has not accrued 31 October; bnpl has accrued it")
                 .containsExactly(new Lagging(Accruer.LENDING, "EUR", OCTOBER_END));
@@ -66,7 +68,7 @@ class ServicingAccrualCompletenessTest {
     @Test
     @DisplayName("both caught up: nothing lagging, nothing blocking")
     void caughtUpBlocksNothing() {
-        AccrualCompleteness completeness = new ServicingAccrualCompleteness(read(Map.of()), read(Map.of()));
+        AccrualCompleteness completeness = new ServicingAccrualCompleteness(read(Map.of()), read(Map.of()), NONE_FLOORED);
         assertThat(completeness.lagging(unitOfWork)).isEmpty();
         assertThat(completeness.blocking(unitOfWork, OCTOBER_END)).isEmpty();
     }
@@ -74,8 +76,21 @@ class ServicingAccrualCompletenessTest {
     @Test
     @DisplayName("a read answering null is a defect, never 'caught up'")
     void aNullReadIsADefect() {
-        AccrualCompleteness completeness = new ServicingAccrualCompleteness(read(Map.of()), connection -> null);
+        AccrualCompleteness completeness = new ServicingAccrualCompleteness(read(Map.of()), connection -> null, NONE_FLOORED);
         assertThatThrownBy(() -> completeness.lagging(unitOfWork)).isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    @DisplayName("the entries floored past a period's end, on the caller's unit of work - the one snapshot blocking reads on (P14-TSK-011)")
+    void theFlooredEntriesAreReadOnTheCallersUnitOfWork() {
+        List<AccrualCompleteness.Floored> floored = List.of(new AccrualCompleteness.Floored(Accruer.LENDING, "EUR", 2, 1,
+                java.math.BigInteger.TEN));
+        AccrualCompleteness completeness = new ServicingAccrualCompleteness(read(Map.of()), read(Map.of()), (connection, periodEnd) -> {
+            assertThat(connection).isSameAs(unitOfWork);
+            assertThat(periodEnd).isEqualTo(OCTOBER_END);
+            return floored;
+        });
+        assertThat(completeness.flooredPast(unitOfWork, OCTOBER_END)).isEqualTo(floored);
     }
 
     private java.util.function.Function<Connection, Map<CurrencyCode, LocalDate>> read(

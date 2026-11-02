@@ -119,6 +119,14 @@ public final class InMemoryAccountingBreakStore implements AccountingBreakStore 
     }
 
     @Override
+    public Map<BreakStatus, Long> countByStatus(Connection unitOfWork, YearMonth period) {
+        Map<BreakStatus, Long> counts = new EnumMap<>(BreakStatus.class);
+        rows.values().stream().filter(row -> row.period().equals(period))
+                .forEach(row -> counts.merge(row.status(), 1L, Long::sum));
+        return counts;
+    }
+
+    @Override
     public boolean proposeAcknowledgement(Connection unitOfWork, AccountingBreakId id, Actor actor, String disclosure) {
         BreakRow row = rows.get(id);
         if (row == null || row.status() != BreakStatus.OPEN || row.ackProposedBy().isPresent()) {
