@@ -77,6 +77,17 @@ class TrialBalanceDefinitionTest {
     }
 
     @Test
+    @DisplayName("it states its five facts (P14-TSK-017) - and writes none of them: version 1's bytes are fixed, and it is no operational report")
+    void itStatesItselfAndItsBytesAreFixed() {
+        InMemoryTrialBalanceReads reads = books(PeriodStatus.LOCKED, Optional.of(pinned));
+        TrialBalanceDefinition definition = new TrialBalanceDefinition(reads);
+        assertThat(definition.statement().facts()).hasSize(5);
+        assertThat(definition.operational()).isFalse();
+        assertThat(CanonicalJson.text(definition.generate(SNAPSHOT, inputs(RunBasis.FINAL, Optional.of(pinned)))))
+                .doesNotContain("\"statement\"").doesNotContain("currencySemantics");
+    }
+
+    @Test
     @DisplayName("the version is the period's pin: a FINAL run reads the version its period's row pins, and one naming"
             + " another is refused before anything is read - never a FINAL trial balance under the wrong version")
     void theVersionIsThePeriodsPin() {

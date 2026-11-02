@@ -6,6 +6,8 @@ package com.finapp.accounting;
  * {@code CLOSED} period (reproducible, {@code INV-ACC-04}), {@code PROVISIONAL} for an open one (labelled, never
  * issued). {@link #TRIAL_BALANCE}'s completed run is {@code DELIVERY_PLAN.md}'s {@code TrialBalanceGenerated}. The
  * existing live operator reports of lending, bnpl, reconciliation and merchant stay operational and are not kinds here.
+ * *(`P14-TSK-017` renamed four to the entry's and ADR-0115's codes - a definition's code is its kind's name - and two are
+ * never a run: {@code OperationalReportDefinition}.)*
  */
 public enum ReportKind {
 
@@ -15,23 +17,23 @@ public enum ReportKind {
     GL_ACTIVITY,
     /** Closing balances per GL account and currency. */
     BALANCES,
-    /** Fee and interest revenue. */
-    FEE_AND_INTEREST_REVENUE,
-    /** Receivables and payables. */
-    RECEIVABLES_AND_PAYABLES,
-    /** Settlement and clearing positions. */
-    SETTLEMENT_AND_CLEARING_POSITIONS,
-    /** Suspense, with reconciliation's ageing. */
+    /** Fee, interest and spread revenue: the period's movement by purpose. */
+    REVENUE,
+    /** Receivables and payables: balances by purpose as of the period's end. */
+    RECEIVABLES_PAYABLES,
+    /** Settlement and clearing positions, and cash: balances by purpose as of the period's end. */
+    SETTLEMENT_POSITIONS,
+    /** Suspense: the ledger's balance, with the register's items and ageing as of the cutoff. */
     SUSPENSE,
     /** Realised FX gains and losses, the spread and the rounding residual. */
-    FX_GAINS_AND_LOSSES,
-    /** Lending's portfolio re-stated as of the period's end, through a port. */
+    FX_RESULTS,
+    /** The loan book restated as of the period's end from ledger balances by purpose, never lending's live rows. */
     LOAN_PORTFOLIO,
-    /** BNPL's exposure re-stated as of the period's end, through a port. */
+    /** The BNPL book restated as of the period's end from ledger balances by purpose, never bnpl's live rows. */
     BNPL_EXPOSURE,
-    /** Reconciliation's status as of the cutoff. */
+    /** Operational, never a run: the month's reconciliation runs, reconciliation's disclosure, past-the-cutoff postings. */
     RECONCILIATION_STATUS,
-    /** The period's close run and its checks. */
+    /** Operational, never a run: the close run's state, its checks, the breaks and the approved valuation rate set. */
     CLOSE_STATUS,
     /** The balance sheet, from the statement sections; retained earnings computed (C8). */
     BALANCE_SHEET,

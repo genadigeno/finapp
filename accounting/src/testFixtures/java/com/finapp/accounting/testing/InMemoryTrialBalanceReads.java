@@ -1,6 +1,7 @@
 package com.finapp.accounting.testing;
 
 import com.finapp.accounting.AccountingPeriodId;
+import com.finapp.accounting.CounterpartyPositionReads;
 import com.finapp.accounting.GlMappingVersion;
 import com.finapp.accounting.GlMappingVersionId;
 import com.finapp.accounting.JournalReads;
@@ -18,6 +19,7 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
@@ -26,16 +28,24 @@ import java.util.function.Predicate;
  * by purpose, owner kind, currency, scale and side before a date or within a range; the ledger side per currency, scale
  * and side over the three windows of a period, <strong>its bounds the period row's</strong> - the row {@link #period}
  * served, never the caller's month; every read honouring the cut on the line's creation instant. The SQL's own behaviour is
- * {@code TrialBalanceRunDatabaseTest}'s (owed, C5).
+ * {@code TrialBalanceRunDatabaseTest}'s (owed, C5). {@link #counterparties()} is the same lines through {@code
+ * CounterpartyPositionReads}, the two reads of one journal a report folds together.
  */
 public final class InMemoryTrialBalanceReads implements TrialBalanceReads {
 
-    /** One journal line: its entry's posting date and creation instant, its account's key, its amount. */
+    /** The owner kind whose accounts are each one counterparty's. */
+    private static final String COUNTERPARTY = "COUNTERPARTY";
+
+    /** The code a counterparty's line carries when a suite names none. */
+    public static final String THE_COUNTERPARTY = "fx-sim-a";
+
+    /** One journal line: its entry's posting date and creation instant, its account's key and counterparty, its amount. */
     public record JournalLine(
             LocalDate postingDate,
             Instant createdAt,
             String purpose,
             String ownerKind,
+            Optional<String> counterparty,
             String currency,
             int scale,
             Side side,
@@ -46,6 +56,7 @@ public final class InMemoryTrialBalanceReads implements TrialBalanceReads {
             Objects.requireNonNull(createdAt, "createdAt");
             Objects.requireNonNull(purpose, "purpose");
             Objects.requireNonNull(ownerKind, "ownerKind");
+            Objects.requireNonNull(counterparty, "counterparty");
             Objects.requireNonNull(currency, "currency");
             if (side != Side.DEBIT && side != Side.CREDIT) {
                 throw new IllegalArgumentException("a journal line is a debit or a credit");
@@ -53,6 +64,12 @@ public final class InMemoryTrialBalanceReads implements TrialBalanceReads {
             if (minorUnits <= 0) {
                 throw new IllegalArgumentException("a journal line's amount is positive");
             }
+        }
+
+        /** A line whose counterparty, if its account has one, is {@link #THE_COUNTERPARTY}. */
+        public JournalLine(LocalDate postingDate, Instant createdAt, String purpose, String ownerKind, String currency, int scale,
+                Side side, long minorUnits) {
+            this(postingDate, createdAt, purpose, ownerKind, named(ownerKind, THE_COUNTERPARTY), currency, scale, side, minorUnits);
         }
 
         public String key() {
@@ -85,11 +102,40 @@ public final class InMemoryTrialBalanceReads implements TrialBalanceReads {
     /** One balanced two-line entry: {@code debit} and {@code credit} as {@code PURPOSE/OWNER_KIND} keys. */
     public InMemoryTrialBalanceReads post(LocalDate date, Instant createdAt, String currency, int scale, long minorUnits,
             String debit, String credit) {
+        return postFor(THE_COUNTERPARTY, date, createdAt, currency, scale, minorUnits, debit, credit);
+    }
+
+    /** As {@link #post}, a counterparty's account among the two being {@code counterparty}'s. */
+    public InMemoryTrialBalanceReads postFor(String counterparty, LocalDate date, Instant createdAt, String currency, int scale,
+            long minorUnits, String debit, String credit) {
         String[] debited = debit.split("/", 2);
         String[] credited = credit.split("/", 2);
-        line(new JournalLine(date, createdAt, debited[0], debited[1], currency, scale, Side.DEBIT, minorUnits));
-        line(new JournalLine(date, createdAt, credited[0], credited[1], currency, scale, Side.CREDIT, minorUnits));
+        line(new JournalLine(date, createdAt, debited[0], debited[1], named(debited[1], counterparty), currency, scale, Side.DEBIT,
+                minorUnits));
+        line(new JournalLine(date, createdAt, credited[0], credited[1], named(credited[1], counterparty), currency, scale,
+                Side.CREDIT, minorUnits));
         return this;
+    }
+
+    private static Optional<String> named(String ownerKind, String counterparty) {
+        return COUNTERPARTY.equals(ownerKind) ? Optional.of(counterparty) : Optional.empty();
+    }
+
+    /** The same journal through {@link CounterpartyPositionReads}, answering as {@code LedgerCounterpartyPositionReads} does. */
+    public CounterpartyPositionReads counterparties() {
+        return new CounterpartyPositionReads() {
+            @Override
+            public List<JournalReads.Aggregate> before(Connection snapshot, LocalDate before, Optional<Instant> cut) {
+                return grouped(line -> COUNTERPARTY.equals(line.ownerKind()) && line.postingDate().isBefore(before)
+                        && atOrBefore(line, cut), JournalLine::counterparty);
+            }
+
+            @Override
+            public List<JournalReads.Aggregate> within(Connection snapshot, JournalReads.Range range, Optional<Instant> cut) {
+                return grouped(line -> COUNTERPARTY.equals(line.ownerKind()) && range.holds(line.postingDate())
+                        && atOrBefore(line, cut), JournalLine::counterparty);
+            }
+        };
     }
 
     /** Every line held, in posting order. */
@@ -113,12 +159,12 @@ public final class InMemoryTrialBalanceReads implements TrialBalanceReads {
 
     @Override
     public List<JournalReads.Aggregate> before(Connection snapshot, LocalDate before, Optional<Instant> cut) {
-        return grouped(line -> line.postingDate().isBefore(before) && atOrBefore(line, cut));
+        return grouped(line -> line.postingDate().isBefore(before) && atOrBefore(line, cut), line -> Optional.empty());
     }
 
     @Override
     public List<JournalReads.Aggregate> within(Connection snapshot, JournalReads.Range range, Optional<Instant> cut) {
-        return grouped(line -> range.holds(line.postingDate()) && atOrBefore(line, cut));
+        return grouped(line -> range.holds(line.postingDate()) && atOrBefore(line, cut), line -> Optional.empty());
     }
 
     @Override
@@ -157,20 +203,21 @@ public final class InMemoryTrialBalanceReads implements TrialBalanceReads {
         return cut.map(at -> !line.createdAt().isAfter(at)).orElse(true);
     }
 
-    private List<JournalReads.Aggregate> grouped(Predicate<JournalLine> selected) {
+    private List<JournalReads.Aggregate> grouped(Predicate<JournalLine> selected, Function<JournalLine, Optional<String>> dimension) {
         Map<String, JournalReads.Aggregate> grouped = new TreeMap<>();
         for (JournalLine line : lines) {
             if (!selected.test(line)) {
                 continue;
             }
-            String key = String.join("\u0000", line.purpose(), line.ownerKind(), line.currency(),
+            Optional<String> counterparty = dimension.apply(line);
+            String key = String.join("\u0000", line.purpose(), line.ownerKind(), counterparty.orElse(""), line.currency(),
                     Integer.toString(line.scale()), line.side().name());
             JournalReads.Aggregate was = grouped.get(key);
             BigInteger amount = BigInteger.valueOf(line.minorUnits());
             grouped.put(key, was == null
-                    ? new JournalReads.Aggregate(line.purpose(), line.ownerKind(), Optional.empty(), line.currency(),
+                    ? new JournalReads.Aggregate(line.purpose(), line.ownerKind(), counterparty, line.currency(),
                             line.scale(), line.side(), amount, 1)
-                    : new JournalReads.Aggregate(was.purpose(), was.ownerKind(), Optional.empty(), was.currency(),
+                    : new JournalReads.Aggregate(was.purpose(), was.ownerKind(), counterparty, was.currency(),
                             was.scale(), was.side(), was.minorUnits().add(amount), was.lines() + 1));
         }
         return List.copyOf(grouped.values());

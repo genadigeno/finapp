@@ -35,8 +35,8 @@ class AccountingVocabulariesTest {
                 "OPEN_ACCOUNTING_BREAKS");
         // Section 13.6's fourteen reports.
         assertThat(names(ReportKind.values())).containsExactly(
-                "TRIAL_BALANCE", "GL_ACTIVITY", "BALANCES", "FEE_AND_INTEREST_REVENUE", "RECEIVABLES_AND_PAYABLES",
-                "SETTLEMENT_AND_CLEARING_POSITIONS", "SUSPENSE", "FX_GAINS_AND_LOSSES", "LOAN_PORTFOLIO",
+                "TRIAL_BALANCE", "GL_ACTIVITY", "BALANCES", "REVENUE", "RECEIVABLES_PAYABLES",
+                "SETTLEMENT_POSITIONS", "SUSPENSE", "FX_RESULTS", "LOAN_PORTFOLIO",
                 "BNPL_EXPOSURE", "RECONCILIATION_STATUS", "CLOSE_STATUS", "BALANCE_SHEET", "INCOME_STATEMENT");
         assertThat(names(RunStatus.values()))
                 .containsExactly("GENERATING", "FINAL", "PROVISIONAL", "FAILED", "SUPERSEDED");
@@ -216,7 +216,9 @@ class AccountingVocabulariesTest {
                         // P14-TSK-010: the break doors - a break past the act; a correcting entry absent or the subject.
                         "accounting.BreakStale=409", "accounting.CorrectingEntryInvalid=422",
                         // P14-TSK-011: the re-run door - the latest attempt has not concluded.
-                        "accounting.CloseCheckPending=409");
+                        "accounting.CloseCheckPending=409",
+                        // P14-TSK-017: an operational definition is never a run; a run's is not read at the operational door.
+                        "accounting.ReportDoorMismatch=409");
         // P14-TSK-002: the posting rule register's audited read - no reason, an operator's read.
         assertThat(AccountingAuditAction.POSTING_RULES_READ.code()).isEqualTo("accounting.PostingRulesRead");
         assertThat(AccountingAuditAction.POSTING_RULES_READ.requiresReason()).isFalse();
@@ -243,7 +245,9 @@ class AccountingVocabulariesTest {
                         // The independent review's M-5: the break reads, audited like the GL's and the reports'.
                         "accounting.BreakRead=false",
                         // P14-TSK-011: the re-run, reasoned; the read of a close run, audited like the others.
-                        "accounting.CloseCheckRerun=true", "accounting.CloseRunRead=false");
+                        "accounting.CloseCheckRerun=true", "accounting.CloseRunRead=false",
+                        // P14-TSK-017: the read of an operational report, audited like the others.
+                        "accounting.OperationalReportRead=false");
     }
 
     // ------------------------------------------------------------------

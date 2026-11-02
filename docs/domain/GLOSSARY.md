@@ -2648,6 +2648,13 @@ ADR-0118).
 **Not:** a legal fact the platform asserts: no real jurisdiction is chosen and no compliance is claimed.
 **Owned by:** `accounting`
 
+### Operational Report
+**Is:** a report definition that reads what keeps moving after a period's lock - `RECONCILIATION_STATUS`, `CLOSE_STATUS` - so it is generated at each read on a read-only
+snapshot, labelled `OPERATIONAL` and as of the database's instant, audited, and stored nowhere (`P14-TSK-017`, ADR-0115).
+**Not:** a Report Run, FINAL or PROVISIONAL: it has no key, no revision, no regeneration, and is never issued or a source for a submission; nor a live operator report of
+lending, bnpl or reconciliation, which is no definition at all.
+**Owned by:** `accounting`
+
 ### Regulatory Submission
 **Is:** one return under an obligation for a period, drafted only from FINAL Report Runs (lineage by run id and hash),
 validated, approved under four eyes, submitted once through `RegulatoryReportingProvider`, acknowledged or rejected;

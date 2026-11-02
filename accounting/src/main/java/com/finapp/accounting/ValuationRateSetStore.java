@@ -6,6 +6,7 @@ import java.sql.Connection;
 import java.time.Instant;
 import java.time.YearMonth;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -36,6 +37,12 @@ public interface ValuationRateSetStore {
      * found (`P14-TSK-011`; `P14-TSK-014`'s review, M-5). Unlocked.
      */
     List<SetRow> ofPeriod(Connection unitOfWork, AccountingPeriodId period, int limit);
+
+    /**
+     * How many of the period's sets stand at each status - a status with none absent. Counted by the database, whatever their number
+     * ({@code CLOSE_STATUS}; `P14-TSK-017`'s review, M-11). Unlocked.
+     */
+    Map<ValuationRateSetStatus, Long> countByStatus(Connection unitOfWork, AccountingPeriodId period);
 
     /** The set's rates, in their capture order. */
     List<ValuationRate> rates(Connection unitOfWork, ValuationRateSetId id);

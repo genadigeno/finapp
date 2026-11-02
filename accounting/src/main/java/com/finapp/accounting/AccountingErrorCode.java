@@ -85,7 +85,10 @@ public enum AccountingErrorCode implements ErrorCode {
             "No GL mapping version is pinned by, or in force for, the period - the GL cannot be read for it until a"
                     + " version is activated under four eyes."),
 
-    /** The GL doors (`P14-TSK-007`): a statement of the read outlived the snapshot's statement timeout. */
+    /**
+     * The GL doors (`P14-TSK-007`): a statement of the read outlived the snapshot's statement timeout. The operational report door
+     * (`P14-TSK-017`): the same, or its instance's permits all held.
+     */
     READ_TIMED_OUT(
             "accounting.ReadTimedOut",
             503,
@@ -160,7 +163,17 @@ public enum AccountingErrorCode implements ErrorCode {
             "accounting.CloseCheckPending",
             409,
             "The close check's latest attempt has not concluded; a re-run is a new attempt after it, and nothing was"
-                    + " changed.");
+                    + " changed."),
+
+    /**
+     * The two report doors (`P14-TSK-017`): an operational definition is never a run, and a run's definition is not read at
+     * the operational door. Each is the other door's question; nothing was claimed or served.
+     */
+    REPORT_DOOR_MISMATCH(
+            "accounting.ReportDoorMismatch",
+            409,
+            "This report definition is answered at the other door: an operational definition is read live and is never a"
+                    + " report run, and any other is asked as a report run; nothing was claimed or served.");
 
     private final String code;
     private final int status;

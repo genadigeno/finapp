@@ -577,6 +577,41 @@
           }
         }
       },
+      "accounting.ReportDoorMismatch": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.ReportDoorMismatch"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.ReportDoorMismatch"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This report definition is answered at the other door: an operational definition is read live and is never a report run, and any other is asked as a report run; nothing was claimed or served.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.ReportParametersInvalid": {
         "content": {
           "application/problem+json": {
@@ -21278,6 +21313,36 @@
         ],
         "type": "object"
       },
+      "OperationalReportView": {
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "basis": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string"
+          },
+          "definition": {
+            "type": "string"
+          },
+          "definitionVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "OperatorDisputeEvidenceUploadRequest": {
         "properties": {
           "content": {
@@ -32753,6 +32818,41 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AccountingPeriodReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/periods/{periodId}/operational-reports/{definition}": {
+      "get": {
+        "operationId": "readOperationalReport",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "periodId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "definition",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationalReportView"
                 }
               }
             },

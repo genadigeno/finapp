@@ -81,8 +81,13 @@ import org.junit.jupiter.api.Test;
  * else dates into, past every cutoff any suite moves (1999's) - and judges relations that hold whatever else that month
  * holds on a rerun. The version read is the one in force for the month: the reference chart, activated under four eyes
  * when no version is active yet (the {@code GlMappingDatabaseTest} precedent: from the latest month already in force).
+ *
+ * <p><strong>A database of its own</strong> ({@code own-container}; `P14-TSK-017`'s review, I-2): it commits lines straight onto {@code
+ * SETTLEMENT_CLEARING}, which no expectation names and no backfill can adopt, so in the shared container they would fail {@code
+ * ReconciledPositionResidueDatabaseTest#noSuiteLeftAnUnexplainedLine} for good.
  */
 @Tag("database")
+@Tag("own-container") // its own JVM and database: ownContainerDatabaseTest, the javadoc says why
 @DisplayName("the GL read model and drill-down against the journal (P14-TSK-007)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 class GlReadModelDatabaseTest {

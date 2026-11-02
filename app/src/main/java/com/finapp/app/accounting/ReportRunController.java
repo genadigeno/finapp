@@ -27,7 +27,9 @@ import org.springframework.web.bind.annotation.RestController;
  * ({@code IDENTICAL | DIVERGED}) under the same permission; reads a run with its content under {@code ACCOUNTING_READ},
  * every read audited. Every POST keyed per principal ({@code accounting.report-run:<type>:<id>}). The content is
  * {@code CONFIDENTIAL} and served only by the audited read. The handlers' names are distinctive (the springdoc
- * {@code operationId} rule).
+ * {@code operationId} rule). {@code RECONCILIATION_STATUS} and {@code CLOSE_STATUS} are refused here, {@code 409
+ * accounting.ReportDoorMismatch} (`P14-TSK-017`): they read what keeps moving after a lock, so they are never a run, and
+ * {@link OperationalReportController} answers them.
  */
 @RestController
 @RequestMapping(path = "/operator/accounting/report-runs", produces = MediaType.APPLICATION_JSON_VALUE)

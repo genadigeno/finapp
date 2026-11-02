@@ -1488,3 +1488,38 @@ postponement and the unmeasured latency (§9.1 step 2; items 76, PI-004); before
 operations (item 67, §9.1 step 10); the filing alert's literal 30 minutes (item 70, §9.4); the held card payment read
 as stranded by payments' gauge (item 85, §9.5b); the monitoring census's id sets and the unenforced settle horizon
 (items 82, 92, §9.3, §9.11); `RESCREEN_PARTY` never dispatched (item 93, §9.9).)*
+
+## 10. Accounting (Phase 14): the close and its alerts
+
+*Opened by `P14-TSK-017` (2026-11-02) with the one alert the close run's birth stands on. `P14-TSK-020` writes the rest: the close calendar, a lock, a refused posting, a failed
+check, a divergence, a reopen, the first mapping activation.*
+
+### 10.1 A locked period with no close run - `AccountingCloseRunStalled`, `AccountingCloseRunStallUnreadable`
+
+**What it means.** `finapp.accounting.close.run.stalled` is above zero: a period has been `LOCKED` for longer than `finapp.accounting.close.run-stalled-polls` (default 10, never
+under 3) polls of `finapp.accounting.close.checks-poll` (default 30 s: five minutes) and no close run answers its present lock. The ledger's cutoff has moved, so no posting dated in the period
+commits - the lock waits for nothing, by design - but **nothing is judging the books**: the check leg that births the run is not running on any instance. No money is at risk; the close cannot be proposed,
+and the month's readiness is unknown.
+
+**Diagnose.** (1) `finapp.accounting.sweeper.enabled` per instance: `0` everywhere means the schedule is switched off (`finapp.accounting.sweeper.enabled=false`). (2)
+`finapp.accounting.close.leg.failed{leg="checks"}` rising, and the application log's `The accounting close schedule's checks leg failed` with its exception's class: the leg runs and fails. (3) `GET
+/v1/operator/accounting/periods/{periodId}/operational-reports/CLOSE_STATUS` (`ACCOUNTING_READ`): `runState` `STALLED`, with `lockedAt` and `asOf`.
+
+**Act.** Restore the leg - switch the schedule on, or fix what it fails on. Within one poll it births the run and its nine attempts, insert-if-absent, whichever instance gets there first, and the gauge falls
+within 15 s. **Never** insert a run by hand: the edge trigger refuses a run not under the present lock, and an attempt is the check leg's. **Do not unlock** to clear the alert: an unlock is four-eyes, moves the
+cutoff back and answers a different question.
+
+**`AccountingCloseRunStallUnreadable`** is the gauge's read failing for 15 minutes: no value, never a reassuring zero. Whether a close has stalled is then unknown: treat the database's reachability from the
+application first; `CLOSE_STATUS` answers per period meanwhile, or refuses.
+
+### 10.2 An operational report answered `503 accounting.ReadTimedOut`
+
+**What it means.** `GET .../periods/{periodId}/operational-reports/{definition}` served nothing and recorded nothing, for one of two reasons, which the response's detail names. **Its time bound**: the read outlived
+`finapp.accounting.report.operational-timeout` (default 30 s, generation and `statement_timeout` alike). **Its permits**: this instance was already answering `finapp.accounting.report.operational-permits` (default 2)
+of them, and the door refuses the next rather than queue it, because each read holds a connection of the instance's pool (8, a 5 s wait) that postings need. Neither is a defect, and no figure is affected.
+
+**A known limit.** `RECONCILIATION_STATUS` reads every entry posted after the month's cutoff, so its cost grows with the journal and with the age of the month. **A long-past month may no longer answer inside 30 s, and the door then answers 503 honestly**, every time, on every instance.
+That is not a transient to retry. `CLOSE_STATUS` holds no journal read and is not expected to reach it.
+
+**Act.** On a refusal for permits: retry, it is a new answer as of its own instant; another instance may have one free. On the time bound, for a recent month: look for what is slow on the database. For a long-past month: raise `finapp.accounting.report.operational-timeout`
+for an operator's read, and keep the permits low, since the two together are what the door can hold of a pool. Rising refusals are the owner's question of whether these reports should be stored (`P14-TSK-012`'s entry). **Never** raise the permits to or near the pool's size: that is the outage the bound exists to prevent.

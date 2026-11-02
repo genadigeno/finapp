@@ -3,6 +3,7 @@ package com.finapp.app.accounting;
 import com.finapp.accounting.AccountingStorageException;
 import com.finapp.accounting.AccrualCompleteness;
 import com.finapp.accounting.CutoffReaction;
+import com.finapp.accounting.PastTheCutoffPostings;
 import com.finapp.accounting.PostingRule;
 import com.finapp.accounting.PostingRuleRegister;
 import com.finapp.bnpl.BnplAccruals;
@@ -43,7 +44,7 @@ import java.util.stream.Collectors;
  * <p>{@code SELECT} only, on the caller's snapshot; no reference, reason or actor is read. The posting date's own
  * range: {@code journal_entry (posting_date, id)} (ledger {@code V029}).
  */
-public final class LedgerFlooredPostings {
+public final class LedgerFlooredPostings implements PastTheCutoffPostings {
 
     /** Lending's accrual entries' scope - {@code ledger.post:lending.accrual:<loan>:<date>}. */
     static final String LENDING_SCOPE = PostingService.IDEMPOTENCY_SCOPE + ":" + LoanServicing.POSTING_KEY_PREFIX + "%";
@@ -69,6 +70,19 @@ public final class LedgerFlooredPostings {
     static final String BY_NAMESPACE_SQL = "SELECT split_part(entry.idempotency_scope, ':', 2) AS namespace, count(*) AS entries"
             + " FROM ledger.journal_entry entry WHERE entry.posting_date > ? AND entry.value_date <= ?"
             + " AND entry.idempotency_scope LIKE ? GROUP BY 1 ORDER BY 1";
+
+    /**
+     * {@link #BY_NAMESPACE_SQL}'s entries, each told floored or not (`P14-TSK-017`; `P14-TSK-011`'s review, M-2): the ledger names
+     * the stated date on the entry's own audit record ({@code flooredFrom=}, {@code PostingService}), nothing on the journal does.
+     * One probe of {@code audit_record_by_target} per entry; the entries from {@code journal_entry_by_posting_date}.
+     */
+    static final String PAST_THE_CUTOFF_SQL = "SELECT past.namespace, count(*) AS entries,"
+            + " count(*) FILTER (WHERE past.floored) AS floored FROM ("
+            + "SELECT split_part(entry.idempotency_scope, ':', 2) AS namespace, EXISTS (SELECT 1 FROM platform.audit_record audit"
+            + " WHERE audit.target_type = 'journal_entry' AND audit.target_id = entry.id::text"
+            + " AND audit.change_summary LIKE '%flooredFrom=%') AS floored"
+            + " FROM ledger.journal_entry entry WHERE entry.posting_date > ? AND entry.value_date <= ?"
+            + " AND entry.idempotency_scope LIKE ?) past GROUP BY past.namespace ORDER BY past.namespace";
 
     private final Set<String> flooredNamespaces;
 
@@ -129,6 +143,28 @@ public final class LedgerFlooredPostings {
             return counts;
         } catch (SQLException failure) {
             throw failed("reading the floored rules' entries past a cutoff", failure);
+        }
+    }
+
+    @Override
+    public SortedMap<String, PastTheCutoffPostings.Split> pastTheCutoff(Connection snapshot, LocalDate cutoff) {
+        Objects.requireNonNull(cutoff, "cutoff");
+        try (PreparedStatement read = snapshot.prepareStatement(PAST_THE_CUTOFF_SQL)) {
+            read.setDate(1, Date.valueOf(cutoff));
+            read.setDate(2, Date.valueOf(cutoff));
+            read.setString(3, PostingService.IDEMPOTENCY_SCOPE + ":%");
+            SortedMap<String, PastTheCutoffPostings.Split> splits = new TreeMap<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    String namespace = row.getString("namespace");
+                    if (flooredNamespaces.contains(namespace)) {
+                        splits.put(namespace, new PastTheCutoffPostings.Split(row.getLong("entries"), row.getLong("floored")));
+                    }
+                }
+            }
+            return splits;
+        } catch (SQLException failure) {
+            throw failed("reading which entries past a cutoff were floored", failure);
         }
     }
 

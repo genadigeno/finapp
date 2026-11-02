@@ -78,7 +78,12 @@ import org.junit.jupiter.api.Test;
  * the three windows; the opening the previous closing; a wrong range bound caught; a FINAL run regenerating identical
  * under its period's pin; a PROVISIONAL run read at its cut and reused within its freshness window.
  *
- * <p><strong>The books it uses.</strong> Accounting periods are contiguous calendar months shared by every suite, so this
+ * <p><strong>A database of its own</strong> ({@code own-container}; `P14-TSK-017`'s review, I-2): it commits lines straight onto {@code
+ * SETTLEMENT_CLEARING}, which no expectation names and no backfill can adopt, so in the shared container they would fail {@code
+ * ReconciledPositionResidueDatabaseTest#noSuiteLeftAnUnexplainedLine} for good; a run reads them on a snapshot of its own, so they cannot be
+ * rolled back. {@code ValuationRateSetDatabaseTest} calls its helpers, and is tagged for the same reason.
+ *
+ * <p><strong>The books it uses.</strong> Accounting periods are contiguous calendar months, so this
  * one uses only the fixture's <strong>January and February 1999</strong> ({@link AccountingPeriodFixture} - before
  * `P14-TSK-012` builds the close only January can be locked); it posts entries dated 1998-12-15 (the opening's history),
  * 1999-01-01 and 1999-01-31 (the period's boundary days) and 1999-02-01 (the day after), in EUR and BHD, and judges
@@ -88,6 +93,7 @@ import org.junit.jupiter.api.Test;
  * decision C5: the database tiers are skipped per task).
  */
 @Tag("database")
+@Tag("own-container") // its own JVM and database: ownContainerDatabaseTest, the javadoc says why
 @DisplayName("the period trial balance against the database (P14-TSK-009)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 class TrialBalanceRunDatabaseTest {

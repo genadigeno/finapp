@@ -98,9 +98,14 @@ import org.junit.jupiter.api.TestMethodOrder;
  * it: a FINAL translated run pinning January's set - the key to it, the journal untouched, regenerating IDENTICAL - beside
  * the plain run; a PROVISIONAL one at the set an unlock left approved; February refused January's approved set; and a stored
  * figure and rate's text against the journal.
+ *
+ * <p><strong>A database of its own</strong> ({@code own-container}; `P14-TSK-017`'s review, I-2): its translated runs need lines in every
+ * currency, committed straight onto {@code SETTLEMENT_CLEARING}, which no expectation names and no backfill can adopt, so in the shared
+ * container they would fail {@code ReconciledPositionResidueDatabaseTest#noSuiteLeftAnUnexplainedLine} for good.
  * <strong>Written and owed</strong> (owner decision C5: the database tiers are skipped per task).
  */
 @Tag("database")
+@Tag("own-container") // its own JVM and database: ownContainerDatabaseTest, the javadoc says why
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("valuation rate sets against the database (P14-TSK-014)")
 class ValuationRateSetDatabaseTest {

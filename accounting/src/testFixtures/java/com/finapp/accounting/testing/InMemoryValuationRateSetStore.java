@@ -11,6 +11,7 @@ import com.finapp.platform.security.Actor;
 import java.sql.Connection;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +47,14 @@ public final class InMemoryValuationRateSetStore implements ValuationRateSetStor
     @Override
     public List<SetRow> ofPeriod(Connection unitOfWork, AccountingPeriodId period, int limit) {
         return rows.values().stream().filter(row -> row.period().equals(period)).limit(limit).toList();
+    }
+
+    @Override
+    public Map<ValuationRateSetStatus, Long> countByStatus(Connection unitOfWork, AccountingPeriodId period) {
+        Map<ValuationRateSetStatus, Long> counts = new EnumMap<>(ValuationRateSetStatus.class);
+        rows.values().stream().filter(row -> row.period().equals(period))
+                .forEach(row -> counts.merge(row.status(), 1L, Long::sum));
+        return counts;
     }
 
     /** The capture reason stored with the set - held, never served. */

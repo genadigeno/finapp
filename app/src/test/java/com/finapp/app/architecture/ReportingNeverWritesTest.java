@@ -2,11 +2,22 @@ package com.finapp.app.architecture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.accounting.AccountingPeriodId;
+import com.finapp.accounting.AccountingPeriodStore;
+import com.finapp.accounting.CloseRunStore;
+import com.finapp.accounting.CloseStatusReads;
 import com.finapp.accounting.JournalReads;
+import com.finapp.accounting.PastTheCutoffPostings;
 import com.finapp.accounting.PostingCutoff;
 import com.finapp.accounting.PriorPeriodPostings;
+import com.finapp.accounting.ReconciliationDisclosure;
+import com.finapp.accounting.ReconciliationRunCoverage;
 import com.finapp.accounting.RegulatoryReportingProvider;
+import com.finapp.accounting.SuspenseAsOfCutoff;
 import com.finapp.accounting.reporting.GeneralLedger;
+import com.finapp.accounting.reporting.OperationalReportDefinition;
+import com.finapp.accounting.reporting.ReportDefinition;
+import com.finapp.app.lending.LendingReports;
 import com.finapp.ledger.PostingService;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.audit.JdbcAuditWriter;
@@ -49,7 +60,8 @@ import org.junit.jupiter.api.Test;
  *
  * <p><strong>The reach.</strong> From every report class, every {@code accounting} class it depends on and on from
  * those - and, for an accounting interface or abstract class reached, every accounting implementation of it. The reach
- * stays inside {@code accounting}: a port's {@code app} adapter is held by the read-only transaction, not by this rule,
+ * stays inside {@code accounting}: a port's {@code app} adapter is held by the read-only transaction and, by its own accesses, by
+ * {@link #noReportPortAdapterWrites} (`P14-TSK-017`), not by this rule,
  * and the read ports ({@link JournalReads} and its siblings) are the only way out. No class on the reach may
  * <ul>
  *   <li>depend on a {@code com.finapp.ledger} type - the ledger's writers above all ({@code PostingService},
@@ -121,6 +133,23 @@ class ReportingNeverWritesTest {
             "commit", "rollback", "setSavepoint", "releaseSavepoint", "abort", "setSchema", "setCatalog",
             "createStatement", "prepareCall");
 
+    /**
+     * The ports whose answers keep moving after a period's lock (`P14-TSK-017`): a report that reads one is never FINAL. A port
+     * added here is a decision; a new moving read outside it is a reviewer's to catch, and is why a FINAL body's sources are named on
+     * its statement.
+     */
+    static final Set<String> MOVING = Set.of(
+            ReconciliationDisclosure.class.getName(),
+            ReconciliationRunCoverage.class.getName(),
+            PastTheCutoffPostings.class.getName(),
+            CloseStatusReads.class.getName());
+
+    /** The ledger's writers by name - an adapter may read the ledger's tables, and hold none of these. */
+    static final Set<String> LEDGER_WRITERS = Set.of(PostingService.class.getName());
+
+    /** What a report port's adapter may call of a store or of {@code CloseRuns}: reads, on the snapshot it is handed. */
+    static final Set<String> ADAPTER_STORE_READS = Set.of("find", "view", "content", "rates", "approvedFor", "countByStatus");
+
     @ArchTest
     static void noReportingClassReachesAWriter(JavaClasses imported) {
         assertThat(violations(imported, ReportingNeverWritesTest::isReportingClass,
@@ -135,7 +164,8 @@ class ReportingNeverWritesTest {
      * depends on {@code java.util.Currency} or reaches {@link CurrencyCode#minorUnits()}, by a call or a method reference
      * (the review's M-6); scales are the data's own, and the
      * reporting minor unit is {@code Translation.REPORTING_SCALE}, a literal. {@link GeneralLedger} is the one exception, and
-     * it is not a run's content: the live GL doors' zero at a currency's minor unit.
+     * it is not a run's content: the live GL doors' zero at a currency's minor unit - and
+     * {@link #noReportDefinitionReachesTheGeneralLedger} is what makes that so (`P14-TSK-017`).
      */
     @ArchTest
     static void noReportContentReadsTheJdksCurrencyTable(JavaClasses imported) {
@@ -143,6 +173,73 @@ class ReportingNeverWritesTest {
                 && !candidate.getName().equals(GeneralLedger.class.getName())))
                 .as("a report class reading a JDK's currency table (INV-ACC-04)")
                 .isEmpty();
+    }
+
+    /**
+     * <strong>No report definition has a path to {@link GeneralLedger}</strong> (`P14-TSK-017`; `P14-TSK-015`'s review, M-6;
+     * {@code INV-ACC-04}): {@code GeneralLedger.fold} writes {@code GeneralLedger.zero}'s scale - {@code CurrencyCode.minorUnits},
+     * a JDK's table - so a definition calling it would put that scale into FINAL content, and the rule above, which checks a report
+     * class's own accesses and names {@code GeneralLedger} as its exception, would not see it. Here the exception's reach is closed:
+     * from every definition, through every {@code accounting} class it depends on - {@code GlEqualsLedger} folds through it too, and
+     * is no report class - and every accounting implementation of an interface it reaches, by a call or a method reference.
+     */
+    @ArchTest
+    static void noReportDefinitionReachesTheGeneralLedger(JavaClasses imported) {
+        assertThat(definitionsReaching(imported, ReportDefinition.class.getName(), GeneralLedger.class.getName(),
+                candidate -> candidate.getPackageName().startsWith(ACCOUNTING)))
+                .as("a report definition with a path to GeneralLedger (INV-ACC-04, the JDK's scale in FINAL content)")
+                .isEmpty();
+    }
+
+    /**
+     * <strong>What moves after a lock is read only by a report that is never FINAL</strong> (`P14-TSK-017`; {@code INV-ACC-04}): a
+     * report class that is not an {@link OperationalReportDefinition} - nor reached only from one - depends on none of {@link #MOVING}.
+     * {@link SuspenseAsOfCutoff} is not among them: it reads the frozen stamps, and is what a FINAL body has instead.
+     */
+    @ArchTest
+    static void onlyAnOperationalDefinitionReadsWhatMoves(JavaClasses imported) {
+        assertThat(finalReadersOfWhatMoves(imported, ReportingNeverWritesTest::isReportingClass))
+                .as("a FINAL report class reading what keeps moving after a lock (INV-ACC-04)")
+                .isEmpty();
+    }
+
+    /**
+     * <strong>A report port's adapter never writes, and reads no product's reports</strong> (`P14-TSK-017`; {@code INV-ACC-14},
+     * {@code INV-BAL-05}): the reach above stops at {@code accounting}, because a port's {@code app} adapter sees the ledger by design.
+     * So each adapter - every {@code app} class implementing a port report code depends on - is held here, by its own accesses (calls and
+     * method references alike): no JDBC write and no {@code Connection} mutator; no writer type; no {@code com.finapp.lending},
+     * {@code com.finapp.bnpl} or their {@code app} desks, so the portfolio and the exposure cannot be sourced from live rows; and of a
+     * store or {@code CloseRuns}, only the reads {@link #ADAPTER_STORE_READS} names.
+     */
+    @ArchTest
+    static void noReportPortAdapterWrites(JavaClasses imported) {
+        Set<String> adapters = reportPortAdapters(imported, ReportingNeverWritesTest::isReportingClass);
+        assertThat(adapters).as("the census: the adapters this rule is armed over").contains(
+                "com.finapp.app.accounting.LedgerTrialBalanceReads", "com.finapp.app.accounting.LedgerCounterpartyPositionReads",
+                "com.finapp.app.accounting.ReconciliationMonthReads",
+                "com.finapp.app.accounting.AccountingCloseStatusReads", "com.finapp.app.accounting.LedgerFlooredPostings",
+                "com.finapp.app.accounting.ProductReconciliationDisclosure");
+        assertThat(adapterViolations(imported, adapters)).as("a report port's adapter that can write, or reads a product's reports")
+                .isEmpty();
+    }
+
+    /**
+     * <strong>The frozen register ages in its own bands</strong> (`P14-TSK-017`'s review, M-10; {@code INV-ACC-04}): what a FINAL body holds
+     * cannot move with a table it does not own. {@code ReconciliationMonthReads} and its fold depend on no part of {@code
+     * ProductReconciliationDisclosure}, whose table the close's disclosure may change; {@code SuspenseAsOfCutoff.AGEING_BANDS} is {@code
+     * SUSPENSE} version 1's.
+     */
+    @ArchTest
+    static void theFrozenRegisterAgesInItsOwnBands(JavaClasses imported) {
+        String reads = "com.finapp.app.accounting.ReconciliationMonthReads";
+        List<JavaClass> found = imported.stream()
+                .filter(candidate -> candidate.getName().equals(reads) || candidate.getName().startsWith(reads + "$"))
+                .toList();
+        assertThat(found).as("the census: the class and its fold").hasSizeGreaterThanOrEqualTo(2);
+        assertThat(found.stream().flatMap(candidate -> candidate.getDirectDependenciesFromSelf().stream())
+                .map(dependency -> dependency.getTargetClass().getName()))
+                .as("a FINAL body's ageing reading the close disclosure's table (INV-ACC-04)")
+                .doesNotContain("com.finapp.app.accounting.ProductReconciliationDisclosure");
     }
 
     /** The census: the guard sees accounting, every writer it names, and the ledger's writers it refuses by package. */
@@ -258,6 +355,50 @@ class ReportingNeverWritesTest {
     }
 
     @Test
+    @DisplayName("M-6: a definition calling GeneralLedger is refused - directly, by a method reference, through a helper - and one folding its"
+            + " own reads is not (P14-TSK-017)")
+    void aDefinitionReachingTheGeneralLedgerIsRefused() {
+        JavaClasses planted = new ClassFileImporter().importClasses(PlantedDefinition.class, PlantedDefinitionCalling.class,
+                PlantedDefinitionByReference.class, PlantedDefinitionThroughAHelper.class, PlantedReportHelper.class,
+                PlantedDefinitionFoldingItself.class, PlantedLedgerFold.class);
+        assertThat(definitionsReaching(planted, PlantedDefinition.class.getName(), PlantedLedgerFold.class.getName(),
+                candidate -> candidate.getSimpleName().startsWith("Planted")))
+                .hasSize(3)
+                .anySatisfy(found -> assertThat(found).contains("PlantedDefinitionCalling"))
+                .anySatisfy(found -> assertThat(found).contains("PlantedDefinitionByReference"))
+                .anySatisfy(found -> assertThat(found).contains("PlantedDefinitionThroughAHelper"));
+    }
+
+    @Test
+    @DisplayName("a FINAL report class holding a read that moves is refused; an operational definition holding it, and a FINAL one holding the"
+            + " frozen register, are not (P14-TSK-017)")
+    void aFinalReaderOfWhatMovesIsRefused() {
+        JavaClasses planted = new ClassFileImporter().importClasses(PlantedFinalReadingWhatMoves.class,
+                PlantedOperationalReadingWhatMoves.class, PlantedFinalReadingTheFrozenRegister.class,
+                ReconciliationRunCoverage.class, CloseStatusReads.class, SuspenseAsOfCutoff.class,
+                OperationalReportDefinition.class, ReportDefinition.class);
+        assertThat(finalReadersOfWhatMoves(planted, candidate -> candidate.getSimpleName().startsWith("Planted")))
+                .singleElement().asString().contains("PlantedFinalReadingWhatMoves").contains("ReconciliationRunCoverage");
+    }
+
+    @Test
+    @DisplayName("a report port's adapter writing, holding a product's report or calling a store's write is refused - by a call or a method"
+            + " reference; one reading a store's read is not (P14-TSK-017)")
+    void anAdapterThatCanWriteIsRefused() {
+        JavaClasses planted = new ClassFileImporter().importClasses(PlantedPort.class, PlantedPortUser.class,
+                PlantedAdapterUpdating.class, PlantedAdapterByReference.class, PlantedAdapterOnALendingReport.class,
+                PlantedAdapterWritingAStore.class, PlantedAdapterReadingAStore.class, CloseRunStore.class, PreparedStatement.class,
+                LendingReports.class);
+        Set<String> adapters = reportPortAdapters(planted, candidate -> candidate.getSimpleName().equals("PlantedPortUser"));
+        assertThat(adapters).as("every implementor of the port report code depends on").hasSize(5);
+        assertThat(adapterViolations(planted, adapters)).hasSize(4)
+                .anySatisfy(found -> assertThat(found).contains("PlantedAdapterUpdating").contains("executeUpdate"))
+                .anySatisfy(found -> assertThat(found).contains("PlantedAdapterByReference").contains("executeUpdate"))
+                .anySatisfy(found -> assertThat(found).contains("PlantedAdapterOnALendingReport").contains("LendingReports"))
+                .anySatisfy(found -> assertThat(found).contains("PlantedAdapterWritingAStore").contains("insertRunIfAbsent"));
+    }
+
+    @Test
     @DisplayName("a report class that only reads - executeQuery, the journal's read port - is not flagged")
     void aReadingReportClassPasses() {
         assertThat(plantedViolations(PlantedReportReading.class, PreparedStatement.class, JournalReads.class))
@@ -327,6 +468,114 @@ class ReportingNeverWritesTest {
             }
         });
         return readers;
+    }
+
+    /**
+     * Every class implementing {@code definitionType} (and selected by {@code followed}) from which {@code target} is reachable,
+     * through the classes {@code followed} selects and their implementations.
+     */
+    static Set<String> definitionsReaching(JavaClasses classes, String definitionType, String target,
+            Predicate<JavaClass> followed) {
+        Set<String> reaching = new TreeSet<>();
+        classes.stream()
+                .filter(candidate -> !candidate.getName().equals(definitionType) && followed.test(candidate)
+                        && candidate.isAssignableTo(definitionType) && !candidate.isInterface())
+                .forEach(definition -> {
+                    Set<String> reached = new TreeSet<>();
+                    Deque<JavaClass> pending = new ArrayDeque<>(List.of(definition));
+                    while (!pending.isEmpty()) {
+                        JavaClass current = pending.pop();
+                        if (!reached.add(current.getName())) {
+                            continue;
+                        }
+                        // The definition's own interface is no path: from it every other definition is an implementation.
+                        current.getDirectDependenciesFromSelf().stream()
+                                .map(Dependency::getTargetClass)
+                                .filter(next -> !next.getName().equals(definitionType))
+                                .filter(next -> next.getName().equals(target) || followed.test(next))
+                                .forEach(pending::add);
+                        current.getCodeUnitAccessesFromSelf().stream()
+                                .map(access -> access.getTarget().getOwner())
+                                .filter(next -> !next.getName().equals(definitionType))
+                                .filter(next -> next.getName().equals(target) || followed.test(next))
+                                .forEach(pending::add);
+                        if (current.isInterface() || current.getModifiers().contains(JavaModifier.ABSTRACT)) {
+                            current.getAllSubclasses().stream().filter(followed).forEach(pending::add);
+                        }
+                    }
+                    if (reached.contains(target)) {
+                        reaching.add(definition.getName());
+                    }
+                });
+        return reaching;
+    }
+
+    /** Every report class, not an operational definition, that depends on a read that moves. */
+    static Set<String> finalReadersOfWhatMoves(JavaClasses classes, Predicate<JavaClass> reports) {
+        Set<String> readers = new TreeSet<>();
+        classes.stream().filter(reports)
+                .filter(candidate -> !candidate.isAssignableTo(OperationalReportDefinition.class.getName()))
+                .forEach(candidate -> {
+                    List<String> moving = candidate.getDirectDependenciesFromSelf().stream()
+                            .map(dependency -> dependency.getTargetClass().getName())
+                            .filter(MOVING::contains).distinct().sorted().toList();
+                    if (!moving.isEmpty()) {
+                        readers.add(candidate.getName() + " -> " + moving);
+                    }
+                });
+        return readers;
+    }
+
+    /** Every {@code app} class - or, for a planted suite, any class - implementing an interface a report class depends on. */
+    static Set<String> reportPortAdapters(JavaClasses classes, Predicate<JavaClass> reports) {
+        Set<String> adapters = new TreeSet<>();
+        classes.stream().filter(reports).forEach(report -> report.getDirectDependenciesFromSelf().stream()
+                .map(Dependency::getTargetClass)
+                .filter(JavaClass::isInterface)
+                .filter(port -> port.getName().startsWith("com.finapp."))
+                .forEach(port -> port.getAllSubclasses().stream()
+                        .filter(candidate -> !candidate.isInterface())
+                        .filter(candidate -> !candidate.getPackageName().startsWith(ACCOUNTING))
+                        .filter(candidate -> !candidate.isAnonymousClass())
+                        .forEach(adapter -> adapters.add(adapter.getName()))));
+        return adapters;
+    }
+
+    /** What each adapter's own accesses and direct dependencies break of {@link #noReportPortAdapterWrites}. */
+    static Set<String> adapterViolations(JavaClasses classes, Set<String> adapters) {
+        Set<String> violations = new TreeSet<>();
+        for (String name : adapters) {
+            JavaClass adapter = classes.get(name);
+            List<String> forbidden = adapter.getDirectDependenciesFromSelf().stream()
+                    .map(Dependency::getTargetClass)
+                    .filter(target -> WRITERS.contains(target.getName()) || WRITABLE_PATHS.contains(target.getName())
+                            || LEDGER_WRITERS.contains(target.getName()) || isAProductsReport(target))
+                    .map(JavaClass::getName).distinct().sorted().toList();
+            List<String> writes = adapter.getCodeUnitAccessesFromSelf().stream()
+                    .filter(access -> isJdbcWrite(access) || isAStoreWrite(access))
+                    .map(access -> access.getTarget().getOwner().getSimpleName() + "." + access.getName())
+                    .distinct().sorted().toList();
+            if (!forbidden.isEmpty() || !writes.isEmpty()) {
+                violations.add(name + " -> " + forbidden + " " + writes);
+            }
+        }
+        return violations;
+    }
+
+    private static boolean isAProductsReport(JavaClass target) {
+        String pkg = target.getPackageName();
+        return pkg.equals("com.finapp.lending") || pkg.startsWith("com.finapp.lending.")
+                || pkg.equals("com.finapp.bnpl") || pkg.startsWith("com.finapp.bnpl.")
+                || pkg.equals("com.finapp.app.lending") || pkg.startsWith("com.finapp.app.lending.")
+                || pkg.equals("com.finapp.app.bnpl") || pkg.startsWith("com.finapp.app.bnpl.");
+    }
+
+    /** A call on an accounting store or on {@code CloseRuns} that is not one of the reads named. */
+    private static boolean isAStoreWrite(JavaCodeUnitAccess<?> access) {
+        JavaClass owner = access.getTarget().getOwner();
+        boolean store = owner.getPackageName().equals(ACCOUNTING)
+                && (owner.getSimpleName().endsWith("Store") || owner.getSimpleName().equals("CloseRuns"));
+        return store && !ADAPTER_STORE_READS.contains(access.getName());
     }
 
     private static boolean isJdbcWrite(JavaCodeUnitAccess<?> call) {
@@ -445,6 +694,109 @@ class ReportingNeverWritesTest {
     static class PlantedReportCurrencyCode {
         String code(CurrencyCode code) {
             return code.code();
+        }
+    }
+
+    // ------------------------------------------------------------------ P14-TSK-017's planted classes
+
+    /** Stands for {@code ReportDefinition}. */
+    interface PlantedDefinition {}
+
+    /** Stands for {@code GeneralLedger}: the fold a definition must not reach. */
+    static class PlantedLedgerFold {
+        static int fold() {
+            return 1;
+        }
+    }
+
+    /** A definition calling the fold. */
+    static class PlantedDefinitionCalling implements PlantedDefinition {
+        int body() {
+            return PlantedLedgerFold.fold();
+        }
+    }
+
+    /** A definition holding the fold by a method reference - no call in its bytecode. */
+    static class PlantedDefinitionByReference implements PlantedDefinition {
+        java.util.function.IntSupplier body() {
+            return PlantedLedgerFold::fold;
+        }
+    }
+
+    /** A definition one hop from the fold. */
+    static class PlantedDefinitionThroughAHelper implements PlantedDefinition {
+        PlantedReportHelper helper;
+    }
+
+    static class PlantedReportHelper {
+        int body() {
+            return PlantedLedgerFold.fold();
+        }
+    }
+
+    /** A definition folding what it read itself. */
+    static class PlantedDefinitionFoldingItself implements PlantedDefinition {
+        int body() {
+            return 2;
+        }
+    }
+
+    /** A FINAL report class reading the month's runs, which a late batch moves. */
+    static class PlantedFinalReadingWhatMoves implements ReportDefinitionShape {
+        ReconciliationRunCoverage coverage;
+    }
+
+    /** An operational definition may. */
+    abstract static class PlantedOperationalReadingWhatMoves implements OperationalReportDefinition {
+        CloseStatusReads status;
+    }
+
+    /** A FINAL report class reading the frozen register may. */
+    static class PlantedFinalReadingTheFrozenRegister implements ReportDefinitionShape {
+        SuspenseAsOfCutoff register;
+    }
+
+    /** No {@code ReportDefinition}: its abstract methods would only be noise here. */
+    interface ReportDefinitionShape {}
+
+    /** Stands for a report port. */
+    interface PlantedPort {}
+
+    /** Report code depending on the port. */
+    static class PlantedPortUser {
+        PlantedPort port;
+    }
+
+    /** An adapter running an UPDATE. */
+    static class PlantedAdapterUpdating implements PlantedPort {
+        int touch(PreparedStatement statement) throws SQLException {
+            return statement.executeUpdate();
+        }
+    }
+
+    /** An adapter running an UPDATE by a method reference - no call in its bytecode. */
+    static class PlantedAdapterByReference implements PlantedPort {
+        PlantedStatementAct touch() {
+            return PreparedStatement::executeUpdate;
+        }
+    }
+
+    /** An adapter sourcing the loan book from lending's live report. */
+    static class PlantedAdapterOnALendingReport implements PlantedPort {
+        LendingReports reports;
+    }
+
+    /** An adapter calling a store's write. */
+    static class PlantedAdapterWritingAStore implements PlantedPort {
+        boolean touch(CloseRunStore store, Connection connection, CloseRunStore.NewRun run) {
+            return store.insertRunIfAbsent(connection, run);
+        }
+    }
+
+    /** An adapter calling only a read of a store - not flagged. */
+    static class PlantedAdapterReadingAStore implements PlantedPort {
+        Object touch(AccountingPeriodStore store, Connection connection, AccountingPeriodId id) {
+            return store.find(connection, id);
         }
     }
 

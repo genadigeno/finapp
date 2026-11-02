@@ -61,6 +61,11 @@ import lombok.RequiredArgsConstructor;
  * claim refuses it unless the set is the period's approved one ({@link ValuationSetNotApproved}), FINAL or PROVISIONAL,
  * under the period row {@code FOR SHARE}: an approval takes that row {@code FOR UPDATE}, so the read cannot race one, and
  * approved is terminal, so it cannot go stale. A plain run reads no set.
+ *
+ * <p><strong>An operational definition is never a run</strong> (`P14-TSK-017`; ADR-0115 As built): the claim refuses it
+ * first ({@link DefinitionIsOperational}), so no row, no lease and no key exists for it, and {@link OperationalReports}
+ * answers it live. Nothing here changes for any other definition: {@code TRIAL_BALANCE}'s question, key, basis and bytes
+ * are as they were.
  */
 @RequiredArgsConstructor
 public final class ReportRuns implements ReportRunSupersession {
@@ -196,6 +201,18 @@ public final class ReportRuns implements ReportRunSupersession {
         }
     }
 
+    /**
+     * The definition reads what keeps moving after a lock, so it is never a run (`P14-TSK-017`,
+     * {@code OperationalReportDefinition}): it is read at the operational door, and nothing was claimed.
+     */
+    public static final class DefinitionIsOperational extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        DefinitionIsOperational() {
+            super("this report definition is operational: it is never a report run, and is read at its operational door");
+        }
+    }
+
     /** The parameters are not what the definition takes. */
     public static final class ParametersInvalid extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
@@ -246,6 +263,10 @@ public final class ReportRuns implements ReportRunSupersession {
         Objects.requireNonNull(correlation, "correlation");
         requester(actor);
         ReportDefinition definition = definitions.current(code).orElseThrow(DefinitionUnknown::new);
+        // Before anything is read or locked: a definition reading what moves after a lock is never a run (P14-TSK-017).
+        if (definition.operational()) {
+            throw new DefinitionIsOperational();
+        }
         accepts(definition, parameters);
         // A1: the period FOR SHARE - its month frozen from birth, so the unlocked read only names the row.
         YearMonth month = periods.find(unitOfWork, periodId).orElseThrow(AccountingPeriods.PeriodNotFound::new).month();

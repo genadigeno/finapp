@@ -2059,6 +2059,12 @@ class OwnershipIsScopedTest {
                                     "P14-TSK-011. The system's: the id comes only from the run row this transaction locked FOR"
                                         + " UPDATE behind a claim - the platform's books, no owner to scope by.")),
                     Map.entry(
+                            "com.finapp.accounting.JdbcValuationRateSetStore.countByStatus",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-017 (its review, M-11). How many sets of the period CLOSE_STATUS answers for, per status -"
+                                        + " counts only, under ACCOUNTING_READ - platform-wide configuration, no owner to scope by.")),
+                    Map.entry(
                             "com.finapp.accounting.JdbcValuationRateSetStore.ofPeriod",
                             new Entry(
                                     Scope.ADMINISTERED,

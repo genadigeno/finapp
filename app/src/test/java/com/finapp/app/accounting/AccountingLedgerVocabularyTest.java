@@ -2,16 +2,24 @@ package com.finapp.app.accounting;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.accounting.CounterpartyPositionReads;
 import com.finapp.accounting.EntryType;
 import com.finapp.accounting.GlClassification;
+import com.finapp.accounting.TrialBalanceReads;
+import com.finapp.accounting.reporting.PurposeReportDefinition;
+import com.finapp.accounting.reporting.SuspenseDefinition;
+import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AccountType;
 import com.finapp.ledger.JournalEntryType;
 import com.finapp.ledger.NormalBalance;
+import com.finapp.ledger.OwnerKind;
 import com.finapp.platform.telemetry.Spans;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -49,6 +57,87 @@ class AccountingLedgerVocabularyTest {
         assertThat(Arrays.stream(EntryType.values()).map(Enum::name))
                 .as("a rule is keyed by the door that wrote the entry; a type the ledger adds is a door no rule names")
                 .containsExactlyElementsOf(Arrays.stream(JournalEntryType.values()).map(Enum::name).toList());
+    }
+
+    @Test
+    @DisplayName("every purpose a report names is the ledger's, with its own owner kind - a renamed purpose would read an empty row forever"
+            + " (P14-TSK-017)")
+    void theReportsPurposesAreTheLedgers() {
+        for (PurposeReportDefinition definition : reports()) {
+            for (PurposeReportDefinition.Section section : definition.sections()) {
+                assertThat(section.keys()).as("%s %s", definition.code(), section.name()).allSatisfy(key -> {
+                    String[] parts = key.split("/", 2);
+                    assertThat(AccountPurpose.valueOf(parts[0]).ownerKind().name()).as(key).isEqualTo(parts[1]);
+                });
+            }
+        }
+        String[] suspense = SuspenseDefinition.LEDGER_KEY.split("/", 2);
+        assertThat(AccountPurpose.valueOf(suspense[0]).ownerKind().name()).isEqualTo(suspense[1]);
+    }
+
+    /**
+     * The purposes no report's section names, each with why. {@code GL_ACTIVITY} reads every line, these among them, and {@code
+     * P14-TSK-016}'s statements carry them; none is silently absent. A purpose the ledger adds lands in a section or here, by a decision.
+     */
+    private static final Map<String, String> NOT_IN_A_SECTION = Map.of(
+            "DISPUTE_COSTS", "a cost: REVENUE reports income, and the statements carry the expense",
+            "PROCESSING_COSTS", "a cost: REVENUE reports income, and the statements carry the expense",
+            "RECONCILIATION_LOSSES", "a reconciliation's own result: RECONCILIATION_STATUS reports the breaks, and the statements the expense",
+            "RECONCILIATION_GAINS", "a reconciliation's own result, no fee, interest or spread: the statements carry it as other income",
+            "LOAN_WRITE_OFF_EXPENSE", "a credit loss: LOAN_PORTFOLIO is the book's balances, and the statements carry the expense",
+            "BNPL_WRITE_OFF_EXPENSE", "a credit loss: BNPL_EXPOSURE is the book's balances, and the statements carry the expense",
+            "FX_POSITION", "the platform's own currency inventory: a balance, so no FX result, and neither clearing nor cash",
+            "LENDING_CAPITAL", "equity: no report here covers it, and the balance sheet does");
+
+    @Test
+    @DisplayName("M-4, the census: every ledger purpose is in a section of some report - SUSPENSE's among them - or on a named list with its reason,"
+            + " never both, and the list names only what the ledger holds (P14-TSK-017)")
+    void everyPurposeIsReportedOrSaidNotToBe() {
+        Set<String> inASection = new TreeSet<>(Set.of(SuspenseDefinition.LEDGER_KEY));
+        reports().forEach(definition -> inASection.addAll(keys(definition)));
+        for (AccountPurpose purpose : AccountPurpose.values()) {
+            assertThat(inASection.contains(purpose.name() + "/" + purpose.ownerKind().name())
+                    ^ NOT_IN_A_SECTION.containsKey(purpose.name()))
+                    .as("%s is in a section of a report or named as not, and never both", purpose)
+                    .isTrue();
+        }
+        assertThat(NOT_IN_A_SECTION.keySet()).allSatisfy(name -> assertThat(AccountPurpose.valueOf(name)).isNotNull());
+        assertThat(NOT_IN_A_SECTION.values()).allSatisfy(reason -> assertThat(reason).hasSizeGreaterThan(20));
+    }
+
+    @Test
+    @DisplayName("LOAN_PORTFOLIO is every purpose of owner kind LOAN and BNPL_EXPOSURE every one of BNPL_OBLIGATION: a purpose the ledger adds to"
+            + " either book cannot be left out of its restatement (P14-TSK-017)")
+    void theBooksAreWhole() {
+        assertThat(keys(PurposeReportDefinition.loanPortfolio(NO_READS)))
+                .containsExactlyInAnyOrderElementsOf(keysOf(OwnerKind.LOAN));
+        assertThat(keys(PurposeReportDefinition.bnplExposure(NO_READS)))
+                .containsExactlyInAnyOrderElementsOf(keysOf(OwnerKind.BNPL_OBLIGATION));
+    }
+
+    private static final TrialBalanceReads NO_READS = (TrialBalanceReads) java.lang.reflect.Proxy.newProxyInstance(
+            TrialBalanceReads.class.getClassLoader(), new Class<?>[] {TrialBalanceReads.class}, (proxy, method, args) -> {
+                throw new UnsupportedOperationException("the sections are read, not the journal");
+            });
+
+    private static final CounterpartyPositionReads NO_POSITIONS = (CounterpartyPositionReads) java.lang.reflect.Proxy.newProxyInstance(
+            CounterpartyPositionReads.class.getClassLoader(), new Class<?>[] {CounterpartyPositionReads.class}, (proxy, method, args) -> {
+                throw new UnsupportedOperationException("the sections are read, not the journal");
+            });
+
+    private static List<PurposeReportDefinition> reports() {
+        return List.of(PurposeReportDefinition.revenue(NO_READS), PurposeReportDefinition.receivablesPayables(NO_READS),
+                PurposeReportDefinition.settlementPositions(NO_READS, NO_POSITIONS), PurposeReportDefinition.fxResults(NO_READS),
+                PurposeReportDefinition.loanPortfolio(NO_READS), PurposeReportDefinition.bnplExposure(NO_READS));
+    }
+
+    private static List<String> keys(PurposeReportDefinition definition) {
+        return definition.sections().stream().flatMap(section -> section.keys().stream()).toList();
+    }
+
+    private static List<String> keysOf(OwnerKind kind) {
+        return Arrays.stream(AccountPurpose.values()).filter(purpose -> purpose.ownerKind() == kind)
+                .map(purpose -> purpose.name() + "/" + kind.name()).toList();
     }
 
     @Test

@@ -12,7 +12,9 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -29,6 +31,10 @@ public final class JdbcValuationRateSetStore implements ValuationRateSetStore {
     private static final String ROW = "SELECT s.id, s.period_id, p.period_start, s.as_of, s.max_age_hours, s.rate_count,"
             + " s.status, s.captured_by, s.captured_at, s.decided_by, s.decided_at FROM accounting.valuation_rate_set s"
             + " JOIN accounting.accounting_period p ON p.id = s.period_id";
+
+    /** A period's sets per status - no bound: the database counts them all. */
+    static final String COUNT_BY_STATUS_SQL = "SELECT status, count(*) FROM accounting.valuation_rate_set WHERE period_id = ?"
+            + " GROUP BY status";
 
     @Override
     public void insert(Connection unitOfWork, NewSet set) {
@@ -102,6 +108,22 @@ public final class JdbcValuationRateSetStore implements ValuationRateSetStore {
             return sets;
         } catch (SQLException failure) {
             throw failed("reading a period's valuation rate sets", failure);
+        }
+    }
+
+    @Override
+    public Map<ValuationRateSetStatus, Long> countByStatus(Connection unitOfWork, AccountingPeriodId period) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(COUNT_BY_STATUS_SQL)) {
+            read.setObject(1, period.value());
+            Map<ValuationRateSetStatus, Long> counts = new EnumMap<>(ValuationRateSetStatus.class);
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    counts.put(ValuationRateSetStatus.valueOf(row.getString(1)), row.getLong(2));
+                }
+            }
+            return counts;
+        } catch (SQLException failure) {
+            throw failed("counting a period's valuation rate sets", failure);
         }
     }
 
