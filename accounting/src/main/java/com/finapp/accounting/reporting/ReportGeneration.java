@@ -41,6 +41,9 @@ public final class ReportGeneration {
     /** The content's largest size in UTF-8 - {@code accounting V004}'s {@code report_run_content_bounded}. */
     public static final int MAX_CONTENT_BYTES = 8 * 1024 * 1024;
 
+    /** The label an operational definition's content carries for its {@code basis} - never a run's (`P14-TSK-017`). */
+    public static final String OPERATIONAL = "OPERATIONAL";
+
     /** The period, read in the snapshot - the lock instance's re-read. */
     static final String PERIOD_SQL = "SELECT status, locked_at FROM accounting.accounting_period WHERE id = ?";
 
@@ -140,6 +143,10 @@ public final class ReportGeneration {
         Objects.requireNonNull(snapshot, "snapshot");
         Objects.requireNonNull(definition, "definition");
         Objects.requireNonNull(inputs, "inputs");
+        // Never a FINAL body of what keeps moving (P14-TSK-017): ReportRuns refuses the run; this holds the second door.
+        if (definition.operational() && inputs.basis() == RunBasis.FINAL) {
+            throw new IllegalArgumentException("an operational report is never generated FINAL");
+        }
         ReadOnlySnapshot view = new ReadOnlySnapshot(snapshot, budget, ticker);
         CanonicalJson.Obj body;
         try {
@@ -181,7 +188,7 @@ public final class ReportGeneration {
                 .put("definitionVersion", definition.version())
                 .put("period", inputs.period().toString())
                 .put("periodRevision", inputs.periodRevision())
-                .put("basis", inputs.basis().name())
+                .put("basis", definition.operational() ? OPERATIONAL : inputs.basis().name())
                 .put("parameters", inputs.parameters().asValue());
         if (inputs.mappingVersion().isPresent()) {
             header.put("mappingVersion", inputs.mappingVersion().get());

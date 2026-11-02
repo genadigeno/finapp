@@ -75,6 +75,16 @@ public final class JdbcCloseRunStore implements CloseRunStore {
             + " WHERE period.status = 'LOCKED' AND NOT EXISTS (SELECT 1 FROM accounting.close_run run"
             + " WHERE run.period_id = period.id AND run.period_locked_at = period.locked_at) ORDER BY period.period_start";
 
+    /**
+     * The periods locked past the bound under a lock no run answers (`P14-TSK-017`): {@code locked_at} is the database's
+     * clock by {@code accounting V003}'s trigger and the bound is measured on the same clock, so no instance's clock enters.
+     */
+    static final String STALLED_LOCKS_SQL = "SELECT count(*) FROM accounting.accounting_period period"
+            + " WHERE period.status = 'LOCKED'"
+            + " AND period.locked_at <= clock_timestamp() - ? * interval '1 millisecond'"
+            + " AND NOT EXISTS (SELECT 1 FROM accounting.close_run run"
+            + " WHERE run.period_id = period.id AND run.period_locked_at = period.locked_at)";
+
     static final String INSERT_RUN_SQL = "INSERT INTO accounting.close_run (id, period_id, period_locked_at, period_revision,"
             + " started_at, correlation_id) VALUES (?, ?, ?, ?, clock_timestamp(), ?)"
             + " ON CONFLICT ON CONSTRAINT close_run_one_per_lock DO NOTHING";
@@ -108,6 +118,19 @@ public final class JdbcCloseRunStore implements CloseRunStore {
             return periods;
         } catch (SQLException failure) {
             throw failed("reading the periods locked without a close run", failure);
+        }
+    }
+
+    @Override
+    public long stalledLocks(Connection unitOfWork, Duration bound) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(STALLED_LOCKS_SQL)) {
+            read.setLong(1, bound.toMillis());
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        } catch (SQLException failure) {
+            throw failed("reading the locks past their bound with no close run", failure);
         }
     }
 

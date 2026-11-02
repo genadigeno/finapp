@@ -525,6 +525,8 @@ class OpenApiContractTest {
                         // P14-TSK-011: the close run - read (ACCOUNTING_READ, audited), a check's re-run
                         // (ACCOUNTING_CLOSE_PROPOSE, keyed).
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/close-run",
+                        // P14-TSK-017: the two reports that are never a run, read live (ACCOUNTING_READ, audited).
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/operational-reports/{definition}",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/close-run/checks/{check}/rerun",
                         // P14-TSK-010: the accounting breaks - listed (ACCOUNTING_READ), one read by the controller,
                         // the acknowledgement proposed (ACCOUNTING_ADJUST_PROPOSE) and approved, the resolution by

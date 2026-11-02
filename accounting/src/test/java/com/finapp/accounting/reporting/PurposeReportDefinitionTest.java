@@ -1,0 +1,367 @@
+package com.finapp.accounting.reporting;
+
+import static com.finapp.accounting.testing.ReportBodies.isNull;
+import static com.finapp.accounting.testing.ReportBodies.minor;
+import static com.finapp.accounting.testing.ReportBodies.object;
+import static com.finapp.accounting.testing.ReportBodies.objects;
+import static com.finapp.accounting.testing.ReportBodies.row;
+import static com.finapp.accounting.testing.ReportBodies.scale;
+import static com.finapp.accounting.testing.ReportBodies.section;
+import static com.finapp.accounting.testing.ReportBodies.text;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.finapp.accounting.AccountingPeriodId;
+import com.finapp.accounting.GlMappingVersion;
+import com.finapp.accounting.GlMappingVersionId;
+import com.finapp.accounting.JournalReads;
+import com.finapp.accounting.PeriodStatus;
+import com.finapp.accounting.ReportKind;
+import com.finapp.accounting.RunBasis;
+import com.finapp.accounting.Side;
+import com.finapp.accounting.TrialBalanceReads;
+import com.finapp.accounting.testing.InMemoryTrialBalanceReads;
+import com.finapp.accounting.testing.ReferenceGlMapping;
+import com.finapp.sharedkernel.id.IdGenerator;
+import java.lang.reflect.Proxy;
+import java.math.BigInteger;
+import java.security.SecureRandom;
+import java.sql.Connection;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+/**
+ * The six reports that are the journal's figures by purpose (`P14-TSK-017`; {@code INV-ACC-02}, {@code INV-ACC-04},
+ * {@code INV-BAL-05}, {@code INV-MON-01}): each figure equal to an independent fold over the same journal lines, per purpose and
+ * currency; nothing across currencies; sums past {@code long}; the data's scale, never a JDK's; the period's pin and the PROVISIONAL
+ * cut; and byte-identical whatever order the reads serve. The SQL's own behaviour against a real journal is {@code
+ * OperationalReportsDatabaseTest}'s (owed, C5).
+ */
+@DisplayName("the reports by purpose (P14-TSK-017)")
+class PurposeReportDefinitionTest {
+
+    private static final IdGenerator IDS = new IdGenerator(Clock.systemUTC(), new SecureRandom());
+    private static final Connection SNAPSHOT = (Connection) Proxy.newProxyInstance(
+            PurposeReportDefinitionTest.class.getClassLoader(), new Class<?>[] {Connection.class},
+            (proxy, method, args) -> {
+                throw new UnsupportedOperationException("a report reads only through its port");
+            });
+    private static final YearMonth MONTH = YearMonth.of(2097, 6);
+    private static final Instant CUT = Instant.parse("2097-06-20T10:00:00Z");
+    private static final Instant EARLY = Instant.parse("2097-06-01T00:00:00Z");
+    private static final GlMappingVersion VERSION = ReferenceGlMapping.version(YearMonth.of(2097, 1));
+    private static final String CASH = "CASH_AT_BANK/OPERATIONAL";
+    private static final String LOAN_PRINCIPAL = "LOAN_PRINCIPAL/LOAN";
+    private static final String FEES = "FEE_REVENUE/OPERATIONAL";
+
+    private static final Map<String, Function<TrialBalanceReads, PurposeReportDefinition>> SIX = Map.of(
+            "REVENUE", PurposeReportDefinition::revenue,
+            "RECEIVABLES_PAYABLES", PurposeReportDefinition::receivablesPayables,
+            "SETTLEMENT_POSITIONS", PurposeReportDefinition::settlementPositions,
+            "FX_RESULTS", PurposeReportDefinition::fxResults,
+            "LOAN_PORTFOLIO", PurposeReportDefinition::loanPortfolio,
+            "BNPL_EXPOSURE", PurposeReportDefinition::bnplExposure);
+
+    private final AccountingPeriodId periodId = AccountingPeriodId.next(IDS);
+    private final GlMappingVersionId pinned = GlMappingVersionId.next(IDS);
+
+    @Test
+    @DisplayName("the six: each its ReportKind's name, version 1, no parameter, no rate set, FINAL by default - its statement written")
+    void theSix() {
+        InMemoryTrialBalanceReads reads = books();
+        SIX.forEach((code, factory) -> {
+            PurposeReportDefinition definition = factory.apply(reads);
+            assertThat(definition.code()).isEqualTo(ReportKind.valueOf(code).name());
+            assertThat(definition.version()).isEqualTo(1);
+            assertThat(definition.parameterNames()).isEmpty();
+            assertThat(definition.takesValuationRateSet()).as("%s translates nothing the owner has not settled", code).isFalse();
+            assertThat(definition.operational()).as("%s is FINAL for a locked period", code).isFalse();
+            assertThat(CanonicalJson.text(definition.generate(SNAPSHOT, inputs(RunBasis.FINAL))))
+                    .contains(CanonicalJson.text(definition.statement().asValue()));
+        });
+    }
+
+    @Test
+    @DisplayName("every figure equals the ledger by purpose: for each report, each section's every key, each currency - the opening,"
+            + " the debits, the credits and the closing equal an independent fold over the same journal lines")
+    void everyFigureEqualsTheLedgerByPurpose() {
+        SIX.forEach((code, factory) -> {
+            InMemoryTrialBalanceReads reads = books();
+            for (PurposeReportDefinition.Section section : factory.apply(reads).sections()) {
+                for (String key : section.keys()) {
+                    // A line each way, before and inside the month and after it, in two currencies at their own scales.
+                    reads.post(MONTH.atDay(1).minusDays(1), EARLY, "EUR", 2, 1_000, key, CASH);
+                    reads.post(MONTH.atDay(1), EARLY, "EUR", 2, 200, key, CASH);
+                    reads.post(MONTH.atEndOfMonth(), EARLY, "EUR", 2, 30, CASH, key);
+                    reads.post(MONTH.atEndOfMonth().plusDays(1), EARLY, "EUR", 2, 7, key, CASH);
+                    reads.post(MONTH.atDay(9), EARLY, "BHD", 3, 12_345, key, CASH);
+                }
+            }
+            PurposeReportDefinition definition = factory.apply(reads);
+            CanonicalJson.Obj body = definition.generate(SNAPSHOT, inputs(RunBasis.FINAL));
+            for (PurposeReportDefinition.Section section : definition.sections()) {
+                for (String key : section.keys()) {
+                    String purpose = key.substring(0, key.indexOf('/'));
+                    for (String currency : List.of("EUR", "BHD")) {
+                        Figures oracle = oracle(reads, key, currency);
+                        CanonicalJson.Obj written = row(body, purpose, currency).orElseThrow();
+                        assertThat(text(written, "ownerKind")).isEqualTo(key.substring(key.indexOf('/') + 1));
+                        assertThat(minor(written, "debits")).as("%s %s %s debits", code, key, currency)
+                                .isEqualTo(oracle.debits);
+                        assertThat(minor(written, "credits")).as("%s %s %s credits", code, key, currency)
+                                .isEqualTo(oracle.credits);
+                        if (definition.window() == PurposeReportDefinition.Window.BALANCES) {
+                            assertThat(minor(written, "opening")).as("%s %s %s opening", code, key, currency)
+                                    .isEqualTo(oracle.opening);
+                            assertThat(minor(written, "closing")).as("%s %s %s closing", code, key, currency)
+                                    .isEqualTo(oracle.opening.add(oracle.debits).subtract(oracle.credits));
+                        } else {
+                            assertThat(written.members()).doesNotContainKey("opening").doesNotContainKey("closing");
+                            assertThat(minor(written, "net")).isEqualTo(oracle.debits.subtract(oracle.credits));
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    @Test
+    @DisplayName("a purpose outside the report is no row of it, and none of its lines is in a figure")
+    void aPurposeOutsideIsNoRow() {
+        InMemoryTrialBalanceReads reads = books();
+        reads.post(MONTH.atDay(3), EARLY, "EUR", 2, 500, LOAN_PRINCIPAL, CASH);
+        CanonicalJson.Obj portfolio = PurposeReportDefinition.loanPortfolio(reads).generate(SNAPSHOT, inputs(RunBasis.FINAL));
+        assertThat(row(portfolio, "CASH_AT_BANK", "EUR")).isEmpty();
+        assertThat(row(portfolio, "LOAN_PRINCIPAL", "EUR")).isPresent();
+        CanonicalJson.Obj revenue = PurposeReportDefinition.revenue(reads).generate(SNAPSHOT, inputs(RunBasis.FINAL));
+        assertThat(objects(section(revenue, "FEE"), "rows")).isEmpty();
+        assertThat(objects(section(revenue, "FEE"), "totals")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("never across currencies: a section's totals are per currency, each at its own scale, and no amount crosses")
+    void neverAcrossCurrencies() {
+        InMemoryTrialBalanceReads reads = books();
+        reads.post(MONTH.atDay(3), EARLY, "EUR", 2, 100, LOAN_PRINCIPAL, CASH);
+        reads.post(MONTH.atDay(4), EARLY, "EUR", 2, 50, "LOAN_PRINCIPAL_DUE/LOAN", CASH);
+        reads.post(MONTH.atDay(3), EARLY, "BHD", 3, 7_000, LOAN_PRINCIPAL, CASH);
+        CanonicalJson.Obj body = PurposeReportDefinition.loanPortfolio(reads).generate(SNAPSHOT, inputs(RunBasis.FINAL));
+        List<CanonicalJson.Obj> totals = objects(section(body, "PRINCIPAL"), "totals");
+        assertThat(totals).extracting(total -> text(total, "currency")).containsExactly("BHD", "EUR");
+        assertThat(minor(totals.get(0), "closing")).isEqualTo(BigInteger.valueOf(7_000));
+        assertThat(scale(totals.get(0), "closing")).isEqualTo(3);
+        assertThat(minor(totals.get(1), "closing")).isEqualTo(BigInteger.valueOf(150));
+        assertThat(scale(totals.get(1), "closing")).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("past long: a position beyond Long.MAX_VALUE in minor units is written exactly")
+    void pastLong() {
+        InMemoryTrialBalanceReads reads = books();
+        reads.post(MONTH.atDay(1).minusDays(2), EARLY, "EUR", 2, Long.MAX_VALUE, LOAN_PRINCIPAL, CASH);
+        reads.post(MONTH.atDay(1).minusDays(1), EARLY, "EUR", 2, Long.MAX_VALUE, LOAN_PRINCIPAL, CASH);
+        reads.post(MONTH.atDay(1), EARLY, "EUR", 2, 5, LOAN_PRINCIPAL, CASH);
+        CanonicalJson.Obj body = PurposeReportDefinition.loanPortfolio(reads).generate(SNAPSHOT, inputs(RunBasis.FINAL));
+        BigInteger twice = BigInteger.valueOf(Long.MAX_VALUE).multiply(BigInteger.TWO);
+        assertThat(minor(row(body, "LOAN_PRINCIPAL", "EUR").orElseThrow(), "opening")).isEqualTo(twice);
+        assertThat(minor(row(body, "LOAN_PRINCIPAL", "EUR").orElseThrow(), "closing")).isEqualTo(twice.add(BigInteger.valueOf(5)));
+    }
+
+    @Test
+    @DisplayName("the data's scale, never the JDK's (P14-TSK-015's review, M-6): JPY held at 2 is written at 2, one scale per currency,"
+            + " a currency held at two scales at the larger, exactly")
+    void theDatasScale() {
+        InMemoryTrialBalanceReads reads = books();
+        reads.post(MONTH.atDay(3), EARLY, "JPY", 2, 1_50, LOAN_PRINCIPAL, CASH);
+        reads.post(MONTH.atDay(3), EARLY, "EUR", 2, 1_50, LOAN_PRINCIPAL, CASH);
+        reads.post(MONTH.atDay(4), EARLY, "EUR", 3, 1_005, "LOAN_FEES_DUE/LOAN", CASH);
+        CanonicalJson.Obj body = PurposeReportDefinition.loanPortfolio(reads).generate(SNAPSHOT, inputs(RunBasis.FINAL));
+        assertThat(scale(row(body, "LOAN_PRINCIPAL", "JPY").orElseThrow(), "closing")).isEqualTo(2);
+        assertThat(minor(row(body, "LOAN_PRINCIPAL", "EUR").orElseThrow(), "closing")).as("150 at scale 2 reads 1500 at 3")
+                .isEqualTo(BigInteger.valueOf(1_500));
+        assertThat(scale(row(body, "LOAN_FEES_DUE", "EUR").orElseThrow(), "closing")).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("the pin: a FINAL run under another version is refused before anything is read; each row names the GL account the pinned"
+            + " version maps it to; no version, no account - never a guess")
+    void thePin() {
+        InMemoryTrialBalanceReads reads = books();
+        reads.post(MONTH.atDay(3), EARLY, "EUR", 2, 100, LOAN_PRINCIPAL, CASH);
+        PurposeReportDefinition definition = PurposeReportDefinition.loanPortfolio(reads);
+        assertThat(text(row(definition.generate(SNAPSHOT, inputs(RunBasis.FINAL)), "LOAN_PRINCIPAL", "EUR").orElseThrow(),
+                "glAccount")).isEqualTo("1300");
+        GlMappingVersionId other = GlMappingVersionId.next(IDS);
+        reads.version(other, VERSION);
+        assertThatThrownBy(() -> definition.generate(SNAPSHOT, new ReportInputs(periodId, MONTH, 1, RunBasis.FINAL,
+                Optional.of(CUT), Optional.of(other), Optional.of(2), CUT, RunParameters.none())))
+                .isInstanceOf(TrialBalanceDefinition.PinMismatch.class);
+
+        InMemoryTrialBalanceReads unpinned = new InMemoryTrialBalanceReads().period(new TrialBalanceReads.Period(periodId,
+                MONTH.atDay(1), MONTH.atEndOfMonth(), PeriodStatus.LOCKED, Optional.empty()));
+        unpinned.post(MONTH.atDay(3), EARLY, "EUR", 2, 100, LOAN_PRINCIPAL, CASH);
+        CanonicalJson.Obj body = PurposeReportDefinition.loanPortfolio(unpinned).generate(SNAPSHOT, new ReportInputs(periodId,
+                MONTH, 1, RunBasis.FINAL, Optional.of(CUT), Optional.empty(), Optional.empty(), CUT, RunParameters.none()));
+        assertThat(isNull(row(body, "LOAN_PRINCIPAL", "EUR").orElseThrow(), "glAccount")).isTrue();
+    }
+
+    @Test
+    @DisplayName("the cut: a PROVISIONAL run counts only entries created at or before its claim, opening and movement alike; a FINAL run"
+            + " counts every entry")
+    void theCut() {
+        InMemoryTrialBalanceReads reads = books();
+        reads.post(MONTH.atDay(3), CUT, "EUR", 2, 100, LOAN_PRINCIPAL, CASH);
+        reads.post(MONTH.atDay(3), CUT.plusSeconds(1), "EUR", 2, 40, LOAN_PRINCIPAL, CASH);
+        reads.post(MONTH.atDay(1).minusDays(1), CUT.plusSeconds(1), "EUR", 2, 9, LOAN_PRINCIPAL, CASH);
+        PurposeReportDefinition definition = PurposeReportDefinition.loanPortfolio(reads);
+        CanonicalJson.Obj provisional = row(definition.generate(SNAPSHOT, inputs(RunBasis.PROVISIONAL)), "LOAN_PRINCIPAL", "EUR")
+                .orElseThrow();
+        assertThat(minor(provisional, "debits")).isEqualTo(BigInteger.valueOf(100));
+        assertThat(minor(provisional, "opening")).isEqualTo(BigInteger.ZERO);
+        CanonicalJson.Obj whole = row(definition.generate(SNAPSHOT, inputs(RunBasis.FINAL)), "LOAN_PRINCIPAL", "EUR").orElseThrow();
+        assertThat(minor(whole, "debits")).isEqualTo(BigInteger.valueOf(140));
+        assertThat(minor(whole, "opening")).isEqualTo(BigInteger.valueOf(9));
+    }
+
+    @Test
+    @DisplayName("INV-ACC-04: byte-identical whatever order the journal serves, for every report - no iteration order the code does not fix")
+    void regeneratesByteIdentical() {
+        SIX.forEach((code, factory) -> {
+            InMemoryTrialBalanceReads forward = books();
+            InMemoryTrialBalanceReads backward = books();
+            List<String> keys = factory.apply(forward).sections().stream().flatMap(section -> section.keys().stream()).toList();
+            for (int i = 0; i < keys.size(); i++) {
+                forward.post(MONTH.atDay(1 + i), EARLY, "EUR", 2, 100L + i, keys.get(i), CASH);
+                forward.post(MONTH.atDay(1 + i), EARLY, "USD", 2, 300L + i, CASH, keys.get(i));
+            }
+            for (int i = keys.size() - 1; i >= 0; i--) {
+                backward.post(MONTH.atDay(1 + i), EARLY, "USD", 2, 300L + i, CASH, keys.get(i));
+                backward.post(MONTH.atDay(1 + i), EARLY, "EUR", 2, 100L + i, keys.get(i), CASH);
+            }
+            assertThat(CanonicalJson.text(factory.apply(forward).generate(SNAPSHOT, inputs(RunBasis.FINAL))))
+                    .as(code)
+                    .isEqualTo(CanonicalJson.text(factory.apply(backward).generate(SNAPSHOT, inputs(RunBasis.FINAL))));
+        });
+    }
+
+    @Test
+    @DisplayName("a movement report never reads from inception - revenue and FX results are bounded by the month; a balance report is what"
+            + " pays for the opening")
+    void aMovementReportReadsNoOpening() {
+        CountingReads counting = new CountingReads(books());
+        PurposeReportDefinition.revenue(counting).generate(SNAPSHOT, inputs(RunBasis.FINAL));
+        PurposeReportDefinition.fxResults(counting).generate(SNAPSHOT, inputs(RunBasis.FINAL));
+        assertThat(counting.befores).isZero();
+        PurposeReportDefinition.loanPortfolio(counting).generate(SNAPSHOT, inputs(RunBasis.FINAL));
+        assertThat(counting.befores).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the shape of the sections: a purpose in two sections of one report is refused - it would be counted twice")
+    void aPurposeIsInOneSection() {
+        ReportStatement statement = PurposeReportDefinition.statement("a rule stated at length", PurposeReportDefinition.Window.MOVEMENT);
+        assertThatThrownBy(() -> new PurposeReportDefinition("TEST_REPORT", PurposeReportDefinition.Window.MOVEMENT, List.of(
+                new PurposeReportDefinition.Section("A", List.of(FEES)),
+                new PurposeReportDefinition.Section("B", List.of(FEES))), statement, books()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("what a body holds: the sign, the window, the two ranges - and no loan, customer, merchant, line or name; aggregates only")
+    void whatABodyHolds() {
+        InMemoryTrialBalanceReads reads = books();
+        reads.post(MONTH.atDay(3), EARLY, "EUR", 2, 100, LOAN_PRINCIPAL, CASH);
+        CanonicalJson.Obj body = PurposeReportDefinition.loanPortfolio(reads).generate(SNAPSHOT, inputs(RunBasis.FINAL));
+        assertThat(text(body, "sign")).isEqualTo(TrialBalance.SIGN);
+        assertThat(text(body, "window")).isEqualTo("BALANCES");
+        assertThat(text(object(body, "range"), "from")).isEqualTo("2097-06-01");
+        assertThat(text(object(body, "periodBounds"), "through")).isEqualTo("2097-06-30");
+        assertThat(row(body, "LOAN_PRINCIPAL", "EUR").orElseThrow().members().keySet()).containsExactlyInAnyOrder("purpose",
+                "ownerKind", "currency", "glAccount", "opening", "debits", "credits", "closing", "lines");
+    }
+
+    // -----------------------------------------------------------------
+
+    private InMemoryTrialBalanceReads books() {
+        return new InMemoryTrialBalanceReads()
+                .period(new TrialBalanceReads.Period(periodId, MONTH.atDay(1), MONTH.atEndOfMonth(), PeriodStatus.LOCKED,
+                        Optional.of(pinned)))
+                .version(pinned, VERSION);
+    }
+
+    private ReportInputs inputs(RunBasis basis) {
+        return new ReportInputs(periodId, MONTH, 1, basis, basis == RunBasis.FINAL ? Optional.of(CUT) : Optional.empty(),
+                Optional.of(pinned), Optional.of(1), CUT, RunParameters.none());
+    }
+
+    /** The independent fold: over the journal's lines themselves, no aggregate, no report code. */
+    private static Figures oracle(InMemoryTrialBalanceReads reads, String key, String currency) {
+        Figures figures = new Figures();
+        LocalDate first = MONTH.atDay(1);
+        LocalDate last = MONTH.atEndOfMonth();
+        for (InMemoryTrialBalanceReads.JournalLine line : reads.lines()) {
+            if (!line.key().equals(key) || !line.currency().equals(currency) || line.postingDate().isAfter(last)) {
+                continue;
+            }
+            BigInteger amount = BigInteger.valueOf(line.minorUnits());
+            if (line.postingDate().isBefore(first)) {
+                figures.opening = line.side() == Side.DEBIT ? figures.opening.add(amount) : figures.opening.subtract(amount);
+            } else if (line.side() == Side.DEBIT) {
+                figures.debits = figures.debits.add(amount);
+            } else {
+                figures.credits = figures.credits.add(amount);
+            }
+        }
+        return figures;
+    }
+
+    private static final class Figures {
+        private BigInteger opening = BigInteger.ZERO;
+        private BigInteger debits = BigInteger.ZERO;
+        private BigInteger credits = BigInteger.ZERO;
+    }
+
+    /** The reads, counting how often a report pays for the walk from inception. */
+    private static final class CountingReads implements TrialBalanceReads {
+        private final TrialBalanceReads reads;
+        private int befores;
+
+        CountingReads(TrialBalanceReads reads) {
+            this.reads = reads;
+        }
+
+        @Override
+        public Optional<Period> period(Connection snapshot, AccountingPeriodId id) {
+            return reads.period(snapshot, id);
+        }
+
+        @Override
+        public GlMappingVersion version(Connection snapshot, GlMappingVersionId id) {
+            return reads.version(snapshot, id);
+        }
+
+        @Override
+        public List<JournalReads.Aggregate> before(Connection snapshot, LocalDate before, Optional<Instant> cut) {
+            befores++;
+            return reads.before(snapshot, before, cut);
+        }
+
+        @Override
+        public List<JournalReads.Aggregate> within(Connection snapshot, JournalReads.Range range, Optional<Instant> cut) {
+            return reads.within(snapshot, range, cut);
+        }
+
+        @Override
+        public List<LedgerWindows> ledger(Connection snapshot, Period period, Optional<Instant> cut) {
+            return reads.ledger(snapshot, period, cut);
+        }
+    }
+}

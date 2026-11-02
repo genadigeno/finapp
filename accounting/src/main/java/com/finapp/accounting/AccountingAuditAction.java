@@ -247,6 +247,17 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " answer, so nothing is served unrecorded; a period with no run records nothing. Its target the run;"
                     + " the summary the period, whether the run answers the present lock and whether it is complete -"
                     + " never evidence or a figure.",
+            false),
+
+    /** An operator read an operational report (`P14-TSK-017`, ACCOUNTING_READ) - every serving recorded. */
+    OPERATIONAL_REPORT_READ(
+            "accounting.OperationalReportRead",
+            "An accountant read an operational report - RECONCILIATION_STATUS or CLOSE_STATUS, CONFIDENTIAL aggregates and"
+                    + " codes generated on a read-only snapshot and stored nowhere (P14-TSK-017, ADR-0115 As built; GET"
+                    + " /v1/operator/accounting/periods/{periodId}/operational-reports/{definition}, ACCOUNTING_READ; the"
+                    + " ReportRead and CloseRunRead precedent). Recorded SUCCEEDED in a transaction of its own before the"
+                    + " answer, so nothing is served unrecorded. Its target the period; the summary the definition, its"
+                    + " version, the month and the content's sha256 - never the content or a figure.",
             false);
 
     private final String code;

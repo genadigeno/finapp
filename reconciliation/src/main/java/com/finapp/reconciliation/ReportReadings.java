@@ -90,6 +90,16 @@ public interface ReportReadings {
     void eachSuspenseItemAsOf(
             Connection unitOfWork, LocalDate openedThrough, Instant asOf, Consumer<SuspenseAsOfLine> visitor);
 
+    /**
+     * As {@link #eachSuspenseItemAsOf}, narrowed to the items that provably existed at {@code asOf}: their owning break was
+     * raised before it (`P14-TSK-017`; {@code INV-ACC-04}). An adopted parking's {@code opened_on} is its entry's posting date
+     * (ADR-0070 §2), so an adoption after {@code asOf} joins {@link #eachSuspenseItemAsOf}'s answer dated before it; the owner's
+     * {@code raised_at} is frozen and stamped at the adoption, so here it does not. For an instant far enough in the past that no
+     * transaction straddles it, this answer never changes: what a report that must regenerate byte for byte reads.
+     */
+    void eachSuspenseItemBornAsOf(
+            Connection unitOfWork, LocalDate openedThrough, Instant asOf, Consumer<SuspenseAsOfLine> visitor);
+
     // ----------------------------------------------------------------- unexplained value
 
     /**
@@ -219,6 +229,27 @@ public interface ReportReadings {
             Objects.requireNonNull(offset, "offset must not be null");
         }
     }
+
+    /**
+     * The runs of one source, kind, status and business date, and how many (`P14-TSK-017`): a count, never a run's identity, its
+     * rule set, requester or reason. A {@code BATCH} run is born in its acceptance's transaction, so it counts acceptances; a later
+     * repudiation leaves it standing.
+     */
+    record RunLine(UUID sourceId, RunKind kind, RunStatus status, LocalDate businessDate, long runs) {
+
+        public RunLine {
+            Objects.requireNonNull(sourceId, "sourceId must not be null");
+            Objects.requireNonNull(kind, "kind must not be null");
+            Objects.requireNonNull(status, "status must not be null");
+            Objects.requireNonNull(businessDate, "businessDate must not be null");
+        }
+    }
+
+    /**
+     * Every run whose {@code business_date} is in {@code [from, through]}, grouped as {@link RunLine} and ordered by source,
+     * kind, status and date - a total order. Moving: a late batch joins its month at any time.
+     */
+    List<RunLine> runsOfBusinessDates(Connection unitOfWork, LocalDate from, LocalDate through);
 
     /** Every item of the runs whose {@code business_date} is {@code businessDate}. */
     void eachItemOfBusinessDate(

@@ -95,6 +95,16 @@ public final class InMemoryCloseRunStore implements CloseRunStore {
     }
 
     @Override
+    public long stalledLocks(Connection unitOfWork, Duration bound) {
+        return oneStatement(() -> periods.recent(unitOfWork, 1000).stream()
+                .filter(period -> period.status() == PeriodStatus.LOCKED)
+                .filter(period -> period.lockedAt().filter(at -> !at.plus(bound).isAfter(now)).isPresent())
+                .filter(period -> runs.values().stream().noneMatch(run -> run.period.equals(period.id())
+                        && period.lockedAt().filter(run.lockedAt::equals).isPresent()))
+                .count());
+    }
+
+    @Override
     public boolean insertRunIfAbsent(Connection unitOfWork, NewRun run) {
         return oneStatement(() -> {
             if (runs.values().stream().anyMatch(held -> held.period.equals(run.period()) && held.lockedAt.equals(run.lockedAt()))) {

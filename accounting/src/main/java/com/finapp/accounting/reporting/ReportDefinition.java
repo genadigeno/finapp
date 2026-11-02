@@ -21,6 +21,10 @@ import java.util.Set;
  * the pinned rate set - and nothing else: no clock, no random, no iteration order the code does not fix, no figure from a
  * projection, a cache or a gauge ({@code INV-BAL-05}). A change to what a definition produces is a new {@link #version},
  * with the old one kept in the build for regeneration.
+ *
+ * <p><strong>Or operational, and never a run</strong> (`P14-TSK-017`): a definition reading what keeps moving after a lock
+ * says so ({@link #operational()}, {@link OperationalReportDefinition}); it is refused a run and answered live. Every other
+ * definition keeps the promise above, and may read nothing that can change after its period's lock.
  */
 public interface ReportDefinition {
 
@@ -54,6 +58,20 @@ public interface ReportDefinition {
      */
     default boolean takesValuationRateSet() {
         return needsValuationRateSet();
+    }
+
+    /**
+     * The report's source, rule, date, currency semantics and freshness - abstract, so a definition cannot omit them, and
+     * {@link ReportStatement} refuses a fact left empty (`P14-TSK-017`'s acceptance criterion).
+     */
+    ReportStatement statement();
+
+    /**
+     * Whether the report reads state that keeps moving after a period's lock, and so is never FINAL and never a run
+     * ({@link OperationalReportDefinition}). False - the promise of a reproducible body - by default.
+     */
+    default boolean operational() {
+        return false;
     }
 
     /**

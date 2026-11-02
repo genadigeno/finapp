@@ -4,9 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.accounting.EntryType;
 import com.finapp.accounting.GlClassification;
+import com.finapp.accounting.TrialBalanceReads;
+import com.finapp.accounting.reporting.PurposeReportDefinition;
+import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AccountType;
 import com.finapp.ledger.JournalEntryType;
 import com.finapp.ledger.NormalBalance;
+import com.finapp.ledger.OwnerKind;
 import com.finapp.platform.telemetry.Spans;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -49,6 +53,50 @@ class AccountingLedgerVocabularyTest {
         assertThat(Arrays.stream(EntryType.values()).map(Enum::name))
                 .as("a rule is keyed by the door that wrote the entry; a type the ledger adds is a door no rule names")
                 .containsExactlyElementsOf(Arrays.stream(JournalEntryType.values()).map(Enum::name).toList());
+    }
+
+    @Test
+    @DisplayName("every purpose a report names is the ledger's, with its own owner kind - a renamed purpose would read an empty row forever"
+            + " (P14-TSK-017)")
+    void theReportsPurposesAreTheLedgers() {
+        for (PurposeReportDefinition definition : reports()) {
+            for (PurposeReportDefinition.Section section : definition.sections()) {
+                assertThat(section.keys()).as("%s %s", definition.code(), section.name()).allSatisfy(key -> {
+                    String[] parts = key.split("/", 2);
+                    assertThat(AccountPurpose.valueOf(parts[0]).ownerKind().name()).as(key).isEqualTo(parts[1]);
+                });
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("LOAN_PORTFOLIO is every purpose of owner kind LOAN and BNPL_EXPOSURE every one of BNPL_OBLIGATION: a purpose the ledger adds to"
+            + " either book cannot be left out of its restatement (P14-TSK-017)")
+    void theBooksAreWhole() {
+        assertThat(keys(PurposeReportDefinition.loanPortfolio(NO_READS)))
+                .containsExactlyInAnyOrderElementsOf(keysOf(OwnerKind.LOAN));
+        assertThat(keys(PurposeReportDefinition.bnplExposure(NO_READS)))
+                .containsExactlyInAnyOrderElementsOf(keysOf(OwnerKind.BNPL_OBLIGATION));
+    }
+
+    private static final TrialBalanceReads NO_READS = (TrialBalanceReads) java.lang.reflect.Proxy.newProxyInstance(
+            TrialBalanceReads.class.getClassLoader(), new Class<?>[] {TrialBalanceReads.class}, (proxy, method, args) -> {
+                throw new UnsupportedOperationException("the sections are read, not the journal");
+            });
+
+    private static List<PurposeReportDefinition> reports() {
+        return List.of(PurposeReportDefinition.revenue(NO_READS), PurposeReportDefinition.receivablesPayables(NO_READS),
+                PurposeReportDefinition.settlementPositions(NO_READS), PurposeReportDefinition.fxResults(NO_READS),
+                PurposeReportDefinition.loanPortfolio(NO_READS), PurposeReportDefinition.bnplExposure(NO_READS));
+    }
+
+    private static List<String> keys(PurposeReportDefinition definition) {
+        return definition.sections().stream().flatMap(section -> section.keys().stream()).toList();
+    }
+
+    private static List<String> keysOf(OwnerKind kind) {
+        return Arrays.stream(AccountPurpose.values()).filter(purpose -> purpose.ownerKind() == kind)
+                .map(purpose -> purpose.name() + "/" + kind.name()).toList();
     }
 
     @Test

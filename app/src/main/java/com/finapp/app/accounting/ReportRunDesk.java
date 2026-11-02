@@ -241,6 +241,8 @@ public final class ReportRunDesk {
             return work.get();
         } catch (ReportRuns.DefinitionUnknown | ReportRunGenerator.DefinitionNoLongerHeld unknown) {
             throw refused(AccountingErrorCode.REPORT_DEFINITION_UNKNOWN, unknown);
+        } catch (ReportRuns.DefinitionIsOperational operational) {
+            throw refused(AccountingErrorCode.REPORT_DOOR_MISMATCH, operational);
         } catch (ReportRuns.ParametersInvalid | RunParameters.Invalid invalid) {
             throw refused(AccountingErrorCode.REPORT_PARAMETERS_INVALID, invalid);
         } catch (ReportRuns.ValuationSetNotApproved notApproved) {

@@ -38,6 +38,18 @@ class CloseRunStatementsTest {
     }
 
     @Test
+    @DisplayName("the stalled locks (P14-TSK-017): LOCKED, past the bound on the database's clock - no instance's clock enters - with no run"
+            + " under the PRESENT lock; a count, one reading for every instance")
+    void theStalledLocksAreTheDatabases() {
+        assertThat(JdbcCloseRunStore.STALLED_LOCKS_SQL)
+                .startsWith("SELECT count(*) FROM accounting.accounting_period period")
+                .contains("period.status = 'LOCKED'")
+                .contains("period.locked_at <= clock_timestamp() - ? * interval '1 millisecond'")
+                .contains("NOT EXISTS (SELECT 1 FROM accounting.close_run run")
+                .contains("run.period_id = period.id AND run.period_locked_at = period.locked_at");
+    }
+
+    @Test
     @DisplayName("the claim reads the period's present lock - a run an unlock left behind is never claimed")
     void anOldLocksAttemptsAreNobodys() {
         assertThat(JdbcCloseRunStore.CLAIM_SQL)

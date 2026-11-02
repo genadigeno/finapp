@@ -3,6 +3,7 @@ package com.finapp.accounting.testing;
 import com.finapp.accounting.reporting.CanonicalJson;
 import com.finapp.accounting.reporting.ReportDefinition;
 import com.finapp.accounting.reporting.ReportInputs;
+import com.finapp.accounting.reporting.ReportStatement;
 import java.sql.Connection;
 import java.util.Objects;
 import java.util.Set;
@@ -18,6 +19,10 @@ public final class TestReportDefinition implements ReportDefinition {
 
     /** The probe's code - no {@code ReportKind}, so it can never be mistaken for a production report. */
     public static final String CODE = "TEST_PROBE";
+
+    private static final ReportStatement STATEMENT = new ReportStatement("the suite's own body function",
+            "whatever the suite supplies", "the suite's own dates", "the suite's own currencies",
+            "generated per the machinery under test");
 
     private final String code;
     private final int version;
@@ -75,6 +80,11 @@ public final class TestReportDefinition implements ReportDefinition {
     @Override
     public int version() {
         return version;
+    }
+
+    @Override
+    public ReportStatement statement() {
+        return STATEMENT;
     }
 
     @Override

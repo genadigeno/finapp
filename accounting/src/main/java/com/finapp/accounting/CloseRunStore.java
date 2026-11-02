@@ -25,6 +25,13 @@ public interface CloseRunStore {
     /** The periods {@code LOCKED} under a lock no run answers yet. Unlocked: it only names them. */
     List<AccountingPeriodId> lockedWithoutRun(Connection unitOfWork);
 
+    /**
+     * How many periods are {@code LOCKED}, have been for at least {@code bound} on the database's clock, and have no run
+     * under their present lock (`P14-TSK-017`; the standing condition of the run's birth by the schedule) - what
+     * {@code finapp.accounting.close.run.stalled} publishes. One count: every instance reads the same number.
+     */
+    long stalledLocks(Connection unitOfWork, Duration bound);
+
     /** Births the run unless its lock instance has one; {@code true} when born. */
     boolean insertRunIfAbsent(Connection unitOfWork, NewRun run);
 

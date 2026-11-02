@@ -81,6 +81,19 @@ public final class TrialBalanceDefinition implements ReportDefinition {
         }
     }
 
+    /** What it states of itself (`P14-TSK-017`) - never written into version 1's body, whose bytes are fixed. */
+    private static final ReportStatement STATEMENT = new ReportStatement(
+            "The ledger's journal lines, by posting date; the pinned GL mapping version; no projection, cache or gauge.",
+            "Per GL account and currency: the opening a cumulative fold from inception under the period's version, the"
+                    + " period's debits and credits, the closing their sum; every line the version does not map an explicit"
+                    + " row; zero per currency in three legs and equal to the ledger over three windows.",
+            "A line belongs to the period its posting date falls in; a FINAL run is as of the lock, a PROVISIONAL one as of"
+                    + " its cut (entries created at or before its claim).",
+            "Per currency, one scale - the largest its own amounts carry, an exact rescale; never summed across currencies;"
+                    + " minor units in strings. Translated only where a run names the period's approved rate set.",
+            "FINAL for a period no longer OPEN, byte-identical on regeneration under its lock; PROVISIONAL for an OPEN one,"
+                    + " labelled, reused within its freshness window, never issued.");
+
     private final TrialBalanceReads reads;
     private final Optional<ValuationRateReads> rates;
 
@@ -104,6 +117,11 @@ public final class TrialBalanceDefinition implements ReportDefinition {
     @Override
     public int version() {
         return VERSION;
+    }
+
+    @Override
+    public ReportStatement statement() {
+        return STATEMENT;
     }
 
     @Override

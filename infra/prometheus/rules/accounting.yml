@@ -1,0 +1,41 @@
+# Accounting alerts (PHASE_14_PLAN.md section 16; ADR-0114, ADR-0115). Each alert's procedure is OPERATIONS_RUNBOOK.md section 10.
+#
+# P14-TSK-017 opens this file with the one alert the close run's birth stands on: P14-TSK-020 owns the rest of the plan's table
+# (AccountingCloseOverdue, AccountingCloseCheckFailed, AccountingPostingIntoClosedPeriod, AccountingMappingGap, AccountingBreakAged,
+# AccountingReportDiverged, RegulatorySubmissionRejected) and AlertRulesResolveTest#theAccountingRulesResolve.
+#
+# Every expression names a series the application publishes - AccountingAlertRulesTest evaluates every rule over a scrape whose one
+# sample breaks its condition and proves that alert, and only it, fires, and that none fires on a healthy scrape. The expressions keep
+# to the small grammar that test evaluates; a rule outside it fails the test rather than going unchecked.
+#
+# Conventions (credit.yml's):
+# - Gauges read the shared database, so every instance publishes the same reading: aggregate with max(), never sum().
+# - A gauge that cannot be read is NaN, never zero and never its last value; x != x holds only for NaN, so the threshold rule cannot
+#   see it and the unreadable rule can.
+# - Never a figure anywhere: no amount, period or subject exists in these series to name.
+# - Local development only: no Alertmanager is wired; routing and paging are Phase 15's.
+
+groups:
+  - name: accounting
+    rules:
+      - alert: AccountingCloseRunStalled
+        # A period LOCKED past the bound (10 polls of the check leg by default, 5 minutes; never under 3) with no close run under its
+        # present lock. The lock is the ledger's protection and waits for nothing, so the run is born by the schedule's check leg, not
+        # in the lock's transaction - the recorded deviation the owner ratified on this condition. The books are cut and nothing is
+        # judging them: the schedule is off everywhere, or its leg fails on every instance.
+        expr: max(finapp_accounting_close_run_stalled) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "A locked accounting period has no close run"
+          description: "The check leg has not started the close of a locked period. See OPERATIONS_RUNBOOK.md section 10.1."
+      - alert: AccountingCloseRunStallUnreadable
+        # NaN: the gauge's read failed. An unreadable signal must stay visible, never read as 0 or as its last value.
+        expr: max(finapp_accounting_close_run_stalled != finapp_accounting_close_run_stalled)
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Whether a close run has stalled cannot be read"
+          description: "finapp.accounting.close.run.stalled has no value. See OPERATIONS_RUNBOOK.md section 10.1."
