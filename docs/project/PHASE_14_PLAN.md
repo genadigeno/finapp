@@ -523,7 +523,25 @@ cutoff; the period's end is `as_of`, the first instant of the next month UTC, an
 and within the bound (96 h default); the valued currencies the ledger's postable ones but EUR, each read as the
 reference's canonical `EUR/<currency>` from `fx.rate_snapshot` alone - accounting `V005`, ADR-0116 As built.)* Translation: per line group, `HALF_EVEN` to the reporting currency's minor unit, the sum's
 difference from the translated total shown as an explicit **translation difference** line (C7) — never absorbed.
-Realised FX results are reported from their posted purposes; unrealised results are not posted (C7 A).
+Realised FX results are reported from their posted purposes; unrealised results are not posted (C7 A). *(As built by
+`P14-TSK-015`, 2026-11-02, no migration: **a run asks by naming its period's approved set** (`RunParameters.valuationRateSet`,
+the API's `valuationRateSetId`) where its definition `takesValuationRateSet()` - already in the parameters, the hash and the
+key, so the translated run and the plain one are two questions and two runs of one definition version; "every report showing
+transaction-currency columns" (C1) is read as every run that asks, the close's plain `TRIAL_BALANCE` never needing a set. **No
+approved set, no translated run, FINAL or PROVISIONAL**: the claim refuses `409 accounting.ValuationSetNotApproved` under the
+period `FOR SHARE`; the generation re-judges in its snapshot. An open period therefore has no translated run, unless an unlock
+left it an approved set - never another period's rates (an accounting policy the plan does not make; owner item).
+`reporting.Translation`, pure: `amount / rate` by exact division, `HALF_EVEN` to two places, `EUR` at a stated identity; per
+currency `parts + difference = total`; every column of a run at its one set, so a translated row need not cross-foot by a cent
+and a translated opening is not the previous period's translated closing when rates moved - the unrealised effect, not posted and
+named by no member of the content: a reader finds it by comparing two runs (`-016`'s C7 note decides whether the content says
+so). **A currency the set does not value, with a figure that is not zero**, is never dropped or translated at one: its originals
+stay, its translated figures are `null`, it is named in `translation.untranslated`, `translation.complete` is false and the
+report-wide totals are withheld - the run completes, as the unmapped row's does; `-016` reads `complete`. **A zero needs no rate**:
+such a currency with every figure zero, in every column, translates to zero under a basis of its own (`ZERO_NO_RATE`, no rate),
+and is no hole - a retired currency's rows persist from inception. **A currency the trial balance holds and no row carries** (a
+read that lost its rows) is a hole, whatever the set values (`NO_PARTS`). Translation does not enter `passes` and the plain content
+is byte-identical, pinned - ADR-0116 As built.)*
 
 ### 13.5 Period close (owner brief 7.6)
 

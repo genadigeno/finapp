@@ -243,6 +243,8 @@ public final class ReportRunDesk {
             throw refused(AccountingErrorCode.REPORT_DEFINITION_UNKNOWN, unknown);
         } catch (ReportRuns.ParametersInvalid | RunParameters.Invalid invalid) {
             throw refused(AccountingErrorCode.REPORT_PARAMETERS_INVALID, invalid);
+        } catch (ReportRuns.ValuationSetNotApproved notApproved) {
+            throw refused(AccountingErrorCode.VALUATION_SET_NOT_APPROVED, notApproved);
         } catch (ReportRunGenerator.RunNotFinal stale) {
             throw refused(AccountingErrorCode.REPORT_RUN_STALE, stale);
         } catch (com.finapp.accounting.reporting.ReportGeneration.GenerationTimedOut timedOut) {
@@ -278,8 +280,12 @@ public final class ReportRunDesk {
         }
     }
 
+    /**
+     * The set a run names - absent only when the field is absent: it means "translate this" (`P14-TSK-015`), so a blank is
+     * no plain run but a malformed ask.
+     */
     private static Optional<UUID> rateSet(String raw) {
-        if (raw == null || raw.isBlank()) {
+        if (raw == null) {
             return Optional.empty();
         }
         try {

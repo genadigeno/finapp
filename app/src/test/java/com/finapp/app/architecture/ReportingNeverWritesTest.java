@@ -13,10 +13,11 @@ import com.finapp.platform.audit.JdbcAuditWriter;
 import com.finapp.platform.idempotency.IdempotencyRecordStore;
 import com.finapp.platform.outbox.JdbcOutboxWriter;
 import com.finapp.platform.outbox.OutboxWriter;
+import com.finapp.sharedkernel.money.CurrencyCode;
 import com.tngtech.archunit.core.domain.Dependency;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
-import com.tngtech.archunit.core.domain.JavaMethodCall;
+import com.tngtech.archunit.core.domain.JavaCodeUnitAccess;
 import com.tngtech.archunit.core.domain.JavaModifier;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
@@ -128,6 +129,22 @@ class ReportingNeverWritesTest {
                 .isEmpty();
     }
 
+    /**
+     * <strong>A run's content never depends on a JDK's currency table</strong> (`P14-TSK-015`; `P14-TSK-009`'s review, M-3;
+     * ADR-0003; {@code INV-ACC-04}): a JDK's data changing would otherwise change a FINAL run's regeneration. No report class
+     * depends on {@code java.util.Currency} or reaches {@link CurrencyCode#minorUnits()}, by a call or a method reference
+     * (the review's M-6); scales are the data's own, and the
+     * reporting minor unit is {@code Translation.REPORTING_SCALE}, a literal. {@link GeneralLedger} is the one exception, and
+     * it is not a run's content: the live GL doors' zero at a currency's minor unit.
+     */
+    @ArchTest
+    static void noReportContentReadsTheJdksCurrencyTable(JavaClasses imported) {
+        assertThat(currencyTableReaders(imported, candidate -> isReportingClass(candidate)
+                && !candidate.getName().equals(GeneralLedger.class.getName())))
+                .as("a report class reading a JDK's currency table (INV-ACC-04)")
+                .isEmpty();
+    }
+
     /** The census: the guard sees accounting, every writer it names, and the ledger's writers it refuses by package. */
     @ArchTest
     static void theReportingGuardSeesTheAccountingModule(JavaClasses imported) {
@@ -171,6 +188,13 @@ class ReportingNeverWritesTest {
     void aJdbcWriteIsRefused() {
         assertThat(plantedViolations(PlantedReportUpdating.class, PreparedStatement.class))
                 .singleElement().asString().contains("PlantedReportUpdating").contains("executeUpdate");
+    }
+
+    @Test
+    @DisplayName("a report class writing by a method reference, not a call, is refused (P14-TSK-015's review, M-6)")
+    void aJdbcWriteByReferenceIsRefused() {
+        assertThat(plantedViolations(PlantedReportUpdatingByReference.class, PreparedStatement.class))
+                .singleElement().asString().contains("PlantedReportUpdatingByReference").contains("executeUpdate");
     }
 
     @Test
@@ -219,6 +243,21 @@ class ReportingNeverWritesTest {
     }
 
     @Test
+    @DisplayName("a report class reading a JDK's currency table - java.util.Currency, or CurrencyCode.minorUnits - is refused"
+            + " (P14-TSK-015), and one holding a CurrencyCode only as a code is not")
+    void aCurrencyTableReaderIsRefused() {
+        JavaClasses planted = new ClassFileImporter().importClasses(PlantedReportCurrencyTable.class,
+                PlantedReportMinorUnits.class, PlantedReportCurrencyCode.class, PlantedReportMinorUnitsReference.class,
+                PlantedReportCurrencyTableReference.class, CurrencyCode.class);
+        assertThat(currencyTableReaders(planted, candidate -> candidate.getSimpleName().startsWith("PlantedReport")))
+                .hasSize(4)
+                .anySatisfy(found -> assertThat(found).contains("PlantedReportCurrencyTable"))
+                .anySatisfy(found -> assertThat(found).contains("PlantedReportMinorUnits"))
+                .anySatisfy(found -> assertThat(found).contains("PlantedReportMinorUnitsReference"))
+                .anySatisfy(found -> assertThat(found).contains("PlantedReportCurrencyTableReference"));
+    }
+
+    @Test
     @DisplayName("a report class that only reads - executeQuery, the journal's read port - is not flagged")
     void aReadingReportClassPasses() {
         assertThat(plantedViolations(PlantedReportReading.class, PreparedStatement.class, JournalReads.class))
@@ -254,7 +293,8 @@ class ReportingNeverWritesTest {
                     .filter(target -> target.getPackageName().startsWith(LEDGER) || WRITERS.contains(target.getName())
                             || WRITABLE_PATHS.contains(target.getName()))
                     .map(JavaClass::getName).distinct().sorted().toList();
-            List<String> writes = current.getMethodCallsFromSelf().stream()
+            // Code unit accesses, not calls alone: a method reference (PreparedStatement::executeUpdate) is no call.
+            List<String> writes = current.getCodeUnitAccessesFromSelf().stream()
                     .filter(ReportingNeverWritesTest::isJdbcWrite)
                     .map(call -> call.getTarget().getOwner().getSimpleName() + "." + call.getName())
                     .distinct().sorted().toList();
@@ -272,7 +312,24 @@ class ReportingNeverWritesTest {
         return violations;
     }
 
-    private static boolean isJdbcWrite(JavaMethodCall call) {
+    /** Every {@code reporting} class that depends on {@code java.util.Currency} or asks a currency for its minor units. */
+    static Set<String> currencyTableReaders(JavaClasses classes, Predicate<JavaClass> reporting) {
+        Set<String> readers = new TreeSet<>();
+        classes.stream().filter(reporting).forEach(candidate -> {
+            boolean table = candidate.getDirectDependenciesFromSelf().stream()
+                    .anyMatch(dependency -> dependency.getTargetClass().getName().equals("java.util.Currency"));
+            // Code unit accesses, not calls alone: CurrencyCode::minorUnits is a method reference, which is no call.
+            boolean minorUnits = candidate.getCodeUnitAccessesFromSelf().stream()
+                    .anyMatch(call -> call.getName().equals("minorUnits")
+                            && call.getTarget().getOwner().getName().equals(CurrencyCode.class.getName()));
+            if (table || minorUnits) {
+                readers.add(candidate.getName());
+            }
+        });
+        return readers;
+    }
+
+    private static boolean isJdbcWrite(JavaCodeUnitAccess<?> call) {
         JavaClass owner = call.getTarget().getOwner();
         if (owner.isAssignableTo(java.sql.Connection.class)) {
             return CONNECTION_MUTATORS.contains(call.getName());
@@ -298,6 +355,19 @@ class ReportingNeverWritesTest {
     static class PlantedReportUpdating {
         int touch(PreparedStatement statement) throws SQLException {
             return statement.executeUpdate();
+        }
+    }
+
+    /** A statement's act, by a method reference. */
+    @FunctionalInterface
+    interface PlantedStatementAct {
+        int act(PreparedStatement statement) throws SQLException;
+    }
+
+    /** A report class running an UPDATE by a method reference - no call in its bytecode. */
+    static class PlantedReportUpdatingByReference {
+        PlantedStatementAct touch() {
+            return PreparedStatement::executeUpdate;
         }
     }
 
@@ -340,6 +410,41 @@ class ReportingNeverWritesTest {
     static class PlantedReportStatement {
         boolean run(Connection snapshot) throws SQLException {
             return snapshot.createStatement().executeQuery("SELECT 1").next();
+        }
+    }
+
+    /** A report class asking the JDK's table for a currency's digits. */
+    static class PlantedReportCurrencyTable {
+        int digits(String code) {
+            return java.util.Currency.getInstance(code).getDefaultFractionDigits();
+        }
+    }
+
+    /** A report class asking a currency code for its minor units - the JDK's table, one hop away. */
+    static class PlantedReportMinorUnits {
+        int digits(CurrencyCode code) {
+            return code.minorUnits();
+        }
+    }
+
+    /** A report class asking a currency code for its minor units by a method reference, not a call. */
+    static class PlantedReportMinorUnitsReference {
+        java.util.function.ToIntFunction<CurrencyCode> digits() {
+            return CurrencyCode::minorUnits;
+        }
+    }
+
+    /** A report class reaching the JDK's table by a method reference, not a call. */
+    static class PlantedReportCurrencyTableReference {
+        java.util.function.Function<String, Object> table() {
+            return java.util.Currency::getInstance;
+        }
+    }
+
+    /** A report class holding a currency only as a code. */
+    static class PlantedReportCurrencyCode {
+        String code(CurrencyCode code) {
+            return code.code();
         }
     }
 

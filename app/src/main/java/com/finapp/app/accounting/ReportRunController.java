@@ -71,8 +71,9 @@ public class ReportRunController {
     // -----------------------------------------------------------------
 
     /**
-     * A generation: the definition's code, the period, the parameters it takes (at most 16 plain values) and, for a
-     * translated report, the valuation rate set to pin. No reason, no person's data.
+     * A generation: the definition's code, the period, the parameters it takes (at most 16 plain values) and, to ask for a
+     * translated report (`P14-TSK-015`), the period's approved valuation rate set - anything else named is refused
+     * {@code accounting.ValuationSetNotApproved}; a plain run names none. No reason, no person's data.
      */
     @ClosedBody
     public record ReportRunRequest(

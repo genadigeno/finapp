@@ -21,7 +21,8 @@ import java.util.regex.Pattern;
  * letter and up to 31 letters or digits; a value of 1 to 128 characters from a plain alphabet (letters, digits, space and
  * {@code _ . : , / = + -}) holding no card-number or bank-account shape ({@link InstrumentShapes}) - a report is asked by
  * codes, dates and currencies, never by a person's instrument. The rate set is a reference by id, never validated here:
- * the set's table is `P14-TSK-014`'s, and the definition that needs one reads it inside its snapshot.
+ * it is how a run asks for translation (`P14-TSK-015`) - the claim refuses a set that is not the period's approved one, and
+ * the definition reads it inside its snapshot ({@code Translation.Rates.pinnedBy}).
  */
 public record RunParameters(SortedMap<String, String> values, Optional<UUID> valuationRateSet) {
 

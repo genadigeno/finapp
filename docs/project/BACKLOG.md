@@ -26177,7 +26177,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   id** - the controller cannot discover a period's sets and the capturer cannot re-read its own (its receipt carries the
   rates): a follow-up for `-011`, whose close shows the period's sets (no endpoint added here).
 
-**P14-TSK-015 — Reporting-currency translation** — `READY` (2026-11-01; marked by the coordinator at `P14-TSK-009`'s merge, master `76a2c58e`; every dependency `COMPLETE`)
+**P14-TSK-015 — Reporting-currency translation** — `COMPLETE` (2026-11-02; branch `P14-TSK-015` from master `a184bed2`, wave F beside `P14-TSK-011`; no migration; **M14.5 at 2 of 2 - closed**; marks no task `READY` — the coordinator does) *(read "`READY` (2026-11-01; marked by the coordinator at `P14-TSK-009`'s merge, master `76a2c58e`; every dependency `COMPLETE`)" until this task's gate)*
 - **Objective**: EUR translation in every run that asks, originals beside, the difference explicit (C1, C7).
 - **Bounded context**: Reporting.
 - **Dependencies**: `-009`, `-014`.
@@ -26198,6 +26198,78 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: absorb the difference into the largest line → the explicit-difference test red.
 - **Acceptance criteria**: five currencies at three scales translated with explicit differences.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Low. **Cx**: S.
+- **As built** (2026-11-02; no migration): **how a run asks** - by naming its period's approved set in
+  `RunParameters.valuationRateSet` (the API's existing `valuationRateSetId`), where the definition `takesValuationRateSet()`
+  (`ReportDefinition`, default `needsValuationRateSet()`; so a definition refuses a set, may take one - `TRIAL_BALANCE` - or
+  must have one). The member was already in the canonical parameters, the hash, `report_run_key`, the column, the foreign key
+  and the header, so the translated and the plain run are **two questions and two runs of one definition version**; a variant
+  code per report was rejected as doubling `ReportKind` for what the key already holds. **The refusal**: `ReportRuns.claim`,
+  under the period `FOR SHARE` (an approval takes it `FOR UPDATE`, approved is terminal), refuses anything but the period's
+  approved set - unknown, proposed, rejected, another period's, none approved - `ReportRuns.ValuationSetNotApproved`,
+  `409 accounting.ValuationSetNotApproved`, nothing written, **FINAL or PROVISIONAL**; the generation re-judges in its snapshot
+  (`Translation.Rates.pinnedBy`, `Translation.NotPinned`: the run FAILED `DEFINITION_FAILED`). `ReportRuns`' constructors without
+  `ApprovedSets` stay and refuse every run naming a set (fail closed); production wires `ApprovedSets.of(store)`. **PROVISIONAL**: an
+  open period has no approved set, so no translated run; a period unlocked after an approval keeps its set, whose rates are the
+  period end's, and translates at it, labelled by basis and cut. An earlier period's rates are never used - an accounting policy
+  the plan does not make (owner item). **`reporting.Translation`** (pure; reusable: `Rates.pinnedBy`, `Rates.translate`, `section`):
+  `amount / rate` by a correctly rounded exact division, `HALF_EVEN` to `REPORTING_SCALE` 2, a literal; `EUR` at a stated identity
+  (`Basis.IDENTITY`, a finer scale rounded by name); per currency `parts + difference = total`, the total translated once from the
+  exact original total, so a balanced currency's translated debits equal its credits through the difference lines; originals
+  summed within a currency only (`INV-MON-04`). Each column of a run at its one set: a translated row need not cross-foot by a
+  cent, and a translated opening is not the previous translated closing when rates moved - the unrealised effect, not posted
+  and named by no member of the content: a reader finds it by comparing two runs (the cross-foot caveat is in these docs only,
+  too - both routed to `-016`'s C7 note). **A currency the set does not value, with a figure that is not zero**: never dropped,
+  never at one - originals kept, translated figures `null` (`Basis.NO_RATE`), named in `translation.untranslated`,
+  `translation.complete` false, the report-wide totals withheld (`Translated.total()` is `Optional`), the run completed; the
+  unmapped row's shape - a failed run would carry no reason (a closed code), fail identically at every revision and, with no
+  supersession edge, never be cured. **A zero needs no rate** (the review's I-1(b)): a currency with no rate whose every figure, in
+  every column, is zero translates to zero (`Basis.ZERO_NO_RATE`, `rate` null, no rate of one stated or implied), stays out of
+  `untranslated`, keeps `complete` true and withholds nothing - a retired currency's rows persist from inception, and every later
+  period must not read incomplete for good; one non-zero figure in any column, a movement netting to a zero balance included, is
+  a hole in all of them. **A currency the trial balance holds and no row carries** (the review's M-1) is a hole too, whatever the
+  set values (`Basis.NO_PARTS`, `original` and `rate` null): a read that lost a currency's rows must not leave `complete` true over
+  a partial total; `passes` is untouched, already failed by the ledger comparison. **The trial balance**
+  (`TrialBalance.body(rates)`, `TrialBalanceTranslation`): each row, unmapped ones too, gains a `translated` member beside its
+  originals, the body a `translation` member (reporting currency, scale, rounding; the set; every rate with source, `observedAt`,
+  snapshot id; per currency and column the original total, translated parts, `translationDifference`, translated total; report-wide
+  totals; `complete`, `untranslated`). **Plain `TRIAL_BALANCE`, `RunParameters.none()`, is byte-identical**: a golden pins a FINAL
+  and a PROVISIONAL run, its provenance shown by the fix round - the case, ported only to `new TrialBalanceDefinition(reads)` (the
+  rate port does not exist there), run against master `a184bed2`'s main code in a throwaway worktree: both hashes pass, 8 tests, 0
+  failed, the test file the only difference from that commit; it reads no rate; **`VERSION` stays 1** - nothing version 1
+  ever issued changes and a run naming a set was refused until now, so a bump would change `-011`'s key for nothing. **Translation
+  is outside `passes`**: the verdict the same bytes at `{body,verdict,passes}`, and a translation never plugs an imbalance. The
+  port `ValuationRateReads` and `app`'s `PinnedValuationRates` (`SELECT` only, through the snapshot's view - `ReportingNeverWritesTest`
+  follows accounting's implementations of a port a report class holds). `accounting.ReportRunCompleted` and
+  `accounting.ReportGenerated`'s, `ReportRead`'s and `ReportRegenerated`'s summaries name the set on a translated run only. A new
+  guard: no report class depends on `java.util.Currency` or reaches `CurrencyCode.minorUnits`, by a call or a method reference
+  (`ReportingNeverWritesTest`, `GeneralLedger` the named exception - the live GL doors, not a run's content; the review's M-6 found
+  the reference escaping, and the JDBC write rule had the same hole, closed with it). A blank `valuationRateSetId` is refused 422
+  (the review's M-3): the field means translate this, so only null asks the plain run. No new route, schema or permission; one error
+  code, the OpenAPI document regenerated (35 lines, all compatible). Tests: `TranslationTest` (13; a hand-worked table of five currencies at three scales, an exact-rational oracle over
+  300 seeds past `long`, ties, the rate's direction, identity, no rate, cross-currency, locale and zone with a pinned hash),
+  `TranslatedTrialBalanceRunsTest` (11), `TrialBalanceDefinitionTest` (+10), `TrialBalanceOracleTest` (+1, every seed),
+  `PinnedValuationRatesTest` (2), `ReportRunDeskTest` (+2), `ReportingNeverWritesTest` (+3) - fresh, after the fix round:
+  `:accounting:test` 260/0 (41 classes), the app accounting suites and named guards 256/0 (44 classes), `:app:architectureTest` 224/0 (39 classes). **Owed (C5)**, in
+  `ValuationRateSetDatabaseTest`, which holds January's order: before `#oneApprovedPerPeriod`,
+  `#aFinalTranslatedRunWithNoApprovedSetIsRefused`, `#aProvisionalTranslatedRunInAnOpenPeriodIsRefused` and
+  `#aClaimRacingAnApprovalThatRollsBackIsRefused` (the claim waits on the row the approval holds, then is refused); in it, January's
+  one approval now held by its first approver while the translated claim queues behind it, then the other nine - so the claim reads
+  the approval it waited for, the winner fixed where -014's start gate left it to the race, one approved set still the outcome;
+  after it, `#aFinalTranslatedRunPinsItsSetAndRegeneratesIdentical`, `#aProvisionalTranslatedRunAfterAnUnlockReadsItsOwnSet`,
+  `#aRunInFebruaryNamingJanuarysApprovedSetIsRefused` and `#theStoredContentHoldsTheFigureAndTheRatesText` (`131.2500000000` and a JPY
+  figure worked from a raw sum of the lines). The new January lines, in all five currencies through the ledger's own door, are
+  tolerated by every other suite that shares or reaches the month, by reading them, none yet run on this branch:
+  `TrialBalanceRunDatabaseTest` judges relations; `ReportRunDatabaseTest`'s `TEST_JOURNAL` counts entries but no case asserts the
+  count; `GlMappingDatabaseTest` reads no journal; `AccountingPeriodDatabaseTest`, `PostingCutoffDatabaseTest` and
+  `PostingFloorDatabaseTest` filter by their own reference, scope or correlation; `GlReadModelDatabaseTest`,
+  `AccountingBreakDatabaseTest` and `AccountingSourceProofsDatabaseTest` read other months only. Probes: `MUTATION_TESTING.md` section 2.
+  **Routing**: `-016`, whose statements cannot stand with a hole, refuses on `translation.complete` false (it asks
+  `Translated.complete()`); `-017` may use `Translation` as-is; both entries carry the review's routed items. **Owner items**: whether
+  a FINAL run with a real hole should be issued at all, or fail (issued as evidence as built; the alternative is one throw in the
+  definition) and the real cure through `-014`'s supersession item; settling the translated body's shape before the first translated
+  FINAL (the review's M-2); indicative PROVISIONAL translation at an earlier set, not built; the design does not depend on the open
+  supersession question - a new set is a new id, a new hash and a new run, the one touch point `pinnedBy`, which would have to admit
+  a superseded set for the regeneration of a run that pinned it.
 
 **P14-TSK-016 — Financial statements** — `PLANNED`
 - **Objective**: balance sheet and income statement per period, with notes (C8).
@@ -26221,6 +26293,17 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: omit suspense from the notes → `#notesDiscloseSuspenseAndBreaks` red.
 - **Acceptance criteria**: the balance sheet balances per currency and translated; every figure drills down.
 - **Definition of done**: `DOD-FIN`, `DOD-API`. **Risk**: Low. **Cx**: M.
+- *Routed by `P14-TSK-015` (2026-11-02):* `reporting.Translation` is reusable as it stands - `takesValuationRateSet()` (or
+  `needs...`), `Rates.pinnedBy` on the snapshot, `Rates.translate(columns, required)` over its columns, `section` for the content. A
+  statement cannot stand with a hole, so refuse the run on `Translated.complete()` false (`total()` is withheld then, so no partial
+  total can be read by accident); a retired currency at zero is no hole (`ZERO_NO_RATE`). "Translated" balances through the
+  difference lines, every column at the run's one set.
+- *Routed by `P14-TSK-015`'s review, I-1(a) (2026-11-02):* carry translation completeness on `accounting.ReportRunCompleted` and the
+  audit summary (`complete`, the untranslated currencies by code), so a hole is not visible only inside the body. No content changes,
+  so no definition version moves.
+- *Routed by `P14-TSK-015`'s review, M-7 (2026-11-02), for the C7 note:* the translated content does not say that a translated row
+  need not cross-foot, nor name the unrealised effect (a translated opening is not the previous translated closing when rates moved;
+  a reader finds it by comparing two runs). Decide whether the statements' C7 note, or the content, says so.
 
 **P14-TSK-017 — Operational financial reports** — `PLANNED`
 - **Objective**: the operational financial reports as definitions (`PHASE_14_PLAN.md` §13.6), labelled FINAL or
@@ -26243,6 +26326,14 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: source the loan portfolio from lending's live report → the equality test red.
 - **Acceptance criteria**: every report's source, rule, date, currency semantics and freshness stated in its definition.
 - **Definition of done**: `DOD-API`. **Risk**: Low. **Cx**: M.
+- *Routed by `P14-TSK-015`'s review, M-4 (2026-11-02), to `CLOSE_STATUS`:* the role that asks for a translated run cannot look up the
+  set it must name. No read lists a period's sets, and `GET …/valuation-rate-sets/{setId}` needs `ACCOUNTING_CLOSE_APPROVE`, which
+  `ACCOUNTANT` lacks, so with two proposals an accountant finds the approved one by being refused 409. `CLOSE_STATUS` names the
+  period's approved set.
+- *Routed by `P14-TSK-015`'s review, M-6's other half (2026-11-02):* a definition calling the public `GeneralLedger.fold` would put
+  the JDK's scale into FINAL content unflagged (`GeneralLedger.zero`, `CurrencyCode.minorUnits`): the guard
+  `noReportContentReadsTheJdksCurrencyTable` checks a report class's own accesses and names `GeneralLedger` as its one exception.
+  `GL_ACTIVITY` is the likely first caller: use the data's scale, as `TrialBalance` does, or close the path before it ships.
 
 **P14-TSK-018 — The regulatory reporting framework** — `PLANNED`
 - **Objective**: obligations as configuration and submissions with lineage behind a simulated adapter (ADR-0118, C4).

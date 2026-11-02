@@ -73,6 +73,46 @@ the audit trail are the history. **Pinned by runs**: at its integration with `P1
 run's pin - `report_run_valuation_rate_set_fk`, `report_run.valuation_rate_set_id → valuation_rate_set (id)` - so a run
 can pin only a set that exists. Status stays `Proposed` until the phase's exit review.
 
+`P14-TSK-015` (2026-11-02), decisions 1, 3 and 4; no migration. **How a run asks**: by naming its period's approved set in
+`RunParameters.valuationRateSet`, where the definition `takesValuationRateSet()`. That member was already in the canonical
+parameters, the hash, `report_run_key`, the column, the foreign key and the content's header, so the translated and the plain
+run are two questions and two runs of one definition version. A variant code per report was rejected: it doubles `ReportKind`
+and the registry for every later definition to re-express what the key already holds. Decision 1's "always shown" is read as
+every run that asks; the close's plain `TRIAL_BALANCE`, `RunParameters.none()`, never needs a set. **The refusal**:
+`ReportRuns.claim`, under the period row `FOR SHARE` (an approval takes it `FOR UPDATE`, approved is terminal): anything but the
+period's approved set - unknown, proposed, rejected, another period's, or none approved - is
+`409 accounting.ValuationSetNotApproved`, nothing written, FINAL or PROVISIONAL; the generation re-judges in its snapshot
+(`Translation.Rates.pinnedBy`, a run failed `DEFINITION_FAILED`). No trigger: the key holds existence, the two ranks approval, and
+only `ReportRuns` writes the row. **PROVISIONAL**: an open period normally has no approved set and so no translated run; a
+period unlocked after an approval keeps its set, whose rates are the period end's, and translates at it, labelled by basis and
+cut. An earlier period's set is not used: which indicative rate to use is a policy this ADR does not make (owner item).
+**The arithmetic** (`reporting.Translation`, pure): `amount / rate` by a correctly rounded exact division, `HALF_EVEN` to two
+places, the reporting minor unit a literal, never a JDK's table (a guard holds it for report code); `EUR` at a stated identity;
+per currency `translated parts + translation difference = translated total`, the total translated once from the exact original
+total, so a balanced currency's translated debits equal its credits through the difference lines. Every column of a run is at
+its one set: a translated row need not cross-foot by a cent, and a translated opening differs from the previous period's translated
+closing when rates moved. That is decision 4's unrealised effect: not posted, and, as built, named by no member of the content, so
+"disclosed" holds only in that a reader can find it by comparing two runs; the cross-foot caveat is likewise in these documents, not
+the content. Both are `-016`'s C7 note to settle. **A currency the set does not value, with a figure that is not zero**: never
+dropped, never at one - originals kept, translated figures `null`, named in `translation.untranslated`, `translation.complete`
+false, the report-wide totals withheld, the run completed; the unmapped row's shape, since a failed run would carry no reason,
+fail identically at every revision and, with no supersession edge, never be cured (whether a FINAL run with a real hole should be
+issued at all is the owner's). **A zero needs no rate**: a currency with no rate whose every figure, in every column, is zero
+translates to zero under a basis of its own (`ZERO_NO_RATE`, `rate` null - no rate of one stated or implied), stays out of
+`untranslated`, keeps `complete` true and withholds nothing: a retired currency's rows persist from inception, so otherwise every
+later period would read incomplete and `-016` refuse for good. **A currency the trial balance holds and no row carries** - a read
+that lost its rows, the ledger's windows still holding it - is a hole whatever the set values (`NO_PARTS`, `original` and `rate`
+null), never `complete` over a partial total. **The trial balance**: plain content byte-identical - a golden whose provenance is
+shown by running it on master `a184bed2`'s main code in a throwaway worktree - version 1 unchanged: nothing it ever issued changes
+and a run naming a set was refused until now; translation is outside `passes`, the verdict the same bytes at the same path. **The
+port**:
+`ValuationRateReads`, `app`'s `PinnedValuationRates`, because `ReportingNeverWritesTest` follows accounting's implementations of a
+port a report class holds. `accounting.ReportRunCompleted` and the summaries of `accounting.ReportGenerated`, `ReportRead` and
+`ReportRegenerated` name the set on a translated run only, so the two runs of one definition stay distinguishable. **Supersession
+does not change this design**: it would mint a new
+set id, a new parameters hash, a new question and a new run; the one touch point is `pinnedBy`, which would have to admit a
+superseded set for the regeneration of a run that pinned it.
+
 ## Follow-up
 
 C7 B with qualified review; a reporting currency other than the functional one, if a jurisdiction requires it.

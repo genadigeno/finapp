@@ -2,6 +2,8 @@ package com.finapp.app.accounting;
 
 import com.finapp.accounting.GlMappingStore;
 import com.finapp.accounting.TrialBalanceReads;
+import com.finapp.accounting.ValuationRateReads;
+import com.finapp.accounting.ValuationRateSetStore;
 import com.finapp.accounting.reporting.TrialBalanceDefinition;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,9 +24,16 @@ public class TrialBalanceBeans {
         return new LedgerTrialBalanceReads(glMappingStore);
     }
 
-    /** {@code TRIAL_BALANCE} version 1. */
+    /** What a translated report reads of its pinned set (`P14-TSK-015`) - {@code SELECT} only, on the snapshot. */
     @Bean
-    TrialBalanceDefinition trialBalanceDefinition(TrialBalanceReads trialBalanceReads) {
-        return new TrialBalanceDefinition(trialBalanceReads);
+    ValuationRateReads valuationRateReads(ValuationRateSetStore valuationRateSetStore) {
+        return new PinnedValuationRates(valuationRateSetStore);
+    }
+
+    /** {@code TRIAL_BALANCE} version 1 - plain, or translated when a run names its period's approved set. */
+    @Bean
+    TrialBalanceDefinition trialBalanceDefinition(
+            TrialBalanceReads trialBalanceReads, ValuationRateReads valuationRateReads) {
+        return new TrialBalanceDefinition(trialBalanceReads, valuationRateReads);
     }
 }

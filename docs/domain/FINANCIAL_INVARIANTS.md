@@ -1437,8 +1437,10 @@ pinned by the run; the difference between translated parts and the translated to
 is re-valued and no customer execution rate is read for valuation.
 **Why:** Valuation that overwrites originals or borrows execution rates destroys the evidence `INV-FX-05` keeps.
 **Enforce:** `DOMAIN` + `DB-CONSTRAINT` (rate sets `INSERT`-only; four-eyes `CHECK`).
-**Verify:** `TranslationTest#everyCurrencyAtItsScaleWithAnExplicitDifference`, `ValuationRateSetDatabaseTest`
-(`P14-TSK-014`, `-015`); the battery's oracle.
+**Verify:** `TranslationTest#everyCurrencyAtItsScaleWithAnExplicitDifference`, `#originalsAreKept`,
+`#generatedAmountsAgreeWithAnExactOracle`, `TrialBalanceOracleTest#theTranslationIsTheOracles`,
+`TranslatedTrialBalanceRunsTest`, `ValuationRateSetDatabaseTest` (`P14-TSK-014`, `-015`; the database cases owed, C5); the
+battery's oracle.
 **Phase:** 14
 
 ### INV-ACC-12 — Every entry conforms to a registered rule, and every expected entry exists once
