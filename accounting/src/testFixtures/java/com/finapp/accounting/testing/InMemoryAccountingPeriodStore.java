@@ -11,7 +11,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
-import java.util.TreeMap;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * {@link AccountingPeriodStore} in memory (`P14-TSK-005`): the hermetic suites' store, holding the database's ranks the
@@ -22,8 +23,9 @@ import java.util.TreeMap;
  */
 public final class InMemoryAccountingPeriodStore implements AccountingPeriodStore {
 
-    private final TreeMap<YearMonth, PeriodRow> rows = new TreeMap<>();
-    private final List<EventRow> history = new ArrayList<>();
+    /** Concurrent, so a leg reading the periods never fails on another leg's birth of one (`AccountingCloseScheduleTest#everyLegRunsAtStart`, found by `P14-TSK-012`'s fresh run). */
+    private final ConcurrentSkipListMap<YearMonth, PeriodRow> rows = new ConcurrentSkipListMap<>();
+    private final List<EventRow> history = new CopyOnWriteArrayList<>();
     private int rowLocks;
     /** Each lock's own stamp, as the database's clock_timestamp() would give it (`P14-TSK-008`: a lock instance). */
     private long lockInstances;
