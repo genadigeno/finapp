@@ -1341,7 +1341,7 @@ prior-period adjustment in an open period.
 floored to the first open date, never into the locked period - `PostingFloorTest`, `PostingFloorDatabaseTest`,
 `LoanAccrualCutoffDatabaseTest`; an adjustment refused at approval, `PROPOSED` kept - `AdjustmentApprovalCutoffTest`,
 `PostingFloorDatabaseTest#aManualAdjustmentDatedIntoALockIsRefusedAtApprovalAndStaysProposed`; every rule's reaction
-held to the source - `PostingRuleRegisterTest#theFloorAgreesWithTheSource`.)*
+held to the source - `PostingRuleRegisterTest#theFloorAgreesWithTheSource`.)* *(`P14-TSK-012`: the cutoff stands from the lock through `CLOSE_PROPOSED` and `CLOSED`, moved back only by a reopen's approval, exactly one period - `PeriodClosesTest#theCutoffMovesBackOnePeriod`, `PeriodReopenDatabaseTest#aReopenRefusesNothingOutsideItsPeriod`, owed C5.)*
 **Phase:** 14
 
 ### INV-ACC-04 — Reports are reproducible
@@ -1426,7 +1426,7 @@ an incomplete run).
 `CloseCheckWorkerTest`, `CloseRunDatabaseTest` - owed, C5; `accounting V007`'s attempts frozen, `DISCLOSED` only where the check admits it. The
 proposal's refusal is `-012`'s, on `CloseRuns.readiness`. **Unmet as built**: floored accruals and reconciliation positions conclude `DISCLOSED` with no person and no
 reason, so "with a reason" holds only once `-012`'s proposal carries one per `DISCLOSED` attempt, or the owner amends this statement - the review's I-3, `-012`'s
-precondition. *The owner ruled, 2026-11-02: this statement stands, unamended; `-012`'s proposal carries a person's reason per `DISCLOSED` attempt.*)*
+precondition. *The owner ruled, 2026-11-02: this statement stands, unamended; `-012`'s proposal carries a person's reason per `DISCLOSED` attempt.*)* *(**Met by `P14-TSK-012`, 2026-11-03, `accounting V008`**: the proposal carries a person's reason per `DISCLOSED` attempt, bound to the attempt read - `PeriodClosesTest#everyDisclosedAttemptCarriesAReason`, `#aReasonIsBoundToTheAttemptRead`, `#theDisclosureIsFrozen`; readiness read holding the period row; the approval refused if what was read no longer stands - `#aLaterAttemptRefusesTheApproval`, `#aBreakMovedRefusesTheApproval`; four eyes for every writer - `PeriodCloseMigrationTest#fourEyesForEveryWriter`, `PeriodCloseDatabaseTest` owed, C5.)*
 **Phase:** 14
 
 ### INV-ACC-10 — After close, corrections are prior-period adjustments; a reopen supersedes, never deletes
@@ -1438,7 +1438,7 @@ report runs `SUPERSEDED`; nothing is deleted.
 **Why:** Issued figures must stay explainable: what was issued, what changed, by whom and why.
 **Enforce:** `DB-CONSTRAINT` (`INV-ACC-08`'s trigger; report runs immutable; `INSERT`-only events) + `DOMAIN`.
 **Verify:** `PriorPeriodAdjustmentDatabaseTest#postsInTheOpenPeriodReferencingTheClosedOne`,
-`PeriodReopenDatabaseTest#aReopenSupersedesAndDeletesNothing` (`P14-TSK-012`, `-013`).
+`PeriodReopenDatabaseTest#aReopenSupersedesAndDeletesNothing` (`P14-TSK-012`, `-013`). *(`P14-TSK-012`, the reopen's half: `PeriodClosesTest#aReopenSupersedesAndDeletesNothing`, `#onlyTheLatest`, `#aReCloseIsANewRun`, `PeriodCloseMigrationTest`; `PeriodReopenDatabaseTest#aReopenSupersedesAndDeletesNothing`, `#onlyTheLatest` owed, C5. "Only of the latest closed period" is built as "the next period absent or `OPEN`", judged by the domain and by the trigger for every writer: periods close in order, so that is the latest. The prior-period adjustment's half is `-013`'s.)*
 **Phase:** 14
 
 ### INV-ACC-11 — Translation keeps the original and never alters a line or an executed rate
@@ -1533,7 +1533,7 @@ approver distinct from the initiator.
 **Why:** Single-actor control over financial correction is an unacceptable internal-fraud
 exposure.
 **Enforce:** `DOMAIN` + `DB-CONSTRAINT` (approver ≠ initiator).
-**Verify:** Self-approval rejection tests.
+**Verify:** Self-approval rejection tests. *(`P14-TSK-012`, the close and the reopen: `PeriodClosesTest#theProposerCannotApprove`, `#theProposerCannotApproveAReopen`; `period_close_four_eyes`, `period_reopen_four_eyes`, `period_event_four_eyes` - `PeriodCloseMigrationTest#fourEyesForEveryWriter`; `PeriodCloseDatabaseTest#theProposerCannotApprove`, `PeriodReopenDatabaseTest#onlyTheLatest` owed, C5. A rejection is not an approval and may be the proposer's.)*
 **Phase:** 3, 6, 8, 10, 13, 14
 
 *(The list read "3, 8, 10, 13, 14" until the 2026-09-21 transition into the checkout phase:

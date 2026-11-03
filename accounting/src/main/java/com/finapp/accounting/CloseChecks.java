@@ -24,16 +24,27 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p><strong>No false pass.</strong> {@code PASSED} only when the judge read everything it covers and found nothing. An
  * exception, a timeout, an incomplete proof, a reading missing, a verdict member absent: {@code FAILED} with its
- * reason, the exception's class logged (never its message, which may carry data). A {@code RECURRED} outcome - a {@code
- * RESOLVED} break's discrepancy still present - is {@code FAILED} and never {@code DISCLOSED}, the default until the
- * owner rules on re-raising (ADR-0117's open question). That answer also decides whether such a close can ever pass: the
- * subject of an immutable journal entry never goes away, so as built a {@code RESOLVED} conformance break fails every
- * re-run for good (`P14-TSK-012`'s precondition, I-2).
+ * reason, the exception's class logged (never its message, which may carry data).
  *
  * <p><strong>{@code DISCLOSED}</strong> only as {@link CloseCheckCode#disclosable()} admits: a raising check every one
- * of whose findings an {@code ACKNOWLEDGED} break holds <em>as acknowledged</em> ({@link
- * CheckOutcome#ACKNOWLEDGED_CHANGED}), and nothing else failing; {@code ACCRUALS_COMPLETE} with nothing behind and
- * entries found past the cutoff; {@code RECONCILIATION_DISCLOSURE} read whole and not clean.
+ * of whose findings a person decided on and that stands unchanged - an {@code ACKNOWLEDGED} break's by its disclosure, a {@code RESOLVED}
+ * one's by its correcting entry (the owner's ruling, ADR-0117, `P14-TSK-012`; {@link CheckOutcome#FINDING_CHANGED} otherwise, its next
+ * generation raised) - and nothing else failing; {@code ACCRUALS_COMPLETE} with nothing behind and entries found past the cutoff; {@code
+ * RECONCILIATION_DISCLOSURE} with its month run, read whole and not clean. A person's reason per {@code DISCLOSED} attempt is the proposal's
+ * ({@code INV-ACC-09}, {@link PeriodCloses}).
+ *
+ * <p><strong>{@code RECONCILIATION_DISCLOSURE} and a month's run</strong> (the owner's rulings of 2026-11-02 and 2026-11-03): a month's run is a {@code
+ * COMPLETED} {@code BATCH} run with a business date in the month, of a batch not repudiated, <strong>for each active source</strong>; a run in another status
+ * counts for nothing, a {@code REPROCESS} alone counts for nothing, and a repudiated batch's run counts for nothing, its evidence withdrawn. A source is active when
+ * {@code settlement.source} says {@code ACTIVE} and this build declares it. <strong>A month with no activity gets its run from the counterparty's nil report</strong>:
+ * a file with no lines through the existing door - pulled, the channel its authentication, or uploaded and attested by a second person - accepted with no posting,
+ * its run going {@code OPEN -> COMPLETED} at no items. Runs are born only in that acceptance's transaction, from a stored file, so the platform cannot mint one to satisfy this
+ * check. A retired source's door is shut, so it is not required: requiring it would wedge; its unfinished or repudiated runs are disclosed, never ignored.
+ *
+ * <p><strong>{@code VALUATION_SET_APPROVED} waits</strong> (`P14-TSK-011`'s review, M-6): a set is captured only after the lock, so it would be {@code FAILED} on every first attempt
+ * and {@code AccountingCloseCheckFailed} would fire at every close. So with no approved set the judge answers "not yet", the attempt deferred and re-judged until one stands, taking no
+ * new lock - and no person's re-run and no attempt born by the approval, which would leave the first {@code FAILED} and race an attempt in flight. {@code CLOSE_STATUS} names the
+ * proposals that await a decision.
  *
  * <p><strong>{@code ACCRUALS_COMPLETE} after the lock</strong> (`P14-TSK-006`'s review, I-1): a catch-up after the lock
  * floors the period's accrual dates to the first open date, and {@link AccrualCompleteness#blocking} then reads empty
@@ -70,8 +81,8 @@ public final class CloseChecks {
     /** The projection reading could not judge everything - an account in flight. */
     public static final String PROJECTION_INCOMPLETE = "PROJECTION_INCOMPLETE";
 
-    /** The period has no approved valuation rate set. */
-    public static final String NO_APPROVED_SET = "NO_APPROVED_SET";
+    /** An active source has no {@code COMPLETED} {@code BATCH} run of an unrepudiated batch in the month, or the register answered no active source. */
+    public static final String MONTH_NOT_RUN = "MONTH_NOT_RUN";
 
     /** The approved set holds no rate. */
     public static final String EMPTY_APPROVED_SET = "EMPTY_APPROVED_SET";
@@ -93,6 +104,7 @@ public final class CloseChecks {
     @NonNull private final AccrualCompleteness accruals;
     @NonNull private final SourceProofs proofs;
     @NonNull private final ReconciliationDisclosure disclosure;
+    @NonNull private final ReconciliationRunCoverage coverage;
     @NonNull private final ValuationRateSets valuationSets;
     @NonNull private final AccountingPeriodStore periods;
     @NonNull private final AccountingChecks.Snapshots snapshots;
@@ -119,7 +131,7 @@ public final class CloseChecks {
                 case ACCRUALS_COMPLETE -> Optional.of(accrualsComplete(claimed));
                 case PROJECTION_VERIFIED -> Optional.of(projectionVerified(claimed));
                 case RECONCILIATION_DISCLOSURE -> Optional.of(reconciliationDisclosure(claimed));
-                case VALUATION_SET_APPROVED -> Optional.of(valuationSetApproved(claimed));
+                case VALUATION_SET_APPROVED -> valuationSetApproved(claimed);
                 case OPEN_ACCOUNTING_BREAKS -> throw new IllegalStateException("handled above");
             };
         } catch (RuntimeException unreadable) {
@@ -189,9 +201,8 @@ public final class CloseChecks {
     }
 
     /**
-     * An outcome as an attempt's verdict: {@code DISCLOSED} only when the sole failure is {@link
-     * CheckOutcome#DISCREPANCIES} and an {@code ACKNOWLEDGED} break - four eyes, a disclosure - holds every finding.
-     * {@link CheckOutcome#RECURRED}, {@link CheckOutcome#ACKNOWLEDGED_CHANGED}, {@code UNAVAILABLE:*}, {@code NO_MAPPING}
+     * An outcome as an attempt's verdict: {@code DISCLOSED} only when the sole failure is {@link CheckOutcome#DISCREPANCIES} and every finding is one a person
+     * decided on and that stands unchanged. An {@code OPEN} break awaits a decision; {@link CheckOutcome#FINDING_CHANGED}, {@code UNAVAILABLE:*}, {@code NO_MAPPING}
      * and {@code FINDINGS_CAPPED} are each another failure, so never.
      */
     static CheckVerdict verdictOf(CheckOutcome outcome) {
@@ -200,7 +211,7 @@ public final class CloseChecks {
             return CheckVerdict.passed(outcome.check(), outcome.judgedBy(), evidence);
         }
         boolean allDisclosed = outcome.check().disclosable() && outcome.failures().equals(List.of(CheckOutcome.DISCREPANCIES))
-                && outcome.knownAcknowledged() == outcome.findings();
+                && outcome.decided() == outcome.findings();
         return allDisclosed
                 ? CheckVerdict.disclosed(outcome.check(), outcome.judgedBy(), evidence)
                 : CheckVerdict.failed(outcome.check(), outcome.judgedBy(), outcome.failures(), evidence);
@@ -208,10 +219,10 @@ public final class CloseChecks {
 
     private static CanonicalJson.Obj evidence(CheckOutcome outcome) {
         CanonicalJson.Arr changed = CanonicalJson.array();
-        outcome.acknowledgedChanged().stream().limit(MAX_SUBJECTS).forEach(changed::add);
+        outcome.changed().stream().limit(MAX_SUBJECTS).forEach(changed::add);
         return CanonicalJson.object().put("findings", outcome.findings()).put("raised", outcome.raised())
                 .put("knownOpen", outcome.knownOpen()).put("knownAcknowledged", outcome.knownAcknowledged())
-                .put("recurred", outcome.knownResolved()).put("acknowledgedChanged", outcome.acknowledgedChanged().size())
+                .put("knownResolved", outcome.knownResolved()).put("changed", outcome.changed().size())
                 .put("changedSubjects", changed);
     }
 
@@ -273,12 +284,73 @@ public final class CloseChecks {
 
     // ------------------------------------------------------------------ the disclosure
 
+    private record DisclosureReading(ReconciliationDisclosure.Disclosure disclosure, ReconciliationRunCoverage.Coverage coverage) {}
+
+    /** The disclosure and the month's runs, on one snapshot: {@code FAILED} when the month did not run, otherwise {@code PASSED} only with nothing to disclose. */
     private CheckVerdict reconciliationDisclosure(CloseRuns.ClaimedCheck claimed) {
-        ReconciliationDisclosure.Disclosure read = snapshots.read(snapshot ->
-                disclosure.asOfCutoff(snapshot, claimed.month()));
-        return read.nothingToDisclose()
-                ? CheckVerdict.passed(claimed.check(), ReconciliationDisclosure.JUDGED_BY, read.evidence())
-                : CheckVerdict.disclosed(claimed.check(), ReconciliationDisclosure.JUDGED_BY, read.evidence());
+        DisclosureReading read = snapshots.read(snapshot -> new DisclosureReading(disclosure.asOfCutoff(snapshot, claimed.month()),
+                coverage.ofMonth(snapshot, claimed.month())));
+        MonthRuns runs = MonthRuns.judge(read.coverage());
+        CanonicalJson.Obj evidence = read.disclosure().evidence().put("monthRuns", runs.evidence());
+        if (!runs.ran()) {
+            return CheckVerdict.failed(claimed.check(), ReconciliationDisclosure.JUDGED_BY, List.of(MONTH_NOT_RUN), evidence);
+        }
+        return read.disclosure().nothingToDisclose() && runs.finished()
+                ? CheckVerdict.passed(claimed.check(), ReconciliationDisclosure.JUDGED_BY, evidence)
+                : CheckVerdict.disclosed(claimed.check(), ReconciliationDisclosure.JUDGED_BY, evidence);
+    }
+
+    /**
+     * The owner's rule over one coverage reading. The evidence is per source, never per day: a month's lines could pass the attempt's bound and fail the check by its size.
+     *
+     * @param ran every active source has a run that counts, and at least one source is active
+     * @param finished no run of the month stands unfinished or repudiated, whichever source's, and none names a source the register does not hold
+     * @param notRun the active sources with no run that counts, by code; {@link PeriodCloses} re-judges {@code ran} on it, holding the period row
+     */
+    record MonthRuns(boolean ran, boolean finished, List<String> notRun, CanonicalJson.Obj evidence) {
+
+        static MonthRuns judge(ReconciliationRunCoverage.Coverage coverage) {
+            CanonicalJson.Arr unrun = CanonicalJson.array();
+            List<String> notRun = new ArrayList<>();
+            CanonicalJson.Arr sources = CanonicalJson.array();
+            boolean anyActive = false;
+            boolean allRan = true;
+            for (ReconciliationRunCoverage.Source source : coverage.sources()) {
+                List<ReconciliationRunCoverage.Line> own = coverage.lines().stream()
+                        .filter(line -> line.sourceId().equals(source.id())).toList();
+                long counting = own.stream().filter(MonthRuns::counts).mapToLong(ReconciliationRunCoverage.Line::runs).sum();
+                long reprocess = own.stream().filter(line -> !ReconciliationRunCoverage.Coverage.BATCH.equals(line.kind()))
+                        .mapToLong(ReconciliationRunCoverage.Line::runs).sum();
+                long unfinished = own.stream().filter(line -> !ReconciliationRunCoverage.Coverage.COMPLETED.equals(line.status()))
+                        .mapToLong(ReconciliationRunCoverage.Line::runs).sum();
+                long repudiated = own.stream().filter(ReconciliationRunCoverage.Line::repudiated)
+                        .mapToLong(ReconciliationRunCoverage.Line::runs).sum();
+                sources.add(CanonicalJson.object().put("code", source.code()).put("state", source.state().name())
+                        .put("completedBatchRuns", counting).put("reprocessRuns", reprocess).put("unfinishedRuns", unfinished)
+                        .put("repudiatedRuns", repudiated));
+                if (source.state() == ReconciliationRunCoverage.SourceState.ACTIVE) {
+                    anyActive = true;
+                    if (counting == 0) {
+                        allRan = false;
+                        unrun.add(source.code());
+                        notRun.add(source.code());
+                    }
+                }
+            }
+            long unknown = coverage.lines().stream()
+                    .filter(line -> coverage.sources().stream().noneMatch(source -> source.id().equals(line.sourceId())))
+                    .mapToLong(ReconciliationRunCoverage.Line::runs).sum();
+            boolean finished = unknown == 0 && coverage.lines().stream().allMatch(line ->
+                    ReconciliationRunCoverage.Coverage.COMPLETED.equals(line.status()) && !line.repudiated());
+            return new MonthRuns(anyActive && allRan, finished, List.copyOf(notRun), CanonicalJson.object().put("month", coverage.month().toString())
+                    .put("sources", sources).put("sourcesNotRun", unrun).put("unknownSourceRuns", unknown));
+        }
+
+        /** The owner's rule: {@code BATCH}, {@code COMPLETED}, and its batch not repudiated. */
+        private static boolean counts(ReconciliationRunCoverage.Line line) {
+            return ReconciliationRunCoverage.Coverage.BATCH.equals(line.kind())
+                    && ReconciliationRunCoverage.Coverage.COMPLETED.equals(line.status()) && !line.repudiated();
+        }
     }
 
     // ------------------------------------------------------------------ the valuation set
@@ -287,11 +359,10 @@ public final class CloseChecks {
 
     /**
      * The period's approved set, read afresh per attempt and pinned nowhere - whichever way the owner rules on
-     * superseding an approved set (ADR-0116), the check reads what {@code approvedFor} answers then. The period's sets
-     * are named in the evidence so a {@code FAILED} check says which proposal awaits a decision (`P14-TSK-014`'s
-     * review, M-5).
+     * superseding an approved set (ADR-0116), the check reads what {@code approvedFor} answers then. <strong>None yet: not yet</strong>, so the attempt is
+     * deferred (`P14-TSK-011`'s review, M-6, this class's note); {@code CLOSE_STATUS} names the proposals awaiting a decision (`P14-TSK-014`'s review, M-5).
      */
-    private CheckVerdict valuationSetApproved(CloseRuns.ClaimedCheck claimed) {
+    private Optional<CheckVerdict> valuationSetApproved(CloseRuns.ClaimedCheck claimed) {
         SetReading reading = snapshots.read(snapshot -> new SetReading(valuationSets.approvedFor(snapshot, claimed.period()),
                 valuationSets.ofPeriod(snapshot, claimed.period())));
         CanonicalJson.Arr sets = CanonicalJson.array();
@@ -299,15 +370,15 @@ public final class CloseChecks {
                 .put("status", set.status().name())));
         CanonicalJson.Obj evidence = CanonicalJson.object().put("sets", sets);
         if (reading.approved().isEmpty()) {
-            return CheckVerdict.failed(claimed.check(), "valuation-set:none", List.of(NO_APPROVED_SET), evidence);
+            return Optional.empty();
         }
         ValuationRateSets.Valued approved = reading.approved().get();
         String judgedBy = "valuation-set:" + approved.id().value();
         evidence.put("approved", approved.id().value().toString()).put("asOf", approved.asOf().toString())
                 .put("rates", (long) approved.rates().size());
-        return approved.rates().isEmpty()
+        return Optional.of(approved.rates().isEmpty()
                 ? CheckVerdict.failed(claimed.check(), judgedBy, List.of(EMPTY_APPROVED_SET), evidence)
-                : CheckVerdict.passed(claimed.check(), judgedBy, evidence);
+                : CheckVerdict.passed(claimed.check(), judgedBy, evidence));
     }
 
     // ------------------------------------------------------------------ plumbing

@@ -11,6 +11,7 @@ import com.finapp.accounting.CloseRuns;
 import com.finapp.accounting.FinalTrialBalance;
 import com.finapp.accounting.JdbcCloseRunStore;
 import com.finapp.accounting.ReconciliationDisclosure;
+import com.finapp.accounting.ReconciliationRunCoverage;
 import com.finapp.accounting.ReportRuns;
 import com.finapp.accounting.SourceProofs;
 import com.finapp.accounting.ValuationRateSets;
@@ -97,6 +98,7 @@ public class AccountingCloseBeans {
             AccrualCompleteness accrualCompleteness,
             SourceProofs sourceProofs,
             ReconciliationDisclosure reconciliationDisclosure,
+            ReconciliationRunCoverage reconciliationRunCoverage,
             ValuationRateSets valuationRateSets,
             AccountingPeriodStore accountingPeriodStore,
             DataSource dataSource,
@@ -104,7 +106,7 @@ public class AccountingCloseBeans {
                     Duration statementTimeout) {
         GlSnapshots snapshots = new GlSnapshots(dataSource::getConnection, statementTimeout);
         return new CloseChecks(accountingChecks::run, finalTrialBalance, accrualCompleteness, sourceProofs,
-                reconciliationDisclosure, valuationRateSets, accountingPeriodStore, snapshots::read);
+                reconciliationDisclosure, reconciliationRunCoverage, valuationRateSets, accountingPeriodStore, snapshots::read);
     }
 
     @Bean

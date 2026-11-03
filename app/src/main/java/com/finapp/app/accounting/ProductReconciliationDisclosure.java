@@ -103,7 +103,7 @@ public final class ProductReconciliationDisclosure implements ReconciliationDisc
 
         return new Disclosure(cutoff, asOf, breaks.values().stream().map(BreakFold::value).toList(), raisedSince[0],
                 suspense.values().stream().map(SuspenseFold::value).toList(), unowned[0],
-                postings.others(snapshot, cutoff));
+                postings.pastTheCutoff(snapshot, cutoff));
     }
 
     private static void ledgerLines(Connection snapshot, LocalDate cutoff, Map<String, SuspenseFold> suspense) {

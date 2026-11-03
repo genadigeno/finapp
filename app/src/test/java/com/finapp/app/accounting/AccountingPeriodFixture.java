@@ -44,6 +44,10 @@ final class AccountingPeriodFixture {
     static final YearMonth JANUARY = YearMonth.of(1999, 1);
     static final YearMonth FEBRUARY = YearMonth.of(1999, 2);
     static final JdbcAccountingPeriodStore STORE = new JdbcAccountingPeriodStore();
+    /** The sources this build declares, as {@code SettlementBeans} composes them - what {@code ReconciliationMonthReads} measures a month against. */
+    static final java.util.Set<String> DECLARED_SOURCES = java.util.Set.of("simulated-psp.settlement", "simulated-scheme.cycle-report",
+            "simulated-payout.settlement", "simulated-bank.statement", "fx-sim-a.trade-report", "corridor-sim-a.settlement",
+            "fx-sim-b.trade-report", "corridor-sim-b.settlement");
 
     private AccountingPeriodFixture() {}
 

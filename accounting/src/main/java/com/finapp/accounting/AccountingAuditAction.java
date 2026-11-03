@@ -258,6 +258,53 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " ReportRead and CloseRunRead precedent). Recorded SUCCEEDED in a transaction of its own before the"
                     + " answer, so nothing is served unrecorded. Its target the period; the summary the definition, its"
                     + " version, the month and the content's sha256 - never the content or a figure.",
+            false),
+
+    /** A person proposed a period's close (`P14-TSK-012`, ACCOUNTING_CLOSE_PROPOSE). */
+    PERIOD_CLOSE_PROPOSED(
+            "accounting.PeriodCloseProposed",
+            "An accountant proposed closing a LOCKED accounting period on the attempts they read, a person's reason per DISCLOSED attempt frozen in the close record (P14-TSK-012,"
+                    + " INV-ACC-09; POST .../periods/{id}/close-proposal, ACCOUNTING_CLOSE_PROPOSE). Reasoned. Its target the period; the summary its month, revision, the run, the"
+                    + " proposal and the attempts disclosed by check and number - never a reason or a figure. accounting.AccountingPeriodCloseProposed is published with it.",
+            true),
+
+    /** A second person approved a period's close (`P14-TSK-012`, ACCOUNTING_CLOSE_APPROVE). */
+    PERIOD_CLOSED(
+            "accounting.PeriodClosed",
+            "A person other than its proposer approved an accounting period's close: CLOSE_PROPOSED -> CLOSED, on the proposal they read, what it read still standing (P14-TSK-012,"
+                    + " INV-ACC-09, INV-AUD-04; POST .../periods/{id}/close-approval, ACCOUNTING_CLOSE_APPROVE). Reasoned. Its target the period; the summary its month, revision, the run, the"
+                    + " proposal and the valuation rate set. accounting.AccountingPeriodClosed is published with it.",
+            true),
+
+    /** A proposal was rejected (`P14-TSK-012`, ACCOUNTING_CLOSE_APPROVE). */
+    PERIOD_CLOSE_REJECTED(
+            "accounting.PeriodCloseRejected",
+            "A holder of ACCOUNTING_CLOSE_APPROVE rejected a period's close proposal: CLOSE_PROPOSED -> LOCKED, the same lock and run, the proposal kept; a next proposal is a new row"
+                    + " (P14-TSK-012; POST .../periods/{id}/close-rejection). Reasoned. May be the proposer's. Its target the period; the summary its month, revision, the proposal and whether"
+                    + " the rejecter proposed it.",
+            true),
+
+    /** A person proposed reopening the latest closed period (`P14-TSK-012`, ACCOUNTING_CLOSE_PROPOSE). */
+    PERIOD_REOPEN_PROPOSED(
+            "accounting.PeriodReopenProposed",
+            "An accountant proposed reopening the latest CLOSED accounting period - nothing moves until a second person approves (P14-TSK-012, INV-ACC-10, INV-AUD-04; POST"
+                    + " .../periods/{id}/reopen-proposal, ACCOUNTING_CLOSE_PROPOSE). Reasoned. Its target the period; the summary its month and revision.",
+            true),
+
+    /** A second person approved a reopen (`P14-TSK-012`, ACCOUNTING_CLOSE_APPROVE). */
+    PERIOD_REOPENED(
+            "accounting.PeriodReopened",
+            "A person other than its proposer approved a period's reopen: CLOSED -> OPEN at revision + 1, the ledger's posting cutoff back exactly one period, the period's FINAL report runs"
+                    + " SUPERSEDED and the pin released, in one transaction; nothing deleted (P14-TSK-012, INV-ACC-10, INV-AUD-04; POST .../periods/{id}/reopen-approval, ACCOUNTING_CLOSE_APPROVE)."
+                    + " Reasoned. Its target the period; the summary its month, the new revision and how many runs were superseded. accounting.AccountingPeriodReopened is published with it.",
+            true),
+
+    /** A controller read what it decides (`P14-TSK-012`, ACCOUNTING_CLOSE_APPROVE) - every serving recorded. */
+    CLOSE_PROPOSAL_READ(
+            "accounting.CloseProposalRead",
+            "A controller read a period's close proposal - the attempts it names with their evidence and the person's reason per DISCLOSED attempt (P14-TSK-012; GET"
+                    + " .../periods/{id}/close-proposal, ACCOUNTING_CLOSE_APPROVE; a controller holds no ACCOUNTING_READ). Recorded SUCCEEDED in a transaction of its own before the answer. Its"
+                    + " target the period; the summary its month, the proposal, its status and whether it still stands - never a reason or a figure.",
             false);
 
     private final String code;

@@ -326,6 +326,9 @@ extra["ownContainerSuites"] =
     listOf(
         "com.finapp.app.accounting.GlReadModelDatabaseTest",
         "com.finapp.app.accounting.OperationalReportsDatabaseTest",
+        "com.finapp.app.accounting.PeriodCloseDatabaseTest",
+        "com.finapp.app.accounting.PeriodReopenDatabaseTest",
+        "com.finapp.app.accounting.QuietMonthDatabaseTest",
         "com.finapp.app.accounting.TrialBalanceRunDatabaseTest",
         "com.finapp.app.accounting.ValuationRateSetDatabaseTest",
         "com.finapp.app.bnpl.BnplAcceptanceApiTest",

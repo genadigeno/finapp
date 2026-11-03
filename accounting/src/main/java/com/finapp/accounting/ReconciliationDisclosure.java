@@ -33,8 +33,8 @@ import java.util.TreeMap;
  */
 public interface ReconciliationDisclosure {
 
-    /** The version an attempt names. */
-    String JUDGED_BY = "reconciliation-disclosure:v1";
+    /** The version an attempt names - v2 from `P14-TSK-012`: narrowed to the floored, and a month's runs judged beside it. */
+    String JUDGED_BY = "reconciliation-disclosure:v2";
 
     /** The disclosure of the {@code period}'s cutoff; throws when it cannot be read whole - never an empty answer for it. */
     Disclosure asOfCutoff(Connection snapshot, YearMonth period);
@@ -101,26 +101,30 @@ public interface ReconciliationDisclosure {
      * @param suspenseUnowned items unreleased at the cutoff whose owning break was not standing open then - the {@code
      * suspense.unowned} defect, as of the cutoff (`P14-TSK-010`'s review, M-10): frozen facts, so disclosed, never
      * passed
-     * @param postedPastTheCutoff entries of the floored rules other than {@code LND-2} (that one is {@code
-     * ACCRUALS_COMPLETE}'s) whose value date is at or before the cutoff and whose posting date is after it, per key
-     * namespace - a floor puts them there, or a rule's own value date before its accepted date: the journal holds them
-     * in a later period while a report grouped by the stated date ({@code ReconciliationReports.providerCosts}) can
-     * hold them in this one (`P14-TSK-006`'s review, M-2: disclosed)
+     * @param pastTheCutoff entries of the floored rules other than {@code LND-2} (that one is {@code ACCRUALS_COMPLETE}'s) whose value date is at or
+     * before the cutoff and whose posting date is after it, per key namespace, each told floored, unrecorded or its rule's own dating ({@link
+     * PastTheCutoffPostings}): the journal holds them in a later period while a report grouped by the stated date ({@code
+     * ReconciliationReports.providerCosts}) can hold them in this one (`P14-TSK-006`'s review, M-2)
      */
     record Disclosure(LocalDate cutoff, Instant asOf, List<OpenBreaks> breaks, long raisedSinceStillOpen, List<Suspense> suspense,
-            long suspenseUnowned, SortedMap<String, Long> postedPastTheCutoff) {
+            long suspenseUnowned, SortedMap<String, PastTheCutoffPostings.Split> pastTheCutoff) {
 
         public Disclosure {
             Objects.requireNonNull(cutoff, "cutoff");
             Objects.requireNonNull(asOf, "asOf");
             breaks = List.copyOf(breaks);
             suspense = List.copyOf(suspense);
-            postedPastTheCutoff = new TreeMap<>(postedPastTheCutoff);
+            pastTheCutoff = new TreeMap<>(pastTheCutoff);
         }
 
-        /** True only when the whole reading found nothing to disclose - anything else is {@code DISCLOSED}, never {@code PASSED}. */
+        /**
+         * True only when the whole reading found nothing to disclose - anything else is {@code DISCLOSED}, never {@code PASSED}. A posting past the cutoff
+         * under its rule's own dating asks for nothing (the owner's decision (b), 2026-11-03); a floored one does, and so does one whose
+         * audit record is missing.
+         */
         public boolean nothingToDisclose() {
-            return breaks.isEmpty() && raisedSinceStillOpen == 0 && suspenseUnowned == 0 && postedPastTheCutoff.isEmpty()
+            return breaks.isEmpty() && raisedSinceStillOpen == 0 && suspenseUnowned == 0
+                    && pastTheCutoff.values().stream().allMatch(split -> split.countsAsFloored() == 0)
                     && suspense.stream().allMatch(Suspense::clear);
         }
 
@@ -130,10 +134,12 @@ public interface ReconciliationDisclosure {
             breaks.forEach(group -> openBreaks.add(group.evidence()));
             CanonicalJson.Arr items = CanonicalJson.array();
             suspense.forEach(group -> items.add(group.evidence()));
+            CanonicalJson.Obj past = CanonicalJson.object();
+            pastTheCutoff.forEach((namespace, split) -> past.put(namespace, split.asValue()));
             return CanonicalJson.object().put("cutoff", cutoff.toString()).put("asOf", asOf.toString())
                     .put("openBreaks", openBreaks).put("raisedSinceStillOpen", raisedSinceStillOpen)
                     .put("suspense", items).put("suspenseUnowned", suspenseUnowned)
-                    .put("postedPastTheCutoff", counts(postedPastTheCutoff));
+                    .put("pastTheCutoff", past);
         }
     }
 

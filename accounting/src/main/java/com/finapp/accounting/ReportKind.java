@@ -7,7 +7,8 @@ package com.finapp.accounting;
  * issued). {@link #TRIAL_BALANCE}'s completed run is {@code DELIVERY_PLAN.md}'s {@code TrialBalanceGenerated}. The
  * existing live operator reports of lending, bnpl, reconciliation and merchant stay operational and are not kinds here.
  * *(`P14-TSK-017` renamed four to the entry's and ADR-0115's codes - a definition's code is its kind's name - and two are
- * never a run: {@code OperationalReportDefinition}.)*
+ * never a run: {@code OperationalReportDefinition}. {@code P14-TSK-012} dropped {@code BALANCES}, on the owner's decision of 2026-11-03: no
+ * definition used it and the trial balance's closing column answers it.)*
  */
 public enum ReportKind {
 
@@ -15,8 +16,6 @@ public enum ReportKind {
     TRIAL_BALANCE,
     /** Per GL account, drill-down to the journal lines. */
     GL_ACTIVITY,
-    /** Closing balances per GL account and currency. */
-    BALANCES,
     /** Fee, interest and spread revenue: the period's movement by purpose. */
     REVENUE,
     /** Receivables and payables: balances by purpose as of the period's end. */

@@ -8,6 +8,7 @@ import com.finapp.accounting.AccountingPeriodStore;
 import com.finapp.accounting.AccountingPeriods;
 import com.finapp.accounting.AccrualCompleteness;
 import com.finapp.accounting.CheckOutcome;
+import com.finapp.accounting.CloseCheckCode;
 import com.finapp.accounting.CloseCheckStatus;
 import com.finapp.accounting.CloseChecks;
 import com.finapp.accounting.CloseRunStore;
@@ -185,7 +186,7 @@ class AccountingCloseScheduleTest {
         }
     }
 
-    /** The check leg's first pass, on the schedule's own executor: one run, all nine concluded. */
+    /** The check leg's first pass, on the schedule's own executor: one run, all nine judged - eight concluded, {@code VALUATION_SET_APPROVED} waiting on a set this fixture never approves (`P14-TSK-012`, M-6). */
     private void awaitEveryCheckConcluded() {
         long waited = 0;
         while (!everyCheckConcluded() && waited++ < 6000) {
@@ -196,6 +197,7 @@ class AccountingCloseScheduleTest {
 
     private boolean everyCheckConcluded() {
         return !store.runs().isEmpty() && store.all(store.runs().get(0).id()).size() == 9 && store.all(store.runs().get(0).id()).stream()
+                .filter(attempt -> attempt.check() != CloseCheckCode.VALUATION_SET_APPROVED)
                 .noneMatch(attempt -> attempt.status() == CloseCheckStatus.PENDING);
     }
 
@@ -222,8 +224,13 @@ class AccountingCloseScheduleTest {
         lockedMarch();
         assertThat(schedule().checksOnce()).isEqualTo(9);
         assertThat(store.runs()).hasSize(1);
-        assertThat(store.all(store.runs().get(0).id())).allSatisfy(attempt ->
-                assertThat(attempt.status()).as(attempt.check().name()).isNotEqualTo(CloseCheckStatus.PENDING));
+        assertThat(store.all(store.runs().get(0).id())).allSatisfy(attempt -> {
+            if (attempt.check() == CloseCheckCode.VALUATION_SET_APPROVED) {
+                assertThat(attempt.status()).as("it waits for an approved set, deferred, never FAILED (P14-TSK-012, M-6)").isEqualTo(CloseCheckStatus.PENDING);
+            } else {
+                assertThat(attempt.status()).as(attempt.check().name()).isNotEqualTo(CloseCheckStatus.PENDING);
+            }
+        });
         assertThat(schedule().checksOnce()).as("nothing left").isZero();
         assertThat(store.runs()).as("one run per lock").hasSize(1);
     }
@@ -381,7 +388,11 @@ class AccountingCloseScheduleTest {
         };
         ValuationRateSets sets = new ValuationRateSets(new InMemoryValuationRateSetStore().watching(periods), periods, reference,
                 ValuationStaleness.standard(), (uow, record) -> { }, IDS, CLOCK);
-        return new CloseChecks(clean, (id, actor, correlation) -> trialBalance.read(id, actor, correlation), caughtUp, proofs, disclosure, sets, periods,
+        return new CloseChecks(clean, (id, actor, correlation) -> trialBalance.read(id, actor, correlation), caughtUp, proofs, disclosure, (snapshot, month) -> {
+            java.util.UUID ranSource = java.util.UUID.nameUUIDFromBytes(new byte[] {7});
+            return new com.finapp.accounting.ReconciliationRunCoverage.Coverage(month, List.of(new com.finapp.accounting.ReconciliationRunCoverage.Line(ranSource, "BATCH", "COMPLETED", month.atDay(1), false, 1)),
+                    List.of(new com.finapp.accounting.ReconciliationRunCoverage.Source(ranSource, "simulated-psp.settlement", com.finapp.accounting.ReconciliationRunCoverage.SourceState.ACTIVE)));
+        }, sets, periods,
                 new com.finapp.accounting.AccountingChecks.Snapshots() {
                     @Override
                     public <R> R read(Function<Connection, R> work) {

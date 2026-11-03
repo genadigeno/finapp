@@ -12,9 +12,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * The accounting breaks' store (`P14-TSK-010`; {@code accounting V006}): the break row and its append-only case file.
- * The birth is insert-if-absent on {@code (period, check, subject)} - the row-10 arbiter; every later move a conditional
- * {@code UPDATE} of the row's act columns under {@code V006}'s edge trigger. No delete exists.
+ * The accounting breaks' store (`P14-TSK-010`; {@code accounting V006}, {@code V008}): the break row and its append-only case
+ * file. The birth is insert-if-absent on {@code (period, check, subject, generation)} - the row-10 arbiter; every later move a
+ * conditional {@code UPDATE} of the row's act columns under the edge trigger. No delete exists.
  */
 public interface AccountingBreakStore {
 
@@ -27,7 +27,8 @@ public interface AccountingBreakStore {
     }
 
     /** A break to be born. */
-    record NewBreak(AccountingBreakId id, YearMonth period, BreakFinding finding, Actor raisedBy, CorrelationId correlation) {
+    record NewBreak(AccountingBreakId id, YearMonth period, BreakFinding finding, int generation, Actor raisedBy,
+            CorrelationId correlation) {
 
         public NewBreak {
             Objects.requireNonNull(id, "id");
@@ -35,6 +36,14 @@ public interface AccountingBreakStore {
             Objects.requireNonNull(finding, "finding");
             Objects.requireNonNull(raisedBy, "raisedBy");
             Objects.requireNonNull(correlation, "correlation");
+            if (generation < 1) {
+                throw new IllegalArgumentException("a break's generation starts at 1");
+            }
+        }
+
+        /** A subject's first break. */
+        public NewBreak(AccountingBreakId id, YearMonth period, BreakFinding finding, Actor raisedBy, CorrelationId correlation) {
+            this(id, period, finding, 1, raisedBy, correlation);
         }
     }
 
@@ -45,6 +54,7 @@ public interface AccountingBreakStore {
             CloseCheckCode check,
             BreakType type,
             String subject,
+            int generation,
             String evidence,
             String judgedBy,
             BreakStatus status,
@@ -112,8 +122,8 @@ public interface AccountingBreakStore {
     }
 
     /**
-     * Births the break unless one already holds its {@code (period, check, subject)} - {@code ON CONFLICT DO NOTHING}: a
-     * concurrent raiser waits on the winner's commit and inserts nothing.
+     * Births the break unless one already holds its {@code (period, check, subject, generation)} - {@code ON CONFLICT DO
+     * NOTHING}: a concurrent raiser waits on the winner's commit and inserts nothing.
      *
      * @return true when this call inserted it
      */
@@ -132,23 +142,47 @@ public interface AccountingBreakStore {
             Optional<AccountingBreakId> after, int limit);
 
     /**
-     * The subjects already raised for {@code period} and {@code check}, each with its break's status and evidence - what
-     * a run counts and never re-raises, a {@code RESOLVED} one reported as a recurrence (the review's I-1), an {@code
-     * ACKNOWLEDGED} one whose finding now reads differently as changed (`P14-TSK-011`'s review, I-1).
+     * The subjects already raised for {@code period} and {@code check}, each with its <strong>latest generation</strong>'s
+     * status, evidence and number - what a run compares a finding with (ADR-0117's ruling, `P14-TSK-012`).
      */
     Map<String, Held> held(Connection unitOfWork, YearMonth period, CloseCheckCode check);
 
-    /** What a raised subject's break holds: its status, and the evidence it was raised with - never rewritten. */
-    record Held(BreakStatus status, String evidence) {
+    /**
+     * What a raised subject's latest break holds: its status, the evidence it was raised with - never rewritten - and its
+     * generation. <strong>One rule for a finding a person decided on</strong> (the owner's ruling, ADR-0117): an {@code OPEN}
+     * break awaits a decision, so nothing is compared with it. A decided one - {@code ACKNOWLEDGED}, or {@code RESOLVED} by its
+     * correcting entry - holds a finding unchanged from its evidence, which counts as disclosed; a finding that differs is
+     * {@link #changedBy changed}, a new break at {@link #nextGeneration()}.
+     *
+     * <p><strong>What decides "unchanged"</strong>: exact equality of {@link BreakFinding#evidence()}, which every producer
+     * renders canonically (no clock, a fixed member order, sorted lists, the cut at {@value BreakFinding#MAX_EVIDENCE} deterministic) and
+     * the column stores verbatim. The limits: evidence holds no amounts (accepted by the owner) and a difference past the cut is not seen.
+     */
+    record Held(BreakStatus status, String evidence, int generation) {
 
         public Held {
             Objects.requireNonNull(status, "status");
             Objects.requireNonNull(evidence, "evidence");
         }
 
-        /** True when {@code finding} is one an acknowledgement did not see: acknowledged, and now reading differently. */
+        /** A subject's first break. */
+        public Held(BreakStatus status, String evidence) {
+            this(status, evidence, 1);
+        }
+
+        /** True when a person has decided on this break: acknowledged it, or resolved it by its correcting entry. */
+        boolean decided() {
+            return status != BreakStatus.OPEN;
+        }
+
+        /** True when {@code finding} is not what a person decided on - decided, and now reading differently. */
         boolean changedBy(BreakFinding finding) {
-            return status == BreakStatus.ACKNOWLEDGED && !evidence.equals(finding.evidence());
+            return decided() && !evidence.equals(finding.evidence());
+        }
+
+        /** The generation a changed finding is raised at. */
+        int nextGeneration() {
+            return generation + 1;
         }
     }
 

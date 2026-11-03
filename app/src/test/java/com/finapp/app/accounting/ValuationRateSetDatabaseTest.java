@@ -79,13 +79,13 @@ import org.junit.jupiter.api.TestMethodOrder;
  * and - last, since a period admits one approved set for good - two captures and <strong>ten concurrent approvals</strong>
  * leaving exactly one approved set, a raw second approval refused by the partial unique.
  *
- * <p>January 1999 is the one period the fixtures can lock (the first; February would need January {@code CLOSED}, which
- * `P14-TSK-012` builds, and the contiguity trigger refuses a far period without every month before it), so each case
+ * <p>January 1999 is the one period the fixtures can lock (the first; February needs January {@code CLOSED}, which
+ * only `P14-TSK-012`'s suites do, each in a database of its own, and the contiguity trigger refuses a far period without every month before it), so each case
  * locks it and {@link AccountingPeriodFixture#restore} returns it to {@code OPEN}; each case's reference is a source of
  * its own ({@code valuation-test-<uuid>}), so fx's newer-than-latest rule never meets another suite's rows.
  * <strong>January 1999 ends this suite with an approved set for good</strong> - a set is never deleted and a period has
  * one approved set - so a later database suite that must approve a set of its own (`-011`'s close, `-015`'s translation)
- * either uses another period (February, once `-012` can close January) or runs before this one; one that needs only
+ * either has a database of its own (`P14-TSK-012`'s) or runs before this one; one that needs only
  * <em>an</em> approved set can read January's ({@code ValuationRateSets.approvedFor}). Only {@link #oneApprovedPerPeriod},
  * ordered after every case that needs January with no approved set and before every case that reads its set, approves;
  * every race before it is arranged so that no approval succeeds.

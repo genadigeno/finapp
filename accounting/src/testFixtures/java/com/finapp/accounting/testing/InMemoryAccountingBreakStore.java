@@ -22,7 +22,8 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * {@link AccountingBreakStore} in memory (`P14-TSK-010`): the hermetic suites' store, holding the database's ranks the
- * machine relies on - born once per {@code (period, check, subject)} (the unique key's insert-if-absent), born
+ * machine relies on - born once per {@code (period, check, subject, generation)} (the unique key's insert-if-absent), a later generation
+ * only over a decided one reading differently, born
  * {@code OPEN}, the conditional edges, the four-eyes {@code CHECK}, the case file append-only - so a defect the database
  * would refuse is refused here too, as an {@link IllegalStateException} naming the rank. The real ranks are
  * {@code accounting V006}'s, proven by {@code AccountingBreakDatabaseTest} (owed, C5).
@@ -57,8 +58,16 @@ public final class InMemoryAccountingBreakStore implements AccountingBreakStore 
 
     @Override
     public boolean insertIfAbsent(Connection unitOfWork, NewBreak born) {
+        if (born.generation() > 1 && rows.values().stream().noneMatch(row -> row.period().equals(born.period())
+                && row.check() == born.finding().check() && row.subject().equals(born.finding().subject())
+                && row.generation() == born.generation() - 1 && row.status() != BreakStatus.OPEN
+                && !row.evidence().equals(born.finding().evidence()))) {
+            throw new IllegalStateException("accounting_break_permits_only_machine_edges: a later generation follows a decided one"
+                    + " and reads differently");
+        }
         boolean held = rows.values().stream().anyMatch(row -> row.period().equals(born.period())
-                && row.check() == born.finding().check() && row.subject().equals(born.finding().subject()));
+                && row.check() == born.finding().check() && row.subject().equals(born.finding().subject())
+                && row.generation() == born.generation());
         if (held && !uniqueKeyDisarmed) {
             return false;
         }
@@ -66,7 +75,7 @@ public final class InMemoryAccountingBreakStore implements AccountingBreakStore 
             throw new IllegalStateException("accounting_break_pk: a break id is born once");
         }
         rows.put(born.id(), new BreakRow(born.id(), born.period(), born.finding().check(), born.finding().type(),
-                born.finding().subject(), born.finding().evidence(), born.finding().judgedBy(), BreakStatus.OPEN, now(),
+                born.finding().subject(), born.generation(), born.finding().evidence(), born.finding().judgedBy(), BreakStatus.OPEN, now(),
                 Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
                 Optional.empty(), Optional.empty()));
         return true;
@@ -101,7 +110,9 @@ public final class InMemoryAccountingBreakStore implements AccountingBreakStore 
     public Map<String, Held> held(Connection unitOfWork, YearMonth period, CloseCheckCode check) {
         Map<String, Held> held = new TreeMap<>();
         rows.values().stream().filter(row -> row.period().equals(period) && row.check() == check)
-                .forEach(row -> held.put(row.subject(), new Held(row.status(), row.evidence())));
+                .filter(row -> !held.containsKey(row.subject()) || held.get(row.subject()).generation() < row.generation())
+                .forEach(row -> held.merge(row.subject(), new Held(row.status(), row.evidence(), row.generation()),
+                        (kept, later) -> later.generation() > kept.generation() ? later : kept));
         return held;
     }
 
@@ -132,7 +143,7 @@ public final class InMemoryAccountingBreakStore implements AccountingBreakStore 
         if (row == null || row.status() != BreakStatus.OPEN || row.ackProposedBy().isPresent()) {
             return false;
         }
-        rows.put(id, new BreakRow(row.id(), row.period(), row.check(), row.type(), row.subject(), row.evidence(),
+        rows.put(id, new BreakRow(row.id(), row.period(), row.check(), row.type(), row.subject(), row.generation(), row.evidence(),
                 row.judgedBy(), row.status(), row.raisedAt(), Optional.of(actor.id()), Optional.of(now()),
                 Optional.of(disclosure), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
                 Optional.empty()));
@@ -149,7 +160,7 @@ public final class InMemoryAccountingBreakStore implements AccountingBreakStore 
         if (row.ackProposedBy().get().equals(actor.id())) {
             throw new IllegalStateException("accounting_break_acknowledgement_four_eyes: the approver proposed it");
         }
-        rows.put(id, new BreakRow(row.id(), row.period(), row.check(), row.type(), row.subject(), row.evidence(),
+        rows.put(id, new BreakRow(row.id(), row.period(), row.check(), row.type(), row.subject(), row.generation(), row.evidence(),
                 row.judgedBy(), BreakStatus.ACKNOWLEDGED, row.raisedAt(), row.ackProposedBy(), row.ackProposedAt(),
                 row.disclosure(), Optional.of(actor.id()), Optional.of(now()), Optional.empty(), Optional.empty(),
                 Optional.empty()));
@@ -163,7 +174,7 @@ public final class InMemoryAccountingBreakStore implements AccountingBreakStore 
         if (row == null || row.status() != from || from == BreakStatus.RESOLVED) {
             return false;
         }
-        rows.put(id, new BreakRow(row.id(), row.period(), row.check(), row.type(), row.subject(), row.evidence(),
+        rows.put(id, new BreakRow(row.id(), row.period(), row.check(), row.type(), row.subject(), row.generation(), row.evidence(),
                 row.judgedBy(), BreakStatus.RESOLVED, row.raisedAt(), row.ackProposedBy(), row.ackProposedAt(),
                 row.disclosure(), row.ackApprovedBy(), row.ackApprovedAt(), Optional.of(actor.id()), Optional.of(now()),
                 Optional.of(correctingEntry)));

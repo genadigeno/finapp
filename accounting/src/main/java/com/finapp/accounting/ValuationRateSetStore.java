@@ -39,6 +39,12 @@ public interface ValuationRateSetStore {
     List<SetRow> ofPeriod(Connection unitOfWork, AccountingPeriodId period, int limit);
 
     /**
+     * The period's {@code PROPOSED} sets, newest first, at most {@code limit} - the ones a waiting {@code VALUATION_SET_APPROVED} waits for, which {@code CLOSE_STATUS} names; the database selects them, so however many sets a
+     * period holds, the proposals being awaited are not the ones cut (`P14-TSK-012`'s review, M-5). Unlocked.
+     */
+    List<SetRow> proposedOf(Connection unitOfWork, AccountingPeriodId period, int limit);
+
+    /**
      * How many of the period's sets stand at each status - a status with none absent. Counted by the database, whatever their number
      * ({@code CLOSE_STATUS}; `P14-TSK-017`'s review, M-11). Unlocked.
      */

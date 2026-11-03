@@ -20,33 +20,42 @@ import java.util.UUID;
 
 /**
  * {@link AccountingBreakStore} over plain JDBC (`P14-TSK-010`, ADR-0033; {@code JdbcAccountingPeriodStore}'s shape): the
- * birth an {@code INSERT ... ON CONFLICT ON CONSTRAINT accounting_break_born_once DO NOTHING}, every move a conditional
- * {@code UPDATE} of the act columns under {@code accounting V006}'s edge trigger, the case file INSERT-only, every time the
- * database's, every failure its operation and SQLSTATE only ({@link AccountingStorageException}). Reasons are written,
- * never read back.
+ * birth an {@code INSERT ... ON CONFLICT ON CONSTRAINT accounting_break_born_once DO NOTHING} - the key the generation's since
+ * {@code accounting V008} - every move a conditional {@code UPDATE} of the act columns under the edge trigger, the case file
+ * INSERT-only, every time the database's, every failure its operation and SQLSTATE only ({@link AccountingStorageException}).
+ * Reasons are written, never read back.
  */
 public final class JdbcAccountingBreakStore implements AccountingBreakStore {
 
-    private static final String ROW = "SELECT id, period_start, check_code, break_type, subject_ref, evidence, judged_by,"
+    /** The latest generation of each subject of a period's check (`P14-TSK-012`, ADR-0117): what a finding is compared with. */
+    static final String HELD_SQL = "SELECT DISTINCT ON (subject_ref) subject_ref, status, evidence, generation"
+            + " FROM accounting.accounting_break WHERE period_start = ? AND check_code = ?"
+            + " ORDER BY subject_ref, generation DESC";
+
+    /** The birth: one row per {@code (period, check, subject, generation)}; a loser of the race inserts nothing. */
+    static final String INSERT_SQL = "INSERT INTO accounting.accounting_break (id,"
+            + " period_start, check_code, break_type, subject_ref, generation, evidence, judged_by, status, raised_at, raised_by,"
+            + " raised_by_type, correlation_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', clock_timestamp(), ?, ?, ?)"
+            + " ON CONFLICT ON CONSTRAINT accounting_break_born_once DO NOTHING";
+
+    private static final String ROW = "SELECT id, period_start, check_code, break_type, subject_ref, generation, evidence, judged_by,"
             + " status, raised_at, ack_proposed_by, ack_proposed_at, disclosure, ack_approved_by, ack_approved_at,"
             + " resolved_by, resolved_at, resolving_entry_id FROM accounting.accounting_break";
 
     @Override
     public boolean insertIfAbsent(Connection unitOfWork, NewBreak born) {
-        try (PreparedStatement insert = unitOfWork.prepareStatement("INSERT INTO accounting.accounting_break (id,"
-                + " period_start, check_code, break_type, subject_ref, evidence, judged_by, status, raised_at, raised_by,"
-                + " raised_by_type, correlation_id) VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN', clock_timestamp(), ?, ?, ?)"
-                + " ON CONFLICT ON CONSTRAINT accounting_break_born_once DO NOTHING")) {
+        try (PreparedStatement insert = unitOfWork.prepareStatement(INSERT_SQL)) {
             insert.setObject(1, born.id().value());
             insert.setDate(2, Date.valueOf(born.period().atDay(1)));
             insert.setString(3, born.finding().check().name());
             insert.setString(4, born.finding().type().name());
             insert.setString(5, born.finding().subject());
-            insert.setString(6, born.finding().evidence());
-            insert.setString(7, born.finding().judgedBy());
-            insert.setString(8, born.raisedBy().id());
-            insert.setString(9, born.raisedBy().type().name());
-            insert.setString(10, born.correlation().value());
+            insert.setInt(6, born.generation());
+            insert.setString(7, born.finding().evidence());
+            insert.setString(8, born.finding().judgedBy());
+            insert.setString(9, born.raisedBy().id());
+            insert.setString(10, born.raisedBy().type().name());
+            insert.setString(11, born.correlation().value());
             return insert.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw failed("raising an accounting break", failure);
@@ -92,14 +101,13 @@ public final class JdbcAccountingBreakStore implements AccountingBreakStore {
 
     @Override
     public Map<String, Held> held(Connection unitOfWork, YearMonth period, CloseCheckCode check) {
-        try (PreparedStatement read = unitOfWork.prepareStatement("SELECT subject_ref, status, evidence FROM"
-                + " accounting.accounting_break WHERE period_start = ? AND check_code = ?")) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(HELD_SQL)) {
             read.setDate(1, Date.valueOf(period.atDay(1)));
             read.setString(2, check.name());
             Map<String, Held> subjects = new TreeMap<>();
             try (ResultSet row = read.executeQuery()) {
                 while (row.next()) {
-                    subjects.put(row.getString(1), new Held(BreakStatus.valueOf(row.getString(2)), row.getString(3)));
+                    subjects.put(row.getString(1), new Held(BreakStatus.valueOf(row.getString(2)), row.getString(3), row.getInt(4)));
                 }
             }
             return subjects;
@@ -231,6 +239,7 @@ public final class JdbcAccountingBreakStore implements AccountingBreakStore {
                 CloseCheckCode.valueOf(row.getString("check_code")),
                 BreakType.valueOf(row.getString("break_type")),
                 row.getString("subject_ref"),
+                row.getInt("generation"),
                 row.getString("evidence"),
                 row.getString("judged_by"),
                 BreakStatus.valueOf(row.getString("status")),

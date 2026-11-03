@@ -74,11 +74,14 @@ public final class JdbcReportReadings implements ReportReadings {
 
     /** The month's runs, grouped: scanned by {@code business_date}, one row per source and day, so never a large read. */
     static final String RUNS_OF_BUSINESS_DATES =
-            "SELECT source_id, kind, status, business_date, count(*) AS runs"
-                    + " FROM reconciliation.reconciliation_batch"
-                    + " WHERE business_date >= ? AND business_date <= ?"
-                    + " GROUP BY source_id, kind, status, business_date"
-                    + " ORDER BY source_id, kind, status, business_date";
+            "SELECT line.source_id, line.kind, line.status, line.business_date, line.repudiated, count(*) AS runs"
+                    + " FROM (SELECT run.source_id, run.kind, run.status, run.business_date,"
+                    + " EXISTS (SELECT 1 FROM reconciliation.resolution resolved"
+                    + " WHERE resolved.settlement_batch_id = run.batch_id AND resolved.status = 'APPROVED') AS repudiated"
+                    + " FROM reconciliation.reconciliation_batch run"
+                    + " WHERE run.business_date >= ? AND run.business_date <= ?) line"
+                    + " GROUP BY line.source_id, line.kind, line.status, line.business_date, line.repudiated"
+                    + " ORDER BY line.source_id, line.kind, line.status, line.business_date, line.repudiated";
 
     private static final String BREAK_COLUMNS =
             "SELECT id, source_id, type, severity, status, value_at_issue_minor, currency,"
@@ -208,6 +211,7 @@ public final class JdbcReportReadings implements ReportReadings {
                                     RunKind.valueOf(rows.getString("kind")),
                                     RunStatus.valueOf(rows.getString("status")),
                                     rows.getObject("business_date", LocalDate.class),
+                                    rows.getBoolean("repudiated"),
                                     rows.getLong("runs")));
                 }
                 return List.copyOf(lines);

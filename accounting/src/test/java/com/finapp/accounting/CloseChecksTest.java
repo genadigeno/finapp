@@ -34,7 +34,7 @@ import org.junit.jupiter.api.Test;
  * The nine checks' judges (`P14-TSK-011`; {@code PHASE_14_PLAN.md} section 13.5; {@code INV-ACC-05}, {@code
  * INV-ACC-09}): each passes only when it read everything and found nothing - a false verdict, an exception, an
  * incomplete proof, a missing reading and an empty set each {@code FAILED}; {@code DISCLOSED} only as the check admits
- * it; a {@code RECURRED} outcome neither; {@code ACCRUALS_COMPLETE} never {@code PASSED} on a period short of interest.
+ * it; a {@code FINDING_CHANGED} outcome neither; {@code ACCRUALS_COMPLETE} never {@code PASSED} on a period short of interest.
  * Hermetic: every port a double, every snapshot one stand-in.
  */
 @DisplayName("the close checks: never a false pass (P14-TSK-011)")
@@ -61,6 +61,11 @@ class CloseChecksTest {
     private Function<SourceProofs.Source, List<SourceProofs.Reading>> proofs = source -> List.of(
             new SourceProofs.Reading(SourceProofs.Proof.PROJECTION, true, List.of()));
     private ReconciliationDisclosure disclosure = (snapshot, month) -> nothing();
+    private ReconciliationRunCoverage coverage = (snapshot, month) -> {
+        UUID source = UUID.nameUUIDFromBytes(new byte[] {7});
+        return new ReconciliationRunCoverage.Coverage(month, List.of(new ReconciliationRunCoverage.Line(source, "BATCH", "COMPLETED", month.atDay(1), false, 1)),
+                List.of(new ReconciliationRunCoverage.Source(source, "simulated-psp.settlement", ReconciliationRunCoverage.SourceState.ACTIVE)));
+    };
     private int snapshotsOpened;
 
     private final AccrualCompleteness accruals = new AccrualCompleteness() {
@@ -197,18 +202,24 @@ class CloseChecksTest {
     }
 
     @Test
-    @DisplayName("RECURRED never passes and never discloses: a resolved break's discrepancy still present is FAILED, the recurrence on the"
-            + " record - the default until the owner rules on ADR-0117's question")
-    void aRecurrenceNeverPassesNorDiscloses() {
+    @DisplayName("the owner's ruling (ADR-0117): a RESOLVED break's unchanged finding counts as disclosed by its correcting entry, alone or beside acknowledged ones - but GL = ledger is"
+            + " never disclosed, whatever a person decided")
+    void anUnchangedResolvedFindingIsDisclosed() {
         breakChecks = (month, code, actor, correlation) -> outcome(code, 1, 0, 0, 0, 1);
         CheckVerdict alone = judge(CloseCheckCode.SOURCE_COMPLETENESS).orElseThrow();
-        assertThat(alone.status()).isEqualTo(CloseCheckStatus.FAILED);
-        assertThat(alone.failures()).contains(CheckOutcome.RECURRED);
-        assertThat(alone.evidence()).contains("\"recurred\":\"1\"");
+        assertThat(alone.status()).isEqualTo(CloseCheckStatus.DISCLOSED);
+        assertThat(alone.evidence()).contains("\"knownResolved\":\"1\"");
 
         breakChecks = (month, code, actor, correlation) -> outcome(code, 3, 0, 0, 2, 1);
         assertThat(judge(CloseCheckCode.RULE_CONFORMANCE).orElseThrow().status())
-                .as("beside acknowledged findings").isEqualTo(CloseCheckStatus.FAILED);
+                .as("beside acknowledged findings").isEqualTo(CloseCheckStatus.DISCLOSED);
+
+        breakChecks = (month, code, actor, correlation) -> outcome(code, 1, 0, 0, 0, 1);
+        CheckVerdict gl = judge(CloseCheckCode.GL_EQUALS_LEDGER).orElseThrow();
+        assertThat(gl.status()).as("never disclosable").isEqualTo(CloseCheckStatus.FAILED);
+
+        breakChecks = (month, code, actor, correlation) -> outcome(code, 2, 0, 1, 0, 1);
+        assertThat(judge(CloseCheckCode.RULE_CONFORMANCE).orElseThrow().status()).as("one still OPEN awaits its decision").isEqualTo(CloseCheckStatus.FAILED);
     }
 
     @Test
@@ -301,24 +312,23 @@ class CloseChecksTest {
     }
 
     @Test
-    @DisplayName("I-1: a finding an ACKNOWLEDGED break holds that now reads differently is FAILED ACKNOWLEDGED_CHANGED, its subject recorded,"
-            + " however many findings are acknowledged - never DISCLOSED")
-    void anAcknowledgedFindingThatChangedIsNeverDisclosed() {
-        CheckOutcome changed = new CheckOutcome(MARCH, CloseCheckCode.RULE_CONFORMANCE, CheckOutcome.Result.FAILED, "posting-rules:v2", 2, 0, 0,
-                2, 0, List.of("namespace:POSTING probe:"), List.of(CheckOutcome.DISCREPANCIES, CheckOutcome.ACKNOWLEDGED_CHANGED));
+    @DisplayName("a finding that differs from what a person decided on is FAILED FINDING_CHANGED, its subject recorded, however many findings stand decided - never DISCLOSED")
+    void aChangedFindingIsNeverDisclosed() {
+        CheckOutcome changed = new CheckOutcome(MARCH, CloseCheckCode.RULE_CONFORMANCE, CheckOutcome.Result.FAILED, "posting-rules:v2", 3, 1, 0,
+                2, 0, List.of("namespace:POSTING probe:"), List.of(CheckOutcome.DISCREPANCIES, CheckOutcome.FINDING_CHANGED));
         CheckVerdict verdict = CloseChecks.verdictOf(changed);
         assertThat(verdict.status()).isEqualTo(CloseCheckStatus.FAILED);
-        assertThat(verdict.failures()).containsExactly(CheckOutcome.DISCREPANCIES, CheckOutcome.ACKNOWLEDGED_CHANGED);
-        assertThat(verdict.evidence()).contains("\"acknowledgedChanged\":\"1\"", "\"changedSubjects\":[\"namespace:POSTING probe:\"]");
+        assertThat(verdict.failures()).containsExactly(CheckOutcome.DISCREPANCIES, CheckOutcome.FINDING_CHANGED);
+        assertThat(verdict.evidence()).contains("\"changed\":\"1\"", "\"changedSubjects\":[\"namespace:POSTING probe:\"]");
 
         assertThatThrownBy(() -> new CheckOutcome(MARCH, CloseCheckCode.RULE_CONFORMANCE, CheckOutcome.Result.FAILED, "posting-rules:v2", 1, 0, 0,
                 1, 0, List.of("shape:1"), List.of(CheckOutcome.DISCREPANCIES))).as("a changed subject with no failure")
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new CheckOutcome(MARCH, CloseCheckCode.RULE_CONFORMANCE, CheckOutcome.Result.FAILED, "posting-rules:v2", 1, 0, 0,
-                1, 0, List.of(), List.of(CheckOutcome.DISCREPANCIES, CheckOutcome.ACKNOWLEDGED_CHANGED))).as("a failure with no subject")
+                1, 0, List.of(), List.of(CheckOutcome.DISCREPANCIES, CheckOutcome.FINDING_CHANGED))).as("a failure with no subject")
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new CheckOutcome(MARCH, CloseCheckCode.RULE_CONFORMANCE, CheckOutcome.Result.FAILED, "posting-rules:v2", 1, 0, 1,
-                0, 0, List.of("shape:1"), List.of(CheckOutcome.DISCREPANCIES, CheckOutcome.ACKNOWLEDGED_CHANGED))).as("nothing acknowledged")
+        assertThatThrownBy(() -> new CheckOutcome(MARCH, CloseCheckCode.RULE_CONFORMANCE, CheckOutcome.Result.FAILED, "posting-rules:v2", 1, 1, 0,
+                0, 0, List.of("shape:1", "shape:2"), List.of(CheckOutcome.DISCREPANCIES, CheckOutcome.FINDING_CHANGED))).as("more changed than found")
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -386,12 +396,15 @@ class CloseChecksTest {
     }
 
     @Test
-    @DisplayName("RECONCILIATION_DISCLOSURE: each thing alone keeps it from passing - unowned suspense (M-10), a posting past the cutoff"
-            + " (M-2), a break raised since, a ledger balance with no item")
+    @DisplayName("RECONCILIATION_DISCLOSURE: each thing alone keeps it from passing - an entry with no audit record (it counts as floored, the owner's (b)), unowned suspense (M-10), a"
+            + " floored posting past the cutoff, a break raised since, a ledger balance with no item")
     void anythingOpenDisclosesAlone() {
-        TreeMap<String, Long> posted = new TreeMap<>();
-        posted.put("settlement-batch", 1L);
+        TreeMap<String, PastTheCutoffPostings.Split> posted = new TreeMap<>();
+        posted.put("settlement-batch", new PastTheCutoffPostings.Split(1, 1, 0));
+        TreeMap<String, PastTheCutoffPostings.Split> unrecorded = new TreeMap<>();
+        unrecorded.put("settlement-batch", new PastTheCutoffPostings.Split(1, 0, 1));
         List<ReconciliationDisclosure.Disclosure> each = List.of(
+                new ReconciliationDisclosure.Disclosure(MARCH_END, Instant.EPOCH, List.of(), 0, List.of(), 0, unrecorded),
                 new ReconciliationDisclosure.Disclosure(MARCH_END, Instant.EPOCH, List.of(), 0, List.of(), 1, new TreeMap<>()),
                 new ReconciliationDisclosure.Disclosure(MARCH_END, Instant.EPOCH, List.of(), 0, List.of(), 0, posted),
                 new ReconciliationDisclosure.Disclosure(MARCH_END, Instant.EPOCH, List.of(), 1, List.of(), 0, new TreeMap<>()),
@@ -405,17 +418,110 @@ class CloseChecksTest {
         }
     }
 
+    @Test
+    @DisplayName("RECONCILIATION_DISCLOSURE, the owner's (b): a posting past the cutoff under its rule's own dating asks for no person's reason - PASSED, the split still on the record")
+    void anOrdinaryLatePostingAsksForNothing() {
+        TreeMap<String, PastTheCutoffPostings.Split> ordinary = new TreeMap<>();
+        ordinary.put("settlement-batch", new PastTheCutoffPostings.Split(5, 0, 0));
+        disclosure = (snapshot, month) -> new ReconciliationDisclosure.Disclosure(MARCH_END, Instant.EPOCH, List.of(), 0, List.of(), 0, ordinary);
+        CheckVerdict verdict = judge(CloseCheckCode.RECONCILIATION_DISCLOSURE).orElseThrow();
+        assertThat(verdict.status()).isEqualTo(CloseCheckStatus.PASSED);
+        assertThat(verdict.evidence()).contains("\"ownValueDate\":\"5\"");
+    }
+
+    @Test
+    @DisplayName("the owner's (a): a month's run is a COMPLETED BATCH run for each active source; no run FAILED, naming who; another status, a REPROCESS alone or a repudiated batch's run counts for nothing")
+    void aMonthWithoutItsRunFails() {
+        UUID psp = UUID.nameUUIDFromBytes(new byte[] {1});
+        UUID bank = UUID.nameUUIDFromBytes(new byte[] {2});
+        List<ReconciliationRunCoverage.Source> both = List.of(new ReconciliationRunCoverage.Source(psp, "simulated-psp.settlement", ReconciliationRunCoverage.SourceState.ACTIVE),
+                new ReconciliationRunCoverage.Source(bank, "simulated-bank.statement", ReconciliationRunCoverage.SourceState.ACTIVE));
+        ReconciliationRunCoverage.Line pspCompleted = new ReconciliationRunCoverage.Line(psp, "BATCH", "COMPLETED", MARCH.atDay(2), false, 1);
+
+        coverage = (snapshot, month) -> new ReconciliationRunCoverage.Coverage(month, List.of(), both);
+        CheckVerdict none = judge(CloseCheckCode.RECONCILIATION_DISCLOSURE).orElseThrow();
+        assertThat(none.status()).isEqualTo(CloseCheckStatus.FAILED);
+        assertThat(none.failures()).containsExactly(CloseChecks.MONTH_NOT_RUN);
+        assertThat(none.evidence()).contains("\"sourcesNotRun\":[\"simulated-psp.settlement\",\"simulated-bank.statement\"]");
+
+        coverage = (snapshot, month) -> new ReconciliationRunCoverage.Coverage(month, List.of(pspCompleted), both);
+        CheckVerdict oneShort = judge(CloseCheckCode.RECONCILIATION_DISCLOSURE).orElseThrow();
+        assertThat(oneShort.status()).as("each active source").isEqualTo(CloseCheckStatus.FAILED);
+        assertThat(oneShort.evidence()).contains("\"sourcesNotRun\":[\"simulated-bank.statement\"]");
+
+        for (ReconciliationRunCoverage.Line countsForNothing : List.of(
+                new ReconciliationRunCoverage.Line(bank, "BATCH", "BLOCKED", MARCH.atDay(2), false, 1),
+                new ReconciliationRunCoverage.Line(bank, "BATCH", "OPEN", MARCH.atDay(2), false, 1),
+                new ReconciliationRunCoverage.Line(bank, "BATCH", "IN_PROGRESS", MARCH.atDay(2), false, 1),
+                new ReconciliationRunCoverage.Line(bank, "REPROCESS", "COMPLETED", MARCH.atDay(2), false, 1),
+                new ReconciliationRunCoverage.Line(bank, "BATCH", "COMPLETED", MARCH.atDay(2), true, 1))) {
+            coverage = (snapshot, month) -> new ReconciliationRunCoverage.Coverage(month, List.of(pspCompleted, countsForNothing), both);
+            assertThat(judge(CloseCheckCode.RECONCILIATION_DISCLOSURE).orElseThrow().status()).as(countsForNothing.toString()).isEqualTo(CloseCheckStatus.FAILED);
+        }
+
+        coverage = (snapshot, month) -> new ReconciliationRunCoverage.Coverage(month, List.of(pspCompleted,
+                new ReconciliationRunCoverage.Line(bank, "BATCH", "COMPLETED", MARCH.atDay(2), false, 1)), both);
+        assertThat(judge(CloseCheckCode.RECONCILIATION_DISCLOSURE).orElseThrow().status()).as("each ran, nothing to disclose").isEqualTo(CloseCheckStatus.PASSED);
+
+        coverage = (snapshot, month) -> new ReconciliationRunCoverage.Coverage(month, List.of(pspCompleted,
+                new ReconciliationRunCoverage.Line(bank, "BATCH", "COMPLETED", MARCH.atDay(2), true, 1), new ReconciliationRunCoverage.Line(bank, "BATCH", "COMPLETED", MARCH.atDay(2), false, 1)), both);
+        assertThat(judge(CloseCheckCode.RECONCILIATION_DISCLOSURE).orElseThrow().status()).as("the way on: a new counting run of the same source and date beside the repudiated one, which stays on the record")
+                .isEqualTo(CloseCheckStatus.DISCLOSED);
+
+        coverage = (snapshot, month) -> new ReconciliationRunCoverage.Coverage(month, List.of(), List.of());
+        assertThat(judge(CloseCheckCode.RECONCILIATION_DISCLOSURE).orElseThrow().failures()).as("no active source at all: a month with no run fails").containsExactly(CloseChecks.MONTH_NOT_RUN);
+    }
+
+    @Test
+    @DisplayName("a retired or undeclared source is not required - its door is shut, requiring it would wedge - and its unfinished or repudiated run, or a run no source owns, is disclosed, never ignored")
+    void aRetiredSourceIsNotRequiredAndNotIgnored() {
+        UUID psp = UUID.nameUUIDFromBytes(new byte[] {1});
+        UUID retired = UUID.nameUUIDFromBytes(new byte[] {2});
+        List<ReconciliationRunCoverage.Source> sources = List.of(new ReconciliationRunCoverage.Source(psp, "simulated-psp.settlement", ReconciliationRunCoverage.SourceState.ACTIVE),
+                new ReconciliationRunCoverage.Source(retired, "old-psp.settlement", ReconciliationRunCoverage.SourceState.RETIRED),
+                new ReconciliationRunCoverage.Source(UUID.nameUUIDFromBytes(new byte[] {3}), "gone.settlement", ReconciliationRunCoverage.SourceState.UNDECLARED));
+        ReconciliationRunCoverage.Line ran = new ReconciliationRunCoverage.Line(psp, "BATCH", "COMPLETED", MARCH.atDay(2), false, 1);
+
+        coverage = (snapshot, month) -> new ReconciliationRunCoverage.Coverage(month, List.of(ran), sources);
+        assertThat(judge(CloseCheckCode.RECONCILIATION_DISCLOSURE).orElseThrow().status()).as("not required").isEqualTo(CloseCheckStatus.PASSED);
+
+        for (ReconciliationRunCoverage.Line disclosed : List.of(
+                new ReconciliationRunCoverage.Line(retired, "BATCH", "BLOCKED", MARCH.atDay(3), false, 1),
+                new ReconciliationRunCoverage.Line(psp, "BATCH", "BLOCKED", MARCH.atDay(3), false, 1),
+                new ReconciliationRunCoverage.Line(psp, "BATCH", "COMPLETED", MARCH.atDay(3), true, 1),
+                new ReconciliationRunCoverage.Line(UUID.nameUUIDFromBytes(new byte[] {9}), "BATCH", "COMPLETED", MARCH.atDay(3), false, 1))) {
+            coverage = (snapshot, month) -> new ReconciliationRunCoverage.Coverage(month, List.of(ran, disclosed), sources);
+            assertThat(judge(CloseCheckCode.RECONCILIATION_DISCLOSURE).orElseThrow().status()).as(disclosed.toString()).isEqualTo(CloseCheckStatus.DISCLOSED);
+        }
+    }
+
+    @Test
+    @DisplayName("a month's evidence is per source, never per day: the attempt's bound holds at the worst month - every source, every day, every status - rather than failing the check by its size")
+    void theEvidenceHoldsItsBound() {
+        List<ReconciliationRunCoverage.Source> sources = new ArrayList<>();
+        List<ReconciliationRunCoverage.Line> lines = new ArrayList<>();
+        for (int source = 0; source < 20; source++) {
+            UUID id = UUID.nameUUIDFromBytes(new byte[] {(byte) source});
+            sources.add(new ReconciliationRunCoverage.Source(id, "source-" + source + ".a-settlement-source-with-a-long-code", ReconciliationRunCoverage.SourceState.ACTIVE));
+            for (int day = 1; day <= 31; day++) {
+                for (String status : List.of("OPEN", "IN_PROGRESS", "COMPLETED", "BLOCKED")) {
+                    lines.add(new ReconciliationRunCoverage.Line(id, "BATCH", status, MARCH.atDay(day), false, 1));
+                }
+            }
+        }
+        coverage = (snapshot, month) -> new ReconciliationRunCoverage.Coverage(month, lines, sources);
+        CheckVerdict verdict = judge(CloseCheckCode.RECONCILIATION_DISCLOSURE).orElseThrow();
+        assertThat(verdict.status()).as("not UNAVAILABLE by its own size").isEqualTo(CloseCheckStatus.DISCLOSED);
+    }
+
     // ------------------------------------------------------------------ the valuation set
 
     @Test
-    @DisplayName("VALUATION_SET_APPROVED: none approved FAILED, the period's proposals named so the controller can find them")
-    void noApprovedSetFails() {
-        ValuationRateSets.Valued proposed = sets().capture(SNAPSHOT, period, ACCOUNTANT, null, correlation());
-        CheckVerdict verdict = judge(CloseCheckCode.VALUATION_SET_APPROVED).orElseThrow();
-        assertThat(verdict.status()).isEqualTo(CloseCheckStatus.FAILED);
-        assertThat(verdict.failures()).containsExactly(CloseChecks.NO_APPROVED_SET);
-        assertThat(verdict.judgedBy()).isEqualTo("valuation-set:none");
-        assertThat(verdict.evidence()).contains(proposed.id().value().toString(), "PROPOSED");
+    @DisplayName("M-6: VALUATION_SET_APPROVED waits - no approved set is 'not yet', deferred and never FAILED, so AccountingCloseCheckFailed does not fire at every close and no person re-runs it")
+    void noApprovedSetWaits() {
+        assertThat(judge(CloseCheckCode.VALUATION_SET_APPROVED)).as("none captured").isEmpty();
+        sets().capture(SNAPSHOT, period, ACCOUNTANT, null, correlation());
+        assertThat(judge(CloseCheckCode.VALUATION_SET_APPROVED)).as("captured, awaiting a decision").isEmpty();
     }
 
     @Test
@@ -469,7 +575,7 @@ class CloseChecksTest {
         SourceProofs reading = (snapshot, source) -> proofs.apply(source);
         return new CloseChecks((month, check, actor, correlation) -> breakChecks.run(month, check, actor, correlation),
                 (id, actor, correlation) -> trialBalance.read(id, actor, correlation), accruals, reading,
-                (snapshot, month) -> disclosure.asOfCutoff(snapshot, month), sets(), periods,
+                (snapshot, month) -> disclosure.asOfCutoff(snapshot, month), (snapshot, month) -> coverage.ofMonth(snapshot, month), sets(), periods,
                 new AccountingChecks.Snapshots() {
                     @Override
                     public <R> R read(Function<Connection, R> work) {
@@ -493,9 +599,6 @@ class CloseChecksTest {
 
     private static CheckOutcome outcome(CloseCheckCode check, int findings, int raised, int open, int acknowledged, int resolved) {
         List<String> failures = new ArrayList<>(List.of(CheckOutcome.DISCREPANCIES));
-        if (resolved > 0) {
-            failures.add(CheckOutcome.RECURRED);
-        }
         return new CheckOutcome(MARCH, check, CheckOutcome.Result.FAILED, "posting-rules:v2", findings, raised, open, acknowledged,
                 resolved, List.of(), failures);
     }

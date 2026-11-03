@@ -111,6 +111,26 @@ public final class JdbcValuationRateSetStore implements ValuationRateSetStore {
         }
     }
 
+    /** Newest first: the id is a UUIDv7, so its order is its birth's. */
+    static final String PROPOSED_OF_SQL = ROW + " WHERE s.period_id = ? AND s.status = 'PROPOSED' ORDER BY s.id DESC LIMIT ?";
+
+    @Override
+    public List<SetRow> proposedOf(Connection unitOfWork, AccountingPeriodId period, int limit) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(PROPOSED_OF_SQL)) {
+            read.setObject(1, period.value());
+            read.setInt(2, limit);
+            List<SetRow> sets = new ArrayList<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    sets.add(row(row));
+                }
+            }
+            return sets;
+        } catch (SQLException failure) {
+            throw failed("reading a period's proposed valuation rate sets", failure);
+        }
+    }
+
     @Override
     public Map<ValuationRateSetStatus, Long> countByStatus(Connection unitOfWork, AccountingPeriodId period) {
         try (PreparedStatement read = unitOfWork.prepareStatement(COUNT_BY_STATUS_SQL)) {

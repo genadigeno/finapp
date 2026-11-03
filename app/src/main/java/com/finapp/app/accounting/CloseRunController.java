@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
  * INV-ACC-09}, {@code INV-ACC-05}): an accountant reads a period's close run under {@code ACCOUNTING_READ} - every
  * check's attempts with their evidence - and asks a check's next attempt under {@code ACCOUNTING_CLOSE_PROPOSE}, keyed
  * and reasoned. The checks themselves run on the schedule ({@code AccountingCloseSchedule}), never at a door, so a
- * re-run's answer is a {@code PENDING} attempt a worker claims. Proposal and approval are `P14-TSK-012`'s, and with
+ * re-run's answer is a {@code PENDING} attempt a worker claims. Proposal and approval are {@link PeriodCloseController}'s (`P14-TSK-012`), and with
  * them a controller's read (identity {@code V025}'s partition gives the controller no {@code ACCOUNTING_READ}). The
  * handlers' names are distinctive (the springdoc {@code operationId} rule).
  */

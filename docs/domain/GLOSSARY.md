@@ -2530,10 +2530,20 @@ reporting window of an operational report.
 ### Period Close
 **Is:** the act of closing a `LOCKED` Accounting Period: a close run whose Close Checks are all `PASSED` or explicitly
 `DISCLOSED`, a FINAL trial balance zero per currency and equal to the ledger, proposed by an `ACCOUNTANT` and approved by
-a second person (`INV-ACC-09`, `P14-TSK-011`, `-012`).
+a second person (`INV-ACC-09`, `P14-TSK-011`, `-012`). *(As built: the proposal a row with nine frozen attempts and a person's reason per `DISCLOSED` one - the close record; the approval on what the second person read, refused if it no longer stands; a rejection returns the period to `LOCKED`, the same lock and run.)*
 **Not:** the Posting Cutoff (which happens at the lock, before the checks), nor a closing journal entry (none is posted,
 owner decision C8), nor irreversible — a reopen is four-eyes and supersedes, never deletes.
 **Owned by:** `accounting`
+
+### Break Generation
+**Is:** which break of one (period, check, subject) an Accounting Break is: 1, then one more each time a finding differs from the evidence a person decided on. The earlier generation stays as it was; the new one needs its own four-eyes acknowledgement (ADR-0117's ruling, `P14-TSK-012`).
+**Not:** a recurrence: a finding unchanged from what a person decided on raises nothing and counts as disclosed; nor a change of amount, which evidence does not hold.
+**Owned by:** `accounting`
+
+### Nil Report
+**Is:** a counterparty's settlement report for a business date with no lines and a zero net, through the existing door: pulled, the channel its authentication, or uploaded and attested by a second person. Accepted with nothing posted; its reconciliation run completes at no items, which is how an honestly quiet month gets its run (`P14-TSK-012`, the owner's decisions of 2026-11-02 and 2026-11-03).
+**Not:** something the platform can mint: a run is born only in an acceptance's transaction, from a stored file; nor a Close Check's waiver.
+**Owned by:** `settlement` (the file), `reconciliation` (the run)
 
 ### Close Check
 **Is:** one recorded readiness test of a close run — `LEDGER_TRIAL_BALANCE`, `GL_EQUALS_LEDGER`, `RULE_CONFORMANCE`,

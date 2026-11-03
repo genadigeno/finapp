@@ -1491,7 +1491,7 @@ as stranded by payments' gauge (item 85, §9.5b); the monitoring census's id set
 
 ## 10. Accounting (Phase 14): the close and its alerts
 
-*Opened by `P14-TSK-017` (2026-11-02) with the one alert the close run's birth stands on. `P14-TSK-020` writes the rest: the close calendar, a lock, a refused posting, a failed
+*Opened by `P14-TSK-017` (2026-11-02) with the one alert the close run's birth stands on; §10.3 by `P14-TSK-012` (2026-11-03). `P14-TSK-020` writes the rest: the close calendar, a lock, a refused posting, a failed
 check, a divergence, a reopen, the first mapping activation.*
 
 ### 10.1 A locked period with no close run - `AccountingCloseRunStalled`, `AccountingCloseRunStallUnreadable`
@@ -1522,4 +1522,26 @@ of them, and the door refuses the next rather than queue it, because each read h
 That is not a transient to retry. `CLOSE_STATUS` holds no journal read and is not expected to reach it.
 
 **Act.** On a refusal for permits: retry, it is a new answer as of its own instant; another instance may have one free. On the time bound, for a recent month: look for what is slow on the database. For a long-past month: raise `finapp.accounting.report.operational-timeout`
-for an operator's read, and keep the permits low, since the two together are what the door can hold of a pool. Rising refusals are the owner's question of whether these reports should be stored (`P14-TSK-012`'s entry). **Never** raise the permits to or near the pool's size: that is the outage the bound exists to prevent.
+for an operator's read, and keep the permits low, since the two together are what the door can hold of a pool. **These two reports stay unstored** (the owner, 2026-11-03: nothing is filed or relied on from them), so rising refusals are a question of the bound's configuration, not of storing them. **Never** raise the permits to or near the pool's size: that is the outage the bound exists to prevent.
+
+### 10.3 A month that cannot be proposed
+
+**What it means.** `POST .../periods/{periodId}/close-proposal` answered `409 accounting.CloseNotReady`, or `GET .../close-run` shows a check `FAILED`. No door discloses a `FAILED` must-pass check (the owner, 2026-11-02): each has its own way on. Periods close in order, so a stuck month holds up every later one: act on it, do not wait.
+
+**`RECONCILIATION_DISCLOSURE` `MONTH_NOT_RUN`.** The attempt's `monthRuns.sourcesNotRun` names the active sources with no `COMPLETED` `BATCH` run of a batch not repudiated in the month. A source that was **really silent** gets its run from the counterparty's **nil report**: a file with no lines dated in the month, through the same door as any other, pulled, or uploaded and attested by a second person. It posts nothing and its run completes at no items. Then re-run the check. If the batch **was** repudiated, present its corrected file or a nil: other bytes are admitted as a new batch of the same source and date, the repudiated one freeing its identity, and the same bytes are a person's readmission, since the door answers them `DUPLICATE`. **Never** insert a batch or a run by hand: that is the false pass this rule exists to stop. A source without a scheduled pull needs that upload every quiet month, a chore chosen over a false pass.
+
+**A source with no `ACTIVE` rule set.** `finapp.reconciliation.rule_set.missing{source}` is `1`, and its report waits `PARSED` with backoff, so the month cannot have its run. No migration seeds a counterparty's rule set: activate it under four eyes first (§3), then its report or nil report goes through.
+
+**`CloseNotReady` or `CloseProposalStale` naming a source not run, after the check concluded.** A batch was repudiated since. The attempt's evidence is what stood when it concluded, and the proposal and the approval each ask again. Give the source a new counting run as above; a proposal that stands can then be approved as it is, with nothing else moved. **A repudiation landing after the approval's read, or after `CLOSED`, is not caught**: the month stays closed with no run that counts, `RECONCILIATION_STATUS` shows it, and the way on is the reopen.
+
+**`RULE_CONFORMANCE` or `SOURCE_COMPLETENESS` `FINDING_CHANGED`.** A finding reads differently from what a person decided on, so it is a new break at the next generation, `OPEN`, with its own four eyes. Read it (`GET .../breaks`), acknowledge or resolve it, then re-run the check and `OPEN_ACCOUNTING_BREAKS`. A finding **unchanged** from what was decided needs nothing and counts as disclosed. A proof's evidence reads the live book - `POSITION`'s open counts, a loan's or obligation's `status=`, `LENDING_CAPITAL`'s `unexplainedEntries=`, `BNPL_THREE_WAY`'s failing legs - so under traffic the same discrepancy can read as changed again: correct what the proof found rather than chase it.
+
+**`VALUATION_SET_APPROVED` shows `PENDING`.** Not a failure: the attempt waits for an approved set, deferred and re-judged, and `P14-TSK-020`'s `AccountingCloseCheckFailed` will not fire for it. `CLOSE_STATUS` lists the proposed sets (`proposedValuationRateSets`): approve one, or capture and then approve. `accounting.ValuationRateStale` at the capture: a stale bound is configuration, up to two weeks. **A reference gap beyond that bound has no door**: take it to the owner.
+
+**`PROJECTION_VERIFIED` `PROJECTION_DRIFT`.** A domain-path entry commits with its projection row, so drift means something wrote past the projection: **a ledger incident, not a close chore**. `ProjectionVerification` reports and never repairs; ADR-0041's rebuild is not built as a door. The month waits on an engineer's repair under the incident process. Do not unlock to clear it: the drift is in the live book and an unlock moves nothing there.
+
+**`LEDGER_TRIAL_BALANCE`, `GL_EQUALS_LEDGER`.** Never disclosable. Unlock under four eyes, correct, or activate a mapping version from the month, and re-lock: a new run.
+
+**`accounting.CloseProposalStale`.** At the proposal: a re-run landed while it was written, so read the run again. At the approval: something moved since the proposal; `GET .../close-proposal` says `stillStands: false`. Reject it and propose again, with reasons written for what stands now, unless the month's run was all that moved, above.
+
+**A pending unlock blocks a proposal**, and no door withdraws it: approve it and lock again, which costs a new run. A pending reopen on a `CLOSED` period is harmless and blocks nothing; its approval judges everything again. A reopen is refused once the next period has left `OPEN`: only the latest closed period reopens.

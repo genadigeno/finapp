@@ -50,6 +50,14 @@ public final class InMemoryValuationRateSetStore implements ValuationRateSetStor
     }
 
     @Override
+    public List<SetRow> proposedOf(Connection unitOfWork, AccountingPeriodId period, int limit) {
+        List<SetRow> proposed = new java.util.ArrayList<>(rows.values().stream()
+                .filter(row -> row.period().equals(period) && row.status() == ValuationRateSetStatus.PROPOSED).toList());
+        java.util.Collections.reverse(proposed);
+        return proposed.stream().limit(limit).toList();
+    }
+
+    @Override
     public Map<ValuationRateSetStatus, Long> countByStatus(Connection unitOfWork, AccountingPeriodId period) {
         Map<ValuationRateSetStatus, Long> counts = new EnumMap<>(ValuationRateSetStatus.class);
         rows.values().stream().filter(row -> row.period().equals(period))

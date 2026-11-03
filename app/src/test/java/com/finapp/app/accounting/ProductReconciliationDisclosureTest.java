@@ -152,7 +152,7 @@ class ProductReconciliationDisclosureTest {
         assertThat(dinar.ledgerCreditsMinor()).as("a ledger balance with no item is on the record too").isEqualTo(BigInteger.valueOf(7));
         assertThat(read.suspenseUnowned()).as("the second item's owner was not standing").isEqualTo(1);
         assertThat(read.nothingToDisclose()).isFalse();
-        assertThat(read.evidence().members()).containsKeys("openBreaks", "suspense", "suspenseUnowned", "postedPastTheCutoff");
+        assertThat(read.evidence().members()).containsKeys("openBreaks", "suspense", "suspenseUnowned", "pastTheCutoff");
     }
 
     @Test
@@ -172,18 +172,24 @@ class ProductReconciliationDisclosureTest {
     }
 
     @Test
-    @DisplayName("M-2: entries past the cutoff are counted only for the floored rules' namespaces, LND-2 left to ACCRUALS_COMPLETE; any other"
-            + " namespace's value date is its own business")
+    @DisplayName("M-2, the owner's (b): entries past the cutoff are told only for the floored rules' namespaces, LND-2 left to ACCRUALS_COMPLETE; floored or unrecorded asks for a disclosure, an ordinary"
+            + " late posting under its rule's own dating asks for nothing")
     void postingsPastTheCutoffAreTheFlooredRules() {
-        rows.put(LedgerFlooredPostings.BY_NAMESPACE_SQL, List.of(
-                row("namespace", "settlement-batch", "entries", 2L),
-                row("namespace", "recon-suspense", "entries", 1L),
-                row("namespace", "lending.accrual", "entries", 9L),
-                row("namespace", "bnpl.accrual", "entries", 40L),
-                row("namespace", "transfer", "entries", 3L)));
+        rows.put(LedgerFlooredPostings.PAST_THE_CUTOFF_SQL, List.of(
+                row("namespace", "settlement-batch", "entries", 2L, "floored", 1L, "unrecorded", 0L),
+                row("namespace", "recon-suspense", "entries", 1L, "floored", 0L, "unrecorded", 0L),
+                row("namespace", "lending.accrual", "entries", 9L, "floored", 9L, "unrecorded", 0L),
+                row("namespace", "bnpl.accrual", "entries", 40L, "floored", 0L, "unrecorded", 0L),
+                row("namespace", "transfer", "entries", 3L, "floored", 0L, "unrecorded", 0L)));
         ReconciliationDisclosure.Disclosure read = disclosure().asOfCutoff(connection(), MARCH);
-        assertThat(read.postedPastTheCutoff()).containsOnlyKeys("settlement-batch", "recon-suspense");
+        assertThat(read.pastTheCutoff()).containsOnlyKeys("settlement-batch", "recon-suspense");
         assertThat(read.nothingToDisclose()).isFalse();
+
+        rows.put(LedgerFlooredPostings.PAST_THE_CUTOFF_SQL, List.of(row("namespace", "settlement-batch", "entries", 5L, "floored", 0L, "unrecorded", 0L)));
+        assertThat(disclosure().asOfCutoff(connection(), MARCH).nothingToDisclose()).as("ordinary late postings").isTrue();
+
+        rows.put(LedgerFlooredPostings.PAST_THE_CUTOFF_SQL, List.of(row("namespace", "settlement-batch", "entries", 5L, "floored", 0L, "unrecorded", 1L)));
+        assertThat(disclosure().asOfCutoff(connection(), MARCH).nothingToDisclose()).as("a missing record is never its own dating").isFalse();
     }
 
     @Test
@@ -221,8 +227,7 @@ class ProductReconciliationDisclosureTest {
     @Test
     @DisplayName("the statements only read, and the value date and posting date straddle the cutoff; the income line alone")
     void theStatementsOnlyRead() {
-        for (String sql : List.of(LedgerFlooredPostings.ACCRUALS_SQL, LedgerFlooredPostings.BY_NAMESPACE_SQL,
-                ProductReconciliationDisclosure.SUSPENSE_LEDGER_SQL)) {
+        for (String sql : List.of(LedgerFlooredPostings.ACCRUALS_SQL, ProductReconciliationDisclosure.SUSPENSE_LEDGER_SQL)) {
             String upper = sql.toUpperCase(Locale.ROOT);
             assertThat(upper).startsWith("SELECT ");
             for (String forbidden : List.of("INSERT", "UPDATE", "DELETE", "FOR SHARE", "FOR UPDATE", "PG_ADVISORY", "REASON", "ACTOR_ID",
@@ -233,7 +238,7 @@ class ProductReconciliationDisclosureTest {
         assertThat(LedgerFlooredPostings.ACCRUALS_SQL).contains("entry.posting_date > ? AND entry.value_date <= ?")
                 .contains("line.direction = 'CREDIT'").contains("count(*) FILTER (WHERE entry.value_date = ?)")
                 .contains("sum(line.amount_minor) FILTER (WHERE entry.value_date = ?)");
-        assertThat(LedgerFlooredPostings.BY_NAMESPACE_SQL).contains("entry.posting_date > ? AND entry.value_date <= ?");
+        assertThat(LedgerFlooredPostings.PAST_THE_CUTOFF_SQL).contains("entry.posting_date > ? AND entry.value_date <= ?");
         assertThat(ProductReconciliationDisclosure.SUSPENSE_LEDGER_SQL).contains("account.purpose = ? AND entry.posting_date <= ?");
     }
 

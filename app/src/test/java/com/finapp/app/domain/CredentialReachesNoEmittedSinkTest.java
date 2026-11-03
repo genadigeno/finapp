@@ -773,7 +773,12 @@ class CredentialReachesNoEmittedSinkTest {
                         "BreakActRequest",
                         "BreakResolution",
                         // P14-TSK-011: a close check's re-run - a reason, screened by AccountingReasons, never served.
-                        "CloseCheckRerunRequest");
+                        "CloseCheckRerunRequest",
+                        // P14-TSK-012: the close's and the reopen's bodies - ids, and reasons screened by AccountingReasons; a disclosure's
+                        // reason is the proposal's item, served to its approver and never logged.
+                        "CloseProposalRequest",
+                        "CloseDecisionRequest",
+                        "PeriodReopenRequest");
     }
 
     @Test

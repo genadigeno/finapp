@@ -26,6 +26,7 @@ import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.SortedMap;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -33,8 +34,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The month's reads over reconciliation and the journal (`P14-TSK-017`; {@code INV-ACC-04}, {@code INV-ACC-05}; the owner's decision of
- * 2026-11-02; `P14-TSK-011`'s review, M-2): the runs of the month's business dates, what {@code -012}'s check will read; the suspense
+ * The month's reads over reconciliation and the journal (`P14-TSK-017`, `P14-TSK-012`; {@code INV-ACC-04}, {@code INV-ACC-05}; the owner's decisions of
+ * 2026-11-02 and 2026-11-03; `P14-TSK-011`'s review, M-2): the runs of the month's business dates and the source register, what the check judges; the suspense
  * register through the one read that cannot move after a lock - every other read of reconciliation's is refused here, so a FINAL body
  * cannot be pointed at what moves; and which past-the-cutoff entry is which.
  */
@@ -83,20 +84,43 @@ class ReconciliationMonthReadsTest {
     @DisplayName("the month's runs: its first to last business date, per source, kind, status and day - a count of what stands, with no verdict")
     void theMonthsRuns() {
         UUID source = UUID.randomUUID();
-        runs.add(new ReportReadings.RunLine(source, RunKind.BATCH, RunStatus.COMPLETED, MARCH.atDay(30), 2));
-        runs.add(new ReportReadings.RunLine(source, RunKind.REPROCESS, RunStatus.OPEN, MARCH.atDay(31), 1));
+        runs.add(new ReportReadings.RunLine(source, RunKind.BATCH, RunStatus.COMPLETED, MARCH.atDay(30), false, 2));
+        runs.add(new ReportReadings.RunLine(source, RunKind.BATCH, RunStatus.COMPLETED, MARCH.atDay(30), true, 1));
+        runs.add(new ReportReadings.RunLine(source, RunKind.REPROCESS, RunStatus.OPEN, MARCH.atDay(31), false, 1));
 
-        ReconciliationRunCoverage.Coverage coverage = reads().ofMonth(NO_CONNECTION, MARCH);
+        ReconciliationRunCoverage.Coverage coverage = reads().ofMonth(sources().connection(), MARCH);
 
         assertThat(asked).containsExactly(MARCH.atDay(1), CUTOFF);
         assertThat(coverage.month()).isEqualTo(MARCH);
         assertThat(coverage.lines()).containsExactly(
-                new ReconciliationRunCoverage.Line(source, "BATCH", "COMPLETED", MARCH.atDay(30), 2),
-                new ReconciliationRunCoverage.Line(source, "REPROCESS", "OPEN", MARCH.atDay(31), 1));
-        assertThat(coverage.batchRuns()).isEqualTo(2);
+                new ReconciliationRunCoverage.Line(source, "BATCH", "COMPLETED", MARCH.atDay(30), false, 2),
+                new ReconciliationRunCoverage.Line(source, "BATCH", "COMPLETED", MARCH.atDay(30), true, 1),
+                new ReconciliationRunCoverage.Line(source, "REPROCESS", "OPEN", MARCH.atDay(31), false, 1));
+        assertThat(coverage.batchRuns()).isEqualTo(3);
 
         runs.clear();
-        assertThat(reads().ofMonth(NO_CONNECTION, MARCH).batchRuns()).isZero();
+        assertThat(reads().ofMonth(sources().connection(), MARCH).batchRuns()).isZero();
+    }
+
+    @Test
+    @DisplayName("what makes a source active (P14-TSK-012): its row ACTIVE and this build declaring it; a RETIRED row is retired; an ACTIVE row no build declares has no door; a declared code with no row is a deployment's defect, which throws - never an empty pass")
+    void whichSourcesAreActive() {
+        ReconciliationRunCoverage.Coverage coverage = reads().ofMonth(sources().connection(), MARCH);
+        assertThat(coverage.sources()).extracting(ReconciliationRunCoverage.Source::code, ReconciliationRunCoverage.Source::state).containsExactly(
+                org.assertj.core.groups.Tuple.tuple("simulated-bank.statement", ReconciliationRunCoverage.SourceState.ACTIVE),
+                org.assertj.core.groups.Tuple.tuple("old-psp.settlement", ReconciliationRunCoverage.SourceState.RETIRED),
+                org.assertj.core.groups.Tuple.tuple("nobody-declares.this", ReconciliationRunCoverage.SourceState.UNDECLARED));
+
+        ReconciliationMonthReads missing = new ReconciliationMonthReads(readings, Set.of("simulated-bank.statement", "never-seeded.settlement"));
+        assertThatThrownBy(() -> missing.ofMonth(sources().connection(), MARCH)).isInstanceOf(IllegalStateException.class).hasMessageContaining("deployment");
+        assertThat(ReconciliationMonthReads.SOURCES_SQL).isEqualTo("SELECT id, code, status FROM settlement.source ORDER BY code");
+    }
+
+    private static ScriptedStatements sources() {
+        return new ScriptedStatements(sql -> List.of(
+                row("id", UUID.nameUUIDFromBytes(new byte[] {1}), "code", "simulated-bank.statement", "status", "ACTIVE"),
+                row("id", UUID.nameUUIDFromBytes(new byte[] {2}), "code", "old-psp.settlement", "status", "RETIRED"),
+                row("id", UUID.nameUUIDFromBytes(new byte[] {3}), "code", "nobody-declares.this", "status", "ACTIVE")));
     }
 
     @Test
@@ -133,9 +157,9 @@ class ReconciliationMonthReadsTest {
                 new Class<?>[] {ReportReadings.class}, (proxy, method, args) -> {
                     throw new IllegalStateException("the register is away");
                 });
-        assertThatThrownBy(() -> new ReconciliationMonthReads(failing).ofCutoff(NO_CONNECTION, MARCH))
+        assertThatThrownBy(() -> new ReconciliationMonthReads(failing, Set.of()).ofCutoff(NO_CONNECTION, MARCH))
                 .isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> new ReconciliationMonthReads(failing).ofMonth(NO_CONNECTION, MARCH))
+        assertThatThrownBy(() -> new ReconciliationMonthReads(failing, Set.of()).ofMonth(NO_CONNECTION, MARCH))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -151,12 +175,12 @@ class ReconciliationMonthReadsTest {
     // ------------------------------------------------------------------ M-2
 
     @Test
-    @DisplayName("M-2: per floored namespace the entries past the cutoff, split - floored by the entry's own audit mark, the rest the rule's own"
-            + " dating: a batch accepted on the 1st for the 31st is not a floor; a namespace of no floored rule is not reported")
+    @DisplayName("M-2, the owner's (b): per floored namespace the entries past the cutoff, split - floored by the posting's own audit mark, unrecorded where no such record stands, the rest"
+            + " the rule's own dating: a batch accepted on the 1st for the 31st is not a floor; a missing record is never its own dating; a namespace of no floored rule is not reported")
     void whichIsWhich() {
         ScriptedStatements script = new ScriptedStatements(sql -> List.of(
-                row("namespace", "settlement-batch", "entries", 7L, "floored", 2L),
-                row("namespace", "transfer", "entries", 99L, "floored", 0L)));
+                row("namespace", "settlement-batch", "entries", 7L, "floored", 2L, "unrecorded", 1L),
+                row("namespace", "transfer", "entries", 99L, "floored", 0L, "unrecorded", 0L)));
         LedgerFlooredPostings postings = new LedgerFlooredPostings(PostingRuleRegister.CURRENT.rules());
 
         SortedMap<String, PastTheCutoffPostings.Split> split = postings.pastTheCutoff(script.connection(), CUTOFF);
@@ -164,22 +188,24 @@ class ReconciliationMonthReadsTest {
         assertThat(script.bound).containsExactly(Date.valueOf(CUTOFF), Date.valueOf(CUTOFF), "ledger.post:%");
         assertThat(split).containsOnlyKeys("settlement-batch");
         assertThat(split.get("settlement-batch").floored()).isEqualTo(2);
-        assertThat(split.get("settlement-batch").ownValueDate()).isEqualTo(5);
+        assertThat(split.get("settlement-batch").unrecorded()).isEqualTo(1);
+        assertThat(split.get("settlement-batch").countsAsFloored()).isEqualTo(3);
+        assertThat(split.get("settlement-batch").ownValueDate()).isEqualTo(4);
     }
 
     @Test
-    @DisplayName("the statement: one SELECT the report's view admits, no lock; the same selection as the disclosure's count; the floor read from the"
-            + " entry's audit record by the target index, nothing but its existence - never a summary, actor or reference")
+    @DisplayName("the statement: one SELECT the report's view admits, no lock; 'record present, no mark' told from 'no record' in one read, the posting's own record alone - a GL read of the entry"
+            + " shares its target type and says nothing about a floor; nothing but existence - never a summary, actor or reference")
     void theStatement() throws java.sql.SQLException {
         String sql = LedgerFlooredPostings.PAST_THE_CUTOFF_SQL;
         assertThat(sql).contains("entry.posting_date > ? AND entry.value_date <= ?")
                 .contains("entry.idempotency_scope LIKE ?")
                 .contains("EXISTS (SELECT 1 FROM platform.audit_record audit")
                 .contains("audit.target_type = 'journal_entry' AND audit.target_id = entry.id::text")
-                .contains("audit.change_summary LIKE '%flooredFrom=%'");
-        assertThat(LedgerFlooredPostings.BY_NAMESPACE_SQL).as("the disclosure's count is unchanged - the check is -011's")
-                .contains("entry.posting_date > ? AND entry.value_date <= ?")
-                .doesNotContain("audit_record");
+                .contains("audit.operation IN ('ledger.JournalEntryPosted', 'ledger.AdjustmentPosted')")
+                .contains(") AS recorded,")
+                .contains("audit.change_summary LIKE '%flooredFrom=%') AS floored")
+                .contains("count(*) FILTER (WHERE NOT past.recorded) AS unrecorded");
         String upper = sql.toUpperCase(Locale.ROOT);
         for (String forbidden : List.of("INSERT", "UPDATE", "DELETE", "FOR SHARE", "FOR UPDATE", "PG_ADVISORY")) {
             assertThat(upper).doesNotContain(forbidden);
@@ -195,7 +221,7 @@ class ReconciliationMonthReadsTest {
     // -----------------------------------------------------------------
 
     private ReconciliationMonthReads reads() {
-        return new ReconciliationMonthReads(readings);
+        return new ReconciliationMonthReads(readings, Set.of("simulated-bank.statement"));
     }
 
     private static ReportReadings.SuspenseAsOfLine line(SuspenseSide side, long minor, CurrencyCode currency, LocalDate openedOn) {

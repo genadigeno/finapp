@@ -2059,11 +2059,57 @@ class OwnershipIsScopedTest {
                                     "P14-TSK-011. The system's: the id comes only from the run row this transaction locked FOR"
                                         + " UPDATE behind a claim - the platform's books, no owner to scope by.")),
                     Map.entry(
+                            "com.finapp.accounting.JdbcAccountingPeriodStore.edge",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-012. markCloseProposed, markClosed, markCloseRejected and markReopened's one helper: the id comes only"
+                                        + " from the period row this transaction locked FOR UPDATE, the edge conditional on its status and the revision"
+                                        + " read; a period is platform-wide with no owner to scope by, behind @RequiresPermission(ACCOUNTING_CLOSE_PROPOSE"
+                                        + " or ACCOUNTING_CLOSE_APPROVE).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcPeriodCloseStore.approveReopen",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-012. The id comes only from the reopen row this transaction locked FOR UPDATE under the period's own lock,"
+                                        + " conditional on PROPOSED - the platform's books, no owner to scope by, behind"
+                                        + " @RequiresPermission(ACCOUNTING_CLOSE_APPROVE).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcPeriodCloseStore.attemptEvidence",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-012. The frozen evidence of a proposal's attempts, for the id of the period's latest proposal, read by"
+                                        + " an audited read behind @RequiresPermission(ACCOUNTING_CLOSE_APPROVE) - the platform's books, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcPeriodCloseStore.checks",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-012. A proposal's frozen checks, for the id of a proposal this transaction read or locked, behind"
+                                        + " @RequiresPermission(ACCOUNTING_CLOSE_PROPOSE or ACCOUNTING_CLOSE_APPROVE) - the platform's books, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcPeriodCloseStore.decide",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-012. The id comes only from the proposal row this transaction locked FOR UPDATE, checked to be the period's,"
+                                        + " conditional on PROPOSED - the platform's books, no owner to scope by, behind"
+                                        + " @RequiresPermission(ACCOUNTING_CLOSE_APPROVE).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcPeriodCloseStore.oneReopen",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-012. reopenAt and lockReopenAt's one helper: a reopen proposal by the period the operator's"
+                                        + " permission-guarded request named and the revision its row holds - a calendar month of the platform's books, no owner to scope by.")),
+                    Map.entry(
                             "com.finapp.accounting.JdbcValuationRateSetStore.countByStatus",
                             new Entry(
                                     Scope.ADMINISTERED,
                                     "P14-TSK-017 (its review, M-11). How many sets of the period CLOSE_STATUS answers for, per status -"
                                         + " counts only, under ACCOUNTING_READ - platform-wide configuration, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcValuationRateSetStore.proposedOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-012 (its review, M-5). The period's proposed sets CLOSE_STATUS names, under ACCOUNTING_READ -"
+                                        + " ids only - platform-wide configuration, no owner to scope by.")),
                     Map.entry(
                             "com.finapp.accounting.JdbcValuationRateSetStore.ofPeriod",
                             new Entry(

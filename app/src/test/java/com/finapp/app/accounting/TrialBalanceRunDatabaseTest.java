@@ -84,8 +84,8 @@ import org.junit.jupiter.api.Test;
  * rolled back. {@code ValuationRateSetDatabaseTest} calls its helpers, and is tagged for the same reason.
  *
  * <p><strong>The books it uses.</strong> Accounting periods are contiguous calendar months, so this
- * one uses only the fixture's <strong>January and February 1999</strong> ({@link AccountingPeriodFixture} - before
- * `P14-TSK-012` builds the close only January can be locked); it posts entries dated 1998-12-15 (the opening's history),
+ * one uses only the fixture's <strong>January and February 1999</strong> ({@link AccountingPeriodFixture} - `P14-TSK-012`'s
+ * close suites close January only in databases of their own, so only January can be locked here); it posts entries dated 1998-12-15 (the opening's history),
  * 1999-01-01 and 1999-01-31 (the period's boundary days) and 1999-02-01 (the day after), in EUR and BHD, and judges
  * relations that hold whatever else those months hold on a rerun. Whether a mapping version is in force for 1999 depends
  * on what other suites activated first; every case holds either way (with none, every line is an unmapped row). Each case

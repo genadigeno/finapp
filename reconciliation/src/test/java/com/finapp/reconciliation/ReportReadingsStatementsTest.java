@@ -25,13 +25,15 @@ class ReportReadingsStatementsTest {
     }
 
     @Test
-    @DisplayName("the run lines: grouped by source, kind, status and day and ordered by the same; a bound on the business date; no other column")
+    @DisplayName("the run lines: grouped by source, kind, status, day and repudiation and ordered by the same; a bound on the business date; a repudiated batch told from its approved"
+            + " resolution, reconciliation's own table (P14-TSK-012); no other column")
     void theRunLines() {
         assertThat(JdbcReportReadings.RUNS_OF_BUSINESS_DATES)
-                .startsWith("SELECT source_id, kind, status, business_date, count(*) AS runs FROM reconciliation.reconciliation_batch")
-                .contains("WHERE business_date >= ? AND business_date <= ?")
-                .contains("GROUP BY source_id, kind, status, business_date")
-                .endsWith("ORDER BY source_id, kind, status, business_date");
+                .startsWith("SELECT line.source_id, line.kind, line.status, line.business_date, line.repudiated, count(*) AS runs FROM (SELECT run.source_id, run.kind, run.status, run.business_date,")
+                .contains("EXISTS (SELECT 1 FROM reconciliation.resolution resolved WHERE resolved.settlement_batch_id = run.batch_id AND resolved.status = 'APPROVED') AS repudiated")
+                .contains("FROM reconciliation.reconciliation_batch run WHERE run.business_date >= ? AND run.business_date <= ?) line")
+                .contains("GROUP BY line.source_id, line.kind, line.status, line.business_date, line.repudiated")
+                .endsWith("ORDER BY line.source_id, line.kind, line.status, line.business_date, line.repudiated");
     }
 
     @Test

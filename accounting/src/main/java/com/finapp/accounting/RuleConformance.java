@@ -69,8 +69,9 @@ public final class RuleConformance {
     }
 
     /**
-     * A fresh tally for one run - the subjects {@code held} by a break counted by that break's status, never re-raised,
-     * those an acknowledgement no longer describes named ({@link Tally#changed()}); new ones kept up to {@code cap}.
+     * A fresh tally for one run - the subjects {@code held} by a break compared with what a person decided on: an {@code OPEN} one or a
+     * decided one unchanged counted by that break's status; a decided one that differs raised under its next generation and named
+     * ({@link Tally#changed()}); new ones kept up to {@code cap}.
      */
     public Tally tally(Map<String, AccountingBreakStore.Held> held, int cap) {
         return new Tally(held, cap);
@@ -140,17 +141,17 @@ public final class RuleConformance {
 
     /**
      * One run's findings over a period's entries, entry by entry: the per-entry findings kept as found, the unregistered
-     * namespaces folded with their counts and first entries. Subjects a break already holds are counted by its status,
-     * never kept; past {@code cap} new subjects the tally only counts ({@link #capped()}). Per run, never shared.
+     * namespaces folded with their counts and first entries. A subject a break already holds is counted by its status unless a person
+     * decided on it and it now differs, which is a new raise at the next generation; past {@code cap} raises the tally only counts ({@link
+     * #capped()}). Per run, never shared.
      */
     public final class Tally {
 
         private final Map<String, AccountingBreakStore.Held> held;
         private final int cap;
-        private final Map<String, BreakFinding> kept = new LinkedHashMap<>();
+        private final Map<String, BreakFinding.Raise> kept = new LinkedHashMap<>();
         private final Map<String, Unregistered> namespaces = new LinkedHashMap<>();
         private final Map<String, BreakStatus> knownSeen = new TreeMap<>();
-        private final Set<String> changedEntries = new TreeSet<>();
         private final Map<String, Unregistered> heldNamespaces = new LinkedHashMap<>();
         private long entries;
         private boolean capped;
@@ -169,13 +170,14 @@ public final class RuleConformance {
             for (BreakFinding finding : judge(entry)) {
                 AccountingBreakStore.Held holder = held.get(finding.subject());
                 if (holder != null) {
-                    knownSeen.put(finding.subject(), holder.status());
                     if (finding.type() == BreakType.UNREGISTERED_POSTING) {
                         // Its evidence is folded over the month, so it is compared when the walk has ended.
                         heldNamespaces.computeIfAbsent(finding.subject(),
                                 subject -> new Unregistered(entry.type(), folded(namespaceOf(entry)))).add(entry);
-                    } else if (holder.changedBy(finding)) {
-                        changedEntries.add(finding.subject());
+                    } else if (!holder.changedBy(finding)) {
+                        knownSeen.put(finding.subject(), holder.status());
+                    } else if (!kept.containsKey(finding.subject()) && room()) {
+                        kept.put(finding.subject(), new BreakFinding.Raise(finding, holder.nextGeneration()));
                     }
                     continue;
                 }
@@ -192,26 +194,33 @@ public final class RuleConformance {
                     continue;
                 }
                 if (!kept.containsKey(finding.subject()) && room()) {
-                    kept.put(finding.subject(), finding);
+                    kept.put(finding.subject(), new BreakFinding.Raise(finding, 1));
                 }
             }
         }
 
-        /** Every new finding, in the order first seen - each unregistered namespace once, with its count. */
-        public List<BreakFinding> findings() {
-            List<BreakFinding> findings = new ArrayList<>(kept.values());
-            namespaces.forEach((subject, folded) -> findings.add(unregistered(subject, folded)));
-            return findings;
-        }
-
-        /** The subjects found whose {@code ACKNOWLEDGED} break no longer reads as they do - sorted. */
-        public List<String> changed() {
-            Set<String> changed = new TreeSet<>(changedEntries);
+        /** Every finding to raise, in the order first seen - each unregistered namespace once, with its count - and its generation. */
+        public List<BreakFinding.Raise> raises() {
+            List<BreakFinding.Raise> raises = new ArrayList<>(kept.values());
+            namespaces.forEach((subject, folded) -> raises.add(new BreakFinding.Raise(unregistered(subject, folded), 1)));
             heldNamespaces.forEach((subject, folded) -> {
-                if (held.get(subject).changedBy(unregistered(subject, folded))) {
-                    changed.add(subject);
+                BreakFinding finding = unregistered(subject, folded);
+                if (held.get(subject).changedBy(finding)) {
+                    raises.add(new BreakFinding.Raise(finding, held.get(subject).nextGeneration()));
                 }
             });
+            return raises;
+        }
+
+        /** Every finding to raise - {@link #raises()} without its generations. */
+        public List<BreakFinding> findings() {
+            return raises().stream().map(BreakFinding.Raise::finding).toList();
+        }
+
+        /** The subjects raised because they differ from what a person decided on - sorted. */
+        public List<String> changed() {
+            Set<String> changed = new TreeSet<>();
+            raises().stream().filter(raise -> raise.generation() > 1).forEach(raise -> changed.add(raise.finding().subject()));
             return List.copyOf(changed);
         }
 
@@ -220,10 +229,15 @@ public final class RuleConformance {
                     judgedBy());
         }
 
-        /** Subjects found that a break already held, counted per that break's status - never re-raised. */
+        /** Subjects found that a break already held and that are not raised again, counted per that break's status. */
         public Map<BreakStatus, Integer> known() {
             Map<BreakStatus, Integer> known = new java.util.EnumMap<>(BreakStatus.class);
             knownSeen.values().forEach(status -> known.merge(status, 1, Integer::sum));
+            heldNamespaces.forEach((subject, folded) -> {
+                if (!held.get(subject).changedBy(unregistered(subject, folded))) {
+                    known.merge(held.get(subject).status(), 1, Integer::sum);
+                }
+            });
             return known;
         }
 
@@ -284,11 +298,19 @@ public final class RuleConformance {
         return lines.stream().map(line -> line.side() + " " + line.purpose()).collect(Collectors.joining(", ", "[", "]"));
     }
 
-    /** One unregistered namespace folded over a run: how many entries, and the first few. */
+    /**
+     * One unregistered namespace folded over a run: how many entries, and the first few by {@code (posting date, id)} - whatever order
+     * they were walked in, so the evidence a person decided on and the finding compared with it are the same text for the same entries
+     * (ADR-0117's rule, `P14-TSK-012`).
+     */
     private static final class Unregistered {
+        private static final java.util.Comparator<JournalShapes.EntryShape> BY_DATE_THEN_ID =
+                java.util.Comparator.comparing(JournalShapes.EntryShape::postingDate).thenComparing(JournalShapes.EntryShape::id,
+                        JournalReads.LineCursor::compareIds);
+
         private final EntryType type;
         private final String namespace;
-        private final List<String> first = new ArrayList<>();
+        private final java.util.TreeSet<JournalShapes.EntryShape> first = new java.util.TreeSet<>(BY_DATE_THEN_ID);
         private long count;
         private Optional<java.time.LocalDate> from = Optional.empty();
         private Optional<java.time.LocalDate> to = Optional.empty();
@@ -300,8 +322,9 @@ public final class RuleConformance {
 
         void add(JournalShapes.EntryShape entry) {
             count++;
-            if (first.size() < NAMED_ENTRIES) {
-                first.add(entry.id().toString());
+            first.add(entry);
+            if (first.size() > NAMED_ENTRIES) {
+                first.pollLast();
             }
             from = Optional.of(from.filter(day -> day.isBefore(entry.postingDate())).orElse(entry.postingDate()));
             to = Optional.of(to.filter(day -> day.isAfter(entry.postingDate())).orElse(entry.postingDate()));
@@ -309,7 +332,7 @@ public final class RuleConformance {
 
         String evidence() {
             return "type=" + type + ", namespace=" + namespace + ", entries=" + count + ", postingDates=" + from.orElseThrow()
-                    + ".." + to.orElseThrow() + ", first=" + first;
+                    + ".." + to.orElseThrow() + ", first=" + first.stream().map(entry -> entry.id().toString()).toList();
         }
     }
 }

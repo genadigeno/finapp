@@ -29,8 +29,8 @@ import org.junit.jupiter.api.Test;
 /**
  * {@code finapp.accounting.close.run.stalled}'s read against a live PostgreSQL (`P14-TSK-017`; the owner's decision of 2026-11-02):
  * on the database's clock, within the bound silent, past it one, cleared by the run's birth and by an unlock - the statement every
- * instance runs, read-only. Uses only the fixture's January 1999 ({@link AccountingPeriodFixture}: before `P14-TSK-012` builds the close
- * only January can be locked), returning it to {@code OPEN}; every other row a shared database holds is not {@code LOCKED} before this
+ * instance runs, read-only. Uses only the fixture's January 1999 ({@link AccountingPeriodFixture}: `P14-TSK-012`'s close suites close it only in databases
+ * of their own, so a shared database can lock only January), returning it to {@code OPEN}; every other row a shared database holds is not {@code LOCKED} before this
  * suite locks. <strong>Written and owed</strong> (owner decision C5).
  */
 @Tag("database")
