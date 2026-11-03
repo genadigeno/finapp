@@ -41,7 +41,8 @@ import lombok.RequiredArgsConstructor;
  * codes this build declares. A row {@code ACTIVE} and declared is {@link SourceState#ACTIVE}; a row {@code RETIRED} is {@link SourceState#RETIRED}; a row {@code ACTIVE} that no build declares has no door, {@link SourceState#UNDECLARED}.
  * A declared code with no row is a deployment defect: the read throws, and the check is {@code FAILED}, never an empty pass.
  *
- * <p>Every read on the caller's snapshot; a read that fails throws, so a report fails rather than says nothing is there. Never a
+ * <p>Every read on the caller's connection: a report's and a check's {@code REPEATABLE READ READ ONLY} snapshot, and for {@link #ofMonth} also the close machine's {@code READ COMMITTED} transaction, which
+ * {@link ReconciliationRunCoverage} explains; a read that fails throws, so a report fails rather than says nothing is there. Never a
  * reason, requester or reference; figures gross per currency and scale, in minor units ({@link BigInteger} folds, never floating
  * point), and never netted across sides.
  */
@@ -56,17 +57,17 @@ public final class ReconciliationMonthReads implements ReconciliationRunCoverage
     @NonNull private final Set<String> declared;
 
     @Override
-    public Coverage ofMonth(Connection snapshot, YearMonth month) {
-        Objects.requireNonNull(snapshot, "snapshot");
+    public Coverage ofMonth(Connection connection, YearMonth month) {
+        Objects.requireNonNull(connection, "connection");
         Objects.requireNonNull(month, "month");
-        return new Coverage(month, readings.runsOfBusinessDates(snapshot, month.atDay(1), month.atEndOfMonth()).stream()
+        return new Coverage(month, readings.runsOfBusinessDates(connection, month.atDay(1), month.atEndOfMonth()).stream()
                 .map(line -> new Line(line.sourceId(), line.kind().name(), line.status().name(), line.businessDate(),
                         line.repudiated(), line.runs()))
-                .toList(), sources(snapshot));
+                .toList(), sources(connection));
     }
 
-    private List<Source> sources(Connection snapshot) {
-        try (PreparedStatement read = snapshot.prepareStatement(SOURCES_SQL); ResultSet row = read.executeQuery()) {
+    private List<Source> sources(Connection connection) {
+        try (PreparedStatement read = connection.prepareStatement(SOURCES_SQL); ResultSet row = read.executeQuery()) {
             List<Source> sources = new ArrayList<>();
             while (row.next()) {
                 String code = row.getString("code");

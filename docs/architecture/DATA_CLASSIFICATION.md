@@ -4983,7 +4983,7 @@ so it is `CONFIDENTIAL`, served to an operator under `ACCOUNTING_READ` and read 
 | `period_close` | `breaks_acknowledged` | `INTERNAL` | A count of the month's breaks at the proposal |
 | `period_close` | `breaks_resolved` | `INTERNAL` | A count of the month's breaks at the proposal |
 | `period_close` | `status` | `INTERNAL` | The machine's state - `PROPOSED`, `APPROVED`, `REJECTED` |
-| `period_close` | `proposed_by` | `CONFIDENTIAL` | The accountant who proposed it; served to the approver |
+| `period_close` | `proposed_by` | `CONFIDENTIAL` | The accountant who proposed it; never served: the approver's read names no person |
 | `period_close` | `proposed_by_type` | `INTERNAL` | A closed actor type - a person's, by `CHECK` |
 | `period_close` | `proposed_at` | `INTERNAL` | The database's stamp |
 | `period_close` | `proposal_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |

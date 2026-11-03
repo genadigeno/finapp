@@ -42,6 +42,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -140,6 +141,22 @@ class CloseStatusThroughTheMachineTest {
     private void lock() {
         int revision = periods.find(UOW, march).orElseThrow().revision();
         periods.markLocked(UOW, march, revision, ACCOUNTANT, Optional.of(new AccountingPeriodStore.Pin(GlMappingVersionId.next(IDS), 1)));
+    }
+
+    @Test
+    @DisplayName("the independent review, M-5: past the bound the newest proposals are the ones named, the ones being awaited; the counts say how many there are")
+    void theNewestProposalsAreNamed() throws Exception {
+        periods.insertIfAbsent(UOW, new AccountingPeriodStore.NewPeriod(march, MARCH, CorrelationId.generate(IDS)));
+        lock();
+        List<String> captured = new ArrayList<>();
+        for (int set = 0; set < AccountingCloseStatusReads.MAX_PROPOSED_NAMED + 5; set++) {
+            captured.add(sets.capture(UOW, march, ACCOUNTANT, null, CorrelationId.generate(IDS)).id().value().toString());
+        }
+        java.util.Collections.reverse(captured);
+        JsonNode read = read(Instant.parse("2097-04-05T09:00:00Z"));
+        List<String> named = new ArrayList<>();
+        read.get("proposedValuationRateSets").forEach(id -> named.add(id.asText()));
+        assertThat(named).containsExactlyElementsOf(captured.subList(0, AccountingCloseStatusReads.MAX_PROPOSED_NAMED));
     }
 
     /** Every attempt concluded {@code PASSED} but {@code but}'s, left {@code PENDING} as a deferred one would be. */

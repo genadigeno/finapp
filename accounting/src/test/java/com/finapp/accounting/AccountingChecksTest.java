@@ -201,7 +201,7 @@ class AccountingChecksTest {
 
     @Test
     @DisplayName("ten instances judging one changed finding raise one generation: the number is what each read, the key is the arbiter; one overtaken raises nothing once it exists")
-    void tenWorkersOneGeneration() {
+    void workersReadingOneHeldRaiseOneGeneration() {
         sources.put(SourceProofs.Source.LENDING, lending("fails=[UNEXPLAINED_ENTRIES]"));
         checks.run(MARCH, CloseCheckCode.SOURCE_COMPLETENESS, Actor.SYSTEM, correlation());
         acknowledge(store.rows().get(0).id());

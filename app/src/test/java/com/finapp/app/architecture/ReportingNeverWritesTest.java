@@ -148,7 +148,7 @@ class ReportingNeverWritesTest {
     static final Set<String> LEDGER_WRITERS = Set.of(PostingService.class.getName());
 
     /** What a report port's adapter may call of a store or of {@code CloseRuns}: reads, on the snapshot it is handed. */
-    static final Set<String> ADAPTER_STORE_READS = Set.of("find", "view", "content", "rates", "approvedFor", "countByStatus", "ofPeriod");
+    static final Set<String> ADAPTER_STORE_READS = Set.of("find", "view", "content", "rates", "approvedFor", "countByStatus", "proposedOf");
 
     @ArchTest
     static void noReportingClassReachesAWriter(JavaClasses imported) {

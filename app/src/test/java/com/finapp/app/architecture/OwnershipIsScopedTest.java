@@ -2105,6 +2105,12 @@ class OwnershipIsScopedTest {
                                     "P14-TSK-017 (its review, M-11). How many sets of the period CLOSE_STATUS answers for, per status -"
                                         + " counts only, under ACCOUNTING_READ - platform-wide configuration, no owner to scope by.")),
                     Map.entry(
+                            "com.finapp.accounting.JdbcValuationRateSetStore.proposedOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-012 (its review, M-5). The period's proposed sets CLOSE_STATUS names, under ACCOUNTING_READ -"
+                                        + " ids only - platform-wide configuration, no owner to scope by.")),
+                    Map.entry(
                             "com.finapp.accounting.JdbcValuationRateSetStore.ofPeriod",
                             new Entry(
                                     Scope.ADMINISTERED,

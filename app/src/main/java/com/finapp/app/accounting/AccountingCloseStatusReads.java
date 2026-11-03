@@ -24,7 +24,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public final class AccountingCloseStatusReads implements CloseStatusReads {
 
-    /** The most of a period's sets read to name those awaiting a decision: {@code ValuationRateSets.ofPeriod}'s own bound. */
+    /** The most proposed sets named, newest first: the read selects them, so older ones are what a period past the bound leaves unnamed, and the counts still say how many. */
     static final int MAX_PROPOSED_NAMED = 20;
 
     @NonNull private final AccountingPeriodStore periods;
@@ -51,8 +51,7 @@ public final class AccountingCloseStatusReads implements CloseStatusReads {
                 sets.approvedFor(snapshot, id).map(set -> new ApprovedSet(set.id().value(), set.asOf(), set.rateCount(),
                         set.decidedAt())),
                 byStatus,
-                sets.ofPeriod(snapshot, id, MAX_PROPOSED_NAMED).stream().filter(set -> set.status() == ValuationRateSetStatus.PROPOSED)
-                        .map(set -> set.id().value()).toList());
+                sets.proposedOf(snapshot, id, MAX_PROPOSED_NAMED).stream().map(set -> set.id().value()).toList());
     }
 
     private static Run run(CloseRuns.RunView view) {

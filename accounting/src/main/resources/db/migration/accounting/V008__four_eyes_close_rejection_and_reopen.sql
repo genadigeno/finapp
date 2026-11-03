@@ -20,7 +20,8 @@
 -- The locks (DISTRIBUTED_EXECUTION.md section 3, the Phase 14 order): (A1) the period FOR UPDATE - the previous FOR SHARE first and the
 -- next FOR SHARE after, for a reopen's approval, oldest first; (A4) the proposal row, and for a reopen's approval the FINAL report runs;
 -- (A2) namespace 14 key cutoff exclusive and (A3) the ledger's posting_cutoff row, a reopen's approval only, inside the ledger's own API,
--- never a write here. The statements below hold no lock but the trigger's period FOR SHARE, the domain's row already held.
+-- never a write here. The statements below hold no lock but the triggers' period FOR SHARE, each on a row the domain's path already holds: a proposal's period, a lock's previous, a reopen's next. A raw writer, holding the row it
+-- updates when its trigger asks for a neighbour, takes them newer before older; that can only meet a deadlock's refusal, never a wrong edge. The application role holds the column UPDATE that FOR SHARE needs.
 --
 -- NO MONEY: no column here holds an amount. A copied evidence is canonical JSON text as the attempt froze it, aggregates per currency at
 -- most. Nothing here posts. The migration names no other schema. No DELETE for any role; never truncated.
@@ -530,9 +531,9 @@ BEGIN
         RAISE EXCEPTION 'an accounting period''s revision moves only at a reopen (P14-TSK-012, INV-ACC-10)';
     END IF;
     IF OLD.status = 'OPEN' AND NEW.status = 'LOCKED' THEN
-        -- IN ORDER: the previous period, when there is one, is CLOSED.
+        -- IN ORDER: the previous period, when there is one, is CLOSED - held FOR SHARE, as lockWithPrevious already holds it on the domain's path, so a raw writer's read cannot be overtaken.
         SELECT p.status INTO previous_status FROM accounting.accounting_period p
-         WHERE p.period_start = (OLD.period_start - interval '1 month')::date;
+         WHERE p.period_start = (OLD.period_start - interval '1 month')::date FOR SHARE;
         IF FOUND AND previous_status <> 'CLOSED' THEN
             RAISE EXCEPTION 'accounting periods lock in order: the period before % is %, not CLOSED (P14-TSK-005)', OLD.period_start, previous_status;
         END IF;
@@ -608,8 +609,9 @@ BEGIN
                 OR NEW.pinned_mapping_version_id IS NOT NULL OR NEW.unlock_proposed_by IS NOT NULL OR NEW.unlock_approved_by IS NOT NULL THEN
             RAISE EXCEPTION 'a reopen releases the lock and its pin, and records nothing else on the period (P14-TSK-012)';
         END IF;
+        -- FOR SHARE, as approveReopen already holds it on the domain's path, oldest first.
         SELECT p.status INTO next_status FROM accounting.accounting_period p
-         WHERE p.period_start = (OLD.period_start + interval '1 month')::date;
+         WHERE p.period_start = (OLD.period_start + interval '1 month')::date FOR SHARE;
         IF FOUND AND next_status <> 'OPEN' THEN
             RAISE EXCEPTION 'only the latest closed period reopens, the next not locked: the period after % is % (P14-TSK-012, INV-ACC-10)', OLD.period_start, next_status;
         END IF;

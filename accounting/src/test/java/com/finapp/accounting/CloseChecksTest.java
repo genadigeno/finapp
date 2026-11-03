@@ -34,7 +34,7 @@ import org.junit.jupiter.api.Test;
  * The nine checks' judges (`P14-TSK-011`; {@code PHASE_14_PLAN.md} section 13.5; {@code INV-ACC-05}, {@code
  * INV-ACC-09}): each passes only when it read everything and found nothing - a false verdict, an exception, an
  * incomplete proof, a missing reading and an empty set each {@code FAILED}; {@code DISCLOSED} only as the check admits
- * it; a {@code RECURRED} outcome neither; {@code ACCRUALS_COMPLETE} never {@code PASSED} on a period short of interest.
+ * it; a {@code FINDING_CHANGED} outcome neither; {@code ACCRUALS_COMPLETE} never {@code PASSED} on a period short of interest.
  * Hermetic: every port a double, every snapshot one stand-in.
  */
 @DisplayName("the close checks: never a false pass (P14-TSK-011)")

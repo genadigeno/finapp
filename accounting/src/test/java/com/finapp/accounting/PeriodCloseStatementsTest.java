@@ -33,6 +33,12 @@ class PeriodCloseStatementsTest {
     }
 
     @Test
+    @DisplayName("the independent review, M-5: the proposed sets are the statement's to select, newest first, never a Java filter over the first of a period's sets")
+    void theProposedSetsAreSelected() {
+        assertThat(JdbcValuationRateSetStore.PROPOSED_OF_SQL).endsWith("WHERE s.period_id = ? AND s.status = 'PROPOSED' ORDER BY s.id DESC LIMIT ?");
+    }
+
+    @Test
     @DisplayName("the attempt evidence is the frozen attempt's own, joined by the id the close record names")
     void theAttemptsEvidenceIsItsOwn() {
         assertThat(JdbcPeriodCloseStore.ATTEMPT_EVIDENCE_SQL).contains("JOIN accounting.close_check a ON a.id = f.close_check_id").endsWith("WHERE f.close_id = ?");

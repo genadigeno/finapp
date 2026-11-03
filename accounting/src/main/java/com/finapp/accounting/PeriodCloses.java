@@ -119,7 +119,14 @@ public final class PeriodCloses {
     }
 
     /** One check of a proposal as the approver reads it: the frozen row, and the evidence of the attempt it names. */
-    public record CheckView(PeriodCloseStore.CheckRow check, Optional<String> attemptEvidence) {}
+    public record CheckView(PeriodCloseStore.CheckRow check, Optional<String> attemptEvidence) {
+
+        /** The evidence is {@code CONFIDENTIAL} aggregates, served to the approver and never logged: a record's generated {@code toString} would carry it into a log line. */
+        @Override
+        public String toString() {
+            return "CheckView[" + check + "]";
+        }
+    }
 
     // ------------------------------------------------------------------ refusals
 

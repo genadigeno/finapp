@@ -76,6 +76,12 @@ public interface PeriodCloseStore {
             Objects.requireNonNull(reason, "reason");
             Objects.requireNonNull(correlation, "correlation");
         }
+
+        /** The reason never leaves in a text form: a record's generated {@code toString} would carry it into a log line. */
+        @Override
+        public String toString() {
+            return "NewClose[" + id.value() + "]";
+        }
     }
 
     /** A proposal as stored - the proposer's reason read only to tell a repeat from another act, and never served. */
@@ -150,6 +156,12 @@ public interface PeriodCloseStore {
             Objects.requireNonNull(proposedBy, "proposedBy");
             Objects.requireNonNull(reason, "reason");
             Objects.requireNonNull(correlation, "correlation");
+        }
+
+        /** The reason never leaves in a text form: a record's generated {@code toString} would carry it into a log line. */
+        @Override
+        public String toString() {
+            return "NewReopen[" + id.value() + ", revision=" + revision + "]";
         }
     }
 

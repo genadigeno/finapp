@@ -46,6 +46,9 @@ import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.CurrencyCode;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
+import jakarta.validation.ValidatorFactory;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.math.BigDecimal;
@@ -298,6 +301,30 @@ class PeriodCloseDeskTest {
             }
         }
         assertThat(seen).isEqualTo(expected.size());
+    }
+
+    @Test
+    @DisplayName("the independent review, M-3: no body and no view prints a reason or evidence, whichever a log line were handed")
+    void aBodysTextHoldsNoReason() {
+        String secret = "a-persons-reason";
+        for (Object record : List.of(new PeriodCloseController.CloseProposalRequest("run", secret, List.of(new PeriodCloseController.CloseDisclosureItem("CHECK", 1, secret))),
+                new PeriodCloseController.CloseDisclosureItem("CHECK", 1, secret), new PeriodCloseController.CloseDecisionRequest("proposal", secret), new PeriodCloseController.PeriodReopenRequest(secret),
+                new PeriodCloseDesk.StatedDisclosure("CHECK", 1, secret), new PeriodCloseDesk.CloseProposalCheckView("CHECK", 1, "DISCLOSED", "judge:v1", secret, secret))) {
+            assertThat(record.toString()).as(record.getClass().getSimpleName()).doesNotContain(secret);
+        }
+    }
+
+    @Test
+    @DisplayName("the independent review, M-4: a null among the disclosures is the platform's validation failure at the door, never a NullPointerException and a 500; its absence is no disclosure")
+    void aNullDisclosureIsAValidationFailure() {
+        try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
+            Validator validator = factory.getValidator();
+            assertThat(validator.validate(new PeriodCloseController.CloseProposalRequest("run", REASON, java.util.Arrays.asList((PeriodCloseController.CloseDisclosureItem) null))))
+                    .singleElement().satisfies(violation -> assertThat(violation.getPropertyPath().toString()).startsWith("disclosures[0]"));
+            assertThat(validator.validate(new PeriodCloseController.CloseProposalRequest("run", REASON, null))).isEmpty();
+            assertThat(validator.validate(new PeriodCloseController.CloseProposalRequest("run", REASON, List.of(new PeriodCloseController.CloseDisclosureItem("CHECK", 1, "x".repeat(1001))))))
+                    .as("the cascade still reaches each item").singleElement().satisfies(violation -> assertThat(violation.getPropertyPath().toString()).isEqualTo("disclosures[0].reason"));
+        }
     }
 
     // ------------------------------------------------------------------ plumbing

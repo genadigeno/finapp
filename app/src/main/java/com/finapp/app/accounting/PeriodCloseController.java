@@ -6,6 +6,7 @@ import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 import lombok.NonNull;
@@ -103,17 +104,45 @@ public class PeriodCloseController {
 
     /** The proposal: the run read, the act's reason, a reason per DISCLOSED attempt (at most one per check). */
     @ClosedBody
-    public record CloseProposalRequest(@Size(max = 64) String closeRunId, @Size(max = 1000) String reason, @Valid @Size(max = 9) List<CloseDisclosureItem> disclosures) {}
+    public record CloseProposalRequest(@Size(max = 64) String closeRunId, @Size(max = 1000) String reason, @Size(max = 9) List<@Valid @NotNull CloseDisclosureItem> disclosures) {
+
+        /** Every reason it holds stays out of a log line: a record's generated {@code toString} would carry them. */
+        @Override
+        public String toString() {
+            return "CloseProposalRequest[" + closeRunId + "]";
+        }
+    }
 
     /** A person's reason for one attempt they read. */
     @ClosedBody
-    public record CloseDisclosureItem(@Size(max = 64) String check, int attempt, @Size(max = 1000) String reason) {}
+    public record CloseDisclosureItem(@Size(max = 64) String check, int attempt, @Size(max = 1000) String reason) {
+
+        /** The reason stays out of a log line: a record's generated {@code toString} would carry it. */
+        @Override
+        public String toString() {
+            return "CloseDisclosureItem[" + check + "#" + attempt + "]";
+        }
+    }
 
     /** A decision: the proposal read, and a reason. */
     @ClosedBody
-    public record CloseDecisionRequest(@Size(max = 64) String proposalId, @Size(max = 1000) String reason) {}
+    public record CloseDecisionRequest(@Size(max = 64) String proposalId, @Size(max = 1000) String reason) {
+
+        /** The reason stays out of a log line: a record's generated {@code toString} would carry it. */
+        @Override
+        public String toString() {
+            return "CloseDecisionRequest[" + proposalId + "]";
+        }
+    }
 
     /** A reopen's act: its reason ({@code accounting.ReasonRequired} when missing). */
     @ClosedBody
-    public record PeriodReopenRequest(@Size(max = 1000) String reason) {}
+    public record PeriodReopenRequest(@Size(max = 1000) String reason) {
+
+        /** The reason stays out of a log line: a record's generated {@code toString} would carry it. */
+        @Override
+        public String toString() {
+            return "PeriodReopenRequest[]";
+        }
+    }
 }

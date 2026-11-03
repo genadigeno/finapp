@@ -103,7 +103,8 @@ class PeriodCloseMigrationTest {
     @DisplayName("the reopen's edge: the next period's status judged for every writer, the lock and pin released; the close's: the lock and pin frozen, no unlock pending")
     void theEdges() throws IOException {
         String sql = collapsed(RESOURCE);
-        assertThat(sql).contains("p.period_start = (OLD.period_start + interval '1 month')::date").contains("IF FOUND AND next_status <> 'OPEN' THEN");
+        assertThat(sql).contains("p.period_start = (OLD.period_start + interval '1 month')::date FOR SHARE;").contains("IF FOUND AND next_status <> 'OPEN' THEN");
+        assertThat(sql).as("the neighbour the lock judges cannot be overtaken either").contains("p.period_start = (OLD.period_start - interval '1 month')::date FOR SHARE;");
         assertThat(sql).contains("IF (OLD.status = 'LOCKED' AND NEW.status = 'CLOSE_PROPOSED') OR (OLD.status = 'CLOSE_PROPOSED' AND NEW.status IN ('CLOSED', 'LOCKED')) THEN")
                 .contains("OR NEW.locked_at IS DISTINCT FROM OLD.locked_at OR NEW.pinned_mapping_version_id IS DISTINCT FROM OLD.pinned_mapping_version_id OR OLD.unlock_proposed_by IS NOT NULL");
         assertThat(sql).contains("EXISTS (SELECT 1 FROM accounting.period_close_check f JOIN accounting.close_check later ON later.close_run_id = NEW.close_run_id")

@@ -96,7 +96,7 @@ class OperationalReportDeskTest {
                     yield counts;
                 }
                 case "approvedFor" -> sets.stream().filter(set -> set.status() == ValuationRateSetStatus.APPROVED).findFirst();
-                case "ofPeriod" -> List.copyOf(sets);
+                case "proposedOf" -> sets.stream().filter(set -> set.status() == ValuationRateSetStatus.PROPOSED).toList();
                 default -> throw new AssertionError("close status only reads: " + method.getName());
             });
 

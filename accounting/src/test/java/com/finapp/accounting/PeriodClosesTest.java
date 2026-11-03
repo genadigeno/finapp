@@ -102,8 +102,12 @@ class PeriodClosesTest {
     };
 
     private List<ReconciliationRunCoverage.Line> monthLines = List.of(pspLine(false));
-    private final ReconciliationRunCoverage coverage = (connection, month) -> new ReconciliationRunCoverage.Coverage(month, monthLines,
-            List.of(new ReconciliationRunCoverage.Source(PSP, "simulated-psp.settlement", ReconciliationRunCoverage.SourceState.ACTIVE)));
+    private final ReconciliationRunCoverage coverage = (connection, month) -> {
+        // Never a second connection while the period row is held: under load that waits on a pool every holder of a period row is waiting on.
+        assertThat(connection).as("the machine's own connection").isSameAs(UOW);
+        return new ReconciliationRunCoverage.Coverage(month, monthLines,
+                List.of(new ReconciliationRunCoverage.Source(PSP, "simulated-psp.settlement", ReconciliationRunCoverage.SourceState.ACTIVE)));
+    };
 
     private final PeriodCloses machine = new PeriodCloses(periods, closes, runs, breaks, setStore, coverage, cutoff, supersession, (uow, record) -> audit.add(record),
             (uow, envelope, payload, mediaType) -> {
@@ -737,6 +741,27 @@ class PeriodClosesTest {
                 default -> CheckVerdict.passed(claimed.check(), "judge:v1", evidence);
             };
             runs.conclude(UOW, claimed, verdict);
+        }
+    }
+
+    @Test
+    @DisplayName("the independent review, M-3: no reason and no evidence in a text form, whichever record a log line were handed")
+    void aRecordsTextHoldsNoReasonAndNoEvidence() {
+        String reason = "a-persons-reason";
+        String evidence = "{\"attempts-evidence\":\"1\"}";
+        PeriodCloseId id = PeriodCloseId.next(IDS);
+        PeriodCloseStore.CheckRow disclosed = new PeriodCloseStore.CheckRow(id, CloseCheckCode.RECONCILIATION_DISCLOSURE, CloseCheckId.next(IDS), 1, CloseCheckStatus.DISCLOSED, "judge:v1", Optional.of(evidence), Optional.of(reason));
+        Actor person = ACCOUNTANT;
+        AccountingPeriodId period = AccountingPeriodId.next(IDS);
+        CloseRunId run = CloseRunId.next(IDS);
+        PeriodCloseStore.CloseRow row = new PeriodCloseStore.CloseRow(id, period, MARCH, 1, Instant.EPOCH, run, GlMappingVersionId.next(IDS), ValuationRateSetId.next(IDS), 0, 0, PeriodCloseStatus.PROPOSED, "someone",
+                Instant.EPOCH, reason, Optional.empty(), Optional.empty(), correlation());
+        for (Object record : List.of(new PeriodCloses.Disclosure(CloseCheckCode.RECONCILIATION_DISCLOSURE, 1, reason), disclosed, new PeriodCloses.CheckView(disclosed, Optional.of(evidence)), row,
+                new PeriodCloses.ProposalView(row, PeriodStatus.CLOSE_PROPOSED, List.of(new PeriodCloses.CheckView(disclosed, Optional.of(evidence))), true),
+                new PeriodCloseStore.NewClose(id, period, 1, Instant.EPOCH, run, GlMappingVersionId.next(IDS), ValuationRateSetId.next(IDS), 0, 0, person, reason, correlation()),
+                new PeriodCloseStore.NewReopen(PeriodReopenId.next(IDS), period, 1, person, reason, correlation()),
+                new PeriodCloseStore.ReopenRow(PeriodReopenId.next(IDS), period, 1, PeriodReopenStatus.PROPOSED, "someone", Instant.EPOCH, reason, Optional.empty(), Optional.empty()))) {
+            assertThat(record.toString()).as(record.getClass().getSimpleName()).doesNotContain(reason).doesNotContain("attempts-evidence");
         }
     }
 
