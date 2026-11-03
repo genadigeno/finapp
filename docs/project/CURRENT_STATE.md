@@ -1387,6 +1387,8 @@ Resolved during initiation:
 
 ## Next Task
 
+**The owner's decisions (2026-11-03):** every recommendation made after `P14-TSK-017`'s merge is accepted. `P14-TSK-012`'s entry holds what it must build (what counts as a month's run, the check narrowed to the floored, the operational reports unstored, `BALANCES` dropped); `-016`, `-017` and `-020` hold theirs. Of `P14-TSK-015`'s three questions, two are ruled; **the translated layout stays open**, for the owner to look at before the first translated FINAL. `P14-TSK-012` started, on the owner's word.
+
 **After `P14-TSK-017`'s merge (2026-11-02):** newly `READY`: no new task. Phase 14 continues in its waves (`PHASE_14_PLAN.md` §18).
 
 **After `P14-TSK-017`'s gate (2026-11-02):** marks no task `READY` (the coordinator does at its merge) and unblocks none alone: `P14-TSK-020` still waits on `-012` and `-018`, `-016` on `-013`. `P14-TSK-012` stays `READY`, with the run-coverage read and the M-2 split on its entry. The database suites are owed to the phase's one pass.

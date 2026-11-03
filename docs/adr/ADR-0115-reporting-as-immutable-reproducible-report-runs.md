@@ -164,6 +164,10 @@ forward, then one probe of `audit_record_by_target` per entry it keeps; a run in
 partial answer. A long-past month may no longer answer at the door, and says so: an owner item. **Version 1's bodies changed in `P14-TSK-017`'s fix round and stay version 1, because
 no FINAL run has been issued anywhere.**
 
+**Ruled by the owner, 2026-11-03.** `RECONCILIATION_STATUS` and `CLOSE_STATUS` stay unstored, on the rule that nothing is filed or relied on from them: the audit hash can show a saved copy is genuine, but the platform
+cannot reproduce what was seen. `ReportKind.BALANCES` is dropped. The 30-second door bound stays, and its setting is raised if a long-past month stops answering. `FX_RESULTS.REALISED` keeps no total, and the income
+statement carries the net. `FX_POSITION` stays out of the purpose reports.
+
 ## Follow-up
 
 Retention of runs with Phase 15's data-retention work; export formats beyond JSON. *(`P14-TSK-009`: a chained

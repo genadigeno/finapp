@@ -1359,7 +1359,7 @@ whatever order its reads serve - `TrialBalanceOracleTest#regeneratesByteIdentica
 
 *(`P14-TSK-017`'s review, M-12: `RECONCILIATION_STATUS` and `CLOSE_STATUS` are never issued and nothing is filed from them, pending the owner's ruling on whether they are ever
 stored. They read what moves under one lock, so they are answered live and stored nowhere, and this Statement is not claimed of them; `ReportRuns.claim` refuses them a run, so no obligation can
-draw from them.)*
+draw from them. *The owner ruled, 2026-11-03: they stay unstored, on the rule that nothing is filed or relied on from them.*)*
 
 ### INV-ACC-05 — Unreconciled positions are disclosed
 **Statement:** Open breaks and suspense balances are explicitly disclosed at period close,

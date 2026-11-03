@@ -113,6 +113,9 @@ does not change this design**: it would mint a new
 set id, a new parameters hash, a new question and a new run; the one touch point is `pinnedBy`, which would have to admit a
 superseded set for the regeneration of a run that pinned it.
 
+**Ruled by the owner, 2026-11-03.** A FINAL run with a missing rate stays issued, with the gap disclosed, and a statement still refuses it. Indicative translation of an open period is left out. **Still open: the translated
+body's shape**, for the owner to look at before the first translated FINAL, because a later change means a new version.
+
 ## Follow-up
 
 C7 B with qualified review; a reporting currency other than the functional one, if a jurisdiction requires it.

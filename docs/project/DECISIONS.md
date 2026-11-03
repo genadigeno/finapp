@@ -1235,6 +1235,11 @@ is a new break needing its own four-eyes acknowledgement. Every `DISCLOSED` chec
 reconciliation run fails its check. No door discloses a failed must-pass check: the way on is to unlock and correct. The close run stays born by the check leg, not
 in the lock's transaction. `BNPL-F2a`'s month-end shift stays disclosed. → [ADR-0117](../adr/ADR-0117-the-posting-rule-register-gl-reconciliation-and-accounting-breaks.md)
 
+**What a month's reconciliation means, and what the reports hold (the owner, 2026-11-03).** A month's run is a `COMPLETED` `BATCH` run for each active source; another status, or a `REPROCESS` alone, counts for nothing.
+The disclosure check narrows to floored postings, a missing audit record counting as floored. The two operational reports stay unstored, and nothing is filed or relied on from them. A close run stalled after its birth alerts,
+by a second gauge in `P14-TSK-020`. A FINAL translated run with a missing rate stays issued with the gap disclosed; open periods get no indicative translation; the translated layout is still open.
+-> [ADR-0115](../adr/ADR-0115-reporting-as-immutable-reproducible-report-runs.md), [ADR-0116](../adr/ADR-0116-multi-currency-valuation-and-reporting-currency-translation.md)
+
 **Regulatory reporting behind adapters.** Obligations as configuration; submissions only from FINAL runs, four-eyes,
 with lineage, corrected by resubmission; a simulated reference adapter; the reference safeguarding return subtracting
 `lending_funded` (C4, C13). → [ADR-0118](../adr/ADR-0118-regulatory-reporting-behind-jurisdiction-adapters.md)
