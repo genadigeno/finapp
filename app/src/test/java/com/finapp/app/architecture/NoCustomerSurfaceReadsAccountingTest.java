@@ -213,7 +213,7 @@ class NoCustomerSurfaceReadsAccountingTest {
     @RequiresMerchantKey
     static class PlantedMerchantController {
         ReportKind kind() {
-            return ReportKind.BALANCES;
+            return ReportKind.TRIAL_BALANCE;
         }
     }
 
