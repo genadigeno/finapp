@@ -54,6 +54,7 @@ class PeriodClosesTest {
     private static final Actor CONTROLLER = new Actor("controller-1", ActorType.CUSTOMER);
     private static final Actor OTHER_CONTROLLER = new Actor("controller-2", ActorType.CUSTOMER);
     private static final String REASON = "the books are read and agree";
+    private static final java.util.UUID PSP = java.util.UUID.nameUUIDFromBytes(new byte[] {7});
     private static final String DISCLOSURE = "suspense of two items, aged under a week, explained by the bank's holiday";
 
     private final InMemoryAccountingPeriodStore periods = new InMemoryAccountingPeriodStore();
@@ -100,7 +101,11 @@ class PeriodClosesTest {
         return 3;
     };
 
-    private final PeriodCloses machine = new PeriodCloses(periods, closes, runs, breaks, setStore, cutoff, supersession, (uow, record) -> audit.add(record),
+    private List<ReconciliationRunCoverage.Line> monthLines = List.of(pspLine(false));
+    private final ReconciliationRunCoverage coverage = (connection, month) -> new ReconciliationRunCoverage.Coverage(month, monthLines,
+            List.of(new ReconciliationRunCoverage.Source(PSP, "simulated-psp.settlement", ReconciliationRunCoverage.SourceState.ACTIVE)));
+
+    private final PeriodCloses machine = new PeriodCloses(periods, closes, runs, breaks, setStore, coverage, cutoff, supersession, (uow, record) -> audit.add(record),
             (uow, envelope, payload, mediaType) -> {
                 events.add(envelope);
                 payloads.add(payload);
@@ -275,7 +280,71 @@ class PeriodClosesTest {
         assertThat(closes.closes()).hasSize(1);
     }
 
+    @Test
+    @DisplayName("the independent review, I-2: a batch repudiated after its check concluded refuses the proposal, CloseNotReady naming the source, nothing written; a new counting run lets it through")
+    void aRepudiationRefusesTheProposal() {
+        CloseRunId run = readyRun();
+        monthLines = List.of(pspLine(true));
+        assertThatThrownBy(() -> machine.propose(UOW, march, run, List.of(), ACCOUNTANT, REASON, correlation())).isInstanceOf(PeriodCloses.CloseNotReady.class)
+                .hasMessageContaining("simulated-psp.settlement");
+        assertThat(period().status()).isEqualTo(PeriodStatus.LOCKED);
+        assertThat(closes.closes()).isEmpty();
+
+        monthLines = List.of(pspLine(true), pspLine(false));
+        assertThat(machine.propose(UOW, march, run, List.of(), ACCOUNTANT, REASON, correlation()).status()).isEqualTo(PeriodStatus.CLOSE_PROPOSED);
+    }
+
+    @Test
+    @DisplayName("a repeat of a proposal converges whatever the month now says: the re-judge stands after the replay, so a timeout's retry is never refused by what came since")
+    void aRepeatedProposalIsNotReJudged() {
+        CloseRunId run = readyRun();
+        machine.propose(UOW, march, run, List.of(), ACCOUNTANT, REASON, correlation());
+        monthLines = List.of(pspLine(true));
+        assertThat(machine.propose(UOW, march, run, List.of(), ACCOUNTANT, REASON, correlation()).replayed()).isTrue();
+    }
+
     // ------------------------------------------------------------------ approve
+
+    @Test
+    @DisplayName("the independent review, I-2: a batch repudiated since the proposal refuses the approval, stale, and the approver's read says so; a new counting run lets the same proposal through, nothing else having moved")
+    void aRepudiationRefusesTheApproval() {
+        PeriodCloseId proposal = proposed();
+        monthLines = List.of(pspLine(true));
+        assertThat(machine.proposalOf(UOW, march).orElseThrow().stillStands()).as("the approver's read, by the same question").isFalse();
+        assertThatThrownBy(() -> machine.approve(UOW, march, proposal, CONTROLLER, REASON, correlation())).isInstanceOf(PeriodCloses.CloseProposalStale.class)
+                .hasMessageContaining("simulated-psp.settlement");
+        assertThat(period().status()).isEqualTo(PeriodStatus.CLOSE_PROPOSED);
+
+        monthLines = List.of(pspLine(true), pspLine(false));
+        assertThat(machine.proposalOf(UOW, march).orElseThrow().stillStands()).isTrue();
+        assertThat(machine.approve(UOW, march, proposal, CONTROLLER, REASON, correlation()).status()).isEqualTo(PeriodStatus.CLOSED);
+    }
+
+    @Test
+    @DisplayName("a repeat of an approval converges whatever the month now says; and only `ran` refuses - counts moving, a second run or one unfinished, while a counting run stands do not, or a close would chase traffic")
+    void onlyTheRunRefusesAndAReplayIsNotReJudged() {
+        PeriodCloseId proposal = proposed();
+        monthLines = List.of(pspLine(false), pspLine(false), new ReconciliationRunCoverage.Line(PSP, "BATCH", "BLOCKED", MARCH.atDay(3), false, 1),
+                new ReconciliationRunCoverage.Line(PSP, "REPROCESS", "OPEN", MARCH.atDay(3), false, 1));
+        assertThat(machine.approve(UOW, march, proposal, CONTROLLER, REASON, correlation()).status()).isEqualTo(PeriodStatus.CLOSED);
+
+        monthLines = List.of(pspLine(true));
+        assertThat(machine.approve(UOW, march, proposal, CONTROLLER, REASON, correlation()).replayed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("a month that cannot be read refuses, never a pass: no source at all, and a read that throws")
+    void aMonthUnreadRefuses() {
+        CloseRunId run = readyRun();
+        PeriodCloses unreadable = new PeriodCloses(periods, closes, runs, breaks, setStore, (connection, month) -> {
+            throw new IllegalStateException("unreadable");
+        }, cutoff, supersession, (uow, record) -> audit.add(record), (uow, envelope, payload, mediaType) -> events.add(envelope), IDS, CLOCK);
+        assertThatThrownBy(() -> unreadable.propose(UOW, march, run, List.of(), ACCOUNTANT, REASON, correlation())).isInstanceOf(IllegalStateException.class);
+        PeriodCloses noSource = new PeriodCloses(periods, closes, runs, breaks, setStore, (connection, month) -> new ReconciliationRunCoverage.Coverage(month, List.of(), List.of()), cutoff, supersession,
+                (uow, record) -> audit.add(record), (uow, envelope, payload, mediaType) -> events.add(envelope), IDS, CLOCK);
+        assertThatThrownBy(() -> noSource.propose(UOW, march, run, List.of(), ACCOUNTANT, REASON, correlation())).isInstanceOf(PeriodCloses.CloseNotReady.class);
+        assertThat(closes.closes()).isEmpty();
+    }
 
     @Test
     @DisplayName("#theProposerCannotApprove: a SelfApprovalRefused, nothing moved; the record FAILED kept beside it; the store's four-eyes rank beneath the domain's refusal")
@@ -669,6 +738,10 @@ class PeriodClosesTest {
             };
             runs.conclude(UOW, claimed, verdict);
         }
+    }
+
+    private static ReconciliationRunCoverage.Line pspLine(boolean repudiated) {
+        return new ReconciliationRunCoverage.Line(PSP, "BATCH", "COMPLETED", MARCH.atDay(2), repudiated, 1);
     }
 
     private CloseRunStore.AttemptRow attemptOf(CloseCheckCode check) {

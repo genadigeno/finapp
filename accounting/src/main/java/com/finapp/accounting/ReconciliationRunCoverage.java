@@ -10,8 +10,12 @@ import java.util.UUID;
 
 /**
  * A month's reconciliation runs (`P14-TSK-017`; the owner's decisions of 2026-11-02 and 2026-11-03) - per source, kind, status, business date and whether its batch
- * was repudiated, over reconciliation's own {@code reconciliation_batch}, with the settlement sources they are measured against, on the caller's {@code
- * REPEATABLE READ READ ONLY} snapshot. {@code RECONCILIATION_STATUS} reports it; {@code RECONCILIATION_DISCLOSURE} reads it (`P14-TSK-012`, {@link CloseChecks}).
+ * was repudiated, over reconciliation's own {@code reconciliation_batch}, with the settlement sources they are measured against, on the caller's connection. {@code RECONCILIATION_STATUS} reports it and
+ * {@code RECONCILIATION_DISCLOSURE} reads it (`P14-TSK-012`, {@link CloseChecks}), each on a {@code REPEATABLE READ READ ONLY} snapshot; {@link PeriodCloses} re-judges a month's run on it holding the period row, {@code READ COMMITTED}.
+ *
+ * <p><strong>Two statements, so on {@code READ COMMITTED} two instants</strong> (the independent review, I-2): the runs, whose repudiation is an {@code EXISTS} in that one statement, so a run and its repudiation are one instant; then the source register. Only {@link
+ * CloseChecks.MonthRuns#ran} is judged there, and a register moving between them can misjudge only towards refusing or towards not asking of a source whose door has just shut: a source born between them has no line, so a refusal that a retry clears, and a source retired
+ * between them is no longer required, as it would not be a moment later. No run can be counted for a source that did not earn it, and none is hidden. The row-lock-free reads take no lock, so holding a period row beside them closes no cycle. The application role holds {@code SELECT} on all three tables.
  *
  * <p><strong>It judges nothing</strong> (`P14-TSK-017`'s review, I-4): it says which runs and sources exist. What makes a month "run" is the check's, on the owner's ruling.
  *
@@ -22,7 +26,7 @@ import java.util.UUID;
 public interface ReconciliationRunCoverage {
 
     /** The runs whose business date falls in {@code month} and the source register; a read that fails throws, never an empty answer for it. */
-    Coverage ofMonth(Connection snapshot, YearMonth month);
+    Coverage ofMonth(Connection connection, YearMonth month);
 
     /**
      * The runs of one source, kind, status, business date and repudiation.

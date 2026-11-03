@@ -54,7 +54,7 @@ import java.util.UUID;
 
 /**
  * The close's and the reopen's suites against PostgreSQL (`P14-TSK-012`), each in a database of its own ({@code own-container}: they close January 1999 for real, and activate a GL mapping from it). The machine over the real stores; a period brought to a ready run through the real
- * {@code V007} attempts, whose verdicts are the suite's own, since what is proven here is the machine and {@code accounting V008}, and the judges are {@code CloseRunDatabaseTest}'s. A set is approved once per period for good ({@code V005}), so it is approved at most once here.
+ * {@code V007} attempts, whose verdicts are the suite's own, since what is proven here is the machine and {@code accounting V008}, and the judges are {@code CloseRunDatabaseTest}'s; the month's run is {@code QuietMonthDatabaseTest}'s, so every month ran here. A set is approved once per period for good ({@code V005}), so it is approved at most once here.
  */
 final class PeriodCloseFixture {
 
@@ -63,7 +63,7 @@ final class PeriodCloseFixture {
     static final JdbcAccountingBreakStore BREAKS = new JdbcAccountingBreakStore();
     static final JdbcValuationRateSetStore SETS = new JdbcValuationRateSetStore();
     static final CloseRuns RUNS = new CloseRuns(RUN_STORE, AccountingPeriodFixture.STORE, BREAKS, CloseRuns.Leases.STANDARD, new JdbcAuditWriter(), IDS, NOW);
-    static final PeriodCloses MACHINE = new PeriodCloses(AccountingPeriodFixture.STORE, CLOSES, RUNS, BREAKS, SETS, new LedgerPostingCutoff(new PostingCutoffs(IDS, NOW)),
+    static final PeriodCloses MACHINE = new PeriodCloses(AccountingPeriodFixture.STORE, CLOSES, RUNS, BREAKS, SETS, com.finapp.accounting.testing.MonthsThatRan.EVERY_MONTH, new LedgerPostingCutoff(new PostingCutoffs(IDS, NOW)),
             (unitOfWork, period, actor, correlation) -> new JdbcReportRunStore().supersedeFinal(unitOfWork, period, correlation), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, NOW);
     static final ValuationRateSets VALUATION = new ValuationRateSets(SETS, AccountingPeriodFixture.STORE, new OneRate(), ValuationStaleness.standard(), new JdbcAuditWriter(), IDS, NOW);
     static final Actor ACCOUNTANT = person();

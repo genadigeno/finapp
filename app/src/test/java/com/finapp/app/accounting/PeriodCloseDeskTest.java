@@ -118,7 +118,7 @@ class PeriodCloseDeskTest {
         }
     };
     private boolean cutoffBusy;
-    private final PeriodCloses machine = new PeriodCloses(periods, closes, runs, breaks, setStore, cutoff, (uow, period, actor, correlation) -> 2, (uow, record) -> audited.add(record),
+    private final PeriodCloses machine = new PeriodCloses(periods, closes, runs, breaks, setStore, com.finapp.accounting.testing.MonthsThatRan.EVERY_MONTH, cutoff, (uow, period, actor, correlation) -> 2, (uow, record) -> audited.add(record),
             (uow, envelope, payload, mediaType) -> events.add(envelope.eventType()), IDS, CLOCK);
     private final AccountingTransactions transactions = new AccountingTransactions() {
         @Override

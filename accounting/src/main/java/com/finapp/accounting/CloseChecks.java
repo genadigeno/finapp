@@ -305,11 +305,13 @@ public final class CloseChecks {
      *
      * @param ran every active source has a run that counts, and at least one source is active
      * @param finished no run of the month stands unfinished or repudiated, whichever source's, and none names a source the register does not hold
+     * @param notRun the active sources with no run that counts, by code; {@link PeriodCloses} re-judges {@code ran} on it, holding the period row
      */
-    private record MonthRuns(boolean ran, boolean finished, CanonicalJson.Obj evidence) {
+    record MonthRuns(boolean ran, boolean finished, List<String> notRun, CanonicalJson.Obj evidence) {
 
         static MonthRuns judge(ReconciliationRunCoverage.Coverage coverage) {
             CanonicalJson.Arr unrun = CanonicalJson.array();
+            List<String> notRun = new ArrayList<>();
             CanonicalJson.Arr sources = CanonicalJson.array();
             boolean anyActive = false;
             boolean allRan = true;
@@ -331,6 +333,7 @@ public final class CloseChecks {
                     if (counting == 0) {
                         allRan = false;
                         unrun.add(source.code());
+                        notRun.add(source.code());
                     }
                 }
             }
@@ -339,7 +342,7 @@ public final class CloseChecks {
                     .mapToLong(ReconciliationRunCoverage.Line::runs).sum();
             boolean finished = unknown == 0 && coverage.lines().stream().allMatch(line ->
                     ReconciliationRunCoverage.Coverage.COMPLETED.equals(line.status()) && !line.repudiated());
-            return new MonthRuns(anyActive && allRan, finished, CanonicalJson.object().put("month", coverage.month().toString())
+            return new MonthRuns(anyActive && allRan, finished, List.copyOf(notRun), CanonicalJson.object().put("month", coverage.month().toString())
                     .put("sources", sources).put("sourcesNotRun", unrun).put("unknownSourceRuns", unknown));
         }
 

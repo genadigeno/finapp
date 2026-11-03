@@ -70,7 +70,7 @@ class CloseStatusThroughTheMachineTest {
     private final InMemoryPeriodCloseStore closes = new InMemoryPeriodCloseStore(periods);
     private final CloseRuns runs = new CloseRuns(runStore, periods, breaks, CloseRuns.Leases.STANDARD, (uow, record) -> { }, IDS, CLOCK);
     private final ValuationRateSets sets = new ValuationRateSets(setStore, periods, new OneRate(), ValuationStaleness.standard(), (uow, record) -> { }, IDS, CLOCK);
-    private final PeriodCloses machine = new PeriodCloses(periods, closes, runs, breaks, setStore, new NoCutoff(), (uow, period, actor, correlation) -> 0, (uow, record) -> { },
+    private final PeriodCloses machine = new PeriodCloses(periods, closes, runs, breaks, setStore, com.finapp.accounting.testing.MonthsThatRan.EVERY_MONTH, new NoCutoff(), (uow, period, actor, correlation) -> 0, (uow, record) -> { },
             (uow, envelope, payload, mediaType) -> { }, IDS, CLOCK);
     private final CloseStatusDefinition definition = new CloseStatusDefinition(new AccountingCloseStatusReads(periods, runs, breaks, setStore), new CloseRunStall(Duration.ofSeconds(30), CloseRunStall.STANDARD_POLLS));
     private final AccountingPeriodId march = AccountingPeriodId.next(IDS);

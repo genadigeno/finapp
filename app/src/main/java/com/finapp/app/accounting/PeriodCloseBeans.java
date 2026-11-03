@@ -7,6 +7,7 @@ import com.finapp.accounting.JdbcPeriodCloseStore;
 import com.finapp.accounting.PeriodCloseStore;
 import com.finapp.accounting.PeriodCloses;
 import com.finapp.accounting.PostingCutoff;
+import com.finapp.accounting.ReconciliationRunCoverage;
 import com.finapp.accounting.ReportRuns;
 import com.finapp.accounting.ValuationRateSetStore;
 import com.finapp.platform.audit.AuditWriter;
@@ -36,13 +37,14 @@ public class PeriodCloseBeans {
             CloseRuns closeRuns,
             AccountingBreakStore accountingBreakStore,
             ValuationRateSetStore valuationRateSetStore,
+            ReconciliationRunCoverage reconciliationRunCoverage,
             PostingCutoff postingCutoff,
             ReportRuns reportRuns,
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
             Clock clock) {
-        return new PeriodCloses(accountingPeriodStore, periodCloseStore, closeRuns, accountingBreakStore, valuationRateSetStore, postingCutoff, reportRuns,
+        return new PeriodCloses(accountingPeriodStore, periodCloseStore, closeRuns, accountingBreakStore, valuationRateSetStore, reconciliationRunCoverage, postingCutoff, reportRuns,
                 auditWriter, outboxWriter, idGenerator, clock);
     }
 

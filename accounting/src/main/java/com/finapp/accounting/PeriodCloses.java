@@ -38,14 +38,19 @@ import lombok.RequiredArgsConstructor;
  * {@link CloseNotReady}. <strong>What the person read is what is proposed</strong>: the body names the run and, per {@code DISCLOSED} attempt, the check, the attempt and a reason ({@code INV-ACC-09},
  * unamended). A {@code DISCLOSED} latest attempt with no reason is {@link AccountingReasons.ReasonRequired}; a reason naming anything but a latest {@code DISCLOSED} attempt, or another run, is
  * {@link CloseProposalStale} - so a re-run landing while the proposal was written is refused, never covered by a reason written for something else. The nine attempts are frozen in the close record, with a
- * copy of what was disclosed.
+ * copy of what was disclosed. <strong>The month's run is judged again here</strong> (the independent review, I-2): a batch repudiated after {@code RECONCILIATION_DISCLOSURE} concluded takes its run with it, and the frozen
+ * evidence would say it ran, so {@link CloseChecks.MonthRuns#ran} is read on this connection, holding the row, and {@link CloseNotReady} refuses a month with no run that counts. Only {@code ran} refuses: counts moving
+ * while a counting run stands do not, or a close would chase traffic.
  *
  * <p><strong>Approve</strong> ({@link #approve}, four eyes): the body names the proposal the person read. (A1) the period {@code FOR UPDATE}, (A4) the proposal {@code FOR UPDATE}; refused to its proposer
  * ({@link AccountingPeriods.SelfApprovalRefused}; {@code V008}'s {@code CHECK} on the row and on the history); {@link CloseProposalStale} unless it is the period's present proposal and what it read still
- * stands - readiness read again on the row, every latest attempt the one frozen, the month's break counts and the approved set as they were. <strong>The approver never closes something other than what they
- * read</strong>: while {@code CLOSE_PROPOSED} a re-run, an unlock and a set's capture or approval are refused already, and what can still move - an overtaken worker's raise, its re-judged {@code
- * OPEN_ACCOUNTING_BREAKS}, a person's act on a break - is caught here. The way on is to reject and propose again. <strong>Two approvers, one close</strong>: the second waits on the row, finds {@code CLOSED},
- * and converges if it was theirs, {@link AccountingPeriods.PeriodStale} otherwise.
+ * stands - readiness read again on the row, every latest attempt the one frozen, the month's break counts and the approved set as they were, the month's run still counting. <strong>The approver never closes something
+ * other than what they read</strong>: while {@code CLOSE_PROPOSED} a re-run, an unlock and a set's capture or approval are refused already. What can still move is read at this one moment, and <strong>its window is
+ * stated</strong>: neither a break's writers nor a repudiation take the period row, so one committing after this read is not caught. A resolve or an acknowledgement then leaves the record's {@code breaks_resolved} or {@code
+ * breaks_acknowledged} off by one, with no false close, since it opens nothing; an overtaken worker's raise leaves an {@code OPEN} break on a month just {@code CLOSED}, never hidden; a repudiation leaves a closed month with no
+ * counting run, the way on being the reopen, and {@code RECONCILIATION_STATUS} shows it. An approval refused is rejected and proposed again, or for a run withdrawn, answered by a new batch. <strong>Two approvers, one
+ * close</strong>: the second waits on the row, finds {@code CLOSED}, and converges if it was theirs, {@link AccountingPeriods.PeriodStale} otherwise. Neither a repeat of a proposal nor of an approval re-judges anything: each
+ * converges on what was done.
  *
  * <p><strong>Reject</strong> ({@link #reject}): {@code CLOSE_PROPOSED -> LOCKED}, the same lock and run, the proposal kept {@code REJECTED}. May be the proposer's. A next proposal is a new row with its own reasons.
  *
@@ -73,6 +78,7 @@ public final class PeriodCloses {
     @NonNull private final CloseRuns runs;
     @NonNull private final AccountingBreakStore breaks;
     @NonNull private final ValuationRateSetStore sets;
+    @NonNull private final ReconciliationRunCoverage coverage;
     @NonNull private final PostingCutoff cutoff;
     @NonNull private final ReportRunSupersession reportRuns;
     @NonNull private final AuditWriter<Connection> audit;
@@ -146,7 +152,7 @@ public final class PeriodCloses {
      * @param disclosures a reason per {@code DISCLOSED} attempt, each naming its attempt
      * @throws AccountingPeriods.PeriodNotFound when no period has this id
      * @throws AccountingPeriods.PeriodStale when the period is not {@code LOCKED}, an unlock is pending, or another person's proposal stands
-     * @throws CloseNotReady when the run cannot be proposed
+     * @throws CloseNotReady when the run cannot be proposed, or the month no longer has a run that counts for each active source
      * @throws CloseProposalStale when the body names anything but the present run and its latest {@code DISCLOSED} attempts
      * @throws AccountingReasons.ReasonRequired for a missing, unbounded or instrument-bearing reason - the act's, or any attempt's
      */
@@ -180,6 +186,10 @@ public final class PeriodCloses {
         }
         if (!readiness.run().get().equals(run)) {
             throw new CloseProposalStale("the run named is not the one answering the period's present lock");
+        }
+        CloseChecks.MonthRuns month = monthRuns(unitOfWork, row.month());
+        if (!month.ran()) {
+            throw new CloseNotReady(monthNotRun(month));
         }
         CloseRuns.RunView view = read.orElseThrow();
         List<PeriodCloseStore.CheckRow> rows = new ArrayList<>();
@@ -286,7 +296,7 @@ public final class PeriodCloses {
         }
         Optional<String> moved = moved(unitOfWork, row, standing);
         if (moved.isPresent()) {
-            throw new CloseProposalStale(moved.get() + "; it is rejected and proposed again");
+            throw new CloseProposalStale(moved.get() + "; nothing was changed");
         }
         if (!closes.decide(unitOfWork, standing.id(), PeriodCloseStatus.APPROVED, actor, reasoned)) {
             throw new IllegalStateException("the locked proposal was decided by another writer: the FOR UPDATE protocol was bypassed");
@@ -375,7 +385,23 @@ public final class PeriodCloses {
         if (sets.approvedFor(unitOfWork, row.id()).map(ValuationRateSetStore.SetRow::id).filter(standing.rateSet()::equals).isEmpty()) {
             return Optional.of("the period's approved valuation rate set is not the one proposed");
         }
+        CloseChecks.MonthRuns month = monthRuns(unitOfWork, row.month());
+        if (!month.ran()) {
+            return Optional.of(monthNotRun(month));
+        }
         return Optional.empty();
+    }
+
+    /**
+     * The owner's rule read again, on {@code unitOfWork}, the caller holding the period row: the attempt's evidence is what stood when it concluded, and a repudiation moves what it read. On the caller's own connection, because a
+     * second one, taken while holding the row, could wait on a pool every holder of a period row is waiting on. {@code READ COMMITTED}, so {@link ReconciliationRunCoverage}'s two statements see two instants: its javadoc says why {@code ran} holds on them.
+     */
+    private CloseChecks.MonthRuns monthRuns(Connection unitOfWork, YearMonth month) {
+        return CloseChecks.MonthRuns.judge(coverage.ofMonth(unitOfWork, month));
+    }
+
+    private static String monthNotRun(CloseChecks.MonthRuns month) {
+        return "the month no longer has a run that counts: not run " + month.notRun();
     }
 
     // ------------------------------------------------------------------ reopen

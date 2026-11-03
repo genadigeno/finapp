@@ -293,16 +293,14 @@ class PeriodCloseDatabaseTest {
 
         boolean born = inScope(Actor.SYSTEM, uow -> BREAKS.insertIfAbsent(uow, new AccountingBreakStore.NewBreak(AccountingBreakId.next(IDS), QUIET, finding(subject, "fails=[A]"), Actor.SYSTEM, correlation())));
         assertThat(born).as("the same generation: the key, unchanged in effect").isFalse();
-        assertThatThrownBy(() -> inScope(Actor.SYSTEM, uow -> BREAKS.insertIfAbsent(uow, new AccountingBreakStore.NewBreak(AccountingBreakId.next(IDS), QUIET, finding(subject, "fails=[B]"), 2, Actor.SYSTEM, correlation()))))
-                .as("over an OPEN one").hasStackTraceContaining("a later generation");
+        // Raw, as the owner: the store's failure path keeps the SQLSTATE and deliberately drops the driver's text (DatabaseFailure), and it is this trigger's refusal being proven.
+        refused(laterGeneration(subject, 2, "fails=[B]"), "a later generation");
 
         inScope(ACCOUNTANT, uow -> BREAKS.proposeAcknowledgement(uow, first, ACCOUNTANT, "disclosed"));
         inScope(CONTROLLER, uow -> BREAKS.approveAcknowledgement(uow, first, CONTROLLER, "agreed"));
         assertThat(inScope(Actor.SYSTEM, uow -> BREAKS.held(uow, QUIET, CloseCheckCode.SOURCE_COMPLETENESS)).get(subject).generation()).isEqualTo(1);
-        assertThatThrownBy(() -> inScope(Actor.SYSTEM, uow -> BREAKS.insertIfAbsent(uow, new AccountingBreakStore.NewBreak(AccountingBreakId.next(IDS), QUIET, finding(subject, "fails=[A]"), 2, Actor.SYSTEM, correlation()))))
-                .as("reading the same").hasStackTraceContaining("a later generation");
-        assertThatThrownBy(() -> inScope(Actor.SYSTEM, uow -> BREAKS.insertIfAbsent(uow, new AccountingBreakStore.NewBreak(AccountingBreakId.next(IDS), QUIET, finding(subject, "fails=[B]"), 3, Actor.SYSTEM, correlation()))))
-                .as("a gap").hasStackTraceContaining("a later generation");
+        refused(laterGeneration(subject, 2, "fails=[A]"), "a later generation");
+        refused(laterGeneration(subject, 3, "fails=[B]"), "a later generation");
 
         ExecutorService pool = Executors.newFixedThreadPool(APPROVERS);
         CountDownLatch start = new CountDownLatch(1);
@@ -336,6 +334,12 @@ class PeriodCloseDatabaseTest {
 
     private static BreakFinding finding(String subject, String evidence) {
         return new BreakFinding(CloseCheckCode.SOURCE_COMPLETENESS, BreakType.SOURCE_DISCREPANCY, subject, evidence, SourceCompleteness.JUDGED_BY);
+    }
+
+    /** A break of {@code subject} at {@code generation}, as a raw writer would insert it. */
+    private static String laterGeneration(String subject, int generation, String evidence) {
+        return "INSERT INTO accounting.accounting_break (id, period_start, check_code, break_type, subject_ref, generation, evidence, judged_by, status, raised_at, raised_by, raised_by_type, correlation_id) VALUES ('"
+                + IDS.next() + "', '1999-06-01', 'SOURCE_COMPLETENESS', 'SOURCE_DISCREPANCY', '" + subject + "', " + generation + ", '" + evidence + "', 'source-proofs:v1', 'OPEN', clock_timestamp(), 'platform', 'SYSTEM', 'raw')";
     }
 
     private static void raw(String sql) throws SQLException {

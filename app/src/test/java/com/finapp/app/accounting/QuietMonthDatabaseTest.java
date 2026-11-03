@@ -11,11 +11,18 @@ import com.finapp.accounting.CloseChecks;
 import com.finapp.accounting.CloseRunId;
 import com.finapp.accounting.CloseRuns;
 import com.finapp.accounting.ReconciliationRunCoverage;
+import com.finapp.app.reconciliation.CorridorRuleSetV1;
+import com.finapp.app.reconciliation.FxRuleSetV1;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.Actor;
+import com.finapp.platform.security.ActorType;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
+import com.finapp.reconciliation.BatchRepudiations;
 import com.finapp.reconciliation.Matching;
+import com.finapp.reconciliation.ResolutionReasonCode;
+import com.finapp.reconciliation.RuleSetAdministration;
+import com.finapp.reconciliation.RuleSetProposal;
 import com.finapp.settlement.BatchAcceptance;
 import com.finapp.settlement.DeliveryChannel;
 import com.finapp.settlement.FileParsing;
@@ -31,10 +38,16 @@ import com.finapp.sharedkernel.money.CurrencyCode;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -45,6 +58,12 @@ import org.springframework.boot.test.context.SpringBootTest;
  * An honestly quiet month closes (`P14-TSK-012`; the owner's decisions of 2026-11-02 and 2026-11-03; {@code RECONCILIATION_DISCLOSURE}): a month with no run is {@code FAILED}, naming every active source; each counterparty's nil report goes through the existing door - the
  * channel's authentication here, a pull - the parse, the acceptance and the run leg, its run {@code COMPLETED} at no items with nothing posted; and the check then reads the month as run. Nothing here mints a run: every one is born in an acceptance's transaction, from a stored file. The real
  * composition, against PostgreSQL. <strong>Written and owed</strong> (owner decision C5); the formats' half is {@code NilReportsAreEvidenceTest}, and runs on every build.
+ *
+ * <p><strong>Rule sets</strong>: reconciliation {@code V002} seeds the four first sources' rule sets; no migration seeds a counterparty's (D26, {@code OPERATIONS_RUNBOOK.md} section 3), and with none a parsed report waits {@code PARSED}
+ * with backoff. So a person activates the other four, four eyes, as a deployment must before such a source can have a run; {@link #everySourceHasItsRuleSet} does it through the same administration.
+ *
+ * <p><strong>A repudiation</strong> ({@link #aRepudiatedBatchsRunCountsForNothingAndTheNextBatchCounts}): the run stands and counts for nothing; settlement's live uniques exclude {@code REPUDIATED}, so a new batch of the same source, date and
+ * identity is admitted, with its own run.
  *
  * <p><strong>A database of its own</strong> ({@code own-container}): a bank statement's chain starts at sequence 1 with a zero opening, and a shared database's has moved on.
  */
@@ -58,6 +77,9 @@ class QuietMonthDatabaseTest {
     private static final IdGenerator IDS = new IdGenerator(Clock.systemUTC(), new SecureRandom());
     private static final YearMonth MONTH = YearMonth.of(1999, 3);
     private static final LocalDate DAY = MONTH.atDay(31);
+    /** A month of its own, so the two cases read nothing of each other's. */
+    private static final YearMonth REPUDIATED_MONTH = YearMonth.of(1999, 4);
+    private static final String PSP = "simulated-psp.settlement";
 
     @Autowired private SettlementSources sources;
     @Autowired private FileReception<Connection> reception;
@@ -67,11 +89,22 @@ class QuietMonthDatabaseTest {
     @Autowired private TransactionRunner settlementTransactionRunner;
     @Autowired private ReconciliationMonthReads monthReads;
     @Autowired private CloseChecks closeChecks;
+    @Autowired private RuleSetAdministration ruleSetAdministration;
+    @Autowired private BatchRepudiations repudiations;
+    @Autowired private com.finapp.reconciliation.TransactionRunner reconciliationTransactionRunner;
+
+    @BeforeEach
+    void everySourceHasItsRuleSet() throws Exception {
+        ruleSetActive(FxRuleSetV1.SOURCE, FxRuleSetV1.proposal("The quiet month suite: fx-sim-a's first version"));
+        ruleSetActive(FxRuleSetV1.SOURCE_B, FxRuleSetV1.proposalB("The quiet month suite: fx-sim-b's first version"));
+        ruleSetActive(CorridorRuleSetV1.SOURCE, CorridorRuleSetV1.proposal("The quiet month suite: corridor-sim-a's first version"));
+        ruleSetActive(CorridorRuleSetV1.SOURCE_B, CorridorRuleSetV1.proposalB("The quiet month suite: corridor-sim-b's first version"));
+    }
 
     @Test
     @DisplayName("no run: FAILED MONTH_NOT_RUN, naming every active source; nil reports through the door: COMPLETED BATCH runs, posting nothing, the month run")
     void aQuietMonthRunsOnNilReports() throws Exception {
-        CheckVerdict quiet = judged();
+        CheckVerdict quiet = judged(MONTH);
         assertThat(quiet.status()).isEqualTo(CloseCheckStatus.FAILED);
         assertThat(quiet.failures()).containsExactly(CloseChecks.MONTH_NOT_RUN);
         sources.declared().forEach(source -> assertThat(quiet.evidence()).contains(source.code()));
@@ -96,13 +129,118 @@ class QuietMonthDatabaseTest {
             assertThat(line.repudiated()).isFalse();
         });
 
-        CheckVerdict run = judged();
+        CheckVerdict run = judged(MONTH);
         assertThat(run.status()).as("run; PASSED or DISCLOSED by what else stands, never FAILED by the month").isNotEqualTo(CloseCheckStatus.FAILED);
         assertThat(run.evidence()).contains("\"sourcesNotRun\":[]");
     }
 
-    private CheckVerdict judged() {
-        Optional<CheckVerdict> verdict = closeChecks.judge(new CloseRuns.ClaimedCheck(CloseCheckId.next(IDS), CloseRunId.next(IDS), AccountingPeriodId.of(IDS.next()), MONTH,
+    @Test
+    @DisplayName("a repudiated batch's COMPLETED run counts for nothing, against the EXISTS on resolution, read on the application's own READ COMMITTED connection, as the close reads it; a new batch of the same source, date and identity has its own run, which counts")
+    void aRepudiatedBatchsRunCountsForNothingAndTheNextBatchCounts() throws Exception {
+        LocalDate day = REPUDIATED_MONTH.atDay(15);
+        SettlementSourceDescriptor psp = sources.declared().stream().filter(source -> source.code().equals(PSP)).findFirst().orElseThrow();
+        pull(psp, pspNil(day, "PSP-REM-19990415"));
+        sweepAll();
+
+        assertThat(pspLines(day)).singleElement().satisfies(line -> {
+            assertThat(line.status()).isEqualTo("COMPLETED");
+            assertThat(line.repudiated()).isFalse();
+        });
+        assertThat(sourcesNotRun(REPUDIATED_MONTH)).as("the month has PSP's run").doesNotContain(PSP);
+
+        repudiate(batchOf(psp, day));
+        assertThat(pspLines(day)).as("the run stands, its evidence withdrawn").singleElement().satisfies(line -> {
+            assertThat(line.kind()).isEqualTo("BATCH");
+            assertThat(line.status()).isEqualTo("COMPLETED");
+            assertThat(line.repudiated()).isTrue();
+        });
+        assertThat(sourcesNotRun(REPUDIATED_MONTH)).as("a repudiated batch's COMPLETED run counts for nothing").contains(PSP);
+
+        // Other bytes, the same identity: settlement's live uniques exclude REPUDIATED, and a gapless sequence gives the new run its own number.
+        pull(psp, pspNil(day, "PSP-REM-199904150"));
+        sweepAll();
+        assertThat(pspLines(day)).as("the withdrawn run beside its successor, one date").hasSize(2)
+                .anySatisfy(line -> assertThat(line.repudiated()).isTrue())
+                .anySatisfy(line -> {
+                    assertThat(line.repudiated()).isFalse();
+                    assertThat(line.status()).isEqualTo("COMPLETED");
+                });
+        assertThat(sourcesNotRun(REPUDIATED_MONTH)).as("the way on: a new counting run").doesNotContain(PSP);
+    }
+
+    private void sweepAll() {
+        for (int round = 0; round < sources.declared().size(); round++) {
+            parsing.sweep();
+            acceptance.sweep();
+            matching.sweep();
+        }
+    }
+
+    private List<ReconciliationRunCoverage.Line> pspLines(LocalDate day) throws Exception {
+        try (Connection app = DatabaseRoles.application()) {
+            ReconciliationRunCoverage.Coverage coverage = monthReads.ofMonth(app, YearMonth.from(day));
+            UUID psp = coverage.sources().stream().filter(source -> source.code().equals(PSP)).findFirst().orElseThrow().id();
+            return coverage.lines().stream().filter(line -> line.sourceId().equals(psp) && line.businessDate().equals(day)).toList();
+        }
+    }
+
+    private String sourcesNotRun(YearMonth month) {
+        String evidence = judged(month).evidence();
+        int from = evidence.indexOf("\"sourcesNotRun\":[");
+        return evidence.substring(from, evidence.indexOf(']', from));
+    }
+
+    private static UUID batchOf(SettlementSourceDescriptor source, LocalDate day) throws Exception {
+        try (Connection migrator = DatabaseRoles.migrator();
+                PreparedStatement read = migrator.prepareStatement("SELECT b.id FROM settlement.batch b JOIN settlement.source s ON s.id = b.source_id"
+                        + " WHERE s.code = ? AND b.business_date = ? AND b.status = 'ACCEPTED'")) {
+            read.setString(1, source.code());
+            read.setObject(2, day);
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getObject(1, UUID.class);
+            }
+        }
+    }
+
+    /** {@code REPUDIATE_BATCH} under four eyes, through reconciliation's own machine; a nil batch has no recognition to reverse. */
+    private void repudiate(UUID batch) {
+        try (SecurityContext.Scope platform = SecurityContext.enterSystem();
+                CorrelationContext.Scope scope = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)))) {
+            UUID resolution = reconciliationTransactionRunner.inTransaction(uow -> repudiations.propose(uow, batch, ResolutionReasonCode.EVIDENCE_REPUDIATED, "the suite withdraws this evidence",
+                    new Actor("quiet-controller-a", ActorType.EMPLOYEE), CorrelationContext.current().orElseThrow().correlationId()).resolutionId());
+            reconciliationTransactionRunner.inTransaction(uow -> repudiations.approve(uow, resolution, new Actor("quiet-controller-b", ActorType.EMPLOYEE),
+                    CorrelationContext.current().orElseThrow().correlationId()));
+        }
+    }
+
+    /** A person's act, four eyes, the suite's as a deployment's; once, whichever case comes first. */
+    private void ruleSetActive(UUID source, RuleSetProposal proposal) throws Exception {
+        try (Connection migrator = DatabaseRoles.migrator();
+                PreparedStatement read = migrator.prepareStatement("SELECT count(*) FROM reconciliation.rule_set WHERE source_id = ? AND status = 'ACTIVE'")) {
+            read.setObject(1, source);
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                if (row.getLong(1) > 0) {
+                    return;
+                }
+            }
+        }
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)));
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            UUID ruleSet = ruleSetAdministration.propose(app, proposal, new Actor("quiet-controller-a", ActorType.EMPLOYEE), Instant.now(), CorrelationId.generate(IDS)).ruleSetId();
+            ruleSetAdministration.approve(app, ruleSet, new Actor("quiet-controller-b", ActorType.EMPLOYEE), "the suite's first version", Instant.now(), CorrelationId.generate(IDS));
+            app.commit();
+        }
+    }
+
+    private static String pspNil(LocalDate day, String remittance) {
+        return "H,SIM_PSP_CSV,1,PSPB-" + day + "-01,EUR," + day + "\nT,0,0.00," + remittance + "\n";
+    }
+
+    private CheckVerdict judged(YearMonth month) {
+        Optional<CheckVerdict> verdict = closeChecks.judge(new CloseRuns.ClaimedCheck(CloseCheckId.next(IDS), CloseRunId.next(IDS), AccountingPeriodId.of(IDS.next()), month,
                 CloseCheckCode.RECONCILIATION_DISCLOSURE, 1, IDS.next(), 0, false, CorrelationId.generate(IDS), Actor.SYSTEM));
         return verdict.orElseThrow();
     }

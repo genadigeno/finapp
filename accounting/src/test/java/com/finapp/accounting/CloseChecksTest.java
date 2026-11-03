@@ -463,6 +463,11 @@ class CloseChecksTest {
                 new ReconciliationRunCoverage.Line(bank, "BATCH", "COMPLETED", MARCH.atDay(2), false, 1)), both);
         assertThat(judge(CloseCheckCode.RECONCILIATION_DISCLOSURE).orElseThrow().status()).as("each ran, nothing to disclose").isEqualTo(CloseCheckStatus.PASSED);
 
+        coverage = (snapshot, month) -> new ReconciliationRunCoverage.Coverage(month, List.of(pspCompleted,
+                new ReconciliationRunCoverage.Line(bank, "BATCH", "COMPLETED", MARCH.atDay(2), true, 1), new ReconciliationRunCoverage.Line(bank, "BATCH", "COMPLETED", MARCH.atDay(2), false, 1)), both);
+        assertThat(judge(CloseCheckCode.RECONCILIATION_DISCLOSURE).orElseThrow().status()).as("the way on: a new counting run of the same source and date beside the repudiated one, which stays on the record")
+                .isEqualTo(CloseCheckStatus.DISCLOSED);
+
         coverage = (snapshot, month) -> new ReconciliationRunCoverage.Coverage(month, List.of(), List.of());
         assertThat(judge(CloseCheckCode.RECONCILIATION_DISCLOSURE).orElseThrow().failures()).as("no active source at all: a month with no run fails").containsExactly(CloseChecks.MONTH_NOT_RUN);
     }
