@@ -120,6 +120,6 @@ body's shape**, for the owner to look at before the first translated FINAL, beca
 
 C7 B with qualified review; a reporting currency other than the functional one, if a jurisdiction requires it.
 Superseding an approved valuation rate set (an `APPROVED → SUPERSEDED` edge under four eyes) if a wrong approved set must
-ever be replaced (`P14-TSK-014`'s owner item). *(`P14-TSK-011`, 2026-11-02: `VALUATION_SET_APPROVED` reads `approvedFor` afresh
+ever be replaced (`P14-TSK-014`'s owner item). *(`P14-TSK-012`, 2026-11-03: with no approved set the check now waits, deferred and re-judged, never `FAILED`, and a close records the set it was proposed on, `period_close.valuation_rate_set_id`; a set stands through a reopen, and a capture refused for a reference gap beyond the staleness bound has no door, an owner item.)* *(`P14-TSK-011`, 2026-11-02: `VALUATION_SET_APPROVED` reads `approvedFor` afresh
 per attempt and pins nothing, so either answer fits; it names the period's sets, so a proposal can be found - `ValuationRateSets.ofPeriod`,
 `P14-TSK-014`'s review, M-5.)*

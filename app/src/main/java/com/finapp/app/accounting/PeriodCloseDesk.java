@@ -72,7 +72,14 @@ public final class PeriodCloseDesk {
     }
 
     /** One check of a proposal as the approver reads it - no person. */
-    public record CloseProposalCheckView(String check, int attempt, String status, String judgedBy, String evidence, String disclosureReason) {}
+    public record CloseProposalCheckView(String check, int attempt, String status, String judgedBy, String evidence, String disclosureReason) {
+
+        /** Served to the approver and never logged: a record's generated {@code toString} would carry the reason into a log line. */
+        @Override
+        public String toString() {
+            return "CloseProposalCheckView[" + check + "#" + attempt + ", " + status + "]";
+        }
+    }
 
     /**
      * A period's latest close proposal. {@code stillStands} when the approval would find what it read still standing; when false the way on is to reject and propose again.

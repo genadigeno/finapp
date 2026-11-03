@@ -34,7 +34,6 @@ public final class InMemoryPeriodCloseStore implements PeriodCloseStore {
     private final Map<CloseCheckCode, String> evidence = new EnumMap<>(CloseCheckCode.class);
     private final AtomicLong clock = new AtomicLong();
     private final InMemoryAccountingPeriodStore periods;
-    private boolean fourEyesDisarmed;
 
     public InMemoryPeriodCloseStore(InMemoryAccountingPeriodStore periods) {
         this.periods = periods;
@@ -64,11 +63,6 @@ public final class InMemoryPeriodCloseStore implements PeriodCloseStore {
             reopens.clear();
             reopens.putAll(reopensNow);
         };
-    }
-
-    /** A probe's handle: the four-eyes rank no longer arbitrates, as a migration without it would not. */
-    public void disarmFourEyesForProbe() {
-        fourEyesDisarmed = true;
     }
 
     /** What {@link #attemptEvidence} answers - the attempts' own text, set by the suite as its run concludes. */
@@ -132,7 +126,7 @@ public final class InMemoryPeriodCloseStore implements PeriodCloseStore {
         if (row == null || row.status() != PeriodCloseStatus.PROPOSED) {
             return false;
         }
-        if (decision == PeriodCloseStatus.APPROVED && row.proposedBy().equals(actor.id()) && !fourEyesDisarmed) {
+        if (decision == PeriodCloseStatus.APPROVED && row.proposedBy().equals(actor.id())) {
             throw new IllegalStateException("period_close_four_eyes");
         }
         if (decision == PeriodCloseStatus.APPROVED && closes.values().stream().anyMatch(other -> other.period().equals(row.period())
@@ -169,7 +163,7 @@ public final class InMemoryPeriodCloseStore implements PeriodCloseStore {
         if (row == null || row.status() != PeriodReopenStatus.PROPOSED) {
             return false;
         }
-        if (row.proposedBy().equals(actor.id()) && !fourEyesDisarmed) {
+        if (row.proposedBy().equals(actor.id())) {
             throw new IllegalStateException("period_reopen_four_eyes");
         }
         reopens.put(id, new ReopenRow(row.id(), row.period(), row.revision(), PeriodReopenStatus.APPROVED, row.proposedBy(), row.proposedAt(), row.proposalReason(),

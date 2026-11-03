@@ -329,6 +329,15 @@ class PeriodClosesTest {
         assertThatThrownBy(() -> machine.approve(UOW, march, proposal, CONTROLLER, REASON, correlation())).isInstanceOf(PeriodCloses.CloseProposalStale.class);
         assertThat(period().status()).isEqualTo(PeriodStatus.CLOSE_PROPOSED);
 
+        // What the machine cannot reach, held all the same, as V008's trigger holds it for every writer: a claim asks LOCKED, so that attempt stays PENDING until a rejection.
+        // Concluded behind the machine's back, readiness holds again, every check PASSED, and only the frozen attempt against the latest can tell it is not what was read.
+        periods.markCloseRejected(UOW, march, 1);
+        runs.concludeOpenBreaks(UOW, runs.claim(UOW, Actor.SYSTEM).orElseThrow());
+        periods.markCloseProposed(UOW, march, 1);
+        assertThat(machine.proposalOf(UOW, march).orElseThrow().stillStands()).isFalse();
+        assertThatThrownBy(() -> machine.approve(UOW, march, proposal, CONTROLLER, REASON, correlation())).isInstanceOf(PeriodCloses.CloseProposalStale.class)
+                .hasMessageContaining("OPEN_ACCOUNTING_BREAKS has a later attempt");
+
         machine.reject(UOW, march, proposal, CONTROLLER, "the attempts moved", correlation());
         concludeAll(Map.of());
         PeriodCloses.Acted again = machine.propose(UOW, march, run, List.of(), ACCOUNTANT, REASON, correlation());

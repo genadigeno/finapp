@@ -31,6 +31,7 @@ import com.finapp.platform.api.RequiresIdempotencyKey;
 import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.idempotency.IdempotencyConflictException;
 import com.finapp.platform.idempotency.IdempotencyKey;
 import com.finapp.platform.idempotency.IdempotencyRecord;
 import com.finapp.platform.idempotency.IdempotencyRecordStore;
@@ -185,11 +186,9 @@ class PeriodCloseDeskTest {
         assertThat(propose("k-1")).as("the same key, the same body").isEqualTo(first);
         assertThat(events).as("written once").hasSize(published);
 
-        assertThatThrownBy(() -> as(ACCOUNTANT, () -> desk.propose("k-1", period(), run.value().toString(), "another reason", reasons()))).isInstanceOf(RuntimeException.class)
-                .isNotInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> as(ACCOUNTANT, () -> desk.propose("k-1", period(), run.value().toString(), "another reason", reasons()))).isInstanceOf(IdempotencyConflictException.class);
         assertThatThrownBy(() -> as(ACCOUNTANT, () -> desk.propose("k-1", period(), run.value().toString(), REASON,
-                List.of(new PeriodCloseDesk.StatedDisclosure(CloseCheckCode.RECONCILIATION_DISCLOSURE.name(), 1, "another disclosure"))))).isInstanceOf(RuntimeException.class)
-                .isNotInstanceOf(IllegalStateException.class);
+                List.of(new PeriodCloseDesk.StatedDisclosure(CloseCheckCode.RECONCILIATION_DISCLOSURE.name(), 1, "another disclosure"))))).isInstanceOf(IdempotencyConflictException.class);
     }
 
     @Test

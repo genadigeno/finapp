@@ -149,7 +149,6 @@ class CloseStatusThroughTheMachineTest {
             CloseRuns.ClaimedCheck claimed = next.get();
             if (claimed.check() == but) {
                 runs.defer(UOW, claimed);
-                runStore.advance(Duration.ofMillis(-1));
                 continue;
             }
             if (claimed.check() == CloseCheckCode.OPEN_ACCOUNTING_BREAKS) {
