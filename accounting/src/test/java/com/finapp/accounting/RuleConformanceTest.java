@@ -138,8 +138,8 @@ class RuleConformanceTest {
     @DisplayName("a run counts the subjects already raised and never keeps them; past its cap it only counts")
     void knownSubjectsAreCountedAndTheCapHolds() {
         JournalShapes.EntryShape known = mismatch();
-        RuleConformance.Tally tally =
-                conformance.tally(java.util.Map.of("shape:" + known.id(), new AccountingBreakStore.Held(BreakStatus.RESOLVED, "raised")), 2);
+        RuleConformance.Tally tally = conformance.tally(java.util.Map.of("shape:" + known.id(),
+                new AccountingBreakStore.Held(BreakStatus.RESOLVED, conformance.judge(known).get(0).evidence())), 2);
         tally.add(known);
         tally.add(mismatch());
         tally.add(mismatch());
@@ -173,9 +173,9 @@ class RuleConformanceTest {
     // ------------------------------------------------------------------ fixtures
 
     @Test
-    @DisplayName("I-1: the evidence of unchanged facts is stable - lines in their sequence, rules in the register's order, no clock, the first"
-            + " entries in the walk's order - so an ACKNOWLEDGED subject reading the same has not changed and one reading differently has; a shape"
-            + " held OPEN or RESOLVED is not compared")
+    @DisplayName("the owner's ruling (ADR-0117): the evidence of unchanged facts is stable - lines in their sequence, rules in the register's order, no clock, the first"
+            + " entries by date and id - so a decided subject reading the same has not changed and one reading differently has, ACKNOWLEDGED or RESOLVED alike, a new raise at the next"
+            + " generation; a shape held OPEN awaits its decision and is not compared")
     void anAcknowledgementIsComparedWithTheFinding() {
         JournalShapes.EntryShape shaped = mismatch();
         String subject = "shape:" + shaped.id();
@@ -184,7 +184,8 @@ class RuleConformanceTest {
         assertThat(changedOver(subject, BreakStatus.ACKNOWLEDGED, evidence, shaped)).isEmpty();
         assertThat(changedOver(subject, BreakStatus.ACKNOWLEDGED, evidence + " once", shaped)).containsExactly(subject);
         assertThat(changedOver(subject, BreakStatus.OPEN, evidence + " once", shaped)).isEmpty();
-        assertThat(changedOver(subject, BreakStatus.RESOLVED, evidence + " once", shaped)).isEmpty();
+        assertThat(changedOver(subject, BreakStatus.RESOLVED, evidence, shaped)).as("unchanged: disclosed by its correcting entry").isEmpty();
+        assertThat(changedOver(subject, BreakStatus.RESOLVED, evidence + " once", shaped)).containsExactly(subject);
 
         List<JournalShapes.EntryShape> month = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
@@ -201,8 +202,9 @@ class RuleConformanceTest {
         month.forEach(grown::add);
         grown.add(entry(EntryType.POSTING, "p14-011-probe:", line("CUSTOMER_WALLET", Side.DEBIT, 7), line("FEE_REVENUE", Side.CREDIT, 7)));
         assertThat(grown.changed()).as("one more entry under an acknowledged namespace").containsExactly(raised.subject());
-        assertThat(grown.findings()).as("counted, never raised again").isEmpty();
-        assertThat(grown.known()).containsExactly(java.util.Map.entry(BreakStatus.ACKNOWLEDGED, 1));
+        assertThat(grown.raises()).as("raised at the next generation").singleElement()
+                .satisfies(raise -> assertThat(raise.generation()).isEqualTo(2));
+        assertThat(grown.known()).as("not counted as what was decided").isEmpty();
     }
 
     private List<String> changedOver(String subject, BreakStatus status, String evidence, JournalShapes.EntryShape... entries) {

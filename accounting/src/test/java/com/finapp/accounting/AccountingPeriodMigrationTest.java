@@ -36,7 +36,9 @@ class AccountingPeriodMigrationTest {
     void theValueListsAreTheEnums() {
         String sql = collapsed(RESOURCE);
         assertThat(sql).contains("CHECK (status IN (" + list(PeriodStatus.values()) + "))");
-        for (AccountingPeriodStore.Act act : AccountingPeriodStore.Act.values()) {
+        // The first four, this migration's; P14-TSK-012's V008 adds the rest (PeriodCloseMigrationTest holds every act there).
+        for (AccountingPeriodStore.Act act : List.of(AccountingPeriodStore.Act.OPENED, AccountingPeriodStore.Act.LOCKED,
+                AccountingPeriodStore.Act.UNLOCK_PROPOSED, AccountingPeriodStore.Act.UNLOCKED)) {
             assertThat(sql).as("the act %s is on its edge", act).contains("(act = '" + act.name() + "' AND from_status");
         }
         assertThat(PeriodStatus.OPEN.canMoveTo(PeriodStatus.LOCKED)).isTrue();

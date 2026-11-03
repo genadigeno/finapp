@@ -117,7 +117,7 @@ import org.junit.jupiter.api.Test;
  * writer. <strong>Written and owed</strong> (owner decision C5: the database tiers are skipped per task).
  *
  * <p><strong>The books it uses.</strong> The fixture's <strong>January 1999</strong> ({@link AccountingPeriodFixture}:
- * before `P14-TSK-012` builds the close it is the only period the fixtures can lock); every case returns it to {@code
+ * the shared database's one lockable period - `P14-TSK-012`'s close suites close it only in databases of their own); every case returns it to {@code
  * OPEN} and each lock is a new run, so a rerun on a kept database starts clean. It approves <strong>no valuation
  * set</strong> - January ends {@code ValuationRateSetDatabaseTest} with one approved for good, so no case asserts
  * {@code VALUATION_SET_APPROVED}'s status. <strong>What cannot be committed is planted in one transaction</strong> and
@@ -638,8 +638,8 @@ class CloseRunDatabaseTest {
     }
 
     @Test
-    @DisplayName("VALUATION_SET_APPROVED through the real SQL, on the read-only snapshot (ofPeriod): the period's sets named, the verdict what the table"
-            + " says - January ends another suite with one approved, so the verdict is read off the table")
+    @DisplayName("VALUATION_SET_APPROVED through the real SQL, on the read-only snapshot (ofPeriod): the period's sets read, the answer what the table"
+            + " says - January ends another suite with one approved, so the answer is read off the table")
     void theValuationCheckReadsThePeriodsSets() throws Exception {
         AccountingPeriodId january = lockJanuary();
         String ofJanuary = "SELECT count(*) FROM accounting.valuation_rate_set WHERE period_id = '" + january.value() + "'";
@@ -651,12 +651,12 @@ class CloseRunDatabaseTest {
             assertThat(set.month()).isEqualTo(JANUARY);
         });
 
-        CheckVerdict verdict = checks(caughtUp(), (snapshot, month) -> noDisclosure(month), reader())
-                .judge(claimed(CloseCheckCode.VALUATION_SET_APPROVED, january)).orElseThrow();
-        assertThat(verdict.failures()).noneMatch(failure -> failure.startsWith(CloseChecks.UNAVAILABLE));
+        Optional<CheckVerdict> verdict = checks(caughtUp(), (snapshot, month) -> noDisclosure(month), reader())
+                .judge(claimed(CloseCheckCode.VALUATION_SET_APPROVED, january));
         if (approved == 0) {
-            assertThat(verdict.status()).isEqualTo(CloseCheckStatus.FAILED);
-            assertThat(verdict.failures()).containsExactly(CloseChecks.NO_APPROVED_SET);
+            assertThat(verdict).as("P14-TSK-012: no approved set is 'not yet', never FAILED").isEmpty();
+        } else {
+            assertThat(verdict.orElseThrow().failures()).noneMatch(failure -> failure.startsWith(CloseChecks.UNAVAILABLE));
         }
     }
 
@@ -913,7 +913,7 @@ class CloseRunDatabaseTest {
                 ValuationStaleness.standard(), new JdbcAuditWriter(), IDS, NOW);
         return new CloseChecks((month, check, actor, correlation) -> {
             throw new AssertionError("this suite's cases raise no break");
-        }, trialBalance, accruals, clean, disclosure, sets, AccountingPeriodFixture.STORE, new AccountingChecks.Snapshots() {
+        }, trialBalance, accruals, clean, disclosure, (snapshot, month) -> ran(month), sets, AccountingPeriodFixture.STORE, new AccountingChecks.Snapshots() {
             @Override
             public <R> R read(Function<Connection, R> work) {
                 return SNAPSHOTS.read(work);
@@ -933,6 +933,13 @@ class CloseRunDatabaseTest {
                 return List.of();
             }
         };
+    }
+
+    /** The month's runs as the disclosure's check needs them, stood in: the rule itself is CloseChecksTest's and PeriodCloseDatabaseTest's. */
+    private static com.finapp.accounting.ReconciliationRunCoverage.Coverage ran(YearMonth month) {
+        UUID source = UUID.fromString("01a0e2bc-8200-7001-8000-000000000001");
+        return new com.finapp.accounting.ReconciliationRunCoverage.Coverage(month, List.of(new com.finapp.accounting.ReconciliationRunCoverage.Line(source, "BATCH", "COMPLETED", month.atDay(1), false, 1)),
+                List.of(new com.finapp.accounting.ReconciliationRunCoverage.Source(source, "simulated-psp.settlement", com.finapp.accounting.ReconciliationRunCoverage.SourceState.ACTIVE)));
     }
 
     private static ReconciliationDisclosure.Disclosure noDisclosure(YearMonth month) {

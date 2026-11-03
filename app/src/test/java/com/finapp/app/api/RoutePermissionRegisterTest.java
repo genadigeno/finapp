@@ -466,6 +466,15 @@ class RoutePermissionRegisterTest {
                             PermissionName.ACCOUNTING_CLOSE_PROPOSE),
                     entry("POST /v1/operator/accounting/periods/{periodId}/unlock-approval",
                             PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    // P14-TSK-012: the close and the reopen - each proposal the accountant's, each decision and the controller's read of
+                    // what it decides the controller's (identity V025's partition: a controller holds no ACCOUNTING_READ); the
+                    // negatives are PeriodCloseDeskTest's route declarations.
+                    entry("POST /v1/operator/accounting/periods/{periodId}/close-proposal", PermissionName.ACCOUNTING_CLOSE_PROPOSE),
+                    entry("GET /v1/operator/accounting/periods/{periodId}/close-proposal", PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    entry("POST /v1/operator/accounting/periods/{periodId}/close-approval", PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    entry("POST /v1/operator/accounting/periods/{periodId}/close-rejection", PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    entry("POST /v1/operator/accounting/periods/{periodId}/reopen-proposal", PermissionName.ACCOUNTING_CLOSE_PROPOSE),
+                    entry("POST /v1/operator/accounting/periods/{periodId}/reopen-approval", PermissionName.ACCOUNTING_CLOSE_APPROVE),
                     // P14-TSK-010: the accounting breaks - the list the accountant's, the acknowledgement's proposal
                     // ACCOUNTING_ADJUST_PROPOSE, the controller's read of one break, the approval (four eyes) and the
                     // resolution by reference ACCOUNTING_ADJUST_APPROVE (identity V025's partition); the negatives are

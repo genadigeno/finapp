@@ -32,9 +32,12 @@ import lombok.RequiredArgsConstructor;
  * domain posted through its own door, never by posting one.
  *
  * <p><strong>Raise</strong> ({@link #raise}, the check's): the break born {@code OPEN} once per
- * {@code (period, check, subject)} - {@code INSERT ... ON CONFLICT DO NOTHING}, so two checks or ten instances raising one
- * discrepancy leave one break; only the inserter writes its {@code RAISED} case-file row, its audit record and
- * {@code accounting.AccountingBreakRaised} - all in the caller's one transaction.
+ * {@code (period, check, subject, generation)} - {@code INSERT ... ON CONFLICT DO NOTHING}, so two checks or ten instances raising
+ * one discrepancy leave one break; only the inserter writes its {@code RAISED} case-file row, its audit record and
+ * {@code accounting.AccountingBreakRaised} - all in the caller's one transaction. <strong>A later generation</strong> (the owner's
+ * ruling, ADR-0117, `P14-TSK-012`): a finding that differs from what a person decided on is a new break at generation + 1, the
+ * number from what the raiser read - so two workers judging one changed finding insert one row, and an overtaken worker inserts
+ * nothing once that generation exists. If it is the first, its raise is a real finding and only makes the close harder.
  *
  * <p><strong>Acknowledge</strong> (four eyes): a person proposes with a disclosure ({@link #proposeAcknowledgement} -
  * nothing moves); a <strong>different</strong> person approves ({@link #approveAcknowledgement}): {@code OPEN ->
@@ -163,6 +166,17 @@ public final class AccountingBreaks {
      */
     public boolean raise(Connection unitOfWork, YearMonth period, BreakFinding finding, Actor actor,
             CorrelationId correlation) {
+        return raise(unitOfWork, period, finding, 1, actor, correlation);
+    }
+
+    /**
+     * Raises {@code finding} at {@code generation} - {@code V008}'s trigger holds a later one to a decided predecessor reading
+     * differently, for every writer.
+     *
+     * @return true when this call raised it
+     */
+    public boolean raise(Connection unitOfWork, YearMonth period, BreakFinding finding, int generation, Actor actor,
+            CorrelationId correlation) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(period, "period");
         Objects.requireNonNull(finding, "finding");
@@ -171,14 +185,15 @@ public final class AccountingBreaks {
             person(actor);
         }
         AccountingBreakId id = AccountingBreakId.next(ids);
-        if (!store.insertIfAbsent(unitOfWork, new AccountingBreakStore.NewBreak(id, period, finding, actor, correlation))) {
+        if (!store.insertIfAbsent(unitOfWork,
+                new AccountingBreakStore.NewBreak(id, period, finding, generation, actor, correlation))) {
             return false;
         }
         store.appendEvent(unitOfWork, new AccountingBreakStore.EventRow(ids.next(), id, AccountingBreakStore.Act.RAISED,
                 Optional.empty(), BreakStatus.OPEN, actor, Optional.empty(), Optional.empty(), Optional.empty(),
                 correlation));
         record(unitOfWork, actor, AccountingAuditAction.BREAK_RAISED, id, Optional.empty(), summary(period, finding.check(),
-                finding.type()) + ", judgedBy=" + finding.judgedBy(), correlation);
+                finding.type()) + ", generation=" + generation + ", judgedBy=" + finding.judgedBy(), correlation);
         outbox.write(unitOfWork, new EventEnvelope(EventId.next(ids), RAISED_EVENT, EVENT_VERSION,
                         EventEnvelope.CURRENT_SCHEMA_VERSION, id, TARGET_TYPE, clock.instant(), PRODUCER, correlation,
                         CausationId.of(correlation.value())),
@@ -189,6 +204,7 @@ public final class AccountingBreaks {
                         .with("period", period.toString())
                         .with("check", finding.check().name())
                         .with("type", finding.type().name())
+                        .with("generation", Integer.toString(generation))
                         .with("register", finding.judgedBy().substring(0, finding.judgedBy().indexOf(':')))
                         .with("registerVersion", finding.judgedBy().substring(finding.judgedBy().indexOf(":v") + 2))
                         .toBytes(),
@@ -386,7 +402,7 @@ public final class AccountingBreaks {
         return store.list(unitOfWork, period, status, after, limit);
     }
 
-    /** The subjects already raised for a period's check, each with its break's status. */
+    /** The subjects already raised for a period's check, each with its latest generation's status and evidence. */
     public Map<String, AccountingBreakStore.Held> held(Connection unitOfWork, YearMonth period, CloseCheckCode check) {
         return store.held(unitOfWork, period, check);
     }

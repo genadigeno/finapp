@@ -19,10 +19,13 @@ import lombok.RequiredArgsConstructor;
  * {@code CLOSE_STATUS}'s reads over accounting's own stores (`P14-TSK-017`) - in {@code app} because report code reaches no store:
  * a store also writes, and {@code ReportingNeverWritesTest} refuses report code one on its reach. This class calls only their reads
  * (the same guard holds its accesses to that list, method references counted) on a {@code ReadOnlySnapshot} that prepares nothing
- * else - the run through {@link CloseRuns#view}, so "complete" is the very judgement {@code P14-TSK-012}'s proposal will read.
+ * else - the run through {@link CloseRuns#view}, so "complete" is the very judgement {@code P14-TSK-012}'s proposal reads.
  */
 @RequiredArgsConstructor
 public final class AccountingCloseStatusReads implements CloseStatusReads {
+
+    /** The most of a period's sets read to name those awaiting a decision: {@code ValuationRateSets.ofPeriod}'s own bound. */
+    static final int MAX_PROPOSED_NAMED = 20;
 
     @NonNull private final AccountingPeriodStore periods;
     @NonNull private final CloseRuns runs;
@@ -47,7 +50,9 @@ public final class AccountingCloseStatusReads implements CloseStatusReads {
                 breaks.countByStatus(snapshot, period.month()),
                 sets.approvedFor(snapshot, id).map(set -> new ApprovedSet(set.id().value(), set.asOf(), set.rateCount(),
                         set.decidedAt())),
-                byStatus);
+                byStatus,
+                sets.ofPeriod(snapshot, id, MAX_PROPOSED_NAMED).stream().filter(set -> set.status() == ValuationRateSetStatus.PROPOSED)
+                        .map(set -> set.id().value()).toList());
     }
 
     private static Run run(CloseRuns.RunView view) {

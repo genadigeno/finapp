@@ -117,9 +117,9 @@ class AccountingChecksTest {
     }
 
     @Test
-    @DisplayName("a known finding is counted by its break's status (the review's I-1): acknowledged is disclosed; a"
-            + " discrepancy still present after its break was resolved is RECURRED - never folded into 'disclosed'")
-    void aResolvedBreaksDiscrepancyStillPresentIsRecurred() {
+    @DisplayName("a finding a person decided on and that stands unchanged counts as disclosed (the owner's ruling, ADR-0117): an acknowledged"
+            + " break's by its disclosure, a resolved one's by its correcting entry - so an immutable subject no longer wedges a close, and nothing is raised")
+    void aResolvedBreaksUnchangedFindingCountsAsDisclosed() {
         entry("transfer:", "CUSTOMER_WALLET", "FEE_REVENUE");
         checks.run(MARCH, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation());
         AccountingBreakId id = store.rows().get(0).id();
@@ -137,19 +137,20 @@ class AccountingChecksTest {
                 "CUSTOMER_WALLET", "CUSTOMER");
         breaks.resolve(SNAPSHOT, id, controller, correcting.id(), "reversed", correlation());
 
-        CheckOutcome recurred = checks.run(MARCH, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation());
-        assertThat(recurred.result()).isEqualTo(CheckOutcome.Result.FAILED);
-        assertThat(recurred.knownResolved()).isEqualTo(1);
-        assertThat(recurred.knownOpen()).isZero();
-        assertThat(recurred.failures()).containsExactly(CheckOutcome.DISCREPANCIES, CheckOutcome.RECURRED);
-        assertThat(recurred.raised()).as("the key and the re-raise rule are unchanged - an owner item").isZero();
+        CheckOutcome unchanged = checks.run(MARCH, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation());
+        assertThat(unchanged.knownResolved()).isEqualTo(1);
+        assertThat(unchanged.knownOpen()).isZero();
+        assertThat(unchanged.decided()).isEqualTo(unchanged.findings());
+        assertThat(unchanged.failures()).as("no longer RECURRED").containsExactly(CheckOutcome.DISCREPANCIES);
+        assertThat(CloseChecks.verdictOf(unchanged).status()).as("the wedge is gone").isEqualTo(CloseCheckStatus.DISCLOSED);
+        assertThat(unchanged.raised()).isZero();
         assertThat(store.rows()).hasSize(1);
     }
 
     @Test
-    @DisplayName("I-1: an acknowledgement holds the finding, not only its subject: an acknowledged namespace with one more entry is"
-            + " ACKNOWLEDGED_CHANGED, its subject named, nothing raised; the same facts walked again are not")
-    void anAcknowledgedNamespaceThatGrewHasChanged() {
+    @DisplayName("a changed finding is a new break under a generation in the key: an acknowledged namespace with one more entry is FINDING_CHANGED, its subject named,"
+            + " generation 2 born OPEN and the check FAILED until its own four eyes; the same facts walked again raise nothing")
+    void aChangedFindingIsANewGeneration() {
         for (int i = 0; i < 2; i++) {
             entry("p14-011-probe:", "CUSTOMER_WALLET", "FEE_REVENUE");
         }
@@ -159,20 +160,111 @@ class AccountingChecksTest {
         CheckOutcome same = checks.run(MARCH, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation());
         assertThat(same.failures()).containsExactly(CheckOutcome.DISCREPANCIES);
         assertThat(same.knownAcknowledged()).isEqualTo(1);
-        assertThat(same.acknowledgedChanged()).isEmpty();
+        assertThat(same.changed()).isEmpty();
+        assertThat(store.rows()).hasSize(1);
 
         entry("p14-011-probe:", "CUSTOMER_WALLET", "FEE_REVENUE");
         CheckOutcome grown = checks.run(MARCH, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation());
         assertThat(grown.result()).isEqualTo(CheckOutcome.Result.FAILED);
-        assertThat(grown.failures()).containsExactly(CheckOutcome.DISCREPANCIES, CheckOutcome.ACKNOWLEDGED_CHANGED);
-        assertThat(grown.acknowledgedChanged()).containsExactly("namespace:POSTING p14-011-probe:");
-        assertThat(grown.raised()).isZero();
-        assertThat(store.rows()).hasSize(1);
+        assertThat(grown.failures()).containsExactly(CheckOutcome.DISCREPANCIES, CheckOutcome.FINDING_CHANGED);
+        assertThat(grown.changed()).containsExactly("namespace:POSTING p14-011-probe:");
+        assertThat(grown.raised()).isEqualTo(1);
+        assertThat(store.rows()).extracting(AccountingBreakStore.BreakRow::generation).containsExactly(1, 2);
+        assertThat(store.rows()).extracting(AccountingBreakStore.BreakRow::status).containsExactly(BreakStatus.ACKNOWLEDGED, BreakStatus.OPEN);
+        assertThat(store.rows().get(1).evidence()).as("the new break holds what was found").isNotEqualTo(store.rows().get(0).evidence());
+
+        CheckOutcome awaiting = checks.run(MARCH, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation());
+        assertThat(awaiting.raised()).as("generation 2 awaits its decision: nothing more is raised").isZero();
+        assertThat(awaiting.knownOpen()).isEqualTo(1);
+        assertThat(CloseChecks.verdictOf(awaiting).status()).isEqualTo(CloseCheckStatus.FAILED);
+
+        acknowledge(store.rows().get(1).id());
+        CheckOutcome disclosed = checks.run(MARCH, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation());
+        assertThat(CloseChecks.verdictOf(disclosed).status()).as("its own four eyes, and it stands disclosed").isEqualTo(CloseCheckStatus.DISCLOSED);
+        assertThat(store.rows()).hasSize(2);
     }
 
     @Test
-    @DisplayName("I-1: an acknowledged proof subject whose evidence moved is ACKNOWLEDGED_CHANGED; the same evidence is not, and one still OPEN is"
-            + " simply a discrepancy")
+    @DisplayName("a changed finding on a RESOLVED break is the same rule: generation 2, OPEN, its own decision")
+    void aResolvedBreaksChangedFindingIsANewGeneration() {
+        sources.put(SourceProofs.Source.LENDING, lending("fails=[UNEXPLAINED_ENTRIES]"));
+        checks.run(MARCH, CloseCheckCode.SOURCE_COMPLETENESS, Actor.SYSTEM, correlation());
+        JournalReads.Entry correcting = journal.post(DAY.plusDays(5), "EUR", 2, 10, "FEE_REVENUE", "OPERATIONAL", "CUSTOMER_WALLET", "CUSTOMER");
+        breaks.resolve(SNAPSHOT, store.rows().get(0).id(), new Actor("controller-1", ActorType.CUSTOMER), correcting.id(), "corrected", correlation());
+
+        sources.put(SourceProofs.Source.LENDING, lending("fails=[UNEXPLAINED_ENTRIES, NEGATIVE]"));
+        CheckOutcome moved = checks.run(MARCH, CloseCheckCode.SOURCE_COMPLETENESS, Actor.SYSTEM, correlation());
+        assertThat(moved.failures()).containsExactly(CheckOutcome.DISCREPANCIES, CheckOutcome.FINDING_CHANGED);
+        assertThat(store.rows()).extracting(AccountingBreakStore.BreakRow::generation).containsExactly(1, 2);
+        assertThat(store.rows().get(0).status()).as("a RESOLVED break is final").isEqualTo(BreakStatus.RESOLVED);
+    }
+
+    @Test
+    @DisplayName("ten instances judging one changed finding raise one generation: the number is what each read, the key is the arbiter; one overtaken raises nothing once it exists")
+    void tenWorkersOneGeneration() {
+        sources.put(SourceProofs.Source.LENDING, lending("fails=[UNEXPLAINED_ENTRIES]"));
+        checks.run(MARCH, CloseCheckCode.SOURCE_COMPLETENESS, Actor.SYSTEM, correlation());
+        acknowledge(store.rows().get(0).id());
+        BreakFinding changed = new BreakFinding(CloseCheckCode.SOURCE_COMPLETENESS, BreakType.SOURCE_DISCREPANCY, "LOAN_SUBLEDGER:loan-9", "moved", SourceCompleteness.JUDGED_BY);
+
+        List<Boolean> raised = new java.util.ArrayList<>();
+        for (int worker = 0; worker < 10; worker++) {
+            raised.add(breaks.raise(SNAPSHOT, MARCH, changed, 2, Actor.SYSTEM, correlation()));
+        }
+        assertThat(raised).containsOnlyOnce(true);
+        assertThat(store.rows()).hasSize(2);
+
+        acknowledge(store.rows().get(1).id());
+        assertThat(breaks.raise(SNAPSHOT, MARCH, new BreakFinding(CloseCheckCode.SOURCE_COMPLETENESS, BreakType.SOURCE_DISCREPANCY, "LOAN_SUBLEDGER:loan-9", "what an overtaken worker read",
+                SourceCompleteness.JUDGED_BY), 2, Actor.SYSTEM, correlation())).as("an overtaken worker's stale number: the generation exists").isFalse();
+        assertThat(store.rows()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("V008's trigger, held here too: a later generation only over a decided one reading differently, never over an OPEN one, an equal one or a gap")
+    void aLaterGenerationFollowsADecidedOne() {
+        sources.put(SourceProofs.Source.LENDING, lending("fails=[UNEXPLAINED_ENTRIES]"));
+        checks.run(MARCH, CloseCheckCode.SOURCE_COMPLETENESS, Actor.SYSTEM, correlation());
+        BreakFinding other = new BreakFinding(CloseCheckCode.SOURCE_COMPLETENESS, BreakType.SOURCE_DISCREPANCY, "LOAN_SUBLEDGER:loan-9", "moved", SourceCompleteness.JUDGED_BY);
+        assertThatThrownBy(() -> breaks.raise(SNAPSHOT, MARCH, other, 2, Actor.SYSTEM, correlation())).as("over an OPEN one")
+                .isInstanceOf(IllegalStateException.class);
+        acknowledge(store.rows().get(0).id());
+        assertThatThrownBy(() -> breaks.raise(SNAPSHOT, MARCH, other, 3, Actor.SYSTEM, correlation())).as("a gap").isInstanceOf(IllegalStateException.class);
+        BreakFinding same = new BreakFinding(CloseCheckCode.SOURCE_COMPLETENESS, BreakType.SOURCE_DISCREPANCY, "LOAN_SUBLEDGER:loan-9", store.rows().get(0).evidence(),
+                SourceCompleteness.JUDGED_BY);
+        assertThatThrownBy(() -> breaks.raise(SNAPSHOT, MARCH, same, 2, Actor.SYSTEM, correlation())).as("reading the same").isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("what decides 'unchanged' is stable: the namespace's evidence is one text in any walk order; a blank or an over-long evidence compares as the record normalised it, on both sides")
+    void theComparisonIsCanonical() {
+        PostingRuleRegister register = PostingRuleRegister.CURRENT;
+        RuleConformance conformance = new RuleConformance(register);
+        List<JournalShapes.EntryShape> entries = new java.util.ArrayList<>();
+        for (int day = 1; day <= 7; day++) {
+            entries.add(new JournalShapes.EntryShape(java.util.UUID.nameUUIDFromBytes(new byte[] {(byte) day}), EntryType.POSTING, MARCH.atDay(day), java.util.Optional.of("p14-012-canonical:"),
+                    List.of()));
+        }
+        RuleConformance.Tally inOrder = conformance.tally(java.util.Map.of(), 10);
+        entries.forEach(inOrder::add);
+        List<JournalShapes.EntryShape> reversed = new java.util.ArrayList<>(entries);
+        java.util.Collections.reverse(reversed);
+        RuleConformance.Tally inReverse = conformance.tally(java.util.Map.of(), 10);
+        reversed.forEach(inReverse::add);
+        assertThat(inReverse.findings()).extracting(BreakFinding::evidence).isEqualTo(inOrder.findings().stream().map(BreakFinding::evidence).toList());
+
+        String longText = "x".repeat(BreakFinding.MAX_EVIDENCE + 5);
+        BreakFinding longFinding = new BreakFinding(CloseCheckCode.SOURCE_COMPLETENESS, BreakType.SOURCE_DISCREPANCY, "s", longText, SourceCompleteness.JUDGED_BY);
+        assertThat(new AccountingBreakStore.Held(BreakStatus.ACKNOWLEDGED, longFinding.evidence()).changedBy(longFinding)).isFalse();
+        assertThat(new AccountingBreakStore.Held(BreakStatus.ACKNOWLEDGED, "other").changedBy(longFinding)).isTrue();
+        assertThat(new AccountingBreakStore.Held(BreakStatus.OPEN, "other").changedBy(longFinding)).as("nothing was decided").isFalse();
+        BreakFinding blank = new BreakFinding(CloseCheckCode.SOURCE_COMPLETENESS, BreakType.SOURCE_DISCREPANCY, "s", " ", SourceCompleteness.JUDGED_BY);
+        assertThat(new AccountingBreakStore.Held(BreakStatus.RESOLVED, "-").changedBy(blank)).isFalse();
+    }
+
+    @Test
+    @DisplayName("an acknowledged proof subject whose evidence moved is FINDING_CHANGED and a new generation - a proof over the live book has a door; the same evidence is not, and one still OPEN"
+            + " is simply a discrepancy awaiting its decision, whatever it reads")
     void anAcknowledgedProofSubjectThatMovedHasChanged() {
         sources.put(SourceProofs.Source.LENDING, lending("fails=[UNEXPLAINED_ENTRIES]"));
         checks.run(MARCH, CloseCheckCode.SOURCE_COMPLETENESS, Actor.SYSTEM, correlation());
@@ -180,7 +272,8 @@ class AccountingChecksTest {
         sources.put(SourceProofs.Source.LENDING, lending("fails=[UNEXPLAINED_ENTRIES, NEGATIVE]"));
         CheckOutcome open = checks.run(MARCH, CloseCheckCode.SOURCE_COMPLETENESS, Actor.SYSTEM, correlation());
         assertThat(open.failures()).as("awaiting a decision, whatever it reads").containsExactly(CheckOutcome.DISCREPANCIES);
-        assertThat(open.acknowledgedChanged()).isEmpty();
+        assertThat(open.changed()).isEmpty();
+        assertThat(open.raised()).isZero();
 
         sources.put(SourceProofs.Source.LENDING, lending("fails=[UNEXPLAINED_ENTRIES]"));
         acknowledge(store.rows().get(0).id());
@@ -189,8 +282,9 @@ class AccountingChecksTest {
 
         sources.put(SourceProofs.Source.LENDING, lending("fails=[UNEXPLAINED_ENTRIES, NEGATIVE]"));
         CheckOutcome moved = checks.run(MARCH, CloseCheckCode.SOURCE_COMPLETENESS, Actor.SYSTEM, correlation());
-        assertThat(moved.failures()).containsExactly(CheckOutcome.DISCREPANCIES, CheckOutcome.ACKNOWLEDGED_CHANGED);
-        assertThat(moved.acknowledgedChanged()).containsExactly("LOAN_SUBLEDGER:loan-9");
+        assertThat(moved.failures()).containsExactly(CheckOutcome.DISCREPANCIES, CheckOutcome.FINDING_CHANGED);
+        assertThat(moved.changed()).containsExactly("LOAN_SUBLEDGER:loan-9");
+        assertThat(store.rows()).extracting(AccountingBreakStore.BreakRow::generation).containsExactly(1, 2);
     }
 
     private static java.util.function.Function<Connection, List<SourceProofs.Reading>> lending(String evidence) {

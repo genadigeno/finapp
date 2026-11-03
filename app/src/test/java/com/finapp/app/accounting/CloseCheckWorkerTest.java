@@ -89,6 +89,19 @@ class CloseCheckWorkerTest {
     private final CloseRuns runs = new CloseRuns(failable, periods, breaks, LEASES, (uow, record) -> { }, IDS, CLOCK);
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
     private final CloseRunMetrics metrics = new CloseRunMetrics(registry);
+    /** One pair, observed the hour before the period's end - nothing approved until a case says so. */
+    private final ValuationRateSets valuation = new ValuationRateSets(new InMemoryValuationRateSetStore().watching(periods), periods, new ValuationRates() {
+        @Override
+        public List<CurrencyCode> valued() {
+            return List.of(CurrencyCode.of("USD"));
+        }
+
+        @Override
+        public List<Observed> lastObservedBefore(Connection unitOfWork, Instant before) {
+            return List.of(new Observed(CurrencyCode.of("USD"), Optional.of(new Observation(java.util.UUID.nameUUIDFromBytes(new byte[] {1}), "simulated-reference", CurrencyCode.of("EUR"),
+                    CurrencyCode.of("USD"), new java.math.BigDecimal("1.1734000000"), before.minusSeconds(3_600), before.minusSeconds(3_598)))));
+        }
+    }, ValuationStaleness.standard(), (uow, record) -> { }, IDS, CLOCK);
 
     private FinalTrialBalance trialBalance =
             (id, actor, correlation) -> new FinalTrialBalance.Verdict("run-1", 1, 1, "abc", true, true, true, true, true);
@@ -103,17 +116,18 @@ class CloseCheckWorkerTest {
         return () -> heartbeatsStopped++;
     };
     private CloseRunId run;
+    private AccountingPeriodId march;
 
     @BeforeEach
     void marchIsLockedWithARun() {
-        AccountingPeriodId march = AccountingPeriodId.next(IDS);
+        march = AccountingPeriodId.next(IDS);
         periods.insertIfAbsent(UOW, new AccountingPeriodStore.NewPeriod(march, MARCH, CorrelationId.generate(IDS)));
         periods.markLocked(UOW, march, 1, ACCOUNTANT, Optional.empty());
         run = runs.startMissing(UOW, Actor.SYSTEM).get(0);
     }
 
     @Test
-    @DisplayName("nine checks, one attempt each: every one concluded with its evidence and the versions it read, counted once; the run's"
+    @DisplayName("nine checks, one attempt each: eight concluded, the set's waiting for its approval, deferred and no failure (P14-TSK-012, M-6); then every one concluded with its evidence and the versions it read, counted once; the run's"
             + " duration observed once; the next claim empty")
     void everyCheckRecordedWithEvidence() {
         CloseCheckWorker worker = worker();
@@ -122,6 +136,16 @@ class CloseCheckWorkerTest {
             taken++;
         }
         assertThat(taken).isEqualTo(9);
+        assertThat(store.all(run)).filteredOn(attempt -> !attempt.status().concluded()).singleElement()
+                .satisfies(waiting -> assertThat(waiting.check()).isEqualTo(CloseCheckCode.VALUATION_SET_APPROVED));
+        assertThat(registry.get(CloseRunMetrics.DURATION).timer().count()).as("the run has not concluded").isZero();
+
+        ValuationRateSets.Valued captured = valuation.capture(UOW, march, ACCOUNTANT, null, CorrelationId.generate(IDS));
+        valuation.approve(UOW, captured.id(), new Actor("controller-1", ActorType.CUSTOMER), "the rates agree", CorrelationId.generate(IDS));
+        store.advance(LEASES.deferral());
+        assertThat(worker.workOne(Actor.SYSTEM)).as("no approval births anything: the waiting attempt is judged again").isTrue();
+        assertThat(worker.workOne(Actor.SYSTEM)).isFalse();
+
         List<CloseRunStore.AttemptRow> attempts = store.all(run);
         assertThat(attempts).hasSize(9).allSatisfy(attempt -> {
             assertThat(attempt.status().concluded()).as(attempt.check().name()).isTrue();
@@ -131,7 +155,7 @@ class CloseCheckWorkerTest {
         });
         assertThat(attempts).extracting(CloseRunStore.AttemptRow::check).containsExactlyInAnyOrder(CloseCheckCode.values());
         assertThat(registry.get(CloseRunMetrics.DURATION).timer().count()).isEqualTo(1);
-        assertThat(heartbeatsStopped).as("every heartbeat stopped with its check").isEqualTo(9);
+        assertThat(heartbeatsStopped).as("every heartbeat stopped with its check, the waiting one's twice").isEqualTo(10);
     }
 
     @Test
@@ -306,21 +330,12 @@ class CloseCheckWorkerTest {
         SourceProofs clean = (snapshot, source) -> List.of(new SourceProofs.Reading(SourceProofs.Proof.PROJECTION, true, List.of()));
         ReconciliationDisclosure disclosure = (snapshot, month) -> new ReconciliationDisclosure.Disclosure(month.atEndOfMonth(),
                 Instant.EPOCH, List.of(), 0, List.of(), 0, new TreeMap<>());
-        ValuationRates reference = new ValuationRates() {
-            @Override
-            public List<CurrencyCode> valued() {
-                return List.of();
-            }
-
-            @Override
-            public List<Observed> lastObservedBefore(Connection unitOfWork, Instant before) {
-                return List.of();
-            }
-        };
-        ValuationRateSets sets = new ValuationRateSets(new InMemoryValuationRateSetStore().watching(periods), periods, reference,
-                ValuationStaleness.standard(), (uow, record) -> { }, IDS, CLOCK);
         return new CloseChecks(raising, (id, actor, correlation) -> trialBalance.read(id, actor, correlation), caughtUp, clean,
-                disclosure, sets, periods, new com.finapp.accounting.AccountingChecks.Snapshots() {
+                disclosure, (snapshot, month) -> {
+            java.util.UUID ranSource = java.util.UUID.nameUUIDFromBytes(new byte[] {7});
+            return new com.finapp.accounting.ReconciliationRunCoverage.Coverage(month, List.of(new com.finapp.accounting.ReconciliationRunCoverage.Line(ranSource, "BATCH", "COMPLETED", month.atDay(1), false, 1)),
+                    List.of(new com.finapp.accounting.ReconciliationRunCoverage.Source(ranSource, "simulated-psp.settlement", com.finapp.accounting.ReconciliationRunCoverage.SourceState.ACTIVE)));
+        }, valuation, periods, new com.finapp.accounting.AccountingChecks.Snapshots() {
                     @Override
                     public <R> R read(Function<Connection, R> work) {
                         return work.apply(UOW);

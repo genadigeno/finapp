@@ -9,7 +9,6 @@ import com.finapp.accounting.CloseStatusReads;
 import com.finapp.accounting.CounterpartyPositionReads;
 import com.finapp.accounting.OperationalDoorBound;
 import com.finapp.accounting.OperationalReports;
-import com.finapp.accounting.PastTheCutoffPostings;
 import com.finapp.accounting.ReconciliationDisclosure;
 import com.finapp.accounting.TrialBalanceReads;
 import com.finapp.accounting.ValuationRateSetStore;
@@ -22,11 +21,14 @@ import com.finapp.accounting.reporting.ReportGeneration;
 import com.finapp.accounting.reporting.SuspenseDefinition;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.reconciliation.ReportReadings;
+import com.finapp.settlement.SettlementSourceDescriptor;
+import com.finapp.settlement.SettlementSources;
 import com.finapp.sharedkernel.id.IdGenerator;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.stream.Collectors;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -89,13 +91,9 @@ public class OperationalReportBeans {
 
     /** The month's runs and the frozen suspense register - {@code SELECT} only, on the caller's snapshot. */
     @Bean
-    ReconciliationMonthReads reconciliationMonthReads(ReportReadings reconciliationReportReadings) {
-        return new ReconciliationMonthReads(reconciliationReportReadings);
-    }
-
-    @Bean
-    PastTheCutoffPostings pastTheCutoffPostings() {
-        return new LedgerFlooredPostings();
+    ReconciliationMonthReads reconciliationMonthReads(ReportReadings reconciliationReportReadings, SettlementSources settlementSources) {
+        return new ReconciliationMonthReads(reconciliationReportReadings, settlementSources.declared().stream()
+                .map(SettlementSourceDescriptor::code).collect(Collectors.toUnmodifiableSet()));
     }
 
     @Bean
@@ -105,8 +103,8 @@ public class OperationalReportBeans {
 
     @Bean
     ReconciliationStatusDefinition reconciliationStatusDefinition(ReconciliationDisclosure reconciliationDisclosure,
-            ReconciliationMonthReads reconciliationMonthReads, PastTheCutoffPostings pastTheCutoffPostings) {
-        return new ReconciliationStatusDefinition(reconciliationDisclosure, reconciliationMonthReads, pastTheCutoffPostings);
+            ReconciliationMonthReads reconciliationMonthReads) {
+        return new ReconciliationStatusDefinition(reconciliationDisclosure, reconciliationMonthReads);
     }
 
     // ------------------------------------------------------------------ the close's

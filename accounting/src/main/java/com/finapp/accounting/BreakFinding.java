@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
  * What one of the three break-raising checks found (`P14-TSK-010`; ADR-0117 decisions 2-3; {@code PHASE_14_PLAN.md}
  * section 13.3; {@code INV-ACC-12}): a classified discrepancy on one subject, with its evidence and the register version
  * it was judged by - never a correction. {@link AccountingBreaks#raise} turns it into a break born once per
- * {@code (period, check, subject)}.
+ * {@code (period, check, subject, generation)}.
  *
  * @param check the check that found it - one of {@link #CHECKS}
  * @param type its classification, one of its check's types ({@link #checkOf})
@@ -50,6 +50,17 @@ public record BreakFinding(CloseCheckCode check, BreakType type, String subject,
         evidence = evidence.isBlank() ? "-" : cut(evidence, MAX_EVIDENCE);
         if (!JUDGED_BY.matcher(judgedBy).matches()) {
             throw new IllegalArgumentException("a break names the register version it was judged by: " + judgedBy);
+        }
+    }
+
+    /** A finding to raise, and the generation of its subject it is raised at (`P14-TSK-012`, ADR-0117). */
+    public record Raise(BreakFinding finding, int generation) {
+
+        public Raise {
+            Objects.requireNonNull(finding, "finding");
+            if (generation < 1) {
+                throw new IllegalArgumentException("a break's generation starts at 1");
+            }
         }
     }
 

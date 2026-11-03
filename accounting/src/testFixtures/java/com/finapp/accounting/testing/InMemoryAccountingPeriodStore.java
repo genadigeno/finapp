@@ -16,9 +16,9 @@ import java.util.TreeMap;
 /**
  * {@link AccountingPeriodStore} in memory (`P14-TSK-005`): the hermetic suites' store, holding the database's ranks the
  * machine relies on - one period per month, contiguous, born {@code OPEN}, the conditional edges, in order, one period in
- * close, the four-eyes {@code CHECK} - so a defect the database would refuse is refused here too, as an
- * {@link IllegalStateException} naming the rank. The real ranks are {@code accounting V003}'s, proven by
- * {@code AccountingPeriodDatabaseTest} (owed, C5).
+ * close, the four-eyes {@code CHECK}, the close's and the reopen's edges - so a defect the database would refuse is refused here too, as an
+ * {@link IllegalStateException} naming the rank. The real ranks are {@code accounting V003}'s and {@code V008}'s, proven by
+ * {@code AccountingPeriodDatabaseTest}, {@code PeriodCloseDatabaseTest} and {@code PeriodReopenDatabaseTest} (owed, C5).
  */
 public final class InMemoryAccountingPeriodStore implements AccountingPeriodStore {
 
@@ -161,8 +161,59 @@ public final class InMemoryAccountingPeriodStore implements AccountingPeriodStor
     }
 
     @Override
+    public boolean markCloseProposed(Connection unitOfWork, AccountingPeriodId id, int revision) {
+        Optional<PeriodRow> found = find(unitOfWork, id);
+        if (found.isEmpty() || found.get().status() != PeriodStatus.LOCKED || found.get().revision() != revision
+                || found.get().unlockProposedBy().isPresent()) {
+            return false;
+        }
+        return moved(found.get(), PeriodStatus.CLOSE_PROPOSED);
+    }
+
+    @Override
+    public boolean markClosed(Connection unitOfWork, AccountingPeriodId id, int revision) {
+        Optional<PeriodRow> found = find(unitOfWork, id);
+        if (found.isEmpty() || found.get().status() != PeriodStatus.CLOSE_PROPOSED || found.get().revision() != revision) {
+            return false;
+        }
+        return moved(found.get(), PeriodStatus.CLOSED);
+    }
+
+    @Override
+    public boolean markCloseRejected(Connection unitOfWork, AccountingPeriodId id, int revision) {
+        Optional<PeriodRow> found = find(unitOfWork, id);
+        if (found.isEmpty() || found.get().status() != PeriodStatus.CLOSE_PROPOSED || found.get().revision() != revision) {
+            return false;
+        }
+        return moved(found.get(), PeriodStatus.LOCKED);
+    }
+
+    @Override
+    public boolean markReopened(Connection unitOfWork, AccountingPeriodId id, int revision) {
+        Optional<PeriodRow> found = find(unitOfWork, id);
+        if (found.isEmpty() || found.get().status() != PeriodStatus.CLOSED || found.get().revision() != revision) {
+            return false;
+        }
+        PeriodRow row = found.get();
+        PeriodRow next = rows.get(row.month().plusMonths(1));
+        if (next != null && next.status() != PeriodStatus.OPEN) {
+            throw new IllegalStateException("accounting_period_permits_only_machine_edges: only the latest closed period reopens");
+        }
+        rows.put(row.month(), new PeriodRow(id, row.month(), PeriodStatus.OPEN, revision + 1, row.openedAt(), Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()));
+        return true;
+    }
+
+    private boolean moved(PeriodRow row, PeriodStatus to) {
+        rows.put(row.month(), new PeriodRow(row.id(), row.month(), to, row.revision(), row.openedAt(), row.lockedAt(), row.pinned(), row.unlockProposedBy(),
+                row.unlockProposedAt(), row.unlockApprovedBy(), row.unlockApprovedAt()));
+        return true;
+    }
+
+    @Override
     public void appendEvent(Connection unitOfWork, EventRow row) {
-        if (row.act() == Act.UNLOCKED && row.proposedBy().filter(row.actor().id()::equals).isPresent()) {
+        boolean fourEyes = row.act() == Act.UNLOCKED || row.act() == Act.CLOSED || row.act() == Act.REOPENED;
+        if (fourEyes != row.proposedBy().isPresent() || row.proposedBy().filter(row.actor().id()::equals).isPresent()) {
             throw new IllegalStateException("period_event_four_eyes");
         }
         history.add(row);

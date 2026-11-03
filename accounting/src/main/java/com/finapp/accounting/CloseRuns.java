@@ -406,9 +406,16 @@ public final class CloseRuns {
         });
     }
 
-    /** What `P14-TSK-012`'s proposal asks: {@link Readiness} of the period's present lock, read in the caller's transaction. */
+    /**
+     * What `P14-TSK-012`'s proposal and approval ask: {@link Readiness} of the period's present lock, read in the caller's transaction. Those two call it holding the period
+     * row {@code FOR UPDATE} (`P14-TSK-011`'s review, M-4), so no conclusion, re-run or unlock lands behind the reading: each of them takes that row first.
+     */
     public Readiness readiness(Connection unitOfWork, AccountingPeriodId id) {
-        Optional<RunView> view = view(unitOfWork, id);
+        return readinessOf(view(unitOfWork, id));
+    }
+
+    /** {@link Readiness} of a {@link #view} already read - so a caller judging and freezing one reading reads it once. */
+    public static Readiness readinessOf(Optional<RunView> view) {
         if (view.isEmpty() || !view.get().current()) {
             return new Readiness(Optional.empty(), false, List.of(CloseCheckCode.values()),
                     view.map(RunView::openBreaks).orElse(0L));

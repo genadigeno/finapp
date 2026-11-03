@@ -33,10 +33,12 @@ import lombok.extern.slf4j.Slf4j;
  * re-run raises the rest. Nothing here posts.
  *
  * <p><strong>Ten instances, one break per discrepancy.</strong> Any number of instances may run the same check for the
- * same period at once: the judges only read, and the raises converge on {@code accounting_break_born_once}. Subjects
- * already raised are counted by their break's status - open, acknowledged, or resolved and so <strong>recurred</strong>
- * ({@link CheckOutcome#RECURRED}, the review's I-1) - never raised again; a run keeps at most {@link #MAX_NEW_FINDINGS}
- * new ones ({@link CheckOutcome#FINDINGS_CAPPED} - the next run raises the next).
+ * same period at once: the judges only read, and the raises converge on {@code accounting_break_born_once}. <strong>A finding is
+ * compared with what a person decided on</strong> (the owner's ruling, ADR-0117, `P14-TSK-012`): held by an {@code OPEN} break it is
+ * counted, and awaits a decision; held by a decided one and unchanged it is counted, and is disclosed; held by a decided one and
+ * changed it is raised at the next generation ({@link CheckOutcome#FINDING_CHANGED}). The generation's number comes from what the
+ * judge read, so two workers raise one row and one overtaken raises none once it exists. A run keeps at most {@link
+ * #MAX_NEW_FINDINGS} raises ({@link CheckOutcome#FINDINGS_CAPPED} - the next run raises the next).
  *
  * <p><strong>No false pass.</strong> {@link CheckOutcome.Result#PASSED} only when the judge read everything and found
  * nothing: a source unread, a reading incomplete, a judge that threw or timed out, a month with no mapping version - each
@@ -114,8 +116,8 @@ public final class AccountingChecks {
         };
         int raised = 0;
         int lost = 0;
-        for (BreakFinding finding : judgement.fresh()) {
-            if (transactions.inTransaction(uow -> breaks.raise(uow, period, finding, actor, correlation))) {
+        for (BreakFinding.Raise raise : judgement.fresh()) {
+            if (transactions.inTransaction(uow -> breaks.raise(uow, period, raise.finding(), raise.generation(), actor, correlation))) {
                 raised++;
             } else {
                 // A concurrent run raised it between our read and our insert: a newborn, OPEN break.
@@ -130,11 +132,8 @@ public final class AccountingChecks {
         if (findings > 0) {
             failures.add(CheckOutcome.DISCREPANCIES);
         }
-        if (knownResolved > 0) {
-            failures.add(CheckOutcome.RECURRED);
-        }
         if (!judgement.changed().isEmpty()) {
-            failures.add(CheckOutcome.ACKNOWLEDGED_CHANGED);
+            failures.add(CheckOutcome.FINDING_CHANGED);
         }
         failures.addAll(judgement.failures());
         return new CheckOutcome(period, check, failures.isEmpty() ? CheckOutcome.Result.PASSED
@@ -144,8 +143,8 @@ public final class AccountingChecks {
 
     // ------------------------------------------------------------------ the judges
 
-    /** What a judge found: the new findings to raise, the known ones counted per status, why it could not pass. */
-    private record Judgement(String judgedBy, List<BreakFinding> fresh, Map<BreakStatus, Integer> knownByStatus,
+    /** What a judge found: the findings to raise, the known ones counted per status, why it could not pass. */
+    private record Judgement(String judgedBy, List<BreakFinding.Raise> fresh, Map<BreakStatus, Integer> knownByStatus,
             List<String> changed, List<String> failures) {
 
         int known(BreakStatus status) {
@@ -188,7 +187,7 @@ public final class AccountingChecks {
                     }
                     after = page.isEmpty() ? after : Optional.of(page.get(page.size() - 1).cursor());
                 } while (page.size() == PAGE);
-                return new Judgement(conformance.judgedBy(), tally.findings(), tally.known(), tally.changed(),
+                return new Judgement(conformance.judgedBy(), tally.raises(), tally.known(), tally.changed(),
                         tally.capped() ? List.of(CheckOutcome.FINDINGS_CAPPED) : List.of());
             });
         } catch (RuntimeException unreadable) {
@@ -220,10 +219,10 @@ public final class AccountingChecks {
         return split(SourceCompleteness.JUDGED_BY, found, held, failures);
     }
 
-    /** {@code found} split into the new (first {@link #MAX_NEW_FINDINGS}) and the known per status, with the failures. */
+    /** {@code found} split into the raises (first {@link #MAX_NEW_FINDINGS}) and the known per status, with the failures. */
     private static Judgement split(String judgedBy, List<BreakFinding> found, Map<String, AccountingBreakStore.Held> held,
             List<String> failures) {
-        List<BreakFinding> fresh = new ArrayList<>();
+        List<BreakFinding.Raise> fresh = new ArrayList<>();
         Map<BreakStatus, Integer> known = new EnumMap<>(BreakStatus.class);
         Set<String> changed = new TreeSet<>();
         Set<String> seen = new HashSet<>();
@@ -233,13 +232,13 @@ public final class AccountingChecks {
                 continue;
             }
             AccountingBreakStore.Held holder = held.get(finding.subject());
-            if (holder != null) {
+            if (holder != null && !holder.changedBy(finding)) {
                 known.merge(holder.status(), 1, Integer::sum);
-                if (holder.changedBy(finding)) {
+            } else if (fresh.size() < MAX_NEW_FINDINGS) {
+                fresh.add(new BreakFinding.Raise(finding, holder == null ? 1 : holder.nextGeneration()));
+                if (holder != null) {
                     changed.add(finding.subject());
                 }
-            } else if (fresh.size() < MAX_NEW_FINDINGS) {
-                fresh.add(finding);
             } else {
                 capped = true;
             }

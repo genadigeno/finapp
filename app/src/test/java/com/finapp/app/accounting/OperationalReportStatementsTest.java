@@ -63,7 +63,7 @@ class OperationalReportStatementsTest {
 
     private final TrialBalanceReads reads = new LedgerTrialBalanceReads(new JdbcGlMappingStore());
     private final CounterpartyPositionReads positions = new LedgerCounterpartyPositionReads();
-    private final ReconciliationMonthReads monthReads = new ReconciliationMonthReads(new JdbcReportReadings());
+    private final ReconciliationMonthReads monthReads = new ReconciliationMonthReads(new JdbcReportReadings(), java.util.Set.of());
     private final LedgerFlooredPostings postings = new LedgerFlooredPostings();
     private final CloseRuns closeRuns = new CloseRuns(new JdbcCloseRunStore(), new JdbcAccountingPeriodStore(),
             new JdbcAccountingBreakStore(), CloseRuns.Leases.STANDARD, (uow, record) -> { }, IDS, Clock.systemUTC());
@@ -115,7 +115,7 @@ class OperationalReportStatementsTest {
         ReportInputs live = new ReportInputs(AccountingPeriodId.of(PERIOD), MARCH, 1, RunBasis.PROVISIONAL, Optional.empty(),
                 Optional.empty(), Optional.empty(), AS_OF, RunParameters.none());
         assertThat(generate(new ReconciliationStatusDefinition(new ProductReconciliationDisclosure(new JdbcReportReadings(), postings),
-                monthReads, postings), live)).contains("\"basis\":\"OPERATIONAL\"").contains("\"batchRuns\":\"0\"");
+                monthReads), live)).contains("\"basis\":\"OPERATIONAL\"").contains("\"batchRuns\":\"0\"");
         assertThat(generate(new CloseStatusDefinition(new AccountingCloseStatusReads(new JdbcAccountingPeriodStore(), closeRuns,
                 new JdbcAccountingBreakStore(), new JdbcValuationRateSetStore()), new CloseRunStall(Duration.ofSeconds(30),
                 CloseRunStall.STANDARD_POLLS)), live)).contains("\"basis\":\"OPERATIONAL\"").contains("\"runState\":\"RUNNING\"");

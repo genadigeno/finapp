@@ -80,7 +80,7 @@ writer (`encode(sha256(convert_to(content, 'UTF8')), 'hex')` - the risk `V006`/`
 decision 3 superseded FINAL runs only at a reopen, but `P14-TSK-005`'s four-eyes unlock already returns a `LOCKED` period
 to `OPEN` without a new revision - a FINAL run left standing would stop reproducing as postings land. So
 `AccountingPeriods.approveUnlock` supersedes the period's FINAL runs in its own transaction, before the edge (the port
-`ReportRunSupersession`, which `P14-TSK-012`'s reopen reuses), and `V004`'s trigger
+`ReportRunSupersession`, which `P14-TSK-012`'s reopen reuses *(so built, 2026-11-03)*), and `V004`'s trigger
 `accounting_period_reopens_with_its_runs_superseded` refuses any return to `OPEN` that leaves one - for every writer.
 (3) **The freeze is its own trigger** (`report_run_content_is_frozen`, firing before the machine's by name), so its
 refusal is its own. The valuation rate set is pinned as `valuation_rate_set_id uuid NULL` with **no foreign key** (the
@@ -90,7 +90,7 @@ set's table is `P14-TSK-014`'s `V005`, landing after) *(keyed by `P14-TSK-014`'s
 `POST …/{runId}/regeneration` (keyed; `IDENTICAL | DIVERGED`, recorded `accounting.ReportRegenerated`, a divergence
 counted `finapp.accounting.report.diverged`, never repaired). `P14-TSK-012`'s close must keep `locked_at` through
 `CLOSE_PROPOSED` and `CLOSED` (V003's `accounting_period_lock_coherent` already requires it): it is the lock instance a
-FINAL run reproduces under.
+FINAL run reproduces under *(so built: `V008`'s edge refuses anything else for every writer)*.
 
 **The independent review's fixes** (2026-10-31, before the merge). *I-1 - a time bound*: a lease cannot be renewed, so a
 generation that outlived it would be overtaken by its own reclaim at every attempt; the generation is now bounded below

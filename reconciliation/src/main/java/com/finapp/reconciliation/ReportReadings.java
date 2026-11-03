@@ -231,11 +231,11 @@ public interface ReportReadings {
     }
 
     /**
-     * The runs of one source, kind, status and business date, and how many (`P14-TSK-017`): a count, never a run's identity, its
+     * The runs of one source, kind, status, business date and repudiation, and how many (`P14-TSK-017`, `P14-TSK-012`): a count, never a run's identity, its
      * rule set, requester or reason. A {@code BATCH} run is born in its acceptance's transaction, so it counts acceptances; a later
-     * repudiation leaves it standing.
+     * repudiation leaves it standing, its {@code REPUDIATE_BATCH} resolution approved, which is what {@code repudiated} says.
      */
-    record RunLine(UUID sourceId, RunKind kind, RunStatus status, LocalDate businessDate, long runs) {
+    record RunLine(UUID sourceId, RunKind kind, RunStatus status, LocalDate businessDate, boolean repudiated, long runs) {
 
         public RunLine {
             Objects.requireNonNull(sourceId, "sourceId must not be null");
@@ -247,7 +247,7 @@ public interface ReportReadings {
 
     /**
      * Every run whose {@code business_date} is in {@code [from, through]}, grouped as {@link RunLine} and ordered by source,
-     * kind, status and date - a total order. Moving: a late batch joins its month at any time.
+     * kind, status, date and repudiation - a total order. Moving: a late batch joins its month at any time.
      */
     List<RunLine> runsOfBusinessDates(Connection unitOfWork, LocalDate from, LocalDate through);
 

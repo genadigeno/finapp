@@ -148,7 +148,7 @@ class ReportingNeverWritesTest {
     static final Set<String> LEDGER_WRITERS = Set.of(PostingService.class.getName());
 
     /** What a report port's adapter may call of a store or of {@code CloseRuns}: reads, on the snapshot it is handed. */
-    static final Set<String> ADAPTER_STORE_READS = Set.of("find", "view", "content", "rates", "approvedFor", "countByStatus");
+    static final Set<String> ADAPTER_STORE_READS = Set.of("find", "view", "content", "rates", "approvedFor", "countByStatus", "ofPeriod");
 
     @ArchTest
     static void noReportingClassReachesAWriter(JavaClasses imported) {
@@ -213,7 +213,10 @@ class ReportingNeverWritesTest {
      */
     @ArchTest
     static void noReportPortAdapterWrites(JavaClasses imported) {
-        Set<String> adapters = reportPortAdapters(imported, ReportingNeverWritesTest::isReportingClass);
+        Set<String> adapters = new TreeSet<>(reportPortAdapters(imported, ReportingNeverWritesTest::isReportingClass));
+        // P14-TSK-012: RECONCILIATION_STATUS reports the disclosure's own split, so no definition names this port now; the adapter behind
+        // that disclosure reads through it, so it stays held by name rather than falling out of the rule.
+        adapters.add("com.finapp.app.accounting.LedgerFlooredPostings");
         assertThat(adapters).as("the census: the adapters this rule is armed over").contains(
                 "com.finapp.app.accounting.LedgerTrialBalanceReads", "com.finapp.app.accounting.LedgerCounterpartyPositionReads",
                 "com.finapp.app.accounting.ReconciliationMonthReads",

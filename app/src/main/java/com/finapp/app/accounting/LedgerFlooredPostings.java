@@ -36,9 +36,8 @@ import java.util.stream.Collectors;
  * {@code BNPL-F2a}, which posts today valued the accrual date (`P14-TSK-011`'s review, C-1) - so these <em>are</em> the
  * interest the period is short by, per accruer, currency and scale, the income line's amount ({@code SUM(bigint)} exact),
  * the period's last day apart from anything older.
- *   <li>{@link #others}: the other floored rules' entries, counted per key namespace - {@code
- * RECONCILIATION_DISCLOSURE}'s note that the journal holds them in a later period while a report by stated date may
- * not.
+ *   <li>{@link #pastTheCutoff}: the other floored rules' entries per key namespace, each told floored, unrecorded or its rule's own dating - the one read {@code
+ * RECONCILIATION_DISCLOSURE} judges and {@code RECONCILIATION_STATUS} reports (the owner's decision (b) of 2026-11-03, `P14-TSK-012`).
  * </ul>
  *
  * <p>{@code SELECT} only, on the caller's snapshot; no reference, reason or actor is read. The posting date's own
@@ -66,21 +65,25 @@ public final class LedgerFlooredPostings implements PastTheCutoffPostings {
             + " AND (entry.idempotency_scope LIKE ? OR entry.idempotency_scope LIKE ?)"
             + " GROUP BY 1, line.currency, line.scale ORDER BY 1, line.currency, line.scale";
 
-    /** Every posted entry past the cutoff per key namespace - what is reported is filtered to the floored rules. */
-    static final String BY_NAMESPACE_SQL = "SELECT split_part(entry.idempotency_scope, ':', 2) AS namespace, count(*) AS entries"
-            + " FROM ledger.journal_entry entry WHERE entry.posting_date > ? AND entry.value_date <= ?"
-            + " AND entry.idempotency_scope LIKE ? GROUP BY 1 ORDER BY 1";
+    /**
+     * The posting's own audit record: {@code audit_record_by_target} holds the GL door's reads under this target type too ({@code GeneralLedgerDesk.ENTRY_TARGET}), and a read says
+     * nothing about a floor.
+     */
+    private static final String POSTING_RECORD = "SELECT 1 FROM platform.audit_record audit"
+            + " WHERE audit.target_type = 'journal_entry' AND audit.target_id = entry.id::text"
+            + " AND audit.operation IN ('ledger.JournalEntryPosted', 'ledger.AdjustmentPosted')";
 
     /**
-     * {@link #BY_NAMESPACE_SQL}'s entries, each told floored or not (`P14-TSK-017`; `P14-TSK-011`'s review, M-2): the ledger names
-     * the stated date on the entry's own audit record ({@code flooredFrom=}, {@code PostingService}), nothing on the journal does.
-     * One probe of {@code audit_record_by_target} per entry; the entries from {@code journal_entry_by_posting_date}.
+     * Every posted entry past the cutoff per key namespace, each told floored or not (`P14-TSK-017`; `P14-TSK-011`'s review, M-2; `P14-TSK-012`): the ledger names the stated date on the
+     * entry's own audit record ({@code flooredFrom=}, {@code PostingService}), nothing on the journal does. <strong>"Record present, no mark" and "no record" are told apart</strong>, because
+     * a rule's own dating is inferred from the mark's absence, which only a record present can show (the owner's decision (b), 2026-11-03). What is reported is filtered to the floored rules.
+     * Two probes of {@code audit_record_by_target} per entry passing the dates' filter; the entries from {@code journal_entry_by_posting_date}.
      */
     static final String PAST_THE_CUTOFF_SQL = "SELECT past.namespace, count(*) AS entries,"
-            + " count(*) FILTER (WHERE past.floored) AS floored FROM ("
-            + "SELECT split_part(entry.idempotency_scope, ':', 2) AS namespace, EXISTS (SELECT 1 FROM platform.audit_record audit"
-            + " WHERE audit.target_type = 'journal_entry' AND audit.target_id = entry.id::text"
-            + " AND audit.change_summary LIKE '%flooredFrom=%') AS floored"
+            + " count(*) FILTER (WHERE past.floored) AS floored, count(*) FILTER (WHERE NOT past.recorded) AS unrecorded FROM ("
+            + "SELECT split_part(entry.idempotency_scope, ':', 2) AS namespace,"
+            + " EXISTS (" + POSTING_RECORD + ") AS recorded,"
+            + " EXISTS (" + POSTING_RECORD + " AND audit.change_summary LIKE '%flooredFrom=%') AS floored"
             + " FROM ledger.journal_entry entry WHERE entry.posting_date > ? AND entry.value_date <= ?"
             + " AND entry.idempotency_scope LIKE ?) past GROUP BY past.namespace ORDER BY past.namespace";
 
@@ -124,28 +127,6 @@ public final class LedgerFlooredPostings implements PastTheCutoffPostings {
         }
     }
 
-    /** The other floored rules' entries past {@code periodEnd}, per key namespace - a namespace with none absent. */
-    public SortedMap<String, Long> others(Connection snapshot, LocalDate periodEnd) {
-        Objects.requireNonNull(periodEnd, "periodEnd");
-        try (PreparedStatement read = snapshot.prepareStatement(BY_NAMESPACE_SQL)) {
-            read.setDate(1, Date.valueOf(periodEnd));
-            read.setDate(2, Date.valueOf(periodEnd));
-            read.setString(3, PostingService.IDEMPOTENCY_SCOPE + ":%");
-            SortedMap<String, Long> counts = new TreeMap<>();
-            try (ResultSet row = read.executeQuery()) {
-                while (row.next()) {
-                    String namespace = row.getString("namespace");
-                    if (flooredNamespaces.contains(namespace)) {
-                        counts.put(namespace, row.getLong("entries"));
-                    }
-                }
-            }
-            return counts;
-        } catch (SQLException failure) {
-            throw failed("reading the floored rules' entries past a cutoff", failure);
-        }
-    }
-
     @Override
     public SortedMap<String, PastTheCutoffPostings.Split> pastTheCutoff(Connection snapshot, LocalDate cutoff) {
         Objects.requireNonNull(cutoff, "cutoff");
@@ -158,7 +139,7 @@ public final class LedgerFlooredPostings implements PastTheCutoffPostings {
                 while (row.next()) {
                     String namespace = row.getString("namespace");
                     if (flooredNamespaces.contains(namespace)) {
-                        splits.put(namespace, new PastTheCutoffPostings.Split(row.getLong("entries"), row.getLong("floored")));
+                        splits.put(namespace, new PastTheCutoffPostings.Split(row.getLong("entries"), row.getLong("floored"), row.getLong("unrecorded")));
                     }
                 }
             }

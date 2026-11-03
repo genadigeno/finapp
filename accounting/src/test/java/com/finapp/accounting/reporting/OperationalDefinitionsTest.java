@@ -67,13 +67,11 @@ class OperationalDefinitionsTest {
         ReconciliationStatusDefinition definition = new ReconciliationStatusDefinition(
                 (snapshot, month) -> disclosure(),
                 (snapshot, month) -> new ReconciliationRunCoverage.Coverage(month, List.of(
-                        new ReconciliationRunCoverage.Line(SOURCE, "BATCH", "COMPLETED", MONTH.atDay(30), 2),
-                        new ReconciliationRunCoverage.Line(SOURCE, "REPROCESS", "OPEN", MONTH.atDay(31), 1))),
-                (snapshot, cutoff) -> new TreeMap<>(Map.of(
-                        "settlement-batch", new PastTheCutoffPostings.Split(7, 2),
-                        "reconciliation-park", new PastTheCutoffPostings.Split(1, 1))));
+                        new ReconciliationRunCoverage.Line(SOURCE, "BATCH", "COMPLETED", MONTH.atDay(30), false, 2),
+                        new ReconciliationRunCoverage.Line(SOURCE, "REPROCESS", "OPEN", MONTH.atDay(31), false, 1)),
+                        List.of(new ReconciliationRunCoverage.Source(SOURCE, "simulated-psp.settlement", ReconciliationRunCoverage.SourceState.ACTIVE))));
         assertThat(definition.code()).isEqualTo(ReportKind.RECONCILIATION_STATUS.name());
-        assertThat(definition.version()).isEqualTo(1);
+        assertThat(definition.version()).isEqualTo(2);
         assertThat(definition.operational()).isTrue();
         assertThat(definition.takesValuationRateSet()).isFalse();
 
@@ -90,30 +88,36 @@ class OperationalDefinitionsTest {
 
         assertThat(text(object(body, "disclosure"), "cutoff")).isEqualTo("2097-03-31");
 
-        CanonicalJson.Obj batches = object(body, "pastTheCutoff", "settlement-batch");
+        CanonicalJson.Obj batches = object(body, "disclosure", "pastTheCutoff", "settlement-batch");
         assertThat(text(batches, "entries")).isEqualTo("7");
         assertThat(text(batches, "floored")).as("a lock covered the date they stated").isEqualTo("2");
-        assertThat(text(batches, "ownValueDate")).as("accepted after the cutoff, valued at the business date: ordinary").isEqualTo("5");
+        assertThat(text(batches, "unrecorded")).as("no audit record: cannot be told from floored").isEqualTo("1");
+        assertThat(text(batches, "ownValueDate")).as("accepted after the cutoff, valued at the business date: ordinary").isEqualTo("4");
+        assertThat(body.members()).as("the owner's (b): one read, the disclosure's own, so the two cannot disagree").doesNotContainKey("pastTheCutoff");
     }
 
     @Test
     @DisplayName("I-4: the coverage -012 reads counts and does not judge - a REPROCESS is no accepted batch's run, a BLOCKED or OPEN one is counted,"
             + " and what makes a month run is -012's and the owner's; a split's floored are among its entries; M-3: the rest is said to be inferred")
     void theCoverage() {
-        assertThat(new ReconciliationRunCoverage.Coverage(MONTH, List.of()).batchRuns()).isZero();
+        assertThat(new ReconciliationRunCoverage.Coverage(MONTH, List.of(), List.of()).batchRuns()).isZero();
         assertThat(new ReconciliationRunCoverage.Coverage(MONTH, List.of(
-                new ReconciliationRunCoverage.Line(SOURCE, "REPROCESS", "OPEN", MONTH.atDay(1), 3))).batchRuns()).isZero();
+                new ReconciliationRunCoverage.Line(SOURCE, "REPROCESS", "OPEN", MONTH.atDay(1), false, 3)), List.of()).batchRuns()).isZero();
         ReconciliationRunCoverage.Coverage standing = new ReconciliationRunCoverage.Coverage(MONTH, List.of(
-                new ReconciliationRunCoverage.Line(SOURCE, "BATCH", "BLOCKED", MONTH.atDay(1), 1),
-                new ReconciliationRunCoverage.Line(SOURCE, "BATCH", "OPEN", MONTH.atDay(2), 2)));
+                new ReconciliationRunCoverage.Line(SOURCE, "BATCH", "BLOCKED", MONTH.atDay(1), false, 1),
+                new ReconciliationRunCoverage.Line(SOURCE, "BATCH", "OPEN", MONTH.atDay(2), false, 2)), List.of());
         assertThat(standing.batchRuns()).isEqualTo(3);
         assertThat(CanonicalJson.text(standing.asValue())).doesNotContain("noRun");
         assertThat(CanonicalJson.text(new ReconciliationStatusDefinition((snapshot, period) -> {
             throw new AssertionError("the statement is read, not the disclosure");
-        }, (snapshot, month) -> standing, (snapshot, cutoff) -> new java.util.TreeMap<>()).statement().asValue()))
-                .contains("other than LND-2").contains("inferred from that mark's absence").doesNotContain("per floored rule's namespace");
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new PastTheCutoffPostings.Split(1, 2))
+        }, (snapshot, month) -> standing).statement().asValue()))
+                .contains("other than LND-2").contains("a record present with no mark").doesNotContain("per floored rule's namespace");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new PastTheCutoffPostings.Split(1, 2, 0))
                 .isInstanceOf(IllegalArgumentException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new PastTheCutoffPostings.Split(1, 1, 1))
+                .as("the floored and the unrecorded are among the entries").isInstanceOf(IllegalArgumentException.class);
+        assertThat(new PastTheCutoffPostings.Split(5, 1, 1).countsAsFloored()).isEqualTo(2);
+        assertThat(new PastTheCutoffPostings.Split(5, 1, 1).ownValueDate()).isEqualTo(3);
     }
 
     // ------------------------------------------------------------------ CLOSE_STATUS
@@ -214,13 +218,13 @@ class OperationalDefinitionsTest {
     private static CloseStatusReads.Reading reading(PeriodStatus status, Optional<Instant> lockedAt,
             Optional<CloseStatusReads.Run> run, Optional<CloseStatusReads.ApprovedSet> approved) {
         return new CloseStatusReads.Reading(MONTH, status, 1, lockedAt, lockedAt.map(ignored -> 4), run,
-                Map.of(BreakStatus.OPEN, 2L), approved, new TreeMap<>(Map.of("PROPOSED", 1L, "APPROVED", 0L, "REJECTED", 0L)));
+                Map.of(BreakStatus.OPEN, 2L), approved, new TreeMap<>(Map.of("PROPOSED", 1L, "APPROVED", 0L, "REJECTED", 0L)), List.of(SOURCE));
     }
 
     private static ReconciliationDisclosure.Disclosure disclosure() {
         TreeMap<String, Long> ageing = new TreeMap<>(Map.of("0-2", 1L));
         return new ReconciliationDisclosure.Disclosure(LocalDate.of(2097, 3, 31), Instant.parse("2097-04-01T00:00:00Z"),
                 List.of(new ReconciliationDisclosure.OpenBreaks("EUR", 2, 1, BigInteger.TEN, ageing)), 0, List.of(), 0,
-                new TreeMap<>(Map.of("settlement-batch", 7L)));
+                new TreeMap<>(Map.of("settlement-batch", new PastTheCutoffPostings.Split(7, 2, 1))));
     }
 }

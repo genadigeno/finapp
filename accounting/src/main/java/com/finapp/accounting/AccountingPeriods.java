@@ -50,7 +50,7 @@ import lombok.RequiredArgsConstructor;
  * transaction, under the period's row lock and before the cutoff moves (`P14-TSK-008`, {@link ReportRunSupersession};
  * {@code accounting V004} refuses the edge otherwise).
  *
- * <p>The close, its rejection and the reopen are `P14-TSK-012`'s. How a back-dating poster reacts to a locked period is
+ * <p>The close, its rejection and the reopen are {@link PeriodCloses}' (`P14-TSK-012`). How a back-dating poster reacts to a locked period is
  * `P14-TSK-006`'s (C3): here the ledger refuses, and nothing else is decided.
  */
 @RequiredArgsConstructor
@@ -129,7 +129,7 @@ public final class AccountingPeriods {
         }
     }
 
-    /** The proposer tried to approve their own unlock ({@code INV-AUD-04}). */
+    /** The proposer tried to approve their own unlock, close or reopen ({@code INV-AUD-04}). */
     public static final class SelfApprovalRefused extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
@@ -137,9 +137,13 @@ public final class AccountingPeriods {
         private final String summary;
 
         SelfApprovalRefused(AccountingPeriodId id, YearMonth month) {
-            super("a period's unlock is approved by someone other than its proposer");
+            this(id, month, "period:unlock");
+        }
+
+        SelfApprovalRefused(AccountingPeriodId id, YearMonth month, String act) {
+            super("a period's unlock, close or reopen is approved by someone other than its proposer");
             this.target = id.value().toString();
-            this.summary = "period=" + month + ", act=period:unlock";
+            this.summary = "period=" + month + ", act=" + act;
         }
 
         /** The period - the refusal record's target. */

@@ -54,6 +54,18 @@ public interface AccountingPeriodStore {
     /** {@code LOCKED -> OPEN} by the pending proposal's approval; {@code false} when nothing was pending. */
     boolean approveUnlock(Connection unitOfWork, AccountingPeriodId id, int revision, Actor actor, String reason);
 
+    /** {@code LOCKED -> CLOSE_PROPOSED} at {@code revision}, no unlock pending (`P14-TSK-012`); {@code false} when the row was not there. */
+    boolean markCloseProposed(Connection unitOfWork, AccountingPeriodId id, int revision);
+
+    /** {@code CLOSE_PROPOSED -> CLOSED} at {@code revision}, the lock and its pin as they were; {@code false} when the row was not there. */
+    boolean markClosed(Connection unitOfWork, AccountingPeriodId id, int revision);
+
+    /** {@code CLOSE_PROPOSED -> LOCKED} at {@code revision}, the same lock; {@code false} when the row was not there. */
+    boolean markCloseRejected(Connection unitOfWork, AccountingPeriodId id, int revision);
+
+    /** {@code CLOSED -> OPEN}, {@code revision + 1}, the lock and its pin released; {@code false} when the row was not there. */
+    boolean markReopened(Connection unitOfWork, AccountingPeriodId id, int revision);
+
     /** Appends one history row. */
     void appendEvent(Connection unitOfWork, EventRow row);
 
@@ -64,7 +76,12 @@ public interface AccountingPeriodStore {
         OPENED,
         LOCKED,
         UNLOCK_PROPOSED,
-        UNLOCKED
+        UNLOCKED,
+        CLOSE_PROPOSED,
+        CLOSED,
+        CLOSE_REJECTED,
+        REOPEN_PROPOSED,
+        REOPENED
     }
 
     /** A period to birth. */

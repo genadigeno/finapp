@@ -522,6 +522,12 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/lock",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/unlock-proposal",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/unlock-approval",
+                        // P14-TSK-012: the close and the reopen, each keyed; the controller's read of what it decides.
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/close-proposal",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/close-approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/close-rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/reopen-proposal",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/reopen-approval",
                         // P14-TSK-011: the close run - read (ACCOUNTING_READ, audited), a check's re-run
                         // (ACCOUNTING_CLOSE_PROPOSE, keyed).
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/close-run",

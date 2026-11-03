@@ -68,10 +68,14 @@ public interface CloseStatusReads {
         }
     }
 
-    /** A period's status, as one snapshot saw it. */
+    /**
+     * A period's status, as one snapshot saw it.
+     *
+     * @param proposedSets the ids of the sets awaiting a decision - {@code VALUATION_SET_APPROVED} waits for one, so no attempt says which (`P14-TSK-012`; `P14-TSK-014`'s review, M-5)
+     */
     record Reading(YearMonth month, PeriodStatus status, int revision, Optional<Instant> lockedAt,
             Optional<Integer> pinnedVersion, Optional<Run> run, Map<BreakStatus, Long> breaks,
-            Optional<ApprovedSet> approvedSet, SortedMap<String, Long> setsByStatus) {
+            Optional<ApprovedSet> approvedSet, SortedMap<String, Long> setsByStatus, List<UUID> proposedSets) {
 
         public Reading {
             Objects.requireNonNull(month, "month");
@@ -82,6 +86,7 @@ public interface CloseStatusReads {
             breaks = Map.copyOf(breaks);
             Objects.requireNonNull(approvedSet, "approvedSet");
             setsByStatus = new TreeMap<>(setsByStatus);
+            proposedSets = List.copyOf(proposedSets);
         }
     }
 }

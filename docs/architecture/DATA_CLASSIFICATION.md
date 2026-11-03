@@ -4851,6 +4851,7 @@ and in the statements' notes (`INV-ACC-05`) but is a person's text: screened for
 | `accounting_break` | `period_start` | `INTERNAL` | The judged month's first day - the accounting period's identity (one period per month) |
 | `accounting_break` | `check_code` | `INTERNAL` | A closed `CloseCheckCode` - one of the three that raise |
 | `accounting_break` | `break_type` | `INTERNAL` | A closed `BreakType`, each on its check by `CHECK` |
+| `accounting_break` | `generation` | `INTERNAL` | Which break of this (period, check, subject) this is - `accounting V008`, `P14-TSK-012`, ADR-0117's ruling; a count, frozen from birth |
 | `accounting_break` | `subject_ref` | `CONFIDENTIAL` | What the discrepancy is about by identifier - an entry id, a namespace, a purpose/owner-kind key, a currency, a proof's subject (a loan, obligation, merchant payable or ledger account id) |
 | `accounting_break` | `evidence` | `CONFIDENTIAL` | Codes, identifiers and counts only - the rules tried, the lines' purposes and sides, a proof's failing arms; never an amount |
 | `accounting_break` | `judged_by` | `INTERNAL` | The register version the check judged by - `posting-rules:v<n>`, `gl-mapping:v<n>`, `source-proofs:v<n>` |
@@ -4965,6 +4966,53 @@ so it is `CONFIDENTIAL`, served to an operator under `ACCOUNTING_READ` and read 
 | `close_check` | `evidence` | `CONFIDENTIAL` | Canonical JSON: codes, ids, counts and aggregates per currency in minor units - never an owner reference or a name |
 | `close_check` | `concluded_at` | `INTERNAL` | The database's stamp |
 | `close_check` | `correlation_id` | `INTERNAL` | The run's, or the re-run request's |
+
+### `accounting.period_close`, `period_close_check` and `period_reopen` - the close record and the reopen - *added by `P14-TSK-012`*
+
+`accounting V008`: a person's proposal to close a `LOCKED` period, one row per proposal, with nine rows naming the attempts read; a person's proposal to reopen the latest `CLOSED` one, one per revision. Never deleted, `period_close_check` `INSERT`-only. **No money moves here, and no column is an amount.** `evidence` is a copy, for a `DISCLOSED` attempt, of `close_check.evidence` as it froze: canonical JSON of closed codes, ids, counts and aggregates per currency in minor units, so `CONFIDENTIAL` as there. `disclosure_reason` is **a person's explanation of a discrepancy, served to the approver under `ACCOUNTING_CLOSE_APPROVE`** and read audited, screened for instrument shapes (`AccountingReasons`), never logged, in no summary and no metric: `CONFIDENTIAL`, one step below a reason nobody reads. The proposal's, decision's and reopen's own reasons are person-written and never served: `RESTRICTED-PII`, as every accounting reason. The persons `CONFIDENTIAL`, their closed types `INTERNAL`; ids, codes, counts and the database's stamps `INTERNAL`. No customer or merchant route reads any of it (`NoCustomerSurfaceReadsAccountingTest`).
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `period_close` | `id` | `INTERNAL` | Generated - the proposal's identity |
+| `period_close` | `period_id` | `INTERNAL` | The accounting period |
+| `period_close` | `period_revision` | `INTERNAL` | The revision proposed at |
+| `period_close` | `period_locked_at` | `INTERNAL` | The lock instance it answers |
+| `period_close` | `close_run_id` | `INTERNAL` | The run read - accounting's own row |
+| `period_close` | `pinned_mapping_version_id` | `INTERNAL` | The GL mapping version the lock pinned |
+| `period_close` | `valuation_rate_set_id` | `INTERNAL` | The approved valuation rate set |
+| `period_close` | `breaks_acknowledged` | `INTERNAL` | A count of the month's breaks at the proposal |
+| `period_close` | `breaks_resolved` | `INTERNAL` | A count of the month's breaks at the proposal |
+| `period_close` | `status` | `INTERNAL` | The machine's state - `PROPOSED`, `APPROVED`, `REJECTED` |
+| `period_close` | `proposed_by` | `CONFIDENTIAL` | The accountant who proposed it; served to the approver |
+| `period_close` | `proposed_by_type` | `INTERNAL` | A closed actor type - a person's, by `CHECK` |
+| `period_close` | `proposed_at` | `INTERNAL` | The database's stamp |
+| `period_close` | `proposal_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
+| `period_close` | `decided_by` | `CONFIDENTIAL` | The second person who approved it - never the proposer, by `CHECK` - or who rejected it |
+| `period_close` | `decided_by_type` | `INTERNAL` | A closed actor type - a person's |
+| `period_close` | `decided_at` | `INTERNAL` | The database's stamp |
+| `period_close` | `decision_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
+| `period_close` | `correlation_id` | `INTERNAL` | The proposing flow's correlation |
+| `period_close_check` | `close_id` | `INTERNAL` | The proposal |
+| `period_close_check` | `check_code` | `INTERNAL` | A closed `CloseCheckCode` |
+| `period_close_check` | `close_check_id` | `INTERNAL` | The frozen attempt read - accounting's own row |
+| `period_close_check` | `attempt` | `INTERNAL` | Its number |
+| `period_close_check` | `status` | `INTERNAL` | `PASSED` or `DISCLOSED` |
+| `period_close_check` | `judged_by` | `INTERNAL` | The versions the attempt read |
+| `period_close_check` | `evidence` | `CONFIDENTIAL` | For a `DISCLOSED` attempt, a copy of what it disclosed - codes, ids, counts and aggregates per currency; never an owner reference, a name or a line; served to the approver, read audited |
+| `period_close_check` | `disclosure_reason` | `CONFIDENTIAL` | A person's explanation of a `DISCLOSED` attempt; screened for instrument shapes; served to the approver under `ACCOUNTING_CLOSE_APPROVE`, read audited; never logged, in no summary or metric |
+| `period_reopen` | `id` | `INTERNAL` | Generated - the proposal's identity |
+| `period_reopen` | `period_id` | `INTERNAL` | The accounting period |
+| `period_reopen` | `period_revision` | `INTERNAL` | The revision it would leave - one reopen per revision |
+| `period_reopen` | `status` | `INTERNAL` | The machine's state - `PROPOSED`, `APPROVED` |
+| `period_reopen` | `proposed_by` | `CONFIDENTIAL` | The accountant who proposed it |
+| `period_reopen` | `proposed_by_type` | `INTERNAL` | A closed actor type - a person's, by `CHECK` |
+| `period_reopen` | `proposed_at` | `INTERNAL` | The database's stamp |
+| `period_reopen` | `proposal_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
+| `period_reopen` | `approved_by` | `CONFIDENTIAL` | The second person who approved it - never the proposer, by `CHECK` |
+| `period_reopen` | `approved_by_type` | `INTERNAL` | A closed actor type - a person's |
+| `period_reopen` | `approved_at` | `INTERNAL` | The database's stamp |
+| `period_reopen` | `approval_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
+| `period_reopen` | `correlation_id` | `INTERNAL` | The proposing flow's correlation |
 
 ### Free text, classified at its ceiling
 

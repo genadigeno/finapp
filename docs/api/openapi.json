@@ -87,6 +87,76 @@
           }
         }
       },
+      "accounting.CloseNotReady": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.CloseNotReady"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.CloseNotReady"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The close cannot be proposed - the period's present lock has no close run yet, a check of it is not PASSED or DISCLOSED, or a break of the month is OPEN; nothing was changed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.CloseProposalStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.CloseProposalStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.CloseProposalStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] What this act names is no longer what stands - another close run, an attempt that is not its check's latest, another proposal, or what the proposal read has moved; nothing was changed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.CorrectingEntryInvalid": {
         "content": {
           "application/problem+json": {
@@ -11124,6 +11194,10 @@
           "evidence": {
             "type": "string"
           },
+          "generation": {
+            "format": "int32",
+            "type": "integer"
+          },
           "id": {
             "type": "string"
           },
@@ -15450,6 +15524,140 @@
             "type": "array"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CloseDecisionRequest": {
+        "properties": {
+          "proposalId": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CloseDisclosureItem": {
+        "properties": {
+          "attempt": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "check": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CloseProposalCheckView": {
+        "properties": {
+          "attempt": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "check": {
+            "type": "string"
+          },
+          "disclosureReason": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "judgedBy": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CloseProposalRequest": {
+        "properties": {
+          "closeRunId": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "disclosures": {
+            "items": {
+              "$ref": "#/components/schemas/CloseDisclosureItem"
+            },
+            "maxItems": 9,
+            "minItems": 0,
+            "type": "array"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CloseProposalView": {
+        "properties": {
+          "breaksAcknowledged": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "breaksResolved": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CloseProposalCheckView"
+            },
+            "type": "array"
+          },
+          "closeRunId": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "lockedAt": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodStatus": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "stillStands": {
+            "type": "boolean"
+          },
+          "valuationRateSetId": {
             "type": "string"
           }
         },
@@ -22294,6 +22502,40 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PeriodCloseReceipt": {
+        "properties": {
+          "closeRunId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PeriodReopenRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
             "type": "string"
           }
         },
@@ -32701,6 +32943,166 @@
         }
       }
     },
+    "/v1/operator/accounting/periods/{periodId}/close-approval": {
+      "post": {
+        "operationId": "approveAccountingPeriodClose",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "periodId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeriodCloseReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/periods/{periodId}/close-proposal": {
+      "get": {
+        "operationId": "readAccountingPeriodCloseProposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "periodId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloseProposalView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "proposeAccountingPeriodClose",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "periodId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeriodCloseReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/periods/{periodId}/close-rejection": {
+      "post": {
+        "operationId": "rejectAccountingPeriodClose",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "periodId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloseDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeriodCloseReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/accounting/periods/{periodId}/close-run": {
       "get": {
         "operationId": "readAccountingCloseRun",
@@ -32853,6 +33255,96 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OperationalReportView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/periods/{periodId}/reopen-approval": {
+      "post": {
+        "operationId": "approveAccountingPeriodReopen",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "periodId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeriodReopenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeriodCloseReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/periods/{periodId}/reopen-proposal": {
+      "post": {
+        "operationId": "proposeAccountingPeriodReopen",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "periodId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeriodReopenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeriodCloseReceipt"
                 }
               }
             },

@@ -43,7 +43,8 @@ public final class GlEqualsLedger {
         List<BreakFinding> findings = new ArrayList<>();
         byKey.forEach((key, gaps) -> {
             StringBuilder currencies = new StringBuilder();
-            for (GlBalances.Unmapped gap : gaps) {
+            // One rendering, whatever order the fold answered in (ADR-0117: a finding is compared with what a person decided on).
+            for (GlBalances.Unmapped gap : gaps.stream().sorted(java.util.Comparator.comparing(GlBalances.Unmapped::currency)).toList()) {
                 currencies.append(currencies.isEmpty() ? "" : ", ").append(gap.currency()).append(" (").append(gap.lines())
                         .append(" lines)");
             }

@@ -11,30 +11,23 @@ import java.util.Objects;
  * unavailable proof, any judgement it could not make is {@link Result#FAILED} with its reasons - <strong>never a false
  * pass</strong> ({@code INV-REC-02}).
  *
- * <p><strong>What a known finding is held by</strong> (the independent review's I-1): a finding a break of the period
- * and check already holds is counted, never raised again - and counted by that break's status, because they mean
- * different things to the close: one held {@code OPEN} awaits a decision, one held {@code ACKNOWLEDGED} is disclosed,
- * and one held {@code RESOLVED} is a discrepancy <strong>still present</strong> after its break was resolved by
- * reference to a correcting entry - reported as {@link #RECURRED}, never folded into "disclosed". Whether a recurrence
- * should instead raise a new break (a generation in the key, or re-raise on {@code RESOLVED}) is an owner item for
- * `-011`, ADR-0117's open question.
- *
- * <p><strong>An acknowledgement holds a finding, not only a subject</strong> (`P14-TSK-011`'s review, I-1): four eyes
- * disclosed what the break's evidence says, so a finding under an {@code ACKNOWLEDGED} break whose evidence now differs is
- * {@link #ACKNOWLEDGED_CHANGED} - never disclosed - and names its subject. Evidence holds codes, ids and counts and
- * never an amount, so a change of amount alone is not seen; which granularity is right is the owner's, this is the safe
- * default (ADR-0117).
+ * <p><strong>One rule for a finding a person decided on</strong> (the owner's ruling, 2026-11-02, ADR-0117; built by `P14-TSK-012`): a
+ * finding is compared with the evidence a person decided on. Held by an {@code OPEN} break it awaits a decision. Held by a decided break and
+ * <strong>unchanged</strong> it counts as disclosed - an {@code ACKNOWLEDGED} break's by its disclosure, a {@code RESOLVED} one's by its correcting
+ * entry, so an immutable subject no longer wedges a close. <strong>Changed</strong>, it is raised again under the next generation, needing its own
+ * four eyes, and the check is {@code FAILED} ({@link #FINDING_CHANGED}, its subject named). Evidence holds codes, ids and counts and never an amount, so a
+ * change of amount alone is not seen: the limit the owner accepted.
  *
  * @param judgedBy the register version: {@code posting-rules:v<n>}, {@code gl-mapping:v<n>} ({@code gl-mapping:none}
  *     when no version applies), {@code source-proofs:v<n>}
  * @param findings every discrepancy the run found - new or already a break
  * @param raised the breaks this run raised
  * @param knownOpen findings an {@code OPEN} break already held (a concurrent run's newborn among them)
- * @param knownAcknowledged findings an {@code ACKNOWLEDGED} break held - disclosed
- * @param knownResolved findings a {@code RESOLVED} break held - a recurrence ({@link #RECURRED})
- * @param acknowledgedChanged the subjects of those findings whose evidence differs from what was acknowledged, sorted
- * @param failures why the check did not pass, each a code: {@link #DISCREPANCIES}, {@link #RECURRED},
- *     {@link #ACKNOWLEDGED_CHANGED}, {@link #NO_MAPPING}, {@link #FINDINGS_CAPPED}, {@code UNAVAILABLE:<proof or judge>}
+ * @param knownAcknowledged findings an {@code ACKNOWLEDGED} break held, unchanged - disclosed
+ * @param knownResolved findings a {@code RESOLVED} break held, unchanged - disclosed by its correcting entry
+ * @param changed the subjects of findings that differ from what a person decided on, each raised under its next generation, sorted
+ * @param failures why the check did not pass, each a code: {@link #DISCREPANCIES}, {@link #FINDING_CHANGED}, {@link #NO_MAPPING},
+ *     {@link #FINDINGS_CAPPED}, {@code UNAVAILABLE:<proof or judge>}
  */
 public record CheckOutcome(
         YearMonth period,
@@ -46,17 +39,14 @@ public record CheckOutcome(
         int knownOpen,
         int knownAcknowledged,
         int knownResolved,
-        List<String> acknowledgedChanged,
+        List<String> changed,
         List<String> failures) {
 
     /** The run found discrepancies - each a break, new or known. */
     public static final String DISCREPANCIES = "DISCREPANCIES";
 
-    /** A discrepancy a {@code RESOLVED} break holds is still present - its correction did not remove it. */
-    public static final String RECURRED = "RECURRED";
-
-    /** A finding an {@code ACKNOWLEDGED} break holds no longer reads as what was acknowledged. */
-    public static final String ACKNOWLEDGED_CHANGED = "ACKNOWLEDGED_CHANGED";
+    /** A finding a decided break holds no longer reads as what a person decided on: raised under its next generation. */
+    public static final String FINDING_CHANGED = "FINDING_CHANGED";
 
     /** No GL mapping version is pinned by, or in force for, the period - the GL cannot be judged. */
     public static final String NO_MAPPING = "NO_MAPPING";
@@ -78,7 +68,7 @@ public record CheckOutcome(
         Objects.requireNonNull(check, "check");
         Objects.requireNonNull(result, "result");
         Objects.requireNonNull(judgedBy, "judgedBy");
-        acknowledgedChanged = List.copyOf(acknowledgedChanged);
+        changed = List.copyOf(changed);
         failures = List.copyOf(failures);
         if ((result == Result.PASSED) != failures.isEmpty()) {
             throw new IllegalArgumentException("a check passes exactly when nothing failed it");
@@ -90,20 +80,20 @@ public record CheckOutcome(
         if ((findings > 0) != failures.contains(DISCREPANCIES)) {
             throw new IllegalArgumentException("a check says DISCREPANCIES exactly when it found one");
         }
-        if ((knownResolved > 0) != failures.contains(RECURRED)) {
-            throw new IllegalArgumentException("a check says RECURRED exactly when a resolved break's discrepancy is"
-                    + " still present");
-        }
-        if (acknowledgedChanged.isEmpty() == failures.contains(ACKNOWLEDGED_CHANGED)
-                || acknowledgedChanged.size() > knownAcknowledged) {
-            throw new IllegalArgumentException("a check says ACKNOWLEDGED_CHANGED exactly when an acknowledged finding"
-                    + " differs, and names only those");
+        if (changed.isEmpty() == failures.contains(FINDING_CHANGED) || changed.size() > findings) {
+            throw new IllegalArgumentException("a check says FINDING_CHANGED exactly when a decided finding differs, and names"
+                    + " only those");
         }
     }
 
     /** True when the check judged everything it covers and found nothing. */
     public boolean passed() {
         return result == Result.PASSED;
+    }
+
+    /** Every finding a person decided on and that stands unchanged - what a disclosable check may disclose. */
+    public int decided() {
+        return knownAcknowledged + knownResolved;
     }
 
     /** Every finding a break already held, whatever its status. */

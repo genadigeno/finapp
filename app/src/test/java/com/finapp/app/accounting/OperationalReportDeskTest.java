@@ -96,6 +96,7 @@ class OperationalReportDeskTest {
                     yield counts;
                 }
                 case "approvedFor" -> sets.stream().filter(set -> set.status() == ValuationRateSetStatus.APPROVED).findFirst();
+                case "ofPeriod" -> List.copyOf(sets);
                 default -> throw new AssertionError("close status only reads: " + method.getName());
             });
 
@@ -143,7 +144,7 @@ class OperationalReportDeskTest {
                 CloseStatusDefinition.CODE));
 
         assertThat(view.definition()).isEqualTo("CLOSE_STATUS");
-        assertThat(view.definitionVersion()).isEqualTo(1);
+        assertThat(view.definitionVersion()).as("P14-TSK-012: the proposed sets named").isEqualTo(2);
         assertThat(view.basis()).isEqualTo("OPERATIONAL");
         assertThat(view.period()).isEqualTo("2097-03");
         assertThat(view.asOf()).isEqualTo(DATABASE_NOW.toString());

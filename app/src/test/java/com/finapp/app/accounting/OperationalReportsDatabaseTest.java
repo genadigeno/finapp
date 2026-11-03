@@ -108,7 +108,7 @@ import org.junit.jupiter.api.Test;
  * roll them back, because a run reads them on a snapshot of its own.
  *
  * <p><strong>The books it uses.</strong> Only the fixture's <strong>January and February 1999</strong>
- * ({@link AccountingPeriodFixture}: before `P14-TSK-012` builds the close only January can be locked); it approves no valuation rate set,
+ * ({@link AccountingPeriodFixture}: `P14-TSK-012`'s close suites close January only in databases of their own, so only January can be locked here); it approves no valuation rate set,
  * reading January's as it finds it (`P14-TSK-014`'s note); every comparison is a relation that holds whatever else those months hold,
  * this suite's own earlier cases included, whose lines stay. Each case returns the periods to {@code OPEN}, superseding its FINAL runs. An
  * adopted parking it opens stays - an item is never deleted - and is dated in January with a raise of today, so it never enters January's
@@ -130,7 +130,7 @@ class OperationalReportsDatabaseTest {
     private static final JdbcLedgerAccountStore ACCOUNTS = new JdbcLedgerAccountStore();
     private static final TrialBalanceReads READS = new LedgerTrialBalanceReads(new JdbcGlMappingStore());
     private static final CounterpartyPositionReads POSITIONS = new LedgerCounterpartyPositionReads();
-    private static final ReconciliationMonthReads MONTH_READS = new ReconciliationMonthReads(new JdbcReportReadings());
+    private static final ReconciliationMonthReads MONTH_READS = new ReconciliationMonthReads(new JdbcReportReadings(), AccountingPeriodFixture.DECLARED_SOURCES);
     private static final LedgerFlooredPostings POSTINGS = new LedgerFlooredPostings();
     private static final ProductReconciliationDisclosure DISCLOSURE =
             new ProductReconciliationDisclosure(new JdbcReportReadings(), POSTINGS);
@@ -169,7 +169,7 @@ class OperationalReportsDatabaseTest {
             PurposeReportDefinition.loanPortfolio(READS),
             PurposeReportDefinition.bnplExposure(READS),
             new SuspenseDefinition(READS, MONTH_READS),
-            new ReconciliationStatusDefinition(DISCLOSURE, MONTH_READS, POSTINGS),
+            new ReconciliationStatusDefinition(DISCLOSURE, MONTH_READS),
             new CloseStatusDefinition(new AccountingCloseStatusReads(AccountingPeriodFixture.STORE, CLOSE_RUNS,
                     new JdbcAccountingBreakStore(), new JdbcValuationRateSetStore()), STALL));
 
@@ -382,8 +382,9 @@ class OperationalReportsDatabaseTest {
         assertThat(after.entries() - before.entries()).isEqualTo(2);
         assertThat(after.floored() - before.floored()).isEqualTo(1);
         assertThat(after.ownValueDate() - before.ownValueDate()).isEqualTo(1);
-        assertThat(after.entries()).as("the disclosure's count is the same selection").isEqualTo(
-                SNAPSHOTS.read(snapshot -> DISCLOSURE.asOfCutoff(snapshot, JANUARY)).postedPastTheCutoff().get("settlement-batch"));
+        assertThat(after.unrecorded() - before.unrecorded()).as("each stands on its own posting record").isZero();
+        assertThat(after).as("the disclosure's read is this one (P14-TSK-012, the owner's (b))").isEqualTo(
+                SNAPSHOTS.read(snapshot -> DISCLOSURE.asOfCutoff(snapshot, JANUARY)).pastTheCutoff().get("settlement-batch"));
 
         JsonNode body = bodyOf(answer(ReconciliationStatusDefinition.CODE, january));
         assertThat(body.get("coverage").get("batchRuns").asLong()).isEqualTo(count("SELECT count(*) FROM reconciliation.reconciliation_batch"
@@ -608,7 +609,7 @@ class OperationalReportsDatabaseTest {
 
     private static PastTheCutoffPostings.Split split() {
         return SNAPSHOTS.read(snapshot -> POSTINGS.pastTheCutoff(snapshot, LAST_DAY)).getOrDefault("settlement-batch",
-                new PastTheCutoffPostings.Split(0, 0));
+                new PastTheCutoffPostings.Split(0, 0, 0));
     }
 
     // ------------------------------------------------------------------ the runs

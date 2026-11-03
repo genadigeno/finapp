@@ -28,6 +28,20 @@ public final class JdbcAccountingPeriodStore implements AccountingPeriodStore {
             + " p.unlock_approved_by, p.unlock_approved_at FROM accounting.accounting_period p"
             + " LEFT JOIN accounting.gl_mapping_version v ON v.id = p.pinned_mapping_version_id";
 
+    /** The close's three edges and the reopen's (`P14-TSK-012`): each conditional on its state and revision, under {@code accounting V008}'s trigger. */
+    static final String MARK_CLOSE_PROPOSED_SQL = "UPDATE accounting.accounting_period SET status = 'CLOSE_PROPOSED'"
+            + " WHERE id = ? AND status = 'LOCKED' AND revision = ? AND unlock_proposed_by IS NULL";
+
+    static final String MARK_CLOSED_SQL = "UPDATE accounting.accounting_period SET status = 'CLOSED'"
+            + " WHERE id = ? AND status = 'CLOSE_PROPOSED' AND revision = ?";
+
+    static final String MARK_CLOSE_REJECTED_SQL = "UPDATE accounting.accounting_period SET status = 'LOCKED'"
+            + " WHERE id = ? AND status = 'CLOSE_PROPOSED' AND revision = ?";
+
+    static final String MARK_REOPENED_SQL = "UPDATE accounting.accounting_period SET status = 'OPEN', revision = revision + 1,"
+            + " locked_by = NULL, locked_by_type = NULL, locked_at = NULL, pinned_mapping_version_id = NULL"
+            + " WHERE id = ? AND status = 'CLOSED' AND revision = ?";
+
     @Override
     public boolean insertIfAbsent(Connection unitOfWork, NewPeriod period) {
         try (PreparedStatement insert = unitOfWork.prepareStatement("INSERT INTO accounting.accounting_period (id,"
@@ -156,6 +170,36 @@ public final class JdbcAccountingPeriodStore implements AccountingPeriodStore {
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw failed("approving an accounting period's unlock", failure);
+        }
+    }
+
+    @Override
+    public boolean markCloseProposed(Connection unitOfWork, AccountingPeriodId id, int revision) {
+        return edge(unitOfWork, MARK_CLOSE_PROPOSED_SQL, id, revision, "proposing an accounting period's close");
+    }
+
+    @Override
+    public boolean markClosed(Connection unitOfWork, AccountingPeriodId id, int revision) {
+        return edge(unitOfWork, MARK_CLOSED_SQL, id, revision, "closing an accounting period");
+    }
+
+    @Override
+    public boolean markCloseRejected(Connection unitOfWork, AccountingPeriodId id, int revision) {
+        return edge(unitOfWork, MARK_CLOSE_REJECTED_SQL, id, revision, "rejecting an accounting period's close");
+    }
+
+    @Override
+    public boolean markReopened(Connection unitOfWork, AccountingPeriodId id, int revision) {
+        return edge(unitOfWork, MARK_REOPENED_SQL, id, revision, "reopening an accounting period");
+    }
+
+    private static boolean edge(Connection unitOfWork, String sql, AccountingPeriodId id, int revision, String operation) {
+        try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
+            update.setObject(1, id.value());
+            update.setInt(2, revision);
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw failed(operation, failure);
         }
     }
 

@@ -166,6 +166,22 @@ public enum AccountingErrorCode implements ErrorCode {
                     + " changed."),
 
     /**
+     * The close proposal (`P14-TSK-012`, {@code INV-ACC-09}): no run yet under the period's present lock, a check not {@code PASSED} or {@code DISCLOSED}, or a break of the month {@code OPEN}.
+     */
+    CLOSE_NOT_READY(
+            "accounting.CloseNotReady",
+            409,
+            "The close cannot be proposed - the period's present lock has no close run yet, a check of it is not PASSED or DISCLOSED, or a break of the month is OPEN; nothing was changed."),
+
+    /**
+     * The close proposal and approval (`P14-TSK-012`, {@code INV-ACC-09}): what the act names is no longer what stands, so it is never covered by a reason or an approval written for something else.
+     */
+    CLOSE_PROPOSAL_STALE(
+            "accounting.CloseProposalStale",
+            409,
+            "What this act names is no longer what stands - another close run, an attempt that is not its check's latest, another proposal, or what the proposal read has moved; nothing was changed."),
+
+    /**
      * The two report doors (`P14-TSK-017`): an operational definition is never a run, and a run's definition is not read at
      * the operational door. Each is the other door's question; nothing was claimed or served.
      */

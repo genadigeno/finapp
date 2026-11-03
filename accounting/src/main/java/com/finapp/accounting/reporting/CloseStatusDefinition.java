@@ -13,7 +13,7 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 /**
- * The {@code CLOSE_STATUS} report definition, version 1, <strong>operational and never a run</strong> (`P14-TSK-017`;
+ * The {@code CLOSE_STATUS} report definition, version 2, <strong>operational and never a run</strong> (`P14-TSK-017`;
  * {@code PHASE_14_PLAN.md} sections 8.1, 13.5, 13.6; {@code INV-ACC-09}): where a period's close stands, for a reader who asks. Attempts
  * conclude and re-run, the period moves, breaks move, a rate set is approved - all under one lock - so a stored answer would be wrong by
  * the next poll and a FINAL one wrong for good ({@link OperationalReportDefinition}).
@@ -23,7 +23,12 @@ import lombok.RequiredArgsConstructor;
  * only when asked, so this is not the signal: {@code finapp.accounting.close.run.stalled} and its alert are, on the same bound.
  *
  * <p><strong>The approved set</strong> (`P14-TSK-015`'s review, M-4): named here, under {@code ACCOUNTING_READ}, so the role that asks
- * for a translated run can find what it must name, which it cannot read at {@code GET .../valuation-rate-sets/{setId}}.
+ * for a translated run can find what it must name, which it cannot read at {@code GET .../valuation-rate-sets/{setId}}. <strong>The sets awaiting a decision</strong> are named beside it (`P14-TSK-012`, version 2):
+ * {@code VALUATION_SET_APPROVED} waits for an approval, so no attempt says which proposal it waits for (`P14-TSK-014`'s review, M-5).
+ *
+ * <p><strong>Through the machine</strong> (`P14-TSK-012`, read against this code): {@code LOCKED}, {@code CLOSE_PROPOSED} and {@code CLOSED} each hold the lock their run answers, so {@link RunState} is that run's -
+ * {@link RunState#RUNNING} until its checks first all concluded, {@link RunState#CONCLUDED} from then on, a later re-judgement's attempt leaving the stamp where it was. A reopen, like an unlock, is {@link RunState#NOT_LOCKED}
+ * with the old run served {@code current=false}; the next lock is {@link RunState#AWAITING_FIRST_POLL} until its own run is born.
  *
  * <p>Codes, counts and instants only: no person, no reason, no evidence and no figure ({@code CloseRunDesk} serves those). Report code:
  * it reads through {@link CloseStatusReads} on the snapshot it is handed; every age is from {@link ReportInputs#cutAt()}, the database's
@@ -36,7 +41,7 @@ public final class CloseStatusDefinition implements OperationalReportDefinition 
     public static final String CODE = ReportKind.CLOSE_STATUS.name();
 
     /** The definition's version: what {@link #generate} writes. */
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
 
     /** Where a period's close run stands. */
     public enum RunState {
@@ -57,7 +62,7 @@ public final class CloseStatusDefinition implements OperationalReportDefinition 
                     + " other module's table; no projection, cache or gauge.",
             "The period's status, revision, lock and pinned version number; the run's state; each check's latest attempt -"
                     + " status, attempts, failure codes, the versions that judged it, when it concluded; the month's breaks by status;"
-                    + " the approved valuation rate set by id, and how many sets per status.",
+                    + " the approved valuation rate set by id, how many sets per status, and the ids of those awaiting a decision.",
             "The period's calendar month. Every instant as the database stamped it; the whole as of asOf, the database's instant at"
                     + " the read; the run's state judged from that instant against the lock's.",
             "Holds no amount, in any currency: codes, counts and instants only. The valuation rate set is named by its id, never a"
@@ -93,6 +98,8 @@ public final class CloseStatusDefinition implements OperationalReportDefinition 
         }
         CanonicalJson.Obj sets = CanonicalJson.object();
         reading.setsByStatus().forEach(sets::put);
+        CanonicalJson.Arr proposed = CanonicalJson.array();
+        reading.proposedSets().forEach(id -> proposed.add(id.toString()));
         CanonicalJson.Obj body = CanonicalJson.object()
                 .put("statement", STATEMENT.asValue())
                 .put("asOf", inputs.cutAt().toString())
@@ -102,7 +109,8 @@ public final class CloseStatusDefinition implements OperationalReportDefinition 
                 .put("runState", state(reading, inputs.cutAt()).name())
                 .put("runStalledAfterSeconds", stall.after().toSeconds())
                 .put("breaks", breaks)
-                .put("valuationRateSets", sets);
+                .put("valuationRateSets", sets)
+                .put("proposedValuationRateSets", proposed);
         instantOrNull(body, "lockedAt", reading.lockedAt());
         if (reading.pinnedVersion().isPresent()) {
             body.put("pinnedMappingVersion", reading.pinnedVersion().get());

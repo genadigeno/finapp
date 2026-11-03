@@ -9,15 +9,11 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * A month's reconciliation runs (`P14-TSK-017`; the owner's decision of 2026-11-02: "a month with no reconciliation run must
- * fail {@code RECONCILIATION_DISCLOSURE}") - per source, kind, status and business date, over reconciliation's own
- * {@code reconciliation_batch}, on the caller's {@code REPEATABLE READ READ ONLY} snapshot. {@code RECONCILIATION_STATUS} reports it;
- * <strong>{@code P14-TSK-012}'s check reads it</strong>, on its own snapshot, by this port - the check is that task's, and
- * nothing here changes {@code -011}'s.
+ * A month's reconciliation runs (`P14-TSK-017`; the owner's decisions of 2026-11-02 and 2026-11-03) - per source, kind, status, business date and whether its batch
+ * was repudiated, over reconciliation's own {@code reconciliation_batch}, with the settlement sources they are measured against, on the caller's {@code
+ * REPEATABLE READ READ ONLY} snapshot. {@code RECONCILIATION_STATUS} reports it; {@code RECONCILIATION_DISCLOSURE} reads it (`P14-TSK-012`, {@link CloseChecks}).
  *
- * <p><strong>It judges nothing</strong> (`P14-TSK-017`'s review, I-4): it says which runs exist, and leaves what makes a month "run" to
- * {@code -012} and the owner, who has yet to rule whether a run that is not {@code COMPLETED} counts and whether each active source needs
- * one. An earlier {@code noRun()} answered both by accident: one {@code BLOCKED} run of one source on one day read as a month that ran.
+ * <p><strong>It judges nothing</strong> (`P14-TSK-017`'s review, I-4): it says which runs and sources exist. What makes a month "run" is the check's, on the owner's ruling.
  *
  * <p>Moving, by nature: a batch for the month's last days is accepted in the next, a run's status moves, a late batch joins
  * the month at any time. So it is an operational read, and a FINAL body may not read it.
@@ -25,16 +21,17 @@ import java.util.UUID;
 @FunctionalInterface
 public interface ReconciliationRunCoverage {
 
-    /** The runs whose business date falls in {@code month}; a read that fails throws, never an empty answer for it. */
+    /** The runs whose business date falls in {@code month} and the source register; a read that fails throws, never an empty answer for it. */
     Coverage ofMonth(Connection snapshot, YearMonth month);
 
     /**
-     * The runs of one source, kind, status and business date.
+     * The runs of one source, kind, status, business date and repudiation.
      *
      * @param kind {@code BATCH} (one per accepted batch, born in the acceptance) or {@code REPROCESS} (a person's)
      * @param status {@code OPEN}, {@code IN_PROGRESS}, {@code COMPLETED} or {@code BLOCKED}
+     * @param repudiated its batch was repudiated under four eyes: the run stands and its items say {@code REPUDIATED}, so its evidence is withdrawn
      */
-    record Line(UUID sourceId, String kind, String status, LocalDate businessDate, long runs) {
+    record Line(UUID sourceId, String kind, String status, LocalDate businessDate, boolean repudiated, long runs) {
 
         public Line {
             Objects.requireNonNull(sourceId, "sourceId");
@@ -45,19 +42,48 @@ public interface ReconciliationRunCoverage {
 
         CanonicalJson.Obj asValue() {
             return CanonicalJson.object().put("sourceId", sourceId.toString()).put("kind", kind).put("status", status)
-                    .put("businessDate", businessDate.toString()).put("runs", runs);
+                    .put("businessDate", businessDate.toString()).put("repudiated", repudiated).put("runs", runs);
         }
     }
 
-    /** A month's lines, in the read's total order. */
-    record Coverage(YearMonth month, List<Line> lines) {
+    /** Where a settlement source stands, for a month's reading. */
+    enum SourceState {
+        /** {@code settlement.source} {@code ACTIVE} and declared in this build: its evidence can arrive. */
+        ACTIVE,
+        /** {@code RETIRED}: its door is shut. No date is stored, and today only a migration retires one. */
+        RETIRED,
+        /** {@code ACTIVE} on its row and declared by no build: no door takes its bytes. */
+        UNDECLARED
+    }
+
+    /** One settlement source: identity and state, never a position. */
+    record Source(UUID id, String code, SourceState state) {
+
+        public Source {
+            Objects.requireNonNull(id, "id");
+            Objects.requireNonNull(code, "code");
+            Objects.requireNonNull(state, "state");
+        }
+
+        /** The content's member for this source. */
+        CanonicalJson.Obj asValue() {
+            return CanonicalJson.object().put("id", id.toString()).put("code", code).put("state", state.name());
+        }
+    }
+
+    /** A month's lines, in the read's total order, and the source register by code. */
+    record Coverage(YearMonth month, List<Line> lines, List<Source> sources) {
 
         /** The kind an accepted batch's run carries. */
         public static final String BATCH = "BATCH";
 
+        /** The status that counts: the run reached its end. */
+        public static final String COMPLETED = "COMPLETED";
+
         public Coverage {
             Objects.requireNonNull(month, "month");
             lines = List.copyOf(lines);
+            sources = List.copyOf(sources);
         }
 
         /**
@@ -72,7 +98,10 @@ public interface ReconciliationRunCoverage {
         public CanonicalJson.Obj asValue() {
             CanonicalJson.Arr runs = CanonicalJson.array();
             lines.forEach(line -> runs.add(line.asValue()));
-            return CanonicalJson.object().put("month", month.toString()).put("batchRuns", batchRuns()).put("runs", runs);
+            CanonicalJson.Arr known = CanonicalJson.array();
+            sources.forEach(source -> known.add(source.asValue()));
+            return CanonicalJson.object().put("month", month.toString()).put("batchRuns", batchRuns()).put("runs", runs)
+                    .put("sources", known);
         }
     }
 }
