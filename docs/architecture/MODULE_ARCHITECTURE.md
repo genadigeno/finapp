@@ -1284,6 +1284,8 @@ empty, so each is proven able to fail by probes planted in its own source.
   *(ArchUnit: `theFrozenRegisterAgesInItsOwnBands`)*
 - A close waits for no statement (`P14-TSK-016`, `INV-ACC-09`): the close's machine depends on neither `BalanceSheetDefinition` nor `IncomeStatementDefinition`, and `ReportRuns.claim` has two callers, the accountant's door and `FinalTrialBalanceReader`, whose one claim is the trial balance's: a statement that refuses cannot leave a month unable to close.
   *(ArchUnit: `theCloseWaitsForNoStatement`)*
+- No stored figure reads a merchant's term (`P14-TSK-022`, `INV-ACC-04`): `MerchantPayable.Payable.accountingCorrections` has one reader, the merchant's own response, so a report definition, a port adapter and a close check read nothing that classifying a line by its origin moved, and a FINAL of a closed month regenerates as it was.
+  *(ArchUnit: `noStoredFigureReadsAMerchantsTerm`)*
 
 ### Persistence boundary
 

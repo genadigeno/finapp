@@ -264,6 +264,20 @@ class ReportingNeverWritesTest {
         assertThat(waitingOn(imported, theClose, Set.of(BalanceSheetDefinition.class.getName(), IncomeStatementDefinition.class.getName()))).as("a close's machine holding a statement (INV-ACC-09)").isEmpty();
     }
 
+    /**
+     * A FINAL of a closed month cannot move for a merchant's term (`P14-TSK-022`, the owner's ruling (q); {@code INV-ACC-04}): {@code accountingCorrections} moved a line between terms, and only a merchant's own response reads that term. A report definition, a port adapter and a close check read no
+     * term, so regenerating an earlier month reads nothing that changed; the {@code MERCHANT_PAYABLE} proof and {@code BNPL_THREE_WAY} read the sum, which still holds.
+     */
+    @ArchTest
+    static void noStoredFigureReadsAMerchantsTerm(JavaClasses imported) {
+        String payable = com.finapp.merchant.MerchantPayable.Payable.class.getName();
+        Set<String> readers = new TreeSet<>();
+        imported.forEach(reader -> reader.getMethodCallsFromSelf().stream()
+                .filter(call -> call.getTarget().getOwner().getName().equals(payable) && call.getTarget().getName().equals("accountingCorrections"))
+                .forEach(call -> readers.add(reader.getName())));
+        assertThat(readers).as("who reads the term: the merchant's own response, and nothing stored").containsExactly("com.finapp.app.merchant.MerchantPayableController");
+    }
+
     /** The census: the guard sees accounting, every writer it names, and the ledger's writers it refuses by package. */
     @ArchTest
     static void theReportingGuardSeesTheAccountingModule(JavaClasses imported) {
