@@ -153,6 +153,7 @@ class StatementNotesAreFrozenTest {
         for (ReportDefinition definition : statements()) {
             String issued = bytesOf(definition);
             assertThat(issued).as("the issued bytes do name them: the control").contains("/v1/").contains("ACCOUNTING_READ").contains("RECONCILIATION_INVESTIGATE").contains("under this role").contains("drillDown");
+            assertThat(issued).as("and the close record's reasons names the one door that does open, beside an accountant's: why the words served say what they say").contains("close-proposal under ACCOUNTING_CLOSE_APPROVE").contains("close-run (ACCOUNTING_READ)");
 
             FinalStatementDesk.Projection projection = FinalStatementDesk.project(issued);
 

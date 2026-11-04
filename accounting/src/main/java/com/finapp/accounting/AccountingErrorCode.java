@@ -201,7 +201,7 @@ public enum AccountingErrorCode implements ErrorCode {
             "accounting.PriorPeriodAdjustmentStale",
             409,
             "What the act names is no longer what stands - the revision corrected, the date it posts on, the month's posted corrections, a month"
-                    + " closed and reopened under it, or the adjustment was decided; nothing was changed. Read it again; one that can no longer post is rejected and proposed again."),
+                    + " closed and reopened under it, or the adjustment was decided; nothing was changed. Read it again; an adjustment that can no longer post is rejected and proposed again."),
 
     /**
      * The two report doors (`P14-TSK-017`): an operational definition is never a run, and a run's definition is not read at

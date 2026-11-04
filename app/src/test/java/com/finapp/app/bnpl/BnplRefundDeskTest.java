@@ -251,7 +251,7 @@ class BnplRefundDeskTest {
 
     /** A real collaborator whose every part is {@code known} or answers nothing: only what runs before the guard is ever asked. */
     @SuppressWarnings("unchecked")
-    static <T> T built(Class<T> type, Object... known) {
+    private static <T> T built(Class<T> type, Object... known) {
         java.lang.reflect.Constructor<?> widest = Arrays.stream(type.getDeclaredConstructors())
                 .max(java.util.Comparator.comparingInt(java.lang.reflect.Constructor::getParameterCount))
                 .orElseThrow(() -> new IllegalStateException("nothing to build " + type + " with"));
@@ -264,7 +264,7 @@ class BnplRefundDeskTest {
         }
     }
 
-    static Object part(Class<?> type, Object[] known) {
+    private static Object part(Class<?> type, Object[] known) {
         for (Object given : known) {
             if (type.isInstance(given)) {
                 return given;
@@ -279,7 +279,7 @@ class BnplRefundDeskTest {
         return type.isInterface() ? answering(type, java.util.Map.of("getConnection", noConnection())) : built(type, known);
     }
 
-    static Object answering(Class<?> type, java.util.Map<String, Object> answers) {
+    private static Object answering(Class<?> type, java.util.Map<String, Object> answers) {
         return java.lang.reflect.Proxy.newProxyInstance(BnplRefundDeskTest.class.getClassLoader(), new Class<?>[] {type},
                 (proxy, method, args) -> {
                     if (answers.containsKey(method.getName())) {
@@ -298,7 +298,7 @@ class BnplRefundDeskTest {
                 });
     }
 
-    static com.finapp.platform.idempotency.IdempotencyRecordStore<java.sql.Connection> claims() {
+    private static com.finapp.platform.idempotency.IdempotencyRecordStore<java.sql.Connection> claims() {
         return new com.finapp.platform.idempotency.IdempotencyRecordStore<>() {
             @Override
             public ClaimOutcome claim(java.sql.Connection unitOfWork, com.finapp.platform.idempotency.IdempotencyKey key,

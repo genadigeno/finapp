@@ -131,8 +131,10 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
                             Bucket.of(
                                     direction,
                                     amount,
+                                    // By name, so an origin this build does not know reads as
+                                    // none: by its counterparty, the sum holding (never a throw).
                                     Optional.ofNullable(row.getString("origin"))
-                                            .map(AdjustmentOrigin::valueOf),
+                                            .flatMap(AdjustmentOrigin::named),
                                     Optional.ofNullable(row.getString("counterparty"))
                                             .map(JdbcPositionBreakdown::counterparty),
                                     Optional.ofNullable(row.getString("namespace")));

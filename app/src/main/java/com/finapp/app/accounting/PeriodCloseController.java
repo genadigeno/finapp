@@ -1,5 +1,6 @@
 package com.finapp.app.accounting;
 
+import com.finapp.accounting.PriorPeriodAdjustments;
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
@@ -140,10 +141,11 @@ public class PeriodCloseController {
     }
 
     /**
-     * A reopen's act: its reason ({@code accounting.ReasonRequired} when missing) and the adjustments posted against the month that the person read. Absent names none; naming other than what is posted now is refused, a month with none included.
+     * A reopen's act: its reason ({@code accounting.ReasonRequired} when missing) and the adjustments posted against the month that the person read. Absent names none; naming other than what is posted now is refused, a month with none included. Its bound is the most a
+     * month can hold, one above what an adjustment's approval may name ({@link PriorPeriodAdjustments#MAX_POSTED_CORRECTIONS} says why): a smaller one would leave a full month unable to reopen.
      */
     @ClosedBody
-    public record PeriodReopenRequest(@Size(max = 1000) String reason, @Size(max = 200) List<@NotNull @Size(max = 64) String> postedAdjustments) {
+    public record PeriodReopenRequest(@Size(max = 1000) String reason, @Size(max = PriorPeriodAdjustments.MAX_POSTED_CORRECTIONS) List<@NotNull @Size(max = 64) String> postedAdjustments) {
 
         /** The reason stays out of a log line: a record's generated {@code toString} would carry it. */
         @Override

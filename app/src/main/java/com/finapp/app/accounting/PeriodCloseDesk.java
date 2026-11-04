@@ -67,7 +67,7 @@ public final class PeriodCloseDesk {
      * An act's receipt: the period as the act left it, and the proposal it answers.
      *
      * @param priorPeriodAdjustments on a reopen's two acts, the adjustments already posted against the month, read holding its row (`P14-TSK-013`): its figures at the next revision will still show what those corrected, each entry being dated in a later month, so
-     *     whoever corrects the month directly must know they stand; what the act named, since `P14-TSK-022` refuses naming anything else. Empty on a close's acts.
+     *     whoever corrects the month directly must know they stand. What an act that judged its naming named, since `P14-TSK-022` refuses anything else; a repeat that converged compared nothing, and this is what stands now. Empty on a close's acts.
      */
     public record PeriodCloseReceipt(String id, String period, String status, int revision, String proposalId, String closeRunId, List<String> priorPeriodAdjustments) {}
 

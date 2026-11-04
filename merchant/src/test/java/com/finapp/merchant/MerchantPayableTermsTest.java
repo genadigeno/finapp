@@ -129,6 +129,18 @@ class MerchantPayableTermsTest {
     }
 
     @Test
+    @DisplayName("P14-TSK-022's review, M-3: an origin this build does not know reads as none: facing a wallet, by what it faces; the terms still sum, so an old instance's response and proofs go on answering under a rolling deploy")
+    void anOriginThisBuildDoesNotKnow() {
+        PositionBreakdown.Bucket later = PositionBreakdown.Bucket.of(Direction.CREDIT, eur(1_500), AdjustmentOrigin.named("A_LATER_RELEASES_ORIGIN"), Optional.of(new PositionBreakdown.Counterparty(AccountPurpose.CUSTOMER_WALLET, Direction.DEBIT)), Optional.empty());
+
+        MerchantPayable.Payable payable = payableOf(List.of(later));
+
+        assertThat(payable.captured()).isEqualTo(eur(1_500));
+        assertThat(payable.accountingCorrections()).isEqualTo(eur(0));
+        assertThat(payable.terms()).isEqualTo(payable.position());
+    }
+
+    @Test
     @DisplayName("P14-TSK-022: only ACCOUNTING moved: a MANUAL line facing a wallet still reads by its counterparty, as no ruling changed; a RECONCILIATION one is an attribution; the terms sum for each")
     void onlyAccountingMoved() {
         MerchantPayable.Payable manual = payableOf(List.of(ofOrigin(AdjustmentOrigin.MANUAL, AccountPurpose.CUSTOMER_WALLET, Direction.CREDIT, 1_500)));

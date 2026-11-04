@@ -602,7 +602,7 @@
             }
           }
         },
-        "description": "[409] What the act names is no longer what stands - the revision corrected, the date it posts on, the month's posted corrections, a month closed and reopened under it, or the adjustment was decided; nothing was changed. Read it again; one that can no longer post is rejected and proposed again.",
+        "description": "[409] What the act names is no longer what stands - the revision corrected, the date it posts on, the month's posted corrections, a month closed and reopened under it, or the adjustment was decided; nothing was changed. Read it again; an adjustment that can no longer post is rejected and proposed again.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -23670,7 +23670,7 @@
               "minLength": 0,
               "type": "string"
             },
-            "maxItems": 200,
+            "maxItems": 201,
             "minItems": 0,
             "type": "array"
           },

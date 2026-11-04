@@ -138,6 +138,36 @@ class PriorPeriodAdjustmentDeskTest {
         return as(ACCOUNTANT, () -> desk.propose(key, january.value().toString(), 1, REASON, lines()));
     }
 
+    /** One adjustment of January already posted, at {@code revision}, as an earlier approval left it. */
+    private String posted(int revision) {
+        com.finapp.accounting.PriorPeriodAdjustmentId id = com.finapp.accounting.PriorPeriodAdjustmentId.next(IDS);
+        store.insert(UOW, new com.finapp.accounting.PriorPeriodAdjustmentStore.NewAdjustment(id, january, revision, periods.month(MARCH).orElseThrow().id(), 1, MARCH.atDay(5), UUID.randomUUID(), ACCOUNTANT, "a correction", CorrelationId.generate(IDS)));
+        assertThat(store.markPosted(UOW, id, UUID.randomUUID(), CONTROLLER, "agreed")).isTrue();
+        return id.value().toString();
+    }
+
+    @Test
+    @DisplayName("P14-TSK-022's review, M-1: 201 is the most a month can hold, for its whole life: 200 posted, every revision's counting, the 201st names them and posts; the 202nd must name 201, which its body cannot, and naming 200 is Stale, 201 standing, nothing posted")
+    void twoHundredAndOneIsTheMost() {
+        List<String> posted = new ArrayList<>();
+        while (posted.size() < PriorPeriodAdjustments.MAX_NAMED_CORRECTIONS) {
+            posted.add(posted(posted.size() < 100 ? 1 : 2));
+        }
+
+        PriorPeriodAdjustmentDesk.PriorPeriodAdjustmentReceipt last = propose("k-p1");
+        assertThat(as(CONTROLLER, () -> desk.approve("k-a1", last.id(), TODAY, 1, posted, "read and agreed")).status()).isEqualTo("POSTED");
+        assertThat(store.rows()).filteredOn(row -> row.status() == com.finapp.accounting.PriorPeriodAdjustmentStatus.POSTED).hasSize(PriorPeriodAdjustments.MAX_POSTED_CORRECTIONS);
+
+        PriorPeriodAdjustmentDesk.PriorPeriodAdjustmentReceipt next = propose("k-p2");
+        refused(() -> as(CONTROLLER, () -> desk.approve("k-a2", next.id(), TODAY, 1, posted, "read and agreed")), AccountingErrorCode.PRIOR_PERIOD_ADJUSTMENT_STALE, 409);
+        List<String> all = new ArrayList<>(posted);
+        all.add(last.id());
+        try (jakarta.validation.ValidatorFactory factory = jakarta.validation.Validation.buildDefaultValidatorFactory()) {
+            assertThat(factory.getValidator().validate(new PriorPeriodAdjustmentController.PriorPeriodApprovalRequest(TODAY, 1, all, "read and agreed"))).as("the one body that would stand cannot pass the door").isNotEmpty();
+        }
+        assertThat(store.rows()).filteredOn(row -> row.status() == com.finapp.accounting.PriorPeriodAdjustmentStatus.POSTED).hasSize(PriorPeriodAdjustments.MAX_POSTED_CORRECTIONS);
+    }
+
     private PriorPeriodAdjustmentDesk.PriorPeriodAdjustmentReceipt approve(String key, String id) {
         return as(CONTROLLER, () -> desk.approve(key, id, TODAY, 1, List.of(), "read and agreed"));
     }

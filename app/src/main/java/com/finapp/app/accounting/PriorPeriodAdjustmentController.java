@@ -1,5 +1,6 @@
 package com.finapp.app.accounting;
 
+import com.finapp.accounting.PriorPeriodAdjustments;
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.api.DecimalText;
 import com.finapp.app.session.RequiresAssurance;
@@ -128,7 +129,7 @@ public class PriorPeriodAdjustmentController {
     public record PriorPeriodApprovalRequest(
             @Size(max = 16) String postingDate,
             int correctedRevision,
-            @Size(max = 200) List<@NotNull @Size(max = 64) String> postedCorrections,
+            @Size(max = PriorPeriodAdjustments.MAX_NAMED_CORRECTIONS) List<@NotNull @Size(max = 64) String> postedCorrections,
             @Size(max = 1000) String reason) {
 
         /** The reason stays out of a log line. */

@@ -408,15 +408,44 @@ class PeriodCloseDeskTest {
     }
 
     @Test
-    @DisplayName("P14-TSK-022: a reopen's body: a null among the names is the platform's validation failure at the door, never a NullPointerException and a 500; its absence names none; the list is bounded")
+    @DisplayName("P14-TSK-022: a reopen's body: a null among the names is the platform's validation failure at the door, never a NullPointerException and a 500; its absence names none; its bound is the most a month can hold, one above what an adjustment's approval may name, so a full month can still reopen")
     void aReopensBodyIsBounded() {
         try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
             Validator validator = factory.getValidator();
             assertThat(validator.validate(new PeriodCloseController.PeriodReopenRequest(REASON, java.util.Arrays.asList((String) null))))
                     .singleElement().satisfies(violation -> assertThat(violation.getPropertyPath().toString()).startsWith("postedAdjustments[0]"));
             assertThat(validator.validate(new PeriodCloseController.PeriodReopenRequest(REASON, null))).isEmpty();
-            assertThat(validator.validate(new PeriodCloseController.PeriodReopenRequest(REASON, java.util.Collections.nCopies(201, UUID.randomUUID().toString())))).isNotEmpty();
+            int named = com.finapp.accounting.PriorPeriodAdjustments.MAX_NAMED_CORRECTIONS;
+            int most = com.finapp.accounting.PriorPeriodAdjustments.MAX_POSTED_CORRECTIONS;
+            assertThat(named).isEqualTo(200);
+            assertThat(most).as("an approval names those posted and adds itself").isEqualTo(named + 1);
+            String id = UUID.randomUUID().toString();
+            assertThat(validator.validate(new PeriodCloseController.PeriodReopenRequest(REASON, java.util.Collections.nCopies(most, id)))).as("a reopen names all a month can hold").isEmpty();
+            assertThat(validator.validate(new PeriodCloseController.PeriodReopenRequest(REASON, java.util.Collections.nCopies(most + 1, id)))).isNotEmpty();
+            assertThat(validator.validate(new PriorPeriodAdjustmentController.PriorPeriodApprovalRequest("2097-04-05", 1, java.util.Collections.nCopies(named, id), REASON))).as("an approval names the 200 before it").isEmpty();
+            assertThat(validator.validate(new PriorPeriodAdjustmentController.PriorPeriodApprovalRequest("2097-04-05", 1, java.util.Collections.nCopies(named + 1, id), REASON))).as("so the 202nd can never post").isNotEmpty();
         }
+    }
+
+    @Test
+    @DisplayName("P14-TSK-022's review, M-1: a month at the most it can hold still reopens: 201 posted, named in the bodies a door admits, proposed and approved, the receipt listing them all")
+    void aFullMonthStillReopens() {
+        String first = closedWithOnePosted("k-f1");
+        AccountingPeriodId april = periods.lockShared(UOW, MARCH.plusMonths(1)).orElseThrow().id();
+        List<String> all = new ArrayList<>(List.of(first));
+        while (all.size() < com.finapp.accounting.PriorPeriodAdjustments.MAX_POSTED_CORRECTIONS) {
+            all.add(posted(april));
+        }
+        try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
+            assertThat(factory.getValidator().validate(new PeriodCloseController.PeriodReopenRequest("found something", all))).as("the door admits the body").isEmpty();
+        }
+
+        as(ACCOUNTANT, () -> desk.proposeReopen("k-f2", period(), all, "found something"));
+        PeriodCloseDesk.PeriodCloseReceipt reopened = as(CONTROLLER, () -> desk.approveReopen("k-f3", period(), all, "agreed"));
+
+        assertThat(reopened.status()).isEqualTo("OPEN");
+        assertThat(reopened.priorPeriodAdjustments()).hasSize(201);
+        assertThat(as(CONTROLLER, () -> desk.approveReopen("k-f3", period(), all, "agreed"))).as("and its long receipt replays").isEqualTo(reopened);
     }
 
     @Test

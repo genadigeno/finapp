@@ -71,6 +71,16 @@ public final class PriorPeriodAdjustments {
     /** The most lines one adjustment may carry - a bound on the proposal, not a business limit. */
     public static final int MAX_LINES = 100;
 
+    /** The most posted corrections one adjustment's approval may name: a bound on its body, read by {@code @Size}, so a compile-time constant. */
+    public static final int MAX_NAMED_CORRECTIONS = 200;
+
+    /**
+     * The most corrections a month can ever hold {@code POSTED}, every revision's together, and so the most a reopen's body must be able to name (`P14-TSK-022`'s review, M-1). <strong>One more than {@link #MAX_NAMED_CORRECTIONS}, because an approval names
+     * those already posted and then adds itself</strong>: naming 200 takes the month to 201, and the 202nd can never post, since its approval would have to name 201. A reopen adds nothing and names them all, so its bound must reach 201 or the month's last
+     * door closes: once the 202nd is refused, the reopen is the way on. Nothing else moves a row to {@code POSTED}, the approvals of a month serialise on its rows, and a reopen moves a month's revision and not its corrections, so this holds for the month's whole life.
+     */
+    public static final int MAX_POSTED_CORRECTIONS = MAX_NAMED_CORRECTIONS + 1;
+
     /** The most standing proposals one read answers. */
     public static final int PENDING_LIMIT = 100;
 

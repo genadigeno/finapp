@@ -179,7 +179,7 @@ class FinalStatementDeskTest {
             assertThat(view.statement()).contains("\"closingMinor\":\"" + FIGURE + "\"").contains("\"untraced\":\"0\"").contains("\"revision\":\"1\"");
             assertThat(view.statement()).doesNotContain("drillDown").doesNotContain("\"route\"").doesNotContain("\"reasons\"").doesNotContain("/v1/").doesNotContain("ACCOUNTING_READ").doesNotContain("RECONCILIATION_INVESTIGATE");
             assertThat(view.withheld()).containsExactly("drillDown", "notes.closeRecord.reasons", "notes.suspense.route", "sections.route");
-            assertThat(view.doors()).isEqualTo(FinalStatementDesk.DOORS).contains("none of them opens under ACCOUNTING_CLOSE_APPROVE").contains("GET /v1/operator/accounting/periods/{periodId}/close-proposal").contains("hand over this run's id").contains("untraced");
+            assertThat(view.doors()).isEqualTo(FinalStatementDesk.DOORS).contains("none of those opens under ACCOUNTING_CLOSE_APPROVE").contains("The close record's reasons goes with them").contains("GET /v1/operator/accounting/periods/{periodId}/close-proposal").contains("hand over this run's id").contains("untraced");
             assertThat(order).as("read, recorded, then served").containsExactly("snapshot", "recorded");
             assertThat(audited).hasSize(recorded + 1);
             AuditRecord record = audited.get(audited.size() - 1);
@@ -195,7 +195,7 @@ class FinalStatementDeskTest {
     }
 
     @Test
-    @DisplayName("everything else is one 404, indistinguishable: another definition FINAL, the statement PROVISIONAL, GENERATING, FAILED and SUPERSEDED, an unknown id, a malformed one and none at all - the same code, title and detail, and nothing recorded")
+    @DisplayName("everything else is one 404, indistinguishable: another definition FINAL, the statement PROVISIONAL, GENERATING and FAILED, an unknown id, a malformed one and none at all - the same code, title and detail, and nothing recorded (SUPERSEDED is aMonthAfterAReopen's)")
     void everythingElseIsOneNotFound() {
         AccountingPeriodId august = august();
         lockAndClose(august);
