@@ -54,6 +54,7 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/ledger/adjustments", PermissionName.LEDGER_ADJUST),
                     entry("GET /v1/ledger/adjustments/{id}", PermissionName.LEDGER_ADJUST),
                     entry("DELETE /v1/ledger/adjustments/{id}", PermissionName.LEDGER_ADJUST),
+                    // MULTI_FACTOR on this one, its three neighbours not (P14-TSK-022); this register holds permissions, ApprovalAssuranceTest the assurance.
                     entry("POST /v1/ledger/adjustments/{id}/approval", PermissionName.LEDGER_ADJUST),
                     // Transfer reversal (Phase 4), refund (Phase 5), void (P7-TSK-004)
                     entry("POST /v1/transfers/{id}/reversal", PermissionName.TRANSFER_REVERSE),
@@ -506,6 +507,7 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/accounting/prior-period-adjustments", PermissionName.ACCOUNTING_ADJUST_PROPOSE),
                     entry("GET /v1/operator/accounting/prior-period-adjustments", PermissionName.ACCOUNTING_ADJUST_APPROVE),
                     entry("GET /v1/operator/accounting/prior-period-adjustments/{adjustmentId}", PermissionName.ACCOUNTING_ADJUST_APPROVE),
+                    // MULTI_FACTOR on this one, the door's other routes not (P14-TSK-022); ApprovalAssuranceTest holds it.
                     entry("POST /v1/operator/accounting/prior-period-adjustments/{adjustmentId}/approval", PermissionName.ACCOUNTING_ADJUST_APPROVE),
                     entry("POST /v1/operator/accounting/prior-period-adjustments/{adjustmentId}/rejection", PermissionName.ACCOUNTING_ADJUST_APPROVE),
                     entry("GET /v1/operator/accounting/periods/{periodId}/prior-period-adjustments", PermissionName.ACCOUNTING_READ),

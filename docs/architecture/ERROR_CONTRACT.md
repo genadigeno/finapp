@@ -1571,7 +1571,7 @@ stranger-safe: never an amount, a balance, a GL figure or an owner reference.
 
 | Code | Status | Meaning |
 |---|---|---|
-| `accounting.NotFound` | 404 | No accounting record matches the requested identifier - an unknown or a malformed id alike. |
+| `accounting.NotFound` | 404 | No accounting record matches the requested identifier - an unknown or a malformed id alike. At `GET .../report-runs/{runId}/final-statement` (`P14-TSK-022`) also a run of another definition or of any status but `FINAL`, one answer whatever the run is. |
 | `accounting.SelfApprovalRefused` | 403 | A proposal is decided by someone other than its proposer; the proposer may reject it. *(The `credit`/`lending`/`bnpl`/`risk` precedent — a forbidden act, not a conflict. The roles' grants are disjoint but one identity may hold `ACCOUNTANT` and `FINANCIAL_CONTROLLER`, so this, with each four-eyes row's `CHECK`, is the binding control, `INV-AUD-04`.)* |
 | `accounting.MappingInvalid` | 422 | The GL mapping version is not coherent - an unparseable month, an unknown classification or section, a code repeated, a rule naming an account the version does not hold, two rules for one purpose, or a section that does not admit its account's classification; nothing was proposed (`P14-TSK-003`). |
 | `accounting.MappingNotTotal` | 422 | The GL mapping version does not map every purpose of the ledger's chart, as the activation's transaction read it; it was not activated (`INV-ACC-06`; the detail names the unmapped purposes - codes only). |

@@ -762,7 +762,7 @@ Owner decision C6 (A), ADR-0103 F11, ADR-0104's Follow-up. **It moves an asset t
 | Merchant refund (F5), by the merchant or a dispute | Refused, by the domain and `V020`'s trigger, for every writer: the merchant's money stays on its payable. **No rule pays it** (owner item, F12 recommended). Never paid to the customer's wallet as if the obligation were closed. **The merchant reads the neutral `409 bnpl.RefundNotPostable`, naming no cause**: the customer's credit is not the merchant's to read; the operator's door answers `bnpl.ObligationWrittenOff`. Counted `finapp.bnpl.refund{outcome="written_off"}`. |
 | A dispute opened afterwards | Refused, by the domain and `V020`'s trigger: a customer told "still owed" has no dispute door (owner item). |
 | Scheduled instalments, retries, dunning, late fees, accrual, delinquency | The step re-reads under B4 and is `NOT_SERVICED`; the sweep's claim and every lag read filter on `ACTIVE`. |
-| The customer's read | The status, what stands owed, never zero, and a notice that says so. Never "paid", "settled" or "forgiven". |
+| The customer's read | The status, what stands owed, never zero, and a notice that says so and where to take it: a person's review, no outcome promised (`P14-TSK-022`; `OPERATIONS_RUNBOOK.md` section 7.13). Never "paid", "settled" or "forgiven". A dispute is refused with the same route (`PI-007`). |
 | Credit decisioning | Credit exposure v4 leaves F11's lines out, so the obligation keeps counting. Nothing is sent to a bureau; nothing consumes `BnplWrittenOff`. |
 
 **The way back:** none is built; the same owner item as a loan's.
