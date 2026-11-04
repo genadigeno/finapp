@@ -427,6 +427,29 @@ class StatementsDatabaseTest {
         assertThat(generator().regenerate(second.id()).identical()).isTrue();
     }
 
+    @Test
+    @DisplayName("a statement refused, and one abandoned mid-generation, wedge nothing: a FAILED row and a GENERATING one stand on a CLOSED month, the month reopens and closes again past them, the abandoned attempt's completion fails PERIOD_MOVED, and the next ask is FINAL")
+    void aRefusedOrAbandonedStatementWedgesNothing() throws Exception {
+        PeriodCloseFixture.closed(JANUARY);
+        AccountingPeriodId january = id(JANUARY);
+        Actor accountant = person();
+        ReportRuns.Claimed refused = TRANSACTIONS.inTransaction(uow -> runs().claim(uow, BalanceSheetDefinition.CODE, january, RunParameters.none(), accountant, correlation()));
+        ReportRuns.Concluded failed = TRANSACTIONS.inTransaction(uow -> runs().refuse(uow, refused.run().id(), refused.run().attempt(), new ReportRefused(ReportRefused.Reason.OUT_OF_BALANCE, List.of("EUR")).summary(), accountant, refused.run().correlation()));
+        assertThat(failed.run().status()).isEqualTo(RunStatus.FAILED);
+        assertThat(single("SELECT change_summary FROM platform.audit_record WHERE operation = 'accounting.ReportGenerated' AND target_id = '" + refused.run().id().value() + "'")).contains("refusal=OUT_OF_BALANCE:EUR");
+        ReportRuns.Claimed abandoned = TRANSACTIONS.inTransaction(uow -> runs().claim(uow, IncomeStatementDefinition.CODE, january, RunParameters.none(), accountant, correlation()));
+        assertThat(abandoned.run().status()).isEqualTo(RunStatus.GENERATING);
+        ReportGeneration.Generated generated = SNAPSHOTS.read(snapshot -> new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT, ReportRuns.Leases.STANDARD.generationTimeout(), NOW).generate(snapshot, INCOME, abandoned.run().inputs()));
+
+        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, "a correction was found", correlation()));
+        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, "agreed", correlation()));
+        assertThat(TRANSACTIONS.inTransaction(uow -> runs().complete(uow, abandoned.run().id(), abandoned.run().attempt(), generated, accountant)).run().failure()).contains(com.finapp.accounting.RunFailure.PERIOD_MOVED);
+
+        PeriodCloseFixture.closed(JANUARY);
+        assertThat(row(JANUARY).status().name()).isEqualTo("CLOSED");
+        assertThat(ask(SHEET, january, RunParameters.none()).status()).isEqualTo(RunStatus.FINAL);
+    }
+
     // ------------------------------------------------------------------ translated
 
     @Test

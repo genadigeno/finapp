@@ -43,7 +43,7 @@ public final class StatementNotes {
     static final String REFERENCE_CHART = "The GL chart, these statement sections and this layout are reference artefacts, not a statutory chart or a filed statement. Codes are illustrative, and nothing here claims compliance with any accounting framework or regulator;"
             + " a real framework needs qualified review.";
 
-    static final String REVERSALS_FINAL = "Each original is dated in a closed month: a lock needs its previous period closed, so with this month's lock standing every month before it is closed.";
+    static final String REVERSALS_FINAL = "Each original is dated in a closed month, or before the first accounting period: a lock needs its previous period closed, so with this month's lock standing every month before it is closed.";
 
     static final String REVERSALS_PROVISIONAL = "Each original is dated before the month, which may still be open: this month is not locked, so nothing yet says those before it are closed.";
 

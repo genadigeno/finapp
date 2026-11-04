@@ -1282,6 +1282,8 @@ empty, so each is proven able to fail by probes planted in its own source.
 - The frozen suspense register ages in its own bands (`P14-TSK-017`'s review M-10, `INV-ACC-04`): `ReconciliationMonthReads` and its fold depend on
   no part of `ProductReconciliationDisclosure`, whose table may change without moving a FINAL body.
   *(ArchUnit: `theFrozenRegisterAgesInItsOwnBands`)*
+- A close waits for no statement (`P14-TSK-016`, `INV-ACC-09`): the close's machine depends on neither `BalanceSheetDefinition` nor `IncomeStatementDefinition`, and `ReportRuns.claim` has two callers, the accountant's door and `FinalTrialBalanceReader`, whose one claim is the trial balance's: a statement that refuses cannot leave a month unable to close.
+  *(ArchUnit: `theCloseWaitsForNoStatement`)*
 
 ### Persistence boundary
 

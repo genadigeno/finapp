@@ -2216,6 +2216,12 @@ class OwnershipIsScopedTest {
                                         + " under the period FOR SHARE; a freshness read on the database's clock, no"
                                         + " owner to scope by.")),
                     Map.entry(
+                            "com.finapp.app.accounting.AccountingCloseRecordReads.ofRevision",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-016. A statement's own period, read in the run's read-only snapshot by the id and revision the run pinned at its claim -"
+                                        + " the close's codes, counts and ids, no person or reason; a calendar month of the platform's books, no owner to scope by.")),
+                    Map.entry(
                             "com.finapp.app.accounting.LedgerTrialBalanceReads.period",
                             new Entry(
                                     Scope.ADMINISTERED,
