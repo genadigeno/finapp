@@ -182,6 +182,16 @@ class RegulatorySubmissionsTest {
         Acted sent = world.submitted(world.approved(world.validated(second)));
         assertThat(sent.status()).isEqualTo(SubmissionStatus.SUBMITTED);
         assertThatThrownBy(() -> world.drafted(obligation, JANUARY)).isInstanceOf(RegulatorySubmissions.SubmissionLive.class).hasMessageContaining("correction");
+
+        // Another month, so nothing above answers: a retired version, then this build holding no adapter for the one in force.
+        world.closed(FEBRUARY);
+        world.issued(FEBRUARY, RegulatoryWorld.body(100_00, 100_00, 50_00, 50_00));
+        RegulatoryObligationId inForce = world.active(2, RegulatoryWorld.configuration());
+        assertThatThrownBy(() -> world.drafted(obligation, FEBRUARY)).isInstanceOf(RegulatorySubmissions.SubmissionStale.class).hasMessageContaining("not in force");
+        RegulatorySubmissions noAdapter = new RegulatorySubmissions(world.periods, world.store, world.obligationStore, world.runs, new RegulatoryAdapters(List.of()), (uow, record) -> { }, (uow, envelope, payload, mediaType) -> { }, world.ids, world.clock,
+                Duration.ofDays(1));
+        assertThatThrownBy(() -> noAdapter.draft(UOW, new Draft(inForce, world.row(FEBRUARY).id(), Optional.empty(), REASON), PREPARER, world.correlation())).isInstanceOf(RegulatorySubmissions.SubmissionStale.class).hasMessageContaining("no adapter");
+        assertThat(world.store.standing(UOW, 100)).extracting(RegulatorySubmissionStore.Row::month).doesNotContain(FEBRUARY);
     }
 
     @Test
@@ -228,9 +238,9 @@ class RegulatorySubmissionsTest {
         assertThat(world.store.find(UOW, original.id()).orElseThrow().correctedBy()).contains(correction.id());
         assertThat(world.store.find(UOW, original.id()).orElseThrow().status()).isEqualTo(SubmissionStatus.REJECTED);
 
-        // A second correction of the one original: refused while the first stands.
+        // A second correction of the one original: refused while the first stands, by the machine's own judgement under the original's lock, the unique only a backstop.
         assertThatThrownBy(() -> machine.draft(UOW, new Draft(obligation, january, Optional.of(original.id()), REASON), PREPARER, world.correlation()))
-                .isInstanceOf(RegulatorySubmissions.SubmissionLive.class);
+                .isInstanceOf(RegulatorySubmissions.SubmissionLive.class).hasMessageContaining("already has a correction");
 
         // Withdrawn, it frees the original for another.
         machine.withdraw(UOW, correction.id(), REASON, PREPARER, world.correlation());
@@ -294,6 +304,28 @@ class RegulatorySubmissionsTest {
     }
 
     /** Reopened, a run re-issued under the new revision, closed again. */
+    @Test
+    @DisplayName("each judgement holds alone: a month that moved while its run reads FINAL; a run no longer FINAL in a month that has not moved")
+    void eachJudgementHoldsAlone() {
+        // The month alone. A reopen supersedes its runs in one transaction, so only a defect or a raw writer could leave this: that is why the month is compared as well as the run.
+        Acted january = world.drafted(obligation, JANUARY);
+        AccountingPeriodStore.PeriodRow row = world.row(JANUARY);
+        assertThat(world.periods.markReopened(UOW, row.id(), row.revision())).isTrue();
+        world.reclosed(JANUARY);
+        assertThat(world.row(JANUARY).status()).isEqualTo(PeriodStatus.CLOSED);
+        assertThat(world.runs.all().stream().filter(run -> run.period().equals(JANUARY)).findFirst().orElseThrow().status()).isEqualTo(RunStatus.FINAL);
+        assertThatThrownBy(() -> world.validated(january)).isInstanceOf(RegulatorySubmissions.SubmissionStale.class).hasMessageContaining("moved");
+
+        // The run alone, in a month of its own, whose revision has not moved.
+        world.closed(FEBRUARY);
+        world.issued(FEBRUARY, RegulatoryWorld.body(100_00, 100_00, 50_00, 50_00));
+        Acted february = world.drafted(obligation, FEBRUARY);
+        int revision = world.row(FEBRUARY).revision();
+        world.runs.supersedeFinal(UOW, world.row(FEBRUARY).id(), world.correlation());
+        assertThat(world.row(FEBRUARY).revision()).isEqualTo(revision);
+        assertThatThrownBy(() -> world.validated(february)).isInstanceOf(RegulatorySubmissions.SubmissionStale.class).hasMessageContaining("no longer stands FINAL");
+    }
+
     private void roundTrip() {
         world.reopened(JANUARY);
         world.reclosed(JANUARY);
@@ -411,6 +443,11 @@ class RegulatorySubmissionsTest {
     @Test
     @DisplayName("every act is a person's, with a reason where one is required; the platform, a service or a merchant is refused; a blank or instrument-bearing reason is refused")
     void everyActIsAPersons() {
+        for (ActorType type : ActorType.values()) {
+            if (type != ActorType.CUSTOMER && type != ActorType.EMPLOYEE) {
+                assertThatThrownBy(() -> machine.draft(UOW, new Draft(obligation, world.row(JANUARY).id(), Optional.empty(), REASON), new Actor("not-a-person", type), world.correlation())).as(type.name()).isInstanceOf(IllegalArgumentException.class);
+            }
+        }
         Actor service = new Actor("svc", ActorType.SERVICE);
         assertThatThrownBy(() -> machine.draft(UOW, new Draft(obligation, world.row(JANUARY).id(), Optional.empty(), REASON), service, world.correlation())).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> machine.draft(UOW, new Draft(obligation, world.row(JANUARY).id(), Optional.empty(), " "), PREPARER, world.correlation())).isInstanceOf(AccountingReasons.ReasonRequired.class);
@@ -714,6 +751,13 @@ class RegulatorySubmissionsTest {
         assertThat(view.stillStands()).isTrue();
         assertThat(view.blockedBy()).isEmpty();
         assertThat(view.obligation().id()).isEqualTo(obligation);
+
+        // A line its run does not explain reads as not agreeing, whatever put it there, and the run's own figure is beside it.
+        world.store.forgeLineForTest(draft.id(), 1, java.math.BigInteger.valueOf(999_999));
+        List<RegulatorySubmissions.LineView> forged = machine.view(UOW, draft.id()).lines();
+        assertThat(forged.get(0).agrees()).isFalse();
+        assertThat(forged.get(0).figure().orElseThrow().minor()).isNotEqualTo(forged.get(0).line().minor());
+        assertThat(forged.subList(1, forged.size())).allSatisfy(line -> assertThat(line.agrees()).isTrue());
     }
 
     @Test

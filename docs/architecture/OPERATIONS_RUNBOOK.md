@@ -1586,3 +1586,29 @@ for an operator's read, and keep the permits low, since the two together are wha
 **`422 accounting.PriorPeriodAdjustmentInvalid` naming a purpose not mapped.** The month it lands in could not close with that line on it: activate a GL mapping version that maps it, effective from an open month.
 
 **Before reopening a month.** The reopen's receipts list the adjustments already posted against it, in `priorPeriodAdjustments`. Its figures at the next revision still show what those corrected, each entry being dated in a later month. **A direct correction in the reopened month on top of one would correct it twice**, and nothing refuses that: the generic adjustment door knows nothing of accounting. Read the list, and agree who corrects what.
+
+### 10.6 A regulatory return that needs a person
+
+Every return here is `REFERENCE`, through a simulated adapter (ADR-0118, C4): no jurisdiction, channel or form is real, it was delivered to no one, and nothing here is a statement that any obligation was met. The alerts are `P14-TSK-020`'s; the numbers are `finapp.accounting.regulatory.attention{kind}` and `finapp.accounting.regulatory.submission{outcome}`. `GET /v1/operator/regulatory/submissions` lists what stands, with `REGULATORY_REPORT_PREPARE`. Each row's `statusMeaning` says what its status says.
+
+**A return `REJECTED`.** The provider's answer to what was sent, its code on the row, its bytes base64 on the read. Read them as data; they are untrusted. Correct by a new draft naming it in `correctsSubmissionId`.
+
+**A return `REFUSED`.** A controller would not attest it, and nothing was sent. A plain new draft is free. **`WITHDRAWN`**: the same, a preparer's.
+
+**`attention{kind=overdue}`: `SUBMITTED` past its answer horizon, one day by default.** The inquiry leg goes on. Check `finapp.accounting.close.leg.failed{leg=inquiry}` and the read's latest answer. An `UNKNOWN` answer has no door: nobody here may assert what the provider holds. Wait, or escalate to whoever runs the provider.
+
+**`attention{kind=resends_exhausted}`: five resends spent, the provider still answering "not received".** Find out why, then `POST .../{submissionId}/non-delivery` under `REGULATORY_REPORT_SUBMIT` from a `MULTI_FACTOR` session, and correct by a new draft naming it. The door also opens on a definite "not received" past the horizon, and refuses `409 accounting.RegulatorySubmissionStale` over an `UNKNOWN` answer or a resend in flight. Do not conclude it merely because it is slow.
+
+**`attention{kind=overtaken}`: a return sent, and its month since reopened.** It stands, frozen: it was true when it was sent, and it is never edited. Its read says `monthMoved` with both revisions. **The reopen's receipt does not list these yet; check this number before and after a reopen.** Once the month is re-closed and its runs re-issued, decide whether a correction is owed, then draft one naming the original.
+
+**`attention{kind=stale_unsent}`: a return not yet sent whose month has moved.** No act going forward will pass. `POST .../withdrawal` (`DRAFT`, `VALIDATED`, `APPROVED`) or `.../refusal` (`VALIDATED`, `APPROVED`), each asking nothing of the month, then draft again.
+
+**`attention{kind=contrary}`: a provider's answer disagreeing with what a concluded return says.** Kept, flagged and audited as `regulatory.SubmissionContraryAnswer`, and never an edge: the row still says what it said. Read the answer and escalate. Do not resend, and do not write to the row.
+
+**`outcome=run_bytes_differ`, `409 accounting.RegulatoryRunBytesDiffer`.** A FINAL run's bytes no longer prove against its stored hash. Report runs are frozen, so this means someone wrote to one. Treat it as an integrity incident and do not draft around it.
+
+**`409 accounting.RegulatorySourceNotFinal`.** The month is not `CLOSED`, or a source has no FINAL run at its present revision: an accountant issues it. **`422 accounting.RegulatoryFigureUnresolved`.** A form line's path found nothing, more than one, or no amount in that run; the detail names the line and path. Never fill it: the obligation's next version corrects the mapping, or the books answer why nothing is there.
+
+**`403 accounting.SelfApprovalRefused`.** The preparer approving, or the approver sending. One identity holding two roles is why it exists. Another person acts.
+
+**To rehearse.** `finapp.accounting.regulatory.simulation` chooses what the simulated adapter answers: `ACKNOWLEDGE` by default, `REJECT`, `UNKNOWN_THEN_ACKNOWLEDGE`, `UNKNOWN`, `NEVER_RECEIVED`, `UNAVAILABLE`. An outside environment only.

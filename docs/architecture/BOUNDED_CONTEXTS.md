@@ -569,7 +569,7 @@ disclosure and fx's reference rates through ports `app` implements.
   `RegulatoryReportingProvider` (simulated, owner decision C4). *Owned state:* Report Run, Regulatory Obligation,
   Regulatory Submission. *Not owned:* the operational live reports (lending, bnpl, reconciliation, merchant, risk keep
   theirs, labelled operational). *Transaction boundary:* claim and completion its own; reads `REPEATABLE READ READ ONLY`
-  (`INV-ACC-14`). *Failure:* a generator's death re-claimed by lease; a provider's unknown answer an inquiry.
+  (`INV-ACC-14`). *Failure:* a generator's death re-claimed by lease; a provider's unknown answer an inquiry. *(As built, `P14-TSK-018`: the framework sits in module `accounting` outside its read-only `reporting` package, which holds no writer; a return reads a FINAL run through its store and takes the period row, and writes only its own six tables.)*
 - **Ledger (7)** — gains the Posting Cutoff, an index for period reads and the `ACCOUNTING` adjustment origin; its
   grants, its single-writer rule and its trial balance are unchanged.
 - **Lending (18)** — its daily accrual floors its posting date at the first open date when the accrual date is locked

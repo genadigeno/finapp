@@ -41,9 +41,6 @@ public interface RegulatorySubmissionStore {
     /** Whether a row of the form and month has reached {@code SUBMITTED} or past it. */
     boolean anySent(Connection unitOfWork, String jurisdiction, String form, AccountingPeriodId period);
 
-    /** The row of the form and month holding {@code regulatory_submission_one_live}. */
-    Optional<Row> liveOf(Connection unitOfWork, String jurisdiction, String form, AccountingPeriodId period);
-
     /** The correction of {@code original} that stands: one not refused or withdrawn. */
     Optional<RegulatorySubmissionId> correctionOf(Connection unitOfWork, RegulatorySubmissionId original);
 

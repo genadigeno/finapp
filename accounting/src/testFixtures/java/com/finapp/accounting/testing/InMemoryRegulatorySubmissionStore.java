@@ -61,6 +61,12 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
         return List.copyOf(events);
     }
 
+    /** A line as a defect or a raw writer might leave it: what a reader's comparison exists to catch. */
+    public void forgeLineForTest(RegulatorySubmissionId id, int ordinal, java.math.BigInteger minor) {
+        lines.compute(id, (ignored, held) -> held.stream().map(line -> line.ordinal() != ordinal ? line
+                : new RegulatoryFormLine(line.ordinal(), line.code(), line.label(), line.currency(), minor, line.scale(), line.run(), line.runSha256(), line.source(), line.figure())).toList());
+    }
+
     /** The kept answers, in order. */
     public List<NewAnswer> keptAnswers() {
         return List.copyOf(answers);
@@ -164,11 +170,6 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
     public boolean anySent(Connection unitOfWork, String jurisdiction, String form, AccountingPeriodId period) {
         return rows.values().stream().map(Stored::row)
                 .anyMatch(row -> row.jurisdiction().equals(jurisdiction) && row.form().equals(form) && row.period().equals(period) && row.status().immutable());
-    }
-
-    @Override
-    public Optional<Row> liveOf(Connection unitOfWork, String jurisdiction, String form, AccountingPeriodId period) {
-        return Optional.ofNullable(live.get(liveKey(jurisdiction, form, period))).flatMap(id -> find(unitOfWork, id));
     }
 
     @Override

@@ -215,6 +215,13 @@ class CredentialReachesNoEmittedSinkTest {
                         "BnplWriteOffProposalRequest",
                         "BnplWriteOffApprovalRequest",
                         "BnplWriteOffRejectionRequest",
+                        // P14-TSK-018: the regulatory doors. A reason, the hash and revision an approver or sender names, a configuration of codes and paths; no credential.
+                        "RegulatoryObligationRequest",
+                        "RegulatoryObligationActivationRequest",
+                        "RegulatoryObligationRejectionRequest",
+                        "RegulatorySubmissionDraftRequest",
+                        "RegulatorySubmissionAttestationRequest",
+                        "RegulatorySubmissionDecisionRequest",
                         // P1-TSK-026 changed what this entry MEANS without changing the entry, and
                         // that is worth recording rather than leaving as a silent reclassification.
                         // It was here because the set is every schema REACHABLE from a request

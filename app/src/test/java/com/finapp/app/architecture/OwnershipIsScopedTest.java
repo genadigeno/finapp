@@ -2176,6 +2176,116 @@ class OwnershipIsScopedTest {
                                     "P14-TSK-013. The id comes only from the row this transaction locked FOR UPDATE, conditional on PROPOSED - the platform's books, no owner to scope by, behind"
                                         + " @RequiresPermission(ACCOUNTING_ADJUST_APPROVE).")),
                     Map.entry(
+                            "com.finapp.accounting.JdbcRegulatoryObligationStore.one",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. find, lock and lockShared's one helper: an obligation version by the id a permission-guarded request or a return's row names - configuration data, no owner to scope by, behind @RequiresPermission(REGULATORY_REPORT_PREPARE or REGULATORY_REPORT_APPROVE), or the drive's and a draft's own read.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatoryObligationStore.decided",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. markActive and markRejected's one helper. The id comes only from the row this transaction locked FOR UPDATE, conditional on PROPOSED - configuration data, no owner to scope by, behind @RequiresPermission(REGULATORY_REPORT_APPROVE).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatoryObligationStore.markRetired",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. The id comes only from the form's rows this transaction locked FOR UPDATE at an activation, conditional on ACTIVE - configuration data, no owner to scope by, behind @RequiresPermission(REGULATORY_REPORT_APPROVE).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.one",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. find and lock's one helper: a return by the id a permission-guarded request or the drive's claimed row names - a return of the platform's reference reporting, no owner to scope by, behind @RequiresPermission(REGULATORY_REPORT_PREPARE, REGULATORY_REPORT_APPROVE or REGULATORY_REPORT_SUBMIT).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.closed",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. markRefused and markWithdrawn's one helper. The id comes only from the row this transaction locked FOR UPDATE, conditional on its status - a return of the platform's reference reporting, no owner to scope by, behind @RequiresPermission(REGULATORY_REPORT_APPROVE or REGULATORY_REPORT_PREPARE).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.markValidated",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. The id comes only from the row this transaction locked FOR UPDATE, conditional on DRAFT - a return of the platform's reference reporting, no owner to scope by, behind @RequiresPermission(REGULATORY_REPORT_PREPARE).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.markApproved",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. The id comes only from the row this transaction locked FOR UPDATE, conditional on VALIDATED - a return of the platform's reference reporting, no owner to scope by, behind @RequiresPermission(REGULATORY_REPORT_APPROVE).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.markSubmitted",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. The id comes only from the row this transaction locked FOR UPDATE, conditional on APPROVED - a return of the platform's reference reporting, no owner to scope by, behind @RequiresPermission(REGULATORY_REPORT_SUBMIT).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.markUndelivered",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. The id comes only from the row this transaction locked FOR UPDATE, conditional on SUBMITTED and a definite not received - a return of the platform's reference reporting, no owner to scope by, behind @RequiresPermission(REGULATORY_REPORT_SUBMIT).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.markAcknowledged",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. The drive's: the id comes only from the row this transaction locked FOR UPDATE, conditional on SUBMITTED - a return of the platform's reference reporting, no owner to scope by, the platform recording a provider's answer.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.markRejected",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. The drive's: the id comes only from the row this transaction locked FOR UPDATE, conditional on SUBMITTED - a return of the platform's reference reporting, no owner to scope by, the platform recording a provider's answer.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.await",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. The drive's: the id comes only from a row this worker claimed, conditional on the attempt it holds - a return of the platform's reference reporting, no owner to scope by, the platform moving its own permit.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.permitResend",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. The drive's: the id comes only from a row this worker claimed, conditional on the attempt it holds, a definite not received and the bound - a return of the platform's reference reporting, no owner to scope by, the platform counting its own resend.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.claim",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. The sending door's drive: the id of the return whose SUBMITTED edge that door just committed, behind @RequiresPermission(REGULATORY_REPORT_SUBMIT) - a return of the platform's reference reporting, no owner to scope by; SKIP LOCKED on a permit that has come.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.answers",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. A return's kept answers by the id of the row the permission-guarded read named - a return of the platform's reference reporting, no owner to scope by, served only on the audited reads as base64.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.lines",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. A return's lines by the id of the row the permission-guarded read or act named - a return of the platform's reference reporting, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.sources",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. A return's source runs by the id of the row the permission-guarded read or act named - a return of the platform's reference reporting, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.content",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. A return's frozen content by the id of a row the permission-guarded read names or a worker claimed - a return of the platform's reference reporting, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.correctionOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. The correction standing of the original a draft under @RequiresPermission(REGULATORY_REPORT_PREPARE) named, read under that original's FOR UPDATE - a return of the platform's reference reporting, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.anySent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. Whether a form and month holds a return sent, under the period FOR SHARE, for a draft behind @RequiresPermission(REGULATORY_REPORT_PREPARE) - a return of the platform's reference reporting, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.insertLines",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. The id was generated in this transaction, for the return it is born with - a return of the platform's reference reporting, no owner to scope by, behind @RequiresPermission(REGULATORY_REPORT_PREPARE).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.insertSource",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. The id was generated in this transaction, for the return it is born with - a return of the platform's reference reporting, no owner to scope by, behind @RequiresPermission(REGULATORY_REPORT_PREPARE).")),
+                    Map.entry(
                             "com.finapp.accounting.JdbcValuationRateSetStore.proposedOf",
                             new Entry(
                                     Scope.ADMINISTERED,

@@ -57,7 +57,6 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
     static final String ANY_SENT_SQL = "SELECT EXISTS (SELECT 1 FROM accounting.regulatory_submission WHERE jurisdiction_code = ? AND form_code = ? AND period_id = ?"
             + " AND status IN ('SUBMITTED', 'ACKNOWLEDGED', 'REJECTED', 'UNDELIVERED'))";
 
-    static final String LIVE_OF_SQL = ROW + " WHERE s.jurisdiction_code = ? AND s.form_code = ? AND s.period_id = ? AND s.status IN ('DRAFT', 'VALIDATED', 'APPROVED', 'SUBMITTED')";
 
     static final String CORRECTION_OF_SQL = "SELECT id FROM accounting.regulatory_submission WHERE corrects_submission_id = ? AND status NOT IN ('REFUSED', 'WITHDRAWN')";
 
@@ -234,19 +233,6 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
             }
         } catch (SQLException failure) {
             throw failed("reading whether a return was sent", failure);
-        }
-    }
-
-    @Override
-    public Optional<Row> liveOf(Connection unitOfWork, String jurisdiction, String form, AccountingPeriodId period) {
-        try (PreparedStatement read = unitOfWork.prepareStatement(LIVE_OF_SQL)) {
-            read.setString(1, jurisdiction);
-            read.setString(2, form);
-            read.setObject(3, period.value());
-            List<Row> rows = rows(read);
-            return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
-        } catch (SQLException failure) {
-            throw failed("reading a form's live return", failure);
         }
     }
 

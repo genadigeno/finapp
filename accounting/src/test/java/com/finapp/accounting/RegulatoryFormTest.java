@@ -57,6 +57,10 @@ class RegulatoryFormTest {
         assertThat(why("body.rows[glAccount=1000,currency=EUR].closing")).isEqualTo(FigurePath.Why.MORE_THAN_ONE);
         assertThat(why("body.rows[glAccount=1000,currency=*].closing")).isEqualTo(FigurePath.Why.MORE_THAN_ONE);
         assertThat(why("body.equation.assets")).isEqualTo(FigurePath.Why.MORE_THAN_ONE);
+        CanonicalJson.Obj twoCurrencies = CanonicalJson.object().put("body", CanonicalJson.object().put("rows", CanonicalJson.array()
+                .add(CanonicalJson.object().put("glAccount", "1000").put("currency", "EUR").put("closing", RegulatoryWorld.money("EUR", 1)))
+                .add(CanonicalJson.object().put("glAccount", "1000").put("currency", "USD").put("closing", RegulatoryWorld.money("USD", 1)))));
+        assertThatThrownBy(() -> FigurePath.of("body.rows[glAccount=1000].closing").resolve(twoCurrencies)).as("two rows found and no wildcard asked for: never two lines").isInstanceOf(FigurePath.Unresolved.class).hasMessageContaining("MORE_THAN_ONE");
         assertThat(why("body.equation[currency=EUR].assets[x=y].minor")).isEqualTo(FigurePath.Why.NOTHING);
         assertThat(why("body.equation[currency=EUR].currency")).isEqualTo(FigurePath.Why.NOT_AN_AMOUNT);
         CanonicalJson.Obj lying = CanonicalJson.object().put("body", CanonicalJson.object().put("rows", CanonicalJson.array()
@@ -181,6 +185,7 @@ class RegulatoryFormTest {
         assertThat(validated(RegulatoryRuleType.NOT_LESS_THAN, List.of("A"), List.of("C"), amount("A", "EUR", 2), amount("C", "EUR", 3)).passed()).isFalse();
         assertThat(validated(RegulatoryRuleType.NON_NEGATIVE, List.of("A"), List.of(), amount("A", "EUR", 0)).passed()).isTrue();
         assertThat(validated(RegulatoryRuleType.NON_NEGATIVE, List.of("A"), List.of(), amount("A", "EUR", -1)).passed()).isFalse();
+        assertThat(validated(RegulatoryRuleType.EQUALS, List.of("A"), List.of("C"), amount("A", "EUR", 900_719_925_474_099_300L), amount("C", "EUR", 900_719_925_474_099_200L)).passed()).as("exact, past what a double can tell apart").isFalse();
         RegulatoryFormLine sameValue = new RegulatoryFormLine(1, "C", "A line", "EUR", BigInteger.valueOf(100), 3, ReportRunId.next(IDS), "h", "TRIAL_BALANCE", "body.a.b");
         assertThat(validated(RegulatoryRuleType.EQUALS, List.of("A"), List.of("C"), amount("A", "EUR", 10), sameValue).passed()).isTrue();
     }

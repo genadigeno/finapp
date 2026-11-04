@@ -12,6 +12,8 @@ import com.finapp.accounting.RegulatorySubmissions;
 import com.finapp.accounting.ReportRunId;
 import com.finapp.accounting.ReportRunStore;
 import com.finapp.accounting.ReportRuns;
+import com.finapp.accounting.RunBasis;
+import com.finapp.accounting.RunStatus;
 import com.finapp.accounting.reporting.CanonicalJson;
 import com.finapp.accounting.reporting.ReportDefinitions;
 import com.finapp.accounting.reporting.ReportGeneration;
@@ -133,11 +135,19 @@ public final class RegulatoryWorld {
 
     /** A FINAL run of {@link #SOURCE} for {@code month} with {@code body}, as a generator would complete it. */
     public ReportRunId issued(YearMonth month, CanonicalJson.Obj body) {
-        ReportRuns.Claimed claimed = reportRuns.claim(UOW, SOURCE, row(month).id(), RunParameters.none(), PREPARER, correlation());
-        if (!claimed.mine()) {
+        // Born through the store, as ReportRuns.claim would: only the door and the close's one trial balance claim a run (ReportingNeverWritesTest), and this class is imported beside them.
+        AccountingPeriodStore.PeriodRow period = row(month);
+        RunBasis basis = RunBasis.of(period.status());
+        ReportRunStore.RunKey key = new ReportRunStore.RunKey(SOURCE, 1, period.id(), RunParameters.none().hash());
+        Optional<ReportRunStore.RunRow> latest = runs.latest(UOW, key);
+        if (latest.filter(held -> held.status() == RunStatus.FINAL && held.periodRevision() == period.revision()).isPresent()) {
             throw new IllegalStateException("the run was already issued");
         }
-        ReportRunStore.RunRow run = claimed.run();
+        int revision = latest.map(held -> held.revision() + 1).orElse(1);
+        Optional<AccountingPeriodStore.Pin> pin = basis == RunBasis.FINAL ? period.pinned() : Optional.empty();
+        runs.insertIfAbsent(UOW, new ReportRunStore.NewRun(ReportRunId.next(ids), key, revision, month, period.revision(), RunParameters.none(), basis, basis == RunBasis.FINAL ? period.lockedAt() : Optional.empty(),
+                pin.map(AccountingPeriodStore.Pin::id), pin.map(AccountingPeriodStore.Pin::version), PREPARER, ReportRuns.Leases.STANDARD.lease(), correlation()));
+        ReportRunStore.RunRow run = runs.at(UOW, key, revision).orElseThrow();
         String content = CanonicalJson.text(CanonicalJson.object().put("definition", SOURCE).put("period", month.toString()).put("body", body));
         reportRuns.complete(UOW, run.id(), run.attempt(), new ReportGeneration.Generated(content, CanonicalJson.sha256(content), Optional.empty()), PREPARER);
         return run.id();

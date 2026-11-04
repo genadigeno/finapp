@@ -26,6 +26,26 @@ resubmission. Inventing a legal obligation would be worse than having none.
 4. **The first obligation** is a reference **safeguarding position return** (C13): customer and merchant liabilities vs
    cash and clearing receivables, with `lending_funded` (ADR-0096 §6) subtracted.
 
+## As built
+
+`P14-TSK-018`, 2026-11-04, accounting `V010`. Status stays `Proposed` until the owner ratifies the phase's ADRs.
+
+**`SubmissionStatus` is widened.** Decision 2's line has no door out of a state a person refuses to attest, a preparer takes back, or a provider says it never received, and a state no door leaves is a return nobody can end. Appended: `REFUSED` (a controller's: nothing sent; distinct from `REJECTED`, the provider's answer to what was sent, in name, event, audit and reader's text), `WITHDRAWN` (a preparer's: nothing sent), `UNDELIVERED` (a person's conclusion, only on the provider's definite "not received" with the resends spent or the horizon past). The machine: `DRAFT → VALIDATED | WITHDRAWN`; `VALIDATED → APPROVED | REFUSED | WITHDRAWN`; `APPROVED → SUBMITTED | REFUSED | WITHDRAWN`; `SUBMITTED → ACKNOWLEDGED | REJECTED | UNDELIVERED`. A failed validation stays `DRAFT`, recorded once; its way on is a withdrawal and a new draft. A correction references only `ACKNOWLEDGED`, `REJECTED` or `UNDELIVERED`; after `REFUSED` or `WITHDRAWN` a plain new draft is free.
+
+**Status never identifies the books.** `CLOSED` round-trips, so every act going forward compares the period's revision and each run's id and hash, its bytes re-proved, under the period row: in the domain, and again in `regulatory_submission_judge_stands` for a raw writer. A reopen's approval holds that row `FOR UPDATE`, so it and a submit serialise and each sees what the other committed. There is no third order.
+
+**A return sent and then overtaken stands.** It is frozen, and it was true when sent. It is flagged on every read and counted, and it is not edited, withdrawn or re-sent; a correction is a new submission naming it, one per original.
+
+**"An unknown answer an inquiry, never a re-submit" is held, and one more case added:** a resend, only on the provider's *definite* "not received", under the same id, at most five, each counted and committed before its call with `last_answer = RESENDING`, so no person can conclude non-delivery over a send in flight. The provider deduplicates on the id, so this is the first send, not a second return. `UNKNOWN` forever has no person's door: nobody here may assert what a regulator holds; the row reads overdue, the gauge counts it, and the inquiry goes on (owner item).
+
+**An answer disagreeing with a concluded return is kept, flagged, audited and metered, and is never an edge.** A provider's answer is untrusted bytes: at most 64 KiB kept, and an answer over the bound, of a malformed reference or code, or contradicting its own call decides nothing.
+
+**Decision 1 as built:** an obligation enters by four-eyes doors, not a migration: proposed under `REGULATORY_REPORT_PREPARE`, activated by a second person under `REGULATORY_REPORT_APPROVE` from a `MULTI_FACTOR` session; a closed rule vocabulary and a closed figure path grammar; `standing` `REFERENCE` by `CHECK`; nothing seeded. **Decision 4 is `P14-TSK-019`'s.**
+
+**Beyond the Consequences' sentence on roles:** one identity can hold two roles until Phase 15's separation at assignment, so the preparer never approves and the approver never sends, each held at the act and by `CHECK`. A preparer may send. The approver reads what they attest under `REGULATORY_REPORT_APPROVE`, its figures under their own permission; `ACCOUNTING_READ` is granted to no one new, and a view says what a role cannot open.
+
+**What a real adapter changes:** its own bean in `RegulatoryReportingBeans`; a call timeout below the two-minute lease; a format verified against the regulator's specification; a jurisdiction; a migration widening `standing`; a review of `regulatory_provider_answer.raw`'s classification. The machine, the driver and the doors do not change.
+
 ## Alternatives Considered
 
 ### Model a named real regime now
