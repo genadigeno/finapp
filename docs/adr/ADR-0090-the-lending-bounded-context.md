@@ -150,7 +150,7 @@ ADR-0084 §4 (credit decides and moves no money; lending begins where credit sto
 10. **Deferred, each with an owner** (§17): refinance — a new decision and a two-account atomic
     payoff — owner: the Phase 11 → 12 transition, which names the later lending phase that takes
     it; write-off, charge-off, provisioning and IFRS 9 staging — Phase 14 (`LOAN_WRITE_OFF_EXPENSE`
-    is seeded now, posted by nothing, so the account plan does not change later); collections case
+    is seeded now, so the account plan does not change later; *as built by `P14-TSK-021`, owner decision C6 (A): the write-off alone, under four eyes, with no automatic charge-off; provisioning and IFRS 9 staging stay deferred*); collections case
     management — Phase 13, consuming `LoanDelinquencyChanged` and `LoanDefaulted`; BNPL — Phase 12;
     consumer-credit-law features — none (L4); variable rates; external inbound repayment (A11);
     the agreement and evidence purge — Phase 15.

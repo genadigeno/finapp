@@ -357,6 +357,40 @@ class PurposeReportDefinitionTest {
     }
 
     @Test
+    @DisplayName("P14-TSK-021: a write-off in a later month moves no byte of LOAN_PORTFOLIO's or BNPL_EXPOSURE's FINAL for an earlier one - neither"
+            + " reads a status; in its own month the account does not vanish: the book's rows hold its credits, and the expense is not the book's")
+    void aWriteOffMovesNoEarlierFinalAndVanishesFromNoReport() {
+        Map<String, String[]> books = Map.of(
+                "LOAN_PORTFOLIO", new String[] {"LOAN_PRINCIPAL/LOAN", "LOAN_FEES_DUE/LOAN", "LOAN_WRITE_OFF_EXPENSE/OPERATIONAL"},
+                "BNPL_EXPOSURE", new String[] {"BNPL_PRINCIPAL/BNPL_OBLIGATION", "BNPL_FEES_DUE/BNPL_OBLIGATION",
+                        "BNPL_WRITE_OFF_EXPENSE/OPERATIONAL"});
+        books.forEach((code, keys) -> {
+            InMemoryTrialBalanceReads reads = books();
+            reads.post(MONTH.atDay(5), EARLY, "EUR", 2, 500_00, keys[0], CASH);
+            reads.post(MONTH.atDay(5), EARLY, "EUR", 2, 20_00, keys[1], FEES);
+            PurposeReportDefinition definition = SIX.get(code).apply(reads);
+            String issued = CanonicalJson.text(definition.generate(SNAPSHOT, inputs(RunBasis.FINAL)));
+
+            // The entry a month on: DR the expense, CR each asset to zero.
+            reads.post(MONTH.plusMonths(1).atDay(3), CUT.plusSeconds(3_600), "EUR", 2, 500_00, keys[2], keys[0]);
+            reads.post(MONTH.plusMonths(1).atDay(3), CUT.plusSeconds(3_600), "EUR", 2, 20_00, keys[2], keys[1]);
+            assertThat(CanonicalJson.text(definition.generate(SNAPSHOT, inputs(RunBasis.FINAL)))).as(code).isEqualTo(issued);
+
+            // The same entry inside the month: the rows stand, the credits named, and the expense is no row of the book's report.
+            InMemoryTrialBalanceReads within = books();
+            within.post(MONTH.atDay(5), EARLY, "EUR", 2, 500_00, keys[0], CASH);
+            within.post(MONTH.atDay(5), EARLY, "EUR", 2, 20_00, keys[1], FEES);
+            within.post(MONTH.atDay(9), EARLY, "EUR", 2, 500_00, keys[2], keys[0]);
+            within.post(MONTH.atDay(9), EARLY, "EUR", 2, 20_00, keys[2], keys[1]);
+            String body = CanonicalJson.text(SIX.get(code).apply(within).generate(SNAPSHOT, inputs(RunBasis.FINAL)));
+            assertThat(body).as(code).contains(keys[0].substring(0, keys[0].indexOf('/'))).contains("50000")
+                    .doesNotContain("WRITE_OFF");
+            assertThat(SIX.get(code).apply(within).sections().stream().flatMap(section -> section.keys().stream()))
+                    .as("the expense is in no section of the book's report").doesNotContain(keys[2]);
+        });
+    }
+
+    @Test
     @DisplayName("a movement report never reads from inception - revenue and FX results are bounded by the month; a balance report is what"
             + " pays for the opening")
     void aMovementReportReadsNoOpening() {

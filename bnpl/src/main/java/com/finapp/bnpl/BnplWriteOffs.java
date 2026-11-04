@@ -372,9 +372,13 @@ public final class BnplWriteOffs {
     }
 
     /** Records a refused self-dealing attempt {@code FAILED}, in the caller's own transaction after the act rolled back. */
-    public void recordRefusal(Connection unitOfWork, BnplRepaymentReversals.SelfDealingRefused refused, Actor actor,
+    public Optional<BnplProduct> recordRefusal(Connection unitOfWork, BnplRepaymentReversals.SelfDealingRefused refused, Actor actor,
             CorrelationId correlation) {
         BnplRepaymentReversals.record(audit, ids, clock, unitOfWork, refused, actor, correlation);
+        // The product its meter is tagged with: the act was refused before it read the obligation, so this transaction reads it.
+        return corrections.addressed(unitOfWork, refused.agreement())
+                .flatMap(addressed -> servicing.lock(unitOfWork, addressed.obligation()))
+                .map(locked -> locked.obligation().product());
     }
 
     /** Records a refused self-approval {@code FAILED}, in the caller's own transaction after the act rolled back. */

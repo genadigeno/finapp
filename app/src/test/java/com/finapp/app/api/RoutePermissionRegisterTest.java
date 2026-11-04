@@ -251,6 +251,13 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/loans/{id}/waivers", PermissionName.LOAN_SERVICE),
                     entry("POST /v1/operator/loans/{id}/waivers/{waiverId}/approval", PermissionName.LOAN_SERVICE_APPROVE),
                     entry("POST /v1/operator/loans/{id}/waivers/{waiverId}/rejection", PermissionName.LOAN_SERVICE),
+                    // P14-TSK-021: the write-off under four eyes - the servicing agent proposes; the officer reads, lists, decides, the
+                    // approval MULTI_FACTOR (never one's own - the domain and lending V032's CHECK); the negatives are LoanWriteOffApiTest's.
+                    entry("POST /v1/operator/loans/{id}/write-offs", PermissionName.LOAN_WRITE_OFF_PROPOSE),
+                    entry("GET /v1/operator/loans/write-offs", PermissionName.LOAN_WRITE_OFF_APPROVE),
+                    entry("GET /v1/operator/loans/{id}/write-offs/{writeOffId}", PermissionName.LOAN_WRITE_OFF_APPROVE),
+                    entry("POST /v1/operator/loans/{id}/write-offs/{writeOffId}/approval", PermissionName.LOAN_WRITE_OFF_APPROVE),
+                    entry("POST /v1/operator/loans/{id}/write-offs/{writeOffId}/rejection", PermissionName.LOAN_WRITE_OFF_APPROVE),
                     // P11-TSK-027: the restructuring doors under four eyes - LOAN_SERVICE proposes and rejects,
                     // LOAN_SERVICE_APPROVE approves (never one's own - the domain and lending V023's CHECK); the customer's
                     // acceptance is a session door; the negatives are AmendmentApiTest's.
@@ -330,6 +337,12 @@ class RoutePermissionRegisterTest {
                             PermissionName.BNPL_SERVICE_APPROVE),
                     entry("POST /v1/operator/bnpl-agreements/{id}/waivers/{waiverId}/rejection",
                             PermissionName.BNPL_SERVICE),
+                    // P14-TSK-021: the same for BNPL, bnpl V020's CHECK beneath; the negatives are BnplWriteOffApiTest's.
+                    entry("POST /v1/operator/bnpl-agreements/{id}/write-offs", PermissionName.BNPL_WRITE_OFF_PROPOSE),
+                    entry("GET /v1/operator/bnpl-agreements/write-offs", PermissionName.BNPL_WRITE_OFF_APPROVE),
+                    entry("GET /v1/operator/bnpl-agreements/{id}/write-offs/{writeOffId}", PermissionName.BNPL_WRITE_OFF_APPROVE),
+                    entry("POST /v1/operator/bnpl-agreements/{id}/write-offs/{writeOffId}/approval", PermissionName.BNPL_WRITE_OFF_APPROVE),
+                    entry("POST /v1/operator/bnpl-agreements/{id}/write-offs/{writeOffId}/rejection", PermissionName.BNPL_WRITE_OFF_APPROVE),
                     // The BNPL investigator's doors (P12-TSK-025): BNPL_INVESTIGATE (held by BNPL_OFFICER) - the agreement
                     // read, its explanation and its replay, each audited, never of the investigator's own party's agreement.
                     // The negatives are BnplInvestigationDeskTest's.

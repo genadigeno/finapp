@@ -76,6 +76,7 @@ class LendingMetersTest {
         keys.put("finapp.lending.repayment", Set.of("kind", "outcome"));
         keys.put("finapp.lending.fee", Set.of("kind", "outcome"));
         keys.put("finapp.lending.waiver", Set.of("kind", "outcome"));
+        keys.put("finapp.lending.write.off", Set.of("product", "outcome"));
         keys.put("finapp.lending.delinquency", Set.of("product", "bucket"));
         keys.put("finapp.lending.default", Set.of("product"));
         keys.put("finapp.lending.loans", Set.of("product", "status"));

@@ -132,12 +132,7 @@ public final class BnplWriteOffDesk {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         return keyed(actor, correlation, idempotencyKey, BnplWriteOffMetrics.Outcome.APPROVED,
-                String.join("|", "approve", agreement.value().toString(), writeOff.toString(),
-                        Long.toString(attested.principal().minorUnits()), Long.toString(attested.principalDue().minorUnits()),
-                        Long.toString(attested.interestAccrued().minorUnits()), Long.toString(attested.interestDue().minorUnits()),
-                        Long.toString(attested.feesDue().minorUnits()), Integer.toString(attested.principal().scale()),
-                        attested.principal().currency().code(), Long.toString(attested.revision()),
-                        String.valueOf(body.reason())),
+                approvalFingerprint(agreement.value(), writeOff, attested, body.reason()),
                 uow -> decided(writeOffs.approve(uow, agreement, writeOff, attested, body.reason(), actor, correlation)));
     }
 
@@ -164,11 +159,8 @@ public final class BnplWriteOffDesk {
             return transactions.inTransaction(unitOfWork -> attestation(
                     writeOffs.read(unitOfWork, agreement, writeOff, actor, correlation)));
         } catch (BnplRepaymentReversals.SelfDealingRefused selfDealing) {
-            transactions.inTransaction(uow -> {
-                writeOffs.recordRefusal(uow, selfDealing, actor, correlation);
-                return null;
-            });
-            metrics.recordSelfDealingOfUnknownProduct();
+            transactions.inTransaction(uow -> writeOffs.recordRefusal(uow, selfDealing, actor, correlation))
+                    .ifPresent(product -> metrics.record(product, BnplWriteOffMetrics.Outcome.SELF_DEALING_REFUSED));
             throw refused(BnplErrorCode.SELF_DEALING_REFUSED, selfDealing);
         } catch (BnplRepaymentReversals.NotFound unknown) {
             throw notFound();
@@ -253,11 +245,8 @@ public final class BnplWriteOffDesk {
                 return CommandResult.succeeded(stored(receipt(done.writeOff())));
             }));
         } catch (BnplRepaymentReversals.SelfDealingRefused selfDealing) {
-            transactions.inTransaction(uow -> {
-                writeOffs.recordRefusal(uow, selfDealing, actor, correlation);
-                return null;
-            });
-            metrics.recordSelfDealingOfUnknownProduct();
+            transactions.inTransaction(uow -> writeOffs.recordRefusal(uow, selfDealing, actor, correlation))
+                    .ifPresent(product -> metrics.record(product, BnplWriteOffMetrics.Outcome.SELF_DEALING_REFUSED));
             throw refused(BnplErrorCode.SELF_DEALING_REFUSED, selfDealing);
         } catch (BnplRepaymentReversals.NotFound unknown) {
             throw notFound();
@@ -312,8 +301,18 @@ public final class BnplWriteOffDesk {
         return new Acted(decided.writeOff(), decided.product(), decided.replayed());
     }
 
+    /** What the key is held to: every figure named, the revision, the scale, the currency, the reason - any other body is a conflict. */
+    static String approvalFingerprint(UUID account, UUID writeOff, BnplWriteOffPosition attested, String reason) {
+        return String.join("|", "approve", account.toString(), writeOff.toString(),
+                Long.toString(attested.principal().minorUnits()), Long.toString(attested.principalDue().minorUnits()),
+                Long.toString(attested.interestAccrued().minorUnits()), Long.toString(attested.interestDue().minorUnits()),
+                Long.toString(attested.feesDue().minorUnits()), Integer.toString(attested.principal().scale()),
+                attested.principal().currency().code(), Long.toString(attested.revision()),
+                String.valueOf(reason));
+    }
+
     /** The receipt: the view's fields, '|'-separated, an absent one empty. */
-    private static StoredResponse stored(WriteOffReceipt view) {
+    static StoredResponse stored(WriteOffReceipt view) {
         String body = String.join("|", view.writeOffId(), view.agreementId(), view.status(), view.currency(), view.principal(),
                 view.principalDue(), view.interestAccrued(), view.interestDue(), view.feesDue(), view.principalTotal(), view.total(),
                 Long.toString(view.revision()), view.defaultEventId(), Integer.toString(view.agreementVersion()), view.proposedAt(),
@@ -321,7 +320,7 @@ public final class BnplWriteOffDesk {
         return StoredResponse.of(body.getBytes(StandardCharsets.UTF_8), "text/plain");
     }
 
-    private static WriteOffReceipt replayed(byte[] body) {
+    static WriteOffReceipt replayed(byte[] body) {
         String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", -1);
         return new WriteOffReceipt(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5], fields[6], fields[7], fields[8],
                 fields[9], fields[10], Long.parseLong(fields[11]), fields[12], Integer.parseInt(fields[13]), fields[14],

@@ -298,7 +298,7 @@ Closure is a consequence, never a command. The kind is frozen at birth. **A rest
 state** (agreement v n+1 on an `ACTIVE` loan), and **no condition is a state** (§5). **Invalid:**
 anything out of `CLOSED` or `CANCELLED` (`INV-LIFE-04`, `INV-LND-08`); `ACTIVE → PENDING_DISBURSEMENT`;
 `PENDING_DISBURSEMENT → CLOSED` (nothing to repay — that is `CANCELLED`); `ACTIVE → CANCELLED` (after
-disbursement a loan ends only by repayment, or — deferred — write-off); `CLOSING → ACTIVE` (a new
+disbursement a loan ends only by repayment, or by `WRITTEN_OFF`, section 4.5a); `CLOSING → ACTIVE` (a new
 application); a revolving loan in `PENDING_DISBURSEMENT`, an instalment loan in `CLOSING`; instalment
 `→ ACTIVE` without its disbursement `POSTED` beside it, `→ CANCELLED` without it `FAILED`; `CLOSED`
 without its reason. A `CLOSED` account's six balances are zero, proven continuously by
@@ -607,6 +607,38 @@ refuses a schedule version superseding an instalment already due and unbilled - 
 
 ---
 
+### 4.5a The write-off (`lending.loan_write_off`, `lending.loan_write_off_decision`) — `P14-TSK-021`
+
+Owner decision C6 (A), ADR-0096 rule 14, ADR-0104's Follow-up. **It moves an asset to expense on our books; it says nothing about what the customer owes.**
+
+```text
+         propose                       approve (another person, MULTI_FACTOR, naming what they read)
+ (none) ---------> PROPOSED ------------------------------------------------> APPROVED  loan ACTIVE|CLOSING -> WRITTEN_OFF
+                       |  reject (any account status: the door out)
+                       +---------------------------------------------------> REJECTED
+```
+
+| Act | Who | Under L3 it refuses | What it does |
+|---|---|---|---|
+| Propose | `LOAN_WRITE_OFF_PROPOSE` (`LOAN_SERVICING_AGENT`), not of their own party | written off; not `ACTIVE`/`CLOSING`; not defaulted; a credit balance held; an elapsed date not accrued; a proposal already awaiting | Reads the five receivables and the revision, pins the latest `DEFAULT` change. Posts nothing. |
+| Approve | `LOAN_WRITE_OFF_APPROVE` (`LENDING_OFFICER`), not the proposer (the domain and `V032`'s `CHECK`), `MULTI_FACTOR` | all of the above; `Stale` when the figures or revision they name are not the proposal's, the account's now are not, or the `DEFAULT` change is another | Posts rule 14 dated today, the decision, the edge, the event and the audit record in one transaction. |
+| Reject | `LOAN_WRITE_OFF_APPROVE` (the proposer may, if they hold it) | an already decided proposal | Terminal, nothing posted, on any account status. |
+| Read / list | `LOAN_WRITE_OFF_APPROVE`, audited | | The figures, the proposer and their reason, what the account holds now, whether it still stands, each blocker. |
+
+**The revision** is the count of journal lines on the account's six accounts: lines are append-only, so a repayment and its reversal cannot round-trip, and a cure and re-default names a later `DEFAULT` change. **Consequence:** an accrual moves the figures daily, so a proposal is decided on the business date it was made, or rejected and proposed again.
+
+**After a write-off:**
+
+| Door | What it does now |
+|---|---|
+| Repayment, payoff, prepayment, draw, line closure, waiver, repayment reversal (propose and approve), amendment | `409 lending.LoanWrittenOff` under L3, nothing moved. A key already born replays. The customer's money stays in their wallet: **no recovery rule exists** (owner item). |
+| Auto-collection, late settlement of a collection | The servicing step is `NOT_SERVICED` for the status, so nothing is collected; nothing already received is touched. |
+| Servicing sweep: accrual, billing, statements, delinquency, late fees | The claim and every lag read filter on `ACTIVE`/`CLOSING`; the step re-reads under L3 and is `NOT_SERVICED`; `lending.loan`'s edge function refuses a permit move. Under ten instances a step either ran before the approval (and the approval read what it left, or found itself `Stale`) or finds the status. |
+| The customer's read | The status, the figures the write-off took as what stands owed, never zero, and a notice that says so. Never "paid", "settled" or "forgiven". |
+| Credit decisioning | Credit exposure leaves rule 14's lines out, so the account keeps counting: the loss never hands the customer new credit. Nothing is sent to a bureau; the collections case stays open and nothing consumes `LoanWrittenOff`. |
+
+**The way back** (`INV-REV-04`, `.claude/rules/financial-invariants.md`): none is built. Nothing leaves `WRITTEN_OFF` (`INV-LIFE-04`) and the expense is closed to free adjustments. An owner item, with a recommendation, in `P14-TSK-021`'s record; the runbook (section 7) says what an operator does meanwhile. What the customer owes is unchanged throughout, so an error here is a books error, not a customer's.
+
 ## 5. Conditions (orthogonal to the lifecycle; append-only histories) — `P11-TSK-024`
 
 | Condition | Values | Set / cleared by | Effect |
@@ -669,7 +701,7 @@ the machines:
 |---|---|---|
 | L1 | Funding from `LENDING_CAPITAL`, recognised only from bank evidence, never over-deployed | §4.2; L6 at acceptance, draw and a principal-re-instating reversal; `CapitalUnavailable`; `INV-LND-13` |
 | L2 | Disbursement to the wallet and to an external account through payments' withdrawal | §4.6, §4.7; the payout observes, never posts; no lock-order cycle |
-| L3 | `PERSONAL_LOAN` and the revolving `CREDIT_LINE`; refinance, write-off, collections deferred | §4.5's two kinds; `CLOSING` for the line only; no write-off edge |
+| L3 | `PERSONAL_LOAN` and the revolving `CREDIT_LINE`; refinance, write-off, collections deferred | §4.5's two kinds; `CLOSING` for the line only; no write-off edge *(`P14-TSK-021`, C6 (A), 2026-11-04: the write-off edge is built, section 4.5a; refinance and collections' placement stay deferred.)* |
 | L4 | Neutral EUR jurisdiction, no consumer-credit-law features | no withdrawal-right edge on the agreement, no statutory notice step |
 | L5 | ACT/365F simple daily interest, rounded once per period | the accrual fact and the database-clock date rule (§3) |
 | L6 | Allocation oldest-due first, fees → interest → principal, excess held as credit | §4.8 |

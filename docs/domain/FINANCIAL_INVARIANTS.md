@@ -156,7 +156,7 @@ corresponding balanced posting. Rounding residuals are posted to a designated ac
 absorbed or discarded.
 **Why:** Absorbed residual is money creation or destruction, at scale.
 **Enforce:** `DOMAIN` (allocation with zero residual) + `INV-LED-01`.
-**Verify:** Allocation property tests; system-wide trial balance.
+**Verify:** Allocation property tests; system-wide trial balance. *(`P14-TSK-021`: `LoanWriteOffProofTest#theLinesAreWholeAndBalanced`, `LoanWriteOffsTest#aDefaultedLoanIsWrittenOffWhole`: a write-off moves value to expense, balanced per currency, and creates none.)*
 **Phase:** 0 (allocation), 3 (posting)
 
 *(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0074 (`Proposed`), in force when
@@ -493,7 +493,7 @@ ledger `V015` a closed `reason_code` on every adjustment proposal — `MANUAL_CO
 `RECONCILIATION_OFFSET`, `UNCODED` reserved to proposals that predate it and refused on every new
 one by a `BEFORE INSERT` trigger — frozen with the payload beside an `origin` of `MANUAL` or
 `RECONCILIATION`; each origin's door refuses the other's proposals). *(`P14-TSK-013`, ledger `V030`: `PRIOR_PERIOD_ADJUSTMENT` beside them, origin `ACCOUNTING`; three doors, each refusing the other two's. Read "`RECONCILIATION_OFFSET`" as dropped at `P8-TSK-006`'s design, its own note.)*
-**Verify:** Authorization negative tests; a raw insert without a reason code refused; approval
+**Verify:** Authorization negative tests; a raw insert without a reason code refused; approval *(`P14-TSK-021`, a write-off: a reasoned, four-eyes act, `LoanWriteOffsTest#aReasonIsRequiredAndNeverPrinted`, `BnplWriteOffDeskTest#theRoutesPermissionsAndAssurance`. Its expense stays closed to free adjustments. **Its way back is not built**: an owner item, stated in `LENDING_LIFECYCLES.md` section 4.5a.)*
 and `DELETE` of a `RECONCILIATION`-origin proposal through the generic door refused (`409
 ledger.AdjustmentOriginMismatch`). *(`P14-TSK-013`: `AccountingOriginDoorTest#eachOwnerRefusesTheOthers`, all twelve; `PriorPeriodAdjustmentDatabaseTest#theGenericDoorRefusesTheOrigin`, `#theOwnersRefuseEachOther` owed, C5.)*
 **Phase:** 3, 8
@@ -1533,7 +1533,7 @@ approver distinct from the initiator.
 **Why:** Single-actor control over financial correction is an unacceptable internal-fraud
 exposure.
 **Enforce:** `DOMAIN` + `DB-CONSTRAINT` (approver ≠ initiator).
-**Verify:** Self-approval rejection tests. *(`P14-TSK-013`, a prior-period adjustment: refused by the domain, `prior_period_adjustment_four_eyes` and the ledger's `adjustment_proposal_approver_is_not_initiator` for every writer - `PriorPeriodAdjustmentsTest#theProposerCannotApprove`, `AccountingOriginDoorTest#theLedgersFourEyes`, `PriorPeriodAdjustmentMigrationTest#fourEyesForEveryWriter`; `PriorPeriodAdjustmentDatabaseTest#theProposerCannotApprove`, `#theMigrationBindsEveryEdge`, `#theLedgersMigrationBindsEveryWriter` owed, C5.)* *(`P14-TSK-012`, the close and the reopen: `PeriodClosesTest#theProposerCannotApprove`, `#theProposerCannotApproveAReopen`; `period_close_four_eyes`, `period_reopen_four_eyes`, `period_event_four_eyes` - `PeriodCloseMigrationTest#fourEyesForEveryWriter`; `PeriodCloseDatabaseTest#theProposerCannotApprove`, `PeriodReopenDatabaseTest#onlyTheLatest` owed, C5. A rejection is not an approval and may be the proposer's.)*
+**Verify:** Self-approval rejection tests. *(`P14-TSK-013`, a prior-period adjustment: refused by the domain, `prior_period_adjustment_four_eyes` and the ledger's `adjustment_proposal_approver_is_not_initiator` for every writer - `PriorPeriodAdjustmentsTest#theProposerCannotApprove`, `AccountingOriginDoorTest#theLedgersFourEyes`, `PriorPeriodAdjustmentMigrationTest#fourEyesForEveryWriter`; `PriorPeriodAdjustmentDatabaseTest#theProposerCannotApprove`, `#theMigrationBindsEveryEdge`, `#theLedgersMigrationBindsEveryWriter` owed, C5.)* *(`P14-TSK-012`, the close and the reopen: `PeriodClosesTest#theProposerCannotApprove`, `#theProposerCannotApproveAReopen`; `period_close_four_eyes`, `period_reopen_four_eyes`, `period_event_four_eyes` - `PeriodCloseMigrationTest#fourEyesForEveryWriter`; `PeriodCloseDatabaseTest#theProposerCannotApprove`, `PeriodReopenDatabaseTest#onlyTheLatest` owed, C5. A rejection is not an approval and may be the proposer's.)* *(`P14-TSK-021`: `LoanWriteOffsTest#theProposerCannotApprove`, `BnplWriteOffsTest#theProposerCannotApprove`; the `CHECK`s `LoanWriteOffDatabaseTest#theProposerCannotApprove` and `BnplWriteOffDatabaseTest#theProposerCannotApprove`, owed, C5; the approval `MULTI_FACTOR`, `LoanWriteOffDeskTest#theRoutesPermissionsAndAssurance`, refused below it over HTTP by `LoanWriteOffApiTest#theApprovalIsMultiFactor`, owed.)*
 **Phase:** 3, 6, 8, 10, 13, 14
 
 *(The list read "3, 8, 10, 13, 14" until the 2026-09-21 transition into the checkout phase:
@@ -1916,7 +1916,7 @@ the loan purposes) + `DOMAIN` (every decision — allocation, accrual base, payo
 derives from journal lines through `BalanceDerivation` under the account's lock, never from the
 display-only projection, `INV-BAL-05`; lending posts only through `PostingService` /
 `ReversalService`; every loan purpose joins `AccountPurpose.closedToFreeAdjustments()`).
-**Verify:** `LendingSchemaHasNoMutableMoneyTest` with a planted mutable money column
+**Verify:** `LendingSchemaHasNoMutableMoneyTest` with a planted mutable money column *(`P14-TSK-021`: `LoanWriteOffProofTest#anExplainedWriteOffHolds`, `#anUnexplainedWriteOffFails`, `#aPartialWriteOffFails`, `#aRowAndAnEntryDisagreeingFails`: a written-off loan's figures are still its lines, its row explains its entry whole; `LoanWriteOffsTest#aDifferenceIsNeverWrittenOffOver`: its rows must explain its due accounts first.)*
 (`P11-TSK-002`); the adjustment guard refusing every loan purpose (`P11-TSK-003`);
 `LoanSubledgerProof` zero for every account — each of the six balances equal to its rows' sums, no
 due account negative — gauged `finapp.lending.subledger.proof{verdict}` and alerting on any failure
@@ -2577,7 +2577,7 @@ recognition entry crediting `LENDING_CAPITAL` for a line `CapitalRecognition` cl
 expectation under the statement's source, exact amount, inside its window, locked - and `capital_recognition` is born
 once per contribution and per line (reconciliation `V022`), which also refuses any allocation to a contribution but a
 `RECOGNITION` decision's and never lets one age; the resolution machine disposes of nothing on it.
-**Verify:** `LendingCapitalProof` (`P11-TSK-004`) per currency in one `REPEATABLE READ` snapshot —
+**Verify:** `LendingCapitalProof` (`P11-TSK-004`) per currency in one `REPEATABLE READ` snapshot — *(`P14-TSK-021`: `LendingCapitalHeadroomTest#theHeadroomDoesNotRise` - a write-off cannot release capacity; written-off principal is a fourth term, derived from journal lines; `LoanWriteOffDatabaseTest#theHeadroomDoesNotRise` and `BnplWriteOffLedgerDatabaseTest#theHeadroomDoesNotRise` are owed, C5.)*
 every capital journal line a recognised contribution's, headroom ≥ 0 at rest, the safeguarding
 adjustment `lending_funded(c)` published — gauged `finapp.lending.capital.proof{verdict}` and alerting
 on any failure (built: `LendingCapitalDatabaseTest#theProofFindsAForeignPosting`); capital recognised only from a

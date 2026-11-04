@@ -358,6 +358,12 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/waivers",
                         ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/waivers/{waiverId}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/waivers/{waiverId}/rejection",
+                        // P14-TSK-021: the write-off under four eyes.
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/write-offs",
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans/write-offs",
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/write-offs/{writeOffId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/write-offs/{writeOffId}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/write-offs/{writeOffId}/rejection",
                         // P11-TSK-027: the restructuring doors under four eyes (LOAN_SERVICE proposes and rejects,
                         // LOAN_SERVICE_APPROVE approves; the customer alone accepts).
                         ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/amendments",
@@ -418,6 +424,12 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/waivers",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/waivers/{waiverId}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/waivers/{waiverId}/rejection",
+                        // P14-TSK-021: the write-off under four eyes.
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/write-offs",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/write-offs",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/write-offs/{writeOffId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/write-offs/{writeOffId}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/write-offs/{writeOffId}/rejection",
                         // P12-TSK-025: the BNPL investigator's doors - the agreement read, its explanation from its rows
                         // alone and its replay with a reason (BNPL_INVESTIGATE, each audited, never one's own party's).
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}",

@@ -48,6 +48,10 @@ class LendingCreditExposureTest {
         assertThat(figure("REVOLVING", "ACTIVE", 2_500_00, 3_000_00)).as("drawn beyond the limit").isEqualTo(eur(3_000_00));
         assertThat(figure("REVOLVING", "CLOSING", 2_500_00, 700_00)).as("a closing line's drawn principal").isEqualTo(eur(700_00));
         assertThat(figure("REVOLVING", "CLOSED", 2_500_00)).isEqualTo(eur(0));
+        // P14-TSK-021: a write-off moves no exposure - rule 14's lines are left out, so the account counts the principal it held, and a
+        // written-off line its drawn principal: the limit is gone, what stands owed is not.
+        assertThat(figure("INSTALMENT", "WRITTEN_OFF", 8_000_00, 5_000_00)).isEqualTo(eur(5_000_00));
+        assertThat(figure("REVOLVING", "WRITTEN_OFF", 2_500_00, 700_00)).isEqualTo(eur(700_00));
         assertThat(figure("INSTALMENT", "ACTIVE", 8_000_00, -1_00))
                 .as("a principal below zero - a defect - offsets nothing").isEqualTo(eur(0));
     }

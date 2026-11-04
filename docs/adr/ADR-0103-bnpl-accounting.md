@@ -48,7 +48,7 @@ mirrors). Rests on `PHASE_12_PLAN.md` §2.3 (A8–A12), §3.1, §12.4–§12.6, 
    | `BNPL_MERCHANT_FEE_INCOME` | OPERATIONAL | REVENUE | currency | the merchant discount |
    | `BNPL_INTEREST_INCOME` | OPERATIONAL | REVENUE | currency | PN interest |
    | `BNPL_FEE_INCOME` | OPERATIONAL | REVENUE | currency | late fees |
-   | `BNPL_WRITE_OFF_EXPENSE` | OPERATIONAL | EXPENSE | currency | seeded, posted by nothing in Phase 12 (Phase 14) |
+   | `BNPL_WRITE_OFF_EXPENSE` | OPERATIONAL | EXPENSE | currency | seeded in Phase 12; posted only by F11 (`P14-TSK-021`) |
 
    The per-obligation accounts are opened by `createOrConverge` in the purchase transaction, in the
    obligation's currency, by bnpl's opener declaring each type (`INV-LED-06` at the opener, the
@@ -62,7 +62,7 @@ mirrors). Rests on `PHASE_12_PLAN.md` §2.3 (A8–A12), §3.1, §12.4–§12.6, 
    new owner kind would have made lending's headroom count BNPL for free, but would make
    `LendingBooksHaveOnePosterTest`'s "only lending posts loan purposes" false and tie BNPL's figures
    to lending's subledger identities. Instead **`BnplBooksHaveOnePosterTest`** holds the mirror: only
-   bnpl's operations post to the ten BNPL purposes (the write-off expense by nothing yet); lending's
+   bnpl's operations post to the ten BNPL purposes (the write-off expense by F11 alone, `P14-TSK-021`); lending's
    headroom and proof read the BNPL principal purposes by purpose (ADR-0104) without learning bnpl's
    module. The merchant discount gets its own `BNPL_MERCHANT_FEE_INCOME` rather than merchant's
    `FEE_REVENUE` (OQ-19): the card processing fee and a credit-funded discount are different income
@@ -104,7 +104,7 @@ mirrors). Rests on `PHASE_12_PLAN.md` §2.3 (A8–A12), §3.1, §12.4–§12.6, 
    | F8a | Late fee a reversal re-opened, released *(the Phase 12 → 13 transition gate's A7-3, `bnpl V019`, 2026-10-22)* | `BNPL_FEE_INCOME` | `BNPL_FEES_DUE` | F8 re-opened a fee paid before a refund cancelled its instalment whole; released by F5a's rule in the reversal's transaction, so OQ-14 holds whichever act came first; one row per instalment in `bnpl_reversal_fee_release` | `bnpl.reversal-fee-release:<reversal>` |
    | F9 | Dispute resolved as a refund | = F5 | = F5 | a refund under the same bound (ADR-0106, `INV-BNPL-08`) | `bnpl.refund:<refund>` |
    | F10 | Merchant payout | `MERCHANT_PAYABLE` | `PAYOUT_CLEARING` | merchant's own entry, unchanged — BNPL never pays a merchant | merchant's keys |
-   | F11 | Write-off (deferred, Phase 14) | `BNPL_WRITE_OFF_EXPENSE` | every BNPL asset account | loss | — |
+   | F11 | Write-off (`P14-TSK-021`, four eyes) | `BNPL_WRITE_OFF_EXPENSE` | every BNPL asset account holding anything (never `BNPL_CREDIT_BALANCE`) | loss; says nothing about what the customer owes | `bnpl.write-off:<obligation>` |
 
    F1 is `INV-BNPL-04` made concrete: receivable principal = G = merchant net (G − f) + merchant fee
    f, exactly, the entry's lines checked by trigger. F5 is `INV-BNPL-06`: R = Σ principal cancelled +
@@ -166,7 +166,7 @@ mirrors). Rests on `PHASE_12_PLAN.md` §2.3 (A8–A12), §3.1, §12.4–§12.6, 
     merchant discount is income at purchase or a yield adjustment amortised over the instalments
     (effective interest) — Phase 12 recognises it at purchase (A9). (b) Whether the receivable should
     be recorded at G or at G − f with the discount unearned — an IFRS 9 question. (c) Credit-impaired
-    treatment, provisioning and write-off (F11 seeded, posted by nothing). No Phase 12 code anticipates
+    treatment and provisioning (the write-off, F11, was built by `P14-TSK-021`). No Phase 12 code anticipates
     an answer.
 
 ## Alternatives Considered

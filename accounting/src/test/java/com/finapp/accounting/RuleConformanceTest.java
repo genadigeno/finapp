@@ -63,6 +63,35 @@ class RuleConformanceTest {
     }
 
     @Test
+    @DisplayName("P14-TSK-021: a write-off conforms whole or in any part (a zero takes no line), under rule 14 and F11 from the origin - so no"
+            + " entry predates its rule; a credit to the customer's own balance, the wrong expense, or a line of the other book is a mismatch")
+    void aWriteOffConformsAndNothingElseOfItsShapeDoes() {
+        assertThat(conformance.judge(entry(EntryType.POSTING, "lending.write-off:", line("LOAN_WRITE_OFF_EXPENSE", Side.DEBIT, 515),
+                line("LOAN_PRINCIPAL", Side.CREDIT, 400), line("LOAN_PRINCIPAL_DUE", Side.CREDIT, 100), line("LOAN_INTEREST_ACCRUED", Side.CREDIT, 5),
+                line("LOAN_INTEREST_DUE", Side.CREDIT, 7), line("LOAN_FEES_DUE", Side.CREDIT, 3)))).isEmpty();
+        assertThat(conformance.judge(entry(EntryType.POSTING, "lending.write-off:", line("LOAN_WRITE_OFF_EXPENSE", Side.DEBIT, 5),
+                line("LOAN_INTEREST_DUE", Side.CREDIT, 5)))).isEmpty();
+        assertThat(conformance.judge(entry(EntryType.POSTING, "bnpl.write-off:", line("BNPL_WRITE_OFF_EXPENSE", Side.DEBIT, 515),
+                line("BNPL_PRINCIPAL", Side.CREDIT, 400), line("BNPL_PRINCIPAL_DUE", Side.CREDIT, 100), line("BNPL_INTEREST_ACCRUED", Side.CREDIT, 5),
+                line("BNPL_INTEREST_DUE", Side.CREDIT, 7), line("BNPL_FEES_DUE", Side.CREDIT, 3)))).isEmpty();
+        assertThat(PostingRuleRegister.CURRENT.rules().stream().filter(rule -> rule.id().equals("LND-14") || rule.id().equals("BNPL-F11")))
+                .hasSize(2).allSatisfy(rule -> assertThat(rule.effectiveFrom()).isEqualTo(PostingRuleRegister.ORIGIN));
+
+        assertThat(conformance.judge(entry(EntryType.POSTING, "lending.write-off:", line("LOAN_WRITE_OFF_EXPENSE", Side.DEBIT, 5),
+                line("LOAN_CREDIT_BALANCE", Side.CREDIT, 5)))).extracting(BreakFinding::type)
+                .as("never the customer's money").containsExactly(BreakType.SHAPE_MISMATCH);
+        assertThat(conformance.judge(entry(EntryType.POSTING, "lending.write-off:", line("BNPL_WRITE_OFF_EXPENSE", Side.DEBIT, 5),
+                line("LOAN_PRINCIPAL", Side.CREDIT, 5)))).extracting(BreakFinding::type)
+                .as("the other product's expense").containsExactly(BreakType.SHAPE_MISMATCH);
+        assertThat(conformance.judge(entry(EntryType.POSTING, "bnpl.write-off:", line("BNPL_WRITE_OFF_EXPENSE", Side.DEBIT, 5),
+                line("LOAN_PRINCIPAL", Side.CREDIT, 5)))).extracting(BreakFinding::type)
+                .as("the other product's book").containsExactly(BreakType.SHAPE_MISMATCH);
+        assertThat(conformance.judge(entry(EntryType.POSTING, "lending.write-off:", line("LOAN_PRINCIPAL", Side.DEBIT, 5),
+                line("LOAN_WRITE_OFF_EXPENSE", Side.CREDIT, 5)))).extracting(BreakFinding::type)
+                .as("a write-off is never posted backwards").containsExactly(BreakType.SHAPE_MISMATCH);
+    }
+
+    @Test
     @DisplayName("an unregistered namespace is one UNREGISTERED_POSTING per type and namespace, whatever its entries -"
             + " counted, its first entries named; a key with no namespace and an adjustment with no origin folded")
     void anUnregisteredNamespaceIsOneFindingPerNamespace() {

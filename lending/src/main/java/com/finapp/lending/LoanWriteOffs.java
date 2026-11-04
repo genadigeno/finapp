@@ -404,13 +404,15 @@ public final class LoanWriteOffs {
      * Records a refused self-dealing attempt {@code FAILED} on {@code unitOfWork} - the caller's own transaction, after the act
      * rolled back, so the attempt is kept.
      */
-    public void recordRefusal(Connection unitOfWork, RepaymentReversals.SelfDealingRefused refused, Actor actor,
+    public Optional<LoanProduct> recordRefusal(Connection unitOfWork, RepaymentReversals.SelfDealingRefused refused, Actor actor,
             CorrelationId correlation) {
         Objects.requireNonNull(refused, "refused");
         audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, clock.instant(),
                 LendingAuditAction.SELF_DEALING_REFUSED, "loan", refused.loan().value().toString(), Optional.empty(),
                 AuditOutcome.FAILED, correlation, Optional.of("loan=" + refused.loan().value() + ", act="
                         + refused.act() + " refused - the loan is the acting operator's own party's")));
+        // The product its meter is tagged with: the act was refused before it read the account, so this transaction reads it.
+        return loans.lock(unitOfWork, refused.loan()).map(owned -> owned.loan().product());
     }
 
     /** Records a refused self-approval {@code FAILED}, in the caller's own transaction after the act rolled back. */

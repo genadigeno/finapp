@@ -58,7 +58,7 @@ the *shape* of — never the rows — are [`LENDING_LIFECYCLES.md`](LENDING_LIFE
 | Waiver · repayment reversal | the approved proposal | F7 (`ReversalService` of F4) · F8 (exact swap of F3) |
 | Merchant payout | `merchant`'s payout | F10 — merchant's own entry; BNPL posts nothing |
 | Closure | obligation `CLOSED` (reason) | None of its own: the consequence of the entry that zeroed the last receivable, a credit balance refunded beside it (`bnpl.closure-refund:<obligation>`) |
-| Write-off | — | F11, **deferred** (Phase 14); `BNPL_WRITE_OFF_EXPENSE` seeded, unposted |
+| Write-off | Approved today, under four eyes (section 4.7a) | F11, `P14-TSK-021`: `BNPL_WRITE_OFF_EXPENSE` / every asset holding anything, dated today |
 
 ---
 
@@ -751,12 +751,27 @@ converging) with a version in force that returns its fee, else `NOT_PRICED`. A s
 is refused at the assignment (`422 merchant.BnplScheduleNotReturning`, and by trigger for every writer); a
 `RETAINED` version added later makes the product `NOT_PRICED` rather than ever pricing a BNPL purchase.
 
+### 4.7a The write-off (`bnpl.bnpl_write_off`, `bnpl.bnpl_write_off_decision`) — `P14-TSK-021`
+
+Owner decision C6 (A), ADR-0103 F11, ADR-0104's Follow-up. **It moves an asset to expense on our books; it says nothing about what the customer owes.** The same machine as a loan's (`LENDING_LIFECYCLES.md` section 4.5a) under B4: propose (`BNPL_WRITE_OFF_PROPOSE`, `BNPL_SERVICING_AGENT`), approve (`BNPL_WRITE_OFF_APPROVE`, `BNPL_OFFICER`, another person, `MULTI_FACTOR`, naming the figures and revision read), reject (any status, the door out); `ACTIVE -> WRITTEN_OFF`, nothing leaves it. It also refuses while a dispute is open (`bnpl.WriteOffDisputeOpen`): a dispute's outcome may be a refund, which needs the receivable. The identity it keeps: `G = repaid + cancelled + outstanding + writtenOff`.
+
+| Door | What it does now |
+|---|---|
+| Repayment, payoff, repayment reversal (propose and approve), waiver | `409 bnpl.ObligationWrittenOff` under B4, nothing moved; a key already born replays. The customer's money stays in their wallet: **no recovery rule exists** (owner item). |
+| Merchant refund (F5), by the merchant or a dispute | Refused, by the domain and `V020`'s trigger, for every writer: the merchant's money stays on its payable. **No rule pays it** (owner item, F12 recommended). Never paid to the customer's wallet as if the obligation were closed. |
+| A dispute opened afterwards | Refused, by the domain and `V020`'s trigger. |
+| Scheduled instalments, retries, dunning, late fees, accrual, delinquency | The step re-reads under B4 and is `NOT_SERVICED`; the sweep's claim and every lag read filter on `ACTIVE`. |
+| The customer's read | The status, what stands owed, never zero, and a notice that says so. Never "paid", "settled" or "forgiven". |
+| Credit decisioning | Credit exposure v4 leaves F11's lines out, so the obligation keeps counting. Nothing is sent to a bureau; nothing consumes `BnplWrittenOff`. |
+
+**The way back:** none is built; the same owner item as a loan's.
+
 ## 5. Conditions (orthogonal to the lifecycle; append-only histories) — `P12-TSK-020`, `-023`
 
 | Condition | Values | Set / cleared by | Effect |
 |---|---|---|---|
 | Delinquency | `CURRENT`; `PAST_DUE` with DPD and bucket (the pinned terms' bounds) | S, daily in T-svc under B4, derived from billed and allocated rows | late-fee eligibility; `BnplDelinquencyChanged` (old/new bucket, DPD) — also announcing cure |
-| Default | `DEFAULTED` flag | S at DPD ≥ 90 (A14); cleared at cure, no probation | `BnplDefaulted` / `BnplDefaultCleared`; **no acceleration, no posting** (write-off is Phase 14's) |
+| Default | `DEFAULTED` flag | S at DPD ≥ 90 (A14); cleared at cure, no probation | `BnplDefaulted` / `BnplDefaultCleared`; **no acceleration, no posting** (the write-off is its own four-eyes act, section 4.7a) |
 | Disputed (servicing hold) | the held amount and the instalments it covers, latest first | the dispute's opening (T-dsp); lifted by its resolution or withdrawal | no late fee and no DPD on the held instalments; no auto-collection beyond the undisputed part — the hold Phase 11 designed and did not build (lending's A9), built here for BNPL's own reason. *(The Phase 12 → 13 gate's A5-F2, `bnpl V018`, 2026-10-22: after a refund or upheld lift the clock restarts at the lift's business date; after a **withdrawal** it does not - DPD and the fee day count from the due date as if never held; and the purchase takes no new dispute for 30 days after the withdrawal (`409 bnpl.DisputeCoolingOff`, `BnplDisputes.WITHDRAWAL_COOLDOWN` - the length the owner's to change), so a withdraw-and-re-open loop cannot keep an instalment held.)* |
 | Late-fee eligibility | derived | S, read in T-svc under B4 | a late fee once per instalment on the pinned day, capped, never on a held instalment |
 

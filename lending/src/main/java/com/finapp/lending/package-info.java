@@ -32,7 +32,7 @@
  * {@link com.finapp.lending.LoanProduct}: merchant-financed instalment credit is one economic event producing two
  * financial flows - the merchant's financing and the customer's obligation - with refund and chargeback semantics a
  * loan does not have. {@code bnpl} will reference lending's concepts by identifier and own neither; lending neither
- * knows a merchant nor finances an order. Refinance, write-off and collections are deferred with named owners
+ * knows a merchant nor finances an order. Refinance and collections are deferred with named owners (the write-off arrived with `P14-TSK-021`)
  * ({@code PHASE_11_PLAN.md} section 17): no member, state or posting here anticipates them.
  *
  * <p><strong>What exists so far.</strong> The boundary, the migrator-owned schema floor ({@code V001}) and the closed

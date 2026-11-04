@@ -1481,10 +1481,12 @@ borrower's own funds. Nothing of it is built in Phase 11.
 **Owned by:** `lending`
 
 ### Write-off
-**Is:** the recognition that a loan's receivable is no longer expected to be collected — lending's
-event, which will move every per-loan asset balance to `LOAN_WRITE_OFF_EXPENSE`. **Deferred** to
-Phase 14 with provisioning; the expense account is seeded in Phase 11 and posted by nothing.
-**Not:** Default (a flag, posting nothing) or Delinquency. Nor a waiver, which is a reasoned,
+**Is:** the recognition **on our books** that a defaulted loan's or BNPL obligation's receivable is no longer
+expected to be collected — lending's and bnpl's event, moving every per-account asset to
+`LOAN_WRITE_OFF_EXPENSE` / `BNPL_WRITE_OFF_EXPENSE` under four eyes (`P14-TSK-021`, rule 14 and F11; status
+`WRITTEN_OFF`, never closed). **It says nothing about what the customer owes**: not paid, not forgiven.
+Provisioning stays deferred.
+**Not:** Forgiveness or a closure. Default (a flag, posting nothing) or Delinquency. Nor a waiver, which is a reasoned,
 four-eyes release of specific due amounts. And not the general ledger: the GL mapping, provisioning
 and IFRS 9 staging are `accounting`'s — lending owns the event, accounting its books.
 **Owned by:** `lending`

@@ -247,7 +247,7 @@ module depends on `bnpl`):
   the L6 row is the Ledger's `LENDING_CAPITAL` account row *(`P12-DOC-001`, 2026-10-22: read "no shared row")*.
 - **Ledger (7)** — downstream conformist: a new `OwnerKind.BNPL_OBLIGATION` with six per-obligation
   purposes and four operational ones (`BNPL_MERCHANT_FEE_INCOME`, `BNPL_INTEREST_INCOME`,
-  `BNPL_FEE_INCOME`, `BNPL_WRITE_OFF_EXPENSE` — seeded, unposted), all closed to free adjustments
+  `BNPL_FEE_INCOME`, `BNPL_WRITE_OFF_EXPENSE` — posted by F11 alone, `P14-TSK-021`), all closed to free adjustments
   (ledger `V027`); posting and reversal through the ledger's services only. The Ledger rows BNPL locks:
   `ledger_account` rows `FOR UPDATE` at L6 (`LENDING_CAPITAL`) and (P) (`MERCHANT_PAYABLE`, `CUSTOMER_WALLET`),
   and at L8, in one sorted call, `FOR KEY SHARE` on every account posted to and then its `account_balance` rows

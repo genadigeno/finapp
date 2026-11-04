@@ -46,7 +46,7 @@ class LendingVocabulariesTest {
         assertThat(names(LoanStatus.values()))
                 .containsExactly("PENDING_DISBURSEMENT", "ACTIVE", "CLOSING", "CLOSED", "CANCELLED", "WRITTEN_OFF")
                 .as("delinquency, default, draws suspended and awaiting payout are conditions, never states")
-                .doesNotContain("DELINQUENT", "DEFAULTED", "SUSPENDED", "AWAITING_PAYOUT", "RESTRUCTURED", "WRITTEN_OFF");
+                .doesNotContain("DELINQUENT", "DEFAULTED", "SUSPENDED", "AWAITING_PAYOUT", "RESTRUCTURED");
     }
 
     @Test

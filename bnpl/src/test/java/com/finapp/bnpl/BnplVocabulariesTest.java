@@ -102,7 +102,7 @@ class BnplVocabulariesTest {
                 .containsExactly("ACTIVE", "CLOSED", "WRITTEN_OFF")
                 .as("delinquency, default and a dispute's hold are conditions; nothing is disbursed; a financed"
                         + " obligation is never cancelled")
-                .doesNotContain("DELINQUENT", "DEFAULTED", "DISPUTED", "PENDING_DISBURSEMENT", "CANCELLED", "WRITTEN_OFF");
+                .doesNotContain("DELINQUENT", "DEFAULTED", "DISPUTED", "PENDING_DISBURSEMENT", "CANCELLED");
         assertThat(names(BnplClosureReason.values()))
                 .containsExactly("REPAID", "PAID_OFF_EARLY", "REFUNDED", "REFUNDED_PARTIALLY_REPAID");
     }

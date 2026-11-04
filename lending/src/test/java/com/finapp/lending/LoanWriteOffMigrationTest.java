@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * {@code lending V032}'s ranks as the code declares them (`P14-TSK-021`) - a text pin, which proves only the text: the clauses run in
- * {@code app}'s {@code LoanWriteOffDatabaseTest}, owed. It holds the migration to the enums and the doors to the names.
+ * {@code LoanWriteOffDatabaseTest}, owed. It holds the migration to the enums and the doors to the names.
  */
 @DisplayName("lending V032 holds the write-off's ranks as the code declares them (P14-TSK-021)")
 class LoanWriteOffMigrationTest {

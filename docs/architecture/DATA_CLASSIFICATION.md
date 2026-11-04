@@ -3389,6 +3389,36 @@ assessment, agreement and entry references `CONFIDENTIAL`, kinds, outcomes, type
 | `waiver_decision` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
 | `waiver_decision` | `journal_entry_id` | `CONFIDENTIAL` | Posting rule 8's, 8a's or 9's journal entry, by value - exactly when approved |
 | `waiver_decision` | `correlation_id` | `INTERNAL` | The decision's correlation |
+| `loan_write_off` | `id` | `INTERNAL` | Generated (`P14-TSK-021`) |
+| `loan_write_off` | `loan_id` | `CONFIDENTIAL` | The loan written off |
+| `loan_write_off` | `currency` | `INTERNAL` | The account's currency |
+| `loan_write_off` | `scale` | `INTERNAL` | Its persisted scale |
+| `loan_write_off` | `principal_minor` | `RESTRICTED-FINANCIAL` | Principal not due, as read under the lock |
+| `loan_write_off` | `principal_due_minor` | `RESTRICTED-FINANCIAL` | Principal due, as read under the lock |
+| `loan_write_off` | `interest_accrued_minor` | `RESTRICTED-FINANCIAL` | Interest accrued, as read under the lock |
+| `loan_write_off` | `interest_due_minor` | `RESTRICTED-FINANCIAL` | Interest due, as read under the lock |
+| `loan_write_off` | `fees_due_minor` | `RESTRICTED-FINANCIAL` | Fees due, as read under the lock |
+| `loan_write_off` | `revision` | `INTERNAL` | Journal lines on the account's six accounts when they were read |
+| `loan_write_off` | `default_event_id` | `INTERNAL` | The DEFAULT condition change it stands on |
+| `loan_write_off` | `agreement_version` | `INTERNAL` | The governing agreement's version |
+| `loan_write_off` | `proposed_by` | `CONFIDENTIAL` | The holder of the propose permission |
+| `loan_write_off` | `proposed_by_type` | `INTERNAL` | A closed actor type |
+| `loan_write_off` | `proposed_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_write_off` | `proposal_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
+| `loan_write_off` | `correlation_id` | `INTERNAL` | The proposal's correlation |
+| `loan_write_off_decision` | `id` | `INTERNAL` | Generated (`P14-TSK-021`) |
+| `loan_write_off_decision` | `write_off_id` | `INTERNAL` | The proposal - decided once |
+| `loan_write_off_decision` | `loan_id` | `CONFIDENTIAL` | Its account, pinned to the proposal's by the composite foreign key |
+| `loan_write_off_decision` | `proposed_by` | `CONFIDENTIAL` | The proposer, pinned likewise - what the four-eyes CHECK compares |
+| `loan_write_off_decision` | `outcome` | `INTERNAL` | `APPROVED` or `REJECTED` |
+| `loan_write_off_decision` | `decided_by` | `CONFIDENTIAL` | Who decided - never the proposer of an approval |
+| `loan_write_off_decision` | `decided_by_type` | `INTERNAL` | A closed actor type |
+| `loan_write_off_decision` | `decided_at` | `INTERNAL` | System time, stamped by the trigger |
+| `loan_write_off_decision` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
+| `loan_write_off_decision` | `journal_entry_id` | `CONFIDENTIAL` | The entry an approval posted, by value - absent on a rejection |
+| `loan_write_off_decision` | `value_date` | `INTERNAL` | The date an approval was valued - absent on a rejection |
+| `loan_write_off_decision` | `recorded_order` | `INTERNAL` | The fact's place in its account's history |
+| `loan_write_off_decision` | `correlation_id` | `INTERNAL` | The decision's correlation |
 
 ### `lending` - restructuring by agreement amendment - *added by `P11-TSK-027`*
 
@@ -3991,6 +4021,37 @@ at the merchant's own door only - `reason`; never `excess_*`, `cancelled_*` or t
 | `bnpl_waiver_decision` | `journal_entry_id` | `INTERNAL` | F7's entry (`bnpl.waiver:<id>` in the ledger's reversal scope), by value - exactly when `APPROVED` |
 | `bnpl_waiver_decision` | `correlation_id` | `INTERNAL` | The decision's correlation |
 | `bnpl_waiver_decision` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
+| `bnpl_write_off` | `id` | `INTERNAL` | Generated (`P14-TSK-021`) |
+| `bnpl_write_off` | `obligation_id` | `CONFIDENTIAL` | The obligation written off |
+| `bnpl_write_off` | `agreement_id` | `INTERNAL` | The agreement in force |
+| `bnpl_write_off` | `currency` | `INTERNAL` | The account's currency |
+| `bnpl_write_off` | `scale` | `INTERNAL` | Its persisted scale |
+| `bnpl_write_off` | `principal_minor` | `RESTRICTED-FINANCIAL` | Principal not due, as read under the lock |
+| `bnpl_write_off` | `principal_due_minor` | `RESTRICTED-FINANCIAL` | Principal due, as read under the lock |
+| `bnpl_write_off` | `interest_accrued_minor` | `RESTRICTED-FINANCIAL` | Interest accrued, as read under the lock |
+| `bnpl_write_off` | `interest_due_minor` | `RESTRICTED-FINANCIAL` | Interest due, as read under the lock |
+| `bnpl_write_off` | `fees_due_minor` | `RESTRICTED-FINANCIAL` | Fees due, as read under the lock |
+| `bnpl_write_off` | `revision` | `INTERNAL` | Journal lines on the account's six accounts when they were read |
+| `bnpl_write_off` | `default_event_id` | `INTERNAL` | The DEFAULT condition change it stands on |
+| `bnpl_write_off` | `agreement_version` | `INTERNAL` | The governing agreement's version |
+| `bnpl_write_off` | `proposed_by` | `CONFIDENTIAL` | The holder of the propose permission |
+| `bnpl_write_off` | `proposed_by_type` | `INTERNAL` | A closed actor type |
+| `bnpl_write_off` | `proposed_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_write_off` | `proposal_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
+| `bnpl_write_off` | `correlation_id` | `INTERNAL` | The proposal's correlation |
+| `bnpl_write_off_decision` | `id` | `INTERNAL` | Generated (`P14-TSK-021`) |
+| `bnpl_write_off_decision` | `write_off_id` | `INTERNAL` | The proposal - decided once |
+| `bnpl_write_off_decision` | `obligation_id` | `CONFIDENTIAL` | Its account, pinned to the proposal's by the composite foreign key |
+| `bnpl_write_off_decision` | `proposed_by` | `CONFIDENTIAL` | The proposer, pinned likewise - what the four-eyes CHECK compares |
+| `bnpl_write_off_decision` | `outcome` | `INTERNAL` | `APPROVED` or `REJECTED` |
+| `bnpl_write_off_decision` | `decided_by` | `CONFIDENTIAL` | Who decided - never the proposer of an approval |
+| `bnpl_write_off_decision` | `decided_by_type` | `INTERNAL` | A closed actor type |
+| `bnpl_write_off_decision` | `decided_at` | `INTERNAL` | System time, stamped by the trigger |
+| `bnpl_write_off_decision` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
+| `bnpl_write_off_decision` | `journal_entry_id` | `CONFIDENTIAL` | The entry an approval posted, by value - absent on a rejection |
+| `bnpl_write_off_decision` | `value_date` | `INTERNAL` | The date an approval was valued - absent on a rejection |
+| `bnpl_write_off_decision` | `recorded_order` | `INTERNAL` | The fact's place in its account's history |
+| `bnpl_write_off_decision` | `correlation_id` | `INTERNAL` | The decision's correlation |
 | `bnpl_refund` | `dispute_id` | `CONFIDENTIAL` | The dispute a refund of door `DISPUTE` resolves (`P12-TSK-023`); NULL for the merchant's and the operator's doors |
 | `bnpl_refund` | `recorded_order` | `INTERNAL` | The fact's place in its obligation's history - `bnpl.record_order` drawn under the obligation's row lock (`P12-TST-001`, `V017`); the replay proof's order, never a clock |
 | `bnpl_dispute` | `id` | `INTERNAL` | Generated (`P12-TSK-023`) |

@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * {@code bnpl V020}'s ranks as the code declares them (`P14-TSK-021`) - a text pin, which proves only the text: the clauses run in
- * {@code app}'s {@code BnplWriteOffDatabaseTest}, owed. It holds the migration to the enums and the door to the CHECK's names.
+ * {@code BnplWriteOffDatabaseTest}, owed. It holds the migration to the enums and the door to the CHECK's names.
  */
 @DisplayName("bnpl V020 holds the write-off's ranks as the code declares them (P14-TSK-021)")
 class BnplWriteOffMigrationTest {

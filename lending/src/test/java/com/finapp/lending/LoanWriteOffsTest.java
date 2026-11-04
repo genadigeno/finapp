@@ -339,6 +339,21 @@ class LoanWriteOffsTest {
     }
 
     @Test
+    @DisplayName("after it a repayment is refused at its door under L3, nothing posted: what is owed is unchanged and the money stays in the"
+            + " wallet; a key already born replays first")
+    void aRepaymentAfterItIsRefused() {
+        world.defaulted();
+        LoanWriteOffs.Proposed proposed = propose();
+        approve(proposed.writeOff().id(), proposed.writeOff().position());
+        int entries = world.appended.size();
+        Repayments door = world.repaymentDoor();
+        Actor customer = new Actor(world.party.toString(), ActorType.CUSTOMER);
+        assertThatThrownBy(() -> door.repay(UOW, world.id, world.party, new Repayments.Request("key-after", eur(1_00)), customer, CORRELATION))
+                .isInstanceOf(LoanWrittenOffRefused.class);
+        assertThat(world.appended).hasSize(entries);
+    }
+
+    @Test
     @DisplayName("the rejection is the door out, on any account status: a proposal that can no longer post can always be cleared, and a new"
             + " one can follow it; approving it afterwards finds it decided")
     void rejectionIsTheDoorOut() {
@@ -463,6 +478,23 @@ class LoanWriteOffsTest {
                     outbox(), audit(), IDS, CLOCK);
         }
 
+        /** The customer's repayment over this world's loan - everything past the door's L3 refuses to run. */
+        Repayments repaymentDoor() {
+            PurposeBalances<Connection> balances = balances();
+            LedgerAccountStore<Connection> chart = chart();
+            return new Repayments(loans(), fake(RepaymentStore.class, (proxy, method, args) -> {
+                if (method.getName().equals("findByKey")) {
+                    return Optional.empty();
+                }
+                throw new UnsupportedOperationException(method.getName());
+            }), billings(), termsStore(), refuse(LoanWallets.class), new com.finapp.ledger.AvailableBalance<Connection>(
+                    World.<com.finapp.ledger.BalanceDerivation<Connection>>refuse(com.finapp.ledger.BalanceDerivation.class),
+                    World.<com.finapp.ledger.HoldStore<Connection>>refuse(com.finapp.ledger.HoldStore.class)), chart, balances,
+                    posting(), new LoanClosures(loans(), servicing(), billings(), refuse(LoanWallets.class), chart, balances, posting(),
+                            refuse(OutboxWriter.class), IDS, CLOCK),
+                    refuse(OutboxWriter.class), IDS, CLOCK);
+        }
+
         void defaulted() {
             post(AccountPurpose.LOAN_PRINCIPAL, Direction.DEBIT, eur(700_00), TODAY.minusDays(100));
             post(AccountPurpose.LOAN_PRINCIPAL_DUE, Direction.DEBIT, eur(100_00), TODAY.minusDays(100));
@@ -525,7 +557,7 @@ class LoanWriteOffsTest {
         LoanStore loans() {
             return fake(LoanStore.class, (proxy, method, args) -> switch (method.getName()) {
                 case "partyOf" -> Optional.of(party);
-                case "lock", "ownedBy" -> owned();
+                case "lock", "ownedBy", "lockOwnedBy" -> owned();
                 case "principalValueDate" -> valueDateFloor;
                 case "appendEvent" -> {
                     LoanStore.HistoryRow row = (LoanStore.HistoryRow) args[1];
