@@ -96,6 +96,23 @@ class ApprovalAssuranceTest {
         }
     }
 
+    @Test
+    @DisplayName("the controller's read of a FINAL statement through the real interceptor: the controller is let through, on a password session; the accountant, the ledger's operator and a session holding no role are refused 403; the accountant's own read stays closed to the controller")
+    void theControllersReadIsTheControllers() throws Exception {
+        Method read = com.finapp.app.accounting.FinalStatementController.class.getMethod("readFinalStatement", String.class);
+        assertThat(SteppedUpDoor.knock(read, AssuranceLevel.PASSWORD, Set.of(RoleName.FINANCIAL_CONTROLLER))).isTrue();
+        for (Set<RoleName> notTheController : List.of(Set.of(RoleName.ACCOUNTANT), Set.of(RoleName.LEDGER_OPERATOR), Set.<RoleName>of())) {
+            assertThatThrownBy(() -> SteppedUpDoor.knock(read, AssuranceLevel.MULTI_FACTOR, notTheController)).as(notTheController.toString()).isInstanceOfSatisfying(ApiException.class,
+                    refused -> assertThat(refused.errorCode().status()).isEqualTo(403));
+        }
+        Method lines = com.finapp.app.accounting.ReportRunLinesController.class.getMethod("readReportRunLines", String.class, String.class, String.class, String.class, String.class, Integer.class);
+        Method bytes = com.finapp.app.accounting.ReportRunController.class.getMethod("readReportRun", String.class);
+        for (Method accountants : List.of(lines, bytes)) {
+            assertThatThrownBy(() -> SteppedUpDoor.knock(accountants, AssuranceLevel.MULTI_FACTOR, Set.of(RoleName.FINANCIAL_CONTROLLER))).as(accountants.getName()).isInstanceOfSatisfying(ApiException.class,
+                    refused -> assertThat(refused.errorCode().status()).isEqualTo(403));
+        }
+    }
+
     private static List<Door> doors() throws Exception {
         return List.of(new Door(ledger("approve", String.class), Set.of(RoleName.LEDGER_OPERATOR)), new Door(priorPeriod("approvePriorPeriodAdjustment"), Set.of(RoleName.FINANCIAL_CONTROLLER)));
     }

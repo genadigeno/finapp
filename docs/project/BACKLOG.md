@@ -26566,6 +26566,7 @@ storm runs after the project's phases)
   (C5); rule the gate clause by clause; ratify or record C1–C13; accept ADR-0113…0118 or correct them.
 - **Dependencies**: every item but `P14-TST-001`. **Definition of done**: `DOD-DOC`. **Risk**: Low. **Cx**: L.
 - *The owner's decisions (2026-11-04), for the review:* before production a qualified reviewer also reads the write-off notice's wording (`P14-TSK-021`'s (d)), counterparties on a statement's face (`P14-TSK-016`'s (x)) and the income statement's period-end rate (its (z)), beside C3, C6, C7 and C8. Record `PI-005`, `PI-006` and `PI-007` as what a production use of write-offs requires.
+- *Routed by `P14-TSK-022` (2026-11-04), status unchanged:* `StatementDerivation.StatementLine.reconciliationAttribution` lost its one production reader when `AccountController` took the one label; the ledger's fact stands and its suites read it, with a subquery on every statement line. Keep it for a reader or drop it: a small clean-up, not a defect. And the owed list this task adds to your database pass is `MUTATION_TESTING.md` section 2's last paragraph, `RulingsDoorsApiTest` included.
 
 ---
 
