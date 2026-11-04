@@ -308,9 +308,42 @@ class AccountingCloseScheduleTest {
     }
 
     @Test
+    @DisplayName("the inquiry leg: the driver's, its answers counted; its failure metered from its first run and ending only itself; registered at zero before anything fails (P14-TSK-018)")
+    void theInquiryLeg() {
+        assertThat(registry.get(CloseRunMetrics.LEG_FAILED).tag("leg", AccountingCloseSchedule.INQUIRY_LEG).counter().count()).isZero();
+        assertThat(schedule(() -> 3).inquiryOnce()).isEqualTo(3);
+
+        AccountingCloseSchedule failing = schedule(() -> {
+            throw new IllegalStateException("the database is gone");
+        });
+        assertThat(failing.inquiryOnce()).isZero();
+        assertThat(registry.get(CloseRunMetrics.LEG_FAILED).tag("leg", AccountingCloseSchedule.INQUIRY_LEG).counter().count()).isEqualTo(1);
+        assertThat(failing.openOnce()).as("the other legs go on").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the lifecycle runs the inquiry leg at once, not after its poll: an hour's poll still asks on a fleet restarted within the hour (P14-TSK-018)")
+    void theInquiryLegRunsAtOnce() throws Exception {
+        CountDownLatch asked = new CountDownLatch(1);
+        cadence = new AccountingCloseSchedule.Cadence(Duration.ofHours(1), Duration.ofHours(1), Duration.ofHours(1), Duration.ofHours(1), 18, 10);
+        AccountingCloseSchedule schedule = schedule(() -> {
+            asked.countDown();
+            return 0;
+        });
+        schedule.start();
+        try {
+            assertThat(asked.await(30, TimeUnit.SECONDS)).as("the inquiry leg ran with no poll elapsed").isTrue();
+        } finally {
+            schedule.stop();
+        }
+    }
+
+    @Test
     @DisplayName("the cadence is refused at start-up unless every poll and batch is positive")
     void theCadenceIsJudged() {
         Duration second = Duration.ofSeconds(1);
+        assertThatThrownBy(() -> new AccountingCloseSchedule.Cadence(second, second, second, Duration.ZERO, 1, 1))
+                .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new AccountingCloseSchedule.Cadence(Duration.ZERO, second, second, 1, 1))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new AccountingCloseSchedule.Cadence(second, second, second, 0, 1))
@@ -331,6 +364,11 @@ class AccountingCloseScheduleTest {
     private void lockedLater() {
         AccountingPeriodStore.PeriodRow open = periods.month(YearMonth.of(2097, 4)).orElseThrow();
         periods.markLocked(UOW, open.id(), open.revision(), ACCOUNTANT, Optional.empty());
+    }
+
+    private AccountingCloseSchedule schedule(AccountingCloseSchedule.Inquiries inquiries) {
+        return new AccountingCloseSchedule(accountingPeriods(), closeRuns, checks(), orphans, inquiries, transactions, metrics,
+                AccountingFlowScope.NONE, IDS, cadence);
     }
 
     private AccountingCloseSchedule schedule() {

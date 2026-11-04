@@ -509,6 +509,27 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/accounting/prior-period-adjustments/{adjustmentId}/approval", PermissionName.ACCOUNTING_ADJUST_APPROVE),
                     entry("POST /v1/operator/accounting/prior-period-adjustments/{adjustmentId}/rejection", PermissionName.ACCOUNTING_ADJUST_APPROVE),
                     entry("GET /v1/operator/accounting/periods/{periodId}/prior-period-adjustments", PermissionName.ACCOUNTING_READ),
+                    // P14-TSK-018: the regulatory framework - a preparer drafts, validates, withdraws and reads; a controller reads what they attest, attests and refuses; a sender sends and concludes (identity V025's partition).
+                    // Each role's read its own door, and none of them ACCOUNTING_READ.
+                    entry("POST /v1/operator/regulatory/submissions", PermissionName.REGULATORY_REPORT_PREPARE),
+                    entry("GET /v1/operator/regulatory/submissions", PermissionName.REGULATORY_REPORT_PREPARE),
+                    entry("GET /v1/operator/regulatory/submissions/{submissionId}", PermissionName.REGULATORY_REPORT_PREPARE),
+                    entry("GET /v1/operator/regulatory/submissions/{submissionId}/reference-export", PermissionName.REGULATORY_REPORT_PREPARE),
+                    entry("POST /v1/operator/regulatory/submissions/{submissionId}/validation", PermissionName.REGULATORY_REPORT_PREPARE),
+                    entry("POST /v1/operator/regulatory/submissions/{submissionId}/withdrawal", PermissionName.REGULATORY_REPORT_PREPARE),
+                    entry("GET /v1/operator/regulatory/submissions/awaiting-approval", PermissionName.REGULATORY_REPORT_APPROVE),
+                    entry("GET /v1/operator/regulatory/submissions/{submissionId}/attestation", PermissionName.REGULATORY_REPORT_APPROVE),
+                    entry("POST /v1/operator/regulatory/submissions/{submissionId}/approval", PermissionName.REGULATORY_REPORT_APPROVE),
+                    entry("POST /v1/operator/regulatory/submissions/{submissionId}/refusal", PermissionName.REGULATORY_REPORT_APPROVE),
+                    entry("POST /v1/operator/regulatory/submissions/{submissionId}/submission", PermissionName.REGULATORY_REPORT_SUBMIT),
+                    entry("POST /v1/operator/regulatory/submissions/{submissionId}/non-delivery", PermissionName.REGULATORY_REPORT_SUBMIT),
+                    entry("POST /v1/operator/regulatory/obligations", PermissionName.REGULATORY_REPORT_PREPARE),
+                    entry("GET /v1/operator/regulatory/obligations", PermissionName.REGULATORY_REPORT_PREPARE),
+                    entry("GET /v1/operator/regulatory/obligations/{obligationId}", PermissionName.REGULATORY_REPORT_PREPARE),
+                    entry("GET /v1/operator/regulatory/obligations/awaiting-activation", PermissionName.REGULATORY_REPORT_APPROVE),
+                    entry("GET /v1/operator/regulatory/obligations/{obligationId}/attestation", PermissionName.REGULATORY_REPORT_APPROVE),
+                    entry("POST /v1/operator/regulatory/obligations/{obligationId}/activation", PermissionName.REGULATORY_REPORT_APPROVE),
+                    entry("POST /v1/operator/regulatory/obligations/{obligationId}/rejection", PermissionName.REGULATORY_REPORT_APPROVE),
                     // P14-TSK-011: the close run - read by the accountant (audited accounting.CloseRunRead), a check's next
                     // attempt asked under the close's proposer; the negatives are CloseRunDeskTest's route declarations.
                     entry("GET /v1/operator/accounting/periods/{periodId}/close-run", PermissionName.ACCOUNTING_READ),

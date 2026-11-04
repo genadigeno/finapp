@@ -551,6 +551,7 @@ DECLARE
     held_form       text;
     held_jurisdiction text;
     held_version    integer;
+    held_configured text;
     original_status text;
     original_form   text;
     original_jurisdiction text;
@@ -573,7 +574,7 @@ BEGIN
             RAISE EXCEPTION 'a regulatory submission is drawn only from a CLOSED period at its present revision (P14-TSK-018, INV-ACC-13)';
         END IF;
         -- THE VERSION IN FORCE, ITS CODES COPIED FAITHFULLY - they are copied so the partial uniques can name them.
-        SELECT o.status, o.jurisdiction_code, o.form_code, o.form_version INTO held_obligation, held_jurisdiction, held_form, held_version
+        SELECT o.status, o.jurisdiction_code, o.form_code, o.form_version, o.configuration_sha256 INTO held_obligation, held_jurisdiction, held_form, held_version, held_configured
           FROM accounting.regulatory_obligation o WHERE o.id = NEW.obligation_id FOR SHARE;
         IF NOT FOUND OR held_obligation <> 'ACTIVE' OR held_jurisdiction <> NEW.jurisdiction_code OR held_form <> NEW.form_code OR held_version <> NEW.form_version THEN
             RAISE EXCEPTION 'a regulatory submission pins its obligation version in force, its form as stated (P14-TSK-018)';
@@ -591,7 +592,8 @@ BEGIN
         END IF;
         IF stated ->> 'standing' IS DISTINCT FROM 'REFERENCE' OR stated ->> 'obligationId' IS DISTINCT FROM NEW.obligation_id::text
                 OR stated ->> 'jurisdiction' IS DISTINCT FROM NEW.jurisdiction_code OR stated ->> 'form' IS DISTINCT FROM NEW.form_code
-                OR stated ->> 'formVersion' IS DISTINCT FROM NEW.form_version::text OR stated ->> 'periodRevision' IS DISTINCT FROM NEW.period_revision::text
+                OR stated ->> 'formVersion' IS DISTINCT FROM NEW.form_version::text OR stated ->> 'configurationSha256' IS DISTINCT FROM held_configured
+                OR stated ->> 'periodRevision' IS DISTINCT FROM NEW.period_revision::text
                 OR stated ->> 'correctsSubmissionId' IS DISTINCT FROM NEW.corrects_submission_id::text THEN
             RAISE EXCEPTION 'regulatory_submission_content_is_this_rows: REFERENCE, and its header this row''s (P14-TSK-018, INV-ACC-13)' USING ERRCODE = 'check_violation';
         END IF;

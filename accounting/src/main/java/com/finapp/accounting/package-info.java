@@ -30,7 +30,7 @@
  * {@link com.finapp.accounting.PriorPeriodPostings}, {@link com.finapp.accounting.SourceProofs},
  * {@link com.finapp.accounting.AccrualCompleteness}, {@link com.finapp.accounting.ReconciliationDisclosure},
  * {@link com.finapp.accounting.ValuationRates} and {@link com.finapp.accounting.RegulatoryReportingProvider} - declared
- * empty with the boundary, each given its methods and its implementation by the task that first consumes it.
+ * with the boundary, each given its methods and its implementation by the task that first consumed it.
  *
  * <p><strong>Trust.</strong> Three disjoint desks (owner decision C12; {@code INV-AUD-03}, {@code RoleNameTest}): the
  * accountant reads and proposes (mapping versions, closes, adjustments) and generates reports; the financial controller

@@ -56,8 +56,8 @@ public record RegulatoryObligationConfiguration(List<Source> sources, List<Line>
     public record Rule(String code, RegulatoryRuleType type, List<String> left, List<String> right) {
 
         public Rule {
-            left = left == null ? List.of() : List.copyOf(left);
-            right = right == null ? List.of() : List.copyOf(right);
+            left = left == null ? List.of() : copied(left, "rule's lines");
+            right = right == null ? List.of() : copied(right, "rule's lines");
         }
     }
 
@@ -131,7 +131,7 @@ public record RegulatoryObligationConfiguration(List<Source> sources, List<Line>
     }
 
     private static <T> List<T> copied(List<T> given, String what) {
-        if (given == null || given.contains(null)) {
+        if (given == null || given.stream().anyMatch(Objects::isNull)) {
             throw new Invalid("the " + what + " are required, and hold no null");
         }
         return List.copyOf(given);

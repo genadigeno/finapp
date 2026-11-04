@@ -107,7 +107,7 @@ class AccountingMigrationTest {
             + " functions (P14-TSK-003's V002), the periods' (P14-TSK-005's V003), the report run's (P14-TSK-008's"
             + " V004), the valuation rate sets' (P14-TSK-014's V005), the breaks' (P14-TSK-010's V006), the close"
             + " run's (P14-TSK-011's V007), the close and reopen proposals' (P14-TSK-012's V008) and the prior-period adjustments'"
-            + " (P14-TSK-013's V009), nothing else")
+            + " (P14-TSK-013's V009) and the regulatory framework's (P14-TSK-018's V010), nothing else")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. Each later task rewrites
@@ -116,7 +116,8 @@ class AccountingMigrationTest {
         assertThat(tablesIn(SCHEMA)).containsExactly("accounting_break", "accounting_period", "break_event", "close_check",
                 "close_run",
                 "flyway_schema_history", "gl_account", "gl_mapping_rule", "gl_mapping_version",
-                "gl_mapping_version_event", "period_close", "period_close_check", "period_event", "period_reopen", "prior_period_adjustment", "report_run",
+                "gl_mapping_version_event", "period_close", "period_close_check", "period_event", "period_reopen", "prior_period_adjustment", "regulatory_obligation",
+                "regulatory_provider_answer", "regulatory_submission", "regulatory_submission_event", "regulatory_submission_line", "regulatory_submission_source", "report_run",
                 "valuation_rate", "valuation_rate_set");
         assertThat(column("SELECT viewname FROM pg_views WHERE schemaname = '" + SCHEMA + "'")).isEmpty();
         assertThat(column("SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
@@ -135,6 +136,11 @@ class AccountingMigrationTest {
                 "period_event_is_append_only", "period_reopen_commits_with_its_edge", "period_reopen_permits_only_machine_edges",
                 // P14-TSK-013's V009.
                 "prior_period_adjustment_permits_only_machine_edges",
+                // P14-TSK-018's V010.
+                "regulatory_obligation_permits_only_machine_edges", "regulatory_provider_answer_is_append_only", "regulatory_record_is_never_truncated",
+                "regulatory_submission_event_is_append_only", "regulatory_submission_is_born_whole", "regulatory_submission_judge_stands",
+                "regulatory_submission_line_is_born_with_its_draft", "regulatory_submission_lines_agree", "regulatory_submission_permits_only_machine_edges",
+                "regulatory_submission_source_is_a_final_run",
                 "report_run_content_is_frozen", "report_run_is_never_truncated",
                 "report_run_permits_only_machine_edges",
                 // P14-TSK-014's V005.

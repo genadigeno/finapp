@@ -330,6 +330,7 @@ extra["ownContainerSuites"] =
         "com.finapp.app.accounting.PeriodReopenDatabaseTest",
         "com.finapp.app.accounting.PriorPeriodAdjustmentDatabaseTest",
         "com.finapp.app.accounting.QuietMonthDatabaseTest",
+        "com.finapp.app.accounting.RegulatorySubmissionDatabaseTest",
         "com.finapp.app.accounting.StatementsDatabaseTest",
         "com.finapp.app.accounting.TrialBalanceRunDatabaseTest",
         "com.finapp.app.accounting.ValuationRateSetDatabaseTest",
