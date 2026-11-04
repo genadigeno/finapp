@@ -33,7 +33,7 @@ import org.junit.jupiter.api.Test;
  * zero; bnpl's own principal purposes bound, never named here. The live read against the real purchase, both orders of an
  * acceptance and a decision, and the census are {@code BnplCreditExposureDatabaseTest}'s.
  */
-@DisplayName("platform credit exposure v3: loans, lines and BNPL principal in one statement (P12-TSK-012)")
+@DisplayName("platform credit exposure v4: loans, lines and BNPL principal in one statement (P12-TSK-012, P14-TSK-021)")
 class BnplCreditExposureTest {
 
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");

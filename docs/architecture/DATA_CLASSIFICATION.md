@@ -4037,7 +4037,7 @@ at the merchant's own door only - `reason`; never `excess_*`, `cancelled_*` or t
 | `bnpl_write_off` | `proposed_by` | `CONFIDENTIAL` | The holder of the propose permission |
 | `bnpl_write_off` | `proposed_by_type` | `INTERNAL` | A closed actor type |
 | `bnpl_write_off` | `proposed_at` | `INTERNAL` | System time, stamped by the trigger |
-| `bnpl_write_off` | `proposal_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
+| `bnpl_write_off` | `proposal_reason` | `RESTRICTED-PII` | A person's prose - bounded and screened |
 | `bnpl_write_off` | `correlation_id` | `INTERNAL` | The proposal's correlation |
 | `bnpl_write_off_decision` | `id` | `INTERNAL` | Generated (`P14-TSK-021`) |
 | `bnpl_write_off_decision` | `write_off_id` | `INTERNAL` | The proposal - decided once |
@@ -4047,7 +4047,7 @@ at the merchant's own door only - `reason`; never `excess_*`, `cancelled_*` or t
 | `bnpl_write_off_decision` | `decided_by` | `CONFIDENTIAL` | Who decided - never the proposer of an approval |
 | `bnpl_write_off_decision` | `decided_by_type` | `INTERNAL` | A closed actor type |
 | `bnpl_write_off_decision` | `decided_at` | `INTERNAL` | System time, stamped by the trigger |
-| `bnpl_write_off_decision` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person - screened for instrument shapes |
+| `bnpl_write_off_decision` | `decision_reason` | `RESTRICTED-PII` | A person's prose - bounded and screened |
 | `bnpl_write_off_decision` | `journal_entry_id` | `CONFIDENTIAL` | The entry an approval posted, by value - absent on a rejection |
 | `bnpl_write_off_decision` | `value_date` | `INTERNAL` | The date an approval was valued - absent on a rejection |
 | `bnpl_write_off_decision` | `recorded_order` | `INTERNAL` | The fact's place in its account's history |

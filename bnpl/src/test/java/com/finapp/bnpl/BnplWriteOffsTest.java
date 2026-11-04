@@ -369,6 +369,94 @@ class BnplWriteOffsTest {
         assertThat(read.owned().obligation().status()).isEqualTo(BnplObligationStatus.WRITTEN_OFF);
     }
 
+    @Test
+    @DisplayName("what is proposed under one agreement version is not approved under another, whatever else stands - the proposal is stale")
+    void anotherAgreementVersionIsStale() {
+        BnplConditionWorld.Agreement agreement = defaulted();
+        BnplWriteOffs.Proposed proposed = propose(agreement);
+        BnplAgreement current = fakes.purchases.agreements.get(agreement.agreement().value());
+        fakes.purchases.agreements.put(agreement.agreement().value(), new BnplAgreement(current.id(), current.version() + 1,
+                current.obligation(), current.offer(), current.decision(), current.termsVersionId(), current.product(), current.plan(),
+                current.scheduleEngine(), current.accrualEngine(), current.allocationEngine(), current.refundAllocationEngine(),
+                current.feeScheduleVersion(), current.template(), current.canonicalFormat(), current.canonicalTerms(),
+                current.termsSha256(), current.documentSha256(), current.createdAt()));
+        BnplWriteOffs.Attestation moved = corrections.on(DEFAULTED_ON, approver, () -> writeOffs.read(BnplApplicationFakes.UOW,
+                agreement.agreement(), proposed.writeOff().id(), approver, BnplConditionWorld.CORRELATION));
+        assertThat(moved.blockers()).containsExactly(BnplWriteOffs.Blocker.MOVED);
+        assertThat(moved.agreementVersionNow()).isEqualTo(current.version() + 1);
+        assertThatThrownBy(() -> approve(agreement, proposed.writeOff().id(), proposed.writeOff().position()))
+                .isInstanceOf(BnplWriteOffs.Stale.class);
+    }
+
+    @Test
+    @DisplayName("on the day an upheld dispute lifts, the clock restarts and nothing is past due: the condition the recorder would derive is not"
+            + " defaulted, so a proposal that day is refused, whatever the earlier DEFAULT change says")
+    void anUpheldDisputesLiftIsNotADefault() {
+        BnplConditionWorld.Agreement agreement = defaulted();
+        fakes.now = DEFAULTED_ON.atTime(11, 0).toInstant(java.time.ZoneOffset.UTC);
+        BnplDispute dispute = fakes.inTransaction(() -> proofs.disputes.open(BnplApplicationFakes.UOW, agreement.agreement(), world.party,
+                new BnplDisputes.OpenRequest("dispute-1", eur(BnplConditionWorld.GROSS * 3 / 4), BnplDisputeReason.NOT_RECEIVED, "it never came"),
+                world.customer, BnplConditionWorld.CORRELATION)).dispute();
+        fakes.now = DEFAULTED_ON.atTime(12, 0).toInstant(java.time.ZoneOffset.UTC);
+        fakes.inTransaction(() -> proofs.disputes.respond(BnplApplicationFakes.UOW, dispute.id(), world.merchant,
+                new BnplDisputes.Response(BnplDisputes.Decision.CONTEST, "we shipped it", "merchant-key-1", BnplKeyIssuer.KEY_ISSUER),
+                world.merchantActor, BnplConditionWorld.CORRELATION));
+        LocalDate lifted = DEFAULTED_ON.plusDays(1);
+        fakes.now = lifted.atTime(9, 0).toInstant(java.time.ZoneOffset.UTC);
+        fakes.inTransaction(() -> proofs.disputes.resolve(BnplApplicationFakes.UOW, dispute.id(), BnplDisputeStatus.RESOLVED_UPHELD,
+                "on the evidence", approver, BnplConditionWorld.CORRELATION));
+        assertThatThrownBy(() -> corrections.on(lifted, proposer, () -> writeOffs.propose(BnplApplicationFakes.UOW, agreement.agreement(),
+                "uncollectable", proposer, BnplConditionWorld.CORRELATION))).isInstanceOf(BnplWriteOffs.NotDefaulted.class);
+    }
+
+    @Test
+    @DisplayName("the pending list never serves the officer's own party's agreement, and an officer the platform cannot place reads none and is"
+            + " recorded FAILED")
+    void thePendingListJudgesTheReader() {
+        BnplConditionWorld.Agreement agreement = defaulted();
+        propose(agreement);
+        assertThat(writeOffs.pending(BnplApplicationFakes.UOW, approver, BnplConditionWorld.CORRELATION)).hasSize(1);
+        assertThat(writeOffs.pending(BnplApplicationFakes.UOW, corrections.insider, BnplConditionWorld.CORRELATION))
+                .as("the officer's own party's").isEmpty();
+        Actor nobody = new Actor("operator-unplaced", com.finapp.platform.security.ActorType.EMPLOYEE);
+        BnplWriteOffs.UnplacedReaderRefused refused = org.junit.jupiter.api.Assertions.assertThrows(
+                BnplWriteOffs.UnplacedReaderRefused.class, () -> writeOffs.pending(BnplApplicationFakes.UOW, nobody, BnplConditionWorld.CORRELATION));
+        writeOffs.recordRefusal(BnplApplicationFakes.UOW, refused, nobody, BnplConditionWorld.CORRELATION);
+        assertThat(fakes.audited.get(fakes.audited.size() - 1).outcome()).isEqualTo(com.finapp.platform.audit.AuditOutcome.FAILED);
+    }
+
+    @Test
+    @DisplayName("what a customer reads beside the status says it stands owed, in words that cannot be read as paid or forgiven")
+    void theNoticeSaysItStandsOwed() {
+        assertThat(BnplObligations.WRITTEN_OFF_NOTICE).contains("written off in our accounts").contains("bookkeeping entry")
+                .contains("has not been paid or forgiven").contains("still owed");
+    }
+
+    @Test
+    @DisplayName("every correction left standing from before it, and the payoff quoted before it, is refused after it: a reversal's and a"
+            + " waiver's approval, a new waiver, the payoff's execution - nothing posted")
+    void whatStoodBeforeItIsRefusedAfterIt() {
+        BnplConditionWorld.Agreement agreement = defaulted();
+        UUID paid = fakes.purchases.repayments.values().stream().filter(row -> row.obligation().equals(agreement.obligation()))
+                .findFirst().map(BnplPurchaseStore.Repayment::id).orElseThrow();
+        BnplRepaymentReversal reversal = corrections.propose(DEFAULTED_ON, agreement, paid, proposer);
+        BnplFeeAssessment fee = corrections.fees(agreement).get(0);
+        BnplWaiver waiver = corrections.proposeWaiver(DEFAULTED_ON, agreement, fee.id(), 1_00, proposer);
+        BnplPayoffs.Quoted quoted = proofs.quoteOn(DEFAULTED_ON, agreement, "quote");
+        BnplWriteOffs.Proposed proposed = propose(agreement);
+        approve(agreement, proposed.writeOff().id(), proposed.writeOff().position());
+        int lines = fakes.book.lines.size();
+        LocalDate same = DEFAULTED_ON;
+
+        assertThatThrownBy(() -> corrections.approve(same, agreement, paid, reversal.id(), approver)).isInstanceOf(BnplWrittenOffRefused.class);
+        assertThatThrownBy(() -> corrections.approveWaiver(same, agreement, waiver.id(), approver)).isInstanceOf(BnplWrittenOffRefused.class);
+        assertThatThrownBy(() -> corrections.proposeWaiver(same, agreement, fee.id(), 1_00, proposer)).isInstanceOf(BnplWrittenOffRefused.class);
+        fakes.now = same.atTime(10, 30).toInstant(java.time.ZoneOffset.UTC);
+        assertThatThrownBy(() -> fakes.inTransaction(() -> proofs.payoffs.execute(BnplApplicationFakes.UOW, agreement.agreement(), world.party,
+                "execute", quoted.quote().id(), world.customer, BnplConditionWorld.CORRELATION))).isInstanceOf(BnplWrittenOffRefused.class);
+        assertThat(fakes.book.lines).as("nothing moved").hasSize(lines);
+    }
+
     private BnplConditionWorld.Agreement defaulted() {
         BnplConditionWorld.Agreement agreement = world.payIn4();
         world.serviceOn(DEFAULTED_ON, agreement);

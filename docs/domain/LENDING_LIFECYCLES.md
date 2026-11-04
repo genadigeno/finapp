@@ -283,6 +283,7 @@ birth is an invariant breach and stays a `500`.*
 INSTALMENT:  PENDING_DISBURSEMENT ──disbursement credited to the wallet──> ACTIVE ──every receivable zero, credit balance refunded──> CLOSED
                    └──standing lost / wallet not postable past the deadline──> CANCELLED
 REVOLVING:   (born at acceptance) ACTIVE ──customer requests closure──> CLOSING ──every receivable zero──> CLOSED
+BOTH KINDS:  ACTIVE, or a line's CLOSING, --a different person approves the write-off (section 4.5a)--> WRITTEN_OFF
                                     └──closure requested with nothing outstanding, or paid off──────────────> CLOSED
 ```
 
@@ -296,7 +297,7 @@ REVOLVING:   (born at acceptance) ACTIVE ──customer requests closure──> 
 
 Closure is a consequence, never a command. The kind is frozen at birth. **A restructuring is not a
 state** (agreement v n+1 on an `ACTIVE` loan), and **no condition is a state** (§5). **Invalid:**
-anything out of `CLOSED` or `CANCELLED` (`INV-LIFE-04`, `INV-LND-08`); `ACTIVE → PENDING_DISBURSEMENT`;
+anything out of `CLOSED`, `CANCELLED` or `WRITTEN_OFF` (`INV-LIFE-04`, `INV-LND-08`); `ACTIVE → PENDING_DISBURSEMENT`;
 `PENDING_DISBURSEMENT → CLOSED` (nothing to repay — that is `CANCELLED`); `ACTIVE → CANCELLED` (after
 disbursement a loan ends only by repayment, or by `WRITTEN_OFF`, section 4.5a); `CLOSING → ACTIVE` (a new
 application); a revolving loan in `PENDING_DISBURSEMENT`, an instalment loan in `CLOSING`; instalment
@@ -621,9 +622,9 @@ Owner decision C6 (A), ADR-0096 rule 14, ADR-0104's Follow-up. **It moves an ass
 | Act | Who | Under L3 it refuses | What it does |
 |---|---|---|---|
 | Propose | `LOAN_WRITE_OFF_PROPOSE` (`LOAN_SERVICING_AGENT`), not of their own party | written off; not `ACTIVE`/`CLOSING`; not defaulted; a credit balance held; an elapsed date not accrued; a proposal already awaiting | Reads the five receivables and the revision, pins the latest `DEFAULT` change. Posts nothing. |
-| Approve | `LOAN_WRITE_OFF_APPROVE` (`LENDING_OFFICER`), not the proposer (the domain and `V032`'s `CHECK`), `MULTI_FACTOR` | all of the above; `Stale` when the figures or revision they name are not the proposal's, the account's now are not, or the `DEFAULT` change is another | Posts rule 14 dated today, the decision, the edge, the event and the audit record in one transaction. |
+| Approve | `LOAN_WRITE_OFF_APPROVE` (`LENDING_OFFICER`), not the proposer (the domain and `V032`'s `CHECK`), `MULTI_FACTOR` | all of the above; `Stale` when the figures or revision they name are not the proposal's, the account's now are not, the `DEFAULT` change is another, or the governing agreement's version moved: a restructuring accepted without re-scheduling arrears moves no journal line (the domain and `V032`'s trigger) | Posts rule 14 dated today, the decision, the edge, the event and the audit record in one transaction. |
 | Reject | `LOAN_WRITE_OFF_APPROVE` (the proposer may, if they hold it) | an already decided proposal | Terminal, nothing posted, on any account status. |
-| Read / list | `LOAN_WRITE_OFF_APPROVE`, audited | | The figures, the proposer and their reason, what the account holds now, whether it still stands, each blocker. |
+| Read / list | `LOAN_WRITE_OFF_APPROVE`, audited | their own party's account (the read refuses; the list leaves it out); an officer the platform cannot place in a party | The figures, the proposer and their reason, what the account holds now and its agreement version, whether it still stands, each blocker. The approver names figures and revision, not the version: the proposal's version is immutable and compared under the lock. |
 
 **The revision** is the count of journal lines on the account's six accounts: lines are append-only, so a repayment and its reversal cannot round-trip, and a cure and re-default names a later `DEFAULT` change. **Consequence:** an accrual moves the figures daily, so a proposal is decided on the business date it was made, or rejected and proposed again.
 
@@ -631,7 +632,8 @@ Owner decision C6 (A), ADR-0096 rule 14, ADR-0104's Follow-up. **It moves an ass
 
 | Door | What it does now |
 |---|---|
-| Repayment, payoff, prepayment, draw, line closure, waiver, repayment reversal (propose and approve), amendment | `409 lending.LoanWrittenOff` under L3, nothing moved. A key already born replays. The customer's money stays in their wallet: **no recovery rule exists** (owner item). |
+| Repayment, payoff (quote and execution), prepayment, draw, line closure, waiver (propose and approve), repayment reversal (propose and approve), an amendment's proposal | `409 lending.LoanWrittenOff` under L3, nothing moved. A key already born replays. The customer's money stays in their wallet: **no recovery rule exists** (owner item). |
+| An amendment already proposed or offered | Its approval and the customer's acceptance answer `409 lending.AmendmentLapsed`: its derived status lapses when the loan is no longer `ACTIVE`. |
 | Auto-collection, late settlement of a collection | The servicing step is `NOT_SERVICED` for the status, so nothing is collected; nothing already received is touched. |
 | Servicing sweep: accrual, billing, statements, delinquency, late fees | The claim and every lag read filter on `ACTIVE`/`CLOSING`; the step re-reads under L3 and is `NOT_SERVICED`; `lending.loan`'s edge function refuses a permit move. Under ten instances a step either ran before the approval (and the approval read what it left, or found itself `Stale`) or finds the status. |
 | The customer's read | The status, the figures the write-off took as what stands owed, never zero, and a notice that says so. Never "paid", "settled" or "forgiven". |

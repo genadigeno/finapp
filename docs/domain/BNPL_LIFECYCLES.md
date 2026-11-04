@@ -422,6 +422,7 @@ agent bounded. No money column: the amounts are the canonical terms' and the fin
 
 ```
  (born at acceptance) ACTIVE ──every receivable zero, every elapsed date accrued, credit balance refunded──> CLOSED
+ ACTIVE --a different person approves the write-off (section 4.7a)--> WRITTEN_OFF
                                 (reason REPAID | PAID_OFF_EARLY | REFUNDED | REFUNDED_PARTIALLY_REPAID)
 ```
 
@@ -443,10 +444,10 @@ excess); a partial refund that settles the last receivable → **`REFUNDED_PARTI
 **`PAID_OFF_EARLY`**; any other closing act (repayment, auto-collection, credit-balance application,
 waiver) → **`REPAID`**, earlier partial refunds notwithstanding. Closure is a consequence, never a command.
 No `PENDING_DISBURSEMENT` (nothing to disburse) and no `CANCELLED` (once financed, an obligation ends only
-by being settled — or, deferred to Phase 14, written off). **No condition is a state** (§5). A `CLOSED`
+by being settled — or written off, section 4.7a). **No condition is a state** (§5). A `CLOSED`
 obligation's six balances are zero, proven continuously by `BnplSubledgerProof` (`INV-BNPL-09`); a
 repayment, collection or fee on it answers `409 bnpl.ObligationClosed` or is skipped, and no condition is
-written after closure (scenario 13). **Invalid:** anything out of `CLOSED` (`INV-LIFE-04`); `CLOSED`
+written after closure (scenario 13). **Invalid:** anything out of `CLOSED` or `WRITTEN_OFF` (`INV-LIFE-04`); `CLOSED`
 without its reason, or with a receivable or credit balance not zero; a reason that does not match its
 closing act (`REFUNDED` without the purchase `FULLY_REFUNDED`, `PAID_OFF_EARLY` without a payoff execution).
 
@@ -758,8 +759,8 @@ Owner decision C6 (A), ADR-0103 F11, ADR-0104's Follow-up. **It moves an asset t
 | Door | What it does now |
 |---|---|
 | Repayment, payoff, repayment reversal (propose and approve), waiver | `409 bnpl.ObligationWrittenOff` under B4, nothing moved; a key already born replays. The customer's money stays in their wallet: **no recovery rule exists** (owner item). |
-| Merchant refund (F5), by the merchant or a dispute | Refused, by the domain and `V020`'s trigger, for every writer: the merchant's money stays on its payable. **No rule pays it** (owner item, F12 recommended). Never paid to the customer's wallet as if the obligation were closed. |
-| A dispute opened afterwards | Refused, by the domain and `V020`'s trigger. |
+| Merchant refund (F5), by the merchant or a dispute | Refused, by the domain and `V020`'s trigger, for every writer: the merchant's money stays on its payable. **No rule pays it** (owner item, F12 recommended). Never paid to the customer's wallet as if the obligation were closed. **The merchant reads the neutral `409 bnpl.RefundNotPostable`, naming no cause**: the customer's credit is not the merchant's to read; the operator's door answers `bnpl.ObligationWrittenOff`. Counted `finapp.bnpl.refund{outcome="written_off"}`. |
+| A dispute opened afterwards | Refused, by the domain and `V020`'s trigger: a customer told "still owed" has no dispute door (owner item). |
 | Scheduled instalments, retries, dunning, late fees, accrual, delinquency | The step re-reads under B4 and is `NOT_SERVICED`; the sweep's claim and every lag read filter on `ACTIVE`. |
 | The customer's read | The status, what stands owed, never zero, and a notice that says so. Never "paid", "settled" or "forgiven". |
 | Credit decisioning | Credit exposure v4 leaves F11's lines out, so the obligation keeps counting. Nothing is sent to a bureau; nothing consumes `BnplWrittenOff`. |

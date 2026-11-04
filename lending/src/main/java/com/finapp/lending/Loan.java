@@ -16,7 +16,8 @@ import java.util.UUID;
  * @param offer the offer it was born from
  * @param decision credit's decision it consumed, by value (ADR-0029)
  * @param openedAt the database's instant of the acceptance
- * @param closedAt the database's instant of a terminal edge, once there
+ * @param closedAt the database's instant of a closing edge, once there: {@code CLOSED} or {@code CANCELLED}, never {@code WRITTEN_OFF},
+ *     which closes nothing
  * @param correlation the acceptance's
  */
 public record Loan(

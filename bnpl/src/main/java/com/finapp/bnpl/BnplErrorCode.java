@@ -188,7 +188,7 @@ public enum BnplErrorCode implements ErrorCode {
      * {@code CLOSED} agreement (a closed agreement holds no credit balance, OQ-15), or the merchant's payable cannot be
      * debited. Nothing was written; retry later under the same key.
      */
-    REFUND_NOT_POSTABLE("bnpl.RefundNotPostable", 409, "The BNPL refund cannot be posted now; nothing was written."),
+    REFUND_NOT_POSTABLE("bnpl.RefundNotPostable", 409, "The BNPL refund cannot be posted; nothing was written."),
 
     /**
      * An operator tried to refund a BNPL purchase of their own party (`P12-TSK-021`; the self-dealing rule,

@@ -6,8 +6,8 @@ package com.finapp.bnpl;
  *
  * <p>Born {@code ACTIVE} at the acceptance; {@code CLOSED} - with its {@link BnplClosureReason} - by the transaction that
  * zeroes the last receivable. No {@code PENDING_DISBURSEMENT} (nothing to disburse) and no {@code CANCELLED} (once
- * financed, an obligation ends only by being settled). Delinquency, default and a dispute's servicing hold are
- * conditions, never states. Terminal: {@code CLOSED} ({@code INV-LIFE-04}).
+ * financed, an obligation ends only by being settled or written off). Delinquency, default and a dispute's servicing hold are
+ * conditions, never states. Terminal: {@code CLOSED} and {@code WRITTEN_OFF}, which closes nothing ({@code INV-LIFE-04}).
  */
 public enum BnplObligationStatus {
 

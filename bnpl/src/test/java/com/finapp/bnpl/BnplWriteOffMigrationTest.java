@@ -47,6 +47,8 @@ class BnplWriteOffMigrationTest {
     void theEdgeAndTheDoors() {
         assertThat(V020).contains("IF OLD.status = 'ACTIVE' AND NEW.status = 'WRITTEN_OFF' THEN");
         assertThat(V020).contains("d.obligation_id = OLD.id AND d.outcome = 'APPROVED'");
+        assertThat(V020).contains("IF proposal.agreement_version <> (SELECT max(a.version) FROM bnpl.bnpl_agreement a");
+        assertThat(V020).contains("CREATE TRIGGER bnpl_dispute_refused_on_a_written_off_obligation");
         assertThat(V020).contains("BEFORE INSERT ON bnpl.bnpl_refund").contains("BEFORE INSERT ON bnpl.bnpl_dispute");
     }
 

@@ -856,7 +856,7 @@ billed amount is paid (`INV-LND-12`). Built by `P11-TSK-024` (`lending V020`'s `
 servicing step's daily evaluation at most once a business date - a repayment that cures is recorded by the
 next evaluation, not by itself.
 **Not:** a lifecycle state — a delinquent loan stays `ACTIVE`. Nor a Default, which is a flag set
-at 90 days past due and posts nothing, and not a Write-off, the deferred accounting event with its
+at 90 days past due and posts nothing, and not a Write-off, the accounting event (`P14-TSK-021`) with its
 own posting. Delinquency is recoverable, and lending only records it: contact strategy and
 placement are a future collections owner's. *(This entry read "the state arising from contractual
 payments being missed, with defined stages", and called default "an accounting event with its own
@@ -1127,7 +1127,7 @@ Decision, recorded once.
 
 *(Added by the Phase 10 → 11 transition, 2026-10-10 — ADR-0090…0100 (`Proposed`),
 `PHASE_11_PLAN.md` §3 and §12. Twenty-three Phase 11 terms, in the order `DOMAIN_MODEL.md` lists
-them. Phase 11 built every concept below except those marked **Deferred** (Refinance, Write-off,
+them. Phase 11 built every concept below except those marked **Deferred** (Refinance, and the Write-off until `P14-TSK-021` built it,
 Collections) - each entry states what was built, read against the code by the Phase 11 exit review,
 `P11-DOC-001`, 2026-10-15; this note read "Nothing of Phase 11 is built: every entry is the planned
 design, and the task that builds a concept corrects its entry to the code" until then. The machines they name are in
@@ -1266,7 +1266,7 @@ holding `LOAN_SERVICE` proposes, a different person holding `LOAN_SERVICE_APPROV
 the Loan Credit Balance (rule 8a), `INTEREST` billed interest released (rule 9) - each bounded by what is due now under the
 loan's lock, the account closed in the same transaction when it settled the last receivable (`waiver`, `waiver_decision`,
 `Waivers`, `POST /v1/operator/loans/{id}/waivers`).
-**Not:** an edit of a fee or a balance, a Repayment Reversal (which undoes money applied), a write-off (Phase 14), or a
+**Not:** an edit of a fee or a balance, a Repayment Reversal (which undoes money applied), a write-off (`P14-TSK-021`), or a
 waiver of accrued interest not yet billed (a billing's interest is exactly its period's accruals - refined out).
 **Owned by:** `lending`
 
@@ -1314,7 +1314,7 @@ cleared when the account is current again, without probation — announced, susp
 draws, and recorded as an append-only condition change. Built by `P11-TSK-024` (`loan_condition_event`,
 `LoanConditions`): set at the threshold, held while anything is past due, cleared at cure.
 **Not:** a lifecycle state, and not acceleration: Phase 11 accelerates nothing, charges no default
-interest and posts nothing on default. Nor a Write-off (the deferred recognition of the loss), and
+interest and posts nothing on default. Nor a Write-off (the recognition of the loss on our books, under four eyes), and
 not Delinquency, the graduated condition of which default is one threshold.
 **Owned by:** `lending`
 

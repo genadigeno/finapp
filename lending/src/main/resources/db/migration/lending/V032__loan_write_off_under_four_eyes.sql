@@ -220,6 +220,11 @@ BEGIN
         IF default_change.id IS DISTINCT FROM proposal.default_event_id OR default_change.defaulted IS NOT TRUE THEN
             RAISE EXCEPTION 'a write-off is approved only while the DEFAULT change it stands on is the latest and still set (P14-TSK-021)';
         END IF;
+        -- The agreement in force is the one it was proposed under: a restructuring accepted without re-scheduling arrears moves no
+        -- journal line, so the revision cannot say so.
+        IF proposal.agreement_version <> (SELECT max(a.version) FROM lending.loan_agreement a WHERE a.loan_id = proposal.loan_id) THEN
+            RAISE EXCEPTION 'a write-off is approved only under the agreement version it was proposed on (P14-TSK-021, INV-LND-01)';
+        END IF;
         -- What the billed items say is due is what the proposal named (the rows' side; the ledger's is the domain's under L3).
         SELECT coalesce(sum(lending.billing_component_billed(i.id, 'PRINCIPAL') - lending.billing_component_paid(i.id, 'PRINCIPAL')), 0),
                coalesce(sum(lending.billing_component_billed(i.id, 'INTEREST') - lending.billing_component_paid(i.id, 'INTEREST')), 0),

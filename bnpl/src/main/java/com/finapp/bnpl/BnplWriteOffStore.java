@@ -36,8 +36,8 @@ public interface BnplWriteOffStore {
     /** The obligation's approved write-off - at most one, ever. */
     Optional<BnplWriteOff> approvedOf(Connection unitOfWork, BnplObligationId obligation);
 
-    /** The oldest write-offs awaiting a decision, oldest first, at most {@code limit}: how a stale one is found. */
-    List<BnplWriteOff> oldestPending(Connection unitOfWork, int limit);
+    /** The oldest write-offs awaiting a decision, never of {@code excludedParty}, oldest first, at most {@code limit}: how a stale one is found. */
+    List<BnplWriteOff> oldestPending(Connection unitOfWork, UUID excludedParty, int limit);
 
     /** A proposal at birth; its instant is the database's. */
     record NewProposal(UUID id, BnplObligationId obligation, BnplAgreementId agreement, BnplWriteOffPosition position, UUID defaultEvent,

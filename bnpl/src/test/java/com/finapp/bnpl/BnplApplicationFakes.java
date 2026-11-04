@@ -1987,8 +1987,9 @@ final class BnplApplicationFakes {
         }
 
         @Override
-        public List<BnplWriteOff> oldestPending(Connection unitOfWork, int limit) {
-            return rows.values().stream().filter(row -> row.status() == BnplCorrectionStatus.PROPOSED).limit(limit).toList();
+        public List<BnplWriteOff> oldestPending(Connection unitOfWork, UUID excludedParty, int limit) {
+            return rows.values().stream().filter(row -> row.status() == BnplCorrectionStatus.PROPOSED)
+                    .filter(row -> !excludedParty.equals(purchases.obligations.get(row.obligation().value()).party())).limit(limit).toList();
         }
     }
 

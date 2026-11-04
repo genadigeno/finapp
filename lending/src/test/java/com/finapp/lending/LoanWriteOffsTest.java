@@ -285,6 +285,23 @@ class LoanWriteOffsTest {
     }
 
     @Test
+    @DisplayName("a restructuring accepted between the two acts moves no journal line - the figures, the revision and the DEFAULT change all"
+            + " read the same - and is stale all the same: the customer's bargain changed, and the approver did not read that one")
+    void aRestructuringBetweenTheTwoActsIsStale() {
+        world.defaulted();
+        LoanWriteOffs.Proposed proposed = propose();
+        world.agreementVersion = 2;
+        LoanWriteOffs.Attestation moved = world.writeOffs.read(UOW, world.id, proposed.writeOff().id(), approver, CORRELATION);
+        assertThat(moved.live()).as("nothing on the ledger moved").isEqualTo(proposed.writeOff().position());
+        assertThat(moved.blockers()).containsExactly(LoanWriteOffs.Blocker.MOVED);
+        assertThat(moved.agreementVersionNow()).isEqualTo(2);
+        assertThatThrownBy(() -> approve(proposed.writeOff().id(), proposed.writeOff().position()))
+                .isInstanceOf(LoanWriteOffs.Stale.class);
+        assertThat(world.appended).isEmpty();
+        assertThat(world.status).isEqualTo(LoanStatus.ACTIVE);
+    }
+
+    @Test
     @DisplayName("a credit balance is the customer's money and is never written off: refused until its servicing step applies it")
     void aCreditBalanceIsRefused() {
         world.defaulted();
@@ -431,6 +448,114 @@ class LoanWriteOffsTest {
     }
 
     @Test
+    @DisplayName("the pending list never serves the officer's own party's account, and an officer the platform cannot place reads none and is"
+            + " recorded FAILED - what the read judges, the list judges")
+    void thePendingListJudgesTheReader() {
+        world.defaulted();
+        propose();
+        assertThat(world.writeOffs.pending(UOW, approver, CORRELATION)).hasSize(1);
+        world.parties.put(approver.id(), world.party);
+        assertThat(world.writeOffs.pending(UOW, approver, CORRELATION)).as("the officer's own party's").isEmpty();
+        world.parties.remove(approver.id());
+        LoanWriteOffs.UnplacedReaderRefused refused = org.junit.jupiter.api.Assertions.assertThrows(
+                LoanWriteOffs.UnplacedReaderRefused.class, () -> world.writeOffs.pending(UOW, approver, CORRELATION));
+        world.writeOffs.recordRefusal(UOW, refused, approver, CORRELATION);
+        assertThat(world.audited.get(world.audited.size() - 1).outcome()).isEqualTo(com.finapp.platform.audit.AuditOutcome.FAILED);
+        assertThat(world.audited.get(world.audited.size() - 1).targetId()).isEqualTo("pending");
+    }
+
+    @Test
+    @DisplayName("what a customer reads beside the status says it stands owed, in words that cannot be read as paid or forgiven")
+    void theNoticeSaysItStandsOwed() {
+        assertThat(Loans.WRITTEN_OFF_NOTICE).contains("written off in our accounts").contains("bookkeeping entry")
+                .contains("has not been paid or forgiven").contains("still owed");
+    }
+
+    @Test
+    @DisplayName("every door on the account refuses it under L3, nothing posted: payoff quote and execution, prepayment, draw, line closure (with"
+            + " and without a request born), a waiver proposed and approved, a reversal's approval, and an amendment's proposal")
+    void everyDoorRefusesAWrittenOffLoan() {
+        world.defaulted();
+        LoanWriteOffs.Proposed proposed = propose();
+        approve(proposed.writeOff().id(), proposed.writeOff().position());
+        int entries = world.appended.size();
+        Actor customer = new Actor(world.party.toString(), ActorType.CUSTOMER);
+        Money one = eur(1_00);
+
+        Payoffs quoting = world.door(Payoffs.class);
+        assertRefused(() -> quoting.quote(UOW, world.id, world.party, new Payoffs.QuoteRequest("quote", Optional.empty()), CORRELATION));
+        PayoffQuote quote = new PayoffQuote(IDS.next(), world.id, "quote", TODAY, TODAY, one, one, one, one, one, eur(0), one, 0, eur(0),
+                eur(5_00), LoanAgreementId.of(IDS.next()), 1, EngineVersion.ACCRUAL_ENGINE_V1, EngineVersion.ALLOCATION_ENGINE_V1,
+                Instant.parse("2026-11-04T09:00:00Z"));
+        Payoffs executing = world.door(Payoffs.class, World.<PayoffStore>fake(PayoffStore.class, (proxy, method, args) -> switch (method.getName()) {
+            case "findExecution" -> Optional.empty();
+            case "findQuote" -> Optional.of(quote);
+            default -> throw new UnsupportedOperationException(method.getName());
+        }));
+        assertRefused(() -> executing.execute(UOW, world.id, world.party, "execute", quote.id(), customer, CORRELATION));
+
+        Prepayments prepayments = world.door(Prepayments.class);
+        assertRefused(() -> prepayments.prepay(UOW, world.id, world.party, new Prepayments.Request("prepay", one), customer, CORRELATION));
+
+        CreditLineDraws draws = world.door(CreditLineDraws.class);
+        assertRefused(() -> draws.draw(UOW, world.id, world.party, new CreditLineDraws.Request("draw", one), customer, CORRELATION));
+
+        LineClosures closures = world.door(LineClosures.class);
+        assertRefused(() -> closures.request(UOW, world.id, world.party, "close", customer, CORRELATION));
+        LineClosureRequest born = new LineClosureRequest(IDS.next(), world.id, "earlier", LineClosureOutcome.CLOSING,
+                Instant.parse("2026-11-01T09:00:00Z"));
+        LineClosures closuresBorn = world.door(LineClosures.class, World.<LineClosureStore>fake(LineClosureStore.class, (proxy, method, args) -> {
+            if (method.getName().equals("findByLoan")) {
+                return Optional.of(born);
+            }
+            throw new UnsupportedOperationException(method.getName());
+        }));
+        assertRefused(() -> closuresBorn.request(UOW, world.id, world.party, "another key", customer, CORRELATION));
+
+        Waivers proposing = world.door(Waivers.class);
+        assertRefused(() -> proposing.propose(UOW, world.id, WaiverKind.INTEREST, BILLED_ITEM, one, "goodwill", approver, CORRELATION));
+        Waiver standing = new Waiver(IDS.next(), world.id, WaiverKind.INTEREST, Optional.empty(), DueItemId.of(BILLED_ITEM), one, 1,
+                WaiverStatus.PROPOSED, proposer.id(), Instant.parse("2026-11-03T09:00:00Z"), "goodwill", Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty());
+        Waivers approving = world.door(Waivers.class, World.<WaiverStore>fake(WaiverStore.class, (proxy, method, args) -> {
+            if (method.getName().equals("find")) {
+                return Optional.of(standing);
+            }
+            throw new UnsupportedOperationException(method.getName());
+        }));
+        assertRefused(() -> approving.approve(UOW, world.id, standing.id(), "agreed", approver, CORRELATION));
+
+        LoanCreditDecisions credit = World.fake(LoanCreditDecisions.class, (proxy, method, args) -> {
+            if (method.getName().equals("lockExposure")) {
+                return true;
+            }
+            throw new UnsupportedOperationException(method.getName());
+        });
+        // The reversal's proposal needs a real repayment's allocations: LoanWriteOffDatabaseTest#afterItTheCustomerStillOwes, owed.
+        RepaymentReversal reversal = new RepaymentReversal(IDS.next(), world.id, IDS.next(), 1, RepaymentReversalStatus.PROPOSED,
+                proposer.id(), Instant.parse("2026-11-03T09:00:00Z"), "wrong account", Optional.empty(), Optional.empty(), Optional.empty(),
+                Optional.empty());
+        RepaymentReversals approvingReversal = world.door(RepaymentReversals.class, credit, World.<RepaymentReversalStore>fake(RepaymentReversalStore.class,
+                (proxy, method, args) -> {
+                    if (method.getName().equals("lock")) {
+                        return Optional.of(reversal);
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                }));
+        assertRefused(() -> approvingReversal.approve(UOW, world.id, reversal.repayment(), reversal.id(), "agreed", approver, CORRELATION));
+
+        LoanAmendments amendments = world.door(LoanAmendments.class);
+        assertRefused(() -> amendments.propose(UOW, world.id, new BigDecimal("0.06"), 6, false, "restructure", approver, CORRELATION));
+
+        assertThat(world.appended).as("nothing posted").hasSize(entries);
+        assertThat(world.status).isEqualTo(LoanStatus.WRITTEN_OFF);
+    }
+
+    private static void assertRefused(org.assertj.core.api.ThrowableAssert.ThrowingCallable door) {
+        assertThatThrownBy(door).isInstanceOf(LoanWrittenOffRefused.class);
+    }
+
+    @Test
     @DisplayName("a written-off account's read of the approval is harmless: rows no longer explain the ledger there, and it says why it cannot post")
     void aWrittenOffAccountIsReadWithoutTheDueProof() {
         world.defaulted();
@@ -474,6 +599,7 @@ class LoanWriteOffsTest {
         final List<String> payloads = new ArrayList<>();
         final List<AuditRecord> audited = new ArrayList<>();
         LoanStatus status = LoanStatus.ACTIVE;
+        int agreementVersion = 1;
         Optional<LoanConditionEvent> latestDefault = Optional.empty();
         boolean defaultFlag = true;
         LocalDate accrualStart = TODAY;
@@ -495,6 +621,74 @@ class LoanWriteOffsTest {
                             refuse(OutboxWriter.class), IDS, CLOCK),
                     posting(), (uow, actor) -> Optional.ofNullable(parties.get(actor.id())),
                     outbox(), audit(), IDS, CLOCK);
+        }
+
+        /**
+         * A real door over this world: what it reaches before its guard answers from the world or from {@code known} - a store's read
+         * finding nothing - and a final collaborator is built of the same parts; anything past the guard refuses to run.
+         */
+        @SuppressWarnings("unchecked")
+        <T> T door(Class<T> type, Object... known) {
+            java.lang.reflect.Constructor<?> widest = java.util.Arrays.stream(type.getDeclaredConstructors())
+                    .max(java.util.Comparator.comparingInt(java.lang.reflect.Constructor::getParameterCount))
+                    .orElseThrow(() -> new IllegalStateException("no constructor to build a door's part of: " + type));
+            Object[] arguments = java.util.Arrays.stream(widest.getParameterTypes()).map(part -> part(part, known)).toArray();
+            try {
+                widest.setAccessible(true);
+                return (T) widest.newInstance(arguments);
+            } catch (ReflectiveOperationException failure) {
+                throw new IllegalStateException(type.getName(), failure);
+            }
+        }
+
+        private Object part(Class<?> type, Object[] known) {
+            for (Object given : known) {
+                if (type.isInstance(given)) {
+                    return given;
+                }
+            }
+            if (type == LoanStore.class) {
+                return loans();
+            }
+            if (type == LoanActingParty.class) {
+                return (LoanActingParty) (uow, actor) -> Optional.ofNullable(parties.get(actor.id()));
+            }
+            if (type == InstalmentBillingStore.class) {
+                return billings();
+            }
+            if (type == IdGenerator.class) {
+                return IDS;
+            }
+            if (type == Clock.class) {
+                return CLOCK;
+            }
+            if (type == int.class) {
+                return 30;
+            }
+            if (type == long.class) {
+                return 30L;
+            }
+            if (type == boolean.class) {
+                return false;
+            }
+            if (type == java.time.Duration.class) {
+                return java.time.Duration.ofMinutes(1);
+            }
+            if (type.isInterface()) {
+                return fake(type, (proxy, method, args) -> {
+                    if (method.getReturnType() == Optional.class) {
+                        return Optional.empty();
+                    }
+                    if (method.getReturnType() == List.class) {
+                        return List.of();
+                    }
+                    if (method.getReturnType() == boolean.class) {
+                        return false;
+                    }
+                    throw new UnsupportedOperationException(type.getSimpleName() + "." + method.getName());
+                });
+            }
+            return door(type, known);
         }
 
         /** The customer's read over this world's loan. */
@@ -576,6 +770,10 @@ class LoanWriteOffsTest {
                     new BigDecimal("0.12"), 5, Optional.of(EngineVersion.SCHEDULE_ENGINE_V1), EngineVersion.ACCRUAL_ENGINE_V1,
                     EngineVersion.ALLOCATION_ENGINE_V1, Optional.empty(), terms.agreementTemplate(), "terms", new byte[32],
                     Instant.parse("2026-01-01T00:00:00Z"));
+            for (int amended = 1; amended < agreementVersion; amended++) {
+                agreement = agreement.amended(LoanAgreementId.of(IDS.next()), IDS.next(), new BigDecimal("0.06"), 12, "terms",
+                        Instant.parse("2026-11-04T09:00:00Z"));
+            }
             return Optional.of(new LoanStore.Owned(loan, agreement));
         }
 
@@ -740,8 +938,9 @@ class LoanWriteOffsTest {
                 }
 
                 @Override
-                public List<LoanWriteOff> oldestPending(Connection unitOfWork, int limit) {
-                    return rows.values().stream().filter(row -> row.status() == LoanWriteOffStatus.PROPOSED).limit(limit).toList();
+                public List<LoanWriteOff> oldestPending(Connection unitOfWork, UUID excludedParty, int limit) {
+                    return rows.values().stream().filter(row -> !excludedParty.equals(party))
+                            .filter(row -> row.status() == LoanWriteOffStatus.PROPOSED).limit(limit).toList();
                 }
             };
         }
@@ -793,7 +992,7 @@ class LoanWriteOffsTest {
         }
 
         @SuppressWarnings("unchecked")
-        private static <T> T fake(Class<?> type, InvocationHandler handler) {
+        static <T> T fake(Class<?> type, InvocationHandler handler) {
             return (T) Proxy.newProxyInstance(LoanWriteOffsTest.class.getClassLoader(), new Class<?>[] {type}, handler);
         }
 

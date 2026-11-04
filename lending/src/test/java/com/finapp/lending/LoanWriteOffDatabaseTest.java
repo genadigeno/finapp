@@ -40,6 +40,7 @@ import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -231,6 +232,68 @@ class LoanWriteOffDatabaseTest {
         assertThat(service(loan).kind()).isEqualTo(LoanServicing.Outcome.Kind.NOT_SERVICED);
         assertThat(count(lines, loan.value())).isEqualTo(before);
         assertThat(LendingProofsWorld.proven(loan).replay().verdict()).isEqualTo(LoanReplayProof.Verdict.IDENTICAL);
+    }
+
+    @Test
+    @DisplayName("a restructuring accepted between the two acts, arrears not re-scheduled: no journal line moves, the agreement's version does - the"
+            + " approval is stale, and V032's trigger refuses the same raw decision for every writer")
+    void aRestructuringBetweenTheTwoActsIsStale() throws Exception {
+        LoanId loan = defaulted();
+        LoanAmendment offered = AmendmentDatabaseTest.propose(loan, AmendmentDatabaseTest.lowerRate(loan), 14, false, employee());
+        AmendmentDatabaseTest.approve(loan, offered.id(), employee());
+        LoanWriteOffs.Proposed proposed = propose(loan, employee());
+        String lines = "SELECT count(*) FROM ledger.journal_line l JOIN ledger.ledger_account a ON a.id = l.ledger_account_id WHERE a.owner_ref = ?";
+        long before = count(lines, loan.value());
+        AmendmentDatabaseTest.accept(loan, offered.id());
+        assertThat(count(lines, loan.value())).as("the customer's acceptance moved no journal line").isEqualTo(before);
+
+        assertThatExceptionOfType(LoanWriteOffs.Stale.class)
+                .isThrownBy(() -> approve(loan, proposed.writeOff().id(), proposed.writeOff().position(), employee()));
+        assertThat(loanStatus(loan)).isEqualTo("ACTIVE");
+        refusedAlone("INSERT INTO lending.loan_write_off_decision (id, write_off_id, loan_id, proposed_by, outcome, decided_by,"
+                + " decided_by_type, decided_at, decision_reason, journal_entry_id, value_date, correlation_id) VALUES ('" + IDS.next()
+                + "', '" + proposed.writeOff().id() + "', '" + loan.value() + "', '" + proposed.writeOff().proposedBy() + "', 'APPROVED', 'someone else',"
+                + " 'EMPLOYEE', statement_timestamp(), 'agreed', '" + IDS.next() + "', '" + businessDate(loan) + "', 'c')",
+                "P0001", "under the agreement version it was proposed on");
+    }
+
+    @Test
+    @DisplayName("after it every door refuses, nothing moved: a payoff quoted before it, a new quote, a prepayment, a waiver and a reversal left"
+            + " standing and a new waiver; an amendment's proposal is refused, and one already proposed or offered reads lapsed at its approval"
+            + " and its acceptance, because the status it derives from is no longer ACTIVE")
+    void everyDoorRefusesAWrittenOffLoan() throws Exception {
+        LoanId loan = defaulted();
+        Repayments.Repaid earlier = repay(loan, key(), 1_00);
+        RepaymentReversal reversal = RepaymentReversalDatabaseTest.propose(loan, earlier.repayment().id(), employee());
+        UUID item = InstalmentBillingDatabaseTest.billings(loan).get(0).billing().id();
+        Waiver waiver = FeeAndWaiverDatabaseTest.propose(loan, WaiverKind.INTEREST, item, 1_00, employee());
+        PayoffQuote quote = PayoffDatabaseTest.quote(loan, key(), Optional.empty()).quote();
+        LoanAmendment offered = AmendmentDatabaseTest.propose(loan, AmendmentDatabaseTest.lowerRate(loan), 14, false, employee());
+        AmendmentDatabaseTest.approve(loan, offered.id(), employee());
+        LoanId other = defaulted();
+        LoanAmendment proposedOnly = AmendmentDatabaseTest.propose(other, AmendmentDatabaseTest.lowerRate(other), 14, false, employee());
+        for (LoanId account : List.of(loan, other)) {
+            LoanWriteOffs.Proposed proposed = propose(account, employee());
+            approve(account, proposed.writeOff().id(), proposed.writeOff().position(), employee());
+        }
+        String lines = "SELECT count(*) FROM ledger.journal_line l JOIN ledger.ledger_account a ON a.id = l.ledger_account_id WHERE a.owner_ref = ?";
+        long before = count(lines, loan.value());
+
+        assertThatThrownBy(() -> PayoffDatabaseTest.quote(loan, key(), Optional.empty())).isInstanceOf(LoanWrittenOffRefused.class);
+        assertThatThrownBy(() -> PayoffDatabaseTest.execute(loan, quote, key())).isInstanceOf(LoanWrittenOffRefused.class);
+        assertThatThrownBy(() -> PrepaymentDatabaseTest.prepay(loan, key(), 1_00)).isInstanceOf(LoanWrittenOffRefused.class);
+        assertThatThrownBy(() -> FeeAndWaiverDatabaseTest.approve(loan, waiver.id(), employee())).isInstanceOf(LoanWrittenOffRefused.class);
+        assertThatThrownBy(() -> FeeAndWaiverDatabaseTest.propose(loan, WaiverKind.INTEREST, item, 1_00, employee()))
+                .isInstanceOf(LoanWrittenOffRefused.class);
+        assertThatThrownBy(() -> RepaymentReversalDatabaseTest.approve(loan, earlier.repayment().id(), reversal.id(), employee()))
+                .isInstanceOf(LoanWrittenOffRefused.class);
+        assertThatThrownBy(() -> AmendmentDatabaseTest.propose(loan, AmendmentDatabaseTest.lowerRate(loan), 13, false, employee()))
+                .isInstanceOf(LoanWrittenOffRefused.class);
+        assertThatExceptionOfType(LoanAmendments.AmendmentLapsed.class).as("the offer's acceptance")
+                .isThrownBy(() -> AmendmentDatabaseTest.accept(loan, offered.id(), offered.documentSha256Hex()));
+        assertThatExceptionOfType(LoanAmendments.AmendmentLapsed.class).as("the proposal's approval")
+                .isThrownBy(() -> AmendmentDatabaseTest.approve(other, proposedOnly.id(), employee()));
+        assertThat(count(lines, loan.value())).as("nothing moved").isEqualTo(before);
     }
 
     // ------------------------------------------------------------------ what it refuses, and the database beneath

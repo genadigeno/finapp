@@ -230,6 +230,10 @@ BEGIN
                     WHERE d.obligation_id = proposal.obligation_id AND d.status IN ('OPEN', 'MERCHANT_RESPONDED')) THEN
             RAISE EXCEPTION 'a write-off is approved only with no dispute open (P14-TSK-021, ADR-0106)';
         END IF;
+        -- The agreement in force is the one it was proposed under (lending V032's rank; a BNPL version moves only with a refund's lines).
+        IF proposal.agreement_version <> (SELECT max(a.version) FROM bnpl.bnpl_agreement a WHERE a.agreement_id = account.agreement_id) THEN
+            RAISE EXCEPTION 'a write-off is approved only under the agreement version it was proposed on (P14-TSK-021, INV-BNPL-01)';
+        END IF;
         -- What the billed items say is due is what the proposal named (the rows' side; the ledger's is the domain's under B4).
         SELECT coalesce(sum(bnpl.billing_component_billed(b.id, 'PRINCIPAL') - bnpl.billing_component_paid(b.id, 'PRINCIPAL')), 0),
                coalesce(sum(bnpl.billing_component_billed(b.id, 'INTEREST') - bnpl.billing_component_paid(b.id, 'INTEREST')), 0),

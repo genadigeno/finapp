@@ -158,11 +158,12 @@ public final class LoanWriteOffs {
 
     /**
      * What an approver reads, under their own permission, and attests: the proposal; the account's product, status and the date
-     * its default stands on; what its figures and revision are now; the date the entry would post and value on; why it could not
-     * post now.
+     * its default stands on; what its figures, revision and governing agreement version are now; the date the entry would post and
+     * value on; why it could not post now. The approver names the figures and the revision, not the version: the proposal's version
+     * is immutable and compared under the lock, so a restructuring after this read is {@link Stale} whatever the approver names.
      */
     public record Attestation(LoanWriteOff writeOff, LoanProduct product, LoanStatus accountStatus, Optional<LocalDate> defaultedOn,
-            LoanWriteOffPosition live, LocalDate postsOn, List<Blocker> blockers) {
+            LoanWriteOffPosition live, int agreementVersionNow, LocalDate postsOn, List<Blocker> blockers) {
 
         public Attestation {
             Objects.requireNonNull(writeOff, "writeOff must not be null");
@@ -279,9 +280,11 @@ public final class LoanWriteOffs {
             throw new NotDefaulted(product);
         }
         // Compared by revision, never by status: a default cured and set again names a later change, a repayment reversed
-        // leaves the figures and a higher revision.
+        // leaves the figures and a higher revision, and a restructuring accepted without re-scheduling arrears moves no journal
+        // line at all - only the agreement's version says so. Whatever moved the customer's bargain, the approver did not read it.
         if (!attested.sameAs(proposal.position()) || !now.position().sameAs(proposal.position())
-                || !now.defaultEvent().filter(proposal.defaultEvent()::equals).isPresent()) {
+                || !now.defaultEvent().filter(proposal.defaultEvent()::equals).isPresent()
+                || locked.agreement().version() != proposal.agreementVersion()) {
             throw new Stale(product);
         }
         refuse(now.blockers(), product);
@@ -378,7 +381,8 @@ public final class LoanWriteOffs {
         Assessment now = assess(unitOfWork, owned);
         List<Blocker> blockers = new ArrayList<>(now.blockers());
         if (found.status() == LoanWriteOffStatus.PROPOSED && (!now.position().sameAs(found.position())
-                || !now.defaultEvent().filter(found.defaultEvent()::equals).isPresent())) {
+                || !now.defaultEvent().filter(found.defaultEvent()::equals).isPresent()
+                || owned.agreement().version() != found.agreementVersion())) {
             blockers.add(Blocker.MOVED);
         }
         Optional<LocalDate> defaultedOn = conditions.latest(unitOfWork, loan, ConditionKind.DEFAULT)
@@ -386,18 +390,33 @@ public final class LoanWriteOffs {
                 .map(LoanConditionEvent::businessDate);
         auditRead(unitOfWork, actor, "loan_write_off", writeOff.toString(),
                 "loan=" + loan.value() + ", writeOff=" + writeOff, correlation);
-        return new Attestation(found, owned.loan().product(), owned.loan().status(), defaultedOn, now.position(), now.today(),
-                blockers);
+        return new Attestation(found, owned.loan().product(), owned.loan().status(), defaultedOn, now.position(),
+                owned.agreement().version(), now.today(), blockers);
     }
 
-    /** The oldest write-offs awaiting a decision, on the caller's snapshot, audited - how one that can no longer post is found. */
+    /**
+     * The oldest write-offs awaiting a decision, on the caller's snapshot, audited - how one that can no longer post is found. Never one
+     * of the officer's own party (figures of their own account); an officer the platform cannot place in a party reads none (fail
+     * closed), as {@link #read} judges both.
+     *
+     * @throws UnplacedReaderRefused the actor has no party the platform knows
+     */
     public List<LoanWriteOff> pending(Connection unitOfWork, Actor actor, CorrelationId correlation) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(actor, "actor");
         Objects.requireNonNull(correlation, "correlation");
-        List<LoanWriteOff> found = store.oldestPending(unitOfWork, PENDING_LIMIT);
+        UUID own = actingParties.partyOf(unitOfWork, actor).orElseThrow(UnplacedReaderRefused::new);
+        List<LoanWriteOff> found = store.oldestPending(unitOfWork, own, PENDING_LIMIT);
         auditRead(unitOfWork, actor, "loan_write_off", "pending", "pending=" + found.size(), correlation);
         return found;
+    }
+
+    /** Records an unplaced officer's refused list {@code FAILED}, in the caller's own transaction after the read rolled back. */
+    public void recordRefusal(Connection unitOfWork, UnplacedReaderRefused refused, Actor actor, CorrelationId correlation) {
+        Objects.requireNonNull(refused, "refused");
+        audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, clock.instant(), LendingAuditAction.SELF_DEALING_REFUSED,
+                TARGET_TYPE, "pending", Optional.empty(), AuditOutcome.FAILED, correlation,
+                Optional.of("write-off:pending refused - the platform cannot place the acting operator in a party")));
     }
 
     /**
@@ -556,6 +575,15 @@ public final class LoanWriteOffs {
     // ------------------------------------------------------------------ the refusals, each writing nothing
 
     /** No such loan, or no such write-off of it. */
+    /** An officer the platform cannot place in a party reads no list: their own party's accounts could not be left out. */
+    public static final class UnplacedReaderRefused extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        UnplacedReaderRefused() {
+            super("an operator the platform cannot place in a party reads no pending write-offs");
+        }
+    }
+
     public static final class NotFound extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 

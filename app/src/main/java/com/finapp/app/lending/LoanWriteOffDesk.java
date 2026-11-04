@@ -84,7 +84,8 @@ public final class LoanWriteOffDesk {
 
     /** What the account holds now: the figures and the revision the approval re-judges under the lock. */
     public record WriteOffLiveView(
-            String principal, String principalDue, String interestAccrued, String interestDue, String feesDue, long revision) {}
+            String principal, String principalDue, String interestAccrued, String interestDue, String feesDue, long revision,
+            int agreementVersion) {}
 
     /**
      * What an approver attests, under their own permission: the proposal, its proposer and reason, the account, the date its default
@@ -182,6 +183,12 @@ public final class LoanWriteOffDesk {
                 snapshot(unitOfWork);
                 return writeOffs.pending(unitOfWork, actor, correlation).stream().map(LoanWriteOffDesk::receipt).toList();
             });
+        } catch (LoanWriteOffs.UnplacedReaderRefused unplaced) {
+            transactions.inTransaction(uow -> {
+                writeOffs.recordRefusal(uow, unplaced, actor, correlation);
+                return null;
+            });
+            throw refused(LendingErrorCode.SELF_DEALING_REFUSED, unplaced);
         } catch (MonetaryOverflowException overflow) {
             throw unpostable();
         }
@@ -231,7 +238,7 @@ public final class LoanWriteOffDesk {
                 read.defaultedOn().map(LocalDate::toString).orElse(null),
                 read.postsOn().toString(),
                 new WriteOffLiveView(decimal(live.principal()), decimal(live.principalDue()), decimal(live.interestAccrued()),
-                        decimal(live.interestDue()), decimal(live.feesDue()), live.revision()),
+                        decimal(live.interestDue()), decimal(live.feesDue()), live.revision(), read.agreementVersionNow()),
                 read.blockers().isEmpty(),
                 read.blockers().stream().map(Enum::name).toList());
     }

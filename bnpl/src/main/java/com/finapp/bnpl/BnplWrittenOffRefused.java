@@ -13,8 +13,28 @@ import java.util.Objects;
 public final class BnplWrittenOffRefused extends RuntimeException {
     @java.io.Serial private static final long serialVersionUID = 1L;
 
+    /** The refund's kind when a refund was refused - its meter's tag; null at any other door. */
+    private final BnplRefunds.Kind refundKind;
+
     BnplWrittenOffRefused() {
+        this(null);
+    }
+
+    private BnplWrittenOffRefused(BnplRefunds.Kind refundKind) {
         super("the agreement is written off: this door takes nothing, and what is owed is unchanged");
+        this.refundKind = refundKind;
+    }
+
+    /** The refund's kind, when a refund is what was refused. */
+    public java.util.Optional<BnplRefunds.Kind> refundKind() {
+        return java.util.Optional.ofNullable(refundKind);
+    }
+
+    /** Refuses a refund of {@code kind} when {@code obligation}, read under its row lock, is written off. */
+    static void refuseRefundIfWrittenOff(BnplObligation obligation, BnplRefunds.Kind kind) {
+        if (Objects.requireNonNull(obligation, "obligation").status() == BnplObligationStatus.WRITTEN_OFF) {
+            throw new BnplWrittenOffRefused(Objects.requireNonNull(kind, "kind"));
+        }
     }
 
     /** Refuses when {@code obligation}, read under its row lock, is written off. */

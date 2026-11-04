@@ -158,10 +158,13 @@ public final class JdbcLoanWriteOffStore implements LoanWriteOffStore {
     }
 
     @Override
-    public List<LoanWriteOff> oldestPending(Connection unitOfWork, int limit) {
+    public List<LoanWriteOff> oldestPending(Connection unitOfWork, UUID excludedParty, int limit) {
+        Objects.requireNonNull(excludedParty, "excludedParty");
         try (PreparedStatement select = unitOfWork.prepareStatement(
-                SELECT + " WHERE d.id IS NULL ORDER BY w.proposed_at, w.id LIMIT ?")) {
-            select.setInt(1, limit);
+                SELECT + " JOIN lending.loan l ON l.id = w.loan_id WHERE d.id IS NULL AND l.party_id <> ?"
+                        + " ORDER BY w.proposed_at, w.id LIMIT ?")) {
+            select.setObject(1, excludedParty);
+            select.setInt(2, limit);
             return writeOffs(select);
         } catch (SQLException failure) {
             throw failed("reading the pending write-offs", failure);

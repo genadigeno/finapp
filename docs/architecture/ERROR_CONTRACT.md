@@ -1321,7 +1321,7 @@ horizon is `api.ValidationFailed` (`422`), as is a malformed one.
 | `bnpl.RefundExceedsPurchase` | 422 | The refund exceeds what remains of the BNPL purchase. |
 | `bnpl.PurchaseFullyRefunded` | 409 | The BNPL purchase is already fully refunded. |
 | `bnpl.RefundScopeRequired` | 403 | This API key may not refund BNPL purchases; a key with the refund scope may. |
-| `bnpl.RefundNotPostable` | 409 | The BNPL refund cannot be posted now; nothing was written. |
+| `bnpl.RefundNotPostable` | 409 | The BNPL refund cannot be posted; nothing was written. |
 | `bnpl.SelfDealingRefused` | 403 | An employee never acts on a BNPL purchase or agreement of their own party; nothing was done. |
 | `bnpl.ProposalNotPending` | 409 | The proposal is no longer awaiting a decision. |
 | `bnpl.RepaymentNotReversible` | 409 | The BNPL repayment cannot be reversed. |

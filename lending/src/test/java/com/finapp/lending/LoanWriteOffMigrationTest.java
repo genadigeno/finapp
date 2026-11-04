@@ -47,6 +47,7 @@ class LoanWriteOffMigrationTest {
     void theEdge() {
         assertThat(V032).contains("IF OLD.status IN ('ACTIVE', 'CLOSING') AND NEW.status = 'WRITTEN_OFF' THEN");
         assertThat(V032).contains("d.loan_id = OLD.id AND d.outcome = 'APPROVED'");
+        assertThat(V032).contains("IF proposal.agreement_version <> (SELECT max(a.version) FROM lending.loan_agreement a");
         assertThat(V032).contains("USING ERRCODE = 'LNEXP'").as("V026's body, verbatim");
         assertThat(V032).contains("NEW.recorded_order := nextval('lending.record_order');");
     }

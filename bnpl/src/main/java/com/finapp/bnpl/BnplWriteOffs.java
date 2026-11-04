@@ -130,7 +130,8 @@ public final class BnplWriteOffs {
 
     /** What an approver reads, under their own permission, and attests - lending's {@code Attestation}. */
     public record Attestation(BnplWriteOff writeOff, BnplProduct product, BnplObligationStatus accountStatus,
-            Optional<LocalDate> defaultedOn, BnplWriteOffPosition live, LocalDate postsOn, List<Blocker> blockers) {
+            Optional<LocalDate> defaultedOn, BnplWriteOffPosition live, int agreementVersionNow, LocalDate postsOn,
+            List<Blocker> blockers) {
 
         public Attestation {
             Objects.requireNonNull(writeOff, "writeOff must not be null");
@@ -251,9 +252,11 @@ public final class BnplWriteOffs {
             throw new NotDefaulted(product);
         }
         // Compared by revision, never by status: a default cured and set again names a later change, a repayment reversed leaves the
-        // figures and a higher revision.
+        // figures and a higher revision. A BNPL agreement's version moves only with a refund's receivable lines, so the revision
+        // would catch it today; compared anyway, so that stays true of whatever moves a version next.
         if (!attested.sameAs(proposal.position()) || !now.position().sameAs(proposal.position())
-                || !now.defaultEvent().filter(proposal.defaultEvent()::equals).isPresent()) {
+                || !now.defaultEvent().filter(proposal.defaultEvent()::equals).isPresent()
+                || locked.agreementVersion() != proposal.agreementVersion()) {
             throw new Stale(product);
         }
         refuse(now.blockers(), product);
@@ -350,7 +353,8 @@ public final class BnplWriteOffs {
         Assessment now = assess(unitOfWork, locked);
         List<Blocker> blockers = new ArrayList<>(now.blockers());
         if (found.status() == BnplCorrectionStatus.PROPOSED && (!now.position().sameAs(found.position())
-                || !now.defaultEvent().filter(found.defaultEvent()::equals).isPresent())) {
+                || !now.defaultEvent().filter(found.defaultEvent()::equals).isPresent()
+                || locked.agreementVersion() != found.agreementVersion())) {
             blockers.add(Blocker.MOVED);
         }
         Optional<LocalDate> defaultedOn = conditions.latest(unitOfWork, addressed.obligation(), BnplConditionKind.DEFAULT)
@@ -358,15 +362,21 @@ public final class BnplWriteOffs {
                 .map(BnplConditionEvent::businessDate);
         auditRead(unitOfWork, actor, writeOff.toString(), "agreement=" + agreement.value() + ", writeOff=" + writeOff, correlation);
         return new Attestation(found, locked.obligation().product(), locked.obligation().status(), defaultedOn, now.position(),
-                now.today(), blockers);
+                locked.agreementVersion(), now.today(), blockers);
     }
 
-    /** The oldest write-offs awaiting a decision, audited - how one that can no longer post is found. */
+    /**
+     * The oldest write-offs awaiting a decision, audited - how one that can no longer post is found. Never one of the officer's own
+     * party; an officer the platform cannot place in a party reads none (fail closed) - {@link BnplDisputes#queue}'s rule.
+     *
+     * @throws UnplacedReaderRefused the actor has no party the platform knows
+     */
     public List<BnplWriteOff> pending(Connection unitOfWork, Actor actor, CorrelationId correlation) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(actor, "actor");
         Objects.requireNonNull(correlation, "correlation");
-        List<BnplWriteOff> found = store.oldestPending(unitOfWork, PENDING_LIMIT);
+        UUID own = actingParties.partyOf(unitOfWork, actor).orElseThrow(UnplacedReaderRefused::new);
+        List<BnplWriteOff> found = store.oldestPending(unitOfWork, own, PENDING_LIMIT);
         auditRead(unitOfWork, actor, "pending", "pending=" + found.size(), correlation);
         return found;
     }
@@ -379,6 +389,14 @@ public final class BnplWriteOffs {
         return corrections.addressed(unitOfWork, refused.agreement())
                 .flatMap(addressed -> servicing.lock(unitOfWork, addressed.obligation()))
                 .map(locked -> locked.obligation().product());
+    }
+
+    /** Records an unplaced officer's refused list {@code FAILED}, in the caller's own transaction after the read rolled back. */
+    public void recordRefusal(Connection unitOfWork, UnplacedReaderRefused refused, Actor actor, CorrelationId correlation) {
+        Objects.requireNonNull(refused, "refused");
+        audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, clock.instant(), BnplAuditAction.SELF_DEALING_REFUSED,
+                TARGET_TYPE, "pending", Optional.empty(), AuditOutcome.FAILED, correlation,
+                Optional.of("write-off:pending refused - the platform cannot place the acting operator in a party")));
     }
 
     /** Records a refused self-approval {@code FAILED}, in the caller's own transaction after the act rolled back. */
@@ -413,8 +431,9 @@ public final class BnplWriteOffs {
         BnplTerms pinned = terms.version(unitOfWork, locked.termsVersionId())
                 .orElseThrow(() -> new IllegalStateException("an agreement pins a terms version that is never deleted"))
                 .terms();
+        // Under the dispute's hold, as the recorder derives it: on the day an upheld dispute lifts, the clock restarts and nothing is past due.
         boolean derived = BnplDelinquencyState.derive(purchases.billedItems(unitOfWork, obligation.id()), today, pinned,
-                defaultEvent.isPresent()).defaulted();
+                defaultEvent.isPresent(), purchases.disputeHold(unitOfWork, obligation.id())).defaulted();
         if (defaultEvent.isEmpty() || !derived) {
             blockers.add(Blocker.NOT_DEFAULTED);
         }
@@ -524,6 +543,15 @@ public final class BnplWriteOffs {
     // ------------------------------------------------------------------ the refusals, each writing nothing
 
     /** A refusal of an act on an obligation of a known product - the product tags its meter. */
+    /** An officer the platform cannot place in a party reads no list: their own party's accounts could not be left out. */
+    public static final class UnplacedReaderRefused extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        UnplacedReaderRefused() {
+            super("an operator the platform cannot place in a party reads no pending write-offs");
+        }
+    }
+
     public abstract static class Refused extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 

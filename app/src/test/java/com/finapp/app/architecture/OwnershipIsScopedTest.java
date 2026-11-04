@@ -1145,6 +1145,11 @@ class OwnershipIsScopedTest {
                                     "com.finapp.lending.JdbcLoanStore.ownedBy",
                                     "P14-TSK-021. The approved write-off of an account the customer's read already resolved under party_id = ? - or the operator's own read: the loan id comes from that owner-constrained read, never from the request alone.")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplWriteOffStore.oldestPending",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-021. GET /v1/operator/bnpl-agreements/write-offs - the officer's list by permission, its one identifier the officer's own party, left out, never a target.")),
+                    Map.entry(
                             "com.finapp.bnpl.JdbcBnplWriteOffStore.find",
                             new Entry(
                                     Scope.ADMINISTERED,

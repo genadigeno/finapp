@@ -8,6 +8,7 @@ import com.finapp.bnpl.BnplPurchaseId;
 import com.finapp.bnpl.BnplReasons;
 import com.finapp.bnpl.BnplRefund;
 import com.finapp.bnpl.BnplRefunds;
+import com.finapp.bnpl.BnplWrittenOffRefused;
 import com.finapp.merchant.AuthenticatedMerchant;
 import com.finapp.merchant.MerchantApiKeyScope;
 import com.finapp.platform.api.ApiException;
@@ -136,6 +137,8 @@ public final class BnplRefundDesk {
                     .orElseGet(() -> replayedMerchant(keyed.replayed().orElseThrow()));
         } catch (BnplRefunds.SelfDealingRefused selfDealing) {
             throw selfDealing(selfDealing, actor, correlation);
+        } catch (BnplWrittenOffRefused writtenOff) {
+            throw notPostableForAMerchant();
         }
     }
 
@@ -156,6 +159,17 @@ public final class BnplRefundDesk {
         } catch (BnplRefunds.SelfDealingRefused selfDealing) {
             throw selfDealing(selfDealing, actor, correlation);
         }
+    }
+
+    /**
+     * What a merchant reads when the customer's agreement was written off (`P14-TSK-021`): the merchant knows the order and the
+     * customer, so a write-off's own code would tell it of that customer's default, which the merchant never sees
+     * ({@code PHASE_12_PLAN.md} section 8). So the neutral refusal, naming no cause and promising nothing of a retry. The operator's
+     * door keeps {@code 409 bnpl.ObligationWrittenOff}.
+     */
+    static ApiException notPostableForAMerchant() {
+        return new ApiException(BnplErrorCode.REFUND_NOT_POSTABLE, "The BNPL refund cannot be posted",
+                "the refund cannot be posted; nothing was written. Please contact support.");
     }
 
     /**
@@ -237,6 +251,10 @@ public final class BnplRefundDesk {
                 metrics.record(notPostable.kind(), BnplRefundMetrics.Outcome.NOT_POSTABLE);
                 throw new ApiException(BnplErrorCode.REFUND_NOT_POSTABLE, "The BNPL refund cannot be posted now",
                         "the refund cannot be posted now; nothing was written - retry later under the same key.");
+            } catch (BnplWrittenOffRefused writtenOff) {
+                // Counted here, at either door; each door answers in its own words.
+                metrics.record(writtenOff.refundKind().orElse(BnplRefunds.Kind.PARTIAL), BnplRefundMetrics.Outcome.WRITTEN_OFF);
+                throw writtenOff;
             } catch (AllocationAnomaly anomaly) {
                 metrics.anomaly();
                 throw anomaly;

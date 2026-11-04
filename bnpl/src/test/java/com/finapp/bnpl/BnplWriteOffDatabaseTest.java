@@ -13,7 +13,6 @@ import com.finapp.platform.security.Actor;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -43,6 +42,12 @@ class BnplWriteOffDatabaseTest {
             BnplConditionDatabaseWorld.CONDITIONS, BnplConditionDatabaseWorld.TERMS_STORE, new JdbcBnplDisputeStore(), world.base.book,
             (uow, actor) -> Optional.ofNullable(world.operatorParties.get(actor.id())), new JdbcOutboxWriter(), new JdbcAuditWriter(),
             BnplConditionDatabaseWorld.IDS, BnplConditionDatabaseWorld.CLOCK);
+
+    /** The real dispute door: a dispute commits beside its claim (V015's deferred bnpl_dispute_is_whole), and openOf reads through it. */
+    private final BnplDisputes disputes = new BnplDisputes(new JdbcBnplDisputeStore(), BnplConditionDatabaseWorld.REFUNDS,
+            BnplConditionDatabaseWorld.SERVICING, BnplConditionDatabaseWorld.PURCHASES, BnplConditionDatabaseWorld.TERMS_STORE, world.base.refunds,
+            world.base.ports, world.base.book, (uow, actor) -> Optional.ofNullable(world.operatorParties.get(actor.id())), new JdbcOutboxWriter(),
+            new JdbcAuditWriter(), BnplConditionDatabaseWorld.IDS, BnplConditionDatabaseWorld.CLOCK);
 
     @BeforeAll
     static void termsAndClock() {
@@ -203,32 +208,66 @@ class BnplWriteOffDatabaseTest {
 
     @Test
     @DisplayName("an open dispute blocks both acts: the proposal is refused, and an approval whose dispute opened after its proposal is refused,"
-            + " by the domain under B4; the trigger holds the same for every writer")
+            + " by the domain under B4; V020's two ranks refuse the same raw rows for every writer; the rejection is the door out")
     void anOpenDisputeBlocksBothActs() throws SQLException {
         BnplConditionDatabaseWorld.Purchased disputedFirst = defaulted();
         LocalDate day = dayOf(disputedFirst);
-        openedRaw(day, disputedFirst);
+        opened(day, disputedFirst);
         assertThatExceptionOfType(BnplWriteOffs.DisputeOpen.class).isThrownBy(() -> propose(day, disputedFirst, world.operator()));
+        refusedFramed(day, rawProposal(disputedFirst), "P0001", "proposed only with no dispute open");
 
         BnplConditionDatabaseWorld.Purchased disputedAfter = defaulted();
         LocalDate later = dayOf(disputedAfter);
         BnplWriteOffs.Proposed proposed = propose(later, disputedAfter, world.operator());
-        openedRaw(later, disputedAfter);
+        opened(later, disputedAfter);
         assertThatExceptionOfType(BnplWriteOffs.DisputeOpen.class).isThrownBy(() ->
                 approve(later, disputedAfter, proposed.writeOff().id(), proposed.writeOff().position(), world.operator()));
+        refusedFramed(later, rawApproval(later, disputedAfter, proposed), "P0001", "approved only with no dispute open");
         assertThat(reject(later, disputedAfter, proposed.writeOff().id(), world.operator()).writeOff().status())
                 .as("the door out").isEqualTo(BnplCorrectionStatus.REJECTED);
     }
 
     @Test
-    @DisplayName("after it: a repayment, a merchant refund and a reversal are refused by the domain with nothing written, and a raw dispute by"
-            + " the trigger for every writer; the merchant's money stays on its payable")
-    void afterItEveryDoorRefuses() throws SQLException {
+    @DisplayName("a refund moves the agreement's version with its lines: what was proposed before it is stale in the domain, and V020's rank refuses"
+            + " the same raw decision on the version alone")
+    void aRefundMovesTheVersion() throws SQLException {
         BnplConditionDatabaseWorld.Purchased bought = defaulted();
         LocalDate day = dayOf(bought);
+        BnplWriteOffs.Proposed proposed = propose(day, bought, world.operator());
+        long version = count("SELECT max(version) FROM bnpl.bnpl_agreement WHERE obligation_id = '" + bought.id() + "'");
+        world.base.refundOn(day, bought, "refund-before", 150_00);
+        assertThat(count("SELECT max(version) FROM bnpl.bnpl_agreement WHERE obligation_id = '" + bought.id() + "'")).isEqualTo(version + 1);
+        assertThatExceptionOfType(BnplWriteOffs.Stale.class).isThrownBy(() ->
+                approve(day, bought, proposed.writeOff().id(), proposed.writeOff().position(), world.operator()));
+        refusedFramed(day, rawApproval(day, bought, proposed), "P0001", "under the agreement version it was proposed on");
+    }
+
+    @Test
+    @DisplayName("after it: a repayment, a merchant refund, a payoff quoted before it, a reversal and a waiver left standing and a new waiver are"
+            + " each refused by the domain with nothing written, and a raw dispute by the trigger for every writer; the merchant's money stays on"
+            + " its payable")
+    void afterItEveryDoorRefuses() throws SQLException {
+        BnplConditionDatabaseWorld.Purchased bought = world.base.feeBearing();
+        world.base.serviceOn(bought.due(2), bought);
+        world.base.serviceOn(bought.due(2).plusDays(5), bought);
+        BnplFeeAssessment fee = world.fees(bought).get(0);
+        world.base.serviceOn(dayOf(bought), bought);
+        LocalDate day = dayOf(bought);
         BnplRepayments.Repaid earlier = world.base.repayOn(day, bought, "earlier", 1_00);
+        BnplRepaymentReversal standing = world.propose(day, bought, earlier.repayment().id(), world.operator());
+        BnplWaiver waiver = world.proposeWaiver(day, bought, fee.id(), 1_00, world.operator());
+        BnplPayoffQuote quote = BnplClockFrame.inOneTransaction(world.base.frameOn(day), uow -> world.base.payoffs.quote(uow, bought.agreement(),
+                bought.party(), new BnplPayoffs.QuoteRequest("quote-before", Optional.empty()), BnplAcceptanceDatabaseTest.correlation())).quote();
         BnplWriteOffs.Proposed proposed = propose(day, bought, world.operator());
         approve(day, bought, proposed.writeOff().id(), proposed.writeOff().position(), world.operator());
+
+        assertThatExceptionOfType(BnplWrittenOffRefused.class).isThrownBy(() -> world.approve(day, bought, earlier.repayment().id(), standing.id(),
+                world.operator()));
+        assertThatExceptionOfType(BnplWrittenOffRefused.class).isThrownBy(() -> world.approveWaiver(day, bought, waiver.id(), world.operator()));
+        assertThatExceptionOfType(BnplWrittenOffRefused.class).isThrownBy(() -> world.proposeWaiver(day, bought, fee.id(), 1_00, world.operator()));
+        assertThatExceptionOfType(BnplWrittenOffRefused.class).isThrownBy(() -> BnplClockFrame.inOneTransaction(world.base.frameOn(day),
+                uow -> world.base.payoffs.execute(uow, bought.agreement(), bought.party(), "execute-after", quote.id(),
+                        BnplAcceptanceDatabaseTest.customer(bought.party()), BnplAcceptanceDatabaseTest.correlation())));
 
         assertThatExceptionOfType(BnplWrittenOffRefused.class).isThrownBy(() -> world.base.repayOn(day, bought, "after", 1_00));
         assertThatExceptionOfType(BnplWrittenOffRefused.class).isThrownBy(() -> world.base.refundOn(day, bought, "refund", 1_00));
@@ -323,13 +362,29 @@ class BnplWriteOffDatabaseTest {
         }
     }
 
-    /** {@code BnplDisputeDatabaseTest}'s raw dispute, for a dispute standing beside the suite's default without its door's world. */
-    private void openedRaw(LocalDate day, BnplConditionDatabaseWorld.Purchased bought) throws SQLException {
-        try (Connection connection = BnplClockFrame.framed(DatabaseRoles.application(), world.base.frameOn(day));
-                Statement statement = connection.createStatement()) {
-            statement.execute(rawDispute(bought));
-            connection.commit();
-        }
+    /** A real dispute of part of the purchase, on {@code day}: beside its claim and its hold, as the door commits one. */
+    private void opened(LocalDate day, BnplConditionDatabaseWorld.Purchased bought) {
+        BnplClockFrame.inOneTransaction(world.base.frameOn(day), uow -> disputes.open(uow, bought.agreement(), bought.party(),
+                new BnplDisputes.OpenRequest("open-" + bought.id(), BnplConditionDatabaseWorld.eur(150_00), BnplDisputeReason.NOT_RECEIVED,
+                        "it never came"), BnplAcceptanceDatabaseTest.customer(bought.party()), BnplAcceptanceDatabaseTest.correlation()));
+    }
+
+    /** A raw proposal every rank but the dispute's admits: an ACTIVE obligation, its agreement in force, its latest DEFAULT change. */
+    private static String rawProposal(BnplConditionDatabaseWorld.Purchased bought) {
+        return "INSERT INTO bnpl.bnpl_write_off (id, obligation_id, agreement_id, currency, scale, principal_minor, principal_due_minor,"
+                + " interest_accrued_minor, interest_due_minor, fees_due_minor, revision, default_event_id, agreement_version, proposed_by,"
+                + " proposed_by_type, proposed_at, proposal_reason, correlation_id) SELECT '" + UUID.randomUUID() + "', o.id, o.agreement_id,"
+                + " o.currency, 2, 1, 0, 0, 0, 0, 1, (SELECT e.id FROM bnpl.bnpl_condition_event e WHERE e.obligation_id = o.id AND e.kind ="
+                + " 'DEFAULT' ORDER BY e.business_date DESC LIMIT 1), (SELECT max(a.version) FROM bnpl.bnpl_agreement a WHERE a.agreement_id ="
+                + " o.agreement_id), 'a', 'CUSTOMER', clock_timestamp(), 'r', 'c' FROM bnpl.bnpl_obligation o WHERE o.id = '" + bought.id() + "'";
+    }
+
+    /** A raw approval of {@code proposed} by another person, valued {@code day}. */
+    private static String rawApproval(LocalDate day, BnplConditionDatabaseWorld.Purchased bought, BnplWriteOffs.Proposed proposed) {
+        return "INSERT INTO bnpl.bnpl_write_off_decision (id, write_off_id, obligation_id, proposed_by, outcome, decided_by, decided_by_type,"
+                + " decided_at, decision_reason, journal_entry_id, value_date, correlation_id) VALUES ('" + UUID.randomUUID() + "', '"
+                + proposed.writeOff().id() + "', '" + bought.id() + "', '" + proposed.writeOff().proposedBy() + "', 'APPROVED', 'someone else',"
+                + " 'CUSTOMER', clock_timestamp(), 'agreed', '" + UUID.randomUUID() + "', DATE '" + day + "', 'c')";
     }
 
     private static String rawDispute(BnplConditionDatabaseWorld.Purchased bought) {

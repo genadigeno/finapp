@@ -383,8 +383,9 @@ public final class BnplRefunds {
         BnplObligation obligation = obligationLocked.obligation();
         // F5 credits the receivables, which a write-off took to expense: what it would cancel now is a recovery, a later rule, and a
         // CLOSED obligation's path - the whole refund to the wallet - would pay the customer on a debt still owed. So nothing moves:
-        // the merchant's money stays on its payable, and bnpl V020's trigger refuses it for every writer (P14-TSK-021).
-        BnplWrittenOffRefused.refuseIfWrittenOff(obligation);
+        // the merchant's money stays on its payable, and bnpl V020's trigger refuses it for every writer (P14-TSK-021). The door
+        // answers: a merchant never learns why (BnplRefundDesk) - the customer's credit is not the merchant's to read.
+        BnplWrittenOffRefused.refuseRefundIfWrittenOff(obligation, kind);
         boolean active = obligation.status() == BnplObligationStatus.ACTIVE;
         Instant now = servicing.databaseNow(unitOfWork);
         LocalDate today = LocalDate.ofInstant(now, ZoneId.of(obligationLocked.servicingZone()));
