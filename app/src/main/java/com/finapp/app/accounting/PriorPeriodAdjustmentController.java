@@ -1,6 +1,7 @@
 package com.finapp.app.accounting;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.api.DecimalText;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
@@ -108,7 +109,7 @@ public class PriorPeriodAdjustmentController {
 
     /** One line; the amount a decimal string, exact in the currency's scale. */
     @ClosedBody
-    public record PriorPeriodLineItem(@Size(max = 64) String ledgerAccountId, @Size(max = 16) String direction, @Size(max = 40) String amount, @Size(max = 8) String currency) {
+    public record PriorPeriodLineItem(@Size(max = 64) String ledgerAccountId, @Size(max = 16) String direction, @Size(max = DecimalText.MAX_LENGTH) String amount, @Size(max = 8) String currency) {
 
         /** The amount stays out of a log line. */
         @Override

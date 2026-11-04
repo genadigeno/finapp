@@ -9,6 +9,7 @@ import com.finapp.accounting.PriorPeriodAdjustmentStore;
 import com.finapp.accounting.PriorPeriodAdjustments;
 import com.finapp.accounting.PriorPeriodPostings;
 import com.finapp.accounting.Side;
+import com.finapp.app.api.DecimalText;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.CommandResult;
@@ -22,7 +23,6 @@ import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import com.finapp.sharedkernel.money.MonetaryException;
-import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.time.Instant;
@@ -331,7 +331,10 @@ public final class PriorPeriodAdjustmentDesk {
         return named;
     }
 
-    /** Parse before the transaction opens; each refusal names the line and the field, never the value. {@code Money.of} is exact: more precision than the currency has is refused, never rounded. */
+    /**
+     * Parse before the transaction opens; each refusal names the line and the field, never the value. {@link DecimalText} first, so no exponent reaches a rescale; {@code Money.of} is exact: more precision than the
+     * currency has is refused, never rounded.
+     */
     private static List<PriorPeriodPostings.Line> parsed(List<StatedLine> stated) {
         List<PriorPeriodPostings.Line> lines = new ArrayList<>();
         for (int at = 0; at < stated.size(); at++) {
@@ -357,7 +360,7 @@ public final class PriorPeriodAdjustmentDesk {
                 throw invalid("line " + at + ": the currency is malformed.");
             }
             try {
-                lines.add(new PriorPeriodPostings.Line(account, side, Money.of(new BigDecimal(line.amount()), currency)));
+                lines.add(new PriorPeriodPostings.Line(account, side, Money.of(DecimalText.parse(line.amount()), currency)));
             } catch (NumberFormatException | NullPointerException | MonetaryException malformed) {
                 throw invalid("line " + at + ": the amount is not an exact amount of the currency.");
             }

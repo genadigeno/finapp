@@ -23225,7 +23225,7 @@
       "PriorPeriodLineItem": {
         "properties": {
           "amount": {
-            "maxLength": 40,
+            "maxLength": 32,
             "minLength": 0,
             "type": "string"
           },

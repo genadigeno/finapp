@@ -267,16 +267,16 @@ class PriorPeriodAdjustmentDeskTest {
     }
 
     @Test
-    @DisplayName("the boundary's decimal strings are exact or refused, each refusal naming the line and the field and never the value; more precision than the currency has is refused, never rounded; unbalanced is refused before the key is spent")
+    @DisplayName("the boundary's decimal strings are exact or refused, each refusal naming the line and the field and never the value; more precision than the currency has is refused, never rounded; an exponent or a sign never reaches a rescale; unbalanced is refused before the key is spent")
     void theLinesAreParsedExactly() {
         record Bad(String account, String direction, String amount, String currency, String names) {}
         for (Bad bad : List.of(new Bad("not-an-account", "DEBIT", "15.00", "EUR", "ledger account"), new Bad(fees, "EITHER", "15.00", "EUR", "direction"), new Bad(fees, "DEBIT", "15.00", "XX", "currency"),
-                new Bad(fees, "DEBIT", "fifteen", "EUR", "amount"), new Bad(fees, "DEBIT", "15.001", "EUR", "amount"), new Bad(fees, "DEBIT", null, "EUR", "amount"))) {
+                new Bad(fees, "DEBIT", "fifteen", "EUR", "amount"), new Bad(fees, "DEBIT", "15.001", "EUR", "amount"), new Bad(fees, "DEBIT", null, "EUR", "amount"), new Bad(fees, "DEBIT", "1E+3", "EUR", "amount"), new Bad(fees, "DEBIT", "-15.00", "EUR", "amount"))) {
             assertThatThrownBy(() -> as(ACCOUNTANT, () -> desk.propose("k-p", january.value().toString(), 1, REASON,
                     List.of(new PriorPeriodAdjustmentDesk.StatedLine(bad.account(), bad.direction(), bad.amount(), bad.currency()), new PriorPeriodAdjustmentDesk.StatedLine(wallet, "CREDIT", "15.00", "EUR")))))
                     .isInstanceOfSatisfying(ApiException.class, refused -> {
                         assertThat(refused.errorCode()).isEqualTo(AccountingErrorCode.PRIOR_PERIOD_ADJUSTMENT_INVALID);
-                        assertThat(refused.clientDetail().orElseThrow()).contains("line 0").contains(bad.names()).doesNotContain("15.001").doesNotContain("fifteen").doesNotContain("not-an-account");
+                        assertThat(refused.clientDetail().orElseThrow()).contains("line 0").contains(bad.names()).doesNotContain("15.001").doesNotContain("fifteen").doesNotContain("not-an-account").doesNotContain("1E+3");
                     });
         }
         refused(() -> as(ACCOUNTANT, () -> desk.propose("k-u", january.value().toString(), 1, REASON,
@@ -350,7 +350,7 @@ class PriorPeriodAdjustmentDeskTest {
                     .singleElement().satisfies(violation -> assertThat(violation.getPropertyPath().toString()).startsWith("lines[0]"));
             assertThat(validator.validate(new PriorPeriodAdjustmentController.PriorPeriodApprovalRequest(TODAY, 1, Arrays.asList((String) null), REASON)))
                     .singleElement().satisfies(violation -> assertThat(violation.getPropertyPath().toString()).startsWith("postedCorrections[0]"));
-            assertThat(validator.validate(new PriorPeriodAdjustmentController.PriorPeriodAdjustmentRequest("period", 1, REASON, List.of(new PriorPeriodAdjustmentController.PriorPeriodLineItem("a", "DEBIT", "1".repeat(41), "EUR")))))
+            assertThat(validator.validate(new PriorPeriodAdjustmentController.PriorPeriodAdjustmentRequest("period", 1, REASON, List.of(new PriorPeriodAdjustmentController.PriorPeriodLineItem("a", "DEBIT", "1".repeat(com.finapp.app.api.DecimalText.MAX_LENGTH + 1), "EUR")))))
                     .singleElement().satisfies(violation -> assertThat(violation.getPropertyPath().toString()).isEqualTo("lines[0].amount"));
             assertThat(validator.validate(new PriorPeriodAdjustmentController.PriorPeriodApprovalRequest(TODAY, 1, null, REASON))).as("nothing posted yet names nothing").isEmpty();
         }
