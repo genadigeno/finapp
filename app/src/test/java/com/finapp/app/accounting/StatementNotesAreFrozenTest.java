@@ -3,6 +3,7 @@ package com.finapp.app.accounting;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.CloseRecordReads;
 import com.finapp.accounting.GlMappingVersionId;
@@ -29,7 +30,10 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.lang.reflect.Proxy;
+import java.io.IOException;
 import java.math.BigInteger;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.sql.Connection;
 import java.time.Clock;
@@ -40,8 +44,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -194,6 +201,32 @@ class StatementNotesAreFrozenTest {
         assertThat(dollars.breaks()).as("resolved before the instant, it did not stand").isEqualTo(1);
         assertThat(dollars.breakIds()).containsExactly(third);
         assertThat(dollars.ageing()).as("raised on the last day").containsEntry("0-2", 1L);
+    }
+
+    @Test
+    @DisplayName("every route a statement names, from a figure or a note, is a route of the API's own contract: a route that does not exist is no route, and a figure with no route is a defect")
+    void everyRouteNamedIsARouteOfTheApi() throws IOException {
+        Path directory = Path.of("").toAbsolutePath();
+        while (!Files.isRegularFile(directory.resolve("settings.gradle.kts"))) {
+            directory = directory.getParent();
+        }
+        Set<String> contract = new TreeSet<>();
+        new ObjectMapper().readTree(Files.readString(directory.resolve("docs/api/openapi.json"))).get("paths").fieldNames().forEachRemaining(route -> contract.add(unnamed(route)));
+        for (ReportDefinition definition : statements()) {
+            Set<String> named = new TreeSet<>();
+            Matcher route = Pattern.compile("GET (/v1/[^ ?,;:)\"]+)").matcher(bytesOf(definition));
+            while (route.find()) {
+                named.add(unnamed(route.group(1)));
+            }
+            assertThat(named).as(definition.code()).contains("/v1/operator/accounting/report-runs/{}/lines", "/v1/operator/accounting/gl/accounts/{}/activity", "/v1/operator/accounting/gl/entries/{}", "/v1/operator/reconciliation/breaks/{}", "/v1/operator/accounting/periods/{}/close-proposal",
+                    "/v1/operator/accounting/periods/{}/close-run", "/v1/operator/accounting/periods/{}/prior-period-adjustments", "/v1/operator/accounting/breaks");
+            assertThat(contract).as(definition.code()).containsAll(named);
+        }
+    }
+
+    /** A route with its path variables' names gone: the words of a note name them for the reader. */
+    private static String unnamed(String route) {
+        return route.replaceAll("\\{[^}]+}", "{}");
     }
 
     @Test
