@@ -144,7 +144,7 @@ Phase 13: credit consumes a risk signal through a seam and computes none.)*
 - Collections operations *(later phases — Phase 13's case management consumes lending's facts; as built by
   `P13-TSK-025`, a thin slice: a loan's or BNPL agreement's default opens its party's `COLLECTIONS` case, and contact
   strategy, promises to pay, placement and write-off stay out, C3 - P13-DOC-001, 2026-10-27)*;
-  refinance *(not Phase 12 — decided by the Phase 11 → 12 transition; unowned)*; write-off and provisioning *(Phase 14)*
+  refinance *(not Phase 12 — decided by the Phase 11 → 12 transition; unowned)*; provisioning *(deferred, C6)*; write-off *(built by `P14-TSK-021`, under four eyes)*
 
 *(Marked "planned" by the Phase 10 → 11 transition, 2026-10-10 (`PHASE_11_PLAN.md`; ADR-0090…0100,
 then `Proposed`), and marked delivered by the Phase 11 exit review, `P11-DOC-001`, 2026-10-15
@@ -332,7 +332,7 @@ risk / Account takeover / AML monitoring / Limits / velocity / Manual review", u
 - Regulatory reporting — planned: obligations as configuration, submissions only from final figures, four-eyes, with
   lineage, corrected by resubmission; a simulated reference adapter and a reference safeguarding position return; no
   legal obligation asserted
-- Write-off — planned, optional (owner decision C6): loan and BNPL write-off under four eyes on the rules already designed;
+- Write-off — built by `P14-TSK-021` (owner decision C6 (A)): loan and BNPL write-off under four eyes on the rules already designed;
   provisioning and effective-interest amortisation deferred for qualified review and disclosed
 
 *(Marked "planned" by the Phase 13 → 14 transition, 2026-10-29 (`PHASE_14_PLAN.md`; ADR-0113…0118 `Proposed`); to be

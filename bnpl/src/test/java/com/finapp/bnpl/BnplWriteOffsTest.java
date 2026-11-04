@@ -354,6 +354,21 @@ class BnplWriteOffsTest {
 
     // ------------------------------------------------------------------ plumbing
 
+    @Test
+    @DisplayName("the customer's read after it names what stands owed, never zero: the ledger's accounts are empty, the figures are the row's")
+    void theCustomersReadNamesWhatStandsOwed() {
+        BnplConditionWorld.Agreement agreement = defaulted();
+        BnplWriteOffs.Proposed proposed = propose(agreement);
+        BnplWriteOffPosition position = proposed.writeOff().position();
+        approve(agreement, proposed.writeOff().id(), position);
+        BnplObligations.Read read = new BnplObligations(fakes.purchases, fakes.book, fakes.writeOffs)
+                .read(BnplApplicationFakes.UOW, agreement.agreement(), world.party).orElseThrow();
+        assertThat(read.balances().principalOutstanding()).isEqualTo(position.principalTotal());
+        assertThat(read.balances().principalOutstanding().isPositive()).isTrue();
+        assertThat(read.balances().feesDue()).isEqualTo(position.feesDue());
+        assertThat(read.owned().obligation().status()).isEqualTo(BnplObligationStatus.WRITTEN_OFF);
+    }
+
     private BnplConditionWorld.Agreement defaulted() {
         BnplConditionWorld.Agreement agreement = world.payIn4();
         world.serviceOn(DEFAULTED_ON, agreement);

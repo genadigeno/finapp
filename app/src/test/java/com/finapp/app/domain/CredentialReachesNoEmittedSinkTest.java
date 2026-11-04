@@ -208,6 +208,13 @@ class CredentialReachesNoEmittedSinkTest {
                 .as("the schemas a secret is permitted in, named so that widening is visible")
                 .containsExactlyInAnyOrder(
                         "AuthenticationRequest",
+                        // P14-TSK-021: the write-off's doors. A reason and the figures an approver names; no credential.
+                        "LoanWriteOffProposalRequest",
+                        "LoanWriteOffApprovalRequest",
+                        "LoanWriteOffRejectionRequest",
+                        "BnplWriteOffProposalRequest",
+                        "BnplWriteOffApprovalRequest",
+                        "BnplWriteOffRejectionRequest",
                         // P1-TSK-026 changed what this entry MEANS without changing the entry, and
                         // that is worth recording rather than leaving as a silent reclassification.
                         // It was here because the set is every schema REACHABLE from a request

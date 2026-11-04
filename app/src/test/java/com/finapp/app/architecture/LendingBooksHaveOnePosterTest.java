@@ -63,8 +63,6 @@ class LendingBooksHaveOnePosterTest {
             Map.of(
                     "PostingRuleCatalogue.java",
                     "READER (P14-TSK-002; permitted by P14-TSK-021, which found this guard red on master): the posting-rule register names each rule's accounts as data, to judge an entry already posted; it posts nothing and reaches no poster",
-                    "PurposeReportDefinition.java",
-                    "READER (P14-TSK-017; permitted by P14-TSK-021, which found this guard red on master): a report's definition names the purposes it sums from journal lines, on a read-only snapshot; it posts nothing and reaches no poster",
                     "SourceProofs.java",
                     "NAME ONLY (P14-TSK-010; permitted by P14-TSK-021, which found this guard red on master): the proof's own name in accounting's vocabulary, never the account; it posts nothing",
                     "ProductSourceProofs.java",

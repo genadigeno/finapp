@@ -339,6 +339,25 @@ class LoanWriteOffsTest {
     }
 
     @Test
+    @DisplayName("the customer's read after it names what stands owed, never zero and never closed: the ledger's accounts are empty, the figures"
+            + " are the row's, and no condition is derived out of servicing")
+    void theCustomersReadNamesWhatStandsOwed() {
+        world.defaulted();
+        LoanWriteOffs.Proposed proposed = propose();
+        LoanWriteOffPosition position = proposed.writeOff().position();
+        approve(proposed.writeOff().id(), position);
+        Loans.Read read = world.customersRead().read(UOW, world.id, world.party).orElseThrow();
+        assertThat(read.balances().principalOutstanding()).isEqualTo(position.principalTotal());
+        assertThat(read.balances().interestAccrued()).isEqualTo(position.interestAccrued());
+        assertThat(read.balances().interestDue()).isEqualTo(position.interestDue());
+        assertThat(read.balances().feesDue()).isEqualTo(position.feesDue());
+        assertThat(read.balances().principalOutstanding().isPositive()).isTrue();
+        assertThat(read.owned().loan().status()).isEqualTo(LoanStatus.WRITTEN_OFF);
+        assertThat(read.owned().loan().closedAt()).isEmpty();
+        assertThat(read.condition()).isEmpty();
+    }
+
+    @Test
     @DisplayName("after it a repayment is refused at its door under L3, nothing posted: what is owed is unchanged and the money stays in the"
             + " wallet; a key already born replays first")
     void aRepaymentAfterItIsRefused() {
@@ -476,6 +495,12 @@ class LoanWriteOffsTest {
                             refuse(OutboxWriter.class), IDS, CLOCK),
                     posting(), (uow, actor) -> Optional.ofNullable(parties.get(actor.id())),
                     outbox(), audit(), IDS, CLOCK);
+        }
+
+        /** The customer's read over this world's loan. */
+        Loans customersRead() {
+            return new Loans(loans(), chart(), balances(), fake(LoanPayoutStore.class, (proxy, method, args) -> Optional.empty()),
+                    new LoanConditions(billings(), conditions(), termsStore(), refuse(OutboxWriter.class), IDS, CLOCK), store());
         }
 
         /** The customer's repayment over this world's loan - everything past the door's L3 refuses to run. */

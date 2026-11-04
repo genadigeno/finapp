@@ -104,8 +104,8 @@ class BnplWriteOffApiTest {
     }
 
     @Test
-    @DisplayName("to the agent: an act without a key, with a field the body does not declare or a null list is 422 before the domain; an unknown"
-            + " or malformed account - a UUIDv4 included - the uniform 404; a missing reason on a real id the same 404 first, never a 500")
+    @DisplayName("to the agent: an act without a key or with a field the body does not declare is 422 before the domain; an unknown or malformed"
+            + " account - a UUIDv4 included - the uniform 404, never a 500")
     void theKeyTheBodyAndTheUniformNotFound() throws Exception {
         BnplApplicationClient client = new BnplApplicationClient(port);
         String agent = sessionWith(RoleName.BNPL_SERVICING_AGENT);

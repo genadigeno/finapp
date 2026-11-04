@@ -67,6 +67,7 @@ class MonitoringClassificationTest {
             Map.entry("lending.credit-application:", MonitoredKind.LOAN_SERVICING),
             Map.entry("lending.amendment:", MonitoredKind.LOAN_SERVICING),
             Map.entry("lending.closure-refund:", MonitoredKind.LOAN_SERVICING),
+            Map.entry("lending.write-off:", MonitoredKind.LOAN_SERVICING),
             Map.entry("lending.capital-contribution:", MonitoredKind.LENDING_CAPITAL),
             Map.entry("bnpl.financing:", MonitoredKind.BNPL_FINANCING),
             Map.entry("bnpl.repayment:", MonitoredKind.BNPL_REPAYMENT),
@@ -77,10 +78,11 @@ class MonitoringClassificationTest {
             Map.entry("bnpl.accrual-correction:", MonitoredKind.BNPL_SERVICING),
             Map.entry("bnpl.fee:", MonitoredKind.BNPL_SERVICING),
             Map.entry("bnpl.credit-application:", MonitoredKind.BNPL_SERVICING),
-            Map.entry("bnpl.reversal-fee-release:", MonitoredKind.BNPL_SERVICING));
+            Map.entry("bnpl.reversal-fee-release:", MonitoredKind.BNPL_SERVICING),
+            Map.entry("bnpl.write-off:", MonitoredKind.BNPL_SERVICING));
 
     @Test
-    @DisplayName("the register is exactly the forty-four namespaces the ledger carries today, each to its kind")
+    @DisplayName("the register is exactly the forty-six namespaces the ledger carries today, each to its kind")
     void theRegisterIsExact() {
         assertThat(MonitoredKind.registeredNamespaces()).containsExactlyInAnyOrderElementsOf(REGISTER.keySet());
         REGISTER.forEach((namespace, kind) -> {

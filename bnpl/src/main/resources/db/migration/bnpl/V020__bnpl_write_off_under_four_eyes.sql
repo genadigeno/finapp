@@ -286,7 +286,9 @@ CREATE TRIGGER bnpl_refund_not_on_a_written_off_obligation
     FOR EACH ROW
     EXECUTE FUNCTION bnpl.nothing_is_refunded_or_disputed_on_a_written_off_obligation();
 
-CREATE TRIGGER bnpl_dispute_not_on_a_written_off_obligation
+-- Named to fire after bnpl_dispute_permits_only_machine_edges (names in order), which has taken B5 then B4: a raw writer never takes
+-- the obligation FOR SHARE ahead of the purchase's lock.
+CREATE TRIGGER bnpl_dispute_refused_on_a_written_off_obligation
     BEFORE INSERT ON bnpl.bnpl_dispute
     FOR EACH ROW
     EXECUTE FUNCTION bnpl.nothing_is_refunded_or_disputed_on_a_written_off_obligation();

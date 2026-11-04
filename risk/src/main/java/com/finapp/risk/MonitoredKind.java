@@ -42,13 +42,17 @@ public enum MonitoredKind {
     LOAN_DISBURSEMENT("lending.disbursement:", "lending.draw:"),
     LOAN_REPAYMENT("lending.repayment:"),
     LOAN_SERVICING("lending.accrual:", "lending.accrual-correction:", "lending.billing:", "lending.statement:",
-            "lending.fee:", "lending.credit-application:", "lending.amendment:", "lending.closure-refund:"),
+            "lending.fee:", "lending.credit-application:", "lending.amendment:", "lending.closure-refund:",
+            // P14-TSK-021: rule 14 - an entry on our books with no line on a wallet: recorded, never UNCLASSIFIED.
+            "lending.write-off:"),
     LENDING_CAPITAL("lending.capital-contribution:"),
     BNPL_FINANCING("bnpl.financing:"),
     BNPL_REPAYMENT("bnpl.repayment:"),
     BNPL_REFUND("bnpl.refund:", "bnpl.closure-refund:"),
     BNPL_SERVICING("bnpl.billing:", "bnpl.accrual:", "bnpl.accrual-correction:", "bnpl.fee:", "bnpl.credit-application:",
-            "bnpl.reversal-fee-release:"),
+            "bnpl.reversal-fee-release:",
+            // P14-TSK-021: F11, as lending's rule 14.
+            "bnpl.write-off:"),
     /** A {@code REVERSAL} entry, whatever its key - it names the original it compensates. */
     REVERSAL(),
     /** An {@code ADJUSTMENT} entry, whatever its key - a person's reasoned correction. */
