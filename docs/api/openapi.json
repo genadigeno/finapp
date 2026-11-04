@@ -717,6 +717,321 @@
           }
         }
       },
+      "accounting.RegulatoryFigureUnresolved": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.RegulatoryFigureUnresolved"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.RegulatoryFigureUnresolved"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A form line's figure path resolves to nothing, to more than one figure, or to no amount in the run it names; it is refused and never filled with a zero. Nothing was drafted.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.RegulatoryObligationInvalid": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.RegulatoryObligationInvalid"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.RegulatoryObligationInvalid"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The regulatory obligation is not coherent, or names an adapter or a report definition this build does not hold, or one that is never a run; nothing was proposed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.RegulatoryObligationStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.RegulatoryObligationStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.RegulatoryObligationStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] That form and version exist, the version is no longer awaiting a decision, the configuration named is not what stands, or a later form version is in force; nothing was changed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.RegulatoryProviderUnavailable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.RegulatoryProviderUnavailable"
+                    },
+                    "status": {
+                      "const": 503
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.RegulatoryProviderUnavailable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[503] The provider could not be asked at this act, or its answer not kept, so nothing was concluded: a return is concluded undelivered only on what the provider says now. The return stands SUBMITTED. Ask again.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.RegulatoryRunBytesDiffer": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.RegulatoryRunBytesDiffer"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.RegulatoryRunBytesDiffer"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A report run's bytes do not prove against its stored hash, or the hash this return named; nothing was drawn or moved.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.RegulatorySourceNotFinal": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.RegulatorySourceNotFinal"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.RegulatorySourceNotFinal"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A return is drawn only from FINAL report runs of a CLOSED month at its present revision: the month is not closed, or a source's FINAL run is not yet issued; nothing was drafted.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.RegulatorySubmissionInvalid": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.RegulatorySubmissionInvalid"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.RegulatorySubmissionInvalid"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The draft is not coherent: no such obligation, or a correction of anything but a concluded return of its own form and month; nothing was drafted.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.RegulatorySubmissionLive": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.RegulatorySubmissionLive"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.RegulatorySubmissionLive"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A return of this form and month is live, was sent, or already has a correction standing; a later return is a correction naming what it corrects.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.RegulatorySubmissionStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.RegulatorySubmissionStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.RegulatorySubmissionStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] What the act names is no longer what stands: the return's status, its content or revision, the month it read, the obligation version it pinned, or a report run it drew from; nothing was changed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.ReportAwaitsClose": {
         "content": {
           "application/problem+json": {
@@ -24929,6 +25244,835 @@
         ],
         "type": "object"
       },
+      "RegulatoryDrillDownView": {
+        "properties": {
+          "heldByRoles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "note": {
+            "type": "string"
+          },
+          "requiresPermission": {
+            "type": "string"
+          },
+          "route": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryFormLineView": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "lineage": {
+            "$ref": "#/components/schemas/RegulatoryLineageView"
+          },
+          "minorUnits": {
+            "type": "string"
+          },
+          "ordinal": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryLineageView": {
+        "properties": {
+          "agreesWithTheRun": {
+            "type": "boolean"
+          },
+          "definition": {
+            "type": "string"
+          },
+          "drillDown": {
+            "$ref": "#/components/schemas/RegulatoryDrillDownView"
+          },
+          "figurePath": {
+            "type": "string"
+          },
+          "runFigureCurrency": {
+            "type": "string"
+          },
+          "runFigureMinorUnits": {
+            "type": "string"
+          },
+          "runFigureScale": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "runSha256": {
+            "type": "string"
+          },
+          "runStatus": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryObligationActivationRequest": {
+        "properties": {
+          "configurationSha256": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryObligationLineItem": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "figure": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryObligationLineRequest": {
+        "properties": {
+          "code": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "figure": {
+            "maxLength": 256,
+            "minLength": 0,
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 200,
+            "minLength": 0,
+            "type": "string"
+          },
+          "source": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryObligationReceipt": {
+        "properties": {
+          "configurationSha256": {
+            "type": "string"
+          },
+          "obligationId": {
+            "type": "string"
+          },
+          "standing": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryObligationRejectionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryObligationRequest": {
+        "properties": {
+          "adapterName": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "formCode": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "formVersion": {
+            "format": "int32",
+            "maximum": 9999,
+            "type": "integer"
+          },
+          "jurisdictionCode": {
+            "maxLength": 25,
+            "minLength": 0,
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/RegulatoryObligationLineRequest"
+            },
+            "maxItems": 500,
+            "minItems": 0,
+            "type": "array"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/RegulatoryObligationRuleRequest"
+            },
+            "maxItems": 200,
+            "minItems": 0,
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/RegulatoryObligationSourceRequest"
+            },
+            "maxItems": 8,
+            "minItems": 0,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryObligationRuleItem": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "left": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "right": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryObligationRuleRequest": {
+        "properties": {
+          "code": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "left": {
+            "items": {
+              "maxLength": 32,
+              "minLength": 0,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 0,
+            "type": "array"
+          },
+          "right": {
+            "items": {
+              "maxLength": 32,
+              "minLength": 0,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 0,
+            "type": "array"
+          },
+          "type": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryObligationSourceItem": {
+        "properties": {
+          "definition": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryObligationSourceRequest": {
+        "properties": {
+          "definition": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "maximum": 9999,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryObligationSummaryView": {
+        "properties": {
+          "configurationSha256": {
+            "type": "string"
+          },
+          "formCode": {
+            "type": "string"
+          },
+          "formVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "jurisdictionCode": {
+            "type": "string"
+          },
+          "obligationId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "standing": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryObligationView": {
+        "properties": {
+          "adapterHeld": {
+            "type": "boolean"
+          },
+          "adapterName": {
+            "type": "string"
+          },
+          "configurationSha256": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "formCode": {
+            "type": "string"
+          },
+          "formVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "jurisdictionCode": {
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/RegulatoryObligationLineItem"
+            },
+            "type": "array"
+          },
+          "notice": {
+            "type": "string"
+          },
+          "obligationId": {
+            "type": "string"
+          },
+          "periodType": {
+            "type": "string"
+          },
+          "proposalReason": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "retiredAt": {
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/RegulatoryObligationRuleItem"
+            },
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/RegulatoryObligationSourceItem"
+            },
+            "type": "array"
+          },
+          "standing": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryProviderAnswerView": {
+        "properties": {
+          "anomaly": {
+            "type": "string"
+          },
+          "answerId": {
+            "type": "string"
+          },
+          "attempt": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "call": {
+            "type": "string"
+          },
+          "flag": {
+            "type": "string"
+          },
+          "providerReference": {
+            "type": "string"
+          },
+          "rawBase64": {
+            "type": "string"
+          },
+          "rawSha256": {
+            "type": "string"
+          },
+          "readOutcome": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "type": "string"
+          },
+          "receivedBytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "rejectionCode": {
+            "type": "string"
+          },
+          "statedOutcome": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryReferenceExportView": {
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "document": {
+            "type": "string"
+          },
+          "notice": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "standing": {
+            "type": "string"
+          },
+          "submissionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatorySubmissionAttestationRequest": {
+        "properties": {
+          "contentSha256": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "periodRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatorySubmissionDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatorySubmissionDraftRequest": {
+        "properties": {
+          "correctsSubmissionId": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "obligationId": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "periodId": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatorySubmissionReceipt": {
+        "properties": {
+          "contentSha256": {
+            "type": "string"
+          },
+          "monthMoved": {
+            "type": "boolean"
+          },
+          "periodRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "standing": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusMeaning": {
+            "type": "string"
+          },
+          "submissionId": {
+            "type": "string"
+          },
+          "validationPassed": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatorySubmissionStandingView": {
+        "properties": {
+          "nextAfter": {
+            "type": "string"
+          },
+          "submissions": {
+            "items": {
+              "$ref": "#/components/schemas/RegulatorySubmissionSummaryView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatorySubmissionSummaryView": {
+        "properties": {
+          "contraryAnswers": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "correctedBySubmissionId": {
+            "type": "string"
+          },
+          "correctsSubmissionId": {
+            "type": "string"
+          },
+          "formCode": {
+            "type": "string"
+          },
+          "formVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "jurisdictionCode": {
+            "type": "string"
+          },
+          "monthMoved": {
+            "type": "boolean"
+          },
+          "nonDeliveryOpen": {
+            "type": "boolean"
+          },
+          "overdue": {
+            "type": "boolean"
+          },
+          "overtaken": {
+            "type": "boolean"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "periodRevisionNow": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "preparedAt": {
+            "type": "string"
+          },
+          "resendsExhausted": {
+            "type": "boolean"
+          },
+          "standing": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusMeaning": {
+            "type": "string"
+          },
+          "submissionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatorySubmissionView": {
+        "properties": {
+          "adapterName": {
+            "type": "string"
+          },
+          "answerHorizonAt": {
+            "type": "string"
+          },
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/RegulatoryProviderAnswerView"
+            },
+            "type": "array"
+          },
+          "answersKept": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "approvedAt": {
+            "type": "string"
+          },
+          "attempts": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "blockedBy": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "concludedAt": {
+            "type": "string"
+          },
+          "configurationSha256": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string"
+          },
+          "contraryAnswers": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "correctedBySubmissionId": {
+            "type": "string"
+          },
+          "correctsSubmissionId": {
+            "type": "string"
+          },
+          "formCode": {
+            "type": "string"
+          },
+          "formVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "jurisdictionCode": {
+            "type": "string"
+          },
+          "lastAnswer": {
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/RegulatoryFormLineView"
+            },
+            "type": "array"
+          },
+          "monthMoved": {
+            "type": "boolean"
+          },
+          "nonDeliveryOpen": {
+            "type": "boolean"
+          },
+          "notice": {
+            "type": "string"
+          },
+          "obligationId": {
+            "type": "string"
+          },
+          "obligationStatus": {
+            "type": "string"
+          },
+          "overdue": {
+            "type": "boolean"
+          },
+          "overtaken": {
+            "type": "boolean"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "periodRevisionNow": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "periodStatusNow": {
+            "type": "string"
+          },
+          "preparationReason": {
+            "type": "string"
+          },
+          "preparedAt": {
+            "type": "string"
+          },
+          "providerReference": {
+            "type": "string"
+          },
+          "rejectionCode": {
+            "type": "string"
+          },
+          "resends": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "resendsExhausted": {
+            "type": "boolean"
+          },
+          "standing": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusMeaning": {
+            "type": "string"
+          },
+          "stillStands": {
+            "type": "boolean"
+          },
+          "submissionId": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string"
+          },
+          "validatedAt": {
+            "type": "string"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/RegulatoryValidationView"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryValidationFindingView": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "detail": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "passed": {
+            "type": "boolean"
+          },
+          "rule": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RegulatoryValidationView": {
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/RegulatoryValidationFindingView"
+            },
+            "type": "array"
+          },
+          "passed": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "ReinstatementRequest": {
         "properties": {
           "reason": {
@@ -41060,6 +42204,657 @@
               }
             },
             "description": "Accepted"
+          }
+        }
+      }
+    },
+    "/v1/operator/regulatory/obligations": {
+      "get": {
+        "operationId": "listRegulatoryObligations",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RegulatoryObligationSummaryView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "proposeRegulatoryObligation",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegulatoryObligationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulatoryObligationReceipt"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/regulatory/obligations/awaiting-activation": {
+      "get": {
+        "operationId": "listRegulatoryObligationsAwaitingActivation",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RegulatoryObligationSummaryView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/regulatory/obligations/{obligationId}": {
+      "get": {
+        "operationId": "readRegulatoryObligation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "obligationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulatoryObligationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/regulatory/obligations/{obligationId}/activation": {
+      "post": {
+        "operationId": "activateRegulatoryObligation",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "obligationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegulatoryObligationActivationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulatoryObligationReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/regulatory/obligations/{obligationId}/attestation": {
+      "get": {
+        "operationId": "readRegulatoryObligationAttestation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "obligationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulatoryObligationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/regulatory/obligations/{obligationId}/rejection": {
+      "post": {
+        "operationId": "rejectRegulatoryObligation",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "obligationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegulatoryObligationRejectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulatoryObligationReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/regulatory/submissions": {
+      "get": {
+        "operationId": "listStandingRegulatorySubmissions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulatorySubmissionStandingView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "draftRegulatorySubmission",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegulatorySubmissionDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulatorySubmissionReceipt"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/regulatory/submissions/awaiting-approval": {
+      "get": {
+        "operationId": "listRegulatorySubmissionsAwaitingApproval",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RegulatorySubmissionSummaryView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/regulatory/submissions/{submissionId}": {
+      "get": {
+        "operationId": "readRegulatorySubmission",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submissionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulatorySubmissionView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/regulatory/submissions/{submissionId}/approval": {
+      "post": {
+        "operationId": "approveRegulatorySubmission",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "submissionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegulatorySubmissionAttestationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulatorySubmissionReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/regulatory/submissions/{submissionId}/attestation": {
+      "get": {
+        "operationId": "readRegulatorySubmissionAttestation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submissionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulatorySubmissionView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/regulatory/submissions/{submissionId}/non-delivery": {
+      "post": {
+        "operationId": "declareRegulatorySubmissionUndelivered",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "submissionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegulatorySubmissionDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulatorySubmissionReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/regulatory/submissions/{submissionId}/reference-export": {
+      "get": {
+        "operationId": "readRegulatoryReferenceExport",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submissionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulatoryReferenceExportView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/regulatory/submissions/{submissionId}/refusal": {
+      "post": {
+        "operationId": "refuseRegulatorySubmission",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "submissionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegulatorySubmissionDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulatorySubmissionReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/regulatory/submissions/{submissionId}/submission": {
+      "post": {
+        "operationId": "sendRegulatorySubmission",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "submissionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegulatorySubmissionAttestationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulatorySubmissionReceipt"
+                }
+              }
+            },
+            "description": "Accepted"
+          }
+        }
+      }
+    },
+    "/v1/operator/regulatory/submissions/{submissionId}/validation": {
+      "post": {
+        "operationId": "validateRegulatorySubmission",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "submissionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulatorySubmissionReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/regulatory/submissions/{submissionId}/withdrawal": {
+      "post": {
+        "operationId": "withdrawRegulatorySubmission",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "submissionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegulatorySubmissionDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegulatorySubmissionReceipt"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

@@ -5104,6 +5104,133 @@ so it is `CONFIDENTIAL`, served to an operator under `ACCOUNTING_READ` and read 
 | `prior_period_adjustment` | `decision_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
 | `prior_period_adjustment` | `correlation_id` | `INTERNAL` | The proposing flow's correlation |
 
+### `accounting.regulatory_obligation` - a regulatory obligation version - *added by `P14-TSK-018`*
+
+`accounting V010`: configuration data, `REFERENCE` only, frozen but for its one decision. No figure.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `regulatory_obligation` | `id` | `INTERNAL` | Generated: the version's identity |
+| `regulatory_obligation` | `jurisdiction_code` | `INTERNAL` | A closed shape; the placeholder jurisdiction in Phase 14 |
+| `regulatory_obligation` | `form_code` | `INTERNAL` | A closed shape |
+| `regulatory_obligation` | `form_version` | `INTERNAL` | The form's version |
+| `regulatory_obligation` | `period_type` | `INTERNAL` | `MONTH`, by `CHECK` |
+| `regulatory_obligation` | `adapter_name` | `INTERNAL` | The adapter it files through |
+| `regulatory_obligation` | `standing` | `INTERNAL` | `REFERENCE`, and nothing else by `CHECK` |
+| `regulatory_obligation` | `configuration` | `INTERNAL` | Canonical JSON: source definitions, line mapping, closed-vocabulary rules; labels screened for instrument shapes. Never SQL or script |
+| `regulatory_obligation` | `configuration_sha256` | `INTERNAL` | Recomputed at the birth |
+| `regulatory_obligation` | `status` | `INTERNAL` | The machine |
+| `regulatory_obligation` | `proposed_by` | `CONFIDENTIAL` | A person; never its activator, by `CHECK` |
+| `regulatory_obligation` | `proposed_by_type` | `INTERNAL` | The proposer's actor type |
+| `regulatory_obligation` | `proposed_at` | `INTERNAL` | The database's stamp |
+| `regulatory_obligation` | `proposal_reason` | `RESTRICTED-PII` | Person-written; screened; never logged, never in a summary or an event; served to the controller's door alone |
+| `regulatory_obligation` | `decided_by` | `CONFIDENTIAL` | A person; never the proposer when it activates, by `CHECK` |
+| `regulatory_obligation` | `decided_by_type` | `INTERNAL` | The decider's actor type |
+| `regulatory_obligation` | `decided_at` | `INTERNAL` | The database's stamp |
+| `regulatory_obligation` | `decision_reason` | `RESTRICTED-PII` | Person-written; screened; never logged, never in a summary or an event; never served |
+| `regulatory_obligation` | `retired_at` | `INTERNAL` | The database's stamp, when a later version took over |
+| `regulatory_obligation` | `correlation_id` | `INTERNAL` | The proposing flow's correlation |
+
+### `accounting.regulatory_submission`, `regulatory_submission_source`, `regulatory_submission_line`, `regulatory_submission_event` - a return - *added by `P14-TSK-018`*
+
+`accounting V010`: one return, `REFERENCE` only, content frozen from birth. Aggregates per currency and account, as the `FINAL` run it read; output, never truth. No customer name or instrument. Regulatory content is `CONFIDENTIAL` (`PHASE_14_PLAN.md` section 12).
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `regulatory_submission` | `id` | `INTERNAL` | Generated, and the key the provider deduplicates on |
+| `regulatory_submission` | `obligation_id` | `INTERNAL` | The version it pinned |
+| `regulatory_submission` | `jurisdiction_code` | `INTERNAL` | A copy of the version's, held equal by the trigger, so the partial uniques can name it |
+| `regulatory_submission` | `form_code` | `INTERNAL` | The same |
+| `regulatory_submission` | `form_version` | `INTERNAL` | The same |
+| `regulatory_submission` | `period_id` | `INTERNAL` | The month it read |
+| `regulatory_submission` | `period_revision` | `INTERNAL` | The month's revision it read: what every act compares |
+| `regulatory_submission` | `corrects_submission_id` | `INTERNAL` | The return it corrects |
+| `regulatory_submission` | `content` | `CONFIDENTIAL` | The canonical text attested: aggregates in minor units in strings, never a person; served only on the audited doors; frozen, never logged, never in an event |
+| `regulatory_submission` | `content_sha256` | `INTERNAL` | What a person names |
+| `regulatory_submission` | `status` | `INTERNAL` | The machine |
+| `regulatory_submission` | `prepared_by` | `CONFIDENTIAL` | A person; never its approver, by `CHECK`; never served |
+| `regulatory_submission` | `prepared_by_type` | `INTERNAL` | The preparer's actor type |
+| `regulatory_submission` | `prepared_at` | `INTERNAL` | The database's stamp |
+| `regulatory_submission` | `preparation_reason` | `RESTRICTED-PII` | Person-written; screened; never logged, never in a summary or an event; served to the approver's door alone |
+| `regulatory_submission` | `validation_outcome` | `CONFIDENTIAL` | Rules, currencies and codes; never an amount |
+| `regulatory_submission` | `validation_passed` | `INTERNAL` | Whether every rule passed |
+| `regulatory_submission` | `validated_by` | `CONFIDENTIAL` | A person; never served |
+| `regulatory_submission` | `validated_by_type` | `INTERNAL` | The validator's actor type |
+| `regulatory_submission` | `validated_at` | `INTERNAL` | The database's stamp |
+| `regulatory_submission` | `approved_by` | `CONFIDENTIAL` | A person; never its preparer or its sender, by `CHECK`; never served |
+| `regulatory_submission` | `approved_by_type` | `INTERNAL` | The approver's actor type |
+| `regulatory_submission` | `approved_at` | `INTERNAL` | The database's stamp |
+| `regulatory_submission` | `approval_reason` | `RESTRICTED-PII` | Person-written; screened; never logged, never in a summary or an event; never served |
+| `regulatory_submission` | `approved_content_sha256` | `INTERNAL` | What the approver named |
+| `regulatory_submission` | `approved_period_revision` | `INTERNAL` | What the approver named |
+| `regulatory_submission` | `submitted_by` | `CONFIDENTIAL` | A person; never its approver, by `CHECK`; never served |
+| `regulatory_submission` | `submitted_by_type` | `INTERNAL` | The sender's actor type |
+| `regulatory_submission` | `submitted_at` | `INTERNAL` | The database's stamp |
+| `regulatory_submission` | `submission_reason` | `RESTRICTED-PII` | Person-written; screened; never logged, never in a summary or an event; never served |
+| `regulatory_submission` | `closed_by` | `CONFIDENTIAL` | A person, on a refusal, a withdrawal or a non-delivery; never served |
+| `regulatory_submission` | `closed_by_type` | `INTERNAL` | The closer's actor type |
+| `regulatory_submission` | `closed_at` | `INTERNAL` | The database's stamp |
+| `regulatory_submission` | `closing_reason` | `RESTRICTED-PII` | Person-written; screened; never logged, never in a summary or an event; never served |
+| `regulatory_submission` | `attempts` | `INTERNAL` | The drive: attempts claimed |
+| `regulatory_submission` | `resends` | `INTERNAL` | The drive: resends counted before their calls |
+| `regulatory_submission` | `next_inquiry_at` | `INTERNAL` | The drive's permit, on the database's clock |
+| `regulatory_submission` | `answer_horizon_at` | `INTERNAL` | When a return with no answer reads overdue, on the database's clock |
+| `regulatory_submission` | `last_answer` | `INTERNAL` | A closed vocabulary |
+| `regulatory_submission` | `provider_reference` | `INTERNAL` | Read off a provider's answer only if of a closed shape and no instrument's |
+| `regulatory_submission` | `rejection_code` | `INTERNAL` | The same |
+| `regulatory_submission` | `concluded_at` | `INTERNAL` | The database's stamp, on the provider's definite answer |
+| `regulatory_submission` | `correlation_id` | `INTERNAL` | The drafting flow's correlation |
+| `regulatory_submission_source` | `submission_id` | `INTERNAL` | The return |
+| `regulatory_submission_source` | `run_id` | `INTERNAL` | The lineage: the report run read |
+| `regulatory_submission_source` | `run_sha256` | `INTERNAL` | The lineage: that run's hash |
+| `regulatory_submission_source` | `definition` | `INTERNAL` | The report definition |
+| `regulatory_submission_source` | `definition_version` | `INTERNAL` | The definition's version |
+| `regulatory_submission_line` | `submission_id` | `INTERNAL` | The return |
+| `regulatory_submission_line` | `ordinal` | `INTERNAL` | Its place in the return |
+| `regulatory_submission_line` | `line_code` | `CONFIDENTIAL` | The obligation's code for one aggregate of the return |
+| `regulatory_submission_line` | `label` | `CONFIDENTIAL` | The obligation's label for it |
+| `regulatory_submission_line` | `currency` | `CONFIDENTIAL` | The aggregate's currency |
+| `regulatory_submission_line` | `minor_units` | `CONFIDENTIAL` | One aggregate of the return, as issued; never a person |
+| `regulatory_submission_line` | `scale` | `CONFIDENTIAL` | The aggregate's scale |
+| `regulatory_submission_line` | `run_id` | `INTERNAL` | The lineage: `NOT NULL` |
+| `regulatory_submission_line` | `run_sha256` | `INTERNAL` | The lineage: `NOT NULL` |
+| `regulatory_submission_line` | `source_definition` | `INTERNAL` | The lineage: `NOT NULL` |
+| `regulatory_submission_line` | `figure_path` | `INTERNAL` | The lineage: `NOT NULL`, in the closed grammar |
+| `regulatory_submission_event` | `id` | `INTERNAL` | Generated |
+| `regulatory_submission_event` | `submission_id` | `INTERNAL` | The return |
+| `regulatory_submission_event` | `act` | `INTERNAL` | A closed vocabulary, each on its edge |
+| `regulatory_submission_event` | `from_status` | `INTERNAL` | The edge |
+| `regulatory_submission_event` | `to_status` | `INTERNAL` | The edge |
+| `regulatory_submission_event` | `actor` | `CONFIDENTIAL` | A person, or the platform; on an approval never its preparer, by `CHECK` |
+| `regulatory_submission_event` | `actor_type` | `INTERNAL` | The actor's type |
+| `regulatory_submission_event` | `prepared_by` | `CONFIDENTIAL` | A person, on an approval only |
+| `regulatory_submission_event` | `reason` | `RESTRICTED-PII` | As the row's; never served |
+| `regulatory_submission_event` | `occurred_at` | `INTERNAL` | The database's stamp |
+| `regulatory_submission_event` | `correlation_id` | `INTERNAL` | The act's correlation |
+
+### `accounting.regulatory_provider_answer` - a provider's answer, verbatim - *added by `P14-TSK-018`*
+
+`accounting V010`: `INV-HIST-02`. **Untrusted bytes**, kept as they arrived. **The bound and its rule**: at most 64 KiB is kept; over it the first 64 KiB, the whole length and the whole SHA-256, flagged truncated, and the answer decides nothing. Append-only for every writer. Never logged, never in a metric's tag, an event or a summary; served only as base64, as data, on the audited reads, the newest twenty at a time.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `regulatory_provider_answer` | `id` | `INTERNAL` | Generated |
+| `regulatory_provider_answer` | `submission_id` | `INTERNAL` | The return |
+| `regulatory_provider_answer` | `attempt` | `INTERNAL` | The attempt it answered |
+| `regulatory_provider_answer` | `call_kind` | `INTERNAL` | A closed vocabulary |
+| `regulatory_provider_answer` | `stated_outcome` | `INTERNAL` | A closed vocabulary: what it said |
+| `regulatory_provider_answer` | `read_outcome` | `INTERNAL` | A closed vocabulary: what was believed |
+| `regulatory_provider_answer` | `provider_reference` | `INTERNAL` | Read off it only if of a closed shape and no instrument's; otherwise null with the anomaly named |
+| `regulatory_provider_answer` | `rejection_code` | `INTERNAL` | The same |
+| `regulatory_provider_answer` | `anomaly` | `INTERNAL` | A closed vocabulary: why it decided nothing |
+| `regulatory_provider_answer` | `flag` | `INTERNAL` | A closed vocabulary: late, or contrary |
+| `regulatory_provider_answer` | `raw` | `CONFIDENTIAL` | Whatever the provider sent: untrusted bytes. An instrument-shaped reference stays here, verbatim, and goes no further. A real adapter's classification is reviewed when one is chosen |
+| `regulatory_provider_answer` | `raw_sha256` | `INTERNAL` | Of what arrived, whatever was kept |
+| `regulatory_provider_answer` | `received_bytes` | `INTERNAL` | What arrived, whatever was kept |
+| `regulatory_provider_answer` | `truncated` | `INTERNAL` | Whether the bound cut it |
+| `regulatory_provider_answer` | `received_at` | `INTERNAL` | The database's stamp |
+| `regulatory_provider_answer` | `correlation_id` | `INTERNAL` | The flow |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

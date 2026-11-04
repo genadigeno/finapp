@@ -131,6 +131,7 @@ public class AccountingCloseBeans {
             CloseRuns closeRuns,
             CloseChecks closeChecks,
             ReportRunGenerator reportRunGenerator,
+            RegulatorySubmissionDriver regulatorySubmissionDriver,
             AccountingTransactions accountingTransactions,
             CloseRunMetrics closeRunMetrics,
             AccountingFlowScope accountingFlowScope,
@@ -138,11 +139,12 @@ public class AccountingCloseBeans {
             @Value("${finapp.accounting.close.open-poll:PT1H}") Duration openPoll,
             @Value("${finapp.accounting.close.checks-poll:PT30S}") Duration checksPoll,
             @Value("${finapp.accounting.close.orphans-poll:PT1M}") Duration orphansPoll,
+            @Value("${finapp.accounting.close.inquiry-poll:PT1M}") Duration inquiryPoll,
             @Value("${finapp.accounting.close.checks-batch:18}") int checksBatch,
             @Value("${finapp.accounting.close.orphans-batch:10}") int orphansBatch) {
         return new AccountingCloseSchedule(accountingPeriods, closeRuns, closeChecks, reportRunGenerator::completeOrphaned,
-                accountingTransactions, closeRunMetrics, accountingFlowScope, idGenerator,
-                new AccountingCloseSchedule.Cadence(openPoll, checksPoll, orphansPoll, checksBatch, orphansBatch));
+                regulatorySubmissionDriver::inquireDue, accountingTransactions, closeRunMetrics, accountingFlowScope, idGenerator,
+                new AccountingCloseSchedule.Cadence(openPoll, checksPoll, orphansPoll, inquiryPoll, checksBatch, orphansBatch));
     }
 
     /** Whether this instance runs the close schedule - eager either way (`P1-TSK-029`'s rule). */

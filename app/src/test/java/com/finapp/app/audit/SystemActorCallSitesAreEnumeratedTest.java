@@ -471,6 +471,13 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " attempt row its trail; a person's acts on the close - the lock, a re-run, the proposal - are theirs,"
                         + " and a re-run names its person and reason."),
                     Map.entry(
+                            "com.finapp.app.accounting.RegulatorySubmissionDriver.asThePlatform",
+                    "A regulatory return's drive (P14-TSK-018, ADR-0118, INV-ACC-13, INV-HIST-02): the send, every inquiry and every record of"
+                        + " what a provider answered, from the sending door after SUBMITTED commits or from the leaderless inquiry leg. Nobody"
+                        + " commands a provider's answer, and a later inquiry has no caller at all. The person who sent it is on the SUBMITTED"
+                        + " edge and the person who attested it on the APPROVED one; the platform records only what the provider said, as the"
+                        + " system, and RegulatorySubmissions.record refuses anyone else. Every act of a person on a return is that person's."),
+                    Map.entry(
                             "com.finapp.app.risk.RiskMonitoringSchedule.sweepOnce",
                     "The risk monitoring sweep's intake leg (P13-TSK-019, PHASE_13_PLAN.md section 7.1 T-mon, ADR-0111"
                         + " decision 3: monitoring is retrospective and never a person's act): nobody commands a journal"

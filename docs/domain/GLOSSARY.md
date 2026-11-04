@@ -2658,7 +2658,7 @@ door).
 ### Regulatory Obligation
 **Is:** configuration naming a reporting duty — jurisdiction code, form and version, period type, the report definitions
 it draws from, the form-line mapping, validation rules and the adapter — simulated in Phase 14 (owner decision C4,
-ADR-0118).
+ADR-0118). *(As built, `P14-TSK-018`: a version, `REFERENCE` only, proposed by one person and activated by a second, frozen; a rule is one of a closed vocabulary over line codes and a figure a path in a closed grammar, never SQL or script from a row. A draft pins the version it used.)*
 **Not:** a legal fact the platform asserts: no real jurisdiction is chosen and no compliance is claimed.
 **Owned by:** `accounting`
 
@@ -2672,7 +2672,7 @@ lending, bnpl or reconciliation, which is no definition at all.
 ### Regulatory Submission
 **Is:** one return under an obligation for a period, drafted only from FINAL Report Runs (lineage by run id and hash),
 validated, approved under four eyes, submitted once through `RegulatoryReportingProvider`, acknowledged or rejected;
-corrected by a new submission referencing it (`INV-ACC-13`, `P14-TSK-018`).
+corrected by a new submission referencing it (`INV-ACC-13`, `P14-TSK-018`). *(As built: every line names its run, the run's hash and the figure's path. A **refusal** is a controller's, nothing sent; a **rejection** is the provider's answer to what was sent; **withdrawn** a preparer's; **undelivered** a person's conclusion on a definite "not received". A month reopened after it was sent leaves it frozen, standing, and flagged **month moved**, and **overtaken** until a return of its form is acknowledged at the month's present revision. A month that moved before it was sent keeps it from being sent at all.)*
 **Not:** Phase 13's Regulatory Report (an AML filing from a case, `risk`'s), nor a report run.
 **Owned by:** `accounting`
 

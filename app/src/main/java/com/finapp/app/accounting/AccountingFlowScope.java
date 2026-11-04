@@ -18,7 +18,7 @@ import java.util.function.Supplier;
  * <p>Two legs exist: a door's span in the request's own scope, and a sweep leg's in the flow its row stored ({@link #inFlow},
  * `P14-TSK-011`: a close check in its attempt's correlation - the claim hands it over, so no lookup is made). A report generation
  * on the orphan leg runs under that leg's own span, unlinked: {@code completeOrphaned} names no run to its caller; the run's audit
- * record and event carry its stored correlation all the same. A submission's inquiry arrives with `-018`.
+ * record and event carry its stored correlation all the same. A submission's inquiry runs in its row's flow (`P14-TSK-018`).
  */
 public final class AccountingFlowScope {
 

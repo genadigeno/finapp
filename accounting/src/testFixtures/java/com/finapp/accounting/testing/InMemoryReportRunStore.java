@@ -71,6 +71,11 @@ public final class InMemoryReportRunStore implements ReportRunStore {
         }
     }
 
+    /** A suite's way to bytes that no longer prove (`P14-TSK-018`): what is issued replaced, its stored hash left, past the freeze a database's would hold. */
+    public void corruptContentForTest(ReportRunId id, String content) {
+        contents.computeIfPresent(id, (key, issued) -> new Content(content, issued.sha256()));
+    }
+
     @Override
     public Optional<RunRow> latest(Connection unitOfWork, RunKey key) {
         return byKey.values().stream().filter(row -> row.key().equals(key))

@@ -220,7 +220,60 @@ public enum AccountingErrorCode implements ErrorCode {
     REPORT_AWAITS_CLOSE(
             "accounting.ReportAwaitsClose",
             409,
-            "A financial statement of a month is issued once the month is closed; the period is locked and not yet closed, and nothing was claimed.");
+            "A financial statement of a month is issued once the month is closed; the period is locked and not yet closed, and nothing was claimed."),
+
+    /** The regulatory submission's doors (`P14-TSK-018`, {@code INV-ACC-13}): what the act names is no longer what stands. */
+    REGULATORY_SUBMISSION_STALE(
+            "accounting.RegulatorySubmissionStale",
+            409,
+            "What the act names is no longer what stands: the return's status, its content or revision, the month it read, the obligation version it pinned, or a report run it drew from; nothing was changed."),
+
+    /** The draft door (`P14-TSK-018`): one live return per form and month, and a later return names what was sent. */
+    REGULATORY_SUBMISSION_LIVE(
+            "accounting.RegulatorySubmissionLive",
+            409,
+            "A return of this form and month is live, was sent, or already has a correction standing; a later return is a correction naming what it corrects."),
+
+    /** The draft door (`P14-TSK-018`): the draft itself is not coherent. */
+    REGULATORY_SUBMISSION_INVALID(
+            "accounting.RegulatorySubmissionInvalid",
+            422,
+            "The draft is not coherent: no such obligation, or a correction of anything but a concluded return of its own form and month; nothing was drafted."),
+
+    /** The draft door (`P14-TSK-018`, {@code INV-ACC-13}): only FINAL runs of a CLOSED month. */
+    REGULATORY_SOURCE_NOT_FINAL(
+            "accounting.RegulatorySourceNotFinal",
+            409,
+            "A return is drawn only from FINAL report runs of a CLOSED month at its present revision: the month is not closed, or a source's FINAL run is not yet issued; nothing was drafted."),
+
+    /** The draft door (`P14-TSK-018`, {@code INV-ACC-13}): a line no figure explains. */
+    REGULATORY_FIGURE_UNRESOLVED(
+            "accounting.RegulatoryFigureUnresolved",
+            422,
+            "A form line's figure path resolves to nothing, to more than one figure, or to no amount in the run it names; it is refused and never filled with a zero. Nothing was drafted."),
+
+    /** Every act going forward (`P14-TSK-018`, {@code INV-ACC-04}): an integrity failure. */
+    REGULATORY_RUN_BYTES_DIFFER(
+            "accounting.RegulatoryRunBytesDiffer",
+            409,
+            "A report run's bytes do not prove against its stored hash, or the hash this return named; nothing was drawn or moved."),
+
+    /** The obligation doors (`P14-TSK-018`): the configuration is not coherent, or names what this build does not hold. */
+    REGULATORY_OBLIGATION_INVALID(
+            "accounting.RegulatoryObligationInvalid",
+            422,
+            "The regulatory obligation is not coherent, or names an adapter or a report definition this build does not hold, or one that is never a run; nothing was proposed."),
+
+    /** The obligation doors (`P14-TSK-018`): what the act names is no longer what stands. */
+    REGULATORY_OBLIGATION_STALE(
+            "accounting.RegulatoryObligationStale",
+            409,
+            "That form and version exist, the version is no longer awaiting a decision, the configuration named is not what stands, or a later form version is in force; nothing was changed."),
+    /** The non-delivery door could not ask the provider at the act (`P14-TSK-018`): nothing was concluded. */
+    REGULATORY_PROVIDER_UNAVAILABLE(
+            "accounting.RegulatoryProviderUnavailable",
+            503,
+            "The provider could not be asked at this act, or its answer not kept, so nothing was concluded: a return is concluded undelivered only on what the provider says now. The return stands SUBMITTED. Ask again.");
 
     private final String code;
     private final int status;

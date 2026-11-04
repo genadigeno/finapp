@@ -35,12 +35,13 @@ import org.springframework.context.SmartLifecycle;
  * is left, up to a batch - <strong>one run per call</strong> (`P14-TSK-008`'s review, M-6): a call reclaims its runs in
  * one transaction and generates them in turn, so a limit above one would start every later run's lease before its
  * generation and let another instance overtake it.
+ *   <li><strong>Inquiry</strong> ({@link #inquiryOnce}, `P14-TSK-018`): {@code RegulatorySubmissionDriver.inquireDue} - up to a bound, each due {@code SUBMITTED} return claimed
+ * {@code FOR UPDATE SKIP LOCKED} under a lease, asked of its adapter on no transaction, and its answer recorded. It meters its own failed claims, {@code leg=inquiry}, from its first run.
  * </ul>
  *
  * <p>A leg on its own thread, so a two-hour check never delays the opening of a month; one thread more for the
  * heartbeats, so no busy leg can starve a lease. A leg that fails is counted and logged by class, and ends only itself.
- * Off in test contexts ({@code finapp.accounting.sweeper.enabled}); the suites drive the legs directly. The regulatory
- * inquiry leg is `P14-TSK-018`'s.
+ * Off in test contexts ({@code finapp.accounting.sweeper.enabled}); the suites drive the legs directly.
  */
 @Slf4j
 public final class AccountingCloseSchedule implements SmartLifecycle {
@@ -48,30 +49,37 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
     static final String OPEN_LEG = "open";
     static final String CHECKS_LEG = "checks";
     static final String ORPHANS_LEG = "orphans";
+    static final String INQUIRY_LEG = "inquiry";
 
-    /** Three legs and the heartbeats - a thread each. */
-    private static final int THREADS = 4;
+    /** Four legs and the heartbeats - a thread each. */
+    private static final int THREADS = 5;
 
     /** The orphan leg's limit per call (`P14-TSK-008`'s review, M-6). */
     static final int ONE_RUN = 1;
 
     /** The schedule's cadences and batches, each refused at start-up unless positive. */
-    public record Cadence(Duration openPoll, Duration checksPoll, Duration orphansPoll, int checksBatch, int orphansBatch) {
+    public record Cadence(Duration openPoll, Duration checksPoll, Duration orphansPoll, Duration inquiryPoll, int checksBatch, int orphansBatch) {
 
-        /** An hour to open a month; thirty seconds to claim; a minute for orphans; a run's nine checks and a few orphans. */
+        /** An hour to open a month; thirty seconds to claim; a minute for orphans and for inquiries; a run's nine checks and a few orphans. */
         public static final Cadence STANDARD =
-                new Cadence(Duration.ofHours(1), Duration.ofSeconds(30), Duration.ofMinutes(1), 18, 10);
+                new Cadence(Duration.ofHours(1), Duration.ofSeconds(30), Duration.ofMinutes(1), Duration.ofMinutes(1), 18, 10);
 
         public Cadence {
             Objects.requireNonNull(openPoll, "openPoll");
             Objects.requireNonNull(checksPoll, "checksPoll");
             Objects.requireNonNull(orphansPoll, "orphansPoll");
-            if (openPoll.toMillis() < 1 || checksPoll.toMillis() < 1 || orphansPoll.toMillis() < 1) {
+            Objects.requireNonNull(inquiryPoll, "inquiryPoll");
+            if (openPoll.toMillis() < 1 || checksPoll.toMillis() < 1 || orphansPoll.toMillis() < 1 || inquiryPoll.toMillis() < 1) {
                 throw new IllegalArgumentException("the close schedule's polls are positive");
             }
             if (checksBatch < 1 || orphansBatch < 1) {
                 throw new IllegalArgumentException("the close schedule's batches are positive");
             }
+        }
+
+        /** The inquiry leg at a minute. */
+        public Cadence(Duration openPoll, Duration checksPoll, Duration orphansPoll, int checksBatch, int orphansBatch) {
+            this(openPoll, checksPoll, orphansPoll, Duration.ofMinutes(1), checksBatch, orphansBatch);
         }
     }
 
@@ -81,10 +89,21 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
         int complete(int limit, Actor actor);
     }
 
+    /** The inquiry leg's callable - {@code RegulatorySubmissionDriver.inquireDue}: how many answers one tick recorded. */
+    @FunctionalInterface
+    public interface Inquiries {
+
+        /** Nothing to ask - a suite's schedule that drives no regulatory return. */
+        Inquiries NONE = () -> 0;
+
+        int inquireDue();
+    }
+
     private final AccountingPeriods periods;
     private final CloseRuns runs;
     private final CloseCheckWorker worker;
     private final Orphans orphans;
+    private final Inquiries inquiries;
     private final AccountingTransactions transactions;
     private final CloseRunMetrics metrics;
     private final IdGenerator ids;
@@ -94,9 +113,16 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
     public AccountingCloseSchedule(AccountingPeriods periods, CloseRuns runs, CloseChecks checks,
             Orphans orphans, AccountingTransactions transactions, CloseRunMetrics metrics,
             AccountingFlowScope flow, IdGenerator ids, Cadence cadence) {
+        this(periods, runs, checks, orphans, Inquiries.NONE, transactions, metrics, flow, ids, cadence);
+    }
+
+    public AccountingCloseSchedule(AccountingPeriods periods, CloseRuns runs, CloseChecks checks,
+            Orphans orphans, Inquiries inquiries, AccountingTransactions transactions, CloseRunMetrics metrics,
+            AccountingFlowScope flow, IdGenerator ids, Cadence cadence) {
         this.periods = Objects.requireNonNull(periods, "periods");
         this.runs = Objects.requireNonNull(runs, "runs");
         this.orphans = Objects.requireNonNull(orphans, "orphans");
+        this.inquiries = Objects.requireNonNull(inquiries, "inquiries");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
         this.ids = Objects.requireNonNull(ids, "ids");
@@ -147,6 +173,15 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
         }));
     }
 
+    /**
+     * The inquiry leg: the due {@code SUBMITTED} returns, each claimed, asked and recorded as the platform by the driver, which enters that scope itself because the sending door drives it too.
+     *
+     * @return how many answers this call recorded
+     */
+    public int inquiryOnce() {
+        return leg(INQUIRY_LEG, inquiries::inquireDue);
+    }
+
     @SuppressWarnings("try") // The Scope is used for its close side effect (the established idiom).
     private static int inSystemScope(java.util.function.ToIntFunction<Actor> work) {
         try (SecurityContext.Scope scope = SecurityContext.enterSystem()) {
@@ -192,7 +227,7 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
         });
         executor.set(started);
         for (Leg leg : List.of(new Leg(cadence.openPoll(), this::openOnce), new Leg(cadence.checksPoll(), this::checksOnce),
-                new Leg(cadence.orphansPoll(), this::orphansOnce))) {
+                new Leg(cadence.orphansPoll(), this::orphansOnce), new Leg(cadence.inquiryPoll(), this::inquiryOnce))) {
             // At once, not after a poll: an hour's open leg would otherwise never run on a fleet restarted within the hour.
             started.scheduleWithFixedDelay(leg.work()::getAsInt, 0, leg.poll().toMillis(), TimeUnit.MILLISECONDS);
         }

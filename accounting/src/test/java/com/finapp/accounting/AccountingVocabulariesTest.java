@@ -56,7 +56,9 @@ class AccountingVocabulariesTest {
         assertThat(names(EntryType.values())).containsExactly("POSTING", "REVERSAL", "ADJUSTMENT");
         assertThat(names(Side.values())).containsExactly("DEBIT", "CREDIT", "EITHER");
         assertThat(names(SubmissionStatus.values()))
-                .containsExactly("DRAFT", "VALIDATED", "APPROVED", "SUBMITTED", "ACKNOWLEDGED", "REJECTED");
+                .containsExactly("DRAFT", "VALIDATED", "APPROVED", "SUBMITTED", "ACKNOWLEDGED", "REJECTED", "REFUSED", "WITHDRAWN", "UNDELIVERED");
+        assertThat(names(RegulatoryObligationStatus.values())).containsExactly("PROPOSED", "ACTIVE", "REJECTED", "RETIRED");
+        assertThat(names(RegulatoryRuleType.values())).containsExactly("NON_NEGATIVE", "EQUALS", "NOT_LESS_THAN");
         assertThat(StatementSection.values()).hasSize(17);
     }
 
@@ -140,14 +142,26 @@ class AccountingVocabulariesTest {
     }
 
     @Test
-    @DisplayName("a submission moves forward only, and is answered - never edited - once submitted")
+    @DisplayName("a submission moves forward, has a door out of every state not sent, and is answered - never edited - once submitted; a refusal is never a rejection (P14-TSK-018)")
     void theSubmissionsEdges() {
         assertThat(edges(SubmissionStatus.values(), SubmissionStatus::canMoveTo)).containsExactlyInAnyOrder(
                 "DRAFT->VALIDATED", "VALIDATED->APPROVED", "APPROVED->SUBMITTED", "SUBMITTED->ACKNOWLEDGED",
-                "SUBMITTED->REJECTED");
+                "SUBMITTED->REJECTED", "SUBMITTED->UNDELIVERED",
+                "DRAFT->WITHDRAWN", "VALIDATED->WITHDRAWN", "APPROVED->WITHDRAWN", "VALIDATED->REFUSED", "APPROVED->REFUSED");
         assertThat(EnumSet.allOf(SubmissionStatus.class).stream().filter(SubmissionStatus::immutable))
                 .containsExactlyInAnyOrder(
-                        SubmissionStatus.SUBMITTED, SubmissionStatus.ACKNOWLEDGED, SubmissionStatus.REJECTED);
+                        SubmissionStatus.SUBMITTED, SubmissionStatus.ACKNOWLEDGED, SubmissionStatus.REJECTED, SubmissionStatus.UNDELIVERED);
+        assertThat(EnumSet.allOf(SubmissionStatus.class).stream().filter(SubmissionStatus::correctable))
+                .containsExactlyInAnyOrder(SubmissionStatus.ACKNOWLEDGED, SubmissionStatus.REJECTED, SubmissionStatus.UNDELIVERED);
+        assertThat(EnumSet.allOf(SubmissionStatus.class).stream().filter(SubmissionStatus::terminal))
+                .containsExactlyInAnyOrder(SubmissionStatus.ACKNOWLEDGED, SubmissionStatus.REJECTED, SubmissionStatus.REFUSED, SubmissionStatus.WITHDRAWN, SubmissionStatus.UNDELIVERED);
+        assertThat(SubmissionStatus.REFUSED.meaning()).contains("controller").doesNotContain("provider");
+        assertThat(SubmissionStatus.REJECTED.meaning()).contains("provider").doesNotContain("controller");
+        // No state but the terminal ones lacks a way on, and every status says what it means.
+        assertThat(EnumSet.allOf(SubmissionStatus.class)).allSatisfy(status -> {
+            assertThat(status.meaning()).isNotBlank();
+            assertThat(status.terminal()).isEqualTo(status.next().isEmpty());
+        });
     }
 
     @Test
@@ -222,7 +236,10 @@ class AccountingVocabulariesTest {
                         // P14-TSK-013: the prior-period adjustment's doors.
                         "accounting.PriorPeriodAdjustmentInvalid=422", "accounting.PriorPeriodPurposeClosed=422", "accounting.PriorPeriodAdjustmentStale=409",
                         // P14-TSK-017: an operational definition is never a run; a run's is not read at the operational door.
-                        "accounting.ReportDoorMismatch=409", "accounting.ReportAwaitsClose=409");
+                        "accounting.ReportDoorMismatch=409", "accounting.ReportAwaitsClose=409",
+                        // P14-TSK-018: the regulatory framework's.
+                        "accounting.RegulatorySubmissionStale=409", "accounting.RegulatorySubmissionLive=409", "accounting.RegulatorySubmissionInvalid=422", "accounting.RegulatorySourceNotFinal=409",
+                        "accounting.RegulatoryFigureUnresolved=422", "accounting.RegulatoryRunBytesDiffer=409", "accounting.RegulatoryObligationInvalid=422", "accounting.RegulatoryObligationStale=409", "accounting.RegulatoryProviderUnavailable=503");
         // P14-TSK-002: the posting rule register's audited read - no reason, an operator's read.
         assertThat(AccountingAuditAction.POSTING_RULES_READ.code()).isEqualTo("accounting.PostingRulesRead");
         assertThat(AccountingAuditAction.POSTING_RULES_READ.requiresReason()).isFalse();
@@ -258,6 +275,11 @@ class AccountingVocabulariesTest {
                         // P14-TSK-013: both acts and the rejection, each reasoned; the reads, an operator's.
                         "accounting.PriorPeriodAdjustmentProposed=true", "accounting.PriorPeriodAdjustmentPosted=true", "accounting.PriorPeriodAdjustmentRejected=true",
                         "accounting.PriorPeriodAdjustmentRead=false",
+                        // P14-TSK-018: every person's act reasoned but the validation; the provider's answers the platform's; the reads an operator's.
+                        "regulatory.ObligationProposed=true", "regulatory.ObligationActivated=true", "regulatory.ObligationRejected=true", "regulatory.ObligationRead=false",
+                        "regulatory.SubmissionDrafted=true", "regulatory.SubmissionValidated=false", "regulatory.SubmissionApproved=true", "regulatory.SubmissionRefused=true", "regulatory.SubmissionWithdrawn=true",
+                        "regulatory.SubmissionSubmitted=true", "regulatory.SubmissionAcknowledged=false", "regulatory.SubmissionRejected=false", "regulatory.SubmissionUndelivered=true",
+                        "regulatory.SubmissionContraryAnswer=false", "regulatory.SubmissionRead=false", "regulatory.SubmissionResent=false",
                         "accounting.FinalStatementRead=false");
     }
 
