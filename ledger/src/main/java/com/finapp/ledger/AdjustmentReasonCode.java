@@ -43,6 +43,9 @@ public enum AdjustmentReasonCode {
     /** Aged unattributable value recognised as a gain (`RECOGNISE_GAIN`, owner decision O5). */
     RECONCILIATION_GAIN(AdjustmentOrigin.RECONCILIATION),
 
+    /** A closed period's error corrected in an open one (`P14-TSK-013`, `V030`, {@code INV-ACC-10}). */
+    PRIOR_PERIOD_ADJUSTMENT(AdjustmentOrigin.ACCOUNTING),
+
     /** History only: rows born before `V015`. Refused on every new proposal, by trigger. */
     UNCODED(AdjustmentOrigin.MANUAL);
 
@@ -53,7 +56,7 @@ public enum AdjustmentReasonCode {
         return origin;
     }
 
-    /** The `V015` {@code CHECK}'s value list — reconciled by the migration test. */
+    /** The latest {@code CHECK}'s value list (`V030`) — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())
                 .map(value -> "'" + value.name() + "'")
@@ -61,7 +64,7 @@ public enum AdjustmentReasonCode {
     }
 
     /**
-     * The code→origin pairing as a SQL predicate, for `V015`'s coherence {@code CHECK} —
+     * The code→origin pairing as a SQL predicate, for the coherence {@code CHECK} (`V015`, `V030`) —
      * one definition, two artefacts (the {@code AccountPurpose.sqlOwnerKindRule()} pattern).
      */
     public static String sqlPairingRule() {

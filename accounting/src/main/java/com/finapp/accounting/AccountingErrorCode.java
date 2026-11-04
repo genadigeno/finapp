@@ -181,6 +181,28 @@ public enum AccountingErrorCode implements ErrorCode {
             409,
             "What this act names is no longer what stands - another close run, an attempt that is not its check's latest, another proposal, or what the proposal read has moved; nothing was changed."),
 
+    /** The prior-period adjustment's doors (`P14-TSK-013`): the proposal itself is not coherent. */
+    PRIOR_PERIOD_ADJUSTMENT_INVALID(
+            "accounting.PriorPeriodAdjustmentInvalid",
+            422,
+            "The prior-period adjustment is not coherent - too few lines, a line not positive, debits and credits differing in a currency, a"
+                    + " side's sum more than the ledger holds, an account the ledger does not hold, or a purpose not mapped in the GL mapping version in force for the month it lands in;"
+                    + " nothing was written."),
+
+    /** The prior-period adjustment's doors (`P14-TSK-013`): a line names a purpose closed to free adjustments. */
+    PRIOR_PERIOD_PURPOSE_CLOSED(
+            "accounting.PriorPeriodPurposeClosed",
+            422,
+            "A line names a purpose closed to free adjustments: its correction is the owning domain's own, which the detail names; nothing was"
+                    + " written."),
+
+    /** The prior-period adjustment's doors (`P14-TSK-013`): what the act names is no longer what stands. */
+    PRIOR_PERIOD_ADJUSTMENT_STALE(
+            "accounting.PriorPeriodAdjustmentStale",
+            409,
+            "What the act names is no longer what stands - the revision corrected, the date it posts on, the month's posted corrections, a month"
+                    + " closed and reopened under it, or the adjustment was decided; nothing was changed. Read it again; one that can no longer post is rejected and proposed again."),
+
     /**
      * The two report doors (`P14-TSK-017`): an operational definition is never a run, and a run's definition is not read at
      * the operational door. Each is the other door's question; nothing was claimed or served.

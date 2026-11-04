@@ -305,6 +305,47 @@ public enum AccountingAuditAction implements AuditableAction {
             "A controller read a period's close proposal - the attempts it names with their evidence and the person's reason per DISCLOSED attempt (P14-TSK-012; GET"
                     + " .../periods/{id}/close-proposal, ACCOUNTING_CLOSE_APPROVE; a controller holds no ACCOUNTING_READ). Recorded SUCCEEDED in a transaction of its own before the answer. Its"
                     + " target the period; the summary its month, the proposal, its status and whether it still stands - never a reason or a figure.",
+            false),
+
+    /** An accountant proposed a prior-period adjustment (`P14-TSK-013`, ACCOUNTING_ADJUST_PROPOSE). */
+    PRIOR_PERIOD_ADJUSTMENT_PROPOSED(
+            "accounting.PriorPeriodAdjustmentProposed",
+            "An accountant proposed correcting a CLOSED accounting period at the revision they read, dated today in the OPEN month holding"
+                    + " today - nothing posts until a second person approves (P14-TSK-013, INV-ACC-10, INV-REV-04; POST"
+                    + " /v1/operator/accounting/prior-period-adjustments, ACCOUNTING_ADJUST_PROPOSE). Reasoned. Recorded with"
+                    + " ledger.AdjustmentProposed, whose reason is identifiers only. Its target the adjustment; the summary the corrected month,"
+                    + " revision, target month, posting date, the ledger's proposal and the counts of lines and earlier corrections - never an"
+                    + " amount.",
+            true),
+
+    /** A second person approved a prior-period adjustment and its entry posted (`P14-TSK-013`, ACCOUNTING_ADJUST_APPROVE). */
+    PRIOR_PERIOD_ADJUSTMENT_POSTED(
+            "accounting.PriorPeriodAdjustmentPosted",
+            "A person other than its proposer approved a prior-period adjustment, naming the date, the revision and the month's posted"
+                    + " corrections they read; the ledger's ACCOUNTING-origin entry posted in the same transaction (P14-TSK-013, INV-ACC-10,"
+                    + " INV-AUD-04, INV-LED-01; POST .../prior-period-adjustments/{id}/approval, ACCOUNTING_ADJUST_APPROVE). Reasoned. Recorded with"
+                    + " ledger.AdjustmentPosted; accounting.PriorPeriodAdjustmentPosted and ledger.JournalEntryPosted are published with it. Its"
+                    + " target the adjustment; the summary the months, revision, posting date, proposal, entry and the count of earlier posted"
+                    + " corrections - never an amount.",
+            true),
+
+    /** A prior-period adjustment was rejected (`P14-TSK-013`, ACCOUNTING_ADJUST_APPROVE). */
+    PRIOR_PERIOD_ADJUSTMENT_REJECTED(
+            "accounting.PriorPeriodAdjustmentRejected",
+            "A holder of ACCOUNTING_ADJUST_APPROVE rejected a standing prior-period adjustment, the ledger's proposal with it - final; the way on"
+                    + " for one that can no longer post, so it asks nothing of either month (P14-TSK-013; POST"
+                    + " .../prior-period-adjustments/{id}/rejection). Reasoned. May be the proposer's. Recorded with ledger.AdjustmentRejected. Its"
+                    + " target the adjustment; the summary the corrected month, revision, proposal and whether the rejecter proposed it.",
+            true),
+
+    /** An operator read prior-period adjustments (`P14-TSK-013`) - every serving recorded. */
+    PRIOR_PERIOD_ADJUSTMENT_READ(
+            "accounting.PriorPeriodAdjustmentRead",
+            "An operator read prior-period adjustments - a controller one with its lines and the proposer's reason (GET"
+                    + " .../prior-period-adjustments/{id}), or those standing (GET .../prior-period-adjustments), under"
+                    + " ACCOUNTING_ADJUST_APPROVE; an accountant a month's (GET .../periods/{periodId}/prior-period-adjustments), under"
+                    + " ACCOUNTING_READ (P14-TSK-013, INV-ACC-10). Recorded before it is served, in a transaction of its own. Its target the"
+                    + " adjustment or the period; the summary the door and a count or a status - never an amount or a reason.",
             false);
 
     private final String code;

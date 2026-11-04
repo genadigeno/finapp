@@ -7,6 +7,7 @@ import com.finapp.accounting.JdbcPeriodCloseStore;
 import com.finapp.accounting.PeriodCloseStore;
 import com.finapp.accounting.PeriodCloses;
 import com.finapp.accounting.PostingCutoff;
+import com.finapp.accounting.PriorPeriodAdjustments;
 import com.finapp.accounting.ReconciliationRunCoverage;
 import com.finapp.accounting.ReportRuns;
 import com.finapp.accounting.ValuationRateSetStore;
@@ -51,9 +52,10 @@ public class PeriodCloseBeans {
     @Bean
     PeriodCloseDesk periodCloseDesk(
             PeriodCloses periodCloses,
+            PriorPeriodAdjustments priorPeriodAdjustments,
             IdempotentExecutor idempotentExecutor,
             AccountingTransactions accountingTransactions,
             AccountingFlowScope accountingFlowScope) {
-        return new PeriodCloseDesk(periodCloses, idempotentExecutor, accountingTransactions, accountingFlowScope);
+        return new PeriodCloseDesk(periodCloses, priorPeriodAdjustments, idempotentExecutor, accountingTransactions, accountingFlowScope);
     }
 }

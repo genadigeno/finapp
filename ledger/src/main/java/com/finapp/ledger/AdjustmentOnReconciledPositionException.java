@@ -3,7 +3,7 @@ package com.finapp.ledger;
 import java.util.Objects;
 
 /**
- * A {@code MANUAL} adjustment named a reconciled position (`P8-TSK-006`, ADR-0071,
+ * A {@code MANUAL} or (`P14-TSK-013`) {@code ACCOUNTING} adjustment named a reconciled position (`P8-TSK-006`, ADR-0071,
  * {@code INV-REC-06}): value in a clearing or suspense account moves only through a break
  * resolution. Thrown by the domain <em>before the idempotency claim</em>, so the refused
  * request never consumes its key — and again at approval, the re-check that covers the one

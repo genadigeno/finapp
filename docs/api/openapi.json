@@ -542,6 +542,111 @@
           }
         }
       },
+      "accounting.PriorPeriodAdjustmentInvalid": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.PriorPeriodAdjustmentInvalid"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.PriorPeriodAdjustmentInvalid"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The prior-period adjustment is not coherent - too few lines, a line not positive, debits and credits differing in a currency, a side's sum more than the ledger holds, an account the ledger does not hold, or a purpose not mapped in the GL mapping version in force for the month it lands in; nothing was written.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.PriorPeriodAdjustmentStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.PriorPeriodAdjustmentStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.PriorPeriodAdjustmentStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] What the act names is no longer what stands - the revision corrected, the date it posts on, the month's posted corrections, a month closed and reopened under it, or the adjustment was decided; nothing was changed. Read it again; one that can no longer post is rejected and proposed again.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.PriorPeriodPurposeClosed": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.PriorPeriodPurposeClosed"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.PriorPeriodPurposeClosed"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A line names a purpose closed to free adjustments: its correction is the owning domain's own, which the detail names; nothing was written.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.ReadTimedOut": {
         "content": {
           "application/problem+json": {
@@ -15641,6 +15746,12 @@
           "periodStatus": {
             "type": "string"
           },
+          "priorPeriodAdjustments": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "proposalId": {
             "type": "string"
           },
@@ -22507,6 +22618,30 @@
         },
         "type": "object"
       },
+      "PendingPriorPeriodAdjustmentView": {
+        "properties": {
+          "correctedPeriod": {
+            "type": "string"
+          },
+          "correctedRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "postingDate": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "targetPeriod": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "PeriodCloseReceipt": {
         "properties": {
           "closeRunId": {
@@ -22517,6 +22652,12 @@
           },
           "period": {
             "type": "string"
+          },
+          "priorPeriodAdjustments": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "proposalId": {
             "type": "string"
@@ -22909,6 +23050,234 @@
           "pairs",
           "reason"
         ],
+        "type": "object"
+      },
+      "PriorPeriodAdjustmentReceipt": {
+        "properties": {
+          "adjustmentProposalId": {
+            "type": "string"
+          },
+          "correctedPeriod": {
+            "type": "string"
+          },
+          "correctedRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "earlierCorrections": {
+            "items": {
+              "$ref": "#/components/schemas/PriorPeriodCorrectionView"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "postingDate": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "targetPeriod": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PriorPeriodAdjustmentRequest": {
+        "properties": {
+          "correctedPeriodId": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "correctedRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/PriorPeriodLineItem"
+            },
+            "maxItems": 100,
+            "minItems": 0,
+            "type": "array"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PriorPeriodAdjustmentView": {
+        "properties": {
+          "adjustmentProposalId": {
+            "type": "string"
+          },
+          "blockedBy": {
+            "type": "string"
+          },
+          "correctedPeriod": {
+            "type": "string"
+          },
+          "correctedRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "earlierCorrections": {
+            "items": {
+              "$ref": "#/components/schemas/PriorPeriodCorrectionView"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/PriorPeriodLineView"
+            },
+            "type": "array"
+          },
+          "postingDate": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "stillStands": {
+            "type": "boolean"
+          },
+          "targetPeriod": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PriorPeriodApprovalRequest": {
+        "properties": {
+          "correctedRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "postedCorrections": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 0,
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 0,
+            "type": "array"
+          },
+          "postingDate": {
+            "maxLength": 16,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PriorPeriodCorrectionView": {
+        "properties": {
+          "correctedRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "postingDate": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PriorPeriodLineItem": {
+        "properties": {
+          "amount": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "currency": {
+            "maxLength": 8,
+            "minLength": 0,
+            "type": "string"
+          },
+          "direction": {
+            "maxLength": 16,
+            "minLength": 0,
+            "type": "string"
+          },
+          "ledgerAccountId": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PriorPeriodLineView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "ledgerAccountId": {
+            "type": "string"
+          },
+          "ownerKind": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PriorPeriodRejectionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "ProblemDetail": {
@@ -33263,6 +33632,36 @@
         }
       }
     },
+    "/v1/operator/accounting/periods/{periodId}/prior-period-adjustments": {
+      "get": {
+        "operationId": "readPriorPeriodAdjustmentsOfPeriod",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "periodId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PriorPeriodCorrectionView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/accounting/periods/{periodId}/reopen-approval": {
       "post": {
         "operationId": "approveAccountingPeriodReopen",
@@ -33452,6 +33851,178 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PostingRuleRegisterView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/prior-period-adjustments": {
+      "get": {
+        "operationId": "listPendingPriorPeriodAdjustments",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PendingPriorPeriodAdjustmentView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "proposePriorPeriodAdjustment",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriorPeriodAdjustmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriorPeriodAdjustmentReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/prior-period-adjustments/{adjustmentId}": {
+      "get": {
+        "operationId": "readPriorPeriodAdjustment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "adjustmentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriorPeriodAdjustmentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/prior-period-adjustments/{adjustmentId}/approval": {
+      "post": {
+        "operationId": "approvePriorPeriodAdjustment",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "adjustmentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriorPeriodApprovalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriorPeriodAdjustmentReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/prior-period-adjustments/{adjustmentId}/rejection": {
+      "post": {
+        "operationId": "rejectPriorPeriodAdjustment",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "adjustmentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriorPeriodRejectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriorPeriodAdjustmentReceipt"
                 }
               }
             },

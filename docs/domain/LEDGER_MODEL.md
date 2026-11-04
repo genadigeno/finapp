@@ -152,6 +152,11 @@ command, which is where "the database committed but the response was lost" becom
   rank: `V010`'s approver ≠ proposer `CHECK` is origin-agnostic, and reconciliation's
   `resolution_four_eyes_distinct` `CHECK` holds it again on the resolution row, every posting
   kind being four-eyes by `resolution_four_eyes_derived`.)*
+  *(`P14-TSK-013`, `V030`: a third origin. An `ACCOUNTING` adjustment (`PRIOR_PERIOD_ADJUSTMENT`) is a prior-period
+  adjustment's ledger half, proposed and approved only inside accounting's own transaction, through
+  `AdjustmentService.proposePriorPeriod` and `approvePriorPeriod` - called only from `app`'s `LedgerPriorPeriodPostings` - by a
+  second holder of `ACCOUNTING_ADJUST_APPROVE`, the `FINANCIAL_CONTROLLER` role, which holds no ledger permission. Each of the
+  three doors refuses the other two's. Its lines are closed to the same purposes as `MANUAL`'s, its two dates one date.)*
 - a **rounding residual** is posted to a designated account, never absorbed (`INV-BAL-03`).
   Absorbed residual is money creation or destruction, at scale.
 

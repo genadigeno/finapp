@@ -1545,3 +1545,21 @@ for an operator's read, and keep the permits low, since the two together are wha
 **`accounting.CloseProposalStale`.** At the proposal: a re-run landed while it was written, so read the run again. At the approval: something moved since the proposal; `GET .../close-proposal` says `stillStands: false`. Reject it and propose again, with reasons written for what stands now, unless the month's run was all that moved, above.
 
 **A pending unlock blocks a proposal**, and no door withdraws it: approve it and lock again, which costs a new run. A pending reopen on a `CLOSED` period is harmless and blocks nothing; its approval judges everything again. A reopen is refused once the next period has left `OPEN`: only the latest closed period reopens.
+
+### 10.4 Correcting a closed month: a prior-period adjustment
+
+**What it is.** An error in a `CLOSED` month is corrected by an entry dated today, in the month holding today, under four eyes (`INV-ACC-10`). A `LOCKED` month is unlocked instead. A line on a loan, BNPL, FX or reconciled position is the owning domain's correction: `422 accounting.PriorPeriodPurposeClosed` names which.
+
+**To correct.** An accountant reads the month's figures at its present revision, and `GET .../periods/{periodId}/prior-period-adjustments` for what has already corrected it. `POST .../prior-period-adjustments` names the period, the revision, a reason and the lines; the server dates it, and the receipt says the date and the month's other corrections. A controller finds it at `GET .../prior-period-adjustments`, reads `GET .../{adjustmentId}`, where each line says its account's purpose and owner kind, and approves naming the date, the revision and the ids of the `POSTED` corrections it read. A correction of a break of that month: acknowledge the break if the month must close first, post the adjustment, then resolve the break naming its entry.
+
+**One that can no longer post.** `GET .../{adjustmentId}` answers `stillStands: false` and `blockedBy`: `CORRECTED_NOT_CLOSED` or `CORRECTED_REVISION_MOVED`, the corrected month reopened; `TARGET_NOT_OPEN`, the month it lands in locked, closing or closed, which an unlock lifts; `TARGET_REVISION_MOVED`, that month closed and reopened while it stood, which nothing lifts. An approval is refused, `409 accounting.PeriodStale` or `accounting.PriorPeriodAdjustmentStale`, and both rows stay `PROPOSED`. Reject it, `POST .../{adjustmentId}/rejection`, which asks nothing of either month, and propose again against what now stands. Nothing yet counts these: a standing proposal has no alert (`P14-TSK-020`).
+
+**`stillStands: true` and the approval refused.** `stillStands` answers for the two months only. `422 accounting.PriorPeriodPurposeClosed`, or `accounting.PriorPeriodAdjustmentInvalid` for a purpose no longer mapped, or the ledger's own refusal: it stands `PROPOSED`, and the way on is the same.
+
+**`500` on an approval.** Nothing committed: a `40P01` against a wallet's decider, say (`PHASE_14_PLAN.md` §8.2), leaves both rows `PROPOSED` and the key unspent. Retry with the same key.
+
+**`409 accounting.PriorPeriodAdjustmentStale` on an approval.** Read it again. Another correction of the month may have posted since: that is the control working, so decide knowing it.
+
+**`422 accounting.PriorPeriodAdjustmentInvalid` naming a purpose not mapped.** The month it lands in could not close with that line on it: activate a GL mapping version that maps it, effective from an open month.
+
+**Before reopening a month.** The reopen's receipts list the adjustments already posted against it, in `priorPeriodAdjustments`. Its figures at the next revision still show what those corrected, each entry being dated in a later month. **A direct correction in the reopened month on top of one would correct it twice**, and nothing refuses that: the generic adjustment door knows nothing of accounting. Read the list, and agree who corrects what.

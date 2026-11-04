@@ -27,6 +27,10 @@ class AdjustmentProposalMigrationTest {
     private static final String MIGRATION_V015 =
             "db/migration/ledger/V015__adjustment_reason_codes_and_origins.sql";
 
+    /** `P14-TSK-013`'s widening: the {@code ACCOUNTING} origin, its reason, the binding re-stated. */
+    private static final String MIGRATION_V030 =
+            "db/migration/ledger/V030__the_accounting_origin_and_the_prior_period_reason.sql";
+
     @Test
     @DisplayName("the status CHECK lists exactly the values the enum declares")
     void theStatusListMatchesItsEnum() {
@@ -116,13 +120,34 @@ class AdjustmentProposalMigrationTest {
     // -----------------------------------------------------------------
 
     @Test
-    @DisplayName("the reason-code and origin lists, and their pairing, are the enums' own"
-            + " (P8-TSK-006, INV-REV-04)")
+    @DisplayName("the reason-code and origin lists, and their pairing, are the enums' own - the latest definition is V030's"
+            + " (P8-TSK-006, P14-TSK-013, INV-REV-04)")
     void theCodeAndOriginListsMatchTheirEnums() {
-        assertThat(migrationV015())
+        assertThat(read(MIGRATION_V030))
+                .contains("DROP CONSTRAINT adjustment_proposal_reason_code_is_known")
+                .contains("DROP CONSTRAINT adjustment_proposal_origin_is_known")
+                .contains("DROP CONSTRAINT adjustment_proposal_code_matches_origin")
                 .contains("CHECK (reason_code IN (" + AdjustmentReasonCode.sqlValueList() + "))")
                 .contains("CHECK (origin IN (" + AdjustmentOrigin.sqlValueList() + "))")
                 .contains("CHECK (" + AdjustmentReasonCode.sqlPairingRule() + ")");
+        assertThat(migrationV015())
+                .as("history: V015 as it was applied, never edited")
+                .contains("CHECK (origin IN ('MANUAL', 'RECONCILIATION'))");
+    }
+
+    @Test
+    @DisplayName("V030: the binding holds ACCOUNTING to the closed set as it holds MANUAL, its list AccountPurpose's own; one date per"
+            + " ACCOUNTING proposal; no new grant, table or other schema (P14-TSK-013, INV-ACC-10)")
+    void theAccountingOriginIsBound() {
+        assertThat(read(MIGRATION_V030))
+                .contains("CREATE OR REPLACE FUNCTION ledger.adjustment_line_respects_reconciled_positions")
+                .contains("IF proposal_origin IN ('MANUAL', 'ACCOUNTING')")
+                .contains("account_purpose IN (" + AccountPurpose.sqlClosedToFreeAdjustmentsList() + ")")
+                .contains("CHECK (origin <> 'ACCOUNTING' OR value_date = posting_date)")
+                .doesNotContain("GRANT ")
+                .doesNotContain("CREATE TABLE")
+                .doesNotContain("REFERENCES")
+                .doesNotContain("accounting.");
     }
 
     @Test
@@ -138,15 +163,14 @@ class AdjustmentProposalMigrationTest {
 
     @Test
     @DisplayName("the binding's purpose list is AccountPurpose.closedToFreeAdjustments(),"
-            + " generated (P8-TSK-006, ADR-0071) - its LATEST re-statement is V027's"
-            + " (P12-TSK-003: the BNPL book joins the closed set, after V026's loan book and"
-            + " LENDING_CAPITAL)")
+            + " generated (P8-TSK-006, ADR-0071) - its LATEST re-statement is V030's"
+            + " (P14-TSK-013: the ACCOUNTING origin joins MANUAL, after V027's BNPL book,"
+            + " V026's loan book and LENDING_CAPITAL)")
     void theBindingListIsTheEnums() {
         assertThat(migrationV015())
                 .contains("CREATE TRIGGER adjustment_line_respects_reconciled_positions")
                 .contains("BEFORE INSERT ON ledger.adjustment_proposal_line");
-        assertThat(read(
-                        "db/migration/ledger/V027__the_bnpl_book_joins_the_chart.sql"))
+        assertThat(read(MIGRATION_V030))
                 .as("the current generated list lives in the latest re-statement")
                 .contains(
                         "CREATE OR REPLACE FUNCTION"

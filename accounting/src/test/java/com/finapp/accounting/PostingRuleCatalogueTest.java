@@ -37,13 +37,13 @@ class PostingRuleCatalogueTest {
     class TheRegister {
 
         @Test
-        @DisplayName("catalogue version 2: 58 rules in 65 versions - every rule at version 1 from the origin, and C3's"
+        @DisplayName("catalogue version 3: 59 rules in 66 versions - every rule at version 1 from the origin, and C3's"
                 + " seven floored system rules at version 2 from 2026-10-30 (P14-TSK-006)")
         void isVersionTwoOfFiftyEightRules() {
-            assertThat(REGISTER.catalogueVersion()).isEqualTo(PostingRuleRegister.CATALOGUE_VERSION).isEqualTo(2);
-            assertThat(REGISTER.rules()).hasSize(65);
-            assertThat(REGISTER.rules().stream().map(PostingRule::id).distinct()).hasSize(58);
-            assertThat(REGISTER.rules().stream().filter(rule -> rule.version() == 1)).hasSize(58)
+            assertThat(REGISTER.catalogueVersion()).isEqualTo(PostingRuleRegister.CATALOGUE_VERSION).isEqualTo(3);
+            assertThat(REGISTER.rules()).hasSize(66);
+            assertThat(REGISTER.rules().stream().map(PostingRule::id).distinct()).hasSize(59);
+            assertThat(REGISTER.rules().stream().filter(rule -> rule.version() == 1)).hasSize(59)
                     .allSatisfy(rule -> assertThat(rule.effectiveFrom()).isEqualTo(PostingRuleRegister.ORIGIN));
             assertThat(REGISTER.rules().stream().filter(rule -> rule.version() == 2)).hasSize(7)
                     .allSatisfy(rule -> assertThat(rule.effectiveFrom()).isEqualTo(PostingRuleRegister.C3_FLOOR));
@@ -52,7 +52,7 @@ class PostingRuleCatalogueTest {
         }
 
         @Test
-        @DisplayName("every namespace the platform posts, reverses or adjusts under - 42, 7 and 2 - and no other")
+        @DisplayName("every namespace the platform posts, reverses or adjusts under - 42, 7 and 3 - and no other")
         void registersEveryNamespace() {
             assertThat(REGISTER.namespaces(EntryType.POSTING)).containsExactly(
                     "bnpl.accrual:", "bnpl.billing:", "bnpl.closure-refund:", "bnpl.credit-application:", "bnpl.fee:",
@@ -68,22 +68,22 @@ class PostingRuleCatalogueTest {
             assertThat(REGISTER.namespaces(EntryType.REVERSAL)).containsExactly(
                     "bnpl.repayment-reversal:", "bnpl.waiver:", "fx-trade:", "lending.repayment-reversal:",
                     "lending.waiver:", "settlement-batch:", "transfer:");
-            assertThat(REGISTER.namespaces(EntryType.ADJUSTMENT)).containsExactly("MANUAL", "RECONCILIATION");
+            assertThat(REGISTER.namespaces(EntryType.ADJUSTMENT)).containsExactly("ACCOUNTING", "MANUAL", "RECONCILIATION");
         }
 
         @Test
         @DisplayName("the back-dating posters are named: ECONOMIC_DATE lending's accrual and the manual adjustment;"
-                + " STORED_ROW the settlement, suspense, payout-return, fx and reconciliation-resolution rules")
+                + " STORED_ROW the settlement, suspense, payout-return, fx, reconciliation-resolution and prior-period rules")
         void namesTheBackDatingPosters() {
             assertThat(ids(DatingClass.ECONOMIC_DATE)).containsExactly("ADJ-MANUAL", "LND-2");
             assertThat(REGISTER.rules().stream().filter(rule -> rule.dating() == DatingClass.ECONOMIC_DATE)
                     .flatMap(rule -> rule.posters().stream()).distinct()).containsExactlyInAnyOrder("LoanServicing",
                     "LedgerAdjustments");
             assertThat(ids(DatingClass.STORED_ROW)).containsExactly(
-                    "FX-COVER", "FX-TRADE", "MERCHANT-PAYOUT-RETURN", "RECON-GAIN", "RECON-SUSPENSE",
+                    "ACC-PRIOR-PERIOD", "FX-COVER", "FX-TRADE", "MERCHANT-PAYOUT-RETURN", "RECON-GAIN", "RECON-SUSPENSE",
                     "RECON-TRANSFER", "RECON-WRITE-OFF", "SETTLEMENT-REPORT", "SETTLEMENT-STATEMENT");
             assertThat(REGISTER.rules().stream().filter(PostingRule::mayBackDate).map(PostingRule::id).distinct())
-                    .hasSize(11);
+                    .hasSize(12);
             // Lending dates by the database clock in its servicing zone except the accrual; bnpl always does.
             assertThat(ids(DatingClass.TODAY_DATABASE)).allMatch(id -> id.startsWith("LND-") || id.startsWith("BNPL-"))
                     .hasSize(24);
@@ -184,7 +184,7 @@ class PostingRuleCatalogueTest {
             assertThat(REGISTER.rules()).allSatisfy(rule -> {
                 assertThat(rule.authoritativeReference()).isNotBlank();
                 assertThat(rule.sourceModule()).isIn("transfers", "payments", "merchant", "settlement",
-                        "reconciliation", "fx", "lending", "bnpl", "ledger", "app");
+                        "reconciliation", "fx", "lending", "bnpl", "ledger", "app", "accounting");
             });
             assertThatThrownBy(() -> LineShape.required(Side.DEBIT, "A_X", "A_X")).hasMessageContaining("once");
             assertThatThrownBy(() -> LineShape.required(Side.DEBIT, "lower_case"))
@@ -217,7 +217,7 @@ class PostingRuleCatalogueTest {
                         .filter(judging -> judging.id().equals(rule.id()))
                         .forEach(judging -> inForce.put(judging.id(), judging.cutoff()));
             }
-            assertThat(inForce).hasSize(58);
+            assertThat(inForce).hasSize(59);
             assertThat(inForce).containsAllEntriesOf(Map.of(
                     "LND-2", CutoffReaction.FLOORED_AT_FIRST_OPEN,
                     "SETTLEMENT-REPORT", CutoffReaction.FLOORED_AT_FIRST_OPEN,
@@ -230,9 +230,10 @@ class PostingRuleCatalogueTest {
                     "ADJ-MANUAL", CutoffReaction.REFUSED_AT_APPROVAL,
                     "RECON-WRITE-OFF", CutoffReaction.REFUSED_AT_APPROVAL,
                     "RECON-TRANSFER", CutoffReaction.REFUSED_AT_APPROVAL,
-                    "RECON-GAIN", CutoffReaction.REFUSED_AT_APPROVAL));
+                    "RECON-GAIN", CutoffReaction.REFUSED_AT_APPROVAL,
+                    "ACC-PRIOR-PERIOD", CutoffReaction.REFUSED_AT_APPROVAL));
             assertThat(inForce.entrySet().stream().filter(entry -> entry.getValue() != CutoffReaction.NOT_REACHED))
-                    .as("exactly the eleven back-dating rules are reached by a lock").hasSize(11);
+                    .as("exactly the twelve back-dating rules are reached by a lock").hasSize(12);
             assertThat(inForce.values()).as("nothing in force is still refused by a lock").doesNotContain(
                     CutoffReaction.REFUSED);
             assertThat(REGISTER.rules()).allSatisfy(rule -> assertThat(rule.cutoff().reachedByALock())
@@ -505,9 +506,15 @@ class PostingRuleCatalogueTest {
             assertThat(rule("ADJ-MANUAL").dating()).isEqualTo(DatingClass.ECONOMIC_DATE);
             assertThat(REGISTER.rules().stream().filter(rule -> rule.namespace().equals("RECONCILIATION")))
                     .extracting(PostingRule::id).containsExactly("RECON-WRITE-OFF", "RECON-TRANSFER", "RECON-GAIN");
-            assertThat(REGISTER.rules().stream().filter(rule -> rule.type() == EntryType.ADJUSTMENT))
-                    .as("the ACCOUNTING origin arrives with P14-TSK-013, its rule with it")
-                    .noneMatch(rule -> rule.namespace().equals("ACCOUNTING"));
+            // P14-TSK-013: the ACCOUNTING origin, with its rule. Stored, refused at approval, never floored; effective from the register's origin,
+            // so no adjustment of the origin can predate its rule.
+            assertShape("ACC-PRIOR-PERIOD", "accounting", "DR " + open, "CR " + open);
+            PostingRule priorPeriod = rule("ACC-PRIOR-PERIOD");
+            assertThat(priorPeriod.namespace()).isEqualTo("ACCOUNTING");
+            assertThat(priorPeriod.dating()).isEqualTo(DatingClass.STORED_ROW);
+            assertThat(priorPeriod.cutoff()).isEqualTo(CutoffReaction.REFUSED_AT_APPROVAL);
+            assertThat(priorPeriod.floored()).as("C3's floor is a POSTING's and cannot reach this origin").isFalse();
+            assertThat(priorPeriod.effectiveFrom()).isEqualTo(PostingRuleRegister.ORIGIN);
         }
     }
 

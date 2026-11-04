@@ -339,8 +339,10 @@ public final class AdjustmentService {
 
         // The binding's re-check (P8-TSK-006): V015's insert trigger could not see a
         // proposal born before the migration, so a MANUAL approval re-judges the stored
-        // lines against the reconciled positions - the one honest answer to a legacy row.
-        if (proposal.origin() == AdjustmentOrigin.MANUAL) {
+        // lines against the reconciled positions - the one honest answer to a legacy row. An
+        // ACCOUNTING approval too (P14-TSK-013): the closed set is code, and a release may
+        // have widened it since the proposal was read. Only a resolution is exempt.
+        if (proposal.origin() != AdjustmentOrigin.RECONCILIATION) {
             requireOffReconciledPositions(unitOfWork, proposal.lines());
         }
 
@@ -349,7 +351,9 @@ public final class AdjustmentService {
         // (ledger.PeriodClosed), and the proposal stays PROPOSED: the operator re-proposes it in the open period or
         // corrects the closed period by a prior-period adjustment (P14-TSK-013). Read under the cutoff's shared key,
         // held to commit, so a lock cannot commit between this judgement and the insert below (whose trigger re-judges
-        // it for every writer). Both doors: MANUAL and the reconciliation resolution's approveOwned.
+        // it for every writer). Every door: MANUAL, the reconciliation resolution's approveOwned, and the prior-period
+        // adjustment's approvePriorPeriod, whose approver read this date too.
+        // C3's floor is a PostingCommand's alone: nothing on this path can move the date.
         PostingCutoffs.requireOpen(
                 unitOfWork, proposal.postingDate(), proposal.origin() + " adjustment proposal " + proposal.id());
 
@@ -519,7 +523,7 @@ public final class AdjustmentService {
 
     /**
      * Approves a reconciliation-owned proposal and posts its entry, in the caller's
-     * transaction — the resolution's approval leg. Refuses a {@code MANUAL} proposal
+     * transaction — the resolution's approval leg. Refuses a {@code MANUAL} or {@code ACCOUNTING} proposal
      * ({@code ledger.AdjustmentOriginMismatch}); everything else is the generic approval's
      * discipline verbatim: the row lock, the second person, the conditional decision, the
      * same-approver converge, the posting meter.
@@ -530,11 +534,78 @@ public final class AdjustmentService {
 
     /**
      * Rejects — or, for the proposing flow, withdraws — a reconciliation-owned proposal in
-     * the caller's transaction; converges on one already rejected. Refuses a {@code MANUAL}
-     * proposal.
+     * the caller's transaction; converges on one already rejected. Refuses a {@code MANUAL} or
+     * {@code ACCOUNTING} proposal.
      */
     public boolean rejectOwned(Connection unitOfWork, AdjustmentProposalId id) {
         return doReject(unitOfWork, id, AdjustmentOrigin.RECONCILIATION);
+    }
+
+    // -----------------------------------------------------------------
+    // The accounting-owned door (P14-TSK-013, ADR-0113 decision 4, INV-ACC-10): a prior-period
+    // adjustment's ledger half, called only from app's LedgerPriorPeriodPostings inside the
+    // transaction that moves accounting's row. Its own method names, so a static guard can hold
+    // reconciliation and accounting each to their own door; the runtime refusal is doApprove's
+    // and doReject's origin check, each door refusing every other origin's proposal.
+    // -----------------------------------------------------------------
+
+    /**
+     * Records an accounting-owned proposal in the caller's transaction — origin {@code ACCOUNTING}, reason
+     * {@code PRIOR_PERIOD_ADJUSTMENT}, one date for both of the entry's, no key of its own (the caller's claimed transaction
+     * is the dedupe, and accounting's row stores the returned id). Nothing posts; the approver must be a second person.
+     *
+     * @throws UnbalancedJournalEntryException before anything is written
+     * @throws AdjustmentOnReconciledPositionException a line names a purpose closed to free adjustments - that purpose's own
+     *     domain has its own correction door
+     * @throws UnknownPostingAccountException a line names an unknown account or a foreign currency
+     * @throws IllegalArgumentException the command is not a prior-period adjustment's, or its two dates differ
+     */
+    public AdjustmentProposalId proposePriorPeriod(
+            Connection unitOfWork, OwnedAdjustmentCommand command) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(command, "command must not be null");
+        if (command.reasonCode() != AdjustmentReasonCode.PRIOR_PERIOD_ADJUSTMENT) {
+            throw new IllegalArgumentException(
+                    "the accounting-owned door carries PRIOR_PERIOD_ADJUSTMENT, not "
+                            + command.reasonCode() + " (ADR-0071 section 6)");
+        }
+        if (!command.postingDate().equals(command.valueDate())) {
+            throw new IllegalArgumentException(
+                    "a prior-period adjustment has one date: nothing about its entry points into the"
+                            + " month it corrects (INV-ACC-10)");
+        }
+        JournalEntry.balanced(
+                ids, clock, command.postingDate(), command.valueDate(), command.lines());
+        requireOffReconciledPositions(unitOfWork, command.lines());
+        Actor actor = SecurityContext.require();
+        Correlation correlation = resolvedCorrelation();
+        AdjustmentProposal proposal =
+                AdjustmentProposal.proposePriorPeriod(
+                        AdjustmentProposalId.next(ids),
+                        command.postingDate(),
+                        command.reference(),
+                        command.reason(),
+                        actor.id(),
+                        command.lines(),
+                        clock);
+        proposals.insert(unitOfWork, proposal);
+        appendProposedRecord(unitOfWork, proposal, actor, correlation, command.reason());
+        return proposal.id();
+    }
+
+    /**
+     * Approves an accounting-owned proposal and posts its entry, on the date the proposal states, in the caller's transaction.
+     * Refuses every other origin ({@code ledger.AdjustmentOriginMismatch}); everything else is the generic approval's discipline:
+     * the row lock, the second person, the cutoff judged under its shared key and never floored, the same-approver converge, the
+     * posting meter.
+     */
+    public PostingResult approvePriorPeriod(Connection unitOfWork, AdjustmentProposalId id) {
+        return observed(() -> doApprove(unitOfWork, id, AdjustmentOrigin.ACCOUNTING));
+    }
+
+    /** Rejects an accounting-owned proposal in the caller's transaction; converges on one already rejected. Refuses every other origin. */
+    public boolean rejectPriorPeriod(Connection unitOfWork, AdjustmentProposalId id) {
+        return doReject(unitOfWork, id, AdjustmentOrigin.ACCOUNTING);
     }
 
     /** The flow's correlation with the cause resolved — the {@code PostingService} idiom. */

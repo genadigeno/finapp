@@ -219,6 +219,8 @@ class AccountingVocabulariesTest {
                         "accounting.CloseCheckPending=409",
                         // P14-TSK-012: a run that cannot be proposed; an act naming what no longer stands.
                         "accounting.CloseNotReady=409", "accounting.CloseProposalStale=409",
+                        // P14-TSK-013: the prior-period adjustment's doors.
+                        "accounting.PriorPeriodAdjustmentInvalid=422", "accounting.PriorPeriodPurposeClosed=422", "accounting.PriorPeriodAdjustmentStale=409",
                         // P14-TSK-017: an operational definition is never a run; a run's is not read at the operational door.
                         "accounting.ReportDoorMismatch=409");
         // P14-TSK-002: the posting rule register's audited read - no reason, an operator's read.
@@ -252,7 +254,10 @@ class AccountingVocabulariesTest {
                         "accounting.OperationalReportRead=false",
                         // P14-TSK-012: the close's and the reopen's acts, each reasoned; the controller's read, an operator's read.
                         "accounting.PeriodCloseProposed=true", "accounting.PeriodClosed=true", "accounting.PeriodCloseRejected=true",
-                        "accounting.PeriodReopenProposed=true", "accounting.PeriodReopened=true", "accounting.CloseProposalRead=false");
+                        "accounting.PeriodReopenProposed=true", "accounting.PeriodReopened=true", "accounting.CloseProposalRead=false",
+                        // P14-TSK-013: both acts and the rejection, each reasoned; the reads, an operator's.
+                        "accounting.PriorPeriodAdjustmentProposed=true", "accounting.PriorPeriodAdjustmentPosted=true", "accounting.PriorPeriodAdjustmentRejected=true",
+                        "accounting.PriorPeriodAdjustmentRead=false");
     }
 
     // ------------------------------------------------------------------

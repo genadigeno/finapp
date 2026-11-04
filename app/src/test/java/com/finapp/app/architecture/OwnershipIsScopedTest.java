@@ -2105,6 +2105,30 @@ class OwnershipIsScopedTest {
                                     "P14-TSK-017 (its review, M-11). How many sets of the period CLOSE_STATUS answers for, per status -"
                                         + " counts only, under ACCOUNTING_READ - platform-wide configuration, no owner to scope by.")),
                     Map.entry(
+                            "com.finapp.accounting.JdbcPriorPeriodAdjustmentStore.one",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-013. find and lock's one helper: an adjustment by the id the operator's permission-guarded request named - a correction of the platform's own books,"
+                                        + " no owner to scope by, behind @RequiresPermission(ACCOUNTING_ADJUST_APPROVE).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcPriorPeriodAdjustmentStore.ofPeriod",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-013. lockCorrectionsOf and ofCorrected's one helper: a month's adjustments by the period the row or the permission-guarded request names - a calendar month of"
+                                        + " the platform's books, no owner to scope by, behind @RequiresPermission(ACCOUNTING_ADJUST_PROPOSE, ACCOUNTING_ADJUST_APPROVE or ACCOUNTING_READ).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcPriorPeriodAdjustmentStore.markPosted",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-013. The id comes only from the row this transaction locked FOR UPDATE, conditional on PROPOSED - the platform's books, no owner to scope by, behind"
+                                        + " @RequiresPermission(ACCOUNTING_ADJUST_APPROVE).")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcPriorPeriodAdjustmentStore.markRejected",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-013. The id comes only from the row this transaction locked FOR UPDATE, conditional on PROPOSED - the platform's books, no owner to scope by, behind"
+                                        + " @RequiresPermission(ACCOUNTING_ADJUST_APPROVE).")),
+                    Map.entry(
                             "com.finapp.accounting.JdbcValuationRateSetStore.proposedOf",
                             new Entry(
                                     Scope.ADMINISTERED,

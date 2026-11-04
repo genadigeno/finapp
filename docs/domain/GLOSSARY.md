@@ -2646,7 +2646,9 @@ from a discrepancy.)*
 ### Prior-Period Adjustment
 **Is:** the correction of an error found in a closed period by a ledger adjustment of origin `ACCOUNTING`, reason
 `PRIOR_PERIOD_ADJUSTMENT`, posted in an open period under four eyes, recorded with the closed period it corrects
-(`INV-ACC-10`, `P14-TSK-013`).
+(`INV-ACC-10`, `P14-TSK-013`). Built: `PriorPeriodAdjustments`, accounting `V009`, ledger `V030`. Dated today by the server,
+stored, in the month holding today, naming the revision of the figures it corrects; the approver names the date, the revision and
+the month's posted corrections it read. `PROPOSED`, then `POSTED` or `REJECTED`, the ledger's proposal moving with it.
 **Not:** a back-dated posting (the ledger refuses those), nor a reopen, nor a `MANUAL` adjustment (its own origin and
 door).
 **Owned by:** `accounting`
