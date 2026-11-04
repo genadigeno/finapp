@@ -213,15 +213,21 @@ class StatementNotesAreFrozenTest {
         Set<String> contract = new TreeSet<>();
         new ObjectMapper().readTree(Files.readString(directory.resolve("docs/api/openapi.json"))).get("paths").fieldNames().forEachRemaining(route -> contract.add(unnamed(route)));
         for (ReportDefinition definition : statements()) {
-            Set<String> named = new TreeSet<>();
-            Matcher route = Pattern.compile("GET (/v1/[^ ?,;:)\"]+)").matcher(bytesOf(definition));
-            while (route.find()) {
-                named.add(unnamed(route.group(1)));
-            }
-            assertThat(named).as(definition.code()).contains("/v1/operator/accounting/report-runs/{}/lines", "/v1/operator/accounting/gl/accounts/{}/activity", "/v1/operator/accounting/gl/entries/{}", "/v1/operator/reconciliation/breaks/{}", "/v1/operator/accounting/periods/{}/close-proposal",
+            Set<String> named = routesNamedBy(definition);
+            assertThat(named).as(definition.code()).contains("/v1/operator/accounting/gl/accounts/{}/activity", "/v1/operator/accounting/gl/entries/{}", "/v1/operator/reconciliation/breaks/{}", "/v1/operator/accounting/periods/{}/close-proposal",
                     "/v1/operator/accounting/periods/{}/close-run", "/v1/operator/accounting/periods/{}/prior-period-adjustments", "/v1/operator/accounting/breaks");
             assertThat(contract).as(definition.code()).containsAll(named);
         }
+        assertThat(routesNamedBy(statements().get(0))).as("an opening's own door: only the balance sheet holds an opening").contains("/v1/operator/accounting/report-runs/{}/lines");
+    }
+
+    private Set<String> routesNamedBy(ReportDefinition definition) {
+        Set<String> named = new TreeSet<>();
+        Matcher route = Pattern.compile("GET (/v1/[^ ?,;:)\"]+)").matcher(bytesOf(definition));
+        while (route.find()) {
+            named.add(unnamed(route.group(1)));
+        }
+        return named;
     }
 
     /** A route with its path variables' names gone: the words of a note name them for the reader. */
