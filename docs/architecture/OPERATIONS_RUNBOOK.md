@@ -614,12 +614,12 @@ conditional the triggers re-judge, so a step that runs again does each act once.
 open, a review case unworked) says whether credit or the sweep is the one waiting; open an incident with the class name if
 the failures persist.
 
-### 7.x A write-off: refused, stale, or approved in error (`P14-TSK-021`)
+### 7.13 A write-off: refused, stale, or approved in error (`P14-TSK-021`)
 
 *Loans here; a BNPL obligation is the same under `bnpl.WriteOff*` (`POST /v1/operator/bnpl-agreements/{id}/write-offs...`).* A write-off is an act on our books: **it says nothing about what the customer owes, and no one should tell a customer it does.**
 
 - **`lending.WriteOffStale`.** Something moved since the proposal: a repayment, an accrual, a late fee, a default cured and set again. Nothing was posted. An accrual moves the figures daily, so decide a proposal on the business date it was made. Otherwise reject it and propose again; the next proposal reads what is there.
-- **`lending.WriteOffBehindAccrual`.** An elapsed date is not accrued: the account's next servicing step brings it; if `LendingAccrualLag` is firing, follow that first.
+- **`lending.WriteOffBehindAccrual`.** An elapsed date is not accrued: the account's next servicing step brings it; if `LendingAccrualLagging` is firing, follow that first (section 7.5).
 - **`lending.WriteOffCreditHeld`.** The account holds the customer's money; a write-off never takes it. The next servicing step applies it.
 - **`ledger.PeriodClosed` at the approval.** Today's month is locked. Nothing was posted, the proposal stands, and it is never moved to another date: decide it once the month holding today is open, or reject it.
 - **`lending.LoanWrittenOff` from a customer's repayment.** Refused, nothing taken: the money stays in their wallet. No recovery rule exists; do not post one by hand.

@@ -105,7 +105,7 @@ class PostingRuleDeskTest {
             assertThat(record.targetId()).isEqualTo("catalogue-4");
             assertThat(record.outcome()).isEqualTo(AuditOutcome.SUCCEEDED);
             assertThat(record.reason()).isEmpty();
-            assertThat(record.changeSummary()).contains("catalogueVersion=3, rules=66");
+            assertThat(record.changeSummary()).contains("catalogueVersion=4, rules=68");
             assertThat(record.occurredAt()).isEqualTo(CLOCK.instant());
         });
     }
