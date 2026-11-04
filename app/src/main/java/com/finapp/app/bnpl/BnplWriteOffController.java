@@ -48,7 +48,7 @@ public class BnplWriteOffController {
     @RequiresPermission(PermissionName.BNPL_WRITE_OFF_PROPOSE)
     @RequiresIdempotencyKey
     @ResponseStatus(HttpStatus.CREATED)
-    public BnplWriteOffDesk.WriteOffReceipt proposeBnplWriteOff(
+    public BnplWriteOffDesk.BnplWriteOffReceipt proposeBnplWriteOff(
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("id") String id,
             @Valid @RequestBody BnplWriteOffProposalRequest body) {
@@ -58,7 +58,7 @@ public class BnplWriteOffController {
     /** The oldest write-offs awaiting a decision, so one that can no longer post can be found. Audited. */
     @GetMapping("/write-offs")
     @RequiresPermission(PermissionName.BNPL_WRITE_OFF_APPROVE)
-    public List<BnplWriteOffDesk.WriteOffReceipt> listPendingBnplWriteOffs() {
+    public List<BnplWriteOffDesk.BnplWriteOffReceipt> listPendingBnplWriteOffs() {
         return desk.pending();
     }
 
@@ -68,7 +68,7 @@ public class BnplWriteOffController {
      */
     @GetMapping("/{id}/write-offs/{writeOffId}")
     @RequiresPermission(PermissionName.BNPL_WRITE_OFF_APPROVE)
-    public BnplWriteOffDesk.WriteOffAttestation readBnplWriteOff(
+    public BnplWriteOffDesk.BnplWriteOffAttestation readBnplWriteOff(
             @PathVariable("id") String id, @PathVariable("writeOffId") String writeOffId) {
         return desk.read(id, writeOffId);
     }
@@ -81,7 +81,7 @@ public class BnplWriteOffController {
     @RequiresPermission(PermissionName.BNPL_WRITE_OFF_APPROVE)
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @RequiresIdempotencyKey
-    public BnplWriteOffDesk.WriteOffReceipt approveBnplWriteOff(
+    public BnplWriteOffDesk.BnplWriteOffReceipt approveBnplWriteOff(
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("id") String id,
             @PathVariable("writeOffId") String writeOffId,
@@ -93,7 +93,7 @@ public class BnplWriteOffController {
     @PostMapping(path = "/{id}/write-offs/{writeOffId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.BNPL_WRITE_OFF_APPROVE)
     @RequiresIdempotencyKey
-    public BnplWriteOffDesk.WriteOffReceipt rejectBnplWriteOff(
+    public BnplWriteOffDesk.BnplWriteOffReceipt rejectBnplWriteOff(
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("id") String id,
             @PathVariable("writeOffId") String writeOffId,

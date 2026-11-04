@@ -48,7 +48,7 @@ public class LoanWriteOffController {
     @RequiresPermission(PermissionName.LOAN_WRITE_OFF_PROPOSE)
     @RequiresIdempotencyKey
     @ResponseStatus(HttpStatus.CREATED)
-    public LoanWriteOffDesk.WriteOffReceipt proposeLoanWriteOff(
+    public LoanWriteOffDesk.LoanWriteOffReceipt proposeLoanWriteOff(
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("id") String id,
             @Valid @RequestBody LoanWriteOffProposalRequest body) {
@@ -58,7 +58,7 @@ public class LoanWriteOffController {
     /** The oldest write-offs awaiting a decision, so one that can no longer post can be found. Audited. */
     @GetMapping("/write-offs")
     @RequiresPermission(PermissionName.LOAN_WRITE_OFF_APPROVE)
-    public List<LoanWriteOffDesk.WriteOffReceipt> listPendingLoanWriteOffs() {
+    public List<LoanWriteOffDesk.LoanWriteOffReceipt> listPendingLoanWriteOffs() {
         return desk.pending();
     }
 
@@ -68,7 +68,7 @@ public class LoanWriteOffController {
      */
     @GetMapping("/{id}/write-offs/{writeOffId}")
     @RequiresPermission(PermissionName.LOAN_WRITE_OFF_APPROVE)
-    public LoanWriteOffDesk.WriteOffAttestation readLoanWriteOff(
+    public LoanWriteOffDesk.LoanWriteOffAttestation readLoanWriteOff(
             @PathVariable("id") String id, @PathVariable("writeOffId") String writeOffId) {
         return desk.read(id, writeOffId);
     }
@@ -81,7 +81,7 @@ public class LoanWriteOffController {
     @RequiresPermission(PermissionName.LOAN_WRITE_OFF_APPROVE)
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @RequiresIdempotencyKey
-    public LoanWriteOffDesk.WriteOffReceipt approveLoanWriteOff(
+    public LoanWriteOffDesk.LoanWriteOffReceipt approveLoanWriteOff(
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("id") String id,
             @PathVariable("writeOffId") String writeOffId,
@@ -93,7 +93,7 @@ public class LoanWriteOffController {
     @PostMapping(path = "/{id}/write-offs/{writeOffId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LOAN_WRITE_OFF_APPROVE)
     @RequiresIdempotencyKey
-    public LoanWriteOffDesk.WriteOffReceipt rejectLoanWriteOff(
+    public LoanWriteOffDesk.LoanWriteOffReceipt rejectLoanWriteOff(
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("id") String id,
             @PathVariable("writeOffId") String writeOffId,

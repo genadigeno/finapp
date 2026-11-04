@@ -76,7 +76,7 @@ class LoanWriteOffDeskTest {
     @DisplayName("a receipt replays exactly, proposed and approved, and holds no reason and no person")
     void theReceiptReplaysAndNamesNoPerson() {
         LoanWriteOff proposed = writeOff(LoanWriteOffStatus.PROPOSED, Optional.empty(), Optional.empty(), Optional.empty());
-        LoanWriteOffDesk.WriteOffReceipt first = LoanWriteOffDesk.receipt(proposed);
+        LoanWriteOffDesk.LoanWriteOffReceipt first = LoanWriteOffDesk.receipt(proposed);
         byte[] stored = LoanWriteOffDesk.stored(first).body();
         assertThat(LoanWriteOffDesk.replayed(stored)).isEqualTo(first);
         assertThat(new String(stored, StandardCharsets.UTF_8)).doesNotContain("a private reason").doesNotContain("the proposer");
@@ -86,7 +86,7 @@ class LoanWriteOffDeskTest {
 
         LoanWriteOff approved = writeOff(LoanWriteOffStatus.APPROVED, Optional.of(Instant.parse("2026-11-04T10:00:00Z")),
                 Optional.of(JournalEntryId.of(IDS.next())), Optional.of(LocalDate.parse("2026-11-04")));
-        LoanWriteOffDesk.WriteOffReceipt decided = LoanWriteOffDesk.receipt(approved);
+        LoanWriteOffDesk.LoanWriteOffReceipt decided = LoanWriteOffDesk.receipt(approved);
         assertThat(LoanWriteOffDesk.replayed(LoanWriteOffDesk.stored(decided).body())).isEqualTo(decided);
         assertThat(decided.valueDate()).isEqualTo("2026-11-04");
     }

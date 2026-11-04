@@ -77,7 +77,7 @@ class BnplWriteOffDeskTest {
     @DisplayName("a receipt replays exactly, proposed and approved, and holds no reason and no person")
     void theReceiptReplaysAndNamesNoPerson() {
         BnplWriteOff proposed = writeOff(BnplCorrectionStatus.PROPOSED, Optional.empty(), Optional.empty(), Optional.empty());
-        BnplWriteOffDesk.WriteOffReceipt first = BnplWriteOffDesk.receipt(proposed);
+        BnplWriteOffDesk.BnplWriteOffReceipt first = BnplWriteOffDesk.receipt(proposed);
         byte[] stored = BnplWriteOffDesk.stored(first).body();
         assertThat(BnplWriteOffDesk.replayed(stored)).isEqualTo(first);
         assertThat(new String(stored, StandardCharsets.UTF_8)).doesNotContain("a private reason").doesNotContain("the proposer");
@@ -87,7 +87,7 @@ class BnplWriteOffDeskTest {
 
         BnplWriteOff approved = writeOff(BnplCorrectionStatus.APPROVED, Optional.of(Instant.parse("2026-11-04T10:00:00Z")),
                 Optional.of(JournalEntryId.of(IDS.next())), Optional.of(LocalDate.parse("2026-11-04")));
-        BnplWriteOffDesk.WriteOffReceipt decided = BnplWriteOffDesk.receipt(approved);
+        BnplWriteOffDesk.BnplWriteOffReceipt decided = BnplWriteOffDesk.receipt(approved);
         assertThat(BnplWriteOffDesk.replayed(BnplWriteOffDesk.stored(decided).body())).isEqualTo(decided);
         assertThat(decided.valueDate()).isEqualTo("2026-11-04");
     }

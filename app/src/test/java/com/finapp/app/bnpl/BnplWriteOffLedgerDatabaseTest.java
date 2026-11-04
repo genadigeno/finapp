@@ -108,7 +108,7 @@ class BnplWriteOffLedgerDatabaseTest {
         Bought bought = defaulted();
         LendingCapitalHeadroom.Headroom before = lendingTransactions.inTransaction(uow -> headroom.atRest(uow, BnplPurchaseWorld.EUR));
         Money exposed = exposureOf(bought);
-        BnplWriteOffDesk.WriteOffReceipt proposed = as(operator(), () -> desk.propose(bought.agreementText(), BnplApplicationClient.key(),
+        BnplWriteOffDesk.BnplWriteOffReceipt proposed = as(operator(), () -> desk.propose(bought.agreementText(), BnplApplicationClient.key(),
                 "uncollectable after collections"));
         as(operator(), () -> desk.approve(bought.agreementText(), proposed.writeOffId(), BnplApplicationClient.key(), attesting(proposed)));
 
@@ -134,14 +134,14 @@ class BnplWriteOffLedgerDatabaseTest {
         Bought bought = defaulted();
         Actor proposer = operator();
         String proposalKey = BnplApplicationClient.key();
-        BnplWriteOffDesk.WriteOffReceipt proposed = as(proposer, () -> desk.propose(bought.agreementText(), proposalKey, "uncollectable"));
+        BnplWriteOffDesk.BnplWriteOffReceipt proposed = as(proposer, () -> desk.propose(bought.agreementText(), proposalKey, "uncollectable"));
         assertThat(as(proposer, () -> desk.propose(bought.agreementText(), proposalKey, "uncollectable"))).isEqualTo(proposed);
         assertThatExceptionOfType(IdempotencyConflictException.class)
                 .isThrownBy(() -> as(proposer, () -> desk.propose(bought.agreementText(), proposalKey, "another reason")));
 
         Actor approver = operator();
         String approvalKey = BnplApplicationClient.key();
-        BnplWriteOffDesk.WriteOffReceipt approved = as(approver, () ->
+        BnplWriteOffDesk.BnplWriteOffReceipt approved = as(approver, () ->
                 desk.approve(bought.agreementText(), proposed.writeOffId(), approvalKey, attesting(proposed)));
         assertThat(approved.status()).isEqualTo("APPROVED");
         assertThat(approved.journalEntryId()).isNotNull();
@@ -161,7 +161,7 @@ class BnplWriteOffLedgerDatabaseTest {
     @DisplayName("after it, money arriving is refused into nowhere never: a repayment is refused and the wallet keeps it; the proofs hold")
     void aRepaymentAfterItLeavesTheWalletWhole() throws Exception {
         Bought bought = defaulted();
-        BnplWriteOffDesk.WriteOffReceipt proposed = as(operator(), () -> desk.propose(bought.agreementText(), BnplApplicationClient.key(),
+        BnplWriteOffDesk.BnplWriteOffReceipt proposed = as(operator(), () -> desk.propose(bought.agreementText(), BnplApplicationClient.key(),
                 "uncollectable after collections"));
         as(operator(), () -> desk.approve(bought.agreementText(), proposed.writeOffId(), BnplApplicationClient.key(), attesting(proposed)));
         // Money the customer brings afterwards: defaulted() left the wallet empty so the step could not collect the debt.
@@ -180,7 +180,7 @@ class BnplWriteOffLedgerDatabaseTest {
     void aMerchantLearnsNothingOfIt() throws Exception {
         Bought bought = defaulted();
         String scoped = scopedKey(bought.merchant());
-        BnplWriteOffDesk.WriteOffReceipt proposed = as(operator(), () -> desk.propose(bought.agreementText(), BnplApplicationClient.key(),
+        BnplWriteOffDesk.BnplWriteOffReceipt proposed = as(operator(), () -> desk.propose(bought.agreementText(), BnplApplicationClient.key(),
                 "uncollectable after collections"));
         as(operator(), () -> desk.approve(bought.agreementText(), proposed.writeOffId(), BnplApplicationClient.key(), attesting(proposed)));
         String refund = "{\"amount\":\"10.00\",\"currency\":\"EUR\",\"reason\":\"goods returned\"}";
@@ -215,7 +215,7 @@ class BnplWriteOffLedgerDatabaseTest {
         LocalDate today = LocalDate.now(java.time.ZoneOffset.UTC);
         BnplReports.BnplPortfolioRow yesterdayBefore = payIn4(today.minusDays(1));
         BnplReports.BnplPortfolioRow todayBefore = payIn4(today);
-        BnplWriteOffDesk.WriteOffReceipt proposed = as(operator(), () -> desk.propose(bought.agreementText(), BnplApplicationClient.key(),
+        BnplWriteOffDesk.BnplWriteOffReceipt proposed = as(operator(), () -> desk.propose(bought.agreementText(), BnplApplicationClient.key(),
                 "uncollectable after collections"));
         as(operator(), () -> desk.approve(bought.agreementText(), proposed.writeOffId(), BnplApplicationClient.key(), attesting(proposed)));
 
@@ -231,7 +231,7 @@ class BnplWriteOffLedgerDatabaseTest {
             + " platform's own moves never cover today (INV-ACC-08), so the lock is planted by the owner role: the refusal is the real trigger's")
     void aMonthLockedOverTodayRefusesAndTheProposalStands() throws Exception {
         Bought bought = defaulted();
-        BnplWriteOffDesk.WriteOffReceipt proposed = as(operator(), () -> desk.propose(bought.agreementText(), BnplApplicationClient.key(),
+        BnplWriteOffDesk.BnplWriteOffReceipt proposed = as(operator(), () -> desk.propose(bought.agreementText(), BnplApplicationClient.key(),
                 "uncollectable after collections"));
         Actor approver = operator();
         cutoff("ledger.posting_cutoff_month_end((now() AT TIME ZONE 'UTC')::date)");
@@ -361,7 +361,7 @@ class BnplWriteOffLedgerDatabaseTest {
         return lendingTransactions.inTransaction(uow -> exposure.outstandingFor(uow, bought.party(), BnplPurchaseWorld.EUR));
     }
 
-    private static BnplWriteOffController.BnplWriteOffApprovalRequest attesting(BnplWriteOffDesk.WriteOffReceipt read) {
+    private static BnplWriteOffController.BnplWriteOffApprovalRequest attesting(BnplWriteOffDesk.BnplWriteOffReceipt read) {
         return new BnplWriteOffController.BnplWriteOffApprovalRequest(read.currency(), read.principal(), read.principalDue(),
                 read.interestAccrued(), read.interestDue(), read.feesDue(), read.revision(), "read and agreed");
     }

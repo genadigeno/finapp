@@ -60,7 +60,7 @@ public final class BnplWriteOffDesk {
      * A write-off as answered, and replayed: the figures it takes by component, the principal part and the total; the revision read;
      * the default it stands on; once approved its entry and date. Never a reason or a person.
      */
-    public record WriteOffReceipt(
+    public record BnplWriteOffReceipt(
             String writeOffId,
             String agreementId,
             String status,
@@ -81,7 +81,7 @@ public final class BnplWriteOffDesk {
             String valueDate) {}
 
     /** What the account holds now: the figures and the revision the approval re-judges under the lock. */
-    public record WriteOffLiveView(
+    public record BnplWriteOffLiveView(
             String principal, String principalDue, String interestAccrued, String interestDue, String feesDue, long revision,
             int agreementVersion) {}
 
@@ -90,29 +90,29 @@ public final class BnplWriteOffDesk {
      * stands on, the date it would post on (posting and value), what the account holds now, and why it could not post now - empty
      * when it stands.
      */
-    public record WriteOffAttestation(
-            WriteOffReceipt writeOff,
+    public record BnplWriteOffAttestation(
+            BnplWriteOffReceipt writeOff,
             String product,
             String accountStatus,
             String proposedBy,
             String proposalReason,
             String defaultedOn,
             String postsOn,
-            WriteOffLiveView live,
+            BnplWriteOffLiveView live,
             boolean stands,
             List<String> blockers) {
 
         /** The reason and the figures stay out of a log line. */
         @Override
         public String toString() {
-            return "WriteOffAttestation[" + writeOff.writeOffId() + ", stands=" + stands + "]";
+            return "BnplWriteOffAttestation[" + writeOff.writeOffId() + ", stands=" + stands + "]";
         }
     }
 
     // ------------------------------------------------------------------ the acts
 
     /** Proposes it - a holder of {@code BNPL_WRITE_OFF_PROPOSE}; nothing is posted. */
-    public WriteOffReceipt propose(String rawAgreementId, String idempotencyKey, String reason) {
+    public BnplWriteOffReceipt propose(String rawAgreementId, String idempotencyKey, String reason) {
         BnplAgreementId agreement = agreementId(rawAgreementId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
@@ -125,7 +125,7 @@ public final class BnplWriteOffDesk {
     }
 
     /** Approves it - a holder of {@code BNPL_WRITE_OFF_APPROVE} other than its proposer, on a MULTI_FACTOR session; posts F11. */
-    public WriteOffReceipt approve(String rawAgreementId, String rawWriteOffId, String idempotencyKey,
+    public BnplWriteOffReceipt approve(String rawAgreementId, String rawWriteOffId, String idempotencyKey,
             BnplWriteOffController.BnplWriteOffApprovalRequest body) {
         BnplAgreementId agreement = agreementId(rawAgreementId);
         UUID writeOff = id(rawWriteOffId);
@@ -138,7 +138,7 @@ public final class BnplWriteOffDesk {
     }
 
     /** Rejects it - a holder of {@code BNPL_WRITE_OFF_APPROVE}, on any account status. */
-    public WriteOffReceipt reject(String rawAgreementId, String rawWriteOffId, String idempotencyKey, String reason) {
+    public BnplWriteOffReceipt reject(String rawAgreementId, String rawWriteOffId, String idempotencyKey, String reason) {
         BnplAgreementId agreement = agreementId(rawAgreementId);
         UUID writeOff = id(rawWriteOffId);
         Actor actor = SecurityContext.require();
@@ -151,7 +151,7 @@ public final class BnplWriteOffDesk {
     // ------------------------------------------------------------------ the approver's reads
 
     /** One write-off as its approver reads it, under the obligation's lock - one state - its audit record committing with the read. */
-    public WriteOffAttestation read(String rawAgreementId, String rawWriteOffId) {
+    public BnplWriteOffAttestation read(String rawAgreementId, String rawWriteOffId) {
         BnplAgreementId agreement = agreementId(rawAgreementId);
         UUID writeOff = id(rawWriteOffId);
         Actor actor = SecurityContext.require();
@@ -171,7 +171,7 @@ public final class BnplWriteOffDesk {
     }
 
     /** The oldest write-offs awaiting a decision, audited. */
-    public List<WriteOffReceipt> pending() {
+    public List<BnplWriteOffReceipt> pending() {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         try {
@@ -190,9 +190,9 @@ public final class BnplWriteOffDesk {
 
     // ------------------------------------------------------------------ the views
 
-    static WriteOffReceipt receipt(BnplWriteOff writeOff) {
+    static BnplWriteOffReceipt receipt(BnplWriteOff writeOff) {
         BnplWriteOffPosition position = writeOff.position();
-        return new WriteOffReceipt(
+        return new BnplWriteOffReceipt(
                 writeOff.id().toString(),
                 writeOff.agreement().value().toString(),
                 writeOff.status().name(),
@@ -213,9 +213,9 @@ public final class BnplWriteOffDesk {
                 writeOff.valueDate().map(LocalDate::toString).orElse(null));
     }
 
-    static WriteOffAttestation attestation(BnplWriteOffs.Attestation read) {
+    static BnplWriteOffAttestation attestation(BnplWriteOffs.Attestation read) {
         BnplWriteOffPosition live = read.live();
-        return new WriteOffAttestation(
+        return new BnplWriteOffAttestation(
                 receipt(read.writeOff()),
                 read.product().name(),
                 read.accountStatus().name(),
@@ -223,7 +223,7 @@ public final class BnplWriteOffDesk {
                 read.writeOff().proposalReason(),
                 read.defaultedOn().map(LocalDate::toString).orElse(null),
                 read.postsOn().toString(),
-                new WriteOffLiveView(decimal(live.principal()), decimal(live.principalDue()), decimal(live.interestAccrued()),
+                new BnplWriteOffLiveView(decimal(live.principal()), decimal(live.principalDue()), decimal(live.interestAccrued()),
                         decimal(live.interestDue()), decimal(live.feesDue()), live.revision(), read.agreementVersionNow()),
                 read.blockers().isEmpty(),
                 read.blockers().stream().map(Enum::name).toList());
@@ -239,7 +239,7 @@ public final class BnplWriteOffDesk {
      * One keyed act in one transaction. The act's meter is told after the commit, once (a replay or a converged retry counts
      * nothing); a refusal is counted by reason and product.
      */
-    private WriteOffReceipt keyed(Actor actor, CorrelationId correlation, String idempotencyKey, BnplWriteOffMetrics.Outcome success,
+    private BnplWriteOffReceipt keyed(Actor actor, CorrelationId correlation, String idempotencyKey, BnplWriteOffMetrics.Outcome success,
             String fingerprinted, Function<Connection, Acted> act) {
         IdempotencyKey key = new IdempotencyKey(BnplCorrectionDesk.SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
@@ -319,7 +319,7 @@ public final class BnplWriteOffDesk {
     }
 
     /** The receipt: the view's fields, '|'-separated, an absent one empty. */
-    static StoredResponse stored(WriteOffReceipt view) {
+    static StoredResponse stored(BnplWriteOffReceipt view) {
         String body = String.join("|", view.writeOffId(), view.agreementId(), view.status(), view.currency(), view.principal(),
                 view.principalDue(), view.interestAccrued(), view.interestDue(), view.feesDue(), view.principalTotal(), view.total(),
                 Long.toString(view.revision()), view.defaultEventId(), Integer.toString(view.agreementVersion()), view.proposedAt(),
@@ -327,9 +327,9 @@ public final class BnplWriteOffDesk {
         return StoredResponse.of(body.getBytes(StandardCharsets.UTF_8), "text/plain");
     }
 
-    static WriteOffReceipt replayed(byte[] body) {
+    static BnplWriteOffReceipt replayed(byte[] body) {
         String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", -1);
-        return new WriteOffReceipt(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5], fields[6], fields[7], fields[8],
+        return new BnplWriteOffReceipt(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5], fields[6], fields[7], fields[8],
                 fields[9], fields[10], Long.parseLong(fields[11]), fields[12], Integer.parseInt(fields[13]), fields[14],
                 fields[15].isEmpty() ? null : fields[15], fields[16].isEmpty() ? null : fields[16],
                 fields[17].isEmpty() ? null : fields[17]);

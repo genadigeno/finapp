@@ -62,7 +62,7 @@ public final class LoanWriteOffDesk {
      * A write-off as answered, and replayed: the figures it takes by component, the principal part and the total; the revision read;
      * the default it stands on; once approved its entry and date. Never a reason or a person.
      */
-    public record WriteOffReceipt(
+    public record LoanWriteOffReceipt(
             String writeOffId,
             String loanId,
             String status,
@@ -83,7 +83,7 @@ public final class LoanWriteOffDesk {
             String valueDate) {}
 
     /** What the account holds now: the figures and the revision the approval re-judges under the lock. */
-    public record WriteOffLiveView(
+    public record LoanWriteOffLiveView(
             String principal, String principalDue, String interestAccrued, String interestDue, String feesDue, long revision,
             int agreementVersion) {}
 
@@ -92,29 +92,29 @@ public final class LoanWriteOffDesk {
      * stands on, the date it would post on (posting and value), what the account holds now, and why it could not post now - empty
      * when it stands.
      */
-    public record WriteOffAttestation(
-            WriteOffReceipt writeOff,
+    public record LoanWriteOffAttestation(
+            LoanWriteOffReceipt writeOff,
             String product,
             String accountStatus,
             String proposedBy,
             String proposalReason,
             String defaultedOn,
             String postsOn,
-            WriteOffLiveView live,
+            LoanWriteOffLiveView live,
             boolean stands,
             List<String> blockers) {
 
         /** The reason and the figures stay out of a log line. */
         @Override
         public String toString() {
-            return "WriteOffAttestation[" + writeOff.writeOffId() + ", stands=" + stands + "]";
+            return "LoanWriteOffAttestation[" + writeOff.writeOffId() + ", stands=" + stands + "]";
         }
     }
 
     // ------------------------------------------------------------------ the acts
 
     /** Proposes it - a holder of {@code LOAN_WRITE_OFF_PROPOSE}; nothing is posted. */
-    public WriteOffReceipt propose(String rawLoanId, String idempotencyKey, String reason) {
+    public LoanWriteOffReceipt propose(String rawLoanId, String idempotencyKey, String reason) {
         LoanId loan = loanId(rawLoanId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
@@ -127,7 +127,7 @@ public final class LoanWriteOffDesk {
     }
 
     /** Approves it - a holder of {@code LOAN_WRITE_OFF_APPROVE} other than its proposer, on a MULTI_FACTOR session; posts rule 14. */
-    public WriteOffReceipt approve(String rawLoanId, String rawWriteOffId, String idempotencyKey,
+    public LoanWriteOffReceipt approve(String rawLoanId, String rawWriteOffId, String idempotencyKey,
             LoanWriteOffController.LoanWriteOffApprovalRequest body) {
         LoanId loan = loanId(rawLoanId);
         UUID writeOff = id(rawWriteOffId);
@@ -140,7 +140,7 @@ public final class LoanWriteOffDesk {
     }
 
     /** Rejects it - a holder of {@code LOAN_WRITE_OFF_APPROVE}, on any account status. */
-    public WriteOffReceipt reject(String rawLoanId, String rawWriteOffId, String idempotencyKey, String reason) {
+    public LoanWriteOffReceipt reject(String rawLoanId, String rawWriteOffId, String idempotencyKey, String reason) {
         LoanId loan = loanId(rawLoanId);
         UUID writeOff = id(rawWriteOffId);
         Actor actor = SecurityContext.require();
@@ -153,7 +153,7 @@ public final class LoanWriteOffDesk {
     // ------------------------------------------------------------------ the approver's reads
 
     /** One write-off as its approver reads it, on one snapshot, its audit record committing with the read. */
-    public WriteOffAttestation read(String rawLoanId, String rawWriteOffId) {
+    public LoanWriteOffAttestation read(String rawLoanId, String rawWriteOffId) {
         LoanId loan = loanId(rawLoanId);
         UUID writeOff = id(rawWriteOffId);
         Actor actor = SecurityContext.require();
@@ -175,7 +175,7 @@ public final class LoanWriteOffDesk {
     }
 
     /** The oldest write-offs awaiting a decision, audited. */
-    public List<WriteOffReceipt> pending() {
+    public List<LoanWriteOffReceipt> pending() {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         try {
@@ -204,9 +204,9 @@ public final class LoanWriteOffDesk {
 
     // ------------------------------------------------------------------ the views
 
-    static WriteOffReceipt receipt(LoanWriteOff writeOff) {
+    static LoanWriteOffReceipt receipt(LoanWriteOff writeOff) {
         LoanWriteOffPosition position = writeOff.position();
-        return new WriteOffReceipt(
+        return new LoanWriteOffReceipt(
                 writeOff.id().toString(),
                 writeOff.loan().value().toString(),
                 writeOff.status().name(),
@@ -227,9 +227,9 @@ public final class LoanWriteOffDesk {
                 writeOff.valueDate().map(LocalDate::toString).orElse(null));
     }
 
-    static WriteOffAttestation attestation(LoanWriteOffs.Attestation read) {
+    static LoanWriteOffAttestation attestation(LoanWriteOffs.Attestation read) {
         LoanWriteOffPosition live = read.live();
-        return new WriteOffAttestation(
+        return new LoanWriteOffAttestation(
                 receipt(read.writeOff()),
                 read.product().name(),
                 read.accountStatus().name(),
@@ -237,7 +237,7 @@ public final class LoanWriteOffDesk {
                 read.writeOff().proposalReason(),
                 read.defaultedOn().map(LocalDate::toString).orElse(null),
                 read.postsOn().toString(),
-                new WriteOffLiveView(decimal(live.principal()), decimal(live.principalDue()), decimal(live.interestAccrued()),
+                new LoanWriteOffLiveView(decimal(live.principal()), decimal(live.principalDue()), decimal(live.interestAccrued()),
                         decimal(live.interestDue()), decimal(live.feesDue()), live.revision(), read.agreementVersionNow()),
                 read.blockers().isEmpty(),
                 read.blockers().stream().map(Enum::name).toList());
@@ -253,7 +253,7 @@ public final class LoanWriteOffDesk {
      * One keyed act in one transaction. The act's meter is told after the commit, once (a replay or a converged retry counts
      * nothing); a refusal is counted by reason and product.
      */
-    private WriteOffReceipt keyed(Actor actor, CorrelationId correlation, String idempotencyKey, LoanWriteOffMetrics.Outcome success,
+    private LoanWriteOffReceipt keyed(Actor actor, CorrelationId correlation, String idempotencyKey, LoanWriteOffMetrics.Outcome success,
             String fingerprinted, Function<Connection, Acted> act) {
         IdempotencyKey key = new IdempotencyKey(LoanServicingDesk.SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
@@ -330,7 +330,7 @@ public final class LoanWriteOffDesk {
     }
 
     /** The receipt: the view's fields, '|'-separated, an absent one empty. */
-    static StoredResponse stored(WriteOffReceipt view) {
+    static StoredResponse stored(LoanWriteOffReceipt view) {
         String body = String.join("|", view.writeOffId(), view.loanId(), view.status(), view.currency(), view.principal(),
                 view.principalDue(), view.interestAccrued(), view.interestDue(), view.feesDue(), view.principalTotal(), view.total(),
                 Long.toString(view.revision()), view.defaultEventId(), Integer.toString(view.agreementVersion()), view.proposedAt(),
@@ -338,9 +338,9 @@ public final class LoanWriteOffDesk {
         return StoredResponse.of(body.getBytes(StandardCharsets.UTF_8), "text/plain");
     }
 
-    static WriteOffReceipt replayed(byte[] body) {
+    static LoanWriteOffReceipt replayed(byte[] body) {
         String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", -1);
-        return new WriteOffReceipt(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5], fields[6], fields[7], fields[8],
+        return new LoanWriteOffReceipt(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5], fields[6], fields[7], fields[8],
                 fields[9], fields[10], Long.parseLong(fields[11]), fields[12], Integer.parseInt(fields[13]), fields[14],
                 fields[15].isEmpty() ? null : fields[15], fields[16].isEmpty() ? null : fields[16],
                 fields[17].isEmpty() ? null : fields[17]);

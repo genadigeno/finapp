@@ -132,7 +132,7 @@ class LoanWriteOffLedgerDatabaseTest {
         LendingReports.LendingCapitalRow capitalYesterdayBefore = capital(today.minusDays(1));
         LendingReports.LendingCapitalRow capitalTodayBefore = capital(today);
 
-        LoanWriteOffDesk.WriteOffReceipt proposed = as(operator(), () -> desk.propose(defaulted.loan(), key(), "uncollectable after collections"));
+        LoanWriteOffDesk.LoanWriteOffReceipt proposed = as(operator(), () -> desk.propose(defaulted.loan(), key(), "uncollectable after collections"));
         as(operator(), () -> desk.approve(defaulted.loan(), proposed.writeOffId(), key(), attesting(proposed)));
         long principal = DecimalText.parse(proposed.principalTotal()).movePointRight(2).longValueExact();
         assertThat(principal).isPositive();
@@ -158,7 +158,7 @@ class LoanWriteOffLedgerDatabaseTest {
         Defaulted defaulted = defaulted();
         Money before = exposureOf(defaulted);
         assertThat(before.isPositive()).isTrue();
-        LoanWriteOffDesk.WriteOffReceipt proposed = as(operator(), () -> desk.propose(defaulted.loan(), key(), "uncollectable after collections"));
+        LoanWriteOffDesk.LoanWriteOffReceipt proposed = as(operator(), () -> desk.propose(defaulted.loan(), key(), "uncollectable after collections"));
         as(operator(), () -> desk.approve(defaulted.loan(), proposed.writeOffId(), key(), attesting(proposed)));
         assertThat(exposureOf(defaulted)).as("the loss hands the customer no new credit").isEqualTo(before);
 
@@ -181,7 +181,7 @@ class LoanWriteOffLedgerDatabaseTest {
     @DisplayName("a written-off loan is no accrual gap: with its last dates gone it is not listed, and the same rows under ACTIVE are (the control)")
     void aWrittenOffLoanLeavesNoAccrualGap() throws Exception {
         Defaulted defaulted = defaulted();
-        LoanWriteOffDesk.WriteOffReceipt proposed = as(operator(), () -> desk.propose(defaulted.loan(), key(), "uncollectable after collections"));
+        LoanWriteOffDesk.LoanWriteOffReceipt proposed = as(operator(), () -> desk.propose(defaulted.loan(), key(), "uncollectable after collections"));
         as(operator(), () -> desk.approve(defaulted.loan(), proposed.writeOffId(), key(), attesting(proposed)));
         LocalDate gap = LocalDate.now(ZoneOffset.UTC).minusDays(5);
         asOwner("DELETE FROM lending.interest_accrual WHERE loan_id = '" + defaulted.loan() + "' AND accrual_date >= DATE '" + gap + "'");
@@ -205,14 +205,14 @@ class LoanWriteOffLedgerDatabaseTest {
         Defaulted defaulted = defaulted();
         Actor proposer = operator();
         String proposalKey = key();
-        LoanWriteOffDesk.WriteOffReceipt proposed = as(proposer, () -> desk.propose(defaulted.loan(), proposalKey, "uncollectable"));
+        LoanWriteOffDesk.LoanWriteOffReceipt proposed = as(proposer, () -> desk.propose(defaulted.loan(), proposalKey, "uncollectable"));
         assertThat(as(proposer, () -> desk.propose(defaulted.loan(), proposalKey, "uncollectable"))).isEqualTo(proposed);
         assertThatExceptionOfType(IdempotencyConflictException.class)
                 .isThrownBy(() -> as(proposer, () -> desk.propose(defaulted.loan(), proposalKey, "another reason")));
 
         Actor approver = operator();
         String approvalKey = key();
-        LoanWriteOffDesk.WriteOffReceipt approved = as(approver, () -> desk.approve(defaulted.loan(), proposed.writeOffId(), approvalKey, attesting(proposed)));
+        LoanWriteOffDesk.LoanWriteOffReceipt approved = as(approver, () -> desk.approve(defaulted.loan(), proposed.writeOffId(), approvalKey, attesting(proposed)));
         assertThat(approved.status()).isEqualTo("APPROVED");
         assertThat(as(approver, () -> desk.approve(defaulted.loan(), proposed.writeOffId(), approvalKey, attesting(proposed))))
                 .as("the retry after a lost response answers the recorded receipt").isEqualTo(approved);
@@ -293,7 +293,7 @@ class LoanWriteOffLedgerDatabaseTest {
         return new Actor(UUID.randomUUID().toString(), ActorType.EMPLOYEE);
     }
 
-    private static LoanWriteOffController.LoanWriteOffApprovalRequest attesting(LoanWriteOffDesk.WriteOffReceipt read) {
+    private static LoanWriteOffController.LoanWriteOffApprovalRequest attesting(LoanWriteOffDesk.LoanWriteOffReceipt read) {
         return new LoanWriteOffController.LoanWriteOffApprovalRequest(read.currency(), read.principal(), read.principalDue(), read.interestAccrued(),
                 read.interestDue(), read.feesDue(), read.revision(), "read and agreed");
     }
