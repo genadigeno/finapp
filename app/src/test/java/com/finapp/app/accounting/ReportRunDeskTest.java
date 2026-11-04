@@ -276,7 +276,7 @@ class ReportRunDeskTest {
     }
 
     @Test
-    @DisplayName("a FINAL run that can no longer be produced (P14-TSK-016): a regeneration refused by its definition reads DIVERGED, with no hash to compare, counted once: the books moved under an issued statement, which is what this door exists to find, and never a 5xx")
+    @DisplayName("a FINAL run its definition now refuses (P14-TSK-016): the regeneration reads DIVERGED, with no hash to compare, counted once, the refusal by code on its record: the books moved under an issued statement, which is what this door exists to find")
     void aRefusedRegenerationIsADivergence() {
         String september = lockedSeptember();
         ReportRunDesk.ReportRunView run = as(ACCOUNTANT, () -> desk.generate("key-1", "TEST_REFUSING", september, Map.of(), null));
@@ -287,6 +287,18 @@ class ReportRunDeskTest {
         assertThat(compared.contentSha256()).isEqualTo(run.contentSha256());
         assertThat(compared.regeneratedSha256()).isEqualTo(ReportRunGenerator.NOT_PRODUCED).isEmpty();
         assertThat(registry.get(ReportRunMetrics.DIVERGED).tag("definition", "TEST_REFUSING").counter().count()).isEqualTo(1.0);
+        assertThat(audited).filteredOn(record -> record.operation().code().equals("accounting.ReportRegenerated")).singleElement().satisfies(record -> assertThat(record.changeSummary())
+                .as("the record is the one place the reason is: a claim of this question answers the standing FINAL, and generates nothing").hasValueSatisfying(summary -> assertThat(summary).contains("result=DIVERGED").contains("refusal=OUT_OF_BALANCE:EUR")));
+        assertThat(as(ACCOUNTANT, () -> desk.generate("key-again", "TEST_REFUSING", september, Map.of(), null)).status()).as("asked again, the FINAL stands").isEqualTo("FINAL");
+    }
+
+    @Test
+    @DisplayName("an identical regeneration's record names no refusal (P14-TSK-016)")
+    void anIdenticalRegenerationNamesNoRefusal() {
+        String september = lockedSeptember();
+        ReportRunDesk.ReportRunView run = as(ACCOUNTANT, () -> desk.generate("key-1", "TEST_REFUSING", september, Map.of(), null));
+        assertThat(as(ACCOUNTANT, () -> desk.regenerate("key-regen", run.id())).result()).isEqualTo("IDENTICAL");
+        assertThat(audited).filteredOn(record -> record.operation().code().equals("accounting.ReportRegenerated")).singleElement().satisfies(record -> assertThat(record.changeSummary()).hasValueSatisfying(summary -> assertThat(summary).contains("result=IDENTICAL").doesNotContain("refusal=")));
     }
 
     @Test

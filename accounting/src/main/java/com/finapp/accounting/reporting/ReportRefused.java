@@ -10,7 +10,7 @@ import java.util.Objects;
  *
  * <p>The run ends {@code FAILED}, {@code DEFINITION_FAILED}: a {@code RunFailure} is a closed list {@code accounting V004} holds, and a refusal is the
  * definition's own. Its {@link #summary()} is on the run's {@code accounting.ReportGenerated} record, so the reason is not lost. At a regeneration it is a
- * divergence ({@code ReportRunGenerator.regenerate}): a FINAL run that can no longer be produced is what that door exists to find.
+ * divergence ({@code ReportRunGenerator.regenerate}), the summary on {@code accounting.ReportRegenerated}: a FINAL run its definition now refuses is what that door exists to find.
  *
  * <p><strong>Codes only</strong> ({@code INV-AUD-02}): a reason, and purposes or currencies by name. Never an amount, a balance or a counterparty's position, so
  * the message may reach a log line or an audit summary.

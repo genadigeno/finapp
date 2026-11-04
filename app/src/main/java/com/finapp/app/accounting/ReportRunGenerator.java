@@ -53,8 +53,8 @@ public final class ReportRunGenerator {
     /** The regenerated hash when the definition refused to answer: there are no bytes to hash, and so no comparison but "not identical". */
     static final String NOT_PRODUCED = "";
 
-    /** A FINAL run regenerated in a snapshot: its stored hash, the regenerated one, and whether the bytes are identical. */
-    public record Compared(ReportRunStore.RunRow run, String regeneratedSha256, boolean identical) {}
+    /** A FINAL run regenerated in a snapshot: its stored hash, the regenerated one, whether the bytes are identical, and why its definition refused to answer, by code, when it did. */
+    public record Compared(ReportRunStore.RunRow run, String regeneratedSha256, boolean identical, Optional<String> refusal) {}
 
     /** The definition's own failure inside the snapshot - kept apart from the snapshot's. */
     private static final class DefinitionFailed extends RuntimeException {
@@ -166,11 +166,11 @@ public final class ReportRunGenerator {
             } catch (ReportGeneration.PeriodMoved moved) {
                 throw new RunNotFinal();
             } catch (ReportRefused refused) {
-                // What was issued can no longer be produced: the books moved under a FINAL run. The thing this door exists to find, so a divergence and never a 5xx.
-                return new Compared(run, NOT_PRODUCED, false);
+                // Its definition refuses what it issued: the books moved under a FINAL run. The thing this door exists to find, so a divergence, its reason on the record. Only a refusal: a pin that no longer matches, or a journal whose two reads disagree, is a defect and surfaces as one.
+                return new Compared(run, NOT_PRODUCED, false, Optional.of(refused.summary()));
             }
             return new Compared(run, again.sha256(), stored.equals(again.content())
-                    && run.contentSha256().filter(again.sha256()::equals).isPresent());
+                    && run.contentSha256().filter(again.sha256()::equals).isPresent(), Optional.empty());
         });
     }
 

@@ -10,6 +10,7 @@ import com.finapp.accounting.AccountingPeriodStore;
 import com.finapp.accounting.GlMappingStore;
 import com.finapp.accounting.GlMappingVersionId;
 import com.finapp.accounting.GlMappingVersionStatus;
+import com.finapp.accounting.GlPins;
 import com.finapp.accounting.ReportRunStore;
 import com.finapp.accounting.ReportRuns;
 import com.finapp.accounting.RunStatus;
@@ -92,8 +93,13 @@ class ReportRunLinesDeskTest {
     private final ReportRuns runs = new ReportRuns(store, periods, mappings, ReportDefinitions.of(echo), ReportRuns.Leases.STANDARD, (uow, record) -> { }, (uow, envelope, payload, mediaType) -> { }, IDS, CLOCK);
     private GlMappingVersionId version;
 
+    /** The month's period as the store holds it, as {@code JdbcPeriodPins} reads it from the row. */
+    private GlPins.PeriodPins pins() {
+        return (snapshot, month) -> periods.recent(UOW, 100).stream().filter(row -> row.month().equals(month)).findFirst().map(row -> new GlPins.PeriodPin(row.status(), Optional.empty()));
+    }
+
     private ReportRunLinesDesk desk() {
-        return new ReportRunLinesDesk(runs, mappings, new GeneralLedger(journal), new GlSnapshots(() -> {
+        return new ReportRunLinesDesk(runs, mappings, pins(), new GeneralLedger(journal), new GlSnapshots(() -> {
             SnapshotSession session = new SnapshotSession();
             sessions.add(session);
             return session.connection();
@@ -166,6 +172,14 @@ class ReportRunLinesDeskTest {
     }
 
     @Test
+    @DisplayName("the month's own status, as the GL's door serves it: the run's locked month reads LOCKED, whatever the run is; a month no period row holds reads NONE, which means exactly that")
+    void theMonthsOwnStatus() {
+        String run = aFinalRun().id().value().toString();
+        assertThat(as(ACCOUNTANT, () -> desk().lines(run, "1000", "2026-09", "EUR", null, null)).activity().periodStatus()).isEqualTo("LOCKED");
+        assertThat(as(ACCOUNTANT, () -> desk().lines(run, "1000", "2026-08", "EUR", null, null)).activity().periodStatus()).isEqualTo("NONE");
+    }
+
+    @Test
     @DisplayName("exact only of a FINAL run: SUPERSEDED, its period having moved, the lines are the journal's as they stand, and it says so")
     void exactOnlyOfAFinalRun() {
         ReportRunStore.RunRow run = aFinalRun();
@@ -211,7 +225,7 @@ class ReportRunLinesDeskTest {
         assertThat(sessions).isEmpty();
         assertThat(audit).isEmpty();
 
-        ReportRunLinesDesk unrecording = new ReportRunLinesDesk(runs, mappings, new GeneralLedger(journal), new GlSnapshots(() -> new SnapshotSession().connection(), GlSnapshots.STATEMENT_TIMEOUT), transactions, (unitOfWork, record) -> {
+        ReportRunLinesDesk unrecording = new ReportRunLinesDesk(runs, mappings, pins(), new GeneralLedger(journal), new GlSnapshots(() -> new SnapshotSession().connection(), GlSnapshots.STATEMENT_TIMEOUT), transactions, (unitOfWork, record) -> {
             throw new IllegalStateException("the audit table is away");
         }, AccountingFlowScope.NONE, IDS, CLOCK);
         assertThatThrownBy(() -> as(ACCOUNTANT, () -> unrecording.lines(run.id().value().toString(), "1000", "2026-09", "EUR", null, null))).isInstanceOf(IllegalStateException.class);

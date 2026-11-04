@@ -62,8 +62,9 @@ public final class StatementNotes {
 
     private static final String CLOSE_ROUTE = "Counts: GET /v1/operator/accounting/breaks?period={month}&status={status} (ACCOUNTING_READ), each break's acts stamped, to read as of proposedAt. Checks: GET /v1/operator/accounting/periods/{periodId}/close-run (ACCOUNTING_READ), by attempt.";
 
-    private static final String CORRECTIONS_ROUTE = "An adjustment: GET /v1/operator/accounting/gl/entries/{entry} (ACCOUNTING_READ). Reversals: the month's GET /v1/operator/accounting/gl/accounts/{code}/activity lines of entryType REVERSAL, each entry's view naming what it reverses and that one's date. Untraced: the month's ADJUSTMENT lines,"
-            + " less GET /v1/operator/accounting/periods/{periodId}/prior-period-adjustments (ACCOUNTING_READ).";
+    private static final String CORRECTIONS_ROUTE = "An adjustment: GET /v1/operator/accounting/gl/entries/{entry} (ACCOUNTING_READ), and among the corrections of the month it names at GET /v1/operator/accounting/periods/{periodId}/prior-period-adjustments (ACCOUNTING_READ), which lists by the month corrected and not by where a correction is dated."
+            + " Reversals: the month's GET /v1/operator/accounting/gl/accounts/{code}/activity lines of entryType REVERSAL, each entry's view naming what it reverses and that one's date. Untraced has no line route under this role: it counts entries of the ACCOUNTING origin with no posted adjustment beside them, no ACCOUNTING_READ view shows an entry's origin, and the month's"
+            + " ADJUSTMENT lines hold MANUAL and RECONCILIATION proposals' too. Zero is the one expected answer; any other means a writer bypassed the door.";
 
     @NonNull private final SuspenseAsOfCutoff suspense;
     @NonNull private final ReconciliationAsOfCutoff reconciliation;

@@ -133,19 +133,26 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 
 /**
  * The prior-period adjustment against a live PostgreSQL (`P14-TSK-013`; ADR-0114 decision 5; {@code PHASE_14_PLAN.md} sections 8.1 T-ppa, 8.2, 8.3 row 12, 13.5; {@code INV-ACC-03}, {@code -04}, {@code -10}, {@code INV-REV-04}, {@code INV-AUD-04}, {@code INV-LED-01}): both rows moving in one
  * transaction, the ledger's refusal of a date in the corrected month, the generic and the other owner's door refused, four eyes for every writer, ledger {@code V030} and accounting {@code V009} executing for the first time - and the races: ten approvers one entry; two approvals of one month; an approval against a
- * rejection, a lock of its target, and a reopen of what it corrects; and the two worst failures themselves, the corrected month's FINAL runs regenerating byte-identical and the month it lands in closing.
+ * rejection, a lock of its target, and a reopen of what it corrects; and the two worst failures themselves, the corrected month's FINAL runs regenerating byte-identical and the month it lands in passing its real checks.
  *
  * <p><strong>A database of its own</strong> ({@code own-container}): it closes and posts into January and February 1999, shared fixtures, and commits ledger lines. <strong>Written and owed</strong> (owner decision C5): the database tiers run at the phase's one pass. Refusals are asserted by exception type, or raw by SQLSTATE: a store's failure carries its
  * operation and SQLSTATE only, never the driver's text.
+ *
+ * <p><strong>One case runs last, and every other holds in any order</strong> (`P14-TSK-016`'s fix round, on this suite's own review): a reopen moves a revision for good and a proposal is refused into a month ever reopened, while nearly every case proposes into February. So {@link #theTargetReopenedMeanwhile}, the one case that closes and reopens February, is ordered last, and {@link #januaryClosedFebruaryOpen} says so if February ever moved. A case may lock
+ * February, which an unlock lifts with no revision moved; {@link #theTargetLockedMeanwhile} leaves March open, which nothing else reads; January is reopened and closed by every case, each reading its revision from the row, and what posts stays in February or March, every comparison a relation or by the case's own ids.
  */
 @Tag("database")
 @Tag("own-container") // its own JVM and database: ownContainerDatabaseTest, the javadoc says why
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("the prior-period adjustment against the database (P14-TSK-013)")
 class PriorPeriodAdjustmentDatabaseTest {
 
@@ -165,6 +172,7 @@ class PriorPeriodAdjustmentDatabaseTest {
         AccountingPeriodFixture.openJanuaryAndFebruary();
         PeriodCloseFixture.mappingInForce();
         PeriodCloseFixture.everyPeriodOpen();
+        assertThat(row(FEBRUARY).revision()).as("only the last case closes February: a proposal is refused into a month ever reopened, and a reopen is for good").isEqualTo(1);
         PeriodCloseFixture.closed(JANUARY);
     }
 
@@ -318,6 +326,7 @@ class PriorPeriodAdjustmentDatabaseTest {
     }
 
     @Test
+    @Order(Integer.MAX_VALUE) // It closes and reopens February, the one case that does: every case proposing into February must run before it.
     @DisplayName("the month it lands in really closed and reopened meanwhile, the corrected month untouched: the approval refused for the revision, a raw POST refused for every writer, it stands, the rejection is the way on; nothing is born into that month either")
     void theTargetReopenedMeanwhile() throws Exception {
         PriorPeriodAdjustments.Acted proposed = propose();
@@ -487,10 +496,7 @@ class PriorPeriodAdjustmentDatabaseTest {
 
         java.util.SortedMap<String, com.finapp.accounting.PastTheCutoffPostings.Split> pastTheCutoff = snapshots.read(snapshot -> new LedgerFlooredPostings().pastTheCutoff(snapshot, JANUARY.atEndOfMonth()));
         assertThat(pastTheCutoff).as("never floored, never unrecorded: another scope, and valued in the month it is dated").isEmpty();
-
-        // What is left of the close is this fixture's own concluded checks: the proof is above, not in this line.
-        PeriodCloseFixture.closed(FEBRUARY);
-        assertThat(row(FEBRUARY).status()).isEqualTo(PeriodStatus.CLOSED);
+        // No close here: what is left of one is the fixture's own concluded checks, the proof being above, and the next case would reopen February for good. LOCKED, an unlock lifts it.
     }
 
     @Test

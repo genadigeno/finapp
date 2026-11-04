@@ -3,6 +3,7 @@ package com.finapp.app.accounting;
 import com.finapp.accounting.CloseRecordReads;
 import com.finapp.accounting.CounterpartyPositionReads;
 import com.finapp.accounting.GlMappingStore;
+import com.finapp.accounting.JdbcPeriodPins;
 import com.finapp.accounting.PriorPeriodCorrections;
 import com.finapp.accounting.ReconciliationAsOfCutoff;
 import com.finapp.accounting.ReportRuns;
@@ -64,6 +65,6 @@ public class StatementBeans {
     @Bean
     ReportRunLinesDesk reportRunLinesDesk(ReportRuns reportRuns, GlMappingStore glMappingStore, GeneralLedger generalLedger, GlSnapshots glSnapshots, AccountingTransactions accountingTransactions,
             AuditWriter<Connection> auditWriter, AccountingFlowScope accountingFlowScope, IdGenerator idGenerator, Clock clock) {
-        return new ReportRunLinesDesk(reportRuns, glMappingStore, generalLedger, glSnapshots, accountingTransactions, auditWriter, accountingFlowScope, idGenerator, clock);
+        return new ReportRunLinesDesk(reportRuns, glMappingStore, new JdbcPeriodPins(), generalLedger, glSnapshots, accountingTransactions, auditWriter, accountingFlowScope, idGenerator, clock);
     }
 }

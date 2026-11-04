@@ -177,7 +177,7 @@ public final class ReportRunDesk {
                 if (!executor.complete(unitOfWork, key, true, stored)) {
                     return false; // a takeover recorded first: its answer is the answer, and nothing of ours is kept
                 }
-                runs.recordRegeneration(unitOfWork, compared.run(), compared.identical(), actor, correlation);
+                runs.recordRegeneration(unitOfWork, compared.run(), compared.identical(), compared.refusal(), actor, correlation);
                 return true;
             });
             if (!recorded) {

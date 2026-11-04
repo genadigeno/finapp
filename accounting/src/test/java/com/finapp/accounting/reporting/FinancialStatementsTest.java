@@ -60,7 +60,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * {@code BALANCE_SHEET} and {@code INCOME_STATEMENT} (`P14-TSK-016`; owner decisions C6, C7, C8; {@code INV-ACC-02}, {@code INV-ACC-04}, {@code INV-ACC-05}, {@code INV-ACC-06}, {@code INV-ACC-11}): the arithmetic itself, over a real journal of real entries, and every refusal
- * with a journal that really does not fit. Hermetic: the journal in memory, the notes' ports stood in. What those ports read is {@code ReconciliationAsOfCutoffReadsTest}'s and {@code AccountingCloseRecordReadsTest}'s; the statements against PostgreSQL are {@code StatementsDatabaseTest}'s (owed, C5).
+ * with a journal that really does not fit. Hermetic: the journal in memory, the notes' ports stood in. What those ports read is {@code app}'s {@code StatementNotesAreFrozenTest}'s and {@code StatementReadsPassTheViewTest}'s; the statements against PostgreSQL are {@code StatementsDatabaseTest}'s (owed, C5).
  */
 @DisplayName("the financial statements (P14-TSK-016)")
 class FinancialStatementsTest {
@@ -431,7 +431,7 @@ class FinancialStatementsTest {
     }
 
     @Test
-    @DisplayName("net realised FX: gains less losses per currency, by purpose whichever account a version maps them to, with no FX no row - the owner's decision: FX_RESULTS.REALISED keeps no total, so the statement carries it")
+    @DisplayName("net realised FX: gains less losses per currency, by purpose whichever account a version maps them to - the owner's decision: FX_RESULTS.REALISED keeps no total, so the statement carries it")
     void netRealisedFx() {
         post(JUNE.atDay(3), "EUR", 2, 300, CASH, FX_GAINS);
         post(JUNE.atDay(4), "EUR", 2, 120, FX_LOSSES, CASH);
@@ -443,6 +443,23 @@ class FinancialStatementsTest {
         assertThat(minor(net.get(0), "losses")).isEqualTo(big(120));
         assertThat(minor(net.get(0), "net")).isEqualTo(big(180));
         assertThat(minor(net.get(1), "net")).as("a net loss reads negative").isEqualTo(big(-40));
+    }
+
+    @Test
+    @DisplayName("no FX line in the month, no row: with no FX at all, and with FX only in an earlier month, which is in retained earnings and moved nothing here. A gain and its reversal in the month moved: a row, reading zero")
+    void noFxInTheMonthNoRow() {
+        ordinaryBusiness();
+        assertThat(objects(incomeStatement().generate(SNAPSHOT, finalRun()), "netRealisedFx")).as("no FX at all").isEmpty();
+
+        post(MAY.atDay(4), "EUR", 2, 300, CASH, FX_GAINS);
+        post(MAY.atDay(5), "USD", 2, 40, FX_LOSSES, CASH);
+        assertThat(objects(incomeStatement().generate(SNAPSHOT, finalRun()), "netRealisedFx")).as("FX only in May, and June's statement").isEmpty();
+
+        post(JUNE.atDay(6), "EUR", 2, 50, CASH, FX_GAINS);
+        post(JUNE.atDay(7), "EUR", 2, 50, FX_GAINS, CASH);
+        List<CanonicalJson.Obj> moved = objects(incomeStatement().generate(SNAPSHOT, finalRun()), "netRealisedFx");
+        assertThat(moved).extracting(row -> text(row, "currency")).containsExactly("EUR");
+        assertThat(minor(moved.get(0), "net")).isZero();
     }
 
     @Test
@@ -686,14 +703,19 @@ class FinancialStatementsTest {
         assertThat(text(object(notes, "reconciliationBreaks"), "route")).contains("RECONCILIATION_INVESTIGATE").contains("not the accountant's").contains("ACCOUNTING_READ");
         assertThat(text(object(notes, "closeRecord"), "route")).contains("ACCOUNTING_READ");
         assertThat(text(object(notes, "priorPeriodCorrections"), "route")).contains("ACCOUNTING_READ").contains("REVERSAL").contains("ADJUSTMENT");
+        assertThat(text(object(notes, "priorPeriodCorrections"), "route")).as("the count says it has no route, and does not name a subtraction that cannot isolate it").contains("Untraced has no line route").doesNotContain("less GET");
     }
 
     // ------------------------------------------------------------------ every figure drills down
 
     /** A row's lines through the very fold the door runs: under the run's version, month by month, by keyset page, until {@code wanted} lines are counted. */
     private BigInteger[] walk(String account, String currency, YearMonth from, long wanted) {
+        return walk(pinned, books.version(SNAPSHOT, pinned), account, currency, from, wanted);
+    }
+
+    /** {@link #walk(String, String, YearMonth, long)} under {@code version}: the door on a run that pinned it. */
+    private BigInteger[] walk(GlMappingVersionId version, GlMappingVersion content, String account, String currency, YearMonth from, long wanted) {
         GeneralLedger ledger = new GeneralLedger(journal);
-        GlMappingVersion content = books.version(SNAPSHOT, pinned);
         BigInteger debits = BigInteger.ZERO;
         BigInteger credits = BigInteger.ZERO;
         long counted = 0;
@@ -701,7 +723,7 @@ class FinancialStatementsTest {
             assertThat(month).as("walked past the journal's start with lines still uncounted").isAfter(YearMonth.of(2097, 1));
             Optional<JournalReads.LineCursor> after = Optional.empty();
             do {
-                GlActivity page = ledger.activity(SNAPSHOT, new PinnedMapping(month, Optional.empty(), pinned, 1, content), account, currency, after, 2);
+                GlActivity page = ledger.activity(SNAPSHOT, new PinnedMapping(month, Optional.empty(), version, 1, content), account, currency, after, 2);
                 for (JournalReads.Line line : page.lines()) {
                     counted++;
                     if (line.side() == Side.DEBIT) {
@@ -718,7 +740,7 @@ class FinancialStatementsTest {
     }
 
     @Test
-    @DisplayName("each row's debits, credits and lines are the month's lines; each opening is the earlier months' lines, walked back until openingLines are counted; the closing is their sum; a total and each side of the equation sum the rows; each computed figure sums its components' lines")
+    @DisplayName("each row's debits, credits and lines are the month's lines; each opening is the earlier months' lines, walked back until openingLines are counted; the closing is their sum; a total and each side of the equation sum the rows; each computed figure sums its components' lines; a bridge's opening and moves are this run's lines, and its previous closing the previous version's, an account this version retired refused on this run")
     void everyFigureDrillsToLines() {
         ordinaryBusiness();
         CanonicalJson.Obj body = balanceSheet().generate(SNAPSHOT, finalRun());
@@ -758,6 +780,36 @@ class FinancialStatementsTest {
             result = result.add(lines[1]).subtract(lines[0]);
         }
         assertThat(result).as("the result likewise").isEqualTo(minor(equationOf(body, "EUR"), "currentPeriodResult"));
+
+        // The bridge: the previous period pinned a version holding the cash under an account this version retired.
+        GlMappingVersionId previous = GlMappingVersionId.next(IDS);
+        GlMappingVersion reference = ReferenceGlMapping.version(YearMonth.of(2097, 1));
+        List<GlAccount> accounts = new ArrayList<>(reference.accounts().stream().filter(account -> !account.code().equals("1000")).toList());
+        accounts.add(new GlAccount("1005", "Cash at bank, as it was", GlClassification.ASSET, StatementSection.CASH_AND_BANK));
+        List<MappingRule> rules = reference.rules().stream().map(rule -> rule.glAccountCode().equals("1000") ? new MappingRule(rule.purpose(), rule.ownerKind(), "1005") : rule).toList();
+        GlMappingVersion previousContent = new GlMappingVersion(YearMonth.of(2097, 1), accounts, rules);
+        books.version(previous, previousContent);
+        books.period(closed(june, JUNE, Optional.of(previous)));
+
+        CanonicalJson.Obj restated = balanceSheet().generate(SNAPSHOT, finalRun());
+        CanonicalJson.Obj bridge = object(restated, "reclassification");
+        long openingLines = Long.parseLong(text(rowOf(restated, "1000", "EUR"), "openingLines"));
+        BigInteger[] to = walk("1000", "EUR", MAY, openingLines);
+        BigInteger carried = to[0].subtract(to[1]);
+        List<CanonicalJson.Obj> moves = objects(bridge, "moves");
+        assertThat(moves).as("a bridge there is").isNotEmpty();
+        assertThat(moves).allSatisfy(move -> assertThat(text(move, "from") + ">" + text(move, "to")).isEqualTo("1005>1000"));
+        assertThat(moves.stream().map(move -> minor(move, "balance")).reduce(BigInteger.ZERO, BigInteger::add)).as("what moved is the to account's lines, debit-positive").isEqualTo(carried);
+        assertThat(minor(bridgeOf(bridge, "1000"), "opening")).isEqualTo(carried);
+
+        assertThatThrownBy(() -> new GeneralLedger(journal).activity(SNAPSHOT, new PinnedMapping(MAY, Optional.empty(), pinned, 1, books.version(SNAPSHOT, pinned)), "1005", "EUR", Optional.empty(), 2))
+                .as("retired from this run's version, the from account has no door on this run").isInstanceOf(GeneralLedger.GlAccountNotFound.class);
+        BigInteger[] from = walk(previous, previousContent, "1005", "EUR", MAY, openingLines);
+        assertThat(from[0].subtract(from[1])).as("the previous closing: a run of the previous month, under the version the bridge names").isEqualTo(minor(bridgeOf(bridge, "1005"), "previousClosing"));
+    }
+
+    private static CanonicalJson.Obj bridgeOf(CanonicalJson.Obj bridge, String account) {
+        return objects(bridge, "accounts").stream().filter(row -> text(row, "account").equals(account)).findFirst().orElseThrow(() -> new AssertionError("no bridge row " + account));
     }
 
     @Test
@@ -780,6 +832,7 @@ class FinancialStatementsTest {
         assertThat(text(drill, "movement")).contains("/gl/accounts/{glAccount}/activity").contains("ACCOUNTING_READ");
         assertThat(text(drill, "balance")).contains("/report-runs/{runId}/lines").contains("openingLines").contains("ACCOUNTING_READ");
         assertThat(text(drill, "computed")).contains("retainedEarnings").contains("currentPeriodResult");
+        assertThat(text(drill, "reclassification")).as("a bridge's figures have a route, the retired account's stated").contains("/report-runs/{runId}/lines").contains("previousPeriodPin").contains("accounting.NotFound").contains("debit-positive");
     }
 
     // ------------------------------------------------------------------ translated: balanced through the difference lines, every column at the run's one set

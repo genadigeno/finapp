@@ -20,13 +20,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.finapp.accounting.AccountingErrorCode;
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.CloseCheckCode;
 import com.finapp.accounting.CloseRunId;
+import com.finapp.accounting.GlAccount;
 import com.finapp.accounting.GlClassification;
+import com.finapp.accounting.GlMappingAdministration;
 import com.finapp.accounting.GlMappingStore;
 import com.finapp.accounting.GlMappingVersion;
 import com.finapp.accounting.JdbcGlMappingStore;
+import com.finapp.accounting.JdbcPeriodPins;
 import com.finapp.accounting.JdbcPriorPeriodAdjustmentStore;
 import com.finapp.accounting.JdbcReportRunStore;
 import com.finapp.accounting.JdbcValuationRateSetStore;
@@ -40,6 +44,7 @@ import com.finapp.accounting.ReportRuns;
 import com.finapp.accounting.RunBasis;
 import com.finapp.accounting.RunStatus;
 import com.finapp.accounting.Side;
+import com.finapp.accounting.StatementSection;
 import com.finapp.accounting.TrialBalanceReads;
 import com.finapp.accounting.reporting.BalanceSheetDefinition;
 import com.finapp.accounting.reporting.GeneralLedger;
@@ -66,6 +71,7 @@ import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.PostingCommand;
 import com.finapp.ledger.PostingObserver;
 import com.finapp.ledger.PostingService;
+import com.finapp.platform.api.ApiException;
 import com.finapp.platform.audit.JdbcAuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.IdempotentExecutor;
@@ -99,6 +105,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -110,8 +117,11 @@ import java.util.function.Function;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 
 /**
  * The financial statements against a live PostgreSQL (`P14-TSK-016`; ADR-0115; owner decisions C6, C7, C8; {@code INV-ACC-02}, {@code INV-ACC-04}, {@code INV-ACC-05}, {@code INV-ACC-06}, {@code INV-ACC-11}): the equation, every side held to <em>this suite's own</em> raw sums of the ledger by classification; the notes over real rows; every figure walked to its lines through the real door;
@@ -119,15 +129,22 @@ import org.junit.jupiter.api.Test;
  *
  * <p><strong>A database of its own</strong> ({@code own-container}): it closes January and February 1999 for real, commits ledger lines and parks items with no line behind them, which in the shared container would fail {@code ReconciledPositionResidueDatabaseTest#noSuiteLeftAnUnexplainedLine} for good. <strong>Written and owed</strong> (owner decision C5). Every comparison is a relation that holds whatever else
  * those months hold, this suite's earlier cases included, whose lines and items stay. The close's checks are concluded by the fixture's own verdicts ({@link PeriodCloseFixture}): what is proven here is the statements and the machine, the judges being {@code CloseRunDatabaseTest}'s. Refusals are asserted by exception type or raw by SQLSTATE: a store's failure carries none of the driver's text.
+ *
+ * <p><strong>One case runs last, and every other holds in any order.</strong> A reopen moves a revision for good, a correction is refused into a month ever reopened ({@code PriorPeriodAdjustments.propose}, {@code V009}'s birth), and {@link #theBooks} reopens whatever the case before it closed. So {@link #aCorrectionIsDisclosedWhereItIsDated}, the one case that closes February, is ordered last, and {@link #theBooks} says so if February ever moved. January is
+ * reopened and closed again by whichever case wants it, each reading its revision from the row. {@link #everyFigureDrillsToLines} leaves a second GL version in force from February: January stays under the first, and no case but the last reads February's figures.
  */
 @Tag("database")
 @Tag("own-container") // its own JVM and database: ownContainerDatabaseTest, the javadoc says why
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("the financial statements against the database (P14-TSK-016)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 class StatementsDatabaseTest {
 
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
     private static final CurrencyCode USD = CurrencyCode.of("USD");
+    /** The account {@link #everyFigureDrillsToLines}' second version retires, and the one it restates the loans' purposes to. */
+    private static final String RETIRED = "1300";
+    private static final String RESTATED = "1305";
     private static final LocalDate HISTORY = LocalDate.of(1998, 12, 15);
     private static final LocalDate FIRST_DAY = JANUARY.atDay(1);
     private static final LocalDate LAST_DAY = JANUARY.atEndOfMonth();
@@ -174,6 +191,7 @@ class StatementsDatabaseTest {
     @BeforeEach
     void theBooks() throws SQLException {
         PeriodCloseFixture.everyPeriodOpen();
+        assertThat(row(FEBRUARY).revision()).as("only the last case closes February: a month ever reopened takes no correction, and a reopen is for good").isEqualTo(1);
         wallet = owned(AccountPurpose.CUSTOMER_WALLET, AccountType.LIABILITY, EUR);
         loan = owned(AccountPurpose.LOAN_PRINCIPAL, AccountType.ASSET, EUR);
         post(FIRST_DAY, loan, wallet, 1_000, EUR);
@@ -263,7 +281,7 @@ class StatementsDatabaseTest {
     }
 
     @Test
-    @DisplayName("every figure drills to lines through the real door, under the run's version: a row's movement the month's lines, its opening the earlier months' walked back until openingLines are counted, a side of the equation the sum of its rows, each computed figure its components' lines; each read recorded accounting.GlRead")
+    @DisplayName("every figure drills to lines through the real door, under the run's version: a row's movement the month's lines, its opening the earlier months' walked back until openingLines are counted, a side of the equation the sum of its rows, each computed figure its components' lines; each read recorded accounting.GlRead, each page naming its month's own status. And the bridge: a move's balance and an account's opening this run's lines, an account the version retired refused here and its previous closing the previous month's run's")
     void everyFigureDrillsToLines() throws Exception {
         PeriodCloseFixture.closed(JANUARY);
         ReportRunStore.RunRow statement = ask(SHEET, id(JANUARY), RunParameters.none());
@@ -309,6 +327,32 @@ class StatementsDatabaseTest {
         }
         assertThat(walked).isPositive();
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'accounting.GlRead' AND target_id = '" + statement.id().value() + "'")).as("every page recorded").isGreaterThan(read);
+
+        // The bridge: a version from February moves the loans' purposes to an account of their own and retires the old one, so February's opening restates January's closing.
+        secondVersionFromFebruary();
+        ReportRunStore.RunRow restated = ask(SHEET, id(FEBRUARY), RunParameters.none());
+        assertThat(restated.status()).as("February is open: PROVISIONAL, its door saying its pages are the journal's as it stands").isEqualTo(RunStatus.PROVISIONAL);
+        JsonNode restatedBody = bodyOf(restated);
+        JsonNode bridge = restatedBody.get("reclassification");
+        assertThat(bridge.get("footsToZero").asBoolean()).isTrue();
+        assertThat(bridge.get("previousPeriodPin").asText()).as("the version January's run pinned").isEqualTo(statement.mappingVersionId().orElseThrow().value().toString());
+        assertThat(bridge.get("moves")).isNotEmpty();
+        Map<String, BigDecimal> moved = new TreeMap<>();
+        for (JsonNode move : bridge.get("moves")) {
+            assertThat(move.get("from").asText()).isEqualTo(RETIRED);
+            assertThat(move.get("to").asText()).isEqualTo(RESTATED);
+            moved.merge(move.get("currency").asText(), amount(move.get("balance")), BigDecimal::add);
+        }
+        for (Map.Entry<String, BigDecimal> currency : moved.entrySet()) {
+            BigDecimal[] to = walk(restated, RESTATED, currency.getKey(), JANUARY, rowOf(restatedBody, RESTATED, currency.getKey()).get("openingLines").asLong());
+            assertThat(to[0].subtract(to[1])).as("what moved is the to account's lines, debit-positive").isEqualByComparingTo(currency.getValue());
+            assertThat(to[0].subtract(to[1])).isEqualByComparingTo(amount(bridgeOf(bridge, RESTATED, currency.getKey()).get("opening")));
+
+            assertThatThrownBy(() -> lines(restated, RETIRED, currency.getKey(), JANUARY, null)).as("retired from this run's version, no door on this run").isInstanceOfSatisfying(ApiException.class, refused -> assertThat(refused.errorCode()).isEqualTo(AccountingErrorCode.NOT_FOUND));
+            JsonNode was = rowOf(body, RETIRED, currency.getKey());
+            BigDecimal[] from = walk(statement, RETIRED, currency.getKey(), JANUARY, was.get("openingLines").asLong() + was.get("lines").asLong());
+            assertThat(from[0].subtract(from[1])).as("the previous closing: the previous month's run, under the version the bridge names").isEqualByComparingTo(amount(bridgeOf(bridge, RETIRED, currency.getKey()).get("previousClosing")));
+        }
     }
 
     // ------------------------------------------------------------------ frozen, or it is not FINAL
@@ -338,6 +382,7 @@ class StatementsDatabaseTest {
     }
 
     @Test
+    @Order(Integer.MAX_VALUE) // It closes February, the one case that does: the next #theBooks would reopen it, and a correction is refused into a month ever reopened.
     @DisplayName("a correction is disclosed where it is dated: February's statements name the adjustment, January and its revision, with nothing untraced; a PROVISIONAL read says 'before the month'; January's say nothing of it")
     void aCorrectionIsDisclosedWhereItIsDated() throws Exception {
         PeriodCloseFixture.closed(JANUARY);
@@ -407,6 +452,7 @@ class StatementsDatabaseTest {
         AccountingPeriodId january = id(JANUARY);
         int firstRevision = row(JANUARY).revision();
         ReportRunStore.RunRow first = ask(SHEET, january, RunParameters.none());
+        String issued = single("SELECT content FROM accounting.report_run WHERE id = '" + first.id().value() + "'");
         String firstClose = single("SELECT id::text FROM accounting.period_close WHERE period_id = '" + january.value() + "' AND period_revision = " + firstRevision + " AND status = 'APPROVED'");
 
         inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, "a correction was found", correlation()));
@@ -423,7 +469,8 @@ class StatementsDatabaseTest {
         JsonNode record = bodyOf(second).get("notes").get("closeRecord");
         assertThat(record.get("revision").asInt()).isEqualTo(firstRevision + 1);
         assertThat(texts(record.get("earlierCloses"), "close")).contains(firstClose);
-        assertThat(contentOf(first)).as("what was issued stands").isEqualTo(single("SELECT content FROM accounting.report_run WHERE id = '" + first.id().value() + "'"));
+        assertThat(single("SELECT content FROM accounting.report_run WHERE id = '" + first.id().value() + "'")).as("what was issued stands, its bytes as they were before the reopen").isEqualTo(issued);
+        assertThat(issued).as("the first close's statement never read the second's").doesNotContain(single("SELECT id::text FROM accounting.period_close WHERE period_id = '" + january.value() + "' AND period_revision = " + (firstRevision + 1) + " AND status = 'APPROVED'"));
         assertThat(generator().regenerate(second.id()).identical()).isTrue();
     }
 
@@ -515,6 +562,26 @@ class StatementsDatabaseTest {
         return new BigDecimal(new BigInteger(money.get("minor").asText()), money.get("scale").asInt());
     }
 
+    private static JsonNode rowOf(JsonNode body, String account, String currency) {
+        for (JsonNode section : body.get("sections")) {
+            for (JsonNode row : section.get("rows")) {
+                if (row.get("glAccount").asText().equals(account) && row.get("currency").asText().equals(currency)) {
+                    return row;
+                }
+            }
+        }
+        throw new AssertionError("no row " + account + " " + currency);
+    }
+
+    private static JsonNode bridgeOf(JsonNode bridge, String account, String currency) {
+        for (JsonNode row : bridge.get("accounts")) {
+            if (row.get("account").asText().equals(account) && row.get("currency").asText().equals(currency)) {
+                return row;
+            }
+        }
+        throw new AssertionError("no bridge row " + account + " " + currency);
+    }
+
     private static JsonNode find(JsonNode array, String member, String value) {
         for (JsonNode element : array) {
             if (element.get(member).asText().equals(value)) {
@@ -553,7 +620,6 @@ class StatementsDatabaseTest {
 
     /** A figure's lines through the real door: under the run's version, a month at a time back from {@code from}, until {@code wanted} are counted. Debits, then credits. */
     private BigDecimal[] walk(ReportRunStore.RunRow run, String account, String currency, YearMonth from, long wanted) {
-        ReportRunLinesDesk desk = new ReportRunLinesDesk(runs(), new JdbcGlMappingStore(), new GeneralLedger(new LedgerJournalReads()), GL_SNAPSHOTS, TRANSACTIONS, new JdbcAuditWriter(), AccountingFlowScope.NONE, IDS, NOW);
         BigDecimal debits = BigDecimal.ZERO;
         BigDecimal credits = BigDecimal.ZERO;
         long counted = 0;
@@ -561,14 +627,9 @@ class StatementsDatabaseTest {
             assertThat(month).as("walked past the journal's start with lines still uncounted").isAfter(YearMonth.of(1998, 1));
             String after = null;
             do {
-                String page = after;
-                YearMonth at = month;
-                ReportRunLinesDesk.ReportRunLinesView read;
-                try (SecurityContext.Scope who = SecurityContext.enter(person());
-                        CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(correlation()))) {
-                    read = desk.lines(run.id().value().toString(), account, at.toString(), currency, page, 500);
-                }
-                assertThat(read.exact()).as("a FINAL run's pages sum to its figure").isTrue();
+                ReportRunLinesDesk.ReportRunLinesView read = lines(run, account, currency, month, after);
+                assertThat(read.exact()).as("a FINAL run's pages sum to its figure; any other's are the journal's as it stands").isEqualTo(run.status() == RunStatus.FINAL);
+                assertThat(read.activity().periodStatus()).as("the month's own status").isEqualTo(month.equals(JANUARY) || month.equals(FEBRUARY) ? row(month).status().name() : "NONE");
                 for (GeneralLedgerDesk.GlLineView line : read.activity().lines()) {
                     counted++;
                     if (line.side().equals(Side.DEBIT.name())) {
@@ -582,6 +643,29 @@ class StatementsDatabaseTest {
         }
         assertThat(counted).as("exactly the lines the figure counts").isEqualTo(wanted);
         return new BigDecimal[] {debits, credits};
+    }
+
+    /** One page through the real door, as an accountant. */
+    private static ReportRunLinesDesk.ReportRunLinesView lines(ReportRunStore.RunRow run, String account, String currency, YearMonth month, String after) {
+        ReportRunLinesDesk desk = new ReportRunLinesDesk(runs(), new JdbcGlMappingStore(), new JdbcPeriodPins(), new GeneralLedger(new LedgerJournalReads()), GL_SNAPSHOTS, TRANSACTIONS, new JdbcAuditWriter(), AccountingFlowScope.NONE, IDS, NOW);
+        try (SecurityContext.Scope who = SecurityContext.enter(person());
+                CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(correlation()))) {
+            return desk.lines(run.id().value().toString(), account, month.toString(), currency, after, 500);
+        }
+    }
+
+    /** A version in force from February that moves the loans' purposes to {@link #RESTATED} and drops {@link #RETIRED} from its chart, by the machine's four eyes. */
+    private static void secondVersionFromFebruary() {
+        GlMappingVersion reference = ReferenceGlMapping.version(FEBRUARY);
+        List<GlAccount> accounts = new ArrayList<>(reference.accounts().stream().filter(account -> !account.code().equals(RETIRED)).toList());
+        accounts.add(new GlAccount(RESTATED, "Loans - principal, restated", GlClassification.ASSET, StatementSection.LOANS_AND_BNPL_RECEIVABLES));
+        List<MappingRule> rules = reference.rules().stream().map(rule -> rule.glAccountCode().equals(RETIRED) ? new MappingRule(rule.purpose(), rule.ownerKind(), RESTATED) : rule).toList();
+        GlMappingVersion restated = new GlMappingVersion(FEBRUARY, accounts, rules);
+        GlMappingAdministration administration = new GlMappingAdministration(new JdbcGlMappingStore(), new LedgerPurposeChart(), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, NOW);
+        Actor proposer = person();
+        GlMappingAdministration.Proposed proposed = inScope(proposer, uow -> administration.propose(uow, restated, "the suite's restatement", proposer, correlation()));
+        Actor approver = person();
+        inScope(approver, uow -> administration.activate(uow, proposed.id(), approver, "the suite's restatement", correlation()));
     }
 
     // ------------------------------------------------------------------ the runs

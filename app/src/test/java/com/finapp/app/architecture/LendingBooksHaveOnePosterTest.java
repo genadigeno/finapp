@@ -82,7 +82,10 @@ class LendingBooksHaveOnePosterTest {
             Map.of(
                     "LendingReports.java",
                     "READER: the portfolio and delinquency reports sum each loan account's lines as of a business date"
-                            + " in one read-only snapshot, the book tied to the ledger; it posts nothing");
+                            + " in one read-only snapshot, the book tied to the ledger; it posts nothing",
+                    "StatementNotes.java",
+                    "READER (P14-TSK-016), in words only: the statements' C6 note names LOAN_WRITE_OFF_EXPENSE in the"
+                            + " owner's sentence; no read, figure or line goes by it, and it posts nothing");
 
     /** Every LOAN_* purpose, derived from the declaration. */
     static final List<String> LOAN_BOOK =

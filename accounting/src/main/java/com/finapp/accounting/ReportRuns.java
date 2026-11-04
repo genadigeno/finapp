@@ -512,8 +512,17 @@ public final class ReportRuns implements ReportRunSupersession {
     /** Records a regeneration's comparison ({@code accounting.ReportRegenerated}): {@code IDENTICAL} or {@code DIVERGED}. */
     public void recordRegeneration(Connection unitOfWork, ReportRunStore.RunRow run, boolean identical, Actor actor,
             CorrelationId correlation) {
+        recordRegeneration(unitOfWork, run, identical, Optional.empty(), actor, correlation);
+    }
+
+    /**
+     * {@link #recordRegeneration(Connection, ReportRunStore.RunRow, boolean, Actor, CorrelationId)}, with {@code refusal} (`P14-TSK-016`): why its definition would not answer, by code, when that is why it diverged. This record is the one place it can be read: a claim of the same question
+     * answers the standing FINAL and generates nothing.
+     */
+    public void recordRegeneration(Connection unitOfWork, ReportRunStore.RunRow run, boolean identical, Optional<String> refusal, Actor actor,
+            CorrelationId correlation) {
         audit(unitOfWork, actor, AccountingAuditAction.REPORT_REGENERATED, run, AuditOutcome.SUCCEEDED,
-                summary(run) + ", result=" + (identical ? "IDENTICAL" : "DIVERGED"), correlation);
+                summary(run) + ", result=" + (identical ? "IDENTICAL" : "DIVERGED") + refusal.map(reason -> ", refusal=" + reason).orElse(""), correlation);
     }
 
     // ------------------------------------------------------------------ plumbing

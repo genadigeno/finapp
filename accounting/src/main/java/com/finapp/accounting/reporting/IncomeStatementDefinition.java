@@ -125,11 +125,14 @@ public final class IncomeStatementDefinition implements ReportDefinition {
         }
     }
 
-    /** By purpose, whichever account a version maps them to: from the rows' components. */
+    /** By purpose, whichever account a version maps them to: from the rows' components. A currency with no FX line in the month has no row: an earlier month's FX is in retained earnings, and a row of zeros would say nothing. */
     private static Map<String, NetFx> netRealisedFx(StatementFigures figures) {
         Map<String, NetFx> net = new TreeMap<>();
         for (StatementFigures.Row row : figures.rowsOf(false)) {
             for (StatementFigures.Component component : row.components()) {
+                if (component.movement().lines() == 0) {
+                    continue;
+                }
                 if (component.key().equals(FX_GAINS)) {
                     net.merge(row.currency(), new NetFx(component.movement().net().negate(), BigDecimal.ZERO), IncomeStatementDefinition::plus);
                 } else if (component.key().equals(FX_LOSSES)) {

@@ -36,7 +36,7 @@ import lombok.RequiredArgsConstructor;
  * month before any version took effect is {@code accounting.NoActiveMapping}, so no door could list its lines at all. A figure with no route is a defect. So the version here is the run's, and the months walk back from its period until the row's {@code openingLines} are counted: a page holds at most {@code
  * JournalReads.LineQuery.MAX_LIMIT} lines of one month.
  *
- * <p>The run, the version and the lines in one {@code REPEATABLE READ READ ONLY} snapshot ({@link GlSnapshots}), the read recorded {@code accounting.GlRead} in a transaction of its own <strong>before</strong> it is answered: the {@code GeneralLedgerDesk} order, and its refusals. A month after the run's period is {@code api.ValidationFailed}: no figure of the
+ * <p>The run, the version, the month's own status ({@code NONE} when no period row holds it) and the lines in one {@code REPEATABLE READ READ ONLY} snapshot ({@link GlSnapshots}), the read recorded {@code accounting.GlRead} in a transaction of its own <strong>before</strong> it is answered: the {@code GeneralLedgerDesk} order, and its refusals. A month after the run's period is {@code api.ValidationFailed}: no figure of the
  * run reads it. {@code exact} is whether the pages sum to the figure: true of a {@code FINAL} run, whose months are immutable; a {@code PROVISIONAL} run was cut at its claim and a {@code SUPERSEDED} one's period moved, and the lines are the journal's as it stands.
  *
  * <p>What leaves is {@code GeneralLedgerDesk.GlActivityView}: figures and lines with owner references and counterparty codes, never a name, the entry's reference, a reason or an actor. The summary carries the door, the run, the month, the account, the currency, the version and a count, never an amount ({@code INV-AUD-02}).
@@ -51,6 +51,7 @@ public final class ReportRunLinesDesk {
 
     @NonNull private final ReportRuns runs;
     @NonNull private final GlMappingStore mappings;
+    @NonNull private final GlPins.PeriodPins periods;
     @NonNull private final GeneralLedger ledger;
     @NonNull private final GlSnapshots snapshots;
     @NonNull private final AccountingTransactions transactions;
@@ -89,7 +90,7 @@ public final class ReportRunLinesDesk {
             }
             GlMappingVersionId version = run.mappingVersionId().orElseThrow(() -> new GlPins.NoActiveMapping("this report run pinned no GL mapping version"));
             int number = run.mappingVersion().orElseThrow(() -> new IllegalStateException("a pinned mapping version names its id and its number together"));
-            return new Served(run, ledger.activity(snapshot, new PinnedMapping(month, Optional.empty(), version, number, mappings.content(snapshot, version)), code, currency, after, limit));
+            return new Served(run, ledger.activity(snapshot, new PinnedMapping(month, periods.of(snapshot, month).map(GlPins.PeriodPin::status), version, number, mappings.content(snapshot, version)), code, currency, after, limit));
         })));
         transactions.inTransaction(unitOfWork -> {
             audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, Instant.now(clock), AccountingAuditAction.GL_READ, TARGET, runId.value().toString(), Optional.empty(), AuditOutcome.SUCCEEDED,
