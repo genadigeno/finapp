@@ -4,10 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.accounting.CounterpartyPositionReads;
 import com.finapp.accounting.EntryType;
+import com.finapp.accounting.GlAccount;
 import com.finapp.accounting.GlClassification;
+import com.finapp.accounting.GlMappingVersion;
+import com.finapp.accounting.MappingRule;
+import com.finapp.accounting.StatementSection;
 import com.finapp.accounting.TrialBalanceReads;
+import com.finapp.accounting.reporting.IncomeStatementDefinition;
 import com.finapp.accounting.reporting.PurposeReportDefinition;
 import com.finapp.accounting.reporting.SuspenseDefinition;
+import com.finapp.accounting.testing.ReferenceGlMapping;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AccountType;
 import com.finapp.ledger.JournalEntryType;
@@ -73,6 +79,36 @@ class AccountingLedgerVocabularyTest {
         }
         String[] suspense = SuspenseDefinition.LEDGER_KEY.split("/", 2);
         assertThat(AccountPurpose.valueOf(suspense[0]).ownerKind().name()).isEqualTo(suspense[1]);
+    }
+
+    @Test
+    @DisplayName("every ledger purpose reaches a statement section under the reference chart, on the statement its ledger type belongs to: write-offs in CREDIT_LOSSES, suspense in SUSPENSE - a purpose the ledger adds lands here or the statements refuse it (P14-TSK-016)")
+    void everyPurposeReachesAStatementSection() {
+        GlMappingVersion chart = ReferenceGlMapping.version(ReferenceGlMapping.EFFECTIVE_FROM);
+        Map<String, MappingRule> rules = chart.rulesByKey();
+        for (AccountPurpose purpose : AccountPurpose.values()) {
+            MappingRule rule = rules.get(purpose.name() + "/" + purpose.ownerKind().name());
+            assertThat(rule).as("%s has a rule", purpose).isNotNull();
+            GlAccount account = chart.account(rule.glAccountCode()).orElseThrow();
+            assertThat(account.section().admits(account.classification())).as("%s's section admits its account", purpose).isTrue();
+            assertThat(account.section().statement() == StatementSection.Statement.BALANCE_SHEET).as("%s is on one statement, by its classification", purpose).isEqualTo(account.classification().balanceSheet());
+        }
+        assertThat(sectionOf(chart, AccountPurpose.LOAN_WRITE_OFF_EXPENSE)).isEqualTo(StatementSection.CREDIT_LOSSES);
+        assertThat(sectionOf(chart, AccountPurpose.BNPL_WRITE_OFF_EXPENSE)).isEqualTo(StatementSection.CREDIT_LOSSES);
+        assertThat(sectionOf(chart, AccountPurpose.SUSPENSE_UNMATCHED)).isEqualTo(StatementSection.SUSPENSE);
+    }
+
+    private static StatementSection sectionOf(GlMappingVersion chart, AccountPurpose purpose) {
+        return chart.account(chart.rulesByKey().get(purpose.name() + "/" + purpose.ownerKind().name()).glAccountCode()).orElseThrow().section();
+    }
+
+    @Test
+    @DisplayName("the income statement's net realised FX names the ledger's two purposes, each with its own owner kind: renamed, it would read nothing forever (P14-TSK-016)")
+    void netRealisedFxNamesTheLedgersPurposes() {
+        for (String key : List.of(IncomeStatementDefinition.FX_GAINS, IncomeStatementDefinition.FX_LOSSES)) {
+            String[] parts = key.split("/", 2);
+            assertThat(AccountPurpose.valueOf(parts[0]).ownerKind().name()).as(key).isEqualTo(parts[1]);
+        }
     }
 
     /**

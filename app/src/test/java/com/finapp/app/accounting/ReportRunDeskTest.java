@@ -151,7 +151,43 @@ class ReportRunDeskTest {
                     throw new AssertionError("an operational definition is never generated as a run");
                 }
             };
-    private final ReportDefinitions definitions = ReportDefinitions.of(echo, leaky, throwing, sometimesSlow, translating, moving);
+    /** Whether the refusing definition finds what it cannot stand on its next generation. */
+    private boolean refusing;
+    /** A definition that refuses to answer (`P14-TSK-016`). */
+    private final TestReportDefinition refuser = new TestReportDefinition("TEST_REFUSING", 1, java.util.Set.of(), false, (snapshot, inputs) -> {
+        if (refusing) {
+            throw new com.finapp.accounting.reporting.ReportRefused(com.finapp.accounting.reporting.ReportRefused.Reason.OUT_OF_BALANCE, List.of("EUR"));
+        }
+        return CanonicalJson.object().put("balanced", true);
+    });
+    /** A definition issued only when closed (`P14-TSK-016`). */
+    private final com.finapp.accounting.reporting.ReportDefinition awaitingTheClose = new com.finapp.accounting.reporting.ReportDefinition() {
+        @Override
+        public String code() {
+            return "TEST_AWAITING";
+        }
+
+        @Override
+        public int version() {
+            return 1;
+        }
+
+        @Override
+        public boolean issuedOnlyWhenClosed() {
+            return true;
+        }
+
+        @Override
+        public com.finapp.accounting.reporting.ReportStatement statement() {
+            return echo.statement();
+        }
+
+        @Override
+        public CanonicalJson.Obj generate(java.sql.Connection snapshot, com.finapp.accounting.reporting.ReportInputs inputs) {
+            return CanonicalJson.object().put("closed", true);
+        }
+    };
+    private final ReportDefinitions definitions = ReportDefinitions.of(echo, leaky, throwing, sometimesSlow, translating, moving, refuser, awaitingTheClose);
 
     private final AccountingTransactions transactions = new AccountingTransactions() {
         @Override
@@ -214,6 +250,56 @@ class ReportRunDeskTest {
         // The key binds the request: the same key for another question is a conflict, never a second run.
         assertThatThrownBy(() -> as(ACCOUNTANT, () -> desk.generate("key-1", TestReportDefinition.CODE, september,
                 Map.of("probe", "b"), null))).isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    @DisplayName("a definition's refusal (P14-TSK-016): the run FAILED, DEFINITION_FAILED, the reason by code on its record, no event; the next ask a new revision, which answers once what it found has gone")
+    void aRefusalIsAFailedRunWithItsReason() {
+        String september = lockedSeptember();
+        refusing = true;
+        ReportRunDesk.ReportRunView failed = as(ACCOUNTANT, () -> desk.generate("key-1", "TEST_REFUSING", september, Map.of(), null));
+        assertThat(failed.status()).isEqualTo("FAILED");
+        assertThat(failed.failure()).isEqualTo("DEFINITION_FAILED");
+        assertThat(failed.contentSha256()).isNull();
+        assertThat(events).isEmpty();
+        assertThat(audited).singleElement().satisfies(record -> {
+            assertThat(record.operation().code()).isEqualTo("accounting.ReportGenerated");
+            assertThat(record.outcome()).isEqualTo(com.finapp.platform.audit.AuditOutcome.FAILED);
+            assertThat(record.changeSummary()).hasValueSatisfying(summary -> assertThat(summary).contains("failure=DEFINITION_FAILED").contains("refusal=OUT_OF_BALANCE:EUR"));
+        });
+        assertThat(registry.get(ReportRunMetrics.RUN).tag("definition", "TEST_REFUSING").tag("outcome", "failed").counter().count()).isEqualTo(1.0);
+
+        refusing = false;
+        ReportRunDesk.ReportRunView again = as(ACCOUNTANT, () -> desk.generate("key-2", "TEST_REFUSING", september, Map.of(), null));
+        assertThat(again.status()).isEqualTo("FINAL");
+        assertThat(again.revision()).isEqualTo(failed.revision() + 1);
+    }
+
+    @Test
+    @DisplayName("a FINAL run that can no longer be produced (P14-TSK-016): a regeneration refused by its definition reads DIVERGED, with no hash to compare, counted once: the books moved under an issued statement, which is what this door exists to find, and never a 5xx")
+    void aRefusedRegenerationIsADivergence() {
+        String september = lockedSeptember();
+        ReportRunDesk.ReportRunView run = as(ACCOUNTANT, () -> desk.generate("key-1", "TEST_REFUSING", september, Map.of(), null));
+        assertThat(run.status()).isEqualTo("FINAL");
+        refusing = true;
+        ReportRunDesk.ReportRegenerationView compared = as(ACCOUNTANT, () -> desk.regenerate("key-regen", run.id()));
+        assertThat(compared.result()).isEqualTo("DIVERGED");
+        assertThat(compared.contentSha256()).isEqualTo(run.contentSha256());
+        assertThat(compared.regeneratedSha256()).isEqualTo(ReportRunGenerator.NOT_PRODUCED).isEmpty();
+        assertThat(registry.get(ReportRunMetrics.DIVERGED).tag("definition", "TEST_REFUSING").counter().count()).isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("a statement of a period locked and not yet closed (P14-TSK-016): 409 accounting.ReportAwaitsClose, nothing claimed, naming the month and no figure")
+    void aStatementOfALockedPeriodAwaitsTheClose() {
+        String september = lockedSeptember();
+        assertThatThrownBy(() -> as(ACCOUNTANT, () -> desk.generate("key-1", "TEST_AWAITING", september, Map.of(), null))).isInstanceOfSatisfying(com.finapp.platform.api.ApiException.class, refused -> {
+            assertThat(refused.errorCode()).isEqualTo(com.finapp.accounting.AccountingErrorCode.REPORT_AWAITS_CLOSE);
+            assertThat(refused.errorCode().status()).isEqualTo(409);
+            assertThat(refused.getMessage()).doesNotContain("minor");
+        });
+        assertThat(store.all()).isEmpty();
+        assertThat(audited).isEmpty();
     }
 
     @Test

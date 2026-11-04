@@ -222,7 +222,7 @@ class AccountingVocabulariesTest {
                         // P14-TSK-013: the prior-period adjustment's doors.
                         "accounting.PriorPeriodAdjustmentInvalid=422", "accounting.PriorPeriodPurposeClosed=422", "accounting.PriorPeriodAdjustmentStale=409",
                         // P14-TSK-017: an operational definition is never a run; a run's is not read at the operational door.
-                        "accounting.ReportDoorMismatch=409");
+                        "accounting.ReportDoorMismatch=409", "accounting.ReportAwaitsClose=409");
         // P14-TSK-002: the posting rule register's audited read - no reason, an operator's read.
         assertThat(AccountingAuditAction.POSTING_RULES_READ.code()).isEqualTo("accounting.PostingRulesRead");
         assertThat(AccountingAuditAction.POSTING_RULES_READ.requiresReason()).isFalse();

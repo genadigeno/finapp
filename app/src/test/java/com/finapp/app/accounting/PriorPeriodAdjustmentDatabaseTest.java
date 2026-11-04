@@ -58,12 +58,15 @@ import com.finapp.accounting.SourceProofs;
 import com.finapp.accounting.ValuationRateSets;
 import com.finapp.accounting.ValuationRates;
 import com.finapp.accounting.ValuationStaleness;
+import com.finapp.accounting.reporting.BalanceSheetDefinition;
 import com.finapp.accounting.reporting.GeneralLedger;
 import com.finapp.accounting.reporting.GlActivityDefinition;
+import com.finapp.accounting.reporting.IncomeStatementDefinition;
 import com.finapp.accounting.reporting.PurposeReportDefinition;
 import com.finapp.accounting.reporting.ReportDefinitions;
 import com.finapp.accounting.reporting.ReportGeneration;
 import com.finapp.accounting.reporting.RunParameters;
+import com.finapp.accounting.reporting.StatementNotes;
 import com.finapp.accounting.reporting.SuspenseDefinition;
 import com.finapp.accounting.reporting.TrialBalanceDefinition;
 import com.finapp.ledger.AccountPurpose;
@@ -404,8 +407,8 @@ class PriorPeriodAdjustmentDatabaseTest {
     // ------------------------------------------------------------------ the two worst failures
 
     @Test
-    @DisplayName("the corrected month must not move: each of January's nine FINAL definitions, regenerated after the adjustment posted, is byte-identical; the month's lines are as they were")
-    void theCorrectedMonthsNineFinalRunsRegenerateByteIdentical() throws Exception {
+    @DisplayName("the corrected month must not move: each of January's eleven FINAL definitions, regenerated after the adjustment posted, is byte-identical - the nine generated at the lock, the two statements, which wait for it, at the close; the month's lines are as they were")
+    void theCorrectedMonthsElevenFinalRunsRegenerateByteIdentical() throws Exception {
         PeriodCloseFixture.everyPeriodOpen();
         com.finapp.accounting.CloseRunId closeRun = PeriodCloseFixture.ready(JANUARY);
         ReportRuns reports = reports();
@@ -416,10 +419,15 @@ class PriorPeriodAdjustmentDatabaseTest {
             ReportRuns.Claimed claimed = inTransaction(uow -> reports.claim(uow, code, id(JANUARY), RunParameters.none(), generating, correlation()));
             runs.add(claimed.mine() ? generator.generateAndComplete(claimed.run(), generating) : generator.drive(claimed.run().id(), generating));
         }
-        assertThat(runs).allSatisfy(run -> assertThat(run.status()).isEqualTo(RunStatus.FINAL));
-        assertThat(runs).as("every FINAL definition").hasSize(9);
+        assertThat(runs).as("generated at the lock").hasSize(9);
         PeriodCloses.Acted close = inScope(ACCOUNTANT, uow -> MACHINE.propose(uow, id(JANUARY), closeRun, List.of(), ACCOUNTANT, REASON, correlation()));
         inScope(CONTROLLER, uow -> MACHINE.approve(uow, id(JANUARY), close.proposal().orElseThrow(), CONTROLLER, REASON, correlation()));
+        for (String code : List.of(BalanceSheetDefinition.CODE, IncomeStatementDefinition.CODE)) {
+            ReportRuns.Claimed claimed = inTransaction(uow -> reports.claim(uow, code, id(JANUARY), RunParameters.none(), generating, correlation()));
+            runs.add(claimed.mine() ? generator.generateAndComplete(claimed.run(), generating) : generator.drive(claimed.run().id(), generating));
+        }
+        assertThat(runs).allSatisfy(run -> assertThat(run.status()).isEqualTo(RunStatus.FINAL));
+        assertThat(runs).as("every FINAL definition").hasSize(11);
         long januaryLines = count("SELECT count(*) FROM ledger.journal_entry WHERE posting_date BETWEEN '1999-01-01' AND '1999-01-31'");
 
         PriorPeriodAdjustments.Acted posted = approve(propose(), person());
@@ -785,7 +793,13 @@ class PriorPeriodAdjustmentDatabaseTest {
         LedgerCounterpartyPositionReads positions = new LedgerCounterpartyPositionReads();
         return ReportDefinitions.of(new TrialBalanceDefinition(reads), new GlActivityDefinition(reads, positions), PurposeReportDefinition.revenue(reads), PurposeReportDefinition.receivablesPayables(reads),
                 PurposeReportDefinition.settlementPositions(reads, positions), PurposeReportDefinition.fxResults(reads), PurposeReportDefinition.loanPortfolio(reads), PurposeReportDefinition.bnplExposure(reads),
-                new SuspenseDefinition(reads, new ReconciliationMonthReads(new JdbcReportReadings(), AccountingPeriodFixture.DECLARED_SOURCES)));
+                new SuspenseDefinition(reads, new ReconciliationMonthReads(new JdbcReportReadings(), AccountingPeriodFixture.DECLARED_SOURCES)),
+                new BalanceSheetDefinition(reads, positions, new PinnedValuationRates(new JdbcValuationRateSetStore()), statementNotes()),
+                new IncomeStatementDefinition(reads, positions, new PinnedValuationRates(new JdbcValuationRateSetStore()), statementNotes()));
+    }
+
+    private static StatementNotes statementNotes() {
+        return new StatementNotes(new ReconciliationMonthReads(new JdbcReportReadings(), AccountingPeriodFixture.DECLARED_SOURCES), new ReconciliationAsOfCutoffReads(new JdbcReportReadings()), new LedgerPriorPeriodCorrections(), new AccountingCloseRecordReads());
     }
 
     private static ReportRuns reports() {

@@ -26,15 +26,16 @@ import org.springframework.boot.test.context.SpringBootTest;
 @DisplayName("every report states its source, rule, date, currency semantics and freshness (P14-TSK-017)")
 class EveryReportStatesItselfTest {
 
-    private static final List<String> BUILT = List.of("BNPL_EXPOSURE", "CLOSE_STATUS", "FX_RESULTS", "GL_ACTIVITY", "LOAN_PORTFOLIO",
+    private static final List<String> BUILT = List.of("BALANCE_SHEET", "BNPL_EXPOSURE", "CLOSE_STATUS", "FX_RESULTS", "GL_ACTIVITY", "INCOME_STATEMENT", "LOAN_PORTFOLIO",
             "RECEIVABLES_PAYABLES", "RECONCILIATION_STATUS", "REVENUE", "SETTLEMENT_POSITIONS", "SUSPENSE", "TRIAL_BALANCE");
 
     @Autowired private ReportDefinitions definitions;
 
     @Test
-    @DisplayName("the registry holds every report built - the ten and the trial balance - each a ReportKind's name, and each states all five facts")
+    @DisplayName("the registry holds every report built - the two statements, the ten and the trial balance, every ReportKind's - each a ReportKind's name, and each states all five facts")
     void everyDefinitionStatesItself() {
         assertThat(definitions.codes()).containsAll(BUILT);
+        assertThat(BUILT).as("every kind this phase declares is built: thirteen").containsExactlyInAnyOrderElementsOf(java.util.Arrays.stream(ReportKind.values()).map(Enum::name).toList());
         for (String code : definitions.codes()) {
             ReportDefinition definition = definitions.current(code).orElseThrow();
             assertThat(ReportKind.valueOf(code).name()).isEqualTo(definition.code());
@@ -55,9 +56,16 @@ class EveryReportStatesItselfTest {
     }
 
     @Test
-    @DisplayName("translation is a decision too: the owner has not settled the translated layout, so none of the ten takes a rate set")
-    void noneOfTheTenTranslates() {
+    @DisplayName("translation is a decision too: the trial balance and the two statements take a rate set, and the owner has not settled the other ten's translated layout, so none of them does")
+    void onlyTheTrialBalanceAndTheStatementsTranslate() {
         assertThat(definitions.codes().stream().filter(code -> definitions.current(code).orElseThrow().takesValuationRateSet()).toList())
-                .containsExactly("TRIAL_BALANCE");
+                .containsExactly("BALANCE_SHEET", "INCOME_STATEMENT", "TRIAL_BALANCE");
+    }
+
+    @Test
+    @DisplayName("waiting for the close is a decision too: exactly the two statements, whose notes read what the close decides")
+    void onlyTheStatementsWaitForTheClose() {
+        assertThat(definitions.codes().stream().filter(code -> definitions.current(code).orElseThrow().issuedOnlyWhenClosed()).toList())
+                .containsExactly("BALANCE_SHEET", "INCOME_STATEMENT");
     }
 }
