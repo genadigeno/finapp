@@ -1566,7 +1566,7 @@ for an operator's read, and keep the permits low, since the two together are wha
 
 **`.../regeneration` answers `DIVERGED` with an empty `regeneratedSha256`.** A FINAL statement its definition now refuses: the books moved under what was issued. Read `accounting.ReportRegenerated` for the run in the audit record: `refusal=` holds why, by code, as above. Asking again finds nothing: a claim answers the standing FINAL and generates nothing. Counted `finapp.accounting.report.diverged`, never repaired: escalate.
 
-**A `untraced` count above zero in a statement's `priorPeriodCorrections`.** Entries of the `ACCOUNTING` origin dated in that month with no posted adjustment beside them: a writer bypassed the door. It has no line route under `ACCOUNTING_READ`, since no view there shows an origin: escalate to whoever holds the ledger's own read.
+**An `untraced` count above zero in a statement's `priorPeriodCorrections`.** Entries of the `ACCOUNTING` origin dated in that month with no posted adjustment beside them: a writer bypassed the door. It has no line route under `ACCOUNTING_READ`, since no view there shows an origin: escalate to whoever holds the ledger's own read.
 
 **`409 accounting.PriorPeriodAdjustmentStale` on an approval.** Read it again. Another correction of the month may have posted since: that is the control working, so decide knowing it.
 
