@@ -131,7 +131,7 @@ import org.junit.jupiter.api.TestMethodOrder;
  * those months hold, this suite's earlier cases included, whose lines and items stay. The close's checks are concluded by the fixture's own verdicts ({@link PeriodCloseFixture}): what is proven here is the statements and the machine, the judges being {@code CloseRunDatabaseTest}'s. Refusals are asserted by exception type or raw by SQLSTATE: a store's failure carries none of the driver's text.
  *
  * <p><strong>One case runs last, and every other holds in any order.</strong> A reopen moves a revision for good, a correction is refused into a month ever reopened ({@code PriorPeriodAdjustments.propose}, {@code V009}'s birth), and {@link #theBooks} reopens whatever the case before it closed. So {@link #aCorrectionIsDisclosedWhereItIsDated}, the one case that closes February, is ordered last, and {@link #theBooks} says so if February ever moved. January is
- * reopened and closed again by whichever case wants it, each reading its revision from the row. {@link #everyFigureDrillsToLines} leaves a second GL version in force from February: January stays under the first, and no case but the last reads February's figures.
+ * reopened and closed again by whichever case wants it, each reading its revision from the row. {@link #everyFigureDrillsToLines} leaves a second GL version in force from February, wherever it falls: January stays under the first, and the only other case reading February's figures is the last, whose every comparison is by its own adjustment's id.
  */
 @Tag("database")
 @Tag("own-container") // its own JVM and database: ownContainerDatabaseTest, the javadoc says why

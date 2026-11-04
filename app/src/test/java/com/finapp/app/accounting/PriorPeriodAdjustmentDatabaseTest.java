@@ -148,7 +148,7 @@ import org.junit.jupiter.api.TestMethodOrder;
  * operation and SQLSTATE only, never the driver's text.
  *
  * <p><strong>One case runs last, and every other holds in any order</strong> (`P14-TSK-016`'s fix round, on this suite's own review): a reopen moves a revision for good and a proposal is refused into a month ever reopened, while nearly every case proposes into February. So {@link #theTargetReopenedMeanwhile}, the one case that closes and reopens February, is ordered last, and {@link #januaryClosedFebruaryOpen} says so if February ever moved. A case may lock
- * February, which an unlock lifts with no revision moved; {@link #theTargetLockedMeanwhile} leaves March open, which nothing else reads; January is reopened and closed by every case, each reading its revision from the row, and what posts stays in February or March, every comparison a relation or by the case's own ids.
+ * February, which an unlock lifts with no revision moved; {@link #theTargetLockedMeanwhile} leaves March open, which nothing else reads; January is reopened and closed by every case, each reading its revision from the row, and what posts stays, every comparison a relation or by the case's own ids.
  */
 @Tag("database")
 @Tag("own-container") // its own JVM and database: ownContainerDatabaseTest, the javadoc says why
