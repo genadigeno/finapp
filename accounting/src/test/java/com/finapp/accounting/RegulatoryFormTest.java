@@ -296,7 +296,12 @@ class RegulatoryFormTest {
     void aMalformedAnswerDecidesNothing() {
         // An instrument's shape is no reference or code of ours, since what is read off an answer reaches audit summaries and events. Its bytes stay.
         for (Answer shaped : List.of(Answer.acknowledged("4111111111111111", bytes("card")), Answer.rejected(Optional.of("4111-1111-1111-1111"), "FORM_REFUSED", bytes("card")),
-                Answer.rejected(Optional.empty(), "CARD_4111111111111111", bytes("card")))) {
+                Answer.rejected(Optional.empty(), "CARD_4111111111111111", bytes("card")),
+                Answer.acknowledged("4111.1111.1111.1111", bytes("card")), Answer.acknowledged("4111_1111_1111_1111", bytes("card")), Answer.acknowledged("4111:1111:1111:1111", bytes("card")),
+                Answer.acknowledged("GB82_WEST_12345698765432", bytes("card")), Answer.acknowledged("GB82:WEST:12345698765432", bytes("card")), Answer.acknowledged("GB82.WEST.12345698765432", bytes("card")),
+                Answer.rejected(Optional.empty(), "GB82_WEST_12345698765432", bytes("card")),
+                // The screen's cost, an owner's: a reference only shaped like one discards a definite acknowledgement.
+                Answer.acknowledged("TX2026110500001", bytes("card")))) {
             RegulatoryAnswerReading reading = RegulatoryAnswerReading.of(CallKind.INQUIRE, shaped);
             assertThat(reading.read()).as(shaped.toString()).isEqualTo(Outcome.UNKNOWN);
             assertThat(reading.anomaly()).contains(RegulatoryAnswerReading.Anomaly.MALFORMED);

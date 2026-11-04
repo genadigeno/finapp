@@ -247,12 +247,14 @@ public final class RegulatorySubmissionDesk {
 
     /**
      * Concludes a return undelivered on what the provider says now: {@code last_answer} can be an interval old. The provider is asked once, on no transaction, when the row says the door is open; what it says is kept whatever then happens; the person's act then judges that answer.
-     * <strong>When the call fails, or its answer cannot be kept, nothing is concluded</strong>: {@code 503 accounting.RegulatoryProviderUnavailable}, the row unmoved, the key unspent, and the person asks again.
+     * <strong>When the call fails, or its answer cannot be kept, nothing is concluded</strong>: {@code 503 accounting.RegulatoryProviderUnavailable}, the row unmoved, the key unspent, and the person asks again. The reason is judged first, since a refusal this door can make alone must cost
+     * the provider no question and the record no row. A key reused with another body is judged only inside the act, so that refusal does follow a question and a kept answer: the platform's executor offers no read of a key before its claim.
      */
     public RegulatorySubmissionReceipt declareUndelivered(String idempotencyKey, String rawId, String reason) {
         RegulatorySubmissionId id = submissionId(rawId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
+        guarded(() -> AccountingReasons.reasoned(reason));
         Optional<RegulatorySubmissions.Recorded> asked = flow.door(UNDELIVERED_SPAN, () -> askedAtTheDoor(id, correlation));
         flow.door(UNDELIVERED_SPAN, () -> keyed(actor, idempotencyKey, "submission-non-delivery|" + id.value() + "|" + reason, uow -> submissions.declareUndelivered(uow, id, asked, reason, actor, correlation)));
         return receipt(id);

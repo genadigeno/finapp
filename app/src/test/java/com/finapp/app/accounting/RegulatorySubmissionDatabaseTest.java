@@ -1009,6 +1009,89 @@ class RegulatorySubmissionDatabaseTest {
         assertThat(rowOf(sent.id()).resends()).isEqualTo(1);
     }
 
+    /** {@code approved} sent by a machine whose horizon is already behind it, one attempt claimed, a definite "not received" last: the door open with every resend left, so the door and a permit can both go. */
+    private RegulatorySubmissions.Claimed bothMayGo(Case approved) {
+        RegulatorySubmissions pastItsHorizon = new RegulatorySubmissions(AccountingPeriodFixture.STORE, STORE, OBLIGATIONS, RUNS, adapters, new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, NOW, Duration.ofHours(-3));
+        Actor sender = person();
+        inScope(sender, uow -> pastItsHorizon.submit(uow, approved.id(), approved.read(), REASON, sender, correlation()));
+        RegulatorySubmissions.Claimed claimed = inScope(Actor.SYSTEM, uow -> machine.claim(uow, approved.id(), LEASE)).orElseThrow();
+        inScope(Actor.SYSTEM, uow -> STORE.await(uow, approved.id(), claimed.row().attempts(), INTERVAL, RegulatorySubmissions.INQUIRY_CEILING, "NOT_RECEIVED", Optional.empty()));
+        assertThat(RegulatorySubmissions.nonDeliveryOpen(rowOf(approved.id()))).isTrue();
+        return claimed;
+    }
+
+    @Test
+    @DisplayName("the non-delivery door against a resend's permit, under real locks: each order waits on the row and the second sees what the first committed; raced with no order, exactly one wins; the door's question never overwrites a resend in flight")
+    void theDoorAndAResendsPermitSerialise() throws Exception {
+        // The permit first: the door waits, then finds RESENDING, Stale.
+        Case permitFirst = approved();
+        RegulatorySubmissions.Claimed claimedFirst = bothMayGo(permitFirst);
+        Optional<RegulatorySubmissions.Recorded> askedFirst = driver.askBeforeNonDelivery(rowOf(permitFirst.id()), correlation());
+        assertThat(askedFirst.map(RegulatorySubmissions.Recorded::disposition)).contains(RegulatorySubmissions.Disposition.NOT_RECEIVED);
+        Actor sender = person();
+        CountDownLatch permitted = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        Future<RegulatorySubmissions.ResendPermit> permit = pool.submit(() -> inScope(Actor.SYSTEM, uow -> {
+            RegulatorySubmissions.ResendPermit decided = machine.permitResend(uow, claimedFirst, correlation());
+            permitted.countDown();
+            await(release);
+            return decided;
+        }));
+        assertThat(permitted.await(60, TimeUnit.SECONDS)).isTrue();
+        Future<Object> door = pool.submit(() -> {
+            try {
+                return inScope(sender, uow -> machine.declareUndelivered(uow, permitFirst.id(), askedFirst, REASON, sender, correlation()));
+            } catch (RuntimeException refused) {
+                return refused;
+            }
+        });
+        assertThatThrownBy(() -> door.get(1, TimeUnit.SECONDS)).as("the door waits on the row the permit holds").isInstanceOf(TimeoutException.class);
+        release.countDown();
+        assertThat(permit.get(60, TimeUnit.SECONDS)).isEqualTo(RegulatorySubmissions.ResendPermit.PERMITTED);
+        assertThat(door.get(60, TimeUnit.SECONDS)).isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
+        RegulatorySubmissionStore.Row inFlight = rowOf(permitFirst.id());
+        assertThat(inFlight.status()).isEqualTo(SubmissionStatus.SUBMITTED);
+        assertThat(inFlight.lastAnswer()).contains("RESENDING");
+        assertThat(inFlight.resends()).isEqualTo(1);
+        assertThat(driver.askBeforeNonDelivery(inFlight, correlation()).map(RegulatorySubmissions.Recorded::disposition)).as("over a send in flight it opens nothing").contains(RegulatorySubmissions.Disposition.AWAITING);
+        assertThat(rowOf(permitFirst.id()).lastAnswer()).as("and overwrites nothing").contains("RESENDING");
+
+        // The door first: the permit waits, then finds it concluded, and nothing may be sent.
+        Case doorFirst = approved();
+        RegulatorySubmissions.Claimed claimedSecond = bothMayGo(doorFirst);
+        Optional<RegulatorySubmissions.Recorded> askedSecond = driver.askBeforeNonDelivery(rowOf(doorFirst.id()), correlation());
+        CountDownLatch concluded = new CountDownLatch(1);
+        CountDownLatch releaseDoor = new CountDownLatch(1);
+        Future<RegulatorySubmissions.Acted> first = pool.submit(() -> inScope(sender, uow -> {
+            RegulatorySubmissions.Acted acted = machine.declareUndelivered(uow, doorFirst.id(), askedSecond, REASON, sender, correlation());
+            concluded.countDown();
+            await(releaseDoor);
+            return acted;
+        }));
+        assertThat(concluded.await(60, TimeUnit.SECONDS)).isTrue();
+        Future<RegulatorySubmissions.ResendPermit> second = pool.submit(() -> inScope(Actor.SYSTEM, uow -> machine.permitResend(uow, claimedSecond, correlation())));
+        assertThatThrownBy(() -> second.get(1, TimeUnit.SECONDS)).as("the permit waits on the row the door holds").isInstanceOf(TimeoutException.class);
+        releaseDoor.countDown();
+        assertThat(first.get(60, TimeUnit.SECONDS).status()).isEqualTo(SubmissionStatus.UNDELIVERED);
+        assertThat(second.get(60, TimeUnit.SECONDS)).isEqualTo(RegulatorySubmissions.ResendPermit.OVERTAKEN);
+        pool.shutdownNow();
+        assertThat(rowOf(doorFirst.id()).resends()).isZero();
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'regulatory.SubmissionResent' AND target_id = '" + doorFirst.id().value() + "'")).isZero();
+
+        // With no order at all: exactly one wins.
+        Case raced = approved();
+        RegulatorySubmissions.Claimed claimedRaced = bothMayGo(raced);
+        Optional<RegulatorySubmissions.Recorded> askedRaced = driver.askBeforeNonDelivery(rowOf(raced.id()), correlation());
+        List<Callable<?>> both = List.of(() -> inScope(Actor.SYSTEM, uow -> machine.permitResend(uow, claimedRaced, correlation())),
+                () -> inScope(sender, uow -> machine.declareUndelivered(uow, raced.id(), askedRaced, REASON, sender, correlation())));
+        List<Object> outcomes = race(both);
+        boolean sendGoes = outcomes.get(0) == RegulatorySubmissions.ResendPermit.PERMITTED;
+        boolean concludedIt = outcomes.get(1) instanceof RegulatorySubmissions.Acted;
+        assertThat(sendGoes).as("never a send and a conclusion, and always one of them").isNotEqualTo(concludedIt);
+        assertThat(rowOf(raced.id()).status()).isEqualTo(concludedIt ? SubmissionStatus.UNDELIVERED : SubmissionStatus.SUBMITTED);
+    }
+
     @Test
     @DisplayName("a read proves what it serves: each line agrees with the run's figure read back from the database's bytes")
     void aReadProvesWhatItServes() {

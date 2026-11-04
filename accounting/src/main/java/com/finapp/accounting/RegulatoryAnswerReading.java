@@ -85,8 +85,8 @@ public record RegulatoryAnswerReading(CallKind call, Outcome stated, Outcome rea
         Optional<String> reference = answer.providerReference();
         Optional<String> code = answer.rejectionCode();
         // What is read off an answer reaches audit summaries and events, where a provider's text never does: instrument-shaped, it is no reference or code of ours. The answer then decides nothing; its bytes stay.
-        boolean referenceMalformed = reference.filter(found -> !REFERENCE.matcher(found).matches() || InstrumentShapes.holdsAny(found)).isPresent();
-        boolean codeMalformed = code.filter(found -> !CODE.matcher(found).matches() || InstrumentShapes.holdsAny(found)).isPresent();
+        boolean referenceMalformed = reference.filter(found -> !REFERENCE.matcher(found).matches() || instrumentShaped(found)).isPresent();
+        boolean codeMalformed = code.filter(found -> !CODE.matcher(found).matches() || instrumentShaped(found)).isPresent();
         boolean malformed = referenceMalformed || codeMalformed
                 || (answer.outcome() == Outcome.ACKNOWLEDGED && reference.isEmpty())
                 || (answer.outcome() == Outcome.REJECTED && code.isEmpty())
@@ -99,6 +99,11 @@ public record RegulatoryAnswerReading(CallKind call, Outcome stated, Outcome rea
             return new RegulatoryAnswerReading(call, answer.outcome(), Outcome.UNKNOWN, Optional.empty(), Optional.empty(), Optional.of(Anomaly.CONTRADICTORY), raw, sha256, raw.length, false);
         }
         return new RegulatoryAnswerReading(call, answer.outcome(), answer.outcome(), reference, code, Optional.empty(), raw, sha256, raw.length, false);
+    }
+
+    /** The screen's separators are narrower than this class's grammars: {@code 4111.1111.1111.1111} and {@code GB82_WEST_12345698765432} are instruments all the same, so every separator the grammars admit is made the one the screen reads. */
+    private static boolean instrumentShaped(String found) {
+        return InstrumentShapes.holdsAny(found.replaceAll("[._:]", "-"));
     }
 
     private static String sha256(byte[] bytes) {

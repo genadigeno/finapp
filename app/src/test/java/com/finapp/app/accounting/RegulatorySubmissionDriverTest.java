@@ -295,6 +295,24 @@ class RegulatorySubmissionDriverTest {
     }
 
     @Test
+    @DisplayName("a withheld send is counted before the call: the month moved and the provider down, the first attempt's inquiry throws, and it is still counted, once")
+    void aWithheldSendIsCountedThoughTheProviderIsDown() {
+        world.reopened(JANUARY);
+        world.reclosed(JANUARY);
+        world.provider.nextInquiry(ScriptedRegulatoryProvider.unreachable());
+
+        assertThat(driver.submitIfDue(sent.id())).isFalse();
+        assertThat(count("send_withheld_month_moved")).isEqualTo(1);
+        assertThat(count("call_failed")).isEqualTo(1);
+        assertThat(world.provider.submits()).isZero();
+
+        clock.advance(LEASE.plusSeconds(1));
+        driver.inquireDue();
+        assertThat(count("send_withheld_month_moved")).as("that was the first attempt's; this is the second").isEqualTo(1);
+        assertThat(world.provider.submits()).isZero();
+    }
+
+    @Test
     @DisplayName("the first send failed on the wire, then the month reopened: the next attempt asks, is told not received, and does not send again")
     void aResendAfterAReopenIsRefused() {
         world.provider.nextSubmit(ScriptedRegulatoryProvider.unreachable());

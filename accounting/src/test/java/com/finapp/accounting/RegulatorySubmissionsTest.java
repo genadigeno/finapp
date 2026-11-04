@@ -609,6 +609,16 @@ class RegulatorySubmissionsTest {
     }
 
     @Test
+    @DisplayName("a kept answer says when it arrived, not when it was read")
+    void anAnswerKeepsWhenItArrived() {
+        Acted sent = world.sent(obligation, JANUARY);
+        Instant arrived = clock.instant();
+        answered(machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow(), Answer.unknown(Optional.empty(), bytes("{}")), CallKind.SUBMIT);
+        clock.advance(Duration.ofHours(1));
+        assertThat(world.store.answers(UOW, sent.id(), 100).get(0).receivedAt()).isEqualTo(arrived);
+    }
+
+    @Test
     @DisplayName("a read serves the newest answers and says how many are kept; every one stays kept, verbatim - the statement's limit is pinned in the statements suite")
     void aReadLoadsTheNewestAnswersOnly() {
         assertThat(RegulatorySubmissions.ANSWERS_SERVED).isEqualTo(20);

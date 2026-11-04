@@ -656,8 +656,46 @@ class RegulatorySubmissionDeskTest {
     }
 
     @Test
-    @DisplayName("a refused act stores nothing: the key is free, and nothing of it is left")
-    void aRefusedActStoresNothing() {
+    @DisplayName("a reason the door can refuse alone asks nobody: blank, absent or instrument-bearing, zero inquiries and no kept answer, with the door open")
+    void aReasonTheDoorCanRefuseAsksNobody() {
+        RegulatorySubmissionDesk.RegulatorySubmissionReceipt approved = unknownAtTheProvider();
+        RegulatorySubmissionId id = doorOpen(approved);
+        int kept = world.store.keptAnswers().size();
+
+        for (String reason : java.util.Arrays.asList(null, "", " ", "card 4111111111111111", "x".repeat(1001))) {
+            refused(() -> as(SENDER, () -> desk.declareUndelivered("n-" + reason, approved.submissionId(), reason)), AccountingErrorCode.REASON_REQUIRED);
+        }
+        assertThat(world.provider.inquiries()).isZero();
+        assertThat(world.store.keptAnswers()).hasSize(kept);
+        assertThat(world.store.find(UOW, id).orElseThrow().status()).isEqualTo(SubmissionStatus.SUBMITTED);
+    }
+
+    @Test
+    @DisplayName("what the door's refused act leaves: the provider's answer, kept, its last answer moved; no audit record, no history, the key free")
+    void whatTheDoorsRefusedActLeaves() {
+        RegulatorySubmissionDesk.RegulatorySubmissionReceipt approved = unknownAtTheProvider();
+        RegulatorySubmissionId id = doorOpen(approved);
+        int kept = world.store.keptAnswers().size();
+        int records = world.audit.size();
+        int history = world.store.history().size();
+        int keys = claims.size();
+
+        world.provider.nextInquiry(() -> Answer.unknown(Optional.empty(), "unsure".getBytes(StandardCharsets.UTF_8)));
+        refused(() -> as(SENDER, () -> desk.declareUndelivered("n-1", approved.submissionId(), REASON)), AccountingErrorCode.REGULATORY_SUBMISSION_STALE);
+
+        assertThat(world.store.keptAnswers()).hasSize(kept + 1);
+        assertThat(world.store.find(UOW, id).orElseThrow().lastAnswer()).contains("UNKNOWN");
+        assertThat(world.audit).hasSize(records);
+        assertThat(world.store.history()).hasSize(history);
+        assertThat(claims).hasSize(keys);
+
+        doorOpen(approved);
+        assertThat(as(SENDER, () -> desk.declareUndelivered("n-1", approved.submissionId(), REASON)).status()).as("the key is free").isEqualTo("UNDELIVERED");
+    }
+
+    @Test
+    @DisplayName("a refused approval stores nothing: the key is free, and nothing of it is left")
+    void aRefusedApprovalStoresNothing() {
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt validated = validated();
         int records = world.audit.size();
         int history = world.store.history().size();

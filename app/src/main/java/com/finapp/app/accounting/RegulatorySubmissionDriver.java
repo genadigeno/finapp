@@ -1,6 +1,5 @@
 package com.finapp.app.accounting;
 
-import com.finapp.accounting.RegulatoryReportingProvider;
 import com.finapp.accounting.RegulatorySubmissionId;
 import com.finapp.accounting.RegulatorySubmissionStore;
 import com.finapp.accounting.RegulatorySubmissions;
@@ -125,12 +124,13 @@ public final class RegulatorySubmissionDriver {
     }
 
     private boolean drive(Claimed claimed) {
+        // Before the call, from what the claim read: a provider that is down must not hide that a send was withheld, and the next attempt is no longer the first.
+        if (claimed.row().attempts() == 1 && claimed.row().monthMoved()) {
+            metrics.count("send_withheld_month_moved");
+        }
         Optional<Answered> answered = called(() -> submissions.ask(claimed));
         if (answered.isEmpty()) {
             return false;
-        }
-        if (claimed.row().attempts() == 1 && answered.get().call() == RegulatoryReportingProvider.CallKind.INQUIRE) {
-            metrics.count("send_withheld_month_moved");
         }
         Optional<Recorded> recorded = record(claimed, answered.get());
         if (recorded.isEmpty()) {

@@ -200,10 +200,11 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
     @Override
     public List<AnswerRow> answers(Connection unitOfWork, RegulatorySubmissionId id, int limit) {
         List<AnswerRow> kept = new ArrayList<>();
-        for (NewAnswer answer : answers) {
+        for (int at = 0; at < answers.size(); at++) {
+            NewAnswer answer = answers.get(at);
             if (answer.submission().equals(id)) {
                 kept.add(new AnswerRow(answer.id(), answer.attempt(), answer.reading().call(), answer.reading().stated(), answer.reading().read(), answer.reading().providerReference(), answer.reading().rejectionCode(), answer.reading().anomaly(),
-                        answer.flag(), answer.reading().retained(), answer.reading().rawSha256(), answer.reading().receivedBytes(), answer.reading().truncated(), clock.instant()));
+                        answer.flag(), answer.reading().retained(), answer.reading().rawSha256(), answer.reading().receivedBytes(), answer.reading().truncated(), answerTimes.get(at)));
             }
         }
         return List.copyOf(kept.subList(Math.max(0, kept.size() - limit), kept.size()));

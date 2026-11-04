@@ -14,7 +14,7 @@ import java.util.Set;
  * DRAFT --validate--> VALIDATED --approve--> APPROVED --submit--> SUBMITTED --the provider--> ACKNOWLEDGED | REJECTED
  * DRAFT | VALIDATED | APPROVED --a preparer withdraws--> WITHDRAWN
  * VALIDATED | APPROVED --a controller refuses--> REFUSED
- * SUBMITTED --a person, after a definite "not received" and the resends spent--> UNDELIVERED
+ * SUBMITTED --a person, on a definite "not received" asked at that act, the resends spent, the horizon past or the month moved--> UNDELIVERED
  * </pre>
  *
  * <p><strong>Every state has a door out.</strong> As first declared the machine had only forward edges, so a stale
@@ -38,7 +38,7 @@ public enum SubmissionStatus {
     REFUSED,
     /** A preparer took it back before it was sent. */
     WITHDRAWN,
-    /** Sent, and the provider definitely holds nothing under its id after the resends were spent - a person's conclusion. */
+    /** Committed to be sent, and the provider definitely holds nothing under its id, asked at the act, the resends spent, the horizon past or the month moved - a person's conclusion. */
     UNDELIVERED;
 
     /** The statuses this one may move to, by exactly one edge. */
