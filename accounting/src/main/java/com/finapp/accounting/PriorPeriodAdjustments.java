@@ -49,7 +49,7 @@ import lombok.RequiredArgsConstructor;
  *
  * <p><strong>Correcting twice</strong>: every receipt and read lists the month's corrections; the approval names the posted ones. Two approvals of one month take the same rows in id order, so the second finds the first {@code POSTED}
  * and, unless it named it, is refused. A month reopened and corrected directly leaves its {@code revision} moved, and a correction naming the old one is refused; one naming the new one reads figures that already hold the direct
- * correction. What this class cannot see is the reopen's own act: {@code PeriodCloseDesk} lists the posted corrections there, and refusing it is an owner item.
+ * correction. A reopen's own two acts name the posted corrections too (`P14-TSK-022`, {@link PeriodCloses}), and differing is this same refusal; a generic {@code MANUAL} adjustment dated in the reopened month still knows nothing of them, which the runbook says.
  *
  * <p><strong>A refused approval rolls back and stands {@code PROPOSED}.</strong> The way on is {@link #reject}, which asks nothing of either month, and then a new proposal, dated in a month then open, naming the revision then standing.
  * {@link #view} says whether it still stands and what blocks it; {@link #pending} finds it.
@@ -71,11 +71,21 @@ public final class PriorPeriodAdjustments {
     /** The most lines one adjustment may carry - a bound on the proposal, not a business limit. */
     public static final int MAX_LINES = 100;
 
+    /** The most posted corrections one adjustment's approval may name: a bound on its body, read by {@code @Size}, so a compile-time constant. */
+    public static final int MAX_NAMED_CORRECTIONS = 200;
+
+    /**
+     * The most corrections a month can ever hold {@code POSTED}, every revision's together, and so the most a reopen's body must be able to name (`P14-TSK-022`'s review, M-1). <strong>One more than {@link #MAX_NAMED_CORRECTIONS}, because an approval names
+     * those already posted and then adds itself</strong>: naming 200 takes the month to 201, and the 202nd can never post, since its approval would have to name 201. A reopen adds nothing and names them all, so its bound must reach 201 or the month's last
+     * door closes: once the 202nd is refused, the reopen is the way on. Nothing else moves a row to {@code POSTED}, the approvals of a month serialise on its rows, and a reopen moves a month's revision and not its corrections, so this holds for the month's whole life.
+     */
+    public static final int MAX_POSTED_CORRECTIONS = MAX_NAMED_CORRECTIONS + 1;
+
     /** The most standing proposals one read answers. */
     public static final int PENDING_LIMIT = 100;
 
     /**
-     * The entry's {@code reference}, one constant: a line on a customer's wallet or a merchant's payable is served to them with it ({@code JdbcStatementDerivation}), so it names no adjustment, month or proposal. The
+     * The entry's {@code reference}, one constant, naming no adjustment, month or proposal. A line on a customer's wallet or a merchant's payable no longer serves it (`P14-TSK-022`: one label for every adjustment, at each rendering); it is the entry's column, read by an operator. The
      * trace is the row's {@code journal_entry_id} and {@code adjustment_proposal_id}, and the entry's scope {@code ledger.adjust.approve:<proposal>}.
      */
     public static final String ENTRY_REFERENCE = "accounting-correction";
@@ -348,9 +358,7 @@ public final class PriorPeriodAdjustments {
             throw new AdjustmentStale("it corrects revision " + row.correctedRevision() + ", not the one named; an approver posts what they read");
         }
         Set<UUID> posted = month.stream().filter(candidate -> candidate.status() == PriorPeriodAdjustmentStatus.POSTED).map(candidate -> candidate.id().value()).collect(Collectors.toSet());
-        if (!posted.equals(approval.postedCorrections())) {
-            throw new AdjustmentStale("the month's posted corrections are not those named: " + posted.size() + " stand; read them and decide again");
-        }
+        requireNamed(posted, approval.postedCorrections());
         Optional<Blocked> blocked = blockedBy(row, corrected, target);
         if (blocked.isPresent()) {
             throw switch (blocked.get()) {
@@ -377,6 +385,13 @@ public final class PriorPeriodAdjustments {
                 .with("adjustmentProposal", row.proposal().toString())
                 .with("journalEntry", entry.entry().toString()), correlation);
         return Acted.of(row, PriorPeriodAdjustmentStatus.POSTED, Optional.of(entry.entry()), earlierThan(month, id), false);
+    }
+
+    /** What an act names against what has posted against the month: one refusal, in one set of words, for an adjustment's approval and a reopen's two acts. A count, never an id or a reason. */
+    static void requireNamed(Set<UUID> posted, Set<UUID> named) {
+        if (!posted.equals(named)) {
+            throw new AdjustmentStale("the month's posted corrections are not those named: " + posted.size() + " stand; read them and decide again");
+        }
     }
 
     // ------------------------------------------------------------------ reject

@@ -26,6 +26,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -65,7 +67,7 @@ public final class PeriodCloseDesk {
      * An act's receipt: the period as the act left it, and the proposal it answers.
      *
      * @param priorPeriodAdjustments on a reopen's two acts, the adjustments already posted against the month, read holding its row (`P14-TSK-013`): its figures at the next revision will still show what those corrected, each entry being dated in a later month, so
-     *     whoever corrects the month directly must know they stand. Empty on a close's acts.
+     *     whoever corrects the month directly must know they stand. What an act that judged its naming named, since `P14-TSK-022` refuses anything else; a repeat that converged compared nothing, and this is what stands now. Empty on a close's acts.
      */
     public record PeriodCloseReceipt(String id, String period, String status, int revision, String proposalId, String closeRunId, List<String> priorPeriodAdjustments) {}
 
@@ -141,20 +143,29 @@ public final class PeriodCloseDesk {
                 uow -> receipt(closes.reject(uow, id, proposal, actor, reason, correlation))));
     }
 
-    public PeriodCloseReceipt proposeReopen(String idempotencyKey, String rawId, String reason) {
+    public PeriodCloseReceipt proposeReopen(String idempotencyKey, String rawId, List<String> rawPosted, String reason) {
         AccountingPeriodId id = periodId(rawId);
+        Set<UUID> named = namedAdjustments(rawPosted);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        return flow.door(REOPEN_PROPOSE_SPAN, () -> keyed(actor, idempotencyKey, "reopen-proposal|" + id.value() + "|" + reason,
-                uow -> withPosted(uow, receipt(closes.proposeReopen(uow, id, actor, reason, correlation)), id)));
+        return flow.door(REOPEN_PROPOSE_SPAN, () -> keyed(actor, idempotencyKey, reopenFingerprint("reopen-proposal", id, named, reason),
+                uow -> withPosted(uow, receipt(closes.proposeReopen(uow, id, actor, named, reason, correlation)), id)));
     }
 
-    public PeriodCloseReceipt approveReopen(String idempotencyKey, String rawId, String reason) {
+    public PeriodCloseReceipt approveReopen(String idempotencyKey, String rawId, List<String> rawPosted, String reason) {
         AccountingPeriodId id = periodId(rawId);
+        Set<UUID> named = namedAdjustments(rawPosted);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        return flow.door(REOPEN_APPROVE_SPAN, () -> keyed(actor, idempotencyKey, "reopen-approval|" + id.value() + "|" + reason,
-                uow -> withPosted(uow, receipt(closes.approveReopen(uow, id, actor, reason, correlation)), id)));
+        return flow.door(REOPEN_APPROVE_SPAN, () -> keyed(actor, idempotencyKey, reopenFingerprint("reopen-approval", id, named, reason),
+                uow -> withPosted(uow, receipt(closes.approveReopen(uow, id, actor, named, reason, correlation)), id)));
+    }
+
+    /**
+     * A reopen's fingerprint: the same key naming another set is the executor's conflict. A body naming none reads exactly as one did before `P14-TSK-022`, so a retry across the deploy replays its receipt; one naming some has a prefix of its own, so the two forms can never be the same text whatever a reason holds.
+     */
+    static String reopenFingerprint(String act, AccountingPeriodId id, Set<UUID> named, String reason) {
+        return named.isEmpty() ? act + "|" + id.value() + "|" + reason : act + "-named|" + id.value() + "|" + new TreeSet<>(named) + "|" + reason;
     }
 
     /** The period's latest proposal, as its approver reads it; a period with none is {@code accounting.NotFound}. Recorded before it is served. */
@@ -260,6 +271,8 @@ public final class PeriodCloseDesk {
             throw refused(AccountingErrorCode.CLOSE_NOT_READY, notReady);
         } catch (PeriodCloses.CloseProposalStale stale) {
             throw refused(AccountingErrorCode.CLOSE_PROPOSAL_STALE, stale);
+        } catch (PriorPeriodAdjustments.AdjustmentStale stale) {
+            throw refused(AccountingErrorCode.PRIOR_PERIOD_ADJUSTMENT_STALE, stale);
         } catch (PostingCutoff.CutoffBusy busy) {
             throw new ApiException(AccountingErrorCode.CUTOFF_BUSY, "An accounting period command was refused",
                     "postings held the posting cutoff; nothing was changed, retry.");
@@ -291,6 +304,19 @@ public final class PeriodCloseDesk {
         } catch (IllegalArgumentException | NullPointerException malformed) {
             throw new ApiException(AccountingErrorCode.CLOSE_PROPOSAL_STALE, "An accounting period command was refused", what + " named is no such record.");
         }
+    }
+
+    /** The adjustments a reopen's body names: an id that cannot be anything's is not what stands, the same refusal as naming the wrong one. */
+    private static Set<UUID> namedAdjustments(List<String> raw) {
+        Set<UUID> named = new TreeSet<>();
+        for (String adjustment : raw == null ? List.<String>of() : raw) {
+            try {
+                named.add(UUID.fromString(adjustment));
+            } catch (IllegalArgumentException | NullPointerException malformed) {
+                throw new ApiException(AccountingErrorCode.PRIOR_PERIOD_ADJUSTMENT_STALE, "An accounting period command was refused", "a posted adjustment named is no such record.");
+            }
+        }
+        return named;
     }
 
     /** A check's name in the body: one that names no check is not what stands. */

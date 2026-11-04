@@ -279,7 +279,8 @@ class AccountingVocabulariesTest {
                         "regulatory.ObligationProposed=true", "regulatory.ObligationActivated=true", "regulatory.ObligationRejected=true", "regulatory.ObligationRead=false",
                         "regulatory.SubmissionDrafted=true", "regulatory.SubmissionValidated=false", "regulatory.SubmissionApproved=true", "regulatory.SubmissionRefused=true", "regulatory.SubmissionWithdrawn=true",
                         "regulatory.SubmissionSubmitted=true", "regulatory.SubmissionAcknowledged=false", "regulatory.SubmissionRejected=false", "regulatory.SubmissionUndelivered=true",
-                        "regulatory.SubmissionContraryAnswer=false", "regulatory.SubmissionRead=false", "regulatory.SubmissionResent=false");
+                        "regulatory.SubmissionContraryAnswer=false", "regulatory.SubmissionRead=false", "regulatory.SubmissionResent=false",
+                        "accounting.FinalStatementRead=false");
     }
 
     // ------------------------------------------------------------------

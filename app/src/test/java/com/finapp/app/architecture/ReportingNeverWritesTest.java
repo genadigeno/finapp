@@ -264,6 +264,33 @@ class ReportingNeverWritesTest {
         assertThat(waitingOn(imported, theClose, Set.of(BalanceSheetDefinition.class.getName(), IncomeStatementDefinition.class.getName()))).as("a close's machine holding a statement (INV-ACC-09)").isEmpty();
     }
 
+    /**
+     * A FINAL of a closed month cannot move for a merchant's term (`P14-TSK-022`, the owner's ruling (q); {@code INV-ACC-04}; its review, M-4): classifying a line by its origin moved value between {@code accountingCorrections} and {@code captured}, {@code refunded}, {@code chargedBack} and {@code other}, so
+     * <strong>every</strong> accessor of {@code MerchantPayable.Payable} is held to an exact list of readers, by call or by method reference. A merchant's own response reads each term; the {@code MERCHANT_PAYABLE} proof reads the sum; {@code BNPL_THREE_WAY} reads the sum and the four keyed BNPL terms, which no
+     * adjustment can reach. A report definition, a port adapter and a close check read none, so regenerating an earlier month reads nothing that changed. The accessors come from the record, so a new term with no line here fails.
+     */
+    @ArchTest
+    static void noStoredFigureReadsAMerchantsTerm(JavaClasses imported) {
+        String payable = com.finapp.merchant.MerchantPayable.Payable.class.getName();
+        java.util.Map<String, Set<String>> readers = new java.util.TreeMap<>();
+        imported.forEach(reader -> reader.getCodeUnitAccessesFromSelf().stream()
+                .filter(access -> access.getTargetOwner().getName().equals(payable) && !access.getName().equals("<init>"))
+                .forEach(access -> readers.computeIfAbsent(access.getName(), name -> new TreeSet<>()).add(reader.getName())));
+        String response = "com.finapp.app.merchant.MerchantPayableController";
+        String proof = "com.finapp.app.accounting.ProductSourceProofs";
+        String threeWay = "com.finapp.app.bnpl.LedgerBnplProofReads";
+        java.util.Map<String, Set<String>> expected = new java.util.TreeMap<>();
+        for (java.lang.reflect.RecordComponent term : com.finapp.merchant.MerchantPayable.Payable.class.getRecordComponents()) {
+            expected.put(term.getName(), Set.of(response));
+        }
+        expected.put("position", Set.of(response, proof, threeWay));
+        expected.put("terms", Set.of(proof, threeWay));
+        for (String keyed : List.of("bnplFinanced", "bnplFees", "bnplRefunded", "bnplFeesReturned")) {
+            expected.put(keyed, Set.of(response, threeWay));
+        }
+        assertThat(readers).as("who reads each of a merchant's terms: its own response, the sum's two proofs, and nothing stored").isEqualTo(expected);
+    }
+
     /** The census: the guard sees accounting, every writer it names, and the ledger's writers it refuses by package. */
     @ArchTest
     static void theReportingGuardSeesTheAccountingModule(JavaClasses imported) {

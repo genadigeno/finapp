@@ -64,7 +64,7 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>Every bucket came from the one statement the position was folded from, so
  * {@code position = captured − fees − refunded + feesReturned − paidOut + payoutsReturned −
- * chargedBack + chargebacksReversed ± reconciliationAttributed + bnplFinanced − bnplFees −
+ * chargedBack + chargebacksReversed ± reconciliationAttributed ± accountingCorrections + bnplFinanced − bnplFees −
  * bnplRefunded + bnplFeesReturned + other} is an identity of the breakdown, not a reconciliation this class
  * performs. {@link Payable#terms()} restates it so a caller can check it without re-deriving the
  * sign convention. A payable below zero after a chargeback is merchant debt ({@code INV-MER-07}
@@ -97,6 +97,17 @@ import lombok.RequiredArgsConstructor;
  * amendment): at most that purchase's own net, named {@code bnplRefunded} here, recovered from
  * later captures and financings before any payout.
  *
+ * <h2>A prior-period adjustment reads by its origin (`P14-TSK-022`, the owner's ruling (q))</h2>
+ *
+ * <p>A correction of a closed month ({@code ACCOUNTING}-origin {@code ADJUSTMENT}, {@code MERCHANT_PAYABLE} being a purpose
+ * open to it) faces whatever its person chose, so by counterparty a credit facing a customer's wallet would read as a
+ * capture, a debit as a refund, and one facing the recoverable as a chargeback, none of which happened. So it is classified
+ * by its origin first, as an attribution is, under {@code accountingCorrections}. The merchant's transaction report calls the
+ * same entry {@code OTHER}, labelled, and the two agree: its nets over such entries are this term. A {@code MANUAL} adjustment
+ * keeps its old reading, which no ruling moved. <strong>Nothing stored reads a term</strong>: a close check's
+ * {@code MERCHANT_PAYABLE} proof keeps only whether the terms sum, and no report definition reads this class, so no FINAL of a
+ * closed month moves, regenerated or not.
+ *
  * <h2>Paid out, not in flight</h2>
  *
  * <p>{@code paidOut} counts payouts the rail accepted — posted, keyed
@@ -125,6 +136,9 @@ public final class MerchantPayable {
      *     from the payable (`P8-TSK-015`, ADR-0071 §2), SIGNED — every payable line of a
      *     {@code RECONCILIATION}-origin {@code ADJUSTMENT} entry, whatever it faces, classified
      *     FIRST (ADR-0073 §6's origin rule)
+     * @param accountingCorrections what the platform's accounting corrected on this payable after a
+     *     month closed (`P14-TSK-022`), SIGNED — every payable line of an {@code ACCOUNTING}-origin
+     *     {@code ADJUSTMENT} entry, whatever it faces, classified by that origin
      * @param bnplFinanced the BNPL purchases' gross the financing credited (`P12-TSK-016`) —
      *     every payable CREDIT under {@code bnpl.financing:}
      * @param bnplFees the BNPL merchant fees the financing took out of it — every payable DEBIT
@@ -146,6 +160,7 @@ public final class MerchantPayable {
             Money chargedBack,
             Money chargebacksReversed,
             Money reconciliationAttributed,
+            Money accountingCorrections,
             Money bnplFinanced,
             Money bnplFees,
             Money bnplRefunded,
@@ -164,6 +179,7 @@ public final class MerchantPayable {
             Objects.requireNonNull(chargebacksReversed, "chargebacksReversed must not be null");
             Objects.requireNonNull(
                     reconciliationAttributed, "reconciliationAttributed must not be null");
+            Objects.requireNonNull(accountingCorrections, "accountingCorrections must not be null");
             Objects.requireNonNull(bnplFinanced, "bnplFinanced must not be null");
             Objects.requireNonNull(bnplFees, "bnplFees must not be null");
             Objects.requireNonNull(bnplRefunded, "bnplRefunded must not be null");
@@ -181,6 +197,7 @@ public final class MerchantPayable {
                     .minus(chargedBack)
                     .plus(chargebacksReversed)
                     .plus(reconciliationAttributed)
+                    .plus(accountingCorrections)
                     .plus(bnplFinanced)
                     .minus(bnplFees)
                     .minus(bnplRefunded)
@@ -269,6 +286,7 @@ public final class MerchantPayable {
         Money chargedBack = zero;
         Money chargebacksReversed = zero;
         Money reconciliationAttributed = zero;
+        Money accountingCorrections = zero;
         Money bnplFinanced = zero;
         Money bnplFees = zero;
         Money bnplRefunded = zero;
@@ -285,6 +303,14 @@ public final class MerchantPayable {
                         credit
                                 ? reconciliationAttributed.plus(bucket.total())
                                 : reconciliationAttributed.minus(bucket.total());
+            } else if (bucket.accountingOrigin()) {
+                // A prior-period adjustment (P14-TSK-022), by its origin too: facing a wallet it
+                // would otherwise read as a capture or a refund that never happened. Signed as the
+                // liability reads it.
+                accountingCorrections =
+                        credit
+                                ? accountingCorrections.plus(bucket.total())
+                                : accountingCorrections.minus(bucket.total());
             } else if (bucket.namespace().filter(BNPL_FINANCING_NAMESPACE::equals).isPresent()) {
                 // F1, by its KEY (P12-TSK-016): the gross credited, the merchant fee debited -
                 // the capture's shape with the receivable in the clearing's place.
@@ -361,7 +387,7 @@ public final class MerchantPayable {
         return new Payable(
                 breakdown.position(), captured, fees, refunded, feesReturned, paidOut,
                 payoutsReturned, chargedBack, chargebacksReversed, reconciliationAttributed,
-                bnplFinanced, bnplFees, bnplRefunded, bnplFeesReturned, other);
+                accountingCorrections, bnplFinanced, bnplFees, bnplRefunded, bnplFeesReturned, other);
     }
 
     /** The platform's side of a chargeback's attribution entries — never a sale clearing. */

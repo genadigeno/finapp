@@ -11,8 +11,10 @@ import com.finapp.bnpl.BnplDisputeReason;
 import com.finapp.bnpl.BnplDisputeStatus;
 import com.finapp.bnpl.BnplDisputes;
 import com.finapp.bnpl.BnplErrorCode;
+import com.finapp.bnpl.BnplObligations;
 import com.finapp.bnpl.BnplReasons;
 import com.finapp.bnpl.BnplRefunds;
+import com.finapp.bnpl.BnplWrittenOffRefused;
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.IdentityErrorCode;
 import com.finapp.identity.IdentityStore;
@@ -166,11 +168,23 @@ public final class BnplDisputeDesk {
         RequestFingerprint fingerprint = fingerprint("bnpl.dispute", agreement.value().toString(),
                 Long.toString(amount.minorUnits()), Integer.toString(amount.scale()), amount.currency().code(),
                 category.name(), body.reason() == null ? "" : body.reason());
-        return keyed(OPEN_SCOPE, actor, idempotencyKey, fingerprint, unitOfWork -> {
-            UUID party = partyOf(unitOfWork, current);
-            requireConditionalAssurance(unitOfWork, current);
-            return party;
-        }, (unitOfWork, party) -> disputes.open(unitOfWork, agreement, party, request, actor, correlation));
+        try {
+            return keyed(OPEN_SCOPE, actor, idempotencyKey, fingerprint, unitOfWork -> {
+                UUID party = partyOf(unitOfWork, current);
+                requireConditionalAssurance(unitOfWork, current);
+                return party;
+            }, (unitOfWork, party) -> disputes.open(unitOfWork, agreement, party, request, actor, correlation));
+        } catch (BnplWrittenOffRefused writtenOff) {
+            throw writtenOffForACustomer();
+        }
+    }
+
+    /**
+     * What a customer reads when a dispute is refused on their written-off agreement (`P14-TSK-022`): the code {@code ApiErrorHandler} answers every other door with, nothing stored under the key, and where to go, since this door is closed to them until
+     * {@code PI-007} is built. Their own door only: an operator's or a merchant's never reads this.
+     */
+    static ApiException writtenOffForACustomer() {
+        return new ApiException(BnplErrorCode.OBLIGATION_WRITTEN_OFF, "This BNPL agreement cannot be disputed here", BnplObligations.WRITTEN_OFF_DISPUTE_REFUSED);
     }
 
     /** The customer withdraws their own open dispute. */

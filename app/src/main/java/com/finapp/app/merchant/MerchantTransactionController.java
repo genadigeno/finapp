@@ -54,7 +54,9 @@ public class MerchantTransactionController {
      * {@code kind} is {@code CAPTURE}, {@code REFUND}, {@code BNPL_FINANCING} (a BNPL purchase
      * financed at you: {@code gross} credited, {@code fee} the BNPL merchant fee,
      * {@code purchaseId} the purchase), {@code BNPL_REFUND} ({@code refundId} the BNPL refund)
-     * or {@code OTHER} (`P12-TSK-016`).
+     * or {@code OTHER} (`P12-TSK-016`). {@code label} is {@code Account adjustment} on an
+     * {@code OTHER} movement that is an adjustment, whatever made it, and absent on everything
+     * else (`P14-TSK-022`).
      */
     public record MovementView(
             String kind,
@@ -67,7 +69,8 @@ public class MerchantTransactionController {
             String orderId,
             String paymentIntentId,
             String refundId,
-            String purchaseId) {}
+            String purchaseId,
+            String label) {}
 
     /** One currency: opening, the movements, and the closing they reconcile to. */
     public record SectionView(
@@ -108,7 +111,8 @@ public class MerchantTransactionController {
                 section.movements().stream().map(MerchantTransactionController::render).toList());
     }
 
-    private static MovementView render(MerchantTransactionReport.Movement movement) {
+    /** Package-private so what a merchant reads can be proven with no database ({@code MerchantStatementSurfacesTest}). */
+    static MovementView render(MerchantTransactionReport.Movement movement) {
         return new MovementView(
                 movement.kind().name(),
                 movement.entry().value().toString(),
@@ -120,7 +124,8 @@ public class MerchantTransactionController {
                 text(movement.orderId()),
                 text(movement.paymentIntentId()),
                 text(movement.refundId()),
-                text(movement.purchaseId()));
+                text(movement.purchaseId()),
+                movement.label().orElse(null));
     }
 
     private static String text(Optional<UUID> id) {

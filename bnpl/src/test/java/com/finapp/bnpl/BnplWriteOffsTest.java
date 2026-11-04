@@ -426,10 +426,16 @@ class BnplWriteOffsTest {
     }
 
     @Test
-    @DisplayName("what a customer reads beside the status says it stands owed, in words that cannot be read as paid or forgiven")
+    @DisplayName("what a customer reads beside the status says it stands owed, in words that cannot be read as paid or forgiven; and where to take it (P14-TSK-022): a person reviews it, no outcome promised, no channel invented. Pinned here until a qualified reviewer confirms the wording, the owner's (d)")
     void theNoticeSaysItStandsOwed() {
-        assertThat(BnplObligations.WRITTEN_OFF_NOTICE).contains("written off in our accounts").contains("bookkeeping entry")
-                .contains("has not been paid or forgiven").contains("still owed");
+        assertThat(BnplObligations.WRITTEN_OFF_NOTICE).isEqualTo("This agreement is in default and has been written off in our accounts. That is a bookkeeping entry: the amount has not been paid or forgiven, and it is still owed. Please contact us about repaying it."
+                + " If you think this is wrong, for example because you never received the goods, contact us and a person will review it; we cannot promise the outcome.");
+        assertThat(BnplObligations.WRITTEN_OFF_DISPUTE_REFUSED).isEqualTo("This agreement has been written off, so a dispute cannot be opened here. Nothing was moved, and what is owed is unchanged."
+                + " If you think this is wrong, for example because you never received the goods, contact us and a person will review it; we cannot promise the outcome.");
+        for (String words : java.util.List.of(BnplObligations.WRITTEN_OFF_NOTICE, BnplObligations.WRITTEN_OFF_DISPUTE_REFUSED)) {
+            assertThat(words).contains("contact us").contains("a person will review it").contains("we cannot promise the outcome");
+            assertThat(words.toLowerCase(java.util.Locale.ROOT)).as("no promise, and no channel this product does not name").doesNotContain("refund").doesNotContain("cancel").doesNotContain("will be removed").doesNotContain("@").doesNotContain("http").doesNotContain("call us").doesNotContain("phone");
+        }
     }
 
     @Test

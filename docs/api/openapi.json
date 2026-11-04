@@ -602,7 +602,7 @@
             }
           }
         },
-        "description": "[409] What the act names is no longer what stands - the revision corrected, the date it posts on, the month's posted corrections, a month closed and reopened under it, or the adjustment was decided; nothing was changed. Read it again; one that can no longer post is rejected and proposed again.",
+        "description": "[409] What the act names is no longer what stands - the revision corrected, the date it posts on, the month's posted corrections, a month closed and reopened under it, or the adjustment was decided; nothing was changed. Read it again; an adjustment that can no longer post is rejected and proposed again.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -19852,6 +19852,72 @@
         },
         "type": "object"
       },
+      "FinalStatementView": {
+        "properties": {
+          "completedAt": {
+            "type": "string"
+          },
+          "definition": {
+            "type": "string"
+          },
+          "definitionVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "doors": {
+            "type": "string"
+          },
+          "issuedSha256": {
+            "type": "string"
+          },
+          "mappingVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "parameters": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodId": {
+            "type": "string"
+          },
+          "periodRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "periodStatus": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "statement": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "valuationRateSetId": {
+            "type": "string"
+          },
+          "withheld": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "FxDecisionRequest": {
         "properties": {
           "reason": {
@@ -22572,6 +22638,9 @@
           "kind": {
             "type": "string"
           },
+          "label": {
+            "type": "string"
+          },
           "net": {
             "type": "string"
           },
@@ -23408,6 +23477,9 @@
       },
       "PayableLine": {
         "properties": {
+          "accountingCorrections": {
+            "type": "string"
+          },
           "bnplFees": {
             "type": "string"
           },
@@ -23872,6 +23944,16 @@
       },
       "PeriodReopenRequest": {
         "properties": {
+          "postedAdjustments": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 0,
+              "type": "string"
+            },
+            "maxItems": 201,
+            "minItems": 0,
+            "type": "array"
+          },
           "reason": {
             "maxLength": 1000,
             "minLength": 0,
@@ -36098,6 +36180,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ReportRunContentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/report-runs/{runId}/final-statement": {
+      "get": {
+        "operationId": "readFinalStatement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalStatementView"
                 }
               }
             },

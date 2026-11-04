@@ -142,7 +142,7 @@ command, which is where "the database committed but the response was lost" becom
   an origin, frozen on the proposal by ledger `V015`, and each origin has its own door, which
   refuses the other's proposals (`ledger.AdjustmentOriginMismatch`). A `MANUAL` adjustment
   (`MANUAL_CORRECTION`, or `UNCODED` for one proposed before `V015`) is proposed and approved at
-  `/v1/ledger/adjustments` under `LEDGER_ADJUST`, and may never touch a reconciled position
+  `/v1/ledger/adjustments` under `LEDGER_ADJUST`, its approval on a `MULTI_FACTOR` session (`P14-TSK-022`), and may never touch a reconciled position
   (`V015`'s trigger). A `RECONCILIATION` adjustment (`RECONCILIATION_WRITE_OFF`,
   `RECONCILIATION_GAIN`, `RECONCILIATION_TRANSFER`) is proposed and approved only inside a break
   resolution's own transaction, through `AdjustmentService.proposeOwned` and `approveOwned` —

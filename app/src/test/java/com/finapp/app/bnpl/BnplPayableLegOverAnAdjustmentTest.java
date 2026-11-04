@@ -102,10 +102,10 @@ class BnplPayableLegOverAnAdjustmentTest {
         return new PositionBreakdown.Bucket(side, Optional.empty(), eur(minor), false, Optional.of(namespace));
     }
 
-    /** The adjustment's line in the breakdown: no key and no attribution, facing a customer's wallet. */
+    /** The adjustment's line in the breakdown, by the ledger's own rule: its origin read first, so no key and no counterparty. */
     private static PositionBreakdown.Bucket adjustmentFacingAWallet(Direction side, long minor) {
         Direction onTheWallet = side == Direction.CREDIT ? Direction.DEBIT : Direction.CREDIT;
-        return new PositionBreakdown.Bucket(side, Optional.of(new PositionBreakdown.Counterparty(AccountPurpose.CUSTOMER_WALLET, onTheWallet)), eur(minor), false, Optional.empty());
+        return PositionBreakdown.Bucket.of(side, eur(minor), Optional.of(com.finapp.ledger.AdjustmentOrigin.ACCOUNTING), Optional.of(new PositionBreakdown.Counterparty(AccountPurpose.CUSTOMER_WALLET, onTheWallet)), Optional.empty());
     }
 
     private static StatementDerivation.StatementLine line(Direction side, long minor, Optional<String> namespace) {

@@ -1,9 +1,11 @@
 package com.finapp.merchant;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AccountType;
+import com.finapp.ledger.AdjustmentOrigin;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountStore;
@@ -25,12 +27,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link MerchantPayable}'s real term logic under a prior-period adjustment's line (`P14-TSK-013`; {@code PHASE_14_PLAN.md} section 13.5; {@code MERCHANT_PAYABLE} being one of the five purposes open to it). Nothing classifies such a line: it carries no key and is not an
+ * {@link MerchantPayable}'s real term logic under an adjustment's line (`P14-TSK-013`, `P14-TSK-022`; {@code PHASE_14_PLAN.md} section 13.5; {@code MERCHANT_PAYABLE} being one of the five purposes open to it). Since `P14-TSK-022` an {@code ACCOUNTING} line is classified by its origin, through the ledger's own {@link PositionBreakdown.Bucket#of}; a {@code MANUAL} one still reads by what it faces. Nothing classifies such a line: it carries no key and is not an
  * attribution, so it falls to whichever term its counterparty names. Whatever it reads as, the terms must still sum to the position, or {@code ProductSourceProofs}' {@code MERCHANT_PAYABLE} proof fails and the month it lands in cannot close.
  *
  * <p>The breakdown is stood in, one bucket for each shape {@code JdbcPositionBreakdown} can produce; the folding of real lines into buckets is {@code PriorPeriodAdjustmentDatabaseTest}'s, owed.
  */
-@DisplayName("a prior-period adjustment's line on a merchant payable: the terms sum to the position (P14-TSK-013)")
+@DisplayName("an adjustment's line on a merchant payable: the terms sum to the position (P14-TSK-013, P14-TSK-022)")
 class MerchantPayableTermsTest {
 
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-03-10T09:00:00Z"), ZoneOffset.UTC);
@@ -74,6 +76,83 @@ class MerchantPayableTermsTest {
         return Money.ofMinorUnits(minor, EUR);
     }
 
+    /** One line of an origin's proposal, through the ledger's own origin rule, facing {@code purpose}; the counterparty stands on the other side. */
+    private static PositionBreakdown.Bucket ofOrigin(AdjustmentOrigin origin, AccountPurpose purpose, Direction onThePayable, long minor) {
+        Direction onTheCounterparty = onThePayable == Direction.CREDIT ? Direction.DEBIT : Direction.CREDIT;
+        return PositionBreakdown.Bucket.of(onThePayable, Money.ofMinorUnits(minor, EUR), Optional.of(origin), Optional.of(new PositionBreakdown.Counterparty(purpose, onTheCounterparty)), Optional.empty());
+    }
+
+    /** Every term but {@code accountingCorrections} and the position. */
+    private static List<Money> everyOtherTerm(MerchantPayable.Payable payable) {
+        return List.of(payable.captured(), payable.fees(), payable.refunded(), payable.feesReturned(), payable.paidOut(), payable.payoutsReturned(), payable.chargedBack(), payable.chargebacksReversed(), payable.reconciliationAttributed(),
+                payable.bnplFinanced(), payable.bnplFees(), payable.bnplRefunded(), payable.bnplFeesReturned(), payable.other());
+    }
+
+    @Test
+    @DisplayName("P14-TSK-022 (q): an ACCOUNTING line facing every counterparty the drill-down names, on either side, reads accountingCorrections, signed as the liability reads it, and no other term: no false captured, refunded or chargedBack, and the terms sum")
+    void anAccountingLineFacingEveryCounterparty() {
+        for (AccountPurpose purpose : MerchantPayable.COUNTERPARTIES) {
+            for (Direction side : Direction.values()) {
+                MerchantPayable.Payable payable = payableOf(List.of(ofOrigin(AdjustmentOrigin.ACCOUNTING, purpose, side, 1_500)));
+
+                assertThat(payable.accountingCorrections()).as(purpose + " " + side).isEqualTo(side == Direction.CREDIT ? eur(1_500) : eur(-1_500));
+                assertThat(everyOtherTerm(payable)).as(purpose + " " + side).allSatisfy(term -> assertThat(term).isEqualTo(eur(0)));
+                assertThat(payable.terms()).as(purpose + " " + side).isEqualTo(payable.position());
+                assertThat(payable.position()).as(purpose + " " + side).isEqualTo(side == Direction.CREDIT ? eur(1_500) : eur(-1_500));
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("P14-TSK-022: the origin rule is one statement: ACCOUNTING and RECONCILIATION drop what they face and any key; MANUAL, and an entry no proposal posted, keep both; a line can never be both origins")
+    void theOriginRule() {
+        PositionBreakdown.Counterparty wallet = new PositionBreakdown.Counterparty(AccountPurpose.CUSTOMER_WALLET, Direction.DEBIT);
+        Optional<String> key = Optional.of(MerchantPayable.BNPL_REFUND_NAMESPACE);
+        PositionBreakdown.Bucket accounting = PositionBreakdown.Bucket.of(Direction.CREDIT, eur(1), Optional.of(AdjustmentOrigin.ACCOUNTING), Optional.of(wallet), key);
+        assertThat(accounting.accountingOrigin()).isTrue();
+        assertThat(accounting.reconciliationAttributed()).isFalse();
+        assertThat(accounting.counterparty()).isEmpty();
+        assertThat(accounting.namespace()).isEmpty();
+        PositionBreakdown.Bucket attributed = PositionBreakdown.Bucket.of(Direction.CREDIT, eur(1), Optional.of(AdjustmentOrigin.RECONCILIATION), Optional.of(wallet), key);
+        assertThat(attributed.reconciliationAttributed()).isTrue();
+        assertThat(attributed.accountingOrigin()).isFalse();
+        assertThat(attributed.counterparty()).isEmpty();
+        for (Optional<AdjustmentOrigin> keeps : List.of(Optional.of(AdjustmentOrigin.MANUAL), Optional.<AdjustmentOrigin>empty())) {
+            PositionBreakdown.Bucket kept = PositionBreakdown.Bucket.of(Direction.CREDIT, eur(1), keeps, Optional.of(wallet), key);
+            assertThat(kept.accountingOrigin()).isFalse();
+            assertThat(kept.reconciliationAttributed()).isFalse();
+            assertThat(kept.counterparty()).contains(wallet);
+            assertThat(kept.namespace()).isEqualTo(key);
+        }
+        assertThatThrownBy(() -> new PositionBreakdown.Bucket(Direction.CREDIT, Optional.of(wallet), eur(1), false, Optional.empty(), true)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new PositionBreakdown.Bucket(Direction.CREDIT, Optional.empty(), eur(1), true, Optional.empty(), true)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("P14-TSK-022's review, M-3: an origin this build does not know reads as none: facing a wallet, by what it faces; the terms still sum, so an old instance's response and proofs go on answering under a rolling deploy")
+    void anOriginThisBuildDoesNotKnow() {
+        PositionBreakdown.Bucket later = PositionBreakdown.Bucket.of(Direction.CREDIT, eur(1_500), AdjustmentOrigin.named("A_LATER_RELEASES_ORIGIN"), Optional.of(new PositionBreakdown.Counterparty(AccountPurpose.CUSTOMER_WALLET, Direction.DEBIT)), Optional.empty());
+
+        MerchantPayable.Payable payable = payableOf(List.of(later));
+
+        assertThat(payable.captured()).isEqualTo(eur(1_500));
+        assertThat(payable.accountingCorrections()).isEqualTo(eur(0));
+        assertThat(payable.terms()).isEqualTo(payable.position());
+    }
+
+    @Test
+    @DisplayName("P14-TSK-022: only ACCOUNTING moved: a MANUAL line facing a wallet still reads by its counterparty, as no ruling changed; a RECONCILIATION one is an attribution; the terms sum for each")
+    void onlyAccountingMoved() {
+        MerchantPayable.Payable manual = payableOf(List.of(ofOrigin(AdjustmentOrigin.MANUAL, AccountPurpose.CUSTOMER_WALLET, Direction.CREDIT, 1_500)));
+        assertThat(manual.captured()).isEqualTo(eur(1_500));
+        assertThat(manual.accountingCorrections()).isEqualTo(eur(0));
+        assertThat(manual.terms()).isEqualTo(manual.position());
+        MerchantPayable.Payable attributed = payableOf(List.of(ofOrigin(AdjustmentOrigin.RECONCILIATION, AccountPurpose.CUSTOMER_WALLET, Direction.DEBIT, 1_500)));
+        assertThat(attributed.reconciliationAttributed()).isEqualTo(eur(-1_500));
+        assertThat(attributed.accountingCorrections()).isEqualTo(eur(0));
+        assertThat(attributed.terms()).isEqualTo(attributed.position());
+    }
+
     @Test
     @DisplayName("every counterparty the drill-down names, on either side of the payable: the terms sum to the position")
     void facingEveryCounterparty() {
@@ -88,7 +167,7 @@ class MerchantPayableTermsTest {
     }
 
     @Test
-    @DisplayName("what it reads as is what the owner item says: facing a customer's wallet a credit is a captured sale and a debit a refund; facing a fee account, which no term names, other")
+    @DisplayName("a line of no ACCOUNTING origin, a MANUAL one say, reads by what it faces: facing a customer's wallet a credit is a captured sale and a debit a refund; facing a fee account, which no term names, other")
     void whatAMerchantIsShown() {
         assertThat(payableOf(List.of(facing(AccountPurpose.CUSTOMER_WALLET, Direction.CREDIT, 1_500))).captured()).isEqualTo(eur(1_500));
         assertThat(payableOf(List.of(facing(AccountPurpose.CUSTOMER_WALLET, Direction.DEBIT, 1_500))).refunded()).isEqualTo(eur(1_500));
@@ -126,9 +205,12 @@ class MerchantPayableTermsTest {
         }
         buckets.add(facingNothing(Direction.CREDIT, 5));
         buckets.add(facingNothing(Direction.DEBIT, 2));
+        buckets.add(ofOrigin(AdjustmentOrigin.ACCOUNTING, AccountPurpose.CUSTOMER_WALLET, Direction.CREDIT, 19));
+        buckets.add(ofOrigin(AdjustmentOrigin.ACCOUNTING, AccountPurpose.DISPUTE_COSTS, Direction.DEBIT, 3));
 
         MerchantPayable.Payable payable = payableOf(buckets);
 
+        assertThat(payable.accountingCorrections()).isEqualTo(eur(16));
         assertThat(payable.terms()).isEqualTo(payable.position());
     }
 }

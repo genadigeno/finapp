@@ -353,7 +353,7 @@ by **origin**: every payable line in a `RECONCILIATION`-origin `ADJUSTMENT` entr
 origin) is `MerchantPayable`'s `reconciliationAttributed`, classified first, **whatever it faces** —
 `SUSPENSE_UNMATCHED`, or a clearing position when a `TRANSFER_TO_ACCOUNT` closes an OUTBOUND
 remainder (DR P) — so a reconciliation transfer never reads as a capture or a payout returned; and
-the customer statement labels the same resolution-entry lines `RECONCILIATION_ATTRIBUTION`
+the customer statement labels the same resolution-entry lines `RECONCILIATION_ATTRIBUTION` *(since `P14-TSK-022` the one `Account adjustment`, for every origin)*
 (ADR-0073 §6). Both ship with `P8-TSK-015`, whose `TRANSFER_TO_ACCOUNT` is their first poster — each
 with a counted test. *(The Phase 7 → 8 transition's consistency review, A12 and A13: the rule was
 "a payable line facing `SUSPENSE_UNMATCHED`", and the owner was left ambiguous with `P8-TSK-019`.)*

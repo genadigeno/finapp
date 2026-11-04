@@ -382,7 +382,7 @@ sentence lands.
 | `journal_entry` | `posting_date` | `CONFIDENTIAL` | Dates financial activity — the `kyc_case.opened_at` reasoning, on the record every later phase posts through |
 | `journal_entry` | `value_date` | `CONFIDENTIAL` | As `posting_date` |
 | `journal_entry` | `entry_type` | `INTERNAL` | An enumeration of three values |
-| `journal_entry` | `reference` | `RESTRICTED-FINANCIAL` | The originating economic event — from Phase 4 a transfer or payment identifier, which is `audit_record.target_id`'s reasoning at its ceiling |
+| `journal_entry` | `reference` | `RESTRICTED-FINANCIAL` | The originating economic event — from Phase 4 a transfer or payment identifier, which is `audit_record.target_id`'s reasoning at its ceiling. On an adjustment it is an operator's free text, a resolution's id or an accounting constant, and no customer or merchant surface serves it (`P14-TSK-022`, `Account adjustment` in its place) |
 | `journal_entry` | `reason` | `RESTRICTED-PII` | **Free text written by a person** — `audit_record.reason`'s reasoning verbatim: content constrained by no type, handled at the ceiling |
 | `journal_entry` | `actor_id` | `RESTRICTED-PII` | `audit_record.actor_id`'s reasoning: a person's identity-provider subject once real actors post |
 | `journal_entry` | `correlation_id` | `INTERNAL` | Platform-minted since ADR-0034 |
@@ -4802,7 +4802,7 @@ earlier `accounting` tables are classified in the next section, added beside thi
 | `report_run` | `status` | `INTERNAL` | The machine's state |
 | `report_run` | `attempt` | `INTERNAL` | A count - the generator's attempts, one more per reclaim |
 | `report_run` | `lease_until` | `INTERNAL` | The generator's lease - the database's clock plus the configured lease |
-| `report_run` | `content` | `CONFIDENTIAL` | The issued output - aggregates of the platform's books in canonical JSON; served only by the audited read, never logged, announced or metered |
+| `report_run` | `content` | `CONFIDENTIAL` | The issued output - aggregates of the platform's books in canonical JSON; served only by the audited reads - the accountant's whole, and a controller's of a FINAL statement, its routes withheld (`P14-TSK-022`) - never logged, announced or metered |
 | `report_run` | `content_sha256` | `INTERNAL` | The content's sha256, recomputed by the database - a digest that reveals nothing of the content, the issued output's identifier, published in the completion event for lineage |
 | `report_run` | `completed_at` | `INTERNAL` | The database's stamp |
 | `report_run` | `failure_code` | `INTERNAL` | A closed code - why the run failed |

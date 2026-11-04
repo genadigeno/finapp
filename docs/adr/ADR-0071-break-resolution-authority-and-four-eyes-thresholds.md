@@ -778,7 +778,7 @@ stored resolution, ADR-0069's amendment), `INV-REC-06`, `INV-REC-09`, `INV-SET-0
   shape screened before the claim and the stored receipt carrying no narrative; the evidence
   writer withdraws a pending proposal and rejects its ledger half (§9's first row, produced);
   `MerchantPayable.reconciliationAttributed` and the statement's `RECONCILIATION_ATTRIBUTION`
-  read by origin first. **Deviations and decisions, each recorded:** (a) **every** resolution
+  read by origin first *(the customer's label became the one `Account adjustment` for every origin, `P14-TSK-022`, the owner's ruling (s), 2026-11-04; the ledger's line still marks an attribution)*. **Deviations and decisions, each recorded:** (a) **every** resolution
   command takes the source's namespace-4 advisory first, not only the allocating kinds — §9's
   register fact made uniform (an offset spanning two sources takes both, sorted); (b) the
   **remainder siblings**: a partial allocation raises `AMOUNT_MISMATCH` on the expectation and

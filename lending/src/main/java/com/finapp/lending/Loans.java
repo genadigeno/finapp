@@ -33,10 +33,14 @@ public final class Loans {
 
     /**
      * What a customer reads beside a {@code WRITTEN_OFF} status (`P14-TSK-021`). Truthful, and never "paid", "settled" or
-     * "closed": a write-off is a bookkeeping entry, the amount stands owed. Wording a qualified reviewer confirms before production.
+     * "closed": a write-off is a bookkeeping entry, the amount stands owed. <strong>The route to a person</strong> (`P14-TSK-022`, from the owner's
+     * (c)): it promises a review, never an outcome, because no door settles the matter until {@code PI-005} is built;
+     * {@code OPERATIONS_RUNBOOK.md} section 7.13 is what that person may do. "Contact us" is the only route this product names to a customer: no
+     * channel is invented here. <strong>Wording a qualified reviewer confirms before production</strong> (the owner's (d)).
      */
     public static final String WRITTEN_OFF_NOTICE = "This account is in default and has been written off in our accounts. That is a"
-            + " bookkeeping entry: the amount has not been paid or forgiven, and it is still owed. Please contact us about repaying it.";
+            + " bookkeeping entry: the amount has not been paid or forgiven, and it is still owed. Please contact us about repaying it."
+            + " If you think this is wrong, for example because you never received the money, contact us and a person will review it; we cannot promise the outcome.";
 
     @NonNull private final LoanStore store;
     @NonNull private final LedgerAccountStore<Connection> accounts;
