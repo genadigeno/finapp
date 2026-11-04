@@ -25282,7 +25282,7 @@ wave, the board orders them; a lower number never lands after a higher (Flyway o
 **Milestones** (acceptance in `PHASE_14_PLAN.md` §17): M14.1 Foundations (`-001`…`-003`) · M14.2 Periods and cutoff
 (`-004`…`-006`) · M14.3 GL and trial balance (`-007`…`-009`) · M14.4 Reconciliation and close (`-010`…`-013`) · M14.5
 Multi-currency (`-014`, `-015`) · M14.6 Financial reporting (`-016`, `-017`) · M14.7 Regulatory reporting (`-018`, `-019`) ·
-M14.8 Operations (`-020`) · M14.9 Write-off — optional, C6 (`-021`) · M14.10 Exit (`P14-TST-002`, `P14-TST-001`
+M14.8 Operations (`-020`) · M14.9 Write-off — optional, C6 (`-021`) · M14.10 Exit (`-022`, `P14-TST-002`, `P14-TST-001`
 `POSTPONED`, `P14-DOC-001`).
 
 **If the phase must shrink**, cut `-021` first, then `-019`, then `-017`'s portfolio and exposure re-statements; each
@@ -25291,7 +25291,7 @@ deferral recorded with its owner. **Never cut:** the cutoff (`-004`), four-eyes 
 
 **Parallel waves** (`PHASE_14_PLAN.md` §18): **A** `-001`; **B** `-002`, `-003`, `-004`; **C** `-005`, `-006`;
 **D** `-007`, `-008`, `-014`; **E** `-009`, `-010`; **F** `-011`, `-015`; **G** `-012`, `-017`; **H** `-013`, `-021`; **I** `-016`;
-**J** `-018`; **K** `-019`, `-020`; **L** `P14-TST-002`, then `P14-DOC-001` (`P14-TST-001` `POSTPONED`, PI-004).
+**J** `-018`; **K** `-019`, `-020`; **L** `P14-TST-002`, then `P14-DOC-001` (`P14-TST-001` `POSTPONED`, PI-004). `-022`, added 2026-11-04, depends only on `-013` and comes before **L**.
 
 **What Phase 14 must not implement** (`PHASE_14_PLAN.md` §21): a second ledger or a stored balance; a write to a ledger
 table from `accounting`; a posting treatment the owner has not ratified (revaluation postings, provisioning/ECL, EIR
@@ -26344,6 +26344,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Probe**: omit suspense from the notes → `#notesDiscloseSuspenseAndBreaks` red.
 - **Acceptance criteria**: the balance sheet balances per currency and translated; every figure drills down.
 - **Definition of done**: `DOD-FIN`, `DOD-API`. **Risk**: Low. **Cx**: M.
+- *The owner's decisions (2026-11-04):* C6 A ratified, and `P14-TSK-021` runs beside this task, so either can merge first. The C6 note must read true in both orders: write-offs are posted only by a four-eyes command, under `LOAN_WRITE_OFF_EXPENSE` and `BNPL_WRITE_OFF_EXPENSE`, with no automatic charge-off; provisioning and effective-interest amortisation are not applied. Claim neither that write-offs have occurred nor that none can.
 - *Routed by `P14-TSK-013` (2026-11-04), status unchanged:* **what the notes read is built and unwired**: `PriorPeriodCorrections`, `app`'s `LedgerPriorPeriodCorrections`, no bean: give it one and read it on the run's snapshot. It answers a month's posted adjustments, each traced to the period and revision it corrects; the month's reversals of entries dated before it, per namespace and original month, by date and so frozen, exact at any FINAL read since a lock needs its predecessor closed, a `PROVISIONAL` one saying "dated before the month" and not "closed"; and `untraced`, an entry of the origin with no `POSTED` row, zero unless a writer bypassed the door: disclose it, never assume it. **`report_run` holds no notes**: the backlog's "counted in `report.run` notes" has no mechanism behind it, so the statements' notes are this task's to build. A correction is disclosed in the month it is dated, naming the month it corrects: nothing may be added to a closed month's FINAL bytes (`PriorPeriodEntryWalkTest#theCorrectedMonthsBytesDoNotMove`).
 - *Routed by `P14-TSK-015` (2026-11-02):* `reporting.Translation` is reusable as it stands - `takesValuationRateSet()` (or
   `needs...`), `Rates.pinnedBy` on the snapshot, `Rates.translate(columns, required)` over its columns, `section` for the content. A
@@ -26488,8 +26489,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - *Routed by `P14-TSK-013` (2026-11-04), status unchanged:* **A prior-period adjustment that can no longer post has no meter or alert**: it stands `PROPOSED` until a person rejects it, and only `GET .../prior-period-adjustments` and its `blockedBy` show it (`OPERATIONS_RUNBOOK.md` section 10.4). A gauge from the rows, on the database's clock, of those standing past a bound; no tag carries an id. Count the ledger's own `finapp.accounting.cutoff.refused{command=adjustment}` beside it: the same door.
 - *Routed by `P14-TSK-012` (2026-11-03), status unchanged:* (1) **`AccountingCloseCheckFailed` no longer fires for a set awaiting approval**: `VALUATION_SET_APPROVED` waits, `close.check`'s `deferred` counts it, so a month waiting on a set is not an alert until the owner's stall-after-birth alert covers it; `close.duration` and `CLOSE_STATUS`'s `RUNNING` include that wait. (2) `finapp.accounting.break.open` counts every status but `RESOLVED`, per generation, so an `ACKNOWLEDGED` generation a later one has superseded still counts: say so on the alert or narrow the read. (3) A proposal waiting on a decision has no meter of its own: `period.open.age` covers the month, not the proposal. (4) `OPERATIONS_RUNBOOK.md` §10.3 is this task's, a month that cannot be proposed; write the rest around it, including who takes a `PROJECTION_DRIFT`, which has no product door. (5) A close, a rejection and a reopen each publish or record as `AUDITABLE_ACTIONS.md` says; a rejection and a reopen's proposal publish no event. (6) `finapp.reconciliation.rule_set.missing{source}` now stands between a source and a month's run: say so on its alert. (7) A repudiation after a month's `CLOSED` leaves it with no run that counts: `RECONCILIATION_STATUS` shows it and nothing pages; decide whether something should.
 
-**P14-TSK-021 — Loan and BNPL write-off under four eyes (C6)** — `PLANNED` (optional, first cut candidate; only if the
-owner ratifies C6 A)
+**P14-TSK-021 — Loan and BNPL write-off under four eyes (C6)** — `READY` (2026-11-04; the owner ratified C6 A; marked by the coordinator, master before it `f1a06370`; every dependency `COMPLETE`; still the first cut candidate)
 - **Objective**: post lending rule 14 / bnpl F11 by a four-eyes operator command, with the capital-headroom fix in the same
   commit (ADR-0104 §Follow-up).
 - **Bounded context**: Lending (18), BNPL (19).
@@ -26512,6 +26512,21 @@ owner ratifies C6 A)
 - **Probe**: omit the headroom subtraction → `#theHeadroomDoesNotRise` red.
 - **Acceptance criteria**: the write-off posted only under four eyes; headroom correct.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`. **Risk**: High (policy). **Cx**: M.
+- *The owner's decisions (2026-11-04):* C6 A ratified. Provisioning and effective-interest amortisation stay deferred and disclosed. An approval moving money after the books have closed takes `MULTI_FACTOR` (`P14-TSK-013`'s item (r)): apply the same to a write-off's approval. A qualified reviewer still confirms C6 before production.
+
+**P14-TSK-022 — The owner's rulings on prior-period adjustments** — `READY` (2026-11-04; added by the coordinator from the owner's rulings on `P14-TSK-013`'s items; every dependency `COMPLETE`; not started)
+- **Objective**: build what the owner ruled on `P14-TSK-013`'s items (m), (q), (r) and (s), `CURRENT_STATE.md` §Next Task.
+- **Bounded context**: Accounting (close, adjustments), Ledger and Merchant (the breakdown), the accounts API.
+- **Dependencies**: `-013`.
+- **Scope**: (m) a reopen's proposal and approval name the posted adjustments they read, and differing is the same `Stale` an adjustment's own approval raises. (q) a merchant's breakdown classifies an `ACCOUNTING`-origin line by its origin first, as a `RECONCILIATION` one already is, under a term of its own: no false `captured`, `refunded` or `chargedBack`, the terms still sum, and the drill-down agrees with the report's `OTHER`. (r) `@RequiresAssurance(MULTI_FACTOR)` on a prior-period adjustment's approval. (s) one label for every adjustment on a customer's and a merchant's statement, whatever its origin, set where the statement is rendered, so a `MANUAL` reference's free text and a reconciliation's bare id are no longer served.
+- **The label**: `Account adjustment`, unless the owner says otherwise before this starts. **`LEDGER_ADJUST`'s approval** takes the same assurance only if the owner says so; recommended yes.
+- **Accepted as built, nothing to do**: (n) a pending reopen does not stop an adjustment's approval; (o) a proposer holding only `_PROPOSE` cannot withdraw; (p) customer wallets and merchant payables stay open to a prior-period adjustment.
+- **Out of scope**: `P14-TSK-012`'s twelve items, which this ruling did not cover.
+- **Persistence**: no migration expected; the stored reopen receipt's format stays readable. **APIs**: the reopen bodies, the payable's response and the statement line change; `openapi.json` regenerated.
+- **Invariants**: `INV-ACC-10`, `INV-AUD-04`.
+- **Tests**: a reopen naming other than the posted set refused, hermetic and owed on the database; a real `MerchantPayable` over an `ACCOUNTING` line facing each counterparty; the approval refused below `MULTI_FACTOR`; a statement line of each origin reading the one label, with no reference served.
+- **Probes**: one for each of the four.
+- **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API`. **Risk**: Low. **Cx**: S.
 
 **P14-TST-002 — The accounting battery** — `PLANNED`
 - **Objective**: an independent oracle for the GL, trial balance, statements and translation over generated journals.
