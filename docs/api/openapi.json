@@ -717,6 +717,41 @@
           }
         }
       },
+      "accounting.ReportAwaitsClose": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.ReportAwaitsClose"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.ReportAwaitsClose"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A financial statement of a month is issued once the month is closed; the period is locked and not yet closed, and nothing was claimed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.ReportDefinitionUnknown": {
         "content": {
           "application/problem+json": {
@@ -15653,11 +15688,138 @@
         ],
         "type": "object"
       },
+      "BnplWriteOffAttestation": {
+        "properties": {
+          "accountStatus": {
+            "type": "string"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "defaultedOn": {
+            "type": "string"
+          },
+          "live": {
+            "$ref": "#/components/schemas/BnplWriteOffLiveView"
+          },
+          "postsOn": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "proposalReason": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "stands": {
+            "type": "boolean"
+          },
+          "writeOff": {
+            "$ref": "#/components/schemas/BnplWriteOffReceipt"
+          }
+        },
+        "type": "object"
+      },
+      "BnplWriteOffLiveView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "feesDue": {
+            "type": "string"
+          },
+          "interestAccrued": {
+            "type": "string"
+          },
+          "interestDue": {
+            "type": "string"
+          },
+          "principal": {
+            "type": "string"
+          },
+          "principalDue": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "BnplWriteOffProposalRequest": {
         "properties": {
           "reason": {
             "maxLength": 1000,
             "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplWriteOffReceipt": {
+        "properties": {
+          "agreementId": {
+            "type": "string"
+          },
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "defaultEventId": {
+            "type": "string"
+          },
+          "feesDue": {
+            "type": "string"
+          },
+          "interestAccrued": {
+            "type": "string"
+          },
+          "interestDue": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "principal": {
+            "type": "string"
+          },
+          "principalDue": {
+            "type": "string"
+          },
+          "principalTotal": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "total": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": "string"
+          },
+          "writeOffId": {
             "type": "string"
           }
         },
@@ -21755,11 +21917,138 @@
         ],
         "type": "object"
       },
+      "LoanWriteOffAttestation": {
+        "properties": {
+          "accountStatus": {
+            "type": "string"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "defaultedOn": {
+            "type": "string"
+          },
+          "live": {
+            "$ref": "#/components/schemas/LoanWriteOffLiveView"
+          },
+          "postsOn": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "proposalReason": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "stands": {
+            "type": "boolean"
+          },
+          "writeOff": {
+            "$ref": "#/components/schemas/LoanWriteOffReceipt"
+          }
+        },
+        "type": "object"
+      },
+      "LoanWriteOffLiveView": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "feesDue": {
+            "type": "string"
+          },
+          "interestAccrued": {
+            "type": "string"
+          },
+          "interestDue": {
+            "type": "string"
+          },
+          "principal": {
+            "type": "string"
+          },
+          "principalDue": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "LoanWriteOffProposalRequest": {
         "properties": {
           "reason": {
             "maxLength": 1000,
             "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoanWriteOffReceipt": {
+        "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "defaultEventId": {
+            "type": "string"
+          },
+          "feesDue": {
+            "type": "string"
+          },
+          "interestAccrued": {
+            "type": "string"
+          },
+          "interestDue": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "loanId": {
+            "type": "string"
+          },
+          "principal": {
+            "type": "string"
+          },
+          "principalDue": {
+            "type": "string"
+          },
+          "principalTotal": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "total": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": "string"
+          },
+          "writeOffId": {
             "type": "string"
           }
         },
@@ -24688,6 +24977,23 @@
           },
           "run": {
             "$ref": "#/components/schemas/ReportRunView"
+          }
+        },
+        "type": "object"
+      },
+      "ReportRunLinesView": {
+        "properties": {
+          "activity": {
+            "$ref": "#/components/schemas/GlActivityView"
+          },
+          "exact": {
+            "type": "boolean"
+          },
+          "run": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -29840,133 +30146,6 @@
           }
         },
         "type": "object"
-      },
-      "WriteOffAttestation": {
-        "properties": {
-          "accountStatus": {
-            "type": "string"
-          },
-          "blockers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "defaultedOn": {
-            "type": "string"
-          },
-          "live": {
-            "$ref": "#/components/schemas/WriteOffLiveView"
-          },
-          "postsOn": {
-            "type": "string"
-          },
-          "product": {
-            "type": "string"
-          },
-          "proposalReason": {
-            "type": "string"
-          },
-          "proposedBy": {
-            "type": "string"
-          },
-          "stands": {
-            "type": "boolean"
-          },
-          "writeOff": {
-            "$ref": "#/components/schemas/WriteOffReceipt"
-          }
-        },
-        "type": "object"
-      },
-      "WriteOffLiveView": {
-        "properties": {
-          "agreementVersion": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "feesDue": {
-            "type": "string"
-          },
-          "interestAccrued": {
-            "type": "string"
-          },
-          "interestDue": {
-            "type": "string"
-          },
-          "principal": {
-            "type": "string"
-          },
-          "principalDue": {
-            "type": "string"
-          },
-          "revision": {
-            "format": "int64",
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "WriteOffReceipt": {
-        "properties": {
-          "agreementVersion": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "currency": {
-            "type": "string"
-          },
-          "decidedAt": {
-            "type": "string"
-          },
-          "defaultEventId": {
-            "type": "string"
-          },
-          "feesDue": {
-            "type": "string"
-          },
-          "interestAccrued": {
-            "type": "string"
-          },
-          "interestDue": {
-            "type": "string"
-          },
-          "journalEntryId": {
-            "type": "string"
-          },
-          "loanId": {
-            "type": "string"
-          },
-          "principal": {
-            "type": "string"
-          },
-          "principalDue": {
-            "type": "string"
-          },
-          "principalTotal": {
-            "type": "string"
-          },
-          "proposedAt": {
-            "type": "string"
-          },
-          "revision": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "status": {
-            "type": "string"
-          },
-          "total": {
-            "type": "string"
-          },
-          "valueDate": {
-            "type": "string"
-          },
-          "writeOffId": {
-            "type": "string"
-          }
-        },
-        "type": "object"
       }
     }
   },
@@ -34851,6 +35030,74 @@
         }
       }
     },
+    "/v1/operator/accounting/report-runs/{runId}/lines": {
+      "get": {
+        "operationId": "readReportRunLines",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "account",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "currency",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportRunLinesView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/accounting/report-runs/{runId}/regeneration": {
       "post": {
         "operationId": "regenerateReportRun",
@@ -35049,7 +35296,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/WriteOffReceipt"
+                    "$ref": "#/components/schemas/BnplWriteOffReceipt"
                   },
                   "type": "array"
                 }
@@ -35497,7 +35744,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WriteOffReceipt"
+                  "$ref": "#/components/schemas/BnplWriteOffReceipt"
                 }
               }
             },
@@ -35532,7 +35779,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WriteOffAttestation"
+                  "$ref": "#/components/schemas/BnplWriteOffAttestation"
                 }
               }
             },
@@ -35585,7 +35832,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WriteOffReceipt"
+                  "$ref": "#/components/schemas/BnplWriteOffReceipt"
                 }
               }
             },
@@ -35638,7 +35885,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WriteOffReceipt"
+                  "$ref": "#/components/schemas/BnplWriteOffReceipt"
                 }
               }
             },
@@ -38034,7 +38281,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/WriteOffReceipt"
+                    "$ref": "#/components/schemas/LoanWriteOffReceipt"
                   },
                   "type": "array"
                 }
@@ -38633,7 +38880,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WriteOffReceipt"
+                  "$ref": "#/components/schemas/LoanWriteOffReceipt"
                 }
               }
             },
@@ -38668,7 +38915,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WriteOffAttestation"
+                  "$ref": "#/components/schemas/LoanWriteOffAttestation"
                 }
               }
             },
@@ -38721,7 +38968,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WriteOffReceipt"
+                  "$ref": "#/components/schemas/LoanWriteOffReceipt"
                 }
               }
             },
@@ -38774,7 +39021,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WriteOffReceipt"
+                  "$ref": "#/components/schemas/LoanWriteOffReceipt"
                 }
               }
             },

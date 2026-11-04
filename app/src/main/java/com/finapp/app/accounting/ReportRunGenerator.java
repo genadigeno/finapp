@@ -7,6 +7,7 @@ import com.finapp.accounting.RunFailure;
 import com.finapp.accounting.RunStatus;
 import com.finapp.accounting.reporting.ReportDefinition;
 import com.finapp.accounting.reporting.ReportGeneration;
+import com.finapp.accounting.reporting.ReportRefused;
 import com.finapp.platform.security.Actor;
 import java.util.List;
 import java.util.Objects;
@@ -25,7 +26,7 @@ import java.util.Optional;
  * refuses or too large is {@code CONTENT_INVALID}; a generation past its time bound - its budget spent, or a statement
  * cancelled by the snapshot's {@code statement_timeout} ({@code 57014}) - is {@code GENERATION_TIMED_OUT}, inside its lease
  * (`P14-TSK-008`'s review, I-1); a definition no longer in the build is {@code DEFINITION_UNKNOWN} -
- * each a {@code FAILED} run, a new revision allowed. The snapshot's own failure (the database unreachable) is none of
+ * each a {@code FAILED} run, a new revision allowed. A definition's refusal ({@code ReportRefused}, `P14-TSK-016`) is {@code DEFINITION_FAILED} too, its reason on the record. The snapshot's own failure (the database unreachable) is none of
  * these: the run stays {@code GENERATING}, its lease runs out, and a retry or the orphan leg generates it again.
  *
  * <p><strong>The orphan leg</strong> ({@link #completeOrphaned}) is the callable `P14-TSK-011` schedules in
@@ -49,8 +50,11 @@ public final class ReportRunGenerator {
         this.metrics = Objects.requireNonNull(metrics, "metrics");
     }
 
-    /** A FINAL run regenerated in a snapshot: its stored hash, the regenerated one, and whether the bytes are identical. */
-    public record Compared(ReportRunStore.RunRow run, String regeneratedSha256, boolean identical) {}
+    /** The regenerated hash when the definition refused to answer: there are no bytes to hash, and so no comparison but "not identical". */
+    static final String NOT_PRODUCED = "";
+
+    /** A FINAL run regenerated in a snapshot: its stored hash, the regenerated one, whether the bytes are identical, and why its definition refused to answer, by code, when it did. */
+    public record Compared(ReportRunStore.RunRow run, String regeneratedSha256, boolean identical, Optional<String> refusal) {}
 
     /** The definition's own failure inside the snapshot - kept apart from the snapshot's. */
     private static final class DefinitionFailed extends RuntimeException {
@@ -80,7 +84,7 @@ public final class ReportRunGenerator {
                 try {
                     return generation.generate(snapshot, definition.get(), held.inputs());
                 } catch (ReportGeneration.PeriodMoved | ReportGeneration.ContentInvalid
-                        | ReportGeneration.GenerationTimedOut sorted) {
+                        | ReportGeneration.GenerationTimedOut | ReportRefused sorted) {
                     throw sorted;
                 } catch (RuntimeException definitionsOwn) {
                     throw new DefinitionFailed();
@@ -92,6 +96,8 @@ public final class ReportRunGenerator {
             return failed(held, RunFailure.CONTENT_INVALID, actor);
         } catch (ReportGeneration.GenerationTimedOut timedOut) {
             return failed(held, RunFailure.GENERATION_TIMED_OUT, actor);
+        } catch (ReportRefused refused) {
+            return refused(held, refused, actor);
         } catch (DefinitionFailed definitionsOwn) {
             return failed(held, RunFailure.DEFINITION_FAILED, actor);
         }
@@ -159,9 +165,12 @@ public final class ReportRunGenerator {
                 again = generation.generate(snapshot, definition, run.inputs());
             } catch (ReportGeneration.PeriodMoved moved) {
                 throw new RunNotFinal();
+            } catch (ReportRefused refused) {
+                // Its definition refuses what it issued: the books moved under a FINAL run. The thing this door exists to find, so a divergence, its reason on the record. Only a refusal: a pin that no longer matches, or a journal whose two reads disagree, is a defect and surfaces as one.
+                return new Compared(run, NOT_PRODUCED, false, Optional.of(refused.summary()));
             }
             return new Compared(run, again.sha256(), stored.equals(again.content())
-                    && run.contentSha256().filter(again.sha256()::equals).isPresent());
+                    && run.contentSha256().filter(again.sha256()::equals).isPresent(), Optional.empty());
         });
     }
 
@@ -195,6 +204,15 @@ public final class ReportRunGenerator {
         DefinitionNoLongerHeld() {
             super("this build holds no report definition of the run's code and version");
         }
+    }
+
+    private ReportRunStore.RunRow refused(ReportRunStore.RunRow held, ReportRefused refused, Actor actor) {
+        ReportRuns.Concluded concluded = transactions.inTransaction(unitOfWork -> runs.refuse(unitOfWork, held.id(),
+                held.attempt(), refused.summary(), actor, held.correlation()));
+        if (concluded.moved()) {
+            metrics.concluded(concluded.run());
+        }
+        return concluded.run();
     }
 
     private ReportRunStore.RunRow failed(ReportRunStore.RunRow held, RunFailure failure, Actor actor) {

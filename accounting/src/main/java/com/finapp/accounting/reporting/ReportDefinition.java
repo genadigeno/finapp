@@ -61,6 +61,15 @@ public interface ReportDefinition {
     }
 
     /**
+     * Whether a FINAL run of this definition stands only for a {@code CLOSED} period (`P14-TSK-016`; {@code INV-ACC-04}): it reads what the close itself decides - the
+     * close record, born and decided <em>after</em> the lock - so at {@code LOCKED} or {@code CLOSE_PROPOSED} its bytes would still move under the very lock a FINAL run
+     * reproduces under. {@code ReportRuns.claim} refuses it there, nothing written. Under {@code CLOSED} the only edge is a reopen, which supersedes the run. False by default.
+     */
+    default boolean issuedOnlyWhenClosed() {
+        return false;
+    }
+
+    /**
      * The report's source, rule, date, currency semantics and freshness - abstract, so a definition cannot omit them, and
      * {@link ReportStatement} refuses a fact left empty (`P14-TSK-017`'s acceptance criterion).
      */

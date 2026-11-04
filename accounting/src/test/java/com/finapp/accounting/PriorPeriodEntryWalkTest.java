@@ -2,12 +2,15 @@ package com.finapp.accounting;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.accounting.reporting.BalanceSheetDefinition;
 import com.finapp.accounting.reporting.CanonicalJson;
 import com.finapp.accounting.reporting.GlActivityDefinition;
+import com.finapp.accounting.reporting.IncomeStatementDefinition;
 import com.finapp.accounting.reporting.PurposeReportDefinition;
 import com.finapp.accounting.reporting.ReportDefinition;
 import com.finapp.accounting.reporting.ReportInputs;
 import com.finapp.accounting.reporting.RunParameters;
+import com.finapp.accounting.reporting.StatementNotes;
 import com.finapp.accounting.reporting.SuspenseDefinition;
 import com.finapp.accounting.reporting.TrialBalanceDefinition;
 import com.finapp.accounting.testing.InMemoryAccountingBreakStore;
@@ -45,7 +48,7 @@ import org.junit.jupiter.api.Test;
  * An {@code ACCOUNTING}-origin entry walked through what reads it (`P14-TSK-013`; {@code PHASE_14_PLAN.md} section 13.5; {@code INV-ACC-04}, {@code -10}, {@code -12}): the month it corrects must not move, and the month it lands in must still close. The judges and the
  * definitions themselves, hermetic; {@code PriorPeriodAdjustmentDatabaseTest} walks the same over the real journal (owed, C5). The reads with nothing to judge are stated there: {@code ACCRUALS_COMPLETE} and {@code RECONCILIATION_DISCLOSURE} read {@code ledger.post:} scopes
  * ({@code LedgerFlooredPostings}), and the source proofs read purposes closed to this origin but for two: {@code MERCHANT_PAYABLE}, whose terms {@code MerchantPayableTermsTest} walks and whose {@code BNPL_THREE_WAY} leg compares only {@code bnpl.}-keyed lines, a line of
- * this origin carrying no key ({@code LedgerBnplProofReads}), and every projection, which holds because the entry posts like any other. Five of the nine FINAL definitions read none of its five purposes, so they have nothing a control could move.
+ * this origin carrying no key ({@code LedgerBnplProofReads}), and every projection, which holds because the entry posts like any other. Five of the eleven FINAL definitions read none of its five purposes, so they have nothing a control could move; the six that do have the control. `P14-TSK-016` added the two statements, which read every line.
  */
 @DisplayName("an ACCOUNTING entry walked through the close and the reports (P14-TSK-013)")
 class PriorPeriodEntryWalkTest {
@@ -106,15 +109,21 @@ class PriorPeriodEntryWalkTest {
     }
 
     @Test
-    @DisplayName("the corrected month's FINAL runs do not move: all nine definitions' bytes identical after the entry lands on the date the machine gives it; and the control, for the four that read its purposes, the same entry dated into the month, moves them - so the comparison can see it")
+    @DisplayName("the corrected month's FINAL runs do not move: all eleven definitions' bytes identical after the entry lands on the date the machine gives it; and the control, for the six that read its purposes, the same entry dated into the month, moves them - so the comparison can see it")
     void theCorrectedMonthsBytesDoNotMove() {
+        StatementNotes notes = new StatementNotes((snapshot, period) -> new SuspenseAsOfCutoff.Register(period.atEndOfMonth(), Instant.EPOCH, List.of()),
+                (snapshot, period) -> new ReconciliationAsOfCutoff.Standing(period.atEndOfMonth(), Instant.EPOCH, List.of(), List.of()),
+                (snapshot, month) -> new PriorPeriodCorrections.Corrections(List.of(), List.of(), 0),
+                (snapshot, period, revision) -> Optional.of(new CloseRecordReads.CloseRecord(UUID.nameUUIDFromBytes(new byte[] {1}), revision, Instant.EPOCH, UUID.nameUUIDFromBytes(new byte[] {2}), version.value(), UUID.nameUUIDFromBytes(new byte[] {3}), 0, 0, Instant.EPOCH, Instant.EPOCH, List.of(), List.of())));
+        ValuationRateReads noRates = (snapshot, id) -> Optional.empty();
         List<ReportDefinition> definitions = List.of(new TrialBalanceDefinition(reads), new GlActivityDefinition(reads, reads.counterparties()), PurposeReportDefinition.revenue(reads),
-                PurposeReportDefinition.receivablesPayables(reads));
+                PurposeReportDefinition.receivablesPayables(reads), new BalanceSheetDefinition(reads, reads.counterparties(), noRates, notes), new IncomeStatementDefinition(reads, reads.counterparties(), noRates, notes));
         List<ReportDefinition> readingNoneOfItsPurposes = List.of(PurposeReportDefinition.settlementPositions(reads, reads.counterparties()), PurposeReportDefinition.fxResults(reads),
                 PurposeReportDefinition.loanPortfolio(reads), PurposeReportDefinition.bnplExposure(reads), new SuspenseDefinition(reads, (snapshot, period) -> new SuspenseAsOfCutoff.Register(period.atEndOfMonth(), Instant.EPOCH, List.of())));
         Map<String, String> issued = new java.util.HashMap<>();
         definitions.forEach(definition -> issued.put(definition.code(), bytesOf(definition, january, JANUARY)));
         readingNoneOfItsPurposes.forEach(definition -> issued.put(definition.code(), bytesOf(definition, january, JANUARY)));
+        assertThat(issued).as("every FINAL definition").hasSize(11);
 
         theCorrectionLands(theMachinesDate());
 

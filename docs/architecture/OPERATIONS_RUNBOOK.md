@@ -1571,6 +1571,16 @@ for an operator's read, and keep the permits low, since the two together are wha
 
 **`500` on an approval.** Nothing committed: a `40P01` against a wallet's decider, say (`PHASE_14_PLAN.md` §8.2), leaves both rows `PROPOSED` and the key unspent. Retry with the same key.
 
+### 10.5 A financial statement that will not issue
+
+**`409 accounting.ReportAwaitsClose`.** The period is `LOCKED` or `CLOSE_PROPOSED`. Nothing was claimed, and the close is not waiting on it: close the month and ask again. To read a locked month before approving it: the FINAL `TRIAL_BALANCE`, `GL_ACTIVITY` and `SUSPENSE` runs, and `GET .../periods/{periodId}/close-run`.
+
+**A run answered `FAILED`, `DEFINITION_FAILED`.** Read `accounting.ReportGenerated` for the run in the audit record: `refusal=` holds why, by code, no figure. `UNCLASSIFIED:<purpose>/<owner kind>`: a line the run's version does not map. On an open month, activate a version that maps it. On a closed one `GL_EQUALS_LEDGER` passed, so the journal changed under the close: escalate. `OUT_OF_BALANCE:<currencies>`: the books do not balance, or the equation does not. Read the period's `TRIAL_BALANCE` run, whose `verdict` and per-currency legs say which and by how much, and treat it as a ledger incident: nothing here corrects it, and a statement never will. `NOT_THE_LEDGERS:<currencies>`: a read lost or gained lines against the ledger's own totals: a defect, escalate. `TRANSLATION_INCOMPLETE:<currencies>`: the approved set values no such currency and a figure of it is not zero. The plain statement is unaffected; no door supersedes an approved set today (`P14-TSK-014`'s owner item). `CLOSE_RECORD_MISSING`, `NOT_CLOSED`: something bypassed the machine: escalate. A new ask is a new revision and fails alike until what it found has gone. **None of these blocks the close**, which reads no statement. A run with no `refusal=` failed on a read: the logs, then retry.
+
+**`.../regeneration` answers `DIVERGED` with an empty `regeneratedSha256`.** A FINAL statement its definition now refuses: the books moved under what was issued. Read `accounting.ReportRegenerated` for the run in the audit record: `refusal=` holds why, by code, as above. Asking again finds nothing: a claim answers the standing FINAL and generates nothing. Counted `finapp.accounting.report.diverged`, never repaired: escalate.
+
+**An `untraced` count above zero in a statement's `priorPeriodCorrections`.** Entries of the `ACCOUNTING` origin dated in that month with no posted adjustment beside them: a writer bypassed the door. It has no line route under `ACCOUNTING_READ`, since no view there shows an origin: escalate to whoever holds the ledger's own read.
+
 **`409 accounting.PriorPeriodAdjustmentStale` on an approval.** Read it again. Another correction of the month may have posted since: that is the control working, so decide knowing it.
 
 **`422 accounting.PriorPeriodAdjustmentInvalid` naming a purpose not mapped.** The month it lands in could not close with that line on it: activate a GL mapping version that maps it, effective from an open month.

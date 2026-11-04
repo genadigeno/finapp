@@ -18,7 +18,7 @@ import java.util.UUID;
  *
  * <p>{@code untraced}: entries of this origin dated in the month with no {@code POSTED} adjustment naming them - a raw writer, the two rows having no foreign key between them. Zero unless something bypassed the door, and never assumed so.
  *
- * <p>Read-only, on the caller's {@code REPEATABLE READ READ ONLY} snapshot: a reader port, for report code. <strong>No bean yet</strong>: `P14-TSK-016`, its one consumer, wires it.
+ * <p>Read-only, on the caller's {@code REPEATABLE READ READ ONLY} snapshot: a reader port, for report code. `P14-TSK-016`'s notes read it; the bean is {@code app}'s {@code StatementBeans}.
  */
 @FunctionalInterface
 public interface PriorPeriodCorrections {

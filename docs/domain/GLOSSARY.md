@@ -2591,7 +2591,7 @@ canonical JSON text, the hash recomputed by the database.)*
 ### Financial Statement
 **Is:** the balance sheet and income statement for a period, from the GL by statement section, the current-period
 result and retained earnings computed, with notes disclosing suspense, open breaks, prior-period adjustments and the
-treatments deferred for qualified review (`P14-TSK-016`).
+treatments deferred for qualified review (`P14-TSK-016`). *(As built, 2026-11-04: FINAL only for a `CLOSED` period, because the close record its notes disclose is decided after the lock. Retained earnings is every revenue and expense line dated before the month, from inception, and the current-period result those dated in it: both computed, never posted, and neither solved for. A statement that does not balance, or holds an unmapped line, or a hole in its translation, is refused, never issued with the gap.)*
 **Not:** a statutory filing or an audited statement; nor a customer Account Statement (`StatementDerivation`, the
 ledger's per-account statement).
 **Owned by:** `accounting`

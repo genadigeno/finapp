@@ -49,7 +49,11 @@ class FxBooksHaveOnePosterTest {
                             + " through ledger's BalanceDerivation against fx's own rows; posts nothing",
                     "Phase9Reports.java",
                     "READER: the FX position report (P9-TSK-027) - sums FX_POSITION's lines by currency in one"
-                            + " audited snapshot; posts nothing");
+                            + " audited snapshot; posts nothing",
+                    "IncomeStatementDefinition.java",
+                    "READER (P14-TSK-016): the income statement's net realised FX finds its gains and losses among the"
+                            + " journal's components by the two purposes' keys, whichever account a version maps them to"
+                            + " (the owner's decision: FX_RESULTS.REALISED keeps no total); it posts nothing");
 
     /** The FX books: the position, the spread revenue, the rounding residual and the realised results. */
     private static final List<String> BOOKS =

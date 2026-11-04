@@ -58,12 +58,15 @@ import com.finapp.accounting.SourceProofs;
 import com.finapp.accounting.ValuationRateSets;
 import com.finapp.accounting.ValuationRates;
 import com.finapp.accounting.ValuationStaleness;
+import com.finapp.accounting.reporting.BalanceSheetDefinition;
 import com.finapp.accounting.reporting.GeneralLedger;
 import com.finapp.accounting.reporting.GlActivityDefinition;
+import com.finapp.accounting.reporting.IncomeStatementDefinition;
 import com.finapp.accounting.reporting.PurposeReportDefinition;
 import com.finapp.accounting.reporting.ReportDefinitions;
 import com.finapp.accounting.reporting.ReportGeneration;
 import com.finapp.accounting.reporting.RunParameters;
+import com.finapp.accounting.reporting.StatementNotes;
 import com.finapp.accounting.reporting.SuspenseDefinition;
 import com.finapp.accounting.reporting.TrialBalanceDefinition;
 import com.finapp.ledger.AccountPurpose;
@@ -130,19 +133,26 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 
 /**
  * The prior-period adjustment against a live PostgreSQL (`P14-TSK-013`; ADR-0114 decision 5; {@code PHASE_14_PLAN.md} sections 8.1 T-ppa, 8.2, 8.3 row 12, 13.5; {@code INV-ACC-03}, {@code -04}, {@code -10}, {@code INV-REV-04}, {@code INV-AUD-04}, {@code INV-LED-01}): both rows moving in one
  * transaction, the ledger's refusal of a date in the corrected month, the generic and the other owner's door refused, four eyes for every writer, ledger {@code V030} and accounting {@code V009} executing for the first time - and the races: ten approvers one entry; two approvals of one month; an approval against a
- * rejection, a lock of its target, and a reopen of what it corrects; and the two worst failures themselves, the corrected month's FINAL runs regenerating byte-identical and the month it lands in closing.
+ * rejection, a lock of its target, and a reopen of what it corrects; and the two worst failures themselves, the corrected month's FINAL runs regenerating byte-identical and the month it lands in passing its real checks.
  *
  * <p><strong>A database of its own</strong> ({@code own-container}): it closes and posts into January and February 1999, shared fixtures, and commits ledger lines. <strong>Written and owed</strong> (owner decision C5): the database tiers run at the phase's one pass. Refusals are asserted by exception type, or raw by SQLSTATE: a store's failure carries its
  * operation and SQLSTATE only, never the driver's text.
+ *
+ * <p><strong>One case runs last, and every other holds in any order</strong> (`P14-TSK-016`'s fix round, on this suite's own review): a reopen moves a revision for good and a proposal is refused into a month ever reopened, while nearly every case proposes into February. So {@link #theTargetReopenedMeanwhile}, the one case that closes and reopens February, is ordered last, and {@link #januaryClosedFebruaryOpen} says so if February ever moved. A case may lock
+ * February, which an unlock lifts with no revision moved; {@link #theTargetLockedMeanwhile} leaves March open, which nothing else reads; January is reopened and closed by every case, each reading its revision from the row, and what posts stays, every comparison a relation or by the case's own ids.
  */
 @Tag("database")
 @Tag("own-container") // its own JVM and database: ownContainerDatabaseTest, the javadoc says why
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("the prior-period adjustment against the database (P14-TSK-013)")
 class PriorPeriodAdjustmentDatabaseTest {
 
@@ -162,6 +172,7 @@ class PriorPeriodAdjustmentDatabaseTest {
         AccountingPeriodFixture.openJanuaryAndFebruary();
         PeriodCloseFixture.mappingInForce();
         PeriodCloseFixture.everyPeriodOpen();
+        assertThat(row(FEBRUARY).revision()).as("only the last case closes February: a proposal is refused into a month ever reopened, and a reopen is for good").isEqualTo(1);
         PeriodCloseFixture.closed(JANUARY);
     }
 
@@ -315,6 +326,7 @@ class PriorPeriodAdjustmentDatabaseTest {
     }
 
     @Test
+    @Order(Integer.MAX_VALUE) // It closes and reopens February, the one case that does: every case proposing into February must run before it.
     @DisplayName("the month it lands in really closed and reopened meanwhile, the corrected month untouched: the approval refused for the revision, a raw POST refused for every writer, it stands, the rejection is the way on; nothing is born into that month either")
     void theTargetReopenedMeanwhile() throws Exception {
         PriorPeriodAdjustments.Acted proposed = propose();
@@ -404,8 +416,8 @@ class PriorPeriodAdjustmentDatabaseTest {
     // ------------------------------------------------------------------ the two worst failures
 
     @Test
-    @DisplayName("the corrected month must not move: each of January's nine FINAL definitions, regenerated after the adjustment posted, is byte-identical; the month's lines are as they were")
-    void theCorrectedMonthsNineFinalRunsRegenerateByteIdentical() throws Exception {
+    @DisplayName("the corrected month must not move: each of January's eleven FINAL definitions, regenerated after the adjustment posted, is byte-identical - the nine generated at the lock, the two statements, which wait for it, at the close; the month's lines are as they were")
+    void theCorrectedMonthsElevenFinalRunsRegenerateByteIdentical() throws Exception {
         PeriodCloseFixture.everyPeriodOpen();
         com.finapp.accounting.CloseRunId closeRun = PeriodCloseFixture.ready(JANUARY);
         ReportRuns reports = reports();
@@ -416,10 +428,15 @@ class PriorPeriodAdjustmentDatabaseTest {
             ReportRuns.Claimed claimed = inTransaction(uow -> reports.claim(uow, code, id(JANUARY), RunParameters.none(), generating, correlation()));
             runs.add(claimed.mine() ? generator.generateAndComplete(claimed.run(), generating) : generator.drive(claimed.run().id(), generating));
         }
-        assertThat(runs).allSatisfy(run -> assertThat(run.status()).isEqualTo(RunStatus.FINAL));
-        assertThat(runs).as("every FINAL definition").hasSize(9);
+        assertThat(runs).as("generated at the lock").hasSize(9);
         PeriodCloses.Acted close = inScope(ACCOUNTANT, uow -> MACHINE.propose(uow, id(JANUARY), closeRun, List.of(), ACCOUNTANT, REASON, correlation()));
         inScope(CONTROLLER, uow -> MACHINE.approve(uow, id(JANUARY), close.proposal().orElseThrow(), CONTROLLER, REASON, correlation()));
+        for (String code : List.of(BalanceSheetDefinition.CODE, IncomeStatementDefinition.CODE)) {
+            ReportRuns.Claimed claimed = inTransaction(uow -> reports.claim(uow, code, id(JANUARY), RunParameters.none(), generating, correlation()));
+            runs.add(claimed.mine() ? generator.generateAndComplete(claimed.run(), generating) : generator.drive(claimed.run().id(), generating));
+        }
+        assertThat(runs).allSatisfy(run -> assertThat(run.status()).isEqualTo(RunStatus.FINAL));
+        assertThat(runs).as("every FINAL definition").hasSize(11);
         long januaryLines = count("SELECT count(*) FROM ledger.journal_entry WHERE posting_date BETWEEN '1999-01-01' AND '1999-01-31'");
 
         PriorPeriodAdjustments.Acted posted = approve(propose(), person());
@@ -479,10 +496,7 @@ class PriorPeriodAdjustmentDatabaseTest {
 
         java.util.SortedMap<String, com.finapp.accounting.PastTheCutoffPostings.Split> pastTheCutoff = snapshots.read(snapshot -> new LedgerFlooredPostings().pastTheCutoff(snapshot, JANUARY.atEndOfMonth()));
         assertThat(pastTheCutoff).as("never floored, never unrecorded: another scope, and valued in the month it is dated").isEmpty();
-
-        // What is left of the close is this fixture's own concluded checks: the proof is above, not in this line.
-        PeriodCloseFixture.closed(FEBRUARY);
-        assertThat(row(FEBRUARY).status()).isEqualTo(PeriodStatus.CLOSED);
+        // No close here: what is left of one is the fixture's own concluded checks, the proof being above, and the next case would reopen February for good. LOCKED, an unlock lifts it.
     }
 
     @Test
@@ -785,7 +799,13 @@ class PriorPeriodAdjustmentDatabaseTest {
         LedgerCounterpartyPositionReads positions = new LedgerCounterpartyPositionReads();
         return ReportDefinitions.of(new TrialBalanceDefinition(reads), new GlActivityDefinition(reads, positions), PurposeReportDefinition.revenue(reads), PurposeReportDefinition.receivablesPayables(reads),
                 PurposeReportDefinition.settlementPositions(reads, positions), PurposeReportDefinition.fxResults(reads), PurposeReportDefinition.loanPortfolio(reads), PurposeReportDefinition.bnplExposure(reads),
-                new SuspenseDefinition(reads, new ReconciliationMonthReads(new JdbcReportReadings(), AccountingPeriodFixture.DECLARED_SOURCES)));
+                new SuspenseDefinition(reads, new ReconciliationMonthReads(new JdbcReportReadings(), AccountingPeriodFixture.DECLARED_SOURCES)),
+                new BalanceSheetDefinition(reads, positions, new PinnedValuationRates(new JdbcValuationRateSetStore()), statementNotes()),
+                new IncomeStatementDefinition(reads, positions, new PinnedValuationRates(new JdbcValuationRateSetStore()), statementNotes()));
+    }
+
+    private static StatementNotes statementNotes() {
+        return new StatementNotes(new ReconciliationMonthReads(new JdbcReportReadings(), AccountingPeriodFixture.DECLARED_SOURCES), new ReconciliationAsOfCutoffReads(new JdbcReportReadings()), new LedgerPriorPeriodCorrections(), new AccountingCloseRecordReads());
     }
 
     private static ReportRuns reports() {

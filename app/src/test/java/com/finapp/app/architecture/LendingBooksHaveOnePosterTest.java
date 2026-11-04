@@ -94,7 +94,10 @@ class LendingBooksHaveOnePosterTest {
                     "READER (P14-TSK-017; permitted by P14-TSK-021, which found this guard red on master): a report's definition names the purposes it sums from journal lines, on a read-only snapshot; it posts nothing and reaches no poster",
                     "LendingReports.java",
                     "READER: the portfolio and delinquency reports sum each loan account's lines as of a business date"
-                            + " in one read-only snapshot, the book tied to the ledger; it posts nothing");
+                            + " in one read-only snapshot, the book tied to the ledger; it posts nothing",
+                    "StatementNotes.java",
+                    "READER (P14-TSK-016), in words only: the statements' C6 note names LOAN_WRITE_OFF_EXPENSE in the"
+                            + " owner's sentence; no read, figure or line goes by it, and it posts nothing");
 
     /** Every LOAN_* purpose, derived from the declaration. */
     static final List<String> LOAN_BOOK =

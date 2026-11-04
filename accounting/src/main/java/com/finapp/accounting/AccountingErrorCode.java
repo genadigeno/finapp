@@ -211,7 +211,16 @@ public enum AccountingErrorCode implements ErrorCode {
             "accounting.ReportDoorMismatch",
             409,
             "This report definition is answered at the other door: an operational definition is read live and is never a"
-                    + " report run, and any other is asked as a report run; nothing was claimed or served.");
+                    + " report run, and any other is asked as a report run; nothing was claimed or served."),
+
+    /**
+     * A financial statement of a period locked and not yet closed (`P14-TSK-016`): its notes read what the close decides, so its FINAL bytes could not stand until the
+     * close has. Nothing was claimed: asked again once the period is {@code CLOSED}.
+     */
+    REPORT_AWAITS_CLOSE(
+            "accounting.ReportAwaitsClose",
+            409,
+            "A financial statement of a month is issued once the month is closed; the period is locked and not yet closed, and nothing was claimed.");
 
     private final String code;
     private final int status;

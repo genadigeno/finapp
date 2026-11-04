@@ -205,7 +205,7 @@ public final class GeneralLedgerDesk {
         return Optional.of(cursor);
     }
 
-    private static String code(String raw) {
+    static String code(String raw) {
         if (raw == null || !GlAccount.CODE.matcher(raw).matches()) {
             throw notFound();
         }
@@ -236,16 +236,16 @@ public final class GeneralLedgerDesk {
         }
     }
 
-    private static ApiException invalid(String detail) {
+    static ApiException invalid(String detail) {
         return new ApiException(PlatformErrorCode.VALIDATION_FAILED, "A GL read was requested with an invalid parameter",
                 detail);
     }
 
-    private static ApiException notFound() {
+    static ApiException notFound() {
         return new ApiException(AccountingErrorCode.NOT_FOUND, "No GL record answers the request", "no such record.");
     }
 
-    private static CorrelationId correlation() {
+    static CorrelationId correlation() {
         return CorrelationContext.current()
                 .orElseThrow(() -> new IllegalStateException("a GL read runs inside a correlation scope"))
                 .correlationId();

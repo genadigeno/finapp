@@ -12,6 +12,7 @@ import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -89,12 +90,36 @@ public final class ReportGeneration {
         }
     }
 
-    /** A run's content and its SHA-256. */
-    public record Generated(String content, String sha256) {
+    /**
+     * A translated run's completeness, read from its own body (`P14-TSK-015`'s review, I-1(a)): so a hole is visible on the event and the audit record too, not only
+     * inside the content. Codes, never a figure.
+     *
+     * @param complete the body's {@code translation.complete}
+     * @param untranslated the body's {@code translation.untranslated}, by currency code, sorted
+     */
+    public record TranslationCompleteness(boolean complete, List<String> untranslated) {
+
+        public TranslationCompleteness {
+            untranslated = List.copyOf(untranslated);
+        }
+    }
+
+    /**
+     * A run's content and its SHA-256.
+     *
+     * @param translation what the body says of its translation - empty on a run with no {@code translation} member
+     */
+    public record Generated(String content, String sha256, Optional<TranslationCompleteness> translation) {
 
         public Generated {
             Objects.requireNonNull(content, "content");
             Objects.requireNonNull(sha256, "sha256");
+            Objects.requireNonNull(translation, "translation");
+        }
+
+        /** A content with no translation. */
+        public Generated(String content, String sha256) {
+            this(content, sha256, Optional.empty());
         }
     }
 
@@ -178,7 +203,18 @@ public final class ReportGeneration {
         if (content.getBytes(StandardCharsets.UTF_8).length > MAX_CONTENT_BYTES) {
             throw new ContentInvalid("the content exceeds " + MAX_CONTENT_BYTES + " bytes");
         }
-        return new Generated(content, CanonicalJson.sha256(content));
+        return new Generated(content, CanonicalJson.sha256(content), completenessOf(body));
+    }
+
+    /** The body's {@code translation} member's verdict, by what it wrote - so every definition that translates carries it, whatever it is. Anything but an explicit true is incomplete. */
+    private static Optional<TranslationCompleteness> completenessOf(CanonicalJson.Obj body) {
+        if (!(body.members().get("translation") instanceof CanonicalJson.Obj translation)) {
+            return Optional.empty();
+        }
+        List<String> untranslated = translation.members().get("untranslated") instanceof CanonicalJson.Arr listed
+                ? listed.elements().stream().filter(CanonicalJson.Text.class::isInstance).map(element -> ((CanonicalJson.Text) element).value()).toList()
+                : List.of();
+        return Optional.of(new TranslationCompleteness(translation.members().get("complete") == CanonicalJson.Flag.TRUE, untranslated));
     }
 
     /** Every pinned input, by name - the run's question beside its answer. */
