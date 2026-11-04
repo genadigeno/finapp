@@ -6,7 +6,8 @@ import java.util.Objects;
  * A decision reached a proposal another door owns (`P8-TSK-006`, ADR-0071 §6, F-a): the
  * generic approve and reject refuse a {@code RECONCILIATION}-origin proposal — its decision
  * belongs to the resolution flow that also moves the break — and the owned methods refuse a
- * {@code MANUAL} one. Nothing is written; the proposal stands for its own door.
+ * {@code MANUAL} one, and (`P14-TSK-013`) reconciliation's and accounting's doors each refuse the
+ * other's. Nothing is written; the proposal stands for its own door.
  */
 public final class AdjustmentOriginMismatchException extends RuntimeException {
 

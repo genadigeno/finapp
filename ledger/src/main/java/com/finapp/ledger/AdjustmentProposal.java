@@ -142,6 +142,24 @@ public record AdjustmentProposal(
                 AdjustmentOrigin.RECONCILIATION, proposedBy, lines, clock);
     }
 
+    /**
+     * A newly proposed <strong>accounting-owned</strong> adjustment (`P14-TSK-013`, `V030`; {@code INV-ACC-10}): a prior-period
+     * adjustment's ledger half, decidable only through the accounting-owned methods. One date, for both the entry's dates: nothing
+     * about it may point into the month it corrects ({@code adjustment_proposal_accounting_is_dated_once}).
+     */
+    public static AdjustmentProposal proposePriorPeriod(
+            AdjustmentProposalId id,
+            LocalDate date,
+            String reference,
+            String reason,
+            String proposedBy,
+            List<JournalLine> lines,
+            Clock clock) {
+        return born(
+                id, date, date, reference, reason, AdjustmentReasonCode.PRIOR_PERIOD_ADJUSTMENT,
+                AdjustmentOrigin.ACCOUNTING, proposedBy, lines, clock);
+    }
+
     private static AdjustmentProposal born(
             AdjustmentProposalId id,
             LocalDate postingDate,

@@ -15,14 +15,21 @@ import java.util.stream.Collectors;
  * could post a resolution's lines while the break still stood {@code RESOLUTION_PROPOSED},
  * and neither the stale check nor the break's machine would be consulted (ADR-0071 §6, F-a).
  *
+ * <p>An {@code ACCOUNTING} proposal is a prior-period adjustment's ledger half (`P14-TSK-013`, `V030`; ADR-0113 decision 4;
+ * {@code INV-ACC-10}): proposed and decided only through {@link AdjustmentService}'s accounting-owned methods, in the
+ * transaction that moves accounting's own row. <strong>Three owners, three doors, and each refuses the others'</strong>: a
+ * reconciliation resolution cannot approve a prior-period adjustment, nor accounting a resolution, nor a {@code LEDGER_ADJUST}
+ * holder either. Its lines are held to the same closure as {@code MANUAL}'s.
+ *
  * <p>The origin is part of the frozen payload (`V015` re-states the freeze): a proposal
  * cannot change hands after a person has read it.
  */
 public enum AdjustmentOrigin {
     MANUAL,
-    RECONCILIATION;
+    RECONCILIATION,
+    ACCOUNTING;
 
-    /** The `V015` {@code CHECK}'s value list — reconciled by the migration test. */
+    /** The latest {@code CHECK}'s value list (`V030`) — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())
                 .map(value -> "'" + value.name() + "'")
