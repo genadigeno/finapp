@@ -71,7 +71,7 @@ under four eyes after deployment (the BNPL terms precedent); until then reports 
 | C3 | A posting dated into a locked or closed period | (A) the ledger refuses (`ledger.PeriodClosed`); the one back-dating poster (lending's accrual) floors its posting date at the first open date, value date kept; close readiness requires accruals caught up; (B) the ledger re-dates silently | **(A)**: `INV-ACC-03` as written; re-dating is the producer's explicit rule, never the ledger's silence **Ratified by the owner (2026-10-30), widened to every back-dating rule `P14-TSK-002`'s register found (eleven): the ledger refuses an entry dated into a locked or closed period (`ledger.PeriodClosed`); every system poster (lending's accrual; the settlement report and statement; the merchant-payout return; reconciliation suspense; `fx-trade`; `fx-cover`) posts on the first open date and keeps its economic/value date for traceability; a MANUAL adjustment or a reconciliation resolution's adjustment dated into a locked period is refused at approval and stays `PROPOSED` - the operator re-proposes it in the open period or makes a prior-period adjustment (`P14-TSK-013`); the close requires accruals caught up.** *(As built by `P14-TSK-006`, 2026-10-30: a system poster states its economic or stored date and asks the ledger's posting command for `FLOOR_AT_FIRST_OPEN` - the seven rules `LND-2`, `SETTLEMENT-REPORT`, `SETTLEMENT-STATEMENT`, `MERCHANT-PAYOUT-RETURN`, `RECON-SUSPENSE`, `FX-TRADE`, `FX-COVER` at register version 2 from 2026-10-30; the ledger reads the cutoff under namespace `14` key `cutoff` shared in the posting's own effect and posts on `max(stated, closed_through + 1)`, the value date and the key untouched and the fingerprint the stated date's; the four adjustment rules refused at approval by `AdjustmentService`'s guard, the proposal left `PROPOSED`; `AccrualCompleteness` built in `app` for the close. No migration.)* |
 | C4 | Regulatory reporting jurisdiction | (A) a simulated reference format, jurisdiction a field, adapter data; (B) a named real jurisdiction | **(A)** (Phase 13's C4 precedent): no legal obligation claimed; every real form is adapter data verified when a jurisdiction is chosen |
 | C5 | Criterion 7 in Phase 14 | — | The standing deviation continues: database suites written and owed per task; one owner-authorised database pass before `P14-DOC-001`; `P14-TST-001` planned and `POSTPONED` (PI-004) |
-| C6 | Write-off, provisioning, effective-interest amortisation | (A) write-off as a four-eyes operator command posting lending rule 14 / bnpl F11 with the capital-headroom fix in the same commit, a cut candidate; provisioning (ECL / IFRS 9 staging) and EIR deferred and disclosed; (B) defer all three | **(A)** — the rules and expense accounts already exist; no automatic charge-off policy is invented; provisioning and EIR need qualified review and are disclosed as reporting differences in the statements' notes **Ratified by the owner, 2026-11-04: (A).** |
+| C6 | Write-off, provisioning, effective-interest amortisation | (A) write-off as a four-eyes operator command posting lending rule 14 / bnpl F11 with the capital-headroom fix in the same commit, a cut candidate; provisioning (ECL / IFRS 9 staging) and EIR deferred and disclosed; (B) defer all three | **(A)** — the rules and expense accounts already exist; no automatic charge-off policy is invented; provisioning and EIR need qualified review and are disclosed as reporting differences in the statements' notes **Ratified by the owner, 2026-11-04: (A).** *(Built by `P14-TSK-021`, the same day: no automatic charge-off; a write-off says nothing about what the customer owes; the way back, recovery and a merchant refund on a written-off obligation are owner items. A qualified reviewer still confirms C6 before production.)* |
 | C7 | Revaluation / unrealised FX | (A) report-time translation at a pinned valuation rate set, the translation difference a disclosed line, nothing posted; (B) period-end revaluation entries to new `FX_UNREALISED_*` purposes, auto-reversed | **(A)**: realised results are already posted (`FX_REALISED_*`, `FX_SPREAD_REVENUE`, `ROUNDING_RESIDUAL`); posting unrealised P&L is policy (IAS 21-shaped) needing qualified review |
 | C8 | Year-end and P&L closing entries | (A) none posted; the current-period result and retained earnings computed in the statements; (B) closing entries to a new `RETAINED_EARNINGS` purpose | **(A)**: no new posting treatment; the journal stays the economic record |
 | C9 | Period granularity and calendar | (A) calendar months of `posting_date`, closed in order, a period lockable no earlier than its end + a configured grace (default 2 business days); (B) daily periods | **(A)** |
@@ -106,7 +106,7 @@ Surveyed at master `f94f331a` by grep and reading the key classes and migrations
 | FX | `fx.rate_snapshot` reference rates (`V002`: source, pair, rate `NUMERIC(20,10)`, `observed_at`, append-only), executed trades with frozen provenance (`INV-FX-05`), realised results posted (`V023`) | **Reuse**: valuation rate sets captured from reference snapshots (`-014`); never from customer quotes |
 | Reports | Operator reports for lending (`/portfolio`, `/delinquency`, `/accrual`, `/capital`), bnpl (`/portfolio`, `/merchant-financing`, `/refunds`, `/delinquency`), reconciliation (above), merchant transactions; risk reports | **Reuse** as operational (live) reports; **missing**: immutable, reproducible report runs, GL, statements |
 | Periods, close, GL mapping, valuation, statements, regulatory reporting | Nothing: no period, no cutoff, no mapping, no statement, no submission | **New** — this phase |
-| Write-off, provisioning, EIR | `LOAN_WRITE_OFF_EXPENSE`, `BNPL_WRITE_OFF_EXPENSE` seeded, posted by nothing; rule 14 / F11 designed | C6 |
+| Write-off, provisioning, EIR | `LOAN_WRITE_OFF_EXPENSE`, `BNPL_WRITE_OFF_EXPENSE` seeded, posted by nothing at this plan's writing; rule 14 / F11 designed *(built by `P14-TSK-021`)* | C6 |
 
 ---
 
@@ -331,7 +331,7 @@ trigger, `content_sha256`), `valuation_rate_set`, `valuation_rate` (snapshot ids
 `prior_period_adjustment`, `regulatory_obligation`, `regulatory_submission`. Ledger: `V028` `posting_cutoff` (one row,
 `closed_through date`) + `posting_cutoff_event` (append-only) + the trigger; `V029` index `journal_entry (posting_date,
 id)` *(built by `P14-TSK-007`, 2026-10-31: `journal_entry_by_posting_date`, in the migration's transaction - no production journal yet)*; `V030` origin `ACCOUNTING` + reason `PRIOR_PERIOD_ADJUSTMENT`. Identity `V025`: the permissions and roles (C12).
-Lending: no migration for `-006` (code only); `-021` (if C6 A) takes lending and bnpl migrations then numbered.
+Lending: no migration for `-006` (code only); `-021` (C6 A ratified) took lending `V032` and bnpl `V020`.
 Migration numbers are assigned in landing order (Flyway out-of-order off); next free re-verified at the transition:
 accounting `V001`, ledger `V028`, identity `V025`, lending `V032`, bnpl `V020`. Amounts: `BIGINT` minor units + `CHAR(3)` +
 scale everywhere (`MoneyColumns`); rates `NUMERIC(20,10)` as fx stores them; no floating point (`INV-MON-01`).
@@ -426,7 +426,7 @@ record them; `-002` reads each against its code site and corrects this table by 
 | Loan disbursement, billing, accrual, repayment, fees, waivers, reversals, payoff, credit lines | `lending` (ADR-0096 §2 rules 1–13) | `lending.*` | `LEDGER_MODEL.md` §10; accrual DR `LOAN_INTEREST_ACCRUED` / CR `LOAN_INTEREST_INCOME` | accrual: **posting date = accrual date** (back-dating; C3) *(as built by `P14-TSK-006`: value date the accrual date, posting date floored at the first open date - `LND-2` version 2)* | keyed per act/date; reversal and waiver four-eyes; `LoanSubledgerProof` |
 | BNPL financing, billing, accrual, repayment, refund, fee, waiver, reversal, payoff | `bnpl` (ADR-0103 F1–F10) | `bnpl.*` | `LEDGER_MODEL.md` §11 (merchant settlement F1 net of discount; customer repayment F3) | accrual posting today, value the date | keyed; `BnplThreeWayProof` |
 | Approved manual adjustments | `ledger` proposals | `MANUAL` origin | as approved | today | four-eyes (`INV-REV-04`) |
-| Write-off (C6 A) | `lending` / `bnpl` | rule 14 / F11 | per-loan assets → `LOAN_WRITE_OFF_EXPENSE` / `BNPL_WRITE_OFF_EXPENSE` | today | four-eyes; headroom fix (ADR-0104) |
+| Write-off (C6 A) | `lending` / `bnpl` | rule 14 / F11 | per-loan assets → `LOAN_WRITE_OFF_EXPENSE` / `BNPL_WRITE_OFF_EXPENSE` | today | four-eyes; headroom fix (ADR-0104) *(as built, `P14-TSK-021`, 2026-11-04: `lending.write-off:<loan>`, `bnpl.write-off:<obligation>`, `AS_STATED` today; the machines in `LENDING_LIFECYCLES.md` section 4.5a and `BNPL_LIFECYCLES.md` section 4.7a)* |
 | Prior-period adjustment | `accounting` | `ACCOUNTING` origin | as approved, operational purposes not closed to free adjustments | today, open period | four-eyes; references the corrected closed period |
 
 **Rule versioning.** The register is code (`accounting`, pure data, purposes as strings), versioned by a catalogue
@@ -458,7 +458,7 @@ recognitions (`accepted_on`), the payout return (the item's batch `accepted_on`,
 `recon-suspense:` and the three reconciliation adjustments (a resolution's stored proposal date, approved later), the
 conversion (`booked_on`) and the cover (`recorded_on`). C3's "the one back-dating poster" is therefore not the code's
 truth - recorded for `P14-TSK-006` and the owner, not decided here. The `ACCOUNTING` origin (`-013`) and write-off rule
-14 / F11 (C6) post nothing yet and are not registered. `GET /v1/operator/accounting/posting-rules` serves the register,
+14 / F11 (C6) post nothing yet and are not registered *(registered by `P14-TSK-021`, `posting-rules:v4`, `LND-14` and `BNPL-F11`, version 1 from the origin)*. `GET /v1/operator/accounting/posting-rules` serves the register,
 `ACCOUNTING_READ`, audited `accounting.PostingRulesRead`.)*
 
 *(As built by `P14-TSK-006`, 2026-10-30 - C3 ratified, **every rule names its cutoff reaction** (`CutoffReaction`, a
@@ -767,6 +767,8 @@ rows both ways.
 | `finapp.accounting.report.diverged` | counter | definition *(built by `P14-TSK-008`, counted once per keyed regeneration)* | `AccountingReportDiverged` |
 | `finapp.accounting.regulatory.submission` | counter | outcome | `RegulatorySubmissionRejected` |
 | `finapp.accounting.sweeper.enabled` | gauge | — | — |
+| `finapp.lending.write.off` | counter | product, outcome *(built by `P14-TSK-021`: `proposed`, `approved`, `rejected` or the act's refusal; `finapp_lending_write_off_total`)* | — |
+| `finapp.bnpl.write.off` | counter | product, outcome *(built by `P14-TSK-021`, the same)* | — |
 
 ## 17. Milestones
 
@@ -780,7 +782,7 @@ rows both ways.
 | **M14.6 Financial reporting** | statements; operational financial reports | `-016`, `-017` |
 | **M14.7 Regulatory reporting** | the framework and simulated adapter; the safeguarding return (C13) | `-018`, `-019` |
 | **M14.8 Operations** | meters, alerts, runbook §10 | `-020` |
-| **M14.9 Write-off (optional, C6)** | write-off under four eyes with the headroom fix | `-021` |
+| **M14.9 Write-off (optional, C6)** | write-off under four eyes with the headroom fix | `-021` *(closed at 1 of 1, 2026-11-04)* |
 | **M14.10 Exit** | the owner's rulings on prior-period adjustments built; the battery, the review (the storm postponed) | `-022`, `P14-TST-002`, `P14-TST-001` (`POSTPONED`), `P14-DOC-001` |
 
 **Cut order:** `-021`, then `-019`, then `-017`'s portfolio/exposure re-statements. **Never cut:** the cutoff (`-004`),

@@ -1080,6 +1080,12 @@ The credit reads (`P10-TSK-017`): the customer's request read and `GET /v1/me/cr
 | `lending.RepaymentNotReversible` | 409 | The repayment cannot be reversed; nothing was posted. |
 | `lending.LineNotClosable` | 409 | The account is not a credit line that can be closed by request; nothing was done. |
 | `lending.WaiverExceedsDue` | 422 | The waiver exceeds what is due now; nothing was posted. |
+| `lending.LoanWrittenOff` | 409 | This account has been written off and this request cannot be taken here; nothing was moved and what is owed is unchanged. |
+| `lending.LoanNotDefaulted` | 409 | The account is not defaulted; nothing was done. |
+| `lending.WriteOffStale` | 409 | The account has moved since the write-off was proposed, or the figures named are not the proposal's; nothing was posted. |
+| `lending.WriteOffCreditHeld` | 409 | The account holds a credit balance; its next servicing step applies it. Nothing was done. |
+| `lending.WriteOffUnpostable` | 422 | The account's figures cannot be totalled; nothing was done. |
+| `lending.WriteOffBehindAccrual` | 409 | The account's elapsed days are not accrued yet; nothing was done. |
 | `lending.PayoffQuoteStale` | 409 | The payoff quote no longer ends the account; nothing was posted. |
 | `lending.AmendmentLapsed` | 409 | The amendment has lapsed; nothing was amended. |
 | `lending.ArrearsFirst` | 409 | Something billed is still owing; pay it before prepaying. Nothing was posted. |
@@ -1315,11 +1321,18 @@ horizon is `api.ValidationFailed` (`422`), as is a malformed one.
 | `bnpl.RefundExceedsPurchase` | 422 | The refund exceeds what remains of the BNPL purchase. |
 | `bnpl.PurchaseFullyRefunded` | 409 | The BNPL purchase is already fully refunded. |
 | `bnpl.RefundScopeRequired` | 403 | This API key may not refund BNPL purchases; a key with the refund scope may. |
-| `bnpl.RefundNotPostable` | 409 | The BNPL refund cannot be posted now; nothing was written. |
+| `bnpl.RefundNotPostable` | 409 | The BNPL refund cannot be posted; nothing was written. |
 | `bnpl.SelfDealingRefused` | 403 | An employee never acts on a BNPL purchase or agreement of their own party; nothing was done. |
 | `bnpl.ProposalNotPending` | 409 | The proposal is no longer awaiting a decision. |
 | `bnpl.RepaymentNotReversible` | 409 | The BNPL repayment cannot be reversed. |
 | `bnpl.WaiverExceedsDue` | 422 | The waiver exceeds what is due of the fee. |
+| `bnpl.ObligationWrittenOff` | 409 | This agreement has been written off and this request cannot be taken here; nothing was moved and what is owed is unchanged. |
+| `bnpl.ObligationNotDefaulted` | 409 | The agreement is not defaulted; nothing was done. |
+| `bnpl.WriteOffStale` | 409 | The agreement has moved since the write-off was proposed, or the figures named are not the proposal's; nothing was posted. |
+| `bnpl.WriteOffCreditHeld` | 409 | The agreement holds a credit balance; its next servicing step applies it. Nothing was done. |
+| `bnpl.WriteOffBehindAccrual` | 409 | The agreement's elapsed days are not accrued yet; nothing was done. |
+| `bnpl.WriteOffDisputeOpen` | 409 | A dispute of the purchase is open; it is resolved first. Nothing was done. |
+| `bnpl.WriteOffUnpostable` | 422 | The agreement's figures cannot be totalled; nothing was done. |
 | `bnpl.WalletUnavailable` | 409 | The customer's wallet cannot be credited now; nothing was posted. |
 | `bnpl.DisputeOpen` | 409 | The BNPL purchase has an open dispute. |
 | `bnpl.DisputeNotActionable` | 409 | The BNPL dispute is not open to this act. |

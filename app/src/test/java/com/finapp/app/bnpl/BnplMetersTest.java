@@ -85,6 +85,7 @@ class BnplMetersTest {
         keys.put("finapp.bnpl.purchase", Set.of("product", "plan", "outcome"));
         keys.put("finapp.bnpl.servicing", Set.of("step", "outcome"));
         keys.put("finapp.bnpl.repayment", Set.of("kind", "outcome"));
+        keys.put("finapp.bnpl.write.off", Set.of("product", "outcome"));
         keys.put("finapp.bnpl.refund", Set.of("kind", "outcome"));
         for (String name : List.of("accrual", "collection", "fee", "dispute", "reversal", "waiver")) {
             keys.put("finapp.bnpl." + name, Set.of("outcome"));

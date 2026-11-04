@@ -104,8 +104,9 @@ public class BnplPurchaseBeans {
 
     /** The customer's agreements - the list, the read with its derived balances, the schedule. */
     @Bean
-    BnplObligations bnplObligations(BnplPurchaseStore bnplPurchaseStore, BnplBook bnplBook) {
-        return new BnplObligations(bnplPurchaseStore, bnplBook);
+    BnplObligations bnplObligations(BnplPurchaseStore bnplPurchaseStore, BnplBook bnplBook,
+            com.finapp.bnpl.BnplWriteOffStore bnplWriteOffStore) {
+        return new BnplObligations(bnplPurchaseStore, bnplBook, bnplWriteOffStore);
     }
 
     /** The merchant's reads of its BNPL purchases (`P12-TSK-014`) - with their refunds (`P12-TSK-021`). */

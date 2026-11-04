@@ -128,6 +128,176 @@ class BnplRefundDeskTest {
                 .isEqualTo(2.0);
     }
 
+    @Test
+    @DisplayName("P14-TSK-021: a merchant refunding a written-off customer's purchase learns nothing of it: the neutral 409, no word of a write-off,"
+            + " a default, a debt or a retry, nothing moved, the refusal counted; the operator's door keeps the full code")
+    @SuppressWarnings("try") // The Scopes are used for their close side effect (the idiom).
+    void aMerchantLearnsNothingOfAWriteOff() {
+        UUID merchantId = IDS.next();
+        UUID customer = UUID.randomUUID();
+        BnplObligationId obligationId = BnplObligationId.next(IDS);
+        BnplPurchaseId purchaseId = BnplPurchaseId.next(IDS);
+        BnplAgreementId agreementId = BnplAgreementId.next(IDS);
+        CorrelationId flow = CorrelationId.of("desk");
+        com.finapp.bnpl.BnplPurchase purchase = new com.finapp.bnpl.BnplPurchase(purchaseId, com.finapp.bnpl.BnplOfferId.next(IDS),
+                UUID.randomUUID(), customer, merchantId, com.finapp.bnpl.BnplProduct.BNPL_PAY_IN_4, com.finapp.bnpl.BnplPlan.PAY_IN_4, EUR,
+                com.finapp.bnpl.BnplPurchaseStatus.FINANCED, LocalDate.of(2026, 7, 1), Instant.parse("2026-07-01T10:00:00Z"),
+                Optional.of(Instant.parse("2026-07-01T10:00:00Z")), Optional.empty(), flow);
+        com.finapp.bnpl.BnplRefundStore.LockedPurchase locked = new com.finapp.bnpl.BnplRefundStore.LockedPurchase(purchase, eur(600_00),
+                eur(24_00), eur(576_00), obligationId);
+        com.finapp.bnpl.BnplObligation writtenOff = new com.finapp.bnpl.BnplObligation(obligationId, purchaseId, agreementId, customer,
+                UUID.randomUUID(), com.finapp.bnpl.BnplProduct.BNPL_PAY_IN_4, com.finapp.bnpl.BnplPlan.PAY_IN_4, EUR,
+                com.finapp.bnpl.BnplObligationStatus.WRITTEN_OFF, LocalDate.of(2026, 7, 1), Instant.parse("2026-07-01T10:00:00Z"),
+                Optional.empty(), flow);
+        com.finapp.bnpl.BnplServicingStore.Locked lockedObligation = new com.finapp.bnpl.BnplServicingStore.Locked(writtenOff, agreementId, 1,
+                com.finapp.bnpl.BnplTermsVersionId.of(IDS.next()), "BNPL_SCHEDULE_ENGINE_V1", Optional.empty(), "ALLOCATION_ENGINE_V1", "UTC");
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        BnplRefundDesk desk = new BnplRefundDesk(built(BnplRefunds.class,
+                        answering(com.finapp.bnpl.BnplRefundStore.class, java.util.Map.of("lockAtMerchant", Optional.of(locked),
+                                "lock", Optional.of(locked), "disputeOpen", false)),
+                        answering(com.finapp.bnpl.BnplServicingStore.class, java.util.Map.of("lock", Optional.of(lockedObligation))),
+                        (com.finapp.bnpl.BnplActingParty) (uow, actor) -> Optional.of(UUID.randomUUID())),
+                built(com.finapp.bnpl.BnplAccruals.class),
+                new com.finapp.platform.idempotency.IdempotentExecutor(claims(), Clock.systemUTC(), java.time.Duration.ofDays(1),
+                        java.time.Duration.ofMinutes(1)),
+                built(BnplTransactions.class, new org.springframework.transaction.support.TransactionTemplate(noTransactions())),
+                new BnplRefundMetrics(registry));
+        BnplRefundController.BnplRefundBody body = new BnplRefundController.BnplRefundBody("40.00", "EUR", "goods returned");
+        com.finapp.merchant.AuthenticatedMerchant merchant = new com.finapp.merchant.AuthenticatedMerchant(
+                com.finapp.merchant.MerchantId.of(merchantId), com.finapp.merchant.MerchantApiKeyId.of(IDS.next()),
+                java.util.Set.of(com.finapp.merchant.MerchantApiKeyScope.BNPL_REFUND), Optional.of("key-issuer"));
+        com.finapp.platform.security.Actor actor = new com.finapp.platform.security.Actor(merchantId.toString(),
+                com.finapp.platform.security.ActorType.MERCHANT);
+        try (com.finapp.platform.security.SecurityContext.Scope scope = com.finapp.platform.security.SecurityContext.enter(actor);
+                com.finapp.platform.correlation.CorrelationContext.Scope correlation = com.finapp.platform.correlation.CorrelationContext.enter(
+                        com.finapp.sharedkernel.correlation.Correlation.startingWith(flow))) {
+            assertThatThrownBy(() -> desk.refundAsMerchant(merchant, purchaseId.value().toString(), "key-1", body))
+                    .isInstanceOfSatisfying(ApiException.class, refused -> {
+                        assertThat(refused.errorCode().code()).isEqualTo("bnpl.RefundNotPostable");
+                        assertThat(refused.errorCode().status()).isEqualTo(409);
+                        String said = (refused.errorCode().code() + " " + refused.errorCode().title() + " " + refused.getMessage() + " "
+                                + refused.clientDetail().orElseThrow()).toLowerCase(java.util.Locale.ROOT);
+                        for (String word : List.of("written off", "written-off", "writtenoff", "write-off", "default", "owed", "debt", "customer",
+                                "agreement", "delinquen", "retry", "same key", " now")) {
+                            assertThat(said).as(word).doesNotContain(word);
+                        }
+                    });
+            try (com.finapp.platform.security.SecurityContext.Scope operator = com.finapp.platform.security.SecurityContext.enter(
+                    new com.finapp.platform.security.Actor(UUID.randomUUID().toString(), com.finapp.platform.security.ActorType.EMPLOYEE))) {
+                assertThatThrownBy(() -> desk.refundAsOperator(purchaseId.value().toString(), "key-2", body))
+                        .as("the operator's door keeps the full code, through ApiErrorHandler")
+                        .isInstanceOf(com.finapp.bnpl.BnplWrittenOffRefused.class);
+            }
+        }
+        assertThat(registry.get(BnplRefundMetrics.REFUND).tags("kind", "partial", "outcome", "written_off").counter().count())
+                .as("counted at each door").isEqualTo(2.0);
+    }
+
+    /** A real collaborator whose every part is {@code known} or answers nothing: only what runs before the guard is ever asked. */
+    @SuppressWarnings("unchecked")
+    private static <T> T built(Class<T> type, Object... known) {
+        java.lang.reflect.Constructor<?> widest = Arrays.stream(type.getDeclaredConstructors())
+                .max(java.util.Comparator.comparingInt(java.lang.reflect.Constructor::getParameterCount))
+                .orElseThrow(() -> new IllegalStateException("nothing to build " + type + " with"));
+        Object[] arguments = Arrays.stream(widest.getParameterTypes()).map(part -> part(part, known)).toArray();
+        try {
+            widest.setAccessible(true);
+            return (T) widest.newInstance(arguments);
+        } catch (ReflectiveOperationException failure) {
+            throw new IllegalStateException(type.getName(), failure);
+        }
+    }
+
+    private static Object part(Class<?> type, Object[] known) {
+        for (Object given : known) {
+            if (type.isInstance(given)) {
+                return given;
+            }
+        }
+        if (type == IdGenerator.class) {
+            return IDS;
+        }
+        if (type == Clock.class) {
+            return Clock.systemUTC();
+        }
+        return type.isInterface() ? answering(type, java.util.Map.of("getConnection", noConnection())) : built(type, known);
+    }
+
+    private static Object answering(Class<?> type, java.util.Map<String, Object> answers) {
+        return java.lang.reflect.Proxy.newProxyInstance(BnplRefundDeskTest.class.getClassLoader(), new Class<?>[] {type},
+                (proxy, method, args) -> {
+                    if (answers.containsKey(method.getName())) {
+                        return answers.get(method.getName());
+                    }
+                    if (method.getReturnType() == Optional.class) {
+                        return Optional.empty();
+                    }
+                    if (method.getReturnType() == List.class) {
+                        return List.of();
+                    }
+                    if (method.isDefault()) {
+                        return java.lang.reflect.InvocationHandler.invokeDefault(proxy, method, args);
+                    }
+                    throw new UnsupportedOperationException(type.getSimpleName() + "." + method.getName());
+                });
+    }
+
+    private static com.finapp.platform.idempotency.IdempotencyRecordStore<java.sql.Connection> claims() {
+        return new com.finapp.platform.idempotency.IdempotencyRecordStore<>() {
+            @Override
+            public ClaimOutcome claim(java.sql.Connection unitOfWork, com.finapp.platform.idempotency.IdempotencyKey key,
+                    com.finapp.platform.idempotency.RequestFingerprint fingerprint, CorrelationId correlationId, Instant now, Instant expiresAt,
+                    java.time.Duration lease) {
+                return ClaimOutcome.CLAIMED;
+            }
+
+            @Override
+            public Optional<com.finapp.platform.idempotency.IdempotencyRecord> find(java.sql.Connection unitOfWork,
+                    com.finapp.platform.idempotency.IdempotencyKey key) {
+                return Optional.empty();
+            }
+
+            @Override
+            public boolean complete(java.sql.Connection unitOfWork, com.finapp.platform.idempotency.IdempotencyKey key,
+                    com.finapp.platform.idempotency.IdempotencyState terminalState, com.finapp.platform.idempotency.StoredResponse response,
+                    Instant completedAt) {
+                return true;
+            }
+
+            @Override
+            public boolean reclaimIfLeaseExpired(java.sql.Connection unitOfWork, com.finapp.platform.idempotency.IdempotencyKey key,
+                    CorrelationId correlationId, Instant now, Instant expiresAt, java.time.Duration lease) {
+                return false;
+            }
+        };
+    }
+
+    private static org.springframework.transaction.PlatformTransactionManager noTransactions() {
+        return new org.springframework.transaction.PlatformTransactionManager() {
+            @Override
+            public org.springframework.transaction.TransactionStatus getTransaction(
+                    org.springframework.transaction.TransactionDefinition definition) {
+                return new org.springframework.transaction.support.SimpleTransactionStatus();
+            }
+
+            @Override
+            public void commit(org.springframework.transaction.TransactionStatus status) {}
+
+            @Override
+            public void rollback(org.springframework.transaction.TransactionStatus status) {}
+        };
+    }
+
+    private static java.sql.Connection noConnection() {
+        return (java.sql.Connection) java.lang.reflect.Proxy.newProxyInstance(
+                BnplRefundDeskTest.class.getClassLoader(), new Class<?>[] {java.sql.Connection.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("close")) {
+                        return null;
+                    }
+                    throw new UnsupportedOperationException("the door's fakes never touch the connection: " + method.getName());
+                });
+    }
+
     private static BnplRefunds.Refunded refunded(BnplRefunds.Kind kind) {
         BnplObligationId obligation = BnplObligationId.next(IDS);
         UUID refund = IDS.next();

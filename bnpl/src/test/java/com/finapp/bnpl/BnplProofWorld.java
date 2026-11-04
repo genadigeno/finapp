@@ -289,7 +289,16 @@ final class BnplProofWorld {
                     ids.isEmpty() ? List.of() : fakes.book.datedLinesOn(unitOfWork, ids, LocalDate.of(9999, 12, 31)),
                     shared, Optional.ofNullable(fakes.merchants.payables.get(purchase.merchant())),
                     Optional.of(fakes.book.operational(unitOfWork, AccountPurpose.BNPL_MERCHANT_FEE_INCOME,
-                            obligation.currency()))));
+                            obligation.currency())),
+                    fakes.writeOffs.rows.values().stream().filter(row -> row.obligation().equals(id))
+                            .map(row -> new BnplRecord.WriteOffRow(row.id(), row.position().principal(), row.position().principalDue(),
+                                    row.position().interestAccrued(), row.position().interestDue(), row.position().feesDue(),
+                                    row.position().revision(), row.status() == BnplCorrectionStatus.PROPOSED ? Optional.empty()
+                                            : Optional.of(row.status().name()),
+                                    row.status() == BnplCorrectionStatus.PROPOSED ? at(row.id())
+                                            : at("write-off-decided:" + row.id()),
+                                    row.journalEntry(), row.valueDate()))
+                            .toList()));
         }
 
         private <T> List<BnplRecord.Stamped<T>> stamped(List<T> rows, java.util.function.Function<T, UUID> id) {

@@ -403,8 +403,8 @@ public class LendingBeans {
     @Bean
     Loans loans(LoanStore loanStore, LedgerAccountStore<Connection> ledgerAccountStore,
             PurposeBalances<Connection> purposeBalances, LoanPayoutStore loanPayoutStore,
-            com.finapp.lending.LoanConditions loanConditions) {
-        return new Loans(loanStore, ledgerAccountStore, purposeBalances, loanPayoutStore, loanConditions);
+            com.finapp.lending.LoanConditions loanConditions, com.finapp.lending.LoanWriteOffStore loanWriteOffStore) {
+        return new Loans(loanStore, ledgerAccountStore, purposeBalances, loanPayoutStore, loanConditions, loanWriteOffStore);
     }
 
     /** The condition history's store (P11-TSK-024, lending V020) - {@code loan_condition_event}, INSERT-only. */

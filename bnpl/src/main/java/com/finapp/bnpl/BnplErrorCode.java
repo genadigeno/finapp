@@ -122,6 +122,42 @@ public enum BnplErrorCode implements ErrorCode {
     OBLIGATION_CLOSED("bnpl.ObligationClosed", 409, "The BNPL agreement is closed."),
 
     /**
+     * The agreement is written off (`P14-TSK-021`, owner decision C6): this door moves nothing on it - a repayment took nothing from the
+     * wallet, a merchant's refund nothing from its payable. What is owed is unchanged: a write-off is an act on the platform's books,
+     * never payment or forgiveness. Recovery after a write-off is a later rule.
+     */
+    OBLIGATION_WRITTEN_OFF(
+            "bnpl.ObligationWrittenOff",
+            409,
+            "This agreement has been written off and this request cannot be taken here; nothing was moved and what is owed is unchanged."),
+
+    /** Only a defaulted obligation is written off (`P14-TSK-021`): the default not set, or cured - nothing was done. */
+    OBLIGATION_NOT_DEFAULTED("bnpl.ObligationNotDefaulted", 409, "The agreement is not defaulted; nothing was done."),
+
+    /**
+     * The obligation moved since the proposal, or the figures named are not the proposal's (`P14-TSK-021`): a repayment, an accrual, a
+     * late fee, a default cured and set again. Never silently re-read: nothing was posted and the proposal stands.
+     */
+    WRITE_OFF_STALE(
+            "bnpl.WriteOffStale",
+            409,
+            "The agreement has moved since the write-off was proposed, or the figures named are not the proposal's; nothing was posted."),
+
+    /** A write-off never takes the customer's own money (`P14-TSK-021`): the obligation's next servicing step applies it. */
+    WRITE_OFF_CREDIT_HELD(
+            "bnpl.WriteOffCreditHeld", 409, "The agreement holds a credit balance; its next servicing step applies it. Nothing was done."),
+
+    /** An elapsed date is not accrued yet (`P14-TSK-021`): the obligation's next servicing step brings it. */
+    WRITE_OFF_BEHIND_ACCRUAL(
+            "bnpl.WriteOffBehindAccrual", 409, "The agreement's elapsed days are not accrued yet; nothing was done."),
+
+    /** A dispute of the purchase is open (`P14-TSK-021`): its outcome may be a refund, which needs the receivable. */
+    WRITE_OFF_DISPUTE_OPEN("bnpl.WriteOffDisputeOpen", 409, "A dispute of the purchase is open; it is resolved first. Nothing was done."),
+
+    /** The figures cannot be totalled in the amount the platform can hold (`P14-TSK-021`): an impossible book, never a 500. */
+    WRITE_OFF_UNPOSTABLE("bnpl.WriteOffUnpostable", 422, "The agreement's figures cannot be totalled; nothing was done."),
+
+    /**
      * The payoff quote no longer ends the agreement (`P12-TSK-022`; T-pay, scenario 11): executed on a date other than its
      * good-through date, or what the agreement owes moved since it was quoted (a refund, a repayment, a collection, a fee or
      * a new agreement version committed first) - recomputed under the obligation's lock and refused rather than adjusted;
@@ -152,7 +188,7 @@ public enum BnplErrorCode implements ErrorCode {
      * {@code CLOSED} agreement (a closed agreement holds no credit balance, OQ-15), or the merchant's payable cannot be
      * debited. Nothing was written; retry later under the same key.
      */
-    REFUND_NOT_POSTABLE("bnpl.RefundNotPostable", 409, "The BNPL refund cannot be posted now; nothing was written."),
+    REFUND_NOT_POSTABLE("bnpl.RefundNotPostable", 409, "The BNPL refund cannot be posted; nothing was written."),
 
     /**
      * An operator tried to refund a BNPL purchase of their own party (`P12-TSK-021`; the self-dealing rule,

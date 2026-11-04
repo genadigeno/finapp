@@ -175,6 +175,7 @@ public final class Waivers {
         LoanStore.Owned locked = loans.lock(unitOfWork, loan).orElseThrow(WaiverNotFound::new);
         Target resolved = target(unitOfWork, loan, kind, target);
         Loan account = locked.loan();
+        LoanWrittenOffRefused.refuseIfWrittenOff(account);
         if (!inServicing(account.status())) {
             throw new LoanClosed(kind);
         }
@@ -239,6 +240,7 @@ public final class Waivers {
             throw new SelfApprovalRefused(proposal.kind(), loan, waiver);
         }
         Loan account = locked.loan();
+        LoanWrittenOffRefused.refuseIfWrittenOff(account);
         if (!inServicing(account.status())) {
             throw new LoanClosed(proposal.kind());
         }

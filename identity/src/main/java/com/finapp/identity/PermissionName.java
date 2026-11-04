@@ -737,5 +737,35 @@ public enum PermissionName {
      * acknowledgement (`P14-TSK-001`; ADR-0118); a correction is a new submission referencing the original. The routes
      * are `-018`'s. <strong>Held by {@code REGULATORY_REPORTER}</strong>, beside {@link #REGULATORY_REPORT_PREPARE}.
      */
-    REGULATORY_REPORT_SUBMIT
+    REGULATORY_REPORT_SUBMIT,
+
+    /**
+     * Propose writing a defaulted loan off (`P14-TSK-021`; owner decision C6, ADR-0096 rule 14): reasoned, nothing posted. It names
+     * {@code lending.WriteOffProposed}. <strong>Held by {@code LOAN_SERVICING_AGENT}</strong>: the desk that services the account is
+     * the one that knows it will not be repaid. Its approval is another population's ({@code RoleNameTest}).
+     */
+    LOAN_WRITE_OFF_PROPOSE,
+
+    /**
+     * Approve or reject a loan's write-off another person proposed - <strong>never one's own</strong>, refused at the domain and by
+     * {@code lending V032}'s four-eyes {@code CHECK} - and read what it decides ({@code lending.WriteOffRead}), on a
+     * {@code MULTI_FACTOR} session to approve (the owner's decision, 2026-11-04). <strong>Held by {@code LENDING_OFFICER}</strong>,
+     * whose desk answers for what the terms produced and for the loss they took: another population from the servicing desk, which
+     * cannot book a loss on the accounts it services.
+     */
+    LOAN_WRITE_OFF_APPROVE,
+
+    /**
+     * Propose writing a defaulted BNPL obligation off (`P14-TSK-021`; owner decision C6, ADR-0103 F11): reasoned, nothing posted. It
+     * names {@code bnpl.WriteOffProposed}. <strong>Held by {@code BNPL_SERVICING_AGENT}</strong>.
+     */
+    BNPL_WRITE_OFF_PROPOSE,
+
+    /**
+     * Approve or reject a BNPL obligation's write-off another person proposed - <strong>never one's own</strong>, refused at the
+     * domain and by {@code bnpl V020}'s four-eyes {@code CHECK} - and read what it decides ({@code bnpl.WriteOffRead}), on a
+     * {@code MULTI_FACTOR} session to approve. <strong>Held by {@code BNPL_OFFICER}</strong>, the {@link #LOAN_WRITE_OFF_APPROVE}
+     * shape: a loan's desk is not a BNPL desk.
+     */
+    BNPL_WRITE_OFF_APPROVE
 }

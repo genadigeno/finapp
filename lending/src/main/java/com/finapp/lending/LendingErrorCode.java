@@ -197,6 +197,40 @@ public enum LendingErrorCode implements ErrorCode {
     LOAN_CLOSED("lending.LoanClosed", 409, "The loan is closed; nothing was done."),
 
     /**
+     * The account is written off (`P14-TSK-021`, owner decision C6): this door moves nothing on it. A repayment took nothing from the
+     * wallet; what is owed is unchanged - a write-off is an act on the platform's books, never payment or forgiveness. Recovery
+     * after a write-off is a later rule.
+     */
+    LOAN_WRITTEN_OFF(
+            "lending.LoanWrittenOff",
+            409,
+            "This account has been written off and this request cannot be taken here; nothing was moved and what is owed is unchanged."),
+
+    /** Only a defaulted account is written off (`P14-TSK-021`): the default not set, or cured - nothing was done. */
+    LOAN_NOT_DEFAULTED("lending.LoanNotDefaulted", 409, "The account is not defaulted; nothing was done."),
+
+    /**
+     * The account moved since the proposal, or the figures named are not the proposal's (`P14-TSK-021`): a repayment, an accrual, a
+     * late fee, a default cured and set again. Never silently re-read: nothing was posted and the proposal stands; reject it and
+     * propose again.
+     */
+    WRITE_OFF_STALE(
+            "lending.WriteOffStale",
+            409,
+            "The account has moved since the write-off was proposed, or the figures named are not the proposal's; nothing was posted."),
+
+    /** A write-off never takes the customer's own money (`P14-TSK-021`): the account's next servicing step applies it. */
+    WRITE_OFF_CREDIT_HELD(
+            "lending.WriteOffCreditHeld", 409, "The account holds a credit balance; its next servicing step applies it. Nothing was done."),
+
+    /** The account's figures cannot be totalled in the amount the platform can hold (`P14-TSK-021`): an impossible book, never a 500. */
+    WRITE_OFF_UNPOSTABLE("lending.WriteOffUnpostable", 422, "The account's figures cannot be totalled; nothing was done."),
+
+    /** An elapsed date is not accrued yet (`P14-TSK-021`): the account's next servicing step brings it. */
+    WRITE_OFF_BEHIND_ACCRUAL(
+            "lending.WriteOffBehindAccrual", 409, "The account's elapsed days are not accrued yet; nothing was done."),
+
+    /**
      * An operator acted on a loan of their own party (`P11-TSK-020`; ADR-0099 point 2, the Phase 10 to 11 transition's R1,
      * {@code INV-LND-11}): an employee never services their own party's loan. Refused before anything was written, and
      * the attempt recorded {@code FAILED} ({@code lending.SelfDealingRefused}).

@@ -189,6 +189,7 @@ public final class Payoffs {
             }
             return new Quoted(born.get(), true);
         }
+        LoanWrittenOffRefused.refuseIfWrittenOff(loan);
         if (!Repayments.repayable(loan)) {
             throw new Repayments.LoanNotRepayable(loan.product());
         }
@@ -300,6 +301,7 @@ public final class Payoffs {
         }
         // The quote - immutable, read plainly under L3 (no L5 lock: the execution's uniques beneath L3 arbitrate).
         PayoffQuote quote = store.findQuote(unitOfWork, id, quoteId).orElseThrow(QuoteNotFound::new);
+        LoanWrittenOffRefused.refuseIfWrittenOff(loan);
         if (!Repayments.repayable(loan)) {
             throw new Repayments.LoanNotRepayable(loan.product());
         }

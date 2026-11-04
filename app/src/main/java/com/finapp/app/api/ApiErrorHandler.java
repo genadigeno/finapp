@@ -329,6 +329,38 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
     }
 
     /**
+     * A door that would move money, or a correction, on a written-off BNPL agreement (`P14-TSK-021`): a {@code 409}. Nothing moved: a
+     * repayment took nothing from the wallet, a merchant's refund nothing from its payable; what is owed is unchanged.
+     */
+    @ExceptionHandler(com.finapp.bnpl.BnplWrittenOffRefused.class)
+    public ResponseEntity<ProblemDetailBody> handleBnplWrittenOff(
+            com.finapp.bnpl.BnplWrittenOffRefused exception,
+            HttpServletRequest request) {
+        return render(
+                ProblemDetail.of(
+                        com.finapp.bnpl.BnplErrorCode.OBLIGATION_WRITTEN_OFF,
+                        request.getRequestURI(),
+                        "This agreement has been written off: this request cannot be taken here. Nothing was moved, and what is owed is"
+                                + " unchanged."));
+    }
+
+    /**
+     * A door that would move money, or a correction, on a written-off loan (`P14-TSK-021`): a {@code 409}. Nothing moved: a
+     * repayment took nothing from the wallet; what is owed is unchanged, and the detail says so - never "paid", never "forgiven".
+     */
+    @ExceptionHandler(com.finapp.lending.LoanWrittenOffRefused.class)
+    public ResponseEntity<ProblemDetailBody> handleLoanWrittenOff(
+            com.finapp.lending.LoanWrittenOffRefused exception,
+            HttpServletRequest request) {
+        return render(
+                ProblemDetail.of(
+                        com.finapp.lending.LendingErrorCode.LOAN_WRITTEN_OFF,
+                        request.getRequestURI(),
+                        "This account has been written off: this request cannot be taken here. Nothing was moved, and what is owed is"
+                                + " unchanged."));
+    }
+
+    /**
      * The initiator tried to approve their own adjustment proposal (`P3-TSK-021`,
      * {@code INV-AUD-04}) — the invariant's named negative. Nothing was written: the
      * refusal rolls the transaction back and the proposal stays standing for a second

@@ -76,7 +76,10 @@ public final class BnplAgreementDesk {
             String termsSha256,
             String acceptedAt) {}
 
-    /** One of the customer's agreements, listed. Amounts are exact decimal strings. */
+    /**
+     * One of the customer's agreements, listed. Amounts are exact decimal strings. {@code owed} and {@code notice} only for a
+     * {@code WRITTEN_OFF} agreement (`P14-TSK-021`), so a list never shows that status without what stands owed: null otherwise.
+     */
     public record BnplAgreementSummaryView(
             String agreementId,
             String product,
@@ -84,7 +87,9 @@ public final class BnplAgreementDesk {
             String status,
             String currency,
             String amount,
-            String purchaseDate) {}
+            String purchaseDate,
+            BnplBalancesView owed,
+            String notice) {}
 
     /** The customer's agreements. */
     public record BnplAgreementListView(List<BnplAgreementSummaryView> agreements) {}
@@ -104,7 +109,8 @@ public final class BnplAgreementDesk {
             String openedAt,
             String termsSha256,
             BnplBalancesView balances,
-            BnplConditionView condition) {}
+            BnplConditionView condition,
+            String notice) {}
 
     /**
      * The agreement's condition now (`P12-TSK-020`; {@code PHASE_12_PLAN.md} section 12.8) - derived in the read's snapshot
@@ -213,9 +219,15 @@ public final class BnplAgreementDesk {
 
     /** The caller's agreements, newest first. */
     public BnplAgreementListView list(Session current) {
-        return transactions.inSnapshot(unitOfWork -> new BnplAgreementListView(
-                obligations.list(unitOfWork, partyOf(unitOfWork, current)).stream().map(BnplAgreementDesk::summary)
-                        .toList()));
+        return transactions.inSnapshot(unitOfWork -> {
+            UUID party = partyOf(unitOfWork, current);
+            return new BnplAgreementListView(obligations.list(unitOfWork, party).stream()
+                    .map(owned -> owned.obligation().status() == com.finapp.bnpl.BnplObligationStatus.WRITTEN_OFF
+                            ? writtenOffSummary(obligations.read(unitOfWork, owned.agreement().id(), party).orElseThrow(
+                                    () -> new IllegalStateException("an agreement listed in this snapshot reads in it")))
+                            : summary(owned))
+                    .toList());
+        });
     }
 
     /** The caller's own agreement; another party's is the same {@code 404} as an unknown or malformed id. */
@@ -239,7 +251,20 @@ public final class BnplAgreementDesk {
     static BnplAgreementSummaryView summary(BnplPurchaseStore.Owned owned) {
         return new BnplAgreementSummaryView(owned.agreement().id().value().toString(), owned.obligation().product().name(),
                 owned.obligation().plan().name(), owned.obligation().status().name(), owned.gross().currency().code(),
-                decimal(owned.gross()), owned.obligation().purchaseDate().toString());
+                decimal(owned.gross()), owned.obligation().purchaseDate().toString(), null, null);
+    }
+
+    /** A written-off agreement's line: what stands owed beside the status, and the notice - as its full read says. */
+    static BnplAgreementSummaryView writtenOffSummary(BnplObligations.Read read) {
+        BnplAgreementSummaryView plain = summary(read.owned());
+        return new BnplAgreementSummaryView(plain.agreementId(), plain.product(), plain.plan(), plain.status(), plain.currency(),
+                plain.amount(), plain.purchaseDate(), balances(read.balances()), BnplObligations.WRITTEN_OFF_NOTICE);
+    }
+
+    private static BnplBalancesView balances(BnplObligations.Balances balances) {
+        return new BnplBalancesView(decimal(balances.principalOutstanding()), decimal(balances.principal()),
+                decimal(balances.principalDue()), decimal(balances.interestAccrued()),
+                decimal(balances.interestDue()), decimal(balances.feesDue()), decimal(balances.creditBalance()));
     }
 
     static BnplAgreementView view(BnplObligations.Read read) {
@@ -263,11 +288,11 @@ public final class BnplAgreementDesk {
                 owned.obligation().purchaseDate().toString(),
                 owned.obligation().openedAt().toString(),
                 owned.agreement().termsSha256Hex(),
-                new BnplBalancesView(decimal(balances.principalOutstanding()), decimal(balances.principal()),
-                        decimal(balances.principalDue()), decimal(balances.interestAccrued()),
-                        decimal(balances.interestDue()), decimal(balances.feesDue()), decimal(balances.creditBalance())),
+                balances(balances),
                 condition.map(state -> new BnplConditionView(state.pastDue() ? "PAST_DUE" : "CURRENT",
-                        state.daysPastDue(), state.bucket().map(Enum::name).orElse(null), state.defaulted())).orElse(null));
+                        state.daysPastDue(), state.bucket().map(Enum::name).orElse(null), state.defaulted())).orElse(null),
+                owned.obligation().status() == com.finapp.bnpl.BnplObligationStatus.WRITTEN_OFF
+                        ? BnplObligations.WRITTEN_OFF_NOTICE : null);
     }
 
     static BnplScheduleView schedule(BnplObligations.Schedule read) {

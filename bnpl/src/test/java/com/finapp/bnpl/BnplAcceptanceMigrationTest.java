@@ -120,7 +120,9 @@ class BnplAcceptanceMigrationTest {
     @DisplayName("the status and reason CHECKs list exactly the enums' members")
     void theValueListsAreTheEnums() {
         assertThat(constraint(V006, "purchase_status_is_known")).contains(list(BnplPurchaseStatus.values()));
-        assertThat(constraint(V006, "bnpl_obligation_status_is_known")).contains(list(BnplObligationStatus.values()));
+        // V006's two; bnpl V020 (P14-TSK-021) rebuilds the constraint with WRITTEN_OFF, BnplWriteOffMigrationTest's to hold.
+        assertThat(constraint(V006, "bnpl_obligation_status_is_known"))
+                .contains(list(new BnplObligationStatus[] {BnplObligationStatus.ACTIVE, BnplObligationStatus.CLOSED}));
         assertThat(constraint(V006, "bnpl_obligation_closure_coherent")).contains(list(BnplClosureReason.values()));
         assertThat(constraint(V006, "bnpl_repayment_kind_is_known")).contains("'"
                 + BnplPurchaseStore.Repayment.AT_PURCHASE + "'");

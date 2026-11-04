@@ -44,7 +44,7 @@ anticipated.
    | `LOAN_CREDIT_BALANCE` | LOAN | LIABILITY (credit) | account | money received beyond every receivable, owed to the borrower |
    | `LOAN_INTEREST_INCOME` | OPERATIONAL | REVENUE | currency | |
    | `LOAN_FEE_INCOME` | OPERATIONAL | REVENUE | currency | |
-   | `LOAN_WRITE_OFF_EXPENSE` | OPERATIONAL | EXPENSE | currency | seeded, posted by nothing in Phase 11 |
+   | `LOAN_WRITE_OFF_EXPENSE` | OPERATIONAL | EXPENSE | currency | seeded in Phase 11; posted only by rule 14 (`P14-TSK-021`) |
    | `LENDING_CAPITAL` | OPERATIONAL | EQUITY (credit) | currency | the platform's own funds committed to lending, recognised from bank evidence |
 
    The six per-loan accounts are opened by `createOrConverge` in the acceptance transaction, in the
@@ -76,7 +76,9 @@ anticipated.
    | 11 | Disbursement failed | — | — | nothing posted: a failed disbursement rolls back whole |
    | 12 | Payout (path X) | `CUSTOMER_WALLET` | `INSTANT_CLEARING` | payments' own posting, reversal and return (ADR-0097) |
    | 13 | Arrears re-scheduled (amendment) | `LOAN_PRINCIPAL` | `LOAN_PRINCIPAL_DUE` | `lending.amendment:<amendment>` |
-   | 14 | Write-off (deferred, Phase 14) | `LOAN_WRITE_OFF_EXPENSE` | every LOAN asset account | — |
+   | 14 | Write-off (`P14-TSK-021`, four eyes) | `LOAN_WRITE_OFF_EXPENSE` | every LOAN asset account holding anything (never `LOAN_CREDIT_BALANCE`) | `lending.write-off:<loan>` |
+
+   *(As built, rule 14 (`P14-TSK-021`, 2026-11-04, owner decision C6 (A), lending `V032`; register `posting-rules:v4`, row `LND-14`, version 1 from the origin): DR `LOAN_WRITE_OFF_EXPENSE`, CR each of `LOAN_PRINCIPAL`, `LOAN_PRINCIPAL_DUE`, `LOAN_INTEREST_ACCRUED`, `LOAN_INTEREST_DUE`, `LOAN_FEES_DUE` that holds anything, each to zero, dated today in the account's pinned zone on the database clock - `AS_STATED`, so C3's floor never moves it and a locked month refuses it (`ledger.PeriodClosed`), the proposal standing. It says nothing about what the customer owes: the account goes `WRITTEN_OFF`, `closed_at` NULL, no closure reason. The way back and any recovery are owner items, `LENDING_LIFECYCLES.md` section 4.5a.)*
 
    *(As built (`P11-DOC-001`, 2026-10-15), read against the posting code: rule 3's statement key is
    `lending.statement:<line>:<statement date>` (`CreditLineStatements`) and a post-maturity billing's

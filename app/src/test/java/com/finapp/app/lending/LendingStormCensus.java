@@ -400,13 +400,13 @@ final class LendingStormCensus {
         zero.put("C22 an acceptance at or after its offer's expiry",
                 "SELECT count(*) FROM lending.loan_acceptance a JOIN lending.loan_offer o ON o.id = a.offer_id"
                         + " WHERE a.accepted_at >= o.expires_at");
-        // C23 - the ledger's dates and the deferred write-off (P11-DOC-001: the gate's Ledger criterion, asserted over
-        // the data rather than the code's names). Every lending entry is posted and valued on one date; nothing posts
-        // to the write-off expense, seeded for Phase 14 and closed until then.
+        // C23 - the ledger's dates and the write-off (P11-DOC-001: the gate's Ledger criterion, asserted over the data rather
+        // than the code's names). Every lending entry is posted and valued on one date; the storm drives no write-off
+        // (P14-TSK-021 built it, under four eyes and outside this storm's scenarios), so nothing here posts to its expense.
         zero.put("C23 a lending entry whose posting date is not its value date",
                 "SELECT count(*) FROM ledger.journal_entry e WHERE (e.idempotency_scope LIKE 'ledger.post:lending.%'"
                         + " OR e.idempotency_scope LIKE 'ledger.reverse:lending.%') AND e.posting_date <> e.value_date");
-        zero.put("C23 a journal line on LOAN_WRITE_OFF_EXPENSE (write-off is Phase 14's)",
+        zero.put("C23 a journal line on LOAN_WRITE_OFF_EXPENSE (the storm drives no write-off)",
                 "SELECT count(*) FROM ledger.journal_line j JOIN ledger.ledger_account a ON a.id = j.ledger_account_id"
                         + " WHERE a.purpose = 'LOAN_WRITE_OFF_EXPENSE'");
         return zero;

@@ -232,7 +232,8 @@ public enum RoleName {
      * permissions and they hold none of these ({@code INV-AUD-03}). Origination is never a person's act in Phase 11, so
      * no role here can offer, disburse or draw.
      */
-    LENDING_OFFICER(EnumSet.of(PermissionName.LENDING_ADMINISTER, PermissionName.LENDING_INVESTIGATE)),
+    LENDING_OFFICER(EnumSet.of(PermissionName.LENDING_ADMINISTER, PermissionName.LENDING_INVESTIGATE,
+            PermissionName.LOAN_WRITE_OFF_APPROVE)),
 
     /**
      * Commits the platform's own money to lend (`P11-TSK-002`, ADR-0096, L1): holds
@@ -255,7 +256,8 @@ public enum RoleName {
      * act, and no employee services their own party's loan - is held between two holders at the domain and by
      * {@code CHECK}, enforced by each act's task. Holds neither the terms nor the capital, and cannot originate.
      */
-    LOAN_SERVICING_AGENT(EnumSet.of(PermissionName.LOAN_SERVICE, PermissionName.LOAN_SERVICE_APPROVE)),
+    LOAN_SERVICING_AGENT(EnumSet.of(PermissionName.LOAN_SERVICE, PermissionName.LOAN_SERVICE_APPROVE,
+            PermissionName.LOAN_WRITE_OFF_PROPOSE)),
 
     /**
      * Sets the BNPL products' terms and answers for what they produced (`P12-TSK-002`, ADR-0101, ADR-0102): holds
@@ -268,7 +270,8 @@ public enum RoleName {
      * ({@link #MERCHANT_ADMINISTRATOR}). Holds none of the other populations' permissions and they hold none of these
      * ({@code INV-AUD-03}). No operator creates a purchase or finances a merchant in Phase 12, so no role here can.
      */
-    BNPL_OFFICER(EnumSet.of(PermissionName.BNPL_ADMINISTER, PermissionName.BNPL_INVESTIGATE)),
+    BNPL_OFFICER(EnumSet.of(PermissionName.BNPL_ADMINISTER, PermissionName.BNPL_INVESTIGATE,
+            PermissionName.BNPL_WRITE_OFF_APPROVE)),
 
     /**
      * Services customers' BNPL obligations and resolves their disputes (`P12-TSK-002`, ADR-0101, ADR-0106): holds
@@ -283,7 +286,7 @@ public enum RoleName {
      * lending's servicing: a loan's agent is not a BNPL agent, each context's accounts its own.
      */
     BNPL_SERVICING_AGENT(EnumSet.of(PermissionName.BNPL_SERVICE, PermissionName.BNPL_SERVICE_APPROVE,
-            PermissionName.BNPL_DISPUTE_RESOLVE)),
+            PermissionName.BNPL_DISPUTE_RESOLVE, PermissionName.BNPL_WRITE_OFF_PROPOSE)),
 
     /**
      * Investigates risk and approves another analyst's conclusion (`P13-TSK-001`, ADR-0107, ADR-0110): holds

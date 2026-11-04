@@ -207,6 +207,39 @@ public enum BnplAuditAction implements AuditableAction {
                     + " assessment and the entry - never an amount.",
             true),
 
+    /** A write-off of a defaulted obligation was proposed: nothing posted. */
+    WRITE_OFF_PROPOSED(
+            "bnpl.WriteOffProposed",
+            "A holder of BNPL_WRITE_OFF_PROPOSE proposed writing a defaulted BNPL obligation off (P14-TSK-021, owner decision C6) with a"
+                    + " reason screened for instrument shapes: the five receivables and the revision read under the obligation's row"
+                    + " lock (B4), the DEFAULT change it stands on. Nothing is posted. Its target the proposal; the summary names the"
+                    + " agreement, the product and the revision - never an amount.",
+            true),
+
+    /** A different person approved a write-off: F11 posted, the obligation WRITTEN_OFF. */
+    WRITE_OFF_APPROVED(
+            "bnpl.WriteOffApproved",
+            "A holder of BNPL_WRITE_OFF_APPROVE other than its proposer (also held by bnpl V020's four-eyes CHECK), on a MULTI_FACTOR"
+                    + " session, naming the figures and revision they read, approved a write-off under B4: F11, DR BNPL_WRITE_OFF_EXPENSE"
+                    + " / CR every receivable holding anything, dated today; the obligation WRITTEN_OFF - never closed, nothing paid or"
+                    + " forgiven (INV-AUD-04, INV-REV-04). The summary names the agreement, the product, the entry and its date.",
+            true),
+
+    /** A write-off was rejected: terminal, nothing posted. */
+    WRITE_OFF_REJECTED(
+            "bnpl.WriteOffRejected",
+            "A holder of BNPL_WRITE_OFF_APPROVE rejected a write-off, on any status - the door out of a proposal that can no longer"
+                    + " post. Nothing is posted. The summary names the agreement, the product and whether the rejecter proposed it.",
+            true),
+
+    /** An approver read a write-off, or the pending list, under their own permission. */
+    WRITE_OFF_READ(
+            "bnpl.WriteOffRead",
+            "A holder of BNPL_WRITE_OFF_APPROVE read a write-off and whether it still stands, or the pending list (P14-TSK-021): each door"
+                    + " serves what it decides under its own permission. The figures and the proposer's reason are served to them; the"
+                    + " summary names only the agreement and the write-off, or how many are pending.",
+            false),
+
     /** A fee waiver was rejected, or withdrawn by its proposer (`P12-TSK-024`). */
     WAIVER_REJECTED(
             "bnpl.WaiverRejected",

@@ -1124,6 +1124,53 @@ class OwnershipIsScopedTest {
                                     "com.finapp.bnpl.JdbcBnplRepaymentStore.lockOwnedBy",
                                     "P12-TSK-022. A payoff already executed: the obligation id is the one lockOwnedBy holds FOR UPDATE under party_id = ? in this transaction; UNIQUE (obligation_id) beneath it.")),
                     Map.entry(
+                            "com.finapp.lending.JdbcLoanWriteOffStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-021. A write-off read beside the loan the operator's act holds under L3: the statement keys on the proposal and its loan together, so an id of another account finds nothing. An operator's door under its own permission; no customer reaches it.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanWriteOffStore.pending",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-021. Whether the loan locked under L3 has a proposal awaiting a decision - the operator's act holds the row.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanWriteOffStore.markWrittenOff",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-021. The one edge to WRITTEN_OFF, on the loan LoanWriteOffs.approve holds FOR UPDATE (L3), beside its approved decision, which the edge trigger requires.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanWriteOffStore.approvedOf",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.lending.JdbcLoanStore.ownedBy",
+                                    "P14-TSK-021. The approved write-off of an account the customer's read already resolved under party_id = ? - or the operator's own read: the loan id comes from that owner-constrained read, never from the request alone.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplWriteOffStore.oldestPending",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-021. GET /v1/operator/bnpl-agreements/write-offs - the officer's list by permission, its one identifier the officer's own party, left out, never a target.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplWriteOffStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-021. A write-off read beside the obligation the operator's act holds under B4: the statement keys on the proposal and its obligation together, so an id of another account finds nothing. An operator's door under its own permission; no customer reaches it.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplWriteOffStore.pending",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-021. Whether the obligation locked under B4 has a proposal awaiting a decision - the operator's act holds the row.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplWriteOffStore.markWrittenOff",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-021. The one edge to WRITTEN_OFF, on the obligation BnplWriteOffs.approve holds FOR UPDATE (B4), beside its approved decision, which the edge trigger requires.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplWriteOffStore.approvedOf",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.bnpl.JdbcBnplPurchaseStore.agreementOwnedBy",
+                                    "P14-TSK-021. The approved write-off of an account the customer's read already resolved under party_id = ? - or the operator's own read: the obligation id comes from that owner-constrained read, never from the request alone.")),
+                    Map.entry(
                             "com.finapp.bnpl.JdbcBnplCorrectionStore.liveReversal",
                             new Entry(
                                     Scope.ADMINISTERED,

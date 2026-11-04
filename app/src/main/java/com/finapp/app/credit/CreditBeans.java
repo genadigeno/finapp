@@ -284,7 +284,8 @@ public class CreditBeans {
     // ------------------------------------------------------------------ the progress (P10-TSK-015)
 
     /**
-     * The platform's credit exposure, version 3 (`P12-TSK-012`; ADR-0104): version 2's every loan's committed and
+     * The platform's credit exposure, version 4 (`P14-TSK-021`: version 3 of `P12-TSK-012`, ADR-0104, with a write-off's lines left
+     * out): version 2's every loan's committed and
      * outstanding principal and every open line's limit, plus every BNPL obligation's principal outstanding, in one
      * statement over lending's and bnpl's definer views and the ledger's journal lines - read by the freezer and, under the
      * party's profile lock, by the deciding transaction. Version 2 ({@link LendingCreditExposure}) is no longer wired:

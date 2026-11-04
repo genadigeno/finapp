@@ -134,7 +134,7 @@ class ProductSourceProofsTest {
         LendingProofs.Reading lending = new LendingProofs.Reading(List.of(new LendingProofs.Proven(loanVerdict, replay)));
 
         LendingCapitalProof.Report capital = new LendingCapitalProof.Report(List.of(new LendingCapitalProof.CurrencyVerdict(
-                new LendingCapitalHeadroom.Headroom(EUR, other, amount, amount), holding, holding ? 0 : 2, true)));
+                new LendingCapitalHeadroom.Headroom(EUR, other, amount, amount, Money.zero(EUR)), holding, holding ? 0 : 2, true)));
 
         BnplSubledgerProof.Verdict bnplVerdict = new BnplSubledgerProof.Verdict(BnplObligationId.of(obligation),
                 BnplProduct.BNPL_PAY_IN_4, BnplObligationStatus.ACTIVE, List.of(), holding, 0, true, true, true);

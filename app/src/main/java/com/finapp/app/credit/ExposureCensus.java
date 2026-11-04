@@ -75,6 +75,7 @@ public final class ExposureCensus {
             + " FROM ledger.ledger_account a JOIN ledger.journal_line j ON j.ledger_account_id = a.id"
             + " WHERE a.owner_kind = 'LOAN' AND a.owner_ref = e.loan_id AND a.currency = e.currency"
             + " AND j.currency = e.currency AND a.purpose IN (?, ?)"
+            + LendingCreditExposure.NOT_A_LOAN_WRITE_OFF
             + " GROUP BY j.scale) p ON true"
             + " ORDER BY e.loan_id, p.scale";
 
@@ -89,6 +90,7 @@ public final class ExposureCensus {
             + " FROM ledger.ledger_account a JOIN ledger.journal_line j ON j.ledger_account_id = a.id"
             + " WHERE a.owner_kind = ? AND a.owner_ref = b.obligation_id AND a.currency = b.currency"
             + " AND j.currency = b.currency AND a.purpose IN (?, ?)"
+            + BnplCreditExposure.NOT_A_BNPL_WRITE_OFF
             + " GROUP BY j.scale) q ON true"
             + " ORDER BY b.obligation_id, q.scale";
 

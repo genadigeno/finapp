@@ -183,7 +183,9 @@ class LendingCapitalHeadroomTest {
                         "lock:" + books.capitalId.value(),
                         "committed",
                         "netDebit:[LENDING_CAPITAL]",
-                        "netDebit:[BNPL_PRINCIPAL, BNPL_PRINCIPAL_DUE, LOAN_PRINCIPAL, LOAN_PRINCIPAL_DUE]");
+                        "netDebit:[BNPL_PRINCIPAL, BNPL_PRINCIPAL_DUE, LOAN_PRINCIPAL, LOAN_PRINCIPAL_DUE]",
+                        "netCreditBeside:[BNPL_PRINCIPAL, BNPL_PRINCIPAL_DUE, LOAN_PRINCIPAL, LOAN_PRINCIPAL_DUE]"
+                                + ":[BNPL_WRITE_OFF_EXPENSE, LOAN_WRITE_OFF_EXPENSE]");
 
         books.events.clear();
         headroom.atRest(UOW, EUR);
@@ -259,6 +261,55 @@ class LendingCapitalHeadroomTest {
 
     // ------------------------------------------------------------------ the in-memory ledger
 
+    // ------------------------------------------------------------------ a write-off releases no capacity (P14-TSK-021)
+
+    @Test
+    @DisplayName("the headroom does not rise when loan or BNPL principal is written off: the loss is gone and never came back, and"
+            + " capital = headroom + committed + outstanding + written off still reads")
+    void theHeadroomDoesNotRise() {
+        books.capital(1_000_00).committed(50_00).balance(AccountPurpose.LOAN_PRINCIPAL, 200_00)
+                .balance(AccountPurpose.LOAN_PRINCIPAL_DUE, 100_00).balance(AccountPurpose.BNPL_PRINCIPAL, 150_00);
+        Money before = headroom.underLock(UOW, EUR).headroom();
+        assertThat(before).isEqualTo(eur(500_00));
+
+        books.writeOff(AccountPurpose.LOAN_PRINCIPAL, 200_00).writeOff(AccountPurpose.LOAN_PRINCIPAL_DUE, 100_00);
+        LendingCapitalHeadroom.Headroom afterLoan = headroom.underLock(UOW, EUR);
+        assertThat(afterLoan.outstanding()).as("the principal left the book").isEqualTo(eur(150_00));
+        assertThat(afterLoan.writtenOff()).isEqualTo(eur(300_00));
+        assertThat(afterLoan.headroom()).as("a loan's write-off offers its capital to no one").isEqualTo(before);
+        assertThat(afterLoan.admits(eur(500_01))).isFalse();
+
+        books.writeOff(AccountPurpose.BNPL_PRINCIPAL, 150_00);
+        LendingCapitalHeadroom.Headroom afterBnpl = headroom.atRest(UOW, EUR);
+        assertThat(afterBnpl.headroom()).as("nor does a BNPL obligation's, funded from one pool").isEqualTo(before);
+        assertThat(afterBnpl.capital()).as("nothing is charged to the capital itself").isEqualTo(eur(1_000_00));
+        assertThat(afterBnpl.capital())
+                .isEqualTo(afterBnpl.headroom().plus(afterBnpl.committed()).plus(afterBnpl.outstanding()).plus(afterBnpl.writtenOff()));
+    }
+
+    @Test
+    @DisplayName("the written-off term is read after the outstanding one, over the principal set beside the two expenses: a write-off"
+            + " between the two reads is counted twice - low - and never in neither")
+    void theWrittenOffTermIsReadAfterTheOutstanding() {
+        books.capital(1_000_00);
+        headroom.underLock(UOW, EUR);
+        int outstanding = books.events.indexOf("netDebit:[BNPL_PRINCIPAL, BNPL_PRINCIPAL_DUE, LOAN_PRINCIPAL, LOAN_PRINCIPAL_DUE]");
+        int writtenOff = books.events.indexOf("netCreditBeside:[BNPL_PRINCIPAL, BNPL_PRINCIPAL_DUE, LOAN_PRINCIPAL, LOAN_PRINCIPAL_DUE]"
+                + ":[BNPL_WRITE_OFF_EXPENSE, LOAN_WRITE_OFF_EXPENSE]");
+        assertThat(outstanding).as("the outstanding term is read").isNotNegative();
+        assertThat(writtenOff).as("after it, the term beside the two expenses, principal only").isGreaterThan(outstanding);
+    }
+
+    @Test
+    @DisplayName("the safeguarding term keeps the principal written off: the wallet money the loan created is still capital's, so a"
+            + " write-off raises nothing safeguarding holds customers funded")
+    void lendingFundedKeepsWhatWasWrittenOff() {
+        books.capital(1_000_00).balance(AccountPurpose.LOAN_PRINCIPAL, 300_00);
+        Money before = headroom.atRest(UOW, EUR).lendingFunded();
+        books.writeOff(AccountPurpose.LOAN_PRINCIPAL, 300_00);
+        assertThat(headroom.atRest(UOW, EUR).lendingFunded()).isEqualTo(before).isEqualTo(eur(300_00));
+    }
+
     private static Money eur(long minor) {
         return Money.ofMinorUnits(minor, EUR);
     }
@@ -275,6 +326,17 @@ class LendingCapitalHeadroomTest {
         final JournalEntryId recognitionEntry = JournalEntryId.of(IDS.next());
         long committedMinor;
         boolean failingPrincipal;
+        long writtenOffMinor;
+
+        /**
+         * A write-off of {@code principalMinor} of {@code purpose}: the purpose's balance falls and the term beside the expense rises,
+         * as one entry does both - what {@code JdbcPurposeBalances} reads from the journal, which the database suite proves.
+         */
+        Books writeOff(AccountPurpose purpose, long principalMinor) {
+            netDebits.merge(purpose, -principalMinor, Long::sum);
+            writtenOffMinor += principalMinor;
+            return this;
+        }
 
         Books capital(long minor) {
             netDebits.put(AccountPurpose.LENDING_CAPITAL, -minor);
@@ -302,6 +364,14 @@ class LendingCapitalHeadroomTest {
                 sum += netDebits.getOrDefault(purpose, 0L);
             }
             return Money.ofMinorUnits(sum, currency);
+        }
+
+        @Override
+        public Money netCreditBeside(Connection unitOfWork, Set<AccountPurpose> purposes, Set<AccountPurpose> beside,
+                CurrencyCode currency) {
+            events.add("netCreditBeside:" + new TreeSet<>(purposes.stream().map(Enum::name).collect(Collectors.toSet()))
+                    + ":" + new TreeSet<>(beside.stream().map(Enum::name).collect(Collectors.toSet())));
+            return Money.ofMinorUnits(writtenOffMinor, currency);
         }
 
         @Override

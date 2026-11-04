@@ -614,6 +614,19 @@ conditional the triggers re-judge, so a step that runs again does each act once.
 open, a review case unworked) says whether credit or the sweep is the one waiting; open an incident with the class name if
 the failures persist.
 
+### 7.13 A write-off: refused, stale, or approved in error (`P14-TSK-021`)
+
+*Loans here; a BNPL obligation is the same under `bnpl.WriteOff*` (`POST /v1/operator/bnpl-agreements/{id}/write-offs...`).* A write-off is an act on our books: **it says nothing about what the customer owes, and no one should tell a customer it does.**
+
+- **`lending.WriteOffStale`.** Something moved since the proposal: a repayment, an accrual, a late fee, a default cured and set again. Nothing was posted. An accrual moves the figures daily, so decide a proposal on the business date it was made. Otherwise reject it and propose again; the next proposal reads what is there.
+- **`lending.WriteOffBehindAccrual`.** An elapsed date is not accrued: the account's next servicing step brings it; if `LendingAccrualLagging` is firing, follow that first (section 7.5).
+- **`lending.WriteOffCreditHeld`.** The account holds the customer's money; a write-off never takes it. The next servicing step applies it.
+- **`ledger.PeriodClosed` at the approval.** Today's month is locked. Nothing was posted, the proposal stands, and it is never moved to another date: decide it once the month holding today is open, or reject it.
+- **`lending.LoanWrittenOff` from a customer's repayment.** Refused, nothing taken: the money stays in their wallet. No recovery rule exists; do not post one by hand.
+- **Approved in error. No way back is built.** Nothing leaves `WRITTEN_OFF`, and the expense is closed to free adjustments, so `LEDGER_ADJUST` cannot undo it: **do not try, and do not write to the rows.** Open an incident naming the loan, the write-off and its journal entry, and bring it to the owner: the reversal is an owner item (`P14-TSK-021`'s record). Meanwhile the entry stands and the books state the loss; what the customer owes is unchanged and the customer's read still shows it; the credit exposure still counts it; the headroom is low by the principal, never high. Report the error in the month's close as a known item.
+- **A merchant asks why `bnpl.RefundNotPostable`.** `finapp.bnpl.refund{outcome="written_off"}` counts these. Never tell a merchant the customer's agreement was written off: it is the customer's credit, not the merchant's to read. The refund cannot post until owner item (c) is decided; the money stays on the merchant's payable.
+- **`finapp.lending.write.off{outcome="approved"}` above zero** is a financial event an operator expects to know of; **`self_dealing_refused`** is a signal for the security desk.
+
 ## 8. BNPL (Phase 12): the activation gate and every BNPL alert
 
 *Added by `P12-TSK-026` (`PHASE_12_PLAN.md` §1.1, §15; ADR-0101…ADR-0106).* BNPL draws on lending's capital (ADR-0104 - one

@@ -176,6 +176,7 @@ public final class BnplRepayments {
             return new Repaid(born.get(), store.closureOf(unitOfWork, obligation.id())
                     .filter(closure -> closure.repayment().filter(born.get().id()::equals).isPresent()), true);
         }
+        BnplWrittenOffRefused.refuseIfWrittenOff(obligation);
         if (obligation.status() != BnplObligationStatus.ACTIVE) {
             throw new ObligationClosed(obligation.product());
         }

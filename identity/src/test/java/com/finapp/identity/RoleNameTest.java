@@ -193,7 +193,8 @@ class RoleNameTest {
         // the terms produced, and neither funds the book nor services a borrower's account.
         assertThat(RoleName.LENDING_OFFICER.permissions())
                 .as("setting and investigating loan terms is neither committing capital nor servicing")
-                .containsExactlyInAnyOrder(PermissionName.LENDING_ADMINISTER, PermissionName.LENDING_INVESTIGATE)
+                .containsExactlyInAnyOrder(PermissionName.LENDING_ADMINISTER, PermissionName.LENDING_INVESTIGATE,
+                        PermissionName.LOAN_WRITE_OFF_APPROVE)
                 .doesNotContain(
                         PermissionName.LENDING_CAPITAL_ADMINISTER,
                         PermissionName.LOAN_SERVICE,
@@ -222,7 +223,8 @@ class RoleNameTest {
         // UNDERWRITER shape). The agent holds neither the terms nor the capital.
         assertThat(RoleName.LOAN_SERVICING_AGENT.permissions())
                 .as("servicing an account is not pricing the product or funding the book")
-                .containsExactlyInAnyOrder(PermissionName.LOAN_SERVICE, PermissionName.LOAN_SERVICE_APPROVE)
+                .containsExactlyInAnyOrder(PermissionName.LOAN_SERVICE, PermissionName.LOAN_SERVICE_APPROVE,
+                        PermissionName.LOAN_WRITE_OFF_PROPOSE)
                 .doesNotContain(
                         PermissionName.LENDING_ADMINISTER,
                         PermissionName.LENDING_INVESTIGATE,
@@ -237,7 +239,8 @@ class RoleNameTest {
         // what they produced, and neither services an obligation nor resolves a dispute.
         assertThat(RoleName.BNPL_OFFICER.permissions())
                 .as("setting and investigating BNPL terms is not servicing, nor another context's policy")
-                .containsExactlyInAnyOrder(PermissionName.BNPL_ADMINISTER, PermissionName.BNPL_INVESTIGATE)
+                .containsExactlyInAnyOrder(PermissionName.BNPL_ADMINISTER, PermissionName.BNPL_INVESTIGATE,
+                        PermissionName.BNPL_WRITE_OFF_APPROVE)
                 .doesNotContain(
                         PermissionName.BNPL_SERVICE,
                         PermissionName.BNPL_SERVICE_APPROVE,
@@ -257,7 +260,8 @@ class RoleNameTest {
         assertThat(RoleName.BNPL_SERVICING_AGENT.permissions())
                 .as("servicing an obligation is not pricing the product")
                 .containsExactlyInAnyOrder(
-                        PermissionName.BNPL_SERVICE, PermissionName.BNPL_SERVICE_APPROVE, PermissionName.BNPL_DISPUTE_RESOLVE)
+                        PermissionName.BNPL_SERVICE, PermissionName.BNPL_SERVICE_APPROVE, PermissionName.BNPL_DISPUTE_RESOLVE,
+                        PermissionName.BNPL_WRITE_OFF_PROPOSE)
                 .doesNotContain(
                         PermissionName.BNPL_ADMINISTER,
                         PermissionName.BNPL_INVESTIGATE,
@@ -407,8 +411,9 @@ class RoleNameTest {
                         .isFalse();
             }
         }
-        // Not vacuous: the mapping, the close, the adjustment and the regulatory return are the four pairs today.
-        assertThat(pairs).as("the propose/approve pairs the vocabulary names").isEqualTo(4);
+        // Not vacuous: the mapping, the close, the adjustment, the regulatory return and - P14-TSK-021 - a loan's and a BNPL
+        // obligation's write-off are the six pairs today.
+        assertThat(pairs).as("the propose/approve pairs the vocabulary names").isEqualTo(6);
     }
 
     @Test

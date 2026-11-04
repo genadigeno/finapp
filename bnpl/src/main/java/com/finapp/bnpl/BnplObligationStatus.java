@@ -6,8 +6,8 @@ package com.finapp.bnpl;
  *
  * <p>Born {@code ACTIVE} at the acceptance; {@code CLOSED} - with its {@link BnplClosureReason} - by the transaction that
  * zeroes the last receivable. No {@code PENDING_DISBURSEMENT} (nothing to disburse) and no {@code CANCELLED} (once
- * financed, an obligation ends only by being settled). Delinquency, default and a dispute's servicing hold are
- * conditions, never states. Terminal: {@code CLOSED} ({@code INV-LIFE-04}).
+ * financed, an obligation ends only by being settled or written off). Delinquency, default and a dispute's servicing hold are
+ * conditions, never states. Terminal: {@code CLOSED} and {@code WRITTEN_OFF}, which closes nothing ({@code INV-LIFE-04}).
  */
 public enum BnplObligationStatus {
 
@@ -15,5 +15,13 @@ public enum BnplObligationStatus {
     ACTIVE,
 
     /** Terminal: every receivable zero, every elapsed date accrued, any credit balance refunded. */
-    CLOSED
+    CLOSED,
+
+    /**
+     * Terminal (`P14-TSK-021`, owner decision C6): a defaulted obligation written off under four eyes - its five receivables moved to
+     * {@code BNPL_WRITE_OFF_EXPENSE}. <strong>Never closed, never paid, never forgiven</strong>: an act on the platform's books that
+     * says nothing about what the customer owes. No door moves money on it, nothing services it, and nothing leaves it
+     * ({@code INV-LIFE-04}).
+     */
+    WRITTEN_OFF
 }

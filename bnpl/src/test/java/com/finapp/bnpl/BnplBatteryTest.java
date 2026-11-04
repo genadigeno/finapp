@@ -70,7 +70,9 @@ class BnplBatteryTest {
     static final int SLICE = 10;
 
     /** The population's fingerprint at {@link BnplBatteryWorld#SEED} and full size - moved only by a reviewed change. */
-    static final String FINGERPRINT = "bf21d7fd167ba53120715d6bbd58cedc819d9778b1c29f3cea86875564fa2b88";
+    // P14-TSK-021: moved because the digest walks the record's components by reflection and the record gained writeOffs, empty on
+    // every generated purchase: the population itself is unchanged.
+    static final String FINGERPRINT = "6735c6fd3e2664d1366203e38ccbbec5a060d107b604588f507704f60e9a16e9";
 
     private static final BnplReplayProof REPLAY = new BnplReplayProof();
     private static final BnplSubledgerProof SUBLEDGER = new BnplSubledgerProof();

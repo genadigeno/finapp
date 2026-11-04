@@ -35,8 +35,9 @@ public final class PostingRuleRegister {
      * The catalogue's version: raised whenever any rule is added, versioned or withdrawn. 2 since `P14-TSK-006` (owner
      * decision C3): the seven back-dating system rules versioned to floor their posting date at the first open date, and
      * every rule naming its {@link CutoffReaction}. Version 3 (`P14-TSK-013`): the {@code ACCOUNTING} origin's rule, {@code ACC-PRIOR-PERIOD}.
+     * Version 4 (`P14-TSK-021`, owner decision C6): the two write-offs, {@code LND-14} and {@code BNPL-F11}.
      */
-    public static final int CATALOGUE_VERSION = 3;
+    public static final int CATALOGUE_VERSION = 4;
 
     /**
      * The effective date of every version-1 rule: each describes the code as it has posted since its namespace's first

@@ -45,6 +45,40 @@ public enum LendingAuditAction implements AuditableAction {
                     + " holder's activation (INV-AUD-04). The summary names the product and the version number only.",
             true),
 
+    /** A write-off of a defaulted loan was proposed: nothing posted. */
+    WRITE_OFF_PROPOSED(
+            "lending.WriteOffProposed",
+            "A holder of LOAN_WRITE_OFF_PROPOSE proposed writing a defaulted loan off (P14-TSK-021, owner decision C6) with a reason"
+                    + " screened for instrument shapes: the five receivables and the revision read under the loan's row lock, the"
+                    + " DEFAULT change it stands on. Nothing is posted. Its target the proposal; the summary names the loan, the"
+                    + " product and the revision - never an amount.",
+            true),
+
+    /** A different person approved a write-off: rule 14 posted, the loan WRITTEN_OFF. */
+    WRITE_OFF_APPROVED(
+            "lending.WriteOffApproved",
+            "A holder of LOAN_WRITE_OFF_APPROVE other than its proposer (also held by lending V032's four-eyes CHECK), on a"
+                    + " MULTI_FACTOR session, naming the figures and revision they read, approved a write-off under the loan's row"
+                    + " lock: rule 14, DR LOAN_WRITE_OFF_EXPENSE / CR every receivable holding anything, dated today; the loan"
+                    + " WRITTEN_OFF - never closed, nothing paid or forgiven (INV-AUD-04, INV-REV-04). The summary names the loan,"
+                    + " the product, the entry and its date.",
+            true),
+
+    /** A write-off was rejected: terminal, nothing posted. */
+    WRITE_OFF_REJECTED(
+            "lending.WriteOffRejected",
+            "A holder of LOAN_WRITE_OFF_APPROVE rejected a write-off, on any account status - the door out of a proposal that can no"
+                    + " longer post. Nothing is posted. The summary names the loan, the product and whether the rejecter proposed it.",
+            true),
+
+    /** An approver read a write-off, or the pending list, under their own permission. */
+    WRITE_OFF_READ(
+            "lending.WriteOffRead",
+            "A holder of LOAN_WRITE_OFF_APPROVE read a write-off and whether it still stands, or the pending list (P14-TSK-021): each"
+                    + " door serves what it decides under its own permission. The figures and the proposer's reason are served to"
+                    + " them; the summary names only the loan and the write-off, or how many are pending.",
+            false),
+
     /** A different lending officer activated a terms version, retiring its predecessor. */
     TERMS_VERSION_ACTIVATED(
             "lending.TermsVersionActivated",

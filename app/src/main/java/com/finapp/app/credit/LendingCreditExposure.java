@@ -34,6 +34,10 @@ import java.util.UUID;
  * outstandingFor        = the sum over the party's loan accounts in the currency
  * </pre>
  *
+ * <p><strong>A write-off moves no exposure</strong> (`P14-TSK-021`): rule 14's lines are left out, so a {@code WRITTEN_OFF} account
+ * counts the principal it held. It moved an asset on the platform's books and said nothing about what the customer owes, so it must
+ * not hand the customer back the capacity the debt consumed; a written-off line, which can no longer draw, counts what was drawn.
+ *
  * <p><strong>Principal only</strong> (A3): interest accrued or billed, fees and the credit balance are not credit the
  * platform extended by a decision, and the bureau's total balance - the policy's comparable external figure - is
  * principal too. <strong>An open line counts its limit</strong>: its holder can draw to it without any decision, so the
@@ -72,6 +76,11 @@ public final class LendingCreditExposure implements PlatformCreditExposure<Conne
     /** This composition's version, recorded as the snapshot's provenance ({@code INV-CRD-01}). */
     public static final int VERSION = 2;
 
+    /** Leaves rule 14's lines out of a {@code j}-aliased read: the entry's key is the one poster's own (`P14-TSK-021`). */
+    static final String NOT_A_LOAN_WRITE_OFF = " AND NOT EXISTS (SELECT 1 FROM ledger.journal_entry x WHERE x.id = j.entry_id"
+            + " AND x.idempotency_scope LIKE '" + com.finapp.ledger.PostingService.IDEMPOTENCY_SCOPE + ":"
+            + com.finapp.lending.LoanWriteOffs.WRITE_OFF_KEY_PREFIX + "%')";
+
     /**
      * Per loan account of the party in the currency: its kind, status, latest agreement amount and scale, and - one row
      * per scale its principal lines were written at (one, unless a defect) - the net DR - CR of its journal lines on
@@ -86,6 +95,7 @@ public final class LendingCreditExposure implements PlatformCreditExposure<Conne
             + " FROM ledger.ledger_account a JOIN ledger.journal_line j ON j.ledger_account_id = a.id"
             + " WHERE a.owner_kind = 'LOAN' AND a.owner_ref = e.loan_id AND a.currency = e.currency"
             + " AND j.currency = e.currency AND a.purpose IN (?, ?)"
+            + NOT_A_LOAN_WRITE_OFF
             + " GROUP BY j.scale) p ON true"
             + " WHERE e.party_id = ? AND e.currency = ?"
             + " ORDER BY e.loan_id, p.scale";
@@ -171,13 +181,13 @@ public final class LendingCreditExposure implements PlatformCreditExposure<Conne
             return switch (kind) {
                 case "INSTALMENT" -> switch (status) {
                     case "PENDING_DISBURSEMENT" -> agreed.plus(drawn);
-                    case "ACTIVE", "CLOSED" -> drawn;
+                    case "ACTIVE", "CLOSED", "WRITTEN_OFF" -> drawn;
                     case "CANCELLED" -> Money.ofPersisted(0, agreed.currency(), agreed.scale());
                     default -> throw unknown();
                 };
                 case "REVOLVING" -> switch (status) {
                     case "ACTIVE" -> drawn.compareTo(agreed) > 0 ? drawn : agreed;
-                    case "CLOSING", "CLOSED" -> drawn;
+                    case "CLOSING", "CLOSED", "WRITTEN_OFF" -> drawn;
                     default -> throw unknown();
                 };
                 default -> throw unknown();

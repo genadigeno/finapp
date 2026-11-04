@@ -89,6 +89,26 @@ class BnplAgreementDeskTest {
     }
 
     @Test
+    @DisplayName("P14-TSK-021: a written-off agreement's line in the list carries what stands owed and the notice, never the status alone; any"
+            + " other agreement's line carries neither")
+    void aWrittenOffLineSaysWhatStandsOwed() {
+        BnplPurchaseStore.Owned active = new BnplPurchaseStore.Owned(obligation(), purchase(IDS.next()), agreement(), eur(600_00));
+        assertThat(BnplAgreementDesk.summary(active).owed()).isNull();
+        assertThat(BnplAgreementDesk.summary(active).notice()).isNull();
+        BnplObligation row = obligation();
+        BnplObligation writtenOff = new BnplObligation(row.id(), row.purchase(), row.agreement(), row.party(), row.decision(), row.product(),
+                row.plan(), row.currency(), BnplObligationStatus.WRITTEN_OFF, row.purchaseDate(), row.openedAt(), Optional.empty(),
+                row.correlation());
+        BnplPurchaseStore.Owned owned = new BnplPurchaseStore.Owned(writtenOff, purchase(IDS.next()), agreement(), eur(600_00));
+        BnplAgreementDesk.BnplAgreementSummaryView line = BnplAgreementDesk.writtenOffSummary(new BnplObligations.Read(owned,
+                new BnplObligations.Balances(eur(300_00), eur(150_00), eur(0), eur(0), eur(5_00), eur(0))));
+        assertThat(line.status()).isEqualTo("WRITTEN_OFF");
+        assertThat(line.owed().principalOutstanding()).isEqualTo("450.00");
+        assertThat(line.owed().feesDue()).isEqualTo("5.00");
+        assertThat(line.notice()).isEqualTo(BnplObligations.WRITTEN_OFF_NOTICE).contains("still owed");
+    }
+
+    @Test
     @DisplayName("the agreement shows its condition, derived (P12-TSK-020): PAST_DUE with DPD, bucket and the default flag;"
             + " CURRENT with no bucket; none for a closed agreement")
     void theAgreementShowsItsCondition() {

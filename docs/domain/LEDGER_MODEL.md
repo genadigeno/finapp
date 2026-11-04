@@ -271,7 +271,7 @@ loan's one currency by lending's `LoanAccounts.openFor` over `LedgerAccountStore
 | `LOAN_CREDIT_BALANCE` | LOAN | LIABILITY / CREDIT | money received beyond every receivable, owed back |
 | `LOAN_INTEREST_INCOME` | OPERATIONAL | REVENUE / CREDIT | seeded per supported currency |
 | `LOAN_FEE_INCOME` | OPERATIONAL | REVENUE / CREDIT | seeded per supported currency |
-| `LOAN_WRITE_OFF_EXPENSE` | OPERATIONAL | EXPENSE / DEBIT | seeded; posted by nothing in Phase 11 |
+| `LOAN_WRITE_OFF_EXPENSE` | OPERATIONAL | EXPENSE / DEBIT | seeded in Phase 11; posted only by rule 14, under four eyes (`P14-TSK-021`) |
 | `LENDING_CAPITAL` | OPERATIONAL | EQUITY / CREDIT | the platform's own funds committed to lending, credited only by bank recognition (rule 0, `P11-TSK-004`) |
 
 The per-loan type is declared once, by the opener (`LoanAccounts.declaredTypeOf`), and a converged
@@ -287,9 +287,9 @@ journal lines equals its rows' figure, and every entry on them is named by a row
 `LOAN_*` purpose and only the declaration (and, from `P11-TSK-004`, capital recognition and its
 readers) name `LENDING_CAPITAL`. No `*_CLEARING` purpose arrived (`INV-RAIL-04`): lending moves no
 money across a rail itself. The posting rules are ADR-0096 §2's, each built by the task that posts it:
-every one of the ten is posted except `LOAN_WRITE_OFF_EXPENSE` - seeded, posted by nothing, its write-off
-deferred to Phase 14 - `LENDING_CAPITAL` by bank recognition alone (rule 0), the other eight by lending's own
-transactions (rules 1 to 13). *(This read "Nothing posts to any of the ten yet" until the Phase 11 exit review,
+`LENDING_CAPITAL` by bank recognition alone (rule 0), `LOAN_WRITE_OFF_EXPENSE` by the write-off alone (rule 14, `P14-TSK-021`,
+under four eyes), the other eight by lending's own transactions (rules 1 to 13). *(This read "every one of the ten is posted except
+`LOAN_WRITE_OFF_EXPENSE`" until `P14-TSK-021`, 2026-11-04.)* *(This read "Nothing posts to any of the ten yet" until the Phase 11 exit review,
 `P11-DOC-001`, 2026-10-15.)* *(`P14-TSK-006`, C3: rule 2's posting date is the accrual date floored at the first
 open date - a catch-up across a period lock is recognised in the open period, each entry value-dated its accrual
 date; the subledger proof and the base read by value date, unchanged.)*
@@ -313,7 +313,7 @@ the obligation's one currency by bnpl's `BnplAccounts.openFor` over `LedgerAccou
 | `BNPL_MERCHANT_FEE_INCOME` | OPERATIONAL | REVENUE / CREDIT | the merchant discount; seeded per supported currency |
 | `BNPL_INTEREST_INCOME` | OPERATIONAL | REVENUE / CREDIT | pay-in-N interest; seeded per supported currency |
 | `BNPL_FEE_INCOME` | OPERATIONAL | REVENUE / CREDIT | BNPL late fees; seeded per supported currency |
-| `BNPL_WRITE_OFF_EXPENSE` | OPERATIONAL | EXPENSE / DEBIT | seeded; posted by nothing in Phase 12 (Phase 14) |
+| `BNPL_WRITE_OFF_EXPENSE` | OPERATIONAL | EXPENSE / DEBIT | seeded in Phase 12; posted only by F11, under four eyes (`P14-TSK-021`) |
 
 Separate purposes and a separate owner kind from the loan book (OQ-11): lending's posters, proofs and
 identities never see a BNPL line. The merchant discount is its own income, never merchant's `FEE_REVENUE`
@@ -361,10 +361,10 @@ through `PostingService` or `ReversalService` on the caller's connection, its ke
 | F8a late fee a reversal re-opened, released | the Phase 12 → 13 transition gate's A7-3 (`bnpl V019`) | `bnpl.reversal-fee-release:<reversal>` | DR `BNPL_FEE_INCOME` / CR `BNPL_FEES_DUE` - exactly the fee F8 re-opened on an instalment a refund cancelled whole (OQ-14), beside F8 in T-rev |
 | F9 dispute refunded | `-023` | `bnpl.refund:<refund>` | F5 exactly, under the same bound |
 | F10 merchant payout | merchant's, unchanged (`P12-TSK-016` proved it over BNPL-financed money) | merchant's | DR `MERCHANT_PAYABLE` / CR `PAYOUT_CLEARING` |
-| F11 write-off | **deferred to Phase 14** | — | none |
+| F11 write-off | `P14-TSK-021`, four eyes | `bnpl.write-off:<obligation>` | DR `BNPL_WRITE_OFF_EXPENSE` / CR every BNPL asset holding anything |
 
-So nine of the ten post: the six per-obligation accounts and `BNPL_MERCHANT_FEE_INCOME`, `BNPL_INTEREST_INCOME` and
-`BNPL_FEE_INCOME`; **`BNPL_WRITE_OFF_EXPENSE` carries no line** - seeded, posted by nothing, F11 deferred. The
+So all ten post: the six per-obligation accounts and `BNPL_MERCHANT_FEE_INCOME`, `BNPL_INTEREST_INCOME` and
+`BNPL_FEE_INCOME`, and `BNPL_WRITE_OFF_EXPENSE` by F11 alone (`P14-TSK-021`). *(This read "nine of the ten" until then.)* The
 reserved key `bnpl.accrual-correction:` names a correction run Phase 12 did not build. bnpl posts beside these only
 to `MERCHANT_PAYABLE` and `CUSTOMER_WALLET` - never `LENDING_CAPITAL`, which bank recognition alone credits.
 *(`P12-DOC-001`, 2026-10-22: this read "`INV-MER-02`'s equation gains the BNPL terms with the drill-down

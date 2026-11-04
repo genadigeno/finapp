@@ -25,7 +25,7 @@ import org.junit.jupiter.api.Test;
  * scanner: every {@code BNPL_*} purpose - the six per-obligation accounts and {@code BNPL_MERCHANT_FEE_INCOME},
  * {@code BNPL_INTEREST_INCOME}, {@code BNPL_FEE_INCOME}, {@code BNPL_WRITE_OFF_EXPENSE} - is named in production
  * code only by its declaration and by the {@code bnpl} module, whose operations are the only ones that will post
- * there (through {@code PostingService} / {@code ReversalService}; the write-off expense by nothing in Phase 12).
+ * there (through {@code PostingService} / {@code ReversalService}; the write-off expense by {@code BnplWriteOffs} alone, `P14-TSK-021`, F11).
  * Live from this task: bnpl's {@code BnplAccounts} names the six; every posting rule arrives with its own task
  * (ADR-0103 Follow-up) inside bnpl.
  *
@@ -66,6 +66,10 @@ class BnplBooksHaveOnePosterTest {
      */
     static final Map<String, String> READERS =
             Map.of(
+                    "PostingRuleCatalogue.java",
+                    "READER (P14-TSK-002; permitted by P14-TSK-021, which found this guard red on master): the posting-rule register names each rule's accounts as data, to judge an entry already posted; it posts nothing and reaches no poster",
+                    "PurposeReportDefinition.java",
+                    "READER (P14-TSK-017; permitted by P14-TSK-021, which found this guard red on master): a report's definition names the purposes it sums from journal lines, on a read-only snapshot; it posts nothing and reaches no poster",
                     "LendingCapitalHeadroom.java",
                     "READER (P12-TSK-005): sums BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE by ledger purpose beside the loan"
                             + " principal, in one statement under the capital lock (L6) - one pool, one proof; it posts"
@@ -140,8 +144,8 @@ class BnplBooksHaveOnePosterTest {
                     named.add(token.group(1));
                 }
                 assertThat(named)
-                        .as("lending's headroom names exactly the two BNPL principal purposes")
-                        .containsExactly("BNPL_PRINCIPAL", "BNPL_PRINCIPAL_DUE");
+                        .as("lending's headroom names exactly the two BNPL principal purposes and, for what was written off, the expense")
+                        .containsExactly("BNPL_PRINCIPAL", "BNPL_PRINCIPAL_DUE", "BNPL_WRITE_OFF_EXPENSE");
             }
         });
         sources.forEach((path, text) -> {

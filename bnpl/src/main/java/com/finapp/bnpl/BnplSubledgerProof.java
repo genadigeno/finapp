@@ -154,7 +154,8 @@ public final class BnplSubledgerProof {
             noneNegative &= !balance.isNegative();
             allZero &= balance.isZero();
         }
-        boolean terminal = record.obligation().status() == BnplObligationStatus.CLOSED;
+        boolean terminal = record.obligation().status() == BnplObligationStatus.CLOSED
+                || record.obligation().status() == BnplObligationStatus.WRITTEN_OFF;
         return new Verdict(record.id(), record.obligation().product(), record.obligation().status(), figures, complete,
                 unexplained(record), noneNegative, !terminal || allZero, feeIncomeNonNegative(record));
     }
@@ -254,6 +255,17 @@ public final class BnplSubledgerProof {
         }
         if (record.closure().isPresent()) {
             credit = credit.minus(record.closure().get().row().refund());
+        }
+        // Written off (F11): each receivable to expense, by what the approved row took (P14-TSK-021). A write-off no row explains fails
+        // the obligation twice over, its balances and its unnamed entry.
+        for (BnplRecord.WriteOffRow writeOff : record.writeOffs()) {
+            if (writeOff.approved()) {
+                principal = principal.minus(writeOff.principal());
+                principalDue = principalDue.minus(writeOff.principalDue());
+                accrued = accrued.minus(writeOff.interestAccrued());
+                interestDue = interestDue.minus(writeOff.interestDue());
+                feesDue = feesDue.minus(writeOff.feesDue());
+            }
         }
         Map<AccountPurpose, Money> rows = new EnumMap<>(AccountPurpose.class);
         rows.put(AccountPurpose.BNPL_PRINCIPAL, principal);
@@ -367,6 +379,8 @@ public final class BnplSubledgerProof {
                 new Namer("WAIVER", waiver.id(), waiver.decidedAt().orElse(waiver.proposedAt())))));
         record.closure().ifPresent(closure -> closure.row().refundEntry().ifPresent(entry -> named.put(entry,
                 new Namer("CLOSURE_REFUND", closure.row().id(), closure.at()))));
+        record.writeOffs().forEach(writeOff -> writeOff.entry().ifPresent(entry -> named.put(entry,
+                new Namer("WRITE_OFF", writeOff.id(), writeOff.at()))));
         return named;
     }
 }

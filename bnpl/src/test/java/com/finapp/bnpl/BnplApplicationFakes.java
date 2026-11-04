@@ -95,6 +95,7 @@ final class BnplApplicationFakes {
     final Conditions conditions = new Conditions();
     final Corrections corrections = new Corrections();
     final Disputes disputes = new Disputes();
+    final WriteOffs writeOffs = new WriteOffs();
     /** The purchase step that throws when reached - {@code null} for none. */
     String failAt;
     /** What happens in the world as a purchase step is reached - a clock moving, a rival committing. */
@@ -147,6 +148,7 @@ final class BnplApplicationFakes {
         Conditions.State conditionState = conditions.state();
         Corrections.State correctionState = corrections.state();
         Disputes.State disputeState = disputes.state();
+        Map<UUID, BnplWriteOff> writeOffState = new LinkedHashMap<>(writeOffs.rows);
         int eventCount = events.size();
         int payloadCount = payloads.size();
         int auditCount = audited.size();
@@ -193,6 +195,8 @@ final class BnplApplicationFakes {
             conditions.restore(conditionState);
             corrections.restore(correctionState);
             disputes.restore(disputeState);
+            writeOffs.rows.clear();
+            writeOffs.rows.putAll(writeOffState);
             events.subList(eventCount, events.size()).clear();
             payloads.subList(payloadCount, payloads.size()).clear();
             audited.subList(auditCount, audited.size()).clear();
@@ -1895,6 +1899,97 @@ final class BnplApplicationFakes {
                     row.party(), row.decision(), row.product(), row.plan(), row.currency(), BnplObligationStatus.CLOSED,
                     row.purchaseDate(), row.openedAt(), Optional.of(reason), row.correlation()));
             return true;
+        }
+    }
+
+    /**
+     * {@code bnpl V020}'s write-offs, in memory (`P14-TSK-021`): born once under B4 for an {@code ACTIVE} obligation standing on its latest
+     * {@code DEFAULT} change, one live per obligation, no dispute open; decided once, the four-eyes {@code CHECK}, an approval naming its
+     * entry and date; the edge only beside an approved decision, never closed.
+     */
+    final class WriteOffs implements BnplWriteOffStore {
+
+        final Map<UUID, BnplWriteOff> rows = new LinkedHashMap<>();
+
+        @Override
+        public Instant insert(Connection unitOfWork, NewProposal proposal) {
+            BnplObligation account = purchases.obligations.get(proposal.obligation().value());
+            if (account == null || account.status() != BnplObligationStatus.ACTIVE) {
+                throw new BnplStorageException("a write-off is proposed only on an ACTIVE obligation: P0001");
+            }
+            if (conditions.latest(unitOfWork, proposal.obligation(), BnplConditionKind.DEFAULT)
+                    .filter(change -> change.id().equals(proposal.defaultEvent()) && change.state().defaulted()).isEmpty()) {
+                throw new BnplStorageException("a write-off stands on its obligation's latest DEFAULT change: P0001");
+            }
+            if (pending(unitOfWork, proposal.obligation())) {
+                throw new BnplStorageException("a write-off of this obligation already awaits a decision: P0001");
+            }
+            wrote(proposal.id());
+            rows.put(proposal.id(), new BnplWriteOff(proposal.id(), proposal.obligation(), proposal.agreement(), proposal.position(),
+                    proposal.defaultEvent(), proposal.agreementVersion(), BnplCorrectionStatus.PROPOSED, proposal.proposer().id(), now,
+                    proposal.reason(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()));
+            return now;
+        }
+
+        @Override
+        public boolean decide(Connection unitOfWork, Decision decision) {
+            BnplWriteOff proposal = rows.get(decision.writeOff());
+            if (proposal == null) {
+                throw new BnplStorageException("a write-off decision decides a write-off: P0001");
+            }
+            if (proposal.status() != BnplCorrectionStatus.PROPOSED) {
+                return false;
+            }
+            if (decision.outcome() == BnplCorrectionStatus.APPROVED && decision.decider().id().equals(decision.proposedBy())) {
+                throw new BnplStorageException("bnpl_write_off_decision_four_eyes: SQLSTATE 23514");
+            }
+            if ((decision.outcome() == BnplCorrectionStatus.APPROVED) != decision.journalEntry().isPresent()) {
+                throw new BnplStorageException("bnpl_write_off_decision_approval_posts: SQLSTATE 23514");
+            }
+            wrote("write-off-decided:" + decision.writeOff());
+            rows.put(decision.writeOff(), new BnplWriteOff(proposal.id(), proposal.obligation(), proposal.agreement(), proposal.position(),
+                    proposal.defaultEvent(), proposal.agreementVersion(), decision.outcome(), proposal.proposedBy(), proposal.proposedAt(),
+                    proposal.proposalReason(), Optional.of(decision.decider().id()), Optional.of(now), Optional.of(decision.reason()),
+                    decision.journalEntry(), decision.valueDate()));
+            return true;
+        }
+
+        @Override
+        public boolean markWrittenOff(Connection unitOfWork, BnplObligationId obligation) {
+            BnplObligation row = purchases.obligations.get(obligation.value());
+            if (row == null || row.status() != BnplObligationStatus.ACTIVE) {
+                return false;
+            }
+            if (approvedOf(unitOfWork, obligation).isEmpty()) {
+                throw new BnplStorageException("a BNPL obligation is WRITTEN_OFF only beside its approved write-off: P0001");
+            }
+            purchases.obligations.put(obligation.value(), new BnplObligation(row.id(), row.purchase(), row.agreement(), row.party(),
+                    row.decision(), row.product(), row.plan(), row.currency(), BnplObligationStatus.WRITTEN_OFF, row.purchaseDate(),
+                    row.openedAt(), Optional.empty(), row.correlation()));
+            return true;
+        }
+
+        @Override
+        public Optional<BnplWriteOff> find(Connection unitOfWork, BnplObligationId obligation, UUID id) {
+            return Optional.ofNullable(rows.get(id)).filter(row -> row.obligation().equals(obligation));
+        }
+
+        @Override
+        public boolean pending(Connection unitOfWork, BnplObligationId obligation) {
+            return rows.values().stream().anyMatch(row -> row.obligation().equals(obligation)
+                    && row.status() == BnplCorrectionStatus.PROPOSED);
+        }
+
+        @Override
+        public Optional<BnplWriteOff> approvedOf(Connection unitOfWork, BnplObligationId obligation) {
+            return rows.values().stream().filter(row -> row.obligation().equals(obligation)
+                    && row.status() == BnplCorrectionStatus.APPROVED).findFirst();
+        }
+
+        @Override
+        public List<BnplWriteOff> oldestPending(Connection unitOfWork, UUID excludedParty, int limit) {
+            return rows.values().stream().filter(row -> row.status() == BnplCorrectionStatus.PROPOSED)
+                    .filter(row -> !excludedParty.equals(purchases.obligations.get(row.obligation().value()).party())).limit(limit).toList();
         }
     }
 

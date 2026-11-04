@@ -187,6 +187,7 @@ public final class Repayments {
             }
             return new Repaid(born.get(), repayments.closedBy(unitOfWork, born.get().id()), true);
         }
+        LoanWrittenOffRefused.refuseIfWrittenOff(loan);
         if (!repayable(loan)) {
             throw new LoanNotRepayable(loan.product());
         }

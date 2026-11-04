@@ -234,6 +234,9 @@ public final class BnplDisputeDesk {
             metrics.record(BnplDisputeMetrics.Outcome.SELF_DEALING_REFUSED);
             throw new ApiException(BnplErrorCode.SELF_DEALING_REFUSED, "The acceptance was refused",
                     "this key may not accept this BNPL dispute; nothing was done.");
+        } catch (com.finapp.bnpl.BnplWrittenOffRefused writtenOff) {
+            // Not reachable while the approval refuses an open dispute under B4 (P14-TSK-021); if it ever were, the merchant's words.
+            throw BnplRefundDesk.notPostableForAMerchant();
         }
         return new BnplMerchantDisputeView(view.disputeId(), view.purchaseId(), view.status(), view.category(),
                 view.amount(), view.currency(), view.responseDeadline(), view.refundId());

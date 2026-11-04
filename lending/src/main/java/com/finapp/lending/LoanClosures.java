@@ -227,7 +227,7 @@ public final class LoanClosures {
      * principal outstanding: the base {@code LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE} over the journal lines dated on or
      * before each date after the latest accrual, read in ONE statement (the accrual step's own rule, ADR-0094).
      */
-    private boolean accruedThroughYesterday(
+    boolean accruedThroughYesterday(
             Connection unitOfWork, Loan loan, Accounts accounts, ZoneId zone, LocalDate today, Money zero) {
         Optional<LocalDate> start = loan.kind() == LoanKind.INSTALMENT
                 ? servicing.accrualStartOf(unitOfWork, loan.id())

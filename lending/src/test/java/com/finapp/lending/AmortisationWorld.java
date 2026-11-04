@@ -521,7 +521,7 @@ final class AmortisationWorld {
             return new LoanRecord(account, List.of(agreement), Map.of(versionId, Optional.of(version)), Optional.of(offer),
                     disbursement, accrualStart, Optional.empty(), schedules, draws, accruals, billings, statements,
                     applications, payments, List.of(), fees, List.of(), List.of(), List.of(), closure, List.of(),
-                    List.of(), Optional.empty(), List.of(), List.of(), ledgerAccounts, journal);
+                    List.of(), Optional.empty(), List.of(), List.of(), ledgerAccounts, journal, List.of());
         }
 
         // -------------------------------------------------------------- the credit line

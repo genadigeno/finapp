@@ -61,6 +61,14 @@ class LendingBooksHaveOnePosterTest {
      */
     static final Map<String, String> CAPITAL_PERMITTED =
             Map.of(
+                    "PostingRuleCatalogue.java",
+                    "READER (P14-TSK-002; permitted by P14-TSK-021, which found this guard red on master): the posting-rule register names each rule's accounts as data, to judge an entry already posted; it posts nothing and reaches no poster",
+                    "SourceProofs.java",
+                    "NAME ONLY (P14-TSK-010; permitted by P14-TSK-021, which found this guard red on master): the proof's own name in accounting's vocabulary, never the account; it posts nothing",
+                    "ProductSourceProofs.java",
+                    "NAME ONLY (P14-TSK-010; permitted by P14-TSK-021, which found this guard red on master): that proof's name, reading lending's capital report; it posts nothing",
+                    "MonitoredKind.java",
+                    "NAME ONLY (P13-TSK-019; permitted by P14-TSK-021, which found this guard red on master): risk's monitored kind for the capital-contribution posting namespace, never the account; it posts nothing",
                     "BatchAcceptance.java",
                     "POSTER: the bank statement's acceptance resolves the capital account for BankRecognition's rule 0"
                             + " line - a statement credit matched to an approved contribution, the one way capital arises",
@@ -80,6 +88,10 @@ class LendingBooksHaveOnePosterTest {
      */
     static final Map<String, String> LOAN_BOOK_READERS =
             Map.of(
+                    "PostingRuleCatalogue.java",
+                    "READER (P14-TSK-002; permitted by P14-TSK-021, which found this guard red on master): the posting-rule register names each rule's accounts as data, to judge an entry already posted; it posts nothing and reaches no poster",
+                    "PurposeReportDefinition.java",
+                    "READER (P14-TSK-017; permitted by P14-TSK-021, which found this guard red on master): a report's definition names the purposes it sums from journal lines, on a read-only snapshot; it posts nothing and reaches no poster",
                     "LendingReports.java",
                     "READER: the portfolio and delinquency reports sum each loan account's lines as of a business date"
                             + " in one read-only snapshot, the book tied to the ledger; it posts nothing",

@@ -255,6 +255,8 @@ public final class BnplRefunds {
     List<BnplDispute.Held> heldBy(Connection unitOfWork, BnplRefundStore.LockedPurchase locked,
             BnplServicingStore.Locked obligationLocked, Money amount, Money refundedBefore) {
         BnplObligation obligation = obligationLocked.obligation();
+        // A dispute's outcome may be a refund, and a refund cannot post on a written-off obligation (below): never opened.
+        BnplWrittenOffRefused.refuseIfWrittenOff(obligation);
         if (obligation.status() != BnplObligationStatus.ACTIVE) {
             return List.of();
         }
@@ -379,6 +381,11 @@ public final class BnplRefunds {
         BnplServicingStore.Locked obligationLocked = servicing.lock(unitOfWork, locked.obligation())
                 .orElseThrow(() -> new IllegalStateException("a financed purchase has its obligation (INV-BNPL-02)"));
         BnplObligation obligation = obligationLocked.obligation();
+        // F5 credits the receivables, which a write-off took to expense: what it would cancel now is a recovery, a later rule, and a
+        // CLOSED obligation's path - the whole refund to the wallet - would pay the customer on a debt still owed. So nothing moves:
+        // the merchant's money stays on its payable, and bnpl V020's trigger refuses it for every writer (P14-TSK-021). The door
+        // answers: a merchant never learns why (BnplRefundDesk) - the customer's credit is not the merchant's to read.
+        BnplWrittenOffRefused.refuseRefundIfWrittenOff(obligation, kind);
         boolean active = obligation.status() == BnplObligationStatus.ACTIVE;
         Instant now = servicing.databaseNow(unitOfWork);
         LocalDate today = LocalDate.ofInstant(now, ZoneId.of(obligationLocked.servicingZone()));

@@ -284,8 +284,9 @@ public enum AccountPurpose {
 
     /**
      * A loan written off, per currency (`V026`; rule 14): EXPENSE, debit-normal. Seeded now so the
-     * account plan never changes when Phase 14 builds the write-off; <strong>posted by nothing in
-     * Phase 11</strong>, and closed to free adjustments so no person can post a loss here either.
+     * account plan never changes when Phase 14 builds the write-off; <strong>posted only by
+     * {@code LoanWriteOffs}, under four eyes</strong> (`P14-TSK-021`, rule 14), and closed to free
+     * adjustments so no person can post a loss here any other way.
      */
     LOAN_WRITE_OFF_EXPENSE(OwnerKind.OPERATIONAL),
 
@@ -326,8 +327,9 @@ public enum AccountPurpose {
 
     /**
      * A BNPL obligation written off, per currency (`V027`; F11): EXPENSE, debit-normal. Seeded now so
-     * the account plan never changes when Phase 14 builds the write-off; <strong>posted by nothing in
-     * Phase 12</strong>, and closed to free adjustments so no person can post a loss here either.
+     * the account plan never changes when Phase 14 builds the write-off; <strong>posted only by
+     * {@code BnplWriteOffs}, under four eyes</strong> (`P14-TSK-021`, F11), and closed to free
+     * adjustments so no person can post a loss here any other way.
      */
     BNPL_WRITE_OFF_EXPENSE(OwnerKind.OPERATIONAL),
 

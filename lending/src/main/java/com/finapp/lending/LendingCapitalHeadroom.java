@@ -24,8 +24,18 @@ import lombok.RequiredArgsConstructor;
  * headroom(c) = CR-DR(LENDING_CAPITAL, c)
  *             - committed principal of loans PENDING_DISBURSEMENT in c
  *             - DR-CR(LOAN_PRINCIPAL + LOAN_PRINCIPAL_DUE
- *                     + BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE) over every account of c                  &gt;= 0
+ *                     + BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE) over every account of c
+ *             - principal written off in c                                                            &gt;= 0
  * </pre>
+ *
+ * <p><strong>A write-off releases no capacity</strong> (`P14-TSK-021`, ADR-0104's Follow-up, owner decision C6). Rule 14 and F11
+ * credit the principal against an expense, so the outstanding term falls by what was lost; the capital that funded it is gone and
+ * never came back. So the term that fell moves into {@code writtenOff}: CR-DR on the same four principal purposes over the entries
+ * that also hold a line on a write-off expense - by journal line, a running figure nowhere, so the entry, the row and this input
+ * are one transaction by construction. Principal only: the whole expense would also subtract interest and fees capital never funded
+ * (A29), and a write-off would LOWER the headroom. Read <strong>after</strong> the outstanding term: under {@code READ COMMITTED} a
+ * write-off committing between the two is counted in both - a headroom read low, a refusal at worst - never in neither. No write-off
+ * takes L6: it raises nothing. Nothing is charged to {@code LENDING_CAPITAL} either, which would be a line no recognition explains.
  *
  * <p><strong>The BNPL principal by ledger purpose, never by a bnpl type.</strong> The outstanding term sums the
  * ledger's purposes across every account of the currency, so lending counts a BNPL obligation's principal without
@@ -85,6 +95,15 @@ public final class LendingCapitalHeadroom {
             AccountPurpose.BNPL_PRINCIPAL,
             AccountPurpose.BNPL_PRINCIPAL_DUE);
 
+    /** The two expenses a write-off debits: an entry holding a line on one is a write-off, whoever's book it took from. */
+    static final Set<AccountPurpose> WRITE_OFF_EXPENSES =
+            EnumSet.of(AccountPurpose.LOAN_WRITE_OFF_EXPENSE, AccountPurpose.BNPL_WRITE_OFF_EXPENSE);
+
+    /** The write-off expenses, for every derivation of the headroom that cannot call this class. Unmodifiable. */
+    public static Set<AccountPurpose> writeOffExpenses() {
+        return java.util.Collections.unmodifiableSet(WRITE_OFF_EXPENSES);
+    }
+
     /**
      * The principal purposes the outstanding term sums - the one set, for every derivation of the headroom that cannot
      * call this class (the audited as-of-date capital report, `P11-TSK-030`, folds dated lines in its own snapshot), so
@@ -100,30 +119,37 @@ public final class LendingCapitalHeadroom {
 
     /**
      * One currency's headroom and its terms: the capital recognised, the committed principal of loans awaiting
-     * disbursement, and the principal outstanding of every loan, line and - since `P12-TSK-005` - BNPL obligation, one
-     * figure read in one statement.
+     * disbursement, the principal outstanding of every loan, line and - since `P12-TSK-005` - BNPL obligation, one
+     * figure read in one statement, and the principal written off (`P14-TSK-021`).
      */
-    public record Headroom(CurrencyCode currency, Money capital, Money committed, Money outstanding) {
+    public record Headroom(CurrencyCode currency, Money capital, Money committed, Money outstanding, Money writtenOff) {
 
         public Headroom {
             Objects.requireNonNull(currency, "currency must not be null");
             Objects.requireNonNull(capital, "capital must not be null");
             Objects.requireNonNull(committed, "committed must not be null");
             Objects.requireNonNull(outstanding, "outstanding must not be null");
+            Objects.requireNonNull(writtenOff, "writtenOff must not be null");
         }
 
-        /** Capital less what is committed and outstanding - never negative at any commit ({@code INV-LND-13}). */
+        /**
+         * Capital less what is committed, outstanding and written off - never negative at any commit ({@code INV-LND-13}); a
+         * write-off moves principal from the third term to the fourth, and this figure not at all.
+         */
         public Money headroom() {
-            return capital.minus(committed).minus(outstanding);
+            return capital.minus(committed).minus(outstanding).minus(writtenOff);
         }
 
         /**
          * The safeguarding adjustment ADR-0096 section 6 publishes: the platform liabilities capital created and still
          * funds - principal outstanding (loans, lines and BNPL obligations; ADR-0104 decision 7: BNPL creates
-         * merchant-payable liabilities without cash entering, as a disbursement creates wallet money) plus committed.
+         * merchant-payable liabilities without cash entering, as a disbursement creates wallet money) plus committed, plus
+         * the principal written off (`P14-TSK-021`): the wallet money a written-off loan created is still there, still
+         * capital's and no customer's, so a write-off must not raise what safeguarding holds customers funded. Capital
+         * recognised = headroom + this figure.
          */
         public Money lendingFunded() {
-            return outstanding.plus(committed);
+            return outstanding.plus(committed).plus(writtenOff);
         }
 
         /** Whether {@code principal} more can be deployed. */
@@ -174,8 +200,12 @@ public final class LendingCapitalHeadroom {
         // CR-DR: the capital is credit-normal EQUITY.
         Money recognised = balances.netDebit(unitOfWork, EnumSet.of(capital.purpose()), currency).negated();
         Money outstanding = balances.netDebit(unitOfWork, PRINCIPAL, currency);
-        Money scale = !outstanding.isZero() ? outstanding : !recognised.isZero() ? recognised : committed;
-        return new Headroom(currency, adopt(recognised, scale), adopt(committed, scale), adopt(outstanding, scale));
+        // AFTER the outstanding term: a write-off committing between the two is counted in both, never in neither (the class comment).
+        Money writtenOff = balances.netCreditBeside(unitOfWork, PRINCIPAL, WRITE_OFF_EXPENSES, currency);
+        Money scale = !outstanding.isZero() ? outstanding : !recognised.isZero() ? recognised
+                : !writtenOff.isZero() ? writtenOff : committed;
+        return new Headroom(currency, adopt(recognised, scale), adopt(committed, scale), adopt(outstanding, scale),
+                adopt(writtenOff, scale));
     }
 
     /** A zero takes the other term's persisted scale, so the arithmetic never meets two scales. */

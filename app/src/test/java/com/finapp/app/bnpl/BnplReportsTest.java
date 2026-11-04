@@ -140,6 +140,18 @@ class BnplReportsTest {
     }
 
     @Test
+    @DisplayName("P14-TSK-021: a written-off obligation is counted in a column of its own - never active, never closed, never gone")
+    void aWrittenOffObligationIsCountedApart() {
+        plantBook();
+        reads.obligations.add(new BnplReportReads.ObligationCount("BNPL_PAY_IN_4", "EUR", "WRITTEN_OFF", 2));
+        reading = new BnplProofs.Reading(List.of(), List.of());
+        BnplReports.BnplPortfolioRow payIn4 = served(() -> reports.portfolio(DAY)).rows().get(0);
+        assertThat(payIn4.active()).isEqualTo(3);
+        assertThat(payIn4.closed()).isEqualTo(1);
+        assertThat(payIn4.writtenOff()).isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("the portfolio carries the subledger and replay counts and names the failing and diverged agreements -"
             + " bounded, the truncation said")
     void thePortfolioNamesTheAgreementsTheProofsFail() {

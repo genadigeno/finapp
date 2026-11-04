@@ -37,6 +37,26 @@ class ServicingAccrualCompletenessTest {
     private final List<Connection> seen = new ArrayList<>();
 
     @Test
+    @DisplayName("P14-TSK-021: a written-off account is no gap: neither accruer's read lists it, and the proposal refused it until it had accrued"
+            + " through yesterday")
+    void aWrittenOffAccountIsNoGap() {
+        // The two statements ACCRUALS_COMPLETE reads, as text; over real rows, LoanWriteOffLedgerDatabaseTest#aWrittenOffLoanLeavesNoAccrualGap, owed.
+        List<String> statements = new ArrayList<>();
+        Connection recording = (Connection) Proxy.newProxyInstance(ServicingAccrualCompletenessTest.class.getClassLoader(),
+                new Class<?>[] {Connection.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("prepareStatement")) {
+                        statements.add((String) args[0]);
+                        throw new java.sql.SQLException("recorded", "08006");
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                });
+        assertThatThrownBy(() -> new com.finapp.lending.JdbcLoanServicingStore().oldestUnaccruedByCurrency(recording));
+        assertThatThrownBy(() -> new com.finapp.bnpl.JdbcBnplAccrualStore().oldestUnaccruedByCurrency(recording));
+        assertThat(statements.get(0)).contains("WHERE l.status IN ('ACTIVE', 'CLOSING')").doesNotContain("WRITTEN_OFF");
+        assertThat(statements.get(1)).contains("o.status = 'ACTIVE'").doesNotContain("WRITTEN_OFF");
+    }
+
+    @Test
     @DisplayName("each accruer behind becomes one position per currency, on the caller's unit of work, ordered by accruer"
             + " then currency; accrued-through is the day before the oldest unaccrued date")
     void eachAccruerBehindIsOnePositionPerCurrency() {

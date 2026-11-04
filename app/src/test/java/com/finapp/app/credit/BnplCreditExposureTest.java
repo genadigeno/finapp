@@ -33,15 +33,15 @@ import org.junit.jupiter.api.Test;
  * zero; bnpl's own principal purposes bound, never named here. The live read against the real purchase, both orders of an
  * acceptance and a decision, and the census are {@code BnplCreditExposureDatabaseTest}'s.
  */
-@DisplayName("platform credit exposure v3: loans, lines and BNPL principal in one statement (P12-TSK-012)")
+@DisplayName("platform credit exposure v4: loans, lines and BNPL principal in one statement (P12-TSK-012, P14-TSK-021)")
 class BnplCreditExposureTest {
 
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
 
     @Test
-    @DisplayName("version 3, recorded as the snapshot's provenance; versions 1 and 2 replay from their own snapshots")
-    void versionThree() {
-        assertThat(new BnplCreditExposure().version()).isEqualTo(3);
+    @DisplayName("version 4 (P14-TSK-021), recorded as the snapshot's provenance; versions 1, 2 and 3 replay from their own snapshots")
+    void versionFour() {
+        assertThat(new BnplCreditExposure().version()).isEqualTo(4);
         assertThat(new LendingCreditExposure().version()).as("version 2 is kept, unwired, for what it decided").isEqualTo(2);
     }
 
@@ -96,6 +96,18 @@ class BnplCreditExposureTest {
         assertThat(obligation("CLOSED", 25_00)).as("a defect leaving principal on a closed obligation is exposure")
                 .isEqualTo(eur(25_00));
         assertThat(obligation("ACTIVE", 600_00, -600_00)).as("principal cancelled by a refund").isEqualTo(eur(0));
+    }
+
+    @Test
+    @DisplayName("P14-TSK-021: a write-off moves no exposure - a written-off obligation counts what it held, and both arms leave the entry's"
+            + " lines out by its one poster's key, so the loss never hands the customer new credit")
+    void aWriteOffMovesNoExposure() {
+        assertThat(obligation("WRITTEN_OFF", 600_00, -150_00)).as("what stands owed").isEqualTo(eur(450_00));
+        Recorded recorded = new Recorded(List.of());
+        new BnplCreditExposure().outstandingFor(recorded.connection(), UUID.randomUUID(), EUR);
+        assertThat(recorded.statements.get(0))
+                .contains("idempotency_scope LIKE 'ledger.post:lending.write-off:%'")
+                .contains("idempotency_scope LIKE 'ledger.post:bnpl.write-off:%'");
     }
 
     @Test

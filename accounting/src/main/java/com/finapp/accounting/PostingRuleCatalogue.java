@@ -72,6 +72,7 @@ final class PostingRuleCatalogue {
     static final String LOAN_CREDIT_BALANCE = "LOAN_CREDIT_BALANCE";
     static final String LOAN_INTEREST_INCOME = "LOAN_INTEREST_INCOME";
     static final String LOAN_FEE_INCOME = "LOAN_FEE_INCOME";
+    static final String LOAN_WRITE_OFF_EXPENSE = "LOAN_WRITE_OFF_EXPENSE";
     static final String BNPL_PRINCIPAL = "BNPL_PRINCIPAL";
     static final String BNPL_PRINCIPAL_DUE = "BNPL_PRINCIPAL_DUE";
     static final String BNPL_INTEREST_ACCRUED = "BNPL_INTEREST_ACCRUED";
@@ -81,6 +82,7 @@ final class PostingRuleCatalogue {
     static final String BNPL_MERCHANT_FEE_INCOME = "BNPL_MERCHANT_FEE_INCOME";
     static final String BNPL_INTEREST_INCOME = "BNPL_INTEREST_INCOME";
     static final String BNPL_FEE_INCOME = "BNPL_FEE_INCOME";
+    static final String BNPL_WRITE_OFF_EXPENSE = "BNPL_WRITE_OFF_EXPENSE";
 
     /** The clearing positions a settlement source discharges, one per counterparty kind (ADR-0065, ADR-0078). */
     static final List<String> SOURCE_POSITIONS = List.of(
@@ -401,6 +403,14 @@ final class PostingRuleCatalogue {
                 "Arrears re-scheduled by an accepted amendment", "lending.loan_amendment (the amendment id)",
                 TODAY_DATABASE, adr + "13",
                 required(DEBIT, LOAN_PRINCIPAL), required(CREDIT, LOAN_PRINCIPAL_DUE)));
+        // P14-TSK-021 (C6 A): effective from the register's origin - dated today by the server, so a later effective date could only
+        // wedge RULE_CONFORMANCE on a clock behind it, and no entry of the namespace predates this change. Not floored: a person's act.
+        rules.add(rule("LND-14", POSTING, "lending.write-off:", "lending", posters("LoanWriteOffs"),
+                "A defaulted loan written off under four eyes: every receivable holding anything to expense, each to zero - an act on"
+                        + " the books, never forgiveness",
+                "lending.loan_write_off (the loan's approved write-off)", TODAY_DATABASE, adr + "14",
+                required(DEBIT, LOAN_WRITE_OFF_EXPENSE), optional(CREDIT, LOAN_PRINCIPAL), optional(CREDIT, LOAN_PRINCIPAL_DUE),
+                optional(CREDIT, LOAN_INTEREST_ACCRUED), optional(CREDIT, LOAN_INTEREST_DUE), optional(CREDIT, LOAN_FEES_DUE)));
     }
 
     // ------------------------------------------------------------------ bnpl (ADR-0103, LEDGER_MODEL.md 11)
@@ -465,6 +475,13 @@ final class PostingRuleCatalogue {
                 "The late fee a reversal re-opened on an instalment a refund cancelled whole, released",
                 "bnpl.repayment_reversal (the reversal id)", TODAY_DATABASE, model + "F8a",
                 required(DEBIT, BNPL_FEE_INCOME), required(CREDIT, BNPL_FEES_DUE)));
+        // P14-TSK-021 (C6 A): as LND-14 - effective from the register's origin, dated today, never floored.
+        rules.add(rule("BNPL-F11", POSTING, "bnpl.write-off:", "bnpl", posters("BnplWriteOffs"),
+                "A defaulted BNPL obligation written off under four eyes: every receivable holding anything to expense, each to zero -"
+                        + " an act on the books, never forgiveness",
+                "bnpl.bnpl_write_off (the obligation's approved write-off)", TODAY_DATABASE, model + "F11",
+                required(DEBIT, BNPL_WRITE_OFF_EXPENSE), optional(CREDIT, BNPL_PRINCIPAL), optional(CREDIT, BNPL_PRINCIPAL_DUE),
+                optional(CREDIT, BNPL_INTEREST_ACCRUED), optional(CREDIT, BNPL_INTEREST_DUE), optional(CREDIT, BNPL_FEES_DUE)));
     }
 
     // ------------------------------------------------------------------ adjustments (ledger V010, V015; ADR-0071)

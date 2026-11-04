@@ -36,7 +36,7 @@ import lombok.RequiredArgsConstructor;
  *       satisfies {@code INV-MER-02}'s equation with the BNPL terms ({@code -016}).
  *   <li><strong>The customer leg</strong> - every obligation's {@link BnplSubledgerProof} verdict.
  *   <li><strong>The economic identity</strong> - per purchase: {@code G = principal repaid + principal cancelled by refunds
- *       + principal outstanding} (+ written off, none in Phase 12); {@code Σ refunds = Σ principal cancelled + Σ excess}
+ *       + principal outstanding + principal written off} (`P14-TSK-021`); {@code Σ refunds = Σ principal cancelled + Σ excess}
  *       (a dispute's refund, door {@code DISPUTE}, among them - `-023`'s hand-off); fee recognised less fee returned equals
  *       the purchase's lines on {@code BNPL_MERCHANT_FEE_INCOME} - and the fee arm: the fee and every return recomputed
  *       under the purchase's pinned fee schedule version by merchant's one arithmetic ({@link BnplMerchants#returnedFee},
@@ -270,7 +270,15 @@ public final class BnplThreeWayProof {
         }
         Map<AccountPurpose, Money> ledger = BnplSubledgerProof.ledger(record);
         Money outstanding = ledger.get(AccountPurpose.BNPL_PRINCIPAL).plus(ledger.get(AccountPurpose.BNPL_PRINCIPAL_DUE));
-        boolean principal = gross.equals(repaid.plus(cancelled).plus(outstanding));
+        // Written off (F11, P14-TSK-021): by what the approved row took - a write-off whose row and entry disagree fails the subledger
+        // proof, and one no row explains fails here too: the principal has gone from the outstanding term with nothing to explain it.
+        Money writtenOff = zero;
+        for (BnplRecord.WriteOffRow writeOff : record.writeOffs()) {
+            if (writeOff.approved()) {
+                writtenOff = writtenOff.plus(writeOff.principal()).plus(writeOff.principalDue());
+            }
+        }
+        boolean principal = gross.equals(repaid.plus(cancelled).plus(outstanding).plus(writtenOff));
         boolean refunds = refunded.equals(cancelled.plus(excess));
 
         // The purchase's lines on the currency's merchant fee income: CR - DR over its financing's and refunds' entries.

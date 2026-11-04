@@ -297,6 +297,16 @@ public final class JdbcLoanRecordStore implements LoanRecordStore {
 
         // The ledger: every account the ledger holds for the loan, and every journal line on them in one statement.
         List<LoanRecord.LedgerAccountRow> owned = new ArrayList<>();
+        List<LoanRecord.WriteOffRow> writeOffs = query(c, "SELECT w.id, w.currency, w.scale, w.principal_minor,"
+                + " w.principal_due_minor, w.interest_accrued_minor, w.interest_due_minor, w.fees_due_minor, w.revision,"
+                + " w.proposed_at, d.outcome, d.decided_at, d.journal_entry_id, d.value_date, d.recorded_order"
+                + " FROM lending.loan_write_off w LEFT JOIN lending.loan_write_off_decision d ON d.write_off_id = w.id"
+                + " WHERE w.loan_id = ? ORDER BY w.proposed_at, w.id", id, row -> new LoanRecord.WriteOffRow(
+                        row.getObject("id", UUID.class), money(row, "principal_minor"), money(row, "principal_due_minor"),
+                        money(row, "interest_accrued_minor"), money(row, "interest_due_minor"), money(row, "fees_due_minor"),
+                        row.getLong("revision"), instant(row, "proposed_at"), Optional.ofNullable(row.getString("outcome")),
+                        optionalInstant(row, "decided_at"), entry(row, "journal_entry_id"),
+                        Optional.ofNullable(row.getObject("value_date", LocalDate.class)), order(row, "recorded_order")));
         for (LedgerAccount ledger : ledgerAccounts.findAllOwned(c, id)) {
             owned.add(new LoanRecord.LedgerAccountRow(ledger.id(), ledger.purpose(), ledger.currency(),
                     ledger.status().name()));
@@ -308,7 +318,8 @@ public final class JdbcLoanRecordStore implements LoanRecordStore {
 
         return Optional.of(new LoanRecord(account, agreements, versions, offer, disbursement, accrualStart, payout,
                 schedules, draws, accruals, billings, statements, applications, repayments, reversals, fees, waivers,
-                amendments, reschedulings, closure, quotes, executions, lineClosure, conditions, attempts, owned, lines));
+                amendments, reschedulings, closure, quotes, executions, lineClosure, conditions, attempts, owned, lines,
+                writeOffs));
     }
 
     // ------------------------------------------------------------------ plumbing

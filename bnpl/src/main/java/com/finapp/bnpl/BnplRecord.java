@@ -55,7 +55,8 @@ public record BnplRecord(
         List<PurposeBalances.DatedLine> journalLines,
         List<EntryLines> sharedEntries,
         Optional<LedgerAccountId> payable,
-        Optional<LedgerAccountId> merchantFeeIncome) {
+        Optional<LedgerAccountId> merchantFeeIncome,
+        List<WriteOffRow> writeOffs) {
 
     public BnplRecord {
         Objects.requireNonNull(obligation, "obligation must not be null");
@@ -87,6 +88,25 @@ public record BnplRecord(
         sharedEntries = List.copyOf(sharedEntries);
         Objects.requireNonNull(payable, "payable must not be null");
         Objects.requireNonNull(merchantFeeIncome, "merchantFeeIncome must not be null");
+        writeOffs = List.copyOf(writeOffs);
+    }
+
+    /**
+     * A write-off and its decision, if decided (`P14-TSK-021`): what it took of each receivable, and once approved F11's entry and its
+     * date; {@code at} the decision's re-stamped instant, its proposal's until decided.
+     */
+    public record WriteOffRow(UUID id, Money principal, Money principalDue, Money interestAccrued, Money interestDue, Money feesDue,
+            long revision, Optional<String> outcome, Instant at, Optional<JournalEntryId> entry, Optional<java.time.LocalDate> valueDate) {
+
+        /** Whether its decision approved it. */
+        public boolean approved() {
+            return outcome.filter("APPROVED"::equals).isPresent();
+        }
+
+        @Override
+        public String toString() {
+            return "WriteOffRow[" + id + "]";
+        }
     }
 
     /** A fact and the database instant it was written at - its place in the obligation's history. */

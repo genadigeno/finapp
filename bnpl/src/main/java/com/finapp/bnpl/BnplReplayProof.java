@@ -145,7 +145,12 @@ public final class BnplReplayProof {
         /** A waiver exceeds what its fee still had to forgive. */
         WAIVER,
         /** The closure's refund is not the credit balance held, or a receivable stood. */
-        CLOSURE
+        CLOSURE,
+        /**
+         * A write-off (F11, `P14-TSK-021`) did not take the whole of each receivable as it stood, or its entry is not exactly that, or
+         * a fact follows it, or the obligation's status and its approved write-off disagree.
+         */
+        WRITE_OFF
     }
 
     /** One fact that failed to re-derive: its kind and its row - never a figure ({@code INV-AUD-02}). */
@@ -448,9 +453,17 @@ public final class BnplReplayProof {
                     .forEach(waiver -> events.add(new Event(waiver.decidedAt().orElse(waiver.proposedAt()), 13,
                             waiver.id(), waiver)));
             record.closure().ifPresent(row -> events.add(new Event(row.at(), 14, row.row().id(), row)));
+            record.writeOffs().stream().filter(BnplRecord.WriteOffRow::approved).forEach(writeOff ->
+                    events.add(new Event(writeOff.at(), 15, writeOff.id(), writeOff)));
             events.sort(Comparator.comparing(Event::at).thenComparingInt(Event::rank).thenComparing(Event::id));
 
+            Optional<BnplRecord.WriteOffRow> writtenOff = Optional.empty();
             for (Event event : events) {
+                // Nothing follows a write-off: the obligation takes no fact after it, whatever writer tried.
+                writtenOff.ifPresent(earlier -> diverged(Check.WRITE_OFF, earlier.id()));
+                if (event.fact() instanceof BnplRecord.WriteOffRow row) {
+                    writtenOff = Optional.of(row);
+                }
                 switch (event.fact()) {
                     case BnplAgreement agreement -> governing = agreement;
                     case BnplPurchaseStore.StoredSchedule fixed -> schedule = fixed;
@@ -470,8 +483,44 @@ public final class BnplReplayProof {
                     case BnplPayoffExecution execution -> execution(execution, event.at());
                     case BnplRecord.Reversal reversal -> reversal(reversal);
                     case BnplWaiver waiver -> waiver(waiver);
+                    case BnplRecord.WriteOffRow writeOff -> writeOff(writeOff);
                     default -> throw new IllegalStateException("an unknown fact in the history");
                 }
+            }
+            // The status and the row say one thing: WRITTEN_OFF exactly when a write-off was approved.
+            if ((record.obligation().status() == BnplObligationStatus.WRITTEN_OFF) != writtenOff.isPresent()) {
+                diverged(Check.WRITE_OFF, writtenOff.map(BnplRecord.WriteOffRow::id).orElse(record.id().value()));
+            }
+        }
+
+        /**
+         * F11 re-derived: every receivable stood, just before it, at exactly what the row took, the credit balance at zero; and its entry
+         * credits exactly that on each account, on the row's own date - so a partial write-off, one over a moved figure or one posted
+         * beside another movement diverges, whichever writer wrote it.
+         */
+        private void writeOff(BnplRecord.WriteOffRow writeOff) {
+            replayed++;
+            Map<AccountPurpose, Money> taken = new EnumMap<>(AccountPurpose.class);
+            taken.put(AccountPurpose.BNPL_PRINCIPAL, writeOff.principal());
+            taken.put(AccountPurpose.BNPL_PRINCIPAL_DUE, writeOff.principalDue());
+            taken.put(AccountPurpose.BNPL_INTEREST_ACCRUED, writeOff.interestAccrued());
+            taken.put(AccountPurpose.BNPL_INTEREST_DUE, writeOff.interestDue());
+            taken.put(AccountPurpose.BNPL_FEES_DUE, writeOff.feesDue());
+            boolean holds = writeOff.entry().isPresent() && writeOff.valueDate().isPresent() && credit(writeOff.at()).isZero();
+            for (Map.Entry<AccountPurpose, Money> take : taken.entrySet()) {
+                holds &= asOf(take.getKey(), writeOff.at()).equals(take.getValue());
+                Money credited = zero;
+                for (PurposeBalances.DatedLine line : linesOf(take.getKey())) {
+                    if (writeOff.entry().filter(line.entry()::equals).isPresent()) {
+                        holds &= line.direction() == Direction.CREDIT
+                                && writeOff.valueDate().filter(line.valueDate()::equals).isPresent();
+                        credited = credited.plus(line.amount());
+                    }
+                }
+                holds &= credited.equals(take.getValue());
+            }
+            if (!holds) {
+                diverged(Check.WRITE_OFF, writeOff.id());
             }
         }
 

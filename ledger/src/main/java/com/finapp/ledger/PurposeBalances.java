@@ -37,6 +37,14 @@ public interface PurposeBalances<T> {
      */
     Money netDebit(T unitOfWork, Set<AccountPurpose> purposes, CurrencyCode currency);
 
+    /**
+     * CR − DR over every line of every account whose purpose is in {@code purposes} and whose currency is {@code currency},
+     * only of the entries that also hold a line on an account whose purpose is in {@code beside} - read in one statement; zero at
+     * the currency's scale when there are none (`P14-TSK-021`: the principal written off, which an entry debiting a write-off
+     * expense took from the book). The ledger still learns nothing of what a write-off is.
+     */
+    Money netCreditBeside(T unitOfWork, Set<AccountPurpose> purposes, Set<AccountPurpose> beside, CurrencyCode currency);
+
     /** One account's lines, each with its entry - in entry order, read in one statement. */
     List<EntryLine> linesOn(T unitOfWork, LedgerAccountId account);
 

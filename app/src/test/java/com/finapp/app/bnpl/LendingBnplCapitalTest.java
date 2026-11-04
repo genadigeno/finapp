@@ -63,7 +63,7 @@ class LendingBnplCapitalTest {
         port.underLock(bnplsConnection, EUR);
         List<String> significant = events.stream().filter(event -> !event.startsWith("find")).toList();
         assertThat(significant).first().as("L6 before any read").isEqualTo("lock:" + capitalId.value() + "@bnpl's transaction");
-        assertThat(significant).hasSize(4).allMatch(event -> event.endsWith("@bnpl's transaction"));
+        assertThat(significant).hasSize(5).allMatch(event -> event.endsWith("@bnpl's transaction"));
     }
 
     @Test
@@ -127,6 +127,11 @@ class LendingBnplCapitalTest {
         return (PurposeBalances<Connection>) Proxy.newProxyInstance(
                 LendingBnplCapitalTest.class.getClassLoader(), new Class<?>[] {PurposeBalances.class},
                 (proxy, method, args) -> {
+                    if (method.getName().equals("netCreditBeside")) {
+                        // P14-TSK-021: nothing written off in this suite - the fourth term reads, on the same connection, and is zero.
+                        events.add("netCreditBeside@" + args[0]);
+                        return Money.ofMinorUnits(0, (CurrencyCode) args[3]);
+                    }
                     if (!method.getName().equals("netDebit")) {
                         throw new UnsupportedOperationException(method.getName());
                     }

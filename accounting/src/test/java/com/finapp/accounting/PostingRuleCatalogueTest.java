@@ -37,13 +37,13 @@ class PostingRuleCatalogueTest {
     class TheRegister {
 
         @Test
-        @DisplayName("catalogue version 3: 59 rules in 66 versions - every rule at version 1 from the origin, and C3's"
+        @DisplayName("catalogue version 4: 61 rules in 68 versions - every rule at version 1 from the origin, and C3's"
                 + " seven floored system rules at version 2 from 2026-10-30 (P14-TSK-006)")
         void isVersionTwoOfFiftyEightRules() {
-            assertThat(REGISTER.catalogueVersion()).isEqualTo(PostingRuleRegister.CATALOGUE_VERSION).isEqualTo(3);
-            assertThat(REGISTER.rules()).hasSize(66);
-            assertThat(REGISTER.rules().stream().map(PostingRule::id).distinct()).hasSize(59);
-            assertThat(REGISTER.rules().stream().filter(rule -> rule.version() == 1)).hasSize(59)
+            assertThat(REGISTER.catalogueVersion()).isEqualTo(PostingRuleRegister.CATALOGUE_VERSION).isEqualTo(4);
+            assertThat(REGISTER.rules()).hasSize(68);
+            assertThat(REGISTER.rules().stream().map(PostingRule::id).distinct()).hasSize(61);
+            assertThat(REGISTER.rules().stream().filter(rule -> rule.version() == 1)).hasSize(61)
                     .allSatisfy(rule -> assertThat(rule.effectiveFrom()).isEqualTo(PostingRuleRegister.ORIGIN));
             assertThat(REGISTER.rules().stream().filter(rule -> rule.version() == 2)).hasSize(7)
                     .allSatisfy(rule -> assertThat(rule.effectiveFrom()).isEqualTo(PostingRuleRegister.C3_FLOOR));
@@ -52,16 +52,16 @@ class PostingRuleCatalogueTest {
         }
 
         @Test
-        @DisplayName("every namespace the platform posts, reverses or adjusts under - 42, 7 and 3 - and no other")
+        @DisplayName("every namespace the platform posts, reverses or adjusts under - 44, 7 and 3 - and no other")
         void registersEveryNamespace() {
             assertThat(REGISTER.namespaces(EntryType.POSTING)).containsExactly(
                     "bnpl.accrual:", "bnpl.billing:", "bnpl.closure-refund:", "bnpl.credit-application:", "bnpl.fee:",
-                    "bnpl.financing:", "bnpl.refund:", "bnpl.repayment:", "bnpl.reversal-fee-release:",
+                    "bnpl.financing:", "bnpl.refund:", "bnpl.repayment:", "bnpl.reversal-fee-release:", "bnpl.write-off:",
                     "crossborder-return-fee:", "crossborder-return:", "dispute-attribution:", "dispute-chargeback:",
                     "dispute-fee:", "dispute-loss:", "dispute-reattribution:", "dispute-restoration:", "dispute-won:",
                     "fx-cover:", "fx-trade:", "lending.accrual:", "lending.amendment:", "lending.billing:",
                     "lending.closure-refund:", "lending.credit-application:", "lending.disbursement:", "lending.draw:",
-                    "lending.fee:", "lending.repayment:", "lending.statement:", "lending.waiver:",
+                    "lending.fee:", "lending.repayment:", "lending.statement:", "lending.waiver:", "lending.write-off:",
                     "merchant-payout-return:", "merchant-payout:", "outbound-credit:", "payment-capture:",
                     "payment-execution:", "payment-refund:", "recon-suspense:", "settlement-batch:", "transfer:",
                     "unmatched-confirmation:", "wallet-withdrawal:");
@@ -86,7 +86,7 @@ class PostingRuleCatalogueTest {
                     .hasSize(12);
             // Lending dates by the database clock in its servicing zone except the accrual; bnpl always does.
             assertThat(ids(DatingClass.TODAY_DATABASE)).allMatch(id -> id.startsWith("LND-") || id.startsWith("BNPL-"))
-                    .hasSize(24);
+                    .hasSize(26);
             assertThat(REGISTER.rules().stream().filter(rule -> rule.id().startsWith("BNPL-"))
                     .map(PostingRule::dating)).containsOnly(DatingClass.TODAY_DATABASE);
             assertThat(ids(DatingClass.TODAY_CLOCK)).hasSize(23)
@@ -217,7 +217,7 @@ class PostingRuleCatalogueTest {
                         .filter(judging -> judging.id().equals(rule.id()))
                         .forEach(judging -> inForce.put(judging.id(), judging.cutoff()));
             }
-            assertThat(inForce).hasSize(59);
+            assertThat(inForce).hasSize(61);
             assertThat(inForce).containsAllEntriesOf(Map.of(
                     "LND-2", CutoffReaction.FLOORED_AT_FIRST_OPEN,
                     "SETTLEMENT-REPORT", CutoffReaction.FLOORED_AT_FIRST_OPEN,
@@ -451,9 +451,19 @@ class PostingRuleCatalogueTest {
             assertThat(rule("LND-2").dating()).as("posting = value = the accrual date").isEqualTo(
                     DatingClass.ECONOMIC_DATE);
             assertThat(REGISTER.rules().stream().filter(rule -> rule.id().startsWith("LND-") && rule.version() == 1))
-                    .hasSize(14)
-                    .allSatisfy(rule -> assertThat(rule.purposes()).noneMatch(purpose ->
-                            purpose.equals("LOAN_WRITE_OFF_EXPENSE") || purpose.startsWith("BNPL_")));
+                    .hasSize(15)
+                    .allSatisfy(rule -> assertThat(rule.purposes()).noneMatch(purpose -> purpose.startsWith("BNPL_")));
+            // Rule 14 (P14-TSK-021): the one rule on the expense - every receivable optional, because a zero takes no line; the expense
+            // required; never the credit balance, the customer's money; dated today, never floored; from the origin, so no entry of
+            // the namespace can predate its rule.
+            assertShape("LND-14", "lending", "DR LOAN_WRITE_OFF_EXPENSE", "CR? LOAN_PRINCIPAL", "CR? LOAN_PRINCIPAL_DUE",
+                    "CR? LOAN_INTEREST_ACCRUED", "CR? LOAN_INTEREST_DUE", "CR? LOAN_FEES_DUE");
+            assertThat(rule("LND-14").posters()).containsExactly("LoanWriteOffs");
+            assertThat(rule("LND-14").dating()).isEqualTo(DatingClass.TODAY_DATABASE);
+            assertThat(rule("LND-14").cutoff()).isEqualTo(CutoffReaction.NOT_REACHED);
+            assertThat(rule("LND-14").effectiveFrom()).isEqualTo(PostingRuleRegister.ORIGIN);
+            assertThat(REGISTER.rules().stream().filter(rule -> rule.purposes().contains("LOAN_WRITE_OFF_EXPENSE"))
+                    .map(PostingRule::id)).containsExactly("LND-14");
         }
     }
 
@@ -462,8 +472,8 @@ class PostingRuleCatalogueTest {
     class Bnpl {
 
         @Test
-        @DisplayName("every rule that posts; F6 has no key of its own, F9 is F5, F10 is the merchant payout, F11 is not"
-                + " built")
+        @DisplayName("every rule that posts; F6 has no key of its own, F9 is F5, F10 is the merchant payout, F11 the write-off"
+                + " (P14-TSK-021)")
         void shapes() {
             assertShape("BNPL-F1", "bnpl", "DR BNPL_PRINCIPAL", "CR MERCHANT_PAYABLE", "DR? MERCHANT_PAYABLE",
                     "CR? BNPL_MERCHANT_FEE_INCOME");
@@ -486,10 +496,15 @@ class PostingRuleCatalogueTest {
             assertShape("BNPL-F8a", "bnpl", "DR BNPL_FEE_INCOME", "CR BNPL_FEES_DUE");
             assertThat(rule("BNPL-F2").posters()).containsExactly("BnplAcceptances", "BnplServicing");
             assertThat(rule("BNPL-F3").posters()).containsExactly("BnplAcceptances", "BnplRepayments");
-            assertThat(REGISTER.rules().stream().filter(rule -> rule.id().startsWith("BNPL-"))).hasSize(11)
-                    .allSatisfy(rule -> assertThat(rule.purposes()).noneMatch(purpose ->
-                            purpose.equals("BNPL_WRITE_OFF_EXPENSE") || purpose.startsWith("LOAN_")
-                                    || purpose.equals("LENDING_CAPITAL")));
+            assertThat(REGISTER.rules().stream().filter(rule -> rule.id().startsWith("BNPL-"))).hasSize(12)
+                    .allSatisfy(rule -> assertThat(rule.purposes()).noneMatch(purpose -> purpose.startsWith("LOAN_")
+                            || purpose.equals("LENDING_CAPITAL")));
+            assertShape("BNPL-F11", "bnpl", "DR BNPL_WRITE_OFF_EXPENSE", "CR? BNPL_PRINCIPAL", "CR? BNPL_PRINCIPAL_DUE",
+                    "CR? BNPL_INTEREST_ACCRUED", "CR? BNPL_INTEREST_DUE", "CR? BNPL_FEES_DUE");
+            assertThat(rule("BNPL-F11").posters()).containsExactly("BnplWriteOffs");
+            assertThat(rule("BNPL-F11").cutoff()).isEqualTo(CutoffReaction.NOT_REACHED);
+            assertThat(REGISTER.rules().stream().filter(rule -> rule.purposes().contains("BNPL_WRITE_OFF_EXPENSE"))
+                    .map(PostingRule::id)).containsExactly("BNPL-F11");
         }
     }
 

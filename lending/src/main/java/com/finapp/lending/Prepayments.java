@@ -178,6 +178,7 @@ public final class Prepayments {
             return new Prepaid(born.get(), repaymentStore.rescheduledBy(unitOfWork, id, born.get().id())
                     .orElseThrow(() -> new IllegalStateException("a prepayment commits beside its re-schedule")), true);
         }
+        LoanWrittenOffRefused.refuseIfWrittenOff(loan);
         if (loan.kind() != LoanKind.INSTALMENT || loan.status() != LoanStatus.ACTIVE) {
             throw new Repayments.LoanNotRepayable(loan.product());
         }
