@@ -14,6 +14,9 @@ commit and the date; do not delete the entry.
 | PI-002 | `POSTPONED` | Phase 12 → 13 transition gate, R2 (2026-10-22) | merchant — card-payment fee version in force on the JVM clock |
 | PI-003 | `POSTPONED` | Phase 12 → 13 transition gate, R2 (2026-10-22) | merchant — Phase 6 reason columns unscreened for card and account numbers |
 | PI-004 | `POSTPONED` | P13-TST-001, by the owner (2026-10-27) | every later phase's storm (`TST-001`) — run after the project's phases (`P13-TST-001` itself closed by the owner's acceptance, 2026-10-27) |
+| PI-005 | `POSTPONED` | P14-TSK-021, by the owner (2026-11-04) | lending, bnpl — a write-off approved in error has no way back; required before production use of write-offs |
+| PI-006 | `POSTPONED` | P14-TSK-021, by the owner (2026-11-04) | lending, bnpl — a written-off account has no recovery rule; required before production use of write-offs |
+| PI-007 | `POSTPONED` | P14-TSK-021, by the owner (2026-11-04) | bnpl — a written-off obligation has no refund rule and no dispute door; required before production use of write-offs |
 
 ---
 
@@ -134,3 +137,48 @@ commit and the date; do not delete the entry.
   250 ms read budget, below PostgreSQL's 1 s `deadlock_timeout`, so the storm's lock-cycle rounds need a larger budget (or
   an assertion that no racer's assessment is a fail-safe) to see a cycle at all; and its first run must use the
   own-container suites as they now stand.
+
+---
+
+## PI-005 — A write-off approved in error has no way back
+
+- **Status:** `POSTPONED` (owner, 2026-11-04, accepting the recommendation after `P14-TSK-021`'s merge). **Required before a
+  write-off is used in production.**
+- **What:** `WRITTEN_OFF` is terminal (`INV-LIFE-04`). No door reverses the entry or returns the account, and the write-off
+  expense is closed to free adjustments, so a second person's mistake cannot be corrected through the product.
+- **Consequence today:** the entry stands and the books overstate the expense until an incident's correction. What the customer
+  owes is unchanged. `OPERATIONS_RUNBOOK.md` section 7.13 is the operator's incident path.
+- **Fix:** a reversal machine under four eyes through `ReversalService`, with a new edge `WRITTEN_OFF -> ACTIVE` that relaxes
+  `INV-LIFE-04` by decision, taking L0 and L6 so that the headroom is consumed again, and a rule for the interest not accrued in
+  the gap.
+- **Owner of the fix:** the post-phase clean-up, or sooner if the owner schedules it.
+
+---
+
+## PI-006 — A written-off account has no recovery rule
+
+- **Status:** `POSTPONED` (owner, 2026-11-04, accepting the recommendation after `P14-TSK-021`'s merge). **Required before a
+  write-off is used in production.**
+- **What:** a repayment on a written-off loan or obligation is refused, and the money stays in the customer's wallet. Nothing is
+  lost, and nothing is collected.
+- **Consequence today, each accepted by the owner until this is built:** credit exposure counts a written-off account
+  indefinitely (`P14-TSK-021`'s item (f)); risk's collections case stays open, nothing consumes `LoanWrittenOff`, and nothing goes
+  to a bureau (its item (g)).
+- **Fix:** a posting rule, DR the wallet / CR a recovery account, reversible and four-eyed if manual. Decide (f) and (g) with it:
+  what a recovery does to exposure, to the case and to any bureau report.
+- **Owner of the fix:** the post-phase clean-up, or sooner if the owner schedules it.
+
+---
+
+## PI-007 — A written-off BNPL obligation has no refund rule and no dispute door
+
+- **Status:** `POSTPONED` (owner, 2026-11-04, accepting the recommendation after `P14-TSK-021`'s merge). **Required before a
+  write-off is used in production.**
+- **What:** a merchant's refund on a written-off obligation is refused with the neutral `bnpl.RefundNotPostable`, and the money
+  stays on the payable. `BnplDisputes.open` refuses too, because a dispute's outcome may be a refund. So a customer told "still
+  owed" cannot contest the debt through the product, even one who never received the goods. A purely accounting event should not
+  remove that right, which is why this cannot reach production as it stands.
+- **Consequence today:** `P14-TSK-022` gives the customer a route to a person, named in the notice and in the dispute's refusal.
+  That person can review and escalate, but holds no door that settles the matter until this is built.
+- **Fix:** a posting rule F12 for the refund, with the dispute door reopened on it.
+- **Owner of the fix:** the post-phase clean-up, or sooner if the owner schedules it.

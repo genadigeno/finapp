@@ -813,7 +813,7 @@ four-eyes close (`-012`), report reproducibility (`-008`), conformance (`-010`),
 | `P14-TSK-019` | The safeguarding position return (C13) | M14.7 | `-018` | none | `DOD-FIN` |
 | `P14-TSK-020` | Operating accounting: meters, alerts, runbook | M14.8 | `-012`, `-017`, `-018` | none | `DOD-OBS` |
 | `P14-TSK-021` | Loan and BNPL write-off under four eyes (C6, cut candidate) | M14.9 | `-002`, `-007` | lending, bnpl (then numbered) | `DOD-FIN`, `DOD-SEC` |
-| `P14-TSK-022` | The owner's rulings on prior-period adjustments (added 2026-11-04) | M14.10 | `-013` | none expected | `DOD-FIN`, `DOD-SEC`, `DOD-API` |
+| `P14-TSK-022` | The owner's rulings on prior-period adjustments (added 2026-11-04), and two more of that day | M14.10 | `-013`, `-016`, `-021` | none expected | `DOD-FIN`, `DOD-SEC`, `DOD-API` |
 | `P14-TST-002` | The accounting battery | M14.10 | `-009`, `-015`, `-016` | none | `DOD-TEST` |
 | `P14-TST-001` | The accounting storm — `POSTPONED` (PI-004) | M14.10 | all | none | `DOD-TEST` |
 | `P14-DOC-001` | The Phase 14 exit review | M14.10 | all but `TST-001` | none | `DOD-DOC` |
