@@ -496,7 +496,7 @@ final class PostingRuleCatalogue {
         rules.add(rule("ACC-PRIOR-PERIOD", ADJUSTMENT, "ACCOUNTING", "accounting", posters("LedgerPriorPeriodPostings"),
                 "A closed period's error corrected in an open one, four-eyes, on purposes open to free adjustment - traced to the period and"
                         + " revision it corrects",
-                "accounting.prior_period_adjustment (the adjustment id; its stored date, approved four-eyes)", STORED_ROW,
+                "accounting.prior_period_adjustment (the row naming the entry; its stored date, approved four-eyes)", STORED_ROW,
                 "INV-ACC-10; ledger V030 (closed purposes refused); accounting V009",
                 required(DEBIT, OPEN_TO_FREE_ADJUSTMENT), required(CREDIT, OPEN_TO_FREE_ADJUSTMENT)));
     }

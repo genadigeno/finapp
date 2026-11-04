@@ -25,6 +25,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.NonNull;
@@ -43,7 +44,7 @@ import lombok.RequiredArgsConstructor;
  * births a period, and the schedule will. The ledger's two dates are this one date, so nothing about the entry points into the closed month.
  *
  * <p><strong>What the approver reads is what posts</strong> ({@link #approve}): the body names the date, the revision and the month's posted corrections it read; any of them differing is {@link AdjustmentStale}. The
- * date and lines are frozen; the inputs that can move are read again under the locks: the corrected month's status and revision, the target's status, the month's posted corrections, the mapping in force, the closed
+ * date and lines are frozen; the inputs that can move are read again under the locks: the corrected month's status and revision, the target's status and revision, the month's posted corrections, the mapping in force, the closed
  * purposes (code; a release moves them).
  *
  * <p><strong>Correcting twice</strong>: every receipt and read lists the month's corrections; the approval names the posted ones. Two approvals of one month take the same rows in id order, so the second finds the first {@code POSTED}
@@ -72,6 +73,15 @@ public final class PriorPeriodAdjustments {
 
     /** The most standing proposals one read answers. */
     public static final int PENDING_LIMIT = 100;
+
+    /**
+     * The entry's {@code reference}, one constant: a line on a customer's wallet or a merchant's payable is served to them with it ({@code JdbcStatementDerivation}), so it names no adjustment, month or proposal. The
+     * trace is the row's {@code journal_entry_id} and {@code adjustment_proposal_id}, and the entry's scope {@code ledger.adjust.approve:<proposal>}.
+     */
+    public static final String ENTRY_REFERENCE = "accounting-correction";
+
+    /** A period is born at revision 1 ({@code V003}) and only a reopen moves it, so any other is a month that was closed and reopened. */
+    private static final int NEVER_REOPENED = 1;
 
     @NonNull private final AccountingPeriodStore periods;
     @NonNull private final PriorPeriodAdjustmentStore store;
@@ -122,19 +132,43 @@ public final class PriorPeriodAdjustments {
     /**
      * What an approver reads.
      *
-     * @param lines the ledger's frozen lines
-     * @param blockedBy why an approval would be refused now; empty when it still stands - the way on otherwise is to reject and propose again
+     * @param lines the ledger's frozen lines, each with what it touches
+     * @param blockedBy which month would refuse an approval now; empty when neither would - the way on otherwise is to reject and propose again. Months only: an approval that finds this empty can still be refused for a
+     *     purpose a release has closed, a purpose unmapped in the version now in force, or by the ledger, and it stands {@code PROPOSED} each time
      * @param earlierCorrections the month's other corrections; the posted ones are what the approval names
      */
-    public record View(PriorPeriodAdjustmentStore.Row row, List<PriorPeriodPostings.Line> lines, Optional<Blocked> blockedBy, List<Correction> earlierCorrections) {
+    public record View(PriorPeriodAdjustmentStore.Row row, List<ReadLine> lines, Optional<Blocked> blockedBy, List<Correction> earlierCorrections) {
 
         public View {
             lines = List.copyOf(lines);
             earlierCorrections = List.copyOf(earlierCorrections);
         }
 
+        /** Neither month would refuse it now - no more than that: see {@code blockedBy}. */
         public boolean stillStands() {
             return blockedBy.isEmpty();
+        }
+    }
+
+    /**
+     * One frozen line as its approver reads it: the approver holds no ledger read, so an account's id alone would tell them nothing of what they attest. Codes only, never whose.
+     *
+     * @param line the ledger's frozen line
+     * @param purpose the account's purpose
+     * @param ownerKind the kind of party holding it - never the party
+     */
+    public record ReadLine(PriorPeriodPostings.Line line, String purpose, String ownerKind) {
+
+        public ReadLine {
+            Objects.requireNonNull(line, "line");
+            Objects.requireNonNull(purpose, "purpose");
+            Objects.requireNonNull(ownerKind, "ownerKind");
+        }
+
+        /** An amount stays out of a log line. */
+        @Override
+        public String toString() {
+            return "ReadLine[" + purpose + "/" + ownerKind + ", " + line.side() + "]";
         }
     }
 
@@ -146,8 +180,10 @@ public final class PriorPeriodAdjustments {
         CORRECTED_NOT_CLOSED,
         /** Reopened and closed again: the figures it corrects were superseded. */
         CORRECTED_REVISION_MOVED,
-        /** The month it lands in has been locked: a new proposal lands in the month then open. */
-        TARGET_NOT_OPEN
+        /** The month it lands in is locked, closing or closed: a new proposal lands in the month then open. An unlock lifts this, since that month issued nothing and its revision has not moved. */
+        TARGET_NOT_OPEN,
+        /** The month it lands in was closed and reopened while it stood: {@code OPEN} again, at a revision moved. A correction never lands in a month being re-closed. */
+        TARGET_REVISION_MOVED
     }
 
     // ------------------------------------------------------------------ refusals
@@ -179,7 +215,7 @@ public final class PriorPeriodAdjustments {
         }
     }
 
-    /** What the act names is no longer what stands: another revision, another date, other corrections, or it was decided. Nothing was changed. */
+    /** What the act names is no longer what stands: another revision, another date, other corrections, a month closed and reopened under it, or it was decided. Nothing was changed. */
     public static final class AdjustmentStale extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
@@ -218,7 +254,7 @@ public final class PriorPeriodAdjustments {
      * Proposes correcting a {@code CLOSED} month at the revision the person read, dated today in the {@code OPEN} month holding today. Nothing posts.
      *
      * @throws AccountingPeriods.PeriodNotFound when the corrected period has no row
-     * @throws AccountingPeriods.PeriodStale when the corrected month is not {@code CLOSED}, or the month holding today has no period yet, is not {@code OPEN}, or is not after the corrected one
+     * @throws AccountingPeriods.PeriodStale when the corrected month is not {@code CLOSED}, or the month holding today has no period yet, is not {@code OPEN}, was reopened, or is not after the corrected one
      * @throws AdjustmentStale when the revision named is not the corrected month's
      * @throws AdjustmentInvalid when the lines are not coherent, an account is unknown, or a purpose is unmapped in the version in force for the target
      * @throws PurposeClosed when a line names a purpose closed to free adjustments
@@ -253,12 +289,16 @@ public final class PriorPeriodAdjustments {
         if (target.get().status() != PeriodStatus.OPEN) {
             throw new AccountingPeriods.PeriodStale("the month holding today is " + target.get().status().name() + "; a prior-period adjustment lands in an OPEN period");
         }
+        // A month locks only past its end and its grace, so the month holding today being reopened already is a clock far out, not a race. It is refused all the same: a correction never lands in a month being re-closed.
+        if (target.get().revision() != NEVER_REOPENED) {
+            throw new AccountingPeriods.PeriodStale("the month holding today was closed and reopened; a prior-period adjustment never lands in a reopened month");
+        }
         requireOpenAndMapped(unitOfWork, lines, targetMonth);
         List<Correction> earlier = store.ofCorrected(unitOfWork, corrected).stream().map(Correction::of).toList();
         PriorPeriodAdjustmentId id = PriorPeriodAdjustmentId.next(ids);
-        UUID proposal = postings.propose(unitOfWork, today, "prior-period-adjustment:" + id.value(),
+        UUID proposal = postings.propose(unitOfWork, today, ENTRY_REFERENCE,
                 "prior-period adjustment " + id.value() + " corrects " + correctedMonth + " at revision " + correctedRevision, lines);
-        store.insert(unitOfWork, new PriorPeriodAdjustmentStore.NewAdjustment(id, corrected, correctedRevision, target.get().id(), today, proposal, actor, reasoned, correlation));
+        store.insert(unitOfWork, new PriorPeriodAdjustmentStore.NewAdjustment(id, corrected, correctedRevision, target.get().id(), target.get().revision(), today, proposal, actor, reasoned, correlation));
         record(unitOfWork, actor, AccountingAuditAction.PRIOR_PERIOD_ADJUSTMENT_PROPOSED, id, Optional.of(reasoned), "corrects=" + correctedMonth + ", revision=" + correctedRevision + ", target=" + targetMonth
                 + ", postingDate=" + today + ", proposal=" + proposal + ", lines=" + lines.size() + ", earlierCorrections=" + earlier.size(), correlation);
         return new Acted(id, correctedMonth, correctedRevision, targetMonth, today, PriorPeriodAdjustmentStatus.PROPOSED, proposal, Optional.empty(), earlier, false);
@@ -270,7 +310,7 @@ public final class PriorPeriodAdjustments {
      * Approves a standing proposal - a different person's act, on what they read: the ledger posts the entry, this row moves with it, one transaction. The same approver's repeat converges.
      *
      * @throws AdjustmentNotFound when nothing has this id
-     * @throws AdjustmentStale when it was decided otherwise, or what the body names is not what stands
+     * @throws AdjustmentStale when it was decided otherwise, what the body names is not what stands, or either month was closed and reopened while it stood
      * @throws SelfApprovalRefused when the approver proposed it ({@code INV-AUD-04})
      * @throws AccountingPeriods.PeriodStale when the corrected month is no longer {@code CLOSED}, or the target no longer {@code OPEN} - it stands; the way on is to reject it and propose again
      * @throws AdjustmentInvalid when a purpose is no longer mapped in the version in force for the target
@@ -313,9 +353,11 @@ public final class PriorPeriodAdjustments {
         }
         Optional<Blocked> blocked = blockedBy(row, corrected, target);
         if (blocked.isPresent()) {
-            throw blocked.get() == Blocked.CORRECTED_REVISION_MOVED
-                    ? new AdjustmentStale("the corrected period was reopened and closed again: the figures this corrects were superseded; reject it and propose again")
-                    : new AccountingPeriods.PeriodStale(blockedDetail(blocked.get()));
+            throw switch (blocked.get()) {
+                case CORRECTED_REVISION_MOVED -> new AdjustmentStale("the corrected period was reopened and closed again: the figures this corrects were superseded; reject it and propose again");
+                case TARGET_REVISION_MOVED -> new AdjustmentStale("the month it lands in was closed and reopened while it stood; a correction never lands in a reopened month: reject it and propose again");
+                default -> new AccountingPeriods.PeriodStale(blockedDetail(blocked.get()));
+            };
         }
         requireOpenAndMapped(unitOfWork, postings.linesOf(unitOfWork, row.proposal()), row.targetMonth());
         PriorPeriodPostings.Posted entry = postings.approve(unitOfWork, row.proposal());
@@ -371,7 +413,7 @@ public final class PriorPeriodAdjustments {
     // ------------------------------------------------------------------ reads, refusals' records
 
     /**
-     * One adjustment as its approver reads it, and whether it still stands. Unlocked: {@link #approve} judges again on the rows.
+     * One adjustment as its approver reads it, and whether either month would refuse it now. Unlocked: {@link #approve} judges again on the rows, and judges more than the months: see {@link View#blockedBy}.
      *
      * @throws AdjustmentNotFound when nothing has this id
      */
@@ -382,7 +424,7 @@ public final class PriorPeriodAdjustments {
         Optional<Blocked> blocked = row.status() != PriorPeriodAdjustmentStatus.PROPOSED
                 ? Optional.of(Blocked.DECIDED)
                 : blockedBy(row, periods.find(unitOfWork, row.correctedPeriod()), periods.find(unitOfWork, row.targetPeriod()));
-        return new View(row, postings.linesOf(unitOfWork, row.proposal()), blocked,
+        return new View(row, readLines(unitOfWork, row), blocked,
                 store.ofCorrected(unitOfWork, row.correctedPeriod()).stream().filter(other -> !other.id().equals(id)).map(Correction::of).toList());
     }
 
@@ -426,7 +468,7 @@ public final class PriorPeriodAdjustments {
 
     // ------------------------------------------------------------------ the rules
 
-    /** What would refuse an approval now, from the rows named; the caller reads them under its locks, or unlocked for a person to read. */
+    /** What either month would refuse an approval for now, from the rows named; the caller reads them under its locks, or unlocked for a person to read. */
     private static Optional<Blocked> blockedBy(PriorPeriodAdjustmentStore.Row row, Optional<AccountingPeriodStore.PeriodRow> corrected, Optional<AccountingPeriodStore.PeriodRow> target) {
         if (corrected.isEmpty() || corrected.get().status() != PeriodStatus.CLOSED) {
             return Optional.of(Blocked.CORRECTED_NOT_CLOSED);
@@ -436,6 +478,9 @@ public final class PriorPeriodAdjustments {
         }
         if (target.isEmpty() || target.get().status() != PeriodStatus.OPEN) {
             return Optional.of(Blocked.TARGET_NOT_OPEN);
+        }
+        if (target.get().revision() != row.targetRevision()) {
+            return Optional.of(Blocked.TARGET_REVISION_MOVED);
         }
         return Optional.empty();
     }
@@ -448,25 +493,49 @@ public final class PriorPeriodAdjustments {
         };
     }
 
+    /** Each frozen line with what it touches - the port's own classification, codes only. The ledger's foreign key holds every account a line names. */
+    private List<ReadLine> readLines(Connection unitOfWork, PriorPeriodAdjustmentStore.Row row) {
+        List<PriorPeriodPostings.Line> lines = postings.linesOf(unitOfWork, row.proposal());
+        Map<UUID, PriorPeriodPostings.Classified> chart = postings.classify(unitOfWork, lines.stream().map(PriorPeriodPostings.Line::ledgerAccount).collect(Collectors.toSet()));
+        return lines.stream().map(line -> {
+            PriorPeriodPostings.Classified account = Objects.requireNonNull(chart.get(line.ledgerAccount()), "a frozen line names an account the ledger does not hold");
+            return new ReadLine(line, account.purpose(), account.ownerKind());
+        }).toList();
+    }
+
     private static List<Correction> earlierThan(List<PriorPeriodAdjustmentStore.Row> month, PriorPeriodAdjustmentId id) {
         return month.stream().filter(row -> !row.id().equals(id)).map(Correction::of).toList();
     }
 
-    /** {@code INV-LED-01}, its shape: two lines at least, each positive, each currency at its scale balanced. Before any lock. */
+    /**
+     * {@code INV-LED-01}, its shape: two lines at least, each positive, each currency at its scale balanced, each side's sum one the ledger can hold. Before any lock. {@code JournalEntry.balanced} folds each side through
+     * {@code Money.plus}, a {@code long} of minor units, at the ledger's proposal and again at its approval; past it, that is a {@code MonetaryOverflowException} and a 500 with nothing written.
+     */
     private static void requireCoherent(List<PriorPeriodPostings.Line> lines) {
         if (lines.size() < 2 || lines.size() > MAX_LINES) {
             throw new AdjustmentInvalid("a prior-period adjustment carries 2 to " + MAX_LINES + " lines");
         }
-        Map<String, BigInteger> net = new TreeMap<>();
+        Map<String, BigInteger> debits = new TreeMap<>();
+        Map<String, BigInteger> credits = new TreeMap<>();
         for (PriorPeriodPostings.Line line : lines) {
             Objects.requireNonNull(line, "line");
             if (!line.amount().isPositive()) {
                 throw new AdjustmentInvalid("a line's amount is positive");
             }
-            BigInteger minor = BigInteger.valueOf(line.amount().minorUnits());
-            net.merge(line.amount().currency().code() + "@" + line.amount().scale(), line.side() == Side.DEBIT ? minor : minor.negate(), BigInteger::add);
+            (line.side() == Side.DEBIT ? debits : credits).merge(line.amount().currency().code() + "@" + line.amount().scale(), BigInteger.valueOf(line.amount().minorUnits()), BigInteger::add);
         }
-        List<String> unbalanced = net.entrySet().stream().filter(entry -> entry.getValue().signum() != 0).map(Map.Entry::getKey).toList();
+        Set<String> beyond = new TreeSet<>();
+        Set<String> present = new TreeSet<>(debits.keySet());
+        present.addAll(credits.keySet());
+        List.of(debits, credits).forEach(side -> side.forEach((currency, sum) -> {
+            if (sum.bitLength() > Long.SIZE - 1) {
+                beyond.add(currency);
+            }
+        }));
+        if (!beyond.isEmpty()) {
+            throw new AdjustmentInvalid("a side's sum is more than the ledger holds in " + beyond);
+        }
+        List<String> unbalanced = present.stream().filter(currency -> !debits.getOrDefault(currency, BigInteger.ZERO).equals(credits.getOrDefault(currency, BigInteger.ZERO))).toList();
         if (!unbalanced.isEmpty()) {
             throw new AdjustmentInvalid("debits and credits differ in " + unbalanced);
         }

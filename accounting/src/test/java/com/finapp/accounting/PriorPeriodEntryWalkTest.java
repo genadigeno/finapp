@@ -8,15 +8,22 @@ import com.finapp.accounting.reporting.PurposeReportDefinition;
 import com.finapp.accounting.reporting.ReportDefinition;
 import com.finapp.accounting.reporting.ReportInputs;
 import com.finapp.accounting.reporting.RunParameters;
+import com.finapp.accounting.reporting.SuspenseDefinition;
 import com.finapp.accounting.reporting.TrialBalanceDefinition;
 import com.finapp.accounting.testing.InMemoryAccountingBreakStore;
+import com.finapp.accounting.testing.InMemoryAccountingPeriodStore;
+import com.finapp.accounting.testing.InMemoryGlMappingStore;
 import com.finapp.accounting.testing.InMemoryJournal;
+import com.finapp.accounting.testing.InMemoryPriorPeriodAdjustmentStore;
+import com.finapp.accounting.testing.InMemoryPriorPeriodPostings;
 import com.finapp.accounting.testing.InMemoryTrialBalanceReads;
 import com.finapp.accounting.testing.ReferenceGlMapping;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
+import com.finapp.sharedkernel.money.CurrencyCode;
+import com.finapp.sharedkernel.money.Money;
 import java.lang.reflect.Proxy;
 import java.math.BigInteger;
 import java.security.SecureRandom;
@@ -37,7 +44,8 @@ import org.junit.jupiter.api.Test;
 /**
  * An {@code ACCOUNTING}-origin entry walked through what reads it (`P14-TSK-013`; {@code PHASE_14_PLAN.md} section 13.5; {@code INV-ACC-04}, {@code -10}, {@code -12}): the month it corrects must not move, and the month it lands in must still close. The judges and the
  * definitions themselves, hermetic; {@code PriorPeriodAdjustmentDatabaseTest} walks the same over the real journal (owed, C5). The reads with nothing to judge are stated there: {@code ACCRUALS_COMPLETE} and {@code RECONCILIATION_DISCLOSURE} read {@code ledger.post:} scopes
- * ({@code LedgerFlooredPostings}), the source proofs read only purposes closed to this origin, and a merchant payable's terms sum by construction.
+ * ({@code LedgerFlooredPostings}), and the source proofs read purposes closed to this origin but for two: {@code MERCHANT_PAYABLE}, whose terms {@code MerchantPayableTermsTest} walks and whose {@code BNPL_THREE_WAY} leg compares only {@code bnpl.}-keyed lines, a line of
+ * this origin carrying no key ({@code LedgerBnplProofReads}), and every projection, which holds because the entry posts like any other. Five of the nine FINAL definitions read none of its five purposes, so they have nothing a control could move.
  */
 @DisplayName("an ACCOUNTING entry walked through the close and the reports (P14-TSK-013)")
 class PriorPeriodEntryWalkTest {
@@ -69,22 +77,49 @@ class PriorPeriodEntryWalkTest {
         return CanonicalJson.text(definition.generate(SNAPSHOT, inputsFor(period, month)));
     }
 
+    /** The date the machine itself gives the ledger, so a machine dating into the corrected month is what moves the bytes below. */
+    private static LocalDate theMachinesDate() {
+        Connection uow = SNAPSHOT;
+        CorrelationId flow = CorrelationId.of("flow-1");
+        Actor accountant = new Actor("accountant-1", ActorType.CUSTOMER);
+        InMemoryAccountingPeriodStore periods = new InMemoryAccountingPeriodStore();
+        for (YearMonth month : List.of(JANUARY, JANUARY.plusMonths(1), MARCH)) {
+            periods.insertIfAbsent(uow, new AccountingPeriodStore.NewPeriod(AccountingPeriodId.next(IDS), month, flow));
+        }
+        periods.closeForTest(JANUARY);
+        InMemoryGlMappingStore mappings = new InMemoryGlMappingStore();
+        GlMappingVersionId active = GlMappingVersionId.next(IDS);
+        mappings.insertProposal(null, new GlMappingStore.NewProposal(active, 1, ReferenceGlMapping.version(JANUARY), accountant, "the reference", flow, UUID.randomUUID()));
+        assertThat(mappings.decide(null, active, GlMappingVersionStatus.ACTIVE, new Actor("controller-1", ActorType.CUSTOMER), "approved")).isTrue();
+        InMemoryPriorPeriodPostings ledger = new InMemoryPriorPeriodPostings();
+        List<PriorPeriodPostings.Line> lines = List.of(new PriorPeriodPostings.Line(ledger.account("FEE_REVENUE", "OPERATIONAL"), Side.DEBIT, Money.ofMinorUnits(1_500, CurrencyCode.of("EUR"))),
+                new PriorPeriodPostings.Line(ledger.account("CUSTOMER_WALLET", "CUSTOMER"), Side.CREDIT, Money.ofMinorUnits(1_500, CurrencyCode.of("EUR"))));
+        PriorPeriodAdjustments machine = new PriorPeriodAdjustments(periods, new InMemoryPriorPeriodAdjustmentStore(periods), ledger, mappings, (unitOfWork, record) -> { }, (unitOfWork, envelope, payload, mediaType) -> { }, IDS,
+                Clock.fixed(LANDS_ON.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC));
+        PriorPeriodAdjustments.Acted proposed = machine.propose(uow, periods.month(JANUARY).orElseThrow().id(), 1, lines, accountant, "a fee was booked twice", flow);
+        return ledger.proposal(proposed.proposal()).date();
+    }
+
     /** The prior-period adjustment's entry: today's date for both, on two open purposes. */
     private void theCorrectionLands(LocalDate on) {
         reads.post(on, CUT.minusSeconds(60), "EUR", 2, 1_500, FEES, WALLET);
     }
 
     @Test
-    @DisplayName("the corrected month's FINAL runs do not move: every definition's bytes identical after the entry lands in a later month; and the control, the same entry dated into the month, moves them - so the comparison can see it")
+    @DisplayName("the corrected month's FINAL runs do not move: all nine definitions' bytes identical after the entry lands on the date the machine gives it; and the control, for the four that read its purposes, the same entry dated into the month, moves them - so the comparison can see it")
     void theCorrectedMonthsBytesDoNotMove() {
         List<ReportDefinition> definitions = List.of(new TrialBalanceDefinition(reads), new GlActivityDefinition(reads, reads.counterparties()), PurposeReportDefinition.revenue(reads),
                 PurposeReportDefinition.receivablesPayables(reads));
+        List<ReportDefinition> readingNoneOfItsPurposes = List.of(PurposeReportDefinition.settlementPositions(reads, reads.counterparties()), PurposeReportDefinition.fxResults(reads),
+                PurposeReportDefinition.loanPortfolio(reads), PurposeReportDefinition.bnplExposure(reads), new SuspenseDefinition(reads, (snapshot, period) -> new SuspenseAsOfCutoff.Register(period.atEndOfMonth(), Instant.EPOCH, List.of())));
         Map<String, String> issued = new java.util.HashMap<>();
         definitions.forEach(definition -> issued.put(definition.code(), bytesOf(definition, january, JANUARY)));
+        readingNoneOfItsPurposes.forEach(definition -> issued.put(definition.code(), bytesOf(definition, january, JANUARY)));
 
-        theCorrectionLands(LANDS_ON);
+        theCorrectionLands(theMachinesDate());
 
         definitions.forEach(definition -> assertThat(bytesOf(definition, january, JANUARY)).as(definition.code()).isEqualTo(issued.get(definition.code())));
+        readingNoneOfItsPurposes.forEach(definition -> assertThat(bytesOf(definition, january, JANUARY)).as(definition.code()).isEqualTo(issued.get(definition.code())));
 
         // The control: F1 itself, the same entry dated into the closed month.
         theCorrectionLands(JANUARY.atDay(25));

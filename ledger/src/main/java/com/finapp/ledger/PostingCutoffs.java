@@ -52,7 +52,9 @@ import lombok.RequiredArgsConstructor;
  * ({@link #SHARED_LOCK}). The move therefore waits for every in-flight posting and every later posting waits for the
  * move: once it commits, no entry dated in the period commits. The lock order (the plan's section 8.2): accounting
  * period rows (the caller's) → this key → the cutoff row → the event; the move takes no money row and a posting takes
- * no accounting row, so no cycle exists.
+ * no accounting row, so no cycle among held locks. A shared request queued behind a waiting exclusive can still close
+ * one, soft, through a decider's money row: the deadlock detector reorders the queue, or {@link #LOCK_WAIT} withdraws
+ * the move (section 8.2's limits).
  *
  * <h2>Bounded, and retried</h2>
  *

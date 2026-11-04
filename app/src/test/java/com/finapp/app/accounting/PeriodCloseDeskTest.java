@@ -315,10 +315,10 @@ class PeriodCloseDeskTest {
         AccountingPeriodId april = AccountingPeriodId.next(IDS);
         periods.insertIfAbsent(UOW, new AccountingPeriodStore.NewPeriod(april, MARCH.plusMonths(1), CorrelationId.generate(IDS)));
         com.finapp.accounting.PriorPeriodAdjustmentId adjustment = com.finapp.accounting.PriorPeriodAdjustmentId.next(IDS);
-        priorPeriod.insert(UOW, new com.finapp.accounting.PriorPeriodAdjustmentStore.NewAdjustment(adjustment, march, 1, april, MARCH.plusMonths(1).atDay(5), UUID.randomUUID(), ACCOUNTANT, "a correction", CorrelationId.generate(IDS)));
+        priorPeriod.insert(UOW, new com.finapp.accounting.PriorPeriodAdjustmentStore.NewAdjustment(adjustment, march, 1, april, 1, MARCH.plusMonths(1).atDay(5), UUID.randomUUID(), ACCOUNTANT, "a correction", CorrelationId.generate(IDS)));
         assertThat(priorPeriod.markPosted(UOW, adjustment, UUID.randomUUID(), CONTROLLER, "agreed")).isTrue();
         com.finapp.accounting.PriorPeriodAdjustmentId rejected = com.finapp.accounting.PriorPeriodAdjustmentId.next(IDS);
-        priorPeriod.insert(UOW, new com.finapp.accounting.PriorPeriodAdjustmentStore.NewAdjustment(rejected, march, 1, april, MARCH.plusMonths(1).atDay(5), UUID.randomUUID(), ACCOUNTANT, "a correction", CorrelationId.generate(IDS)));
+        priorPeriod.insert(UOW, new com.finapp.accounting.PriorPeriodAdjustmentStore.NewAdjustment(rejected, march, 1, april, 1, MARCH.plusMonths(1).atDay(5), UUID.randomUUID(), ACCOUNTANT, "a correction", CorrelationId.generate(IDS)));
         assertThat(priorPeriod.markRejected(UOW, rejected, CONTROLLER, "no")).isTrue();
 
         PeriodCloseDesk.PeriodCloseReceipt reopening = as(ACCOUNTANT, () -> desk.proposeReopen("k-t3", period(), "found something"));

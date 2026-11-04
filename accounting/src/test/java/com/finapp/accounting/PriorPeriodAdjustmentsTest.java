@@ -151,7 +151,8 @@ class PriorPeriodAdjustmentsTest {
         InMemoryPriorPeriodPostings.Held held = ledger.proposal(proposed.proposal());
         assertThat(held.date()).as("the entry's one date, today, never into the month it corrects").isEqualTo(TODAY).isAfter(JANUARY.atEndOfMonth());
         assertThat(held.status()).as("nothing posts at the proposal").isEqualTo("PROPOSED");
-        assertThat(held.reference()).contains(proposed.id().value().toString());
+        assertThat(held.reference()).as("served on a customer's and a merchant's statement line: no adjustment, month or proposal in it").isEqualTo(PriorPeriodAdjustments.ENTRY_REFERENCE)
+                .doesNotContain(proposed.id().value().toString()).doesNotContain(proposed.proposal().toString()).doesNotContain("2026").doesNotContain("period");
         assertThat(held.reason()).as("the ledger's reason is identifiers only; the person's stays on accounting's row")
                 .contains(proposed.id().value().toString()).contains("2026-01").doesNotContain("secret");
         assertThat(row(proposed).proposalReason()).isEqualTo(REASON);
@@ -315,10 +316,78 @@ class PriorPeriodAdjustmentsTest {
     }
 
     @Test
+    @DisplayName("the month it lands in closed and reopened meanwhile: OPEN again, its revision moved, the corrected month untouched: refused for the revision, it stands, the rejection is the way on (INV-ACC-10)")
+    void theTargetReopenedMeanwhile() {
+        PriorPeriodAdjustments.Acted proposed = propose();
+        assertThat(row(proposed).targetRevision()).as("what the proposal read of the month it lands in").isEqualTo(1);
+        periods.closeForTest(MARCH);
+        assertThat(periods.markReopened(UOW, id(MARCH), 1)).isTrue();
+        assertThat(periods.month(MARCH).orElseThrow().status()).isEqualTo(PeriodStatus.OPEN);
+
+        refusedAndStanding(proposed, PriorPeriodAdjustments.AdjustmentStale.class, PriorPeriodAdjustments.Blocked.TARGET_REVISION_MOVED);
+    }
+
+    @Test
+    @DisplayName("the month it lands in locked and unlocked meanwhile: it issued nothing and its revision did not move, so it stands again and posts")
+    void theTargetUnlockedMeanwhile() {
+        PriorPeriodAdjustments.Acted proposed = propose();
+        periods.closeForTest(FEBRUARY);
+        periods.markLocked(UOW, id(MARCH), 1, ACCOUNTANT, Optional.empty());
+        assertThat(machine().view(UOW, proposed.id()).blockedBy()).contains(PriorPeriodAdjustments.Blocked.TARGET_NOT_OPEN);
+
+        assertThat(periods.proposeUnlock(UOW, id(MARCH), 1, ACCOUNTANT, "a reason")).isTrue();
+        assertThat(periods.approveUnlock(UOW, id(MARCH), 1, CONTROLLER, "a reason")).isTrue();
+
+        assertThat(machine().view(UOW, proposed.id()).stillStands()).isTrue();
+        assertThat(approve(proposed, CONTROLLER).status()).isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
+    }
+
+    @Test
+    @DisplayName("the month holding today already reopened - a clock far out, a month locking only past its end and grace: refused like any month it cannot land in, nothing written")
+    void theMonthHoldingTodayAlreadyReopened() {
+        periods.closeForTest(MARCH);
+        assertThat(periods.markReopened(UOW, id(MARCH), 1)).isTrue();
+
+        assertThatThrownBy(this::propose).isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("reopened");
+
+        assertThat(store.rows()).isEmpty();
+        assertThat(ledger.calls()).doesNotContain("propose");
+        assertThat(audit).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a side whose sum is more than the ledger holds is an incoherent proposal, refused before anything is read and naming no value: never the ledger's overflow, whichever side; a sum at the bound is not refused for that")
+    void aSideBeyondWhatTheLedgerHolds() {
+        long half = Long.MAX_VALUE / 2 + 1;
+        List<PriorPeriodPostings.Line> balancedBeyond = List.of(line(fees, Side.DEBIT, half), line(fees, Side.DEBIT, half), line(wallet, Side.CREDIT, half), line(wallet, Side.CREDIT, half));
+        List<PriorPeriodPostings.Line> creditsBeyond = List.of(line(fees, Side.DEBIT, Long.MAX_VALUE), line(wallet, Side.CREDIT, half), line(wallet, Side.CREDIT, half));
+        List<PriorPeriodPostings.Line> debitsBeyond = List.of(line(fees, Side.DEBIT, half), line(fees, Side.DEBIT, half), line(wallet, Side.CREDIT, Long.MAX_VALUE));
+        for (List<PriorPeriodPostings.Line> lines : List.of(balancedBeyond, creditsBeyond, debitsBeyond)) {
+            assertThatThrownBy(() -> machine().propose(UOW, id(JANUARY), 1, lines, ACCOUNTANT, REASON, FLOW)).isInstanceOf(PriorPeriodAdjustments.AdjustmentInvalid.class)
+                    .hasMessageContaining("EUR@2").hasMessageNotContaining(Long.toString(half));
+        }
+        assertThat(ledger.calls()).as("nothing read, nothing written").isEmpty();
+
+        List<PriorPeriodPostings.Line> atTheBound = List.of(line(fees, Side.DEBIT, half), line(fees, Side.DEBIT, Long.MAX_VALUE - half), line(wallet, Side.CREDIT, Long.MAX_VALUE));
+        assertThat(machine().propose(UOW, id(JANUARY), 1, atTheBound, ACCOUNTANT, REASON, FLOW).status()).isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
+    }
+
+    @Test
+    @DisplayName("what an approver reads says what each line touches: its account's purpose and owner kind, codes, in the lines' order, never whose and no amount in a log line")
+    void theApproverReadsWhatEachLineTouches() {
+        PriorPeriodAdjustments.View view = machine().view(UOW, propose().id());
+
+        assertThat(view.lines()).extracting(read -> read.line().ledgerAccount(), PriorPeriodAdjustments.ReadLine::purpose, PriorPeriodAdjustments.ReadLine::ownerKind)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(fees, "FEE_REVENUE", "OPERATIONAL"), org.assertj.core.groups.Tuple.tuple(wallet, "CUSTOMER_WALLET", "CUSTOMER"));
+        assertThat(view.lines().get(0).toString()).contains("FEE_REVENUE").doesNotContain("1500").doesNotContain("15.00");
+    }
+
+    @Test
     @DisplayName("a purpose a release closed since the proposal is refused at the approval, the owning door named")
     void aPurposeClosedSinceTheProposal() {
         PriorPeriodAdjustments.Acted proposed = propose();
         ledger.reclassify(fees, "LOAN_FEE_INCOME", "OPERATIONAL");
+        assertThat(machine().view(UOW, proposed.id()).stillStands()).as("its doc says it: the months only, no promise about a purpose").isTrue();
 
         assertThatThrownBy(() -> approve(proposed, CONTROLLER)).isInstanceOf(PriorPeriodAdjustments.PurposeClosed.class).hasMessageContaining("lending");
         assertThat(row(proposed).status()).isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
@@ -671,7 +740,7 @@ class PriorPeriodAdjustmentsTest {
         PriorPeriodPostings.Line line = line(fees, Side.DEBIT, 1500);
 
         assertThat(row(proposed).toString()).doesNotContain("secret").contains("2026-01");
-        assertThat(new PriorPeriodAdjustmentStore.NewAdjustment(proposed.id(), id(JANUARY), 1, id(MARCH), TODAY, UUID.randomUUID(), ACCOUNTANT, REASON, FLOW).toString()).doesNotContain("secret");
+        assertThat(new PriorPeriodAdjustmentStore.NewAdjustment(proposed.id(), id(JANUARY), 1, id(MARCH), 1, TODAY, UUID.randomUUID(), ACCOUNTANT, REASON, FLOW).toString()).doesNotContain("secret");
         assertThat(line.toString()).doesNotContain("1500").doesNotContain("15.00");
         assertThat(machine().view(UOW, proposed.id()).toString()).doesNotContain("secret").doesNotContain("1500").doesNotContain("15.00");
         assertThat(proposed.toString()).doesNotContain("secret");

@@ -83,7 +83,7 @@ public interface PriorPeriodPostings {
      * Records the ledger's proposal - origin {@code ACCOUNTING}, reason {@code PRIOR_PERIOD_ADJUSTMENT} - on {@code unitOfWork}. Nothing posts.
      *
      * @param date the entry's posting and value date
-     * @param reference names the prior-period adjustment; identifiers only
+     * @param reference the entry's reference, served on a statement line to whoever holds the account: it names no adjustment, month or proposal
      * @param reason identifiers only - the person's reason stays on accounting's row
      * @return the ledger's proposal
      */

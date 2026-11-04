@@ -33,7 +33,7 @@ class PriorPeriodAdjustmentStatementsTest {
     @DisplayName("every column a row reads and an insert writes exists in V009, under its own name")
     void theColumnsAreV009s() {
         String migration = PriorPeriodAdjustmentMigrationTest.migration();
-        for (String column : new String[] {"corrected_period_id", "corrected_revision", "target_period_id", "posting_date", "adjustment_proposal_id", "journal_entry_id", "status", "proposed_by", "proposed_by_type", "proposed_at",
+        for (String column : new String[] {"corrected_period_id", "corrected_revision", "target_period_id", "target_revision", "posting_date", "adjustment_proposal_id", "journal_entry_id", "status", "proposed_by", "proposed_by_type", "proposed_at",
                 "proposal_reason", "decided_by", "decided_by_type", "decided_at", "decision_reason", "correlation_id"}) {
             assertThat(migration).contains("    " + column + " ");
             assertThat(JdbcPriorPeriodAdjustmentStore.FIND_SQL + JdbcPriorPeriodAdjustmentStore.INSERT_SQL + JdbcPriorPeriodAdjustmentStore.POST_SQL).contains(column);

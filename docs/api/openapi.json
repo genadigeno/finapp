@@ -567,7 +567,7 @@
             }
           }
         },
-        "description": "[422] The prior-period adjustment is not coherent - too few lines, a line not positive, debits and credits differing in a currency, an account the ledger does not hold, or a purpose not mapped in the GL mapping version in force for the month it lands in; nothing was written.",
+        "description": "[422] The prior-period adjustment is not coherent - too few lines, a line not positive, debits and credits differing in a currency, a side's sum more than the ledger holds, an account the ledger does not hold, or a purpose not mapped in the GL mapping version in force for the month it lands in; nothing was written.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -602,7 +602,7 @@
             }
           }
         },
-        "description": "[409] What the act names is no longer what stands - the revision corrected, the date it posts on, the month's posted corrections, or the adjustment was decided; nothing was changed. Read it again; one that can no longer post is rejected and proposed again.",
+        "description": "[409] What the act names is no longer what stands - the revision corrected, the date it posts on, the month's posted corrections, a month closed and reopened under it, or the adjustment was decided; nothing was changed. Read it again; one that can no longer post is rejected and proposed again.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -23259,6 +23259,12 @@
             "type": "string"
           },
           "ledgerAccountId": {
+            "type": "string"
+          },
+          "ownerKind": {
+            "type": "string"
+          },
+          "purpose": {
             "type": "string"
           }
         },

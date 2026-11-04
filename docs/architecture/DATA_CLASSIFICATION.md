@@ -447,7 +447,7 @@ the journal column it becomes at approval.
 | `adjustment_proposal` | `reference` | `RESTRICTED-FINANCIAL` | `journal_entry.reference`'s reasoning, before the entry exists |
 | `adjustment_proposal` | `reason` | `RESTRICTED-PII` | **Free text written by a person** — `journal_entry.reason`'s reasoning verbatim |
 | `adjustment_proposal` | `reason_code` | `INTERNAL` | A closed enumeration (`P8-TSK-006`, `INV-REV-04`): the justification's category, never its text |
-| `adjustment_proposal` | `origin` | `INTERNAL` | An enumeration of two values (`P8-TSK-006`): whose machinery decides the proposal |
+| `adjustment_proposal` | `origin` | `INTERNAL` | An enumeration of three values (`P8-TSK-006`; `ACCOUNTING`, `P14-TSK-013`): whose machinery decides the proposal |
 | `adjustment_proposal` | `proposed_by` | `RESTRICTED-PII` | `journal_entry.actor_id`'s reasoning: a person's identity-provider subject |
 | `adjustment_proposal` | `proposed_at` | `CONFIDENTIAL` | Dates financial activity — `journal_entry.created_at`'s reasoning |
 | `adjustment_proposal` | `decided_by` | `RESTRICTED-PII` | The second person — `proposed_by`'s reasoning |
@@ -5016,7 +5016,7 @@ so it is `CONFIDENTIAL`, served to an operator under `ACCOUNTING_READ` and read 
 
 ### `accounting.prior_period_adjustment` - the prior-period adjustment - *added by `P14-TSK-013`*
 
-`accounting V009`: a person's correction of a `CLOSED` period at a named revision, dated in an `OPEN` one, one row per adjustment, frozen but for its one decision. Never deleted, never truncated. **No money**: the lines and their amounts are the ledger's (`adjustment_proposal_line`, `CONFIDENTIAL`, served to the approver alone). The ledger's own `reason` on the proposal and on the entry is identifiers only for this origin; the person's is here.
+`accounting V009`: a person's correction of a `CLOSED` period at a named revision, dated in an `OPEN` one, one row per adjustment, frozen but for its one decision. Never deleted, never truncated. **No money**: the lines and their amounts are the ledger's (`adjustment_proposal_line`, `CONFIDENTIAL`). They are served to the approver under `ACCOUNTING_ADJUST_APPROVE`, each with its account's purpose and owner kind, codes and never the owner, recorded `accounting.PriorPeriodAdjustmentRead`; and to any holder of `LEDGER_ADJUST` at `GET /v1/ledger/adjustments/{id}`, which filters on no origin, serving lines, amounts and `proposedBy` with no such record, as it serves a `RECONCILIATION` proposal: the ledger's own door over its own rows. The ledger's own `reason` on the proposal and on the entry is identifiers only for this origin; the person's is here. The entry's `reference` is one constant naming nothing, since a statement line serves it to the customer or merchant whose account it is on.
 
 | Table | Column | Level | Note |
 |---|---|---|---|
@@ -5024,6 +5024,7 @@ so it is `CONFIDENTIAL`, served to an operator under `ACCOUNTING_READ` and read 
 | `prior_period_adjustment` | `corrected_period_id` | `INTERNAL` | The accounting period it corrects |
 | `prior_period_adjustment` | `corrected_revision` | `INTERNAL` | The revision of the figures it corrects |
 | `prior_period_adjustment` | `target_period_id` | `INTERNAL` | The accounting period it lands in |
+| `prior_period_adjustment` | `target_revision` | `INTERNAL` | That period's revision when it was proposed, frozen; compared at the approval |
 | `prior_period_adjustment` | `posting_date` | `INTERNAL` | The entry's date, posting and value, stored at the proposal; a calendar date |
 | `prior_period_adjustment` | `adjustment_proposal_id` | `INTERNAL` | The ledger's proposal, by identifier - no foreign key across schemas |
 | `prior_period_adjustment` | `journal_entry_id` | `INTERNAL` | The entry its approval posted, by identifier |

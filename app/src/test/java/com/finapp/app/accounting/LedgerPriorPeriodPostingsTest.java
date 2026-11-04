@@ -1,7 +1,9 @@
 package com.finapp.app.accounting;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.accounting.PriorPeriodAdjustments;
 import com.finapp.accounting.PriorPeriodCorrections;
 import com.finapp.accounting.PriorPeriodPostings;
 import com.finapp.accounting.Side;
@@ -32,6 +34,7 @@ import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.CurrencyCode;
+import com.finapp.sharedkernel.money.MonetaryOverflowException;
 import com.finapp.sharedkernel.money.Money;
 import java.lang.reflect.Proxy;
 import java.security.SecureRandom;
@@ -49,6 +52,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.DisplayName;
@@ -89,14 +93,14 @@ class LedgerPriorPeriodPostingsTest {
         UUID other = IDS.next();
         List<PriorPeriodPostings.Line> lines = List.of(new PriorPeriodPostings.Line(wallet.id().value(), Side.DEBIT, Money.ofMinorUnits(1500, EUR)), new PriorPeriodPostings.Line(other, Side.CREDIT, Money.ofMinorUnits(1500, EUR)));
 
-        UUID proposal = as(() -> port.propose(connection(), DATE, "prior-period-adjustment:x", "identifiers only", lines));
+        UUID proposal = as(() -> port.propose(connection(), DATE, PriorPeriodAdjustments.ENTRY_REFERENCE, "identifiers only", lines));
 
         AdjustmentProposal stored = held.get(AdjustmentProposalId.of(proposal));
         assertThat(stored.origin()).isEqualTo(AdjustmentOrigin.ACCOUNTING);
         assertThat(stored.reasonCode()).isEqualTo(AdjustmentReasonCode.PRIOR_PERIOD_ADJUSTMENT);
         assertThat(stored.postingDate()).isEqualTo(DATE);
         assertThat(stored.valueDate()).isEqualTo(DATE);
-        assertThat(stored.reference()).isEqualTo("prior-period-adjustment:x");
+        assertThat(stored.reference()).isEqualTo(PriorPeriodAdjustments.ENTRY_REFERENCE);
         assertThat(stored.reason()).isEqualTo("identifiers only");
         assertThat(port.linesOf(connection(), proposal)).containsExactlyElementsOf(lines);
         assertThat(port.linesOf(connection(), IDS.next())).as("a proposal it does not hold").isEmpty();
@@ -115,7 +119,7 @@ class LedgerPriorPeriodPostingsTest {
     @Test
     @DisplayName("approve and reject reach its own door: the entry's id comes back, the date the one stored; a rejection decides the proposal")
     void approveAndReject() {
-        UUID proposal = held(AdjustmentProposal.proposePriorPeriod(AdjustmentProposalId.next(IDS), DATE, "prior-period-adjustment:x", "identifiers only", "person-2", lines(), CLOCK));
+        UUID proposal = held(AdjustmentProposal.proposePriorPeriod(AdjustmentProposalId.next(IDS), DATE, PriorPeriodAdjustments.ENTRY_REFERENCE, "identifiers only", "person-2", lines(), CLOCK));
 
         PriorPeriodPostings.Posted posted = as(() -> port.approve(connection(), proposal));
 
@@ -166,9 +170,34 @@ class LedgerPriorPeriodPostingsTest {
                 .contains("ORDER BY a.posting_date, a.id").doesNotContain("reason").doesNotContain("proposed_by");
         assertThat(LedgerPriorPeriodCorrections.REVERSALS_SQL).contains("JOIN ledger.journal_entry original ON original.id = entry.reverses_entry_id")
                 .contains("entry.posting_date >= ? AND entry.posting_date <= ? AND original.posting_date < ?").contains("GROUP BY 1, 2 ORDER BY 1, 2");
-        assertThat(LedgerPriorPeriodCorrections.UNTRACED_SQL).contains("proposal.origin = 'ACCOUNTING' AND proposal.status = 'APPROVED'").contains("LEFT JOIN accounting.prior_period_adjustment adjustment")
-                .contains("adjustment.status = 'POSTED'").contains("adjustment.id IS NULL");
+        assertThat(LedgerPriorPeriodCorrections.ADJUSTMENTS_SQL).as("one schema a statement").doesNotContain("ledger.").contains("a.adjustment_proposal_id").contains("a.journal_entry_id");
+        assertThat(LedgerPriorPeriodCorrections.ORIGIN_ENTRIES_SQL).as("one schema a statement (ADR-0006)").doesNotContain("accounting.")
+                .contains("proposal.origin = 'ACCOUNTING' AND proposal.status = 'APPROVED'").contains("entry.posting_date >= ? AND entry.posting_date <= ?");
         assertThat(new PriorPeriodCorrections.Corrections(List.of(), List.of(), 0).adjustments()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("what is untraced, read on two statements and compared here: an entry of the origin with no POSTED row naming both it and its proposal; a row naming another entry does not trace it")
+    void theTwoSidesCompared() {
+        UUID proposal = IDS.next();
+        UUID entry = IDS.next();
+        LedgerPriorPeriodCorrections.Trace posted = new LedgerPriorPeriodCorrections.Trace(proposal, entry);
+
+        assertThat(LedgerPriorPeriodCorrections.untraced(List.of(posted), Set.of(posted))).isZero();
+        assertThat(LedgerPriorPeriodCorrections.untraced(List.of(posted), Set.of())).isEqualTo(1);
+        assertThat(LedgerPriorPeriodCorrections.untraced(List.of(posted), Set.of(new LedgerPriorPeriodCorrections.Trace(proposal, IDS.next())))).isEqualTo(1);
+        assertThat(LedgerPriorPeriodCorrections.untraced(List.of(), Set.of(posted))).as("a row with no entry of the origin is the machine's own, none of this read's").isZero();
+    }
+
+    @Test
+    @DisplayName("why the machine refuses a side beyond a long first: past the port, the ledger folds each side through Money.plus at the proposal, an overflow and so a 500")
+    void aSideBeyondALongIsTheLedgersOverflowPastTheMachine() {
+        UUID other = IDS.next();
+        long half = Long.MAX_VALUE / 2 + 1;
+        List<PriorPeriodPostings.Line> lines = List.of(new PriorPeriodPostings.Line(wallet.id().value(), Side.DEBIT, Money.ofMinorUnits(half, EUR)), new PriorPeriodPostings.Line(wallet.id().value(), Side.DEBIT, Money.ofMinorUnits(half, EUR)),
+                new PriorPeriodPostings.Line(other, Side.CREDIT, Money.ofMinorUnits(half, EUR)), new PriorPeriodPostings.Line(other, Side.CREDIT, Money.ofMinorUnits(half, EUR)));
+
+        assertThatThrownBy(() -> as(() -> port.propose(connection(), DATE, PriorPeriodAdjustments.ENTRY_REFERENCE, "identifiers only", lines))).isInstanceOf(MonetaryOverflowException.class);
     }
 
     // ------------------------------------------------------------------

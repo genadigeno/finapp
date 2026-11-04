@@ -14,6 +14,10 @@
 --   A correction that leaves its month unable to close: the domain refuses a purpose closed to free adjustments and one unmapped in the version in
 --   force for the target, and the register carries the origin's rule. The ledger's trigger (V030) refuses the closed purposes for every writer.
 --
+-- NEVER INTO A REOPENED MONTH: target_revision is the target's revision at the birth, always 1 because a reopened month is refused there (only a reopen
+-- moves a revision, and a period is born at 1). A POST compares it under the same FOR SHARE: a target locked, closed and reopened while this stood is
+-- OPEN again and still refused. An unlock moves no revision and issued nothing, so one that stood through an unlock still posts.
+--
 -- NO FOREIGN KEY TO THE LEDGER: adjustment_proposal_id and journal_entry_id name the ledger's rows by identifier (accounting V001's rule; the
 -- migration names no other schema). An entry of this origin with no POSTED row is reported by PriorPeriodCorrections.untraced.
 --
@@ -30,6 +34,7 @@ CREATE TABLE accounting.prior_period_adjustment (
     corrected_period_id    uuid        NOT NULL,
     corrected_revision     integer     NOT NULL,
     target_period_id       uuid        NOT NULL,
+    target_revision        integer     NOT NULL,
     posting_date           date        NOT NULL,
     adjustment_proposal_id uuid        NOT NULL,
     journal_entry_id       uuid,
@@ -52,6 +57,7 @@ CREATE TABLE accounting.prior_period_adjustment (
     -- PriorPeriodAdjustmentStatus.
     CONSTRAINT prior_period_adjustment_status_is_known CHECK (status IN ('PROPOSED', 'POSTED', 'REJECTED')),
     CONSTRAINT prior_period_adjustment_revision_positive CHECK (corrected_revision >= 1),
+    CONSTRAINT prior_period_adjustment_target_revision_positive CHECK (target_revision >= 1),
     -- Persons only: an authenticated human proposes and decides.
     CONSTRAINT prior_period_adjustment_persons CHECK (
         proposed_by_type IN ('CUSTOMER', 'EMPLOYEE')
@@ -75,6 +81,8 @@ COMMENT ON TABLE accounting.prior_period_adjustment IS
     'A prior-period adjustment (P14-TSK-013, ADR-0114, INV-ACC-10): a correction of a CLOSED period at a named revision, dated in an OPEN one, its lines and entry the ledger''s. PROPOSED -> POSTED by a second person, in the transaction that posts the entry | REJECTED. Never deleted. No money.';
 COMMENT ON COLUMN accounting.prior_period_adjustment.corrected_revision IS
     'The revision of the figures this corrects: a reopen moves the period''s revision, so an approval is refused once it has moved.';
+COMMENT ON COLUMN accounting.prior_period_adjustment.target_revision IS
+    'The revision of the month it lands in, as the proposal read it: 1, since a reopened month is refused at the birth. A POST is refused once it has moved: that month was closed and reopened while this stood.';
 COMMENT ON COLUMN accounting.prior_period_adjustment.posting_date IS
     'The entry''s date, both of them (ledger V030): the day of the proposal, stored, what the approver reads and names. Never in or before the corrected period.';
 
@@ -94,6 +102,7 @@ DECLARE
     held_corrected_revision integer;
     held_corrected_end      date;
     held_target_status      text;
+    held_target_revision    integer;
     held_target_start       date;
     held_target_end         date;
 BEGIN
@@ -104,6 +113,7 @@ BEGIN
         IF NEW.id IS DISTINCT FROM OLD.id OR NEW.corrected_period_id IS DISTINCT FROM OLD.corrected_period_id
                 OR NEW.corrected_revision IS DISTINCT FROM OLD.corrected_revision
                 OR NEW.target_period_id IS DISTINCT FROM OLD.target_period_id
+                OR NEW.target_revision IS DISTINCT FROM OLD.target_revision
                 OR NEW.posting_date IS DISTINCT FROM OLD.posting_date
                 OR NEW.adjustment_proposal_id IS DISTINCT FROM OLD.adjustment_proposal_id
                 OR NEW.proposed_by IS DISTINCT FROM OLD.proposed_by OR NEW.proposed_by_type IS DISTINCT FROM OLD.proposed_by_type
@@ -125,24 +135,32 @@ BEGIN
             RAISE EXCEPTION 'a prior-period adjustment is born PROPOSED and undecided (P14-TSK-013)';
         END IF;
     END IF;
-    -- A birth and a POST, oldest first: the corrected month CLOSED at the revision named, the target OPEN - what can move between the two.
+    -- A birth and a POST, oldest first: the corrected month CLOSED at the revision named, the target OPEN at the revision named - what can move between the two.
     SELECT p.status, p.revision, p.period_end
       INTO held_corrected_status, held_corrected_revision, held_corrected_end
       FROM accounting.accounting_period p WHERE p.id = NEW.corrected_period_id FOR SHARE;
     IF NOT FOUND OR held_corrected_status <> 'CLOSED' OR held_corrected_revision <> NEW.corrected_revision THEN
         RAISE EXCEPTION 'a prior-period adjustment corrects a CLOSED period at the revision it names (P14-TSK-013, INV-ACC-10)';
     END IF;
-    SELECT p.status, p.period_start, p.period_end
-      INTO held_target_status, held_target_start, held_target_end
+    SELECT p.status, p.revision, p.period_start, p.period_end
+      INTO held_target_status, held_target_revision, held_target_start, held_target_end
       FROM accounting.accounting_period p WHERE p.id = NEW.target_period_id FOR SHARE;
     IF NOT FOUND OR held_target_status <> 'OPEN' THEN
         RAISE EXCEPTION 'a prior-period adjustment lands in an OPEN period (P14-TSK-013, INV-ACC-10)';
+    END IF;
+    -- NEVER INTO A MONTH REOPENED WHILE IT STOOD: OPEN again, its revision moved. Frozen, so a POST compares what the birth stored.
+    IF held_target_revision <> NEW.target_revision THEN
+        RAISE EXCEPTION 'a prior-period adjustment lands in its target at the revision it names: that month was reopened (P14-TSK-013, INV-ACC-10)';
     END IF;
     -- NEVER IN OR BEFORE THE MONTH IT CORRECTS, AND NEVER SOMEWHERE ELSE THAN THE MONTH IT NAMES. Frozen, so a POST judges the same dates.
     IF held_target_start <= held_corrected_end OR NEW.posting_date < held_target_start OR NEW.posting_date > held_target_end THEN
         RAISE EXCEPTION 'a prior-period adjustment is dated inside its OPEN target, after the period it corrects (P14-TSK-013, INV-ACC-10)';
     END IF;
     IF TG_OP = 'INSERT' THEN
+        -- NEVER BORN INTO A REOPENED MONTH: being re-closed, its figures would carry it, the re-dating INV-ACC-10 forbids.
+        IF NEW.target_revision <> 1 THEN
+            RAISE EXCEPTION 'a prior-period adjustment is born into a month never reopened (P14-TSK-013, INV-ACC-10)';
+        END IF;
         -- NEVER THE FUTURE. A day's grace for an instance's clock across a midnight: the domain dates it, and the database only bounds that.
         IF NEW.posting_date > (now() AT TIME ZONE 'UTC')::date + 1 THEN
             RAISE EXCEPTION 'a prior-period adjustment is not dated in the future (P14-TSK-013, INV-ACC-10)';

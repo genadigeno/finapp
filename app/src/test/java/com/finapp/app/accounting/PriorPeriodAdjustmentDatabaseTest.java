@@ -22,17 +22,26 @@ import com.finapp.accounting.AccountingBreaks;
 import com.finapp.accounting.AccountingChecks;
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.AccountingPeriods;
+import com.finapp.accounting.AccrualCompleteness;
 import com.finapp.accounting.BreakFinding;
 import com.finapp.accounting.BreakStatus;
 import com.finapp.accounting.BreakType;
+import com.finapp.accounting.CheckVerdict;
 import com.finapp.accounting.CheckOutcome;
 import com.finapp.accounting.CloseCheckCode;
+import com.finapp.accounting.CloseCheckId;
+import com.finapp.accounting.CloseCheckStatus;
+import com.finapp.accounting.CloseChecks;
+import com.finapp.accounting.CloseRunId;
+import com.finapp.accounting.CloseRuns;
+import com.finapp.accounting.FinalTrialBalance;
 import com.finapp.accounting.GlPins;
 import com.finapp.accounting.JdbcAccountingBreakStore;
 import com.finapp.accounting.JdbcGlMappingStore;
 import com.finapp.accounting.JdbcPeriodPins;
 import com.finapp.accounting.JdbcPriorPeriodAdjustmentStore;
 import com.finapp.accounting.JdbcReportRunStore;
+import com.finapp.accounting.JdbcValuationRateSetStore;
 import com.finapp.accounting.PeriodCloses;
 import com.finapp.accounting.PeriodStatus;
 import com.finapp.accounting.PostingCutoff;
@@ -46,12 +55,16 @@ import com.finapp.accounting.ReportRuns;
 import com.finapp.accounting.RunStatus;
 import com.finapp.accounting.Side;
 import com.finapp.accounting.SourceProofs;
+import com.finapp.accounting.ValuationRateSets;
+import com.finapp.accounting.ValuationRates;
+import com.finapp.accounting.ValuationStaleness;
 import com.finapp.accounting.reporting.GeneralLedger;
 import com.finapp.accounting.reporting.GlActivityDefinition;
 import com.finapp.accounting.reporting.PurposeReportDefinition;
 import com.finapp.accounting.reporting.ReportDefinitions;
 import com.finapp.accounting.reporting.ReportGeneration;
 import com.finapp.accounting.reporting.RunParameters;
+import com.finapp.accounting.reporting.SuspenseDefinition;
 import com.finapp.accounting.reporting.TrialBalanceDefinition;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AccountType;
@@ -62,10 +75,14 @@ import com.finapp.ledger.AdjustmentReasonCode;
 import com.finapp.ledger.AdjustmentService;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JdbcAdjustmentProposalStore;
+import com.finapp.ledger.JdbcBalanceDerivation;
 import com.finapp.ledger.JdbcBalanceProjection;
 import com.finapp.ledger.JdbcJournalEntryStore;
 import com.finapp.ledger.JdbcLedgerAccountStore;
+import com.finapp.ledger.JdbcPositionBreakdown;
+import com.finapp.ledger.JdbcStatementDerivation;
 import com.finapp.ledger.JournalEntryId;
+import com.finapp.ledger.JournalEntryType;
 import com.finapp.ledger.JournalLine;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.OwnedAdjustmentCommand;
@@ -73,14 +90,18 @@ import com.finapp.ledger.PeriodClosedException;
 import com.finapp.ledger.PostingCommand;
 import com.finapp.ledger.PostingObserver;
 import com.finapp.ledger.PostingService;
+import com.finapp.ledger.ProjectionVerification;
 import com.finapp.ledger.ReversalCommand;
 import com.finapp.ledger.ReversalService;
+import com.finapp.ledger.StatementDerivation;
+import com.finapp.merchant.MerchantPayable;
 import com.finapp.platform.audit.JdbcAuditWriter;
 import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.idempotency.JdbcIdempotencyRecordStore;
 import com.finapp.platform.outbox.JdbcOutboxWriter;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.testing.database.DatabaseRoles;
+import com.finapp.reconciliation.JdbcReportReadings;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
@@ -294,6 +315,36 @@ class PriorPeriodAdjustmentDatabaseTest {
     }
 
     @Test
+    @DisplayName("the month it lands in really closed and reopened meanwhile, the corrected month untouched: the approval refused for the revision, a raw POST refused for every writer, it stands, the rejection is the way on; nothing is born into that month either")
+    void theTargetReopenedMeanwhile() throws Exception {
+        PriorPeriodAdjustments.Acted proposed = propose();
+        int corrected = row(JANUARY).revision();
+        assertThat(text("SELECT target_revision::text FROM accounting.prior_period_adjustment WHERE id = '" + proposed.id().value() + "'")).isEqualTo("1");
+        PeriodCloseFixture.closed(FEBRUARY);
+        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, id(FEBRUARY), ACCOUNTANT, "a correction was found", correlation()));
+        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, id(FEBRUARY), CONTROLLER, "agreed", correlation()));
+        assertThat(row(FEBRUARY).status()).isEqualTo(PeriodStatus.OPEN);
+        assertThat(row(FEBRUARY).revision()).isEqualTo(2);
+        assertThat(row(JANUARY).status()).isEqualTo(PeriodStatus.CLOSED);
+        assertThat(row(JANUARY).revision()).isEqualTo(corrected);
+
+        assertThat(inScope(Actor.SYSTEM, uow -> machine().view(uow, proposed.id())).blockedBy()).contains(PriorPeriodAdjustments.Blocked.TARGET_REVISION_MOVED);
+        assertThatThrownBy(() -> approve(proposed, person())).isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class);
+        assertStillProposed(proposed);
+        ownerRefused("UPDATE accounting.prior_period_adjustment SET status = 'POSTED', journal_entry_id = '" + IDS.next() + "', decided_by = 'raw-approver', decided_by_type = 'EMPLOYEE', decided_at = now(), decision_reason = 'raw' WHERE id = '" + proposed.id().value() + "'", RAISED);
+        ownerRefused("UPDATE accounting.prior_period_adjustment SET target_revision = 2 WHERE id = '" + proposed.id().value() + "'", RAISED);
+
+        assertThatThrownBy(() -> propose()).as("the domain refuses the reopened month").isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("reopened");
+        rawRefused(rowSql(id(JANUARY).value(), corrected, id(FEBRUARY).value(), 2, "1999-02-10", "PROPOSED", null), RAISED);
+        rawRefused(rowSql(id(JANUARY).value(), corrected, id(FEBRUARY).value(), 1, "1999-02-10", "PROPOSED", null), RAISED);
+
+        Actor rejecter = person();
+        inScope(rejecter, uow -> machine().reject(uow, proposed.id(), rejecter, "it can no longer post", correlation()));
+        assertThat(text("SELECT status FROM accounting.prior_period_adjustment WHERE id = '" + proposed.id().value() + "'")).isEqualTo("REJECTED");
+        assertThat(text("SELECT status FROM ledger.adjustment_proposal WHERE id = '" + proposed.proposal() + "'")).isEqualTo("REJECTED");
+    }
+
+    @Test
     @DisplayName("T-lock against an approval, on two connections: whichever takes the target's row first, no entry of the origin stands after the cutoff unaccounted: it posted before the lock committed and is in the month, or it was refused and nothing posted; no deadlock either way")
     void anApprovalRacingALockOfItsTarget() throws Exception {
         PriorPeriodAdjustments.Acted proposed = propose();
@@ -353,23 +404,20 @@ class PriorPeriodAdjustmentDatabaseTest {
     // ------------------------------------------------------------------ the two worst failures
 
     @Test
-    @DisplayName("the corrected month must not move: every FINAL run of January, regenerated after the adjustment posted, is byte-identical; the month's lines are as they were")
-    void theCorrectedMonthsFinalRunRegeneratesByteIdentical() throws Exception {
+    @DisplayName("the corrected month must not move: each of January's nine FINAL definitions, regenerated after the adjustment posted, is byte-identical; the month's lines are as they were")
+    void theCorrectedMonthsNineFinalRunsRegenerateByteIdentical() throws Exception {
         PeriodCloseFixture.everyPeriodOpen();
         com.finapp.accounting.CloseRunId closeRun = PeriodCloseFixture.ready(JANUARY);
-        LedgerTrialBalanceReads reads = new LedgerTrialBalanceReads(new JdbcGlMappingStore());
-        ReportDefinitions definitions = ReportDefinitions.of(new TrialBalanceDefinition(reads), new GlActivityDefinition(reads, new LedgerCounterpartyPositionReads()), PurposeReportDefinition.revenue(reads),
-                PurposeReportDefinition.receivablesPayables(reads));
-        ReportRuns reports = new ReportRuns(new JdbcReportRunStore(), AccountingPeriodFixture.STORE, new JdbcGlMappingStore(), definitions, ReportRuns.Leases.STANDARD, new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, NOW);
-        ReportRunGenerator generator = new ReportRunGenerator(reports, new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT, ReportRuns.Leases.STANDARD.generationTimeout(), NOW),
-                new JdbcReportSnapshots(DatabaseRoles::application, ReportRuns.Leases.STANDARD.generationTimeout()), PriorPeriodAdjustmentDatabaseTest::inTransaction, new ReportRunMetrics(new SimpleMeterRegistry(), definitions));
+        ReportRuns reports = reports();
+        ReportRunGenerator generator = generator(reports);
         Actor generating = person();
         List<ReportRunStore.RunRow> runs = new ArrayList<>();
-        for (String code : List.of(TrialBalanceDefinition.CODE, "GL_ACTIVITY", "REVENUE", "RECEIVABLES_PAYABLES")) {
+        for (String code : List.of(TrialBalanceDefinition.CODE, GlActivityDefinition.CODE, "REVENUE", "RECEIVABLES_PAYABLES", "SETTLEMENT_POSITIONS", "FX_RESULTS", "LOAN_PORTFOLIO", "BNPL_EXPOSURE", SuspenseDefinition.CODE)) {
             ReportRuns.Claimed claimed = inTransaction(uow -> reports.claim(uow, code, id(JANUARY), RunParameters.none(), generating, correlation()));
             runs.add(claimed.mine() ? generator.generateAndComplete(claimed.run(), generating) : generator.drive(claimed.run().id(), generating));
         }
         assertThat(runs).allSatisfy(run -> assertThat(run.status()).isEqualTo(RunStatus.FINAL));
+        assertThat(runs).as("every FINAL definition").hasSize(9);
         PeriodCloses.Acted close = inScope(ACCOUNTANT, uow -> MACHINE.propose(uow, id(JANUARY), closeRun, List.of(), ACCOUNTANT, REASON, correlation()));
         inScope(CONTROLLER, uow -> MACHINE.approve(uow, id(JANUARY), close.proposal().orElseThrow(), CONTROLLER, REASON, correlation()));
         long januaryLines = count("SELECT count(*) FROM ledger.journal_entry WHERE posting_date BETWEEN '1999-01-01' AND '1999-01-31'");
@@ -386,26 +434,79 @@ class PriorPeriodAdjustmentDatabaseTest {
     }
 
     @Test
-    @DisplayName("the month it lands in still closes: its rule conformance and GL equal the ledger with the entry in it, its trial balance fully mapped; the disclosure's past-the-cutoff read sees nothing of it; closed under four eyes")
-    void theMonthItLandsInStillCloses() throws Exception {
-        PriorPeriodAdjustments.Acted posted = approve(propose(), person());
-        assertThat(posted.status()).isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
+    @DisplayName("the month it lands in passes its real checks over lines on a merchant's payable: LEDGER_TRIAL_BALANCE and PROJECTION_VERIFIED judged over a real FINAL trial balance, fully mapped; the real payable proof finds the terms summing, SOURCE_COMPLETENESS with the other sources stood in; RULE_CONFORMANCE and GL_EQUALS_LEDGER pass; the disclosure's past-the-cutoff read sees nothing")
+    void theMonthItLandsInPassesItsRealChecksOverAMerchantPayable() throws Exception {
+        UUID merchant = IDS.next();
+        LedgerAccount payable = ownedBy(merchant, AccountType.LIABILITY, AccountPurpose.MERCHANT_PAYABLE);
+        // Facing a sale's counterparty, the line a merchant's drill-down reads as a term; then facing a purpose it names none of.
+        approved(List.of(new PriorPeriodPostings.Line(payable.id().value(), Side.DEBIT, Money.ofMinorUnits(1500, EUR)), new PriorPeriodPostings.Line(wallet().id().value(), Side.CREDIT, Money.ofMinorUnits(1500, EUR))));
+        approved(List.of(new PriorPeriodPostings.Line(operational(AccountPurpose.FEE_REVENUE).id().value(), Side.DEBIT, Money.ofMinorUnits(700, EUR)), new PriorPeriodPostings.Line(payable.id().value(), Side.CREDIT, Money.ofMinorUnits(700, EUR))));
         PeriodCloseFixture.locked(FEBRUARY);
 
         GlSnapshots snapshots = new GlSnapshots(DatabaseRoles::application, Duration.ofSeconds(30));
-        SourceProofs proofs = (snapshot, source) -> source.proofs().stream().map(proof -> new SourceProofs.Reading(proof, true, List.of())).toList();
+        Function<Connection, List<ProductSourceProofs.PayableTerms>> payables = ProductSourceProofs.merchantPayables(new MerchantPayable(new JdbcLedgerAccountStore(), new JdbcPositionBreakdown()));
+        SourceProofs real = new ProductSourceProofs(notRead(), notRead(), notRead(), notRead(), notRead(), payables, ProductSourceProofs.projections(new ProjectionVerification(new JdbcBalanceDerivation())));
+        SourceProofs proofs = (snapshot, source) -> source == SourceProofs.Source.MERCHANT_PAYABLE || source == SourceProofs.Source.PROJECTION ? real.read(snapshot, source)
+                : source.proofs().stream().map(proof -> new SourceProofs.Reading(proof, true, List.of())).toList();
+
+        List<ProductSourceProofs.PayableTerms> terms = snapshots.read(payables::apply);
+        assertThat(terms).as("the proof reads this merchant, and its terms sum").contains(new ProductSourceProofs.PayableTerms(merchant, "EUR", true));
+        List<SourceProofs.Reading> readings = snapshots.read(snapshot -> real.read(snapshot, SourceProofs.Source.MERCHANT_PAYABLE));
+        assertThat(readings).singleElement().satisfies(reading -> {
+            assertThat(reading.complete()).isTrue();
+            assertThat(reading.discrepancies()).isEmpty();
+        });
+
+        ReportRuns reports = reports();
+        FinalTrialBalance trialBalance = new FinalTrialBalanceReader(reports, generator(reports), PriorPeriodAdjustmentDatabaseTest::inTransaction, FinalTrialBalanceReader.overSnapshots(reportSnapshots()));
+        assertThat(trialBalance.read(id(FEBRUARY), Actor.SYSTEM, correlation())).isInstanceOfSatisfying(FinalTrialBalance.Verdict.class, verdict -> {
+            assertThat(verdict.fullyMapped()).as("every line of the adjustments mapped under the pin").isTrue();
+            assertThat(verdict.holds()).isTrue();
+        });
+        CloseChecks closeChecks = closeChecks(trialBalance, proofs, snapshots);
+        for (CloseCheckCode check : List.of(CloseCheckCode.LEDGER_TRIAL_BALANCE, CloseCheckCode.PROJECTION_VERIFIED)) {
+            CheckVerdict verdict = closeChecks.judge(new CloseRuns.ClaimedCheck(CloseCheckId.next(IDS), CloseRunId.next(IDS), id(FEBRUARY), FEBRUARY, check, 1, IDS.next(), 0, false, correlation(), Actor.SYSTEM)).orElseThrow();
+            assertThat(verdict.status()).as(check.name()).isEqualTo(CloseCheckStatus.PASSED);
+        }
+
         AccountingChecks checks = new AccountingChecks(new GeneralLedger(new LedgerJournalReads()), new GlPins(new JdbcGlMappingStore(), new JdbcPeriodPins()), new LedgerJournalShapes(), proofs, PostingRuleRegister.CURRENT, breaks(),
                 snapshots::read, PriorPeriodAdjustmentDatabaseTest::inTransaction);
-        assertThat(checks.run(FEBRUARY, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation()).result()).as("the rule carries the origin").isEqualTo(CheckOutcome.Result.PASSED);
+        assertThat(checks.run(FEBRUARY, CloseCheckCode.RULE_CONFORMANCE, Actor.SYSTEM, correlation()).result()).as("the rule carries the origin, on an owner's purpose too").isEqualTo(CheckOutcome.Result.PASSED);
         assertThat(checks.run(FEBRUARY, CloseCheckCode.GL_EQUALS_LEDGER, Actor.SYSTEM, correlation()).result()).as("every line mapped under the pin").isEqualTo(CheckOutcome.Result.PASSED);
+        assertThat(checks.run(FEBRUARY, CloseCheckCode.SOURCE_COMPLETENESS, Actor.SYSTEM, correlation()).result()).as("the real payable and projection proofs, the others stood in").isEqualTo(CheckOutcome.Result.PASSED);
         assertThat(checks.run(JANUARY, CloseCheckCode.GL_EQUALS_LEDGER, Actor.SYSTEM, correlation()).result()).as("the corrected month, as it was").isEqualTo(CheckOutcome.Result.PASSED);
         assertThat(count("SELECT count(*) FROM accounting.accounting_break WHERE period_start = '1999-02-01' AND status = 'OPEN'")).isZero();
 
         java.util.SortedMap<String, com.finapp.accounting.PastTheCutoffPostings.Split> pastTheCutoff = snapshots.read(snapshot -> new LedgerFlooredPostings().pastTheCutoff(snapshot, JANUARY.atEndOfMonth()));
         assertThat(pastTheCutoff).as("never floored, never unrecorded: another scope, and valued in the month it is dated").isEmpty();
 
+        // What is left of the close is this fixture's own concluded checks: the proof is above, not in this line.
         PeriodCloseFixture.closed(FEBRUARY);
         assertThat(row(FEBRUARY).status()).isEqualTo(PeriodStatus.CLOSED);
+    }
+
+    @Test
+    @DisplayName("what a statement shows of it: on a customer's wallet and a merchant's payable, ADJUSTMENT, the one constant reference, no attribution, no key - so no adjustment, month or proposal is served, and BNPL_THREE_WAY's leg, which compares keyed lines only, does not compare it")
+    void whatAStatementShowsOfIt() throws Exception {
+        LedgerAccount customers = wallet();
+        UUID merchant = IDS.next();
+        LedgerAccount payable = ownedBy(merchant, AccountType.LIABILITY, AccountPurpose.MERCHANT_PAYABLE);
+        PriorPeriodAdjustments.Acted posted = approved(List.of(new PriorPeriodPostings.Line(payable.id().value(), Side.DEBIT, Money.ofMinorUnits(1500, EUR)), new PriorPeriodPostings.Line(customers.id().value(), Side.CREDIT, Money.ofMinorUnits(1500, EUR))));
+
+        GlSnapshots snapshots = new GlSnapshots(DatabaseRoles::application, Duration.ofSeconds(30));
+        JdbcStatementDerivation statements = new JdbcStatementDerivation(new JdbcBalanceDerivation());
+        List<StatementDerivation.AccountStatement> ofTheCustomer = snapshots.read(snapshot -> statements.statementsFor(snapshot, customers.ownerRef().orElseThrow(), JANUARY.atDay(1), FEBRUARY.atEndOfMonth()));
+        List<StatementDerivation.AccountStatement> ofTheMerchant = snapshots.read(snapshot -> statements.statementsFor(snapshot, merchant, JANUARY.atDay(1), FEBRUARY.atEndOfMonth(), List.of(MerchantPayable.BNPL_FINANCING_NAMESPACE, MerchantPayable.BNPL_REFUND_NAMESPACE, "bnpl.")));
+
+        assertThat(List.of(ofTheCustomer, ofTheMerchant)).allSatisfy(read -> assertThat(read).singleElement().satisfies(statement -> assertThat(statement.lines()).singleElement().satisfies(line -> {
+            assertThat(line.entry().value()).isEqualTo(posted.entry().orElseThrow());
+            assertThat(line.entryType()).isEqualTo(JournalEntryType.ADJUSTMENT);
+            assertThat(line.reference()).isEqualTo(PriorPeriodAdjustments.ENTRY_REFERENCE);
+            assertThat(line.reconciliationAttribution()).isFalse();
+            assertThat(line.namespace()).isEmpty();
+            assertThat(line.postingDate()).isEqualTo(LANDS_ON);
+            assertThat(line.valueDate()).isEqualTo(LANDS_ON);
+        })));
     }
 
     @Test
@@ -612,6 +713,14 @@ class PriorPeriodAdjustmentDatabaseTest {
         return inScope(approver, uow -> machine().approve(uow, proposed.id(), reading, approver, "read and agreed", correlation()));
     }
 
+    /** Proposed by the accountant and approved by a second person, on these lines. */
+    private PriorPeriodAdjustments.Acted approved(List<PriorPeriodPostings.Line> lines) {
+        PriorPeriodAdjustments.Acted proposed = inScope(ACCOUNTANT, uow -> machine().propose(uow, id(JANUARY), row(JANUARY).revision(), lines, ACCOUNTANT, REASON, correlation()));
+        PriorPeriodAdjustments.Acted posted = approve(proposed, person());
+        assertThat(posted.status()).isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
+        return posted;
+    }
+
     private void assertStillProposed(PriorPeriodAdjustments.Acted proposed) throws SQLException {
         assertThat(text("SELECT status FROM accounting.prior_period_adjustment WHERE id = '" + proposed.id().value() + "'")).isEqualTo("PROPOSED");
         assertThat(text("SELECT status FROM ledger.adjustment_proposal WHERE id = '" + proposed.proposal() + "'")).isEqualTo("PROPOSED");
@@ -670,6 +779,74 @@ class PriorPeriodAdjustmentDatabaseTest {
                 new JdbcOutboxWriter(), new JdbcBalanceProjection(), IDS, NOW, PostingObserver.NONE, accounts);
     }
 
+    /** Every FINAL definition, as {@code OperationalReportsDatabaseTest} builds them. */
+    private static ReportDefinitions finalDefinitions() {
+        LedgerTrialBalanceReads reads = new LedgerTrialBalanceReads(new JdbcGlMappingStore());
+        LedgerCounterpartyPositionReads positions = new LedgerCounterpartyPositionReads();
+        return ReportDefinitions.of(new TrialBalanceDefinition(reads), new GlActivityDefinition(reads, positions), PurposeReportDefinition.revenue(reads), PurposeReportDefinition.receivablesPayables(reads),
+                PurposeReportDefinition.settlementPositions(reads, positions), PurposeReportDefinition.fxResults(reads), PurposeReportDefinition.loanPortfolio(reads), PurposeReportDefinition.bnplExposure(reads),
+                new SuspenseDefinition(reads, new ReconciliationMonthReads(new JdbcReportReadings(), AccountingPeriodFixture.DECLARED_SOURCES)));
+    }
+
+    private static ReportRuns reports() {
+        return new ReportRuns(new JdbcReportRunStore(), AccountingPeriodFixture.STORE, new JdbcGlMappingStore(), finalDefinitions(), ReportRuns.Leases.STANDARD, new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, NOW);
+    }
+
+    private static ReportSnapshots reportSnapshots() {
+        return new JdbcReportSnapshots(DatabaseRoles::application, ReportRuns.Leases.STANDARD.generationTimeout());
+    }
+
+    private static ReportRunGenerator generator(ReportRuns reports) {
+        return new ReportRunGenerator(reports, new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT, ReportRuns.Leases.STANDARD.generationTimeout(), NOW), reportSnapshots(), PriorPeriodAdjustmentDatabaseTest::inTransaction,
+                new ReportRunMetrics(new SimpleMeterRegistry(), finalDefinitions()));
+    }
+
+    /** The two checks that case judges; whatever else {@link CloseChecks} holds is never asked. */
+    private static CloseChecks closeChecks(FinalTrialBalance trialBalance, SourceProofs proofs, GlSnapshots snapshots) {
+        ValuationRates noRates = new ValuationRates() {
+            @Override
+            public List<CurrencyCode> valued() {
+                return List.of();
+            }
+
+            @Override
+            public List<Observed> lastObservedBefore(Connection unitOfWork, java.time.Instant before) {
+                return List.of();
+            }
+        };
+        ValuationRateSets sets = new ValuationRateSets(new JdbcValuationRateSetStore(), AccountingPeriodFixture.STORE, noRates, ValuationStaleness.standard(), new JdbcAuditWriter(), IDS, NOW);
+        AccrualCompleteness noAccruals = new AccrualCompleteness() {
+            @Override
+            public List<Lagging> lagging(Connection unitOfWork) {
+                throw new AssertionError("this case judges no accrual");
+            }
+
+            @Override
+            public List<Floored> flooredPast(Connection unitOfWork, LocalDate periodEnd) {
+                throw new AssertionError("this case judges no accrual");
+            }
+        };
+        return new CloseChecks((month, check, actor, correlation) -> {
+            throw new AssertionError("this case raises no break through the close");
+        }, trialBalance, noAccruals, proofs, (snapshot, month) -> {
+            throw new AssertionError("this case judges no disclosure");
+        }, (snapshot, month) -> {
+            throw new AssertionError("this case judges no coverage");
+        }, sets, AccountingPeriodFixture.STORE, new AccountingChecks.Snapshots() {
+            @Override
+            public <R> R read(Function<Connection, R> work) {
+                return snapshots.read(work);
+            }
+        });
+    }
+
+    /** A product proof this case does not read: every purpose it walks is the payable's or a projection's. */
+    private static <R> Function<Connection, R> notRead() {
+        return snapshot -> {
+            throw new AssertionError("this case reads the merchant payables and the projections only");
+        };
+    }
+
     private static AccountingBreaks breaks() {
         return new AccountingBreaks(new JdbcAccountingBreakStore(), new LedgerJournalReads(), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, NOW);
     }
@@ -697,9 +874,13 @@ class PriorPeriodAdjustmentDatabaseTest {
     }
 
     private LedgerAccount owned(AccountType type, AccountPurpose purpose) throws SQLException {
+        return ownedBy(IDS.next(), type, purpose);
+    }
+
+    private LedgerAccount ownedBy(UUID owner, AccountType type, AccountPurpose purpose) throws SQLException {
         try (Connection app = DatabaseRoles.application()) {
             app.setAutoCommit(false);
-            LedgerAccount account = accounts.createOrConverge(app, LedgerAccount.owned(IDS, NOW, type, purpose, EUR, IDS.next())).account();
+            LedgerAccount account = accounts.createOrConverge(app, LedgerAccount.owned(IDS, NOW, type, purpose, EUR, owner)).account();
             app.commit();
             return account;
         }
@@ -734,8 +915,12 @@ class PriorPeriodAdjustmentDatabaseTest {
     }
 
     private String rowSql(UUID corrected, int revision, UUID target, String date, String status, String entryColumn) {
-        return "INSERT INTO accounting.prior_period_adjustment (id, corrected_period_id, corrected_revision, target_period_id, posting_date, adjustment_proposal_id, status, proposed_by, proposed_by_type, proposed_at, proposal_reason, correlation_id"
-                + (entryColumn == null ? "" : ", " + entryColumn) + ") VALUES ('" + IDS.next() + "', '" + corrected + "', " + revision + ", '" + target + "', '" + date + "', '" + IDS.next() + "', '" + status + "', 'raw', 'EMPLOYEE', now(), 'raw', 'raw-flow'"
+        return rowSql(corrected, revision, target, 1, date, status, entryColumn);
+    }
+
+    private String rowSql(UUID corrected, int revision, UUID target, int targetRevision, String date, String status, String entryColumn) {
+        return "INSERT INTO accounting.prior_period_adjustment (id, corrected_period_id, corrected_revision, target_period_id, target_revision, posting_date, adjustment_proposal_id, status, proposed_by, proposed_by_type, proposed_at, proposal_reason, correlation_id"
+                + (entryColumn == null ? "" : ", " + entryColumn) + ") VALUES ('" + IDS.next() + "', '" + corrected + "', " + revision + ", '" + target + "', " + targetRevision + ", '" + date + "', '" + IDS.next() + "', '" + status + "', 'raw', 'EMPLOYEE', now(), 'raw', 'raw-flow'"
                 + (entryColumn == null ? "" : ", '" + IDS.next() + "'") + ")";
     }
 

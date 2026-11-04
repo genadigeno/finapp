@@ -47,7 +47,7 @@ public final class InMemoryPriorPeriodAdjustmentStore implements PriorPeriodAdju
         }
         AccountingPeriodStore.PeriodRow corrected = periods.find(unitOfWork, adjustment.corrected()).orElseThrow();
         AccountingPeriodStore.PeriodRow target = periods.find(unitOfWork, adjustment.target()).orElseThrow();
-        rows.put(adjustment.id(), new Row(adjustment.id(), adjustment.corrected(), corrected.month(), adjustment.correctedRevision(), adjustment.target(), target.month(), adjustment.postingDate(),
+        rows.put(adjustment.id(), new Row(adjustment.id(), adjustment.corrected(), corrected.month(), adjustment.correctedRevision(), adjustment.target(), target.month(), adjustment.targetRevision(), adjustment.postingDate(),
                 adjustment.proposal(), Optional.empty(), PriorPeriodAdjustmentStatus.PROPOSED, adjustment.proposedBy().id(), Instant.ofEpochSecond(++stamps), adjustment.reason(), Optional.empty(),
                 Optional.empty(), adjustment.correlation()));
     }
@@ -106,7 +106,7 @@ public final class InMemoryPriorPeriodAdjustmentStore implements PriorPeriodAdju
     }
 
     private Row decided(Row row, PriorPeriodAdjustmentStatus status, Optional<UUID> entry, Actor actor) {
-        return new Row(row.id(), row.correctedPeriod(), row.correctedMonth(), row.correctedRevision(), row.targetPeriod(), row.targetMonth(), row.postingDate(), row.proposal(), entry, status, row.proposedBy(),
+        return new Row(row.id(), row.correctedPeriod(), row.correctedMonth(), row.correctedRevision(), row.targetPeriod(), row.targetMonth(), row.targetRevision(), row.postingDate(), row.proposal(), entry, status, row.proposedBy(),
                 row.proposedAt(), row.proposalReason(), Optional.of(actor.id()), Optional.of(Instant.ofEpochSecond(++stamps)), row.correlation());
     }
 }

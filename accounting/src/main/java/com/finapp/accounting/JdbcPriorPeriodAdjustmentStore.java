@@ -23,11 +23,11 @@ import java.util.UUID;
  */
 public final class JdbcPriorPeriodAdjustmentStore implements PriorPeriodAdjustmentStore {
 
-    static final String INSERT_SQL = "INSERT INTO accounting.prior_period_adjustment (id, corrected_period_id, corrected_revision, target_period_id, posting_date,"
+    static final String INSERT_SQL = "INSERT INTO accounting.prior_period_adjustment (id, corrected_period_id, corrected_revision, target_period_id, target_revision, posting_date,"
             + " adjustment_proposal_id, status, proposed_by, proposed_by_type, proposed_at, proposal_reason, correlation_id)"
-            + " VALUES (?, ?, ?, ?, ?, ?, 'PROPOSED', ?, ?, clock_timestamp(), ?, ?)";
+            + " VALUES (?, ?, ?, ?, ?, ?, ?, 'PROPOSED', ?, ?, clock_timestamp(), ?, ?)";
 
-    private static final String ROW = "SELECT a.id, a.corrected_period_id, c.period_start AS corrected_start, a.corrected_revision, a.target_period_id,"
+    private static final String ROW = "SELECT a.id, a.corrected_period_id, c.period_start AS corrected_start, a.corrected_revision, a.target_period_id, a.target_revision,"
             + " t.period_start AS target_start, a.posting_date, a.adjustment_proposal_id, a.journal_entry_id, a.status, a.proposed_by, a.proposed_at,"
             + " a.proposal_reason, a.decided_by, a.decided_at, a.correlation_id FROM accounting.prior_period_adjustment a"
             + " JOIN accounting.accounting_period c ON c.id = a.corrected_period_id"
@@ -59,12 +59,13 @@ public final class JdbcPriorPeriodAdjustmentStore implements PriorPeriodAdjustme
             insert.setObject(2, adjustment.corrected().value());
             insert.setInt(3, adjustment.correctedRevision());
             insert.setObject(4, adjustment.target().value());
-            insert.setDate(5, Date.valueOf(adjustment.postingDate()));
-            insert.setObject(6, adjustment.proposal());
-            insert.setString(7, adjustment.proposedBy().id());
-            insert.setString(8, adjustment.proposedBy().type().name());
-            insert.setString(9, adjustment.reason());
-            insert.setString(10, adjustment.correlation().value());
+            insert.setInt(5, adjustment.targetRevision());
+            insert.setDate(6, Date.valueOf(adjustment.postingDate()));
+            insert.setObject(7, adjustment.proposal());
+            insert.setString(8, adjustment.proposedBy().id());
+            insert.setString(9, adjustment.proposedBy().type().name());
+            insert.setString(10, adjustment.reason());
+            insert.setString(11, adjustment.correlation().value());
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw failed("recording a prior-period adjustment", failure);
@@ -158,6 +159,7 @@ public final class JdbcPriorPeriodAdjustmentStore implements PriorPeriodAdjustme
                         row.getInt("corrected_revision"),
                         AccountingPeriodId.of(row.getObject("target_period_id", UUID.class)),
                         YearMonth.from(row.getDate("target_start").toLocalDate()),
+                        row.getInt("target_revision"),
                         row.getDate("posting_date").toLocalDate(),
                         row.getObject("adjustment_proposal_id", UUID.class),
                         Optional.ofNullable(row.getObject("journal_entry_id", UUID.class)),

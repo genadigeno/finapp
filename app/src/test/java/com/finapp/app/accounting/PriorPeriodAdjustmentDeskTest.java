@@ -282,6 +282,13 @@ class PriorPeriodAdjustmentDeskTest {
         refused(() -> as(ACCOUNTANT, () -> desk.propose("k-u", january.value().toString(), 1, REASON,
                 List.of(new PriorPeriodAdjustmentDesk.StatedLine(fees, "DEBIT", "15.00", "EUR"), new PriorPeriodAdjustmentDesk.StatedLine(wallet, "CREDIT", "14.00", "EUR")))), AccountingErrorCode.PRIOR_PERIOD_ADJUSTMENT_INVALID, 422);
         refused(() -> as(ACCOUNTANT, () -> desk.propose("k-n", january.value().toString(), 1, REASON, null)), AccountingErrorCode.PRIOR_PERIOD_ADJUSTMENT_INVALID, 422);
+        // A body the door admits, each line under the fifteen digits, at a scale of three: ten a side pass a long of minor units. A 422, never the ledger's overflow as a 500.
+        List<PriorPeriodAdjustmentDesk.StatedLine> beyond = new java.util.ArrayList<>();
+        for (int line = 0; line < 10; line++) {
+            beyond.add(new PriorPeriodAdjustmentDesk.StatedLine(fees, "DEBIT", "999999999999999.999", "KWD"));
+            beyond.add(new PriorPeriodAdjustmentDesk.StatedLine(wallet, "CREDIT", "999999999999999.999", "KWD"));
+        }
+        refused(() -> as(ACCOUNTANT, () -> desk.propose("k-o", january.value().toString(), 1, REASON, beyond)), AccountingErrorCode.PRIOR_PERIOD_ADJUSTMENT_INVALID, 422);
         assertThat(store.rows()).isEmpty();
         assertThat(claims).as("a refused request spends no key").isEmpty();
     }
@@ -302,6 +309,9 @@ class PriorPeriodAdjustmentDeskTest {
         assertThat(view.blockedBy()).isNull();
         assertThat(view.reason()).isEqualTo(REASON);
         assertThat(view.lines()).extracting(PriorPeriodAdjustmentDesk.PriorPeriodLineView::amount).containsOnly("15.00");
+        assertThat(view.lines()).as("the controller holds no ledger read: what each line touches, codes, is served here or nowhere")
+                .extracting(PriorPeriodAdjustmentDesk.PriorPeriodLineView::ledgerAccountId, PriorPeriodAdjustmentDesk.PriorPeriodLineView::purpose, PriorPeriodAdjustmentDesk.PriorPeriodLineView::ownerKind, PriorPeriodAdjustmentDesk.PriorPeriodLineView::direction)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(fees, "FEE_REVENUE", "OPERATIONAL", "DEBIT"), org.assertj.core.groups.Tuple.tuple(wallet, "CUSTOMER_WALLET", "CUSTOMER", "CREDIT"));
         assertThat(view.earlierCorrections()).singleElement().satisfies(correction -> assertThat(correction.id()).isEqualTo(first.id()));
         assertThat(audited).hasSize(records + 1);
         assertThat(audited).last().satisfies(record -> {
@@ -335,8 +345,8 @@ class PriorPeriodAdjustmentDeskTest {
         String amount = "987.65";
         for (Object record : List.of(new PriorPeriodAdjustmentController.PriorPeriodAdjustmentRequest("period", 1, secret, List.of(new PriorPeriodAdjustmentController.PriorPeriodLineItem("a", "DEBIT", amount, "EUR"))),
                 new PriorPeriodAdjustmentController.PriorPeriodLineItem("a", "DEBIT", amount, "EUR"), new PriorPeriodAdjustmentController.PriorPeriodApprovalRequest(TODAY, 1, List.of(), secret),
-                new PriorPeriodAdjustmentController.PriorPeriodRejectionRequest(secret), new PriorPeriodAdjustmentDesk.StatedLine("a", "DEBIT", amount, "EUR"), new PriorPeriodAdjustmentDesk.PriorPeriodLineView("a", "DEBIT", amount, "EUR"),
-                new PriorPeriodAdjustmentDesk.PriorPeriodAdjustmentView("id", "2026-01", 1, "2026-03", TODAY, "PROPOSED", "p", null, "t", null, secret, true, null, List.of(new PriorPeriodAdjustmentDesk.PriorPeriodLineView("a", "DEBIT", amount, "EUR")), List.of()))) {
+                new PriorPeriodAdjustmentController.PriorPeriodRejectionRequest(secret), new PriorPeriodAdjustmentDesk.StatedLine("a", "DEBIT", amount, "EUR"), new PriorPeriodAdjustmentDesk.PriorPeriodLineView("a", "FEE_REVENUE", "OPERATIONAL", "DEBIT", amount, "EUR"),
+                new PriorPeriodAdjustmentDesk.PriorPeriodAdjustmentView("id", "2026-01", 1, "2026-03", TODAY, "PROPOSED", "p", null, "t", null, secret, true, null, List.of(new PriorPeriodAdjustmentDesk.PriorPeriodLineView("a", "FEE_REVENUE", "OPERATIONAL", "DEBIT", amount, "EUR")), List.of()))) {
             assertThat(record.toString()).as(record.getClass().getSimpleName()).doesNotContain(secret).doesNotContain(amount);
         }
     }

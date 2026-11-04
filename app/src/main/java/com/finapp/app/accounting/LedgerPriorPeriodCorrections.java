@@ -10,8 +10,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -21,7 +23,7 @@ import java.util.UUID;
 public final class LedgerPriorPeriodCorrections implements PriorPeriodCorrections {
 
     /** The month's posted adjustments, by {@code prior_period_adjustment_posted_on}; a {@code PROPOSED} or {@code REJECTED} row corrected nothing. */
-    static final String ADJUSTMENTS_SQL = "SELECT a.id, c.period_start AS corrected_start, a.corrected_revision, a.journal_entry_id, a.posting_date"
+    static final String ADJUSTMENTS_SQL = "SELECT a.id, c.period_start AS corrected_start, a.corrected_revision, a.adjustment_proposal_id, a.journal_entry_id, a.posting_date"
             + " FROM accounting.prior_period_adjustment a JOIN accounting.accounting_period c ON c.id = a.corrected_period_id"
             + " WHERE a.status = 'POSTED' AND a.posting_date >= ? AND a.posting_date <= ? ORDER BY a.posting_date, a.id";
 
@@ -35,13 +37,16 @@ public final class LedgerPriorPeriodCorrections implements PriorPeriodCorrection
             + " WHERE entry.posting_date >= ? AND entry.posting_date <= ? AND original.posting_date < ?"
             + " GROUP BY 1, 2 ORDER BY 1, 2";
 
-    /** Entries of the origin dated in the month with no {@code POSTED} row naming both them and their proposal: a writer that bypassed the door. */
-    static final String UNTRACED_SQL = "SELECT count(*) FROM ledger.adjustment_proposal proposal"
+    /**
+     * The ledger's side of the trace: the origin's entries dated in the month, each with its proposal. Compared in Java with what {@link #ADJUSTMENTS_SQL} read on the same snapshot: no {@code accounting} table named in a
+     * {@code ledger} statement (ADR-0006; the rule {@code LedgerTrialBalanceReads} states).
+     */
+    static final String ORIGIN_ENTRIES_SQL = "SELECT proposal.id, proposal.journal_entry_id FROM ledger.adjustment_proposal proposal"
             + " JOIN ledger.journal_entry entry ON entry.id = proposal.journal_entry_id"
-            + " LEFT JOIN accounting.prior_period_adjustment adjustment ON adjustment.adjustment_proposal_id = proposal.id"
-            + " AND adjustment.status = 'POSTED' AND adjustment.journal_entry_id = proposal.journal_entry_id"
-            + " WHERE proposal.origin = 'ACCOUNTING' AND proposal.status = 'APPROVED' AND entry.posting_date >= ? AND entry.posting_date <= ?"
-            + " AND adjustment.id IS NULL";
+            + " WHERE proposal.origin = 'ACCOUNTING' AND proposal.status = 'APPROVED' AND entry.posting_date >= ? AND entry.posting_date <= ?";
+
+    /** A proposal and the entry it posted, as either side names them. */
+    record Trace(UUID proposal, UUID entry) {}
 
     @Override
     public Corrections ofMonth(Connection snapshot, YearMonth month) {
@@ -50,19 +55,22 @@ public final class LedgerPriorPeriodCorrections implements PriorPeriodCorrection
         Date first = Date.valueOf(month.atDay(1));
         Date last = Date.valueOf(month.atEndOfMonth());
         try {
-            return new Corrections(adjustments(snapshot, first, last), reversals(snapshot, first, last), untraced(snapshot, first, last));
+            Set<Trace> traced = new HashSet<>();
+            List<Adjustment> adjustments = adjustments(snapshot, first, last, traced);
+            return new Corrections(adjustments, reversals(snapshot, first, last), untraced(originEntries(snapshot, first, last), traced));
         } catch (SQLException failure) {
             throw new AccountingStorageException(DatabaseFailure.describe("reading a month's prior-period corrections", failure));
         }
     }
 
-    private static List<Adjustment> adjustments(Connection snapshot, Date first, Date last) throws SQLException {
+    private static List<Adjustment> adjustments(Connection snapshot, Date first, Date last, Set<Trace> traced) throws SQLException {
         try (PreparedStatement read = snapshot.prepareStatement(ADJUSTMENTS_SQL)) {
             read.setDate(1, first);
             read.setDate(2, last);
             List<Adjustment> rows = new ArrayList<>();
             try (ResultSet row = read.executeQuery()) {
                 while (row.next()) {
+                    traced.add(new Trace(row.getObject("adjustment_proposal_id", UUID.class), row.getObject("journal_entry_id", UUID.class)));
                     rows.add(new Adjustment(row.getObject("id", UUID.class), YearMonth.from(row.getDate("corrected_start").toLocalDate()), row.getInt("corrected_revision"),
                             row.getObject("journal_entry_id", UUID.class), row.getDate("posting_date").toLocalDate()));
                 }
@@ -86,14 +94,22 @@ public final class LedgerPriorPeriodCorrections implements PriorPeriodCorrection
         }
     }
 
-    private static long untraced(Connection snapshot, Date first, Date last) throws SQLException {
-        try (PreparedStatement read = snapshot.prepareStatement(UNTRACED_SQL)) {
+    private static List<Trace> originEntries(Connection snapshot, Date first, Date last) throws SQLException {
+        try (PreparedStatement read = snapshot.prepareStatement(ORIGIN_ENTRIES_SQL)) {
             read.setDate(1, first);
             read.setDate(2, last);
+            List<Trace> entries = new ArrayList<>();
             try (ResultSet row = read.executeQuery()) {
-                row.next();
-                return row.getLong(1);
+                while (row.next()) {
+                    entries.add(new Trace(row.getObject("id", UUID.class), row.getObject("journal_entry_id", UUID.class)));
+                }
             }
+            return entries;
         }
+    }
+
+    /** Entries of the origin dated in the month with no {@code POSTED} row of that month naming both them and their proposal: a writer that bypassed the door. */
+    static long untraced(List<Trace> originEntries, Set<Trace> traced) {
+        return originEntries.stream().filter(entry -> !traced.contains(entry)).count();
     }
 }

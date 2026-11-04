@@ -86,18 +86,23 @@ public final class PriorPeriodAdjustmentDesk {
     public record PriorPeriodAdjustmentReceipt(String id, String correctedPeriod, int correctedRevision, String targetPeriod, String postingDate, String status, String adjustmentProposalId,
             String journalEntryId, List<PriorPeriodCorrectionView> earlierCorrections) {}
 
-    /** One line as the approver reads it. */
-    public record PriorPeriodLineView(String ledgerAccountId, String direction, String amount, String currency) {
+    /**
+     * One line as the approver reads it.
+     *
+     * @param purpose the account's purpose, a code: the approver holds no ledger read, so this is how they know what the line touches
+     * @param ownerKind the kind of party holding the account, a code - never the party
+     */
+    public record PriorPeriodLineView(String ledgerAccountId, String purpose, String ownerKind, String direction, String amount, String currency) {
 
         /** Served to the approver and never logged. */
         @Override
         public String toString() {
-            return "PriorPeriodLineView[" + ledgerAccountId + ", " + direction + "]";
+            return "PriorPeriodLineView[" + ledgerAccountId + ", " + purpose + ", " + direction + "]";
         }
     }
 
     /**
-     * What an approver reads. {@code stillStands} when an approval would find it standing; {@code blockedBy} why not. When false the way on is to reject it and propose again. The approval names {@code postingDate}, {@code correctedRevision} and the ids of
+     * What an approver reads. {@code stillStands} when neither month would refuse an approval now; {@code blockedBy} which, and why. When false the way on is to reject it and propose again. True is no promise: an approval can still be refused for a purpose a release has closed, a purpose unmapped in the version now in force, or by the ledger, and it stands {@code PROPOSED}. The approval names {@code postingDate}, {@code correctedRevision} and the ids of
      * {@code earlierCorrections} that are {@code POSTED}.
      */
     public record PriorPeriodAdjustmentView(String id, String correctedPeriod, int correctedRevision, String targetPeriod, String postingDate, String status, String adjustmentProposalId,
@@ -191,7 +196,7 @@ public final class PriorPeriodAdjustmentDesk {
         return new PriorPeriodAdjustmentView(row.id().value().toString(), row.correctedMonth().toString(), row.correctedRevision(), row.targetMonth().toString(), row.postingDate().toString(), row.status().name(),
                 row.proposal().toString(), row.entry().map(UUID::toString).orElse(null), row.proposedAt().toString(), row.decidedAt().map(Instant::toString).orElse(null), row.proposalReason(), view.stillStands(),
                 view.blockedBy().map(Enum::name).orElse(null),
-                view.lines().stream().map(line -> new PriorPeriodLineView(line.ledgerAccount().toString(), line.side().name(), line.amount().toBigDecimal().toPlainString(), line.amount().currency().code())).toList(),
+                view.lines().stream().map(read -> new PriorPeriodLineView(read.line().ledgerAccount().toString(), read.purpose(), read.ownerKind(), read.line().side().name(), read.line().amount().toBigDecimal().toPlainString(), read.line().amount().currency().code())).toList(),
                 view.earlierCorrections().stream().map(PriorPeriodAdjustmentDesk::correction).toList());
     }
 

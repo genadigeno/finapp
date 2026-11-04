@@ -70,6 +70,7 @@ class PriorPeriodAdjustmentMigrationTest {
         assertThat(edges())
                 .contains("NEW.posting_date IS DISTINCT FROM OLD.posting_date")
                 .contains("NEW.corrected_revision IS DISTINCT FROM OLD.corrected_revision")
+                .contains("NEW.target_revision IS DISTINCT FROM OLD.target_revision")
                 .contains("NEW.adjustment_proposal_id IS DISTINCT FROM OLD.adjustment_proposal_id")
                 .contains("NEW.proposal_reason IS DISTINCT FROM OLD.proposal_reason")
                 .contains("OLD.status = 'PROPOSED' AND NEW.status IN ('POSTED', 'REJECTED')")
@@ -85,9 +86,12 @@ class PriorPeriodAdjustmentMigrationTest {
         String body = edges().substring(edges().indexOf("-- A birth and a POST"));
         assertThat(body.indexOf("WHERE p.id = NEW.corrected_period_id FOR SHARE")).isPositive().isLessThan(body.indexOf("WHERE p.id = NEW.target_period_id FOR SHARE"));
         assertThat(body).contains("held_corrected_status <> 'CLOSED'").contains("held_corrected_revision <> NEW.corrected_revision").contains("held_target_status <> 'OPEN'")
+                .contains("held_target_revision <> NEW.target_revision")
                 .contains("held_target_start <= held_corrected_end").contains("NEW.posting_date < held_target_start").contains("NEW.posting_date > held_target_end")
                 .contains("NEW.posting_date > (now() AT TIME ZONE 'UTC')::date + 1");
         assertThat(edges().split("FROM accounting.accounting_period p").length - 1).as("every period read in the trigger is one of the two, each FOR SHARE").isEqualTo(2);
+        assertThat(body.substring(body.indexOf("IF TG_OP = 'INSERT' THEN"), body.indexOf("NEW.proposed_at := clock_timestamp()"))).as("never born into a reopened month").contains("NEW.target_revision <> 1");
+        assertThat(migration()).contains("target_revision        integer     NOT NULL").contains("CHECK (target_revision >= 1)");
     }
 
     @Test

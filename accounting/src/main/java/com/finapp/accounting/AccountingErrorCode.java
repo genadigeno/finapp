@@ -185,8 +185,8 @@ public enum AccountingErrorCode implements ErrorCode {
     PRIOR_PERIOD_ADJUSTMENT_INVALID(
             "accounting.PriorPeriodAdjustmentInvalid",
             422,
-            "The prior-period adjustment is not coherent - too few lines, a line not positive, debits and credits differing in a currency, an"
-                    + " account the ledger does not hold, or a purpose not mapped in the GL mapping version in force for the month it lands in;"
+            "The prior-period adjustment is not coherent - too few lines, a line not positive, debits and credits differing in a currency, a"
+                    + " side's sum more than the ledger holds, an account the ledger does not hold, or a purpose not mapped in the GL mapping version in force for the month it lands in;"
                     + " nothing was written."),
 
     /** The prior-period adjustment's doors (`P14-TSK-013`): a line names a purpose closed to free adjustments. */
@@ -200,8 +200,8 @@ public enum AccountingErrorCode implements ErrorCode {
     PRIOR_PERIOD_ADJUSTMENT_STALE(
             "accounting.PriorPeriodAdjustmentStale",
             409,
-            "What the act names is no longer what stands - the revision corrected, the date it posts on, the month's posted corrections, or the"
-                    + " adjustment was decided; nothing was changed. Read it again; one that can no longer post is rejected and proposed again."),
+            "What the act names is no longer what stands - the revision corrected, the date it posts on, the month's posted corrections, a month"
+                    + " closed and reopened under it, or the adjustment was decided; nothing was changed. Read it again; one that can no longer post is rejected and proposed again."),
 
     /**
      * The two report doors (`P14-TSK-017`): an operational definition is never a run, and a run's definition is not read at

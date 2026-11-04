@@ -205,7 +205,7 @@ class AccountingOriginDoorTest {
     }
 
     private static OwnedAdjustmentCommand command(AdjustmentReasonCode code, LocalDate posting, LocalDate value) {
-        return new OwnedAdjustmentCommand(posting, value, "prior-period-adjustment:x", "identifiers only", code, lines());
+        return new OwnedAdjustmentCommand(posting, value, "accounting-correction", "identifiers only", code, lines());
     }
 
     @SuppressWarnings("unchecked")
@@ -277,7 +277,7 @@ class AccountingOriginDoorTest {
     }
 
     private static AdjustmentProposal accounting(LocalDate date) {
-        return AdjustmentProposal.proposePriorPeriod(AdjustmentProposalId.next(IDS), date, "prior-period-adjustment:x", "identifiers only", INITIATOR, lines(), CLOCK);
+        return AdjustmentProposal.proposePriorPeriod(AdjustmentProposalId.next(IDS), date, "accounting-correction", "identifiers only", INITIATOR, lines(), CLOCK);
     }
 
     private static LedgerAccount account(AccountType type, AccountPurpose purpose, OwnerKind unused) {
