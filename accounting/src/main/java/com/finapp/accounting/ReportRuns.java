@@ -62,6 +62,10 @@ import lombok.RequiredArgsConstructor;
  * under the period row {@code FOR SHARE}: an approval takes that row {@code FOR UPDATE}, so the read cannot race one, and
  * approved is terminal, so it cannot go stale. A plain run reads no set.
  *
+ * <p><strong>A statement waits for its close</strong> (`P14-TSK-016`; ADR-0115 As built): a definition {@link ReportDefinition#issuedOnlyWhenClosed issued only when closed} is
+ * refused at the claim while its period is {@code LOCKED} or {@code CLOSE_PROPOSED} ({@link PeriodNotClosed}), under the period row {@code FOR SHARE}: nothing written, and so nothing a
+ * close could ever wait on.
+ *
  * <p><strong>An operational definition is never a run</strong> (`P14-TSK-017`; ADR-0115 As built): the claim refuses it
  * first ({@link DefinitionIsOperational}), so no row, no lease and no key exists for it, and {@link OperationalReports}
  * answers it live. Nothing here changes for any other definition: {@code TRIAL_BALANCE}'s question, key, basis and bytes
@@ -77,6 +81,9 @@ public final class ReportRuns implements ReportRunSupersession {
     public static final String TARGET_TYPE = "report_run";
 
     static final String PRODUCER = "accounting";
+
+    /** How many untranslated currencies an event names: a value is at most 200 characters ({@code EventPayload}), each code four with its separator, and the count says the rest. */
+    static final int MOST_UNTRANSLATED_NAMED = 40;
     static final int EVENT_VERSION = 1;
 
     @NonNull private final ReportRunStore store;
@@ -235,6 +242,18 @@ public final class ReportRuns implements ReportRunSupersession {
         }
     }
 
+    /**
+     * A definition {@link ReportDefinition#issuedOnlyWhenClosed issued only when closed}, asked of a period no longer {@code OPEN} and not yet {@code CLOSED}. Names the period,
+     * never a figure.
+     */
+    public static final class PeriodNotClosed extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        PeriodNotClosed(YearMonth month) {
+            super("a financial statement of a month is issued once the month is closed, and " + month + " is locked and not yet closed");
+        }
+    }
+
     /** No report run has this id. */
     public static final class RunNotFound extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
@@ -254,6 +273,7 @@ public final class ReportRuns implements ReportRunSupersession {
      *     or unwanted
      * @throws AccountingPeriods.PeriodNotFound when no period has this id
      * @throws ValuationSetNotApproved when the rate set named is not the period's approved one - FINAL or PROVISIONAL
+     * @throws PeriodNotClosed when the definition is issued only when closed, and the period is locked and not yet closed
      */
     public Claimed claim(Connection unitOfWork, String code, AccountingPeriodId periodId, RunParameters parameters,
             Actor actor, CorrelationId correlation) {
@@ -273,6 +293,10 @@ public final class ReportRuns implements ReportRunSupersession {
         AccountingPeriodStore.PeriodRow period = periods.lockShared(unitOfWork, month)
                 .orElseThrow(AccountingPeriods.PeriodNotFound::new);
         RunBasis basis = RunBasis.of(period.status());
+        // Under the row every edge takes FOR UPDATE, so the state judged is the state the run is born under. Nothing written.
+        if (definition.issuedOnlyWhenClosed() && basis == RunBasis.FINAL && period.status() != PeriodStatus.CLOSED) {
+            throw new PeriodNotClosed(month);
+        }
         // Under the row an approval takes FOR UPDATE; approved is terminal. Nothing written, the same for either basis.
         if (parameters.valuationRateSet().isPresent()
                 && !parameters.valuationRateSet().equals(approvedSets.of(unitOfWork, periodId))) {
@@ -393,7 +417,7 @@ public final class ReportRuns implements ReportRunSupersession {
         }
         ReportRunStore.RunRow done = reread(unitOfWork, id);
         audit(unitOfWork, actor, AccountingAuditAction.REPORT_GENERATED, done, AuditOutcome.SUCCEEDED,
-                summary(done) + ", status=" + done.status().name(), done.correlation());
+                summary(done) + ", status=" + done.status().name() + generated.translation().map(ReportRuns::completeness).orElse(""), done.correlation());
         EventPayload payload = EventPayload.of()
                 .with("definition", done.definition())
                 .with("definitionVersion", Integer.toString(done.definitionVersion()))
@@ -408,6 +432,9 @@ public final class ReportRuns implements ReportRunSupersession {
         if (done.valuationRateSetId().isPresent()) {
             payload = payload.with("valuationRateSet", done.valuationRateSetId().get().toString());
         }
+        if (generated.translation().isPresent()) {
+            payload = completeness(payload, generated.translation().get());
+        }
         publish(unitOfWork, done, payload);
         return new Concluded(done, true);
     }
@@ -420,6 +447,22 @@ public final class ReportRuns implements ReportRunSupersession {
      */
     public Concluded fail(Connection unitOfWork, ReportRunId id, int attempt, RunFailure failure, Actor actor,
             CorrelationId correlation) {
+        return concludeFailed(unitOfWork, id, attempt, failure, "", actor, correlation);
+    }
+
+    /**
+     * Fails the run at {@code attempt} because its definition refused to answer ({@code ReportRefused}, `P14-TSK-016`): {@code DEFINITION_FAILED}, from the closed list {@code accounting V004}
+     * holds, and {@code refusal} - a reason and subjects by code - on the record, so the reason is not lost. A new revision may then be asked.
+     *
+     * @throws RunNotFound when no run has this id
+     */
+    public Concluded refuse(Connection unitOfWork, ReportRunId id, int attempt, String refusal, Actor actor, CorrelationId correlation) {
+        Objects.requireNonNull(refusal, "refusal");
+        return concludeFailed(unitOfWork, id, attempt, RunFailure.DEFINITION_FAILED, ", refusal=" + refusal, actor, correlation);
+    }
+
+    private Concluded concludeFailed(Connection unitOfWork, ReportRunId id, int attempt, RunFailure failure, String detail, Actor actor,
+            CorrelationId correlation) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(failure, "failure");
         requester(actor);
@@ -428,7 +471,7 @@ public final class ReportRuns implements ReportRunSupersession {
         }
         ReportRunStore.RunRow failed = reread(unitOfWork, id);
         audit(unitOfWork, actor, AccountingAuditAction.REPORT_GENERATED, failed, AuditOutcome.FAILED,
-                summary(failed) + ", failure=" + failure.name(), correlation);
+                summary(failed) + ", failure=" + failure.name() + detail, correlation);
         return new Concluded(failed, true);
     }
 
@@ -469,8 +512,17 @@ public final class ReportRuns implements ReportRunSupersession {
     /** Records a regeneration's comparison ({@code accounting.ReportRegenerated}): {@code IDENTICAL} or {@code DIVERGED}. */
     public void recordRegeneration(Connection unitOfWork, ReportRunStore.RunRow run, boolean identical, Actor actor,
             CorrelationId correlation) {
+        recordRegeneration(unitOfWork, run, identical, Optional.empty(), actor, correlation);
+    }
+
+    /**
+     * {@link #recordRegeneration(Connection, ReportRunStore.RunRow, boolean, Actor, CorrelationId)}, with {@code refusal} (`P14-TSK-016`): why its definition would not answer, by code, when that is why it diverged. This record is the one place it can be read: a claim of the same question
+     * answers the standing FINAL and generates nothing.
+     */
+    public void recordRegeneration(Connection unitOfWork, ReportRunStore.RunRow run, boolean identical, Optional<String> refusal, Actor actor,
+            CorrelationId correlation) {
         audit(unitOfWork, actor, AccountingAuditAction.REPORT_REGENERATED, run, AuditOutcome.SUCCEEDED,
-                summary(run) + ", result=" + (identical ? "IDENTICAL" : "DIVERGED"), correlation);
+                summary(run) + ", result=" + (identical ? "IDENTICAL" : "DIVERGED") + refusal.map(reason -> ", refusal=" + reason).orElse(""), correlation);
     }
 
     // ------------------------------------------------------------------ plumbing
@@ -551,6 +603,21 @@ public final class ReportRuns implements ReportRunSupersession {
         return "definition=" + run.definition() + ", version=" + run.definitionVersion() + ", period=" + run.period()
                 + ", revision=" + run.revision() + ", basis=" + run.basis().name()
                 + run.valuationRateSetId().map(set -> ", valuationRateSet=" + set).orElse("");
+    }
+
+    /**
+     * A translated run's completeness on the event (`P14-TSK-015`'s review, I-1(a)): the count, and when a currency is a hole the first {@link #MOST_UNTRANSLATED_NAMED} by code, joined by {@code _}: {@code EventPayload}'s grammar
+     * has no other separator, and a bounded value.
+     */
+    private static EventPayload completeness(EventPayload payload, ReportGeneration.TranslationCompleteness translation) {
+        List<String> untranslated = translation.untranslated();
+        EventPayload with = payload.with("translationComplete", Boolean.toString(translation.complete())).with("untranslatedCount", Integer.toString(untranslated.size()));
+        return untranslated.isEmpty() ? with : with.with("untranslated", String.join("_", untranslated.subList(0, Math.min(untranslated.size(), MOST_UNTRANSLATED_NAMED))));
+    }
+
+    /** A translated run's completeness on the audit summary (`P14-TSK-015`'s review, I-1(a)): codes, never a figure. */
+    private static String completeness(ReportGeneration.TranslationCompleteness translation) {
+        return ", translationComplete=" + translation.complete() + ", untranslated=[" + String.join(",", translation.untranslated()) + "]";
     }
 
     private void publish(Connection unitOfWork, ReportRunStore.RunRow run, EventPayload payload) {

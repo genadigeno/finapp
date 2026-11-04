@@ -717,6 +717,41 @@
           }
         }
       },
+      "accounting.ReportAwaitsClose": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.ReportAwaitsClose"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.ReportAwaitsClose"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A financial statement of a month is issued once the month is closed; the period is locked and not yet closed, and nothing was claimed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.ReportDefinitionUnknown": {
         "content": {
           "application/problem+json": {
@@ -24063,6 +24098,23 @@
         },
         "type": "object"
       },
+      "ReportRunLinesView": {
+        "properties": {
+          "activity": {
+            "$ref": "#/components/schemas/GlActivityView"
+          },
+          "exact": {
+            "type": "boolean"
+          },
+          "run": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ReportRunRequest": {
         "properties": {
           "definition": {
@@ -34087,6 +34139,74 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ReportRunContentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/report-runs/{runId}/lines": {
+      "get": {
+        "operationId": "readReportRunLines",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "account",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "currency",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportRunLinesView"
                 }
               }
             },

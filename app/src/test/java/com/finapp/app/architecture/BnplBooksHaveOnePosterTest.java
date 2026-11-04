@@ -85,7 +85,10 @@ class BnplBooksHaveOnePosterTest {
                             + " read-only statements name the receivable purposes in their WHERE clauses to sum the"
                             + " obligations' journal lines by value date (the refunds' receivable and fee shares, the"
                             + " dues by bucket); every statement runs on the caller's read-only snapshot and none"
-                            + " writes");
+                            + " writes",
+                    "StatementNotes.java",
+                    "READER (P14-TSK-016), in words only: the statements' C6 note names BNPL_WRITE_OFF_EXPENSE in the"
+                            + " owner's sentence; no read, figure or line goes by it, and it posts nothing");
 
     /** Every BNPL_* purpose, derived from the declaration. */
     static final List<String> BNPL_BOOK =

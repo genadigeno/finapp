@@ -177,7 +177,7 @@ public final class ReportRunDesk {
                 if (!executor.complete(unitOfWork, key, true, stored)) {
                     return false; // a takeover recorded first: its answer is the answer, and nothing of ours is kept
                 }
-                runs.recordRegeneration(unitOfWork, compared.run(), compared.identical(), actor, correlation);
+                runs.recordRegeneration(unitOfWork, compared.run(), compared.identical(), compared.refusal(), actor, correlation);
                 return true;
             });
             if (!recorded) {
@@ -243,6 +243,8 @@ public final class ReportRunDesk {
             throw refused(AccountingErrorCode.REPORT_DEFINITION_UNKNOWN, unknown);
         } catch (ReportRuns.DefinitionIsOperational operational) {
             throw refused(AccountingErrorCode.REPORT_DOOR_MISMATCH, operational);
+        } catch (ReportRuns.PeriodNotClosed awaiting) {
+            throw refused(AccountingErrorCode.REPORT_AWAITS_CLOSE, awaiting);
         } catch (ReportRuns.ParametersInvalid | RunParameters.Invalid invalid) {
             throw refused(AccountingErrorCode.REPORT_PARAMETERS_INVALID, invalid);
         } catch (ReportRuns.ValuationSetNotApproved notApproved) {

@@ -18,7 +18,7 @@ import java.util.UUID;
 
 /**
  * accounting's {@link PriorPeriodCorrections} over the two schemas (`P14-TSK-013`, for `P14-TSK-016`; the {@code LedgerJournalShapes} precedent of an {@code app} read over the ledger's own tables). {@code SELECT} only, on the
- * caller's snapshot; no reason, actor or amount is read. <strong>No bean</strong>: its one consumer, `P14-TSK-016`, wires it.
+ * caller's snapshot; no reason, actor or amount is read. The bean is {@code StatementBeans}': the statements' notes are its one consumer.
  */
 public final class LedgerPriorPeriodCorrections implements PriorPeriodCorrections {
 

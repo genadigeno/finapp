@@ -514,6 +514,7 @@ class RoutePermissionRegisterTest {
                     // (identity V025's partition); the negatives are ReportRunDeskTest's route declarations.
                     entry("POST /v1/operator/accounting/report-runs", PermissionName.ACCOUNTING_REPORT_GENERATE),
                     entry("GET /v1/operator/accounting/report-runs/{runId}", PermissionName.ACCOUNTING_READ),
+                    entry("GET /v1/operator/accounting/report-runs/{runId}/lines", PermissionName.ACCOUNTING_READ),
                     entry("POST /v1/operator/accounting/report-runs/{runId}/regeneration",
                             PermissionName.ACCOUNTING_REPORT_GENERATE),
                     // P14-TSK-014: the valuation rate sets - captured by the accountant (a close-preparation act on a

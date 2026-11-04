@@ -13,8 +13,11 @@ import com.finapp.accounting.PriorPeriodPostings;
 import com.finapp.accounting.ReconciliationDisclosure;
 import com.finapp.accounting.ReconciliationRunCoverage;
 import com.finapp.accounting.RegulatoryReportingProvider;
+import com.finapp.accounting.ReportRuns;
 import com.finapp.accounting.SuspenseAsOfCutoff;
+import com.finapp.accounting.reporting.BalanceSheetDefinition;
 import com.finapp.accounting.reporting.GeneralLedger;
+import com.finapp.accounting.reporting.IncomeStatementDefinition;
 import com.finapp.accounting.reporting.OperationalReportDefinition;
 import com.finapp.accounting.reporting.ReportDefinition;
 import com.finapp.app.lending.LendingReports;
@@ -221,7 +224,8 @@ class ReportingNeverWritesTest {
                 "com.finapp.app.accounting.LedgerTrialBalanceReads", "com.finapp.app.accounting.LedgerCounterpartyPositionReads",
                 "com.finapp.app.accounting.ReconciliationMonthReads",
                 "com.finapp.app.accounting.AccountingCloseStatusReads", "com.finapp.app.accounting.LedgerFlooredPostings",
-                "com.finapp.app.accounting.ProductReconciliationDisclosure");
+                "com.finapp.app.accounting.ProductReconciliationDisclosure", "com.finapp.app.accounting.LedgerPriorPeriodCorrections",
+                "com.finapp.app.accounting.ReconciliationAsOfCutoffReads", "com.finapp.app.accounting.AccountingCloseRecordReads");
         assertThat(adapterViolations(imported, adapters)).as("a report port's adapter that can write, or reads a product's reports")
                 .isEmpty();
     }
@@ -230,19 +234,34 @@ class ReportingNeverWritesTest {
      * <strong>The frozen register ages in its own bands</strong> (`P14-TSK-017`'s review, M-10; {@code INV-ACC-04}): what a FINAL body holds
      * cannot move with a table it does not own. {@code ReconciliationMonthReads} and its fold depend on no part of {@code
      * ProductReconciliationDisclosure}, whose table the close's disclosure may change; {@code SuspenseAsOfCutoff.AGEING_BANDS} is {@code
-     * SUSPENSE} version 1's.
+     * SUSPENSE} version 1's. {@code ReconciliationAsOfCutoffReads} (`P14-TSK-016`) likewise, {@code ReconciliationAsOfCutoff.AGEING_BANDS} the statements' version 1's.
      */
     @ArchTest
     static void theFrozenRegisterAgesInItsOwnBands(JavaClasses imported) {
-        String reads = "com.finapp.app.accounting.ReconciliationMonthReads";
-        List<JavaClass> found = imported.stream()
-                .filter(candidate -> candidate.getName().equals(reads) || candidate.getName().startsWith(reads + "$"))
-                .toList();
-        assertThat(found).as("the census: the class and its fold").hasSizeGreaterThanOrEqualTo(2);
-        assertThat(found.stream().flatMap(candidate -> candidate.getDirectDependenciesFromSelf().stream())
-                .map(dependency -> dependency.getTargetClass().getName()))
-                .as("a FINAL body's ageing reading the close disclosure's table (INV-ACC-04)")
-                .doesNotContain("com.finapp.app.accounting.ProductReconciliationDisclosure");
+        for (String reads : List.of("com.finapp.app.accounting.ReconciliationMonthReads", "com.finapp.app.accounting.ReconciliationAsOfCutoffReads")) {
+            List<JavaClass> found = imported.stream()
+                    .filter(candidate -> candidate.getName().equals(reads) || candidate.getName().startsWith(reads + "$"))
+                    .toList();
+            assertThat(found).as("the census: the class and its fold").hasSizeGreaterThanOrEqualTo(2);
+            assertThat(found.stream().flatMap(candidate -> candidate.getDirectDependenciesFromSelf().stream())
+                    .map(dependency -> dependency.getTargetClass().getName()))
+                    .as("a FINAL body's ageing reading the close disclosure's table (INV-ACC-04)")
+                    .doesNotContain("com.finapp.app.accounting.ProductReconciliationDisclosure");
+        }
+    }
+
+    /**
+     * <strong>A close waits for no statement</strong> (`P14-TSK-016`; {@code INV-ACC-09}): a statement that refuses - an unclassified line, a hole in translation - must never leave a month unable to close. So the close's machine depends on neither definition, and {@link ReportRuns#claim} has two callers: the
+     * accountant's door, and {@code FinalTrialBalanceReader}, whose one claim is the trial balance's.
+     */
+    @ArchTest
+    static void theCloseWaitsForNoStatement(JavaClasses imported) {
+        assertThat(claimersOf(imported, ReportRuns.class.getName())).as("who claims a report run: the door, and the close's one trial balance")
+                .containsExactly("com.finapp.app.accounting.FinalTrialBalanceReader", "com.finapp.app.accounting.ReportRunDesk");
+        Set<String> theClose = Set.of("com.finapp.accounting.CloseChecks", "com.finapp.accounting.CloseRuns", "com.finapp.accounting.PeriodCloses", "com.finapp.accounting.AccountingPeriods",
+                "com.finapp.app.accounting.FinalTrialBalanceReader", "com.finapp.app.accounting.AccountingCloseSchedule", "com.finapp.app.accounting.CloseCheckWorker");
+        assertThat(theClose).as("the census: the close's machine is imported").allSatisfy(name -> assertThat(imported.contain(name)).as(name).isTrue());
+        assertThat(waitingOn(imported, theClose, Set.of(BalanceSheetDefinition.class.getName(), IncomeStatementDefinition.class.getName()))).as("a close's machine holding a statement (INV-ACC-09)").isEmpty();
     }
 
     /** The census: the guard sees accounting, every writer it names, and the ledger's writers it refuses by package. */
@@ -402,6 +421,15 @@ class ReportingNeverWritesTest {
     }
 
     @Test
+    @DisplayName("a close's machine holding a statement, or a third claimer of a report run, is refused; the two that may claim are not (P14-TSK-016)")
+    void aCloseWaitingOnAStatementIsRefused() {
+        JavaClasses planted = new ClassFileImporter().importClasses(PlantedCloseWaiting.class, PlantedCloseNotWaiting.class, PlantedStatement.class, PlantedClaimer.class, PlantedRuns.class);
+        assertThat(waitingOn(planted, Set.of(PlantedCloseWaiting.class.getName(), PlantedCloseNotWaiting.class.getName()), Set.of(PlantedStatement.class.getName())))
+                .singleElement().asString().contains("PlantedCloseWaiting").contains("PlantedStatement");
+        assertThat(claimersOf(planted, PlantedRuns.class.getName())).containsExactly(PlantedClaimer.class.getName());
+    }
+
+    @Test
     @DisplayName("a report class that only reads - executeQuery, the journal's read port - is not flagged")
     void aReadingReportClassPasses() {
         assertThat(plantedViolations(PlantedReportReading.class, PreparedStatement.class, JournalReads.class))
@@ -454,6 +482,25 @@ class ReportingNeverWritesTest {
             }
         }
         return violations;
+    }
+
+    /** Whoever calls {@code runs}' {@code claim}, by a call or a method reference, sorted. */
+    static List<String> claimersOf(JavaClasses classes, String runs) {
+        return classes.get(runs).getAccessesToSelf().stream().filter(access -> access.getName().equals("claim"))
+                .map(access -> access.getOriginOwner().getName()).distinct().sorted().toList();
+    }
+
+    /** Which of {@code machine} depends on one of {@code statements}, with what. */
+    static Set<String> waitingOn(JavaClasses classes, Set<String> machine, Set<String> statements) {
+        Set<String> waiting = new TreeSet<>();
+        for (String name : machine) {
+            List<String> held = classes.get(name).getDirectDependenciesFromSelf().stream().map(dependency -> dependency.getTargetClass().getName())
+                    .filter(statements::contains).distinct().sorted().toList();
+            if (!held.isEmpty()) {
+                waiting.add(name + " -> " + held);
+            }
+        }
+        return waiting;
     }
 
     /** Every {@code reporting} class that depends on {@code java.util.Currency} or asks a currency for its minor units. */
@@ -800,6 +847,31 @@ class ReportingNeverWritesTest {
     static class PlantedAdapterReadingAStore implements PlantedPort {
         Object touch(AccountingPeriodStore store, Connection connection, AccountingPeriodId id) {
             return store.find(connection, id);
+        }
+    }
+
+    /** Stands for a statement's definition. */
+    static class PlantedStatement {}
+
+    /** A close's machine waiting on a statement. */
+    static class PlantedCloseWaiting {
+        PlantedStatement statement;
+    }
+
+    /** A close's machine that does not. */
+    static class PlantedCloseNotWaiting {
+        int checks;
+    }
+
+    /** Stands for {@code ReportRuns}. */
+    static class PlantedRuns {
+        void claim() {}
+    }
+
+    /** A third claimer. */
+    static class PlantedClaimer {
+        void ask(PlantedRuns runs) {
+            runs.claim();
         }
     }
 

@@ -111,7 +111,8 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " READ ONLY snapshot under the mapping version the period pins (P14-TSK-007, INV-ACC-02,"
                     + " INV-ACC-06, INV-ACC-14; GET /v1/operator/accounting/gl/..., ACCOUNTING_READ). Recorded at every"
                     + " serving, in a transaction of its own after the read and before the answer. Its target the"
-                    + " period, the GL account or the entry; the summary the door, the period, the currency, the"
+                    + " period, the GL account or the entry - or the report run, for a run's figure's lines under its version"
+                    + " (P14-TSK-016, GET /v1/operator/accounting/report-runs/{runId}/lines); the summary the door, the period, the currency, the"
                     + " version number and its counts - figures= and unmapped= for the balances, lines= and"
                     + " page=first|next for an activity page, lines= for an entry - never an amount or an owner"
                     + " reference.",
@@ -127,7 +128,7 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " accounting.ReportRunCompleted in the same commit - or failed with a closed code (DEFINITION_UNKNOWN,"
                     + " DEFINITION_FAILED, PERIOD_MOVED, CONTENT_INVALID, ATTEMPTS_EXHAUSTED, GENERATION_TIMED_OUT) - recorded FAILED. Its target"
                     + " the run; the summary its definition, version, period, revision and basis with the status or the"
-                    + " failure code - never a figure or the content.",
+                    + " failure code - on a translated run its completeness and untranslated currencies by code (P14-TSK-015's review, I-1(a)), on a definition's refusal its reason and subjects by code (P14-TSK-016) - never a figure or the content.",
             false),
 
     /** A FINAL report run was regenerated and compared (`P14-TSK-008`, ACCOUNTING_REPORT_GENERATE). */
