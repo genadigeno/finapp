@@ -36,6 +36,7 @@ needs, and read the *section* you need rather than the whole document.
 | Phase gates and exit criteria | `docs/project/PHASE_GATES.md`, `docs/project/PHASE_<n>_PLAN.md` |
 | What happened before? | `docs/project/history/` — task, milestone, capability and change records |
 | Product scope and capabilities | `docs/product/PRODUCT_VISION.md`, `docs/product/CAPABILITY_MAP.md`, `docs/product/ROADMAP.md` |
+| What has been proposed but not approved? | `docs/project/proposals/README.md` — a proposal changes no scope |
 
 Domain-specific work also loads the applicable path-scoped rules in `.claude/rules/`
 automatically; the procedures for working a backlog task are skills in `.claude/skills/`.
