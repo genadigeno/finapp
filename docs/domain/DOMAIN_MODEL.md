@@ -347,6 +347,8 @@ Screening List Version) (`rescreening_permit_once`), born `PENDING` by the rescr
 activation, claimed `SKIP LOCKED` under a lease, kyc asked under its key, concluded once `DONE` (`CLEARED`, `HIT`,
 `SKIPPED`, `NOT_ONBOARDED`) or `FAILED` at its bound, naming the one signal born of it — risk's record that it asked,
 never a Screening Result, which stays kyc's.)*
+*(`P14-TSK-013`, 2026-11-04: Prior-Period Adjustment is built - `PROPOSED -> POSTED | REJECTED`, a row beside the ledger's proposal, one transaction - and read "a back-dated posting" in the next sentence with its date: today, stored, never in or before the month it corrects.)*
+
 *(`P14-TSK-012`, 2026-11-03, added two to the accounting block: Break Generation - which break of one (period, check, subject) a finding is, a person having decided on the one before it - and Nil Report, a counterparty's report with no lines through the existing door, how an honestly quiet month gets its run.)*
 *(The Phase 13 → 14 transition, 2026-10-29 — ADR-0113…0118 (`Proposed`), `PHASE_14_PLAN.md` §4 and §13 — added the
 eighteen Phase 14 terms in an accounting block after Readmission: the GL's structure (GL Account, GL Mapping Version,

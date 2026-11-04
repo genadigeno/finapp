@@ -9,6 +9,7 @@ import com.finapp.accounting.CloseRunId;
 import com.finapp.accounting.PeriodCloseId;
 import com.finapp.accounting.PeriodCloses;
 import com.finapp.accounting.PostingCutoff;
+import com.finapp.accounting.PriorPeriodAdjustments;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.CommandResult;
@@ -54,12 +55,19 @@ public final class PeriodCloseDesk {
     static final String REOPEN_APPROVE_SPAN = "accounting.period.reopen.approve";
 
     @NonNull private final PeriodCloses closes;
+    /** What has posted against the month: a reopen's two people and a re-close's approver are told (`P14-TSK-013`). Read only. */
+    @NonNull private final PriorPeriodAdjustments priorPeriodAdjustments;
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final AccountingTransactions transactions;
     @NonNull private final AccountingFlowScope flow;
 
-    /** An act's receipt: the period as the act left it, and the proposal it answers. */
-    public record PeriodCloseReceipt(String id, String period, String status, int revision, String proposalId, String closeRunId) {}
+    /**
+     * An act's receipt: the period as the act left it, and the proposal it answers.
+     *
+     * @param priorPeriodAdjustments on a reopen's two acts, the adjustments already posted against the month, read holding its row (`P14-TSK-013`): its figures at the next revision will still show what those corrected, each entry being dated in a later month, so
+     *     whoever corrects the month directly must know they stand. Empty on a close's acts.
+     */
+    public record PeriodCloseReceipt(String id, String period, String status, int revision, String proposalId, String closeRunId, List<String> priorPeriodAdjustments) {}
 
     /** A person's reason for the attempt they read. */
     public record StatedDisclosure(String check, int attempt, String reason) {
@@ -98,7 +106,8 @@ public final class PeriodCloseDesk {
             long breaksAcknowledged,
             long breaksResolved,
             boolean stillStands,
-            List<CloseProposalCheckView> checks) {}
+            List<CloseProposalCheckView> checks,
+            List<String> priorPeriodAdjustments) {}
 
     public PeriodCloseReceipt propose(String idempotencyKey, String rawId, String rawRun, String reason, List<StatedDisclosure> disclosures) {
         AccountingPeriodId id = periodId(rawId);
@@ -137,7 +146,7 @@ public final class PeriodCloseDesk {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         return flow.door(REOPEN_PROPOSE_SPAN, () -> keyed(actor, idempotencyKey, "reopen-proposal|" + id.value() + "|" + reason,
-                uow -> receipt(closes.proposeReopen(uow, id, actor, reason, correlation))));
+                uow -> withPosted(uow, receipt(closes.proposeReopen(uow, id, actor, reason, correlation)), id)));
     }
 
     public PeriodCloseReceipt approveReopen(String idempotencyKey, String rawId, String reason) {
@@ -145,7 +154,7 @@ public final class PeriodCloseDesk {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         return flow.door(REOPEN_APPROVE_SPAN, () -> keyed(actor, idempotencyKey, "reopen-approval|" + id.value() + "|" + reason,
-                uow -> receipt(closes.approveReopen(uow, id, actor, reason, correlation))));
+                uow -> withPosted(uow, receipt(closes.approveReopen(uow, id, actor, reason, correlation)), id)));
     }
 
     /** The period's latest proposal, as its approver reads it; a period with none is {@code accounting.NotFound}. Recorded before it is served. */
@@ -153,18 +162,19 @@ public final class PeriodCloseDesk {
         AccountingPeriodId id = periodId(rawId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        PeriodCloses.ProposalView view = flow.door(CLOSE_READ_SPAN, () -> guarded(() -> transactions.inTransaction(uow ->
-                closes.proposalOf(uow, id).orElseThrow(PeriodCloseDesk::notFound))));
+        record Read(PeriodCloses.ProposalView proposal, List<UUID> posted) {}
+        Read read = flow.door(CLOSE_READ_SPAN, () -> guarded(() -> transactions.inTransaction(uow ->
+                new Read(closes.proposalOf(uow, id).orElseThrow(PeriodCloseDesk::notFound), priorPeriodAdjustments.postedAgainst(uow, id)))));
         transactions.inTransaction(uow -> {
-            closes.recordRead(uow, view, actor, correlation);
+            closes.recordRead(uow, read.proposal(), actor, correlation);
             return null;
         });
-        return view(view);
+        return view(read.proposal(), read.posted());
     }
 
     // ------------------------------------------------------------------ views
 
-    private static CloseProposalView view(PeriodCloses.ProposalView view) {
+    private static CloseProposalView view(PeriodCloses.ProposalView view, List<UUID> posted) {
         return new CloseProposalView(
                 view.proposal().id().value().toString(),
                 view.proposal().month().toString(),
@@ -185,12 +195,19 @@ public final class PeriodCloseDesk {
                         check.check().status().name(),
                         check.check().judgedBy(),
                         check.attemptEvidence().orElse(null),
-                        check.check().disclosureReason().orElse(null))).toList());
+                        check.check().disclosureReason().orElse(null))).toList(),
+                posted.stream().map(UUID::toString).toList());
     }
 
     private static PeriodCloseReceipt receipt(PeriodCloses.Acted acted) {
         return new PeriodCloseReceipt(acted.id().value().toString(), acted.month().toString(), acted.status().name(), acted.revision(),
-                acted.proposal().map(id -> id.value().toString()).orElse(null), acted.run().map(id -> id.value().toString()).orElse(null));
+                acted.proposal().map(id -> id.value().toString()).orElse(null), acted.run().map(id -> id.value().toString()).orElse(null), List.of());
+    }
+
+    /** The receipt with what has posted against the month, read on the act's own transaction, still holding the period's row: an approval racing this act has committed, or will be refused. */
+    private PeriodCloseReceipt withPosted(Connection unitOfWork, PeriodCloseReceipt receipt, AccountingPeriodId id) {
+        return new PeriodCloseReceipt(receipt.id(), receipt.period(), receipt.status(), receipt.revision(), receipt.proposalId(), receipt.closeRunId(),
+                priorPeriodAdjustments.postedAgainst(unitOfWork, id).stream().map(UUID::toString).toList());
     }
 
     // ------------------------------------------------------------------ plumbing
@@ -203,15 +220,17 @@ public final class PeriodCloseDesk {
                 () -> transactions.inTransaction(unitOfWork -> executor.execute(unitOfWork, key, fingerprint, uow -> {
                     PeriodCloseReceipt receipt = act.apply(uow);
                     String stored = receipt.id() + "|" + receipt.period() + "|" + receipt.status() + "|" + receipt.revision() + "|"
-                            + (receipt.proposalId() == null ? "" : receipt.proposalId()) + "|" + (receipt.closeRunId() == null ? "" : receipt.closeRunId());
+                            + (receipt.proposalId() == null ? "" : receipt.proposalId()) + "|" + (receipt.closeRunId() == null ? "" : receipt.closeRunId()) + "|"
+                            + String.join(",", receipt.priorPeriodAdjustments());
                     return CommandResult.succeeded(StoredResponse.of(stored.getBytes(StandardCharsets.UTF_8), "text/plain"));
                 }))));
         String[] stored = new String(
                         outcome.body().orElseThrow(() -> new IllegalStateException("a close act stores its receipt")),
                         StandardCharsets.UTF_8)
                 .split("\\|", -1);
+        // A receipt stored before P14-TSK-013 has six fields.
         return new PeriodCloseReceipt(stored[0], stored[1], stored[2], Integer.parseInt(stored[3]), stored[4].isEmpty() ? null : stored[4],
-                stored[5].isEmpty() ? null : stored[5]);
+                stored[5].isEmpty() ? null : stored[5], stored.length < 7 || stored[6].isEmpty() ? List.of() : List.of(stored[6].split(",")));
     }
 
     private <R> R selfApprovalRecorded(Actor actor, Supplier<R> work) {

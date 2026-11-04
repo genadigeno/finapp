@@ -189,7 +189,7 @@ class PostingRuleRegisterTest {
         assertThat(REGISTER.rules().stream().filter(PostingRule::mayBackDate).map(PostingRule::id).distinct())
                 .containsExactlyInAnyOrder("ADJ-MANUAL", "LND-2", "SETTLEMENT-REPORT", "SETTLEMENT-STATEMENT",
                         "MERCHANT-PAYOUT-RETURN", "RECON-SUSPENSE", "RECON-WRITE-OFF", "RECON-TRANSFER", "RECON-GAIN",
-                        "FX-TRADE", "FX-COVER");
+                        "FX-TRADE", "FX-COVER", "ACC-PRIOR-PERIOD");
     }
 
     @Test

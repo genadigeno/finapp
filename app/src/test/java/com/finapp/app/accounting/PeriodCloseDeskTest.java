@@ -140,7 +140,10 @@ class PeriodCloseDeskTest {
             }
         }
     };
-    private final PeriodCloseDesk desk = new PeriodCloseDesk(machine, new IdempotentExecutor(new Claims(), CLOCK, Duration.ofDays(1), Duration.ofSeconds(30)), transactions, AccountingFlowScope.NONE);
+    private final com.finapp.accounting.testing.InMemoryPriorPeriodAdjustmentStore priorPeriod = new com.finapp.accounting.testing.InMemoryPriorPeriodAdjustmentStore(periods);
+    private final com.finapp.accounting.PriorPeriodAdjustments priorPeriodAdjustments = new com.finapp.accounting.PriorPeriodAdjustments(periods, priorPeriod,
+            new com.finapp.accounting.testing.InMemoryPriorPeriodPostings(), new com.finapp.accounting.testing.InMemoryGlMappingStore(), (uow, record) -> audited.add(record), (uow, envelope, payload, mediaType) -> { }, IDS, CLOCK);
+    private final PeriodCloseDesk desk = new PeriodCloseDesk(machine, priorPeriodAdjustments, new IdempotentExecutor(new Claims(), CLOCK, Duration.ofDays(1), Duration.ofSeconds(30)), transactions, AccountingFlowScope.NONE);
     private AccountingPeriodId march;
     private CloseRunId run;
 
@@ -301,6 +304,28 @@ class PeriodCloseDeskTest {
             }
         }
         assertThat(seen).isEqualTo(expected.size());
+    }
+
+    @Test
+    @DisplayName("P14-TSK-013: a reopen's two people and a re-close's approver are told what has posted against the month - its figures at the next revision still show what those corrected; a close's own acts name nothing; the replay answers the same")
+    void aReopenIsToldWhatHasPosted() {
+        PeriodCloseDesk.PeriodCloseReceipt proposal = propose("k-t1");
+        assertThat(proposal.priorPeriodAdjustments()).isEmpty();
+        assertThat(as(CONTROLLER, () -> desk.approve("k-t2", period(), proposal.proposalId(), "agreed")).priorPeriodAdjustments()).isEmpty();
+        AccountingPeriodId april = AccountingPeriodId.next(IDS);
+        periods.insertIfAbsent(UOW, new AccountingPeriodStore.NewPeriod(april, MARCH.plusMonths(1), CorrelationId.generate(IDS)));
+        com.finapp.accounting.PriorPeriodAdjustmentId adjustment = com.finapp.accounting.PriorPeriodAdjustmentId.next(IDS);
+        priorPeriod.insert(UOW, new com.finapp.accounting.PriorPeriodAdjustmentStore.NewAdjustment(adjustment, march, 1, april, MARCH.plusMonths(1).atDay(5), UUID.randomUUID(), ACCOUNTANT, "a correction", CorrelationId.generate(IDS)));
+        assertThat(priorPeriod.markPosted(UOW, adjustment, UUID.randomUUID(), CONTROLLER, "agreed")).isTrue();
+        com.finapp.accounting.PriorPeriodAdjustmentId rejected = com.finapp.accounting.PriorPeriodAdjustmentId.next(IDS);
+        priorPeriod.insert(UOW, new com.finapp.accounting.PriorPeriodAdjustmentStore.NewAdjustment(rejected, march, 1, april, MARCH.plusMonths(1).atDay(5), UUID.randomUUID(), ACCOUNTANT, "a correction", CorrelationId.generate(IDS)));
+        assertThat(priorPeriod.markRejected(UOW, rejected, CONTROLLER, "no")).isTrue();
+
+        PeriodCloseDesk.PeriodCloseReceipt reopening = as(ACCOUNTANT, () -> desk.proposeReopen("k-t3", period(), "found something"));
+        assertThat(reopening.priorPeriodAdjustments()).as("the proposer is told, the rejected one corrected nothing").containsExactly(adjustment.value().toString());
+        assertThat(as(ACCOUNTANT, () -> desk.proposeReopen("k-t3", period(), "found something"))).as("the stored receipt").isEqualTo(reopening);
+
+        assertThat(as(CONTROLLER, () -> desk.approveReopen("k-t4", period(), "agreed")).priorPeriodAdjustments()).as("the approver is told").containsExactly(adjustment.value().toString());
     }
 
     @Test

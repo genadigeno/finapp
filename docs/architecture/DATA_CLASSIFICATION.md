@@ -5014,6 +5014,30 @@ so it is `CONFIDENTIAL`, served to an operator under `ACCOUNTING_READ` and read 
 | `period_reopen` | `approval_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
 | `period_reopen` | `correlation_id` | `INTERNAL` | The proposing flow's correlation |
 
+### `accounting.prior_period_adjustment` - the prior-period adjustment - *added by `P14-TSK-013`*
+
+`accounting V009`: a person's correction of a `CLOSED` period at a named revision, dated in an `OPEN` one, one row per adjustment, frozen but for its one decision. Never deleted, never truncated. **No money**: the lines and their amounts are the ledger's (`adjustment_proposal_line`, `CONFIDENTIAL`, served to the approver alone). The ledger's own `reason` on the proposal and on the entry is identifiers only for this origin; the person's is here.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `prior_period_adjustment` | `id` | `INTERNAL` | Generated - the adjustment's identity |
+| `prior_period_adjustment` | `corrected_period_id` | `INTERNAL` | The accounting period it corrects |
+| `prior_period_adjustment` | `corrected_revision` | `INTERNAL` | The revision of the figures it corrects |
+| `prior_period_adjustment` | `target_period_id` | `INTERNAL` | The accounting period it lands in |
+| `prior_period_adjustment` | `posting_date` | `INTERNAL` | The entry's date, posting and value, stored at the proposal; a calendar date |
+| `prior_period_adjustment` | `adjustment_proposal_id` | `INTERNAL` | The ledger's proposal, by identifier - no foreign key across schemas |
+| `prior_period_adjustment` | `journal_entry_id` | `INTERNAL` | The entry its approval posted, by identifier |
+| `prior_period_adjustment` | `status` | `INTERNAL` | The machine's state - `PROPOSED`, `POSTED`, `REJECTED` |
+| `prior_period_adjustment` | `proposed_by` | `CONFIDENTIAL` | The accountant who proposed it; never served: the approver's read names no person |
+| `prior_period_adjustment` | `proposed_by_type` | `INTERNAL` | A closed actor type - a person's, by `CHECK` |
+| `prior_period_adjustment` | `proposed_at` | `INTERNAL` | The database's stamp |
+| `prior_period_adjustment` | `proposal_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; served to the controller who decides it under `ACCOUNTING_ADJUST_APPROVE`, audited; never logged |
+| `prior_period_adjustment` | `decided_by` | `CONFIDENTIAL` | The second person who approved it - never the proposer, by `CHECK` - or who rejected it |
+| `prior_period_adjustment` | `decided_by_type` | `INTERNAL` | A closed actor type - a person's |
+| `prior_period_adjustment` | `decided_at` | `INTERNAL` | The database's stamp |
+| `prior_period_adjustment` | `decision_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
+| `prior_period_adjustment` | `correlation_id` | `INTERNAL` | The proposing flow's correlation |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

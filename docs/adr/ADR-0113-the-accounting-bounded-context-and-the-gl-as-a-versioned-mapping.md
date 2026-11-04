@@ -43,6 +43,8 @@ domain through ports implemented in `app`). Rests on `PHASE_14_PLAN.md` §1, §3
    transaction; `ReportingNeverWritesTest` refuses any writer type reachable from report code. A separate database role is
    Phase 15's (owner decision C10).
 
+*As built by `P14-TSK-013` (2026-11-04), decision 4 - nothing here is a different decision:* `PriorPeriodPostings` holds six methods on the caller's transaction, and `app`'s `LedgerPriorPeriodPostings` implements them over `AdjustmentService`'s accounting-owned door, the one class that may. The ledger's refusals pass through as its own types: accounting has no edge to catch them by. Accounting still has no ledger edge (`AccountingModuleIsolationTest`, unloosened), and neither reporting nor the break machinery reaches the port (`ReportingNeverWritesTest`, `BreaksNeverPostTest`, unloosened).
+
 *As built by `P14-TSK-001` (2026-10-29), the boundary only - nothing here is a different decision:* decision 1 holds as
 written (`AccountingModuleIsolationTest`: `platform` and `sharedkernel` only, every business module, `risk` and `app`
 refused; every sibling's isolation test refusing `accounting`), the nine ports declared with no methods, each shaped by the

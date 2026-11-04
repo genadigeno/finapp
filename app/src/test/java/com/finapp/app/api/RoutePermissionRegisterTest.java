@@ -487,6 +487,15 @@ class RoutePermissionRegisterTest {
                             PermissionName.ACCOUNTING_ADJUST_APPROVE),
                     entry("POST /v1/operator/accounting/breaks/{breakId}/resolution",
                             PermissionName.ACCOUNTING_ADJUST_APPROVE),
+                    // P14-TSK-013: the prior-period adjustment - proposed by the accountant, decided and read by the controller (identity V025's
+                    // partition: a controller holds no ACCOUNTING_READ), a month's corrections read by the accountant; the negatives are
+                    // PriorPeriodAdjustmentDeskTest's route declarations.
+                    entry("POST /v1/operator/accounting/prior-period-adjustments", PermissionName.ACCOUNTING_ADJUST_PROPOSE),
+                    entry("GET /v1/operator/accounting/prior-period-adjustments", PermissionName.ACCOUNTING_ADJUST_APPROVE),
+                    entry("GET /v1/operator/accounting/prior-period-adjustments/{adjustmentId}", PermissionName.ACCOUNTING_ADJUST_APPROVE),
+                    entry("POST /v1/operator/accounting/prior-period-adjustments/{adjustmentId}/approval", PermissionName.ACCOUNTING_ADJUST_APPROVE),
+                    entry("POST /v1/operator/accounting/prior-period-adjustments/{adjustmentId}/rejection", PermissionName.ACCOUNTING_ADJUST_APPROVE),
+                    entry("GET /v1/operator/accounting/periods/{periodId}/prior-period-adjustments", PermissionName.ACCOUNTING_READ),
                     // P14-TSK-011: the close run - read by the accountant (audited accounting.CloseRunRead), a check's next
                     // attempt asked under the close's proposer; the negatives are CloseRunDeskTest's route declarations.
                     entry("GET /v1/operator/accounting/periods/{periodId}/close-run", PermissionName.ACCOUNTING_READ),

@@ -778,7 +778,12 @@ class CredentialReachesNoEmittedSinkTest {
                         // reason is the proposal's item, served to its approver and never logged.
                         "CloseProposalRequest",
                         "CloseDecisionRequest",
-                        "PeriodReopenRequest");
+                        "PeriodReopenRequest",
+                        // P14-TSK-013: the prior-period adjustment's bodies - ids, dates and decimal strings, and reasons screened by AccountingReasons.
+                        "PriorPeriodAdjustmentRequest",
+                        "PriorPeriodLineItem",
+                        "PriorPeriodApprovalRequest",
+                        "PriorPeriodRejectionRequest");
     }
 
     @Test

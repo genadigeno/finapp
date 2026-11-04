@@ -808,6 +808,7 @@ stored resolution, ADR-0069's amendment), `INV-REC-06`, `INV-REC-09`, `INV-SET-0
   this machine's).
 
 
+- **As built by `P14-TSK-013`** (2026-11-04), §5-§6, ledger `V030`: a third origin, `ACCOUNTING`, its one code `PRIOR_PERIOD_ADJUSTMENT`, one date for both of the entry's (`adjustment_proposal_accounting_is_dated_once`). **Three owners, three doors, each refusing the other two's proposals**: `AdjustmentService.proposePriorPeriod`, `approvePriorPeriod` and `rejectPriorPeriod` are method names of their own, so `OwnedAdjustmentSeamIsConfinedTest` holds reconciliation to `*Owned` and exactly one class of `app`, `LedgerPriorPeriodPostings`, to these - a file, not a package - each way with a planted caller; `doApprove`'s and `doReject`'s origin check is the runtime layer, tested over all twelve pairs (`AccountingOriginDoorTest#eachOwnerRefusesTheOthers`). The closed set binds this origin as it binds `MANUAL`, at the proposal, at the approval and by the re-stated trigger. A reason on the proposal and the entry is identifiers only, as a resolution's; the person's is on accounting's row.
 - **As built** (2026-10-01, read against the code by `P8-DOC-001`): every point of this ADR is
   implemented by the tasks below, all `COMPLETE`, and every statement above is true of the code.
   The decision that changed after this ADR was written is point 3's threshold, narrowed by

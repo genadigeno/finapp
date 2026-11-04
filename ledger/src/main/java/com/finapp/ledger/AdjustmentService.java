@@ -608,13 +608,6 @@ public final class AdjustmentService {
         return doReject(unitOfWork, id, AdjustmentOrigin.ACCOUNTING);
     }
 
-    /** The proposal, unlocked, on the caller's connection - what accounting's approver reads of the ledger's half. */
-    public Optional<AdjustmentProposal> findPriorPeriod(Connection unitOfWork, AdjustmentProposalId id) {
-        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
-        Objects.requireNonNull(id, "id must not be null");
-        return proposals.findById(unitOfWork, id).filter(proposal -> proposal.origin() == AdjustmentOrigin.ACCOUNTING);
-    }
-
     /** The flow's correlation with the cause resolved — the {@code PostingService} idiom. */
     private static Correlation resolvedCorrelation() {
         Correlation current =

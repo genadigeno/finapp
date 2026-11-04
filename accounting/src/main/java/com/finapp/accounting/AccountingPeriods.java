@@ -361,9 +361,9 @@ public final class AccountingPeriods {
     // ------------------------------------------------------------------ reads
 
     /**
-     * The earliest {@code OPEN} period - where a posting dated today, a correction found during a close, or a prior-period
-     * adjustment lands (the read `P14-TSK-011`, `-013` use). Unlocked; a writer that depends on it re-reads it under its
-     * own lock.
+     * The earliest {@code OPEN} period. Not where a prior-period adjustment lands: it may be a reopened month (`P14-TSK-012`), and
+     * {@link PriorPeriodAdjustments} dates into the month holding today (`P14-TSK-013`). Unlocked; a writer that depends on it re-reads it
+     * under its own lock.
      */
     public Optional<AccountingPeriodStore.PeriodRow> firstOpen(Connection unitOfWork) {
         return store.firstOpen(unitOfWork);

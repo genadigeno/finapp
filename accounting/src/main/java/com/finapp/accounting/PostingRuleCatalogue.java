@@ -35,9 +35,9 @@ import java.util.List;
  * does when a period lock covers its date: {@link CutoffReaction#NOT_REACHED} for every rule dated today; version 1 of the
  * seven back-dating <em>system</em> rules {@link CutoffReaction#REFUSED} (as they posted until C3) and their version 2,
  * effective {@link PostingRuleRegister#C3_FLOOR}, {@link CutoffReaction#FLOORED_AT_FIRST_OPEN} ({@link #floored}); the
- * four back-dating adjustments - the manual one and the reconciliation resolution's three - one version,
- * {@link CutoffReaction#REFUSED_AT_APPROVAL}: the refusal at approval is how they have answered a lock since the cutoff
- * exists (`P14-TSK-004`'s trigger, the approval rolled back) and the entry they post is unchanged.
+ * back-dating adjustments - the manual one, the reconciliation resolution's three and (`P14-TSK-013`) the prior-period
+ * adjustment - one version, {@link CutoffReaction#REFUSED_AT_APPROVAL}: the refusal at approval is how they have answered a
+ * lock since the cutoff exists (`P14-TSK-004`'s trigger, the approval rolled back) and the entry they post is unchanged.
  */
 final class PostingRuleCatalogue {
 
@@ -491,6 +491,14 @@ final class PostingRuleCatalogue {
                 "A parked credit nobody can claim recognised as a gain",
                 resolution, STORED_ROW, "ADR-0071; ResolutionTemplates (RECOGNISE_GAIN)",
                 required(DEBIT, SUSPENSE_UNMATCHED), required(CREDIT, RECONCILIATION_GAINS)));
+        // P14-TSK-013: effective from the register's origin, so no adjustment of this origin can predate its rule (a wedge at RULE_CONFORMANCE).
+        // Dated the day it was proposed and posted from the stored row at approval, like the resolutions; refused at approval, never floored.
+        rules.add(rule("ACC-PRIOR-PERIOD", ADJUSTMENT, "ACCOUNTING", "accounting", posters("LedgerPriorPeriodPostings"),
+                "A closed period's error corrected in an open one, four-eyes, on purposes open to free adjustment - traced to the period and"
+                        + " revision it corrects",
+                "accounting.prior_period_adjustment (the adjustment id; its stored date, approved four-eyes)", STORED_ROW,
+                "INV-ACC-10; ledger V030 (closed purposes refused); accounting V009",
+                required(DEBIT, OPEN_TO_FREE_ADJUSTMENT), required(CREDIT, OPEN_TO_FREE_ADJUSTMENT)));
     }
 
     // ------------------------------------------------------------------ C3: the system posters floored (P14-TSK-006)

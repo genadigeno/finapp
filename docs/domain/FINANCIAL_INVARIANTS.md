@@ -89,7 +89,7 @@ explicitly.
 **Why:** The foundational property of double-entry accounting. Without it, no report,
 balance or reconciliation is trustworthy.
 **Enforce:** `DOMAIN` + `DB-CONSTRAINT` (entry-level balance check).
-**Verify:** Continuous trial-balance job asserting zero per currency, with alerting.
+**Verify:** Continuous trial-balance job asserting zero per currency, with alerting. *(`P14-TSK-013`, a prior-period adjustment's lines: per currency at their scale at the door, before anything is locked - `PriorPeriodAdjustmentsTest#theLinesAreCoherent` - and the ledger's own `JournalEntry.balanced` and deferred trigger beneath.)*
 **Phase:** 3
 
 ### INV-LED-02 — A journal entry has at least two lines
@@ -492,10 +492,10 @@ ledger `V015` a closed `reason_code` on every adjustment proposal — `MANUAL_CO
 `RECONCILIATION_WRITE_OFF`, `RECONCILIATION_TRANSFER`, `RECONCILIATION_GAIN` or
 `RECONCILIATION_OFFSET`, `UNCODED` reserved to proposals that predate it and refused on every new
 one by a `BEFORE INSERT` trigger — frozen with the payload beside an `origin` of `MANUAL` or
-`RECONCILIATION`; each origin's door refuses the other's proposals).
+`RECONCILIATION`; each origin's door refuses the other's proposals). *(`P14-TSK-013`, ledger `V030`: `PRIOR_PERIOD_ADJUSTMENT` beside them, origin `ACCOUNTING`; three doors, each refusing the other two's. Read "`RECONCILIATION_OFFSET`" as dropped at `P8-TSK-006`'s design, its own note.)*
 **Verify:** Authorization negative tests; a raw insert without a reason code refused; approval
 and `DELETE` of a `RECONCILIATION`-origin proposal through the generic door refused (`409
-ledger.AdjustmentOriginMismatch`).
+ledger.AdjustmentOriginMismatch`). *(`P14-TSK-013`: `AccountingOriginDoorTest#eachOwnerRefusesTheOthers`, all twelve; `PriorPeriodAdjustmentDatabaseTest#theGenericDoorRefusesTheOrigin`, `#theOwnersRefuseEachOther` owed, C5.)*
 **Phase:** 3, 8
 
 *(Amended at the Phase 7 → 8 transition, ADR-0071 (`Proposed`), in force when `P8-TSK-006`
@@ -1438,7 +1438,7 @@ report runs `SUPERSEDED`; nothing is deleted.
 **Why:** Issued figures must stay explainable: what was issued, what changed, by whom and why.
 **Enforce:** `DB-CONSTRAINT` (`INV-ACC-08`'s trigger; report runs immutable; `INSERT`-only events) + `DOMAIN`.
 **Verify:** `PriorPeriodAdjustmentDatabaseTest#postsInTheOpenPeriodReferencingTheClosedOne`,
-`PeriodReopenDatabaseTest#aReopenSupersedesAndDeletesNothing` (`P14-TSK-012`, `-013`). *(`P14-TSK-012`, the reopen's half: `PeriodClosesTest#aReopenSupersedesAndDeletesNothing`, `#onlyTheLatest`, `#aReCloseIsANewRun`, `PeriodCloseMigrationTest`; `PeriodReopenDatabaseTest#aReopenSupersedesAndDeletesNothing`, `#onlyTheLatest` owed, C5. "Only of the latest closed period" is built as "the next period absent or `OPEN`", judged by the domain and by the trigger for every writer: periods close in order, so that is the latest. The prior-period adjustment's half is `-013`'s.)*
+`PeriodReopenDatabaseTest#aReopenSupersedesAndDeletesNothing` (`P14-TSK-012`, `-013`). *(`P14-TSK-012`, the reopen's half: `PeriodClosesTest#aReopenSupersedesAndDeletesNothing`, `#onlyTheLatest`, `#aReCloseIsANewRun`, `PeriodCloseMigrationTest`; `PeriodReopenDatabaseTest#aReopenSupersedesAndDeletesNothing`, `#onlyTheLatest` owed, C5. "Only of the latest closed period" is built as "the next period absent or `OPEN`", judged by the domain and by the trigger for every writer: periods close in order, so that is the latest. The prior-period adjustment's half is `-013`'s.)* *(`P14-TSK-013`, that half: `PriorPeriodAdjustmentsTest#postsInTheOpenPeriodReferencingTheClosedOne`, `#itLandsInTheMonthHoldingToday`, `#neverInOrBeforeTheCorrectedMonth`, `#theCorrectedMonthMustBeClosed`, `#aReopenBetweenProposalAndApproval`; `AccountingOriginDoorTest#datedIntoTheCorrectedPeriodTheLedgerRefuses`; `PriorPeriodEntryWalkTest#theCorrectedMonthsBytesDoNotMove`; `PriorPeriodAdjustmentMigrationTest#theDates`; `PriorPeriodAdjustmentDatabaseTest#postsInTheOpenPeriodReferencingTheClosedOne`, `#theCorrectedMonthsFinalRunRegeneratesByteIdentical`, `#datedIntoTheCorrectedPeriodTheLedgerRefuses` owed, C5. "An entry posted in an open period" is built as the month holding today, the date stored and named by the approver. "The owning domain's own correction" is classified by derivation, `PriorPeriodCorrections`.)*
 **Phase:** 14
 
 ### INV-ACC-11 — Translation keeps the original and never alters a line or an executed rate
@@ -1533,7 +1533,7 @@ approver distinct from the initiator.
 **Why:** Single-actor control over financial correction is an unacceptable internal-fraud
 exposure.
 **Enforce:** `DOMAIN` + `DB-CONSTRAINT` (approver ≠ initiator).
-**Verify:** Self-approval rejection tests. *(`P14-TSK-012`, the close and the reopen: `PeriodClosesTest#theProposerCannotApprove`, `#theProposerCannotApproveAReopen`; `period_close_four_eyes`, `period_reopen_four_eyes`, `period_event_four_eyes` - `PeriodCloseMigrationTest#fourEyesForEveryWriter`; `PeriodCloseDatabaseTest#theProposerCannotApprove`, `PeriodReopenDatabaseTest#onlyTheLatest` owed, C5. A rejection is not an approval and may be the proposer's.)*
+**Verify:** Self-approval rejection tests. *(`P14-TSK-013`, a prior-period adjustment: refused by the domain, `prior_period_adjustment_four_eyes` and the ledger's `adjustment_proposal_approver_is_not_initiator` for every writer - `PriorPeriodAdjustmentsTest#theProposerCannotApprove`, `AccountingOriginDoorTest#theLedgersFourEyes`, `PriorPeriodAdjustmentMigrationTest#fourEyesForEveryWriter`; `PriorPeriodAdjustmentDatabaseTest#theProposerCannotApprove`, `#theMigrationBindsEveryEdge`, `#theLedgersMigrationBindsEveryWriter` owed, C5.)* *(`P14-TSK-012`, the close and the reopen: `PeriodClosesTest#theProposerCannotApprove`, `#theProposerCannotApproveAReopen`; `period_close_four_eyes`, `period_reopen_four_eyes`, `period_event_four_eyes` - `PeriodCloseMigrationTest#fourEyesForEveryWriter`; `PeriodCloseDatabaseTest#theProposerCannotApprove`, `PeriodReopenDatabaseTest#onlyTheLatest` owed, C5. A rejection is not an approval and may be the proposer's.)*
 **Phase:** 3, 6, 8, 10, 13, 14
 
 *(The list read "3, 8, 10, 13, 14" until the 2026-09-21 transition into the checkout phase:
