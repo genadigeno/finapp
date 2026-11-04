@@ -183,7 +183,7 @@ final class BnplPayoutWorld implements AutoCloseable {
                 outcomes, recorded, recorded, ids, clock);
         payables = new MerchantPayable(accounts, breakdowns);
         for (AccountPurpose purpose : List.of(AccountPurpose.PAYOUT_CLEARING, AccountPurpose.SETTLEMENT_CLEARING,
-                AccountPurpose.BNPL_MERCHANT_FEE_INCOME, AccountPurpose.CASH_AT_BANK)) {
+                AccountPurpose.BNPL_MERCHANT_FEE_INCOME, AccountPurpose.CASH_AT_BANK, AccountPurpose.CHARGEBACK_RECOVERABLE)) {
             operational(purpose, purpose == AccountPurpose.BNPL_MERCHANT_FEE_INCOME ? AccountType.REVENUE
                     : purpose == AccountPurpose.PAYOUT_CLEARING ? AccountType.LIABILITY : AccountType.ASSET);
         }
@@ -294,6 +294,18 @@ final class BnplPayoutWorld implements AutoCloseable {
                 new JournalLine(shop.payable(), Direction.CREDIT, eur(grossMinor)),
                 new JournalLine(shop.payable(), Direction.DEBIT, eur(feeMinor)),
                 new JournalLine(operational(AccountPurpose.CASH_AT_BANK), Direction.CREDIT, eur(feeMinor))));
+    }
+
+    /** Each adjustment's origin, as {@code ledger.adjustment_proposal} holds it: the journal row itself carries none (`P14-TSK-022`). */
+    final Map<JournalEntryId, com.finapp.ledger.AdjustmentOrigin> adjustmentOrigins = new java.util.HashMap<>();
+
+    /** An {@code ADJUSTMENT} entry of an origin, as the ledger's approval leaves it: its reference a person's or a door's (`P14-TSK-022`). */
+    JournalEntryId adjusted(com.finapp.ledger.AdjustmentOrigin origin, String reference, List<JournalLine> lines) {
+        LocalDate today = LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC);
+        JournalEntry entry = JournalEntry.balanced(ids, clock, today, today, lines);
+        state.entries.add(new Posted(entry, new PostingAttribution(JournalEntryType.ADJUSTMENT, reference, Optional.of("why it was made"), Optional.empty(), "the-approver", flow(), "ledger.adjust.approve:" + ids.next())));
+        adjustmentOrigins.put(entry.id(), origin);
+        return entry.id();
     }
 
     /** One posting through the real {@link PostingService}, as the platform. */
@@ -649,13 +661,13 @@ final class BnplPayoutWorld implements AutoCloseable {
                     if (!line.account().equals(account)) {
                         continue;
                     }
-                    Optional<Counterparty> other = counterpartyOf(posted, precedence);
-                    Optional<String> namespace = namespaceOf(posted, prefixes);
-                    String key = line.direction() + "|" + namespace.orElse("") + "|"
-                            + other.map(c -> c.purpose() + ":" + c.direction()).orElse("NONE");
+                    Bucket labelled = Bucket.of(line.direction(), line.amount(), Optional.ofNullable(adjustmentOrigins.get(posted.entry().id())), counterpartyOf(posted, precedence), namespaceOf(posted, prefixes));
+                    String key = line.direction() + "|" + labelled.namespace().orElse("") + "|"
+                            + (labelled.reconciliationAttributed() ? "RECONCILIATION" : labelled.accountingOrigin() ? "ACCOUNTING"
+                                    : labelled.counterparty().map(c -> c.purpose() + ":" + c.direction()).orElse("NONE"));
                     Bucket so = buckets.get(key);
-                    buckets.put(key, new Bucket(line.direction(), other,
-                            so == null ? line.amount() : so.total().plus(line.amount()), false, namespace));
+                    buckets.put(key, so == null ? labelled : new Bucket(line.direction(), labelled.counterparty(), so.total().plus(line.amount()),
+                            labelled.reconciliationAttributed(), labelled.namespace(), labelled.accountingOrigin()));
                 }
             }
             return new Breakdown(account, settled(account, state.entries), new ArrayList<>(buckets.values()));
@@ -699,8 +711,8 @@ final class BnplPayoutWorld implements AutoCloseable {
                     for (JournalLine line : posted.entry().lines()) {
                         if (line.account().equals(owned.id())) {
                             lines.add(new StatementLine(posted.entry().id(), posted.entry().postingDate(),
-                                    posted.entry().valueDate(), JournalEntryType.POSTING, posted.attribution().reference(),
-                                    line.direction(), line.amount(), false, namespaceOf(posted, prefixes)));
+                                    posted.entry().valueDate(), posted.attribution().entryType(), posted.attribution().reference(),
+                                    line.direction(), line.amount(), adjustmentOrigins.get(posted.entry().id()) == com.finapp.ledger.AdjustmentOrigin.RECONCILIATION, namespaceOf(posted, prefixes)));
                         }
                     }
                 }

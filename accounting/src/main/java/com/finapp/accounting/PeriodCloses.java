@@ -24,6 +24,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -59,6 +61,11 @@ import lombok.RequiredArgsConstructor;
  * ledger's row, back exactly one period; the edge at {@code revision + 1} - one transaction. Nothing is deleted. A posting dated after the period is unaffected before and after (row 9). A re-close is a new lock,
  * so a new run.
  *
+ * <p><strong>A reopen names the posted adjustments it read</strong> (`P14-TSK-022`, the owner's ruling (m); {@code INV-ACC-10}): a month's figures at the next revision still show what those corrected, each entry being dated in a later month, so whoever corrects the month directly
+ * would correct it twice. Each act's body names them, and differing from what is posted <em>at that act</em> is {@link PriorPeriodAdjustments.AdjustmentStale}, the refusal an adjustment's own approval raises. The approval is compared with what stands, never with the proposal: a pending
+ * reopen does not stop an adjustment's approval (ruling (n)), so the set may have moved between the two acts, and an approver attests to what stands when they act. Read by a plain statement after the period's row is held: no writer reaches {@code POSTED} without that row {@code FOR SHARE}, and
+ * {@code POSTED} is terminal, so the set cannot move while it is held; and the read takes no lock, so it adds no edge to the plan's order. Nothing about it is stored: what was named is what was posted, on the adjustments' own rows.
+ *
  * <p>Nothing here posts. A reason is never logged, never in a summary and never in an exception: the audit record's reason column and the rows alone hold it.
  */
 @RequiredArgsConstructor
@@ -81,6 +88,8 @@ public final class PeriodCloses {
     @NonNull private final ReconciliationRunCoverage coverage;
     @NonNull private final PostingCutoff cutoff;
     @NonNull private final ReportRunSupersession reportRuns;
+    /** What has posted against a month, read to judge what a reopen names. Never written here. */
+    @NonNull private final PriorPeriodAdjustmentStore adjustments;
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final OutboxWriter<Connection> outbox;
     @NonNull private final IdGenerator ids;
@@ -414,14 +423,17 @@ public final class PeriodCloses {
     // ------------------------------------------------------------------ reopen
 
     /**
-     * Proposes reopening the latest {@code CLOSED} period - nothing moves. The same proposer's repeat with the same reason converges.
+     * Proposes reopening the latest {@code CLOSED} period, naming the adjustments posted against it - nothing moves. The same proposer's repeat with the same reason converges.
      *
+     * @param named the posted adjustments the person read
      * @throws AccountingPeriods.PeriodNotFound when no period has this id
      * @throws AccountingPeriods.PeriodStale when the period is not {@code CLOSED}, it is not the latest closed, the next is past {@code OPEN}, or another person's proposal stands
+     * @throws PriorPeriodAdjustments.AdjustmentStale when what is named is not what is posted now
      */
-    public Acted proposeReopen(Connection unitOfWork, AccountingPeriodId id, Actor actor, String reason, CorrelationId correlation) {
+    public Acted proposeReopen(Connection unitOfWork, AccountingPeriodId id, Actor actor, Set<UUID> named, String reason, CorrelationId correlation) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(named, "named");
         Objects.requireNonNull(correlation, "correlation");
         person(actor);
         String reasoned = AccountingReasons.reasoned(reason);
@@ -437,25 +449,29 @@ public final class PeriodCloses {
             }
             throw new AccountingPeriods.PeriodStale("a reopen of the period is already proposed and awaits a second person");
         }
+        int posted = requireNamesWhatIsPosted(unitOfWork, id, named);
         closes.insertReopen(unitOfWork, new PeriodCloseStore.NewReopen(PeriodReopenId.next(ids), id, row.revision(), actor, reasoned, correlation));
         periods.appendEvent(unitOfWork, new AccountingPeriodStore.EventRow(ids.next(), id, AccountingPeriodStore.Act.REOPEN_PROPOSED, Optional.of(PeriodStatus.CLOSED),
                 PeriodStatus.CLOSED, row.revision(), actor, Optional.empty(), Optional.empty(), Optional.of(reasoned), correlation));
-        record(unitOfWork, actor, AccountingAuditAction.PERIOD_REOPEN_PROPOSED, id, Optional.of(reasoned), "period=" + row.month() + ", revision=" + row.revision(), correlation);
+        record(unitOfWork, actor, AccountingAuditAction.PERIOD_REOPEN_PROPOSED, id, Optional.of(reasoned), "period=" + row.month() + ", revision=" + row.revision() + ", postedAdjustments=" + posted, correlation);
         return new Acted(id, row.month(), PeriodStatus.CLOSED, row.revision(), Optional.empty(), Optional.empty(), false);
     }
 
     /**
-     * Approves a pending reopen - a different person's act: the FINAL runs superseded, the cutoff back one period, {@code CLOSED -> OPEN} at {@code revision + 1}, the pin released, one transaction. The same
+     * Approves a pending reopen, naming the adjustments posted against the month - a different person's act: the FINAL runs superseded, the cutoff back one period, {@code CLOSED -> OPEN} at {@code revision + 1}, the pin released, one transaction. The same
      * approver's repeat converges.
      *
+     * @param named the posted adjustments the person read
      * @throws AccountingPeriods.PeriodNotFound when no period has this id
      * @throws AccountingPeriods.PeriodStale when the period is not {@code CLOSED} with a reopen pending, it is not the latest closed, or the next is past {@code OPEN}
      * @throws AccountingPeriods.SelfApprovalRefused when the approver proposed it ({@code INV-AUD-04})
+     * @throws PriorPeriodAdjustments.AdjustmentStale when what is named is not what is posted now - nothing changed; read them and decide again
      * @throws PostingCutoff.CutoffBusy when postings held the cutoff through the ledger's bounded attempts - nothing changed; retry
      */
-    public Acted approveReopen(Connection unitOfWork, AccountingPeriodId id, Actor actor, String reason, CorrelationId correlation) {
+    public Acted approveReopen(Connection unitOfWork, AccountingPeriodId id, Actor actor, Set<UUID> named, String reason, CorrelationId correlation) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(named, "named");
         Objects.requireNonNull(correlation, "correlation");
         person(actor);
         String reasoned = AccountingReasons.reasoned(reason);
@@ -481,6 +497,7 @@ public final class PeriodCloses {
         if (standing.proposedBy().equals(actor.id())) {
             throw new AccountingPeriods.SelfApprovalRefused(id, row.month(), "period:reopen");
         }
+        int posted = requireNamesWhatIsPosted(unitOfWork, id, named);
         // The unlock's order: A4 under the period's FOR UPDATE and BEFORE the cutoff's key, so postings do not wait on these writes.
         int superseded = reportRuns.supersedeFinal(unitOfWork, id, actor, correlation);
         if (!closes.approveReopen(unitOfWork, standing.id(), actor, reasoned)) {
@@ -494,7 +511,7 @@ public final class PeriodCloses {
         int revision = row.revision() + 1;
         periods.appendEvent(unitOfWork, new AccountingPeriodStore.EventRow(ids.next(), id, AccountingPeriodStore.Act.REOPENED, Optional.of(PeriodStatus.CLOSED), PeriodStatus.OPEN,
                 revision, actor, Optional.of(standing.proposedBy()), Optional.empty(), Optional.of(reasoned), correlation));
-        record(unitOfWork, actor, AccountingAuditAction.PERIOD_REOPENED, id, Optional.of(reasoned), "period=" + row.month() + ", revision=" + revision + ", supersededRuns=" + superseded, correlation);
+        record(unitOfWork, actor, AccountingAuditAction.PERIOD_REOPENED, id, Optional.of(reasoned), "period=" + row.month() + ", revision=" + revision + ", supersededRuns=" + superseded + ", postedAdjustments=" + posted, correlation);
         EventPayload payload = EventPayload.of()
                 .with("period", row.month().toString())
                 .with("revision", Integer.toString(revision))
@@ -512,6 +529,13 @@ public final class PeriodCloses {
         if (next.isPresent() && next.get().status() != PeriodStatus.OPEN) {
             throw new AccountingPeriods.PeriodStale("only the latest closed period reopens, the next not locked: " + next.get().month() + " is " + next.get().status().name());
         }
+    }
+
+    /** What the act names against what is posted now, on a plain read: the caller holds the period's row, and no writer reaches {@code POSTED} without that row {@code FOR SHARE}. The count is what is posted. */
+    private int requireNamesWhatIsPosted(Connection unitOfWork, AccountingPeriodId id, Set<UUID> named) {
+        Set<UUID> posted = adjustments.ofCorrected(unitOfWork, id).stream().filter(row -> row.status() == PriorPeriodAdjustmentStatus.POSTED).map(row -> row.id().value()).collect(Collectors.toSet());
+        PriorPeriodAdjustments.requireNamed(posted, named);
+        return posted.size();
     }
 
     // ------------------------------------------------------------------ reads, refusals' records

@@ -75,13 +75,21 @@ public interface PositionBreakdown<T> {
      * shapes, decides which one explains the line. A merchant's BNPL refund credits the
      * customer's wallet exactly as a wallet-paid capture's refund does, so only the key can tell
      * the two apart.
+     *
+     * <p>{@code accountingOrigin} (`P14-TSK-022`, the owner's ruling (q); the origin rule again):
+     * the lines belong to an {@code ADJUSTMENT} entry whose proposal is of origin
+     * {@code ACCOUNTING}, a prior-period adjustment. Classified by that origin whatever the entry
+     * faces, so its counterparty is empty: facing a customer's wallet it would otherwise read as a
+     * capture or a refund that never happened. A {@code MANUAL} adjustment has no such rule and
+     * reads by its counterparty, as it always has. {@link #of} is the rule's one statement.
      */
     record Bucket(
             Direction direction,
             Optional<Counterparty> counterparty,
             Money total,
             boolean reconciliationAttributed,
-            Optional<String> namespace) {
+            Optional<String> namespace,
+            boolean accountingOrigin) {
 
         public Bucket {
             Objects.requireNonNull(direction, "direction must not be null");
@@ -96,6 +104,47 @@ public interface PositionBreakdown<T> {
                 throw new IllegalArgumentException(
                         "an attribution is an ADJUSTMENT, never a posting under a namespace");
             }
+            if (accountingOrigin && (reconciliationAttributed || counterparty.isPresent() || namespace.isPresent())) {
+                throw new IllegalArgumentException(
+                        "an ACCOUNTING-origin line is classified by its origin alone");
+            }
+        }
+
+        /**
+         * One line's bucket, the origin rule stated once: a {@code RECONCILIATION} or an
+         * {@code ACCOUNTING} proposal's line is that origin's, its counterparty and any namespace
+         * dropped; anything else, a {@code MANUAL} proposal's or a posting's, keeps both.
+         *
+         * @param origin the origin of the entry's proposal, empty for an entry no proposal posted
+         * @param facing the first named counterparty purpose its entry touched
+         * @param namespace the first named posting-key namespace its key begins with
+         */
+        public static Bucket of(
+                Direction direction,
+                Money total,
+                Optional<AdjustmentOrigin> origin,
+                Optional<Counterparty> facing,
+                Optional<String> namespace) {
+            boolean attributed = origin.filter(AdjustmentOrigin.RECONCILIATION::equals).isPresent();
+            boolean accounting = origin.filter(AdjustmentOrigin.ACCOUNTING::equals).isPresent();
+            boolean byOrigin = attributed || accounting;
+            return new Bucket(
+                    direction,
+                    byOrigin ? Optional.empty() : facing,
+                    total,
+                    attributed,
+                    byOrigin ? Optional.empty() : namespace,
+                    accounting);
+        }
+
+        /** A bucket of no {@code ACCOUNTING} origin - the shape before `P14-TSK-022`. */
+        public Bucket(
+                Direction direction,
+                Optional<Counterparty> counterparty,
+                Money total,
+                boolean reconciliationAttributed,
+                Optional<String> namespace) {
+            this(direction, counterparty, total, reconciliationAttributed, namespace, false);
         }
 
         /** A bucket no posting-key namespace was asked of - the shape before `P12-TSK-016`. */
@@ -104,7 +153,7 @@ public interface PositionBreakdown<T> {
                 Optional<Counterparty> counterparty,
                 Money total,
                 boolean reconciliationAttributed) {
-            this(direction, counterparty, total, reconciliationAttributed, Optional.empty());
+            this(direction, counterparty, total, reconciliationAttributed, Optional.empty(), false);
         }
     }
 

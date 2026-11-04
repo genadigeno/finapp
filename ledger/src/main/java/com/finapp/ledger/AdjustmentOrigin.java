@@ -1,6 +1,7 @@
 package com.finapp.ledger;
 
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -28,6 +29,14 @@ public enum AdjustmentOrigin {
     MANUAL,
     RECONCILIATION,
     ACCOUNTING;
+
+    /**
+     * The origin a stored name holds, or empty for a name this build does not know. For a read that must go on answering under a rolling deploy, where an old instance can meet a later release's origin: such a line carries no origin, so it reads by what it faces and is folded
+     * once like any other, and the sum still holds (`P14-TSK-022`'s review, M-3). {@link #valueOf} would throw on a merchant's payable and on two proofs.
+     */
+    public static Optional<AdjustmentOrigin> named(String name) {
+        return Arrays.stream(values()).filter(origin -> origin.name().equals(name)).findFirst();
+    }
 
     /** The latest {@code CHECK}'s value list (`V030`) — reconciled by the migration test. */
     public static String sqlValueList() {

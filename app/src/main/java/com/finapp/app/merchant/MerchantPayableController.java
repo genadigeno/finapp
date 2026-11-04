@@ -45,7 +45,7 @@ public class MerchantPayableController {
     /**
      * One currency's payable. Every figure is a decimal string; {@code position} equals
      * {@code captured − fees − refunded + feesReturned − paidOut + payoutsReturned − chargedBack
-     * + chargebacksReversed + reconciliationAttributed + bnplFinanced − bnplFees − bnplRefunded
+     * + chargebacksReversed + reconciliationAttributed + accountingCorrections + bnplFinanced − bnplFees − bnplRefunded
      * + bnplFeesReturned + other} exactly. The four BNPL terms (`P12-TSK-016`) are the BNPL
      * purchases financed at you — the gross credited and the merchant fee taken out of it, the
      * fee being the financing entry's own (the version pinned at purchase) — and what BNPL
@@ -61,7 +61,10 @@ public class MerchantPayableController {
      * position below zero after a chargeback is merchant debt, recovered from later captures
      * before any payout; {@code reconciliationAttributed} is signed — value an approved break
      * resolution attributed to or from the payable (`P8-TSK-015`, ADR-0071 §2), whatever the
-     * entry faced; and {@code other} is signed — an operator adjustment today.
+     * entry faced; {@code accountingCorrections} is signed — what the platform's accounting
+     * corrected on this payable after a month closed (`P14-TSK-022`), never a sale, a refund or a
+     * chargeback, read on your transaction report as an {@code OTHER} movement labelled
+     * {@code Account adjustment}; and {@code other} is signed — an operator adjustment today.
      */
     public record PayableLine(
             String currency,
@@ -75,6 +78,7 @@ public class MerchantPayableController {
             String chargedBack,
             String chargebacksReversed,
             String reconciliationAttributed,
+            String accountingCorrections,
             String bnplFinanced,
             String bnplFees,
             String bnplRefunded,
@@ -93,7 +97,8 @@ public class MerchantPayableController {
                 "DERIVED", owed.stream().map(MerchantPayableController::render).toList());
     }
 
-    private static PayableLine render(MerchantPayable.Payable payable) {
+    /** Package-private so what a merchant reads can be proven with no database ({@code MerchantStatementSurfacesTest}). */
+    static PayableLine render(MerchantPayable.Payable payable) {
         return new PayableLine(
                 payable.position().currency().code(),
                 decimal(payable.position()),
@@ -106,6 +111,7 @@ public class MerchantPayableController {
                 decimal(payable.chargedBack()),
                 decimal(payable.chargebacksReversed()),
                 decimal(payable.reconciliationAttributed()),
+                decimal(payable.accountingCorrections()),
                 decimal(payable.bnplFinanced()),
                 decimal(payable.bnplFees()),
                 decimal(payable.bnplRefunded()),

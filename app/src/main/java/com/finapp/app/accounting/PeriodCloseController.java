@@ -1,5 +1,6 @@
 package com.finapp.app.accounting;
 
+import com.finapp.accounting.PriorPeriodAdjustments;
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
@@ -47,7 +48,7 @@ public class PeriodCloseController {
                 : body.disclosures().stream().map(item -> new PeriodCloseDesk.StatedDisclosure(item.check(), item.attempt(), item.reason())).toList());
     }
 
-    /** The period's latest close proposal as its approver reads it: each attempt with its evidence, the reason per DISCLOSED attempt, whether it still stands. Audited. */
+    /** The period's latest close proposal as its approver reads it: each attempt with its evidence, the reason per DISCLOSED attempt, whether it still stands, and the adjustments posted against the month, which a reopen's approver names. Audited. */
     @GetMapping("/{periodId}/close-proposal")
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
     public PeriodCloseDesk.CloseProposalView readAccountingPeriodCloseProposal(@PathVariable("periodId") String periodId) {
@@ -76,7 +77,10 @@ public class PeriodCloseController {
         return desk.reject(idempotencyKey, periodId, body.proposalId(), body.reason());
     }
 
-    /** Proposes reopening the latest CLOSED period, the next not locked - nothing moves until a different person approves; a reason is required. */
+    /**
+     * Proposes reopening the latest CLOSED period, the next not locked, naming the adjustments posted against it (read at GET .../prior-period-adjustments of the period) - nothing moves until a different person approves; a reason is required. Naming other than what is posted now is 409
+     * accounting.PriorPeriodAdjustmentStale.
+     */
     @PostMapping(path = "/{periodId}/reopen-proposal", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
     @RequiresIdempotencyKey
@@ -84,11 +88,12 @@ public class PeriodCloseController {
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("periodId") String periodId,
             @Valid @RequestBody PeriodReopenRequest body) {
-        return desk.proposeReopen(idempotencyKey, periodId, body.reason());
+        return desk.proposeReopen(idempotencyKey, periodId, body.postedAdjustments(), body.reason());
     }
 
     /**
-     * Approves a pending reopen - a different person's act: the period OPEN at its next revision, the cutoff back one period, its FINAL runs SUPERSEDED and nothing deleted; a reason is required.
+     * Approves a pending reopen - a different person's act, naming the adjustments posted against the month (priorPeriodAdjustments of GET .../close-proposal, under this same permission): the period OPEN at its next revision, the cutoff back one period, its FINAL runs SUPERSEDED and nothing deleted;
+     * a reason is required. Naming other than what is posted now is 409 accounting.PriorPeriodAdjustmentStale: an adjustment may have posted since the proposal.
      */
     @PostMapping(path = "/{periodId}/reopen-approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
@@ -97,7 +102,7 @@ public class PeriodCloseController {
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("periodId") String periodId,
             @Valid @RequestBody PeriodReopenRequest body) {
-        return desk.approveReopen(idempotencyKey, periodId, body.reason());
+        return desk.approveReopen(idempotencyKey, periodId, body.postedAdjustments(), body.reason());
     }
 
     // -----------------------------------------------------------------
@@ -135,9 +140,12 @@ public class PeriodCloseController {
         }
     }
 
-    /** A reopen's act: its reason ({@code accounting.ReasonRequired} when missing). */
+    /**
+     * A reopen's act: its reason ({@code accounting.ReasonRequired} when missing) and the adjustments posted against the month that the person read. Absent names none; naming other than what is posted now is refused, a month with none included. Its bound is the most a
+     * month can hold, one above what an adjustment's approval may name ({@link PriorPeriodAdjustments#MAX_POSTED_CORRECTIONS} says why): a smaller one would leave a full month unable to reopen.
+     */
     @ClosedBody
-    public record PeriodReopenRequest(@Size(max = 1000) String reason) {
+    public record PeriodReopenRequest(@Size(max = 1000) String reason, @Size(max = PriorPeriodAdjustments.MAX_POSTED_CORRECTIONS) List<@NotNull @Size(max = 64) String> postedAdjustments) {
 
         /** The reason stays out of a log line: a record's generated {@code toString} would carry it. */
         @Override

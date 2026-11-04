@@ -1,10 +1,12 @@
 package com.finapp.app.accounts;
 
 import com.finapp.accounts.CustomerAccountId;
+import com.finapp.app.api.StatementLabels;
 import com.finapp.app.session.RequiresSession;
 import com.finapp.app.session.SessionAuthenticationInterceptor;
 import com.finapp.identity.Session;
 import com.finapp.ledger.BalanceDisplay;
+import com.finapp.ledger.JournalEntryType;
 import com.finapp.ledger.StatementDerivation;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.IdempotencyKeyHeader;
@@ -224,9 +226,11 @@ public class AccountController {
      * the drill-down key ({@code INV-ACC-02}); {@code reference} is the caller's own economic
      * event. Deliberately absent: any counterparty account, and any {@code reason} — free
      * text written by a person is audit material, never statement material
-     * ({@code RESTRICTED-PII}). {@code label} is {@code RECONCILIATION_ATTRIBUTION} for a line
-     * an approved break resolution attributed to the account (`P8-TSK-015`, ADR-0071 §2), so
-     * the customer's own record names the act; absent otherwise.
+     * ({@code RESTRICTED-PII}). <strong>An adjustment, whatever its origin (`P14-TSK-022`, the
+     * owner's ruling (s)):</strong> {@code label} is {@code Account adjustment} and
+     * {@code reference} is absent, because an adjustment's reference is an operator's free text,
+     * a resolution's bare id or an accounting constant, and none is the customer's own event.
+     * Every other line keeps its reference, with {@code label} absent.
      */
     public record StatementLineView(
             String entryId,
@@ -269,7 +273,9 @@ public class AccountController {
                 statement.lines().stream().map(AccountController::render).toList());
     }
 
-    private static StatementLineView render(StatementDerivation.StatementLine line) {
+    /** Package-private so the one label can be proven with no database ({@code StatementLabelsTest}). */
+    static StatementLineView render(StatementDerivation.StatementLine line) {
+        boolean adjustment = line.entryType() == JournalEntryType.ADJUSTMENT;
         return new StatementLineView(
                 line.entry().value().toString(),
                 line.postingDate().toString(),
@@ -277,8 +283,8 @@ public class AccountController {
                 line.entryType().name(),
                 line.direction().name(),
                 decimal(line.amount()),
-                line.reference(),
-                line.reconciliationAttribution() ? "RECONCILIATION_ATTRIBUTION" : null);
+                adjustment ? null : line.reference(),
+                adjustment ? StatementLabels.ACCOUNT_ADJUSTMENT : null);
     }
 
     /**

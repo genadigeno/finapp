@@ -121,7 +121,8 @@ class PeriodCloseDeskTest {
         }
     };
     private boolean cutoffBusy;
-    private final PeriodCloses machine = new PeriodCloses(periods, closes, runs, breaks, setStore, com.finapp.accounting.testing.MonthsThatRan.EVERY_MONTH, cutoff, (uow, period, actor, correlation) -> 2, (uow, record) -> audited.add(record),
+    private final com.finapp.accounting.testing.InMemoryPriorPeriodAdjustmentStore priorPeriod = new com.finapp.accounting.testing.InMemoryPriorPeriodAdjustmentStore(periods);
+    private final PeriodCloses machine = new PeriodCloses(periods, closes, runs, breaks, setStore, com.finapp.accounting.testing.MonthsThatRan.EVERY_MONTH, cutoff, (uow, period, actor, correlation) -> 2, priorPeriod, (uow, record) -> audited.add(record),
             (uow, envelope, payload, mediaType) -> events.add(envelope.eventType()), IDS, CLOCK);
     private final AccountingTransactions transactions = new AccountingTransactions() {
         @Override
@@ -140,7 +141,6 @@ class PeriodCloseDeskTest {
             }
         }
     };
-    private final com.finapp.accounting.testing.InMemoryPriorPeriodAdjustmentStore priorPeriod = new com.finapp.accounting.testing.InMemoryPriorPeriodAdjustmentStore(periods);
     private final com.finapp.accounting.PriorPeriodAdjustments priorPeriodAdjustments = new com.finapp.accounting.PriorPeriodAdjustments(periods, priorPeriod,
             new com.finapp.accounting.testing.InMemoryPriorPeriodPostings(), new com.finapp.accounting.testing.InMemoryGlMappingStore(), (uow, record) -> audited.add(record), (uow, envelope, payload, mediaType) -> { }, IDS, CLOCK);
     private final PeriodCloseDesk desk = new PeriodCloseDesk(machine, priorPeriodAdjustments, new IdempotentExecutor(new Claims(), CLOCK, Duration.ofDays(1), Duration.ofSeconds(30)), transactions, AccountingFlowScope.NONE);
@@ -272,21 +272,21 @@ class PeriodCloseDeskTest {
         String proposal = propose("k-1").proposalId();
         as(CONTROLLER, () -> desk.approve("k-b", period(), proposal, REASON));
 
-        PeriodCloseDesk.PeriodCloseReceipt proposed = as(ACCOUNTANT, () -> desk.proposeReopen("k-p", period(), "a correction"));
+        PeriodCloseDesk.PeriodCloseReceipt proposed = as(ACCOUNTANT, () -> desk.proposeReopen("k-p", period(), List.of(), "a correction"));
         assertThat(proposed.status()).isEqualTo("CLOSED");
-        assertThat(as(ACCOUNTANT, () -> desk.proposeReopen("k-p", period(), "a correction"))).isEqualTo(proposed);
-        refused(() -> as(ACCOUNTANT, () -> desk.approveReopen("k-s", period(), "mine")), AccountingErrorCode.SELF_APPROVAL_REFUSED, 403);
+        assertThat(as(ACCOUNTANT, () -> desk.proposeReopen("k-p", period(), List.of(), "a correction"))).isEqualTo(proposed);
+        refused(() -> as(ACCOUNTANT, () -> desk.approveReopen("k-s", period(), List.of(), "mine")), AccountingErrorCode.SELF_APPROVAL_REFUSED, 403);
         assertThat(audited.get(audited.size() - 1).outcome()).isEqualTo(AuditOutcome.FAILED);
 
         cutoffBusy = true;
-        refused(() -> as(CONTROLLER, () -> desk.approveReopen("k-o", period(), "agreed")), AccountingErrorCode.CUTOFF_BUSY, 503);
+        refused(() -> as(CONTROLLER, () -> desk.approveReopen("k-o", period(), List.of(), "agreed")), AccountingErrorCode.CUTOFF_BUSY, 503);
         cutoffBusy = false;
 
-        PeriodCloseDesk.PeriodCloseReceipt reopened = as(CONTROLLER, () -> desk.approveReopen("k-o2", period(), "agreed"));
+        PeriodCloseDesk.PeriodCloseReceipt reopened = as(CONTROLLER, () -> desk.approveReopen("k-o2", period(), List.of(), "agreed"));
         assertThat(reopened.status()).isEqualTo(PeriodStatus.OPEN.name());
         assertThat(reopened.revision()).isEqualTo(2);
-        assertThat(as(CONTROLLER, () -> desk.approveReopen("k-o2", period(), "agreed"))).isEqualTo(reopened);
-        refused(() -> as(ACCOUNTANT, () -> desk.proposeReopen("k-q", period(), "again")), AccountingErrorCode.PERIOD_STALE, 409);
+        assertThat(as(CONTROLLER, () -> desk.approveReopen("k-o2", period(), List.of(), "agreed"))).isEqualTo(reopened);
+        refused(() -> as(ACCOUNTANT, () -> desk.proposeReopen("k-q", period(), List.of(), "again")), AccountingErrorCode.PERIOD_STALE, 409);
     }
 
     @Test
@@ -321,11 +321,131 @@ class PeriodCloseDeskTest {
         priorPeriod.insert(UOW, new com.finapp.accounting.PriorPeriodAdjustmentStore.NewAdjustment(rejected, march, 1, april, 1, MARCH.plusMonths(1).atDay(5), UUID.randomUUID(), ACCOUNTANT, "a correction", CorrelationId.generate(IDS)));
         assertThat(priorPeriod.markRejected(UOW, rejected, CONTROLLER, "no")).isTrue();
 
-        PeriodCloseDesk.PeriodCloseReceipt reopening = as(ACCOUNTANT, () -> desk.proposeReopen("k-t3", period(), "found something"));
+        List<String> named = List.of(adjustment.value().toString());
+        PeriodCloseDesk.PeriodCloseReceipt reopening = as(ACCOUNTANT, () -> desk.proposeReopen("k-t3", period(), named, "found something"));
         assertThat(reopening.priorPeriodAdjustments()).as("the proposer is told, the rejected one corrected nothing").containsExactly(adjustment.value().toString());
-        assertThat(as(ACCOUNTANT, () -> desk.proposeReopen("k-t3", period(), "found something"))).as("the stored receipt").isEqualTo(reopening);
+        assertThat(as(ACCOUNTANT, () -> desk.proposeReopen("k-t3", period(), named, "found something"))).as("the stored receipt").isEqualTo(reopening);
 
-        assertThat(as(CONTROLLER, () -> desk.approveReopen("k-t4", period(), "agreed")).priorPeriodAdjustments()).as("the approver is told").containsExactly(adjustment.value().toString());
+        assertThat(as(CONTROLLER, () -> desk.approveReopen("k-t4", period(), named, "agreed")).priorPeriodAdjustments()).as("the approver is told").containsExactly(adjustment.value().toString());
+    }
+
+    /** {@code march} closed, with one adjustment posted against it. */
+    private String closedWithOnePosted(String key) {
+        PeriodCloseDesk.PeriodCloseReceipt proposal = propose(key + "-p");
+        as(CONTROLLER, () -> desk.approve(key + "-a", period(), proposal.proposalId(), "agreed"));
+        AccountingPeriodId april = AccountingPeriodId.next(IDS);
+        periods.insertIfAbsent(UOW, new AccountingPeriodStore.NewPeriod(april, MARCH.plusMonths(1), CorrelationId.generate(IDS)));
+        return posted(april);
+    }
+
+    private String posted(AccountingPeriodId april) {
+        com.finapp.accounting.PriorPeriodAdjustmentId adjustment = com.finapp.accounting.PriorPeriodAdjustmentId.next(IDS);
+        priorPeriod.insert(UOW, new com.finapp.accounting.PriorPeriodAdjustmentStore.NewAdjustment(adjustment, march, 1, april, 1, MARCH.plusMonths(1).atDay(5), UUID.randomUUID(), ACCOUNTANT, "a correction", CorrelationId.generate(IDS)));
+        assertThat(priorPeriod.markPosted(UOW, adjustment, UUID.randomUUID(), CONTROLLER, "agreed")).isTrue();
+        return adjustment.value().toString();
+    }
+
+    @Test
+    @DisplayName("P14-TSK-022 (m): a reopen's two acts name what has posted: naming none or another is the adjustment's own 409 accounting.PriorPeriodAdjustmentStale with nothing kept, and the same key then goes through; a malformed id is that refusal, never a 500; the detail names a count, never an id")
+    void aReopenNamesWhatHasPosted() {
+        String adjustment = closedWithOnePosted("k-n1");
+
+        refused(() -> as(ACCOUNTANT, () -> desk.proposeReopen("k-n2", period(), List.of(), "found something")), AccountingErrorCode.PRIOR_PERIOD_ADJUSTMENT_STALE, 409);
+        refused(() -> as(ACCOUNTANT, () -> desk.proposeReopen("k-n3", period(), null, "found something")), AccountingErrorCode.PRIOR_PERIOD_ADJUSTMENT_STALE, 409);
+        refused(() -> as(ACCOUNTANT, () -> desk.proposeReopen("k-n4", period(), List.of(UUID.randomUUID().toString()), "found something")), AccountingErrorCode.PRIOR_PERIOD_ADJUSTMENT_STALE, 409);
+        refused(() -> as(ACCOUNTANT, () -> desk.proposeReopen("k-n5", period(), List.of("not-a-uuid"), "found something")), AccountingErrorCode.PRIOR_PERIOD_ADJUSTMENT_STALE, 409);
+        assertThatThrownBy(() -> as(ACCOUNTANT, () -> desk.proposeReopen("k-n2", period(), List.of(), "found something")))
+                .isInstanceOfSatisfying(ApiException.class, refused -> assertThat(refused.clientDetail().orElseThrow()).contains("1 stand").doesNotContain(adjustment));
+        assertThat(closes.reopens()).isEmpty();
+
+        assertThat(as(ACCOUNTANT, () -> desk.proposeReopen("k-n2", period(), List.of(adjustment), "found something")).status()).as("a refusal stored nothing under the key").isEqualTo("CLOSED");
+        assertThatThrownBy(() -> as(ACCOUNTANT, () -> desk.proposeReopen("k-n2", period(), List.of(), "found something"))).as("the same key naming another set").isInstanceOf(IdempotencyConflictException.class);
+
+        refused(() -> as(CONTROLLER, () -> desk.approveReopen("k-n6", period(), List.of(), "agreed")), AccountingErrorCode.PRIOR_PERIOD_ADJUSTMENT_STALE, 409);
+        assertThat(periods.find(UOW, march).orElseThrow().status()).isEqualTo(PeriodStatus.CLOSED);
+        assertThat(as(CONTROLLER, () -> desk.approveReopen("k-n6", period(), List.of(adjustment), "agreed")).status()).isEqualTo("OPEN");
+    }
+
+    @Test
+    @DisplayName("P14-TSK-022 (n): an adjustment posted after the proposal: the approver reads the list at GET close-proposal, under ACCOUNTING_CLOSE_APPROVE on a CLOSED month, names it, and lands; naming the proposer's list is refused")
+    void theApproverReadsTheListItNames() throws Exception {
+        String first = closedWithOnePosted("k-r1");
+        as(ACCOUNTANT, () -> desk.proposeReopen("k-r2", period(), List.of(first), "found something"));
+        String second = posted(periods.lockShared(UOW, MARCH.plusMonths(1)).orElseThrow().id());
+
+        assertThat(PeriodCloseController.class.getMethod("readAccountingPeriodCloseProposal", String.class).getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.ACCOUNTING_CLOSE_APPROVE);
+        PeriodCloseDesk.CloseProposalView read = as(CONTROLLER, () -> desk.proposal(period()));
+        assertThat(read.periodStatus()).isEqualTo("CLOSED");
+        assertThat(read.priorPeriodAdjustments()).containsExactlyInAnyOrder(first, second);
+
+        refused(() -> as(CONTROLLER, () -> desk.approveReopen("k-r3", period(), List.of(first), "agreed")), AccountingErrorCode.PRIOR_PERIOD_ADJUSTMENT_STALE, 409);
+        PeriodCloseDesk.PeriodCloseReceipt reopened = as(CONTROLLER, () -> desk.approveReopen("k-r3", period(), read.priorPeriodAdjustments(), "agreed"));
+        assertThat(reopened.status()).isEqualTo("OPEN");
+        assertThat(reopened.priorPeriodAdjustments()).containsExactlyInAnyOrder(first, second);
+    }
+
+    @Test
+    @DisplayName("P14-TSK-022: a stored reopen receipt stays readable: a row from before P14-TSK-013 has six fields and replays with an empty list; and a body naming none fingerprints exactly as it did, so a retry across the deploy replays and is no conflict")
+    void aStoredReceiptStaysReadable() {
+        as(ACCOUNTANT, () -> {
+            String key = "k-old";
+            String fingerprinted = PeriodCloseDesk.reopenFingerprint("reopen-proposal", march, java.util.Set.of(), "from before");
+            assertThat(fingerprinted).isEqualTo("reopen-proposal|" + march.value() + "|from before");
+            IdempotencyKey stored = new IdempotencyKey(AccountingPeriodDesk.SCOPE + ACCOUNTANT.type().name() + ":" + ACCOUNTANT.id(), key);
+            String sixFields = march.value() + "|" + MARCH + "|CLOSED|1||";
+            claims.put(stored, new IdempotencyRecord(stored, RequestFingerprint.sha256(fingerprinted.getBytes(java.nio.charset.StandardCharsets.UTF_8)), IdempotencyState.COMPLETED,
+                    StoredResponse.of(sixFields.getBytes(java.nio.charset.StandardCharsets.UTF_8), "text/plain"), CorrelationId.generate(IDS), CLOCK.instant(), CLOCK.instant().plus(Duration.ofDays(1))));
+
+            PeriodCloseDesk.PeriodCloseReceipt replayed = desk.proposeReopen(key, period(), null, "from before");
+
+            assertThat(replayed.status()).isEqualTo("CLOSED");
+            assertThat(replayed.priorPeriodAdjustments()).isEmpty();
+            return null;
+        });
+        UUID some = UUID.randomUUID();
+        assertThat(PeriodCloseDesk.reopenFingerprint("reopen-proposal", march, java.util.Set.of(some), "r")).as("another form, whatever a reason holds")
+                .isNotEqualTo(PeriodCloseDesk.reopenFingerprint("reopen-proposal", march, java.util.Set.of(), "[" + some + "]|r"));
+    }
+
+    @Test
+    @DisplayName("P14-TSK-022: a reopen's body: a null among the names is the platform's validation failure at the door, never a NullPointerException and a 500; its absence names none; its bound is the most a month can hold, one above what an adjustment's approval may name, so a full month can still reopen")
+    void aReopensBodyIsBounded() {
+        try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
+            Validator validator = factory.getValidator();
+            assertThat(validator.validate(new PeriodCloseController.PeriodReopenRequest(REASON, java.util.Arrays.asList((String) null))))
+                    .singleElement().satisfies(violation -> assertThat(violation.getPropertyPath().toString()).startsWith("postedAdjustments[0]"));
+            assertThat(validator.validate(new PeriodCloseController.PeriodReopenRequest(REASON, null))).isEmpty();
+            int named = com.finapp.accounting.PriorPeriodAdjustments.MAX_NAMED_CORRECTIONS;
+            int most = com.finapp.accounting.PriorPeriodAdjustments.MAX_POSTED_CORRECTIONS;
+            assertThat(named).isEqualTo(200);
+            assertThat(most).as("an approval names those posted and adds itself").isEqualTo(named + 1);
+            String id = UUID.randomUUID().toString();
+            assertThat(validator.validate(new PeriodCloseController.PeriodReopenRequest(REASON, java.util.Collections.nCopies(most, id)))).as("a reopen names all a month can hold").isEmpty();
+            assertThat(validator.validate(new PeriodCloseController.PeriodReopenRequest(REASON, java.util.Collections.nCopies(most + 1, id)))).isNotEmpty();
+            assertThat(validator.validate(new PriorPeriodAdjustmentController.PriorPeriodApprovalRequest("2097-04-05", 1, java.util.Collections.nCopies(named, id), REASON))).as("an approval names the 200 before it").isEmpty();
+            assertThat(validator.validate(new PriorPeriodAdjustmentController.PriorPeriodApprovalRequest("2097-04-05", 1, java.util.Collections.nCopies(named + 1, id), REASON))).as("so the 202nd can never post").isNotEmpty();
+        }
+    }
+
+    @Test
+    @DisplayName("P14-TSK-022's review, M-1: a month at the most it can hold still reopens: 201 posted, named in the bodies a door admits, proposed and approved, the receipt listing them all")
+    void aFullMonthStillReopens() {
+        String first = closedWithOnePosted("k-f1");
+        AccountingPeriodId april = periods.lockShared(UOW, MARCH.plusMonths(1)).orElseThrow().id();
+        List<String> all = new ArrayList<>(List.of(first));
+        while (all.size() < com.finapp.accounting.PriorPeriodAdjustments.MAX_POSTED_CORRECTIONS) {
+            all.add(posted(april));
+        }
+        try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
+            assertThat(factory.getValidator().validate(new PeriodCloseController.PeriodReopenRequest("found something", all))).as("the door admits the body").isEmpty();
+        }
+
+        as(ACCOUNTANT, () -> desk.proposeReopen("k-f2", period(), all, "found something"));
+        PeriodCloseDesk.PeriodCloseReceipt reopened = as(CONTROLLER, () -> desk.approveReopen("k-f3", period(), all, "agreed"));
+
+        assertThat(reopened.status()).isEqualTo("OPEN");
+        assertThat(reopened.priorPeriodAdjustments()).hasSize(201);
+        assertThat(as(CONTROLLER, () -> desk.approveReopen("k-f3", period(), all, "agreed"))).as("and its long receipt replays").isEqualTo(reopened);
     }
 
     @Test
@@ -333,7 +453,7 @@ class PeriodCloseDeskTest {
     void aBodysTextHoldsNoReason() {
         String secret = "a-persons-reason";
         for (Object record : List.of(new PeriodCloseController.CloseProposalRequest("run", secret, List.of(new PeriodCloseController.CloseDisclosureItem("CHECK", 1, secret))),
-                new PeriodCloseController.CloseDisclosureItem("CHECK", 1, secret), new PeriodCloseController.CloseDecisionRequest("proposal", secret), new PeriodCloseController.PeriodReopenRequest(secret),
+                new PeriodCloseController.CloseDisclosureItem("CHECK", 1, secret), new PeriodCloseController.CloseDecisionRequest("proposal", secret), new PeriodCloseController.PeriodReopenRequest(secret, List.of(UUID.randomUUID().toString())),
                 new PeriodCloseDesk.StatedDisclosure("CHECK", 1, secret), new PeriodCloseDesk.CloseProposalCheckView("CHECK", 1, "DISCLOSED", "judge:v1", secret, secret))) {
             assertThat(record.toString()).as(record.getClass().getSimpleName()).doesNotContain(secret);
         }

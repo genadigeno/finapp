@@ -257,7 +257,8 @@ class AccountingVocabulariesTest {
                         "accounting.PeriodReopenProposed=true", "accounting.PeriodReopened=true", "accounting.CloseProposalRead=false",
                         // P14-TSK-013: both acts and the rejection, each reasoned; the reads, an operator's.
                         "accounting.PriorPeriodAdjustmentProposed=true", "accounting.PriorPeriodAdjustmentPosted=true", "accounting.PriorPeriodAdjustmentRejected=true",
-                        "accounting.PriorPeriodAdjustmentRead=false");
+                        "accounting.PriorPeriodAdjustmentRead=false",
+                        "accounting.FinalStatementRead=false");
     }
 
     // ------------------------------------------------------------------

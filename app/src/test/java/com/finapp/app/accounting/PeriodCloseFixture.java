@@ -22,12 +22,14 @@ import com.finapp.accounting.JdbcAccountingBreakStore;
 import com.finapp.accounting.JdbcCloseRunStore;
 import com.finapp.accounting.JdbcGlMappingStore;
 import com.finapp.accounting.JdbcPeriodCloseStore;
+import com.finapp.accounting.JdbcPriorPeriodAdjustmentStore;
 import com.finapp.accounting.JdbcReportRunStore;
 import com.finapp.accounting.JdbcValuationRateSetStore;
 import com.finapp.accounting.PeriodCloseStatus;
 import com.finapp.accounting.PeriodCloseStore;
 import com.finapp.accounting.PeriodCloses;
 import com.finapp.accounting.PeriodStatus;
+import com.finapp.accounting.PriorPeriodAdjustmentStatus;
 import com.finapp.accounting.ValuationRateSets;
 import com.finapp.accounting.ValuationRates;
 import com.finapp.accounting.ValuationStaleness;
@@ -51,6 +53,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * The close's and the reopen's suites against PostgreSQL (`P14-TSK-012`), each in a database of its own ({@code own-container}: they close January 1999 for real, and activate a GL mapping from it). The machine over the real stores; a period brought to a ready run through the real
@@ -64,7 +67,7 @@ final class PeriodCloseFixture {
     static final JdbcValuationRateSetStore SETS = new JdbcValuationRateSetStore();
     static final CloseRuns RUNS = new CloseRuns(RUN_STORE, AccountingPeriodFixture.STORE, BREAKS, CloseRuns.Leases.STANDARD, new JdbcAuditWriter(), IDS, NOW);
     static final PeriodCloses MACHINE = new PeriodCloses(AccountingPeriodFixture.STORE, CLOSES, RUNS, BREAKS, SETS, com.finapp.accounting.testing.MonthsThatRan.EVERY_MONTH, new LedgerPostingCutoff(new PostingCutoffs(IDS, NOW)),
-            (unitOfWork, period, actor, correlation) -> new JdbcReportRunStore().supersedeFinal(unitOfWork, period, correlation), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, NOW);
+            (unitOfWork, period, actor, correlation) -> new JdbcReportRunStore().supersedeFinal(unitOfWork, period, correlation), new JdbcPriorPeriodAdjustmentStore(), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, NOW);
     static final ValuationRateSets VALUATION = new ValuationRateSets(SETS, AccountingPeriodFixture.STORE, new OneRate(), ValuationStaleness.standard(), new JdbcAuditWriter(), IDS, NOW);
     static final Actor ACCOUNTANT = person();
     static final Actor CONTROLLER = person();
@@ -114,14 +117,19 @@ final class PeriodCloseFixture {
         inScope(approver, uow -> periods().approveUnlock(uow, period.id(), approver, "the suite restores the period", correlation()));
     }
 
+    /** What has posted against {@code period}, as a reopen's two acts must name it (`P14-TSK-022`), read on the act's own connection. Every revision's, whatever else the suite left behind, so a restore or a case never depends on what ran before it. */
+    static Set<UUID> posted(Connection unitOfWork, AccountingPeriodId period) {
+        return new JdbcPriorPeriodAdjustmentStore().ofCorrected(unitOfWork, period).stream().filter(row -> row.status() == PriorPeriodAdjustmentStatus.POSTED).map(row -> row.id().value()).collect(Collectors.toSet());
+    }
+
     private static void reopen(AccountingPeriodId period) {
         Actor proposer = person();
         Optional<PeriodCloseStore.ReopenRow> pending = inScope(proposer, uow -> CLOSES.reopenAt(uow, period, rowOf(period).revision()));
         if (pending.isEmpty()) {
-            inScope(proposer, uow -> MACHINE.proposeReopen(uow, period, proposer, "the suite restores the period", correlation()));
+            inScope(proposer, uow -> MACHINE.proposeReopen(uow, period, proposer, posted(uow, period), "the suite restores the period", correlation()));
         }
         Actor approver = person();
-        inScope(approver, uow -> MACHINE.approveReopen(uow, period, approver, "the suite restores the period", correlation()));
+        inScope(approver, uow -> MACHINE.approveReopen(uow, period, approver, posted(uow, period), "the suite restores the period", correlation()));
     }
 
     private static AccountingPeriodStore.PeriodRow rowOf(AccountingPeriodId period) {

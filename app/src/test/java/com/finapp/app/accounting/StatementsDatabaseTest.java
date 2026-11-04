@@ -445,6 +445,49 @@ class StatementsDatabaseTest {
         assertThat(ask(SHEET, january, RunParameters.none()).status()).isEqualTo(RunStatus.FINAL);
     }
 
+    /** One read through the real door, as a controller. */
+    private static FinalStatementDesk.FinalStatementView readAsAController(String runId) {
+        FinalStatementDesk desk = new FinalStatementDesk(runs(), new JdbcPeriodPins(), SNAPSHOTS, TRANSACTIONS, new JdbcAuditWriter(), AccountingFlowScope.NONE, IDS, NOW);
+        try (SecurityContext.Scope who = SecurityContext.enter(CONTROLLER);
+                CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(correlation()))) {
+            return desk.read(runId);
+        }
+    }
+
+    @Test
+    @DisplayName("P14-TSK-022 (v): a controller reads the FINAL statements of the close it approved, over the real stores and the real bytes: the month's real status, the issued hash, the figures as issued, no door named, audited; another definition and an unknown id are the one 404; after a reopen the same id is that 404, and nothing more is recorded")
+    void aControllerReadsAFinalStatement() throws Exception {
+        PeriodCloseFixture.closed(JANUARY);
+        AccountingPeriodId january = id(JANUARY);
+        int revision = row(JANUARY).revision();
+        ReportRunStore.RunRow sheet = ask(SHEET, january, RunParameters.none());
+        ReportRunStore.RunRow income = ask(INCOME, january, RunParameters.none());
+        ReportRunStore.RunRow trialBalance = ask(DEFINITIONS.current(TrialBalanceDefinition.CODE).orElseThrow(), january, RunParameters.none());
+
+        for (ReportRunStore.RunRow run : List.of(sheet, income)) {
+            FinalStatementDesk.FinalStatementView view = readAsAController(run.id().value().toString());
+
+            assertThat(view.periodStatus()).isEqualTo("CLOSED");
+            assertThat(view.periodRevision()).isEqualTo(revision);
+            assertThat(view.issuedSha256()).isEqualTo(single("SELECT content_sha256 FROM accounting.report_run WHERE id = '" + run.id().value() + "'"));
+            assertThat(view.statement()).doesNotContain("/v1/").doesNotContain("ACCOUNTING_READ").doesNotContain("RECONCILIATION_INVESTIGATE");
+            assertThat(JSON.readTree(view.statement()).get("sections")).as("the figures as issued").isEqualTo(bodyOf(run).get("sections"));
+            assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'accounting.FinalStatementRead' AND target_id = '" + run.id().value() + "'")).isEqualTo(1);
+        }
+        String stale = sheet.id().value().toString();
+        List<String> refused = new ArrayList<>(List.of(trialBalance.id().value().toString(), com.finapp.accounting.ReportRunId.next(IDS).value().toString()));
+        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, PeriodCloseFixture.posted(uow, january), "a correction was found", correlation()));
+        assertThat(readAsAController(stale).periodStatus()).as("only proposed: the statement stands").isEqualTo("CLOSED");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'accounting.FinalStatementRead' AND target_id = '" + stale + "'")).isEqualTo(2);
+        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, PeriodCloseFixture.posted(uow, january), "agreed", correlation()));
+        refused.add(stale);
+
+        for (String id : refused) {
+            assertThatThrownBy(() -> readAsAController(id)).isInstanceOfSatisfying(com.finapp.platform.api.ApiException.class, notFound -> assertThat(notFound.errorCode()).isEqualTo(com.finapp.accounting.AccountingErrorCode.NOT_FOUND));
+        }
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'accounting.FinalStatementRead' AND target_id = '" + stale + "'")).as("a refusal records nothing").isEqualTo(2);
+    }
+
     @Test
     @DisplayName("reopened and re-closed: the first FINAL run SUPERSEDED and kept; the next ask a new run under the new revision and lock; its note reads its own close and names the first, which stands beside it")
     void aReCloseIsANewRunBesideTheFirst() throws Exception {
@@ -455,8 +498,8 @@ class StatementsDatabaseTest {
         String issued = single("SELECT content FROM accounting.report_run WHERE id = '" + first.id().value() + "'");
         String firstClose = single("SELECT id::text FROM accounting.period_close WHERE period_id = '" + january.value() + "' AND period_revision = " + firstRevision + " AND status = 'APPROVED'");
 
-        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, "a correction was found", correlation()));
-        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, "agreed", correlation()));
+        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, PeriodCloseFixture.posted(uow, january), "a correction was found", correlation()));
+        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, PeriodCloseFixture.posted(uow, january), "agreed", correlation()));
         assertThat(single("SELECT status FROM accounting.report_run WHERE id = '" + first.id().value() + "'")).isEqualTo("SUPERSEDED");
 
         post(LAST_DAY, wallet, operational(AccountPurpose.FEE_REVENUE), 3, EUR);
@@ -488,8 +531,8 @@ class StatementsDatabaseTest {
         assertThat(abandoned.run().status()).isEqualTo(RunStatus.GENERATING);
         ReportGeneration.Generated generated = SNAPSHOTS.read(snapshot -> new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT, ReportRuns.Leases.STANDARD.generationTimeout(), NOW).generate(snapshot, INCOME, abandoned.run().inputs()));
 
-        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, "a correction was found", correlation()));
-        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, "agreed", correlation()));
+        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, PeriodCloseFixture.posted(uow, january), "a correction was found", correlation()));
+        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, PeriodCloseFixture.posted(uow, january), "agreed", correlation()));
         assertThat(TRANSACTIONS.inTransaction(uow -> runs().complete(uow, abandoned.run().id(), abandoned.run().attempt(), generated, accountant)).run().failure()).contains(com.finapp.accounting.RunFailure.PERIOD_MOVED);
 
         PeriodCloseFixture.closed(JANUARY);

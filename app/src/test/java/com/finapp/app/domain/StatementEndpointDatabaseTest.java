@@ -209,7 +209,7 @@ class StatementEndpointDatabaseTest {
     }
 
     @Test
-    @DisplayName("an adjustment appears as its line - and its reason never does")
+    @DisplayName("an adjustment appears as its line, under the one label (P14-TSK-022) - and neither its reason nor its reference ever does")
     void anAdjustmentsReasonStaysOutOfTheStatement() throws Exception {
         Person person = givenAPerson();
         String accountId = field(post("/me/accounts", person.session(), OPEN_USD, key()).body(), "id");
@@ -258,6 +258,8 @@ class StatementEndpointDatabaseTest {
         assertThat(body)
                 .contains("\"entryType\":\"ADJUSTMENT\"")
                 .contains("\"amount\":\"3.00\"")
+                .contains("\"label\":\"Account adjustment\"")
+                .doesNotContain("statement-adjustment-")
                 // The justification is audit material, RESTRICTED-PII free text written by
                 // a person - never statement material (INV-AUD-02's reasoning at this
                 // surface). The audit record carries it; the statement must not.

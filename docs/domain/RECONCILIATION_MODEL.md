@@ -700,7 +700,7 @@ removes an expectation's remainder moves it to `RESOLVED_BY_ADJUSTMENT`. `RECONC
   `RECONCILIATION`-origin `ADJUSTMENT` entry is `MerchantPayable`'s `reconciliationAttributed`,
   classified first, whatever it faces — `SUSPENSE_UNMATCHED`, or a clearing position when a
   transfer closes an OUTBOUND remainder — so a reconciliation transfer never reads as a capture or a
-  payout returned; the customer statement labels the same lines `RECONCILIATION_ATTRIBUTION`. Both
+  payout returned; the customer statement labels the same lines `RECONCILIATION_ATTRIBUTION` *(since `P14-TSK-022` the one `Account adjustment`, for every origin)*. Both
   ship with `P8-TSK-015`, the first poster; `P8-TSK-019` adds only `payoutsReturned`. *(The Phase 7
   → 8 transition's consistency review, A12 and A13.)*
 - **As built (`P8-TSK-015`, `P8-TSK-023`).** Every kind above is live — the person kinds by

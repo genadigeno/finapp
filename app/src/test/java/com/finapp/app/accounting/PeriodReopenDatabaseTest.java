@@ -152,12 +152,12 @@ class PeriodReopenDatabaseTest {
         int revision = row(JANUARY).revision();
         assertThat(closedThrough()).contains(JANUARY.atEndOfMonth());
 
-        PeriodCloses.Acted proposed = inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, "a correction was found", correlation()));
+        PeriodCloses.Acted proposed = inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, PeriodCloseFixture.posted(uow, january), "a correction was found", correlation()));
         assertThat(proposed.status()).isEqualTo(PeriodStatus.CLOSED);
         assertThat(row(JANUARY).status()).as("nothing moves on a proposal").isEqualTo(PeriodStatus.CLOSED);
         assertThat(closedThrough()).contains(JANUARY.atEndOfMonth());
 
-        PeriodCloses.Acted acted = inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, "agreed", correlation()));
+        PeriodCloses.Acted acted = inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, PeriodCloseFixture.posted(uow, january), "agreed", correlation()));
         assertThat(acted.status()).isEqualTo(PeriodStatus.OPEN);
         assertThat(acted.revision()).isEqualTo(revision + 1);
         assertThat(row(JANUARY).revision()).isEqualTo(revision + 1);
@@ -184,7 +184,7 @@ class PeriodReopenDatabaseTest {
         PeriodCloseFixture.closed(JANUARY);
         AccountingPeriodId january = id(JANUARY);
         assertThatThrownBy(() -> post(IN_JANUARY, wallet, revenue, PostingCommand.Dating.AS_STATED)).as("closed: refused").isInstanceOf(PeriodClosedException.class);
-        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, "a correction was found", correlation()));
+        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, PeriodCloseFixture.posted(uow, january), "a correction was found", correlation()));
 
         ExecutorService pool = Executors.newFixedThreadPool(POSTERS + 1);
         CountDownLatch start = new CountDownLatch(1);
@@ -202,7 +202,7 @@ class PeriodReopenDatabaseTest {
                 // The cutoff's key answers busy after the ledger's bounded attempts, nothing changed; the person retries.
                 while (true) {
                     try {
-                        return inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, "agreed", correlation()));
+                        return inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, PeriodCloseFixture.posted(uow, january), "agreed", correlation()));
                     } catch (PostingCutoff.CutoffBusy busy) {
                         Thread.onSpinWait();
                     }
@@ -226,10 +226,10 @@ class PeriodReopenDatabaseTest {
         PeriodCloseFixture.closed(JANUARY);
         AccountingPeriodId january = id(JANUARY);
         AccountingPeriodId february = id(FEBRUARY);
-        assertThatThrownBy(() -> inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, february, ACCOUNTANT, "open", correlation()))).isInstanceOf(AccountingPeriods.PeriodStale.class);
+        assertThatThrownBy(() -> inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, february, ACCOUNTANT, PeriodCloseFixture.posted(uow, february), "open", correlation()))).isInstanceOf(AccountingPeriods.PeriodStale.class);
 
-        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, "a correction", correlation()));
-        assertThatThrownBy(() -> inScope(ACCOUNTANT, uow -> MACHINE.approveReopen(uow, january, ACCOUNTANT, "mine", correlation()))).isInstanceOf(AccountingPeriods.SelfApprovalRefused.class);
+        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, PeriodCloseFixture.posted(uow, january), "a correction", correlation()));
+        assertThatThrownBy(() -> inScope(ACCOUNTANT, uow -> MACHINE.approveReopen(uow, january, ACCOUNTANT, PeriodCloseFixture.posted(uow, january), "mine", correlation()))).isInstanceOf(AccountingPeriods.SelfApprovalRefused.class);
         refused("UPDATE accounting.period_reopen SET status = 'APPROVED', approved_by = proposed_by, approved_by_type = 'CUSTOMER', approval_reason = 'raw' WHERE status = 'PROPOSED' AND period_id = '" + january.value() + "'", "period_reopen_four_eyes");
         refused("INSERT INTO accounting.period_event (id, period_id, act, from_status, to_status, revision, actor, actor_type, proposed_by, reason, occurred_at, correlation_id) VALUES ('"
                 + IDS.next() + "', '" + january.value() + "', 'REOPENED', 'CLOSED', 'OPEN', 2, 'same', 'CUSTOMER', 'same', 'raw', clock_timestamp(), 'raw')", "period_event_four_eyes");
@@ -237,12 +237,12 @@ class PeriodReopenDatabaseTest {
                 "a second person");
 
         PeriodCloseFixture.locked(FEBRUARY);
-        assertThatThrownBy(() -> inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, "agreed", correlation()))).as("the next locked since").isInstanceOf(AccountingPeriods.PeriodStale.class);
+        assertThatThrownBy(() -> inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, PeriodCloseFixture.posted(uow, january), "agreed", correlation()))).as("the next locked since").isInstanceOf(AccountingPeriods.PeriodStale.class);
         assertThat(row(JANUARY).status()).isEqualTo(PeriodStatus.CLOSED);
         assertThat(closedThrough()).contains(FEBRUARY.atEndOfMonth());
         refused("UPDATE accounting.accounting_period SET status = 'OPEN', revision = revision + 1, locked_by = NULL, locked_by_type = NULL, locked_at = NULL, pinned_mapping_version_id = NULL WHERE id = '" + january.value() + "'",
                 "only the latest closed period");
-        assertThatThrownBy(() -> inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, person(), "another", correlation()))).isInstanceOf(AccountingPeriods.PeriodStale.class);
+        assertThatThrownBy(() -> inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, person(), PeriodCloseFixture.posted(uow, january), "another", correlation()))).isInstanceOf(AccountingPeriods.PeriodStale.class);
     }
 
     @Test
@@ -250,14 +250,14 @@ class PeriodReopenDatabaseTest {
     void aReopenRacingTheNextLock() throws Exception {
         PeriodCloseFixture.closed(JANUARY);
         AccountingPeriodId january = id(JANUARY);
-        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, "a correction", correlation()));
+        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, PeriodCloseFixture.posted(uow, january), "a correction", correlation()));
         ExecutorService pool = Executors.newFixedThreadPool(2);
         CountDownLatch start = new CountDownLatch(1);
         try {
             Future<Boolean> reopen = pool.submit(() -> {
                 start.await();
                 try {
-                    inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, "agreed", correlation()));
+                    inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, PeriodCloseFixture.posted(uow, january), "agreed", correlation()));
                     return true;
                 } catch (AccountingPeriods.PeriodStale stale) {
                     return false;
@@ -287,8 +287,8 @@ class PeriodReopenDatabaseTest {
         PeriodCloseFixture.closed(JANUARY);
         AccountingPeriodId january = id(JANUARY);
         CloseRunId first = inScope(Actor.SYSTEM, uow -> RUN_STORE.latestRun(uow, january)).orElseThrow().id();
-        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, "a correction", correlation()));
-        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, "agreed", correlation()));
+        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, PeriodCloseFixture.posted(uow, january), "a correction", correlation()));
+        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, PeriodCloseFixture.posted(uow, january), "agreed", correlation()));
 
         CloseRunId second = PeriodCloseFixture.ready(JANUARY);
         assertThat(second).isNotEqualTo(first);

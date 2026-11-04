@@ -1,10 +1,12 @@
 package com.finapp.app.merchant;
 
+import com.finapp.app.api.StatementLabels;
 import com.finapp.checkout.CheckoutSession;
 import com.finapp.checkout.CheckoutSessionStore;
 import com.finapp.checkout.OrderStore;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalEntryId;
+import com.finapp.ledger.JournalEntryType;
 import com.finapp.ledger.StatementDerivation;
 import com.finapp.merchant.AuthenticatedMerchant;
 import com.finapp.merchant.MerchantPayable;
@@ -97,9 +99,10 @@ public final class MerchantTransactionReport {
          */
         BNPL_REFUND,
         /**
-         * Anything else that moved the payable — a payout (`P6-TSK-012`), an operator
-         * adjustment. Shown with its money and <em>without</em> commercial identifiers,
-         * because the honest answer to "which purchase is this" is sometimes "none".
+         * Anything else that moved the payable — a payout (`P6-TSK-012`), an adjustment of any
+         * origin, which also carries the one label (`P14-TSK-022`). Shown with its money and
+         * <em>without</em> commercial identifiers, because the honest answer to "which purchase
+         * is this" is sometimes "none".
          */
         OTHER
     }
@@ -118,6 +121,8 @@ public final class MerchantTransactionReport {
      * @param purchaseId a {@link Kind#BNPL_FINANCING}'s BNPL purchase — the financing entry's
      *     own reference, the purchase {@code GET /v1/merchant/bnpl-purchases/{id}} reads
      *     (`P12-TSK-014`); nothing of the customer's beyond it
+     * @param label an adjustment's one label, whatever its origin ({@link StatementLabels}); empty
+     *     for every other entry
      */
     public record Movement(
             Kind kind,
@@ -130,7 +135,8 @@ public final class MerchantTransactionReport {
             Optional<UUID> orderId,
             Optional<UUID> paymentIntentId,
             Optional<UUID> refundId,
-            Optional<UUID> purchaseId) {}
+            Optional<UUID> purchaseId,
+            Optional<String> label) {}
 
     /** One currency's movements, between an opening and a closing they reconcile to. */
     public record Section(Money opening, List<Movement> movements, Money closing) {}
@@ -218,6 +224,24 @@ public final class MerchantTransactionReport {
         // Signed by the LIABILITY's normal balance: a credit increases what is owed.
         Money net = credited.minus(debited);
 
+        // An adjustment first, by its entry's type (P14-TSK-022), before any reference is read: a
+        // MANUAL reference is an operator's free text, and one that happened to name an attempt
+        // would otherwise serve that purchase's identifiers on a movement that is no capture.
+        if (first.entryType() == JournalEntryType.ADJUSTMENT) {
+            return new Movement(
+                    Kind.OTHER,
+                    first.entry(),
+                    first.postingDate(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    net,
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.of(StatementLabels.ACCOUNT_ADJUSTMENT));
+        }
         Optional<UUID> reference = asUuid(first.reference());
         // BNPL's entries by their KEY first (P12-TSK-016, MerchantPayable's rule): the ledger
         // names the namespace beside the line, and only bnpl posts under it.
@@ -234,7 +258,8 @@ public final class MerchantTransactionReport {
                     Optional.empty(),
                     Optional.empty(),
                     Optional.empty(),
-                    reference);
+                    reference,
+                    Optional.empty());
         }
         if (namespace.filter(MerchantPayable.BNPL_REFUND_NAMESPACE::equals).isPresent()) {
             // The second rank (P12-TSK-021): the refund named only when bnpl's tenant-scoped read confirms it.
@@ -251,6 +276,7 @@ public final class MerchantTransactionReport {
                     Optional.empty(),
                     Optional.empty(),
                     confirmed,
+                    Optional.empty(),
                     Optional.empty());
         }
         Optional<PaymentAttempt> captured =
@@ -268,6 +294,7 @@ public final class MerchantTransactionReport {
                     commercial.checkout(),
                     commercial.order(),
                     commercial.intent(),
+                    Optional.empty(),
                     Optional.empty(),
                     Optional.empty());
         }
@@ -291,6 +318,7 @@ public final class MerchantTransactionReport {
                     commercial.intent().isPresent()
                             ? Optional.of(refund.id().value())
                             : Optional.empty(),
+                    Optional.empty(),
                     Optional.empty());
         }
         return new Movement(
@@ -300,6 +328,7 @@ public final class MerchantTransactionReport {
                 Optional.empty(),
                 Optional.empty(),
                 net,
+                Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),

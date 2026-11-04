@@ -289,7 +289,7 @@ public enum AccountingAuditAction implements AuditableAction {
     PERIOD_REOPEN_PROPOSED(
             "accounting.PeriodReopenProposed",
             "An accountant proposed reopening the latest CLOSED accounting period - nothing moves until a second person approves (P14-TSK-012, INV-ACC-10, INV-AUD-04; POST"
-                    + " .../periods/{id}/reopen-proposal, ACCOUNTING_CLOSE_PROPOSE). Reasoned. Its target the period; the summary its month and revision.",
+                    + " .../periods/{id}/reopen-proposal, ACCOUNTING_CLOSE_PROPOSE). Reasoned. Its target the period; the summary its month, revision and how many adjustments stand posted against it, which the act named (P14-TSK-022).",
             true),
 
     /** A second person approved a reopen (`P14-TSK-012`, ACCOUNTING_CLOSE_APPROVE). */
@@ -297,7 +297,7 @@ public enum AccountingAuditAction implements AuditableAction {
             "accounting.PeriodReopened",
             "A person other than its proposer approved a period's reopen: CLOSED -> OPEN at revision + 1, the ledger's posting cutoff back exactly one period, the period's FINAL report runs"
                     + " SUPERSEDED and the pin released, in one transaction; nothing deleted (P14-TSK-012, INV-ACC-10, INV-AUD-04; POST .../periods/{id}/reopen-approval, ACCOUNTING_CLOSE_APPROVE)."
-                    + " Reasoned. Its target the period; the summary its month, the new revision and how many runs were superseded. accounting.AccountingPeriodReopened is published with it.",
+                    + " Reasoned. Its target the period; the summary its month, the new revision, how many runs were superseded and how many adjustments stand posted against it, which the act named (P14-TSK-022). accounting.AccountingPeriodReopened is published with it.",
             true),
 
     /** A controller read what it decides (`P14-TSK-012`, ACCOUNTING_CLOSE_APPROVE) - every serving recorded. */
@@ -347,6 +347,16 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " ACCOUNTING_ADJUST_APPROVE; an accountant a month's (GET .../periods/{periodId}/prior-period-adjustments), under"
                     + " ACCOUNTING_READ (P14-TSK-013, INV-ACC-10). Recorded before it is served, in a transaction of its own. Its target the"
                     + " adjustment or the period; the summary the door and a count or a status - never an amount or a reason.",
+            false),
+
+    /** A controller read a FINAL statement (`P14-TSK-022`, ACCOUNTING_CLOSE_APPROVE) - every serving recorded. */
+    FINAL_STATEMENT_READ(
+            "accounting.FinalStatementRead",
+            "A holder of ACCOUNTING_CLOSE_APPROVE read a FINAL BALANCE_SHEET or INCOME_STATEMENT, its routes withheld, so a controller can read"
+                    + " the statement of a close it approved (P14-TSK-022, the owner's ruling (v); GET .../report-runs/{runId}/final-statement)."
+                    + " Recorded before it is served, in a transaction of its own; a failed record fails the read. No other definition or status"
+                    + " is served, so nothing is recorded for one. Its target the run; the summary the definition, the period, its revision and"
+                    + " status as read, the run's revision and its issued hash - never a figure.",
             false);
 
     private final String code;

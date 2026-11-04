@@ -1,6 +1,8 @@
 package com.finapp.app.ledger;
 
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -81,13 +83,15 @@ public class AdjustmentController {
     }
 
     /**
-     * Approves as the acting person and posts the entry in this transaction
+     * Approves as the acting person, on a {@code MULTI_FACTOR} session (`P14-TSK-022`, the owner's decision, 2026-11-04:
+     * {@code 403 identity.AssuranceRequired} below it, before anything is read), and posts the entry in this transaction
      * ({@code INV-AUD-04}). Self-approval is {@code 409 ledger.SelfApprovalRefused} with
      * nothing written; a decided proposal is {@code 409 ledger.ProposalNotOpen}; the same
      * approver's retry converges on the recorded entry with this same {@code 201}.
      */
     @PostMapping(path = "/{id}/approval")
     @RequiresPermission(PermissionName.LEDGER_ADJUST)
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @ResponseStatus(HttpStatus.CREATED)
     public LedgerAdjustments.AdjustmentView approve(@PathVariable("id") String id) {
         return adjustments.approve(id);
