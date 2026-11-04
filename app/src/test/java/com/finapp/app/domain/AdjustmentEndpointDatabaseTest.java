@@ -317,6 +317,35 @@ class AdjustmentEndpointDatabaseTest {
     }
 
     @Test
+    @DisplayName("P14-TSK-022: the approval is MULTI_FACTOR: the holder on a password session is 403 identity.AssuranceRequired with nothing written, while its proposal, its read and its rejection are not stepped up; the same proposal then posts from a MULTI_FACTOR session")
+    void theApprovalIsMultiFactor() throws Exception {
+        Operator initiator = givenAnOperator();
+        IdentityId holder = givenAnIdentity();
+        givenTheRole(holder, RoleName.LEDGER_OPERATOR);
+        String password = givenASessionFor(holder, AssuranceLevel.PASSWORD);
+        String steppedUp = givenASessionFor(holder, AssuranceLevel.MULTI_FACTOR);
+        LedgerAccount wallet = givenAWallet();
+        UUID proposal = proposalIdOf(post(body(wallet, "5.00", "step-up probe"), initiator.token(), "adj-" + IDS.next()));
+        long entriesBefore = adjustmentEntryCount();
+
+        HttpResponse<String> refused = approve(proposal.toString(), password);
+
+        assertThat(refused.statusCode()).isEqualTo(403);
+        assertThat(refused.body()).contains("identity.AssuranceRequired");
+        assertThat(adjustmentEntryCount()).isEqualTo(entriesBefore);
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(proposalColumn(app, proposal, "status")).isEqualTo("PROPOSED");
+        }
+
+        assertThat(get(proposal.toString(), password).statusCode()).as("the read is not stepped up").isEqualTo(200);
+        UUID mine = proposalIdOf(post(body(wallet, "6.00", "a password session proposes"), password, "adj-" + IDS.next()));
+        assertThat(reject(mine.toString(), password).statusCode()).as("nor the rejection").isEqualTo(204);
+
+        assertThat(approve(proposal.toString(), steppedUp).statusCode()).isEqualTo(201);
+        assertThat(adjustmentEntryCount()).isEqualTo(entriesBefore + 1);
+    }
+
+    @Test
     @DisplayName("a session without the role is refused on every surface, and nothing is"
             + " written (INV-AUD-03's negative)")
     void aSessionWithoutTheRoleIsRefused() throws Exception {
@@ -1219,7 +1248,16 @@ class AdjustmentEndpointDatabaseTest {
         }
     }
 
+    /**
+     * Every session of this suite is {@code MULTI_FACTOR} (`P14-TSK-022`): the approval requires it and the interceptor judges assurance before the permission, so a password session would be refused
+     * {@code identity.AssuranceRequired} before anything these cases prove - and {@code 403}, the role-less refusal's status, and equal to itself, the one-404 comparison's shape, would have passed them for the wrong reason.
+     * The one case of a lesser session asks for it by name.
+     */
     private String givenASessionFor(IdentityId identity) throws SQLException {
+        return givenASessionFor(identity, AssuranceLevel.MULTI_FACTOR);
+    }
+
+    private String givenASessionFor(IdentityId identity, AssuranceLevel assurance) throws SQLException {
         byte[] bytes = new byte[32];
         RANDOMNESS.nextBytes(bytes);
         String plaintext =
@@ -1230,7 +1268,7 @@ class AdjustmentEndpointDatabaseTest {
                         CLOCK,
                         identity,
                         SessionToken.of(plaintext),
-                        AssuranceLevel.PASSWORD,
+                        assurance,
                         SessionPolicy.current());
         try (Connection app = DatabaseRoles.application()) {
             sessions.insert(app, session);

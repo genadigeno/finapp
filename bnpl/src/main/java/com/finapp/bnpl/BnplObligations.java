@@ -29,10 +29,22 @@ public final class BnplObligations {
 
     /**
      * What a customer reads beside a {@code WRITTEN_OFF} status (`P14-TSK-021`). Truthful, and never "paid", "settled" or "closed": a
-     * write-off is a bookkeeping entry, the amount stands owed. Wording a qualified reviewer confirms before production.
+     * write-off is a bookkeeping entry, the amount stands owed. <strong>The route to a person</strong> (`P14-TSK-022`, from the owner's (c)): a
+     * customer told "still owed" has no dispute door on a written-off agreement ({@code PI-007}), so this says where to go; it promises a review,
+     * never an outcome, because no door settles the matter until {@code PI-005} and {@code PI-007} are built; {@code OPERATIONS_RUNBOOK.md} section
+     * 7.13 is what that person may do. "Contact us" is the only route this product names to a customer: no channel is invented here. <strong>Wording
+     * a qualified reviewer confirms before production</strong> (the owner's (d)). Never shown to a merchant, who is told nothing of a customer's write-off.
      */
     public static final String WRITTEN_OFF_NOTICE = "This agreement is in default and has been written off in our accounts. That is a"
-            + " bookkeeping entry: the amount has not been paid or forgiven, and it is still owed. Please contact us about repaying it.";
+            + " bookkeeping entry: the amount has not been paid or forgiven, and it is still owed. Please contact us about repaying it."
+            + " If you think this is wrong, for example because you never received the goods, contact us and a person will review it; we cannot promise the outcome.";
+
+    /**
+     * What a customer reads when a dispute is refused on a written-off agreement (`P14-TSK-022`): {@code 409 bnpl.ObligationWrittenOff}'s detail at that one door, the customer's own, since a dispute's outcome may be a refund
+     * and a refund cannot post ({@link BnplWrittenOffRefused}). The same route and the same promise as {@link #WRITTEN_OFF_NOTICE}. <strong>Wording a qualified reviewer confirms before production</strong> (the owner's (d)).
+     */
+    public static final String WRITTEN_OFF_DISPUTE_REFUSED = "This agreement has been written off, so a dispute cannot be opened here. Nothing was moved, and what is owed is unchanged."
+            + " If you think this is wrong, for example because you never received the goods, contact us and a person will review it; we cannot promise the outcome.";
 
     @NonNull private final BnplPurchaseStore store;
     @NonNull private final BnplBook book;

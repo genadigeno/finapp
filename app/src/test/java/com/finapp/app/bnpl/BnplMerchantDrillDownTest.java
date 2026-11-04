@@ -165,6 +165,86 @@ class BnplMerchantDrillDownTest {
         assertThat(nets).isEqualTo(sections.get(0).closing().minus(sections.get(0).opening()));
     }
 
+    /** An account for an adjustment's other side: a customer's own wallet, or the platform's account of {@code purpose}. */
+    private com.finapp.ledger.LedgerAccountId facing(AccountPurpose purpose) {
+        if (purpose.ownerKind() == com.finapp.ledger.OwnerKind.OPERATIONAL) {
+            return world.operational(purpose);
+        }
+        com.finapp.ledger.LedgerAccount account = com.finapp.ledger.LedgerAccount.owned(world.ids, world.clock, com.finapp.ledger.AccountType.LIABILITY, purpose, BnplPayoutWorld.EUR, world.ids.next());
+        world.state.accounts.put(account.id(), account);
+        return account.id();
+    }
+
+    @Test
+    @DisplayName("P14-TSK-022 (q): an ACCOUNTING line reads by its origin on the real drill-down, facing a customer's wallet or the recoverable, either side: accountingCorrections, signed; no false captured, refunded or chargedBack beside a real capture and a real wallet refund; the terms sum; and the real report calls the same entries OTHER, labelled, with nets equal to the term")
+    void anAccountingCorrectionIsNamedAsOne() {
+        BnplPayoutWorld.Shop shop = world.shop();
+        world.captured(shop, 100_00L, 3_00L);
+        world.walletRefund(shop, 20_00L);
+        MerchantPayable.Payable before = world.payable(shop);
+        world.adjusted(com.finapp.ledger.AdjustmentOrigin.ACCOUNTING, "accounting-correction", List.of(new JournalLine(facing(AccountPurpose.CUSTOMER_WALLET), Direction.DEBIT, eur(15_00L)), new JournalLine(shop.payable(), Direction.CREDIT, eur(15_00L))));
+        world.adjusted(com.finapp.ledger.AdjustmentOrigin.ACCOUNTING, "accounting-correction", List.of(new JournalLine(shop.payable(), Direction.DEBIT, eur(4_00L)), new JournalLine(facing(AccountPurpose.CUSTOMER_WALLET), Direction.CREDIT, eur(4_00L))));
+        world.adjusted(com.finapp.ledger.AdjustmentOrigin.ACCOUNTING, "accounting-correction", List.of(new JournalLine(shop.payable(), Direction.DEBIT, eur(2_00L)), new JournalLine(facing(AccountPurpose.CHARGEBACK_RECOVERABLE), Direction.CREDIT, eur(2_00L))));
+
+        MerchantPayable.Payable payable = world.payable(shop);
+
+        assertThat(payable.accountingCorrections()).isEqualTo(eur(9_00L));
+        assertThat(payable.captured()).as("the real capture alone").isEqualTo(before.captured());
+        assertThat(payable.refunded()).as("the real refund alone").isEqualTo(before.refunded());
+        assertThat(payable.chargedBack().minorUnits()).isZero();
+        assertThat(payable.other().minorUnits()).as("named, so no longer 'other'").isZero();
+        assertThat(payable.terms()).isEqualTo(payable.position());
+        assertThat(payable.position()).isEqualTo(before.position().plus(eur(9_00L)));
+
+        LocalDate today = LocalDate.ofInstant(world.clock.instant(), ZoneOffset.UTC);
+        List<MerchantTransactionReport.Movement> movements = report().report(new AuthenticatedMerchant(shop.id(), MerchantApiKeyId.next(world.ids)), today, today).get(0).movements();
+        List<MerchantTransactionReport.Movement> labelled = movements.stream().filter(movement -> movement.label().isPresent()).toList();
+        assertThat(labelled).hasSize(3).allSatisfy(movement -> {
+            assertThat(movement.kind()).isEqualTo(MerchantTransactionReport.Kind.OTHER);
+            assertThat(movement.label()).contains("Account adjustment");
+            assertThat(movement.gross()).isEmpty();
+            assertThat(movement.fee()).isEmpty();
+            assertThat(movement.checkoutId()).isEmpty();
+            assertThat(movement.refundId()).isEmpty();
+        });
+        assertThat(labelled.stream().map(MerchantTransactionReport.Movement::net).reduce(eur(0), Money::plus)).as("the drill-down and the report agree").isEqualTo(payable.accountingCorrections());
+    }
+
+    @Test
+    @DisplayName("P14-TSK-022 (s): a merchant's report labels an adjustment of each origin before reading its reference: a MANUAL reference naming a real attempt serves no capture and none of that purchase's identifiers, no store even asked; RECONCILIATION's bare id likewise; a payout stays OTHER with no label")
+    void everyOriginIsLabelledBeforeAnyReferenceIsRead() {
+        BnplPayoutWorld.Shop shop = world.shop();
+        world.financed(shop, 600_00L, 24_00L);
+        UUID attempt = world.ids.next();
+        world.adjusted(com.finapp.ledger.AdjustmentOrigin.MANUAL, attempt.toString(), List.of(new JournalLine(facing(AccountPurpose.CUSTOMER_WALLET), Direction.DEBIT, eur(1_00L)), new JournalLine(shop.payable(), Direction.CREDIT, eur(1_00L))));
+        world.adjusted(com.finapp.ledger.AdjustmentOrigin.MANUAL, "INC-2041 per Bob", List.of(new JournalLine(facing(AccountPurpose.CUSTOMER_WALLET), Direction.DEBIT, eur(2_00L)), new JournalLine(shop.payable(), Direction.CREDIT, eur(2_00L))));
+        world.adjusted(com.finapp.ledger.AdjustmentOrigin.RECONCILIATION, world.ids.next().toString(), List.of(new JournalLine(facing(AccountPurpose.CUSTOMER_WALLET), Direction.DEBIT, eur(3_00L)), new JournalLine(shop.payable(), Direction.CREDIT, eur(3_00L))));
+        world.scheme.succeedsWith(PATH, 200, PAID);
+        world.payOut(shop, 100_00L, "payout-" + world.ids.next());
+        LocalDate today = LocalDate.ofInstant(world.clock.instant(), ZoneOffset.UTC);
+
+        MerchantTransactionReport refusing = world.transactionReport(refusingOnThe(attempt, PaymentAttemptStore.class), absent(RefundStore.class), absent(CheckoutSessionStore.class), absent(OrderStore.class));
+        List<MerchantTransactionReport.Movement> movements = refusing.report(new AuthenticatedMerchant(shop.id(), MerchantApiKeyId.next(world.ids)), today, today).get(0).movements();
+
+        assertThat(movements).extracting(MerchantTransactionReport.Movement::kind).containsExactly(MerchantTransactionReport.Kind.BNPL_FINANCING, MerchantTransactionReport.Kind.OTHER, MerchantTransactionReport.Kind.OTHER, MerchantTransactionReport.Kind.OTHER, MerchantTransactionReport.Kind.OTHER);
+        assertThat(movements).extracting(movement -> movement.label().orElse("none")).containsExactly("none", "Account adjustment", "Account adjustment", "Account adjustment", "none");
+    }
+
+    /** An attempt store that fails the test if asked about the named attempt: an adjustment's reference must never be followed. */
+    @SuppressWarnings("unchecked")
+    private static <S> S refusingOnThe(UUID attempt, Class<?> store) {
+        return (S) Proxy.newProxyInstance(store.getClassLoader(), new Class<?>[] {store}, (proxy, method, args) -> {
+            if (args != null) {
+                for (Object arg : args) {
+                    if (arg != null && arg.toString().contains(attempt.toString())) {
+                        throw new AssertionError("an adjustment's reference was followed");
+                    }
+                }
+            }
+            return method.getReturnType() == Optional.class ? Optional.empty() : null;
+        });
+    }
+
     @Test
     @DisplayName("a BNPL_REFUND's identifier rests on two ranks (P12-TSK-021, -016's carry): the key on this merchant's"
             + " payable line, then bnpl's tenant-scoped read - a refund that read does not confirm is shown without it")

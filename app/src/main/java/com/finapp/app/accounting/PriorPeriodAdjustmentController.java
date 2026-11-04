@@ -2,7 +2,9 @@ package com.finapp.app.accounting;
 
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.api.DecimalText;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -61,9 +63,12 @@ public class PriorPeriodAdjustmentController {
         return desk.read(adjustmentId);
     }
 
-    /** Approves it - a different person's act, naming the date, the revision and the month's posted corrections they read: the ledger's entry posts in this transaction. A reason is required. */
+    /**
+     * Approves it - a different person's act, on a MULTI_FACTOR session (`P14-TSK-022`: 403 identity.AssuranceRequired below it), naming the date, the revision and the month's posted corrections they read: the ledger's entry posts in this transaction. A reason is required.
+     */
     @PostMapping(path = "/prior-period-adjustments/{adjustmentId}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_ADJUST_APPROVE)
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @RequiresIdempotencyKey
     public PriorPeriodAdjustmentDesk.PriorPeriodAdjustmentReceipt approvePriorPeriodAdjustment(
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,

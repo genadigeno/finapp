@@ -81,7 +81,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * REAL reconciliation proposal both ways, self-approval refused and the second person's approval
  * posting — the position, suspense and completeness proofs explained after each; an approved
  * transfer of an OUTBOUND clearing remainder reading as {@code reconciliationAttributed} on the
- * merchant's payable, never a capture, and as {@code RECONCILIATION_ATTRIBUTION} on the
+ * merchant's payable, never a capture, and as an attribution on the ledger's statement line, read by a customer under the one label since `P14-TSK-022`, on the
  * customer's statement; the two P&amp;L positions closed to free adjustment at both ranks and
  * posted by nothing but approvals; and every door's negatives three ways.
  *
@@ -138,7 +138,7 @@ class ReconciliationResolutionDatabaseTest {
         Subject subject = completedExpectation(ExpectationDirection.INBOUND, 12_00);
         Session proposer = sessionWith(RoleName.RECONCILIATION_OPERATOR);
         Session approver = sessionWith(RoleName.RECONCILIATION_OPERATOR);
-        Session ledger = sessionWith(RoleName.LEDGER_OPERATOR);
+        Session ledger = steppedUpSessionWith(RoleName.LEDGER_OPERATOR);
 
         String needle = "needle" + UUID.randomUUID().toString().replace("-", "");
         String body = "{\"kind\":\"WRITE_OFF\",\"reasonCode\":\"LOSS_ACCEPTED\","
@@ -221,7 +221,7 @@ class ReconciliationResolutionDatabaseTest {
     @Order(2)
     @DisplayName("an OUTBOUND clearing remainder transferred to a merchant payable reads as"
             + " reconciliationAttributed - never captured - and one transferred to a wallet is"
-            + " labelled RECONCILIATION_ATTRIBUTION on the owner's statement")
+            + " an attribution on the ledger's statement line, which a customer reads under the one label (P14-TSK-022, StatementLabelsTest)")
     void anAttributionReadsAsItself() throws Exception {
         Session proposer = sessionWith(RoleName.RECONCILIATION_OPERATOR);
         Session approver = sessionWith(RoleName.RECONCILIATION_OPERATOR);
@@ -675,6 +675,12 @@ class ReconciliationResolutionDatabaseTest {
         return new Session(identity, givenASessionFor(identity));
     }
 
+    /** A role's session on {@code MULTI_FACTOR}, which {@code POST /v1/ledger/adjustments/{id}/approval} requires since `P14-TSK-022`, ahead of the origin's own refusal these cases read. */
+    private Session steppedUpSessionWith(RoleName role) throws SQLException {
+        Session session = sessionWith(role);
+        return new Session(session.identity(), givenASessionFor(session.identity(), AssuranceLevel.MULTI_FACTOR));
+    }
+
     private Session sessionWith(RoleName role) throws SQLException {
         IdentityId identity = givenAnIdentity();
         try (CorrelationContext.Scope correlation = CorrelationContext.enter(flow());
@@ -711,13 +717,17 @@ class ReconciliationResolutionDatabaseTest {
     }
 
     private String givenASessionFor(IdentityId identity) throws SQLException {
+        return givenASessionFor(identity, AssuranceLevel.PASSWORD);
+    }
+
+    private String givenASessionFor(IdentityId identity, AssuranceLevel assurance) throws SQLException {
         byte[] bytes = new byte[32];
         RANDOMNESS.nextBytes(bytes);
         String plaintext = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
         com.finapp.identity.Session.Draft session =
                 com.finapp.identity.Session.issue(
                         IDS, CLOCK, identity, SessionToken.of(plaintext),
-                        AssuranceLevel.PASSWORD, SessionPolicy.current());
+                        assurance, SessionPolicy.current());
         try (Connection app = DatabaseRoles.application()) {
             sessions.insert(app, session);
         }

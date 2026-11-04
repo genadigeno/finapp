@@ -528,6 +528,9 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/accounting/report-runs", PermissionName.ACCOUNTING_REPORT_GENERATE),
                     entry("GET /v1/operator/accounting/report-runs/{runId}", PermissionName.ACCOUNTING_READ),
                     entry("GET /v1/operator/accounting/report-runs/{runId}/lines", PermissionName.ACCOUNTING_READ),
+                    // P14-TSK-022, the owner's (v): a controller's read of a FINAL statement, its routes withheld; any other definition or status the one 404;
+                    // the negatives are FinalStatementDeskTest's.
+                    entry("GET /v1/operator/accounting/report-runs/{runId}/final-statement", PermissionName.ACCOUNTING_CLOSE_APPROVE),
                     entry("POST /v1/operator/accounting/report-runs/{runId}/regeneration",
                             PermissionName.ACCOUNTING_REPORT_GENERATE),
                     // P14-TSK-014: the valuation rate sets - captured by the accountant (a close-preparation act on a

@@ -572,6 +572,8 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/report-runs/{runId}/regeneration",
                         // P14-TSK-016: a run's figure's lines, under its version (ACCOUNTING_READ, audited).
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/report-runs/{runId}/lines",
+                        // P14-TSK-022: a controller's read of a FINAL statement (ACCOUNTING_CLOSE_APPROVE, audited).
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/report-runs/{runId}/final-statement",
                         // P14-TSK-014: the valuation rate sets - captured (201, ACCOUNTING_CLOSE_PROPOSE), approved,
                         // rejected and read (ACCOUNTING_CLOSE_APPROVE), each POST keyed.
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/valuation-rate-sets",

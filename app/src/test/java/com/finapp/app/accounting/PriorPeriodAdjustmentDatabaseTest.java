@@ -283,8 +283,8 @@ class PriorPeriodAdjustmentDatabaseTest {
     void aReopenBetweenProposalAndApproval() throws Exception {
         PriorPeriodAdjustments.Acted proposed = propose();
         int revision = row(JANUARY).revision();
-        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, id(JANUARY), ACCOUNTANT, "a correction was found", correlation()));
-        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, id(JANUARY), CONTROLLER, "agreed", correlation()));
+        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, id(JANUARY), ACCOUNTANT, PeriodCloseFixture.posted(uow, id(JANUARY)), "a correction was found", correlation()));
+        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, id(JANUARY), CONTROLLER, PeriodCloseFixture.posted(uow, id(JANUARY)), "agreed", correlation()));
 
         assertThatThrownBy(() -> approve(proposed, person())).isInstanceOf(AccountingPeriods.PeriodStale.class);
         assertStillProposed(proposed);
@@ -333,8 +333,8 @@ class PriorPeriodAdjustmentDatabaseTest {
         int corrected = row(JANUARY).revision();
         assertThat(text("SELECT target_revision::text FROM accounting.prior_period_adjustment WHERE id = '" + proposed.id().value() + "'")).isEqualTo("1");
         PeriodCloseFixture.closed(FEBRUARY);
-        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, id(FEBRUARY), ACCOUNTANT, "a correction was found", correlation()));
-        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, id(FEBRUARY), CONTROLLER, "agreed", correlation()));
+        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, id(FEBRUARY), ACCOUNTANT, PeriodCloseFixture.posted(uow, id(FEBRUARY)), "a correction was found", correlation()));
+        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, id(FEBRUARY), CONTROLLER, PeriodCloseFixture.posted(uow, id(FEBRUARY)), "agreed", correlation()));
         assertThat(row(FEBRUARY).status()).isEqualTo(PeriodStatus.OPEN);
         assertThat(row(FEBRUARY).revision()).isEqualTo(2);
         assertThat(row(JANUARY).status()).isEqualTo(PeriodStatus.CLOSED);
@@ -379,38 +379,81 @@ class PriorPeriodAdjustmentDatabaseTest {
     }
 
     @Test
-    @DisplayName("T-reopen against an approval, on two connections: serialised on the corrected month's row. Either it posted at the revision it read and the reopen went on to the next, or the reopen went first and it was refused; a busy cutoff is the reopen's own retry")
+    @DisplayName("T-reopen against an approval, on two connections: serialised on the corrected month's row, no inversion. Either it posted at the revision it read and the reopen, naming what stood before it, is refused Stale with nothing moved until it names it (P14-TSK-022), or the reopen went first and it was refused; a busy cutoff is the reopen's own to retry")
     void anApprovalRacingAReopenOfWhatItCorrects() throws Exception {
         PriorPeriodAdjustments.Acted proposed = propose();
         int revision = row(JANUARY).revision();
         AccountingPeriodId january = id(JANUARY);
-        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, "a correction was found", correlation()));
+        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, PeriodCloseFixture.posted(uow, january), "a correction was found", correlation()));
         Actor approver = person();
         PriorPeriodAdjustments.Approval read = reading(proposed);
+        Set<UUID> namedBeforeTheRace = inScope(CONTROLLER, uow -> PeriodCloseFixture.posted(uow, january));
 
         List<Object> outcomes = race(List.of(
                 () -> inScope(approver, uow -> machine().approve(uow, proposed.id(), read, approver, "agreed", correlation())),
                 () -> {
                     while (true) {
                         try {
-                            return inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, "agreed", correlation()));
+                            return inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, namedBeforeTheRace, "agreed", correlation()));
                         } catch (PostingCutoff.CutoffBusy busy) {
                             Thread.onSpinWait();
                         }
                     }
                 }));
 
-        assertThat(outcomes).filteredOn(PeriodCloses.Acted.class::isInstance).hasSize(1);
-        assertThat(row(JANUARY).status()).isEqualTo(PeriodStatus.OPEN);
-        assertThat(row(JANUARY).revision()).isEqualTo(revision + 1);
         String status = text("SELECT status FROM accounting.prior_period_adjustment WHERE id = '" + proposed.id().value() + "'");
         if (status.equals("POSTED")) {
             assertThat(count("SELECT count(*) FROM accounting.prior_period_adjustment WHERE id = '" + proposed.id().value() + "' AND corrected_revision = " + revision)).isEqualTo(1);
+            assertThat(outcomes).as("the reopen waited on the row, read it posted, and named what stood before it").filteredOn(PriorPeriodAdjustments.AdjustmentStale.class::isInstance).hasSize(1);
+            assertThat(row(JANUARY).status()).as("nothing moved").isEqualTo(PeriodStatus.CLOSED);
+            assertThat(row(JANUARY).revision()).isEqualTo(revision);
+            assertThat(count("SELECT count(*) FROM accounting.report_run WHERE period_id = '" + january.value() + "' AND status = 'SUPERSEDED' AND period_revision = " + revision)).as("no run superseded by a refused reopen").isZero();
+            while (true) {
+                try {
+                    inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, PeriodCloseFixture.posted(uow, january), "agreed", correlation()));
+                    break;
+                } catch (PostingCutoff.CutoffBusy busy) {
+                    Thread.onSpinWait();
+                }
+            }
         } else {
             assertThat(status).isEqualTo("PROPOSED");
+            assertThat(outcomes).filteredOn(PeriodCloses.Acted.class::isInstance).hasSize(1);
             assertThat(outcomes).filteredOn(AccountingPeriods.PeriodStale.class::isInstance).hasSize(1);
             assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope = 'ledger.adjust.approve:" + proposed.proposal() + "'")).isZero();
         }
+        assertThat(row(JANUARY).status()).isEqualTo(PeriodStatus.OPEN);
+        assertThat(row(JANUARY).revision()).isEqualTo(revision + 1);
+    }
+
+    @Test
+    @DisplayName("P14-TSK-022 (m): a reopen names what has posted, judged at each act under the period's row. A proposal naming what stood before one posted is refused and writes nothing; the owner's (n): one posted while the reopen is pending lands; the approval naming the proposal's list is refused, the month CLOSED at its revision and its FINAL runs standing; naming what stands, it reopens")
+    void aReopenNamesWhatHasPosted() throws Exception {
+        AccountingPeriodId january = id(JANUARY);
+        int revision = row(JANUARY).revision();
+        Set<UUID> before = inScope(ACCOUNTANT, uow -> PeriodCloseFixture.posted(uow, january));
+        PriorPeriodAdjustments.Acted first = approve(propose(), person());
+        Set<UUID> afterFirst = inScope(ACCOUNTANT, uow -> PeriodCloseFixture.posted(uow, january));
+        assertThat(afterFirst).contains(first.id().value()).hasSize(before.size() + 1);
+        long reopens = count("SELECT count(*) FROM accounting.period_reopen WHERE period_id = '" + january.value() + "'");
+
+        assertThatThrownBy(() -> inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, before, "a correction was found", correlation()))).isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class);
+        assertThat(count("SELECT count(*) FROM accounting.period_reopen WHERE period_id = '" + january.value() + "'")).as("nothing written").isEqualTo(reopens);
+
+        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, afterFirst, "a correction was found", correlation()));
+        PriorPeriodAdjustments.Acted second = approve(propose(), person());
+        assertThat(second.status()).as("a pending reopen does not stop an adjustment's approval").isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
+        Set<UUID> afterSecond = inScope(CONTROLLER, uow -> PeriodCloseFixture.posted(uow, january));
+        assertThat(afterSecond).contains(second.id().value()).hasSize(afterFirst.size() + 1);
+
+        assertThatThrownBy(() -> inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, afterFirst, "agreed", correlation()))).isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class);
+        assertThat(row(JANUARY).status()).isEqualTo(PeriodStatus.CLOSED);
+        assertThat(row(JANUARY).revision()).isEqualTo(revision);
+        assertThat(count("SELECT count(*) FROM accounting.period_reopen WHERE period_id = '" + january.value() + "' AND period_revision = " + revision + " AND status = 'PROPOSED'")).as("it stands").isEqualTo(1);
+
+        PeriodCloses.Acted reopened = inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, afterSecond, "agreed", correlation()));
+        assertThat(reopened.status()).isEqualTo(PeriodStatus.OPEN);
+        assertThat(reopened.revision()).isEqualTo(revision + 1);
     }
 
     // ------------------------------------------------------------------ the two worst failures
@@ -521,6 +564,13 @@ class PriorPeriodAdjustmentDatabaseTest {
             assertThat(line.postingDate()).isEqualTo(LANDS_ON);
             assertThat(line.valueDate()).isEqualTo(LANDS_ON);
         })));
+
+        // P14-TSK-022 (q): the real fold over the real line. It faces a customer's wallet, so read by its counterparty this debit would be a refund; ledger V030's origin reads first.
+        MerchantPayable.Payable owed = snapshots.read(snapshot -> new MerchantPayable(new JdbcLedgerAccountStore(), new JdbcPositionBreakdown()).payablesOf(snapshot, com.finapp.merchant.MerchantId.of(merchant)).get(0));
+        assertThat(owed.accountingCorrections()).isEqualTo(Money.ofMinorUnits(-1500, EUR));
+        assertThat(owed.refunded()).isEqualTo(Money.ofMinorUnits(0, EUR));
+        assertThat(owed.other()).isEqualTo(Money.ofMinorUnits(0, EUR));
+        assertThat(owed.terms()).isEqualTo(owed.position());
     }
 
     @Test
@@ -671,8 +721,8 @@ class PriorPeriodAdjustmentDatabaseTest {
         ownerRefused("TRUNCATE accounting.prior_period_adjustment", RAISED);
         rawRefused("DELETE FROM accounting.prior_period_adjustment" + row, "42501");
 
-        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, id(JANUARY), ACCOUNTANT, "a correction was found", correlation()));
-        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, id(JANUARY), CONTROLLER, "agreed", correlation()));
+        inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, id(JANUARY), ACCOUNTANT, PeriodCloseFixture.posted(uow, id(JANUARY)), "a correction was found", correlation()));
+        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, id(JANUARY), CONTROLLER, PeriodCloseFixture.posted(uow, id(JANUARY)), "agreed", correlation()));
         rawRefused("UPDATE accounting.prior_period_adjustment SET status = 'POSTED', decided_by = 'someone-else', decided_by_type = 'EMPLOYEE', decided_at = now(), decision_reason = 'raw', journal_entry_id = '" + IDS.next() + "'" + row, RAISED);
 
         raw("UPDATE accounting.prior_period_adjustment SET status = 'REJECTED', decided_by = 'someone-else', decided_by_type = 'EMPLOYEE', decided_at = now(), decision_reason = 'raw'" + row);

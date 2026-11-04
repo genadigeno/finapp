@@ -1439,6 +1439,7 @@ report runs `SUPERSEDED`; nothing is deleted.
 **Enforce:** `DB-CONSTRAINT` (`INV-ACC-08`'s trigger; report runs immutable; `INSERT`-only events) + `DOMAIN`.
 **Verify:** `PriorPeriodAdjustmentDatabaseTest#postsInTheOpenPeriodReferencingTheClosedOne`,
 `PeriodReopenDatabaseTest#aReopenSupersedesAndDeletesNothing` (`P14-TSK-012`, `-013`). *(`P14-TSK-012`, the reopen's half: `PeriodClosesTest#aReopenSupersedesAndDeletesNothing`, `#onlyTheLatest`, `#aReCloseIsANewRun`, `PeriodCloseMigrationTest`; `PeriodReopenDatabaseTest#aReopenSupersedesAndDeletesNothing`, `#onlyTheLatest` owed, C5. "Only of the latest closed period" is built as "the next period absent or `OPEN`", judged by the domain and by the trigger for every writer: periods close in order, so that is the latest. The prior-period adjustment's half is `-013`'s.)* *(`P14-TSK-013`, that half: `PriorPeriodAdjustmentsTest#postsInTheOpenPeriodReferencingTheClosedOne`, `#itLandsInTheMonthHoldingToday`, `#neverInOrBeforeTheCorrectedMonth`, `#theCorrectedMonthMustBeClosed`, `#aReopenBetweenProposalAndApproval`, `#theTargetReopenedMeanwhile`, `#theMonthHoldingTodayAlreadyReopened`; `AccountingOriginDoorTest#datedIntoTheCorrectedPeriodTheLedgerRefuses`; `PriorPeriodEntryWalkTest#theCorrectedMonthsBytesDoNotMove`; `PriorPeriodAdjustmentMigrationTest#theDates`; `PriorPeriodAdjustmentDatabaseTest#postsInTheOpenPeriodReferencingTheClosedOne`, `#theCorrectedMonthsElevenFinalRunsRegenerateByteIdentical`, `#theTargetReopenedMeanwhile`, `#datedIntoTheCorrectedPeriodTheLedgerRefuses` owed, C5. "An entry posted in an open period" is built as the month holding today, the date stored and named by the approver. "The owning domain's own correction" is classified by derivation, `PriorPeriodCorrections`.)*
+*(`P14-TSK-022`, a reopen names the posted adjustments it read, judged at each act under the period's row: `PeriodClosesTest#aReopensProposalNamesWhatHasPosted`, `#aReopensApprovalNamesWhatStandsNow`, `PeriodCloseDeskTest#aReopenNamesWhatHasPosted`; owed, C5: `PriorPeriodAdjustmentDatabaseTest#aReopenNamesWhatHasPosted`, `#anApprovalRacingAReopenOfWhatItCorrects`.)*
 **Phase:** 14
 
 ### INV-ACC-11 — Translation keeps the original and never alters a line or an executed rate
@@ -4224,7 +4225,12 @@ and the customer statement labels a wallet line of such an entry `RECONCILIATION
 the same rule; `payoutsReturned` stays `P8-TSK-019`'s.)* *(Built by `P8-TSK-019`:
 `MerchantPayable.payoutsReturned` is every payable CREDIT facing `PAYOUT_CLEARING` — the return's
 posting `merchant-payout-return:<payoutId>` — classified after the attribution rule, so a
-reconciliation transfer never reads as a return, and served on the payable endpoint's line.)* No table
+reconciliation transfer never reads as a return, and served on the payable endpoint's line.)* *(Built by
+`P14-TSK-022`: `MerchantPayable.accountingCorrections` is the signed term of every payable line of an
+`ACCOUNTING`-origin `ADJUSTMENT` entry, classified by that origin whatever it faces, in the sum beside
+the others, `MerchantPayableTermsTest#anAccountingLineFacingEveryCounterparty`; the merchant's report calls the
+same entries `OTHER`, and a customer's statement and that report read one label for every adjustment,
+`Account adjustment`, in place of `RECONCILIATION_ATTRIBUTION`, `StatementLabelsTest#everyOriginReadsTheOneLabel`.)* No table
 stores a merchant balance; every payout decision derives the available payable inside the account
 lock.
 **Why:** A stored payable is a second balance authority (`INV-BAL-01`'s reasoning at the

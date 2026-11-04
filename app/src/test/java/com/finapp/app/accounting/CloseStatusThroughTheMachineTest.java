@@ -71,7 +71,7 @@ class CloseStatusThroughTheMachineTest {
     private final InMemoryPeriodCloseStore closes = new InMemoryPeriodCloseStore(periods);
     private final CloseRuns runs = new CloseRuns(runStore, periods, breaks, CloseRuns.Leases.STANDARD, (uow, record) -> { }, IDS, CLOCK);
     private final ValuationRateSets sets = new ValuationRateSets(setStore, periods, new OneRate(), ValuationStaleness.standard(), (uow, record) -> { }, IDS, CLOCK);
-    private final PeriodCloses machine = new PeriodCloses(periods, closes, runs, breaks, setStore, com.finapp.accounting.testing.MonthsThatRan.EVERY_MONTH, new NoCutoff(), (uow, period, actor, correlation) -> 0, (uow, record) -> { },
+    private final PeriodCloses machine = new PeriodCloses(periods, closes, runs, breaks, setStore, com.finapp.accounting.testing.MonthsThatRan.EVERY_MONTH, new NoCutoff(), (uow, period, actor, correlation) -> 0, new com.finapp.accounting.testing.InMemoryPriorPeriodAdjustmentStore(periods), (uow, record) -> { },
             (uow, envelope, payload, mediaType) -> { }, IDS, CLOCK);
     private final CloseStatusDefinition definition = new CloseStatusDefinition(new AccountingCloseStatusReads(periods, runs, breaks, setStore), new CloseRunStall(Duration.ofSeconds(30), CloseRunStall.STANDARD_POLLS));
     private final AccountingPeriodId march = AccountingPeriodId.next(IDS);
@@ -121,8 +121,8 @@ class CloseStatusThroughTheMachineTest {
         assertThat(closed.get("runState").asText()).as("however long after").isEqualTo("CONCLUDED");
         assertThat(closed.get("revision").asInt()).isEqualTo(1);
 
-        machine.proposeReopen(UOW, march, ACCOUNTANT, "a correction", CorrelationId.generate(IDS));
-        machine.approveReopen(UOW, march, CONTROLLER, "agreed", CorrelationId.generate(IDS));
+        machine.proposeReopen(UOW, march, ACCOUNTANT, java.util.Set.of(), "a correction", CorrelationId.generate(IDS));
+        machine.approveReopen(UOW, march, CONTROLLER, java.util.Set.of(), "agreed", CorrelationId.generate(IDS));
         JsonNode reopened = read(lockedAt);
         assertThat(reopened.get("status").asText()).isEqualTo("OPEN");
         assertThat(reopened.get("revision").asInt()).isEqualTo(2);

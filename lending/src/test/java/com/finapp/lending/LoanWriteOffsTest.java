@@ -465,10 +465,11 @@ class LoanWriteOffsTest {
     }
 
     @Test
-    @DisplayName("what a customer reads beside the status says it stands owed, in words that cannot be read as paid or forgiven")
+    @DisplayName("what a customer reads beside the status says it stands owed, in words that cannot be read as paid or forgiven; and where to take it (P14-TSK-022): a person reviews it, no outcome promised, no channel invented. Pinned here until a qualified reviewer confirms the wording, the owner's (d)")
     void theNoticeSaysItStandsOwed() {
-        assertThat(Loans.WRITTEN_OFF_NOTICE).contains("written off in our accounts").contains("bookkeeping entry")
-                .contains("has not been paid or forgiven").contains("still owed");
+        assertThat(Loans.WRITTEN_OFF_NOTICE).isEqualTo("This account is in default and has been written off in our accounts. That is a bookkeeping entry: the amount has not been paid or forgiven, and it is still owed. Please contact us about repaying it."
+                + " If you think this is wrong, for example because you never received the money, contact us and a person will review it; we cannot promise the outcome.");
+        assertThat(Loans.WRITTEN_OFF_NOTICE.toLowerCase(java.util.Locale.ROOT)).as("no promise, and no channel this product does not name").doesNotContain("will be removed").doesNotContain("cancel").doesNotContain("@").doesNotContain("http").doesNotContain("call us").doesNotContain("phone");
     }
 
     @Test

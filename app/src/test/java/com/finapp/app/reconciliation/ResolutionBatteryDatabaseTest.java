@@ -298,7 +298,7 @@ class ResolutionBatteryDatabaseTest {
     void aTransferAnAcknowledgementAndTheRanks() throws Exception {
         Session proposer = sessionWith(RoleName.RECONCILIATION_OPERATOR);
         Session approver = sessionWith(RoleName.RECONCILIATION_OPERATOR);
-        Session ledger = sessionWith(RoleName.LEDGER_OPERATOR);
+        Session ledger = steppedUpSessionWith(RoleName.LEDGER_OPERATOR);
 
         UUID wallet = openAccount(AccountPurpose.CUSTOMER_WALLET, EUR, IDS.next());
         Subject outbound = completedExpectation(ExpectationDirection.OUTBOUND, 7_00,
@@ -1083,6 +1083,12 @@ class ResolutionBatteryDatabaseTest {
 
     private record Session(IdentityId identity, String token) {}
 
+    /** A role's session on {@code MULTI_FACTOR}, which {@code POST /v1/ledger/adjustments/{id}/approval} requires since `P14-TSK-022`, ahead of the origin's own refusal this case reads. */
+    private Session steppedUpSessionWith(RoleName role) throws SQLException {
+        Session session = sessionWith(role);
+        return new Session(session.identity(), givenASessionFor(session.identity(), AssuranceLevel.MULTI_FACTOR));
+    }
+
     private Session sessionWith(RoleName role) throws SQLException {
         IdentityId identity = givenAnIdentity();
         try (CorrelationContext.Scope correlation = CorrelationContext.enter(flow());
@@ -1119,13 +1125,17 @@ class ResolutionBatteryDatabaseTest {
     }
 
     private String givenASessionFor(IdentityId identity) throws SQLException {
+        return givenASessionFor(identity, AssuranceLevel.PASSWORD);
+    }
+
+    private String givenASessionFor(IdentityId identity, AssuranceLevel assurance) throws SQLException {
         byte[] bytes = new byte[32];
         RANDOMNESS.nextBytes(bytes);
         String plaintext = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
         com.finapp.identity.Session.Draft session =
                 com.finapp.identity.Session.issue(
                         IDS, CLOCK, identity, SessionToken.of(plaintext),
-                        AssuranceLevel.PASSWORD, SessionPolicy.current());
+                        assurance, SessionPolicy.current());
         try (Connection app = DatabaseRoles.application()) {
             sessions.insert(app, session);
         }

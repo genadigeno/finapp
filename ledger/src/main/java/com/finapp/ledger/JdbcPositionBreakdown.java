@@ -75,10 +75,11 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
                             unitOfWork.prepareStatement(
                                     "SELECT line.direction, line.amount_minor, line.currency,"
                                             + " line.scale,"
-                                            + " EXISTS (SELECT 1 FROM ledger.adjustment_proposal p"
-                                            + "          WHERE p.journal_entry_id = line.entry_id"
-                                            + "            AND p.origin = 'RECONCILIATION')"
-                                            + "   AS attributed,"
+                                            // The origin of the proposal that posted the entry, if
+                                            // one did: journal_entry_id is UNIQUE (V010), so one row
+                                            // at most, and origin is NOT NULL since V015.
+                                            + " (SELECT p.origin FROM ledger.adjustment_proposal p"
+                                            + "   WHERE p.journal_entry_id = line.entry_id) AS origin,"
                                             + " (SELECT other_account.purpose || '|'"
                                             + "         || other.direction"
                                             + "    FROM ledger.journal_line other"
@@ -121,20 +122,20 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
                                     row.getLong("amount_minor"), lineCurrency,
                                     row.getShort("scale"));
                     Direction direction = Direction.valueOf(row.getString("direction"));
-                    // The origin rule first (P8-TSK-015, ADR-0073 section 6): a resolution's
-                    // attribution is never read by what it faces.
-                    boolean attributed = row.getBoolean("attributed");
-                    Optional<Counterparty> other =
-                            attributed
-                                    ? Optional.empty()
-                                    : Optional.ofNullable(row.getString("counterparty"))
-                                            .map(JdbcPositionBreakdown::counterparty);
-                    // An ADJUSTMENT never matches PostingService's scope; the guard keeps the
-                    // Bucket's own refusal unreachable rather than trusting the data to.
-                    Optional<String> namespace =
-                            attributed
-                                    ? Optional.empty()
-                                    : Optional.ofNullable(row.getString("namespace"));
+                    // The origin rule first (P8-TSK-015, ADR-0073 section 6; P14-TSK-022): a
+                    // resolution's attribution and a prior-period adjustment are never read by what
+                    // they face. Bucket.of states it. An ADJUSTMENT never matches PostingService's
+                    // scope, and of() keeps the Bucket's own refusal unreachable rather than trusting
+                    // the data to.
+                    Bucket line =
+                            Bucket.of(
+                                    direction,
+                                    amount,
+                                    Optional.ofNullable(row.getString("origin"))
+                                            .map(AdjustmentOrigin::valueOf),
+                                    Optional.ofNullable(row.getString("counterparty"))
+                                            .map(JdbcPositionBreakdown::counterparty),
+                                    Optional.ofNullable(row.getString("namespace")));
 
                     if (direction == Direction.DEBIT) {
                         debits = JournalEntry.sum(debits, amount);
@@ -143,20 +144,26 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
                     }
                     String key =
                             direction + "|"
-                                    + namespace.orElse("") + "|"
-                                    + (attributed
+                                    + line.namespace().orElse("") + "|"
+                                    + (line.reconciliationAttributed()
                                             ? "RECONCILIATION"
-                                            : other.map(c -> c.purpose() + ":" + c.direction())
-                                                    .orElse("NONE"));
+                                            : line.accountingOrigin()
+                                                    ? "ACCOUNTING"
+                                                    : line.counterparty()
+                                                            .map(c -> c.purpose() + ":" + c.direction())
+                                                            .orElse("NONE"));
                     Bucket so = buckets.get(key);
                     buckets.put(
                             key,
-                            new Bucket(
-                                    direction,
-                                    other,
-                                    so == null ? amount : JournalEntry.sum(so.total(), amount),
-                                    attributed,
-                                    namespace));
+                            so == null
+                                    ? line
+                                    : new Bucket(
+                                            direction,
+                                            line.counterparty(),
+                                            JournalEntry.sum(so.total(), amount),
+                                            line.reconciliationAttributed(),
+                                            line.namespace(),
+                                            line.accountingOrigin()));
                 }
             } catch (ScaleMismatchException mixedScales) {
                 throw refused(account, "its history mixes scales within " + currency.code()

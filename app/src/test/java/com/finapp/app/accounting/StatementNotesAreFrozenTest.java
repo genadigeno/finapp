@@ -145,6 +145,30 @@ class StatementNotesAreFrozenTest {
     }
 
     @Test
+    @DisplayName("P14-TSK-022 (v): what a controller reads of either real statement names no door it cannot open: over the real bytes, with a break, an item and a correction in them, no route, no drillDown, no reasons, no /v1/, no other permission and no 'this role' is left; every other member of the issued tree stands, figures and notes alike")
+    void aControllersViewNamesNoDoor() throws IOException {
+        breaks.add(breakLine(UUID.randomUUID(), BreakType.values()[0], Severity.LOW, BreakStatus.OPEN, 450, EUR, "1999-01-20T10:00:00Z", Optional.empty()));
+        items.add(item(UUID.randomUUID(), SuspenseSide.CREDIT, 700, CUTOFF.minusDays(2), UUID.randomUUID()));
+        ObjectMapper json = new ObjectMapper();
+        for (ReportDefinition definition : statements()) {
+            String issued = bytesOf(definition);
+            assertThat(issued).as("the issued bytes do name them: the control").contains("/v1/").contains("ACCOUNTING_READ").contains("RECONCILIATION_INVESTIGATE").contains("under this role").contains("drillDown");
+
+            FinalStatementDesk.Projection projection = FinalStatementDesk.project(issued);
+
+            assertThat(projection.statement()).doesNotContain("/v1/").doesNotContain("ACCOUNTING_READ").doesNotContain("RECONCILIATION_INVESTIGATE").doesNotContain("under this role").doesNotContain("ACCOUNTING_CLOSE_APPROVE");
+            assertThat(projection.withheld()).containsExactly("drillDown", "notes.closeRecord.reasons", "notes.closeRecord.route", "notes.priorPeriodCorrections.route", "notes.reconciliationBreaks.route", "notes.suspense.route");
+            com.fasterxml.jackson.databind.node.ObjectNode expected = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(issued);
+            expected.remove("drillDown");
+            for (String note : List.of("closeRecord", "priorPeriodCorrections", "reconciliationBreaks", "suspense")) {
+                ((com.fasterxml.jackson.databind.node.ObjectNode) expected.get("notes").get(note)).remove("route");
+            }
+            ((com.fasterxml.jackson.databind.node.ObjectNode) expected.get("notes").get("closeRecord")).remove("reasons");
+            assertThat(json.readTree(projection.statement())).as("nothing else moved").isEqualTo(expected);
+        }
+    }
+
+    @Test
     @DisplayName("what the reading must not be handed anyway is judged again: a break raised at or after the instant is no break of this month, whatever its reading served")
     void aBreakRaisedAfterTheInstantIsNotCounted() {
         breaks.add(breakLine(UUID.randomUUID(), BreakType.values()[0], Severity.LOW, BreakStatus.OPEN, 1, EUR, "1999-02-01T00:00:00Z", Optional.empty()));

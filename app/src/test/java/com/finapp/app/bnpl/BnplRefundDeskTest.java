@@ -193,9 +193,65 @@ class BnplRefundDeskTest {
                 .as("counted at each door").isEqualTo(2.0);
     }
 
+    @Test
+    @DisplayName("P14-TSK-022 (c): a customer disputing a written-off agreement, through the real desk and domain: 409 bnpl.ObligationWrittenOff in words that say it stands owed and where to take it, promising a review and no outcome; nothing written")
+    @SuppressWarnings("try") // The Scopes are used for their close side effect (the idiom).
+    void aCustomerDisputingAWrittenOffAgreementIsToldWhereToGo() {
+        UUID customer = UUID.randomUUID();
+        BnplObligationId obligationId = BnplObligationId.next(IDS);
+        BnplPurchaseId purchaseId = BnplPurchaseId.next(IDS);
+        BnplAgreementId agreementId = BnplAgreementId.next(IDS);
+        CorrelationId flow = CorrelationId.of("desk");
+        com.finapp.bnpl.BnplPurchase purchase = new com.finapp.bnpl.BnplPurchase(purchaseId, com.finapp.bnpl.BnplOfferId.next(IDS),
+                UUID.randomUUID(), customer, IDS.next(), com.finapp.bnpl.BnplProduct.BNPL_PAY_IN_4, com.finapp.bnpl.BnplPlan.PAY_IN_4, EUR,
+                com.finapp.bnpl.BnplPurchaseStatus.FINANCED, LocalDate.of(2026, 7, 1), Instant.parse("2026-07-01T10:00:00Z"),
+                Optional.of(Instant.parse("2026-07-01T10:00:00Z")), Optional.empty(), flow);
+        com.finapp.bnpl.BnplRefundStore.LockedPurchase locked = new com.finapp.bnpl.BnplRefundStore.LockedPurchase(purchase, eur(600_00),
+                eur(24_00), eur(576_00), obligationId);
+        com.finapp.bnpl.BnplObligation writtenOff = new com.finapp.bnpl.BnplObligation(obligationId, purchaseId, agreementId, customer,
+                UUID.randomUUID(), com.finapp.bnpl.BnplProduct.BNPL_PAY_IN_4, com.finapp.bnpl.BnplPlan.PAY_IN_4, EUR,
+                com.finapp.bnpl.BnplObligationStatus.WRITTEN_OFF, LocalDate.of(2026, 7, 1), Instant.parse("2026-07-01T10:00:00Z"),
+                Optional.empty(), flow);
+        com.finapp.bnpl.BnplServicingStore.Locked lockedObligation = new com.finapp.bnpl.BnplServicingStore.Locked(writtenOff, agreementId, 1,
+                com.finapp.bnpl.BnplTermsVersionId.of(IDS.next()), "BNPL_SCHEDULE_ENGINE_V1", Optional.empty(), "ALLOCATION_ENGINE_V1", "UTC");
+        com.finapp.bnpl.BnplPurchaseStore.Owned owned = (com.finapp.bnpl.BnplPurchaseStore.Owned) newOwned(writtenOff, purchase);
+        Object store = answering(com.finapp.bnpl.BnplRefundStore.class, java.util.Map.of("lock", Optional.of(locked)));
+        Object servicing = answering(com.finapp.bnpl.BnplServicingStore.class, java.util.Map.of("lock", Optional.of(lockedObligation)));
+        Object purchases = answering(com.finapp.bnpl.BnplPurchaseStore.class, java.util.Map.of("agreementOwnedBy", Optional.of(owned)));
+        Object disputes = answering(com.finapp.bnpl.BnplDisputeStore.class, java.util.Map.of());
+        com.finapp.bnpl.BnplRefunds refunds = built(BnplRefunds.class, store, servicing, purchases, (com.finapp.bnpl.BnplActingParty) (uow, actor) -> Optional.of(UUID.randomUUID()));
+        com.finapp.identity.IdentityId identity = com.finapp.identity.IdentityId.next(IDS);
+        com.finapp.identity.Identity person = com.finapp.identity.Identity.rehydrate(identity, customer, new com.finapp.identity.LoginIdentifier("writtenoffcustomer"), com.finapp.identity.IdentityStatus.ACTIVE, Instant.EPOCH, Instant.EPOCH);
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        BnplDisputeDesk desk = built(BnplDisputeDesk.class, built(com.finapp.bnpl.BnplDisputes.class, store, servicing, purchases, disputes, refunds),
+                built(com.finapp.bnpl.BnplAccruals.class), answering(com.finapp.identity.IdentityStore.class, java.util.Map.of("findById", Optional.of(person))),
+                new com.finapp.platform.idempotency.IdempotentExecutor(claims(), Clock.systemUTC(), java.time.Duration.ofDays(1), java.time.Duration.ofMinutes(1)),
+                built(BnplTransactions.class, new org.springframework.transaction.support.TransactionTemplate(noTransactions())),
+                new BnplDisputeMetrics(registry), new BnplRefundMetrics(registry), refunds);
+        Instant now = Instant.parse("2026-08-01T10:00:00Z");
+        com.finapp.identity.Session session = com.finapp.identity.Session.rehydrate(com.finapp.identity.SessionId.next(IDS), identity, com.finapp.sharedkernel.security.Sensitive.of("hash"), com.finapp.identity.AssuranceLevel.MULTI_FACTOR,
+                com.finapp.identity.SessionStatus.ACTIVE, now, now.plusSeconds(600), now.plusSeconds(3600), "test", null);
+        com.finapp.platform.security.Actor actor = new com.finapp.platform.security.Actor(customer.toString(), com.finapp.platform.security.ActorType.CUSTOMER);
+        try (com.finapp.platform.security.SecurityContext.Scope scope = com.finapp.platform.security.SecurityContext.enter(actor);
+                com.finapp.platform.correlation.CorrelationContext.Scope correlation = com.finapp.platform.correlation.CorrelationContext.enter(
+                        com.finapp.sharedkernel.correlation.Correlation.startingWith(flow))) {
+            assertThatThrownBy(() -> desk.open(session, agreementId.value().toString(), "key-1", new BnplDisputeController.BnplDisputeOpeningBody("40.00", "EUR", "NOT_RECEIVED", "it never came")))
+                    .isInstanceOfSatisfying(ApiException.class, refused -> {
+                        assertThat(refused.errorCode().code()).isEqualTo("bnpl.ObligationWrittenOff");
+                        assertThat(refused.errorCode().status()).isEqualTo(409);
+                        assertThat(refused.clientDetail().orElseThrow()).isEqualTo(com.finapp.bnpl.BnplObligations.WRITTEN_OFF_DISPUTE_REFUSED);
+                    });
+        }
+    }
+
+    /** {@code BnplPurchaseStore.Owned}, the agreement the domain does not read here left as a record's zero. */
+    private static Object newOwned(com.finapp.bnpl.BnplObligation obligation, com.finapp.bnpl.BnplPurchase purchase) {
+        return new com.finapp.bnpl.BnplPurchaseStore.Owned(obligation, purchase, new org.springframework.objenesis.SpringObjenesis().newInstance(com.finapp.bnpl.BnplAgreement.class), eur(600_00));
+    }
+
     /** A real collaborator whose every part is {@code known} or answers nothing: only what runs before the guard is ever asked. */
     @SuppressWarnings("unchecked")
-    private static <T> T built(Class<T> type, Object... known) {
+    static <T> T built(Class<T> type, Object... known) {
         java.lang.reflect.Constructor<?> widest = Arrays.stream(type.getDeclaredConstructors())
                 .max(java.util.Comparator.comparingInt(java.lang.reflect.Constructor::getParameterCount))
                 .orElseThrow(() -> new IllegalStateException("nothing to build " + type + " with"));
@@ -208,7 +264,7 @@ class BnplRefundDeskTest {
         }
     }
 
-    private static Object part(Class<?> type, Object[] known) {
+    static Object part(Class<?> type, Object[] known) {
         for (Object given : known) {
             if (type.isInstance(given)) {
                 return given;
@@ -223,7 +279,7 @@ class BnplRefundDeskTest {
         return type.isInterface() ? answering(type, java.util.Map.of("getConnection", noConnection())) : built(type, known);
     }
 
-    private static Object answering(Class<?> type, java.util.Map<String, Object> answers) {
+    static Object answering(Class<?> type, java.util.Map<String, Object> answers) {
         return java.lang.reflect.Proxy.newProxyInstance(BnplRefundDeskTest.class.getClassLoader(), new Class<?>[] {type},
                 (proxy, method, args) -> {
                     if (answers.containsKey(method.getName())) {
@@ -242,7 +298,7 @@ class BnplRefundDeskTest {
                 });
     }
 
-    private static com.finapp.platform.idempotency.IdempotencyRecordStore<java.sql.Connection> claims() {
+    static com.finapp.platform.idempotency.IdempotencyRecordStore<java.sql.Connection> claims() {
         return new com.finapp.platform.idempotency.IdempotencyRecordStore<>() {
             @Override
             public ClaimOutcome claim(java.sql.Connection unitOfWork, com.finapp.platform.idempotency.IdempotencyKey key,
