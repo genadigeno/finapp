@@ -702,7 +702,7 @@ class AmortisationBatteryTest {
                     r.payout(), r.schedules(), r.draws(), accruals, billings, statements, r.applications(), repayments,
                     r.reversals(), r.fees(), r.waivers(), r.amendments(), r.reschedulings(), r.closure(),
                     r.payoffQuotes(), r.payoffExecutions(), r.lineClosure(), r.conditions(), r.collectionAttempts(),
-                    r.ledgerAccounts(), r.journalLines());
+                    r.ledgerAccounts(), r.journalLines(), r.writeOffs());
         }
     }
 

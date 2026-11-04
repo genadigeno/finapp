@@ -150,7 +150,8 @@ final class DisbursementWorld {
     static final LoanConditions CONDITIONS = conditions(new JdbcOutboxWriter());
     static final JdbcFeeAssessmentStore FEE_STORE = new JdbcFeeAssessmentStore();
     static final LateFees LATE_FEES = lateFees(new JdbcOutboxWriter());
-    static final Loans LOANS = new Loans(LOAN_STORE, LEDGER_ACCOUNTS, BALANCES, PAYOUT_STORE, CONDITIONS);
+    static final Loans LOANS = new Loans(LOAN_STORE, LEDGER_ACCOUNTS, BALANCES, PAYOUT_STORE, CONDITIONS,
+            new JdbcLoanWriteOffStore());
     static final Payments PAYMENTS = new Payments();
     static final LoanPayoutSteps PAYOUT_STEPS = new LoanPayoutSteps(LOAN_STORE, PAYOUT_STORE, DISBURSEMENT_STORE,
             TERMS_STORE, PAYMENTS, HOLDS, new JdbcOutboxWriter(), IDS, CLOCK);

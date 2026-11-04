@@ -138,7 +138,7 @@ class BnplInvestigationDeskTest {
                     List.of(), Map.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
                     List.of(), List.of(), List.of(), Optional.empty(), List.of(), List.of(), List.of(), Optional.empty(),
                     List.of(new BnplRecord.LedgerAccountRow(principal, AccountPurpose.BNPL_PRINCIPAL, EUR)), lines,
-                    List.of(), Optional.empty(), Optional.empty());
+                    List.of(), Optional.empty(), Optional.empty(), List.of());
         }
     }
 }

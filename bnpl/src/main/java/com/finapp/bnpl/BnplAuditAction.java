@@ -238,7 +238,7 @@ public enum BnplAuditAction implements AuditableAction {
             "A holder of BNPL_WRITE_OFF_APPROVE read a write-off and whether it still stands, or the pending list (P14-TSK-021): each door"
                     + " serves what it decides under its own permission. The figures and the proposer's reason are served to them; the"
                     + " summary names only the agreement and the write-off, or how many are pending.",
-            true),
+            false),
 
     /** A fee waiver was rejected, or withdrawn by its proposer (`P12-TSK-024`). */
     WAIVER_REJECTED(

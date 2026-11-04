@@ -77,7 +77,7 @@ public enum LendingAuditAction implements AuditableAction {
             "A holder of LOAN_WRITE_OFF_APPROVE read a write-off and whether it still stands, or the pending list (P14-TSK-021): each"
                     + " door serves what it decides under its own permission. The figures and the proposer's reason are served to"
                     + " them; the summary names only the loan and the write-off, or how many are pending.",
-            true),
+            false),
 
     /** A different lending officer activated a terms version, retiring its predecessor. */
     TERMS_VERSION_ACTIVATED(

@@ -1960,7 +1960,7 @@ final class BnplBatteryWorld {
                     Map.of(versionId, Optional.of(new BnplTermsVersion(version, terms))), schedules, billings, accruals,
                     applications, repayments, attempts, refunds, fees, List.of(), quotes, execution,
                     disputes.stream().map(this::disputeRow).toList(), List.of(), List.of(), closure, owned, journal, shared,
-                    Optional.of(payable(merchant)), Optional.of(MERCHANT_FEE_INCOME));
+                    Optional.of(payable(merchant)), Optional.of(MERCHANT_FEE_INCOME), List.of());
         }
     }
 

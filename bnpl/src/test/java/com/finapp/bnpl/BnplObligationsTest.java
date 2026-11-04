@@ -52,7 +52,7 @@ class BnplObligationsTest {
         BnplAcceptances acceptances = new BnplAcceptances(world.offers, world.terms.store(), world.purchases,
                 world.credit, world.standing, world.sessions, world.merchants, world.capital, world.wallets, world.book,
                 world.outbox, world.audit, IDS, CLOCK);
-        obligations = new BnplObligations(world.purchases, world.book);
+        obligations = new BnplObligations(world.purchases, world.book, world.writeOffs);
         party = UUID.randomUUID();
         UUID merchant = UUID.randomUUID();
         world.merchants.standings.put(merchant, BnplMerchants.Standing.ENABLED);

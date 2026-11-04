@@ -95,11 +95,11 @@ class BnplVocabulariesTest {
     }
 
     @Test
-    @DisplayName("the obligation machine has exactly section 4.7's two states and four closure reasons - no condition is a"
+    @DisplayName("the obligation machine has exactly section 4.7's three states and four closure reasons - no condition is a"
             + " state, and nothing is disbursed or cancelled")
     void theObligation() {
         assertThat(names(BnplObligationStatus.values()))
-                .containsExactly("ACTIVE", "CLOSED")
+                .containsExactly("ACTIVE", "CLOSED", "WRITTEN_OFF")
                 .as("delinquency, default and a dispute's hold are conditions; nothing is disbursed; a financed"
                         + " obligation is never cancelled")
                 .doesNotContain("DELINQUENT", "DEFAULTED", "DISPUTED", "PENDING_DISBURSEMENT", "CANCELLED", "WRITTEN_OFF");

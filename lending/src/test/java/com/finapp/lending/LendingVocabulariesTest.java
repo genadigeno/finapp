@@ -41,10 +41,10 @@ class LendingVocabulariesTest {
     }
 
     @Test
-    @DisplayName("the loan machine has exactly section 4.5's five states - no condition is a state")
+    @DisplayName("the loan machine has exactly section 4.5's six states - no condition is a state, and a write-off is not closed")
     void theLoanStates() {
         assertThat(names(LoanStatus.values()))
-                .containsExactly("PENDING_DISBURSEMENT", "ACTIVE", "CLOSING", "CLOSED", "CANCELLED")
+                .containsExactly("PENDING_DISBURSEMENT", "ACTIVE", "CLOSING", "CLOSED", "CANCELLED", "WRITTEN_OFF")
                 .as("delinquency, default, draws suspended and awaiting payout are conditions, never states")
                 .doesNotContain("DELINQUENT", "DEFAULTED", "SUSPENDED", "AWAITING_PAYOUT", "RESTRUCTURED", "WRITTEN_OFF");
     }
