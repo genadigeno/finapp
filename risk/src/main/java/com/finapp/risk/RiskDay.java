@@ -30,7 +30,7 @@ public record RiskDay(LocalDate date) {
 
     /** The UTC day {@code instant} falls in. */
     public static RiskDay containing(Instant instant) {
-        return new RiskDay(LocalDate.ofInstant(Objects.requireNonNull(instant, "instant"), ZoneOffset.UTC));
+        return new RiskDay(LocalDate.ofInstant(Objects.requireNonNull(instant, "the instant"), ZoneOffset.UTC));
     }
 
     /** The day's first instant, UTC midnight. */

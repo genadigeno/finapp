@@ -47,6 +47,15 @@ class CashAtBankHasOnePosterTest {
     /** Every permitted file and its one role — a poster, or a reader that posts nothing. */
     private static final Map<String, String> PERMITTED =
             Map.of(
+                    "PostingRuleCatalogue.java",
+                    "READER (P14-TSK-002; permitted when the guard was found red on master, 2026-11-04): the posting-rule register"
+                            + " names each rule's accounts as data, to judge an entry already posted; it posts nothing and reaches no poster",
+                    "PurposeReportDefinition.java",
+                    "READER (P14-TSK-017; permitted when the guard was found red on master, 2026-11-04): a report's definition names"
+                            + " the purposes it sums from journal lines, on a read-only snapshot; it posts nothing and reaches no poster",
+                    "ProductSourceProofs.java",
+                    "NAME ONLY (P14-TSK-010; permitted when the guard was found red on master, 2026-11-04): the cash proof's"
+                            + " discrepancy is labelled by the account's name, never the account; it posts nothing",
                     "BatchAcceptance.java",
                     "POSTER: the bank statement's recognition resolves the account for"
                             + " BankRecognition's entry - the one way cash moves",

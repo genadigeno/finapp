@@ -36,6 +36,15 @@ class FxBooksHaveOnePosterTest {
     /** Every permitted file and its one role. */
     private static final Map<String, String> PERMITTED =
             Map.of(
+                    "PostingRuleCatalogue.java",
+                    "READER (P14-TSK-002; permitted when the guard was found red on master, 2026-11-04): the posting-rule register"
+                            + " names each rule's accounts as data, to judge an entry already posted; it posts nothing and reaches no poster",
+                    "PurposeReportDefinition.java",
+                    "READER (P14-TSK-017; permitted when the guard was found red on master, 2026-11-04): a report's definition names"
+                            + " the purposes it sums from journal lines, on a read-only snapshot; it posts nothing and reaches no poster",
+                    "PriorPeriodAdjustments.java",
+                    "NAME ONLY (P14-TSK-013; permitted when the guard was found red on master, 2026-11-04): a prior-period adjustment"
+                            + " refuses these books, a purpose closed to it, and its refusal says whose door owns them; it posts to none",
                     "ConversionLines.java",
                     "POSTER: a wallet conversion's lines - wallet against FX_POSITION per currency,"
                             + " the margin to FX_SPREAD_REVENUE and the residual to ROUNDING_RESIDUAL"
