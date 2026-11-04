@@ -781,7 +781,6 @@ class CredentialReachesNoEmittedSinkTest {
                         "PeriodReopenRequest",
                         // P14-TSK-013: the prior-period adjustment's bodies - ids, dates and decimal strings, and reasons screened by AccountingReasons.
                         "PriorPeriodAdjustmentRequest",
-                        "PriorPeriodLineItem",
                         "PriorPeriodApprovalRequest",
                         "PriorPeriodRejectionRequest");
     }

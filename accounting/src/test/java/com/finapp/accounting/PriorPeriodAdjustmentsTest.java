@@ -35,7 +35,6 @@ import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -184,499 +183,485 @@ class PriorPeriodAdjustmentsTest {
                 .doesNotContain("secret").doesNotContain("1500").doesNotContain("accountant-1").doesNotContain("controller-1");
     }
 
-    @Nested
-    @DisplayName("which month is corrected, and where the entry lands")
-    class WhichMonth {
+    // ------------------------------------------------------------------ which month is corrected, and where the entry lands
 
-        @Test
-        @DisplayName("a reopened month is the first open one and not where it lands: January closed, February reopened, today in March, it lands in March")
-        void itLandsInTheMonthHoldingToday() {
-            periods.closeForTest(FEBRUARY);
-            periods.markReopened(UOW, id(FEBRUARY), 1);
 
-            assertThat(periods.firstOpen(UOW)).map(AccountingPeriodStore.PeriodRow::month).contains(FEBRUARY);
-            PriorPeriodAdjustments.Acted proposed = propose();
+    @Test
+    @DisplayName("a reopened month is the first open one and not where it lands: January closed, February reopened, today in March, it lands in March")
+    void itLandsInTheMonthHoldingToday() {
+        periods.closeForTest(FEBRUARY);
+        periods.markReopened(UOW, id(FEBRUARY), 1);
 
-            assertThat(proposed.targetMonth()).isEqualTo(MARCH);
-            assertThat(proposed.postingDate()).isEqualTo(TODAY);
-            assertThat(row(proposed).targetPeriod()).isEqualTo(id(MARCH));
-        }
+        assertThat(periods.firstOpen(UOW)).map(AccountingPeriodStore.PeriodRow::month).contains(FEBRUARY);
+        PriorPeriodAdjustments.Acted proposed = propose();
 
-        @Test
-        @DisplayName("a month with no row yet is refused and births nothing: the schedule opens it")
-        void aMonthWithNoRowIsRefused() {
-            Clock april = Clock.fixed(Instant.parse("2026-04-01T00:05:00Z"), ZoneOffset.UTC);
-            int rows = periods.all().size();
-
-            assertThatThrownBy(() -> machine(store, ledger, periods, april).propose(UOW, id(JANUARY), 1, lines(), ACCOUNTANT, REASON, FLOW))
-                    .isInstanceOf(AccountingPeriods.PeriodStale.class)
-                    .hasMessageContaining("has no period yet");
-
-            assertThat(periods.all()).hasSize(rows);
-            nothingProposed();
-        }
-
-        @Test
-        @DisplayName("a clock far ahead finds no row; a clock behind, in or before the corrected month, is refused: never in or before what it corrects")
-        void neverInOrBeforeTheCorrectedMonth() {
-            Clock future = Clock.fixed(Instant.parse("2030-01-15T09:00:00Z"), ZoneOffset.UTC);
-            Clock inJanuary = Clock.fixed(Instant.parse("2026-01-20T09:00:00Z"), ZoneOffset.UTC);
-            Clock beforeIt = Clock.fixed(Instant.parse("2025-12-20T09:00:00Z"), ZoneOffset.UTC);
-            for (Clock clock : List.of(future, inJanuary, beforeIt)) {
-                assertThatThrownBy(() -> machine(store, ledger, periods, clock).propose(UOW, id(JANUARY), 1, lines(), ACCOUNTANT, REASON, FLOW))
-                        .isInstanceOf(AccountingPeriods.PeriodStale.class);
-            }
-            nothingProposed();
-        }
-
-        @Test
-        @DisplayName("the month holding today not OPEN is refused: a clock behind reaching a locked month")
-        void theTargetMustBeOpen() {
-            periods.markLocked(UOW, id(FEBRUARY), 1, ACCOUNTANT, Optional.empty());
-            Clock inFebruary = Clock.fixed(Instant.parse("2026-02-27T09:00:00Z"), ZoneOffset.UTC);
-
-            assertThatThrownBy(() -> machine(store, ledger, periods, inFebruary).propose(UOW, id(JANUARY), 1, lines(), ACCOUNTANT, REASON, FLOW))
-                    .isInstanceOf(AccountingPeriods.PeriodStale.class)
-                    .hasMessageContaining("OPEN");
-            nothingProposed();
-        }
-
-        @Test
-        @DisplayName("the corrected month must be CLOSED: OPEN and LOCKED are refused, a LOCKED month's way back being its unlock (INV-ACC-10); an unknown period is not found")
-        void theCorrectedMonthMustBeClosed() {
-            assertThatThrownBy(() -> machine().propose(UOW, id(FEBRUARY), 1, lines(), ACCOUNTANT, REASON, FLOW))
-                    .isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("OPEN");
-            periods.markLocked(UOW, id(FEBRUARY), 1, ACCOUNTANT, Optional.empty());
-            assertThatThrownBy(() -> machine().propose(UOW, id(FEBRUARY), 1, lines(), ACCOUNTANT, REASON, FLOW))
-                    .isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("LOCKED").hasMessageContaining("unlocked");
-            assertThatThrownBy(() -> machine().propose(UOW, AccountingPeriodId.next(IDS), 1, lines(), ACCOUNTANT, REASON, FLOW))
-                    .isInstanceOf(AccountingPeriods.PeriodNotFound.class);
-            nothingProposed();
-        }
-
-        @Test
-        @DisplayName("it names the revision of the figures it corrects: another is stale at the proposal")
-        void theRevisionIsNamed() {
-            assertThatThrownBy(() -> machine().propose(UOW, id(JANUARY), 2, lines(), ACCOUNTANT, REASON, FLOW))
-                    .isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class);
-            nothingProposed();
-        }
+        assertThat(proposed.targetMonth()).isEqualTo(MARCH);
+        assertThat(proposed.postingDate()).isEqualTo(TODAY);
+        assertThat(row(proposed).targetPeriod()).isEqualTo(id(MARCH));
     }
 
-    @Nested
-    @DisplayName("what can move between the proposal and the approval is read again, and a proposal that can no longer post has a door out")
-    class WhatMoves {
+    @Test
+    @DisplayName("a month with no row yet is refused and births nothing: the schedule opens it")
+    void aMonthWithNoRowIsRefused() {
+        Clock april = Clock.fixed(Instant.parse("2026-04-01T00:05:00Z"), ZoneOffset.UTC);
+        int rows = periods.all().size();
 
-        private void refusedAndStanding(PriorPeriodAdjustments.Acted proposed, Class<? extends RuntimeException> refusal, PriorPeriodAdjustments.Blocked blocked) {
-            assertThatThrownBy(() -> approve(proposed, CONTROLLER)).isInstanceOf(refusal);
-            assertThat(row(proposed).status()).as("it stands").isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
-            assertThat(ledger.proposal(proposed.proposal()).status()).isEqualTo("PROPOSED");
-            assertThat(ledger.calls()).as("the ledger is not asked to post").doesNotContain("approve");
-            assertThat(events).isEmpty();
-            PriorPeriodAdjustments.View view = machine().view(UOW, proposed.id());
-            assertThat(view.stillStands()).isFalse();
-            assertThat(view.blockedBy()).contains(blocked);
-            assertThat(machine().pending(UOW)).as("it can be found").extracting(PriorPeriodAdjustmentStore.Row::id).contains(proposed.id());
+        assertThatThrownBy(() -> machine(store, ledger, periods, april).propose(UOW, id(JANUARY), 1, lines(), ACCOUNTANT, REASON, FLOW))
+                .isInstanceOf(AccountingPeriods.PeriodStale.class)
+                .hasMessageContaining("has no period yet");
 
-            PriorPeriodAdjustments.Acted rejected = machine().reject(UOW, proposed.id(), CONTROLLER, "it can no longer post", FLOW);
-
-            assertThat(rejected.status()).isEqualTo(PriorPeriodAdjustmentStatus.REJECTED);
-            assertThat(ledger.proposal(proposed.proposal()).status()).as("the ledger's with it").isEqualTo("REJECTED");
-            assertThat(machine().view(UOW, proposed.id()).blockedBy()).contains(PriorPeriodAdjustments.Blocked.DECIDED);
-        }
-
-        @Test
-        @DisplayName("the month reopened: the approval is refused, both rows stand PROPOSED, and the rejection, which asks nothing of the months, is the way on")
-        void aReopenBetweenProposalAndApproval() {
-            PriorPeriodAdjustments.Acted proposed = propose();
-            periods.markReopened(UOW, id(JANUARY), 1);
-
-            refusedAndStanding(proposed, AccountingPeriods.PeriodStale.class, PriorPeriodAdjustments.Blocked.CORRECTED_NOT_CLOSED);
-        }
-
-        @Test
-        @DisplayName("reopened and closed again: CLOSED, but the figures it read were superseded - refused, and the way on is to propose against the new revision")
-        void aReCloseBetweenProposalAndApproval() {
-            PriorPeriodAdjustments.Acted proposed = propose();
-            periods.markReopened(UOW, id(JANUARY), 1);
-            periods.closeForTest(JANUARY);
-
-            refusedAndStanding(proposed, PriorPeriodAdjustments.AdjustmentStale.class, PriorPeriodAdjustments.Blocked.CORRECTED_REVISION_MOVED);
-
-            PriorPeriodAdjustments.Acted again = machine().propose(UOW, id(JANUARY), 2, lines(), ACCOUNTANT, REASON, FLOW);
-            assertThat(again.correctedRevision()).isEqualTo(2);
-            assertThat(approve(again, CONTROLLER).status()).isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
-        }
-
-        @Test
-        @DisplayName("the month it lands in locked meanwhile: refused, it stands, it is rejected and proposed again in the next (the backlog's failure handling)")
-        void theTargetLockedMeanwhile() {
-            PriorPeriodAdjustments.Acted proposed = propose();
-            periods.closeForTest(FEBRUARY);
-            periods.markLocked(UOW, id(MARCH), 1, ACCOUNTANT, Optional.empty());
-
-            refusedAndStanding(proposed, AccountingPeriods.PeriodStale.class, PriorPeriodAdjustments.Blocked.TARGET_NOT_OPEN);
-        }
-
-        @Test
-        @DisplayName("a purpose a release closed since the proposal is refused at the approval, the owning door named")
-        void aPurposeClosedSinceTheProposal() {
-            PriorPeriodAdjustments.Acted proposed = propose();
-            ledger.reclassify(fees, "LOAN_FEE_INCOME", "OPERATIONAL");
-
-            assertThatThrownBy(() -> approve(proposed, CONTROLLER)).isInstanceOf(PriorPeriodAdjustments.PurposeClosed.class).hasMessageContaining("lending");
-            assertThat(row(proposed).status()).isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
-            assertThat(ledger.calls()).doesNotContain("approve");
-        }
-
-        @Test
-        @DisplayName("a purpose no longer mapped in the version in force for the target is refused at the approval: that month could not close")
-        void aPurposeUnmappedSinceTheProposal() {
-            PriorPeriodAdjustments.Acted proposed = propose();
-            GlMappingStore without = withContent(ReferenceGlMapping.without(JANUARY, Set.of("FEE_REVENUE")));
-
-            assertThatThrownBy(() -> new PriorPeriodAdjustments(periods, store, ledger, without, (uow, record) -> audit.add(record), (uow, envelope, payload, mediaType) -> { }, IDS,
-                    Clock.fixed(TODAY.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC)).approve(UOW, proposed.id(), reading(proposed), CONTROLLER, "agreed", FLOW))
-                    .isInstanceOf(PriorPeriodAdjustments.AdjustmentInvalid.class)
-                    .hasMessageContaining("FEE_REVENUE/OPERATIONAL");
-            assertThat(ledger.calls()).doesNotContain("approve");
-        }
-
-        @Test
-        @DisplayName("the ledger refusing the date rolls back with the row PROPOSED: its own exception, untranslated")
-        void theLedgersRefusalPassesThrough() {
-            PriorPeriodAdjustments.Acted proposed = propose();
-            ledger.closedThrough(MARCH.atEndOfMonth());
-
-            assertThatThrownBy(() -> approve(proposed, CONTROLLER)).isInstanceOf(InMemoryPriorPeriodPostings.LedgerRefused.class);
-            assertThat(row(proposed).status()).isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
-        }
-
-        @Test
-        @DisplayName("the ledger answering a proposal already approved while this row stands PROPOSED is a defect, and loud: the two rows move together")
-        void twoRowsThatDisagreeAreLoud() {
-            PriorPeriodAdjustments.Acted proposed = propose();
-            ledger.answerReplayed();
-
-            assertThatThrownBy(() -> approve(proposed, CONTROLLER)).isInstanceOf(IllegalStateException.class).hasMessageContaining("move together");
-            assertThat(row(proposed).status()).isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
-        }
+        assertThat(periods.all()).hasSize(rows);
+        nothingProposed();
     }
 
-    @Nested
-    @DisplayName("what the approver read is what posts")
-    class WhatTheyRead {
-
-        @Test
-        @DisplayName("a date other than the one it posts on, or another revision, is stale: nothing posts")
-        void aDifferentDateOrRevisionIsStale() {
-            PriorPeriodAdjustments.Acted proposed = propose();
-
-            assertThatThrownBy(() -> machine().approve(UOW, proposed.id(), new PriorPeriodAdjustments.Approval(TODAY.plusDays(1), 1, Set.of()), CONTROLLER, "agreed", FLOW))
-                    .isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class).hasMessageContaining(TODAY.toString());
-            assertThatThrownBy(() -> machine().approve(UOW, proposed.id(), new PriorPeriodAdjustments.Approval(TODAY, 2, Set.of()), CONTROLLER, "agreed", FLOW))
-                    .isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class);
-
-            assertThat(ledger.calls()).doesNotContain("approve");
-            assertThat(row(proposed).status()).isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
+    @Test
+    @DisplayName("a clock far ahead finds no row; a clock behind, in or before the corrected month, is refused: never in or before what it corrects")
+    void neverInOrBeforeTheCorrectedMonth() {
+        Clock future = Clock.fixed(Instant.parse("2030-01-15T09:00:00Z"), ZoneOffset.UTC);
+        Clock inJanuary = Clock.fixed(Instant.parse("2026-01-20T09:00:00Z"), ZoneOffset.UTC);
+        Clock beforeIt = Clock.fixed(Instant.parse("2025-12-20T09:00:00Z"), ZoneOffset.UTC);
+        for (Clock clock : List.of(future, inJanuary, beforeIt)) {
+            assertThatThrownBy(() -> machine(store, ledger, periods, clock).propose(UOW, id(JANUARY), 1, lines(), ACCOUNTANT, REASON, FLOW))
+                    .isInstanceOf(AccountingPeriods.PeriodStale.class);
         }
-
-        @Test
-        @DisplayName("the view is what the approval names: the date, the revision, the lines, the proposer's reason, and it still stands")
-        void theViewIsWhatTheApprovalNames() {
-            PriorPeriodAdjustments.Acted proposed = propose();
-            PriorPeriodAdjustments.View view = machine().view(UOW, proposed.id());
-
-            assertThat(view.stillStands()).isTrue();
-            assertThat(view.row().postingDate()).isEqualTo(TODAY);
-            assertThat(view.row().correctedRevision()).isEqualTo(1);
-            assertThat(view.row().proposalReason()).isEqualTo(REASON);
-            assertThat(view.lines()).hasSize(2);
-            assertThat(view.earlierCorrections()).isEmpty();
-            assertThat(machine().approve(UOW, proposed.id(), new PriorPeriodAdjustments.Approval(view.row().postingDate(), view.row().correctedRevision(), Set.of()), CONTROLLER, "agreed", FLOW).status())
-                    .isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
-        }
+        nothingProposed();
     }
 
-    @Nested
-    @DisplayName("correcting twice cannot happen unknowingly")
-    class CorrectingTwice {
+    @Test
+    @DisplayName("the month holding today not OPEN is refused: a clock behind reaching a locked month")
+    void theTargetMustBeOpen() {
+        periods.markLocked(UOW, id(FEBRUARY), 1, ACCOUNTANT, Optional.empty());
+        Clock inFebruary = Clock.fixed(Instant.parse("2026-02-27T09:00:00Z"), ZoneOffset.UTC);
 
-        @Test
-        @DisplayName("a proposal's receipt and the approver's read list the month's other corrections; the approval names the posted ones, and one that does not is refused")
-        void anApprovalNamesThePostedCorrections() {
-            PriorPeriodAdjustments.Acted first = propose();
-            UUID firstId = first.id().value();
-            approve(first, CONTROLLER);
-
-            PriorPeriodAdjustments.Acted second = propose();
-
-            assertThat(second.earlierCorrections()).as("the proposer is told").singleElement().satisfies(correction -> {
-                assertThat(correction.id()).isEqualTo(first.id());
-                assertThat(correction.status()).isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
-                assertThat(correction.entry()).isPresent();
-            });
-            assertThat(machine().view(UOW, second.id()).earlierCorrections()).as("the approver is told").singleElement()
-                    .satisfies(correction -> assertThat(correction.id()).isEqualTo(first.id()));
-            assertThatThrownBy(() -> approve(second, OTHER)).as("knowing nothing of the first").isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class).hasMessageContaining("1 stand");
-            assertThat(ledger.proposal(second.proposal()).status()).isEqualTo("PROPOSED");
-
-            assertThat(approve(second, OTHER, firstId).status()).isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
-        }
-
-        @Test
-        @DisplayName("once the first approval is through, the second, which read it PROPOSED, is refused: what two racing approvals meet once the rows have serialised them (the race itself: the database suite)")
-        void theSecondApproverFindsTheFirstPosted() {
-            PriorPeriodAdjustments.Acted first = propose();
-            PriorPeriodAdjustments.Acted second = propose();
-            assertThat(machine().view(UOW, second.id()).earlierCorrections()).singleElement().satisfies(correction ->
-                    assertThat(correction.status()).isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED));
-
-            approve(first, CONTROLLER);
-
-            assertThatThrownBy(() -> approve(second, OTHER)).isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class);
-        }
-
-        @Test
-        @DisplayName("a rejected correction and a standing one are not named: only what has posted corrects anything")
-        void onlyThePostedAreNamed() {
-            PriorPeriodAdjustments.Acted rejected = propose();
-            machine().reject(UOW, rejected.id(), CONTROLLER, "no", FLOW);
-            propose();
-            PriorPeriodAdjustments.Acted third = propose();
-
-            assertThat(approve(third, CONTROLLER).status()).isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
-        }
-
-        @Test
-        @DisplayName("a correction at revision 1 stands against the month at revision 2: the person correcting the re-closed figures is told, and names it; every correction traced to its period")
-        void aCorrectionOfAnEarlierRevisionIsStillNamed() {
-            PriorPeriodAdjustments.Acted first = propose();
-            approve(first, CONTROLLER);
-            periods.markReopened(UOW, id(JANUARY), 1);
-            assertThat(machine().postedAgainst(UOW, id(JANUARY))).as("what a reopen's receipt lists").containsExactly(first.id().value());
-            periods.closeForTest(JANUARY);
-
-            PriorPeriodAdjustments.Acted second = machine().propose(UOW, id(JANUARY), 2, lines(), ACCOUNTANT, REASON, FLOW);
-
-            assertThat(second.earlierCorrections()).singleElement().satisfies(correction -> assertThat(correction.correctedRevision()).isEqualTo(1));
-            assertThat(approve(second, CONTROLLER, first.id().value()).status()).isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
-            assertThat(machine().correctionsOf(UOW, id(JANUARY))).extracting(PriorPeriodAdjustments.Correction::correctedRevision).containsExactly(1, 2);
-            assertThat(machine().correctionsOf(UOW, id(FEBRUARY))).as("a month nothing corrected").isEmpty();
-            assertThatThrownBy(() -> machine().correctionsOf(UOW, AccountingPeriodId.next(IDS))).isInstanceOf(AccountingPeriods.PeriodNotFound.class);
-        }
+        assertThatThrownBy(() -> machine(store, ledger, periods, inFebruary).propose(UOW, id(JANUARY), 1, lines(), ACCOUNTANT, REASON, FLOW))
+                .isInstanceOf(AccountingPeriods.PeriodStale.class)
+                .hasMessageContaining("OPEN");
+        nothingProposed();
     }
 
-    @Nested
-    @DisplayName("what may be corrected")
-    class WhatMayBeCorrected {
+    @Test
+    @DisplayName("the corrected month must be CLOSED: OPEN and LOCKED are refused, a LOCKED month's way back being its unlock (INV-ACC-10); an unknown period is not found")
+    void theCorrectedMonthMustBeClosed() {
+        assertThatThrownBy(() -> machine().propose(UOW, id(FEBRUARY), 1, lines(), ACCOUNTANT, REASON, FLOW))
+                .isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("OPEN");
+        periods.markLocked(UOW, id(FEBRUARY), 1, ACCOUNTANT, Optional.empty());
+        assertThatThrownBy(() -> machine().propose(UOW, id(FEBRUARY), 1, lines(), ACCOUNTANT, REASON, FLOW))
+                .isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("LOCKED").hasMessageContaining("unlocked");
+        assertThatThrownBy(() -> machine().propose(UOW, AccountingPeriodId.next(IDS), 1, lines(), ACCOUNTANT, REASON, FLOW))
+                .isInstanceOf(AccountingPeriods.PeriodNotFound.class);
+        nothingProposed();
+    }
 
-        @Test
-        @DisplayName("a purpose closed to free adjustments is refused at the proposal, the owning domain's door named; nothing written")
-        void aClosedToFreeAdjustmentsPurposeIsRefused() {
-            record Closed(String purpose, String ownerKind, String door) {}
-            for (Closed closed : List.of(new Closed("LOAN_PRINCIPAL", "LOAN", "lending"), new Closed("BNPL_FEES_DUE", "BNPL_OBLIGATION", "bnpl"), new Closed("FX_POSITION", "OPERATIONAL", "fx"),
-                    new Closed("ROUNDING_RESIDUAL", "OPERATIONAL", "fx"), new Closed("SETTLEMENT_CLEARING", "OPERATIONAL", "reconciliation"), new Closed("CASH_AT_BANK", "OPERATIONAL", "reconciliation"),
-                    new Closed("SUSPENSE_UNMATCHED", "OPERATIONAL", "reconciliation"), new Closed("FX_PROVIDER_CLEARING", "COUNTERPARTY", "reconciliation"))) {
-                UUID account = ledger.account(closed.purpose(), closed.ownerKind());
-                assertThatThrownBy(() -> machine().propose(UOW, id(JANUARY), 1, List.of(line(account, Side.DEBIT, 10), line(wallet, Side.CREDIT, 10)), ACCOUNTANT, REASON, FLOW))
-                        .as(closed.purpose())
-                        .isInstanceOf(PriorPeriodAdjustments.PurposeClosed.class)
-                        .hasMessageContaining(closed.purpose())
-                        .hasMessageContaining(closed.door());
-            }
-            nothingProposed();
-        }
+    @Test
+    @DisplayName("it names the revision of the figures it corrects: another is stale at the proposal")
+    void theRevisionIsNamed() {
+        assertThatThrownBy(() -> machine().propose(UOW, id(JANUARY), 2, lines(), ACCOUNTANT, REASON, FLOW))
+                .isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class);
+        nothingProposed();
+    }
 
-        @Test
-        @DisplayName("a purpose this build has never heard of is refused too: the list is of what is open")
-        void anUnknownPurposeFailsClosed() {
-            UUID account = ledger.account("A_PURPOSE_FROM_A_LATER_RELEASE", "OPERATIONAL");
+    // ------------------------------------------------------------------ what can move between the proposal and the approval is read again, and a proposal that can no longer post has a door out
+
+
+    private void refusedAndStanding(PriorPeriodAdjustments.Acted proposed, Class<? extends RuntimeException> refusal, PriorPeriodAdjustments.Blocked blocked) {
+        assertThatThrownBy(() -> approve(proposed, CONTROLLER)).isInstanceOf(refusal);
+        assertThat(row(proposed).status()).as("it stands").isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
+        assertThat(ledger.proposal(proposed.proposal()).status()).isEqualTo("PROPOSED");
+        assertThat(ledger.calls()).as("the ledger is not asked to post").doesNotContain("approve");
+        assertThat(events).isEmpty();
+        PriorPeriodAdjustments.View view = machine().view(UOW, proposed.id());
+        assertThat(view.stillStands()).isFalse();
+        assertThat(view.blockedBy()).contains(blocked);
+        assertThat(machine().pending(UOW)).as("it can be found").extracting(PriorPeriodAdjustmentStore.Row::id).contains(proposed.id());
+
+        PriorPeriodAdjustments.Acted rejected = machine().reject(UOW, proposed.id(), CONTROLLER, "it can no longer post", FLOW);
+
+        assertThat(rejected.status()).isEqualTo(PriorPeriodAdjustmentStatus.REJECTED);
+        assertThat(ledger.proposal(proposed.proposal()).status()).as("the ledger's with it").isEqualTo("REJECTED");
+        assertThat(machine().view(UOW, proposed.id()).blockedBy()).contains(PriorPeriodAdjustments.Blocked.DECIDED);
+    }
+
+    @Test
+    @DisplayName("the month reopened: the approval is refused, both rows stand PROPOSED, and the rejection, which asks nothing of the months, is the way on")
+    void aReopenBetweenProposalAndApproval() {
+        PriorPeriodAdjustments.Acted proposed = propose();
+        periods.markReopened(UOW, id(JANUARY), 1);
+
+        refusedAndStanding(proposed, AccountingPeriods.PeriodStale.class, PriorPeriodAdjustments.Blocked.CORRECTED_NOT_CLOSED);
+    }
+
+    @Test
+    @DisplayName("reopened and closed again: CLOSED, but the figures it read were superseded - refused, and the way on is to propose against the new revision")
+    void aReCloseBetweenProposalAndApproval() {
+        PriorPeriodAdjustments.Acted proposed = propose();
+        periods.markReopened(UOW, id(JANUARY), 1);
+        periods.closeForTest(JANUARY);
+
+        refusedAndStanding(proposed, PriorPeriodAdjustments.AdjustmentStale.class, PriorPeriodAdjustments.Blocked.CORRECTED_REVISION_MOVED);
+
+        PriorPeriodAdjustments.Acted again = machine().propose(UOW, id(JANUARY), 2, lines(), ACCOUNTANT, REASON, FLOW);
+        assertThat(again.correctedRevision()).isEqualTo(2);
+        assertThat(approve(again, CONTROLLER).status()).isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
+    }
+
+    @Test
+    @DisplayName("the month it lands in locked meanwhile: refused, it stands, it is rejected and proposed again in the next (the backlog's failure handling)")
+    void theTargetLockedMeanwhile() {
+        PriorPeriodAdjustments.Acted proposed = propose();
+        periods.closeForTest(FEBRUARY);
+        periods.markLocked(UOW, id(MARCH), 1, ACCOUNTANT, Optional.empty());
+
+        refusedAndStanding(proposed, AccountingPeriods.PeriodStale.class, PriorPeriodAdjustments.Blocked.TARGET_NOT_OPEN);
+    }
+
+    @Test
+    @DisplayName("a purpose a release closed since the proposal is refused at the approval, the owning door named")
+    void aPurposeClosedSinceTheProposal() {
+        PriorPeriodAdjustments.Acted proposed = propose();
+        ledger.reclassify(fees, "LOAN_FEE_INCOME", "OPERATIONAL");
+
+        assertThatThrownBy(() -> approve(proposed, CONTROLLER)).isInstanceOf(PriorPeriodAdjustments.PurposeClosed.class).hasMessageContaining("lending");
+        assertThat(row(proposed).status()).isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
+        assertThat(ledger.calls()).doesNotContain("approve");
+    }
+
+    @Test
+    @DisplayName("a purpose no longer mapped in the version in force for the target is refused at the approval: that month could not close")
+    void aPurposeUnmappedSinceTheProposal() {
+        PriorPeriodAdjustments.Acted proposed = propose();
+        GlMappingStore without = withContent(ReferenceGlMapping.without(JANUARY, Set.of("FEE_REVENUE")));
+
+        assertThatThrownBy(() -> new PriorPeriodAdjustments(periods, store, ledger, without, (uow, record) -> audit.add(record), (uow, envelope, payload, mediaType) -> { }, IDS,
+                Clock.fixed(TODAY.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC)).approve(UOW, proposed.id(), reading(proposed), CONTROLLER, "agreed", FLOW))
+                .isInstanceOf(PriorPeriodAdjustments.AdjustmentInvalid.class)
+                .hasMessageContaining("FEE_REVENUE/OPERATIONAL");
+        assertThat(ledger.calls()).doesNotContain("approve");
+    }
+
+    @Test
+    @DisplayName("the ledger refusing the date rolls back with the row PROPOSED: its own exception, untranslated")
+    void theLedgersRefusalPassesThrough() {
+        PriorPeriodAdjustments.Acted proposed = propose();
+        ledger.closedThrough(MARCH.atEndOfMonth());
+
+        assertThatThrownBy(() -> approve(proposed, CONTROLLER)).isInstanceOf(InMemoryPriorPeriodPostings.LedgerRefused.class);
+        assertThat(row(proposed).status()).isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
+    }
+
+    @Test
+    @DisplayName("the ledger answering a proposal already approved while this row stands PROPOSED is a defect, and loud: the two rows move together")
+    void twoRowsThatDisagreeAreLoud() {
+        PriorPeriodAdjustments.Acted proposed = propose();
+        ledger.answerReplayed();
+
+        assertThatThrownBy(() -> approve(proposed, CONTROLLER)).isInstanceOf(IllegalStateException.class).hasMessageContaining("move together");
+        assertThat(row(proposed).status()).isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
+    }
+
+    // ------------------------------------------------------------------ what the approver read is what posts
+
+
+    @Test
+    @DisplayName("a date other than the one it posts on, or another revision, is stale: nothing posts")
+    void aDifferentDateOrRevisionIsStale() {
+        PriorPeriodAdjustments.Acted proposed = propose();
+
+        assertThatThrownBy(() -> machine().approve(UOW, proposed.id(), new PriorPeriodAdjustments.Approval(TODAY.plusDays(1), 1, Set.of()), CONTROLLER, "agreed", FLOW))
+                .isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class).hasMessageContaining(TODAY.toString());
+        assertThatThrownBy(() -> machine().approve(UOW, proposed.id(), new PriorPeriodAdjustments.Approval(TODAY, 2, Set.of()), CONTROLLER, "agreed", FLOW))
+                .isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class);
+
+        assertThat(ledger.calls()).doesNotContain("approve");
+        assertThat(row(proposed).status()).isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
+    }
+
+    @Test
+    @DisplayName("the view is what the approval names: the date, the revision, the lines, the proposer's reason, and it still stands")
+    void theViewIsWhatTheApprovalNames() {
+        PriorPeriodAdjustments.Acted proposed = propose();
+        PriorPeriodAdjustments.View view = machine().view(UOW, proposed.id());
+
+        assertThat(view.stillStands()).isTrue();
+        assertThat(view.row().postingDate()).isEqualTo(TODAY);
+        assertThat(view.row().correctedRevision()).isEqualTo(1);
+        assertThat(view.row().proposalReason()).isEqualTo(REASON);
+        assertThat(view.lines()).hasSize(2);
+        assertThat(view.earlierCorrections()).isEmpty();
+        assertThat(machine().approve(UOW, proposed.id(), new PriorPeriodAdjustments.Approval(view.row().postingDate(), view.row().correctedRevision(), Set.of()), CONTROLLER, "agreed", FLOW).status())
+                .isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
+    }
+
+    // ------------------------------------------------------------------ correcting twice cannot happen unknowingly
+
+
+    @Test
+    @DisplayName("a proposal's receipt and the approver's read list the month's other corrections; the approval names the posted ones, and one that does not is refused")
+    void anApprovalNamesThePostedCorrections() {
+        PriorPeriodAdjustments.Acted first = propose();
+        UUID firstId = first.id().value();
+        approve(first, CONTROLLER);
+
+        PriorPeriodAdjustments.Acted second = propose();
+
+        assertThat(second.earlierCorrections()).as("the proposer is told").singleElement().satisfies(correction -> {
+            assertThat(correction.id()).isEqualTo(first.id());
+            assertThat(correction.status()).isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
+            assertThat(correction.entry()).isPresent();
+        });
+        assertThat(machine().view(UOW, second.id()).earlierCorrections()).as("the approver is told").singleElement()
+                .satisfies(correction -> assertThat(correction.id()).isEqualTo(first.id()));
+        assertThatThrownBy(() -> approve(second, OTHER)).as("knowing nothing of the first").isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class).hasMessageContaining("1 stand");
+        assertThat(ledger.proposal(second.proposal()).status()).isEqualTo("PROPOSED");
+
+        assertThat(approve(second, OTHER, firstId).status()).isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
+    }
+
+    @Test
+    @DisplayName("once the first approval is through, the second, which read it PROPOSED, is refused: what two racing approvals meet once the rows have serialised them (the race itself: the database suite)")
+    void theSecondApproverFindsTheFirstPosted() {
+        PriorPeriodAdjustments.Acted first = propose();
+        PriorPeriodAdjustments.Acted second = propose();
+        assertThat(machine().view(UOW, second.id()).earlierCorrections()).singleElement().satisfies(correction ->
+                assertThat(correction.status()).isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED));
+
+        approve(first, CONTROLLER);
+
+        assertThatThrownBy(() -> approve(second, OTHER)).isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class);
+    }
+
+    @Test
+    @DisplayName("a rejected correction and a standing one are not named: only what has posted corrects anything")
+    void onlyThePostedAreNamed() {
+        PriorPeriodAdjustments.Acted rejected = propose();
+        machine().reject(UOW, rejected.id(), CONTROLLER, "no", FLOW);
+        propose();
+        PriorPeriodAdjustments.Acted third = propose();
+
+        assertThat(approve(third, CONTROLLER).status()).isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
+    }
+
+    @Test
+    @DisplayName("a correction at revision 1 stands against the month at revision 2: the person correcting the re-closed figures is told, and names it; every correction traced to its period")
+    void aCorrectionOfAnEarlierRevisionIsStillNamed() {
+        PriorPeriodAdjustments.Acted first = propose();
+        approve(first, CONTROLLER);
+        periods.markReopened(UOW, id(JANUARY), 1);
+        assertThat(machine().postedAgainst(UOW, id(JANUARY))).as("what a reopen's receipt lists").containsExactly(first.id().value());
+        periods.closeForTest(JANUARY);
+
+        PriorPeriodAdjustments.Acted second = machine().propose(UOW, id(JANUARY), 2, lines(), ACCOUNTANT, REASON, FLOW);
+
+        assertThat(second.earlierCorrections()).singleElement().satisfies(correction -> assertThat(correction.correctedRevision()).isEqualTo(1));
+        assertThat(approve(second, CONTROLLER, first.id().value()).status()).isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
+        assertThat(machine().correctionsOf(UOW, id(JANUARY))).extracting(PriorPeriodAdjustments.Correction::correctedRevision).containsExactly(1, 2);
+        assertThat(machine().correctionsOf(UOW, id(FEBRUARY))).as("a month nothing corrected").isEmpty();
+        assertThatThrownBy(() -> machine().correctionsOf(UOW, AccountingPeriodId.next(IDS))).isInstanceOf(AccountingPeriods.PeriodNotFound.class);
+    }
+
+    // ------------------------------------------------------------------ what may be corrected
+
+
+    @Test
+    @DisplayName("a purpose closed to free adjustments is refused at the proposal, the owning domain's door named; nothing written")
+    void aClosedToFreeAdjustmentsPurposeIsRefused() {
+        record Closed(String purpose, String ownerKind, String door) {}
+        for (Closed closed : List.of(new Closed("LOAN_PRINCIPAL", "LOAN", "lending"), new Closed("BNPL_FEES_DUE", "BNPL_OBLIGATION", "bnpl"), new Closed("FX_POSITION", "OPERATIONAL", "fx"),
+                new Closed("ROUNDING_RESIDUAL", "OPERATIONAL", "fx"), new Closed("SETTLEMENT_CLEARING", "OPERATIONAL", "reconciliation"), new Closed("CASH_AT_BANK", "OPERATIONAL", "reconciliation"),
+                new Closed("SUSPENSE_UNMATCHED", "OPERATIONAL", "reconciliation"), new Closed("FX_PROVIDER_CLEARING", "COUNTERPARTY", "reconciliation"))) {
+            UUID account = ledger.account(closed.purpose(), closed.ownerKind());
             assertThatThrownBy(() -> machine().propose(UOW, id(JANUARY), 1, List.of(line(account, Side.DEBIT, 10), line(wallet, Side.CREDIT, 10)), ACCOUNTANT, REASON, FLOW))
-                    .isInstanceOf(PriorPeriodAdjustments.PurposeClosed.class);
-            nothingProposed();
+                    .as(closed.purpose())
+                    .isInstanceOf(PriorPeriodAdjustments.PurposeClosed.class)
+                    .hasMessageContaining(closed.purpose())
+                    .hasMessageContaining(closed.door());
         }
+        nothingProposed();
+    }
 
-        @Test
-        @DisplayName("each purpose open to free adjustment may be corrected")
-        void theOpenPurposes() {
-            for (String[] open : List.of(new String[] {"CUSTOMER_WALLET", "CUSTOMER"}, new String[] {"MERCHANT_PAYABLE", "MERCHANT"}, new String[] {"CHARGEBACK_RECOVERABLE", "OPERATIONAL"},
-                    new String[] {"DISPUTE_COSTS", "OPERATIONAL"}, new String[] {"FEE_REVENUE", "OPERATIONAL"})) {
-                UUID account = ledger.account(open[0], open[1]);
-                assertThat(machine().propose(UOW, id(JANUARY), 1, List.of(line(account, Side.DEBIT, 10), line(wallet, Side.CREDIT, 10)), ACCOUNTANT, REASON, FLOW).status())
-                        .as(open[0]).isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
-            }
-        }
+    @Test
+    @DisplayName("a purpose this build has never heard of is refused too: the list is of what is open")
+    void anUnknownPurposeFailsClosed() {
+        UUID account = ledger.account("A_PURPOSE_FROM_A_LATER_RELEASE", "OPERATIONAL");
+        assertThatThrownBy(() -> machine().propose(UOW, id(JANUARY), 1, List.of(line(account, Side.DEBIT, 10), line(wallet, Side.CREDIT, 10)), ACCOUNTANT, REASON, FLOW))
+                .isInstanceOf(PriorPeriodAdjustments.PurposeClosed.class);
+        nothingProposed();
+    }
 
-        @Test
-        @DisplayName("a purpose unmapped in the version in force for the month it lands in is refused at the proposal, and so is no version at all: that month could not close")
-        void anUnmappedPurposeIsRefused() {
-            GlMappingStore without = withContent(ReferenceGlMapping.without(JANUARY, Set.of("FEE_REVENUE")));
-            assertThatThrownBy(() -> new PriorPeriodAdjustments(periods, store, ledger, without, (uow, record) -> audit.add(record), (uow, envelope, payload, mediaType) -> { }, IDS,
-                    Clock.fixed(TODAY.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC)).propose(UOW, id(JANUARY), 1, lines(), ACCOUNTANT, REASON, FLOW))
-                    .isInstanceOf(PriorPeriodAdjustments.AdjustmentInvalid.class).hasMessageContaining("FEE_REVENUE/OPERATIONAL");
-            assertThatThrownBy(() -> new PriorPeriodAdjustments(periods, store, ledger, new InMemoryGlMappingStore(), (uow, record) -> audit.add(record), (uow, envelope, payload, mediaType) -> { }, IDS,
-                    Clock.fixed(TODAY.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC)).propose(UOW, id(JANUARY), 1, lines(), ACCOUNTANT, REASON, FLOW))
-                    .isInstanceOf(PriorPeriodAdjustments.AdjustmentInvalid.class).hasMessageContaining("no GL mapping version");
-            nothingProposed();
-        }
-
-        @Test
-        @DisplayName("the lines: two at least, each positive, balanced per currency (INV-LED-01), and the same numbers in two currencies do not balance; an account the ledger does not hold is refused; each before anything is locked or written")
-        void theLinesAreCoherent() {
-            int locks = periods.rowLocks();
-            PriorPeriodPostings.Line usd = new PriorPeriodPostings.Line(wallet, Side.CREDIT, Money.ofMinorUnits(1500, USD));
-            for (List<PriorPeriodPostings.Line> bad : List.of(
-                    List.<PriorPeriodPostings.Line>of(),
-                    List.of(line(fees, Side.DEBIT, 1500)),
-                    List.of(line(fees, Side.DEBIT, 1500), line(wallet, Side.CREDIT, 1400)),
-                    List.of(line(fees, Side.DEBIT, 1500), usd),
-                    List.of(line(fees, Side.DEBIT, 0), line(wallet, Side.CREDIT, 0)),
-                    List.of(line(fees, Side.DEBIT, -5), line(wallet, Side.CREDIT, -5)))) {
-                assertThatThrownBy(() -> machine().propose(UOW, id(JANUARY), 1, bad, ACCOUNTANT, REASON, FLOW)).isInstanceOf(PriorPeriodAdjustments.AdjustmentInvalid.class);
-            }
-            assertThat(periods.rowLocks()).isEqualTo(locks);
-            assertThatThrownBy(() -> machine().propose(UOW, id(JANUARY), 1, List.of(line(UUID.randomUUID(), Side.DEBIT, 10), line(wallet, Side.CREDIT, 10)), ACCOUNTANT, REASON, FLOW))
-                    .isInstanceOf(PriorPeriodAdjustments.AdjustmentInvalid.class).hasMessageContaining("does not hold");
-            assertThatThrownBy(() -> new PriorPeriodPostings.Line(wallet, Side.EITHER, Money.ofMinorUnits(1, EUR))).isInstanceOf(IllegalArgumentException.class);
-            nothingProposed();
-
-            PriorPeriodAdjustments.Acted twoCurrencies = machine().propose(UOW, id(JANUARY), 1,
-                    List.of(line(fees, Side.DEBIT, 10), line(wallet, Side.CREDIT, 10), new PriorPeriodPostings.Line(fees, Side.CREDIT, Money.ofMinorUnits(7, USD)),
-                            new PriorPeriodPostings.Line(wallet, Side.DEBIT, Money.ofMinorUnits(7, USD))), ACCOUNTANT, REASON, FLOW);
-            assertThat(twoCurrencies.status()).as("each currency balanced").isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
-        }
-
-        @Test
-        @DisplayName("a reason is required at each act, screened for instrument shapes; only a person acts")
-        void reasonsAndPersons() {
-            for (String reason : new String[] {null, " ", "x".repeat(1001), "card 4111 1111 1111 1111"}) {
-                assertThatThrownBy(() -> machine().propose(UOW, id(JANUARY), 1, lines(), ACCOUNTANT, reason, FLOW)).isInstanceOf(AccountingReasons.ReasonRequired.class);
-            }
-            nothingProposed();
-            assertThatThrownBy(() -> machine().propose(UOW, id(JANUARY), 1, lines(), Actor.SYSTEM, REASON, FLOW)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("a person's");
-            PriorPeriodAdjustments.Acted proposed = propose();
-            assertThatThrownBy(() -> machine().approve(UOW, proposed.id(), reading(proposed), CONTROLLER, " ", FLOW)).isInstanceOf(AccountingReasons.ReasonRequired.class);
-            assertThatThrownBy(() -> machine().reject(UOW, proposed.id(), CONTROLLER, null, FLOW)).isInstanceOf(AccountingReasons.ReasonRequired.class);
-            assertThatThrownBy(() -> machine().approve(UOW, proposed.id(), reading(proposed), Actor.SYSTEM, "agreed", FLOW)).isInstanceOf(IllegalArgumentException.class);
-            assertThat(row(proposed).status()).isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
+    @Test
+    @DisplayName("each purpose open to free adjustment may be corrected")
+    void theOpenPurposes() {
+        for (String[] open : List.of(new String[] {"CUSTOMER_WALLET", "CUSTOMER"}, new String[] {"MERCHANT_PAYABLE", "MERCHANT"}, new String[] {"CHARGEBACK_RECOVERABLE", "OPERATIONAL"},
+                new String[] {"DISPUTE_COSTS", "OPERATIONAL"}, new String[] {"FEE_REVENUE", "OPERATIONAL"})) {
+            UUID account = ledger.account(open[0], open[1]);
+            assertThat(machine().propose(UOW, id(JANUARY), 1, List.of(line(account, Side.DEBIT, 10), line(wallet, Side.CREDIT, 10)), ACCOUNTANT, REASON, FLOW).status())
+                    .as(open[0]).isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
         }
     }
 
-    @Nested
-    @DisplayName("four eyes and keyed acts")
-    class FourEyes {
-
-        @Test
-        @DisplayName("the proposer cannot approve: refused before anything is asked of the ledger, the attempt recordable FAILED; the row stands for a second person")
-        void theProposerCannotApprove() {
-            PriorPeriodAdjustments.Acted proposed = propose();
-
-            assertThatThrownBy(() -> approve(proposed, ACCOUNTANT)).isInstanceOfSatisfying(PriorPeriodAdjustments.SelfApprovalRefused.class, refused -> {
-                assertThat(refused.target()).isEqualTo(proposed.id().value().toString());
-                assertThat(refused.summary()).contains("prior-period-adjustment:approve").doesNotContain("secret");
-                machine().recordRefusal(UOW, refused, ACCOUNTANT, FLOW);
-            });
-            assertThat(ledger.calls()).doesNotContain("approve");
-            assertThat(audit).last().satisfies(record -> {
-                assertThat(record.operation().code()).isEqualTo("accounting.SelfApprovalRefused");
-                assertThat(record.outcome()).isEqualTo(AuditOutcome.FAILED);
-                assertThat(record.targetType()).isEqualTo(PriorPeriodAdjustments.TARGET_TYPE);
-            });
-            assertThat(approve(proposed, CONTROLLER).status()).isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
-        }
-
-        @Test
-        @DisplayName("a second look at an approval already through: the same person converges and writes nothing, another is stale; what a replayed approval and ten approvers meet once the row has serialised them (the real race: the database suite)")
-        void aReplayedApprovalPostsOnce() {
-            PriorPeriodAdjustments.Acted proposed = propose();
-            PriorPeriodAdjustments.Acted posted = approve(proposed, CONTROLLER);
-            int records = audit.size();
-            long approvals = ledger.calls().stream().filter("approve"::equals).count();
-
-            PriorPeriodAdjustments.Acted again = approve(proposed, CONTROLLER);
-
-            assertThat(again.replayed()).isTrue();
-            assertThat(again.entry()).isEqualTo(posted.entry());
-            assertThatThrownBy(() -> approve(proposed, OTHER)).isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class).hasMessageContaining("POSTED");
-            assertThat(audit).hasSize(records);
-            assertThat(events).hasSize(1);
-            assertThat(ledger.calls().stream().filter("approve"::equals).count()).isEqualTo(approvals).isEqualTo(1);
-        }
-
-        @Test
-        @DisplayName("an approval and a rejection: whichever the row admits first stands, the other is stale; a rejection may be the proposer's; the same rejecter converges")
-        void anApprovalAndARejection() {
-            PriorPeriodAdjustments.Acted rejected = propose();
-            PriorPeriodAdjustments.Acted withdrawn = machine().reject(UOW, rejected.id(), ACCOUNTANT, "withdrawn", FLOW);
-            assertThat(withdrawn.status()).isEqualTo(PriorPeriodAdjustmentStatus.REJECTED);
-            assertThat(machine().reject(UOW, rejected.id(), ACCOUNTANT, "withdrawn", FLOW).replayed()).isTrue();
-            assertThatThrownBy(() -> machine().reject(UOW, rejected.id(), CONTROLLER, "no", FLOW)).isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class);
-            assertThatThrownBy(() -> approve(rejected, CONTROLLER)).as("rejected, it drops out of the locked rows and is read again").isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class).hasMessageContaining("REJECTED");
-            assertThat(ledger.proposal(rejected.proposal()).status()).isEqualTo("REJECTED");
-
-            PriorPeriodAdjustments.Acted posted = propose();
-            approve(posted, CONTROLLER);
-            assertThatThrownBy(() -> machine().reject(UOW, posted.id(), CONTROLLER, "no", FLOW)).isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class);
-            assertThat(ledger.proposal(posted.proposal()).status()).isEqualTo("APPROVED");
-
-            assertThat(audit).extracting(record -> record.operation().code()).contains("accounting.PriorPeriodAdjustmentRejected");
-            assertThat(events).as("no event at a rejection").hasSize(1);
-        }
-
-        @Test
-        @DisplayName("nothing has this id: not found at each door")
-        void unknownIsNotFound() {
-            PriorPeriodAdjustmentId nobody = PriorPeriodAdjustmentId.next(IDS);
-            assertThatThrownBy(() -> machine().approve(UOW, nobody, new PriorPeriodAdjustments.Approval(TODAY, 1, Set.of()), CONTROLLER, "agreed", FLOW)).isInstanceOf(PriorPeriodAdjustments.AdjustmentNotFound.class);
-            assertThatThrownBy(() -> machine().reject(UOW, nobody, CONTROLLER, "no", FLOW)).isInstanceOf(PriorPeriodAdjustments.AdjustmentNotFound.class);
-            assertThatThrownBy(() -> machine().view(UOW, nobody)).isInstanceOf(PriorPeriodAdjustments.AdjustmentNotFound.class);
-        }
+    @Test
+    @DisplayName("a purpose unmapped in the version in force for the month it lands in is refused at the proposal, and so is no version at all: that month could not close")
+    void anUnmappedPurposeIsRefused() {
+        GlMappingStore without = withContent(ReferenceGlMapping.without(JANUARY, Set.of("FEE_REVENUE")));
+        assertThatThrownBy(() -> new PriorPeriodAdjustments(periods, store, ledger, without, (uow, record) -> audit.add(record), (uow, envelope, payload, mediaType) -> { }, IDS,
+                Clock.fixed(TODAY.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC)).propose(UOW, id(JANUARY), 1, lines(), ACCOUNTANT, REASON, FLOW))
+                .isInstanceOf(PriorPeriodAdjustments.AdjustmentInvalid.class).hasMessageContaining("FEE_REVENUE/OPERATIONAL");
+        assertThatThrownBy(() -> new PriorPeriodAdjustments(periods, store, ledger, new InMemoryGlMappingStore(), (uow, record) -> audit.add(record), (uow, envelope, payload, mediaType) -> { }, IDS,
+                Clock.fixed(TODAY.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC)).propose(UOW, id(JANUARY), 1, lines(), ACCOUNTANT, REASON, FLOW))
+                .isInstanceOf(PriorPeriodAdjustments.AdjustmentInvalid.class).hasMessageContaining("no GL mapping version");
+        nothingProposed();
     }
 
-    @Nested
-    @DisplayName("the locks")
-    class Locks {
-
-        @Test
-        @DisplayName("an approval: the corrected period FOR SHARE, the target FOR SHARE, oldest first; the month's adjustments in one statement; then the ledger; the row's edge after the entry, its lock already held")
-        void anApprovalsOrder() {
-            PriorPeriodAdjustments.Acted proposed = propose();
-            List<String> order = new ArrayList<>();
-            PriorPeriodAdjustments recording = machine(recording(PriorPeriodAdjustmentStore.class, store, order), recording(PriorPeriodPostings.class, ledger, order), recording(AccountingPeriodStore.class, periods, order),
-                    Clock.fixed(TODAY.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC));
-
-            recording.approve(UOW, proposed.id(), reading(proposed), CONTROLLER, "agreed", FLOW);
-
-            assertThat(order).containsSubsequence("lockShared(2026-01)", "lockShared(2026-03)", "lockCorrectionsOf", "approve", "markPosted");
-            assertThat(order).filteredOn(call -> call.startsWith("lock")).containsExactly("lockShared(2026-01)", "lockShared(2026-03)", "lockCorrectionsOf");
-            assertThat(order).doesNotContain("lock");
+    @Test
+    @DisplayName("the lines: two at least, each positive, balanced per currency (INV-LED-01), and the same numbers in two currencies do not balance; an account the ledger does not hold is refused; each before anything is locked or written")
+    void theLinesAreCoherent() {
+        int locks = periods.rowLocks();
+        PriorPeriodPostings.Line usd = new PriorPeriodPostings.Line(wallet, Side.CREDIT, Money.ofMinorUnits(1500, USD));
+        for (List<PriorPeriodPostings.Line> bad : List.of(
+                List.<PriorPeriodPostings.Line>of(),
+                List.of(line(fees, Side.DEBIT, 1500)),
+                List.of(line(fees, Side.DEBIT, 1500), line(wallet, Side.CREDIT, 1400)),
+                List.of(line(fees, Side.DEBIT, 1500), usd),
+                List.of(line(fees, Side.DEBIT, 0), line(wallet, Side.CREDIT, 0)),
+                List.of(line(fees, Side.DEBIT, -5), line(wallet, Side.CREDIT, -5)))) {
+            assertThatThrownBy(() -> machine().propose(UOW, id(JANUARY), 1, bad, ACCOUNTANT, REASON, FLOW)).isInstanceOf(PriorPeriodAdjustments.AdjustmentInvalid.class);
         }
+        assertThat(periods.rowLocks()).isEqualTo(locks);
+        assertThatThrownBy(() -> machine().propose(UOW, id(JANUARY), 1, List.of(line(UUID.randomUUID(), Side.DEBIT, 10), line(wallet, Side.CREDIT, 10)), ACCOUNTANT, REASON, FLOW))
+                .isInstanceOf(PriorPeriodAdjustments.AdjustmentInvalid.class).hasMessageContaining("does not hold");
+        assertThatThrownBy(() -> new PriorPeriodPostings.Line(wallet, Side.EITHER, Money.ofMinorUnits(1, EUR))).isInstanceOf(IllegalArgumentException.class);
+        nothingProposed();
 
-        @Test
-        @DisplayName("a proposal: the two periods FOR SHARE oldest first, then the ledger's proposal, then the row")
-        void aProposalsOrder() {
-            List<String> order = new ArrayList<>();
-            PriorPeriodAdjustments recording = machine(recording(PriorPeriodAdjustmentStore.class, store, order), recording(PriorPeriodPostings.class, ledger, order), recording(AccountingPeriodStore.class, periods, order),
-                    Clock.fixed(TODAY.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC));
+        PriorPeriodAdjustments.Acted twoCurrencies = machine().propose(UOW, id(JANUARY), 1,
+                List.of(line(fees, Side.DEBIT, 10), line(wallet, Side.CREDIT, 10), new PriorPeriodPostings.Line(fees, Side.CREDIT, Money.ofMinorUnits(7, USD)),
+                        new PriorPeriodPostings.Line(wallet, Side.DEBIT, Money.ofMinorUnits(7, USD))), ACCOUNTANT, REASON, FLOW);
+        assertThat(twoCurrencies.status()).as("each currency balanced").isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
+    }
 
-            recording.propose(UOW, id(JANUARY), 1, lines(), ACCOUNTANT, REASON, FLOW);
-
-            assertThat(order).containsSubsequence("lockShared(2026-01)", "lockShared(2026-03)", "propose", "insert");
+    @Test
+    @DisplayName("a reason is required at each act, screened for instrument shapes; only a person acts")
+    void reasonsAndPersons() {
+        for (String reason : new String[] {null, " ", "x".repeat(1001), "card 4111 1111 1111 1111"}) {
+            assertThatThrownBy(() -> machine().propose(UOW, id(JANUARY), 1, lines(), ACCOUNTANT, reason, FLOW)).isInstanceOf(AccountingReasons.ReasonRequired.class);
         }
+        nothingProposed();
+        assertThatThrownBy(() -> machine().propose(UOW, id(JANUARY), 1, lines(), Actor.SYSTEM, REASON, FLOW)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("a person's");
+        PriorPeriodAdjustments.Acted proposed = propose();
+        assertThatThrownBy(() -> machine().approve(UOW, proposed.id(), reading(proposed), CONTROLLER, " ", FLOW)).isInstanceOf(AccountingReasons.ReasonRequired.class);
+        assertThatThrownBy(() -> machine().reject(UOW, proposed.id(), CONTROLLER, null, FLOW)).isInstanceOf(AccountingReasons.ReasonRequired.class);
+        assertThatThrownBy(() -> machine().approve(UOW, proposed.id(), reading(proposed), Actor.SYSTEM, "agreed", FLOW)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(row(proposed).status()).isEqualTo(PriorPeriodAdjustmentStatus.PROPOSED);
+    }
 
-        @Test
-        @DisplayName("a rejection takes no period row: nothing about either month can hold the way out shut")
-        void aRejectionTakesNoPeriodRow() {
-            PriorPeriodAdjustments.Acted proposed = propose();
-            periods.closeForTest(FEBRUARY);
-            periods.markLocked(UOW, id(MARCH), 1, ACCOUNTANT, Optional.empty());
-            int locks = periods.rowLocks();
+    // ------------------------------------------------------------------ four eyes and keyed acts
 
-            machine().reject(UOW, proposed.id(), CONTROLLER, "no", FLOW);
 
-            assertThat(periods.rowLocks()).isEqualTo(locks);
-        }
+    @Test
+    @DisplayName("the proposer cannot approve: refused before anything is asked of the ledger, the attempt recordable FAILED; the row stands for a second person")
+    void theProposerCannotApprove() {
+        PriorPeriodAdjustments.Acted proposed = propose();
+
+        assertThatThrownBy(() -> approve(proposed, ACCOUNTANT)).isInstanceOfSatisfying(PriorPeriodAdjustments.SelfApprovalRefused.class, refused -> {
+            assertThat(refused.target()).isEqualTo(proposed.id().value().toString());
+            assertThat(refused.summary()).contains("prior-period-adjustment:approve").doesNotContain("secret");
+            machine().recordRefusal(UOW, refused, ACCOUNTANT, FLOW);
+        });
+        assertThat(ledger.calls()).doesNotContain("approve");
+        assertThat(audit).last().satisfies(record -> {
+            assertThat(record.operation().code()).isEqualTo("accounting.SelfApprovalRefused");
+            assertThat(record.outcome()).isEqualTo(AuditOutcome.FAILED);
+            assertThat(record.targetType()).isEqualTo(PriorPeriodAdjustments.TARGET_TYPE);
+        });
+        assertThat(approve(proposed, CONTROLLER).status()).isEqualTo(PriorPeriodAdjustmentStatus.POSTED);
+    }
+
+    @Test
+    @DisplayName("a second look at an approval already through: the same person converges and writes nothing, another is stale; what a replayed approval and ten approvers meet once the row has serialised them (the real race: the database suite)")
+    void aReplayedApprovalPostsOnce() {
+        PriorPeriodAdjustments.Acted proposed = propose();
+        PriorPeriodAdjustments.Acted posted = approve(proposed, CONTROLLER);
+        int records = audit.size();
+        long approvals = ledger.calls().stream().filter("approve"::equals).count();
+
+        PriorPeriodAdjustments.Acted again = approve(proposed, CONTROLLER);
+
+        assertThat(again.replayed()).isTrue();
+        assertThat(again.entry()).isEqualTo(posted.entry());
+        assertThatThrownBy(() -> approve(proposed, OTHER)).isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class).hasMessageContaining("POSTED");
+        assertThat(audit).hasSize(records);
+        assertThat(events).hasSize(1);
+        assertThat(ledger.calls().stream().filter("approve"::equals).count()).isEqualTo(approvals).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("an approval and a rejection: whichever the row admits first stands, the other is stale; a rejection may be the proposer's; the same rejecter converges")
+    void anApprovalAndARejection() {
+        PriorPeriodAdjustments.Acted rejected = propose();
+        PriorPeriodAdjustments.Acted withdrawn = machine().reject(UOW, rejected.id(), ACCOUNTANT, "withdrawn", FLOW);
+        assertThat(withdrawn.status()).isEqualTo(PriorPeriodAdjustmentStatus.REJECTED);
+        assertThat(machine().reject(UOW, rejected.id(), ACCOUNTANT, "withdrawn", FLOW).replayed()).isTrue();
+        assertThatThrownBy(() -> machine().reject(UOW, rejected.id(), CONTROLLER, "no", FLOW)).isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class);
+        assertThatThrownBy(() -> approve(rejected, CONTROLLER)).as("rejected, it drops out of the locked rows and is read again").isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class).hasMessageContaining("REJECTED");
+        assertThat(ledger.proposal(rejected.proposal()).status()).isEqualTo("REJECTED");
+
+        PriorPeriodAdjustments.Acted posted = propose();
+        approve(posted, CONTROLLER);
+        assertThatThrownBy(() -> machine().reject(UOW, posted.id(), CONTROLLER, "no", FLOW)).isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class);
+        assertThat(ledger.proposal(posted.proposal()).status()).isEqualTo("APPROVED");
+
+        assertThat(audit).extracting(record -> record.operation().code()).contains("accounting.PriorPeriodAdjustmentRejected");
+        assertThat(events).as("no event at a rejection").hasSize(1);
+    }
+
+    @Test
+    @DisplayName("nothing has this id: not found at each door")
+    void unknownIsNotFound() {
+        PriorPeriodAdjustmentId nobody = PriorPeriodAdjustmentId.next(IDS);
+        assertThatThrownBy(() -> machine().approve(UOW, nobody, new PriorPeriodAdjustments.Approval(TODAY, 1, Set.of()), CONTROLLER, "agreed", FLOW)).isInstanceOf(PriorPeriodAdjustments.AdjustmentNotFound.class);
+        assertThatThrownBy(() -> machine().reject(UOW, nobody, CONTROLLER, "no", FLOW)).isInstanceOf(PriorPeriodAdjustments.AdjustmentNotFound.class);
+        assertThatThrownBy(() -> machine().view(UOW, nobody)).isInstanceOf(PriorPeriodAdjustments.AdjustmentNotFound.class);
+    }
+
+    // ------------------------------------------------------------------ the locks
+
+
+    @Test
+    @DisplayName("an approval: the corrected period FOR SHARE, the target FOR SHARE, oldest first; the month's adjustments in one statement; then the ledger; the row's edge after the entry, its lock already held")
+    void anApprovalsOrder() {
+        PriorPeriodAdjustments.Acted proposed = propose();
+        List<String> order = new ArrayList<>();
+        PriorPeriodAdjustments recording = machine(recording(PriorPeriodAdjustmentStore.class, store, order), recording(PriorPeriodPostings.class, ledger, order), recording(AccountingPeriodStore.class, periods, order),
+                Clock.fixed(TODAY.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC));
+
+        recording.approve(UOW, proposed.id(), reading(proposed), CONTROLLER, "agreed", FLOW);
+
+        assertThat(order).containsSubsequence("lockShared(2026-01)", "lockShared(2026-03)", "lockCorrectionsOf", "approve", "markPosted");
+        assertThat(order).filteredOn(call -> call.startsWith("lock")).containsExactly("lockShared(2026-01)", "lockShared(2026-03)", "lockCorrectionsOf");
+        assertThat(order).doesNotContain("lock");
+    }
+
+    @Test
+    @DisplayName("a proposal: the two periods FOR SHARE oldest first, then the ledger's proposal, then the row")
+    void aProposalsOrder() {
+        List<String> order = new ArrayList<>();
+        PriorPeriodAdjustments recording = machine(recording(PriorPeriodAdjustmentStore.class, store, order), recording(PriorPeriodPostings.class, ledger, order), recording(AccountingPeriodStore.class, periods, order),
+                Clock.fixed(TODAY.atStartOfDay(ZoneOffset.UTC).toInstant(), ZoneOffset.UTC));
+
+        recording.propose(UOW, id(JANUARY), 1, lines(), ACCOUNTANT, REASON, FLOW);
+
+        assertThat(order).containsSubsequence("lockShared(2026-01)", "lockShared(2026-03)", "propose", "insert");
+    }
+
+    @Test
+    @DisplayName("a rejection takes no period row: nothing about either month can hold the way out shut")
+    void aRejectionTakesNoPeriodRow() {
+        PriorPeriodAdjustments.Acted proposed = propose();
+        periods.closeForTest(FEBRUARY);
+        periods.markLocked(UOW, id(MARCH), 1, ACCOUNTANT, Optional.empty());
+        int locks = periods.rowLocks();
+
+        machine().reject(UOW, proposed.id(), CONTROLLER, "no", FLOW);
+
+        assertThat(periods.rowLocks()).isEqualTo(locks);
     }
 
     @Test
