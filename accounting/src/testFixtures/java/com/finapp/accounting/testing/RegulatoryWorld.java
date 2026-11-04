@@ -19,6 +19,7 @@ import com.finapp.accounting.reporting.ReportDefinitions;
 import com.finapp.accounting.reporting.ReportGeneration;
 import com.finapp.accounting.reporting.RunParameters;
 import com.finapp.platform.audit.AuditRecord;
+import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
@@ -70,6 +71,8 @@ public final class RegulatoryWorld {
     public final RegulatoryObligations obligations;
     public final RegulatorySubmissions submissions;
     private final OutboxWriter<Connection> outbox;
+    /** Set, and the audit writer refuses: how a suite shows a record really comes before what it records. */
+    public volatile boolean auditRefuses;
 
     public RegulatoryWorld(Clock clock) {
         this.clock = clock;
@@ -84,8 +87,14 @@ public final class RegulatoryWorld {
         };
         this.reportRuns = new ReportRuns(runs, periods, new InMemoryGlMappingStore(), definitions, ReportRuns.Leases.STANDARD, (uow, record) -> { }, outbox, ids, clock);
         RegulatoryAdapters adapters = new RegulatoryAdapters(List.of(provider));
-        this.obligations = new RegulatoryObligations(obligationStore, adapters, definitions, (uow, record) -> audit.add(record), ids, clock);
-        this.submissions = new RegulatorySubmissions(periods, store, obligationStore, runs, adapters, (uow, record) -> audit.add(record), outbox, ids, clock, Duration.ofDays(1));
+        AuditWriter<Connection> writer = (uow, record) -> {
+            if (auditRefuses) {
+                throw new IllegalStateException("the audit writer refused");
+            }
+            audit.add(record);
+        };
+        this.obligations = new RegulatoryObligations(obligationStore, adapters, definitions, writer, ids, clock);
+        this.submissions = new RegulatorySubmissions(periods, store, obligationStore, runs, adapters, writer, outbox, ids, clock, Duration.ofDays(1));
     }
 
     public CorrelationId correlation() {

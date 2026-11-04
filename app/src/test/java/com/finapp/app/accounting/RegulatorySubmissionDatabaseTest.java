@@ -364,7 +364,7 @@ class RegulatorySubmissionDatabaseTest {
     }
 
     @Test
-    @DisplayName("only FINAL runs feed a draft: the machine refuses a month not CLOSED and a run not FINAL; a raw writer is refused a draft of an OPEN month and a source naming a PROVISIONAL run")
+    @DisplayName("only FINAL runs feed a draft: the machine refuses a CLOSED month with no FINAL run and an OPEN month holding a PROVISIONAL one; a raw writer is refused a draft of an OPEN month and a source naming a PROVISIONAL run")
     void onlyFinalRunsFeedADraft() throws Exception {
         YearMonth closed = closedMonth();
         Form form = activeForm();
@@ -443,7 +443,7 @@ class RegulatorySubmissionDatabaseTest {
     }
 
     @Test
-    @DisplayName("the proposer cannot approve: the machine refuses and the row's and the history's CHECKs refuse a raw writer, on the SQLSTATE; the approver cannot send, the same")
+    @DisplayName("the proposer cannot approve: the machine refuses and the row's and the history's CHECKs refuse a raw writer, on the SQLSTATE; the approver cannot send: the machine refuses and the row's CHECK refuses a raw writer")
     void theProposerCannotApprove() throws Exception {
         Case validated = validated(drafted());
 
@@ -540,6 +540,7 @@ class RegulatorySubmissionDatabaseTest {
         assertThat(frozen.monthMoved()).isTrue();
         assertThat(frozen.periodStatusNow()).isEqualTo(PeriodStatus.OPEN);
         assertThat(count("SELECT count(*) FROM accounting.report_run r JOIN accounting.regulatory_submission_source s ON s.run_id = r.id WHERE s.submission_id = '" + approved.id().value() + "' AND r.status = 'SUPERSEDED'")).isEqualTo(1);
+        assertThat(frozen.contentSha256()).as("frozen").isEqualTo(approved.acted().contentSha256());
     }
 
     @Test
@@ -575,6 +576,10 @@ class RegulatorySubmissionDatabaseTest {
 
         assertThat(rowOf(approved.id()).status()).isEqualTo(SubmissionStatus.APPROVED);
         assertThat(count("SELECT count(*) FROM accounting.regulatory_submission_event WHERE submission_id = '" + approved.id().value() + "' AND act = 'SUBMITTED'")).isZero();
+        assertThat(provider.submits()).as("nothing sent").isZero();
+        assertThat(provider.inquiries()).isZero();
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type = '" + RegulatorySubmissions.SUBMITTED_EVENT + "' AND aggregate_id = '" + approved.id().value() + "'")).isZero();
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'regulatory.SubmissionSubmitted' AND target_id = '" + approved.id().value() + "'")).isZero();
     }
 
     private static void await(CountDownLatch latch) {
@@ -589,7 +594,7 @@ class RegulatorySubmissionDatabaseTest {
     // ================================================================== one live
 
     @Test
-    @DisplayName("ten drafts of one form and month, racing: one live row, nine refused; a withdrawal frees it; the partial unique names only what is live")
+    @DisplayName("ten drafts of one form and month, racing: one live row, nine refused; a withdrawal frees it")
     void tenDraftsOneLiveRow() throws Exception {
         YearMonth month = closedMonth();
         issued(month);
@@ -617,7 +622,7 @@ class RegulatorySubmissionDatabaseTest {
     // ================================================================== what V010 holds for every writer
 
     @Test
-    @DisplayName("born whole, at its commit: rows the content does not state are refused, and a content with no rows; the hash is the text's own; REFERENCE and the header are the row's")
+    @DisplayName("born whole, at its commit: rows the content does not state are refused, and a content with no rows; a line past its bound refused; the hash is the text's own; REFERENCE, the month and the revision in the header are the row's")
     void bornWhole() throws Exception {
         YearMonth month = closedMonth();
         ReportRunId run = issued(month);
@@ -666,10 +671,36 @@ class RegulatorySubmissionDatabaseTest {
             application.rollback();
         }
 
+        // A line past FigurePath.MAX_LENGTH, for a raw writer.
+        try (Connection application = DatabaseRoles.application()) {
+            application.setAutoCommit(false);
+            UUID id = rawDraft(application, form, period, revision, stated, sha);
+            try (PreparedStatement source = application.prepareStatement("INSERT INTO accounting.regulatory_submission_source (submission_id, run_id, run_sha256, definition, definition_version) VALUES (?, ?, ?, ?, 1)")) {
+                source.setObject(1, id);
+                source.setObject(2, run.value());
+                source.setString(3, issued.sha256());
+                source.setString(4, RegulatoryWorld.SOURCE);
+                source.executeUpdate();
+            }
+            try (PreparedStatement line = application.prepareStatement("INSERT INTO accounting.regulatory_submission_line (submission_id, ordinal, line_code, label, currency, minor_units, scale, run_id, run_sha256, source_definition, figure_path)"
+                    + " VALUES (?, 1, 'ASSETS', 'Forged', 'EUR', '1', 2, ?, ?, ?, ?)")) {
+                line.setObject(1, id);
+                line.setObject(2, run.value());
+                line.setString(3, issued.sha256());
+                line.setString(4, RegulatoryWorld.SOURCE);
+                line.setString(5, "body." + "x".repeat(252));
+                assertThatThrownBy(line::executeUpdate).isInstanceOf(SQLException.class).hasMessageContaining("regulatory_submission_line_bounded");
+            }
+            application.rollback();
+        }
+
         try (Connection application = DatabaseRoles.application()) {
             assertThatThrownBy(() -> rawDraft(application, form, period, revision, stated, "0".repeat(64))).isInstanceOf(SQLException.class).hasMessageContaining("regulatory_submission_content_hashed");
             String notReference = stated.replace("\"standing\":\"REFERENCE\"", "\"standing\":\"STATUTORY\"");
             assertThatThrownBy(() -> rawDraft(application, form, period, revision, notReference, CanonicalJson.sha256(notReference))).isInstanceOf(SQLException.class).hasMessageContaining("regulatory_submission_content_is_this_rows");
+            String otherMonth = stated.replace("\"period\":\"" + month + "\"", "\"period\":\"1901-01\"");
+            assertThat(otherMonth).isNotEqualTo(stated);
+            assertThatThrownBy(() -> rawDraft(application, form, period, revision, otherMonth, CanonicalJson.sha256(otherMonth))).as("attested content stating another month").isInstanceOf(SQLException.class).hasMessageContaining("regulatory_submission_content_is_this_rows");
             String otherRevision = stated.replace("\"periodRevision\":\"" + revision + "\"", "\"periodRevision\":\"99\"");
             assertThatThrownBy(() -> rawDraft(application, form, period, revision, otherRevision, CanonicalJson.sha256(otherRevision))).isInstanceOf(SQLException.class).hasMessageContaining("regulatory_submission_content_is_this_rows");
         }
@@ -687,12 +718,15 @@ class RegulatorySubmissionDatabaseTest {
         assertThatThrownBy(() -> asMigrator("UPDATE accounting.regulatory_submission_line SET minor_units = '1' WHERE submission_id = ?", id)).isInstanceOf(SQLException.class).hasMessageContaining("append-only");
         assertThatThrownBy(() -> asMigrator("DELETE FROM accounting.regulatory_submission_source WHERE submission_id = ?", id)).isInstanceOf(SQLException.class).hasMessageContaining("append-only");
         assertThatThrownBy(() -> asMigrator("DELETE FROM accounting.regulatory_submission WHERE id = ?", id)).isInstanceOf(SQLException.class).hasMessageContaining("never deleted");
-        assertThatThrownBy(() -> asMigrator("TRUNCATE accounting.regulatory_provider_answer")).isInstanceOf(SQLException.class).hasMessageContaining("never truncated");
+        // CASCADE, because PostgreSQL refuses a table another references before any trigger: this reaches each table's own trigger, and each raises, so nothing is emptied.
+        for (String table : List.of("regulatory_obligation", "regulatory_submission", "regulatory_submission_source", "regulatory_submission_line", "regulatory_submission_event", "regulatory_provider_answer")) {
+            assertThatThrownBy(() -> asMigrator("TRUNCATE accounting." + table + " CASCADE")).as(table).isInstanceOf(SQLException.class).hasMessageContaining("never truncated");
+        }
         assertThatThrownBy(() -> asMigrator("UPDATE accounting.regulatory_submission SET status = 'DRAFT' WHERE id = ?", id)).isInstanceOf(SQLException.class).hasMessageContaining("not an edge");
     }
 
     @Test
-    @DisplayName("ack against rejection is one way, for every writer: an edge needs its recorded answer; the first definite answer concludes; a contrary one is kept verbatim, flagged, no edge; a concluded row takes no edge")
+    @DisplayName("ack then rejection, for the application role: an edge needs its recorded answer; the first definite answer concludes; a contrary one is kept verbatim, flagged, no edge, and lists the return; a concluded row takes no edge")
     void ackAgainstRejectionIsOneWay() throws Exception {
         Case sent = submitted();
         UUID id = sent.id().value();
@@ -714,15 +748,17 @@ class RegulatorySubmissionDatabaseTest {
         assertThat(after.status()).isEqualTo(SubmissionStatus.ACKNOWLEDGED);
         assertThat(after.rejectionCode()).isEmpty();
         assertThat(after.contraryAnswers()).isEqualTo(1);
-        List<RegulatorySubmissionStore.AnswerRow> kept = inScope(Actor.SYSTEM, uow -> STORE.answers(uow, sent.id()));
+        List<RegulatorySubmissionStore.AnswerRow> kept = inScope(Actor.SYSTEM, uow -> STORE.answers(uow, sent.id(), RegulatorySubmissions.ANSWERS_SERVED));
         assertThat(kept).hasSize(2);
+        List<RegulatorySubmissionStore.Row> standing = inScope(Actor.SYSTEM, uow -> STORE.standing(uow, Optional.empty(), 100));
+        assertThat(standing).as("a contrary answer: a person can find which return").extracting(RegulatorySubmissionStore.Row::id).contains(sent.id());
         assertThat(kept.get(1).raw()).as("the bytes, verbatim: not text").isEqualTo(contrary);
         assertThat(kept.get(1).flag()).contains(RegulatorySubmissionStore.Flag.CONTRARY);
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'regulatory.SubmissionContraryAnswer' AND target_id = '" + id + "'")).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("a provider's answer: bytes as received, append-only for every writer; an oversized one its prefix, its length and its hash, and it decides nothing; the bound and its rule by CHECK")
+    @DisplayName("a provider's answer, append-only: the application role holds no UPDATE and the migrator meets the trigger; an oversized one its prefix, its length and its hash, and it decides nothing; the bound and its rule by CHECK")
     void aProvidersAnswerIsKept() throws Exception {
         Case sent = submitted();
         byte[] huge = new byte[com.finapp.accounting.RegulatoryAnswerReading.MAX_RAW_BYTES + 100];
@@ -732,9 +768,11 @@ class RegulatorySubmissionDatabaseTest {
 
         RegulatorySubmissionStore.Row row = rowOf(sent.id());
         assertThat(row.status()).as("an oversized answer decides nothing").isEqualTo(SubmissionStatus.SUBMITTED);
-        RegulatorySubmissionStore.AnswerRow kept = inScope(Actor.SYSTEM, uow -> STORE.answers(uow, sent.id())).get(0);
+        RegulatorySubmissionStore.AnswerRow kept = inScope(Actor.SYSTEM, uow -> STORE.answers(uow, sent.id(), RegulatorySubmissions.ANSWERS_SERVED)).get(0);
         assertThat(kept.truncated()).isTrue();
         assertThat(kept.raw()).hasSize(com.finapp.accounting.RegulatoryAnswerReading.MAX_RAW_BYTES);
+        assertThat(kept.raw()).isEqualTo(Arrays.copyOf(huge, com.finapp.accounting.RegulatoryAnswerReading.MAX_RAW_BYTES));
+        assertThat(kept.rawSha256()).isEqualTo(CanonicalJson.sha256(new String(huge, StandardCharsets.UTF_8)));
         assertThat(kept.receivedBytes()).isEqualTo(huge.length);
         assertThat(kept.anomaly()).contains(com.finapp.accounting.RegulatoryAnswerReading.Anomaly.OVERSIZED);
 
@@ -742,10 +780,30 @@ class RegulatorySubmissionDatabaseTest {
         assertThatThrownBy(() -> asApplication("UPDATE accounting.regulatory_provider_answer SET flag = 'LATE' WHERE id = ?", answer)).isInstanceOfSatisfying(SQLException.class, refused -> assertThat(refused.getSQLState()).isEqualTo(INSUFFICIENT_PRIVILEGE));
         assertThatThrownBy(() -> asMigrator("UPDATE accounting.regulatory_provider_answer SET flag = 'LATE' WHERE id = ?", answer)).isInstanceOf(SQLException.class).hasMessageContaining("verbatim");
         assertThatThrownBy(() -> asMigrator("DELETE FROM accounting.regulatory_provider_answer WHERE id = ?", answer)).isInstanceOf(SQLException.class).hasMessageContaining("verbatim");
+
+        // The bound and its rule, by CHECK: a raw writer on the application role's own connection.
+        String insert = "INSERT INTO accounting.regulatory_provider_answer (id, submission_id, attempt, call_kind, stated_outcome, read_outcome, raw, raw_sha256, received_bytes, truncated, received_at, correlation_id)"
+                + " VALUES (?, ?, 1, 'INQUIRE', 'UNKNOWN', 'UNKNOWN', ?, ?, ?, ?, clock_timestamp(), 'c')";
+        byte[] past = new byte[com.finapp.accounting.RegulatoryAnswerReading.MAX_RAW_BYTES + 1];
+        Arrays.fill(past, (byte) 'x');
+        String pastSha = CanonicalJson.sha256(new String(past, StandardCharsets.UTF_8));
+        assertThatThrownBy(() -> asApplication(insert, IDS.next(), sent.id().value(), past, pastSha, (long) past.length, false)).isInstanceOfSatisfying(SQLException.class, refused -> {
+            assertThat(refused.getSQLState()).isEqualTo(CHECK_VIOLATION);
+            assertThat(refused.getMessage()).contains("regulatory_provider_answer_raw_bounded");
+        });
+        byte[] small = "x".getBytes(StandardCharsets.UTF_8);
+        assertThatThrownBy(() -> asApplication(insert, IDS.next(), sent.id().value(), small, CanonicalJson.sha256("x"), 2L, true)).as("truncated, and no anomaly says so").isInstanceOfSatisfying(SQLException.class, refused -> {
+            assertThat(refused.getSQLState()).isEqualTo(CHECK_VIOLATION);
+            assertThat(refused.getMessage()).contains("regulatory_provider_answer_truncation_coherent");
+        });
+        assertThatThrownBy(() -> asApplication(insert, IDS.next(), sent.id().value(), small, "0".repeat(64), 1L, false)).as("a hash that is not the bytes'").isInstanceOfSatisfying(SQLException.class, refused -> {
+            assertThat(refused.getSQLState()).isEqualTo(CHECK_VIOLATION);
+            assertThat(refused.getMessage()).contains("regulatory_provider_answer_hash_is_the_answers");
+        });
     }
 
     @Test
-    @DisplayName("UNDELIVERED on a definite not received, for every writer: refused over an unknown answer; the driver's resend counted before its call, under the same id; the person's door opens once the resends are spent")
+    @DisplayName("UNDELIVERED on a definite not received: refused over an unknown answer and to a raw writer; a counted resend must carry RESENDING; the driver's resend goes after its inquiry; the person's door opens once the resends are spent, on what the provider says at the act")
     void undeliveredOnADefiniteNotReceived() throws Exception {
         Case sent = submitted();
         UUID id = sent.id().value();
@@ -759,7 +817,7 @@ class RegulatorySubmissionDatabaseTest {
         assertThatThrownBy(() -> asApplication("UPDATE accounting.regulatory_submission SET resends = resends + 1 WHERE id = ?", id)).isInstanceOf(SQLException.class).hasMessageContaining("recorded before its call");
 
         Actor sender = person();
-        assertThatThrownBy(() -> inScope(sender, uow -> machine.declareUndelivered(uow, sent.id(), REASON, sender, correlation()))).isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
+        assertThatThrownBy(() -> inScope(sender, uow -> machine.declareUndelivered(uow, sent.id(), Optional.empty(), REASON, sender, correlation()))).isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
 
         // The permit made due by the migrator, standing in for time; then a definite answer, and the driver's own resend.
         asMigrator("UPDATE accounting.regulatory_submission SET next_inquiry_at = clock_timestamp() - interval '1 minute', last_answer = 'UNKNOWN' WHERE id = ?", id);
@@ -783,7 +841,9 @@ class RegulatorySubmissionDatabaseTest {
         RegulatorySubmissionStore.Row exhausted = rowOf(sent.id());
         assertThat(exhausted.resends()).isEqualTo(RegulatorySubmissions.MAX_RESENDS);
         assertThat(exhausted.lastAnswer()).contains("NOT_RECEIVED");
-        assertThat(inScope(sender, uow -> machine.declareUndelivered(uow, sent.id(), REASON, sender, correlation())).status()).isEqualTo(SubmissionStatus.UNDELIVERED);
+        Optional<RegulatorySubmissions.Recorded> asked = driver.askBeforeNonDelivery(rowOf(sent.id()), correlation());
+        assertThat(asked.map(RegulatorySubmissions.Recorded::disposition)).as("what the provider says now, kept").contains(RegulatorySubmissions.Disposition.NOT_RECEIVED);
+        assertThat(inScope(sender, uow -> machine.declareUndelivered(uow, sent.id(), asked, REASON, sender, correlation())).status()).isEqualTo(SubmissionStatus.UNDELIVERED);
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type = '" + RegulatorySubmissions.UNDELIVERED_EVENT + "' AND aggregate_id = '" + id + "'")).isEqualTo(1);
     }
 
@@ -810,24 +870,138 @@ class RegulatorySubmissionDatabaseTest {
         assertThat(outcomes).filteredOn(outcome -> outcome instanceof Optional<?> claimed && claimed.isPresent()).hasSize(1);
         assertThat(rowOf(sent.id()).attempts()).isEqualTo(1);
         assertThat(rowOf(sent.id()).nextInquiryAt().orElseThrow()).isAfter(NOW.instant().plusSeconds(60));
+        Optional<RegulatorySubmissions.Claimed> notYet = inScope(Actor.SYSTEM, uow -> machine.claim(uow, sent.id(), LEASE));
+        assertThat(notYet).as("the permit is a lease ahead, and no lock is left to skip").isEmpty();
     }
 
     @Test
-    @DisplayName("what stands: the attention read names a return overtaken by a reopen, and one not yet sent; a pending list excludes its reader's own in the statement")
+    @DisplayName("what stands, on the database's clock: overtaken until a return of the form is acknowledged at the month's present revision, a draft clearing nothing; stale_unsent; overdue; the wait backing off past the horizon; resends_exhausted; a page and its next; a pending list excluding its reader's own")
     void whatStands() throws Exception {
-        long before = inScope(Actor.SYSTEM, uow -> STORE.attention(uow, RegulatorySubmissions.MAX_RESENDS)).overtaken();
+        RegulatorySubmissionStore.Attention before = attention();
+
+        // Overtaken, and what clears it.
         Case sent = submitted();
         driver.submitIfDue(sent.id());
+        assertThat(rowOf(sent.id()).status()).isEqualTo(SubmissionStatus.ACKNOWLEDGED);
         reopen(sent.month());
-        assertThat(inScope(Actor.SYSTEM, uow -> STORE.attention(uow, RegulatorySubmissions.MAX_RESENDS)).overtaken()).isEqualTo(before + 1);
-        List<RegulatorySubmissionStore.Row> standing = inScope(Actor.SYSTEM, uow -> STORE.standing(uow, 100));
+        assertThat(attention().overtaken()).isEqualTo(before.overtaken() + 1);
+        assertThat(rowOf(sent.id()).overtaken()).isTrue();
+        List<RegulatorySubmissionStore.Row> standing = inScope(Actor.SYSTEM, uow -> STORE.standing(uow, Optional.empty(), 100));
         assertThat(standing).extracting(RegulatorySubmissionStore.Row::id).contains(sent.id());
+
+        PeriodCloseFixture.closed(sent.month());
+        issued(sent.month());
+        Actor preparer = person();
+        AccountingPeriodId period = id(sent.month());
+        RegulatorySubmissions.Acted drafted = inScope(preparer, uow -> machine.draft(uow, new RegulatorySubmissions.Draft(sent.form().obligation(), period, Optional.of(sent.id()), REASON), preparer, correlation()));
+        assertThat(attention().overtaken()).as("a draft of a correction clears nothing").isEqualTo(before.overtaken() + 1);
+        Case correction = approved(validated(new Case(sent.month(), sent.form(), drafted, preparer, person())));
+        Actor sender = person();
+        inScope(sender, uow -> machine.submit(uow, correction.id(), correction.read(), REASON, sender, correlation()));
+        driver.submitIfDue(correction.id());
+        assertThat(rowOf(correction.id()).status()).isEqualTo(SubmissionStatus.ACKNOWLEDGED);
+        assertThat(attention().overtaken()).isEqualTo(before.overtaken());
+        assertThat(rowOf(sent.id()).overtaken()).isFalse();
+        assertThat(rowOf(sent.id()).monthMoved()).isTrue();
+
+        // Not yet sent, its month moved. This leaves that month OPEN; the next case in the ladder closes it.
+        Case unsent = validated(drafted());
+        reopen(unsent.month());
+        assertThat(attention().staleUnsent()).isEqualTo(before.staleUnsent() + 1);
+
+        // Overdue: a machine whose horizon is already behind it, so no case waits on a clock.
+        RegulatorySubmissions pastItsHorizon = new RegulatorySubmissions(AccountingPeriodFixture.STORE, STORE, OBLIGATIONS, RUNS, adapters, new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, NOW, Duration.ofHours(-3));
+        Case approved = approved();
+        Actor late = person();
+        inScope(late, uow -> pastItsHorizon.submit(uow, approved.id(), approved.read(), REASON, late, correlation()));
+        assertThat(attention().overdue()).isEqualTo(before.overdue() + 1);
+
+        // The wait backs off on the database's clock: three hours past the horizon, three hours; under a ceiling of one, one.
+        inScope(Actor.SYSTEM, uow -> STORE.claim(uow, approved.id(), LEASE));
+        inScope(Actor.SYSTEM, uow -> STORE.await(uow, approved.id(), 1, INTERVAL, RegulatorySubmissions.INQUIRY_CEILING, "UNKNOWN", Optional.empty()));
+        RegulatorySubmissionStore.Row waiting = rowOf(approved.id());
+        assertThat(Duration.between(waiting.answerHorizonAt().orElseThrow(), waiting.nextInquiryAt().orElseThrow())).isBetween(Duration.ofMinutes(359), Duration.ofMinutes(361));
+        inScope(Actor.SYSTEM, uow -> STORE.await(uow, approved.id(), 1, INTERVAL, Duration.ofHours(1), "UNKNOWN", Optional.empty()));
+        RegulatorySubmissionStore.Row ceiled = rowOf(approved.id());
+        assertThat(Duration.between(ceiled.answerHorizonAt().orElseThrow(), ceiled.nextInquiryAt().orElseThrow())).isBetween(Duration.ofMinutes(239), Duration.ofMinutes(241));
+
+        // Resends spent: the migrator standing in for five rounds, RESENDING first as the trigger asks.
+        asMigrator("UPDATE accounting.regulatory_submission SET resends = ?, last_answer = 'RESENDING' WHERE id = ?", RegulatorySubmissions.MAX_RESENDS, approved.id().value());
+        asMigrator("UPDATE accounting.regulatory_submission SET last_answer = 'NOT_RECEIVED' WHERE id = ?", approved.id().value());
+        assertThat(attention().resendsExhausted()).isEqualTo(before.resendsExhausted() + 1);
+        assertThat(RegulatorySubmissions.nonDeliveryOpen(rowOf(approved.id()))).isTrue();
+
+        // A page and the next, on what is frozen: no row twice.
+        List<RegulatorySubmissionStore.Row> first = inScope(Actor.SYSTEM, uow -> STORE.standing(uow, Optional.empty(), 2));
+        assertThat(first).hasSize(2);
+        List<RegulatorySubmissionStore.Row> next = inScope(Actor.SYSTEM, uow -> STORE.standing(uow, Optional.of(first.get(1).id()), 2));
+        assertThat(next).extracting(RegulatorySubmissionStore.Row::id).doesNotContain(first.get(0).id(), first.get(1).id());
 
         Case validated = validated(drafted());
         List<RegulatorySubmissionStore.Row> own = inScope(validated.preparer(), uow -> machine.awaitingApproval(uow, validated.preparer()));
         assertThat(own).extracting(RegulatorySubmissionStore.Row::id).doesNotContain(validated.id());
         List<RegulatorySubmissionStore.Row> decidable = inScope(validated.approver(), uow -> machine.awaitingApproval(uow, validated.approver()));
         assertThat(decidable).extracting(RegulatorySubmissionStore.Row::id).contains(validated.id());
+    }
+
+    private static RegulatorySubmissionStore.Attention attention() {
+        return inScope(Actor.SYSTEM, uow -> STORE.attention(uow, RegulatorySubmissions.MAX_RESENDS));
+    }
+
+    @Test
+    @DisplayName("SUBMITTED with nothing sent, the month really reopened and re-closed before the claim: the first attempt only asks, nothing is sent, a resend is refused by the statement and for a raw writer by the trigger; a person concludes it and a correction goes at the new revision")
+    void aMonthMovedBeforeTheClaimIsNeverSent() throws Exception {
+        Case sent = submitted();
+        roundTrip(sent.month());
+        assertThat(rowOf(sent.id()).monthMoved()).isTrue();
+
+        assertThat(driver.submitIfDue(sent.id())).isTrue();
+        assertThat(provider.submits()).as("the regulator is handed nothing").isZero();
+        assertThat(provider.inquiries()).isEqualTo(1);
+        assertThat(provider.sendsReceived(sent.id())).isZero();
+        RegulatorySubmissionStore.Row asked = rowOf(sent.id());
+        assertThat(asked.status()).isEqualTo(SubmissionStatus.SUBMITTED);
+        assertThat(asked.attempts()).isEqualTo(1);
+        assertThat(asked.resends()).isZero();
+        assertThat(asked.lastAnswer()).contains("NOT_RECEIVED");
+        assertThat(asked.overtaken()).isTrue();
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'regulatory.SubmissionResent' AND target_id = '" + sent.id().value() + "'")).isZero();
+
+        boolean permitted = inScope(Actor.SYSTEM, uow -> STORE.permitResend(uow, sent.id(), asked.attempts(), RegulatorySubmissions.MAX_RESENDS));
+        assertThat(permitted).as("the statement's own condition").isFalse();
+        assertThatThrownBy(() -> asApplication("UPDATE accounting.regulatory_submission SET resends = resends + 1, last_answer = 'RESENDING' WHERE id = ?", sent.id().value())).as("for a raw writer").isInstanceOf(SQLException.class)
+                .hasMessageContaining("a resend goes only while the month stands");
+
+        // The door: open whatever the resend count, asked at the act. judge_stands is not on this edge: it is how a return its month overtook is ended.
+        assertThat(RegulatorySubmissions.nonDeliveryOpen(asked)).isTrue();
+        Optional<RegulatorySubmissions.Recorded> answered = driver.askBeforeNonDelivery(asked, correlation());
+        assertThat(answered.map(RegulatorySubmissions.Recorded::disposition)).contains(RegulatorySubmissions.Disposition.NOT_RECEIVED);
+        Actor sender = person();
+        assertThat(inScope(sender, uow -> machine.declareUndelivered(uow, sent.id(), answered, REASON, sender, correlation())).status()).isEqualTo(SubmissionStatus.UNDELIVERED);
+
+        Actor preparer = person();
+        AccountingPeriodId period = id(sent.month());
+        RegulatorySubmissions.Acted correction = inScope(preparer, uow -> machine.draft(uow, new RegulatorySubmissions.Draft(sent.form().obligation(), period, Optional.of(sent.id()), REASON), preparer, correlation()));
+        assertThat(correction.periodRevision()).isEqualTo(row(sent.month()).revision()).isGreaterThan(sent.acted().periodRevision());
+        assertThat(rowOf(correction.id()).corrects()).contains(sent.id());
+    }
+
+    @Test
+    @DisplayName("a resend goes only while the month stands: permitted at the revision read, audited, one row; a reopen committed first refuses it, MONTH_MOVED")
+    void aResendIsPermittedUnderThePeriod() throws Exception {
+        Case sent = submitted();
+        RegulatorySubmissions.Claimed claimed = inScope(Actor.SYSTEM, uow -> machine.claim(uow, sent.id(), LEASE)).orElseThrow();
+        inScope(Actor.SYSTEM, uow -> STORE.await(uow, sent.id(), claimed.row().attempts(), INTERVAL, RegulatorySubmissions.INQUIRY_CEILING, "NOT_RECEIVED", Optional.empty()));
+        RegulatorySubmissions.ResendPermit permitted = inScope(Actor.SYSTEM, uow -> machine.permitResend(uow, claimed, correlation()));
+        assertThat(permitted).isEqualTo(RegulatorySubmissions.ResendPermit.PERMITTED);
+        assertThat(rowOf(sent.id()).lastAnswer()).contains("RESENDING");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'regulatory.SubmissionResent' AND target_id = '" + sent.id().value() + "'")).isEqualTo(1);
+
+        inScope(Actor.SYSTEM, uow -> STORE.await(uow, sent.id(), claimed.row().attempts(), INTERVAL, RegulatorySubmissions.INQUIRY_CEILING, "NOT_RECEIVED", Optional.empty()));
+        reopen(sent.month());
+        RegulatorySubmissions.ResendPermit refused = inScope(Actor.SYSTEM, uow -> machine.permitResend(uow, claimed, correlation()));
+        assertThat(refused).isEqualTo(RegulatorySubmissions.ResendPermit.MONTH_MOVED);
+        assertThat(rowOf(sent.id()).resends()).isEqualTo(1);
     }
 
     @Test
@@ -844,7 +1018,7 @@ class RegulatorySubmissionDatabaseTest {
     // ================================================================== the obligation
 
     @Test
-    @DisplayName("an obligation: REFERENCE for every writer; four eyes by CHECK; two activations of one form race and one version stands; a rule outside the vocabulary refused; frozen but for its decision")
+    @DisplayName("an obligation, for the application role and the migrator where each is tried: REFERENCE by CHECK; four eyes by CHECK; two activations of one form race and one version stands; a rule outside the vocabulary refused; frozen but for its decision")
     void anObligationIsHeldForEveryWriter() throws Exception {
         String form = "REF-TEST-" + FORMS.incrementAndGet();
         String configuration = RegulatoryWorld.configuration().canonical();
@@ -896,7 +1070,7 @@ class RegulatorySubmissionDatabaseTest {
     }
 
     @Test
-    @DisplayName("what is read is held to its reader: a row's reason is not in a store's failure, and the store's failure names its operation and SQLSTATE only")
+    @DisplayName("a row's reason is not in a store's failure")
     void aStoresFailureCarriesNoRow() {
         Case draft = drafted();
         assertThatThrownBy(() -> inScope(Actor.SYSTEM, uow -> {

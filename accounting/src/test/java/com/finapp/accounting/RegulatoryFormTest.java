@@ -43,8 +43,11 @@ class RegulatoryFormTest {
         List<FigurePath.Figure> each = FigurePath.of("body.equation[currency=*].liabilities").resolve(CONTENT);
         assertThat(each).extracting(FigurePath.Figure::currency).containsExactly("EUR", "USD");
         assertThat(each).extracting(FigurePath.Figure::path).containsExactly("body.equation[currency=EUR].liabilities", "body.equation[currency=USD].liabilities");
-        assertThat(FigurePath.of("body.equation[currency=*].liabilities").perCurrency()).isTrue();
         assertThat(each.get(0).toString()).doesNotContain("9000");
+        CanonicalJson.Obj usdFirst = CanonicalJson.object().put("body", CanonicalJson.object().put("rows", CanonicalJson.array()
+                .add(CanonicalJson.object().put("currency", "USD").put("closing", RegulatoryWorld.money("USD", 1)))
+                .add(CanonicalJson.object().put("currency", "EUR").put("closing", RegulatoryWorld.money("EUR", 1)))));
+        assertThat(FigurePath.of("body.rows[currency=*].closing").resolve(usdFirst)).extracting(FigurePath.Figure::currency).as("sorted, whatever the body's order").containsExactly("EUR", "USD");
     }
 
     @Test
@@ -80,14 +83,46 @@ class RegulatoryFormTest {
     }
 
     @Test
+    @DisplayName("what passes a proposal fits every draft: a wildcard is judged as the three-letter currency it resolves to, and the resolved path is V010's longest")
+    void aPathIsBoundedAsItResolves() {
+        String fits = pathOf("body.a[currency=*]", 254);
+        assertThat(fits).hasSize(254);
+        assertThatThrownBy(() -> FigurePath.of(pathOf("body.a[currency=*]", 255))).isInstanceOf(FigurePath.Malformed.class);
+        assertThat(FigurePath.of(pathOf("body.a", FigurePath.MAX_LENGTH)).text()).hasSize(256);
+        assertThatThrownBy(() -> FigurePath.of(pathOf("body.a", FigurePath.MAX_LENGTH + 1))).isInstanceOf(FigurePath.Malformed.class);
+
+        String[] members = fits.substring("body.a[currency=*].".length()).split("\\.");
+        CanonicalJson.Value value = RegulatoryWorld.money("EUR", 1);
+        for (int at = members.length - 1; at >= 1; at--) {
+            value = CanonicalJson.object().put(members[at], value);
+        }
+        CanonicalJson.Obj content = CanonicalJson.object().put("body", CanonicalJson.object().put("a", CanonicalJson.array().add(CanonicalJson.object().put("currency", "EUR").put(members[0], value))));
+        assertThat(FigurePath.of(fits).resolve(content).get(0).path()).hasSize(FigurePath.MAX_LENGTH);
+
+        assertThatThrownBy(() -> new RegulatoryObligationConfiguration(List.of(new RegulatoryObligationConfiguration.Source("TRIAL_BALANCE", 1)),
+                List.of(new RegulatoryObligationConfiguration.Line("A", "A line", "TRIAL_BALANCE", pathOf("body.a[currency=*]", 255))),
+                List.of(new RegulatoryObligationConfiguration.Rule("R", RegulatoryRuleType.NON_NEGATIVE, List.of("A"), List.of())))).as("refused at the proposal, never a 500 at every draft").isInstanceOf(RegulatoryObligationConfiguration.Invalid.class);
+        assertThat(RegulatorySubmissionMigrationTest.migration()).contains("char_length(figure_path) BETWEEN 6 AND " + FigurePath.MAX_LENGTH);
+    }
+
+    private static String pathOf(String head, int length) {
+        StringBuilder path = new StringBuilder(head);
+        while (path.length() < length) {
+            int room = length - path.length() - 1;
+            path.append('.').append("b".repeat(Math.min(64, room)));
+        }
+        return path.toString();
+    }
+
+    @Test
     @DisplayName("the grammar is closed: the header is out of reach, the wildcard is a currency's, once, and nothing else parses")
     void theGrammarIsClosed() {
         for (String bad : List.of("", "secret.minor", "body", "body.", "body..x", "body.x[", "body.x[]", "body.x[a]", "body.x[a=b,a=c].y", "body.x[a=*].y", "body.x[currency=*].y[currency=*].z", "body.x[a=b]", "body.x; DROP TABLE t",
                 "body.x[a='b'].y", "body.a.b.c.d.e.f.g.h.i", "body." + "x".repeat(300))) {
             assertThatThrownBy(() -> FigurePath.of(bad)).as(bad).isInstanceOf(FigurePath.Malformed.class);
         }
-        assertThat(FigurePath.of("body.a[b=c,currency=*].d").perCurrency()).isTrue();
-        assertThat(FigurePath.of("body.a.b").perCurrency()).isFalse();
+        assertThat(FigurePath.of("body.a[b=c,currency=*].d").text()).isEqualTo("body.a[b=c,currency=*].d");
+        assertThat(FigurePath.of("body.a.b").text()).isEqualTo("body.a.b");
     }
 
     // ------------------------------------------------------------------ the strict reader
@@ -105,7 +140,7 @@ class RegulatoryFormTest {
     }
 
     @Test
-    @DisplayName("anything else is refused, never normalised: whitespace, a number, unsorted or repeated keys, an escape outside the form, trailing text; and the refusal names a position, never the text")
+    @DisplayName("anything else is refused, never normalised: whitespace, a number, unsorted or repeated keys, an escape outside the form, trailing text; and the refusal never names the text")
     void anythingElseIsRefused() {
         for (String bad : List.of("", " {}", "{} ", "[]", "\"a\"", "{\"a\":1}", "{\"a\": \"b\"}", "{\"b\":\"1\",\"a\":\"2\"}", "{\"a\":\"1\",\"a\":\"2\"}", "{\"a\":\"\\/\"}", "{\"a\":\"\\u00E9\"}", "{\"a\":\"\\q\"}", "{\"a\":\"x", "{\"a\":tru}", "{\"a\":\"\\u12\"}",
                 "{\"a\":\"\\u0000\"}", "{\"a\":[\"b\",]}", "{\"a\":\"b\"}x")) {
@@ -188,6 +223,9 @@ class RegulatoryFormTest {
         assertThat(validated(RegulatoryRuleType.EQUALS, List.of("A"), List.of("C"), amount("A", "EUR", 900_719_925_474_099_300L), amount("C", "EUR", 900_719_925_474_099_200L)).passed()).as("exact, past what a double can tell apart").isFalse();
         RegulatoryFormLine sameValue = new RegulatoryFormLine(1, "C", "A line", "EUR", BigInteger.valueOf(100), 3, ReportRunId.next(IDS), "h", "TRIAL_BALANCE", "body.a.b");
         assertThat(validated(RegulatoryRuleType.EQUALS, List.of("A"), List.of("C"), amount("A", "EUR", 10), sameValue).passed()).isTrue();
+        RegulatoryValidation perCurrency = validated(RegulatoryRuleType.EQUALS, List.of("A"), List.of("C"), amount("A", "EUR", 1), amount("C", "EUR", 1), amount("A", "USD", 2), amount("C", "USD", 3));
+        assertThat(perCurrency.passed()).isFalse();
+        assertThat(perCurrency.findings()).extracting(RegulatoryValidation.Finding::currency, RegulatoryValidation.Finding::passed).containsExactly(org.assertj.core.groups.Tuple.tuple("EUR", true), org.assertj.core.groups.Tuple.tuple("USD", false));
     }
 
     @Test
@@ -214,7 +252,6 @@ class RegulatoryFormTest {
     void aBelievableAnswerIsReadAsItSays() {
         RegulatoryAnswerReading acknowledged = RegulatoryAnswerReading.of(CallKind.SUBMIT, Answer.acknowledged("REF-1", bytes("{\"ok\":true}")));
         assertThat(acknowledged.read()).isEqualTo(Outcome.ACKNOWLEDGED);
-        assertThat(acknowledged.definite()).isTrue();
         assertThat(acknowledged.retained()).isEqualTo(bytes("{\"ok\":true}"));
         assertThat(acknowledged.rawSha256()).isEqualTo(CanonicalJson.sha256("{\"ok\":true}"));
         assertThat(acknowledged.receivedBytes()).isEqualTo(11);
@@ -222,6 +259,7 @@ class RegulatoryFormTest {
         assertThat(acknowledged.anomaly()).isEmpty();
         assertThat(RegulatoryAnswerReading.of(CallKind.INQUIRE, Answer.notReceived(bytes("no"))).read()).isEqualTo(Outcome.NOT_RECEIVED);
         assertThat(RegulatoryAnswerReading.of(CallKind.INQUIRE, Answer.rejected(Optional.empty(), "CODE_1", bytes("no"))).rejectionCode()).contains("CODE_1");
+        assertThat(RegulatoryAnswerReading.of(CallKind.SUBMIT, Answer.rejected(Optional.empty(), "FORM_REFUSED", bytes("r"))).read()).isEqualTo(Outcome.REJECTED);
     }
 
     @Test
@@ -239,11 +277,33 @@ class RegulatoryFormTest {
         assertThat(reading.retained()).hasSize(RegulatoryAnswerReading.MAX_RAW_BYTES);
         assertThat(reading.receivedBytes()).isEqualTo(huge.length);
         assertThat(reading.rawSha256()).isEqualTo(CanonicalJson.sha256(new String(huge, StandardCharsets.UTF_8)));
+
+        byte[] marked = new byte[RegulatoryAnswerReading.MAX_RAW_BYTES + 10];
+        Arrays.fill(marked, (byte) 'x');
+        marked[0] = 'A';
+        marked[RegulatoryAnswerReading.MAX_RAW_BYTES - 1] = 'B';
+        marked[RegulatoryAnswerReading.MAX_RAW_BYTES] = 'C';
+        for (Answer saying : List.of(Answer.acknowledged("REF-1", marked), Answer.rejected(Optional.empty(), "FORM_REFUSED", marked), Answer.notReceived(marked))) {
+            RegulatoryAnswerReading read = RegulatoryAnswerReading.of(CallKind.INQUIRE, saying);
+            assertThat(read.read()).as(saying.outcome().name()).isEqualTo(Outcome.UNKNOWN);
+            assertThat(read.anomaly()).contains(RegulatoryAnswerReading.Anomaly.OVERSIZED);
+            assertThat(read.retained()).as("its first bytes").isEqualTo(Arrays.copyOf(marked, RegulatoryAnswerReading.MAX_RAW_BYTES));
+        }
     }
 
     @Test
     @DisplayName("a malformed answer decides nothing: a reference or code of no allowed shape, an acknowledgement with no reference, a rejection with no code, a not received naming a reference")
     void aMalformedAnswerDecidesNothing() {
+        // An instrument's shape is no reference or code of ours, since what is read off an answer reaches audit summaries and events. Its bytes stay.
+        for (Answer shaped : List.of(Answer.acknowledged("4111111111111111", bytes("card")), Answer.rejected(Optional.of("4111-1111-1111-1111"), "FORM_REFUSED", bytes("card")),
+                Answer.rejected(Optional.empty(), "CARD_4111111111111111", bytes("card")))) {
+            RegulatoryAnswerReading reading = RegulatoryAnswerReading.of(CallKind.INQUIRE, shaped);
+            assertThat(reading.read()).as(shaped.toString()).isEqualTo(Outcome.UNKNOWN);
+            assertThat(reading.anomaly()).contains(RegulatoryAnswerReading.Anomaly.MALFORMED);
+            assertThat(reading.providerReference()).isEmpty();
+            assertThat(reading.rejectionCode()).isEmpty();
+            assertThat(reading.retained()).isEqualTo(bytes("card"));
+        }
         List<Answer> malformed = List.of(
                 new Answer(Outcome.ACKNOWLEDGED, Optional.empty(), Optional.empty(), bytes("a")),
                 new Answer(Outcome.ACKNOWLEDGED, Optional.of("<script>alert(1)</script>"), Optional.empty(), bytes("b")),
@@ -269,6 +329,7 @@ class RegulatoryFormTest {
         assertThat(sent.anomaly()).contains(RegulatoryAnswerReading.Anomaly.CONTRADICTORY);
         RegulatoryAnswerReading resent = RegulatoryAnswerReading.of(CallKind.RESEND, Answer.notReceived(bytes("a")));
         assertThat(resent.read()).isEqualTo(Outcome.UNKNOWN);
+        assertThat(RegulatoryAnswerReading.of(CallKind.INQUIRE, Answer.notReceived(bytes("n"))).read()).isEqualTo(Outcome.NOT_RECEIVED);
     }
 
     @Test
@@ -283,5 +344,8 @@ class RegulatoryFormTest {
         RegulatoryAnswerReading reading = RegulatoryAnswerReading.of(CallKind.SUBMIT, answer);
         assertThat(answer.toString()).doesNotContain("PROVIDER-TEXT").doesNotContain("REF-1");
         assertThat(reading.toString()).doesNotContain("PROVIDER-TEXT").doesNotContain("REF-1");
+        RegulatoryAnswerReading copied = RegulatoryAnswerReading.of(CallKind.INQUIRE, Answer.notReceived(bytes("kept")));
+        copied.retained()[0] = 'z';
+        assertThat(copied.retained()).isEqualTo(bytes("kept"));
     }
 }

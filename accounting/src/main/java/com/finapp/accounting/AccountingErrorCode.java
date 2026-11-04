@@ -268,7 +268,12 @@ public enum AccountingErrorCode implements ErrorCode {
     REGULATORY_OBLIGATION_STALE(
             "accounting.RegulatoryObligationStale",
             409,
-            "That form and version exist, the version is no longer awaiting a decision, the configuration named is not what stands, or a later form version is in force; nothing was changed.");
+            "That form and version exist, the version is no longer awaiting a decision, the configuration named is not what stands, or a later form version is in force; nothing was changed."),
+    /** The non-delivery door could not ask the provider at the act (`P14-TSK-018`): nothing was concluded. */
+    REGULATORY_PROVIDER_UNAVAILABLE(
+            "accounting.RegulatoryProviderUnavailable",
+            503,
+            "The provider could not be asked at this act, or its answer not kept, so nothing was concluded: a return is concluded undelivered only on what the provider says now. The return stands SUBMITTED. Ask again.");
 
     private final String code;
     private final int status;

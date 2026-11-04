@@ -3,6 +3,7 @@ package com.finapp.accounting;
 import com.finapp.accounting.RegulatoryReportingProvider.Answer;
 import com.finapp.accounting.RegulatoryReportingProvider.CallKind;
 import com.finapp.accounting.RegulatoryReportingProvider.Outcome;
+import com.finapp.sharedkernel.security.InstrumentShapes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
@@ -22,7 +23,7 @@ import java.util.regex.Pattern;
  *       {@value #MAX_RAW_BYTES} bytes, the whole length and the whole body's SHA-256 are kept, and nothing is read off it. Verbatim
  *       retention is a promise about what fits in a row: the rule is stated here, in the table's {@code CHECK}s and in
  *       {@code DATA_CLASSIFICATION.md}, and a truncated answer says so on every read.</li>
- *   <li><strong>{@link Anomaly#MALFORMED}</strong>: a reference or a code of no allowed shape, an acknowledgement with no reference, a
+ *   <li><strong>{@link Anomaly#MALFORMED}</strong>: a reference or a code of no allowed shape, or holding an instrument's shape, an acknowledgement with no reference, a
  *       rejection with no code, a "not received" naming a reference.</li>
  *   <li><strong>{@link Anomaly#CONTRADICTORY}</strong>: a send answered "not received", a provider contradicting the very call it is
  *       answering. The safe direction costs one inquiry; reading it any other way would record an answer nobody gave.</li>
@@ -69,11 +70,6 @@ public record RegulatoryAnswerReading(CallKind call, Outcome stated, Outcome rea
         return "RegulatoryAnswerReading[" + call + ", stated " + stated + ", read " + read + ", " + receivedBytes + " bytes]";
     }
 
-    /** Whether the provider has answered for good: an acknowledgement or a rejection, believed. */
-    public boolean definite() {
-        return read == Outcome.ACKNOWLEDGED || read == Outcome.REJECTED;
-    }
-
     /**
      * {@code answer} to {@code call}, read.
      */
@@ -88,8 +84,9 @@ public record RegulatoryAnswerReading(CallKind call, Outcome stated, Outcome rea
         }
         Optional<String> reference = answer.providerReference();
         Optional<String> code = answer.rejectionCode();
-        boolean referenceMalformed = reference.filter(found -> !REFERENCE.matcher(found).matches()).isPresent();
-        boolean codeMalformed = code.filter(found -> !CODE.matcher(found).matches()).isPresent();
+        // What is read off an answer reaches audit summaries and events, where a provider's text never does: instrument-shaped, it is no reference or code of ours. The answer then decides nothing; its bytes stay.
+        boolean referenceMalformed = reference.filter(found -> !REFERENCE.matcher(found).matches() || InstrumentShapes.holdsAny(found)).isPresent();
+        boolean codeMalformed = code.filter(found -> !CODE.matcher(found).matches() || InstrumentShapes.holdsAny(found)).isPresent();
         boolean malformed = referenceMalformed || codeMalformed
                 || (answer.outcome() == Outcome.ACKNOWLEDGED && reference.isEmpty())
                 || (answer.outcome() == Outcome.REJECTED && code.isEmpty())

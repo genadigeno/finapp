@@ -122,8 +122,9 @@ class RegulatorySubmissionDriverTest {
         assertThat(world.provider.inquiries()).isZero();
         assertThat(world.provider.returnsHeld(sent.id())).isEqualTo(1);
         assertThat(row().status()).isEqualTo(SubmissionStatus.ACKNOWLEDGED);
-        assertThat(world.store.answers(UOW, sent.id())).hasSize(1);
+        assertThat(world.store.answers(UOW, sent.id(), 100)).hasSize(1);
         assertThat(count("acknowledged")).isEqualTo(1);
+        assertThat(new String(world.store.answers(UOW, sent.id(), 100).get(0).raw(), StandardCharsets.UTF_8)).as("verbatim").contains("ACKNOWLEDGED").contains(sent.id().value().toString());
     }
 
     @Test
@@ -135,6 +136,9 @@ class RegulatorySubmissionDriverTest {
         }
         assertThat(world.provider.submits()).isEqualTo(1);
         assertThat(world.provider.sendsReceived(sent.id())).isEqualTo(1);
+        assertThat(driver.submitIfDue(sent.id())).as("nothing due").isFalse();
+        assertThat(driver.inquireDue()).as("nothing due").isZero();
+        assertThat(world.provider.inquiries()).isZero();
     }
 
     @Test
@@ -150,6 +154,19 @@ class RegulatorySubmissionDriverTest {
         driver.submitIfDue(sent.id());
         assertThat(during).containsExactly(false);
         assertThat(acting.get(0).type()).isEqualTo(ActorType.SYSTEM);
+
+        // The inquiry and the resend, the same.
+        world.provider.nextInquiry(() -> {
+            during.add(inTransaction);
+            return Answer.notReceived(bytes("{}"));
+        });
+        world.provider.nextSubmit(() -> {
+            during.add(inTransaction);
+            return Answer.unknown(Optional.empty(), bytes("{}"));
+        });
+        clock.advance(INTERVAL.plusSeconds(1));
+        driver.inquireDue();
+        assertThat(during).containsExactly(false, false, false);
     }
 
     @Test
@@ -158,7 +175,7 @@ class RegulatorySubmissionDriverTest {
         world.provider.nextSubmit(ScriptedRegulatoryProvider.unreachable());
         assertThat(driver.submitIfDue(sent.id())).isFalse();
 
-        assertThat(world.store.answers(UOW, sent.id())).isEmpty();
+        assertThat(world.store.answers(UOW, sent.id(), 100)).isEmpty();
         assertThat(row().status()).isEqualTo(SubmissionStatus.SUBMITTED);
         assertThat(count("call_failed")).isEqualTo(1);
 
@@ -204,6 +221,7 @@ class RegulatorySubmissionDriverTest {
         assertThat(row().status()).isEqualTo(SubmissionStatus.ACKNOWLEDGED);
         assertThat(row().resends()).isEqualTo(1);
         assertThat(row().attempts()).isEqualTo(2);
+        assertThat(world.provider.sendsReceived(sent.id())).as("under the same id").isEqualTo(1);
     }
 
     @Test
@@ -245,7 +263,105 @@ class RegulatorySubmissionDriverTest {
         assertThat(world.provider.submits()).as("the first, and the bound").isEqualTo(1 + RegulatorySubmissions.MAX_RESENDS);
         assertThat(count("resends_exhausted")).isGreaterThanOrEqualTo(1);
         assertThat(row().lastAnswer()).contains("NOT_RECEIVED");
-        assertThat(world.submissions.declareUndelivered(UOW, sent.id(), REASON, SENDER, world.correlation()).status()).isEqualTo(SubmissionStatus.UNDELIVERED);
+        assertThat(count("resends_exhausted")).as("it goes on asking").isEqualTo(3);
+        assertThat(world.provider.inquiries()).isEqualTo(RegulatorySubmissions.MAX_RESENDS + 3);
+        assertThat(count("not_resent_month_moved")).isZero();
+        assertThat(count("not_resent_overtaken")).isZero();
+        assertThat(world.submissions.declareUndelivered(UOW, sent.id(), driver.askBeforeNonDelivery(row(), world.correlation()), REASON, SENDER, world.correlation()).status()).isEqualTo(SubmissionStatus.UNDELIVERED);
+    }
+
+    @Test
+    @DisplayName("SUBMITTED with nothing sent, the month reopened and re-closed before the first attempt: it asks and never sends, the leg never sends either, each withheld send counted for what it is, and a person's door is open")
+    void aMonthMovedBeforeTheFirstAttemptIsNeverSent() {
+        world.reopened(JANUARY);
+        world.reclosed(JANUARY);
+
+        assertThat(driver.submitIfDue(sent.id())).isTrue();
+        assertThat(world.provider.submits()).as("the regulator is handed nothing").isZero();
+        assertThat(world.provider.inquiries()).isEqualTo(1);
+        assertThat(world.provider.contents()).isEmpty();
+        assertThat(row().status()).isEqualTo(SubmissionStatus.SUBMITTED);
+        assertThat(row().resends()).isZero();
+        assertThat(row().lastAnswer()).contains("NOT_RECEIVED");
+        assertThat(count("send_withheld_month_moved")).isEqualTo(1);
+        assertThat(count("not_resent_month_moved")).isEqualTo(1);
+        assertThat(count("resent")).isZero();
+
+        clock.advance(INTERVAL.plusSeconds(1));
+        driver.inquireDue();
+        assertThat(world.provider.submits()).isZero();
+        assertThat(count("not_resent_month_moved")).isEqualTo(2);
+        assertThat(world.submissions.view(UOW, sent.id()).nonDeliveryOpen()).isTrue();
+    }
+
+    @Test
+    @DisplayName("the first send failed on the wire, then the month reopened: the next attempt asks, is told not received, and does not send again")
+    void aResendAfterAReopenIsRefused() {
+        world.provider.nextSubmit(ScriptedRegulatoryProvider.unreachable());
+        driver.submitIfDue(sent.id());
+        assertThat(world.provider.submits()).isEqualTo(1);
+        world.reopened(JANUARY);
+
+        clock.advance(LEASE.plusSeconds(1));
+        driver.inquireDue();
+        assertThat(world.provider.inquiries()).isEqualTo(1);
+        assertThat(world.provider.submits()).as("no second send").isEqualTo(1);
+        assertThat(row().resends()).isZero();
+        assertThat(count("not_resent_month_moved")).isEqualTo(1);
+        assertThat(count("resent")).isZero();
+        assertThat(count("send_withheld_month_moved")).as("that is the first attempt's, and this was the second").isZero();
+        assertThat(world.audit).extracting(record -> record.operation().code()).doesNotContain("regulatory.SubmissionResent");
+    }
+
+    @Test
+    @DisplayName("a permit refused because another worker holds the row is named for that, never as resends spent")
+    void aPermitOvertakenIsNamedForIt() {
+        transactions.inTransaction(uow -> world.submissions.claim(uow, sent.id(), LEASE)); // A worker claimed and died.
+        clock.advance(LEASE.plusSeconds(1));
+        int[] calls = {0};
+        AccountingTransactions racing = new AccountingTransactions() {
+            @Override
+            public <R> R inTransaction(Function<Connection, R> work) {
+                calls[0]++;
+                if (calls[0] == 3) { // The permit's: another instance claims first.
+                    clock.advance(INTERVAL.plusSeconds(1));
+                    world.submissions.claim(UOW, sent.id(), LEASE);
+                }
+                return work.apply(UOW);
+            }
+        };
+        new RegulatorySubmissionDriver(world.submissions, racing, metrics, legs, AccountingFlowScope.NONE, LEASE, INTERVAL, 1).inquireDue();
+
+        assertThat(calls[0]).isGreaterThanOrEqualTo(3);
+        assertThat(count("not_resent_overtaken")).isEqualTo(1);
+        assertThat(count("resends_exhausted")).isZero();
+        assertThat(world.provider.submits()).isZero();
+    }
+
+    @Test
+    @DisplayName("the non-delivery door's one question: on no transaction, as the platform; its answer kept; a call that fails keeps nothing and answers empty, counted")
+    void theDoorsQuestion() {
+        transactions.inTransaction(uow -> world.submissions.claim(uow, sent.id(), LEASE));
+        world.store.await(UOW, sent.id(), 1, INTERVAL, Duration.ofDays(1), "NOT_RECEIVED", Optional.empty());
+        int kept = world.store.keptAnswers().size();
+
+        world.provider.nextInquiry(ScriptedRegulatoryProvider.unreachable());
+        assertThat(driver.askBeforeNonDelivery(row(), world.correlation())).isEmpty();
+        assertThat(world.store.keptAnswers()).hasSize(kept);
+        assertThat(count("call_failed")).isEqualTo(1);
+
+        List<Boolean> during = new ArrayList<>();
+        List<Actor> acting = new ArrayList<>();
+        world.provider.nextInquiry(() -> {
+            during.add(inTransaction);
+            acting.add(SecurityContext.require());
+            return Answer.notReceived(bytes("now"));
+        });
+        assertThat(driver.askBeforeNonDelivery(row(), world.correlation()).map(RegulatorySubmissions.Recorded::disposition)).contains(RegulatorySubmissions.Disposition.NOT_RECEIVED);
+        assertThat(during).containsExactly(false);
+        assertThat(acting.get(0).type()).isEqualTo(ActorType.SYSTEM);
+        assertThat(world.store.keptAnswers()).hasSize(kept + 1);
+        assertThat(world.provider.inquiries()).as("one question each").isEqualTo(2);
     }
 
     @Test
@@ -304,6 +420,20 @@ class RegulatorySubmissionDriverTest {
 
         assertThat(driver.inquireDue()).as("the other was due; the failed one is under its lease").isEqualTo(1);
         assertThat(world.store.find(UOW, second.id()).orElseThrow().attempts() + row().attempts()).isEqualTo(2);
+
+        // Each its own: two due in one tick, the first call failing, the second still goes.
+        java.time.YearMonth march = java.time.YearMonth.of(2096, 3);
+        java.time.YearMonth april = java.time.YearMonth.of(2096, 4);
+        world.closed(march);
+        world.closed(april);
+        world.issued(march, RegulatoryWorld.body(1, 1, 1, 1));
+        world.issued(april, RegulatoryWorld.body(1, 1, 1, 1));
+        world.sent(obligation, march);
+        world.sent(obligation, april);
+        int sends = world.provider.submits();
+        world.provider.nextSubmit(ScriptedRegulatoryProvider.unreachable());
+        assertThat(driver.inquireDue()).isEqualTo(1);
+        assertThat(world.provider.submits()).isEqualTo(sends + 2);
     }
 
     @Test
@@ -316,7 +446,8 @@ class RegulatorySubmissionDriverTest {
         assertThat(row().lastAnswer()).contains("UNKNOWN");
         assertThat(row().providerReference()).isEmpty();
         assertThat(count("answer_anomaly")).isEqualTo(1);
-        assertThat(new String(world.store.answers(UOW, sent.id()).get(0).raw(), StandardCharsets.UTF_8)).isEqualTo("<script>alert(1)</script>");
+        assertThat(new String(world.store.answers(UOW, sent.id(), 100).get(0).raw(), StandardCharsets.UTF_8)).isEqualTo("<script>alert(1)</script>");
+        assertThat(row().nextInquiryAt()).as("its permit moved").contains(clock.instant().plus(INTERVAL));
     }
 
     @Test

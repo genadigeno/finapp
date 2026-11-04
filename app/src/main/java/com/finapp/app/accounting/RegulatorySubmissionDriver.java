@@ -1,12 +1,16 @@
 package com.finapp.app.accounting;
 
+import com.finapp.accounting.RegulatoryReportingProvider;
 import com.finapp.accounting.RegulatorySubmissionId;
+import com.finapp.accounting.RegulatorySubmissionStore;
 import com.finapp.accounting.RegulatorySubmissions;
 import com.finapp.accounting.RegulatorySubmissions.Answered;
 import com.finapp.accounting.RegulatorySubmissions.Claimed;
 import com.finapp.accounting.RegulatorySubmissions.Disposition;
 import com.finapp.accounting.RegulatorySubmissions.Recorded;
+import com.finapp.accounting.RegulatorySubmissions.ResendPermit;
 import com.finapp.platform.security.SecurityContext;
+import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.Optional;
@@ -125,6 +129,9 @@ public final class RegulatorySubmissionDriver {
         if (answered.isEmpty()) {
             return false;
         }
+        if (claimed.row().attempts() == 1 && answered.get().call() == RegulatoryReportingProvider.CallKind.INQUIRE) {
+            metrics.count("send_withheld_month_moved");
+        }
         Optional<Recorded> recorded = record(claimed, answered.get());
         if (recorded.isEmpty()) {
             return false;
@@ -132,17 +139,21 @@ public final class RegulatorySubmissionDriver {
         if (recorded.get().disposition() != Disposition.NOT_RECEIVED) {
             return true;
         }
-        // A definite "nothing arrived under this id": the send is still owed. Counted and committed first, conditional on this attempt and the bound.
-        boolean permitted;
+        // A definite "nothing arrived under this id": the send is still owed, if the month still stands. Counted, audited and committed first, conditional on this attempt, the month and the bound.
+        ResendPermit permit;
         try {
-            permitted = transactions.inTransaction(uow -> submissions.permitResend(uow, claimed));
+            permit = transactions.inTransaction(uow -> submissions.permitResend(uow, claimed, claimed.row().correlation()));
         } catch (RuntimeException failure) {
             metrics.count("record_failed");
             log.warn("A regulatory submission's resend could not be counted: {}", failure.getClass().getSimpleName());
             return true;
         }
-        if (!permitted) {
-            metrics.count("resends_exhausted");
+        if (permit != ResendPermit.PERMITTED) {
+            metrics.count(switch (permit) {
+                case MONTH_MOVED -> "not_resent_month_moved";
+                case SPENT -> "resends_exhausted";
+                default -> "not_resent_overtaken";
+            });
             return true;
         }
         metrics.count("resent");
@@ -162,10 +173,26 @@ public final class RegulatorySubmissionDriver {
         }
     }
 
+    /**
+     * The non-delivery door's one question: {@code row}'s provider asked now, on no transaction, as the platform, and what it says kept in a transaction of its own, so it stands whatever the person's act then does.
+     *
+     * @return what the record did; empty when the call failed or its answer could not be kept, counted, and nothing changed: nothing may be concluded
+     */
+    public Optional<Recorded> askBeforeNonDelivery(RegulatorySubmissionStore.Row row, CorrelationId correlation) {
+        Objects.requireNonNull(row, "row");
+        Objects.requireNonNull(correlation, "correlation");
+        return asThePlatform(() -> called(() -> submissions.askAtTheDoor(row))
+                .flatMap(answered -> counted(() -> transactions.inTransaction(uow -> submissions.recordAtTheDoor(uow, row.id(), answered, inquiryInterval, correlation)))));
+    }
+
     private Optional<Recorded> record(Claimed claimed, Answered answered) {
+        return counted(() -> transactions.inTransaction(uow -> submissions.record(uow, claimed, answered, inquiryInterval, claimed.row().correlation())));
+    }
+
+    private Optional<Recorded> counted(Supplier<Recorded> keep) {
         Recorded recorded;
         try {
-            recorded = transactions.inTransaction(uow -> submissions.record(uow, claimed, answered, inquiryInterval, claimed.row().correlation()));
+            recorded = keep.get();
         } catch (RuntimeException failure) {
             // The provider answered but the record did not commit: the next claim asks again and records its answer.
             metrics.count("record_failed");

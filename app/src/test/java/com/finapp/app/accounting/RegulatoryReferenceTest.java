@@ -101,7 +101,7 @@ class RegulatoryReferenceTest {
     }
 
     @Test
-    @DisplayName("the one jurisdiction is the placeholder: nothing else is declared, so no row can name an authority")
+    @DisplayName("the one jurisdiction is the placeholder: this adapter declares nothing else")
     void itDeclaresThePlaceholderOnly() {
         SimulatedRegulatoryReportingProvider adapter = simulated(SimulatedRegulatoryReportingProvider.Behaviour.ACKNOWLEDGE);
         assertThat(adapter.name()).isEqualTo("simulated-reference");
@@ -111,7 +111,7 @@ class RegulatoryReferenceTest {
     }
 
     @Test
-    @DisplayName("the behaviours: a send and an inquiry answer as the knob says, the same on every instance, its reference derived from the id")
+    @DisplayName("the behaviours: each answer the knob gives this adapter; two instances agree on an acknowledgement; its reference derived from the id, in letters, so it can never read as an instrument")
     void theBehaviours() {
         String reference = SimulatedRegulatoryReportingProvider.reference(id);
         Answer acknowledged = simulated(SimulatedRegulatoryReportingProvider.Behaviour.ACKNOWLEDGE).submit(request());
@@ -130,6 +130,10 @@ class RegulatoryReferenceTest {
         assertThat(simulated(SimulatedRegulatoryReportingProvider.Behaviour.NEVER_RECEIVED).inquire(id).outcome()).isEqualTo(Outcome.NOT_RECEIVED);
         assertThatThrownBy(() -> simulated(SimulatedRegulatoryReportingProvider.Behaviour.UNAVAILABLE).submit(request())).isInstanceOf(SimulatedRegulatoryReportingProvider.Unavailable.class);
         assertThatThrownBy(() -> simulated(SimulatedRegulatoryReportingProvider.Behaviour.UNAVAILABLE).inquire(id)).isInstanceOf(SimulatedRegulatoryReportingProvider.Unavailable.class);
+        RegulatorySubmissionId one = RegulatorySubmissionId.next(world.ids);
+        RegulatorySubmissionId other = RegulatorySubmissionId.next(world.ids);
+        assertThat(SimulatedRegulatoryReportingProvider.reference(one)).isEqualTo(SimulatedRegulatoryReportingProvider.reference(one)).isNotEqualTo(SimulatedRegulatoryReportingProvider.reference(other)).matches("SIM-REG-[A-P]{16}");
+        assertThat(com.finapp.sharedkernel.security.InstrumentShapes.holdsAny(SimulatedRegulatoryReportingProvider.reference(one))).isFalse();
     }
 
     @Test
@@ -155,12 +159,13 @@ class RegulatoryReferenceTest {
         metrics.count("rejected");
         assertThat(registry.get(RegulatorySubmissionMetrics.SUBMISSION).tag("outcome", "rejected").counter().count()).isEqualTo(1);
         assertThatThrownBy(() -> metrics.count("anything else")).isInstanceOf(IllegalArgumentException.class);
+        assertThat(RegulatorySubmissionMetrics.SUBMISSION).isEqualTo("finapp.accounting.regulatory.submission");
     }
 
     private final RegulatoryWorld world = new RegulatoryWorld(CLOCK);
 
     @Test
-    @DisplayName("finapp.accounting.regulatory.attention{kind}: from the rows, every kind registered whatever this instance runs; cached; no value when unreadable, never a zero for a failed read")
+    @DisplayName("finapp.accounting.regulatory.attention{kind}: from the rows, every kind registered; cached; no value when unreadable, never a zero for a failed read")
     void theAttentionGauge() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         boolean[] reachable = {true};
@@ -193,6 +198,7 @@ class RegulatoryReferenceTest {
         reachable[0] = false;
         clock.advanceSeconds(16);
         assertThat(registry.get(RegulatoryAttentionMetrics.ATTENTION).tag("kind", "overtaken").gauge().value()).isNaN();
+        assertThat(RegulatoryAttentionMetrics.ATTENTION).isEqualTo("finapp.accounting.regulatory.attention");
     }
 
     private static Connection readOnlyConnection() {

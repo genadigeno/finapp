@@ -6,7 +6,6 @@ import com.finapp.accounting.RegulatorySubmissionId;
 import com.finapp.accounting.reporting.CanonicalJson;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -160,8 +159,12 @@ public final class SimulatedRegulatoryReportingProvider implements RegulatoryRep
         return CanonicalJson.text(answer).getBytes(StandardCharsets.UTF_8);
     }
 
-    /** The simulation's own reference for a submission: derived from its id, so every instance agrees. */
+    /** The simulation's own reference for a submission: derived from its id, so every instance agrees. Letters only, so it can never read as an instrument and fail the screen every provider's reference meets. */
     static String reference(RegulatorySubmissionId submission) {
-        return "SIM-REG-" + CanonicalJson.sha256(submission.value().toString()).substring(0, 16).toUpperCase(Locale.ROOT);
+        StringBuilder letters = new StringBuilder("SIM-REG-");
+        for (char nibble : CanonicalJson.sha256(submission.value().toString()).substring(0, 16).toCharArray()) {
+            letters.append((char) ('A' + Character.digit(nibble, 16)));
+        }
+        return letters.toString();
     }
 }

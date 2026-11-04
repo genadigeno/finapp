@@ -456,6 +456,12 @@ public enum AccountingAuditAction implements AuditableAction {
             "An operator read regulatory submissions - a preparer's list, one return or its reference export under REGULATORY_REPORT_PREPARE; a controller's waiting list or the return they attest under"
                     + " REGULATORY_REPORT_APPROVE (P14-TSK-018, INV-ACC-13). Recorded before it is served, in a transaction of its own, whether or not the provider's answers were among it. Its target the submission or the"
                     + " list; the summary the door and a count or a status - never a figure, a reason or a provider's text.",
+            false),
+    /** The platform sent a return again (`P14-TSK-018`) - retransmitting to a regulator is an act. */
+    REGULATORY_SUBMISSION_RESENT(
+            "regulatory.SubmissionResent",
+            "The platform sent a regulatory submission again under its own id, after the provider's definite not received, while the month stood at the revision it read and a resend was left: counted and recorded in the permit's transaction, before the call"
+                    + " (P14-TSK-018, INV-ACC-13). Its target the submission; the summary its codes, the attempt and which resend - never a figure or a provider's text.",
             false);
 
     private final String code;

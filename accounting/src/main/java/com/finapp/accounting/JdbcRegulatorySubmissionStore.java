@@ -40,11 +40,17 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
 
     private static final String STANDING_CORRECTION = "SELECT c.id FROM accounting.regulatory_submission c WHERE c.corrects_submission_id = s.id AND c.status NOT IN ('REFUSED', 'WITHDRAWN')";
 
+    /**
+     * Sent or acknowledged, the month's revision moved, and no acknowledged return of the form standing at the month's present revision. It reads {@code s} and {@code p}. A chain of corrections reads rightly: only what the provider acknowledged at this revision clears it.
+     */
+    static final String OVERTAKEN = "s.status IN ('SUBMITTED', 'ACKNOWLEDGED') AND p.revision <> s.period_revision AND NOT EXISTS (SELECT 1 FROM accounting.regulatory_submission n WHERE n.jurisdiction_code = s.jurisdiction_code"
+            + " AND n.form_code = s.form_code AND n.period_id = s.period_id AND n.status = 'ACKNOWLEDGED' AND n.period_revision = p.revision)";
+
     private static final String ROW = "SELECT s.id, s.obligation_id, s.jurisdiction_code, s.form_code, s.form_version, o.adapter_name, s.period_id, p.period_start, s.period_revision, p.revision AS period_revision_now,"
             + " p.status AS period_status_now, s.corrects_submission_id, (" + STANDING_CORRECTION + ") AS corrected_by, s.content_sha256, s.status, s.validation_outcome, s.validation_passed, s.validated_by, s.validated_at,"
             + " s.prepared_by, s.prepared_at, s.preparation_reason, s.approved_by, s.approved_at, s.submitted_by, s.submitted_at, s.closed_by, s.closed_at, s.attempts, s.resends, s.next_inquiry_at, s.answer_horizon_at,"
             + " (s.answer_horizon_at IS NOT NULL AND s.answer_horizon_at <= clock_timestamp()) AS past_horizon, s.last_answer, s.provider_reference, s.rejection_code, s.concluded_at,"
-            + " (SELECT count(*) FROM accounting.regulatory_provider_answer a WHERE a.submission_id = s.id AND a.flag = 'CONTRARY') AS contrary_answers, s.correlation_id"
+            + " (SELECT count(*) FROM accounting.regulatory_provider_answer a WHERE a.submission_id = s.id AND a.flag = 'CONTRARY') AS contrary_answers, (" + OVERTAKEN + ") AS overtaken, s.correlation_id"
             + " FROM accounting.regulatory_submission s JOIN accounting.accounting_period p ON p.id = s.period_id JOIN accounting.regulatory_obligation o ON o.id = s.obligation_id";
 
     static final String FIND_SQL = ROW + " WHERE s.id = ?";
@@ -57,7 +63,6 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
     static final String ANY_SENT_SQL = "SELECT EXISTS (SELECT 1 FROM accounting.regulatory_submission WHERE jurisdiction_code = ? AND form_code = ? AND period_id = ?"
             + " AND status IN ('SUBMITTED', 'ACKNOWLEDGED', 'REJECTED', 'UNDELIVERED'))";
 
-
     static final String CORRECTION_OF_SQL = "SELECT id FROM accounting.regulatory_submission WHERE corrects_submission_id = ? AND status NOT IN ('REFUSED', 'WITHDRAWN')";
 
     static final String SOURCES_SQL = "SELECT run_id, run_sha256, definition, definition_version FROM accounting.regulatory_submission_source WHERE submission_id = ? ORDER BY definition";
@@ -65,8 +70,12 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
     static final String LINES_SQL = "SELECT ordinal, line_code, label, currency, minor_units, scale, run_id, run_sha256, source_definition, figure_path FROM accounting.regulatory_submission_line"
             + " WHERE submission_id = ? ORDER BY ordinal";
 
-    static final String ANSWERS_SQL = "SELECT id, attempt, call_kind, stated_outcome, read_outcome, provider_reference, rejection_code, anomaly, flag, raw, raw_sha256, received_bytes, truncated, received_at"
-            + " FROM accounting.regulatory_provider_answer WHERE submission_id = ? ORDER BY received_at, id";
+    /** The newest only, then in order: an untrusted provider chooses how many there are and how large, so a read's load is the statement's. */
+    static final String ANSWERS_SQL = "SELECT id, attempt, call_kind, stated_outcome, read_outcome, provider_reference, rejection_code, anomaly, flag, raw, raw_sha256, received_bytes, truncated, received_at FROM ("
+            + "SELECT id, attempt, call_kind, stated_outcome, read_outcome, provider_reference, rejection_code, anomaly, flag, raw, raw_sha256, received_bytes, truncated, received_at"
+            + " FROM accounting.regulatory_provider_answer WHERE submission_id = ? ORDER BY received_at DESC, id DESC LIMIT ?) newest ORDER BY received_at, id";
+
+    static final String ANSWER_COUNT_SQL = "SELECT count(*) FROM accounting.regulatory_provider_answer WHERE submission_id = ?";
 
     static final String VALIDATE_SQL = "UPDATE accounting.regulatory_submission SET status = ?, validation_outcome = ?, validation_passed = ?, validated_by = ?, validated_by_type = ?, validated_at = clock_timestamp()"
             + " WHERE id = ? AND status = 'DRAFT' AND validation_outcome IS NULL";
@@ -89,8 +98,9 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
     static final String REJECT_SQL = "UPDATE accounting.regulatory_submission SET status = 'REJECTED', last_answer = 'REJECTED', provider_reference = COALESCE(provider_reference, ?), rejection_code = ?,"
             + " concluded_at = clock_timestamp() WHERE id = ? AND status = 'SUBMITTED'";
 
-    static final String UNDELIVER_SQL = "UPDATE accounting.regulatory_submission SET status = 'UNDELIVERED', closed_by = ?, closed_by_type = ?, closed_at = clock_timestamp(), closing_reason = ?"
-            + " WHERE id = ? AND status = 'SUBMITTED' AND last_answer = 'NOT_RECEIVED' AND (resends >= ? OR answer_horizon_at <= clock_timestamp())";
+    static final String UNDELIVER_SQL = "UPDATE accounting.regulatory_submission s SET status = 'UNDELIVERED', closed_by = ?, closed_by_type = ?, closed_at = clock_timestamp(), closing_reason = ?"
+            + " WHERE s.id = ? AND s.status = 'SUBMITTED' AND s.last_answer = 'NOT_RECEIVED' AND (s.resends >= ? OR s.answer_horizon_at <= clock_timestamp()"
+            + " OR s.period_revision <> (SELECT p.revision FROM accounting.accounting_period p WHERE p.id = s.period_id))";
 
     /** The door's claim: {@code SKIP LOCKED} on a permit that has come, one attempt counted, the permit a lease ahead, in one statement. */
     static final String CLAIM_SQL = "UPDATE accounting.regulatory_submission SET attempts = attempts + 1, next_inquiry_at = clock_timestamp() + ? * interval '1 millisecond'"
@@ -100,11 +110,14 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
     static final String CLAIM_NEXT_SQL = "UPDATE accounting.regulatory_submission SET attempts = attempts + 1, next_inquiry_at = clock_timestamp() + ? * interval '1 millisecond'"
             + " WHERE id = (SELECT id FROM accounting.regulatory_submission WHERE status = 'SUBMITTED' AND next_inquiry_at <= clock_timestamp() ORDER BY next_inquiry_at, id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id";
 
-    static final String PERMIT_RESEND_SQL = "UPDATE accounting.regulatory_submission SET resends = resends + 1, last_answer = 'RESENDING'"
-            + " WHERE id = ? AND status = 'SUBMITTED' AND attempts = ? AND last_answer = 'NOT_RECEIVED' AND resends < ?";
+    /** A figure the books no longer say is not sent again: the revision read, in the statement, for a caller past the domain's judgement. */
+    static final String PERMIT_RESEND_SQL = "UPDATE accounting.regulatory_submission s SET resends = s.resends + 1, last_answer = 'RESENDING'"
+            + " WHERE s.id = ? AND s.status = 'SUBMITTED' AND s.attempts = ? AND s.last_answer = 'NOT_RECEIVED' AND s.resends < ?"
+            + " AND s.period_revision = (SELECT p.revision FROM accounting.accounting_period p WHERE p.id = s.period_id)";
 
-    static final String AWAIT_SQL = "UPDATE accounting.regulatory_submission SET next_inquiry_at = clock_timestamp() + ? * interval '1 millisecond', last_answer = ?, provider_reference = COALESCE(provider_reference, ?)"
-            + " WHERE id = ? AND status = 'SUBMITTED' AND attempts = ?";
+    /** The back-off is the statement's, on the database's clock: the base interval up to the horizon, the time since it after, the ceiling above all. */
+    static final String AWAIT_SQL = "UPDATE accounting.regulatory_submission SET next_inquiry_at = clock_timestamp() + LEAST(? * interval '1 millisecond', GREATEST(? * interval '1 millisecond', clock_timestamp() - answer_horizon_at)),"
+            + " last_answer = ?, provider_reference = COALESCE(provider_reference, ?) WHERE id = ? AND status = 'SUBMITTED' AND attempts = ?";
 
     static final String INSERT_ANSWER_SQL = "INSERT INTO accounting.regulatory_provider_answer (id, submission_id, attempt, call_kind, stated_outcome, read_outcome, provider_reference, rejection_code, anomaly, flag, raw,"
             + " raw_sha256, received_bytes, truncated, received_at, correlation_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, clock_timestamp(), ?)";
@@ -112,11 +125,17 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
     static final String INSERT_EVENT_SQL = "INSERT INTO accounting.regulatory_submission_event (id, submission_id, act, from_status, to_status, actor, actor_type, prepared_by, reason, occurred_at, correlation_id)"
             + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, clock_timestamp(), ?)";
 
-    /** Selected in the statement: the filter is the database's, before the {@code LIMIT}. */
-    static final String STANDING_SQL = ROW + " WHERE s.status IN ('DRAFT', 'VALIDATED', 'APPROVED', 'SUBMITTED')"
+    /** What stands: live, rejected or undelivered with no correction, overtaken, or holding a contrary answer so that a person can find which return. */
+    private static final String STANDS = "(s.status IN ('DRAFT', 'VALIDATED', 'APPROVED', 'SUBMITTED')"
             + " OR (s.status IN ('REJECTED', 'UNDELIVERED') AND NOT EXISTS (" + STANDING_CORRECTION + "))"
-            + " OR (s.status = 'ACKNOWLEDGED' AND p.revision <> s.period_revision AND NOT EXISTS (" + STANDING_CORRECTION + "))"
-            + " ORDER BY s.prepared_at, s.id LIMIT ?";
+            + " OR (" + OVERTAKEN + ")"
+            + " OR EXISTS (SELECT 1 FROM accounting.regulatory_provider_answer f WHERE f.submission_id = s.id AND f.flag = 'CONTRARY'))";
+
+    /** Selected in the statement: the filter is the database's, before the {@code LIMIT}. */
+    static final String STANDING_SQL = ROW + " WHERE " + STANDS + " ORDER BY s.prepared_at, s.id LIMIT ?";
+
+    /** The next page: a keyset on what is frozen from birth, by the id the last page ended on. */
+    static final String STANDING_AFTER_SQL = ROW + " WHERE " + STANDS + " AND (s.prepared_at, s.id) > (SELECT l.prepared_at, l.id FROM accounting.regulatory_submission l WHERE l.id = ?) ORDER BY s.prepared_at, s.id LIMIT ?";
 
     /** Selected in the statement: the filter is the database's, before the {@code LIMIT} - what its reader cannot decide never counts toward it. */
     static final String AWAITING_SQL = ROW + " WHERE s.status = 'VALIDATED' AND s.prepared_by <> ? ORDER BY s.validated_at, s.id LIMIT ?";
@@ -124,11 +143,9 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
     static final String ATTENTION_SQL = "SELECT"
             + " count(*) FILTER (WHERE s.status = 'SUBMITTED' AND s.answer_horizon_at <= clock_timestamp()) AS overdue,"
             + " count(*) FILTER (WHERE s.status = 'SUBMITTED' AND s.last_answer = 'NOT_RECEIVED' AND s.resends >= ?) AS resends_exhausted,"
-            + " count(*) FILTER (WHERE s.status IN ('SUBMITTED', 'ACKNOWLEDGED') AND p.revision <> s.period_revision AND c.id IS NULL) AS overtaken,"
-            + " count(*) FILTER (WHERE s.status IN ('DRAFT', 'VALIDATED', 'APPROVED') AND p.revision <> s.period_revision) AS stale_unsent,"
-            + " (SELECT count(*) FROM accounting.regulatory_provider_answer a WHERE a.flag = 'CONTRARY') AS contrary"
-            + " FROM accounting.regulatory_submission s JOIN accounting.accounting_period p ON p.id = s.period_id"
-            + " LEFT JOIN accounting.regulatory_submission c ON c.corrects_submission_id = s.id AND c.status NOT IN ('REFUSED', 'WITHDRAWN')";
+            + " count(*) FILTER (WHERE " + OVERTAKEN + ") AS overtaken,"
+            + " count(*) FILTER (WHERE s.status IN ('DRAFT', 'VALIDATED', 'APPROVED') AND p.revision <> s.period_revision) AS stale_unsent"
+            + " FROM accounting.regulatory_submission s JOIN accounting.accounting_period p ON p.id = s.period_id";
 
     @Override
     public boolean insert(Connection unitOfWork, NewSubmission submission) {
@@ -282,9 +299,23 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
     }
 
     @Override
-    public List<AnswerRow> answers(Connection unitOfWork, RegulatorySubmissionId id) {
+    public long answerCount(Connection unitOfWork, RegulatorySubmissionId id) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(ANSWER_COUNT_SQL)) {
+            read.setObject(1, id.value());
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        } catch (SQLException failure) {
+            throw failed("counting a regulatory submission's answers", failure);
+        }
+    }
+
+    @Override
+    public List<AnswerRow> answers(Connection unitOfWork, RegulatorySubmissionId id, int limit) {
         try (PreparedStatement read = unitOfWork.prepareStatement(ANSWERS_SQL)) {
             read.setObject(1, id.value());
+            read.setInt(2, limit);
             List<AnswerRow> answers = new ArrayList<>();
             try (ResultSet row = read.executeQuery()) {
                 while (row.next()) {
@@ -437,13 +468,14 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
     }
 
     @Override
-    public boolean await(Connection unitOfWork, RegulatorySubmissionId id, int attempt, Duration interval, String lastAnswer, Optional<String> reference) {
+    public boolean await(Connection unitOfWork, RegulatorySubmissionId id, int attempt, Duration interval, Duration ceiling, String lastAnswer, Optional<String> reference) {
         try (PreparedStatement update = unitOfWork.prepareStatement(AWAIT_SQL)) {
-            update.setLong(1, interval.toMillis());
-            update.setString(2, lastAnswer);
-            update.setString(3, reference.orElse(null));
-            update.setObject(4, id.value());
-            update.setInt(5, attempt);
+            update.setLong(1, ceiling.toMillis());
+            update.setLong(2, interval.toMillis());
+            update.setString(3, lastAnswer);
+            update.setString(4, reference.orElse(null));
+            update.setObject(5, id.value());
+            update.setInt(6, attempt);
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw failed("recording a regulatory submission's unconcluded answer", failure);
@@ -497,9 +529,13 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
     }
 
     @Override
-    public List<Row> standing(Connection unitOfWork, int limit) {
-        try (PreparedStatement read = unitOfWork.prepareStatement(STANDING_SQL)) {
-            read.setInt(1, limit);
+    public List<Row> standing(Connection unitOfWork, Optional<RegulatorySubmissionId> after, int limit) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(after.isPresent() ? STANDING_AFTER_SQL : STANDING_SQL)) {
+            int i = 0;
+            if (after.isPresent()) {
+                read.setObject(++i, after.get().value());
+            }
+            read.setInt(++i, limit);
             return rows(read);
         } catch (SQLException failure) {
             throw failed("reading the regulatory submissions standing", failure);
@@ -523,7 +559,7 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
             read.setInt(1, maxResends);
             try (ResultSet row = read.executeQuery()) {
                 row.next();
-                return new Attention(row.getLong("overdue"), row.getLong("resends_exhausted"), row.getLong("overtaken"), row.getLong("stale_unsent"), row.getLong("contrary"));
+                return new Attention(row.getLong("overdue"), row.getLong("resends_exhausted"), row.getLong("overtaken"), row.getLong("stale_unsent"));
             }
         } catch (SQLException failure) {
             throw failed("reading what stands on the regulatory submissions", failure);
@@ -604,6 +640,7 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
                 Optional.ofNullable(row.getString("rejection_code")),
                 instant(row, "concluded_at"),
                 row.getLong("contrary_answers"),
+                row.getBoolean("overtaken"),
                 CorrelationId.of(row.getString("correlation_id")));
     }
 

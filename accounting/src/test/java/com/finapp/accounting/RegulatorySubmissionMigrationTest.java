@@ -47,7 +47,7 @@ class RegulatorySubmissionMigrationTest {
     }
 
     @Test
-    @DisplayName("reference only, for every writer: no row claims a real jurisdiction's form until a migration says otherwise; and nothing is seeded")
+    @DisplayName("V010 states reference only: no row claims a real jurisdiction's form until a migration says otherwise; and it seeds nothing")
     void nothingIsSeededAndEverythingIsReference() {
         assertThat(migration()).contains("CONSTRAINT regulatory_obligation_is_reference CHECK (standing = 'REFERENCE')");
         assertThat(function("regulatory_submission_permits_only_machine_edges")).contains("stated ->> 'standing' IS DISTINCT FROM 'REFERENCE'");
@@ -55,7 +55,7 @@ class RegulatorySubmissionMigrationTest {
     }
 
     @Test
-    @DisplayName("four eyes on the row and on the history, and the approver does not send, for every writer; persons only; the provider's answers the platform's")
+    @DisplayName("V010 states four eyes on the row and on the history, and on the row that the approver does not send; persons in every slot; the provider's answers the platform's")
     void fourEyesForEveryWriter() {
         assertThat(migration())
                 .contains("CONSTRAINT regulatory_submission_four_eyes CHECK (approved_by IS NULL OR approved_by <> prepared_by)")
@@ -64,6 +64,8 @@ class RegulatorySubmissionMigrationTest {
                 .contains("(act = 'APPROVED') = (prepared_by IS NOT NULL) AND (prepared_by IS NULL OR prepared_by <> actor)")
                 .contains("prepared_by_type IN ('CUSTOMER', 'EMPLOYEE')")
                 .contains("(act IN ('ACKNOWLEDGED', 'REJECTED') AND actor_type = 'SYSTEM')");
+        assertThat(migration()).contains("validated_by_type IS NULL OR validated_by_type IN ('CUSTOMER', 'EMPLOYEE')").contains("approved_by_type IS NULL OR approved_by_type IN ('CUSTOMER', 'EMPLOYEE')")
+                .contains("submitted_by_type IS NULL OR submitted_by_type IN ('CUSTOMER', 'EMPLOYEE')").contains("closed_by_type IS NULL OR closed_by_type IN ('CUSTOMER', 'EMPLOYEE')").contains("decided_by_type IS NULL OR decided_by_type IN ('CUSTOMER', 'EMPLOYEE')");
     }
 
     @Test
@@ -102,6 +104,7 @@ class RegulatorySubmissionMigrationTest {
             assertThat(agree).as(field).contains("(stated_lines -> (l.ordinal - 1)) ->> " + field + " IS DISTINCT FROM");
         }
         assertThat(agree).contains("held_lines = 0").contains("held_sources = 0");
+        assertThat(function("regulatory_submission_source_is_a_final_run")).contains("run_period <> parent_period");
     }
 
     @Test
@@ -112,10 +115,11 @@ class RegulatorySubmissionMigrationTest {
                 .contains("CREATE UNIQUE INDEX regulatory_submission_one_correction ON accounting.regulatory_submission (corrects_submission_id)\n    WHERE corrects_submission_id IS NOT NULL AND status NOT IN ('REFUSED', 'WITHDRAWN');");
         String machine = function("regulatory_submission_permits_only_machine_edges");
         assertThat(machine).contains("s.status IN ('SUBMITTED', 'ACKNOWLEDGED', 'REJECTED', 'UNDELIVERED')").contains("USING ERRCODE = 'unique_violation'").contains("original_status NOT IN ('ACKNOWLEDGED', 'REJECTED', 'UNDELIVERED')");
+        assertThat(function("regulatory_submission_permits_only_machine_edges")).contains("original_form <> NEW.form_code OR original_period <> NEW.period_id");
     }
 
     @Test
-    @DisplayName("what is frozen: the content, its hash and who drew it, for every writer; every slot once; ack against rejection one way, and only on a recorded answer; undelivered only on a definite not received")
+    @DisplayName("V010 states what is frozen: the content, its hash and who drew it; every slot once; ack against rejection one way, and only on a recorded answer; undelivered only on a definite not received; a resend only while its month stands")
     void frozenAndOneWay() {
         String machine = function("regulatory_submission_permits_only_machine_edges");
         assertThat(machine).contains("NEW.content IS DISTINCT FROM OLD.content OR NEW.content_sha256 IS DISTINCT FROM OLD.content_sha256")
@@ -124,17 +128,21 @@ class RegulatorySubmissionMigrationTest {
                 .contains("OLD.status = 'SUBMITTED' AND NEW.status IN ('ACKNOWLEDGED', 'REJECTED')")
                 .contains("a.read_outcome = NEW.status")
                 .contains("OLD.last_answer IS DISTINCT FROM 'NOT_RECEIVED'")
-                .contains("NEW.resends > OLD.resends AND NEW.last_answer IS DISTINCT FROM 'RESENDING'");
+                .contains("NEW.resends > OLD.resends AND NEW.last_answer IS DISTINCT FROM 'RESENDING'")
+                .contains("a resend goes only while the month stands at the revision the return read")
+                .contains("held_revision IS DISTINCT FROM NEW.period_revision")
+                .contains("stated ->> 'period' IS DISTINCT FROM to_char(held_month, 'YYYY-MM')");
         // Nothing leaves ACKNOWLEDGED or REJECTED: no edge in the function names them as OLD.
         assertThat(machine).doesNotContain("OLD.status = 'ACKNOWLEDGED'").doesNotContain("OLD.status = 'REJECTED'").doesNotContain("OLD.status IN ('ACKNOWLEDGED'");
+        assertThat(machine).contains("NEW.prepared_by IS DISTINCT FROM OLD.prepared_by").contains("a validation is recorded once").contains("an attestation is recorded once").contains("a sending is recorded once");
     }
 
     @Test
-    @DisplayName("the grants: never content, configuration, a hash, or who drew it in an UPDATE; no DELETE; history, lineage and answers INSERT-only; hashes recomputed at birth; content as text")
+    @DisplayName("the grants: never the content or its hash, the configuration or its hash, or who drew it in an UPDATE; no DELETE; history, lineage and answers INSERT-only; hashes recomputed at birth; content as text")
     void theGrantsAndTheHashes() {
         String text = migration();
         String submission = text.substring(text.indexOf("GRANT UPDATE (status, validation_outcome"), text.indexOf("ON accounting.regulatory_submission TO finapp_app", text.indexOf("GRANT UPDATE (status, validation_outcome")));
-        assertThat(submission).doesNotContainPattern("[ (]content(_sha256)?,").doesNotContain("prepared_by").doesNotContainPattern("[ (]period_revision,").doesNotContain("obligation_id").doesNotContain("corrects");
+        assertThat(submission).doesNotContainPattern("[ (]content(_sha256)?[,)]").doesNotContain("prepared_by").doesNotContainPattern("[ (]period_revision[,)]").doesNotContain("obligation_id").doesNotContain("corrects");
         assertThat(text).contains("GRANT UPDATE (status, decided_by, decided_by_type, decided_at, decision_reason, retired_at) ON accounting.regulatory_obligation TO finapp_app;");
         assertThat(text).contains("GRANT SELECT, INSERT ON accounting.regulatory_submission_source TO finapp_app;").contains("GRANT SELECT, INSERT ON accounting.regulatory_submission_line TO finapp_app;")
                 .contains("GRANT SELECT, INSERT ON accounting.regulatory_submission_event TO finapp_app;").contains("GRANT SELECT, INSERT ON accounting.regulatory_provider_answer TO finapp_app;");
@@ -154,10 +162,11 @@ class RegulatorySubmissionMigrationTest {
                 .contains("anomaly IN ('OVERSIZED', 'MALFORMED', 'CONTRADICTORY') AND read_outcome = 'UNKNOWN'")
                 .contains("flag IS NULL OR flag IN ('LATE', 'CONTRARY')");
         assertThat(function("regulatory_provider_answer_is_append_only")).contains("TG_OP <> 'INSERT'");
+        assertThat(migration()).contains("provider_reference ~ '^[A-Za-z0-9._:-]{1,128}$'").contains("rejection_code ~ '^[A-Z][A-Z0-9_]{0,63}$'");
     }
 
     @Test
-    @DisplayName("the constants a CHECK or a trigger repeats are the code's")
+    @DisplayName("the constants this test names, which a CHECK or a trigger repeats, are the code's")
     void theBoundsAreTheCodes() {
         assertThat(function("regulatory_submission_permits_only_machine_edges")).contains("octet_length(NEW.content) > " + RegulatoryForm.MAX_CONTENT_BYTES);
         assertThat(function("regulatory_obligation_permits_only_machine_edges")).contains("octet_length(NEW.configuration) > " + RegulatoryObligationConfiguration.MAX_BYTES);
@@ -172,5 +181,13 @@ class RegulatorySubmissionMigrationTest {
         for (String table : new String[] {"regulatory_obligation", "regulatory_submission", "regulatory_submission_source", "regulatory_submission_line", "regulatory_submission_event", "regulatory_provider_answer"}) {
             assertThat(code).as(table).contains("CREATE TRIGGER " + table + "_is_never_truncated");
         }
+        java.util.regex.Matcher named = java.util.regex.Pattern.compile("\\b(?:FROM|JOIN|INTO|UPDATE|TABLE|REFERENCES|ON|FUNCTION)\\s+([a-z_]+)\\.[a-z_]+").matcher(code);
+        int references = 0;
+        while (named.find()) {
+            references++;
+            assertThat(named.group(1)).as(named.group()).isEqualTo("accounting");
+        }
+        assertThat(references).as("the census: it read the statements").isGreaterThan(20);
+        assertThat(code).doesNotContainPattern("(?i)\\bDELETE\\s+FROM\\b").contains("is never deleted").contains("append-only");
     }
 }

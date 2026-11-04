@@ -20,7 +20,7 @@ public final class RegulatorySubmissionMetrics {
 
     /** The {@code outcome} tag's values. */
     public static final List<String> OUTCOMES = List.of("drafted", "validated", "validation_failed", "approved", "refused", "withdrawn", "submitted", "acknowledged", "rejected", "undelivered", "unknown", "not_received",
-            "resent", "resends_exhausted", "call_failed", "record_failed", "late", "contrary", "answer_anomaly", "stale", "self_approval_refused", "run_bytes_differ", "figure_unresolved", "source_not_final");
+            "resent", "resends_exhausted", "not_resent_month_moved", "not_resent_overtaken", "send_withheld_month_moved", "call_failed", "record_failed", "late", "contrary", "answer_anomaly", "stale", "self_approval_refused", "run_bytes_differ", "figure_unresolved", "source_not_final");
 
     private final Map<String, Counter> counters = new LinkedHashMap<>();
 

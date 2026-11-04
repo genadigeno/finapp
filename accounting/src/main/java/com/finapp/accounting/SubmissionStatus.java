@@ -62,11 +62,6 @@ public enum SubmissionStatus {
         return this == SUBMITTED || this == ACKNOWLEDGED || this == REJECTED || this == UNDELIVERED;
     }
 
-    /** True while it occupies its form and month - {@code accounting V010}'s {@code regulatory_submission_one_live}. */
-    public boolean live() {
-        return this == DRAFT || this == VALIDATED || this == APPROVED || this == SUBMITTED;
-    }
-
     /** True when no edge leaves it. */
     public boolean terminal() {
         return next().isEmpty();

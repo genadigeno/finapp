@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -48,11 +49,13 @@ public class RegulatorySubmissionController {
         return desk.draft(idempotencyKey, body.obligationId(), body.periodId(), body.correctsSubmissionId(), body.reason());
     }
 
-    /** What a preparer must act on or know of: everything live, a return rejected or undelivered with no correction, an acknowledged one whose month moved with none. Audited. */
+    /** What a preparer must act on or know of, oldest first, a page at a time: everything live, a return rejected or undelivered with no correction, one overtaken by a reopen, and any holding a contrary answer. Audited. */
     @GetMapping
     @RequiresPermission(PermissionName.REGULATORY_REPORT_PREPARE)
-    public List<RegulatorySubmissionDesk.RegulatorySubmissionSummaryView> listStandingRegulatorySubmissions() {
-        return desk.standing();
+    public RegulatorySubmissionDesk.RegulatorySubmissionStandingView listStandingRegulatorySubmissions(
+            @RequestParam(name = "after", required = false) String after,
+            @RequestParam(name = "limit", required = false) Integer limit) {
+        return desk.standing(after, limit);
     }
 
     /** What this controller can decide: those validated, never their own. Audited. */

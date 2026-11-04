@@ -24,22 +24,32 @@ class RegulatorySubmissionStatementsTest {
         assertThat(JdbcRegulatorySubmissionStore.SUBMIT_SQL).contains("SET status = 'SUBMITTED'").contains("answer_horizon_at = clock_timestamp() + ? * interval '1 millisecond'").endsWith("WHERE id = ? AND status = 'APPROVED'");
         assertThat(JdbcRegulatorySubmissionStore.ACKNOWLEDGE_SQL).contains("provider_reference = COALESCE(provider_reference, ?)").endsWith("WHERE id = ? AND status = 'SUBMITTED'");
         assertThat(JdbcRegulatorySubmissionStore.REJECT_SQL).contains("rejection_code = ?").endsWith("WHERE id = ? AND status = 'SUBMITTED'");
-        assertThat(JdbcRegulatorySubmissionStore.UNDELIVER_SQL).endsWith("WHERE id = ? AND status = 'SUBMITTED' AND last_answer = 'NOT_RECEIVED' AND (resends >= ? OR answer_horizon_at <= clock_timestamp())");
+        assertThat(JdbcRegulatorySubmissionStore.UNDELIVER_SQL).endsWith("WHERE s.id = ? AND s.status = 'SUBMITTED' AND s.last_answer = 'NOT_RECEIVED' AND (s.resends >= ? OR s.answer_horizon_at <= clock_timestamp()"
+                + " OR s.period_revision <> (SELECT p.revision FROM accounting.accounting_period p WHERE p.id = s.period_id))");
         for (String edge : List.of(JdbcRegulatorySubmissionStore.VALIDATE_SQL, JdbcRegulatorySubmissionStore.APPROVE_SQL, JdbcRegulatorySubmissionStore.REFUSE_SQL, JdbcRegulatorySubmissionStore.WITHDRAW_SQL, JdbcRegulatorySubmissionStore.SUBMIT_SQL,
                 JdbcRegulatorySubmissionStore.ACKNOWLEDGE_SQL, JdbcRegulatorySubmissionStore.REJECT_SQL, JdbcRegulatorySubmissionStore.UNDELIVER_SQL, JdbcRegulatorySubmissionStore.CLAIM_SQL, JdbcRegulatorySubmissionStore.CLAIM_NEXT_SQL,
                 JdbcRegulatorySubmissionStore.PERMIT_RESEND_SQL, JdbcRegulatorySubmissionStore.AWAIT_SQL)) {
             assertThat(edge).doesNotContain("content =");
         }
+        assertThat(JdbcRegulatorySubmissionStore.REFUSE_SQL).contains("closed_at = clock_timestamp()");
+        assertThat(JdbcRegulatorySubmissionStore.WITHDRAW_SQL).contains("closed_at = clock_timestamp()");
+        assertThat(JdbcRegulatorySubmissionStore.UNDELIVER_SQL).contains("closed_at = clock_timestamp()");
+        assertThat(JdbcRegulatorySubmissionStore.SUBMIT_SQL).contains("submitted_at = clock_timestamp()");
+        assertThat(JdbcRegulatorySubmissionStore.ACKNOWLEDGE_SQL).contains("concluded_at = clock_timestamp()");
+        assertThat(JdbcRegulatorySubmissionStore.REJECT_SQL).contains("concluded_at = clock_timestamp()");
     }
 
     @Test
-    @DisplayName("the claim is one statement: SKIP LOCKED on a permit that has come, one attempt counted, the permit a lease ahead on the database's clock; a resend counted against its bound and the attempt held; an unconcluded answer conditional on the attempt")
+    @DisplayName("the claim is one statement: SKIP LOCKED on a permit that has come, one attempt counted, the permit a lease ahead on the database's clock; a resend counted against its bound, the attempt held and the month's revision; an unconcluded answer conditional on the attempt, its wait backing off on the database's clock")
     void theDriveIsConditional() {
         assertThat(JdbcRegulatorySubmissionStore.CLAIM_SQL).contains("attempts = attempts + 1").contains("next_inquiry_at = clock_timestamp() + ? * interval '1 millisecond'")
                 .contains("next_inquiry_at <= clock_timestamp() FOR UPDATE SKIP LOCKED").contains("status = 'SUBMITTED'");
         assertThat(JdbcRegulatorySubmissionStore.CLAIM_NEXT_SQL).contains("ORDER BY next_inquiry_at, id LIMIT 1 FOR UPDATE SKIP LOCKED").contains("status = 'SUBMITTED'");
-        assertThat(JdbcRegulatorySubmissionStore.PERMIT_RESEND_SQL).contains("resends = resends + 1, last_answer = 'RESENDING'").endsWith("attempts = ? AND last_answer = 'NOT_RECEIVED' AND resends < ?");
-        assertThat(JdbcRegulatorySubmissionStore.AWAIT_SQL).endsWith("WHERE id = ? AND status = 'SUBMITTED' AND attempts = ?");
+        assertThat(JdbcRegulatorySubmissionStore.PERMIT_RESEND_SQL).contains("resends = s.resends + 1, last_answer = 'RESENDING'")
+                .endsWith("s.attempts = ? AND s.last_answer = 'NOT_RECEIVED' AND s.resends < ? AND s.period_revision = (SELECT p.revision FROM accounting.accounting_period p WHERE p.id = s.period_id)");
+        assertThat(JdbcRegulatorySubmissionStore.AWAIT_SQL).endsWith("WHERE id = ? AND status = 'SUBMITTED' AND attempts = ?")
+                .contains("LEAST(? * interval '1 millisecond', GREATEST(? * interval '1 millisecond', clock_timestamp() - answer_horizon_at))");
+        assertThat(JdbcRegulatorySubmissionStore.CLAIM_NEXT_SQL).contains("attempts = attempts + 1").contains("next_inquiry_at = clock_timestamp() + ? * interval '1 millisecond'").contains("next_inquiry_at <= clock_timestamp() ORDER BY");
     }
 
     @Test
@@ -51,11 +61,15 @@ class RegulatorySubmissionStatementsTest {
         assertThat(JdbcRegulatoryObligationStore.AWAITING_SQL).endsWith("WHERE status = 'PROPOSED' AND proposed_by <> ? ORDER BY proposed_at, id LIMIT ?");
         assertThat(JdbcRegulatoryObligationStore.LOCK_SHARED_SQL).endsWith("WHERE id = ? FOR SHARE");
         assertThat(JdbcRegulatoryObligationStore.LOCK_FORM_SQL).endsWith("WHERE jurisdiction_code = ? AND form_code = ? ORDER BY id FOR UPDATE");
-        assertThat(JdbcRegulatorySubmissionStore.STANDING_SQL).endsWith("ORDER BY s.prepared_at, s.id LIMIT ?");
+        assertThat(JdbcRegulatorySubmissionStore.STANDING_SQL).endsWith("ORDER BY s.prepared_at, s.id LIMIT ?").contains("f.flag = 'CONTRARY'").contains(JdbcRegulatorySubmissionStore.OVERTAKEN);
+        assertThat(JdbcRegulatorySubmissionStore.STANDING_AFTER_SQL).endsWith("AND (s.prepared_at, s.id) > (SELECT l.prepared_at, l.id FROM accounting.regulatory_submission l WHERE l.id = ?) ORDER BY s.prepared_at, s.id LIMIT ?");
+        assertThat(JdbcRegulatorySubmissionStore.OVERTAKEN).contains("p.revision <> s.period_revision").contains("n.status = 'ACKNOWLEDGED' AND n.period_revision = p.revision");
+        assertThat(JdbcRegulatorySubmissionStore.ATTENTION_SQL).contains(JdbcRegulatorySubmissionStore.OVERTAKEN).doesNotContain("CONTRARY");
+        assertThat(JdbcRegulatorySubmissionStore.ANSWERS_SQL).contains("ORDER BY received_at DESC, id DESC LIMIT ?").endsWith("newest ORDER BY received_at, id");
     }
 
     @Test
-    @DisplayName("every column a statement names exists in V010, under its own name: checked by hand once, and here for good")
+    @DisplayName("the columns the stores use, named here by hand, exist in V010 under their own names")
     void theColumnsAreV010s() {
         String migration = RegulatorySubmissionMigrationTest.migration();
         for (String column : new String[] {"jurisdiction_code", "form_code", "form_version", "period_id", "period_revision", "corrects_submission_id", "content", "content_sha256", "status", "prepared_by", "prepared_by_type", "prepared_at",
@@ -79,7 +93,7 @@ class RegulatorySubmissionStatementsTest {
     }
 
     @Test
-    @DisplayName("every placeholder has its binding: a statement's count of question marks is what the store sets")
+    @DisplayName("these statements hold the count of placeholders their stores were written to bind")
     void thePlaceholdersAreCounted() {
         assertThat(placeholders(JdbcRegulatorySubmissionStore.INSERT_SQL)).isEqualTo(14);
         assertThat(placeholders(JdbcRegulatorySubmissionStore.INSERT_SOURCE_SQL)).isEqualTo(5);
@@ -97,7 +111,11 @@ class RegulatorySubmissionStatementsTest {
         assertThat(placeholders(JdbcRegulatorySubmissionStore.CLAIM_SQL)).isEqualTo(2);
         assertThat(placeholders(JdbcRegulatorySubmissionStore.CLAIM_NEXT_SQL)).isEqualTo(1);
         assertThat(placeholders(JdbcRegulatorySubmissionStore.PERMIT_RESEND_SQL)).isEqualTo(3);
-        assertThat(placeholders(JdbcRegulatorySubmissionStore.AWAIT_SQL)).isEqualTo(5);
+        assertThat(placeholders(JdbcRegulatorySubmissionStore.AWAIT_SQL)).isEqualTo(6);
+        assertThat(placeholders(JdbcRegulatorySubmissionStore.ANSWERS_SQL)).isEqualTo(2);
+        assertThat(placeholders(JdbcRegulatorySubmissionStore.ANSWER_COUNT_SQL)).isEqualTo(1);
+        assertThat(placeholders(JdbcRegulatorySubmissionStore.STANDING_SQL)).isEqualTo(1);
+        assertThat(placeholders(JdbcRegulatorySubmissionStore.STANDING_AFTER_SQL)).isEqualTo(2);
         assertThat(placeholders(JdbcRegulatoryObligationStore.INSERT_SQL)).isEqualTo(11);
         assertThat(placeholders(JdbcRegulatoryObligationStore.ACTIVATE_SQL)).isEqualTo(4);
     }

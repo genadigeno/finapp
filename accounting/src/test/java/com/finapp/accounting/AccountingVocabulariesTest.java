@@ -151,8 +151,6 @@ class AccountingVocabulariesTest {
         assertThat(EnumSet.allOf(SubmissionStatus.class).stream().filter(SubmissionStatus::immutable))
                 .containsExactlyInAnyOrder(
                         SubmissionStatus.SUBMITTED, SubmissionStatus.ACKNOWLEDGED, SubmissionStatus.REJECTED, SubmissionStatus.UNDELIVERED);
-        assertThat(EnumSet.allOf(SubmissionStatus.class).stream().filter(SubmissionStatus::live))
-                .containsExactlyInAnyOrder(SubmissionStatus.DRAFT, SubmissionStatus.VALIDATED, SubmissionStatus.APPROVED, SubmissionStatus.SUBMITTED);
         assertThat(EnumSet.allOf(SubmissionStatus.class).stream().filter(SubmissionStatus::correctable))
                 .containsExactlyInAnyOrder(SubmissionStatus.ACKNOWLEDGED, SubmissionStatus.REJECTED, SubmissionStatus.UNDELIVERED);
         assertThat(EnumSet.allOf(SubmissionStatus.class).stream().filter(SubmissionStatus::terminal))
@@ -241,7 +239,7 @@ class AccountingVocabulariesTest {
                         "accounting.ReportDoorMismatch=409", "accounting.ReportAwaitsClose=409",
                         // P14-TSK-018: the regulatory framework's.
                         "accounting.RegulatorySubmissionStale=409", "accounting.RegulatorySubmissionLive=409", "accounting.RegulatorySubmissionInvalid=422", "accounting.RegulatorySourceNotFinal=409",
-                        "accounting.RegulatoryFigureUnresolved=422", "accounting.RegulatoryRunBytesDiffer=409", "accounting.RegulatoryObligationInvalid=422", "accounting.RegulatoryObligationStale=409");
+                        "accounting.RegulatoryFigureUnresolved=422", "accounting.RegulatoryRunBytesDiffer=409", "accounting.RegulatoryObligationInvalid=422", "accounting.RegulatoryObligationStale=409", "accounting.RegulatoryProviderUnavailable=503");
         // P14-TSK-002: the posting rule register's audited read - no reason, an operator's read.
         assertThat(AccountingAuditAction.POSTING_RULES_READ.code()).isEqualTo("accounting.PostingRulesRead");
         assertThat(AccountingAuditAction.POSTING_RULES_READ.requiresReason()).isFalse();
@@ -281,7 +279,7 @@ class AccountingVocabulariesTest {
                         "regulatory.ObligationProposed=true", "regulatory.ObligationActivated=true", "regulatory.ObligationRejected=true", "regulatory.ObligationRead=false",
                         "regulatory.SubmissionDrafted=true", "regulatory.SubmissionValidated=false", "regulatory.SubmissionApproved=true", "regulatory.SubmissionRefused=true", "regulatory.SubmissionWithdrawn=true",
                         "regulatory.SubmissionSubmitted=true", "regulatory.SubmissionAcknowledged=false", "regulatory.SubmissionRejected=false", "regulatory.SubmissionUndelivered=true",
-                        "regulatory.SubmissionContraryAnswer=false", "regulatory.SubmissionRead=false");
+                        "regulatory.SubmissionContraryAnswer=false", "regulatory.SubmissionRead=false", "regulatory.SubmissionResent=false");
     }
 
     // ------------------------------------------------------------------

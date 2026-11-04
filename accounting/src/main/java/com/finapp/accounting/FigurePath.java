@@ -33,7 +33,7 @@ import java.util.regex.Pattern;
  */
 public record FigurePath(String text) {
 
-    /** A path's longest length - {@code accounting V010}'s {@code regulatory_submission_line_bounded}. */
+    /** A path's longest length once resolved - {@code accounting V010}'s {@code regulatory_submission_line_bounded}. A wildcard resolves to a three-letter currency, so it is judged two characters longer than it is written: what passes a proposal fits every draft. */
     public static final int MAX_LENGTH = 256;
 
     private static final int MAX_STEPS = 8;
@@ -108,11 +108,6 @@ public record FigurePath(String text) {
         FigurePath path = new FigurePath(Objects.requireNonNull(text, "text"));
         path.steps();
         return path;
-    }
-
-    /** Whether it makes one line per currency. */
-    public boolean perCurrency() {
-        return text.contains(CURRENCY + "=" + WILDCARD);
     }
 
     /**
@@ -231,8 +226,9 @@ public record FigurePath(String text) {
     // ------------------------------------------------------------------ the grammar
 
     private List<Step> steps() {
-        if (text.isEmpty() || text.length() > MAX_LENGTH) {
-            throw new Malformed("a figure path is 1 to " + MAX_LENGTH + " characters");
+        int resolved = text.length() + (text.contains(CURRENCY + "=" + WILDCARD) ? 2 : 0);
+        if (text.isEmpty() || resolved > MAX_LENGTH) {
+            throw new Malformed("a figure path is 1 to " + MAX_LENGTH + " characters once its wildcard is a currency");
         }
         String[] parts = text.split("\\.", -1);
         if (parts.length < 2 || parts.length > MAX_STEPS + 1 || !"body".equals(parts[0])) {

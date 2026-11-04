@@ -123,6 +123,7 @@ class RegulatoryFiguresOnRealBodiesTest {
         assertThat(one(content, "body.sections[section=CUSTOMER_FUNDS].rows[glAccount=2000,currency=USD].closing").minor()).isEqualTo(BigInteger.valueOf(1_001));
         assertThat(one(content, "body.sections[section=CASH_AND_BANK].totals[classification=ASSET,currency=EUR].closing").scale()).isEqualTo(2);
         assertThat(FigurePath.of("body.equation[currency=*].difference").resolve(content)).allSatisfy(figure -> assertThat(figure.minor()).isEqualTo(BigInteger.ZERO));
+        assertThat(one(content, "body.sections[section=CASH_AND_BANK].totals[classification=ASSET,currency=EUR].closing").minor()).isEqualTo(BigInteger.valueOf(2_500));
     }
 
     @Test
@@ -141,6 +142,7 @@ class RegulatoryFiguresOnRealBodiesTest {
         CanonicalJson.Obj balance = issued(trialBalance);
         assertThat(FigurePath.of("body.currencies[currency=*].closingDebitBalances").resolve(balance)).extracting(FigurePath.Figure::currency).containsExactly("EUR", "USD");
         assertThat(one(balance, "body.accounts[account=1000,currency=EUR].closing").minor()).isEqualTo(BigInteger.valueOf(2_500));
+        assertThat(FigurePath.of("body.currencies[currency=*].closingCreditBalances").resolve(balance)).extracting(FigurePath.Figure::currency).containsExactly("EUR", "USD");
     }
 
     @Test

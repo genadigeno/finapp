@@ -133,7 +133,7 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
         rows.put(submission.id(), new Stored(new Row(submission.id(), submission.obligation(), submission.jurisdiction(), submission.form(), submission.formVersion(), obligation.adapter(), submission.period(), period.month(),
                 submission.periodRevision(), period.revision(), period.status(), submission.corrects(), Optional.empty(), submission.contentSha256(), SubmissionStatus.DRAFT, Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
                 submission.preparedBy().id(), clock.instant(), submission.reason(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), 0, 0, Optional.empty(), Optional.empty(), false,
-                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), 0L, submission.correlation()), submission.content(), null, Optional.empty()));
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), 0L, false, submission.correlation()), submission.content(), null, Optional.empty()));
         return true;
     }
 
@@ -148,6 +148,11 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
 
     @Override
     public void insertLines(Connection unitOfWork, RegulatorySubmissionId id, List<RegulatoryFormLine> given) {
+        for (RegulatoryFormLine line : given) {
+            if (line.figure().length() < 6 || line.figure().length() > 256 || !line.figure().startsWith("body.") || line.label().isEmpty() || line.label().length() > 200) {
+                throw new IllegalStateException("regulatory_submission_line_bounded");
+            }
+        }
         lines.put(id, List.copyOf(given));
     }
 
@@ -188,7 +193,12 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
     }
 
     @Override
-    public List<AnswerRow> answers(Connection unitOfWork, RegulatorySubmissionId id) {
+    public long answerCount(Connection unitOfWork, RegulatorySubmissionId id) {
+        return answers.stream().filter(answer -> answer.submission().equals(id)).count();
+    }
+
+    @Override
+    public List<AnswerRow> answers(Connection unitOfWork, RegulatorySubmissionId id, int limit) {
         List<AnswerRow> kept = new ArrayList<>();
         for (NewAnswer answer : answers) {
             if (answer.submission().equals(id)) {
@@ -196,7 +206,7 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
                         answer.flag(), answer.reading().retained(), answer.reading().rawSha256(), answer.reading().receivedBytes(), answer.reading().truncated(), clock.instant()));
             }
         }
-        return kept;
+        return List.copyOf(kept.subList(Math.max(0, kept.size() - limit), kept.size()));
     }
 
     @Override
@@ -287,7 +297,7 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
     @Override
     public boolean markUndelivered(Connection unitOfWork, RegulatorySubmissionId id, Actor actor, String reason, int maxResends) {
         Stored stored = rows.get(id);
-        boolean spentOrPast = stored.row().resends() >= maxResends || stored.horizon().filter(horizon -> !horizon.isAfter(clock.instant())).isPresent();
+        boolean spentOrPast = stored.row().resends() >= maxResends || stored.horizon().filter(horizon -> !horizon.isAfter(clock.instant())).isPresent() || monthMoved(stored.row());
         boolean moved = moved(id, row -> row.status() == SubmissionStatus.SUBMITTED && row.lastAnswer().filter("NOT_RECEIVED"::equals).isPresent() && spentOrPast,
                 row -> copy(row, Map.of("status", SubmissionStatus.UNDELIVERED, "closedBy", Optional.of(actor.id()), "closedAt", Optional.of(clock.instant()))));
         if (moved) {
@@ -330,13 +340,16 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
 
     @Override
     public boolean permitResend(Connection unitOfWork, RegulatorySubmissionId id, int attempt, int maxResends) {
-        return moved(id, row -> row.status() == SubmissionStatus.SUBMITTED && row.attempts() == attempt && row.lastAnswer().filter("NOT_RECEIVED"::equals).isPresent() && row.resends() < maxResends,
+        return moved(id, row -> row.status() == SubmissionStatus.SUBMITTED && row.attempts() == attempt && row.lastAnswer().filter("NOT_RECEIVED"::equals).isPresent() && row.resends() < maxResends && !monthMoved(row),
                 row -> copy(row, Map.of("resends", row.resends() + 1, "lastAnswer", Optional.of("RESENDING"))));
     }
 
     @Override
-    public boolean await(Connection unitOfWork, RegulatorySubmissionId id, int attempt, Duration interval, String lastAnswer, Optional<String> reference) {
-        return moved(id, row -> row.status() == SubmissionStatus.SUBMITTED && row.attempts() == attempt, row -> copy(row, Map.of("nextInquiryAt", Optional.of(clock.instant().plus(interval)), "lastAnswer", Optional.of(lastAnswer), "providerReference",
+    public boolean await(Connection unitOfWork, RegulatorySubmissionId id, int attempt, Duration interval, Duration ceiling, String lastAnswer, Optional<String> reference) {
+        Duration sinceHorizon = rows.get(id).horizon().map(horizon -> Duration.between(horizon, clock.instant())).orElse(Duration.ZERO);
+        Duration wait = sinceHorizon.compareTo(interval) > 0 ? sinceHorizon : interval;
+        Duration bounded = wait.compareTo(ceiling) > 0 ? ceiling : wait;
+        return moved(id, row -> row.status() == SubmissionStatus.SUBMITTED && row.attempts() == attempt, row -> copy(row, Map.of("nextInquiryAt", Optional.of(clock.instant().plus(bounded)), "lastAnswer", Optional.of(lastAnswer), "providerReference",
                 row.providerReference().isPresent() ? row.providerReference() : reference)));
     }
 
@@ -355,11 +368,15 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
     }
 
     @Override
-    public List<Row> standing(Connection unitOfWork, int limit) {
-        return rows.values().stream().map(this::read).filter(row -> row.status().live()
+    public List<Row> standing(Connection unitOfWork, Optional<RegulatorySubmissionId> after, int limit) {
+        Comparator<Row> order = Comparator.comparing(Row::preparedAt).thenComparing(row -> row.id().value());
+        Optional<Row> last = after.flatMap(id -> find(unitOfWork, id));
+        return rows.values().stream().map(this::read).filter(row -> row.status() == SubmissionStatus.DRAFT || row.status() == SubmissionStatus.VALIDATED || row.status() == SubmissionStatus.APPROVED || row.status() == SubmissionStatus.SUBMITTED
                 || ((row.status() == SubmissionStatus.REJECTED || row.status() == SubmissionStatus.UNDELIVERED) && !corrections.containsKey(row.id()))
-                || (row.status() == SubmissionStatus.ACKNOWLEDGED && row.monthMoved() && !corrections.containsKey(row.id())))
-                .sorted(Comparator.comparing(Row::preparedAt).thenComparing(row -> row.id().value())).limit(limit).toList();
+                || row.overtaken()
+                || row.contraryAnswers() > 0)
+                .filter(row -> after.isEmpty() || last.filter(held -> order.compare(row, held) > 0).isPresent())
+                .sorted(order).limit(limit).toList();
     }
 
     @Override
@@ -373,10 +390,9 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
         List<Row> all = rows.values().stream().map(this::read).toList();
         long overdue = all.stream().filter(row -> row.status() == SubmissionStatus.SUBMITTED && row.pastHorizon()).count();
         long exhausted = all.stream().filter(row -> row.status() == SubmissionStatus.SUBMITTED && row.lastAnswer().filter("NOT_RECEIVED"::equals).isPresent() && row.resends() >= maxResends).count();
-        long overtaken = all.stream().filter(row -> (row.status() == SubmissionStatus.SUBMITTED || row.status() == SubmissionStatus.ACKNOWLEDGED) && row.monthMoved() && !corrections.containsKey(row.id())).count();
+        long overtaken = all.stream().filter(Row::overtaken).count();
         long stale = all.stream().filter(row -> (row.status() == SubmissionStatus.DRAFT || row.status() == SubmissionStatus.VALIDATED || row.status() == SubmissionStatus.APPROVED) && row.monthMoved()).count();
-        long contrary = answers.stream().filter(answer -> answer.flag().filter(Flag.CONTRARY::equals).isPresent()).count();
-        return new Attention(overdue, exhausted, overtaken, stale, contrary);
+        return new Attention(overdue, exhausted, overtaken, stale);
     }
 
     // ------------------------------------------------------------------
@@ -393,16 +409,22 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
         return done[0];
     }
 
-    /** The row as a reader sees it: the month's revision and status as they stand, its correction, its contrary answers. */
+    private boolean monthMoved(Row row) {
+        return periods.find(null, row.period()).orElseThrow().revision() != row.periodRevision();
+    }
+
+    /** The row as a reader sees it: the month's revision and status as they stand, its correction, its contrary answers, whether it is overtaken. */
     private Row read(Stored stored) {
         Row row = stored.row();
         AccountingPeriodStore.PeriodRow period = periods.find(null, row.period()).orElseThrow();
         boolean past = stored.horizon().filter(horizon -> !horizon.isAfter(clock.instant())).isPresent();
         long contrary = answers.stream().filter(answer -> answer.submission().equals(row.id()) && answer.flag().filter(Flag.CONTRARY::equals).isPresent()).count();
+        boolean overtaken = (row.status() == SubmissionStatus.SUBMITTED || row.status() == SubmissionStatus.ACKNOWLEDGED) && period.revision() != row.periodRevision() && rows.values().stream().map(Stored::row)
+                .noneMatch(other -> other.jurisdiction().equals(row.jurisdiction()) && other.form().equals(row.form()) && other.period().equals(row.period()) && other.status() == SubmissionStatus.ACKNOWLEDGED && other.periodRevision() == period.revision());
         return new Row(row.id(), row.obligation(), row.jurisdiction(), row.form(), row.formVersion(), row.adapter(), row.period(), row.month(), row.periodRevision(), period.revision(), period.status(), row.corrects(),
                 Optional.ofNullable(corrections.get(row.id())), row.contentSha256(), row.status(), row.validationOutcome(), row.validationPassed(), row.validatedBy(), row.validatedAt(), row.preparedBy(), row.preparedAt(), row.preparationReason(),
                 row.approvedBy(), row.approvedAt(), row.submittedBy(), row.submittedAt(), row.closedBy(), row.closedAt(), row.attempts(), row.resends(), row.nextInquiryAt(), row.answerHorizonAt(), past, row.lastAnswer(), row.providerReference(),
-                row.rejectionCode(), row.concludedAt(), contrary, row.correlation());
+                row.rejectionCode(), row.concludedAt(), contrary, overtaken, row.correlation());
     }
 
     private static String liveKey(String jurisdiction, String form, AccountingPeriodId period) {
@@ -435,6 +457,6 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
                 changed.containsKey("providerReference") ? (Optional<String>) at.apply("providerReference") : row.providerReference(),
                 changed.containsKey("rejectionCode") ? (Optional<String>) at.apply("rejectionCode") : row.rejectionCode(),
                 changed.containsKey("concludedAt") ? (Optional<Instant>) at.apply("concludedAt") : row.concludedAt(),
-                row.contraryAnswers(), row.correlation());
+                row.contraryAnswers(), row.overtaken(), row.correlation());
     }
 }

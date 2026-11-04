@@ -22,10 +22,11 @@ import lombok.extern.slf4j.Slf4j;
  * <ul>
  *   <li>{@code overdue}: {@code SUBMITTED}, past its answer horizon;</li>
  *   <li>{@code resends_exhausted}: {@code SUBMITTED}, the provider's definite "not received" last, no resend left: a person's door is open;</li>
- *   <li>{@code overtaken}: sent or acknowledged, its month's revision moved, no correction standing: the return is frozen and disagrees with the books;</li>
- *   <li>{@code stale_unsent}: not yet sent, its month's revision moved: it can only be withdrawn or refused;</li>
- *   <li>{@code contrary}: answers kept flagged contrary, ever.</li>
+ *   <li>{@code overtaken}: sent or acknowledged, its month's revision moved, and no acknowledged return of its form at the month's present revision: the regulator holds, or may hold, a figure the books no longer say;</li>
+ *   <li>{@code stale_unsent}: not yet sent, its month's revision moved: it can only be withdrawn or refused.</li>
  * </ul>
+ *
+ * <p>A contrary answer is no state that clears, so it is not here: an alert reads {@code increase} of {@code finapp.accounting.regulatory.submission{outcome="contrary"}}, and the standing list names the return.
  *
  * <p><strong>From the database, on the database's clock</strong>: every instance publishes the same numbers with no leader - aggregate with {@code max()}, never {@code sum()}. No value (NaN at Micrometer's edge) when unreadable, never a zero for a read that failed. Cached
  * for 15 s ({@code CloseRunStallMetrics}' floor). The tag closed in the code: a count names no return. Alerts: `P14-TSK-020`'s.
@@ -37,7 +38,7 @@ public final class RegulatoryAttentionMetrics {
     public static final String ATTENTION = "finapp.accounting.regulatory.attention";
 
     /** The {@code kind} tag's values. */
-    public static final List<String> KINDS = List.of("overdue", "resends_exhausted", "overtaken", "stale_unsent", "contrary");
+    public static final List<String> KINDS = List.of("overdue", "resends_exhausted", "overtaken", "stale_unsent");
 
     private static final Duration MIN_REFRESH = Duration.ofSeconds(15);
 
@@ -62,7 +63,6 @@ public final class RegulatoryAttentionMetrics {
         gauge(registry, "resends_exhausted", RegulatorySubmissionStore.Attention::resendsExhausted);
         gauge(registry, "overtaken", RegulatorySubmissionStore.Attention::overtaken);
         gauge(registry, "stale_unsent", RegulatorySubmissionStore.Attention::staleUnsent);
-        gauge(registry, "contrary", RegulatorySubmissionStore.Attention::contrary);
     }
 
     private void gauge(MeterRegistry registry, String kind, ToLongFunction<RegulatorySubmissionStore.Attention> read) {

@@ -19,6 +19,8 @@ import com.finapp.accounting.RegulatorySubmissions.BlockedBy;
 import com.finapp.accounting.RegulatorySubmissions.Claimed;
 import com.finapp.accounting.RegulatorySubmissions.Disposition;
 import com.finapp.accounting.RegulatorySubmissions.Draft;
+import com.finapp.accounting.RegulatorySubmissions.Recorded;
+import com.finapp.accounting.RegulatorySubmissions.ResendPermit;
 import com.finapp.accounting.RegulatorySubmissions.View;
 import com.finapp.accounting.reporting.CanonicalJson;
 import com.finapp.accounting.testing.RegulatoryWorld;
@@ -74,6 +76,23 @@ class RegulatorySubmissionsTest {
         return world.store.find(UOW, acted.id()).orElseThrow();
     }
 
+    /** What the non-delivery door hands the act: the provider's answer of a moment ago. */
+    private static final Optional<Recorded> ASKED = Optional.of(new Recorded(Disposition.NOT_RECEIVED, false));
+
+    private ResendPermit permit(Claimed claimed) {
+        try (SecurityContext.Scope platform = SecurityContext.enterSystem()) {
+            return machine.permitResend(UOW, claimed, world.correlation());
+        }
+    }
+
+    private void answered(Claimed claimed, Answer answer, CallKind call) {
+        asThePlatform(() -> machine.record(UOW, claimed, new Answered(call, answer), Duration.ofMinutes(15), world.correlation()));
+    }
+
+    private static byte[] bytes(String text) {
+        return text.getBytes(StandardCharsets.UTF_8);
+    }
+
     private List<String> codes() {
         return world.audit.stream().map(record -> record.operation().code()).toList();
     }
@@ -103,6 +122,8 @@ class RegulatorySubmissionsTest {
         assertThat(content).contains("\"standing\":\"REFERENCE\"").contains("\"minor\":\"10000\"").contains(run.id().value().toString());
         assertThat(CanonicalJson.sha256(content)).isEqualTo(drafted.contentSha256());
         assertThat(codes()).contains("regulatory.SubmissionDrafted");
+        assertThat(lines).extracting(line -> line.minor().longValueExact()).containsExactly(100_00L, 50_00L, 100_00L, 50_00L);
+        assertThat(run.status()).isEqualTo(RunStatus.FINAL);
     }
 
     @Test
@@ -134,8 +155,8 @@ class RegulatorySubmissionsTest {
         assertThat(empty.row(JANUARY).status()).isEqualTo(PeriodStatus.CLOSED);
         assertThatThrownBy(() -> empty.drafted(version, JANUARY)).isInstanceOf(RegulatorySubmissions.SourceNotFinal.class).hasMessageContaining("revision 2");
 
-        assertThat(world.store.standing(UOW, 100)).isEmpty();
-        assertThat(empty.store.standing(UOW, 100)).isEmpty();
+        assertThat(world.store.standing(UOW, Optional.empty(), 100)).isEmpty();
+        assertThat(empty.store.standing(UOW, Optional.empty(), 100)).isEmpty();
     }
 
     @Test
@@ -150,7 +171,7 @@ class RegulatorySubmissionsTest {
         RegulatoryObligationId notAnAmount = world.active(4, form("body.equation[currency=EUR].currency"));
         assertThatThrownBy(() -> world.drafted(notAnAmount, JANUARY)).isInstanceOf(RegulatoryForm.FigureUnresolved.class)
                 .satisfies(refused -> assertThat(((RegulatoryForm.FigureUnresolved) refused).why()).isEqualTo(FigurePath.Why.NOT_AN_AMOUNT));
-        assertThat(world.store.standing(UOW, 100)).isEmpty();
+        assertThat(world.store.standing(UOW, Optional.empty(), 100)).isEmpty();
     }
 
     private static RegulatoryObligationConfiguration form(String figure) {
@@ -191,11 +212,11 @@ class RegulatorySubmissionsTest {
         RegulatorySubmissions noAdapter = new RegulatorySubmissions(world.periods, world.store, world.obligationStore, world.runs, new RegulatoryAdapters(List.of()), (uow, record) -> { }, (uow, envelope, payload, mediaType) -> { }, world.ids, world.clock,
                 Duration.ofDays(1));
         assertThatThrownBy(() -> noAdapter.draft(UOW, new Draft(inForce, world.row(FEBRUARY).id(), Optional.empty(), REASON), PREPARER, world.correlation())).isInstanceOf(RegulatorySubmissions.SubmissionStale.class).hasMessageContaining("no adapter");
-        assertThat(world.store.standing(UOW, 100)).extracting(RegulatorySubmissionStore.Row::month).doesNotContain(FEBRUARY);
+        assertThat(world.store.standing(UOW, Optional.empty(), 100)).extracting(RegulatorySubmissionStore.Row::month).doesNotContain(FEBRUARY);
     }
 
     @Test
-    @DisplayName("ten threads draft one form and month: one row, nine refused - the one-live arbiter really raced")
+    @DisplayName("ten threads draft one form and month: one row, nine refused - the fixture's arbiter raced; V010's unique racing is RegulatorySubmissionDatabaseTest#tenDraftsOneLiveRow")
     void tenDraftsOneRow() throws Exception {
         ExecutorService pool = Executors.newFixedThreadPool(10);
         CountDownLatch start = new CountDownLatch(1);
@@ -218,7 +239,7 @@ class RegulatorySubmissionsTest {
         }
         pool.shutdownNow();
         assertThat(born).isEqualTo(1);
-        assertThat(world.store.standing(UOW, 100)).hasSize(1);
+        assertThat(world.store.standing(UOW, Optional.empty(), 100)).hasSize(1);
     }
 
     @Test
@@ -247,9 +268,22 @@ class RegulatorySubmissionsTest {
         Acted again = machine.draft(UOW, new Draft(obligation, january, Optional.of(original.id()), REASON), PREPARER, world.correlation());
         assertThat(row(again).corrects()).contains(original.id());
 
+        // Refused, it frees the original too.
+        machine.refuse(UOW, world.validated(again).id(), REASON, APPROVER, world.correlation());
+        Acted third = machine.draft(UOW, new Draft(obligation, january, Optional.of(original.id()), REASON), PREPARER, world.correlation());
+        assertThat(row(third).corrects()).contains(original.id());
+
         // A refused or withdrawn return never reached for the provider: nothing corrects it.
-        machine.withdraw(UOW, again.id(), REASON, PREPARER, world.correlation());
         assertThatThrownBy(() -> machine.draft(UOW, new Draft(obligation, january, Optional.of(again.id()), REASON), PREPARER, world.correlation()))
+                .as("refused").isInstanceOf(RegulatorySubmissions.SubmissionInvalid.class);
+        machine.withdraw(UOW, third.id(), REASON, PREPARER, world.correlation());
+        assertThatThrownBy(() -> machine.draft(UOW, new Draft(obligation, january, Optional.of(third.id()), REASON), PREPARER, world.correlation()))
+                .as("withdrawn").isInstanceOf(RegulatorySubmissions.SubmissionInvalid.class);
+
+        // Another form's.
+        RegulatoryObligations.Acted otherForm = world.obligations.propose(UOW, new RegulatoryObligations.Proposal(ScriptedRegulatoryProvider.JURISDICTION, "REF-TEST-OTHER", 1, ScriptedRegulatoryProvider.NAME, RegulatoryWorld.configuration()), REASON, PREPARER, world.correlation());
+        world.obligations.activate(UOW, otherForm.id(), otherForm.configurationSha256(), REASON, APPROVER, world.correlation());
+        assertThatThrownBy(() -> machine.draft(UOW, new Draft(otherForm.id(), january, Optional.of(original.id()), REASON), PREPARER, world.correlation()))
                 .isInstanceOf(RegulatorySubmissions.SubmissionInvalid.class);
 
         // Unknown, and another month's.
@@ -259,6 +293,15 @@ class RegulatorySubmissionsTest {
         world.issued(FEBRUARY, RegulatoryWorld.body(1, 1, 1, 1));
         assertThatThrownBy(() -> machine.draft(UOW, new Draft(obligation, world.row(FEBRUARY).id(), Optional.of(original.id()), REASON), PREPARER, world.correlation()))
                 .isInstanceOf(RegulatorySubmissions.SubmissionInvalid.class);
+    }
+
+    @Test
+    @DisplayName("the fixture holds a line to V010's regulatory_submission_line_bounded, so a path past 256 characters fails here as it does there")
+    void aLineIsBoundedByTheStoreToo() {
+        Acted draft = world.drafted(obligation, JANUARY);
+        RegulatoryFormLine held = world.store.lines(UOW, draft.id()).get(0);
+        RegulatoryFormLine tooLong = new RegulatoryFormLine(1, held.code(), held.label(), held.currency(), held.minor(), held.scale(), held.run(), held.runSha256(), held.source(), "body." + "x".repeat(252));
+        assertThatThrownBy(() -> world.store.insertLines(UOW, draft.id(), List.of(tooLong))).isInstanceOf(IllegalStateException.class).hasMessageContaining("regulatory_submission_line_bounded");
     }
 
     private void rejected(Acted sent) {
@@ -277,7 +320,7 @@ class RegulatorySubmissionsTest {
     // ------------------------------------------------------------------ a status that round-trips
 
     @Test
-    @DisplayName("a month closed, reopened and re-closed reads CLOSED and is not the month a return read: validate, approve and submit each refuse, though every status looks right")
+    @DisplayName("a month closed, reopened and re-closed reads CLOSED and is not the month a return read: validate, approve and submit each refuse, though the month and the return read as they did")
     void aRoundTrippedMonthIsNotTheMonthItWas() {
         Acted draft = world.drafted(obligation, JANUARY);
         roundTrip();
@@ -289,12 +332,14 @@ class RegulatorySubmissionsTest {
 
         Acted validated = world.validated(world.drafted(obligation, JANUARY));
         roundTrip();
+        assertThat(world.row(JANUARY).status()).isEqualTo(PeriodStatus.CLOSED);
         assertThatThrownBy(() -> world.approved(validated)).isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
         assertThat(row(validated).status()).isEqualTo(SubmissionStatus.VALIDATED);
         machine.refuse(UOW, validated.id(), REASON, APPROVER, world.correlation());
 
         Acted approved = world.approved(world.validated(world.drafted(obligation, JANUARY)));
         roundTrip();
+        assertThat(world.row(JANUARY).status()).isEqualTo(PeriodStatus.CLOSED);
         assertThatThrownBy(() -> world.submitted(approved)).isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
         assertThat(row(approved).status()).isEqualTo(SubmissionStatus.APPROVED);
         assertThat(row(approved).monthMoved()).isTrue();
@@ -303,7 +348,6 @@ class RegulatorySubmissionsTest {
                 .isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
     }
 
-    /** Reopened, a run re-issued under the new revision, closed again. */
     @Test
     @DisplayName("each judgement holds alone: a month that moved while its run reads FINAL; a run no longer FINAL in a month that has not moved")
     void eachJudgementHoldsAlone() {
@@ -326,6 +370,7 @@ class RegulatorySubmissionsTest {
         assertThatThrownBy(() -> world.validated(february)).isInstanceOf(RegulatorySubmissions.SubmissionStale.class).hasMessageContaining("no longer stands FINAL");
     }
 
+    /** Reopened, closed again, a run issued again under the new revision. */
     private void roundTrip() {
         world.reopened(JANUARY);
         world.reclosed(JANUARY);
@@ -338,6 +383,20 @@ class RegulatorySubmissionsTest {
         Acted validated = world.validated(world.drafted(obligation, JANUARY));
         world.reopened(JANUARY);
         assertThatThrownBy(() -> world.approved(validated)).isInstanceOf(RegulatorySubmissions.SubmissionStale.class).hasMessageContaining("OPEN");
+        machine.refuse(UOW, validated.id(), REASON, APPROVER, world.correlation());
+        world.reclosed(JANUARY);
+        world.issued(JANUARY, RegulatoryWorld.body(1, 1, 1, 1));
+
+        Acted draft = world.drafted(obligation, JANUARY);
+        world.reopened(JANUARY);
+        assertThatThrownBy(() -> world.validated(draft)).isInstanceOf(RegulatorySubmissions.SubmissionStale.class).hasMessageContaining("OPEN");
+        machine.withdraw(UOW, draft.id(), REASON, PREPARER, world.correlation());
+        world.reclosed(JANUARY);
+        world.issued(JANUARY, RegulatoryWorld.body(1, 1, 1, 1));
+
+        Acted approved = world.approved(world.validated(world.drafted(obligation, JANUARY)));
+        world.reopened(JANUARY);
+        assertThatThrownBy(() -> world.submitted(approved)).isInstanceOf(RegulatorySubmissions.SubmissionStale.class).hasMessageContaining("OPEN");
     }
 
     @Test
@@ -356,23 +415,267 @@ class RegulatorySubmissionsTest {
         assertThat(world.store.content(UOW, sent.id())).contains(before);
         assertThat(world.store.attention(UOW, RegulatorySubmissions.MAX_RESENDS).overtaken()).isEqualTo(1);
 
-        // Answered, it stays frozen and flagged; a correction standing ends the count.
+        // Answered, it stays frozen and flagged.
         asThePlatform(() -> machine.record(UOW, machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow(), new Answered(CallKind.SUBMIT, Answer.acknowledged("PROVIDER-1", "{}".getBytes(StandardCharsets.UTF_8))), Duration.ofMinutes(15), world.correlation()));
-        assertThat(world.store.standing(UOW, 100)).extracting(RegulatorySubmissionStore.Row::id).contains(sent.id());
+        assertThat(world.store.standing(UOW, Optional.empty(), 100)).extracting(RegulatorySubmissionStore.Row::id).contains(sent.id());
         assertThat(world.store.attention(UOW, RegulatorySubmissions.MAX_RESENDS).overtaken()).isEqualTo(1);
         world.reclosed(JANUARY);
         world.issued(JANUARY, RegulatoryWorld.body(90_00, 90_00, 50_00, 50_00));
-        machine.draft(UOW, new Draft(obligation, world.row(JANUARY).id(), Optional.of(sent.id()), REASON), PREPARER, world.correlation());
+
+        // A draft of a correction clears nothing: the regulator still holds the figure.
+        Acted correction = machine.draft(UOW, new Draft(obligation, world.row(JANUARY).id(), Optional.of(sent.id()), REASON), PREPARER, world.correlation());
+        assertThat(world.store.attention(UOW, RegulatorySubmissions.MAX_RESENDS).overtaken()).isEqualTo(1);
+        assertThat(row(sent).overtaken()).isTrue();
+
+        // Nor does one rejected.
+        Acted rejectedCorrection = world.submitted(world.approved(world.validated(correction)));
+        rejected(rejectedCorrection);
+        assertThat(world.store.attention(UOW, RegulatorySubmissions.MAX_RESENDS).overtaken()).isEqualTo(1);
+        assertThat(world.store.standing(UOW, Optional.empty(), 100)).extracting(RegulatorySubmissionStore.Row::id).contains(sent.id());
+
+        // Only an acknowledged return of the form at the present revision does, down a chain of corrections.
+        Acted second = world.submitted(world.approved(world.validated(machine.draft(UOW, new Draft(obligation, world.row(JANUARY).id(), Optional.of(rejectedCorrection.id()), REASON), PREPARER, world.correlation()))));
+        answered(machine.claim(UOW, second.id(), Duration.ofMinutes(2)).orElseThrow(), Answer.acknowledged("PROVIDER-3", bytes("{}")), CallKind.SUBMIT);
         assertThat(world.store.attention(UOW, RegulatorySubmissions.MAX_RESENDS).overtaken()).isZero();
+        assertThat(row(sent).overtaken()).isFalse();
+        assertThat(row(sent).monthMoved()).as("the month still moved: only the alarm cleared").isTrue();
+        assertThat(world.store.standing(UOW, Optional.empty(), 100)).extracting(RegulatorySubmissionStore.Row::id).doesNotContain(sent.id());
+    }
+
+    // ------------------------------------------------------------------ a month that moved before the send
+
+    @Test
+    @DisplayName("SUBMITTED with nothing sent, the month reopened and re-closed: the first attempt only asks, the provider is handed nothing, and a definite not received permits no send")
+    void aMonthThatMovedBeforeTheSendIsNeverSent() {
+        Acted sent = world.sent(obligation, JANUARY);
+        world.reopened(JANUARY);
+        world.reclosed(JANUARY);
+
+        Claimed first = machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow();
+        assertThat(first.row().attempts()).isEqualTo(1);
+        assertThat(first.row().monthMoved()).as("read in the claim's own transaction").isTrue();
+        Answered asked = machine.ask(first);
+        assertThat(asked.call()).isEqualTo(CallKind.INQUIRE);
+        assertThat(world.provider.submits()).isZero();
+        assertThat(world.provider.inquiries()).isEqualTo(1);
+
+        asThePlatform(() -> assertThat(machine.record(UOW, first, asked, Duration.ofMinutes(15), world.correlation()).disposition()).isEqualTo(Disposition.NOT_RECEIVED));
+        assertThat(permit(first)).isEqualTo(ResendPermit.MONTH_MOVED);
+        assertThat(row(sent).resends()).isZero();
+        assertThat(row(sent).lastAnswer()).contains("NOT_RECEIVED");
+        assertThat(codes()).doesNotContain("regulatory.SubmissionResent");
+    }
+
+    @Test
+    @DisplayName("a definite not received, then the month reopens before the permit: no resend, and named for why; the fixture's rank, standing for the statement, refuses it too")
+    void aResendStopsOnceTheMonthMoves() {
+        Acted sent = world.sent(obligation, JANUARY);
+        machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow(); // The worker died here, before its call.
+        clock.advance(Duration.ofMinutes(3));
+        Claimed second = machine.claimNextDue(UOW, Duration.ofMinutes(2)).orElseThrow();
+        answered(second, Answer.notReceived(bytes("{}")), CallKind.INQUIRE);
+        world.reopened(JANUARY);
+
+        assertThat(permit(second)).isEqualTo(ResendPermit.MONTH_MOVED);
+        assertThat(world.store.permitResend(UOW, sent.id(), second.row().attempts(), RegulatorySubmissions.MAX_RESENDS)).isFalse();
+        assertThat(row(sent).resends()).isZero();
+    }
+
+    @Test
+    @DisplayName("once the month moved a definite not received opens the person's door with every resend left; the return ends UNDELIVERED and a correction goes at the new revision")
+    void aMovedMonthOpensThePersonsDoor() {
+        Acted sent = world.sent(obligation, JANUARY);
+        world.reopened(JANUARY);
+        world.reclosed(JANUARY);
+        world.issued(JANUARY, RegulatoryWorld.body(90_00, 90_00, 50_00, 50_00));
+        assertThat(machine.view(UOW, sent.id()).nonDeliveryOpen()).as("nothing asked yet").isFalse();
+
+        Claimed first = machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow();
+        answered(first, Answer.notReceived(bytes("{}")), CallKind.INQUIRE);
+        assertThat(row(sent).resends()).isZero();
+        assertThat(machine.view(UOW, sent.id()).nonDeliveryOpen()).isTrue();
+
+        assertThat(machine.declareUndelivered(UOW, sent.id(), ASKED, REASON, SENDER, world.correlation()).status()).isEqualTo(SubmissionStatus.UNDELIVERED);
+        Acted correction = world.validated(machine.draft(UOW, new Draft(obligation, world.row(JANUARY).id(), Optional.of(sent.id()), REASON), PREPARER, world.correlation()));
+        assertThat(row(correction).periodRevision()).isEqualTo(world.row(JANUARY).revision());
+        assertThat(row(correction).corrects()).contains(sent.id());
+        assertThat(row(correction).status()).isEqualTo(SubmissionStatus.VALIDATED);
+    }
+
+    @Test
+    @DisplayName("a stale not received concludes nothing: only what the provider answered at this act does")
+    void aStaleNotReceivedConcludesNothing() {
+        Acted sent = world.sent(obligation, JANUARY);
+        Claimed first = machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow();
+        answered(first, Answer.notReceived(bytes("{}")), CallKind.INQUIRE);
+        world.store.horizonPassedForTest(sent.id());
+        assertThat(machine.view(UOW, sent.id()).nonDeliveryOpen()).isTrue();
+
+        assertThatThrownBy(() -> machine.declareUndelivered(UOW, sent.id(), Optional.empty(), REASON, SENDER, world.correlation())).as("not asked").isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
+        assertThatThrownBy(() -> machine.declareUndelivered(UOW, sent.id(), Optional.of(new Recorded(Disposition.AWAITING, false)), REASON, SENDER, world.correlation())).as("asked, and it said otherwise").isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
+        assertThat(row(sent).status()).isEqualTo(SubmissionStatus.SUBMITTED);
+        assertThat(machine.declareUndelivered(UOW, sent.id(), ASKED, REASON, SENDER, world.correlation()).status()).isEqualTo(SubmissionStatus.UNDELIVERED);
+    }
+
+    @Test
+    @DisplayName("the door's answer is kept whatever it says: a not received stands; an unknown closes the door; over a resend in flight it opens nothing and overwrites nothing; an acknowledgement takes its edge; a person cannot record it")
+    void theDoorsAnswerIsKept() {
+        Acted sent = world.sent(obligation, JANUARY);
+        Claimed first = machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow();
+        answered(first, Answer.notReceived(bytes("first")), CallKind.INQUIRE);
+        world.store.horizonPassedForTest(sent.id());
+        Answered notReceived = new Answered(CallKind.INQUIRE, Answer.notReceived(bytes("at the door")));
+        Answered unknown = new Answered(CallKind.INQUIRE, Answer.unknown(Optional.empty(), bytes("unsure")));
+
+        assertThat(atTheDoor(sent, notReceived)).isEqualTo(Disposition.NOT_RECEIVED);
+        assertThat(row(sent).lastAnswer()).contains("NOT_RECEIVED");
+        assertThat(new String(world.store.answers(UOW, sent.id(), 100).get(1).raw(), StandardCharsets.UTF_8)).isEqualTo("at the door");
+
+        assertThat(atTheDoor(sent, unknown)).isEqualTo(Disposition.AWAITING);
+        assertThat(row(sent).lastAnswer()).contains("UNKNOWN");
+        assertThat(machine.view(UOW, sent.id()).nonDeliveryOpen()).isFalse();
+
+        answered(first, Answer.notReceived(bytes("again")), CallKind.INQUIRE);
+        assertThat(permit(first)).isEqualTo(ResendPermit.PERMITTED);
+        assertThat(atTheDoor(sent, notReceived)).as("a send is in flight").isEqualTo(Disposition.AWAITING);
+        assertThat(atTheDoor(sent, unknown)).isEqualTo(Disposition.AWAITING);
+        assertThat(row(sent).lastAnswer()).as("never overwritten").contains("RESENDING");
+
+        assertThatThrownBy(() -> {
+            try (SecurityContext.Scope person = SecurityContext.enter(PREPARER)) {
+                machine.recordAtTheDoor(UOW, sent.id(), notReceived, Duration.ofMinutes(15), world.correlation());
+            }
+        }).isInstanceOf(IllegalStateException.class).hasMessageContaining("platform");
+
+        assertThat(atTheDoor(sent, new Answered(CallKind.INQUIRE, Answer.acknowledged("PROVIDER-1", bytes("held"))))).isEqualTo(Disposition.ACKNOWLEDGED);
+        assertThat(row(sent).status()).isEqualTo(SubmissionStatus.ACKNOWLEDGED);
+        assertThat(world.events).extracting(EventEnvelope::eventType).contains(RegulatorySubmissions.ACKNOWLEDGED_EVENT);
+        assertThat(world.store.answers(UOW, sent.id(), 100)).extracting(answer -> new String(answer.raw(), StandardCharsets.UTF_8)).as("every one, in order, verbatim").containsExactly("first", "at the door", "unsure", "again", "at the door", "unsure", "held");
+    }
+
+    private Disposition atTheDoor(Acted sent, Answered answered) {
+        try (SecurityContext.Scope platform = SecurityContext.enterSystem()) {
+            return machine.recordAtTheDoor(UOW, sent.id(), answered, Duration.ofMinutes(15), world.correlation()).disposition();
+        }
+    }
+
+    @Test
+    @DisplayName("a resend is an act: audited as the platform, with no figure and no provider's text, and a writer refusing fails the permit, so it is one transaction; and only the platform permits one")
+    void aResendIsAudited() {
+        Acted sent = world.sent(obligation, JANUARY);
+        Claimed first = machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow();
+        answered(first, Answer.notReceived(bytes("PROVIDER-TEXT")), CallKind.INQUIRE);
+        assertThatThrownBy(() -> {
+            try (SecurityContext.Scope person = SecurityContext.enter(PREPARER)) {
+                machine.permitResend(UOW, first, world.correlation());
+            }
+        }).isInstanceOf(IllegalStateException.class).hasMessageContaining("platform");
+
+        assertThat(permit(first)).isEqualTo(ResendPermit.PERMITTED);
+        AuditRecord resent = world.audit.get(world.audit.size() - 1);
+        assertThat(resent.operation().code()).isEqualTo("regulatory.SubmissionResent");
+        assertThat(resent.actor().type()).isEqualTo(ActorType.SYSTEM);
+        assertThat(resent.outcome()).isEqualTo(AuditOutcome.SUCCEEDED);
+        assertThat(resent.targetId()).isEqualTo(sent.id().value().toString());
+        assertThat(resent.changeSummary().orElseThrow()).contains("resend=1").doesNotContain("PROVIDER-TEXT").doesNotContain("10000");
+
+        answered(first, Answer.notReceived(bytes("again")), CallKind.INQUIRE);
+        world.auditRefuses = true;
+        assertThatThrownBy(() -> permit(first)).isInstanceOf(IllegalStateException.class).hasMessageContaining("audit");
+        world.auditRefuses = false;
+    }
+
+    @Test
+    @DisplayName("an answer that decides nothing waits the interval up to the horizon; past it the time since the horizon, so the gaps double; never more than a day - the fixture's arithmetic: the statement's is pinned in the statements suite and run by the database suite")
+    void theInquiryBacksOffPastTheHorizon() {
+        assertThat(RegulatorySubmissions.INQUIRY_CEILING).isEqualTo(Duration.ofDays(1));
+        Acted sent = world.sent(obligation, JANUARY);
+        Answer unknown = Answer.unknown(Optional.empty(), bytes("{}"));
+
+        answered(machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow(), unknown, CallKind.SUBMIT);
+        assertThat(row(sent).nextInquiryAt()).contains(clock.instant().plus(Duration.ofMinutes(15)));
+
+        clock.advance(Duration.ofDays(1).plusHours(2));
+        answered(machine.claimNextDue(UOW, Duration.ofMinutes(2)).orElseThrow(), unknown, CallKind.INQUIRE);
+        assertThat(row(sent).nextInquiryAt()).as("two hours past the horizon: two hours").contains(clock.instant().plus(Duration.ofHours(2)));
+
+        clock.advance(Duration.ofHours(2));
+        answered(machine.claimNextDue(UOW, Duration.ofMinutes(2)).orElseThrow(), unknown, CallKind.INQUIRE);
+        assertThat(row(sent).nextInquiryAt()).as("four hours past it: the gap doubled").contains(clock.instant().plus(Duration.ofHours(4)));
+
+        clock.advance(Duration.ofDays(3));
+        answered(machine.claimNextDue(UOW, Duration.ofMinutes(2)).orElseThrow(), unknown, CallKind.INQUIRE);
+        assertThat(row(sent).nextInquiryAt()).as("the ceiling").contains(clock.instant().plus(RegulatorySubmissions.INQUIRY_CEILING));
+    }
+
+    @Test
+    @DisplayName("a read serves the newest answers and says how many are kept; every one stays kept, verbatim - the statement's limit is pinned in the statements suite")
+    void aReadLoadsTheNewestAnswersOnly() {
+        assertThat(RegulatorySubmissions.ANSWERS_SERVED).isEqualTo(20);
+        Acted sent = world.sent(obligation, JANUARY);
+        Claimed first = machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow();
+        int asked = RegulatorySubmissions.ANSWERS_SERVED + 5;
+        for (int i = 0; i < asked; i++) {
+            answered(first, Answer.unknown(Optional.empty(), bytes("answer-" + i)), CallKind.INQUIRE);
+        }
+
+        View view = machine.view(UOW, sent.id());
+        assertThat(view.answersKept()).isEqualTo(asked);
+        assertThat(view.answers()).hasSize(RegulatorySubmissions.ANSWERS_SERVED);
+        assertThat(new String(view.answers().get(0).raw(), StandardCharsets.UTF_8)).isEqualTo("answer-5");
+        assertThat(new String(view.answers().get(view.answers().size() - 1).raw(), StandardCharsets.UTF_8)).isEqualTo("answer-" + (asked - 1));
+        assertThat(world.store.keptAnswers()).hasSize(asked);
+        for (int i = 0; i < asked; i++) {
+            assertThat(new String(world.store.keptAnswers().get(i).reading().retained(), StandardCharsets.UTF_8)).isEqualTo("answer-" + i);
+        }
+    }
+
+    @Test
+    @DisplayName("what stands comes a page at a time, oldest first, and says truthfully when more exist; a page out of bounds and a cursor no return answers are refused")
+    void whatStandsIsPaged() {
+        java.time.YearMonth march = java.time.YearMonth.of(2096, 3);
+        world.closed(FEBRUARY);
+        world.closed(march);
+        world.issued(FEBRUARY, RegulatoryWorld.body(1, 1, 1, 1));
+        world.issued(march, RegulatoryWorld.body(1, 1, 1, 1));
+        RegulatorySubmissionId oldest = world.drafted(obligation, JANUARY).id();
+        clock.advance(Duration.ofMinutes(1));
+        RegulatorySubmissionId middle = world.drafted(obligation, FEBRUARY).id();
+        clock.advance(Duration.ofMinutes(1));
+        List<RegulatorySubmissionId> drafted = List.of(oldest, middle, world.drafted(obligation, march).id());
+
+        RegulatorySubmissions.Standing first = machine.standing(UOW, Optional.empty(), 2);
+        assertThat(first.rows()).hasSize(2);
+        assertThat(first.nextAfter()).contains(first.rows().get(1).id());
+        RegulatorySubmissions.Standing second = machine.standing(UOW, first.nextAfter(), 2);
+        assertThat(second.rows()).hasSize(1);
+        assertThat(second.nextAfter()).as("no more exist").isEmpty();
+        assertThat(java.util.stream.Stream.concat(first.rows().stream(), second.rows().stream()).map(RegulatorySubmissionStore.Row::id)).containsExactlyElementsOf(drafted);
+
+        assertThat(machine.standing(UOW, Optional.empty(), 3).nextAfter()).as("exactly a page: no more exist").isEmpty();
+        assertThatThrownBy(() -> machine.standing(UOW, Optional.empty(), 0)).isInstanceOf(RegulatorySubmissions.SubmissionInvalid.class);
+        assertThatThrownBy(() -> machine.standing(UOW, Optional.empty(), RegulatorySubmissions.LIST_LIMIT + 1)).isInstanceOf(RegulatorySubmissions.SubmissionInvalid.class);
+        assertThatThrownBy(() -> machine.standing(UOW, Optional.of(RegulatorySubmissionId.next(world.ids)), 2)).isInstanceOf(RegulatorySubmissions.SubmissionInvalid.class);
     }
 
     @Test
     @DisplayName("a run's bytes differing at an act refuse it, apart from staleness: an integrity failure")
     void aRunsBytesAreReprovedAtEveryAct() {
+        java.time.YearMonth march = java.time.YearMonth.of(2096, 3);
+        world.closed(FEBRUARY);
+        world.closed(march);
+        world.issued(FEBRUARY, RegulatoryWorld.body(1, 1, 1, 1));
+        world.issued(march, RegulatoryWorld.body(1, 1, 1, 1));
         Acted draft = world.drafted(obligation, JANUARY);
-        world.runs.corruptContentForTest(world.runs.all().get(0).id(), "{\"body\":{}}");
+        Acted validated = world.validated(world.drafted(obligation, FEBRUARY));
+        Acted approved = world.approved(world.validated(world.drafted(obligation, march)));
+        for (ReportRunStore.RunRow run : world.runs.all()) {
+            world.runs.corruptContentForTest(run.id(), "{\"body\":{}}");
+        }
 
         assertThatThrownBy(() -> world.validated(draft)).isInstanceOf(RegulatorySubmissions.RunBytesDiffer.class);
+        assertThatThrownBy(() -> world.approved(validated)).isInstanceOf(RegulatorySubmissions.RunBytesDiffer.class);
+        assertThatThrownBy(() -> world.submitted(approved)).isInstanceOf(RegulatorySubmissions.RunBytesDiffer.class);
         View view = machine.view(UOW, draft.id());
         assertThat(view.blockedBy()).contains(BlockedBy.RUN_BYTES_DIFFER);
         assertThat(view.lines()).allSatisfy(line -> {
@@ -384,18 +687,29 @@ class RegulatorySubmissionsTest {
     @Test
     @DisplayName("an obligation version retired under a return refuses each act going forward; a door out asks nothing of it")
     void aRetiredVersionRefusesActsGoingForward() {
+        java.time.YearMonth march = java.time.YearMonth.of(2096, 3);
+        world.closed(FEBRUARY);
+        world.closed(march);
+        world.issued(FEBRUARY, RegulatoryWorld.body(1, 1, 1, 1));
+        world.issued(march, RegulatoryWorld.body(1, 1, 1, 1));
         Acted draft = world.drafted(obligation, JANUARY);
+        Acted validated = world.validated(world.drafted(obligation, FEBRUARY));
+        Acted approved = world.approved(world.validated(world.drafted(obligation, march)));
         world.active(2, RegulatoryWorld.configuration());
 
         assertThatThrownBy(() -> world.validated(draft)).isInstanceOf(RegulatorySubmissions.SubmissionStale.class).hasMessageContaining("RETIRED");
+        assertThatThrownBy(() -> world.approved(validated)).isInstanceOf(RegulatorySubmissions.SubmissionStale.class).hasMessageContaining("RETIRED");
+        assertThatThrownBy(() -> world.submitted(approved)).isInstanceOf(RegulatorySubmissions.SubmissionStale.class).hasMessageContaining("RETIRED");
         assertThat(machine.view(UOW, draft.id()).blockedBy()).contains(BlockedBy.OBLIGATION_RETIRED);
         assertThat(machine.withdraw(UOW, draft.id(), REASON, PREPARER, world.correlation()).status()).isEqualTo(SubmissionStatus.WITHDRAWN);
+        assertThat(machine.refuse(UOW, validated.id(), REASON, APPROVER, world.correlation()).status()).isEqualTo(SubmissionStatus.REFUSED);
+        assertThat(machine.refuse(UOW, approved.id(), REASON, APPROVER, world.correlation()).status()).isEqualTo(SubmissionStatus.REFUSED);
     }
 
     // ------------------------------------------------------------------ four eyes, and what a person names
 
     @Test
-    @DisplayName("the proposer cannot approve: a holder of both roles is refused, recorded FAILED by the caller, and the row and the history's rank hold the same")
+    @DisplayName("the proposer cannot approve: the same person is refused, recorded FAILED by the caller; the fixture's ranks, standing for V010's CHECKs on the row and the history, hold the same")
     void theProposerCannotApprove() {
         Acted validated = world.validated(world.drafted(obligation, JANUARY));
 
@@ -414,6 +728,8 @@ class RegulatorySubmissionsTest {
         // The fixture's ranks, standing for V010's CHECKs, refuse a writer past the domain.
         assertThatThrownBy(() -> world.store.markApproved(UOW, validated.id(), PREPARER, REASON, validated.contentSha256(), validated.periodRevision()))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("regulatory_submission_four_eyes");
+        assertThatThrownBy(() -> world.store.appendEvent(UOW, new RegulatorySubmissionStore.EventRow(java.util.UUID.randomUUID(), validated.id(), RegulatorySubmissionStore.Act.APPROVED, Optional.of(SubmissionStatus.VALIDATED), SubmissionStatus.APPROVED, PREPARER,
+                Optional.of(PREPARER.id()), Optional.of(REASON), world.correlation()))).isInstanceOf(IllegalStateException.class).hasMessageContaining("regulatory_submission_event_four_eyes");
     }
 
     @Test
@@ -438,6 +754,8 @@ class RegulatorySubmissionsTest {
         assertThatThrownBy(() -> machine.submit(UOW, approved.id(), new Attested("0".repeat(64), approved.periodRevision()), REASON, SENDER, world.correlation()))
                 .isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
         assertThat(row(approved).status()).isEqualTo(SubmissionStatus.APPROVED);
+        assertThatThrownBy(() -> machine.submit(UOW, approved.id(), new Attested(approved.contentSha256(), 9), REASON, SENDER, world.correlation())).isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
+        assertThat(row(approved).status()).isEqualTo(SubmissionStatus.APPROVED);
     }
 
     @Test
@@ -452,6 +770,20 @@ class RegulatorySubmissionsTest {
         assertThatThrownBy(() -> machine.draft(UOW, new Draft(obligation, world.row(JANUARY).id(), Optional.empty(), REASON), service, world.correlation())).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> machine.draft(UOW, new Draft(obligation, world.row(JANUARY).id(), Optional.empty(), " "), PREPARER, world.correlation())).isInstanceOf(AccountingReasons.ReasonRequired.class);
         assertThatThrownBy(() -> machine.draft(UOW, new Draft(obligation, world.row(JANUARY).id(), Optional.empty(), "card 4111111111111111"), PREPARER, world.correlation())).isInstanceOf(AccountingReasons.ReasonRequired.class);
+
+        // Each act, not only the draft.
+        Acted validated = world.validated(world.drafted(obligation, JANUARY));
+        assertThatThrownBy(() -> machine.validate(UOW, validated.id(), service, world.correlation())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> machine.approve(UOW, validated.id(), read(validated), REASON, service, world.correlation())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> machine.refuse(UOW, validated.id(), REASON, service, world.correlation())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> machine.withdraw(UOW, validated.id(), REASON, service, world.correlation())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> machine.submit(UOW, validated.id(), read(validated), REASON, service, world.correlation())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> machine.declareUndelivered(UOW, validated.id(), ASKED, REASON, service, world.correlation())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> machine.approve(UOW, validated.id(), read(validated), " ", APPROVER, world.correlation())).isInstanceOf(AccountingReasons.ReasonRequired.class);
+        assertThatThrownBy(() -> machine.refuse(UOW, validated.id(), " ", APPROVER, world.correlation())).isInstanceOf(AccountingReasons.ReasonRequired.class);
+        assertThatThrownBy(() -> machine.withdraw(UOW, validated.id(), " ", PREPARER, world.correlation())).isInstanceOf(AccountingReasons.ReasonRequired.class);
+        assertThatThrownBy(() -> machine.submit(UOW, validated.id(), read(validated), " ", SENDER, world.correlation())).isInstanceOf(AccountingReasons.ReasonRequired.class);
+        assertThatThrownBy(() -> machine.declareUndelivered(UOW, validated.id(), ASKED, " ", SENDER, world.correlation())).isInstanceOf(AccountingReasons.ReasonRequired.class);
     }
 
     // ------------------------------------------------------------------ doors out
@@ -475,9 +807,15 @@ class RegulatorySubmissionsTest {
         });
 
         int records = world.audit.size();
+        int history = world.store.history().size();
+        int events = world.events.size();
         Acted repeat = machine.validate(UOW, draft.id(), PREPARER, world.correlation());
         assertThat(repeat.replayed()).isTrue();
+        assertThat(repeat.status()).isEqualTo(SubmissionStatus.DRAFT);
+        assertThat(repeat.validationPassed()).contains(false);
         assertThat(world.audit).hasSize(records);
+        assertThat(world.store.history()).hasSize(history);
+        assertThat(world.events).hasSize(events);
         assertThatThrownBy(() -> machine.approve(UOW, draft.id(), read(draft), REASON, APPROVER, world.correlation())).isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
 
         machine.withdraw(UOW, draft.id(), REASON, PREPARER, world.correlation());
@@ -495,7 +833,10 @@ class RegulatorySubmissionsTest {
         world.issued(JANUARY, RegulatoryWorld.body(1, 1, 1, 1));
 
         Acted validated = world.validated(world.drafted(obligation, JANUARY));
+        world.reopened(JANUARY);
         assertThat(machine.refuse(UOW, validated.id(), REASON, APPROVER, world.correlation()).status()).isEqualTo(SubmissionStatus.REFUSED);
+        world.reclosed(JANUARY);
+        world.issued(JANUARY, RegulatoryWorld.body(1, 1, 1, 1));
 
         Acted approved = world.approved(world.validated(world.drafted(obligation, JANUARY)));
         world.reopened(JANUARY);
@@ -512,11 +853,30 @@ class RegulatorySubmissionsTest {
     }
 
     @Test
-    @DisplayName("what was sent cannot be withdrawn or refused: the provider holds it, or may")
-    void whatWasSentHasNoPersonsDoorButTheOne() {
-        Acted sent = world.sent(obligation, JANUARY);
-        assertThatThrownBy(() -> machine.withdraw(UOW, sent.id(), REASON, PREPARER, world.correlation())).isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
-        assertThatThrownBy(() -> machine.refuse(UOW, sent.id(), REASON, APPROVER, world.correlation())).isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
+    @DisplayName("what was sent cannot be withdrawn or refused, whether it is SUBMITTED, ACKNOWLEDGED, REJECTED or UNDELIVERED: the provider holds it, or may")
+    void whatWasSentCannotBeTakenBack() {
+        java.time.YearMonth march = java.time.YearMonth.of(2096, 3);
+        java.time.YearMonth april = java.time.YearMonth.of(2096, 4);
+        world.closed(FEBRUARY);
+        world.closed(march);
+        world.closed(april);
+        world.issued(FEBRUARY, RegulatoryWorld.body(1, 1, 1, 1));
+        world.issued(march, RegulatoryWorld.body(1, 1, 1, 1));
+        world.issued(april, RegulatoryWorld.body(1, 1, 1, 1));
+        Acted submitted = world.sent(obligation, JANUARY);
+        Acted acknowledged = world.sent(obligation, FEBRUARY);
+        answered(machine.claim(UOW, acknowledged.id(), Duration.ofMinutes(2)).orElseThrow(), Answer.acknowledged("PROVIDER-1", bytes("{}")), CallKind.SUBMIT);
+        Acted rejected = world.sent(obligation, march);
+        rejected(rejected);
+        Acted undelivered = world.sent(obligation, april);
+        answered(machine.claim(UOW, undelivered.id(), Duration.ofMinutes(2)).orElseThrow(), Answer.notReceived(bytes("{}")), CallKind.INQUIRE);
+        world.store.horizonPassedForTest(undelivered.id());
+        machine.declareUndelivered(UOW, undelivered.id(), ASKED, REASON, SENDER, world.correlation());
+
+        for (Acted sent : List.of(submitted, acknowledged, rejected, undelivered)) {
+            assertThatThrownBy(() -> machine.withdraw(UOW, sent.id(), REASON, PREPARER, world.correlation())).isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
+            assertThatThrownBy(() -> machine.refuse(UOW, sent.id(), REASON, APPROVER, world.correlation())).isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
+        }
     }
 
     @Test
@@ -571,17 +931,22 @@ class RegulatorySubmissionsTest {
     }
 
     @Test
-    @DisplayName("SUBMITTED commits before any call: nothing reaches the provider until a claim commits")
+    @DisplayName("SUBMITTED commits before any call: nothing reaches the provider until a claim has committed and the provider is asked")
     void submittedCommitsBeforeAnyCall() {
         Acted sent = world.sent(obligation, JANUARY);
         assertThat(world.provider.submits()).isZero();
         assertThat(row(sent).status()).isEqualTo(SubmissionStatus.SUBMITTED);
         assertThat(row(sent).attempts()).isZero();
         assertThat(world.events).extracting(EventEnvelope::eventType).contains(RegulatorySubmissions.SUBMITTED_EVENT);
+        assertThat(world.provider.inquiries()).isZero();
+        Claimed claimed = machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow();
+        assertThat(world.provider.submits()).as("a claim calls nobody").isZero();
+        machine.ask(claimed);
+        assertThat(world.provider.submits()).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("a crash between the commit and the call: the next claim asks, the provider definitely holds nothing, and the driver may send again under the same id - counted first, bounded")
+    @DisplayName("a crash between the commit and the call: the next claim asks, the provider definitely holds nothing, and the driver may send again under the same id - counted first")
     void aSendThatNeverArrivedIsSentAgainUnderItsOwnId() {
         Acted sent = world.sent(obligation, JANUARY);
         machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow(); // The worker died here, before its call.
@@ -592,10 +957,10 @@ class RegulatorySubmissionsTest {
         asThePlatform(() -> assertThat(machine.record(UOW, second, asked, Duration.ofMinutes(15), world.correlation()).disposition()).isEqualTo(Disposition.NOT_RECEIVED));
         assertThat(row(sent).lastAnswer()).contains("NOT_RECEIVED");
 
-        assertThat(machine.permitResend(UOW, second)).isTrue();
+        assertThat(permit(second)).isEqualTo(ResendPermit.PERMITTED);
         assertThat(row(sent).lastAnswer()).as("no person concludes over a send in flight").contains("RESENDING");
         assertThat(row(sent).resends()).isEqualTo(1);
-        assertThat(machine.permitResend(UOW, second)).as("one permit per definite answer").isFalse();
+        assertThat(permit(second)).as("one permit per definite answer").isEqualTo(ResendPermit.OVERTAKEN);
 
         Answered resent = machine.resend(second);
         assertThat(resent.call()).isEqualTo(CallKind.RESEND);
@@ -606,14 +971,14 @@ class RegulatorySubmissionsTest {
     }
 
     @Test
-    @DisplayName("an unknown answer is an inquiry, never a re-send: no permit is given, the row's permit moves ahead, and an overtaken worker moves nothing")
+    @DisplayName("an unknown answer is an inquiry, never a re-send: no permit is given, the row's permit moves ahead, the next attempt asks, and an overtaken worker moves no permit")
     void anUnknownAnswerIsAnInquiry() {
         Acted sent = world.sent(obligation, JANUARY);
         Claimed first = machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow();
         Answered unknown = new Answered(CallKind.SUBMIT, Answer.unknown(Optional.empty(), "{}".getBytes(StandardCharsets.UTF_8)));
         asThePlatform(() -> assertThat(machine.record(UOW, first, unknown, Duration.ofMinutes(15), world.correlation()).disposition()).isEqualTo(Disposition.AWAITING));
 
-        assertThat(machine.permitResend(UOW, first)).isFalse();
+        assertThat(permit(first)).isEqualTo(ResendPermit.OVERTAKEN);
         assertThat(row(sent).lastAnswer()).contains("UNKNOWN");
         Instant permit = row(sent).nextInquiryAt().orElseThrow();
         assertThat(permit).isEqualTo(clock.instant().plus(Duration.ofMinutes(15)));
@@ -625,10 +990,12 @@ class RegulatorySubmissionsTest {
         asThePlatform(() -> machine.record(UOW, first, unknown, Duration.ofDays(5), world.correlation()));
         assertThat(row(sent).nextInquiryAt()).contains(held);
         assertThat(second.row().attempts()).isEqualTo(2);
+        assertThat(machine.ask(second).call()).isEqualTo(CallKind.INQUIRE);
+        assertThat(world.provider.submits()).isZero();
     }
 
     @Test
-    @DisplayName("the resends are bounded: past five the driver may not send, and it goes on asking; the row reads exhausted and a person's door opens")
+    @DisplayName("the resends are bounded: past five the driver may not send, and it goes on asking; the row reads exhausted, and a person concludes it before the horizon")
     void theResendsAreBounded() {
         Acted sent = world.sent(obligation, JANUARY);
         Claimed claimed = null;
@@ -638,41 +1005,46 @@ class RegulatorySubmissionsTest {
             Claimed held = claimed;
             asThePlatform(() -> machine.record(UOW, held, new Answered(CallKind.INQUIRE, Answer.notReceived("{}".getBytes(StandardCharsets.UTF_8))), Duration.ofMinutes(15), world.correlation()));
             if (i < RegulatorySubmissions.MAX_RESENDS) {
-                assertThat(machine.permitResend(UOW, held)).as("resend " + i).isTrue();
+                assertThat(permit(held)).as("resend " + i).isEqualTo(ResendPermit.PERMITTED);
                 asThePlatform(() -> machine.record(UOW, held, new Answered(CallKind.RESEND, Answer.unknown(Optional.empty(), "{}".getBytes(StandardCharsets.UTF_8))), Duration.ofMinutes(15), world.correlation()));
             }
         }
-        assertThat(machine.permitResend(UOW, claimed)).isFalse();
+        assertThat(permit(claimed)).isEqualTo(ResendPermit.SPENT);
         assertThat(row(sent).resends()).isEqualTo(RegulatorySubmissions.MAX_RESENDS);
         assertThat(machine.view(UOW, sent.id()).resendsExhausted()).isTrue();
         assertThat(world.store.attention(UOW, RegulatorySubmissions.MAX_RESENDS).resendsExhausted()).isEqualTo(1);
         assertThat(machine.claimNextDue(UOW, Duration.ofMinutes(2))).as("not yet due").isEmpty();
         clock.advance(Duration.ofMinutes(16));
-        assertThat(machine.claimNextDue(UOW, Duration.ofMinutes(2))).as("it goes on asking").isPresent();
+        assertThat(machine.view(UOW, sent.id()).nonDeliveryOpen()).isTrue();
+        assertThat(RegulatorySubmissions.MAX_RESENDS).isEqualTo(5);
+        Claimed asking = machine.claimNextDue(UOW, Duration.ofMinutes(2)).orElseThrow();
+        assertThat(machine.ask(asking).call()).as("it goes on asking").isEqualTo(CallKind.INQUIRE);
+        assertThat(row(sent).pastHorizon()).isFalse();
+        assertThat(machine.declareUndelivered(UOW, sent.id(), ASKED, REASON, SENDER, world.correlation()).status()).isEqualTo(SubmissionStatus.UNDELIVERED);
     }
 
     @Test
-    @DisplayName("UNDELIVERED only on a definite not received, the resends spent or the horizon past: refused over an unknown answer, over a send in flight, and while the driver may still send")
+    @DisplayName("UNDELIVERED only on a definite not received, past the horizon here: refused over an unknown answer and over a send in flight; a repeat converges and a correction may reference it")
     void undeliveredOnlyOnADefiniteNotReceived() {
         Acted sent = world.sent(obligation, JANUARY);
-        assertThatThrownBy(() -> machine.declareUndelivered(UOW, sent.id(), REASON, SENDER, world.correlation())).as("nothing asked yet").isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
+        assertThatThrownBy(() -> machine.declareUndelivered(UOW, sent.id(), ASKED, REASON, SENDER, world.correlation())).as("nothing asked yet").isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
 
         Claimed first = machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow();
         asThePlatform(() -> machine.record(UOW, first, new Answered(CallKind.SUBMIT, Answer.unknown(Optional.empty(), "{}".getBytes(StandardCharsets.UTF_8))), Duration.ofMinutes(15), world.correlation()));
         world.store.horizonPassedForTest(sent.id());
-        assertThatThrownBy(() -> machine.declareUndelivered(UOW, sent.id(), REASON, SENDER, world.correlation())).as("an unknown answer past the horizon").isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
+        assertThatThrownBy(() -> machine.declareUndelivered(UOW, sent.id(), ASKED, REASON, SENDER, world.correlation())).as("an unknown answer past the horizon").isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
 
         clock.advance(Duration.ofMinutes(16));
         Claimed second = machine.claimNextDue(UOW, Duration.ofMinutes(2)).orElseThrow();
         asThePlatform(() -> machine.record(UOW, second, new Answered(CallKind.INQUIRE, Answer.notReceived("{}".getBytes(StandardCharsets.UTF_8))), Duration.ofMinutes(15), world.correlation()));
-        machine.permitResend(UOW, second);
-        assertThatThrownBy(() -> machine.declareUndelivered(UOW, sent.id(), REASON, SENDER, world.correlation())).as("a send in flight").isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
+        permit(second);
+        assertThatThrownBy(() -> machine.declareUndelivered(UOW, sent.id(), ASKED, REASON, SENDER, world.correlation())).as("a send in flight").isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
         asThePlatform(() -> machine.record(UOW, second, new Answered(CallKind.INQUIRE, Answer.notReceived("{}".getBytes(StandardCharsets.UTF_8))), Duration.ofMinutes(15), world.correlation()));
 
-        Acted undelivered = machine.declareUndelivered(UOW, sent.id(), REASON, SENDER, world.correlation());
+        Acted undelivered = machine.declareUndelivered(UOW, sent.id(), ASKED, REASON, SENDER, world.correlation());
         assertThat(undelivered.status()).isEqualTo(SubmissionStatus.UNDELIVERED);
         assertThat(world.events).extracting(EventEnvelope::eventType).contains(RegulatorySubmissions.UNDELIVERED_EVENT);
-        assertThat(machine.declareUndelivered(UOW, sent.id(), REASON, SENDER, world.correlation()).replayed()).isTrue();
+        assertThat(machine.declareUndelivered(UOW, sent.id(), ASKED, REASON, SENDER, world.correlation()).replayed()).isTrue();
 
         // A correction may reference it.
         Acted correction = machine.draft(UOW, new Draft(obligation, world.row(JANUARY).id(), Optional.of(sent.id()), REASON), PREPARER, world.correlation());
@@ -686,11 +1058,12 @@ class RegulatorySubmissionsTest {
         Claimed first = machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow();
         asThePlatform(() -> machine.record(UOW, first, new Answered(CallKind.INQUIRE, Answer.notReceived("{}".getBytes(StandardCharsets.UTF_8))), Duration.ofMinutes(15), world.correlation()));
 
-        assertThatThrownBy(() -> machine.declareUndelivered(UOW, sent.id(), REASON, SENDER, world.correlation())).isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
+        assertThatThrownBy(() -> machine.declareUndelivered(UOW, sent.id(), ASKED, REASON, SENDER, world.correlation())).isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
+        assertThat(permit(first)).as("the driver still may").isEqualTo(ResendPermit.PERMITTED);
     }
 
     @Test
-    @DisplayName("ack against rejection is one way: the first definite answer takes the edge whichever attempt it came from; a later one is kept verbatim, flagged, audited, never an edge")
+    @DisplayName("ack against rejection is one way, each way round: the first definite answer takes the edge whichever attempt it came from; a later one is kept verbatim, flagged, audited, never an edge")
     void aContraryAnswerIsKeptAndNeverAnEdge() {
         Acted sent = world.sent(obligation, JANUARY);
         Claimed first = machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow();
@@ -707,18 +1080,29 @@ class RegulatorySubmissionsTest {
         assertThat(row.providerReference()).contains("PROVIDER-1");
         assertThat(row.rejectionCode()).isEmpty();
         assertThat(row.contraryAnswers()).isEqualTo(1);
-        List<RegulatorySubmissionStore.AnswerRow> kept = world.store.answers(UOW, sent.id());
+        List<RegulatorySubmissionStore.AnswerRow> kept = world.store.answers(UOW, sent.id(), 100);
         assertThat(kept).hasSize(2);
         assertThat(new String(kept.get(1).raw(), StandardCharsets.UTF_8)).isEqualTo("second");
         assertThat(kept.get(1).flag()).contains(RegulatorySubmissionStore.Flag.CONTRARY);
         assertThat(codes()).contains("regulatory.SubmissionContraryAnswer");
         assertThat(world.events.stream().filter(event -> event.eventType().equals(RegulatorySubmissions.REJECTED_EVENT))).isEmpty();
-        assertThat(world.store.attention(UOW, RegulatorySubmissions.MAX_RESENDS).contrary()).isEqualTo(1);
+        assertThat(world.store.standing(UOW, Optional.empty(), 100)).as("so that a person can find which return").extracting(RegulatorySubmissionStore.Row::id).contains(sent.id());
 
         // One agreeing, after the conclusion: kept, flagged late.
         asThePlatform(() -> assertThat(machine.record(UOW, first, new Answered(CallKind.INQUIRE, Answer.acknowledged("PROVIDER-1", "third".getBytes(StandardCharsets.UTF_8))), Duration.ofMinutes(15), world.correlation()).disposition())
                 .isEqualTo(Disposition.LATE));
         assertThat(row(sent).contraryAnswers()).isEqualTo(1);
+
+        // The other way round, and from an attempt no longer the latest.
+        world.closed(FEBRUARY);
+        world.issued(FEBRUARY, RegulatoryWorld.body(1, 1, 1, 1));
+        Acted other = world.sent(obligation, FEBRUARY);
+        Claimed earlier = machine.claim(UOW, other.id(), Duration.ofMinutes(2)).orElseThrow();
+        clock.advance(Duration.ofMinutes(3));
+        Claimed later = machine.claimNextDue(UOW, Duration.ofMinutes(2)).orElseThrow();
+        asThePlatform(() -> assertThat(machine.record(UOW, earlier, new Answered(CallKind.SUBMIT, Answer.rejected(Optional.of("PROVIDER-4"), "FORM_REFUSED", bytes("r"))), Duration.ofMinutes(15), world.correlation()).disposition()).isEqualTo(Disposition.REJECTED));
+        asThePlatform(() -> assertThat(machine.record(UOW, later, new Answered(CallKind.INQUIRE, Answer.acknowledged("PROVIDER-5", bytes("a"))), Duration.ofMinutes(15), world.correlation()).disposition()).isEqualTo(Disposition.CONTRARY));
+        assertThat(row(other).status()).isEqualTo(SubmissionStatus.REJECTED);
     }
 
     @Test
@@ -732,6 +1116,16 @@ class RegulatorySubmissionsTest {
                 machine.record(UOW, claimed, answered, Duration.ofMinutes(15), world.correlation());
             }
         }).isInstanceOf(IllegalStateException.class).hasMessageContaining("platform");
+        for (ActorType type : ActorType.values()) {
+            if (type != ActorType.SYSTEM) {
+                assertThatThrownBy(() -> {
+                    try (SecurityContext.Scope someone = SecurityContext.enter(new Actor("not-the-platform", type))) {
+                        machine.record(UOW, claimed, answered, Duration.ofMinutes(15), world.correlation());
+                    }
+                }).as(type.name()).isInstanceOf(IllegalStateException.class).hasMessageContaining("platform");
+            }
+        }
+        asThePlatform(() -> assertThat(machine.record(UOW, claimed, answered, Duration.ofMinutes(15), world.correlation()).disposition()).isEqualTo(Disposition.ACKNOWLEDGED));
     }
 
     // ------------------------------------------------------------------ what a reader sees
@@ -758,10 +1152,17 @@ class RegulatorySubmissionsTest {
         assertThat(forged.get(0).agrees()).isFalse();
         assertThat(forged.get(0).figure().orElseThrow().minor()).isNotEqualTo(forged.get(0).line().minor());
         assertThat(forged.subList(1, forged.size())).allSatisfy(line -> assertThat(line.agrees()).isTrue());
+
+        // Bytes that no longer prove serve no figure at all.
+        world.runs.corruptContentForTest(world.runs.all().get(0).id(), "{\"body\":{}}");
+        assertThat(machine.view(UOW, draft.id()).lines()).allSatisfy(line -> {
+            assertThat(line.figure()).isEmpty();
+            assertThat(line.agrees()).isFalse();
+        });
     }
 
     @Test
-    @DisplayName("a pending list excludes what its reader cannot decide, in the statement: their own; a person's only")
+    @DisplayName("a pending list excludes what its reader cannot decide: their own; a person's only - the statement's filter is pinned in the statements suite")
     void aPendingListExcludesWhatItsReaderCannotDecide() {
         Acted validated = world.validated(world.drafted(obligation, JANUARY));
 
@@ -773,24 +1174,38 @@ class RegulatorySubmissionsTest {
     @Test
     @DisplayName("events carry ids and codes only, through the platform's envelope; audit summaries no figure and no reason; a toString no reason, figure or provider text")
     void nothingCarriesAFigureAReasonOrAProvidersText() {
-        Acted sent = world.sent(obligation, JANUARY);
-        rejected(sent);
+        world.closed(FEBRUARY);
+        world.issued(FEBRUARY, RegulatoryWorld.body(1_234_567, 1_234_567, 7_654_321, 7_654_321));
+        Acted sent = world.sent(obligation, FEBRUARY);
+        answered(machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow(), Answer.rejected(Optional.of("PROVIDER-1"), "FORM_REFUSED", bytes("PROVIDER-TEXT-ONLY")), CallKind.SUBMIT);
 
+        java.util.Set<String> allowed = java.util.Set.of("standing", "obligationId", "jurisdiction", "form", "formVersion", "period", "periodRevision", "contentSha256", "rejectionCode");
+        assertThat(world.events.stream().filter(event -> event.eventType().contains("Regulatory"))).hasSize(2);
+        for (int at = 0; at < world.events.size(); at++) {
+            if (world.events.get(at).eventType().contains("Regulatory")) {
+                String text = new String(world.payloads.get(at), StandardCharsets.UTF_8);
+                assertThat(text).as("a simulated acknowledgement never reads as a regulator's").contains("\"standing\"").contains("REFERENCE");
+                java.util.regex.Matcher keys = java.util.regex.Pattern.compile("\"([A-Za-z0-9]+)\"\\s*:").matcher(text);
+                while (keys.find()) {
+                    assertThat(allowed).as("ids and codes only").contains(keys.group(1));
+                }
+            }
+        }
         for (byte[] payload : world.payloads) {
             String text = new String(payload, StandardCharsets.UTF_8);
-            assertThat(text).doesNotContain(REASON).doesNotContain("10000").doesNotContain("PROVIDER-1");
+            assertThat(text).doesNotContain(REASON).doesNotContain("1234567").doesNotContain("7654321").doesNotContain("PROVIDER-1").doesNotContain("PROVIDER-TEXT-ONLY");
         }
-        assertThat(world.events.stream().filter(event -> event.eventType().contains("Regulatory"))).hasSize(2).allSatisfy(event -> {
+        assertThat(world.events.stream().filter(event -> event.eventType().contains("Regulatory"))).allSatisfy(event -> {
             assertThat(event.aggregateId().value()).isEqualTo(sent.id().value());
             assertThat(event.aggregateType()).isEqualTo(RegulatorySubmissions.TARGET_TYPE);
             assertThat(event.producer()).isEqualTo("accounting");
         });
-        assertThat(world.audit).allSatisfy(record -> assertThat(record.changeSummary().orElse("")).doesNotContain(REASON).doesNotContain("10000"));
+        assertThat(world.audit).allSatisfy(record -> assertThat(record.changeSummary().orElse("")).doesNotContain(REASON).doesNotContain("1234567").doesNotContain("7654321").doesNotContain("PROVIDER-TEXT-ONLY"));
         assertThat(new Draft(obligation, world.row(JANUARY).id(), Optional.empty(), REASON).toString()).doesNotContain(REASON);
         assertThat(world.store.find(UOW, sent.id()).orElseThrow().toString()).doesNotContain(REASON);
         assertThat(new RegulatoryReportingProvider.Request(sent.id(), "REF", "F", 1, "2096-01", "SECRET-CONTENT", "h").toString()).doesNotContain("SECRET-CONTENT");
         assertThat(Answer.acknowledged("R", "PROVIDER-TEXT".getBytes(StandardCharsets.UTF_8)).toString()).doesNotContain("PROVIDER-TEXT");
-        assertThat(world.store.lines(UOW, sent.id()).get(0).toString()).doesNotContain("10000");
-        assertThat(world.store.answers(UOW, sent.id()).get(0).toString()).doesNotContain("FORM_REFUSED");
+        assertThat(world.store.lines(UOW, sent.id()).get(0).toString()).doesNotContain("1234567");
+        assertThat(world.store.answers(UOW, sent.id(), 100).get(0).toString()).doesNotContain("FORM_REFUSED").doesNotContain("PROVIDER-TEXT-ONLY");
     }
 }

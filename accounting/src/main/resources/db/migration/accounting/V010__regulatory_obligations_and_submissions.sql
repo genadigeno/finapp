@@ -28,7 +28,8 @@
 -- SUBMITTED COMMITS BEFORE THE CALL, keyed at the provider by the submission's id. The first claimed attempt sends; every later one inquires, and sends
 -- again only after the provider's definite NOT_RECEIVED, under the same id, counted and committed before the call with last_answer RESENDING, so a person
 -- cannot conclude UNDELIVERED over a send in flight. The first definite answer takes the one-way edge; a later or contrary one is kept verbatim and flagged,
--- never an edge.
+-- never an edge. A SEND DOES NOT GO ONCE THE MONTH HAS MOVED: the first attempt then only inquires, and a resend's permit is refused, here too. What no migration
+-- can close: a send that began just before a reopen committed. The rule is that the month stood when the send began.
 --
 -- THE LOCKS (DISTRIBUTED_EXECUTION.md section 3, the Phase 14 order): (A1) the period FOR SHARE; the obligation FOR SHARE; (A4) the submission FOR UPDATE, an
 -- original before its correction; the run rows FOR SHARE beneath it, which nothing but a period holder FOR UPDATE moves. A driver's record takes the row
@@ -547,6 +548,7 @@ AS $$
 DECLARE
     held_status     text;
     held_revision   integer;
+    held_month      date;
     held_obligation text;
     held_form       text;
     held_jurisdiction text;
@@ -569,7 +571,7 @@ BEGIN
             RAISE EXCEPTION 'a regulatory submission is born DRAFT with nothing acted (P14-TSK-018, INV-ACC-13)';
         END IF;
         -- ONLY FROM A CLOSED MONTH, AT THE REVISION IT NAMES. The period first: the domain's order.
-        SELECT p.status, p.revision INTO held_status, held_revision FROM accounting.accounting_period p WHERE p.id = NEW.period_id FOR SHARE;
+        SELECT p.status, p.revision, p.period_start INTO held_status, held_revision, held_month FROM accounting.accounting_period p WHERE p.id = NEW.period_id FOR SHARE;
         IF NOT FOUND OR held_status <> 'CLOSED' OR held_revision <> NEW.period_revision THEN
             RAISE EXCEPTION 'a regulatory submission is drawn only from a CLOSED period at its present revision (P14-TSK-018, INV-ACC-13)';
         END IF;
@@ -593,6 +595,7 @@ BEGIN
         IF stated ->> 'standing' IS DISTINCT FROM 'REFERENCE' OR stated ->> 'obligationId' IS DISTINCT FROM NEW.obligation_id::text
                 OR stated ->> 'jurisdiction' IS DISTINCT FROM NEW.jurisdiction_code OR stated ->> 'form' IS DISTINCT FROM NEW.form_code
                 OR stated ->> 'formVersion' IS DISTINCT FROM NEW.form_version::text OR stated ->> 'configurationSha256' IS DISTINCT FROM held_configured
+                OR stated ->> 'period' IS DISTINCT FROM to_char(held_month, 'YYYY-MM')
                 OR stated ->> 'periodRevision' IS DISTINCT FROM NEW.period_revision::text
                 OR stated ->> 'correctsSubmissionId' IS DISTINCT FROM NEW.corrects_submission_id::text THEN
             RAISE EXCEPTION 'regulatory_submission_content_is_this_rows: REFERENCE, and its header this row''s (P14-TSK-018, INV-ACC-13)' USING ERRCODE = 'check_violation';
@@ -702,6 +705,13 @@ BEGIN
         IF NEW.resends > OLD.resends AND NEW.last_answer IS DISTINCT FROM 'RESENDING' THEN
             RAISE EXCEPTION 'a resend is recorded before its call (P14-TSK-018, INV-ACC-13)';
         END IF;
+        -- FIGURES THE BOOKS NO LONGER SAY ARE NOT SENT AGAIN. The period FOR SHARE, as the domain took it first: a resend and a reopen's approval serialise.
+        IF NEW.resends > OLD.resends THEN
+            SELECT p.revision INTO held_revision FROM accounting.accounting_period p WHERE p.id = NEW.period_id FOR SHARE;
+            IF held_revision IS DISTINCT FROM NEW.period_revision THEN
+                RAISE EXCEPTION 'a resend goes only while the month stands at the revision the return read (P14-TSK-018, INV-ACC-13)';
+            END IF;
+        END IF;
         RETURN NEW;
     END IF;
     IF OLD.status = 'SUBMITTED' AND NEW.status IN ('ACKNOWLEDGED', 'REJECTED') THEN
@@ -713,7 +723,7 @@ BEGIN
         RETURN NEW;
     END IF;
     IF OLD.status = 'SUBMITTED' AND NEW.status = 'UNDELIVERED' THEN
-        -- ON A DEFINITE "NOT RECEIVED", never over an unknown answer or a send in flight.
+        -- ON A DEFINITE "NOT RECEIVED", never over an unknown answer or a send in flight. It asks nothing of the month, which may well have moved: this is how a return that month overtook is ended, so a correction can go at the new revision.
         IF OLD.last_answer IS DISTINCT FROM 'NOT_RECEIVED' THEN
             RAISE EXCEPTION 'a return is concluded undelivered only on the provider''s definite not received (P14-TSK-018, INV-ACC-13)';
         END IF;

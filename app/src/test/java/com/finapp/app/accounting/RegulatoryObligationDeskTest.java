@@ -120,7 +120,7 @@ class RegulatoryObligationDeskTest {
             if (method.isAnnotationPresent(RequiresPermission.class)) {
                 seen++;
                 assertThat(method.getAnnotation(RequiresPermission.class).value()).as(method.getName()).isEqualTo(expected.get(method.getName()));
-                assertThat(method.isAnnotationPresent(RequiresIdempotencyKey.class)).as(method.getName()).isEqualTo(!(method.getName().startsWith("read") || method.getName().startsWith("list")));
+                assertThat(method.isAnnotationPresent(RequiresIdempotencyKey.class)).as(method.getName()).isEqualTo(method.isAnnotationPresent(org.springframework.web.bind.annotation.PostMapping.class));
                 assertThat(method.isAnnotationPresent(RequiresAssurance.class)).as(method.getName()).isEqualTo(method.getName().equals("activateRegulatoryObligation"));
                 if (method.isAnnotationPresent(RequiresAssurance.class)) {
                     assertThat(method.getAnnotation(RequiresAssurance.class).value()).isEqualTo(AssuranceLevel.MULTI_FACTOR);
@@ -135,7 +135,7 @@ class RegulatoryObligationDeskTest {
     }
 
     @Test
-    @DisplayName("a list's null is refused at the boundary, never an NPE in a lambda; a toString carries no reason")
+    @DisplayName("a list's null is refused by the body's own constraints, the API suite holding the 422; a toString carries no reason")
     void aNullInAListIsRefusedAtTheBoundary() {
         try (ValidatorFactory factory = Validation.buildDefaultValidatorFactory()) {
             Validator validator = factory.getValidator();
@@ -153,7 +153,7 @@ class RegulatoryObligationDeskTest {
     }
 
     @Test
-    @DisplayName("the proposal door: REFERENCE, hashed; the same key replays, another body conflicts; incoherent and unserved configurations refused on the contract")
+    @DisplayName("the proposal door: REFERENCE; the same key replays, another body conflicts; incoherent and unserved configurations refused on the contract")
     void theProposalDoor() {
         RegulatoryObligationDesk.RegulatoryObligationReceipt first = proposed("p-1");
         assertThat(first.status()).isEqualTo("PROPOSED");
@@ -185,10 +185,11 @@ class RegulatoryObligationDeskTest {
 
         assertThat(as(APPROVER, () -> desk.activate("a-5", proposed.obligationId(), proposed.configurationSha256(), REASON)).status()).isEqualTo("ACTIVE");
         assertThat(world.audit.stream().map(record -> record.operation().code())).contains("regulatory.ObligationActivated");
+        assertThat(AccountingErrorCode.SELF_APPROVAL_REFUSED.status()).isEqualTo(403);
     }
 
     @Test
-    @DisplayName("the rejection door: final; a reason required; what is decided refuses")
+    @DisplayName("the rejection door: final; a reason required; what it rejected cannot then be activated")
     void theRejectionDoor() {
         RegulatoryObligationDesk.RegulatoryObligationReceipt proposed = proposed("p-1");
         refused(() -> as(APPROVER, () -> desk.reject("r-0", proposed.obligationId(), " ")), AccountingErrorCode.REASON_REQUIRED);
@@ -220,6 +221,15 @@ class RegulatoryObligationDeskTest {
         assertThat(as(PREPARER, desk::recent)).hasSize(1);
         refused(() -> as(PREPARER, () -> desk.read("not-a-uuid")), AccountingErrorCode.NOT_FOUND);
         refused(() -> as(PREPARER, () -> desk.read(RegulatoryObligationId.next(world.ids).value().toString())), AccountingErrorCode.NOT_FOUND);
+
+        assertThat(world.audit.stream().map(record -> record.changeSummary().orElse(""))).anyMatch(summary -> summary.contains("door=awaiting-activation")).anyMatch(summary -> summary.contains("door=recent"));
+
+        // Before it is served: an audit writer refusing leaves nothing served, at each door.
+        world.auditRefuses = true;
+        assertThatThrownBy(() -> as(PREPARER, () -> desk.read(proposed.obligationId()))).isInstanceOf(IllegalStateException.class).hasMessageContaining("audit");
+        assertThatThrownBy(() -> as(APPROVER, () -> desk.attestation(proposed.obligationId()))).isInstanceOf(IllegalStateException.class).hasMessageContaining("audit");
+        assertThatThrownBy(() -> as(APPROVER, desk::awaitingActivation)).isInstanceOf(IllegalStateException.class).hasMessageContaining("audit");
+        assertThatThrownBy(() -> as(PREPARER, desk::recent)).isInstanceOf(IllegalStateException.class).hasMessageContaining("audit");
     }
 
     private final class Claims implements IdempotencyRecordStore<Connection> {

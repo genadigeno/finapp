@@ -54,7 +54,7 @@ class RegulatoryObligationsTest {
     }
 
     @Test
-    @DisplayName("nothing is seeded: a store starts empty, and every row a proposal births is REFERENCE, a month's, PROPOSED, its configuration canonical and hashed")
+    @DisplayName("a fixture store starts empty; a proposal is born REFERENCE, a month's and PROPOSED - the fixture's stand-in, V010's CHECKs being the database suite's - its configuration canonical and hashed")
     void aProposalIsBornReferenceAndHashed() {
         assertThat(new InMemoryRegulatoryObligationStore(CLOCK).all()).isEmpty();
         RegulatoryObligations.Acted acted = proposed(1);
@@ -126,7 +126,7 @@ class RegulatoryObligationsTest {
     }
 
     @Test
-    @DisplayName("the proposer cannot activate; a second person names the hash they read; a differing one is stale; a repeat converges; each decision audited")
+    @DisplayName("the proposer cannot activate; a second person names the hash they read; a differing one is stale; a repeat converges; the activation audited")
     void theProposerCannotActivate() {
         RegulatoryObligations.Acted acted = proposed(1);
 
@@ -172,10 +172,14 @@ class RegulatoryObligationsTest {
         assertThatThrownBy(() -> machine.reject(UOW, acted.id(), REASON, APPROVER, world.correlation())).isInstanceOf(RegulatoryObligations.ObligationStale.class);
         assertThatThrownBy(() -> machine.activate(UOW, acted.id(), acted.configurationSha256(), REASON, APPROVER, world.correlation())).isInstanceOf(RegulatoryObligations.ObligationStale.class);
         assertThatThrownBy(() -> machine.reject(UOW, RegulatoryObligationId.next(world.ids), REASON, APPROVER, world.correlation())).isInstanceOf(RegulatoryObligations.ObligationNotFound.class);
+
+        RegulatoryObligations.Acted second = proposed(2);
+        assertThatThrownBy(() -> machine.reject(UOW, second.id(), " ", PREPARER, world.correlation())).isInstanceOf(AccountingReasons.ReasonRequired.class);
+        assertThat(world.audit).extracting(record -> record.operation().code()).contains("regulatory.ObligationRejected");
     }
 
     @Test
-    @DisplayName("a controller's list excludes their own, in the statement; a person's only; a reader sees whether the build still holds the adapter")
+    @DisplayName("a controller's list excludes their own; a person's only; a reader sees whether the build still holds the adapter - the statement's filter is pinned in the statements suite")
     void aControllersListExcludesTheirOwn() {
         RegulatoryObligations.Acted acted = proposed(1);
         assertThat(machine.awaitingActivation(UOW, APPROVER)).extracting(RegulatoryObligationStore.Row::id).containsExactly(acted.id());
@@ -188,5 +192,6 @@ class RegulatoryObligationsTest {
         List<AuditRecord> reads = new ArrayList<>(world.audit);
         machine.recordRead(UOW, acted.id().value().toString(), "door=preparer", PREPARER, world.correlation());
         assertThat(world.audit).hasSize(reads.size() + 1);
+        assertThat(new RegulatoryObligations(world.obligationStore, new RegulatoryAdapters(List.of()), world.definitions, (uow, record) -> { }, world.ids, world.clock).view(UOW, acted.id()).adapterHeld()).isFalse();
     }
 }

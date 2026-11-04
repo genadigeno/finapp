@@ -163,7 +163,7 @@ class RegulatorySubmissionDeskTest {
             if (method.isAnnotationPresent(RequiresPermission.class)) {
                 seen++;
                 assertThat(method.getAnnotation(RequiresPermission.class).value()).as(method.getName()).isEqualTo(expected.get(method.getName()));
-                assertThat(method.isAnnotationPresent(RequiresIdempotencyKey.class)).as(method.getName()).isEqualTo(!(method.getName().startsWith("read") || method.getName().startsWith("list")));
+                assertThat(method.isAnnotationPresent(RequiresIdempotencyKey.class)).as(method.getName()).isEqualTo(method.isAnnotationPresent(org.springframework.web.bind.annotation.PostMapping.class));
                 assertThat(method.isAnnotationPresent(RequiresAssurance.class)).as(method.getName()).isEqualTo(stepped.contains(method.getName()));
                 if (stepped.contains(method.getName())) {
                     assertThat(method.getAnnotation(RequiresAssurance.class).value()).isEqualTo(AssuranceLevel.MULTI_FACTOR);
@@ -171,10 +171,12 @@ class RegulatorySubmissionDeskTest {
             }
         }
         assertThat(seen).isEqualTo(expected.size());
+        assertThat(Arrays.stream(RegulatorySubmissionController.class.getDeclaredMethods()).filter(method -> method.isAnnotationPresent(org.springframework.web.bind.annotation.PostMapping.class)
+                || method.isAnnotationPresent(org.springframework.web.bind.annotation.GetMapping.class))).as("no route goes unjudged").allSatisfy(method -> assertThat(method.isAnnotationPresent(RequiresPermission.class)).as(method.getName()).isTrue());
     }
 
     @Test
-    @DisplayName("the bodies are closed, and a list's null cannot reach a lambda; a toString carries no reason")
+    @DisplayName("the bodies are closed and a reason bounded; a toString carries no reason")
     void theBodiesAreClosed() {
         assertThat(RegulatorySubmissionController.RegulatorySubmissionDraftRequest.class.isAnnotationPresent(ClosedBody.class)).isTrue();
         assertThat(RegulatorySubmissionController.RegulatorySubmissionAttestationRequest.class.isAnnotationPresent(ClosedBody.class)).isTrue();
@@ -214,6 +216,8 @@ class RegulatorySubmissionDeskTest {
         String february = world.row(RegulatoryWorld.FEBRUARY).id().value().toString();
         refused(() -> as(PREPARER, () -> desk.draft("d-7", obligation.value().toString(), february, null, REASON)), AccountingErrorCode.REGULATORY_SOURCE_NOT_FINAL);
         assertThat(count("source_not_final")).isEqualTo(1);
+        String open = world.open(java.time.YearMonth.of(2096, 3)).value().toString();
+        refused(() -> as(PREPARER, () -> desk.draft("d-open", obligation.value().toString(), open, null, REASON)), AccountingErrorCode.REGULATORY_SOURCE_NOT_FINAL);
     }
 
     @Test
@@ -230,7 +234,10 @@ class RegulatorySubmissionDeskTest {
 
         RegulatoryObligationId current = world.active(3, RegulatoryWorld.configuration());
         world.runs.corruptContentForTest(world.runs.all().get(0).id(), "{\"body\":{}}");
-        refused(() -> as(PREPARER, () -> desk.draft("f-2", current.value().toString(), january, null, REASON)), AccountingErrorCode.REGULATORY_RUN_BYTES_DIFFER);
+        assertThatThrownBy(() -> as(PREPARER, () -> desk.draft("f-2", current.value().toString(), january, null, REASON))).isInstanceOfSatisfying(ApiException.class, refused -> {
+            assertThat(refused.errorCode()).isEqualTo(AccountingErrorCode.REGULATORY_RUN_BYTES_DIFFER);
+            assertThat(refused.clientDetail().orElse("")).doesNotContain("10000");
+        });
         assertThat(count("run_bytes_differ")).isEqualTo(1);
     }
 
@@ -275,6 +282,7 @@ class RegulatorySubmissionDeskTest {
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt approved = as(APPROVER, () -> desk.approve("a-4", validated.submissionId(), validated.contentSha256(), validated.periodRevision(), REASON));
         assertThat(approved.status()).isEqualTo("APPROVED");
         assertThat(count("approved")).isEqualTo(1);
+        assertThat(AccountingErrorCode.SELF_APPROVAL_REFUSED.status()).isEqualTo(403);
     }
 
     @Test
@@ -289,10 +297,18 @@ class RegulatorySubmissionDeskTest {
         assertThat(done.statusMeaning()).contains("controller").doesNotContain("provider");
         assertThat(count("refused")).isEqualTo(1);
         refused(() -> as(APPROVER, () -> desk.refuse("r-2", drafted.submissionId(), " ")), AccountingErrorCode.REASON_REQUIRED);
+
+        java.time.YearMonth february = java.time.YearMonth.of(2096, 2);
+        String period = world.closed(february).value().toString();
+        world.issued(february, RegulatoryWorld.body(1, 1, 1, 1));
+        RegulatorySubmissionDesk.RegulatorySubmissionReceipt other = as(PREPARER, () -> desk.draft("d-f", obligation.value().toString(), period, null, REASON));
+        as(PREPARER, () -> desk.validate("v-f", other.submissionId()));
+        as(APPROVER, () -> desk.approve("a-f", other.submissionId(), other.contentSha256(), other.periodRevision(), REASON));
+        assertThat(as(APPROVER, () -> desk.refuse("r-f", other.submissionId(), REASON)).status()).as("an approved return").isEqualTo("REFUSED");
     }
 
     @Test
-    @DisplayName("the withdrawal door: a preparer's, until it is sent; frees the month; what was sent refuses")
+    @DisplayName("the withdrawal door: a preparer's on a draft; frees the month; the same person's repeat converges")
     void theWithdrawalDoor() {
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt drafted = draft("d-1");
         assertThat(as(PREPARER, () -> desk.withdraw("w-1", drafted.submissionId(), REASON)).status()).isEqualTo("WITHDRAWN");
@@ -313,13 +329,19 @@ class RegulatorySubmissionDeskTest {
     }
 
     @Test
-    @DisplayName("the sending door: SUBMITTED committed, then driven on no transaction; a replay claims nothing new and sends nothing twice; the approver refused; the month moved Stale")
+    @DisplayName("the sending door: SUBMITTED committed, then the door's own drive answered; a replay claims nothing new and sends nothing twice; the approver refused")
     void theSendingDoor() {
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt approved = approved();
 
         refused(() -> as(APPROVER, () -> desk.submit("s-0", approved.submissionId(), approved.contentSha256(), approved.periodRevision(), REASON)), AccountingErrorCode.SELF_APPROVAL_REFUSED);
 
+        List<SubmissionStatus> atTheCall = new java.util.ArrayList<>();
+        world.provider.nextSubmit(() -> {
+            atTheCall.add(world.store.find(UOW, RegulatorySubmissionId.of(java.util.UUID.fromString(approved.submissionId()))).orElseThrow().status());
+            return Answer.acknowledged("PROVIDER-1", "{}".getBytes(StandardCharsets.UTF_8));
+        });
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt sent = as(SENDER, () -> desk.submit("s-1", approved.submissionId(), approved.contentSha256(), approved.periodRevision(), REASON));
+        assertThat(atTheCall).as("committed before the call").containsExactly(SubmissionStatus.SUBMITTED);
         assertThat(sent.status()).as("the door's own drive answered").isEqualTo("ACKNOWLEDGED");
         assertThat(world.provider.submits()).isEqualTo(1);
         assertThat(count("submitted")).isEqualTo(1);
@@ -328,6 +350,7 @@ class RegulatorySubmissionDeskTest {
         as(SENDER, () -> desk.submit("s-1", approved.submissionId(), approved.contentSha256(), approved.periodRevision(), REASON));
         assertThat(world.provider.submits()).as("the key replayed, the drive found nothing due").isEqualTo(1);
         assertThat(count("submitted")).isEqualTo(1);
+        assertThat(world.store.find(UOW, RegulatorySubmissionId.of(java.util.UUID.fromString(approved.submissionId()))).orElseThrow().attempts()).as("claims nothing new").isEqualTo(1);
     }
 
     @Test
@@ -340,26 +363,104 @@ class RegulatorySubmissionDeskTest {
     }
 
     @Test
-    @DisplayName("the non-delivery door: refused until the provider definitely holds nothing and the resends are spent; then a person concludes it")
+    @DisplayName("the non-delivery door: while the row says it is closed it refuses and asks nobody; open, it asks the provider once at the act, and concludes on that answer; a repeat asks nothing")
     void theNonDeliveryDoor() {
+        RegulatorySubmissionDesk.RegulatorySubmissionReceipt approved = unknownAtTheProvider();
+        refused(() -> as(SENDER, () -> desk.declareUndelivered("n-1", approved.submissionId(), REASON)), AccountingErrorCode.REGULATORY_SUBMISSION_STALE);
+        assertThat(world.provider.inquiries()).as("the door is closed: nobody is asked").isZero();
+
+        RegulatorySubmissionId id = doorOpen(approved);
+        int kept = world.store.keptAnswers().size();
+        RegulatorySubmissionDesk.RegulatorySubmissionReceipt done = as(SENDER, () -> desk.declareUndelivered("n-2", approved.submissionId(), REASON));
+        assertThat(done.status()).isEqualTo("UNDELIVERED");
+        assertThat(world.provider.inquiries()).as("asked once, at the act").isEqualTo(1);
+        assertThat(world.store.keptAnswers()).as("what it said is kept").hasSize(kept + 1);
+        assertThat(count("undelivered")).isEqualTo(1);
+        assertThat(done.statusMeaning()).contains("A person concluded");
+        assertThat(world.store.find(UOW, id).orElseThrow().closedBy()).contains(SENDER.id());
+
+        assertThat(as(SENDER, () -> desk.declareUndelivered("n-2", approved.submissionId(), REASON)).status()).as("the key replays").isEqualTo("UNDELIVERED");
+        assertThat(as(SENDER, () -> desk.declareUndelivered("n-3", approved.submissionId(), REASON)).status()).as("the same person converges").isEqualTo("UNDELIVERED");
+        assertThat(world.provider.inquiries()).as("neither asks again").isEqualTo(1);
+        assertThat(count("undelivered")).isEqualTo(1);
+        refused(() -> as(PREPARER, () -> desk.declareUndelivered("n-4", approved.submissionId(), REASON)), AccountingErrorCode.REGULATORY_SUBMISSION_STALE);
+    }
+
+    @Test
+    @DisplayName("the non-delivery door when the provider cannot be asked: 503, nothing concluded, nothing kept, the key unspent; asked again it concludes")
+    void theNonDeliveryDoorWhenTheCallFails() {
+        RegulatorySubmissionDesk.RegulatorySubmissionReceipt approved = unknownAtTheProvider();
+        RegulatorySubmissionId id = doorOpen(approved);
+        int kept = world.store.keptAnswers().size();
+
+        world.provider.nextInquiry(ScriptedRegulatoryProvider.unreachable());
+        refused(() -> as(SENDER, () -> desk.declareUndelivered("n-1", approved.submissionId(), REASON)), AccountingErrorCode.REGULATORY_PROVIDER_UNAVAILABLE);
+        assertThat(AccountingErrorCode.REGULATORY_PROVIDER_UNAVAILABLE.status()).isEqualTo(503);
+        assertThat(world.store.find(UOW, id).orElseThrow().status()).isEqualTo(SubmissionStatus.SUBMITTED);
+        assertThat(world.store.keptAnswers()).hasSize(kept);
+        assertThat(count("call_failed")).isEqualTo(1);
+        assertThat(count("undelivered")).isZero();
+
+        assertThat(as(SENDER, () -> desk.declareUndelivered("n-1", approved.submissionId(), REASON)).status()).as("the same key, unspent").isEqualTo("UNDELIVERED");
+    }
+
+    @Test
+    @DisplayName("the non-delivery door when the provider says otherwise at the act: an unknown refuses, the door shut, what it said kept; an acknowledgement refuses and takes its edge")
+    void theNonDeliveryDoorWhenTheProviderSaysOtherwise() {
+        RegulatorySubmissionDesk.RegulatorySubmissionReceipt approved = unknownAtTheProvider();
+        RegulatorySubmissionId id = doorOpen(approved);
+
+        world.provider.nextInquiry(() -> Answer.unknown(Optional.empty(), "unsure".getBytes(StandardCharsets.UTF_8)));
+        refused(() -> as(SENDER, () -> desk.declareUndelivered("n-1", approved.submissionId(), REASON)), AccountingErrorCode.REGULATORY_SUBMISSION_STALE);
+        assertThat(world.store.find(UOW, id).orElseThrow().lastAnswer()).contains("UNKNOWN");
+        assertThat(world.store.find(UOW, id).orElseThrow().status()).isEqualTo(SubmissionStatus.SUBMITTED);
+
+        doorOpen(approved);
+        world.provider.nextInquiry(() -> Answer.acknowledged("PROVIDER-1", "held".getBytes(StandardCharsets.UTF_8)));
+        refused(() -> as(SENDER, () -> desk.declareUndelivered("n-2", approved.submissionId(), REASON)), AccountingErrorCode.REGULATORY_SUBMISSION_STALE);
+        assertThat(world.store.find(UOW, id).orElseThrow().status()).isEqualTo(SubmissionStatus.ACKNOWLEDGED);
+        assertThat(count("undelivered")).isZero();
+        assertThat(world.store.keptAnswers()).extracting(answer -> new String(answer.reading().retained(), StandardCharsets.UTF_8)).as("what it said, kept").contains("unsure", "held");
+    }
+
+    @Test
+    @DisplayName("the non-delivery door opens once the month moved, with every resend left and before the horizon; a correction then goes at the new revision")
+    void theNonDeliveryDoorOnAMovedMonth() {
+        RegulatorySubmissionDesk.RegulatorySubmissionReceipt approved = unknownAtTheProvider();
+        RegulatorySubmissionId id = RegulatorySubmissionId.of(java.util.UUID.fromString(approved.submissionId()));
+        world.store.await(UOW, id, 1, Duration.ofMinutes(15), Duration.ofDays(1), "NOT_RECEIVED", Optional.empty());
+        refused(() -> as(SENDER, () -> desk.declareUndelivered("n-0", approved.submissionId(), REASON)), AccountingErrorCode.REGULATORY_SUBMISSION_STALE);
+
+        world.reopened(JANUARY);
+        world.reclosed(JANUARY);
+        world.issued(JANUARY, RegulatoryWorld.body(90_00, 90_00, 50_00, 50_00));
+        assertThat(as(PREPARER, () -> desk.read(approved.submissionId())).nonDeliveryOpen()).isTrue();
+        assertThat(as(SENDER, () -> desk.declareUndelivered("n-1", approved.submissionId(), REASON)).status()).isEqualTo("UNDELIVERED");
+
+        RegulatorySubmissionDesk.RegulatorySubmissionReceipt correction = as(PREPARER, () -> desk.draft("d-2", obligation.value().toString(), january, approved.submissionId(), REASON));
+        assertThat(correction.periodRevision()).isEqualTo(2);
+    }
+
+    /** A sent return the provider answered {@code UNKNOWN}. */
+    private RegulatorySubmissionDesk.RegulatorySubmissionReceipt unknownAtTheProvider() {
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt approved = approved();
         world.provider.nextSubmit(() -> Answer.unknown(Optional.empty(), "{}".getBytes(StandardCharsets.UTF_8)));
         as(SENDER, () -> desk.submit("s-1", approved.submissionId(), approved.contentSha256(), approved.periodRevision(), REASON));
-        refused(() -> as(SENDER, () -> desk.declareUndelivered("n-1", approved.submissionId(), REASON)), AccountingErrorCode.REGULATORY_SUBMISSION_STALE);
+        return approved;
+    }
 
-        RegulatorySubmissionId id = RegulatorySubmissionId.of(java.util.UUID.fromString(approved.submissionId()));
-        world.store.await(UOW, id, 1, Duration.ofMinutes(15), "NOT_RECEIVED", Optional.empty());
+    /** A definite "not received" last and the horizon past: what the row must say before the door asks anyone. */
+    private RegulatorySubmissionId doorOpen(RegulatorySubmissionDesk.RegulatorySubmissionReceipt sent) {
+        RegulatorySubmissionId id = RegulatorySubmissionId.of(java.util.UUID.fromString(sent.submissionId()));
+        world.store.await(UOW, id, 1, Duration.ofMinutes(15), Duration.ofDays(1), "NOT_RECEIVED", Optional.empty());
         world.store.horizonPassedForTest(id);
-        RegulatorySubmissionDesk.RegulatorySubmissionReceipt done = as(SENDER, () -> desk.declareUndelivered("n-2", approved.submissionId(), REASON));
-        assertThat(done.status()).isEqualTo("UNDELIVERED");
-        assertThat(count("undelivered")).isEqualTo(1);
-        assertThat(done.statusMeaning()).contains("A person concluded");
+        return id;
     }
 
     // ------------------------------------------------------------------ the reads
 
     @Test
-    @DisplayName("a reporter's read: the draft and its figures under their own permission, audited before it is served; each line traced to the run's figure; no preparer's reason")
+    @DisplayName("a reporter's read: the draft and its figures, audited before it is served: an audit writer refusing serves nothing; each line traced to the run's figure; no preparer's reason")
     void aReportersRead() {
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt drafted = draft("d-1");
         world.audit.clear();
@@ -385,6 +486,10 @@ class RegulatorySubmissionDeskTest {
         assertThat(read.changeSummary().orElseThrow()).contains("door=preparer").doesNotContain("10000");
         assertThat(read.actor()).isEqualTo(PREPARER);
         refused(() -> as(PREPARER, () -> desk.read("not-a-uuid")), AccountingErrorCode.NOT_FOUND);
+
+        // Before it is served: an audit writer that refuses leaves nothing served.
+        world.auditRefuses = true;
+        assertThatThrownBy(() -> as(PREPARER, () -> desk.read(drafted.submissionId()))).isInstanceOf(IllegalStateException.class).hasMessageContaining("audit");
     }
 
     @Test
@@ -402,6 +507,7 @@ class RegulatorySubmissionDeskTest {
         assertThat(view.formVersion()).isEqualTo(1);
         assertThat(view.contentSha256()).isEqualTo(validated.contentSha256());
         assertThat(world.audit.get(0).changeSummary().orElseThrow()).contains("door=approver").doesNotContain(REASON);
+        assertThat(view.lines()).hasSize(4).allSatisfy(line -> assertThat(line.lineage().agreesWithTheRun()).isTrue());
     }
 
     @Test
@@ -412,6 +518,7 @@ class RegulatorySubmissionDeskTest {
 
         assertThat(drill.requiresPermission()).isEqualTo("ACCOUNTING_READ");
         assertThat(drill.heldByRoles()).contains("ACCOUNTANT").doesNotContain(RoleName.REGULATORY_REPORTER.name(), RoleName.FINANCIAL_CONTROLLER.name());
+        assertThat(drill.heldByRoles()).containsExactlyInAnyOrderElementsOf(Arrays.stream(RoleName.values()).filter(role -> role.permissions().contains(PermissionName.ACCOUNTING_READ)).map(Enum::name).toList());
         assertThat(RoleName.REGULATORY_REPORTER.permissions()).doesNotContain(PermissionName.ACCOUNTING_READ);
         assertThat(RoleName.FINANCIAL_CONTROLLER.permissions()).doesNotContain(PermissionName.ACCOUNTING_READ);
         assertThat(drill.route()).startsWith("GET /v1/operator/accounting/report-runs/").doesNotContain("/lines");
@@ -433,7 +540,7 @@ class RegulatorySubmissionDeskTest {
     }
 
     @Test
-    @DisplayName("a month reopened after a return was sent: every read says so, with both revisions, and the preparer's list carries it until a correction stands")
+    @DisplayName("a month reopened after a return was sent: the preparer's read and list say so with both revisions, the approver's says so, and the list carries it until a return of the form is acknowledged at the month's present revision; a draft of a correction does not clear it")
     void aReopenedMonthIsToldOnEveryRead() {
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt approved = approved();
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt sent = as(SENDER, () -> desk.submit("s-1", approved.submissionId(), approved.contentSha256(), approved.periodRevision(), REASON));
@@ -450,15 +557,36 @@ class RegulatorySubmissionDeskTest {
             assertThat(line.lineage().runStatus()).isEqualTo("SUPERSEDED");
             assertThat(line.lineage().agreesWithTheRun()).as("the run's bytes are retained: the return still traces to what it read").isTrue();
         });
-        assertThat(as(PREPARER, desk::standing)).singleElement().satisfies(summary -> {
+        assertThat(view.overtaken()).isTrue();
+        assertThat(as(PREPARER, () -> desk.standing(null, null)).submissions()).singleElement().satisfies(summary -> {
             assertThat(summary.monthMoved()).isTrue();
+            assertThat(summary.overtaken()).isTrue();
+            assertThat(summary.periodRevision()).isEqualTo(1);
+            assertThat(summary.periodRevisionNow()).isEqualTo(2);
+            assertThat(summary.standing()).as("an acknowledgement here is a simulated adapter's").isEqualTo("REFERENCE");
             assertThat(summary.submissionId()).isEqualTo(sent.submissionId());
         });
         assertThat(as(APPROVER, () -> desk.attestation(sent.submissionId())).monthMoved()).isTrue();
+
+        // A correction drafted clears nothing: the regulator still holds the figure.
+        world.reclosed(JANUARY);
+        world.issued(JANUARY, RegulatoryWorld.body(90_00, 90_00, 50_00, 50_00));
+        RegulatorySubmissionDesk.RegulatorySubmissionReceipt correction = as(PREPARER, () -> desk.draft("d-2", obligation.value().toString(), january, sent.submissionId(), REASON));
+        assertThat(as(PREPARER, () -> desk.read(sent.submissionId())).overtaken()).isTrue();
+        assertThat(as(PREPARER, () -> desk.standing(null, null)).submissions()).extracting(RegulatorySubmissionDesk.RegulatorySubmissionSummaryView::submissionId).contains(sent.submissionId());
+
+        // Acknowledged at the present revision, it does; the month still moved under the first.
+        RegulatorySubmissionDesk.RegulatorySubmissionReceipt validated = as(PREPARER, () -> desk.validate("v-2", correction.submissionId()));
+        RegulatorySubmissionDesk.RegulatorySubmissionReceipt attested = as(APPROVER, () -> desk.approve("a-2", correction.submissionId(), validated.contentSha256(), validated.periodRevision(), REASON));
+        assertThat(as(SENDER, () -> desk.submit("s-2", correction.submissionId(), attested.contentSha256(), attested.periodRevision(), REASON)).status()).isEqualTo("ACKNOWLEDGED");
+        RegulatorySubmissionDesk.RegulatorySubmissionView after = as(PREPARER, () -> desk.read(sent.submissionId()));
+        assertThat(after.overtaken()).isFalse();
+        assertThat(after.monthMoved()).isTrue();
+        assertThat(as(PREPARER, () -> desk.standing(null, null)).submissions()).extracting(RegulatorySubmissionDesk.RegulatorySubmissionSummaryView::submissionId).doesNotContain(sent.submissionId());
     }
 
     @Test
-    @DisplayName("the provider's answer is served as data: base64, its hash, what was read off it; a read of the provider's text never logs it, and an untrusted body stays bytes")
+    @DisplayName("the provider's answer is served as data: base64, its hash, what was read off it; neither the view's text nor the read's audit summary carries it, and an untrusted body stays bytes")
     void theProvidersAnswerIsServedAsData() {
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt approved = approved();
         world.provider.nextSubmit(() -> ScriptedRegulatoryProvider.answering(com.finapp.accounting.RegulatoryReportingProvider.Outcome.UNKNOWN, Optional.empty(), Optional.empty(), "<script>alert('x')</script>"));
@@ -471,22 +599,51 @@ class RegulatorySubmissionDeskTest {
         assertThat(answer.readOutcome()).isEqualTo("UNKNOWN");
         assertThat(answer.truncated()).isFalse();
         assertThat(world.audit.get(world.audit.size() - 1).changeSummary().orElseThrow()).doesNotContain("script");
+        assertThat(answer.rawSha256()).isEqualTo(com.finapp.accounting.reporting.CanonicalJson.sha256("<script>alert('x')</script>"));
     }
 
     @Test
-    @DisplayName("a controller's pending list holds what they can decide and never their own, and is audited; the preparer's list is theirs; every list carries no figure")
+    @DisplayName("a controller's pending list holds what they can decide and never their own; the preparer's list holds what stands; both are audited, and neither summary's text carries a figure")
     void theLists() {
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt validated = validated();
 
         assertThat(as(APPROVER, desk::awaitingApproval)).extracting(RegulatorySubmissionDesk.RegulatorySubmissionSummaryView::submissionId).containsExactly(validated.submissionId());
         assertThat(as(PREPARER, desk::awaitingApproval)).isEmpty();
-        assertThat(as(PREPARER, desk::standing)).extracting(RegulatorySubmissionDesk.RegulatorySubmissionSummaryView::status).containsExactly("VALIDATED");
+        assertThat(as(PREPARER, () -> desk.standing(null, null)).submissions()).extracting(RegulatorySubmissionDesk.RegulatorySubmissionSummaryView::status).containsExactly("VALIDATED");
         assertThat(world.audit.stream().map(record -> record.changeSummary().orElse(""))).anyMatch(summary -> summary.contains("door=awaiting-approval")).anyMatch(summary -> summary.contains("door=standing"));
         assertThat(as(APPROVER, desk::awaitingApproval).get(0).toString()).doesNotContain("10000");
+        assertThat(as(PREPARER, () -> desk.standing(null, null)).submissions().get(0).toString()).doesNotContain("10000");
     }
 
     @Test
-    @DisplayName("the reference export door: what it says of itself first, audited, under the preparer's permission; an unknown id not found")
+    @DisplayName("the preparer's list comes a page at a time and says truthfully when more exist; a malformed or unknown cursor and a page out of bounds are refused on the contract; each read recorded")
+    void thePreparersListIsPaged() {
+        for (java.time.YearMonth month : List.of(java.time.YearMonth.of(2096, 2), java.time.YearMonth.of(2096, 3))) {
+            String period = world.closed(month).value().toString();
+            world.issued(month, RegulatoryWorld.body(1, 1, 1, 1));
+            as(PREPARER, () -> desk.draft("d-" + month, obligation.value().toString(), period, null, REASON));
+        }
+        draft("d-1");
+        world.audit.clear();
+
+        RegulatorySubmissionDesk.RegulatorySubmissionStandingView first = as(PREPARER, () -> desk.standing(null, 2));
+        assertThat(first.submissions()).hasSize(2);
+        assertThat(first.nextAfter()).isEqualTo(first.submissions().get(1).submissionId());
+        RegulatorySubmissionDesk.RegulatorySubmissionStandingView next = as(PREPARER, () -> desk.standing(first.nextAfter(), 2));
+        assertThat(next.submissions()).hasSize(1);
+        assertThat(next.nextAfter()).isNull();
+        assertThat(world.audit).hasSize(2);
+        assertThat(world.audit.get(0).changeSummary().orElseThrow()).contains("page=first").contains("more=true");
+        assertThat(world.audit.get(1).changeSummary().orElseThrow()).contains("page=next").contains("more=false");
+
+        refused(() -> as(PREPARER, () -> desk.standing("not-a-cursor", 2)), AccountingErrorCode.REGULATORY_SUBMISSION_INVALID);
+        refused(() -> as(PREPARER, () -> desk.standing(RegulatorySubmissionId.next(world.ids).value().toString(), 2)), AccountingErrorCode.REGULATORY_SUBMISSION_INVALID);
+        refused(() -> as(PREPARER, () -> desk.standing(null, 0)), AccountingErrorCode.REGULATORY_SUBMISSION_INVALID);
+        refused(() -> as(PREPARER, () -> desk.standing(null, 101)), AccountingErrorCode.REGULATORY_SUBMISSION_INVALID);
+    }
+
+    @Test
+    @DisplayName("the reference export door: it says what it is, and it is audited; an unknown id not found")
     void theReferenceExportDoor() {
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt drafted = draft("d-1");
         world.audit.clear();
@@ -502,9 +659,15 @@ class RegulatorySubmissionDeskTest {
     @DisplayName("a refused act stores nothing: the key is free, and nothing of it is left")
     void aRefusedActStoresNothing() {
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt validated = validated();
+        int records = world.audit.size();
+        int history = world.store.history().size();
+        int keys = claims.size();
         refused(() -> as(APPROVER, () -> desk.approve("k", validated.submissionId(), "0".repeat(64), 1, REASON)), AccountingErrorCode.REGULATORY_SUBMISSION_STALE);
-        RegulatorySubmissionDesk.RegulatorySubmissionReceipt ok = as(APPROVER, () -> desk.approve("k2", validated.submissionId(), validated.contentSha256(), 1, REASON));
-        assertThat(ok.status()).isEqualTo(SubmissionStatus.APPROVED.name());
+        assertThat(world.audit).hasSize(records);
+        assertThat(world.store.history()).hasSize(history);
+        assertThat(claims).hasSize(keys);
+        RegulatorySubmissionDesk.RegulatorySubmissionReceipt ok = as(APPROVER, () -> desk.approve("k", validated.submissionId(), validated.contentSha256(), 1, REASON));
+        assertThat(ok.status()).as("the key is free").isEqualTo(SubmissionStatus.APPROVED.name());
     }
 
     private final class Claims implements IdempotencyRecordStore<Connection> {

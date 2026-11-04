@@ -49,13 +49,17 @@ import lombok.RequiredArgsConstructor;
  * revision, and from then on the frozen return reads {@code monthMoved}. Reopen first: the submit reads the new revision and is {@link SubmissionStale}, nothing written. There is no third order.
  *
  * <p><strong>A month reopened after a return went</strong>: the return stands, frozen, disagreeing with the books. It is not edited, and it does not leave. {@code RegulatorySubmissionStore.Row.monthMoved} is on every read and list, and
- * {@code finapp.accounting.regulatory.attention{kind=overtaken}} counts it until a correction stands.
+ * {@code finapp.accounting.regulatory.attention{kind=overtaken}} counts it until an acknowledged return of that form stands at the month's present revision: a draft or a rejected correction does not clear it, since the regulator still holds the figure.
+ *
+ * <p><strong>A month that moved before the send: never sent.</strong> {@code SUBMITTED} commits, the provider is down or a worker dies, the month is reopened: the next claim reads the month in its own transaction, and {@link #ask} then only inquires, so the provider is
+ * not handed figures the books no longer say. {@link #permitResend} judges the same under the period row, and refuses {@link ResendPermit#MONTH_MOVED}. A definite "not received" then opens {@link #declareUndelivered}, whatever the resend count, and a correction goes at the new
+ * revision. <strong>What this cannot close:</strong> a send that began just before a reopen committed, since nothing here holds a transaction around a call. So the rule is that the month stood when the send began, read at the claim or the permit, not when it arrived.
  *
  * <p><strong>Every state has a door out</strong> ({@link SubmissionStatus}). {@link #withdraw} a preparer's, {@link #refuse} a controller's: each asks nothing of the month, because each is how something overtaken is ended. {@link #record} is the
- * provider's answer. {@link #declareUndelivered} a person's, only on a definite "not received". A {@code SUBMITTED} row the provider answers {@code UNKNOWN} forever has no person's door: nobody here may assert what a regulator holds; the inquiry goes on
- * and it reads overdue.
+ * provider's answer. {@link #declareUndelivered} a person's, only on a definite "not received" asked at that act. A {@code SUBMITTED} row the provider answers {@code UNKNOWN} forever has no person's door: nobody here may assert what a regulator holds; the inquiry goes on
+ * and it reads overdue, and it holds {@code regulatory_submission_one_live}, so no correction of that form and month can be drafted meanwhile.
  *
- * <p><strong>The drive, in three steps, the provider in no transaction</strong>: {@link #claim} commits one attempt and a lease; {@link #ask} calls - the first attempt sends, since no earlier call can have preceded it, every later one inquires -;
+ * <p><strong>The drive, in three steps, the provider in no transaction</strong>: {@link #claim} commits one attempt and a lease; {@link #ask} calls - the first attempt sends, since no earlier call can have preceded it, unless the month has moved; every later one inquires -;
  * {@link #record} takes the answer. A definite "not received" lets the driver {@link #permitResend} (counted and committed before the call, {@code last_answer} {@code RESENDING}) and {@link #resend} under the same submission id: the provider's
  * idempotency doing its job, not a second submission. At most {@link #MAX_RESENDS}. An unknown answer is an inquiry, never a re-submit.
  *
@@ -83,6 +87,18 @@ public final class RegulatorySubmissions {
 
     /** The most rows one list answers. */
     public static final int LIST_LIMIT = 100;
+
+    /**
+     * The most kept answers one read loads: the newest, the whole count beside them. Every answer is retained verbatim ({@code INV-HIST-02}) and an inquiry appends one, up to 64 KiB, in a provider's control: a read is not, and {@code 20} is at most 1.3 MiB of bytes. An older
+     * answer is not served by a read; it is kept, and reached in the database.
+     */
+    public static final int ANSWERS_SERVED = 20;
+
+    /**
+     * The longest an inquiry waits. Up to the answer horizon an answer that decides nothing is asked again at the configured interval; past it the wait is the time since the horizon, so the gaps double, up to this: one row a day, not ninety-six. {@code UNKNOWN} has no end, and
+     * this is what keeps it from being an unbounded append.
+     */
+    public static final Duration INQUIRY_CEILING = Duration.ofDays(1);
 
     private static final String PRODUCER = "accounting";
     private static final int EVENT_VERSION = 1;
@@ -150,10 +166,13 @@ public final class RegulatorySubmissions {
      * What a reader reads.
      *
      * @param blockedBy empty when an act going forward would find it stands. Advisory: an act judges again under its locks. Of a return already sent, why it no longer agrees with the books
-     * @param resendsExhausted a definite "not received" last and no resend left: a person's door is open
+     * @param answers the newest {@link #ANSWERS_SERVED} kept answers, oldest of them first
+     * @param answersKept how many are kept: an older one is not served by this read
+     * @param resendsExhausted a definite "not received" last and no resend left
+     * @param nonDeliveryOpen a person's non-delivery door would ask the provider now: {@link #nonDeliveryOpen}
      */
-    public record View(Row row, RegulatoryObligationStore.Row obligation, List<LineView> lines, Optional<RegulatoryValidation> validation, List<RegulatorySubmissionStore.AnswerRow> answers, Optional<BlockedBy> blockedBy,
-            boolean resendsExhausted) {
+    public record View(Row row, RegulatoryObligationStore.Row obligation, List<LineView> lines, Optional<RegulatoryValidation> validation, List<RegulatorySubmissionStore.AnswerRow> answers, long answersKept, Optional<BlockedBy> blockedBy,
+            boolean resendsExhausted, boolean nonDeliveryOpen) {
 
         /** Whether the submission could still go forward on what it read. */
         public boolean stillStands() {
@@ -179,6 +198,21 @@ public final class RegulatorySubmissions {
 
     /** An answer's record: what it did, and whether it decided nothing because it could not be believed. */
     public record Recorded(Disposition disposition, boolean anomalous) {}
+
+    /** What a resend's permit answered. Only {@link #PERMITTED} sends, and each other is named for what is true. */
+    public enum ResendPermit {
+        /** Counted and committed: the driver may send. */
+        PERMITTED,
+        /** The month moved after this return read it: figures the books no longer say are not sent again. A person's door is open. */
+        MONTH_MOVED,
+        /** The resends are spent. A person's door is open. */
+        SPENT,
+        /** This worker no longer holds the row: another attempt was claimed, or it was concluded. */
+        OVERTAKEN
+    }
+
+    /** One page of what stands, and the cursor of the next when more exist. */
+    public record Standing(List<Row> rows, Optional<RegulatorySubmissionId> nextAfter) {}
 
     // ------------------------------------------------------------------ refusals
 
@@ -482,13 +516,15 @@ public final class RegulatorySubmissions {
     }
 
     /**
-     * A person concludes a return undelivered - only on the provider's definite "not received", and only once the resends are spent or the horizon has passed: never over an unknown answer, never over a send in flight. A correction may then reference it. The same
-     * person's repeat converges.
+     * A person concludes a return undelivered - only on the provider's definite "not received", <strong>asked at this act</strong> ({@code asked}, from {@link #recordAtTheDoor}), and only once the resends are spent, the horizon has passed, or the month has moved: never over an
+     * unknown answer, never over a send in flight, never on a {@code last_answer} an interval old. A correction may then reference it. The same person's repeat converges.
      *
+     * @param asked what the provider just answered: empty when it was not asked, which concludes nothing but a repeat
      * @throws SubmissionNotFound no such submission
-     * @throws SubmissionStale it is not {@code SUBMITTED}, the provider has not said it holds nothing, or the driver may still send
+     * @throws SubmissionStale it is not {@code SUBMITTED}, the provider did not just say it holds nothing, or the driver may still send
      */
-    public Acted declareUndelivered(Connection unitOfWork, RegulatorySubmissionId id, String reason, Actor actor, CorrelationId correlation) {
+    public Acted declareUndelivered(Connection unitOfWork, RegulatorySubmissionId id, Optional<Recorded> asked, String reason, Actor actor, CorrelationId correlation) {
+        Objects.requireNonNull(asked, "asked");
         Objects.requireNonNull(correlation, "correlation");
         person(actor);
         String reasoned = AccountingReasons.reasoned(reason);
@@ -496,8 +532,9 @@ public final class RegulatorySubmissions {
         if (row.status() == SubmissionStatus.UNDELIVERED && row.closedBy().filter(actor.id()::equals).isPresent()) {
             return Acted.of(row, row.status(), row.validationPassed(), true);
         }
-        if (row.status() != SubmissionStatus.SUBMITTED || !store.markUndelivered(unitOfWork, id, actor, reasoned, MAX_RESENDS)) {
-            throw new SubmissionStale("a return is concluded undelivered only while SUBMITTED, on the provider's definite not received, the resends spent or the answer horizon past");
+        boolean fresh = asked.filter(answered -> answered.disposition() == Disposition.NOT_RECEIVED).isPresent();
+        if (row.status() != SubmissionStatus.SUBMITTED || !fresh || !store.markUndelivered(unitOfWork, id, actor, reasoned, MAX_RESENDS)) {
+            throw new SubmissionStale("a return is concluded undelivered only while SUBMITTED, on the provider's definite not received asked at this act, the resends spent, the answer horizon past or its month moved");
         }
         history(unitOfWork, row, Act.UNDELIVERED, Optional.of(SubmissionStatus.SUBMITTED), SubmissionStatus.UNDELIVERED, actor, Optional.empty(), Optional.of(reasoned), correlation);
         append(unitOfWork, actor, AccountingAuditAction.REGULATORY_SUBMISSION_UNDELIVERED, row, Optional.of(reasoned), AuditOutcome.SUCCEEDED, summary(row) + ", attempts=" + row.attempts() + ", resends=" + row.resends(), correlation);
@@ -526,27 +563,96 @@ public final class RegulatorySubmissions {
     /**
      * {@code claimed} asked of the provider, on <strong>no connection</strong>: the first attempt sends, since no earlier call can have preceded it; every later one inquires, so a lost answer is asked for, never replaced.
      *
+     * <p><strong>Unless the month has moved:</strong> {@code SUBMITTED} committed against a revision and nothing has gone, so the first attempt then inquires too and never sends. How fresh: {@code claimed.row()} reads the period's revision unlocked in the claim's own
+     * transaction, after its {@code UPDATE}, and only that transaction's commit stands between that read and this call. A reopen committing after the read is the residual window this class's description states.
+     *
      * @throws RuntimeException whatever the adapter throws: nothing is recorded, the permit stands
      */
     public Answered ask(Claimed claimed) {
         Objects.requireNonNull(claimed, "claimed");
         RegulatoryReportingProvider adapter = adapterOf(claimed.row());
-        if (claimed.row().attempts() == 1) {
+        if (claimed.row().attempts() == 1 && !claimed.row().monthMoved()) {
             return new Answered(CallKind.SUBMIT, adapter.submit(request(claimed.row(), claimed.content())));
         }
         return new Answered(CallKind.INQUIRE, adapter.inquire(claimed.row().id()));
     }
 
     /**
-     * One send again counted, on {@code unitOfWork}, which the caller commits before {@link #resend}: conditional on the attempt the caller holds, a definite "not received" being the last answer, and the bound. {@code last_answer} moves to {@code RESENDING}, so no person
-     * can conclude the return undelivered over a send in flight.
+     * One send again counted and audited as the platform, on {@code unitOfWork}, which the caller commits before {@link #resend}: conditional on the attempt the caller holds, a definite "not received" being the last answer, the month standing at the revision read, and the
+     * bound. Under (A1) the period {@code FOR SHARE}, then (A4) the row, as every act going forward: it and a reopen's approval serialise, and each sees what the other committed. {@code last_answer} moves to {@code RESENDING}, so no person can conclude the return undelivered over
+     * a send in flight.
      *
-     * @return {@code false} when overtaken or the resends are spent: nothing may be sent
+     * @return what was decided: anything but {@link ResendPermit#PERMITTED} means nothing may be sent
      */
-    public boolean permitResend(Connection unitOfWork, Claimed claimed) {
+    public ResendPermit permitResend(Connection unitOfWork, Claimed claimed, CorrelationId correlation) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(claimed, "claimed");
-        return store.permitResend(unitOfWork, claimed.row().id(), claimed.row().attempts(), MAX_RESENDS);
+        Objects.requireNonNull(correlation, "correlation");
+        Actor platform = platform();
+        AccountingPeriodStore.PeriodRow period = periods.lockShared(unitOfWork, claimed.row().month()).orElseThrow(() -> new IllegalStateException("a period is never deleted"));
+        Row row = store.lock(unitOfWork, claimed.row().id()).orElseThrow(() -> new IllegalStateException("a claimed return is never deleted"));
+        if (row.status() != SubmissionStatus.SUBMITTED || row.attempts() != claimed.row().attempts() || row.lastAnswer().filter(Outcome.NOT_RECEIVED.name()::equals).isEmpty()) {
+            return ResendPermit.OVERTAKEN;
+        }
+        if (period.revision() != row.periodRevision()) {
+            return ResendPermit.MONTH_MOVED;
+        }
+        if (row.resends() >= MAX_RESENDS) {
+            return ResendPermit.SPENT;
+        }
+        if (!store.permitResend(unitOfWork, row.id(), row.attempts(), MAX_RESENDS)) {
+            throw new IllegalStateException("the locked return moved under another writer: the FOR UPDATE protocol was bypassed");
+        }
+        append(unitOfWork, platform, AccountingAuditAction.REGULATORY_SUBMISSION_RESENT, row, Optional.empty(), AuditOutcome.SUCCEEDED, summary(row) + ", attempt=" + row.attempts() + ", resend=" + (row.resends() + 1), correlation);
+        return ResendPermit.PERMITTED;
+    }
+
+    /**
+     * The non-delivery door's one question, on <strong>no connection</strong>: {@code last_answer} can be an interval old, and a person concludes on what the provider says now.
+     *
+     * @throws RuntimeException whatever the adapter throws: nothing is recorded and nothing may be concluded
+     */
+    public Answered askAtTheDoor(Row row) {
+        Objects.requireNonNull(row, "row");
+        return new Answered(CallKind.INQUIRE, adapterOf(row).inquire(row.id()));
+    }
+
+    /**
+     * Keeps what {@link #askAtTheDoor} heard, verbatim, in a transaction of its own and as the platform, so it stands whatever the person's act then does. A definite acknowledgement or rejection takes its edge, as any answer does. A "not received" reads {@link
+     * Disposition#NOT_RECEIVED} only if that is still the row's last answer: over a resend in flight it opens nothing. An answer that decides nothing moves the row's last answer off "not received", so the door closes; it never overwrites a resend in flight.
+     *
+     * @throws SubmissionNotFound no such submission
+     */
+    public Recorded recordAtTheDoor(Connection unitOfWork, RegulatorySubmissionId id, Answered answered, Duration inquiryInterval, CorrelationId correlation) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(answered, "answered");
+        Objects.requireNonNull(correlation, "correlation");
+        Actor platform = platform();
+        RegulatoryAnswerReading reading = RegulatoryAnswerReading.of(answered.call(), answered.answer());
+        Row row = store.lock(unitOfWork, Objects.requireNonNull(id, "id")).orElseThrow(SubmissionNotFound::new);
+        boolean anomalous = reading.anomaly().isPresent();
+        Optional<Flag> flag = flagOf(row, reading);
+        store.appendAnswer(unitOfWork, new RegulatorySubmissionStore.NewAnswer(ids.next(), row.id(), row.attempts(), reading, flag, correlation));
+        if (flag.isPresent()) {
+            return flagged(unitOfWork, row, reading, flag.get(), anomalous, platform, correlation);
+        }
+        boolean standsNotReceived = row.lastAnswer().filter(Outcome.NOT_RECEIVED.name()::equals).isPresent();
+        return switch (reading.read()) {
+            case ACKNOWLEDGED -> acknowledged(unitOfWork, row, reading, platform, correlation);
+            case REJECTED -> rejected(unitOfWork, row, reading, platform, correlation);
+            case UNKNOWN -> {
+                if (standsNotReceived) {
+                    store.await(unitOfWork, row.id(), row.attempts(), positive(inquiryInterval), INQUIRY_CEILING, Outcome.UNKNOWN.name(), reading.providerReference());
+                }
+                yield new Recorded(Disposition.AWAITING, anomalous);
+            }
+            case NOT_RECEIVED -> new Recorded(standsNotReceived ? Disposition.NOT_RECEIVED : Disposition.AWAITING, anomalous);
+        };
+    }
+
+    /** Whether the non-delivery door is open on what the row says: a definite "not received" last, and the resends spent, the horizon past or the month moved. Only the provider's answer at the act concludes. */
+    public static boolean nonDeliveryOpen(Row row) {
+        return row.status() == SubmissionStatus.SUBMITTED && row.lastAnswer().filter(Outcome.NOT_RECEIVED.name()::equals).isPresent() && (row.resends() >= MAX_RESENDS || row.pastHorizon() || row.monthMoved());
     }
 
     /**
@@ -568,35 +674,45 @@ public final class RegulatorySubmissions {
         Objects.requireNonNull(claimed, "claimed");
         Objects.requireNonNull(answered, "answered");
         Objects.requireNonNull(correlation, "correlation");
-        Actor platform = SecurityContext.require();
-        if (platform.type() != ActorType.SYSTEM) {
-            throw new IllegalStateException("a provider's answer is recorded by the platform, never a person");
-        }
+        Actor platform = platform();
         RegulatoryAnswerReading reading = RegulatoryAnswerReading.of(answered.call(), answered.answer());
         Row row = store.lock(unitOfWork, claimed.row().id()).orElseThrow(() -> new IllegalStateException("a claimed return is never deleted"));
         boolean anomalous = reading.anomaly().isPresent();
         Optional<Flag> flag = flagOf(row, reading);
         store.appendAnswer(unitOfWork, new RegulatorySubmissionStore.NewAnswer(ids.next(), row.id(), claimed.row().attempts(), reading, flag, correlation));
         if (flag.isPresent()) {
-            if (flag.get() == Flag.CONTRARY) {
-                append(unitOfWork, platform, AccountingAuditAction.REGULATORY_SUBMISSION_CONTRARY_ANSWER, row, Optional.empty(), AuditOutcome.FAILED,
-                        summary(row) + ", status=" + row.status().name() + ", read=" + reading.read().name(), correlation);
-                return new Recorded(Disposition.CONTRARY, anomalous);
-            }
-            return new Recorded(Disposition.LATE, anomalous);
+            return flagged(unitOfWork, row, reading, flag.get(), anomalous, platform, correlation);
         }
         return switch (reading.read()) {
             case ACKNOWLEDGED -> acknowledged(unitOfWork, row, reading, platform, correlation);
             case REJECTED -> rejected(unitOfWork, row, reading, platform, correlation);
             case UNKNOWN -> {
-                store.await(unitOfWork, row.id(), claimed.row().attempts(), positive(inquiryInterval), Outcome.UNKNOWN.name(), reading.providerReference());
+                store.await(unitOfWork, row.id(), claimed.row().attempts(), positive(inquiryInterval), INQUIRY_CEILING, Outcome.UNKNOWN.name(), reading.providerReference());
                 yield new Recorded(Disposition.AWAITING, anomalous);
             }
             case NOT_RECEIVED -> {
-                store.await(unitOfWork, row.id(), claimed.row().attempts(), positive(inquiryInterval), Outcome.NOT_RECEIVED.name(), Optional.empty());
+                store.await(unitOfWork, row.id(), claimed.row().attempts(), positive(inquiryInterval), INQUIRY_CEILING, Outcome.NOT_RECEIVED.name(), Optional.empty());
                 yield new Recorded(Disposition.NOT_RECEIVED, anomalous);
             }
         };
+    }
+
+    /** An answer past the row's conclusion, kept: audited {@code FAILED} when it disagrees, because someone must look. Never an edge. */
+    private Recorded flagged(Connection unitOfWork, Row row, RegulatoryAnswerReading reading, Flag flag, boolean anomalous, Actor platform, CorrelationId correlation) {
+        if (flag == Flag.CONTRARY) {
+            append(unitOfWork, platform, AccountingAuditAction.REGULATORY_SUBMISSION_CONTRARY_ANSWER, row, Optional.empty(), AuditOutcome.FAILED, summary(row) + ", status=" + row.status().name() + ", read=" + reading.read().name(), correlation);
+            return new Recorded(Disposition.CONTRARY, anomalous);
+        }
+        return new Recorded(Disposition.LATE, anomalous);
+    }
+
+    /** The platform, or a person trying what is never a person's. */
+    private static Actor platform() {
+        Actor platform = SecurityContext.require();
+        if (platform.type() != ActorType.SYSTEM) {
+            throw new IllegalStateException("a provider's answer and a resend are the platform's, never a person's");
+        }
+        return platform;
     }
 
     private Recorded acknowledged(Connection unitOfWork, Row row, RegulatoryAnswerReading reading, Actor platform, CorrelationId correlation) {
@@ -670,7 +786,7 @@ public final class RegulatorySubmissions {
         }
         Optional<RegulatoryValidation> validation = row.validationOutcome().map(RegulatoryValidation::parse);
         boolean exhausted = row.status() == SubmissionStatus.SUBMITTED && row.lastAnswer().filter(Outcome.NOT_RECEIVED.name()::equals).isPresent() && row.resends() >= MAX_RESENDS;
-        return new View(row, obligation, lines, validation, store.answers(unitOfWork, id), blockedBy, exhausted);
+        return new View(row, obligation, lines, validation, store.answers(unitOfWork, id, ANSWERS_SERVED), store.answerCount(unitOfWork, id), blockedBy, exhausted, nonDeliveryOpen(row));
     }
 
     private static LineView lineView(RegulatoryFormLine line, Optional<ReportRunStore.RunRow> run, Optional<CanonicalJson.Obj> content) {
@@ -696,9 +812,23 @@ public final class RegulatorySubmissions {
         return store.find(unitOfWork, Objects.requireNonNull(id, "id"));
     }
 
-    /** What a person must act on or know of, oldest first. */
-    public List<Row> standing(Connection unitOfWork) {
-        return store.standing(unitOfWork, LIST_LIMIT);
+    /**
+     * What a person must act on or know of, oldest first, one page: a keyset on what is frozen from birth, so a row turning up or leaving moves no other. The cursor is the last row's id.
+     *
+     * @throws SubmissionInvalid a page out of bounds, or a cursor no return answers
+     */
+    public Standing standing(Connection unitOfWork, Optional<RegulatorySubmissionId> after, int limit) {
+        Objects.requireNonNull(after, "after");
+        if (limit < 1 || limit > LIST_LIMIT) {
+            throw new SubmissionInvalid("a page of what stands holds 1 to " + LIST_LIMIT + " returns");
+        }
+        if (after.isPresent() && store.find(unitOfWork, after.get()).isEmpty()) {
+            throw new SubmissionInvalid("after is the cursor of a previous page");
+        }
+        List<Row> read = store.standing(unitOfWork, after, limit + 1);
+        boolean more = read.size() > limit;
+        List<Row> page = more ? read.subList(0, limit) : read;
+        return new Standing(List.copyOf(page), more ? Optional.of(page.get(limit - 1).id()) : Optional.empty());
     }
 
     /** Those waiting on a decision {@code reader} could make: never their own - excluded in the statement, before its limit. Fail closed: only a person has such a list. */
@@ -859,6 +989,7 @@ public final class RegulatorySubmissions {
 
     private static EventPayload base(Row row) {
         return EventPayload.of()
+                .with("standing", RegulatoryForm.REFERENCE)
                 .with("obligationId", row.obligation().value().toString())
                 .with("jurisdiction", row.jurisdiction())
                 .with("form", row.form())

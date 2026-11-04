@@ -96,8 +96,11 @@ public final class RegulatorySubmissionDesk {
     public record RegulatorySubmissionReceipt(String submissionId, String status, String statusMeaning, String standing, String contentSha256, int periodRevision, boolean monthMoved, Boolean validationPassed) {}
 
     /** One return in a list - read one to act on it. No figure, no person. */
-    public record RegulatorySubmissionSummaryView(String submissionId, String status, String statusMeaning, String jurisdictionCode, String formCode, int formVersion, String period, int periodRevision, int periodRevisionNow,
-            boolean monthMoved, boolean overdue, boolean resendsExhausted, long contraryAnswers, String correctsSubmissionId, String correctedBySubmissionId, String preparedAt) {}
+    public record RegulatorySubmissionSummaryView(String submissionId, String standing, String status, String statusMeaning, String jurisdictionCode, String formCode, int formVersion, String period, int periodRevision, int periodRevisionNow,
+            boolean monthMoved, boolean overtaken, boolean overdue, boolean resendsExhausted, boolean nonDeliveryOpen, long contraryAnswers, String correctsSubmissionId, String correctedBySubmissionId, String preparedAt) {}
+
+    /** One page of what stands. {@code nextAfter} is the cursor of the next, and null only when no more exist. */
+    public record RegulatorySubmissionStandingView(List<RegulatorySubmissionSummaryView> submissions, String nextAfter) {}
 
     /** The route that holds a figure's journal lines, what it asks, and who holds that: said plainly, because the reader of this view may hold none of them. */
     public record RegulatoryDrillDownView(String route, String requiresPermission, List<String> heldByRoles, String note) {}
@@ -160,9 +163,9 @@ public final class RegulatorySubmissionDesk {
      * @param preparationReason the preparer's reason: to the approver's door alone
      */
     public record RegulatorySubmissionView(String submissionId, String standing, String notice, String status, String statusMeaning, String obligationId, String obligationStatus, String configurationSha256, String adapterName, String jurisdictionCode,
-            String formCode, int formVersion, String period, int periodRevision, int periodRevisionNow, String periodStatusNow, boolean monthMoved, boolean stillStands, String blockedBy, String contentSha256, RegulatoryValidationView validation,
-            List<RegulatoryFormLineView> lines, List<RegulatoryProviderAnswerView> answers, String correctsSubmissionId, String correctedBySubmissionId, String providerReference, String rejectionCode, int attempts, int resends, String lastAnswer,
-            boolean overdue, boolean resendsExhausted, long contraryAnswers, String preparedAt, String validatedAt, String approvedAt, String submittedAt, String closedAt, String concludedAt, String answerHorizonAt, String preparationReason) {
+            String formCode, int formVersion, String period, int periodRevision, int periodRevisionNow, String periodStatusNow, boolean monthMoved, boolean overtaken, boolean stillStands, String blockedBy, String contentSha256, RegulatoryValidationView validation,
+            List<RegulatoryFormLineView> lines, List<RegulatoryProviderAnswerView> answers, long answersKept, String correctsSubmissionId, String correctedBySubmissionId, String providerReference, String rejectionCode, int attempts, int resends, String lastAnswer,
+            boolean overdue, boolean resendsExhausted, boolean nonDeliveryOpen, long contraryAnswers, String preparedAt, String validatedAt, String approvedAt, String submittedAt, String closedAt, String concludedAt, String answerHorizonAt, String preparationReason) {
 
         /** Figures, a reason and a provider's text stay out of a log line. */
         @Override
@@ -239,12 +242,28 @@ public final class RegulatorySubmissionDesk {
         return receipt(id);
     }
 
+    /**
+     * Concludes a return undelivered on what the provider says now: {@code last_answer} can be an interval old. The provider is asked once, on no transaction, when the row says the door is open; what it says is kept whatever then happens; the person's act then judges that answer.
+     * <strong>When the call fails, or its answer cannot be kept, nothing is concluded</strong>: {@code 503 accounting.RegulatoryProviderUnavailable}, the row unmoved, the key unspent, and the person asks again.
+     */
     public RegulatorySubmissionReceipt declareUndelivered(String idempotencyKey, String rawId, String reason) {
         RegulatorySubmissionId id = submissionId(rawId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        flow.door(UNDELIVERED_SPAN, () -> keyed(actor, idempotencyKey, "submission-non-delivery|" + id.value() + "|" + reason, uow -> submissions.declareUndelivered(uow, id, reason, actor, correlation)));
+        Optional<RegulatorySubmissions.Recorded> asked = flow.door(UNDELIVERED_SPAN, () -> askedAtTheDoor(id, correlation));
+        flow.door(UNDELIVERED_SPAN, () -> keyed(actor, idempotencyKey, "submission-non-delivery|" + id.value() + "|" + reason, uow -> submissions.declareUndelivered(uow, id, asked, reason, actor, correlation)));
         return receipt(id);
+    }
+
+    /** Empty when the row says the door is not open, or the return has already left {@code SUBMITTED}: the person's act then refuses or converges, and nothing was asked. */
+    private Optional<RegulatorySubmissions.Recorded> askedAtTheDoor(RegulatorySubmissionId id, CorrelationId correlation) {
+        RegulatorySubmissionStore.Row row = transactions.inTransaction(uow -> submissions.current(uow, id))
+                .orElseThrow(() -> new ApiException(AccountingErrorCode.NOT_FOUND, "No regulatory submission answers the request", "no such record."));
+        if (!RegulatorySubmissions.nonDeliveryOpen(row)) {
+            return Optional.empty();
+        }
+        return Optional.of(driver.askBeforeNonDelivery(row, correlation).orElseThrow(() -> new ApiException(AccountingErrorCode.REGULATORY_PROVIDER_UNAVAILABLE, "A regulatory submission command was refused",
+                "the provider could not be asked at this act, so nothing was concluded; the return stands SUBMITTED; ask again")));
     }
 
     // ------------------------------------------------------------------ reads
@@ -268,13 +287,15 @@ public final class RegulatorySubmissionDesk {
         return view(view, withReason);
     }
 
-    /** What a preparer must act on or know of. Recorded before it is served. */
-    public List<RegulatorySubmissionSummaryView> standing() {
+    /** What a preparer must act on or know of, one page, oldest first. Recorded before it is served. */
+    public RegulatorySubmissionStandingView standing(String rawAfter, Integer rawLimit) {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        List<RegulatorySubmissionStore.Row> rows = flow.door(READ_SPAN, () -> guarded(() -> transactions.inTransaction(submissions::standing)));
-        recordRead("standing", "door=standing, rows=" + rows.size(), actor, correlation);
-        return rows.stream().map(RegulatorySubmissionDesk::summary).toList();
+        Optional<RegulatorySubmissionId> after = Optional.ofNullable(rawAfter).map(raw -> named(raw, RegulatorySubmissionId::of, "after is the cursor of a previous page"));
+        int limit = rawLimit == null ? RegulatorySubmissions.LIST_LIMIT : rawLimit;
+        RegulatorySubmissions.Standing page = flow.door(READ_SPAN, () -> guarded(() -> transactions.inTransaction(uow -> submissions.standing(uow, after, limit))));
+        recordRead("standing", "door=standing, rows=" + page.rows().size() + ", page=" + (after.isPresent() ? "next" : "first") + ", more=" + page.nextAfter().isPresent(), actor, correlation);
+        return new RegulatorySubmissionStandingView(page.rows().stream().map(RegulatorySubmissionDesk::summary).toList(), id(page.nextAfter()));
     }
 
     /** What this controller can decide: never their own. Recorded before it is served. */
@@ -308,10 +329,10 @@ public final class RegulatorySubmissionDesk {
     private static RegulatorySubmissionView view(RegulatorySubmissions.View view, boolean withReason) {
         RegulatorySubmissionStore.Row row = view.row();
         return new RegulatorySubmissionView(row.id().value().toString(), RegulatoryForm.REFERENCE, NOTICE, row.status().name(), row.status().meaning(), row.obligation().value().toString(), view.obligation().status().name(),
-                view.obligation().configurationSha256(), row.adapter(), row.jurisdiction(), row.form(), row.formVersion(), row.month().toString(), row.periodRevision(), row.periodRevisionNow(), row.periodStatusNow().name(), row.monthMoved(),
+                view.obligation().configurationSha256(), row.adapter(), row.jurisdiction(), row.form(), row.formVersion(), row.month().toString(), row.periodRevision(), row.periodRevisionNow(), row.periodStatusNow().name(), row.monthMoved(), row.overtaken(),
                 view.stillStands(), view.blockedBy().map(Enum::name).orElse(null), row.contentSha256(), view.validation().map(RegulatorySubmissionDesk::validation).orElse(null),
-                view.lines().stream().map(line -> line(line, row)).toList(), view.answers().stream().map(RegulatorySubmissionDesk::answer).toList(), id(row.corrects()), id(row.correctedBy()), row.providerReference().orElse(null),
-                row.rejectionCode().orElse(null), row.attempts(), row.resends(), row.lastAnswer().orElse(null), overdue(row), view.resendsExhausted(), row.contraryAnswers(), row.preparedAt().toString(), instant(row.validatedAt()),
+                view.lines().stream().map(line -> line(line, row)).toList(), view.answers().stream().map(RegulatorySubmissionDesk::answer).toList(), view.answersKept(), id(row.corrects()), id(row.correctedBy()), row.providerReference().orElse(null),
+                row.rejectionCode().orElse(null), row.attempts(), row.resends(), row.lastAnswer().orElse(null), overdue(row), view.resendsExhausted(), view.nonDeliveryOpen(), row.contraryAnswers(), row.preparedAt().toString(), instant(row.validatedAt()),
                 instant(row.approvedAt()), instant(row.submittedAt()), instant(row.closedAt()), instant(row.concludedAt()), instant(row.answerHorizonAt()), withReason ? row.preparationReason() : null);
     }
 
@@ -349,8 +370,8 @@ public final class RegulatorySubmissionDesk {
 
     private static RegulatorySubmissionSummaryView summary(RegulatorySubmissionStore.Row row) {
         boolean exhausted = row.status() == SubmissionStatus.SUBMITTED && row.lastAnswer().filter("NOT_RECEIVED"::equals).isPresent() && row.resends() >= RegulatorySubmissions.MAX_RESENDS;
-        return new RegulatorySubmissionSummaryView(row.id().value().toString(), row.status().name(), row.status().meaning(), row.jurisdiction(), row.form(), row.formVersion(), row.month().toString(), row.periodRevision(), row.periodRevisionNow(),
-                row.monthMoved(), overdue(row), exhausted, row.contraryAnswers(), id(row.corrects()), id(row.correctedBy()), row.preparedAt().toString());
+        return new RegulatorySubmissionSummaryView(row.id().value().toString(), RegulatoryForm.REFERENCE, row.status().name(), row.status().meaning(), row.jurisdiction(), row.form(), row.formVersion(), row.month().toString(), row.periodRevision(), row.periodRevisionNow(),
+                row.monthMoved(), row.overtaken(), overdue(row), exhausted, RegulatorySubmissions.nonDeliveryOpen(row), row.contraryAnswers(), id(row.corrects()), id(row.correctedBy()), row.preparedAt().toString());
     }
 
     private static String id(Optional<RegulatorySubmissionId> id) {

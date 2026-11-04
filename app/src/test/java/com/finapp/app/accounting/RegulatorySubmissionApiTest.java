@@ -88,6 +88,7 @@ class RegulatorySubmissionApiTest {
                 assertThat(knock(door, accountant).statusCode()).as(door.toString()).isEqualTo(403);
             }
         }
+        assertThat(RoleName.ACCOUNTANT.permissions()).as("the role tried does hold it").contains(com.finapp.identity.PermissionName.ACCOUNTING_READ);
     }
 
     @Test
@@ -108,7 +109,7 @@ class RegulatorySubmissionApiTest {
     }
 
     @Test
-    @DisplayName("neither reader's role opens the run's drill-down the lineage names: what a view says of them is true")
+    @DisplayName("neither reader's role opens the report-run routes a lineage names")
     void aReadersRoleOpensNoDrillDown() throws Exception {
         String run = IDS.next().toString();
         for (String token : List.of(sessionWith(RoleName.REGULATORY_REPORTER), sessionWith(RoleName.FINANCIAL_CONTROLLER))) {
@@ -140,13 +141,15 @@ class RegulatorySubmissionApiTest {
     }
 
     @Test
-    @DisplayName("to the reporter: an act without a key or with a field the body does not declare is 422 before the domain; a null in a list is 422, never a 500; an unknown or malformed id the uniform 404")
+    @DisplayName("to the reporter: an act without a key is 422 before the domain; a field the body does not declare is 422, the code named; a null in a list is 422, never a 500; an unknown or malformed id the uniform 404")
     void theKeyTheBodyAndTheUniformNotFound() throws Exception {
         String reporter = sessionWith(RoleName.REGULATORY_REPORTER);
         HttpResponse<String> unkeyed = send("POST", SUBMISSIONS, DRAFT, reporter, null);
         assertThat(unkeyed.statusCode()).as(unkeyed.body()).isEqualTo(422);
         assertThat(unkeyed.body()).contains("api.IdempotencyKeyRequired");
-        assertThat(knock(new Door("POST", SUBMISSIONS, DRAFT.replace("}", ",\"preparedBy\":\"me\"}")), reporter).statusCode()).as("a closed body").isEqualTo(422);
+        HttpResponse<String> closed = knock(new Door("POST", SUBMISSIONS, DRAFT.replace("}", ",\"preparedBy\":\"me\"}")), reporter);
+        assertThat(closed.statusCode()).as("a closed body").isEqualTo(422);
+        assertThat(closed.body()).as("the body's, before the desk").contains("api.ValidationFailed");
         assertThat(knock(new Door("POST", OBLIGATIONS, OBLIGATION.replace("\"sources\":[]", "\"sources\":[null]")), reporter).statusCode()).as("a null in a list").isEqualTo(422);
         for (String id : List.of(IDS.next().toString(), UUID.randomUUID().toString(), "not-a-uuid")) {
             HttpResponse<String> read = knock(new Door("GET", SUBMISSIONS + "/" + id, null), reporter);
