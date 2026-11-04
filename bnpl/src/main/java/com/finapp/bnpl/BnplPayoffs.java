@@ -177,6 +177,7 @@ public final class BnplPayoffs {
             }
             return new Quoted(born.get(), true);
         }
+        BnplWrittenOffRefused.refuseIfWrittenOff(obligation);
         if (obligation.status() != BnplObligationStatus.ACTIVE) {
             throw new BnplRepayments.ObligationClosed(obligation.product());
         }
@@ -290,6 +291,7 @@ public final class BnplPayoffs {
         }
         // The quote - immutable, read plainly under B4 (the execution's uniques beneath B4 arbitrate).
         BnplPayoffQuote quote = store.findQuote(unitOfWork, obligation.id(), quoteId).orElseThrow(QuoteNotFound::new);
+        BnplWrittenOffRefused.refuseIfWrittenOff(obligation);
         if (obligation.status() != BnplObligationStatus.ACTIVE) {
             throw new BnplRepayments.ObligationClosed(obligation.product());
         }

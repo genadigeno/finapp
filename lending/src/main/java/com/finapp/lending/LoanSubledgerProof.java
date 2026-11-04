@@ -37,9 +37,12 @@ import java.util.UUID;
  *   <li>{@code LOAN_CREDIT_BALANCE} = held (the repayments' {@code CREDIT_BALANCE} lines) + fees refunded (rule 8a) -
  *       reversed held - applied - refunded at closure.
  * </ul>
+ * Each of the five receivables less what an approved write-off took of it (rule 14, `P14-TSK-021`): a write-off no row explains
+ * fails the account twice over, its balances and its unnamed entry, which is what keeps the month's {@code SOURCE_COMPLETENESS}
+ * honest.
  * And: every journal entry on the loan's accounts is named by one of its rows (a raw posting no row explains fails the
  * account even where amounts happen to net); the six accounts are exactly the loan's, one each in its currency; no balance
- * is on the wrong side ("no due account negative"); a {@code CLOSED} or {@code CANCELLED} account's six balances are zero;
+ * is on the wrong side ("no due account negative"); a {@code CLOSED}, {@code CANCELLED} or {@code WRITTEN_OFF} account's six balances are zero;
  * and no fee earns the platform less than nothing (the Phase 11 gate's R3): each assessment's income - assessed less its
  * approved fee waivers and refunds, the {@code LOAN_FEE_INCOME} lines its rows name - is never negative. The income account
  * is the currency's, shared, so its lines are judged through the rows that name them; a fee forgiven twice (refunded, the
@@ -164,7 +167,8 @@ public final class LoanSubledgerProof {
             noneNegative &= !balance.isNegative();
             allZero &= balance.isZero();
         }
-        boolean terminal = record.loan().status() == LoanStatus.CLOSED || record.loan().status() == LoanStatus.CANCELLED;
+        boolean terminal = record.loan().status() == LoanStatus.CLOSED || record.loan().status() == LoanStatus.CANCELLED
+                || record.loan().status() == LoanStatus.WRITTEN_OFF;
         return new Verdict(record.id(), record.loan().kind(), record.loan().status(), figures, complete,
                 unexplained(record), noneNegative, !terminal || allZero, feeIncomeNonNegative(record));
     }
@@ -293,6 +297,16 @@ public final class LoanSubledgerProof {
         if (record.closure().isPresent()) {
             credit = credit.minus(record.closure().get().refund());
         }
+        // Written off (rule 14): each receivable to expense, by what the approved row took (P14-TSK-021).
+        for (LoanRecord.WriteOffRow writeOff : record.writeOffs()) {
+            if (writeOff.approved()) {
+                principal = principal.minus(writeOff.principal());
+                principalDue = principalDue.minus(writeOff.principalDue());
+                accrued = accrued.minus(writeOff.interestAccrued());
+                interestDue = interestDue.minus(writeOff.interestDue());
+                feesDue = feesDue.minus(writeOff.feesDue());
+            }
+        }
 
         Map<AccountPurpose, Money> rows = new EnumMap<>(AccountPurpose.class);
         rows.put(AccountPurpose.LOAN_PRINCIPAL, principal);
@@ -381,6 +395,9 @@ public final class LoanSubledgerProof {
                 new Namer("RESCHEDULING", rescheduling.id(), new Stamp(rescheduling.order(), rescheduling.createdAt()))));
         record.closure().ifPresent(closure -> closure.refundEntry().ifPresent(entry -> named.put(entry,
                 new Namer("CLOSURE_REFUND", closure.id(), new Stamp(closure.order(), closure.createdAt())))));
+        record.writeOffs().forEach(writeOff -> writeOff.entry().ifPresent(entry -> named.put(entry,
+                new Namer("WRITE_OFF", writeOff.id(),
+                new Stamp(writeOff.order(), writeOff.decidedAt().orElse(writeOff.proposedAt()))))));
         return named;
     }
 }

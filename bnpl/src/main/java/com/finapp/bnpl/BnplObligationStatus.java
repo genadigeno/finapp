@@ -15,5 +15,13 @@ public enum BnplObligationStatus {
     ACTIVE,
 
     /** Terminal: every receivable zero, every elapsed date accrued, any credit balance refunded. */
-    CLOSED
+    CLOSED,
+
+    /**
+     * Terminal (`P14-TSK-021`, owner decision C6): a defaulted obligation written off under four eyes - its five receivables moved to
+     * {@code BNPL_WRITE_OFF_EXPENSE}. <strong>Never closed, never paid, never forgiven</strong>: an act on the platform's books that
+     * says nothing about what the customer owes. No door moves money on it, nothing services it, and nothing leaves it
+     * ({@code INV-LIFE-04}).
+     */
+    WRITTEN_OFF
 }

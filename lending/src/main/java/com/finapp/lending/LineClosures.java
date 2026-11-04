@@ -117,11 +117,13 @@ public final class LineClosures {
             if (born.get().requestKey().equals(requestKey)) {
                 return new Requested(born.get(), Optional.empty(), true);
             }
+            LoanWrittenOffRefused.refuseIfWrittenOff(loan);
             if (loan.status() == LoanStatus.CLOSED) {
                 throw new LoanClosed();
             }
             return new Requested(born.get(), Optional.empty(), true);
         }
+        LoanWrittenOffRefused.refuseIfWrittenOff(loan);
         if (loan.kind() != LoanKind.REVOLVING) {
             throw new LineNotClosable();
         }

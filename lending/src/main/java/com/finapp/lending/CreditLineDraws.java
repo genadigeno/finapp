@@ -178,6 +178,7 @@ public final class CreditLineDraws {
             }
             return new Drawn(born.get(), true);
         }
+        LoanWrittenOffRefused.refuseIfWrittenOff(loan);
         if (loan.kind() != LoanKind.REVOLVING || loan.status() != LoanStatus.ACTIVE) {
             throw new LineNotDrawable(loan.product());
         }

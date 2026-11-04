@@ -164,6 +164,7 @@ public final class BnplRepaymentReversals {
         BnplServicingStore.Locked locked = servicing.lock(unitOfWork, addressed.obligation()).orElseThrow(NotFound::new);
         BnplPurchaseStore.Repayment reversed = store.repayment(unitOfWork, addressed.obligation(), repayment)
                 .orElseThrow(NotFound::new);
+        BnplWrittenOffRefused.refuseIfWrittenOff(locked.obligation());
         if (locked.obligation().status() != BnplObligationStatus.ACTIVE) {
             throw new ObligationClosed();
         }
@@ -234,6 +235,9 @@ public final class BnplRepaymentReversals {
             throw new SelfApprovalRefused(agreement, reversal);
         }
         BnplObligation obligation = locked.obligation();
+        // A reversal after a write-off would re-raise a receivable the books no longer hold: refused, the proposal left for its
+        // rejection (P14-TSK-021; bnpl V019's edge function admits only an ACTIVE obligation, for every writer).
+        BnplWrittenOffRefused.refuseIfWrittenOff(obligation);
         if (obligation.status() != BnplObligationStatus.ACTIVE) {
             throw new ObligationClosed();
         }

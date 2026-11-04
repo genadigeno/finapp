@@ -6,8 +6,9 @@ package com.finapp.lending;
  *
  * <p>An {@link LoanKind#INSTALMENT} loan: {@code PENDING_DISBURSEMENT -> ACTIVE -> CLOSED}, or
  * {@code PENDING_DISBURSEMENT -> CANCELLED}. A {@link LoanKind#REVOLVING} line: born {@code ACTIVE},
- * {@code ACTIVE -> CLOSING -> CLOSED}, or {@code ACTIVE -> CLOSED}. Terminal: {@code CLOSED} (with its
- * {@link ClosureReason}) and {@code CANCELLED} (with its {@link CancellationReason}) - nothing leaves them
+ * {@code ACTIVE -> CLOSING -> CLOSED}, or {@code ACTIVE -> CLOSED}. Either kind, once defaulted:
+ * {@code ACTIVE | CLOSING -> WRITTEN_OFF} (`P14-TSK-021`). Terminal: {@code CLOSED} (with its
+ * {@link ClosureReason}), {@code CANCELLED} (with its {@link CancellationReason}) and {@code WRITTEN_OFF} - nothing leaves them
  * ({@code INV-LIFE-04}, {@code INV-LND-08}). <strong>Conditions are not states</strong>: delinquency, default, draws
  * suspended and awaiting payout are recorded beside the lifecycle, so an {@code ACTIVE} loan is {@code ACTIVE} whether
  * current or 120 days past due; and a restructuring is agreement version n+1, never a state.
@@ -27,5 +28,13 @@ public enum LoanStatus {
     CLOSED,
 
     /** Terminal, instalment only: never disbursed - nothing was posted, so nothing is owed. */
-    CANCELLED
+    CANCELLED,
+
+    /**
+     * Terminal, either kind (`P14-TSK-021`, owner decision C6): a defaulted account written off under four eyes - its five
+     * receivables moved to {@code LOAN_WRITE_OFF_EXPENSE}. <strong>Never closed, never paid, never forgiven</strong>: an act on
+     * the platform's books that says nothing about what the customer owes, so {@code closedAt} stays empty. No door moves money
+     * on it, nothing services it, and nothing leaves it ({@code INV-LIFE-04}).
+     */
+    WRITTEN_OFF
 }

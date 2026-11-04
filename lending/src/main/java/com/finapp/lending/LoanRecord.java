@@ -68,7 +68,8 @@ public record LoanRecord(
         List<Condition> conditions,
         List<Attempt> collectionAttempts,
         List<LedgerAccountRow> ledgerAccounts,
-        List<PurposeBalances.DatedLine> journalLines) {
+        List<PurposeBalances.DatedLine> journalLines,
+        List<WriteOffRow> writeOffs) {
 
     public LoanRecord {
         Objects.requireNonNull(loan, "loan");
@@ -98,6 +99,7 @@ public record LoanRecord(
         collectionAttempts = List.copyOf(collectionAttempts);
         ledgerAccounts = List.copyOf(ledgerAccounts);
         journalLines = List.copyOf(journalLines);
+        writeOffs = List.copyOf(writeOffs);
     }
 
     /** The order of a fact written before lending {@code V025}: before every ordered fact, among its peers by its stamp. */
@@ -357,6 +359,25 @@ public record LoanRecord(
         @Override
         public String toString() {
             return "WaiverRow[" + id + ", " + kind + "]";
+        }
+    }
+
+    /**
+     * A write-off and its decision, if decided (`P14-TSK-021`): what it took of each receivable, and once approved rule 14's entry
+     * and its date.
+     */
+    public record WriteOffRow(UUID id, Money principal, Money principalDue, Money interestAccrued, Money interestDue, Money feesDue,
+            long revision, Instant proposedAt, Optional<String> outcome, Optional<Instant> decidedAt,
+            Optional<JournalEntryId> entry, Optional<LocalDate> valueDate, long order) {
+
+        /** Whether its decision approved it. */
+        public boolean approved() {
+            return outcome.filter("APPROVED"::equals).isPresent();
+        }
+
+        @Override
+        public String toString() {
+            return "WriteOffRow[" + id + "]";
         }
     }
 

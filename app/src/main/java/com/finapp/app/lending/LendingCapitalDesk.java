@@ -87,6 +87,7 @@ public final class LendingCapitalDesk {
             long outstandingMinor,
             long headroomMinor,
             long lendingFundedMinor,
+            long writtenOffMinor,
             boolean proofHolds) {}
 
     /** One contribution: the proposal, its decision, and - once approved - its derived recognition. */
@@ -155,6 +156,7 @@ public final class LendingCapitalDesk {
                         verdict.terms().outstanding().minorUnits(),
                         verdict.terms().headroom().minorUnits(),
                         verdict.lendingFunded().minorUnits(),
+                        verdict.terms().writtenOff().minorUnits(),
                         verdict.holds()));
             }
             List<CapitalContributionStore.ContributionRow> rows = store.recent(unitOfWork, CONTRIBUTIONS_BOUND + 1);

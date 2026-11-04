@@ -66,8 +66,9 @@ public final class LoanCountMetrics {
     /** The states an account of {@code kind} can hold. */
     static Set<LoanStatus> statesOf(LoanKind kind) {
         return kind == LoanKind.INSTALMENT
-                ? EnumSet.of(LoanStatus.PENDING_DISBURSEMENT, LoanStatus.ACTIVE, LoanStatus.CLOSED, LoanStatus.CANCELLED)
-                : EnumSet.of(LoanStatus.ACTIVE, LoanStatus.CLOSING, LoanStatus.CLOSED);
+                ? EnumSet.of(LoanStatus.PENDING_DISBURSEMENT, LoanStatus.ACTIVE, LoanStatus.CLOSED, LoanStatus.CANCELLED,
+                        LoanStatus.WRITTEN_OFF)
+                : EnumSet.of(LoanStatus.ACTIVE, LoanStatus.CLOSING, LoanStatus.CLOSED, LoanStatus.WRITTEN_OFF);
     }
 
     private double count(LoanProduct product, LoanStatus status) {

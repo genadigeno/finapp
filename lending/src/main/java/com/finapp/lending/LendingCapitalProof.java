@@ -29,8 +29,9 @@ import lombok.RequiredArgsConstructor;
  *   <li><strong>Headroom</strong> - recognised capital less committed and outstanding principal is at least zero at
  *       rest; the outstanding term is {@link LendingCapitalHeadroom}'s, so it counts loan, line and - since
  *       `P12-TSK-005` - BNPL principal ({@code BNPL_PRINCIPAL + BNPL_PRINCIPAL_DUE}, by ledger purpose) alike: capital
- *       recognised from bank evidence = headroom + committed + loan and BNPL principal outstanding (ADR-0104 decision 7,
- *       the formula versioned by that change). One derivation, never a second copy of the formula here.
+ *       recognised from bank evidence = headroom + committed + loan and BNPL principal outstanding + principal written off
+ *       (ADR-0104 decision 7, the formula versioned by that change and by `P14-TSK-021`, whose write-off leaves no line on the
+ *       capital for this proof to explain). One derivation, never a second copy of the formula here.
  *   <li><strong>The safeguarding adjustment</strong> - {@code lending_funded(c) = principal outstanding + committed}
  *       is published: the term by which a future safeguarding proof (Phase 14/15) subtracts the capital-funded part of
  *       the platform's liabilities - loan-funded wallet money and BNPL-funded merchant payables - from customer-funded

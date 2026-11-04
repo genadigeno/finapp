@@ -93,7 +93,9 @@ public final class LoanAccountDesk {
      * {@code PAID_OUT}, {@code FAILED}, {@code NOT_DISPATCHED}) - null for a wallet loan and a line; never the destination.
      * {@code availableLimit} is a line's (`P11-TSK-021`): its limit less its drawn principal while {@code ACTIVE}, zero
      * once it is not - derived in the read's snapshot, never stored; null for an instalment loan. {@code condition} is the
-     * account's delinquency and default (`P11-TSK-024`) - null for an account not in servicing.
+     * account's delinquency and default (`P11-TSK-024`) - null for an account not in servicing. {@code notice} is what a
+     * {@code WRITTEN_OFF} account's holder reads (`P14-TSK-021`): its {@code balances} are what still stands owed, never zero - a
+     * write-off is the platform's bookkeeping, never payment or forgiveness; null otherwise.
      */
     public record LoanView(
             String loanId,
@@ -108,7 +110,8 @@ public final class LoanAccountDesk {
             BalancesView balances,
             String payoutStatus,
             String availableLimit,
-            ConditionView condition) {}
+            ConditionView condition,
+            String notice) {}
 
     /**
      * The account's condition now (`P11-TSK-024`; ADR-0098, {@code PHASE_11_PLAN.md} section 12.7) - derived in the read's
@@ -481,7 +484,8 @@ public final class LoanAccountDesk {
                         condition.daysPastDue(),
                         condition.bucket().map(Enum::name).orElse(null),
                         condition.defaulted(),
-                        read.drawsSuspended().orElse(null))).orElse(null));
+                        read.drawsSuspended().orElse(null))).orElse(null),
+                loan.status() == com.finapp.lending.LoanStatus.WRITTEN_OFF ? Loans.WRITTEN_OFF_NOTICE : null);
     }
 
     private static String decimal(Money amount) {

@@ -492,6 +492,7 @@ public final class LoanAmendments {
             throw new LoanTerms.TermsInvalid("a credit line has no schedule to restructure - more limit is a new"
                     + " application and decision");
         }
+        LoanWrittenOffRefused.refuseIfWrittenOff(account);
         if (account.status() == LoanStatus.CLOSED || account.status() == LoanStatus.CANCELLED) {
             throw new LoanClosed();
         }

@@ -70,6 +70,55 @@ public final class JdbcPurposeBalances implements PurposeBalances<Connection> {
     }
 
     @Override
+    public Money netCreditBeside(
+            Connection unitOfWork, Set<AccountPurpose> purposes, Set<AccountPurpose> beside, CurrencyCode currency) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(purposes, "purposes must not be null");
+        Objects.requireNonNull(beside, "beside must not be null");
+        Objects.requireNonNull(currency, "currency must not be null");
+        if (purposes.isEmpty() || beside.isEmpty()) {
+            throw new IllegalArgumentException("name at least one purpose on each side");
+        }
+        Money debits = Money.zero(currency);
+        Money credits = Money.zero(currency);
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT line.direction, line.amount_minor, line.scale"
+                                + " FROM ledger.journal_line line"
+                                + " JOIN ledger.ledger_account account"
+                                + " ON account.id = line.ledger_account_id"
+                                + " WHERE account.purpose = ANY (?) AND account.currency = ?"
+                                + " AND EXISTS (SELECT 1 FROM ledger.journal_line neighbour"
+                                + " JOIN ledger.ledger_account neighbour_account"
+                                + " ON neighbour_account.id = neighbour.ledger_account_id"
+                                + " WHERE neighbour.entry_id = line.entry_id"
+                                + " AND neighbour_account.purpose = ANY (?))")) {
+            select.setArray(1, unitOfWork.createArrayOf("text", purposes.stream().map(Enum::name).sorted().toArray()));
+            select.setString(2, currency.code());
+            select.setArray(3, unitOfWork.createArrayOf("text", beside.stream().map(Enum::name).sorted().toArray()));
+            try (ResultSet row = select.executeQuery()) {
+                while (row.next()) {
+                    Money amount =
+                            Money.ofPersisted(row.getLong("amount_minor"), currency, row.getShort("scale"));
+                    if (Direction.valueOf(row.getString("direction")) == Direction.DEBIT) {
+                        debits = JournalEntry.sum(debits, amount);
+                    } else {
+                        credits = JournalEntry.sum(credits, amount);
+                    }
+                }
+            }
+            return BalanceDerivation.settle(NormalBalance.CREDIT, debits, credits);
+        } catch (ScaleMismatchException | MonetaryOverflowException underivable) {
+            throw new LedgerStorageException(
+                    "the lines of " + purposes + " beside " + beside + " in " + currency.code()
+                            + " cannot be folded: mixed scales or overflow (INV-MON-03, INV-MON-06)");
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe("folding the lines of " + purposes + " beside " + beside + " in " + currency.code(), failure));
+        }
+    }
+
+    @Override
     public List<EntryLine> linesOn(Connection unitOfWork, LedgerAccountId account) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(account, "account must not be null");

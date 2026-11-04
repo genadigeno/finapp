@@ -30,10 +30,16 @@ import java.util.UUID;
  */
 public final class JdbcBnplReportReads implements BnplReportReads {
 
-    /** Each obligation born by the date ({@code ?1}), with its status at the end of it ({@code ?2}). */
+    /**
+     * Each obligation born by the date, with its status at the end of it - both as of the date, never its present status: closed by
+     * then, written off by then (its entry's value date, `P14-TSK-021`), else active. An earlier date's report never moves because of a
+     * later write-off.
+     */
     private static final String STATED = "SELECT o.id, o.product, o.currency, CASE WHEN o.closed_at IS NOT NULL AND"
-            + " bnpl.business_date(o.closed_at, o.servicing_zone) <= ? THEN 'CLOSED' ELSE 'ACTIVE' END AS status"
-            + " FROM bnpl.bnpl_obligation o WHERE o.purchase_date <= ?";
+            + " bnpl.business_date(o.closed_at, o.servicing_zone) <= p.as_of THEN 'CLOSED'"
+            + " WHEN EXISTS (SELECT 1 FROM bnpl.bnpl_write_off_decision d WHERE d.obligation_id = o.id"
+            + " AND d.outcome = 'APPROVED' AND d.value_date <= p.as_of) THEN 'WRITTEN_OFF' ELSE 'ACTIVE' END AS status"
+            + " FROM bnpl.bnpl_obligation o CROSS JOIN (SELECT CAST(? AS date) AS as_of) p WHERE o.purchase_date <= ?";
 
     /** Signed DR - CR. */
     private static final String SIGNED = "sum(CASE WHEN ln.direction = 'DEBIT' THEN ln.amount_minor ELSE -ln.amount_minor END)";

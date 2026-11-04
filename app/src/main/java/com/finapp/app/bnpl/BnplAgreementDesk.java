@@ -104,7 +104,8 @@ public final class BnplAgreementDesk {
             String openedAt,
             String termsSha256,
             BnplBalancesView balances,
-            BnplConditionView condition) {}
+            BnplConditionView condition,
+            String notice) {}
 
     /**
      * The agreement's condition now (`P12-TSK-020`; {@code PHASE_12_PLAN.md} section 12.8) - derived in the read's snapshot
@@ -267,7 +268,9 @@ public final class BnplAgreementDesk {
                         decimal(balances.principalDue()), decimal(balances.interestAccrued()),
                         decimal(balances.interestDue()), decimal(balances.feesDue()), decimal(balances.creditBalance())),
                 condition.map(state -> new BnplConditionView(state.pastDue() ? "PAST_DUE" : "CURRENT",
-                        state.daysPastDue(), state.bucket().map(Enum::name).orElse(null), state.defaulted())).orElse(null));
+                        state.daysPastDue(), state.bucket().map(Enum::name).orElse(null), state.defaulted())).orElse(null),
+                owned.obligation().status() == com.finapp.bnpl.BnplObligationStatus.WRITTEN_OFF
+                        ? BnplObligations.WRITTEN_OFF_NOTICE : null);
     }
 
     static BnplScheduleView schedule(BnplObligations.Schedule read) {

@@ -263,6 +263,22 @@ public final class JdbcBnplRecordStore implements BnplRecordStore {
                         + " bnpl.bnpl_obligation_closure WHERE obligation_id = ?", id, row -> instant(row, "created_at")))
                         .orElse(Instant.EPOCH))));
 
+        List<BnplRecord.WriteOffRow> writeOffs = query(c, "SELECT w.id, w.currency, w.scale, w.principal_minor, w.principal_due_minor,"
+                + " w.interest_accrued_minor, w.interest_due_minor, w.fees_due_minor, w.revision, w.proposed_at, d.outcome, d.decided_at,"
+                + " d.journal_entry_id, d.value_date FROM bnpl.bnpl_write_off w LEFT JOIN bnpl.bnpl_write_off_decision d"
+                + " ON d.write_off_id = w.id WHERE w.obligation_id = ? ORDER BY w.proposed_at, w.id", id, row -> {
+                    UUID writeOff = row.getObject("id", UUID.class);
+                    java.sql.Timestamp decidedAt = row.getTimestamp("decided_at");
+                    Instant own = decidedAt == null ? instant(row, "proposed_at") : decidedAt.toInstant();
+                    UUID entry = row.getObject("journal_entry_id", UUID.class);
+                    return new BnplRecord.WriteOffRow(writeOff, money(row, "principal_minor"), money(row, "principal_due_minor"),
+                            money(row, "interest_accrued_minor"), money(row, "interest_due_minor"), money(row, "fees_due_minor"),
+                            row.getLong("revision"), Optional.ofNullable(row.getString("outcome")),
+                            at.getOrDefault("write-off-decided:" + writeOff, own),
+                            Optional.ofNullable(entry).map(JournalEntryId::of),
+                            Optional.ofNullable(row.getObject("value_date", LocalDate.class)));
+                });
+
         // The ledger: the obligation's accounts and every line on them in ONE statement; the shared entries' lines.
         List<BnplRecord.LedgerAccountRow> owned = new ArrayList<>();
         Set<LedgerAccountId> ownedIds = new LinkedHashSet<>();
@@ -289,7 +305,7 @@ public final class JdbcBnplRecordStore implements BnplRecordStore {
         return Optional.of(new BnplRecord(obligation, closedAt, head.purchase(), head.financing(),
                 at.getOrDefault("financing", head.financedAt()), offer, offerTerms, agreements, versions, schedules, billings, accruals, applications,
                 repaid, attempts, refunded, fees, changes, quotes, execution, disputed, reversals, waivers, closure, owned,
-                journal, shared, payable, feeIncome));
+                journal, shared, payable, feeIncome, writeOffs));
     }
 
     // ------------------------------------------------------------------ the rows
@@ -426,6 +442,8 @@ public final class JdbcBnplRecordStore implements BnplRecordStore {
                 + " obligation_id = ?"
                 + " UNION ALL SELECT 'waiver-decided:' || d.waiver_id, d.recorded_order, d.decided_at FROM"
                 + " bnpl.bnpl_waiver_decision d JOIN bnpl.bnpl_waiver w ON w.id = d.waiver_id WHERE w.obligation_id = ?"
+                + " UNION ALL SELECT 'write-off-decided:' || d.write_off_id, d.recorded_order, d.decided_at FROM"
+                + " bnpl.bnpl_write_off_decision d WHERE d.obligation_id = ?"
                 + " UNION ALL SELECT 'dispute:' || id, recorded_order, opened_at FROM bnpl.bnpl_dispute WHERE"
                 + " obligation_id = ? AND opened_at IS NOT NULL"
                 + " UNION ALL SELECT 'dispute-resolved:' || d.id, (SELECT max(e.recorded_order) FROM"

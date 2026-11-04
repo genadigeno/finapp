@@ -36,6 +36,10 @@ import java.util.UUID;
  * outstandingFor         = the sum over the party's loans, lines and BNPL obligations in the currency
  * </pre>
  *
+ * <p><strong>Version 4 (`P14-TSK-021`): a write-off moves no exposure.</strong> Rule 14's and F11's lines are left out, so a
+ * {@code WRITTEN_OFF} account counts the principal it held: a write-off said nothing about what the customer owes, and must not hand
+ * them back the capacity the debt consumed. The status is read, never a surprise: every other is refused.
+ *
  * <p><strong>Principal only</strong> (lending A3): interest accrued or billed, late fees and the credit balance are not
  * credit a decision extended. <strong>No committed term for BNPL</strong>: a purchase is financed in the commit that
  * consumes its decision (section 12.4), so the obligation's principal lines exist from the instant the reservation ends.
@@ -62,7 +66,12 @@ import java.util.UUID;
 public final class BnplCreditExposure implements PlatformCreditExposure<Connection> {
 
     /** This composition's version, recorded as the snapshot's provenance ({@code INV-CRD-01}). */
-    public static final int VERSION = 3;
+    public static final int VERSION = 4;
+
+    /** Leaves F11's lines out of a {@code j}-aliased read: the entry's key is the one poster's own (`P14-TSK-021`). */
+    static final String NOT_A_BNPL_WRITE_OFF = " AND NOT EXISTS (SELECT 1 FROM ledger.journal_entry x WHERE x.id = j.entry_id"
+            + " AND x.idempotency_scope LIKE '" + com.finapp.ledger.PostingService.IDEMPOTENCY_SCOPE + ":"
+            + com.finapp.bnpl.BnplWriteOffs.WRITE_OFF_KEY_PREFIX + "%')";
 
     /**
      * Per loan account and per BNPL obligation of the party in the currency, one row per scale its principal lines were
@@ -78,6 +87,7 @@ public final class BnplCreditExposure implements PlatformCreditExposure<Connecti
             + " FROM ledger.ledger_account a JOIN ledger.journal_line j ON j.ledger_account_id = a.id"
             + " WHERE a.owner_kind = ? AND a.owner_ref = e.loan_id AND a.currency = e.currency"
             + " AND j.currency = e.currency AND a.purpose IN (?, ?)"
+            + LendingCreditExposure.NOT_A_LOAN_WRITE_OFF
             + " GROUP BY j.scale) p ON true"
             + " WHERE e.party_id = ? AND e.currency = ?"
             + " UNION ALL"
@@ -89,6 +99,7 @@ public final class BnplCreditExposure implements PlatformCreditExposure<Connecti
             + " FROM ledger.ledger_account a JOIN ledger.journal_line j ON j.ledger_account_id = a.id"
             + " WHERE a.owner_kind = ? AND a.owner_ref = b.obligation_id AND a.currency = b.currency"
             + " AND j.currency = b.currency AND a.purpose IN (?, ?)"
+            + NOT_A_BNPL_WRITE_OFF
             + " GROUP BY j.scale) q ON true"
             + " WHERE b.party_id = ? AND b.currency = ?"
             + " ORDER BY 1, 2, 7";
@@ -221,7 +232,7 @@ public final class BnplCreditExposure implements PlatformCreditExposure<Connecti
             if (!"BNPL_PAY_IN_4".equals(product) && !"BNPL_PAY_IN_N".equals(product)) {
                 throw unknown("of an unknown product");
             }
-            if (!"ACTIVE".equals(status) && !"CLOSED".equals(status)) {
+            if (!"ACTIVE".equals(status) && !"CLOSED".equals(status) && !"WRITTEN_OFF".equals(status)) {
                 throw unknown("in an unknown status");
             }
             if (lines.isEmpty()) {

@@ -122,7 +122,7 @@ public final class LendingReports {
     public record LendingPortfolioRow(
             String product, String currency, int scale, long pendingDisbursement, long active, long closing, long closed,
             long cancelled, long principalMinor, long principalDueMinor, long interestAccruedMinor, long interestDueMinor,
-            long feesDueMinor, long creditBalanceMinor, long outstandingMinor) {}
+            long feesDueMinor, long creditBalanceMinor, long outstandingMinor, long writtenOff) {}
 
     /**
      * One currency's book from the ledger's side - every {@code LOAN}-owned account - and whether it ties: equal to the
@@ -159,7 +159,7 @@ public final class LendingReports {
                 try (ResultSet found = select.executeQuery()) {
                     while (found.next()) {
                         long[] counts = states.computeIfAbsent(key(found.getString(1), found.getString(2)),
-                                ignored -> new long[5]);
+                                ignored -> new long[6]);
                         counts[stateIndex(found.getString(3))] = found.getLong(4);
                     }
                 }
@@ -184,13 +184,13 @@ public final class LendingReports {
             keys.addAll(byProduct.keySet());
             for (String key : keys) {
                 String[] parts = key.split("\\|");
-                long[] counts = states.getOrDefault(key, new long[5]);
+                long[] counts = states.getOrDefault(key, new long[6]);
                 Balances balances = byProduct.getOrDefault(key, new Balances());
                 int scale = balances.scale(parts[1]);
                 rows.add(new LendingPortfolioRow(tag(parts[0]), parts[1].strip(), scale, counts[0], counts[1], counts[2],
                         counts[3], counts[4], balances.debit("LOAN_PRINCIPAL"), balances.debit("LOAN_PRINCIPAL_DUE"),
                         balances.debit("LOAN_INTEREST_ACCRUED"), balances.debit("LOAN_INTEREST_DUE"),
-                        balances.debit("LOAN_FEES_DUE"), balances.credit("LOAN_CREDIT_BALANCE"), balances.outstanding()));
+                        balances.debit("LOAN_FEES_DUE"), balances.credit("LOAN_CREDIT_BALANCE"), balances.outstanding(), counts[5]));
                 productTotals.computeIfAbsent(parts[1].strip(), ignored -> new Balances()).addAll(balances);
             }
             // The ledger's side: every LOAN-owned account, whoever names it.
@@ -345,11 +345,13 @@ public final class LendingReports {
      * One supported currency's lending capital on the date (ADR-0096 section 5): the capital recognised from bank
      * evidence, the principal committed to loans awaiting disbursement, the principal outstanding - loan, line and, since
      * `P12-TSK-005`, BNPL principal, the purposes {@link LendingCapitalHeadroom#principalPurposes()} names (ADR-0104
-     * decision 7) - the headroom left, and the safeguarding term - the liabilities capital created and still funds.
+     * decision 7) - the headroom left, and the safeguarding term - the liabilities capital created and still funds. Since
+     * `P14-TSK-021` the principal written off, which leaves the outstanding term and stays out of the headroom: capital recognised =
+     * headroom + committed + outstanding + written off, by date.
      */
     public record LendingCapitalRow(
             String currency, int scale, long recognisedMinor, long committedMinor, long outstandingMinor,
-            long headroomMinor, long lendingFundedMinor) {}
+            long headroomMinor, long lendingFundedMinor, long writtenOffMinor) {}
 
     public record LendingCapitalReport(String date, boolean known, List<LendingCapitalRow> rows) {}
 
@@ -391,6 +393,25 @@ public final class LendingReports {
                     }
                 }
             }
+            // Written off: CR-DR on the headroom's principal set, of the entries beside a write-off expense, through the date.
+            Map<String, java.math.BigDecimal> writtenOff = new TreeMap<>();
+            try (PreparedStatement select = uow.prepareStatement("SELECT a.currency,"
+                    + " sum(CASE WHEN ln.direction = 'CREDIT' THEN ln.amount_minor ELSE -ln.amount_minor END)"
+                    + " FROM ledger.ledger_account a JOIN ledger.journal_line ln ON ln.ledger_account_id = a.id"
+                    + " JOIN ledger.journal_entry e ON e.id = ln.entry_id WHERE e.value_date <= ? AND a.purpose = ANY (?)"
+                    + " AND EXISTS (SELECT 1 FROM ledger.journal_line n JOIN ledger.ledger_account na"
+                    + " ON na.id = n.ledger_account_id WHERE n.entry_id = ln.entry_id AND na.purpose = ANY (?)) GROUP BY 1")) {
+                select.setObject(1, day);
+                select.setArray(2, uow.createArrayOf("text",
+                        LendingCapitalHeadroom.principalPurposes().stream().map(Enum::name).toArray()));
+                select.setArray(3, uow.createArrayOf("text",
+                        LendingCapitalHeadroom.writeOffExpenses().stream().map(Enum::name).toArray()));
+                try (ResultSet found = select.executeQuery()) {
+                    while (found.next()) {
+                        writtenOff.put(found.getString(1).strip(), found.getBigDecimal(2));
+                    }
+                }
+            }
             List<LendingCapitalRow> rows = new ArrayList<>();
             for (CurrencyCode currency : SupportedCurrencies.ALL) {
                 Balances terms = ledger.getOrDefault(currency.code(), new Balances());
@@ -402,9 +423,10 @@ public final class LendingReports {
                 for (com.finapp.ledger.AccountPurpose principal : LendingCapitalHeadroom.principalPurposes()) {
                     outstanding = Math.addExact(outstanding, terms.debit(principal.name()));
                 }
+                long lost = writtenOff.getOrDefault(currency.code(), java.math.BigDecimal.ZERO).longValueExact();
                 rows.add(new LendingCapitalRow(currency.code(), scale, recognised, commitment, outstanding,
-                        Math.subtractExact(Math.subtractExact(recognised, commitment), outstanding),
-                        Math.addExact(outstanding, commitment)));
+                        Math.subtractExact(Math.subtractExact(Math.subtractExact(recognised, commitment), outstanding), lost),
+                        Math.addExact(Math.addExact(outstanding, commitment), lost), lost));
             }
             return new Served<>(new LendingCapitalReport(day.toString(), true, List.copyOf(rows)), rows.size());
         });
@@ -506,6 +528,7 @@ public final class LendingReports {
             case "CLOSING" -> 2;
             case "CLOSED" -> 3;
             case "CANCELLED" -> 4;
+            case "WRITTEN_OFF" -> 5;
             default -> throw new IllegalStateException("a loan state this build does not know");
         };
     }

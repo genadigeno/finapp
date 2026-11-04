@@ -119,7 +119,12 @@ public final class LoanReplayProof {
         /** A re-scheduled arrear is not what its item had due. */
         RESCHEDULING,
         /** The closure's refund is not the credit balance held. */
-        CLOSURE
+        CLOSURE,
+        /**
+         * A write-off (rule 14, `P14-TSK-021`) did not take the whole of each receivable as it stood, or its entry is not exactly
+         * that, or a fact follows it, or the account's status and its approved write-off disagree.
+         */
+        WRITE_OFF
     }
 
     /** One fact that failed to re-derive: its kind and its row - never a figure ({@code INV-AUD-02}). */
@@ -471,9 +476,17 @@ public final class LoanReplayProof {
             record.reversals().stream().filter(reversal -> "APPROVED".equals(reversal.status())).forEach(reversal ->
                     events.add(new Event(stamp(reversal), 9, reversal.id(), reversal)));
             record.closure().ifPresent(closure -> events.add(new Event(stamp(closure), 10, closure.id(), closure)));
+            record.writeOffs().stream().filter(LoanRecord.WriteOffRow::approved).forEach(writeOff ->
+                    events.add(new Event(stamp(writeOff), 11, writeOff.id(), writeOff)));
             events.sort(Comparator.comparing(Event::at, LoanSubledgerProof.Stamp::compareTo).thenComparingInt(Event::rank).thenComparing(Event::id));
 
+            Optional<LoanRecord.WriteOffRow> writtenOff = Optional.empty();
             for (Event event : events) {
+                // Nothing follows a write-off: the account takes no fact after it, whatever writer tried.
+                writtenOff.ifPresent(earlier -> diverged(Check.WRITE_OFF, earlier.id()));
+                if (event.fact() instanceof LoanRecord.WriteOffRow row) {
+                    writtenOff = Optional.of(row);
+                }
                 switch (event.fact()) {
                     case LoanRecord.Agreement agreement -> governing = Optional.of(agreement);
                     case LoanRecord.ScheduleVersion fixed -> schedule = Optional.of(fixed);
@@ -487,8 +500,13 @@ public final class LoanReplayProof {
                     case LoanRecord.WaiverRow waiver -> waiver(waiver);
                     case LoanRecord.Reversal reversal -> reversal(reversal);
                     case LoanRecord.Closure closure -> closure(closure);
+                    case LoanRecord.WriteOffRow writeOff -> writeOff(writeOff);
                     default -> throw new IllegalStateException("an unknown fact in the history");
                 }
+            }
+            // The status and the row say one thing: WRITTEN_OFF exactly when a write-off was approved.
+            if ((record.loan().status() == LoanStatus.WRITTEN_OFF) != writtenOff.isPresent()) {
+                diverged(Check.WRITE_OFF, writtenOff.map(LoanRecord.WriteOffRow::id).orElse(record.id().value()));
             }
         }
 
@@ -975,6 +993,39 @@ public final class LoanReplayProof {
             }
         }
 
+        /**
+         * Rule 14 re-derived: every receivable stood, just before it, at exactly what the row took, the credit balance at zero; and
+         * its entry credits exactly that on each account, on the row's own date - so a partial write-off, one over a moved figure or
+         * one posted beside another movement diverges, whichever writer wrote it.
+         */
+        private void writeOff(LoanRecord.WriteOffRow writeOff) {
+            replayed++;
+            LoanSubledgerProof.Stamp before = stamp(writeOff);
+            Map<AccountPurpose, Money> taken = new EnumMap<>(AccountPurpose.class);
+            taken.put(AccountPurpose.LOAN_PRINCIPAL, writeOff.principal());
+            taken.put(AccountPurpose.LOAN_PRINCIPAL_DUE, writeOff.principalDue());
+            taken.put(AccountPurpose.LOAN_INTEREST_ACCRUED, writeOff.interestAccrued());
+            taken.put(AccountPurpose.LOAN_INTEREST_DUE, writeOff.interestDue());
+            taken.put(AccountPurpose.LOAN_FEES_DUE, writeOff.feesDue());
+            boolean holds = writeOff.entry().isPresent() && writeOff.valueDate().isPresent()
+                    && asOf(AccountPurpose.LOAN_CREDIT_BALANCE, before).isZero();
+            for (Map.Entry<AccountPurpose, Money> take : taken.entrySet()) {
+                holds &= asOf(take.getKey(), before).equals(take.getValue());
+                Money credited = zero;
+                for (PurposeBalances.DatedLine line : linesOf(take.getKey())) {
+                    if (writeOff.entry().filter(line.entry()::equals).isPresent()) {
+                        holds &= line.direction() == Direction.CREDIT
+                                && writeOff.valueDate().filter(line.valueDate()::equals).isPresent();
+                        credited = credited.plus(line.amount());
+                    }
+                }
+                holds &= credited.equals(take.getValue());
+            }
+            if (!holds) {
+                diverged(Check.WRITE_OFF, writeOff.id());
+            }
+        }
+
         // -------------------------------------------------------------- plumbing
 
         /** The governing agreement at this point of the walk, when it is the one the row names. */
@@ -1075,6 +1126,10 @@ public final class LoanReplayProof {
 
         private static LoanSubledgerProof.Stamp stamp(LoanRecord.Closure row) {
             return new LoanSubledgerProof.Stamp(row.order(), row.createdAt());
+        }
+
+        private static LoanSubledgerProof.Stamp stamp(LoanRecord.WriteOffRow row) {
+            return new LoanSubledgerProof.Stamp(row.order(), row.decidedAt().orElse(row.proposedAt()));
         }
 
         /** Whether {@code entry} was written before {@code before} - an entry no row names counts as always written. */

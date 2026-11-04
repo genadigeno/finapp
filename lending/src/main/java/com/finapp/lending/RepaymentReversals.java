@@ -147,6 +147,7 @@ public final class RepaymentReversals {
         // (L3) The loan: every act on the account, and every proposal for any of its repayments, serialises here.
         LoanStore.Owned locked = loans.lock(unitOfWork, loan).orElseThrow(LoanNotFound::new);
         Repayment reversed = repayments.findById(unitOfWork, loan, repayment).orElseThrow(LoanNotFound::new);
+        LoanWrittenOffRefused.refuseIfWrittenOff(locked.loan());
         if (locked.loan().status() != LoanStatus.ACTIVE) {
             throw new LoanClosed();
         }
@@ -218,6 +219,9 @@ public final class RepaymentReversals {
             throw new SelfApprovalRefused(loan, reversal);
         }
         Loan account = locked.loan();
+        // A reversal after a write-off would re-raise a receivable the books no longer hold, against a closed asset: refused,
+        // the proposal left for its rejection (P14-TSK-021; lending V031's edge function refuses it for every writer).
+        LoanWrittenOffRefused.refuseIfWrittenOff(account);
         if (account.status() != LoanStatus.ACTIVE) {
             throw new LoanClosed();
         }

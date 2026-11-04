@@ -153,6 +153,7 @@ public final class BnplWaivers {
                 .orElseThrow(BnplRepaymentReversals.NotFound::new);
         BnplFeeAssessment fee = store.assessment(unitOfWork, addressed.obligation(), assessment)
                 .orElseThrow(BnplRepaymentReversals.NotFound::new);
+        BnplWrittenOffRefused.refuseIfWrittenOff(locked.obligation());
         if (locked.obligation().status() != BnplObligationStatus.ACTIVE) {
             throw new ObligationClosed();
         }
@@ -220,6 +221,7 @@ public final class BnplWaivers {
             throw new SelfApprovalRefused(agreement, waiver);
         }
         BnplObligation obligation = locked.obligation();
+        BnplWrittenOffRefused.refuseIfWrittenOff(obligation);
         if (obligation.status() != BnplObligationStatus.ACTIVE) {
             throw new ObligationClosed();
         }

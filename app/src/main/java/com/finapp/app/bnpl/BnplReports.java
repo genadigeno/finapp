@@ -141,7 +141,7 @@ public final class BnplReports {
      * (a liability, credit-normal) - with the outstanding total of the five receivables.
      */
     public record BnplPortfolioRow(
-            String product, String currency, int scale, long active, long closed, long principalMinor,
+            String product, String currency, int scale, long active, long closed, long writtenOff, long principalMinor,
             long principalDueMinor, long interestAccruedMinor, long interestDueMinor, long feesDueMinor,
             long creditBalanceMinor, long outstandingMinor) {}
 
@@ -174,7 +174,7 @@ public final class BnplReports {
             }
             Map<String, long[]> states = new TreeMap<>();
             for (BnplReportReads.ObligationCount count : reads.obligations(uow, day)) {
-                long[] counts = states.computeIfAbsent(key(count.product(), count.currency()), ignored -> new long[2]);
+                long[] counts = states.computeIfAbsent(key(count.product(), count.currency()), ignored -> new long[3]);
                 counts[statusIndex(count.status())] = Math.addExact(counts[statusIndex(count.status())], count.count());
             }
             Map<String, Balances> byProduct = new TreeMap<>();
@@ -188,9 +188,9 @@ public final class BnplReports {
             keys.addAll(byProduct.keySet());
             for (String key : keys) {
                 String[] parts = key.split("\\|");
-                long[] counts = states.getOrDefault(key, new long[2]);
+                long[] counts = states.getOrDefault(key, new long[3]);
                 Balances balances = byProduct.getOrDefault(key, new Balances());
-                rows.add(new BnplPortfolioRow(tag(parts[0]), parts[1], balances.scale(parts[1]), counts[0], counts[1],
+                rows.add(new BnplPortfolioRow(tag(parts[0]), parts[1], balances.scale(parts[1]), counts[0], counts[1], counts[2],
                         balances.debit("BNPL_PRINCIPAL"), balances.debit("BNPL_PRINCIPAL_DUE"),
                         balances.debit("BNPL_INTEREST_ACCRUED"), balances.debit("BNPL_INTEREST_DUE"),
                         balances.debit("BNPL_FEES_DUE"), balances.credit("BNPL_CREDIT_BALANCE"), balances.outstanding()));
@@ -417,6 +417,7 @@ public final class BnplReports {
         return switch (status) {
             case "ACTIVE" -> 0;
             case "CLOSED" -> 1;
+            case "WRITTEN_OFF" -> 2;
             default -> throw new IllegalStateException("an obligation status this build does not know");
         };
     }

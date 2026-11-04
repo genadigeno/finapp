@@ -31,11 +31,19 @@ public final class Loans {
     /** The most loans one listing answers. */
     public static final int LISTING_LIMIT = 100;
 
+    /**
+     * What a customer reads beside a {@code WRITTEN_OFF} status (`P14-TSK-021`). Truthful, and never "paid", "settled" or
+     * "closed": a write-off is a bookkeeping entry, the amount stands owed. Wording a qualified reviewer confirms before production.
+     */
+    public static final String WRITTEN_OFF_NOTICE = "This account is in default and has been written off in our accounts. That is a"
+            + " bookkeeping entry: the amount has not been paid or forgiven, and it is still owed. Please contact us about repaying it.";
+
     @NonNull private final LoanStore store;
     @NonNull private final LedgerAccountStore<Connection> accounts;
     @NonNull private final PurposeBalances<Connection> balances;
     @NonNull private final LoanPayoutStore payouts;
     @NonNull private final LoanConditions conditions;
+    @NonNull private final LoanWriteOffStore writeOffs;
 
     /**
      * A loan, its governing agreement, its derived balances, - path X - its payout's status (`P11-TSK-015`; empty for a
@@ -91,7 +99,10 @@ public final class Loans {
 
     /**
      * The six per-loan balances, each on its normal side: the receivables DR-CR, the credit balance CR-DR. Zero for an
-     * account not yet opened (never, after an acceptance) or never posted to (every balance until the disbursement).
+     * account not yet opened (never, after an acceptance) or never posted to (every balance until the disbursement). On a
+     * {@code WRITTEN_OFF} account (`P14-TSK-021`): what its write-off took, which is what stands owed - the entry moved it off
+     * the platform's assets and said nothing about the debt, so a read of zero would tell the customer it was paid. The figures
+     * are the write-off's row, which the subledger proof holds to the entry's lines.
      */
     public record Balances(
             Money principalNotDue,
@@ -144,6 +155,13 @@ public final class Loans {
     private Balances balancesOf(Connection unitOfWork, LoanStore.Owned owned) {
         Loan loan = owned.loan();
         int scale = owned.agreement().amount().scale();
+        if (loan.status() == LoanStatus.WRITTEN_OFF) {
+            LoanWriteOffPosition owed = writeOffs.approvedOf(unitOfWork, loan.id())
+                    .orElseThrow(() -> new IllegalStateException("a WRITTEN_OFF loan has its approved write-off (lending V032)"))
+                    .position();
+            return new Balances(owed.principal(), owed.principalDue(), owed.interestAccrued(), owed.interestDue(), owed.feesDue(),
+                    Money.ofPersisted(0, loan.currency(), scale));
+        }
         return new Balances(
                 netDebit(unitOfWork, loan, AccountPurpose.LOAN_PRINCIPAL, scale),
                 netDebit(unitOfWork, loan, AccountPurpose.LOAN_PRINCIPAL_DUE, scale),
