@@ -34,7 +34,7 @@ public final class CloseRunMetrics {
     public static final List<String> OUTCOMES = List.of("passed", "failed", "disclosed", "deferred", "overtaken");
 
     /** The {@code leg} tag's values. */
-    public static final List<String> LEGS = List.of("open", "checks", "orphans");
+    public static final List<String> LEGS = List.of("open", "checks", "orphans", "inquiry");
 
     private final MeterRegistry registry;
     private final Timer duration;

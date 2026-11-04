@@ -347,6 +347,115 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " ACCOUNTING_ADJUST_APPROVE; an accountant a month's (GET .../periods/{periodId}/prior-period-adjustments), under"
                     + " ACCOUNTING_READ (P14-TSK-013, INV-ACC-10). Recorded before it is served, in a transaction of its own. Its target the"
                     + " adjustment or the period; the summary the door and a count or a status - never an amount or a reason.",
+            false),
+
+    /** A preparer proposed a regulatory obligation version (`P14-TSK-018`, REGULATORY_REPORT_PREPARE). */
+    REGULATORY_OBLIGATION_PROPOSED(
+            "regulatory.ObligationProposed",
+            "A person holding REGULATORY_REPORT_PREPARE proposed a regulatory obligation version - configuration data, REFERENCE only: jurisdiction code, form code and version, adapter, source"
+                    + " definitions, line mapping and closed-vocabulary rules, frozen from this moment (P14-TSK-018, ADR-0118 decision 1; POST /v1/operator/regulatory/obligations). Reasoned. Its target the version;"
+                    + " the summary its codes and line and rule counts.",
+            true),
+
+    /** A second person activated a regulatory obligation version (`P14-TSK-018`, REGULATORY_REPORT_APPROVE, MULTI_FACTOR). */
+    REGULATORY_OBLIGATION_ACTIVATED(
+            "regulatory.ObligationActivated",
+            "A person other than its proposer, holding REGULATORY_REPORT_APPROVE, from a MULTI_FACTOR session, activated a regulatory obligation version, naming the configuration's hash they read; the version in"
+                    + " force retired in the same transaction (P14-TSK-018, INV-AUD-04; POST .../obligations/{id}/activation). Reasoned. Its target the version; the summary its codes and the retired version.",
+            true),
+
+    /** A regulatory obligation version was rejected (`P14-TSK-018`, REGULATORY_REPORT_APPROVE). */
+    REGULATORY_OBLIGATION_REJECTED(
+            "regulatory.ObligationRejected",
+            "A person holding REGULATORY_REPORT_APPROVE rejected a proposed regulatory obligation version - final; may be its proposer (P14-TSK-018; POST .../obligations/{id}/rejection). Reasoned. Its target the"
+                    + " version; the summary its form and version.",
+            true),
+
+    /** An operator read regulatory obligations (`P14-TSK-018`) - every serving recorded. */
+    REGULATORY_OBLIGATION_READ(
+            "regulatory.ObligationRead",
+            "An operator read regulatory obligation versions - a preparer's list or one version under REGULATORY_REPORT_PREPARE, a controller's waiting list or the version they decide under"
+                    + " REGULATORY_REPORT_APPROVE (P14-TSK-018). Recorded before it is served, in a transaction of its own. Its target the version or the list; the summary the door and a count or a status.",
+            false),
+
+    /** A preparer drafted a return (`P14-TSK-018`, REGULATORY_REPORT_PREPARE). */
+    REGULATORY_SUBMISSION_DRAFTED(
+            "regulatory.SubmissionDrafted",
+            "A person holding REGULATORY_REPORT_PREPARE drafted a regulatory submission from FINAL report runs of a CLOSED month, each run's bytes proved against its hash and each line's figure resolved, a"
+                    + " correction naming what it corrects (P14-TSK-018, ADR-0118 decision 2, INV-ACC-13; POST /v1/operator/regulatory/submissions). Reasoned. Its target the submission; the summary its codes, month, revision"
+                    + " and line and source counts - never a figure.",
+            true),
+
+    /** A preparer ran a return's validation (`P14-TSK-018`, REGULATORY_REPORT_PREPARE). */
+    REGULATORY_SUBMISSION_VALIDATED(
+            "regulatory.SubmissionValidated",
+            "A person holding REGULATORY_REPORT_PREPARE ran a regulatory submission's closed-vocabulary rules (P14-TSK-018; POST .../submissions/{id}/validation): SUCCEEDED and VALIDATED when every rule passed,"
+                    + " FAILED and still DRAFT, the outcome recorded once, when one did not. Its target the submission; the summary its codes, whether it passed and how many findings failed - never a figure.",
+            false),
+
+    /** A second person attested a return (`P14-TSK-018`, REGULATORY_REPORT_APPROVE, MULTI_FACTOR). */
+    REGULATORY_SUBMISSION_APPROVED(
+            "regulatory.SubmissionApproved",
+            "A person other than its preparer, holding REGULATORY_REPORT_APPROVE, from a MULTI_FACTOR session, approved a regulatory submission, naming the content's hash and the month's revision they read, under the"
+                    + " period row: the month still CLOSED at that revision and every run still FINAL, its bytes proved (P14-TSK-018, INV-ACC-13, INV-AUD-04; POST .../submissions/{id}/approval). Reasoned. Its target the"
+                    + " submission; the summary its codes and the content's hash.",
+            true),
+
+    /** A controller refused a return (`P14-TSK-018`, REGULATORY_REPORT_APPROVE). */
+    REGULATORY_SUBMISSION_REFUSED(
+            "regulatory.SubmissionRefused",
+            "A person holding REGULATORY_REPORT_APPROVE refused a VALIDATED or APPROVED regulatory submission: a controller's refusal, nothing sent - never the provider's rejection, which is"
+                    + " regulatory.SubmissionRejected (P14-TSK-018; POST .../submissions/{id}/refusal). Asks nothing of the month. Reasoned. Its target the submission; the summary its codes and what it was.",
+            true),
+
+    /** A preparer took a return back (`P14-TSK-018`, REGULATORY_REPORT_PREPARE). */
+    REGULATORY_SUBMISSION_WITHDRAWN(
+            "regulatory.SubmissionWithdrawn",
+            "A person holding REGULATORY_REPORT_PREPARE withdrew a regulatory submission not yet sent, freeing its form and month for a new draft (P14-TSK-018; POST .../submissions/{id}/withdrawal). Asks nothing of"
+                    + " the month. Reasoned. Its target the submission; the summary its codes and what it was.",
+            true),
+
+    /** A sender committed a return to be sent (`P14-TSK-018`, REGULATORY_REPORT_SUBMIT, MULTI_FACTOR). */
+    REGULATORY_SUBMISSION_SUBMITTED(
+            "regulatory.SubmissionSubmitted",
+            "A person other than its approver, holding REGULATORY_REPORT_SUBMIT, from a MULTI_FACTOR session, committed an APPROVED regulatory submission SUBMITTED - before any call - naming the content's hash and"
+                    + " the revision they read (P14-TSK-018, INV-ACC-13; POST .../submissions/{id}/submission, 202). Reasoned. Its target the submission; the summary its codes and the content's hash.",
+            true),
+
+    /** The provider acknowledged a return (`P14-TSK-018`) - the platform's record. */
+    REGULATORY_SUBMISSION_ACKNOWLEDGED(
+            "regulatory.SubmissionAcknowledged",
+            "The platform recorded a provider's acknowledgement of a SUBMITTED regulatory submission, its answer kept verbatim (P14-TSK-018, INV-HIST-02). The acknowledgement is a simulated adapter's in Phase 14."
+                    + " Its target the submission; the summary its codes and the provider's reference.",
+            false),
+
+    /** The provider rejected a return (`P14-TSK-018`) - the platform's record. */
+    REGULATORY_SUBMISSION_REJECTED(
+            "regulatory.SubmissionRejected",
+            "The platform recorded a provider's rejection of a SUBMITTED regulatory submission, its answer kept verbatim: the provider's word, never a controller's, which is regulatory.SubmissionRefused"
+                    + " (P14-TSK-018, INV-HIST-02). A new submission references it. Its target the submission; the summary its codes and the rejection's code.",
+            false),
+
+    /** A person concluded a return undelivered (`P14-TSK-018`, REGULATORY_REPORT_SUBMIT, MULTI_FACTOR). */
+    REGULATORY_SUBMISSION_UNDELIVERED(
+            "regulatory.SubmissionUndelivered",
+            "A person holding REGULATORY_REPORT_SUBMIT, from a MULTI_FACTOR session, concluded a regulatory submission UNDELIVERED: only on the provider's definite not received, the resends spent or its answer"
+                    + " horizon past (P14-TSK-018, INV-ACC-13; POST .../submissions/{id}/non-delivery). Reasoned. Its target the submission; the summary its codes, attempts and resends.",
+            true),
+
+    /** An answer contradicted a return's conclusion (`P14-TSK-018`) - kept, flagged, never an edge. */
+    REGULATORY_SUBMISSION_CONTRARY_ANSWER(
+            "regulatory.SubmissionContraryAnswer",
+            "The platform kept a provider's answer that disagrees with what a concluded regulatory submission already says - recorded verbatim and flagged, never an edge: ack against rejection is one way"
+                    + " (P14-TSK-018, INV-HIST-02). FAILED: someone must look. Its target the submission; the summary its codes, its status and what the answer read as.",
+            false),
+
+    /** An operator read regulatory submissions (`P14-TSK-018`) - every serving recorded. */
+    REGULATORY_SUBMISSION_READ(
+            "regulatory.SubmissionRead",
+            "An operator read regulatory submissions - a preparer's list, one return or its reference export under REGULATORY_REPORT_PREPARE; a controller's waiting list or the return they attest under"
+                    + " REGULATORY_REPORT_APPROVE (P14-TSK-018, INV-ACC-13). Recorded before it is served, in a transaction of its own, whether or not the provider's answers were among it. Its target the submission or the"
+                    + " list; the summary the door and a count or a status - never a figure, a reason or a provider's text.",
             false);
 
     private final String code;

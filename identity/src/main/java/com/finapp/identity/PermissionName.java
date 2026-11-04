@@ -720,21 +720,22 @@ public enum PermissionName {
 
     /**
      * Prepare a regulatory submission (`P14-TSK-001`; ADR-0118; {@code INV-ACC-13}): draft it from FINAL runs of CLOSED
-     * periods - the draft door serves those runs under this permission - and validate it. The routes are `-018`'s.
+     * periods - the draft door serves its figures under this permission, with no {@code ACCOUNTING_READ} - validate it, withdraw it, and propose
+     * the obligation version it is drawn under. The routes are `-018`'s.
      * <strong>Held by {@code REGULATORY_REPORTER}</strong>, beside {@link #REGULATORY_REPORT_SUBMIT}.
      */
     REGULATORY_REPORT_PREPARE,
 
     /**
      * Approve a validated regulatory submission (`P14-TSK-001`; ADR-0118; {@code INV-ACC-13}, {@code INV-AUD-04}): never
-     * the preparer's own; serves the submission and its lineage it decides. The routes are `-018`'s.
+     * the preparer's own; serves the submission and its lineage it decides; refuses one; and activates or rejects an obligation version. The routes are `-018`'s.
      * <strong>Held by {@code FINANCIAL_CONTROLLER}</strong> - the preparer never approves.
      */
     REGULATORY_REPORT_APPROVE,
 
     /**
-     * Submit an approved regulatory submission through the provider (simulated, owner decision C4) and read its
-     * acknowledgement (`P14-TSK-001`; ADR-0118); a correction is a new submission referencing the original. The routes
+     * Submit an approved regulatory submission through the provider (simulated, owner decision C4), never its approver's to send, and conclude one
+     * undelivered on the provider's definite "not received" (`P14-TSK-001`; ADR-0118); its acknowledgement is read under {@link #REGULATORY_REPORT_PREPARE}; a correction is a new submission referencing the original. The routes
      * are `-018`'s. <strong>Held by {@code REGULATORY_REPORTER}</strong>, beside {@link #REGULATORY_REPORT_PREPARE}.
      */
     REGULATORY_REPORT_SUBMIT,
