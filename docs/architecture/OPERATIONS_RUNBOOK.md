@@ -1574,7 +1574,7 @@ for an operator's read, and keep the permits low, since the two together are wha
 
 **`stillStands: true` and the approval refused.** `stillStands` answers for the two months only. `422 accounting.PriorPeriodPurposeClosed`, or `accounting.PriorPeriodAdjustmentInvalid` for a purpose no longer mapped, or the ledger's own refusal: it stands `PROPOSED`, and the way on is the same.
 
-**`403 identity.AssuranceRequired` on an approval** (`P14-TSK-022`). The session is below `MULTI_FACTOR`, at `POST .../prior-period-adjustments/{adjustmentId}/approval` and at the generic `POST /v1/ledger/adjustments/{id}/approval`, each of which posts a person's decision into the journal. Nothing was read or written and the key is unspent: step up with your enrolled factor and retry. The proposals, the reads and the rejections are not stepped up.
+**`403 identity.AssuranceRequired` on an approval** (`P14-TSK-022`). The session is below `MULTI_FACTOR`, at `POST .../prior-period-adjustments/{adjustmentId}/approval` and at the generic `POST /v1/ledger/adjustments/{id}/approval`, each of which posts a person's decision into the journal. Nothing was read or written, and a key, where the door takes one, is unspent: step up with your enrolled factor and retry. The proposals, the reads and the rejections are not stepped up.
 
 **`500` on an approval.** Nothing committed: a `40P01` against a wallet's decider, say (`PHASE_14_PLAN.md` §8.2), leaves both rows `PROPOSED` and the key unspent. Retry with the same key.
 
