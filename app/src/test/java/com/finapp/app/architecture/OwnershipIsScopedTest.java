@@ -2191,6 +2191,16 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P14-TSK-018. The id comes only from the form's rows this transaction locked FOR UPDATE at an activation, conditional on ACTIVE - configuration data, no owner to scope by, behind @RequiresPermission(REGULATORY_REPORT_APPROVE).")),
                     Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.answerCount",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. How many answers a return holds, by the id of the row the permission-guarded read named - a return of the platform's reference reporting, no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.standing",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-018. A page of what stands, after the id of the row the last page ended on, behind @RequiresPermission(REGULATORY_REPORT_PREPARE) - a return of the platform's reference reporting, no owner to scope by.")),
+                    Map.entry(
                             "com.finapp.accounting.JdbcRegulatorySubmissionStore.one",
                             new Entry(
                                     Scope.ADMINISTERED,

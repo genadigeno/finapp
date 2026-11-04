@@ -822,6 +822,41 @@
           }
         }
       },
+      "accounting.RegulatoryProviderUnavailable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.RegulatoryProviderUnavailable"
+                    },
+                    "status": {
+                      "const": 503
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.RegulatoryProviderUnavailable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[503] The provider could not be asked at this act, or its answer not kept, so nothing was concluded: a return is concluded undelivered only on what the provider says now. The return stands SUBMITTED. Ask again.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.RegulatoryRunBytesDiffer": {
         "content": {
           "application/problem+json": {
@@ -25771,6 +25806,20 @@
         },
         "type": "object"
       },
+      "RegulatorySubmissionStandingView": {
+        "properties": {
+          "nextAfter": {
+            "type": "string"
+          },
+          "submissions": {
+            "items": {
+              "$ref": "#/components/schemas/RegulatorySubmissionSummaryView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "RegulatorySubmissionSummaryView": {
         "properties": {
           "contraryAnswers": {
@@ -25796,7 +25845,13 @@
           "monthMoved": {
             "type": "boolean"
           },
+          "nonDeliveryOpen": {
+            "type": "boolean"
+          },
           "overdue": {
+            "type": "boolean"
+          },
+          "overtaken": {
             "type": "boolean"
           },
           "period": {
@@ -25815,6 +25870,9 @@
           },
           "resendsExhausted": {
             "type": "boolean"
+          },
+          "standing": {
+            "type": "string"
           },
           "status": {
             "type": "string"
@@ -25841,6 +25899,10 @@
               "$ref": "#/components/schemas/RegulatoryProviderAnswerView"
             },
             "type": "array"
+          },
+          "answersKept": {
+            "format": "int64",
+            "type": "integer"
           },
           "approvedAt": {
             "type": "string"
@@ -25896,6 +25958,9 @@
           "monthMoved": {
             "type": "boolean"
           },
+          "nonDeliveryOpen": {
+            "type": "boolean"
+          },
           "notice": {
             "type": "string"
           },
@@ -25906,6 +25971,9 @@
             "type": "string"
           },
           "overdue": {
+            "type": "boolean"
+          },
+          "overtaken": {
             "type": "boolean"
           },
           "period": {
@@ -42362,15 +42430,31 @@
     "/v1/operator/regulatory/submissions": {
       "get": {
         "operationId": "listStandingRegulatorySubmissions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/RegulatorySubmissionSummaryView"
-                  },
-                  "type": "array"
+                  "$ref": "#/components/schemas/RegulatorySubmissionStandingView"
                 }
               }
             },

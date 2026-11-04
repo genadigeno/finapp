@@ -805,6 +805,8 @@ CREATE TABLE accounting.regulatory_submission_event (
         OR (act = 'ACKNOWLEDGED' AND from_status = 'SUBMITTED' AND to_status = 'ACKNOWLEDGED')
         OR (act = 'REJECTED' AND from_status = 'SUBMITTED' AND to_status = 'REJECTED')
         OR (act = 'UNDELIVERED' AND from_status = 'SUBMITTED' AND to_status = 'UNDELIVERED')),
+    -- Only a birth has no from: a CHECK passes on NULL, so the edge above alone would let any act name none.
+    CONSTRAINT regulatory_submission_event_from_coherent CHECK ((act = 'DRAFTED') = (from_status IS NULL)),
     -- The provider's answers are the platform's to record; every other act a person's.
     CONSTRAINT regulatory_submission_event_actor_kind CHECK (
         (act IN ('ACKNOWLEDGED', 'REJECTED') AND actor_type = 'SYSTEM')
@@ -884,7 +886,7 @@ CREATE TABLE accounting.regulatory_provider_answer (
     -- THE BOUND AND ITS RULE (RegulatoryAnswerReading.MAX_RAW_BYTES): over 64 KiB the first 64 KiB, the whole length and the whole hash are kept, and the answer decides nothing.
     CONSTRAINT regulatory_provider_answer_raw_bounded CHECK (octet_length(raw) <= 65536 AND received_bytes >= octet_length(raw)),
     CONSTRAINT regulatory_provider_answer_truncation_coherent CHECK (
-        truncated = (received_bytes > octet_length(raw)) AND (NOT truncated OR anomaly = 'OVERSIZED')),
+        truncated = (received_bytes > octet_length(raw)) AND (NOT truncated OR anomaly IS NOT DISTINCT FROM 'OVERSIZED')),
     CONSTRAINT regulatory_provider_answer_hash_is_the_answers CHECK (
         raw_sha256 ~ '^[0-9a-f]{64}$' AND (truncated OR raw_sha256 = encode(sha256(raw), 'hex')))
 );

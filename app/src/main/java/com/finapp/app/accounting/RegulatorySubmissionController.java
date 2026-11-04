@@ -143,7 +143,7 @@ public class RegulatorySubmissionController {
         return desk.submit(idempotencyKey, submissionId, body.contentSha256(), body.periodRevision(), body.reason());
     }
 
-    /** Concludes a return undelivered, from a MULTI_FACTOR session: only on the provider's definite "not received", the resends spent or its horizon past. A reason is required. */
+    /** Concludes a return undelivered, from a MULTI_FACTOR session: the provider is asked once at this act, and only its definite "not received" concludes, with the resends spent, the horizon past or the month moved. 503 when it cannot be asked: nothing concluded. A reason is required. */
     @PostMapping(path = "/{submissionId}/non-delivery", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.REGULATORY_REPORT_SUBMIT)
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)

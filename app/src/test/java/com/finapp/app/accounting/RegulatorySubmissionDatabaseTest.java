@@ -161,13 +161,13 @@ class RegulatorySubmissionDatabaseTest {
     private static void proposeReopen(YearMonth month) {
         AccountingPeriodId period = id(month);
         Actor proposer = person();
-        inScope(proposer, uow -> PeriodCloseFixture.MACHINE.proposeReopen(uow, period, proposer, "the suite reopens it", correlation()));
+        inScope(proposer, uow -> PeriodCloseFixture.MACHINE.proposeReopen(uow, period, proposer, PeriodCloseFixture.posted(uow, period), "the suite reopens it", correlation()));
     }
 
     private static void approveReopen(YearMonth month) {
         AccountingPeriodId period = id(month);
         Actor approver = person();
-        inScope(approver, uow -> PeriodCloseFixture.MACHINE.approveReopen(uow, period, approver, "the suite reopens it", correlation()));
+        inScope(approver, uow -> PeriodCloseFixture.MACHINE.approveReopen(uow, period, approver, PeriodCloseFixture.posted(uow, period), "the suite reopens it", correlation()));
     }
 
     /** A FINAL run of the source for {@code month}, its content the suite's, through the machine's own claim and completion. */
@@ -460,6 +460,11 @@ class RegulatorySubmissionDatabaseTest {
                     assertThat(refused.getSQLState()).isEqualTo(CHECK_VIOLATION);
                     assertThat(refused.getMessage()).contains("regulatory_submission_event_four_eyes");
                 });
+        assertThatThrownBy(() -> asApplication("INSERT INTO accounting.regulatory_submission_event (id, submission_id, act, from_status, to_status, actor, actor_type, prepared_by, reason, occurred_at, correlation_id)"
+                + " VALUES (?, ?, 'REFUSED', NULL, 'REFUSED', 'a-person', 'CUSTOMER', NULL, 'mine', clock_timestamp(), 'c')", IDS.next(), validated.id().value())).as("no from, though a CHECK passes on NULL").isInstanceOfSatisfying(SQLException.class, refused -> {
+                    assertThat(refused.getSQLState()).isEqualTo(CHECK_VIOLATION);
+                    assertThat(refused.getMessage()).contains("regulatory_submission_event_from_coherent");
+                });
         assertThat(rowOf(validated.id()).status()).isEqualTo(SubmissionStatus.VALIDATED);
 
         Case approved = approved(validated);
@@ -555,7 +560,7 @@ class RegulatorySubmissionDatabaseTest {
         CountDownLatch release = new CountDownLatch(1);
         ExecutorService pool = Executors.newFixedThreadPool(2);
         Future<?> reopen = pool.submit(() -> inScope(approver, uow -> {
-            PeriodCloseFixture.MACHINE.approveReopen(uow, period, approver, "the suite reopens it", correlation());
+            PeriodCloseFixture.MACHINE.approveReopen(uow, period, approver, PeriodCloseFixture.posted(uow, period), "the suite reopens it", correlation());
             edgeMade.countDown();
             await(release);
             return null;

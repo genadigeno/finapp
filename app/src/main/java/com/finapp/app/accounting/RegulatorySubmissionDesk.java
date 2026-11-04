@@ -158,6 +158,9 @@ public final class RegulatorySubmissionDesk {
      * A return as its reader reads it.
      *
      * @param monthMoved the month's revision is no longer the one read: it may read {@code CLOSED} again and still not be that month. A return already sent stands, frozen, and disagrees with the books
+     * @param overtaken sent or acknowledged, the month moved, and no return of the form acknowledged at the month's present revision: the regulator holds, or may hold, a figure the books no longer say. A draft or a rejected correction does not clear it
+     * @param answersKept how many of the provider's answers are kept: {@code answers} is the newest of them, an older one not served by this read
+     * @param nonDeliveryOpen the non-delivery door would ask the provider now: a definite "not received" last, and the resends spent, the horizon past or the month moved
      * @param stillStands an act going forward would find it stands. No promise: the act judges again under its locks
      * @param blockedBy why it does not, when it does not
      * @param preparationReason the preparer's reason: to the approver's door alone

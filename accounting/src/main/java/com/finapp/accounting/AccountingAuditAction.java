@@ -439,8 +439,8 @@ public enum AccountingAuditAction implements AuditableAction {
     /** A person concluded a return undelivered (`P14-TSK-018`, REGULATORY_REPORT_SUBMIT, MULTI_FACTOR). */
     REGULATORY_SUBMISSION_UNDELIVERED(
             "regulatory.SubmissionUndelivered",
-            "A person holding REGULATORY_REPORT_SUBMIT, from a MULTI_FACTOR session, concluded a regulatory submission UNDELIVERED: only on the provider's definite not received, the resends spent or its answer"
-                    + " horizon past (P14-TSK-018, INV-ACC-13; POST .../submissions/{id}/non-delivery). Reasoned. Its target the submission; the summary its codes, attempts and resends.",
+            "A person holding REGULATORY_REPORT_SUBMIT, from a MULTI_FACTOR session, concluded a regulatory submission UNDELIVERED: only on the provider's definite not received asked at the act, the resends spent, its answer"
+                    + " horizon past or its month moved (P14-TSK-018, INV-ACC-13; POST .../submissions/{id}/non-delivery). Reasoned. Its target the submission; the summary its codes, attempts and resends.",
             true),
 
     /** An answer contradicted a return's conclusion (`P14-TSK-018`) - kept, flagged, never an edge. */

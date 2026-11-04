@@ -157,7 +157,7 @@ class RegulatorySubmissionMigrationTest {
     void theProvidersAnswer() {
         assertThat(migration()).containsPattern("(?m)^    raw +bytea +NOT NULL")
                 .contains("octet_length(raw) <= " + RegulatoryAnswerReading.MAX_RAW_BYTES)
-                .contains("truncated = (received_bytes > octet_length(raw)) AND (NOT truncated OR anomaly = 'OVERSIZED')")
+                .contains("truncated = (received_bytes > octet_length(raw)) AND (NOT truncated OR anomaly IS NOT DISTINCT FROM 'OVERSIZED')")
                 .contains("truncated OR raw_sha256 = encode(sha256(raw), 'hex')")
                 .contains("anomaly IN ('OVERSIZED', 'MALFORMED', 'CONTRADICTORY') AND read_outcome = 'UNKNOWN'")
                 .contains("flag IS NULL OR flag IN ('LATE', 'CONTRARY')");
@@ -181,7 +181,7 @@ class RegulatorySubmissionMigrationTest {
         for (String table : new String[] {"regulatory_obligation", "regulatory_submission", "regulatory_submission_source", "regulatory_submission_line", "regulatory_submission_event", "regulatory_provider_answer"}) {
             assertThat(code).as(table).contains("CREATE TRIGGER " + table + "_is_never_truncated");
         }
-        java.util.regex.Matcher named = java.util.regex.Pattern.compile("\\b(?:FROM|JOIN|INTO|UPDATE|TABLE|REFERENCES|ON|FUNCTION)\\s+([a-z_]+)\\.[a-z_]+").matcher(code);
+        java.util.regex.Matcher named = java.util.regex.Pattern.compile("\\b(?:(?<!DISTINCT )FROM|JOIN|INTO|UPDATE|TABLE|REFERENCES|ON|FUNCTION)\\s+([a-z_]+)\\.[a-z_]+").matcher(code);
         int references = 0;
         while (named.find()) {
             references++;

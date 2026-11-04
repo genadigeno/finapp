@@ -36,7 +36,7 @@ import lombok.extern.slf4j.Slf4j;
  * reference, a provider's text or a figure - and the permit is left for the next claim, which inquires. A record that fails to commit is the same: the next claim asks again.
  *
  * <p><strong>Past the horizon, or the resends spent</strong>, nothing here gives up: it goes on asking. What runs out is the driver's permission to send; an operator sees {@code overdue} and {@code resendsExhausted} on the read and {@code
- * finapp.accounting.regulatory.attention}, and the {@code non-delivery} door opens on a definite "not received".
+ * finapp.accounting.regulatory.attention}, and the {@code non-delivery} door opens on a definite "not received". <strong>A month that moved</strong> takes the driver's permission to send at once: {@code send_withheld_month_moved} on a first attempt, {@code not_resent_month_moved} on a resend.
  */
 @Slf4j
 public final class RegulatorySubmissionDriver {
