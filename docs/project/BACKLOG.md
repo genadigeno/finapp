@@ -26322,7 +26322,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
   *The owner ruled, 2026-11-03:* a FINAL run with a real hole stays issued, with the gap disclosed (`complete` false), as built; indicative translation of an open period is left out.
   **Still open: the translated body's shape**, for the owner to look at before the first translated FINAL.
 
-**P14-TSK-016 — Financial statements** — `PLANNED`
+**P14-TSK-016 — Financial statements** — `READY` (2026-11-04; marked by the coordinator at `P14-TSK-013`'s merge, master `11dc1525`; every dependency `COMPLETE`)
 - **Objective**: balance sheet and income statement per period, with notes (C8).
 - **Bounded context**: Reporting.
 - **Dependencies**: `-013`, `-015`.
