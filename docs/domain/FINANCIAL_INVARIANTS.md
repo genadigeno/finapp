@@ -1916,7 +1916,7 @@ the loan purposes) + `DOMAIN` (every decision — allocation, accrual base, payo
 derives from journal lines through `BalanceDerivation` under the account's lock, never from the
 display-only projection, `INV-BAL-05`; lending posts only through `PostingService` /
 `ReversalService`; every loan purpose joins `AccountPurpose.closedToFreeAdjustments()`).
-**Verify:** `LendingSchemaHasNoMutableMoneyTest` with a planted mutable money column *(`P14-TSK-021`: `LoanWriteOffProofTest#anExplainedWriteOffHolds`, `#anUnexplainedWriteOffFails`, `#aPartialWriteOffFails`, `#aRowAndAnEntryDisagreeingFails`: a written-off loan's figures are still its lines, its row explains its entry whole; `LoanWriteOffsTest#aDifferenceIsNeverWrittenOffOver`: its rows must explain its due accounts first.)*
+**Verify:** `LendingSchemaHasNoMutableMoneyTest` with a planted mutable money column *(`P14-TSK-021`: `LoanWriteOffProofTest#anExplainedWriteOffHolds`, `#anUnexplainedWriteOffFails`, `#aPartialWriteOffFails`, `#aRowAndAnEntryDisagreeingFails`: a written-off loan's figures are still its lines, its row explains its entry whole; `LoanWriteOffsTest#aDifferenceIsNeverWrittenOffOver`: its rows must explain its due accounts first; `#aRestructuringBetweenTheTwoActsIsStale`: a bargain the customer changed is not written off unread; `#everyDoorRefusesAWrittenOffLoan`, and over real rows `LoanWriteOffDatabaseTest#everyDoorRefusesAWrittenOffLoan`, owed.)*
 (`P11-TSK-002`); the adjustment guard refusing every loan purpose (`P11-TSK-003`);
 `LoanSubledgerProof` zero for every account — each of the six balances equal to its rows' sums, no
 due account negative — gauged `finapp.lending.subledger.proof{verdict}` and alerting on any failure

@@ -2352,7 +2352,7 @@
             }
           }
         },
-        "description": "[409] The BNPL refund cannot be posted now; nothing was written.",
+        "description": "[409] The BNPL refund cannot be posted; nothing was written.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -12713,6 +12713,12 @@
           },
           "currency": {
             "type": "string"
+          },
+          "notice": {
+            "type": "string"
+          },
+          "owed": {
+            "$ref": "#/components/schemas/BnplBalancesView"
           },
           "plan": {
             "type": "string"
@@ -29875,6 +29881,10 @@
       },
       "WriteOffLiveView": {
         "properties": {
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
           "feesDue": {
             "type": "string"
           },
