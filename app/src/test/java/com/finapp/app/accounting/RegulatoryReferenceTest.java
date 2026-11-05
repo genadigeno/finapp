@@ -17,7 +17,6 @@ import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
-import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
@@ -199,10 +198,6 @@ class RegulatoryReferenceTest {
         clock.advanceSeconds(16);
         assertThat(registry.get(RegulatoryAttentionMetrics.ATTENTION).tag("kind", "overtaken").gauge().value()).isNaN();
         assertThat(RegulatoryAttentionMetrics.ATTENTION).isEqualTo("finapp.accounting.regulatory.attention");
-    }
-
-    private static Connection readOnlyConnection() {
-        return (Connection) java.lang.reflect.Proxy.newProxyInstance(Connection.class.getClassLoader(), new Class<?>[] {Connection.class}, (proxy, method, args) -> null);
     }
 
     /** A clock a suite moves. */

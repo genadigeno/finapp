@@ -2,6 +2,7 @@ package com.finapp.app.accounting;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.accounting.AccountingBreakStore;
 import com.finapp.accounting.AccountingBreaks;
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.AccountingPeriodStore;
@@ -54,6 +55,7 @@ class AccountingNewGaugesTest {
     private static final Clock FIXED = Clock.fixed(Instant.parse("2097-04-05T09:00:00Z"), ZoneOffset.UTC);
     private static final IdGenerator IDS = new IdGenerator(FIXED, new SecureRandom());
     private static final Actor ACCOUNTANT = new Actor("accountant-1", ActorType.CUSTOMER);
+    private static final Actor CONTROLLER = new Actor("controller-1", ActorType.CUSTOMER);
     private static final Connection CONNECTION = (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
             new Class<?>[] {Connection.class}, (proxy, method, args) -> null);
     private static final CloseRunStall STALL = new CloseRunStall(Duration.ofSeconds(30), CloseRunStall.STANDARD_POLLS);
@@ -88,6 +90,24 @@ class AccountingNewGaugesTest {
         runs.advance(Duration.ofMillis(1));
         clock.advance(Duration.ofSeconds(16));
         assertThat(gauge(CloseCheckStallMetrics.STALLED)).as("nine attempts, one held back by the claim").isEqualTo(8.0);
+    }
+
+    @Test
+    @DisplayName("close.check.stalled: the raising checks concluded, the check held back behind them stands claimable and counts")
+    void theHeldBackCheckCountsOnceReleased() {
+        new CloseCheckStallMetrics(runs, STALL, snapshots(), clock, registry);
+        UUID holder = UUID.randomUUID();
+        for (int claimed = 0; claimed < 8; claimed++) {
+            CloseRunStore.AttemptRow attempt = runs.claimNext(CONNECTION, holder, Duration.ofMinutes(2)).orElseThrow();
+            if (attempt.check().raisesBreaks()) {
+                runs.conclude(CONNECTION, attempt.id(), holder, com.finapp.accounting.CheckVerdict.passed(attempt.check(), "close-run:v1",
+                        com.finapp.accounting.reporting.CanonicalJson.object().put("planted", true)));
+            } else {
+                runs.defer(CONNECTION, attempt.id(), holder, Duration.ZERO);
+            }
+        }
+        runs.advance(STALL.after());
+        assertThat(gauge(CloseCheckStallMetrics.STALLED)).as("five given back and the breaks' check released").isEqualTo(6.0);
     }
 
     @Test
@@ -157,8 +177,12 @@ class AccountingNewGaugesTest {
         assertThat(registry.get(AccountingBreakAgeMetrics.AGED).tag("type", "SHAPE_MISMATCH").gauge().value()).isZero();
         assertThat(registry.get(AccountingBreakMetrics.OPEN).tag("type", "MAPPING_GAP").gauge().value()).isEqualTo(1.0);
 
-        var row = store.agedOpenByType(CONNECTION, Duration.ofDays(7));
-        assertThat(row).containsEntry(BreakType.MAPPING_GAP, 1L);
+        AccountingBreakStore.BreakRow raised = store.rows().stream().findFirst().orElseThrow();
+        assertThat(store.proposeAcknowledgement(CONNECTION, raised.id(), ACCOUNTANT, "disclosed")).isTrue();
+        assertThat(store.approveAcknowledgement(CONNECTION, raised.id(), CONTROLLER, "agreed")).isTrue();
+        clock.advance(Duration.ofSeconds(16));
+        assertThat(registry.get(AccountingBreakAgeMetrics.AGED).tag("type", "MAPPING_GAP").gauge().value()).as("decided: it asks nothing of anyone").isZero();
+        assertThat(registry.get(AccountingBreakMetrics.OPEN).tag("type", "MAPPING_GAP").gauge().value()).as("and it stands in the count, for good").isEqualTo(1.0);
     }
 
     @Test

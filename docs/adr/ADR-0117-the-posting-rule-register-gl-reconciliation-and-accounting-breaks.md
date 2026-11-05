@@ -83,6 +83,9 @@ detective only; nothing posts.
 
 `INV-ACC-05`, `-12`; `INV-REC-02`; `INV-LED-05`.
 
+*(As built, `P14-TSK-020`, 2026-11-05: `AccountingBreakAged` reads a new `finapp.accounting.break.aged{type}`, breaks `OPEN` past `finapp.accounting.break.aged-after`, on the database's clock, and not `finapp.accounting.break.open`: an `ACKNOWLEDGED` generation, superseded or not, was decided under four eyes and can stand for good, so an alert on the count would fire for good and be muted.)*
+
+
 ## Follow-up
 
 Line-shape conformance for amounts (e.g. fee ≤ gross) as rule predicates, if the battery shows value.

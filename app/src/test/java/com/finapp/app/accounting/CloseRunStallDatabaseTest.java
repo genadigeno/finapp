@@ -108,7 +108,8 @@ class CloseRunStallDatabaseTest {
         CloseRunStore.AttemptRow claimed = inScope(Actor.SYSTEM, uow -> STORE.claimNext(uow, holder, Duration.ofMinutes(10))).orElseThrow();
         assertThat(stalledAttempts(Duration.ofMillis(1))).as("a live claim: a leg at work").isZero();
 
-        assertThat(inScope(Actor.SYSTEM, uow -> STORE.defer(uow, claimed.id(), holder, Duration.ZERO))).isTrue();
+        boolean givenBack = inScope(Actor.SYSTEM, uow -> STORE.defer(uow, claimed.id(), holder, Duration.ZERO));
+        assertThat(givenBack).isTrue();
         assertThat(stalledAttempts(Duration.ofMillis(1))).as("given back, and nobody came").isEqualTo(8);
     }
 
@@ -120,9 +121,10 @@ class CloseRunStallDatabaseTest {
         UUID holder = UUID.randomUUID();
         for (int claimed = 0; claimed < 8; claimed++) {
             CloseRunStore.AttemptRow attempt = inScope(Actor.SYSTEM, uow -> STORE.claimNext(uow, holder, Duration.ofMinutes(10))).orElseThrow();
-            assertThat(inScope(Actor.SYSTEM, uow -> attempt.check().raisesBreaks()
+            boolean moved = inScope(Actor.SYSTEM, uow -> attempt.check().raisesBreaks()
                     ? STORE.conclude(uow, attempt.id(), holder, CheckVerdict.passed(attempt.check(), "close-run:v1", CanonicalJson.object().put("planted", true)))
-                    : STORE.defer(uow, attempt.id(), holder, Duration.ZERO))).as(attempt.check().name()).isTrue();
+                    : STORE.defer(uow, attempt.id(), holder, Duration.ZERO));
+            assertThat(moved).as(attempt.check().name()).isTrue();
         }
         assertThat(stalledAttempts(Duration.ofMillis(1))).as("five given back, and the breaks' check released").isEqualTo(6);
     }

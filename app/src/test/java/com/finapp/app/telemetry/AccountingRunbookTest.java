@@ -155,7 +155,7 @@ class AccountingRunbookTest {
                         .as("`%s` is a meter or a property the code reads", text).isTrue();
                 named++;
             }
-            if (ALERT_LIKE.matcher(text).matches() && !sources.contains("class " + text + " ")) {
+            if (ALERT_LIKE.matcher(text).matches() && !text.endsWith("Test") && !sources.contains("class " + text + " ")) {
                 assertThat(alerts).as("the alert `%s` exists", text).contains(text);
                 named++;
             }

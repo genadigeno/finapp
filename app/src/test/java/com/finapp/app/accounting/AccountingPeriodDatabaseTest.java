@@ -74,7 +74,7 @@ class AccountingPeriodDatabaseTest {
     void theAgeReadsTheDatabasesDate() throws Exception {
         try (Connection connection = DatabaseRoles.application(); Statement session = connection.createStatement()) {
             session.execute("SET TIME ZONE 'Pacific/Kiritimati'");
-            try (ResultSet utc = session.executeQuery("SELECT (now() AT TIME ZONE 'UTC')::date, now()::date")) {
+            try (ResultSet utc = session.executeQuery("SELECT (now() AT TIME ZONE 'UTC')::date")) {
                 utc.next();
                 LocalDate expected = utc.getObject(1, LocalDate.class);
                 // A day's turn between the two statements would read the next day, and nothing else.

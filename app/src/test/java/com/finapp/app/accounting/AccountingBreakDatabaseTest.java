@@ -111,7 +111,8 @@ class AccountingBreakDatabaseTest {
         Thread.sleep(5); // The statement measures "<= now - 1 ms": a real millisecond must pass, on the database's clock.
         Map<BreakType, Long> after = inScope(Actor.SYSTEM, uow -> store.agedOpenByType(uow, Duration.ofMillis(1)));
         assertThat(after.getOrDefault(BreakType.SHAPE_MISMATCH, 0L)).isGreaterThan(before.getOrDefault(BreakType.SHAPE_MISMATCH, 0L));
-        assertThat(inScope(Actor.SYSTEM, uow -> store.agedOpenByType(uow, Duration.ofDays(3650)))).as("inside the bound").isEqualTo(yearBefore);
+        Map<BreakType, Long> yearAfter = inScope(Actor.SYSTEM, uow -> store.agedOpenByType(uow, Duration.ofDays(3650)));
+        assertThat(yearAfter).as("inside the bound").isEqualTo(yearBefore);
     }
 
     @Test
