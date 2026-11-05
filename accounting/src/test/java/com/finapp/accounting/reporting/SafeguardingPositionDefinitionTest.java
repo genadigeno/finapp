@@ -400,13 +400,20 @@ class SafeguardingPositionDefinitionTest {
     }
 
     @Test
-    @DisplayName("question 5: an unreadable read is no zero - the port throws, no body exists, whatever the journal holds")
+    @DisplayName("question 5: an unreadable read is no zero - either of the port's reads failing means no body at all, whatever the journal holds, and the same books read again answer")
     void anUnreadableProofIsNoZero() {
         books.deposit(DAY_ONE, EUR, 2, 100_00);
         SafeguardingPositionDefinition definition = definition();
-        books.unreadable = true;
 
+        books.committedUnreadable = true;
         assertThatThrownBy(() -> definition.generate(SNAPSHOT, inputs())).isInstanceOf(AccountingStorageException.class);
+        books.committedUnreadable = false;
+
+        books.writtenOffUnreadable = true;
+        assertThatThrownBy(() -> definition.generate(SNAPSHOT, inputs())).isInstanceOf(AccountingStorageException.class);
+        books.writtenOffUnreadable = false;
+
+        assertThat(figure(objects(definition.generate(SNAPSHOT, inputs()), "currencies").get(0), "principalWrittenOff")).as("a true zero, from a read that succeeded").isZero();
     }
 
     @Test

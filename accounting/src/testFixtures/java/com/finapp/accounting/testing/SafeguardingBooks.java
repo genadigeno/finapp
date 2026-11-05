@@ -49,8 +49,12 @@ public final class SafeguardingBooks implements LendingFundedAsOfCutoff {
     public final InMemoryTrialBalanceReads journal = new InMemoryTrialBalanceReads();
     private final Map<String, LoanFacts> loans = new LinkedHashMap<>();
     private final List<WriteOff> writeOffs = new ArrayList<>();
-    /** Set, and the port's reads fail as a store's do: how a suite shows an unreadable proof is never a zero. */
+    /** Set, and both of the port's reads fail as a store's do: how a suite shows an unreadable proof is never a zero. */
     public volatile boolean unreadable;
+    /** Set, and only {@link #committed} fails. */
+    public volatile boolean committedUnreadable;
+    /** Set, and only {@link #writtenOff} fails. */
+    public volatile boolean writtenOffUnreadable;
 
     /** Noon UTC of {@code day}. */
     public static Instant noon(LocalDate day) {
@@ -123,13 +127,13 @@ public final class SafeguardingBooks implements LendingFundedAsOfCutoff {
 
     @Override
     public List<Committed> committed(Connection snapshot, LocalDate cutoff, Optional<Instant> cut) {
-        refuseWhenUnreadable();
+        refuseWhen(unreadable || committedUnreadable);
         return LendingFundedAsOfCutoff.committedAt(new ArrayList<>(loans.values()), cutoff, cut);
     }
 
     @Override
     public List<WrittenOff> writtenOff(Connection snapshot, LocalDate cutoff, Optional<Instant> cut) {
-        refuseWhenUnreadable();
+        refuseWhen(unreadable || writtenOffUnreadable);
         Map<String, WrittenOff> folded = new TreeMap<>();
         for (WriteOff held : writeOffs) {
             if (!held.posted().isAfter(cutoff) && cut.filter(held.createdAt()::isAfter).isEmpty()) {
@@ -140,9 +144,9 @@ public final class SafeguardingBooks implements LendingFundedAsOfCutoff {
         return new ArrayList<>(folded.values());
     }
 
-    private void refuseWhenUnreadable() {
+    private static void refuseWhen(boolean unreadable) {
         if (unreadable) {
-            throw new AccountingStorageException("reading the loans committed as of the cutoff: SQLSTATE 08006");
+            throw new AccountingStorageException("reading lending_funded as of the cutoff: SQLSTATE 08006");
         }
     }
 }
