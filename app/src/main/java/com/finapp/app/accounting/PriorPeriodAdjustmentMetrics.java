@@ -21,13 +21,13 @@ public final class PriorPeriodAdjustmentMetrics {
 
     private final AccountingGaugeRead<Long> read;
 
-    public PriorPeriodAdjustmentMetrics(PriorPeriodAdjustmentStore store, Duration standingAfter, GlSnapshots snapshots, Clock clock, MeterRegistry registry) {
+    public PriorPeriodAdjustmentMetrics(PriorPeriodAdjustmentStore store, Duration standingAfter, GlSnapshots snapshots, AccountingGaugeRefresher refresher, Clock clock, MeterRegistry registry) {
         Objects.requireNonNull(store, "store");
         Objects.requireNonNull(standingAfter, "standingAfter");
         if (standingAfter.isNegative() || standingAfter.isZero()) {
             throw new IllegalArgumentException("a proposal's bound is positive: at zero every proposal born would read standing");
         }
-        this.read = new AccountingGaugeRead<>("The prior-period adjustments standing", snapshots, clock, MIN_REFRESH,
+        this.read = new AccountingGaugeRead<>("The prior-period adjustments standing", snapshots, refresher, clock, MIN_REFRESH,
                 connection -> store.standingPast(connection, standingAfter));
         Gauge.builder(STANDING, this::standing)
                 .description("Prior-period adjustments PROPOSED past the bound, whether or not each could still post; no value when unreadable."

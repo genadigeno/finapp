@@ -13,7 +13,9 @@ import java.util.Objects;
  * CloseRunStall#after()} with nobody claiming them - the leg stalled after the run's birth, which {@code close.run.stalled} cannot see: nine {@code PENDING} rows, their leases past, that gauge reading 0.
  *
  * <p><strong>Not a stall</strong> ({@code CloseRunStore.stalledAttempts}): what the claim itself holds back, so {@code OPEN_ACCOUNTING_BREAKS} behind a raising check is a dependency's wait; a set awaited, whose attempt is deferred and re-claimed every poll; an
- * attempt behind a live worker, since a small fleet draining a queue past a long judge is working. <strong>The limit</strong>: a judge hung with its heartbeat alive hides a stall so for at most {@code finapp.accounting.close.max-run}.
+ * attempt behind a live worker, since a small fleet draining a queue past a long judge is working.
+ *
+ * <p><strong>What the live clause costs.</strong> A claim's heartbeat is refused {@code finapp.accounting.close.max-run} after that claim, so one hung judge hides a stall for {@code max-run} plus a lease from the <em>last</em> claim. A reclaim starts a new window and takes another instance's one check-leg thread, so a judge that hangs every time walks the fleet, about 2 h 02 each at the defaults, up to {@code (max-reclaims + 1)} windows: on N of 1 to 4 instances every leg is held at about N x 2 h 02 and this fires some six minutes later; on 5 or more no leg ever runs out, and at about 8 h 08 the next reclaim concludes the attempt {@code FAILED}, {@code WORKERS_EXHAUSTED}, so {@code AccountingCloseCheckFailed} tickets and this never fires, four legs still stuck.
  *
  * <p>The same bound as the run's birth, ten polls of the check leg: nothing a healthy leg does leaves a claimable attempt that long while no claim is live. From the database, on the database's clock, registered whether or not this instance runs the schedule;
  * aggregate with {@code max()}, never {@code sum()}. No value when unreadable, never zero. Bounded by {@link AccountingGaugeRead}, cached 15 s. No tag: a count names no period and no check.
@@ -27,10 +29,10 @@ public final class CloseCheckStallMetrics {
 
     private final AccountingGaugeRead<Long> read;
 
-    public CloseCheckStallMetrics(CloseRunStore store, CloseRunStall stall, GlSnapshots snapshots, Clock clock, MeterRegistry registry) {
+    public CloseCheckStallMetrics(CloseRunStore store, CloseRunStall stall, GlSnapshots snapshots, AccountingGaugeRefresher refresher, Clock clock, MeterRegistry registry) {
         Objects.requireNonNull(store, "store");
         Objects.requireNonNull(stall, "stall");
-        this.read = new AccountingGaugeRead<>("The stalled close checks", snapshots, clock, MIN_REFRESH,
+        this.read = new AccountingGaugeRead<>("The stalled close checks", snapshots, refresher, clock, MIN_REFRESH,
                 connection -> store.stalledAttempts(connection, stall.after()));
         Gauge.builder(STALLED, this::stalled)
                 .description("Attempts of a present close run claimable past the bound with nobody claiming them and no claim live - the check leg stopped after the run's"

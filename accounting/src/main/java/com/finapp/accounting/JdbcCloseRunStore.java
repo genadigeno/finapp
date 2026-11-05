@@ -95,7 +95,7 @@ public final class JdbcCloseRunStore implements CloseRunStore {
      * The attempts claimable for at least the bound, on the database's clock (`P14-TSK-020`; the owner's ruling on `P14-TSK-017`'s I-5): {@code lease_until} is the instant a row became
      * claimable, stamped by the database at a birth and a claim, and moved forward by a deferral and a renewal, so a set awaited and a live worker never read as stalled. {@link
      * #CLAIMABLE_UNDER_THE_LOCK} is the claim's own predicate. <strong>And no claim of a present run is live</strong>: a worker renewing proves a leg alive, and the attempts behind it are a
-     * queue, not a stall. A hung judge's heartbeat can hide a stall so for at most {@code finapp.accounting.close.max-run}, past which {@link #RENEW_SQL} refuses it. {@code holder} is nullable
+     * queue, not a stall. <strong>What that costs</strong>: {@link #RENEW_SQL} bounds a claim at {@code finapp.accounting.close.max-run} from that claim, so a judge hung with its heartbeat alive hides a stall for {@code max-run} plus a lease from the last claim. A reclaim starts a new window, so a judge that hangs every time walks the fleet: see {@code CloseCheckStallMetrics}. {@code holder} is nullable
      * and is asked by name; every other column here is {@code NOT NULL} but {@code locked_at}, which an {@code =} reads as not true when unset, as the claim does.
      */
     static final String STALLED_ATTEMPTS_SQL = "SELECT count(*) FROM accounting.close_check candidate"

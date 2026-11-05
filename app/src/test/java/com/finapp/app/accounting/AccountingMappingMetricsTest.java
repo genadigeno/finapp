@@ -89,7 +89,7 @@ class AccountingMappingMetricsTest {
             throw new com.finapp.accounting.AccountingStorageException(
                     "reading the ledger's chart (SQLState 57014)");
         }, new InMemoryAccountingPeriodStore(), journal), new GlSnapshots(() -> new SnapshotSession().connection(),
-                Duration.ofSeconds(3)), clock, cancelled);
+                Duration.ofSeconds(3)), new AccountingGaugeRefresher(Runnable::run), clock, cancelled);
         assertThat(cancelled.get(AccountingMappingMetrics.UNMAPPED).gauge().value()).isNaN();
     }
 
@@ -104,7 +104,7 @@ class AccountingMappingMetricsTest {
 
     private void metrics(GlSnapshots snapshots) {
         new AccountingMappingMetrics(new GlMappingGap(mappings, unused -> ReferenceGlMapping.agreeingChart(p -> true),
-                new InMemoryAccountingPeriodStore(), journal), snapshots, clock, registry);
+                new InMemoryAccountingPeriodStore(), journal), snapshots, new AccountingGaugeRefresher(Runnable::run), clock, registry);
     }
 
     private double gauge() {

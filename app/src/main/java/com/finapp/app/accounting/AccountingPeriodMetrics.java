@@ -25,8 +25,8 @@ public final class AccountingPeriodMetrics {
 
     private final AccountingGaugeRead<Long> read;
 
-    public AccountingPeriodMetrics(AccountingPeriods periods, GlSnapshots snapshots, Clock clock, MeterRegistry registry) {
-        this.read = new AccountingGaugeRead<>("The oldest unclosed accounting period", snapshots, clock, MIN_REFRESH, periods::overdueDays);
+    public AccountingPeriodMetrics(AccountingPeriods periods, GlSnapshots snapshots, AccountingGaugeRefresher refresher, Clock clock, MeterRegistry registry) {
+        this.read = new AccountingGaugeRead<>("The oldest unclosed accounting period", snapshots, refresher, clock, MIN_REFRESH, periods::overdueDays);
         Gauge.builder(OPEN_AGE, this::overdueDays)
                 .description("Whole days the oldest accounting period not yet CLOSED has been past its lock grace - 0"
                         + " when none is, no value when unreadable. Fleet-wide from every instance: aggregate with max(),"

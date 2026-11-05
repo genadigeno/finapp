@@ -23,13 +23,13 @@ public final class AccountingBreakAgeMetrics {
 
     private final AccountingGaugeRead<Map<BreakType, Long>> read;
 
-    public AccountingBreakAgeMetrics(AccountingBreakStore store, Duration agedAfter, GlSnapshots snapshots, Clock clock, MeterRegistry registry) {
+    public AccountingBreakAgeMetrics(AccountingBreakStore store, Duration agedAfter, GlSnapshots snapshots, AccountingGaugeRefresher refresher, Clock clock, MeterRegistry registry) {
         Objects.requireNonNull(store, "store");
         Objects.requireNonNull(agedAfter, "agedAfter");
         if (agedAfter.isNegative() || agedAfter.isZero()) {
             throw new IllegalArgumentException("a break's bound is positive: at zero every break raised would read aged");
         }
-        this.read = new AccountingGaugeRead<>("The aged accounting breaks", snapshots, clock, MIN_REFRESH,
+        this.read = new AccountingGaugeRead<>("The aged accounting breaks", snapshots, refresher, clock, MIN_REFRESH,
                 connection -> Map.copyOf(store.agedOpenByType(connection, agedAfter)));
         for (BreakType type : BreakType.values()) {
             Gauge.builder(AGED, () -> aged(type))

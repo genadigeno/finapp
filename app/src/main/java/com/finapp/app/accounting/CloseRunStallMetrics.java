@@ -30,11 +30,11 @@ public final class CloseRunStallMetrics {
 
     private final AccountingGaugeRead<Long> read;
 
-    public CloseRunStallMetrics(CloseRunStore store, CloseRunStall stall, GlSnapshots snapshots, Clock clock,
+    public CloseRunStallMetrics(CloseRunStore store, CloseRunStall stall, GlSnapshots snapshots, AccountingGaugeRefresher refresher, Clock clock,
             MeterRegistry registry) {
         Objects.requireNonNull(store, "store");
         Objects.requireNonNull(stall, "stall");
-        this.read = new AccountingGaugeRead<>("The stalled close runs", snapshots, clock, MIN_REFRESH,
+        this.read = new AccountingGaugeRead<>("The stalled close runs", snapshots, refresher, clock, MIN_REFRESH,
                 connection -> store.stalledLocks(connection, stall.after()));
         Gauge.builder(STALLED, this::stalled)
                 .description("Periods LOCKED past the bound with no close run under their present lock - the check leg is not"

@@ -84,7 +84,7 @@ class AccountingNewGaugesTest {
     @Test
     @DisplayName("close.check.stalled: silent inside the bound; past it the eight attempts nobody claimed, OPEN_ACCOUNTING_BREAKS not among them while a raising check stands, since its wait is a dependency's")
     void theStallSpeaksPastTheBoundAndNotForADependency() {
-        new CloseCheckStallMetrics(runs, STALL, snapshots(), clock, registry);
+        new CloseCheckStallMetrics(runs, STALL, snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, registry);
         runs.advance(STALL.after().minusMillis(1));
         assertThat(gauge(CloseCheckStallMetrics.STALLED)).as("a millisecond inside the bound").isZero();
         runs.advance(Duration.ofMillis(1));
@@ -95,7 +95,7 @@ class AccountingNewGaugesTest {
     @Test
     @DisplayName("close.check.stalled: the raising checks concluded, the check held back behind them stands claimable and counts")
     void theHeldBackCheckCountsOnceReleased() {
-        new CloseCheckStallMetrics(runs, STALL, snapshots(), clock, registry);
+        new CloseCheckStallMetrics(runs, STALL, snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, registry);
         UUID holder = UUID.randomUUID();
         for (int claimed = 0; claimed < 8; claimed++) {
             // The store's clock stands still unless moved: a row given back this instant would tie with those never claimed, and be taken again.
@@ -115,7 +115,7 @@ class AccountingNewGaugesTest {
     @Test
     @DisplayName("close.check.stalled: a live claim is a leg at work, and the queue behind it no stall - until its lease lapses and the bound passes")
     void aLiveClaimIsALegAtWork() {
-        new CloseCheckStallMetrics(runs, STALL, snapshots(), clock, registry);
+        new CloseCheckStallMetrics(runs, STALL, snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, registry);
         CloseRunStore.AttemptRow claimed = runs.claimNext(CONNECTION, UUID.randomUUID(), Duration.ofMinutes(10)).orElseThrow();
         assertThat(claimed.check()).isNotEqualTo(CloseCheckCode.OPEN_ACCOUNTING_BREAKS);
         runs.advance(STALL.after());
@@ -128,7 +128,7 @@ class AccountingNewGaugesTest {
     @Test
     @DisplayName("close.check.stalled: a deferred attempt moves its lease forward, so a set awaited reads no stall while the leg keeps coming back")
     void aDeferredAttemptIsNoStall() {
-        new CloseCheckStallMetrics(runs, STALL, snapshots(), clock, registry);
+        new CloseCheckStallMetrics(runs, STALL, snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, registry);
         UUID holder = UUID.randomUUID();
         List<CloseRunStore.AttemptRow> claimed = new ArrayList<>();
         for (Optional<CloseRunStore.AttemptRow> next = runs.claimNext(CONNECTION, holder, Duration.ofMinutes(2)); next.isPresent();
@@ -145,14 +145,14 @@ class AccountingNewGaugesTest {
     @DisplayName("close.check.stalled: unreadable is no value, never zero; no tag; ten instances read one number")
     void theStallUnreadableAndAcrossInstances() {
         unreadable = true;
-        new CloseCheckStallMetrics(runs, STALL, snapshots(), clock, registry);
+        new CloseCheckStallMetrics(runs, STALL, snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, registry);
         assertThat(gauge(CloseCheckStallMetrics.STALLED)).isNaN();
         assertThat(registry.get(CloseCheckStallMetrics.STALLED).gauge().getId().getTags()).isEmpty();
         unreadable = false;
         runs.advance(STALL.after());
         for (int instance = 0; instance < 10; instance++) {
             SimpleMeterRegistry own = new SimpleMeterRegistry();
-            new CloseCheckStallMetrics(runs, STALL, snapshots(), clock, own);
+            new CloseCheckStallMetrics(runs, STALL, snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, own);
             assertThat(own.get(CloseCheckStallMetrics.STALLED).gauge().value()).as("instance %s", instance).isEqualTo(8.0);
         }
     }
@@ -164,8 +164,8 @@ class AccountingNewGaugesTest {
     void aBreakAgesOnlyWhileOpen() {
         InMemoryAccountingBreakStore store = new InMemoryAccountingBreakStore();
         AccountingBreaks breaks = new AccountingBreaks(store, new InMemoryJournal(), (uow, record) -> { }, (uow, envelope, payload, mediaType) -> { }, IDS, clock);
-        new AccountingBreakAgeMetrics(store, Duration.ofDays(7), snapshots(), clock, registry);
-        new AccountingBreakMetrics(breaks, snapshots(), clock, registry);
+        new AccountingBreakAgeMetrics(store, Duration.ofDays(7), snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, registry);
+        new AccountingBreakMetrics(breaks, snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, registry);
         for (BreakType type : BreakType.values()) {
             assertThat(registry.get(AccountingBreakAgeMetrics.AGED).tag("type", type.name()).gauge().value()).as(type.name()).isZero();
         }
@@ -191,9 +191,9 @@ class AccountingNewGaugesTest {
     @DisplayName("break.aged: unreadable is no value; a bound of nothing is refused at start-up, since every break raised would read aged")
     void theAgedGaugeUnreadableAndItsBound() {
         unreadable = true;
-        new AccountingBreakAgeMetrics(new InMemoryAccountingBreakStore(), Duration.ofDays(7), snapshots(), clock, registry);
+        new AccountingBreakAgeMetrics(new InMemoryAccountingBreakStore(), Duration.ofDays(7), snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, registry);
         assertThat(registry.get(AccountingBreakAgeMetrics.AGED).tag("type", "MAPPING_GAP").gauge().value()).isNaN();
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new AccountingBreakAgeMetrics(new InMemoryAccountingBreakStore(), Duration.ZERO, snapshots(), clock, new SimpleMeterRegistry()))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new AccountingBreakAgeMetrics(new InMemoryAccountingBreakStore(), Duration.ZERO, snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, new SimpleMeterRegistry()))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -205,7 +205,7 @@ class AccountingNewGaugesTest {
         AccountingPeriodId april = AccountingPeriodId.next(IDS);
         periods.insertIfAbsent(CONNECTION, new AccountingPeriodStore.NewPeriod(april, MARCH.plusMonths(1), CorrelationId.generate(IDS)));
         InMemoryPriorPeriodAdjustmentStore store = new InMemoryPriorPeriodAdjustmentStore(periods);
-        new PriorPeriodAdjustmentMetrics(store, Duration.ofDays(7), snapshots(), clock, registry);
+        new PriorPeriodAdjustmentMetrics(store, Duration.ofDays(7), snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, registry);
         assertThat(gauge(PriorPeriodAdjustmentMetrics.STANDING)).isZero();
         PriorPeriodAdjustmentId standing = propose(store, april);
         PriorPeriodAdjustmentId decided = propose(store, april);
@@ -234,7 +234,7 @@ class AccountingNewGaugesTest {
     @DisplayName("close.month.unrun: no closed month is 0; the latest closed month's source with a repudiated run and no counting run is 1; a counting run beside it is 0")
     void aRepudiationTakesTheRun() {
         LineSource coverage = new LineSource();
-        new ClosedMonthRunMetrics(new ClosedMonthRuns(periods, coverage), snapshots(), clock, registry);
+        new ClosedMonthRunMetrics(new ClosedMonthRuns(periods, coverage), snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, registry);
         assertThat(gauge(ClosedMonthRunMetrics.UNRUN)).as("March is LOCKED: nothing is closed").isZero();
         periods.closeForTest(MARCH);
         coverage.lines.add(line(SOURCE, "COMPLETED", true));
@@ -261,12 +261,25 @@ class AccountingNewGaugesTest {
         LineSource coverage = new LineSource();
         coverage.sources.add(new ReconciliationRunCoverage.Source(NEWCOMER, "newcomer", ReconciliationRunCoverage.SourceState.ACTIVE));
         periods.closeForTest(MARCH);
-        new ClosedMonthRunMetrics(new ClosedMonthRuns(periods, coverage), snapshots(), clock, registry);
+        new ClosedMonthRunMetrics(new ClosedMonthRuns(periods, coverage), snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, registry);
         assertThat(gauge(ClosedMonthRunMetrics.UNRUN)).isZero();
         SimpleMeterRegistry second = new SimpleMeterRegistry();
         unreadable = true;
-        new ClosedMonthRunMetrics(new ClosedMonthRuns(periods, coverage), snapshots(), clock, second);
+        new ClosedMonthRunMetrics(new ClosedMonthRuns(periods, coverage), snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, second);
         assertThat(second.get(ClosedMonthRunMetrics.UNRUN).gauge().value()).isNaN();
+    }
+
+    @Test
+    @DisplayName("close.month.unrun: a retired or undeclared source's repudiated run is no gap in the month: the rule asks only of an ACTIVE source, and so does this")
+    void onlyAnActiveSourceCounts() {
+        for (ReconciliationRunCoverage.SourceState state : List.of(ReconciliationRunCoverage.SourceState.RETIRED, ReconciliationRunCoverage.SourceState.UNDECLARED)) {
+            LineSource coverage = new LineSource();
+            coverage.sources.clear();
+            coverage.sources.add(new ReconciliationRunCoverage.Source(SOURCE, "source", state));
+            coverage.lines.add(line(SOURCE, "COMPLETED", true));
+            periods.closeForTest(MARCH);
+            assertThat(new ClosedMonthRuns(periods, coverage).repudiatedWithoutARun(CONNECTION)).as(state.name()).isZero();
+        }
     }
 
     private static ReconciliationRunCoverage.Line line(UUID source, String status, boolean repudiated) {

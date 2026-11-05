@@ -65,7 +65,7 @@ class CloseRunStallMetricsTest {
     @Test
     @DisplayName("the ordinary gap is silent; past the bound it speaks, with no schedule and no leader; the check leg's birth clears it")
     void itSpeaksOnlyPastTheBound() {
-        new CloseRunStallMetrics(store, STALL, snapshots(), clock, registry);
+        new CloseRunStallMetrics(store, STALL, snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, registry);
         assertThat(gauge()).as("just locked: the one-poll gap").isZero();
 
         store.advance(STALL.after().minusMillis(1));
@@ -89,7 +89,7 @@ class CloseRunStallMetricsTest {
         store.advance(STALL.after());
         for (int instance = 0; instance < 10; instance++) {
             SimpleMeterRegistry own = new SimpleMeterRegistry();
-            new CloseRunStallMetrics(store, STALL, snapshots(), clock, own);
+            new CloseRunStallMetrics(store, STALL, snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, own);
             assertThat(own.get(CloseRunStallMetrics.STALLED).gauge().value()).as("instance %s", instance).isEqualTo(1.0);
         }
     }
@@ -98,7 +98,7 @@ class CloseRunStallMetricsTest {
     @DisplayName("unreadable is no value, never zero - and the meter carries no tag: a count names no period")
     void unreadableIsNoValue() {
         unreadable = true;
-        new CloseRunStallMetrics(store, STALL, snapshots(), clock, registry);
+        new CloseRunStallMetrics(store, STALL, snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, registry);
         assertThat(gauge()).isNaN();
         assertThat(registry.get(CloseRunStallMetrics.STALLED).gauge().getId().getTags()).isEmpty();
         unreadable = false;

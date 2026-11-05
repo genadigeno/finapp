@@ -2,6 +2,7 @@ package com.finapp.app.telemetry;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.accounting.AccountingErrorCode;
 import com.finapp.accounting.CloseCheckCode;
 import com.finapp.accounting.reporting.ReportDefinitions;
 import com.finapp.app.session.RequiresPermission;
@@ -36,9 +37,14 @@ import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 /**
- * {@code OPERATIONS_RUNBOOK.md} section 10 names only what exists (`P14-TSK-020`): the review's recurring finding is a runbook naming a door its reader cannot open. Every alert links to a section that exists and that names it, and one alert with no link fails. Every route section 10 names
- * is a route of the running application, with the method it says; a route written beside a permission requires that permission; every permission, meter, property, alert and code it names exists. All of it read from the text against the live context and the sources, with no list kept here. It holds the words and no more: whether a step
- * helps an operator is a reader's to judge.
+ * {@code OPERATIONS_RUNBOOK.md} section 10 held to the code (`P14-TSK-020`): the review's recurring finding is a runbook naming a door its reader cannot open. Read from the text against the live context and the sources, with no list kept here.
+ *
+ * <p><strong>Exactly what is held.</strong> Every alert of {@code accounting.yml} links to a section that exists and names it. A backticked route is a route of the running application: a whole {@code /v1/...} path, or a {@code .../} shorthand beginning with a literal segment and matched only under
+ * {@code /operator/accounting} and {@code /operator/regulatory}, with the method it says. A route written beside a permission, in {@code (`X`)}, {@code under `X`} or {@code with `X`}, requires that permission on every route it matches. A permission-shaped name is a permission, a check, a report or a word of the code,
+ * comments stripped. A backticked meter is registered, each label value it writes on a real series and each bare key on the meter; a property is read by the code. An alert is a rule of any rules file. An {@code accounting.*}, {@code regulatory.*}, {@code ledger.*}, {@code identity.*}, {@code bnpl.*} or
+ * {@code lending.*} code is a string of the code, and a status written before an accounting code is that code's.
+ *
+ * <p><strong>What is not held.</strong> JSON fields, reasons and states in prose, a permission written any other way, a route's request or response, and whether a step helps an operator: a reader's to judge.
  */
 @Tag("slice")
 @SpringBootTest(properties = {"spring.datasource.url=jdbc:postgresql://127.0.0.1:1/absent", "finapp.accounting.sweeper.enabled=false"})
@@ -49,11 +55,13 @@ class AccountingRunbookTest {
     private static final Pattern CITED = Pattern.compile("section (\\d+\\.\\d+)");
     private static final Pattern BACKTICKED = Pattern.compile("`([^`\\n]+)`");
     private static final Pattern ROUTE = Pattern.compile("^(?:(GET|POST|PUT|DELETE) )?((?:/v1/|\\.\\.\\./)[A-Za-z0-9/{}._-]*)(?:\\?.*)?$");
-    private static final Pattern ROUTE_THEN_PERMISSION = Pattern.compile("`(GET|POST|PUT|DELETE) ((?:/v1/|\\.\\.\\./)[A-Za-z0-9/{}._-]*)` \\(`([A-Z][A-Z_]+)`\\)");
+    private static final Pattern ROUTE_THEN_PERMISSION = Pattern.compile("`(GET|POST|PUT|DELETE) ((?:/v1/|\\.\\.\\./)[A-Za-z0-9/{}._-]*)`[^`\\n]{0,60}?(?:\\(|\\bunder |\\bwith )`([A-Z][A-Z_]+)`");
     private static final Pattern PERMISSION_LIKE = Pattern.compile("^(ACCOUNTING|REGULATORY|LEDGER|BNPL|LOAN|RECONCILIATION|SETTLEMENT)_[A-Z_]+$");
     private static final Pattern METER_LIKE = Pattern.compile("^(finapp\\.[a-z0-9._-]+)(\\{.*})?$");
-    private static final Pattern ALERT_LIKE = Pattern.compile("^(Accounting|Regulatory|WriteOff)[A-Z][A-Za-z]+$");
-    private static final Pattern CODE_LIKE = Pattern.compile("^(?:\\d{3} )?((?:accounting|regulatory)\\.[A-Z][A-Za-z]+)$");
+    private static final Pattern ALERT_LIKE = Pattern.compile("^(Accounting|Regulatory|Reconciliation|WriteOff)[A-Z][A-Za-z]+$");
+    private static final Pattern CODE_LIKE = Pattern.compile("^(?:(\\d{3}) )?((?:accounting|regulatory|ledger|identity|bnpl|lending)\\.[A-Z][A-Za-z]+)$");
+    private static final Pattern LABEL = Pattern.compile("([a-z_]+)(?:=\"?([A-Za-z0-9_.-]+)\"?)?");
+    private static final Pattern ALERT_RULE = Pattern.compile("(?m)^\\s*-\\s*alert:\\s*([A-Za-z]+)\\s*$");
     private static final Pattern VARIABLE = Pattern.compile("\\{[^}]*}");
 
     @Autowired private MeterRegistry registry;
@@ -103,6 +111,9 @@ class AccountingRunbookTest {
             found.add(token.group(1));
             String method = route.group(1);
             String wanted = normalised(route.group(2));
+            if (wanted.startsWith(".../")) {
+                assertThat(wanted.substring(4).split("/")[0]).as("`%s` begins with a literal segment, or it could mean any route", token.group(1)).isNotEqualTo("{}");
+            }
             List<String> matching = paths.stream().filter(path -> matches(path, wanted)).toList();
             assertThat(matching).as("the route `%s` exists", token.group(1)).isNotEmpty();
             if (method != null) {
@@ -116,14 +127,19 @@ class AccountingRunbookTest {
     @DisplayName("a route written beside a permission requires that permission")
     void aRouteBesidePermissionRequiresIt() {
         Map<String, Set<String>> required = routesAndPermissions();
+        Set<String> permissions = Arrays.stream(PermissionName.values()).map(Enum::name).collect(Collectors.toSet());
         Matcher pair = ROUTE_THEN_PERMISSION.matcher(sectionTen());
         int checked = 0;
         while (pair.find()) {
-            String wanted = pair.group(1) + " " + normalised(pair.group(2));
+            if (!permissions.contains(pair.group(3))) {
+                continue; // `MULTI_FACTOR` and its like: another test's.
+            }
+            String wanted = normalised(pair.group(2));
             List<String> matching = required.keySet().stream().filter(route -> route.startsWith(pair.group(1) + " "))
-                    .filter(route -> matches(route.substring(route.indexOf(' ') + 1), wanted.substring(wanted.indexOf(' ') + 1))).toList();
+                    .filter(route -> matches(route.substring(route.indexOf(' ') + 1), wanted)).toList();
             assertThat(matching).as("`%s %s` is a permissioned route", pair.group(1), pair.group(2)).isNotEmpty();
-            assertThat(matching.stream().flatMap(route -> required.get(route).stream()).toList()).as("`%s %s` requires `%s`", pair.group(1), pair.group(2), pair.group(3)).contains(pair.group(3));
+            assertThat(matching).as("every route `%s %s` could mean requires `%s`", pair.group(1), pair.group(2), pair.group(3))
+                    .allSatisfy(route -> assertThat(required.get(route)).contains(pair.group(3)));
             checked++;
         }
         assertThat(checked).as("the section pairs some routes with their permissions, or this checks nothing").isGreaterThan(10);
@@ -136,32 +152,39 @@ class AccountingRunbookTest {
         Set<String> notPermissions = new TreeSet<>(Arrays.stream(CloseCheckCode.values()).map(Enum::name).toList());
         notPermissions.addAll(definitions.codes());
         Set<String> meters = registry.getMeters().stream().map(Meter::getId).map(Meter.Id::getName).collect(Collectors.toSet());
-        Set<String> alerts = AccountingAlertRulesTest.rules().keySet();
+        Set<String> alerts = allAlerts();
         String sources = mainSources();
+        Map<String, Integer> statuses = Arrays.stream(AccountingErrorCode.values()).collect(Collectors.toMap(AccountingErrorCode::code, AccountingErrorCode::status));
         Matcher token = BACKTICKED.matcher(sectionTen());
         int named = 0;
         while (token.find()) {
             String text = token.group(1);
             if (PERMISSION_LIKE.matcher(text).matches()) {
                 // A check's code, a report's or a proof's reads like a permission; each is held to its own declaration, a whole word of the sources.
-                assertThat(permissions.contains(text) || notPermissions.contains(text) || Pattern.compile("\\b" + text + "\\b").matcher(sources).find())
+                assertThat(permissions.contains(text) || notPermissions.contains(text) || Pattern.compile("(?<![A-Za-z0-9_])" + text + "(?![A-Za-z0-9_])").matcher(sources).find())
                         .as("`%s` is a permission, a check, a report or a declared code", text).isTrue();
                 named++;
             }
             Matcher meter = METER_LIKE.matcher(text);
             if (meter.matches()) {
-                String name = meter.group(1).replaceAll("=.*$", "");
+                String name = meter.group(1);
                 assertThat(meters.contains(name) || sources.contains("${" + name) || sources.contains("\"" + name + "\""))
                         .as("`%s` is a meter or a property the code reads", text).isTrue();
+                if (meter.group(2) != null) {
+                    assertLabels(text, name, meter.group(2));
+                }
                 named++;
             }
-            if (ALERT_LIKE.matcher(text).matches() && !text.endsWith("Test") && !sources.contains("class " + text + " ")) {
+            if (ALERT_LIKE.matcher(text).matches() && !text.endsWith("Test") && !Pattern.compile("\\b(class|interface|record|enum) " + text + "\\b").matcher(sources).find()) {
                 assertThat(alerts).as("the alert `%s` exists", text).contains(text);
                 named++;
             }
             Matcher code = CODE_LIKE.matcher(text);
             if (code.matches()) {
-                assertThat(sources).as("the code `%s` exists", text).contains("\"" + code.group(1) + "\"");
+                assertThat(sources).as("the code `%s` exists", text).contains("\"" + code.group(2) + "\"");
+                if (code.group(1) != null && statuses.containsKey(code.group(2))) {
+                    assertThat(statuses.get(code.group(2))).as("`%s`: the status is the code's", text).isEqualTo(Integer.valueOf(code.group(1)));
+                }
                 named++;
             }
         }
@@ -176,14 +199,18 @@ class AccountingRunbookTest {
         assertThat(paths.stream().anyMatch(path -> matches(path, normalised(".../periods/{periodId}/force-close")))).as("a door that does not exist").isFalse();
         assertThat(routesAndMethods().get(paths.stream().filter(path -> matches(path, normalised(".../periods/{periodId}/lock"))).findFirst().orElseThrow())).containsExactly("POST");
         assertThat(ROUTE_THEN_PERMISSION.matcher("`GET .../periods/{periodId}/close-run` (`ACCOUNTING_READ`)").find()).isTrue();
+        assertThat(ROUTE_THEN_PERMISSION.matcher("`POST .../submissions/{submissionId}/non-delivery` under `REGULATORY_REPORT_SUBMIT`").find()).isTrue();
+        assertThat(ROUTE_THEN_PERMISSION.matcher("`GET /v1/operator/regulatory/submissions` lists what stands, with `REGULATORY_REPORT_PREPARE`").find()).isTrue();
+        assertThat(paths.stream().filter(path -> matches(path, normalised(".../breaks/{breakId}"))).toList()).as("a shorthand reads accounting's and regulatory's routes, never reconciliation's of that name")
+                .isNotEmpty().allSatisfy(path -> assertThat(path).contains("/operator/accounting/"));
     }
 
     // ------------------------------------------------------------------
 
-    /** Does {@code path} (a route, variables blanked) answer {@code wanted}: a whole route, or {@code ...}'s suffix of one. */
+    /** Does {@code path} (a route, variables blanked) answer {@code wanted}: a whole route, or {@code ...}'s suffix of an accounting or regulatory one. */
     private static boolean matches(String path, String wanted) {
         if (wanted.startsWith(".../")) {
-            return (path + "/").endsWith(wanted.substring(3) + "/") || path.endsWith(wanted.substring(3));
+            return (path.contains("/operator/accounting/") || path.contains("/operator/regulatory/")) && path.endsWith(wanted.substring(3));
         }
         return path.equals(wanted) || path.equals(wanted.replaceFirst("^/v1", ""));
     }
@@ -192,6 +219,36 @@ class AccountingRunbookTest {
     private static String normalised(String route) {
         String blanked = VARIABLE.matcher(route).replaceAll("{}").replaceAll("/[A-Z][A-Z_]+(?=/|$)", "/{}");
         return blanked.endsWith("/") ? blanked.substring(0, blanked.length() - 1) : blanked;
+    }
+
+    /** Each {@code key="value"} a meter's token writes is a real series of it, and each bare {@code key} a tag of it. */
+    private void assertLabels(String text, String name, String braces) {
+        Matcher label = LABEL.matcher(braces.substring(1, braces.length() - 1));
+        while (label.find()) {
+            String key = label.group(1);
+            String value = label.group(2);
+            if (value != null) {
+                assertThat(registry.find(name).tag(key, value).meters()).as("`%s`: %s=%s is a series of %s", text, key, value, name).isNotEmpty();
+            } else {
+                assertThat(registry.find(name).tagKeys(key).meters()).as("`%s`: %s is a tag of %s", text, key, name).isNotEmpty();
+            }
+        }
+    }
+
+    /** Every alert of every rules file: a section may name another module's. */
+    private static Set<String> allAlerts() throws IOException {
+        Set<String> alerts = new TreeSet<>();
+        Path rules = RepositoryPaths.locate("settings.gradle.kts").getParent().resolve("infra/prometheus/rules");
+        try (Stream<Path> files = Files.list(rules)) {
+            for (Path file : files.toList()) {
+                Matcher alert = ALERT_RULE.matcher(Files.readString(file));
+                while (alert.find()) {
+                    alerts.add(alert.group(1));
+                }
+            }
+        }
+        assertThat(alerts).as("the rules files parse, or this checks nothing").contains("AccountingCloseOverdue", "ReconciliationRuleSetMissing");
+        return alerts;
     }
 
     private Map<String, Set<String>> routesAndMethods() {
@@ -239,15 +296,15 @@ class AccountingRunbookTest {
         return runbook.substring(start, end < 0 ? runbook.length() : end);
     }
 
-    /** Every main source of the app and accounting modules, as one text: where a property a section names is read, or a code declared. */
+    /** Every main source a section may name, as one text, comments stripped so a javadoc's mention proves nothing: where a property is read, or a code declared. */
     private static String mainSources() throws IOException {
         StringBuilder all = new StringBuilder();
-        for (String root : List.of("app/src/main/java", "accounting/src/main/java", "app/src/main/resources")) {
+        for (String root : List.of("app/src/main/java", "accounting/src/main/java", "ledger/src/main/java", "identity/src/main/java", "bnpl/src/main/java", "lending/src/main/java", "app/src/main/resources")) {
             Path base = RepositoryPaths.locate("settings.gradle.kts").getParent().resolve(root);
             try (Stream<Path> files = Files.walk(base)) {
                 files.filter(Files::isRegularFile).forEach(file -> {
                     try {
-                        all.append(Files.readString(file)).append('\n');
+                        all.append(withoutComments(Files.readString(file))).append('\n');
                     } catch (IOException unreadable) {
                         throw new UncheckedIOException(unreadable);
                     }
@@ -255,5 +312,9 @@ class AccountingRunbookTest {
             }
         }
         return all.toString();
+    }
+
+    private static String withoutComments(String source) {
+        return source.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("(?m)^\\s*//.*$", " ");
     }
 }

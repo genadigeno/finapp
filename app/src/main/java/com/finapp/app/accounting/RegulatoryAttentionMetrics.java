@@ -38,10 +38,10 @@ public final class RegulatoryAttentionMetrics {
 
     private final AccountingGaugeRead<RegulatorySubmissionStore.Attention> read;
 
-    public RegulatoryAttentionMetrics(RegulatorySubmissions submissions, GlSnapshots snapshots, Clock clock, MeterRegistry registry) {
+    public RegulatoryAttentionMetrics(RegulatorySubmissions submissions, GlSnapshots snapshots, AccountingGaugeRefresher refresher, Clock clock, MeterRegistry registry) {
         Objects.requireNonNull(submissions, "submissions");
         Objects.requireNonNull(registry, "registry");
-        this.read = new AccountingGaugeRead<>("What stands on the regulatory submissions", snapshots, clock, MIN_REFRESH, submissions::attention);
+        this.read = new AccountingGaugeRead<>("What stands on the regulatory submissions", snapshots, refresher, clock, MIN_REFRESH, submissions::attention);
         gauge(registry, "overdue", RegulatorySubmissionStore.Attention::overdue);
         gauge(registry, "resends_exhausted", RegulatorySubmissionStore.Attention::resendsExhausted);
         gauge(registry, "overtaken", RegulatorySubmissionStore.Attention::overtaken);

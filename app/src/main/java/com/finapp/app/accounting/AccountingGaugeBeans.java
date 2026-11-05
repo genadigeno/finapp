@@ -18,7 +18,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * What the accounting gauges read through (`P14-TSK-020`; `P14-TSK-017`'s review, M-9), and the gauges this task adds: their own {@link GlSnapshots}, whose statement timeout - {@code finapp.accounting.gauges.statement-timeout}, 2 seconds - is a scrape's bound and not a GL read's 10.
+ * What the accounting gauges read through (`P14-TSK-020`; `P14-TSK-017`'s review, M-9; its own review, I-1), and the gauges this task adds: the one thread that reads, {@link AccountingGaugeRefresher}, and their own {@link GlSnapshots}, whose statement timeout - {@code finapp.accounting.gauges.statement-timeout}, 2 seconds - bounds a read on that thread and not a scrape, which waits on neither.
  * Its own configuration, so the module's parallel tasks each add theirs without editing one file. {@code gl.unmapped} keeps the GL's bean: its read counts journal lines.
  */
 @Configuration(proxyBeanMethods = false)
@@ -33,32 +33,38 @@ public class AccountingGaugeBeans {
         return new GlSnapshots(dataSource::getConnection, statementTimeout);
     }
 
+    /** One thread per instance, closed with the context: {@code AccountingGaugeWiringTest} holds that every accounting gauge reads on it. */
+    @Bean
+    AccountingGaugeRefresher accountingGaugeRefresher() {
+        return new AccountingGaugeRefresher();
+    }
+
     /** {@code finapp.accounting.close.check.stalled}: the same bound as the run's birth. */
     @Bean
-    CloseCheckStallMetrics closeCheckStallMetrics(CloseRunStore closeRunStore, CloseRunStall closeRunStall, @Qualifier(SNAPSHOTS) GlSnapshots snapshots, Clock clock, MeterRegistry meterRegistry) {
-        return new CloseCheckStallMetrics(closeRunStore, closeRunStall, snapshots, clock, meterRegistry);
+    CloseCheckStallMetrics closeCheckStallMetrics(CloseRunStore closeRunStore, CloseRunStall closeRunStall, @Qualifier(SNAPSHOTS) GlSnapshots snapshots, AccountingGaugeRefresher accountingGaugeRefresher, Clock clock, MeterRegistry meterRegistry) {
+        return new CloseCheckStallMetrics(closeRunStore, closeRunStall, snapshots, accountingGaugeRefresher, clock, meterRegistry);
     }
 
     /** {@code finapp.accounting.break.aged{type}}. */
     @Bean
     AccountingBreakAgeMetrics accountingBreakAgeMetrics(AccountingBreakStore accountingBreakStore,
             @Value("${finapp.accounting.break.aged-after:" + AccountingObjectives.BREAK_AGED_AFTER + "}") Duration agedAfter,
-            @Qualifier(SNAPSHOTS) GlSnapshots snapshots, Clock clock, MeterRegistry meterRegistry) {
-        return new AccountingBreakAgeMetrics(accountingBreakStore, agedAfter, snapshots, clock, meterRegistry);
+            @Qualifier(SNAPSHOTS) GlSnapshots snapshots, AccountingGaugeRefresher accountingGaugeRefresher, Clock clock, MeterRegistry meterRegistry) {
+        return new AccountingBreakAgeMetrics(accountingBreakStore, agedAfter, snapshots, accountingGaugeRefresher, clock, meterRegistry);
     }
 
     /** {@code finapp.accounting.adjustment.standing}. */
     @Bean
     PriorPeriodAdjustmentMetrics priorPeriodAdjustmentMetrics(PriorPeriodAdjustmentStore priorPeriodAdjustmentStore,
             @Value("${finapp.accounting.adjustment.standing-after:" + AccountingObjectives.ADJUSTMENT_STANDING_AFTER + "}") Duration standingAfter,
-            @Qualifier(SNAPSHOTS) GlSnapshots snapshots, Clock clock, MeterRegistry meterRegistry) {
-        return new PriorPeriodAdjustmentMetrics(priorPeriodAdjustmentStore, standingAfter, snapshots, clock, meterRegistry);
+            @Qualifier(SNAPSHOTS) GlSnapshots snapshots, AccountingGaugeRefresher accountingGaugeRefresher, Clock clock, MeterRegistry meterRegistry) {
+        return new PriorPeriodAdjustmentMetrics(priorPeriodAdjustmentStore, standingAfter, snapshots, accountingGaugeRefresher, clock, meterRegistry);
     }
 
     /** {@code finapp.accounting.close.month.unrun}. */
     @Bean
     ClosedMonthRunMetrics closedMonthRunMetrics(AccountingPeriodStore accountingPeriodStore, ReconciliationRunCoverage reconciliationRunCoverage,
-            @Qualifier(SNAPSHOTS) GlSnapshots snapshots, Clock clock, MeterRegistry meterRegistry) {
-        return new ClosedMonthRunMetrics(new ClosedMonthRuns(accountingPeriodStore, reconciliationRunCoverage), snapshots, clock, meterRegistry);
+            @Qualifier(SNAPSHOTS) GlSnapshots snapshots, AccountingGaugeRefresher accountingGaugeRefresher, Clock clock, MeterRegistry meterRegistry) {
+        return new ClosedMonthRunMetrics(new ClosedMonthRuns(accountingPeriodStore, reconciliationRunCoverage), snapshots, accountingGaugeRefresher, clock, meterRegistry);
     }
 }

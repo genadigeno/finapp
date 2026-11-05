@@ -10,7 +10,7 @@ import lombok.RequiredArgsConstructor;
  * Whether a repudiation has taken the latest {@code CLOSED} month's counting run (`P14-TSK-020`; `P14-TSK-012`'s item 7 and owner item (l); {@code PHASE_14_PLAN.md} section 13.5's accepted limit): a batch repudiated
  * after the approval's read, or after {@code CLOSED}, takes no period row, so the month stays closed with no run that counts, and until now only {@code RECONCILIATION_STATUS} said so, when somebody asked.
  *
- * <p><strong>A source counts only when a repudiated run stands and no run counts</strong>: {@link CloseChecks.MonthRuns#ran} alone would also read false for a source admitted after the month closed, whose month has no run and
+ * <p><strong>An {@code ACTIVE} source counts only when a repudiated run stands and no run counts</strong>: {@code MonthRuns.ran} asks only of an {@code ACTIVE} source, so a retired or undeclared one is no gap in the month however its runs read; {@link CloseChecks.MonthRuns#ran} alone would also read false for a source admitted after the month closed, whose month has no run and
  * lost none, and {@code settlement.source} holds no admission date. <strong>The latest closed month only</strong>: it is the one a reopen can reach, so the one with a way on; an older month's would hold the alert for good. Two statements of
  * reconciliation's and one of accounting's, on one snapshot, each module's own, compared here. It judges nothing and decides nothing.
  */
@@ -31,7 +31,8 @@ public final class ClosedMonthRuns {
     }
 
     private static long lostItsRun(ReconciliationRunCoverage.Coverage month) {
-        return month.sources().stream().map(source -> month.lines().stream().filter(line -> line.sourceId().equals(source.id())).toList())
+        return month.sources().stream().filter(source -> source.state() == ReconciliationRunCoverage.SourceState.ACTIVE)
+                .map(source -> month.lines().stream().filter(line -> line.sourceId().equals(source.id())).toList())
                 .filter(ClosedMonthRuns::repudiatedAndNoneCounts).count();
     }
 
