@@ -148,6 +148,10 @@ balance exactly.
 **Why:** This is the operational definition of "explainable balance".
 **Enforce:** `DOMAIN`.
 **Verify:** Automated recomputation job; test under sustained concurrent posting.
+*(`P14-TSK-026`, ADR-0119 decision 1: the rebuild ADR-0041 promised, as a person's four-eyes act - `ProjectionRebuildsTest`
+(the lock order, a posting committed while the approval waited is in its sum, one after composes, the approval's own reading
+written, four eyes, `UNCHANGED` writes nothing), `ProjectionRebuildNeverPostsTest` (no journal write on its path);
+`ProjectionRebuildDatabaseTest`'s latched races under concurrent postings and a hold, owed (C5).)*
 **Phase:** 3
 
 ### INV-BAL-03 — Value is neither created nor destroyed
@@ -1456,7 +1460,11 @@ is re-valued and no customer execution rate is read for valuation.
 **Verify:** `TranslationTest#everyCurrencyAtItsScaleWithAnExplicitDifference`, `#originalsAreKept`,
 `#generatedAmountsAgreeWithAnExactOracle`, `TrialBalanceOracleTest#theTranslationIsTheOracles`,
 `TranslatedTrialBalanceRunsTest`, `ValuationRateSetDatabaseTest` (`P14-TSK-014`, `-015`; the database cases owed, C5); the
-battery's oracle.
+battery's oracle. *(`P14-TSK-026`, ADR-0119 decision 2: a reference gap beyond the bound is valued at the reference's real last
+observation, provenance kept, flagged and disclosed on every translated content -
+`TranslationTest#aReferenceGapIsDisclosedAndNothingElseMoves`, `TrialBalanceDefinitionTest#aReferenceGapIsDisclosedOnTheFinal`,
+`FinancialStatementsTest#bothStatementsDiscloseAReferenceGap`, `ValuationRateSetsTest`'s gap cases;
+`ValuationReferenceGapDatabaseTest` owed, C5.)*
 **Phase:** 14
 
 ### INV-ACC-12 — Every entry conforms to a registered rule, and every expected entry exists once

@@ -120,6 +120,47 @@ public enum LedgerAuditAction implements AuditableAction {
             "ledger.HoldReleased",
             "A standing hold was released, restoring available balance; the record names the"
                     + " hold and the account, never an amount.",
+            false),
+
+    /**
+     * A person proposed rebuilding one account's balance projection from its journal (`P14-TSK-026`, ADR-0119).
+     *
+     * <p><strong>Reason required</strong>: a rebuild repairs derived data the verification found drifting, and why the
+     * proposer believes the journal and not the row is the record an investigator reads first. The figures the proposer
+     * observed are on the rebuild's row ({@code ledger.projection_rebuild}), which this record names - never in the
+     * summary ({@code INV-AUD-02}). Emitted by {@code ProjectionRebuilds.propose}, by the creating call only.
+     */
+    PROJECTION_REBUILD_PROPOSED(
+            "ledger.ProjectionRebuildProposed",
+            "A person proposed rebuilding an account's balance projection from its journal for a second person's"
+                    + " approval; the reason and the proposer are recorded, the observed figures on the rebuild it names.",
+            true),
+
+    /**
+     * A second person approved a projection rebuild: the projection was set to what the journal and the holds derive
+     * ({@code APPLIED}), or found already so and left untouched ({@code UNCHANGED}) (`P14-TSK-026`, ADR-0119;
+     * {@code INV-AUD-04}).
+     *
+     * <p>No reason: the proposal carries the why, and the four-eyes trail is two records each naming its own actor - the
+     * {@code ADJUSTMENT_POSTED} reasoning. The summary names the account, the outcome, the applied-entry counts before and
+     * after and which figures moved; the figures before and after are on the rebuild row, in the same transaction. Emitted
+     * by {@code ProjectionRebuilds.approve}, by the deciding call only - a converged retry records nothing.
+     */
+    PROJECTION_REBUILT(
+            "ledger.ProjectionRebuilt",
+            "A second person approved a projection rebuild - the row set to what the journal derives, or found so and"
+                    + " untouched; the record names the rebuild, the outcome and which figures moved, never an amount.",
+            false),
+
+    /**
+     * A standing projection rebuild was rejected, or withdrawn by its proposer (`P14-TSK-026`).
+     *
+     * <p>No reason required - the {@code ADJUSTMENT_REJECTED} argument verbatim. Emitted by {@code
+     * ProjectionRebuilds.reject}, by the deciding call only.
+     */
+    PROJECTION_REBUILD_REJECTED(
+            "ledger.ProjectionRebuildRejected",
+            "A standing projection rebuild was rejected or withdrawn; the record names the rebuild and who declined it.",
             false);
 
     private final String code;

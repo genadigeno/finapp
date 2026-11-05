@@ -43,6 +43,11 @@ import lombok.RequiredArgsConstructor;
  * unless the period is {@code LOCKED}; then the conditional edge and the audit record. <strong>Ten approvers, one
  * approved set</strong> per period. <strong>Reject</strong>: the set {@code FOR UPDATE}, terminal; its capturer may reject
  * it. The same person's repeated decision converges, writing nothing.
+ *
+ * <p><strong>A reference gap's way on</strong> (`P14-TSK-026`, ADR-0119 decision 2): {@link #captureAcrossGap} admits, for each
+ * pair a person names with its snapshot, the reference's real last observation before the end although it is older than the
+ * bound - reasoned, the same locks as a capture - and {@link #approveAcrossGap}, its own door (the route's {@code MULTI_FACTOR}),
+ * re-reads the reference under the approval's locks. Each door decides its own sets: {@link ValuationDoorMismatch} otherwise.
  */
 @RequiredArgsConstructor
 public final class ValuationRateSets {
@@ -102,6 +107,21 @@ public final class ValuationRateSets {
 
         ValuationSetStale(String detail) {
             super(detail);
+        }
+    }
+
+    /**
+     * A set reached the other approval door (`P14-TSK-026`): one holding a reference gap is approved at its own door (on a
+     * {@code MULTI_FACTOR} session, the route's), one holding none at the ordinary door. Nothing written.
+     */
+    public static final class ValuationDoorMismatch extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        ValuationDoorMismatch(boolean holdsAGap) {
+            super(holdsAGap
+                    ? "the valuation rate set holds a reference gap: it is approved at its reference-gap approval, on a"
+                            + " MULTI_FACTOR session"
+                    : "the valuation rate set holds no reference gap: it is approved at the ordinary approval");
         }
     }
 
@@ -171,19 +191,92 @@ public final class ValuationRateSets {
                 content.rates(), false);
     }
 
+    /**
+     * Captures a set for a {@code LOCKED} period across a reference gap (`P14-TSK-026`, ADR-0119 decision 2): each pair of
+     * {@code gaps} at the reference's last observation before the period's end although it is older than the bound - the
+     * snapshot named, flagged beyond the bound - and every other pair within the bound as {@link #capture} judges it. The
+     * same locks and the same period rule as {@link #capture}; reasoned; approved only at {@link #approveAcrossGap}.
+     *
+     * @param gaps the pairs excepted, at least one, each a valued currency once, each with the snapshot id the capturer read
+     * @throws AccountingPeriods.PeriodNotFound when no period has this id
+     * @throws AccountingPeriods.PeriodStale when the period is not {@code LOCKED}
+     * @throws ValuationSetStale when the period already has an approved set
+     * @throws ValuationRateSet.ReferenceGapRefused when a named pair is no gap, or its last observation is not the one named
+     * @throws ValuationRateSet.ValuationRateStale when an unnamed pair is stale or missing
+     * @throws IllegalArgumentException no gap, or a gap naming a currency the set does not value, or one twice
+     */
+    public Valued captureAcrossGap(
+            Connection unitOfWork,
+            AccountingPeriodId periodId,
+            Actor actor,
+            String reason,
+            List<ValuationRateSet.ReferenceGap> gaps,
+            CorrelationId correlation) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(periodId, "periodId");
+        Objects.requireNonNull(gaps, "gaps");
+        Objects.requireNonNull(correlation, "correlation");
+        person(actor);
+        String reasoned = AccountingReasons.reasoned(reason);
+        if (gaps.isEmpty()) {
+            throw new IllegalArgumentException("a reference-gap exception names at least one pair; capture without it");
+        }
+        // The month is frozen from birth, so the unlocked read only names the row; A1 FOR SHARE: an unlock waits.
+        YearMonth month = periods.find(unitOfWork, periodId).orElseThrow(AccountingPeriods.PeriodNotFound::new).month();
+        AccountingPeriodStore.PeriodRow period = periods.lockShared(unitOfWork, month)
+                .orElseThrow(AccountingPeriods.PeriodNotFound::new);
+        if (period.status() != PeriodStatus.LOCKED) {
+            throw new AccountingPeriods.PeriodStale("the period is " + period.status().name()
+                    + "; a valuation rate set is captured for a LOCKED period");
+        }
+        if (store.approvedFor(unitOfWork, periodId).isPresent()) {
+            throw new ValuationSetStale("the period " + month + " already has an approved valuation rate set");
+        }
+        ValuationRateSet content = ValuationRateSet.judgeAcrossGap(periodId, month, staleness, rates.valued(),
+                rates.lastObservedBefore(unitOfWork, ValuationRateSet.asOf(month)), gaps);
+        ValuationRateSetId id = ValuationRateSetId.next(ids);
+        store.insert(unitOfWork, new ValuationRateSetStore.NewSet(id, content, actor, Optional.of(reasoned), correlation));
+        audit(unitOfWork, actor, AccountingAuditAction.VALUATION_SET_CAPTURED_ACROSS_GAP, id, Optional.of(reasoned),
+                "period=" + month + ", asOf=" + content.asOf() + ", pairs=" + content.rates().size() + ", maxAgeHours="
+                        + staleness.hours() + ", referenceGaps=" + gapsOf(content.rates(), content.asOf()),
+                correlation);
+        return new Valued(id, periodId, month, ValuationRateSetStatus.PROPOSED, content.asOf(), staleness.hours(),
+                content.rates(), false);
+    }
+
     // ------------------------------------------------------------------ approve
 
     /**
-     * Approves a {@code PROPOSED} set - a different person's act, while its period is {@code LOCKED} and has no approved
-     * set. The same approver's repeat converges.
+     * Approves a {@code PROPOSED} set holding no reference gap - a different person's act, while its period is
+     * {@code LOCKED} and has no approved set. The same approver's repeat converges.
      *
      * @throws ValuationSetNotFound when no set has this id
+     * @throws ValuationDoorMismatch when the set holds a reference gap: {@link #approveAcrossGap} is its door
      * @throws ValuationSetStale when the set is no longer {@code PROPOSED}, or the period already has an approved set
      * @throws SelfApprovalRefused when the approver captured it ({@code INV-AUD-04})
      * @throws AccountingPeriods.PeriodStale when the period is not {@code LOCKED}
      */
     public Valued approve(
             Connection unitOfWork, ValuationRateSetId id, Actor actor, String reason, CorrelationId correlation) {
+        return decided(unitOfWork, id, actor, reason, correlation, false);
+    }
+
+    /**
+     * Approves a {@code PROPOSED} set holding a reference gap (`P14-TSK-026`, ADR-0119 decision 2) - {@link #approve}'s
+     * rules, the route's {@code MULTI_FACTOR} beside them, and the reference re-read under the locks: each excepted pair must
+     * still be the reference's last observation before the end.
+     *
+     * @throws ValuationDoorMismatch when the set holds no reference gap: {@link #approve} is its door
+     * @throws ValuationRateSet.ReferenceGapRefused when an excepted pair's last observation moved - capture again
+     */
+    public Valued approveAcrossGap(
+            Connection unitOfWork, ValuationRateSetId id, Actor actor, String reason, CorrelationId correlation) {
+        return decided(unitOfWork, id, actor, reason, correlation, true);
+    }
+
+    private Valued decided(
+            Connection unitOfWork, ValuationRateSetId id, Actor actor, String reason, CorrelationId correlation,
+            boolean gapDoor) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(correlation, "correlation");
@@ -194,6 +287,11 @@ public final class ValuationRateSets {
         AccountingPeriodStore.PeriodRow period = periods.lock(unitOfWork, periodId)
                 .orElseThrow(AccountingPeriods.PeriodNotFound::new);
         ValuationRateSetStore.SetRow row = store.lock(unitOfWork, id).orElseThrow(ValuationSetNotFound::new);
+        // Each door decides its own sets and no other's, judged before the converge: even a decided set is not answered
+        // through the wrong door (the adjustment's origin rule, P8-TSK-006).
+        if ((row.referenceGaps() > 0) != gapDoor) {
+            throw new ValuationDoorMismatch(row.referenceGaps() > 0);
+        }
         if (row.status() == ValuationRateSetStatus.APPROVED && row.decidedBy().filter(actor.id()::equals).isPresent()) {
             return valued(unitOfWork, row, true);
         }
@@ -211,13 +309,29 @@ public final class ValuationRateSets {
         if (store.approvedFor(unitOfWork, periodId).isPresent()) {
             throw new ValuationSetStale("the period " + row.month() + " already has an approved valuation rate set");
         }
+        List<ValuationRate> held = store.rates(unitOfWork, row.id());
+        if (gapDoor) {
+            // The gap is approved only while it is the gap the capturer named: re-read under the period and set locks. fx's
+            // inserts are not serialised with this read; a late observation after it leaves a real observation, its age
+            // disclosed (ADR-0119).
+            ValuationRateSet.requireStillTheLast(held, rates.lastObservedBefore(unitOfWork, row.asOf()));
+        }
         if (!store.decide(unitOfWork, row.id(), ValuationRateSetStatus.APPROVED, actor, reasoned)) {
             throw new IllegalStateException(
                     "the locked proposal was decided by another writer: the FOR UPDATE protocol was bypassed");
         }
-        audit(unitOfWork, actor, AccountingAuditAction.VALUATION_SET_APPROVED, row.id(), Optional.of(reasoned),
-                "period=" + row.month() + ", pairs=" + row.rateCount(), correlation);
+        audit(unitOfWork, actor,
+                gapDoor ? AccountingAuditAction.VALUATION_SET_APPROVED_ACROSS_GAP : AccountingAuditAction.VALUATION_SET_APPROVED,
+                row.id(), Optional.of(reasoned), "period=" + row.month() + ", pairs=" + row.rateCount()
+                        + (gapDoor ? ", referenceGaps=" + gapsOf(held, row.asOf()) : ""),
+                correlation);
         return valued(unitOfWork, row, ValuationRateSetStatus.APPROVED);
+    }
+
+    /** The excepted pairs with their ages, {@code EUR/JPY:412h} joined by {@code ;} - codes and hours, never a rate. */
+    static String gapsOf(List<ValuationRate> rates, Instant asOf) {
+        return String.join(";", rates.stream().filter(ValuationRate::beyondBound)
+                .map(rate -> rate.pair() + ":" + rate.ageHours(asOf) + "h").toList());
     }
 
     // ------------------------------------------------------------------ reject

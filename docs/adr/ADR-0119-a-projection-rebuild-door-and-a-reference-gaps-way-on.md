@@ -109,4 +109,25 @@ Security impact: two `MULTI_FACTOR` approvals. Financial impact: none on balance
 
 ## As built
 
-`P14-TSK-026` (2026-11-06): to be completed at the task's gate.
+`P14-TSK-026` (2026-11-06). **Decision 1**: ledger `V031` (`ledger.projection_rebuild`), `ProjectionRebuild` (the aggregate
+and the one definition of drift the two readings use, the verification's), `ProjectionRebuilds` (the three keyed acts),
+`ProjectionRebuildRows` and `JdbcProjectionRebuildRows` (the lock-and-write seam: `FOR KEY SHARE`, `FOR UPDATE`, the
+derivation through `JdbcBalanceDerivation`, the holds folded through the kernel, `INSERT ... ON CONFLICT DO NOTHING`, the
+four-column `UPDATE`; `READ COMMITTED` asserted), `JdbcProjectionRebuildStore`; in `app`, `/v1/ledger/projection-rebuilds`
+(`ProjectionRebuildController`, `LedgerProjectionRebuilds`), `LEDGER_ADJUST` on all four routes and `MULTI_FACTOR` on the
+approval, and `finapp.ledger.projection.rebuild{outcome}`. Five `ledger.*` codes (the adjustment's titles name an adjustment, so
+none is borrowed) and three audit actions, `ledger.ProjectionRebuildProposed` (reasoned), `ledger.ProjectionRebuilt`,
+`ledger.ProjectionRebuildRejected`; the figures before and after on the row, never in a summary. **Who**: the ledger operator
+proposes and a second ledger operator approves; an accountant who sees the drift cannot rebuild and a controller cannot, and
+a ledger operator closes no month (`LEDGER_ADJUST` reused, not a new permission: an owner item). **Decision 2**: accounting
+`V012` (`valuation_rate_set.reference_gaps`, `valuation_rate.beyond_bound`, V005's two functions replaced with every check they
+held, the count frozen), `ValuationRate.beyondBound`, `ValuationRateSet.judgeAcrossGap` and `requireStillTheLast`,
+`ValuationRateSets.captureAcrossGap` and `approveAcrossGap`, `ValuationDoorMismatch`, `Translation.section`'s two conditional
+members; in `app`, `POST .../valuation-rate-sets/reference-gap` (`ACCOUNTING_CLOSE_PROPOSE`) and
+`POST .../{setId}/reference-gap-approval` (`ACCOUNTING_CLOSE_APPROVE`, `MULTI_FACTOR`), the receipt and the read carrying
+`referenceGaps`, `beyondBound` and `ageHours`; `accounting.ReferenceGapRefused`, `accounting.ValuationDoorMismatch`, and the
+audit actions `accounting.ValuationSetCapturedAcrossGap` and `accounting.ValuationSetApprovedAcrossGap`. **Which readers
+translate**: the trial balance, the balance sheet and the income statement, each through `Translation.section`; their content is
+what every serving of a translated figure carries (the report run's content, the controller's FINAL statement read), so the
+disclosure is in each. The database cases are written and owed (C5): `ProjectionRebuildDatabaseTest`,
+`ValuationReferenceGapDatabaseTest`. Status stays `Proposed` until the phase's exit review.

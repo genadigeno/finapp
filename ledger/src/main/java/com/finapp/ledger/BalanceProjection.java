@@ -18,7 +18,9 @@ package com.finapp.ledger;
  * ({@code JdbcBalanceDisplay}, its own SQL over the table, display only — this doc had named
  * it {@code P3-TSK-018}, the recorded one-task plan drift); the statement
  * ({@code P3-TSK-018}) deliberately reads <strong>postings, never this projection</strong>,
- * so the port still exposes no read.
+ * so the port still exposes no read. The rebuild ({@code P14-TSK-026}, {@link ProjectionRebuilds})
+ * reads and writes the row through its own seam, {@link ProjectionRebuildRows}, and returns the
+ * figures to its own record and its operator only - evidence, never a decision's input.
  *
  * @param <T> the transactional unit of work — a JDBC {@code Connection}, fixed by ADR-0033
  */

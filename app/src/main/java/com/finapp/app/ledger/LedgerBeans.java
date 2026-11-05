@@ -141,6 +141,39 @@ public class LedgerBeans {
         return template;
     }
 
+    /**
+     * The four-eyes projection rebuild (`P14-TSK-026`, ADR-0119): its own record store and its lock-and-write seam over the
+     * projection, the journal read through the derivation that defines the balance. Nothing here can post.
+     */
+    @Bean
+    com.finapp.ledger.ProjectionRebuilds projectionRebuilds(
+            IdempotentExecutor idempotentExecutor,
+            AuditWriter<Connection> auditWriter,
+            com.finapp.sharedkernel.id.IdGenerator ids,
+            Clock clock) {
+        return new com.finapp.ledger.ProjectionRebuilds(
+                idempotentExecutor,
+                new com.finapp.ledger.JdbcProjectionRebuildStore(),
+                new com.finapp.ledger.JdbcProjectionRebuildRows(new com.finapp.ledger.JdbcBalanceDerivation()),
+                auditWriter,
+                ids,
+                clock);
+    }
+
+    @Bean
+    ProjectionRebuildMetrics projectionRebuildMetrics(io.micrometer.core.instrument.MeterRegistry registry) {
+        return new ProjectionRebuildMetrics(registry);
+    }
+
+    @Bean
+    LedgerProjectionRebuilds ledgerProjectionRebuilds(
+            com.finapp.ledger.ProjectionRebuilds projectionRebuilds,
+            TransactionTemplate ledgerTransactions,
+            DataSource dataSource,
+            ProjectionRebuildMetrics projectionRebuildMetrics) {
+        return new LedgerProjectionRebuilds(projectionRebuilds, ledgerTransactions, dataSource, projectionRebuildMetrics);
+    }
+
     @Bean
     LedgerAdjustments ledgerAdjustments(
             AdjustmentService adjustmentService,

@@ -48,9 +48,12 @@ import lombok.RequiredArgsConstructor;
  * from the applied-entry count; the settled numbers differing under {@code Money}'s
  * scale-including equality ({@code INV-MON-05}); or a history the derivation refuses while a
  * projection number stands — a number nobody can verify is not clean. <strong>Drift is
- * reported, never repaired</strong>: a ledger that corrected itself would destroy the
- * evidence of what went wrong (the §14.12 rule). Repair is a reasoned adjustment,
- * `P3-TSK-017`'s.
+ * reported, never repaired</strong> here: a ledger that corrected itself would destroy the
+ * evidence of what went wrong (the §14.12 rule). The repair is a person's four-eyes act,
+ * {@link ProjectionRebuilds} (`P14-TSK-026`, ADR-0119), which moves the row to the journal and
+ * records the figures before and after - never an adjustment, which would move the journal to the
+ * row. <em>(This said "a reasoned adjustment, `P3-TSK-017`'s" until `P14-TSK-026`: an adjustment
+ * corrects the books, and a drifting projection is a wrong copy of correct books.)</em>
  */
 @RequiredArgsConstructor
 public final class ProjectionVerification {

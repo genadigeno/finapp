@@ -161,6 +161,8 @@ class AccountingMetersTest {
         outcomes.addAll(RegulatorySubmissionMetrics.OUTCOMES);
         outcomes.addAll(lower(com.finapp.app.lending.LoanWriteOffMetrics.Outcome.values()));
         outcomes.addAll(lower(com.finapp.app.bnpl.BnplWriteOffMetrics.Outcome.values()));
+        // P14-TSK-026: the ledger's projection rebuild counter, a row of the table.
+        outcomes.addAll(com.finapp.app.ledger.ProjectionRebuildMetrics.OUTCOMES);
         Set<String> products = new TreeSet<>(lower(com.finapp.lending.LoanProduct.values()));
         products.addAll(lower(com.finapp.bnpl.BnplProduct.values()));
         return Map.of(

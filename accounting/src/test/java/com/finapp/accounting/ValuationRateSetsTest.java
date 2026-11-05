@@ -310,6 +310,151 @@ class ValuationRateSetsTest {
         assertThat(sets().read(UOW, captured.id()).set().status()).isEqualTo(ValuationRateSetStatus.PROPOSED);
     }
 
+    // ----------------------------------------------------------------- a reference gap's way on (P14-TSK-026)
+
+    @Test
+    @DisplayName("a reference gap (P14-TSK-026, ADR-0119): the refusal names the last snapshot; the exception naming it"
+            + " admits that real observation, flagged and counted, its provenance kept, every other pair inside the bound;"
+            + " reasoned, and audited with the pair's age, never a rate")
+    void aReferenceGapAdmitsTheRealLastObservation() {
+        AccountingPeriodId september = lockedSeptember();
+        reference.observe("JPY", AS_OF.minus(Duration.ofHours(400)));
+        UUID jpy = reference.observations.get(CurrencyCode.of("JPY")).orElseThrow().snapshotId();
+        assertThatThrownBy(() -> sets().capture(UOW, september, accountant, null, correlation()))
+                .isInstanceOf(ValuationRateSet.ValuationRateStale.class).hasMessageContaining(jpy.toString());
+
+        ValuationRateSets.Valued captured = sets().captureAcrossGap(UOW, september, accountant,
+                "the reference published no yen for sixteen days", List.of(gap("JPY", jpy)), correlation());
+
+        assertThat(captured.status()).isEqualTo(ValuationRateSetStatus.PROPOSED);
+        assertThat(captured.rates()).filteredOn(ValuationRate::beyondBound).singleElement().satisfies(rate -> {
+            assertThat(rate.pair()).isEqualTo("EUR/JPY");
+            assertThat(rate.snapshotId()).isEqualTo(jpy);
+            assertThat(rate.source()).isEqualTo(SOURCE);
+            assertThat(rate.observedAt()).isEqualTo(AS_OF.minus(Duration.ofHours(400)));
+            assertThat(rate.ageHours(AS_OF)).isEqualTo(400);
+        });
+        assertThat(captured.rates()).filteredOn(rate -> !rate.beyondBound()).hasSize(3);
+        assertThat(store.find(UOW, captured.id()).orElseThrow().referenceGaps()).isEqualTo(1);
+        assertThat(store.captureReason(captured.id())).contains("the reference published no yen for sixteen days");
+        assertThat(audit).last().satisfies(record -> {
+            assertThat(record.operation()).isEqualTo(AccountingAuditAction.VALUATION_SET_CAPTURED_ACROSS_GAP);
+            assertThat(record.changeSummary().orElseThrow()).contains("referenceGaps=EUR/JPY:400h").doesNotContain("161");
+        });
+        assertThatThrownBy(() -> sets().captureAcrossGap(UOW, september, accountant, null, List.of(gap("JPY", jpy)),
+                correlation())).isInstanceOf(AccountingReasons.ReasonRequired.class);
+    }
+
+    @Test
+    @DisplayName("an exception admits nothing but the gap named: a pair inside the bound, another snapshot, a pair never"
+            + " observed, a pair not valued or named twice are refused; an unnamed stale pair still refuses; nothing written")
+    void anExceptionAdmitsOnlyTheGapNamed() {
+        AccountingPeriodId september = lockedSeptember();
+        UUID gbp = reference.observations.get(CurrencyCode.of("GBP")).orElseThrow().snapshotId();
+        assertThatThrownBy(() -> sets().captureAcrossGap(UOW, september, accountant, "why", List.of(gap("GBP", gbp)),
+                correlation())).isInstanceOfSatisfying(ValuationRateSet.ReferenceGapRefused.class,
+                        refused -> assertThat(refused.pairs()).containsExactly("EUR/GBP"))
+                .hasMessageContaining("no gap");
+
+        reference.observe("JPY", AS_OF.minus(Duration.ofHours(400)));
+        assertThatThrownBy(() -> sets().captureAcrossGap(UOW, september, accountant, "why",
+                List.of(gap("JPY", UUID.randomUUID())), correlation()))
+                .isInstanceOf(ValuationRateSet.ReferenceGapRefused.class).hasMessageContaining("not ");
+
+        UUID jpy = reference.observations.get(CurrencyCode.of("JPY")).orElseThrow().snapshotId();
+        reference.observe("BHD", AS_OF.minus(Duration.ofHours(200)));
+        assertThatThrownBy(() -> sets().captureAcrossGap(UOW, september, accountant, "why", List.of(gap("JPY", jpy)),
+                correlation())).isInstanceOfSatisfying(ValuationRateSet.ValuationRateStale.class,
+                        stale -> assertThat(stale.pairs()).containsExactly("EUR/BHD"));
+
+        reference.observe("BHD", AS_OF.minus(Duration.ofHours(10)));
+        reference.observations.put(CurrencyCode.of("USD"), Optional.empty());
+        assertThatThrownBy(() -> sets().captureAcrossGap(UOW, september, accountant, "why",
+                List.of(gap("JPY", jpy), gap("USD", UUID.randomUUID())), correlation()))
+                .isInstanceOfSatisfying(ValuationRateSet.ReferenceGapRefused.class,
+                        refused -> assertThat(refused.pairs()).containsExactly("EUR/USD"))
+                .hasMessageContaining("no reference observation");
+        reference.observe("USD", AS_OF.minus(Duration.ofHours(10)));
+
+        assertThatThrownBy(() -> sets().captureAcrossGap(UOW, september, accountant, "why",
+                List.of(gap("CHF", UUID.randomUUID())), correlation())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> sets().captureAcrossGap(UOW, september, accountant, "why",
+                List.of(gap("JPY", jpy), gap("JPY", jpy)), correlation())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> sets().captureAcrossGap(UOW, september, accountant, "why", List.of(), correlation()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(store.all()).isEmpty();
+        assertThat(audit).isEmpty();
+    }
+
+    @Test
+    @DisplayName("four eyes on the exception, at its own door: the capturer cannot approve it; the ordinary door refuses a"
+            + " gap set and the gap door an ordinary one; a newer observation since the capture refuses the approval; a"
+            + " second person approves it, recorded as the gap's approval")
+    void aGapSetIsApprovedOnlyByAnotherAtItsOwnDoor() {
+        AccountingPeriodId september = lockedSeptember();
+        reference.observe("JPY", AS_OF.minus(Duration.ofHours(400)));
+        UUID jpy = reference.observations.get(CurrencyCode.of("JPY")).orElseThrow().snapshotId();
+        ValuationRateSets.Valued gapSet = sets().captureAcrossGap(UOW, september, accountant, "silent reference",
+                List.of(gap("JPY", jpy)), correlation());
+
+        assertThatThrownBy(() -> sets().approveAcrossGap(UOW, gapSet.id(), accountant, "mine", correlation()))
+                .isInstanceOf(ValuationRateSets.SelfApprovalRefused.class);
+        assertThatThrownBy(() -> sets().approve(UOW, gapSet.id(), controller, "ordinary", correlation()))
+                .isInstanceOf(ValuationRateSets.ValuationDoorMismatch.class).hasMessageContaining("MULTI_FACTOR");
+
+        reference.observe("JPY", AS_OF.minus(Duration.ofHours(300)));
+        assertThatThrownBy(() -> sets().approveAcrossGap(UOW, gapSet.id(), controller, "fine", correlation()))
+                .isInstanceOfSatisfying(ValuationRateSet.ReferenceGapRefused.class,
+                        refused -> assertThat(refused.pairs()).containsExactly("EUR/JPY"));
+        assertThat(store.find(UOW, gapSet.id()).orElseThrow().status()).isEqualTo(ValuationRateSetStatus.PROPOSED);
+
+        reference.answer("JPY", new ValuationRates.Observation(jpy, SOURCE, EUR, CurrencyCode.of("JPY"),
+                new java.math.BigDecimal("161.2500000000"), AS_OF.minus(Duration.ofHours(400)),
+                AS_OF.minus(Duration.ofHours(400)).plusSeconds(2)));
+        ValuationRateSets.Valued approved = sets().approveAcrossGap(UOW, gapSet.id(), controller,
+                "a real observation, its age disclosed", correlation());
+        assertThat(approved.status()).isEqualTo(ValuationRateSetStatus.APPROVED);
+        assertThat(audit).last().satisfies(record -> {
+            assertThat(record.operation()).isEqualTo(AccountingAuditAction.VALUATION_SET_APPROVED_ACROSS_GAP);
+            assertThat(record.changeSummary().orElseThrow()).contains("referenceGaps=EUR/JPY:400h");
+        });
+        assertThat(sets().approveAcrossGap(UOW, gapSet.id(), controller, "again", correlation()).replayed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("the gap door refuses a set holding no gap, before anything else")
+    void theGapDoorRefusesAnOrdinarySet() {
+        AccountingPeriodId september = lockedSeptember();
+        ValuationRateSets.Valued ordinary = sets().capture(UOW, september, accountant, null, correlation());
+        assertThatThrownBy(() -> sets().approveAcrossGap(UOW, ordinary.id(), controller, "fine", correlation()))
+                .isInstanceOf(ValuationRateSets.ValuationDoorMismatch.class);
+        assertThat(sets().approve(UOW, ordinary.id(), controller, "fine", correlation()).status())
+                .isEqualTo(ValuationRateSetStatus.APPROVED);
+    }
+
+    @Test
+    @DisplayName("the set holds its flag within its bound: a flagged rate inside the bound, or an unflagged one beyond it, is"
+            + " no set at all")
+    void theFlagAgreesWithTheBound() {
+        AccountingPeriodId period = AccountingPeriodId.of(IDS.next());
+        ValuationRate inside = new ValuationRate(EUR, CurrencyCode.of("JPY"), new BigDecimal("161.25"), SOURCE,
+                UUID.randomUUID(), AS_OF.minus(Duration.ofHours(10)), AS_OF.minus(Duration.ofHours(10)), true);
+        ValuationRate beyond = new ValuationRate(EUR, CurrencyCode.of("JPY"), new BigDecimal("161.25"), SOURCE,
+                UUID.randomUUID(), AS_OF.minus(Duration.ofHours(200)), AS_OF.minus(Duration.ofHours(200)), false);
+        assertThatThrownBy(() -> new ValuationRateSet(period, SEPTEMBER, AS_OF, ValuationStaleness.standard(), List.of(inside)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ValuationRateSet(period, SEPTEMBER, AS_OF, ValuationStaleness.standard(), List.of(beyond)))
+                .isInstanceOf(IllegalArgumentException.class);
+        ValuationRate flagged = new ValuationRate(EUR, CurrencyCode.of("JPY"), new BigDecimal("161.25"), SOURCE,
+                UUID.randomUUID(), AS_OF.minus(Duration.ofHours(200)), AS_OF.minus(Duration.ofHours(200)), true);
+        assertThat(new ValuationRateSet(period, SEPTEMBER, AS_OF, ValuationStaleness.standard(), List.of(flagged))
+                .referenceGaps()).isEqualTo(1);
+    }
+
+    private static ValuationRateSet.ReferenceGap gap(String currency, UUID snapshot) {
+        return new ValuationRateSet.ReferenceGap(CurrencyCode.of(currency), snapshot);
+    }
+
     // -----------------------------------------------------------------
 
     private ValuationRateSets sets() {

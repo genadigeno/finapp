@@ -67,7 +67,11 @@ public interface ValuationRateSetStore {
             Optional<String> reason,
             CorrelationId correlation) {}
 
-    /** A set's row - no reason; the capturer and the decider only for the four-eyes judgement. */
+    /**
+     * A set's row - no reason; the capturer and the decider only for the four-eyes judgement; {@code referenceGaps} how many
+     * of its rates a reference-gap exception admitted beyond the bound (`P14-TSK-026`, {@code accounting V012}), zero for an
+     * ordinary capture.
+     */
     record SetRow(
             ValuationRateSetId id,
             AccountingPeriodId period,
@@ -79,5 +83,23 @@ public interface ValuationRateSetStore {
             String capturedBy,
             Instant capturedAt,
             Optional<String> decidedBy,
-            Optional<Instant> decidedAt) {}
+            Optional<Instant> decidedAt,
+            int referenceGaps) {
+
+        /** An ordinary set's row - no reference gap. */
+        public SetRow(
+                ValuationRateSetId id,
+                AccountingPeriodId period,
+                YearMonth month,
+                Instant asOf,
+                int maxAgeHours,
+                int rateCount,
+                ValuationRateSetStatus status,
+                String capturedBy,
+                Instant capturedAt,
+                Optional<String> decidedBy,
+                Optional<Instant> decidedAt) {
+            this(id, period, month, asOf, maxAgeHours, rateCount, status, capturedBy, capturedAt, decidedBy, decidedAt, 0);
+        }
+    }
 }

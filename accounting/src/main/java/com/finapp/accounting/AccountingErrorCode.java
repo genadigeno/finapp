@@ -273,7 +273,24 @@ public enum AccountingErrorCode implements ErrorCode {
     REGULATORY_PROVIDER_UNAVAILABLE(
             "accounting.RegulatoryProviderUnavailable",
             503,
-            "The provider could not be asked at this act, or its answer not kept, so nothing was concluded: a return is concluded undelivered only on what the provider says now. The return stands SUBMITTED. Ask again.");
+            "The provider could not be asked at this act, or its answer not kept, so nothing was concluded: a return is concluded undelivered only on what the provider says now. The return stands SUBMITTED. Ask again."),
+    /**
+     * A reference-gap exception (`P14-TSK-026`, ADR-0119 decision 2) named a pair that is not a gap - it has an observation
+     * inside the bound, or none before the period's end at all - or an observation that is not the reference's last before
+     * the end, at the capture or again at the approval. Nothing was written.
+     */
+    REFERENCE_GAP_REFUSED(
+            "accounting.ReferenceGapRefused",
+            409,
+            "A reference-gap exception admits only the reference's last observation of a pair before the period's end, older than the staleness bound and named by its snapshot; that is not what the reference holds now. Nothing was written."),
+    /**
+     * A valuation rate set reached the other approval door (`P14-TSK-026`): a set holding a reference gap is approved at its
+     * own door, on a MULTI_FACTOR session, and a set holding none at the ordinary one. Nothing was changed.
+     */
+    VALUATION_DOOR_MISMATCH(
+            "accounting.ValuationDoorMismatch",
+            409,
+            "A valuation rate set holding a reference gap is approved at its own door on a MULTI_FACTOR session, and a set holding none at the ordinary door; nothing was changed.");
 
     private final String code;
     private final int status;

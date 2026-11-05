@@ -91,7 +91,15 @@ decisions that must not be wrong.
 - The verification job is a Phase 3 deliverable, not a Phase 15 nicety: `INV-BAL-01`'s stated
   verification method is *"continuous recomputation comparison with alerting."*
 - A projection rebuild must be safe **while postings continue**, which is a named Phase 3
-  failure scenario rather than an assumption.
+  failure scenario rather than an assumption. *(Built by `P14-TSK-026`, 2026-11-06, ADR-0119 decision 1: a four-eyes rebuild
+  of one account at `/v1/ledger/projection-rebuilds`, `LEDGER_ADJUST`, the approval `MULTI_FACTOR` - a person's act, never the
+  verification's, which still reports and never repairs. The approval takes the posting's own locks in the posting's own
+  order - the account `FOR KEY SHARE`, then the projection row `FOR UPDATE` - and derives in statements that start after the
+  grant under `READ COMMITTED`, so a posting committed before is in the sum and one after composes on the written row; it
+  writes `posted_minor`, `holds_minor`, `last_entry_seq` and `updated_at` (this ADR's columns, V006's grant), never the
+  identity, never a journal line, and records the figures before and after in `ledger.projection_rebuild` (`V031`).
+  "A rebuild is the migrator's act" (V006's header) now holds only for what this door refuses: a row at a scale its history
+  does not have, and a row standing for an account with no entries.)*
 
 ## Alternatives rejected
 

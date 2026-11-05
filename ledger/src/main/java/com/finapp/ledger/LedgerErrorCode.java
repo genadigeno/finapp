@@ -122,7 +122,52 @@ public enum LedgerErrorCode implements ErrorCode {
     PERIOD_CLOSED(
             "ledger.PeriodClosed",
             409,
-            "The posting date is in a locked accounting period; post in the open period.");
+            "The posting date is in a locked accounting period; post in the open period."),
+
+    /**
+     * Nothing to rebuild (`P14-TSK-026`, ADR-0119): the account's projection reads what its journal and holds derive, or
+     * an entry committed to it mid-reading. A {@code 409}: read again; nothing was written.
+     */
+    PROJECTION_NOT_DRIFTING(
+            "ledger.ProjectionNotDrifting",
+            409,
+            "The account's balance projection agrees with its journal, or was posted to while being read; nothing to rebuild."),
+
+    /**
+     * A rebuild of the account already awaits a decision (`P14-TSK-026`; V031's one standing rebuild per account). A
+     * {@code 409}: decide that one first.
+     */
+    PROJECTION_REBUILD_STANDING(
+            "ledger.ProjectionRebuildStanding",
+            409,
+            "A rebuild of this account's balance projection already awaits a decision."),
+
+    /**
+     * The account's projection cannot be rebuilt by this door (`P14-TSK-026`): an underivable history, a row at a scale its
+     * history does not have, or a row standing for no entries - each the migrator's to correct. A {@code 409}.
+     */
+    PROJECTION_NOT_REBUILDABLE(
+            "ledger.ProjectionNotRebuildable",
+            409,
+            "The account's balance projection cannot be rebuilt here; its history or its row's scale needs the migrator."),
+
+    /**
+     * The proposer tried to approve their own rebuild (`P14-TSK-026`, {@code INV-AUD-04}). A {@code 409}: the rebuild
+     * stands for a second person; nothing was written.
+     */
+    REBUILD_SELF_APPROVAL_REFUSED(
+            "ledger.RebuildSelfApprovalRefused",
+            409,
+            "A projection rebuild requires a second approver distinct from its proposer."),
+
+    /**
+     * A decision named a rebuild already decided differently (`P14-TSK-026`). A {@code 409}: read it for its outcome; a
+     * later drift is a new proposal.
+     */
+    REBUILD_NOT_OPEN(
+            "ledger.RebuildNotOpen",
+            409,
+            "The projection rebuild is already decided; a later drift is a new proposal.");
 
     private final String code;
     private final int status;

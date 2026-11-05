@@ -88,6 +88,7 @@ class ValuationRateSetDeskTest {
     private final List<AuditRecord> audited = new ArrayList<>();
     private final Map<IdempotencyKey, IdempotencyRecord> claims = new HashMap<>();
     private Instant gbpObservedAt = Instant.parse("2026-09-30T16:00:00Z");
+    private UUID gbpSnapshot = GBP_SNAPSHOT;
     private Optional<LocalDate> closedThrough = Optional.empty();
 
     private final PostingCutoff cutoff = new PostingCutoff() {
@@ -117,7 +118,7 @@ class ValuationRateSetDeskTest {
         @Override
         public List<Observed> lastObservedBefore(Connection unitOfWork, Instant before) {
             return List.of(
-                    new Observed(VALUED.get(0), Optional.of(new Observation(GBP_SNAPSHOT, "simulated-reference", EUR,
+                    new Observed(VALUED.get(0), Optional.of(new Observation(gbpSnapshot, "simulated-reference", EUR,
                             VALUED.get(0), new BigDecimal("0.8612000000"), gbpObservedAt, gbpObservedAt.plusSeconds(1)))),
                     new Observed(VALUED.get(1), Optional.of(new Observation(UUID.randomUUID(), "simulated-reference",
                             EUR, VALUED.get(1), new BigDecimal("161.2500000000"), Instant.parse("2026-09-30T16:00:00Z"),
@@ -276,25 +277,124 @@ class ValuationRateSetDeskTest {
     }
 
     @Test
-    @DisplayName("the stored receipt reads back exactly - every rate and its provenance")
+    @DisplayName("a reference gap's way on (P14-TSK-026): the stale refusal names the last snapshot; the exception naming it"
+            + " captures the real observation flagged with its age, approved only at its own door by another person; a pair"
+            + " that is no gap, another snapshot, or a malformed gap is refused and nothing is written")
+    void aReferenceGapHasAWayOn() {
+        String september = lockedSeptember();
+        gbpObservedAt = Instant.parse("2026-09-12T16:00:00Z"); // 440 hours before the period's end: beyond the 96-hour bound
+        assertThatThrownBy(() -> as(ACCOUNTANT, () -> desk.capture("gap-0", september, null)))
+                .isInstanceOfSatisfying(ApiException.class, refused -> {
+                    assertThat(refused.errorCode()).isEqualTo(AccountingErrorCode.VALUATION_RATE_STALE);
+                    assertThat(refused.clientDetail().orElseThrow()).contains("EUR/GBP").contains(GBP_SNAPSHOT.toString())
+                            .doesNotContain("0.8612");
+                });
+
+        refused(() -> as(ACCOUNTANT, () -> desk.captureAcrossGap("gap-1", september, "the reference was silent",
+                List.of(new ValuationRateSetDesk.ReferenceGapRequest("EUR/GBP", UUID.randomUUID().toString())))),
+                AccountingErrorCode.REFERENCE_GAP_REFUSED, 409);
+        refused(() -> as(ACCOUNTANT, () -> desk.captureAcrossGap("gap-2", september, "the reference was silent",
+                List.of(new ValuationRateSetDesk.ReferenceGapRequest("EUR/GBP", GBP_SNAPSHOT.toString()),
+                        new ValuationRateSetDesk.ReferenceGapRequest("EUR/JPY", UUID.randomUUID().toString())))),
+                AccountingErrorCode.REFERENCE_GAP_REFUSED, 409);
+        for (List<ValuationRateSetDesk.ReferenceGapRequest> malformed : List.of(
+                List.<ValuationRateSetDesk.ReferenceGapRequest>of(),
+                List.of(new ValuationRateSetDesk.ReferenceGapRequest("GBP/EUR", GBP_SNAPSHOT.toString())),
+                List.of(new ValuationRateSetDesk.ReferenceGapRequest("EUR/GBP", "not-a-uuid")),
+                List.of(new ValuationRateSetDesk.ReferenceGapRequest("EUR/USD", GBP_SNAPSHOT.toString())),
+                List.of(new ValuationRateSetDesk.ReferenceGapRequest("EUR/GBP", GBP_SNAPSHOT.toString()),
+                        new ValuationRateSetDesk.ReferenceGapRequest("EUR/GBP", GBP_SNAPSHOT.toString())))) {
+            assertThatThrownBy(() -> as(ACCOUNTANT, () -> desk.captureAcrossGap("gap-m" + malformed.hashCode(), september,
+                    "the reference was silent", malformed))).as(malformed.toString())
+                    .isInstanceOfSatisfying(ApiException.class,
+                            refused -> assertThat(refused.errorCode().code()).isEqualTo("api.ValidationFailed"));
+        }
+        refused(() -> as(ACCOUNTANT, () -> desk.captureAcrossGap("gap-r", september, null,
+                List.of(new ValuationRateSetDesk.ReferenceGapRequest("EUR/GBP", GBP_SNAPSHOT.toString())))),
+                AccountingErrorCode.REASON_REQUIRED, 422);
+        assertThat(store.all()).isEmpty();
+
+        ValuationRateSetDesk.ValuationRateSetReceipt captured = as(ACCOUNTANT, () -> desk.captureAcrossGap("gap-3", september,
+                "the reference was silent for eighteen days",
+                List.of(new ValuationRateSetDesk.ReferenceGapRequest("EUR/GBP", GBP_SNAPSHOT.toString()))));
+        assertThat(captured.referenceGaps()).isEqualTo(1);
+        assertThat(captured.rates()).filteredOn(ValuationRateSetDesk.ValuationRateView::beyondBound).singleElement()
+                .satisfies(rate -> {
+                    assertThat(rate.quoteCurrency()).isEqualTo("GBP");
+                    assertThat(rate.snapshotId()).isEqualTo(GBP_SNAPSHOT.toString());
+                    assertThat(rate.ageHours()).isEqualTo(440);
+                });
+        assertThat(audited.get(audited.size() - 1).operation().code()).isEqualTo("accounting.ValuationSetCapturedAcrossGap");
+        assertThat(audited.get(audited.size() - 1).changeSummary().orElseThrow()).contains("referenceGaps=EUR/GBP:440h")
+                .doesNotContain("0.8612");
+
+        refused(() -> as(CONTROLLER, () -> desk.approve("gap-4", captured.id(), "fine")),
+                AccountingErrorCode.VALUATION_DOOR_MISMATCH, 409);
+        refused(() -> as(ACCOUNTANT, () -> desk.approveAcrossGap("gap-5", captured.id(), "mine")),
+                AccountingErrorCode.SELF_APPROVAL_REFUSED, 403);
+        ValuationRateSetDesk.ValuationRateSetReceipt approved =
+                as(CONTROLLER, () -> desk.approveAcrossGap("gap-6", captured.id(), "a real observation, its age disclosed"));
+        assertThat(approved.status()).isEqualTo("APPROVED");
+        assertThat(approved.referenceGaps()).isEqualTo(1);
+        assertThat(audited.get(audited.size() - 1).operation().code()).isEqualTo("accounting.ValuationSetApprovedAcrossGap");
+    }
+
+    @Test
+    @DisplayName("the gap door refuses a set holding no gap, and re-reads the reference: a newer observation since the capture"
+            + " refuses the approval (P14-TSK-026)")
+    void theGapDoorIsTheGapsOwn() {
+        String september = lockedSeptember();
+        ValuationRateSetDesk.ValuationRateSetReceipt ordinary = as(ACCOUNTANT, () -> desk.capture("door-1", september, null));
+        refused(() -> as(CONTROLLER, () -> desk.approveAcrossGap("door-2", ordinary.id(), "fine")),
+                AccountingErrorCode.VALUATION_DOOR_MISMATCH, 409);
+        as(CONTROLLER, () -> desk.reject("door-3", ordinary.id(), "not this one"));
+
+        gbpObservedAt = Instant.parse("2026-09-12T16:00:00Z");
+        ValuationRateSetDesk.ValuationRateSetReceipt gap = as(ACCOUNTANT, () -> desk.captureAcrossGap("door-4", september,
+                "the reference was silent",
+                List.of(new ValuationRateSetDesk.ReferenceGapRequest("EUR/GBP", GBP_SNAPSHOT.toString()))));
+        gbpObservedAt = Instant.parse("2026-09-29T16:00:00Z"); // a late observation arrived: the gap is not what was named
+        gbpSnapshot = UUID.randomUUID();
+        refused(() -> as(CONTROLLER, () -> desk.approveAcrossGap("door-5", gap.id(), "fine")),
+                AccountingErrorCode.REFERENCE_GAP_REFUSED, 409);
+    }
+
+    @Test
+    @DisplayName("the stored receipt reads back exactly - every rate, its provenance, whether it is beyond the bound and its"
+            + " age (P14-TSK-026); a receipt stored before them reads with no gap, its ages from its instants")
     void theStoredReceiptRoundTrips() {
         ValuationRateSetDesk.ValuationRateSetReceipt receipt = new ValuationRateSetDesk.ValuationRateSetReceipt(
                 UUID.randomUUID().toString(), UUID.randomUUID().toString(), "2026-09", "PROPOSED",
                 "2026-10-01T00:00:00Z", 96, List.of(
                         new ValuationRateSetDesk.ValuationRateView("EUR", "GBP", "0.8612000000", "simulated-reference",
-                                UUID.randomUUID().toString(), "2026-09-30T16:00:00Z", "2026-09-30T16:00:01.123456Z"),
+                                UUID.randomUUID().toString(), "2026-09-30T16:00:00Z", "2026-09-30T16:00:01.123456Z", false, 8),
                         new ValuationRateSetDesk.ValuationRateView("EUR", "BHD", "0.4421000000", "simulated-reference",
-                                UUID.randomUUID().toString(), "2026-09-30T15:00:00Z", "2026-09-30T15:00:02Z")));
+                                UUID.randomUUID().toString(), "2026-09-12T15:00:00Z", "2026-09-12T15:00:02Z", true, 441)),
+                1);
         assertThat(ValuationRateSetDesk.fromStored(ValuationRateSetDesk.stored(receipt))).isEqualTo(receipt);
+
+        String snapshot = UUID.randomUUID().toString();
+        String before = String.join("|", "a", "b", "2026-09", "PROPOSED", "2026-10-01T00:00:00Z", "96",
+                "EUR,GBP,0.8612000000,simulated-reference," + snapshot + ",2026-09-30T16:00:00Z,2026-09-30T16:00:01Z");
+        assertThat(ValuationRateSetDesk.fromStored(before)).satisfies(old -> {
+            assertThat(old.referenceGaps()).isZero();
+            assertThat(old.rates()).singleElement().satisfies(rate -> {
+                assertThat(rate.beyondBound()).isFalse();
+                assertThat(rate.ageHours()).isEqualTo(8);
+                assertThat(rate.snapshotId()).isEqualTo(snapshot);
+            });
+        });
     }
 
     @Test
-    @DisplayName("the routes: the capture ACCOUNTING_CLOSE_PROPOSE, the decisions and the read ACCOUNTING_CLOSE_APPROVE;"
+    @DisplayName("the routes: the captures ACCOUNTING_CLOSE_PROPOSE, the decisions and the read ACCOUNTING_CLOSE_APPROVE;"
             + " every POST keyed")
     void theRoutesAreThePartition() {
         Map<String, PermissionName> expected = Map.of(
                 "captureValuationRateSet", PermissionName.ACCOUNTING_CLOSE_PROPOSE,
+                "captureValuationRateSetAcrossGap", PermissionName.ACCOUNTING_CLOSE_PROPOSE,
                 "approveValuationRateSet", PermissionName.ACCOUNTING_CLOSE_APPROVE,
+                "approveValuationRateSetAcrossGap", PermissionName.ACCOUNTING_CLOSE_APPROVE,
                 "rejectValuationRateSet", PermissionName.ACCOUNTING_CLOSE_APPROVE,
                 "readValuationRateSet", PermissionName.ACCOUNTING_CLOSE_APPROVE);
         int doors = 0;

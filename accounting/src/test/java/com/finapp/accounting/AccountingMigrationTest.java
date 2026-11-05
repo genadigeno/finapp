@@ -145,7 +145,9 @@ class AccountingMigrationTest {
                 "report_run_permits_only_machine_edges",
                 // P14-TSK-014's V005.
                 "valuation_rate_is_born_with_its_set", "valuation_rate_set_commits_whole",
-                "valuation_rate_set_is_never_truncated", "valuation_rate_set_permits_only_machine_edges");
+                "valuation_rate_set_is_never_truncated", "valuation_rate_set_permits_only_machine_edges",
+                // P14-TSK-026's V012 (its two replaced functions keep their V005 names, above).
+                "valuation_rate_set_reference_gaps_are_frozen");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication("SELECT * FROM " + SCHEMA + ".flyway_schema_history"))

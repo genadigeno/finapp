@@ -565,7 +565,19 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/accounting/valuation-rate-sets/{setId}/rejection",
                             PermissionName.ACCOUNTING_CLOSE_APPROVE),
                     entry("GET /v1/operator/accounting/valuation-rate-sets/{setId}",
-                            PermissionName.ACCOUNTING_CLOSE_APPROVE)));
+                            PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    // A reference gap's way on (P14-TSK-026, ADR-0119): captured by the accountant, approved by the
+                    // controller on a MULTI_FACTOR session (ApprovalAssuranceTest holds the assurance).
+                    entry("POST /v1/operator/accounting/valuation-rate-sets/reference-gap",
+                            PermissionName.ACCOUNTING_CLOSE_PROPOSE),
+                    entry("POST /v1/operator/accounting/valuation-rate-sets/{setId}/reference-gap-approval",
+                            PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    // The four-eyes projection rebuild (P14-TSK-026, ADR-0119): the ledger operator's, LEDGER_ADJUST;
+                    // MULTI_FACTOR on the approval alone (ApprovalAssuranceTest).
+                    entry("POST /v1/ledger/projection-rebuilds", PermissionName.LEDGER_ADJUST),
+                    entry("GET /v1/ledger/projection-rebuilds/{id}", PermissionName.LEDGER_ADJUST),
+                    entry("POST /v1/ledger/projection-rebuilds/{id}/approval", PermissionName.LEDGER_ADJUST),
+                    entry("POST /v1/ledger/projection-rebuilds/{id}/rejection", PermissionName.LEDGER_ADJUST)));
 
     /**
      * The CONDITIONAL half (the Phase 12 -> 13 gate's A5-F1): a permission a route asks BESIDE its declared one when the

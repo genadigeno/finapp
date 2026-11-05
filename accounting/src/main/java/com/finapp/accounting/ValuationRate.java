@@ -13,6 +13,11 @@ import java.util.regex.Pattern;
  * end, never floating point, {@code INV-MON-01}), with its provenance: the source's code, the snapshot's id in
  * {@code fx.rate_snapshot}, the source's observation instant and the database's receipt instant. A translation (`-015`)
  * divides a quote-currency amount by it; it is never inverted, rounded or re-scaled here.
+ *
+ * <p><strong>{@code beyondBound}</strong> (`P14-TSK-026`, ADR-0119 decision 2): true for a rate a four-eyes capture
+ * exception admitted older than the set's staleness bound - the reference's real last observation of the pair before the
+ * period end, named by its snapshot id. Every other rate is false and inside the bound; {@code accounting V012} holds both
+ * for every writer. A flagged rate's age is disclosed wherever it translates ({@link #ageHours}).
  */
 public record ValuationRate(
         CurrencyCode base,
@@ -21,7 +26,8 @@ public record ValuationRate(
         String source,
         UUID snapshotId,
         Instant observedAt,
-        Instant receivedAt) {
+        Instant receivedAt,
+        boolean beyondBound) {
 
     /** fx's source shape ({@code fx V002}'s {@code rate_snapshot_source_shape}); {@code accounting V005} holds it too. */
     static final Pattern SOURCE = Pattern.compile("^[a-z][a-z0-9.-]{0,63}$");
@@ -49,6 +55,26 @@ public record ValuationRate(
         if (!SOURCE.matcher(source).matches()) {
             throw new IllegalArgumentException("a valuation rate's source is a reference source's code");
         }
+    }
+
+    /** A rate inside the bound - every rate a set held before `P14-TSK-026`, and every one an ordinary capture admits. */
+    public ValuationRate(
+            CurrencyCode base,
+            CurrencyCode quote,
+            BigDecimal rate,
+            String source,
+            UUID snapshotId,
+            Instant observedAt,
+            Instant receivedAt) {
+        this(base, quote, rate, source, snapshotId, observedAt, receivedAt, false);
+    }
+
+    /**
+     * Whole hours from the observation to {@code asOf} - the period end it values - rounded down: how stale it is. A
+     * function of two frozen instants, so a FINAL that discloses it regenerates byte-identical.
+     */
+    public long ageHours(Instant asOf) {
+        return java.time.Duration.between(observedAt, asOf).toHours();
     }
 
     /** True for a positive rate {@code NUMERIC(20,10)} holds exactly - no digit lost on the way in or out. */

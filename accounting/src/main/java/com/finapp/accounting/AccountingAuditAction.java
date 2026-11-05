@@ -161,6 +161,29 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " instant, pair count and bound - never a rate.",
             false),
 
+    /** A person captured a valuation rate set across a reference gap (`P14-TSK-026`, ACCOUNTING_CLOSE_PROPOSE). */
+    VALUATION_SET_CAPTURED_ACROSS_GAP(
+            "accounting.ValuationSetCapturedAcrossGap",
+            "An accountant captured a valuation rate set for a LOCKED accounting period with a reference-gap exception - for"
+                    + " each named pair the reference's real last observation before the period's end although it is older"
+                    + " than the staleness bound, named by its snapshot, its provenance kept; every other pair within the"
+                    + " bound; PROPOSED and immutable from this moment (P14-TSK-026, ADR-0119 decision 2, INV-ACC-11;"
+                    + " POST /v1/operator/accounting/valuation-rate-sets/reference-gap, ACCOUNTING_CLOSE_PROPOSE). Reasoned."
+                    + " Its target the set; the summary its period, as-of instant, pair count, bound and each excepted pair"
+                    + " with its age in hours - never a rate.",
+            true),
+
+    /** A second person approved a set holding a reference gap (`P14-TSK-026`, ACCOUNTING_CLOSE_APPROVE, MULTI_FACTOR). */
+    VALUATION_SET_APPROVED_ACROSS_GAP(
+            "accounting.ValuationSetApprovedAcrossGap",
+            "A person other than its capturer, on a MULTI_FACTOR session, approved a valuation rate set holding a"
+                    + " reference gap - the period's one approved set, while the period is LOCKED, each excepted pair still"
+                    + " the reference's last observation before the end (P14-TSK-026, ADR-0119 decision 2, INV-ACC-11,"
+                    + " INV-AUD-04; POST .../valuation-rate-sets/{setId}/reference-gap-approval, ACCOUNTING_CLOSE_APPROVE)."
+                    + " Reasoned. Its target the set; the summary its period, pair count and each excepted pair with its age"
+                    + " in hours.",
+            true),
+
     /** A second person approved a valuation rate set (`P14-TSK-014`, ACCOUNTING_CLOSE_APPROVE). */
     VALUATION_SET_APPROVED(
             "accounting.ValuationSetApproved",
