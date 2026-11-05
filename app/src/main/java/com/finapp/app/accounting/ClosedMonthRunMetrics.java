@@ -8,7 +8,7 @@ import java.time.Duration;
 import java.util.Objects;
 
 /**
- * {@code finapp.accounting.close.month.unrun} (`P14-TSK-020`; `P14-TSK-012`'s item 7; alert {@code AccountingClosedMonthLostItsRun}): how many sources of the latest {@code CLOSED} month hold a repudiated run and no run that counts ({@link ClosedMonthRuns}). What a person decides about that month is owner item (l)'s, still
+ * {@code finapp.accounting.close.month.unrun} (`P14-TSK-020`; `P14-TSK-012`'s item 7; alert {@code AccountingClosedMonthLostItsRun}): how many sources the latest {@code CLOSED} month requires hold a repudiated run and no run that counts ({@link ClosedMonthRuns}), by the check's own rule (`P14-TSK-025`). What a person decides about that month is owner item (l)'s, still
  * open: this says it happened, and reads one month, so an older month's stays {@code RECONCILIATION_STATUS}'s to show. From the rows, aggregate with {@code max()}; no value when unreadable; bounded by {@link AccountingGaugeRead}, cached 60 s, since it costs three statements and a repudiation is a person's rare act. No tag: a count names no source.
  */
 public final class ClosedMonthRunMetrics {
@@ -24,7 +24,7 @@ public final class ClosedMonthRunMetrics {
         Objects.requireNonNull(months, "months");
         this.read = new AccountingGaugeRead<>("The latest closed month's runs", snapshots, refresher, clock, MIN_REFRESH, months::repudiatedWithoutARun);
         Gauge.builder(UNRUN, this::unrun)
-                .description("Sources of the latest CLOSED month holding a repudiated run and no run that counts; no value when unreadable."
+                .description("Sources the latest CLOSED month requires holding a repudiated run and no run that counts; no value when unreadable."
                         + " Fleet-wide from every instance: aggregate with max(), never sum()")
                 .strongReference(true)
                 .register(registry);

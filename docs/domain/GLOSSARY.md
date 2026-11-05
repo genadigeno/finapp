@@ -2539,12 +2539,12 @@ owner decision C8), nor irreversible — a reopen is four-eyes and supersedes, n
 
 ### Break Generation
 **Is:** which break of one (period, check, subject) an Accounting Break is: 1, then one more each time a finding differs from the evidence a person decided on. The earlier generation stays as it was; the new one needs its own four-eyes acknowledgement (ADR-0117's ruling, `P14-TSK-012`).
-**Not:** a recurrence: a finding unchanged from what a person decided on raises nothing and counts as disclosed; nor a change of amount, which evidence does not hold.
+**Not:** a recurrence: a finding unchanged from what a person decided on raises nothing and counts as disclosed; nor a change of amount, which evidence does not hold; nor the traffic around a source proof's failure, its evidence naming only what is failing (`P14-TSK-025`).
 **Owned by:** `accounting`
 
 ### Nil Report
-**Is:** a counterparty's settlement report for a business date with no lines and a zero net, through the existing door: pulled, the channel its authentication, or uploaded and attested by a second person. Accepted with nothing posted; its reconciliation run completes at no items, which is how an honestly quiet month gets its run (`P14-TSK-012`, the owner's decisions of 2026-11-02 and 2026-11-03).
-**Not:** something the platform can mint: a run is born only in an acceptance's transaction, from a stored file; nor a Close Check's waiver.
+**Is:** a counterparty's settlement report for a business date with no lines and a zero net, through the existing door: pulled, the channel its authentication, or uploaded and attested by a second person. Accepted with nothing posted; its reconciliation run completes at no items, which is how an honestly quiet month gets its run (`P14-TSK-012`, the owner's decisions of 2026-11-02 and 2026-11-03). *(`P14-TSK-025`: owed only by a source the month requires - declared, admitted by the month's last day, not retired before its first, its rule set active by its last day; settlement `V018`'s `admitted_on` and `retired_on`, reconciliation's first activation.)*
+**Not:** something the platform can mint: a run is born only in an acceptance's transaction, from a stored file; nor a Close Check's waiver; nor owed by a source admitted after the month, retired before it, or whose rule set no person has activated.
 **Owned by:** `settlement` (the file), `reconciliation` (the run)
 
 ### Close Check

@@ -73,7 +73,7 @@ final class ScriptedStatements {
                             current[0] = more ? iterator.next() : null;
                             return more;
                         }
-                        case "getString", "getBigDecimal", "getLong", "getInt", "getDate", "getObject", "getTimestamp" -> {
+                        case "getString", "getBigDecimal", "getLong", "getInt", "getDate", "getObject", "getTimestamp", "getBoolean" -> {
                             @SuppressWarnings("unchecked")
                             Map<String, Object> row = (Map<String, Object>) current[0];
                             return row.get(String.valueOf(args[0])); // By name, or by index: "1".
