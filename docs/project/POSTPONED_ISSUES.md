@@ -20,6 +20,7 @@ commit and the date; do not delete the entry.
 | PI-008 | `POSTPONED` | P14-TSK-018, by the owner (2026-11-05) | accounting — a regulatory return answered `UNKNOWN` for good has no person's door; required before any real regulatory channel |
 | PI-009 | `POSTPONED` | P14-TSK-018, by the owner (2026-11-05) | accounting — two returns can stand at the regulator after a non-delivery; required before any real regulatory channel |
 | PI-010 | `POSTPONED` | P14-TSK-018, by the owner (2026-11-05) | accounting — `overtaken` cannot clear when no correction is owed; required before any real regulatory channel |
+| PI-011 | `POSTPONED` | P14-TSK-019, by the owner (2026-11-05) | accounting — a safeguarding shortfall alerts nobody, and nothing issues the monthly run; required before any real regime |
 
 ---
 
@@ -239,3 +240,19 @@ commit and the date; do not delete the entry.
   this pages once and does not stay red.
 - **Fix:** a reasoned, four-eyes "no correction owed" act, audited, clearing that return's flag.
 - **Owner of the fix:** whoever brings the first real channel; the post-phase clean-up at the latest.
+
+---
+
+## PI-011 — A safeguarding shortfall alerts nobody, and nothing issues the monthly run
+
+- **Status:** `POSTPONED` (owner, 2026-11-05, accepting the recommendation after `P14-TSK-020`'s merge). **Required before any
+  real regime.**
+- **What:** a person sees a shortfall only on the form's `POSITION` and `POSITION_BEFORE` lines at validation and attestation, and in
+  the run's two flags. Nothing pages. An accountant has to issue `SAFEGUARDING_POSITION` each month, nothing does it for them, and a
+  month nobody issues shows nothing at all.
+- **Consequence today:** none in this phase, because the return is a reference figure on a simulated channel and asserts no legal
+  obligation. `OPERATIONS_RUNBOOK.md` section 10.7's close calendar names the run (`P14-TSK-023`).
+- **Fix:** issue the run with the close, and a gauge `finapp.accounting.safeguarding.shortfall`, the currencies whose
+  `positionBeforeLendingFunded` is negative in the latest FINAL at the month's present revision, with an alert. Keyed on that figure and
+  never on `position`, with no amount in any tag.
+- **Owner of the fix:** whoever brings the first real regime; the post-phase clean-up at the latest.
