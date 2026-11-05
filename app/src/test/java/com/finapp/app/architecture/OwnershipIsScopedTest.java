@@ -2286,6 +2286,11 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P14-TSK-018. Whether a form and month holds a return sent, under the period FOR SHARE, for a draft behind @RequiresPermission(REGULATORY_REPORT_PREPARE) - a return of the platform's reference reporting, no owner to scope by.")),
                     Map.entry(
+                            "com.finapp.accounting.JdbcReturnsAReopenOvertakes.of",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-023. The returns of the month a reopen's act holds, for that act's receipt, behind @RequiresPermission(ACCOUNTING_CLOSE_PROPOSE) or (ACCOUNTING_CLOSE_APPROVE): an id, a form and a status of the platform's reference reporting, no owner to scope by.")),
+                    Map.entry(
                             "com.finapp.accounting.JdbcRegulatorySubmissionStore.insertLines",
                             new Entry(
                                     Scope.ADMINISTERED,

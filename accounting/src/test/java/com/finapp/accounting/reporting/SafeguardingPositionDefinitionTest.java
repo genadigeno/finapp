@@ -662,7 +662,7 @@ class SafeguardingPositionDefinitionTest {
 
     @Test
     @DisplayName("P14-TSK-023: the words the run writes say the new thing: the statement, the drill-down and the mapping name the term and the figure that warns, and no word says the old thing: no member of the old name, no acceptance lifting a figure, no flag or figure named for a term that has gone")
-    void noWordStatesTheOldThing() {
+    void theOldTermsAndWordsAreGone() {
         books.deposit(DAY_ONE, EUR, 2, 100_00).accepted("loan", DAY_ONE, EUR, 2, 5_00);
         CanonicalJson.Obj body = body();
         String words = CanonicalJson.text(body);

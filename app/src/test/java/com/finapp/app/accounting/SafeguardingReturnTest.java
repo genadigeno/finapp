@@ -255,7 +255,7 @@ class SafeguardingReturnTest {
 
     @Test
     @DisplayName("P14-TSK-023: no word of the shipped configuration or of what a run writes says the old thing, the runbook's Reading it among them, and each says the new one: the figure that warns, a disclosure, committed disclosed and not subtracted")
-    void noWordStatesTheOldThing() throws Exception {
+    void theOldTermsAndWordsAreGone() throws Exception {
         anOrdinaryMonth();
         closed(JANUARY);
         String block = block();
