@@ -142,15 +142,22 @@ anticipated.
    are never capital (A29); an undrawn line limit consumes none (A28). L6 sits after the act's own
    row (L5) and before any wallet row (L7); only lending locks it.
 
-6. **The capital proof and the safeguarding term** (`LendingCapitalProof`, gauged, alerting on any
+6. **The capital proof and capital's lending-funded figure** (`LendingCapitalProof`, gauged, alerting on any
    failure), per currency in one `REPEATABLE READ` snapshot: (a) every journal line on
    `LENDING_CAPITAL` is a recognised contribution's (completeness — no other poster); (b) headroom
-   ≥ 0 at rest; (c) the published **safeguarding adjustment** `lending_funded(c) = Σ principal
-   outstanding + committed`, the term by which a future safeguarding proof (Phase 14/15's, comparing
-   customer liabilities with cash) subtracts loan-funded wallet money from customer-funded money.
-   Customer liabilities − `lending_funded` is unchanged by any lending act except the loans' own
+   ≥ 0 at rest; (c) the published figure `lending_funded(c) = Σ principal outstanding + committed`
+   *(+ written off, `P14-TSK-021`)*: capital's own, capital recognised = headroom + this figure.
+   *(**Corrected by the owner, 2026-11-05, built by `P14-TSK-023`.** Until then this said: "the published
+   safeguarding adjustment ..., the term by which a future safeguarding proof (Phase 14/15's, comparing
+   customer liabilities with cash) subtracts loan-funded wallet money from customer-funded money". An
+   accepted loan awaiting disbursement has created no wallet money, so subtracting it lifted a position
+   with nothing behind it, and could read a short month as over. The safeguarding proof subtracts the
+   principal outstanding and written off, its `principalUnrepaid`; `committed` stays capital's term and a
+   line beside that proof. ADR-0118's As built holds what each figure then is.)*
+   ~~Customer liabilities − `lending_funded` is unchanged by any lending act except the loans' own
    principal flows and repayments of interest and fees (platform income), each explained by its
-   entry.
+   entry.~~ *(Struck by the same ruling: it did not hold of an acceptance, which moved that figure by the
+   committed term with no entry to explain it.)*
 
 ## Alternatives Considered
 
@@ -242,7 +249,7 @@ Financial impact: the operational ledger gains the loan book and the platform's 
 
 ## Follow-up
 
-- **Section 6's safeguarding proof, built by `P14-TSK-019` (2026-11-05):** `SAFEGUARDING_POSITION` subtracts `lending_funded`, its formula as widened by `P14-TSK-021`, read as of each month's cutoff over frozen rows and never from `LendingCapitalProof`, a live derivation: ADR-0118's As built. Two findings for the owner, `P14-TSK-019`'s items (a) and (b): `committed`, in this section's term, lifts a position by a principal with no liability behind it, and `outstanding` overstates loan-funded money still in wallets once a borrower has withdrawn it. Section 6's sentence, "unchanged by any lending act except the loans' own principal flows and repayments of interest and fees", does not hold of an acceptance, which moves customer liabilities less `lending_funded` by the committed term with no entry to explain it. The section stands as ruled until the owner decides.
+- **Section 6's safeguarding proof, built by `P14-TSK-019` (2026-11-05):** `SAFEGUARDING_POSITION` subtracts `lending_funded`, its formula as widened by `P14-TSK-021`, read as of each month's cutoff over frozen rows and never from `LendingCapitalProof`, a live derivation: ADR-0118's As built. Two findings for the owner, `P14-TSK-019`'s items (a) and (b): `committed`, in this section's term, lifts a position by a principal with no liability behind it, and `outstanding` overstates loan-funded money still in wallets once a borrower has withdrawn it. Section 6's sentence, "unchanged by any lending act except the loans' own principal flows and repayments of interest and fees", does not hold of an acceptance, which moves customer liabilities less `lending_funded` by the committed term with no entry to explain it. The section stands as ruled until the owner decides. *(**The owner decided, 2026-11-05; `P14-TSK-023` built it:** `committed` comes out of the safeguarding subtraction and stays a line, the principal written off stays in it, capital's figure and identity do not change, and section 6 above is corrected. The second finding stands, and is why `POSITION_BEFORE` is now the figure that warns and the adjustment a disclosure: ADR-0118's As built.)*
 - Built by `P11-TSK-003` (ledger `V026`: `OwnerKind.LOAN`, the ten purposes, the seeded operational
   accounts, the adjustment guard), `P11-TSK-004` (contributions, reconciliation `V022`, the capital
   proof, the L6 lock-wait test), and each posting rule by the task that posts it (`-014`, `-016`,

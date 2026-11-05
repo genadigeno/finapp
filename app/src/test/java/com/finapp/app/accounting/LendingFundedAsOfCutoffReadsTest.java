@@ -30,7 +30,7 @@ import org.junit.jupiter.api.Test;
 /**
  * What the adapter's statements say and how it folds what they answer (`P14-TSK-019`; {@code INV-ACC-04}, {@code INV-ACC-14}): over a stand-in connection, so these hold the text and the fold. Whether PostgreSQL answers as this assumes is {@code SafeguardingReturnDatabaseTest}'s and {@code SafeguardingCommittedDatabaseTest}'s (owed, C5).
  */
-@DisplayName("lending_funded's reads as of the cutoff (P14-TSK-019)")
+@DisplayName("the return's lending reads as of the cutoff (P14-TSK-019)")
 class LendingFundedAsOfCutoffReadsTest {
 
     private static final LocalDate CUTOFF = LocalDate.of(2097, 6, 30);

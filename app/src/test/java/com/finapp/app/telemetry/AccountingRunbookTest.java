@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.finapp.accounting.AccountingErrorCode;
 import com.finapp.accounting.CloseCheckCode;
 import com.finapp.accounting.reporting.ReportDefinitions;
+import com.finapp.app.accounting.PeriodCloseDesk;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.testing.RepositoryPaths;
@@ -12,6 +13,7 @@ import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.reflect.RecordComponent;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -189,6 +191,35 @@ class AccountingRunbookTest {
             }
         }
         assertThat(named).as("the section names these, or this checks nothing").isGreaterThan(50);
+    }
+
+    @Test
+    @DisplayName("P14-TSK-023: the close calendar names the monthly safeguarding run: who issues it, when, under which permission, and that nothing issues it for them; the route and permission are held by this suite's own rules")
+    void theCalendarNamesTheMonthlyReturn() {
+        String calendar = section(RepositoryPaths.read(RUNBOOK), "10.7");
+
+        assertThat(calendar).contains("`SAFEGUARDING_POSITION`").contains("once it is `CLOSED`").contains("an accountant issues the run").contains("`POST /v1/operator/accounting/report-runs` (`ACCOUNTING_REPORT_GENERATE`)").contains("**Nothing issues it for them**").contains("`PI-011`");
+    }
+
+    @Test
+    @DisplayName("P14-TSK-023: sections 10.6 and 10.11 say what a reopen's receipts now do, in the receipt's own field names, and say what the list leaves out; no word says the receipt does not list them, or to check a gauge before and after")
+    void theReopensSectionsSayWhatItsReceiptsDo() {
+        String runbook = RepositoryPaths.read(RUNBOOK);
+        String six = section(runbook, "10.6");
+        String eleven = section(runbook, "10.11");
+        Set<String> fields = Arrays.stream(PeriodCloseDesk.PeriodCloseReceipt.class.getRecordComponents()).map(RecordComponent::getName).collect(Collectors.toSet());
+
+        for (String field : List.of("overtakenReturns", "overtakenReturnsTotal")) {
+            assertThat(fields).contains(field);
+            assertThat(six).contains("`" + field + "`");
+            assertThat(eleven).contains("`" + field + "`");
+        }
+        assertThat(fields).contains("overtakenReturnsNote");
+        assertThat(six).contains("`overtakenReturnsNote`").contains("**It is information:** it stops nothing").contains("**It is not everything in flight:**").contains("`APPROVED` and about to send");
+        assertThat(eleven).contains("an empty one is not nothing in flight");
+        for (String section : List.of(six, eleven)) {
+            assertThat(section).doesNotContain("does not list").doesNotContain("before and after").doesNotContain("`P14-TSK-023`).");
+        }
     }
 
     @Test

@@ -245,7 +245,7 @@ class SafeguardingCommittedDatabaseTest {
     }
 
     @Test
-    @DisplayName("M-4: a real FINAL with a non-zero committed: the term and its loan in the run's bytes, subtracted, the two positions apart by exactly it, and the real disbursement after the close moving no byte")
+    @DisplayName("M-4, P14-TSK-023: a real FINAL with a non-zero committed: the term and its loan in the run's bytes, a line and no part of the subtraction, the two positions not apart at all by it, and the real disbursement after the close moving no byte")
     void aFinalHoldsACommittedLoanAndRegeneratesIdenticalAfterItsDisbursement() throws Exception {
         SafeguardingMonths.chartInForce();
         String opened = acceptedLoan(customers.consentingCustomer(), loan(SECOND, 12, 10));
@@ -263,8 +263,8 @@ class SafeguardingCommittedDatabaseTest {
         assertThat(eur).as("the commitment alone gives the currency its element").isNotNull();
         assertThat(minorOf(eur, "principalCommitted")).isEqualTo(SECOND_MINOR);
         assertThat(eur.get("principalCommittedLoans").asText()).isEqualTo("1");
-        assertThat(minorOf(eur, "lendingFunded")).isEqualTo(SECOND_MINOR);
-        assertThat(minorOf(eur, "position") - minorOf(eur, "positionBeforeLendingFunded")).isEqualTo(SECOND_MINOR);
+        assertThat(minorOf(eur, "principalUnrepaid")).as("accepted, not disbursed: a line and no part of the term").isZero();
+        assertThat(minorOf(eur, "position") - minorOf(eur, "positionBeforePrincipalUnrepaid")).as("an acceptance moves neither position").isZero();
 
         disburse();
 

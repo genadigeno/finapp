@@ -211,6 +211,33 @@ class BnplMerchantDrillDownTest {
     }
 
     @Test
+    @DisplayName("P14-TSK-023 (ac): a MANUAL line reads by its origin on the real drill-down, facing a customer's wallet or the recoverable, either side: other, signed; no false captured, refunded or chargedBack beside a real capture and a real refund; the terms sum and the merchant's report agrees for that origin too")
+    void aManualAdjustmentIsNamedOther() {
+        BnplPayoutWorld.Shop shop = world.shop();
+        world.captured(shop, 100_00L, 3_00L);
+        world.walletRefund(shop, 20_00L);
+        MerchantPayable.Payable before = world.payable(shop);
+        world.adjusted(com.finapp.ledger.AdjustmentOrigin.MANUAL, "INC-1", List.of(new JournalLine(facing(AccountPurpose.CUSTOMER_WALLET), Direction.DEBIT, eur(15_00L)), new JournalLine(shop.payable(), Direction.CREDIT, eur(15_00L))));
+        world.adjusted(com.finapp.ledger.AdjustmentOrigin.MANUAL, "INC-2", List.of(new JournalLine(shop.payable(), Direction.DEBIT, eur(4_00L)), new JournalLine(facing(AccountPurpose.CUSTOMER_WALLET), Direction.CREDIT, eur(4_00L))));
+        world.adjusted(com.finapp.ledger.AdjustmentOrigin.MANUAL, "INC-3", List.of(new JournalLine(shop.payable(), Direction.DEBIT, eur(2_00L)), new JournalLine(facing(AccountPurpose.CHARGEBACK_RECOVERABLE), Direction.CREDIT, eur(2_00L))));
+
+        MerchantPayable.Payable payable = world.payable(shop);
+
+        assertThat(payable.other()).isEqualTo(eur(9_00L));
+        assertThat(payable.captured()).as("the real capture alone").isEqualTo(before.captured());
+        assertThat(payable.refunded()).as("the real refund alone").isEqualTo(before.refunded());
+        assertThat(payable.chargedBack().minorUnits()).isZero();
+        assertThat(payable.accountingCorrections().minorUnits()).isZero();
+        assertThat(payable.terms()).isEqualTo(payable.position());
+        assertThat(payable.position()).as("the total moved by the adjustments and nothing else").isEqualTo(before.position().plus(eur(9_00L)));
+
+        LocalDate today = LocalDate.ofInstant(world.clock.instant(), ZoneOffset.UTC);
+        List<MerchantTransactionReport.Movement> labelled = report().report(new AuthenticatedMerchant(shop.id(), MerchantApiKeyId.next(world.ids)), today, today).get(0).movements().stream().filter(movement -> movement.label().isPresent()).toList();
+        assertThat(labelled).hasSize(3).allSatisfy(movement -> assertThat(movement.kind()).isEqualTo(MerchantTransactionReport.Kind.OTHER));
+        assertThat(labelled.stream().map(MerchantTransactionReport.Movement::net).reduce(eur(0), Money::plus)).as("the drill-down and the report agree").isEqualTo(payable.other());
+    }
+
+    @Test
     @DisplayName("P14-TSK-022 (s): a merchant's report labels an adjustment of each origin before reading its reference: a MANUAL reference naming a real attempt serves no capture and none of that purchase's identifiers, no store even asked; RECONCILIATION's bare id likewise; a payout stays OTHER with no label")
     void everyOriginIsLabelledBeforeAnyReferenceIsRead() {
         BnplPayoutWorld.Shop shop = world.shop();

@@ -204,7 +204,7 @@ class LendingCapitalHeadroomTest {
         assertThatThrownBy(() -> headroom.atRest(UOW, EUR)).isInstanceOf(LedgerStorageException.class);
     }
 
-    // ------------------------------------------------------------------ the proof, the safeguarding term, the gauge
+    // ------------------------------------------------------------------ the proof, capital's lending-funded figure, the gauge
 
     @Test
     @DisplayName("the capital proof counts BNPL principal: recognised capital = headroom + committed + loan and BNPL"
@@ -231,7 +231,7 @@ class LendingCapitalHeadroomTest {
     }
 
     @Test
-    @DisplayName("the safeguarding term lending_funded includes BNPL principal: committed + loan + BNPL principal"
+    @DisplayName("capital's figure lending_funded includes BNPL principal: committed + loan + BNPL principal"
             + " outstanding")
     void lendingFundedIncludesBnplPrincipal() {
         books.capital(2_000_00).committed(250_00)
@@ -301,7 +301,7 @@ class LendingCapitalHeadroomTest {
     }
 
     @Test
-    @DisplayName("the safeguarding term keeps the principal written off: the wallet money the loan created is still capital's, so a"
+    @DisplayName("capital's lending-funded figure keeps the principal written off: the wallet money the loan created is still capital's, so a"
             + " write-off raises nothing safeguarding holds customers funded")
     void lendingFundedKeepsWhatWasWrittenOff() {
         books.capital(1_000_00).balance(AccountPurpose.LOAN_PRINCIPAL, 300_00);

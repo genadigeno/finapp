@@ -64,7 +64,12 @@ public class MerchantPayableController {
      * entry faced; {@code accountingCorrections} is signed — what the platform's accounting
      * corrected on this payable after a month closed (`P14-TSK-022`), never a sale, a refund or a
      * chargeback, read on your transaction report as an {@code OTHER} movement labelled
-     * {@code Account adjustment}; and {@code other} is signed — an operator adjustment today.
+     * {@code Account adjustment}; and {@code other} is signed — an operator's adjustment to this payable, whatever
+     * it faced, never a sale, a refund or a chargeback, read on your transaction report the same way, and any other
+     * line no term names. <strong>This read is live, so that reading applies to adjustments already posted</strong>
+     * (`P14-TSK-023`, 2026-11-05): an operator's adjustment that read here under {@code captured}, {@code fees},
+     * {@code refunded}, {@code feesReturned}, {@code chargedBack} or another term before that date reads under
+     * {@code other} from it. {@code position} does not move.
      */
     public record PayableLine(
             String currency,

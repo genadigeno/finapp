@@ -242,8 +242,8 @@ class SafeguardingReturnDatabaseTest {
     // ------------------------------------------------------------------ the entry's two cases
 
     @Test
-    @DisplayName("lendingFundedIsSubtracted: each term equals this suite's raw sum through the last day, committed the real statement's true zero, and position = assets - liabilities + lendingFunded")
-    void lendingFundedIsSubtracted() throws Exception {
+    @DisplayName("principalUnrepaidIsSubtracted: each term equals this suite's raw sum through the last day, committed the real statement's true zero and no part of the term, and position = assets - liabilities + principalUnrepaid")
+    void principalUnrepaidIsSubtracted() throws Exception {
         YearMonth month = openMonth();
         LocalDate day = month.atDay(10);
         LedgerAccount cash = operational(AccountPurpose.CASH_AT_BANK, EUR);
@@ -271,11 +271,11 @@ class SafeguardingReturnDatabaseTest {
         assertThat(minor(eur, "principalWrittenOff")).isEqualTo(rawWrittenOff(lastDay, EUR)).isGreaterThanOrEqualTo(5_00 + 1_00);
         assertThat(minor(eur, "principalCommitted")).as("no loan was opened by a cutoff in 1999: the real statement's true zero").isZero();
         assertThat(eur.get("principalCommittedLoans").asText()).isEqualTo("0");
-        long funded = minor(eur, "principalOutstanding") + minor(eur, "principalWrittenOff");
-        assertThat(minor(eur, "lendingFunded")).isEqualTo(funded).isGreaterThanOrEqualTo(30_00 + 13_00);
-        assertThat(minor(eur, "position")).isEqualTo(minor(eur, "assets") - minor(eur, "liabilities") + funded);
-        assertThat(minor(eur, "position") - minor(eur, "positionBeforeLendingFunded")).as("subtracted").isEqualTo(funded);
-        assertThat(minor(eur, "customerFundedLiabilities")).isEqualTo(minor(eur, "liabilities") - funded);
+        long unrepaid = minor(eur, "principalOutstanding") + minor(eur, "principalWrittenOff");
+        assertThat(minor(eur, "principalUnrepaid")).isEqualTo(unrepaid).isGreaterThanOrEqualTo(30_00 + 13_00);
+        assertThat(minor(eur, "position")).isEqualTo(minor(eur, "assets") - minor(eur, "liabilities") + unrepaid);
+        assertThat(minor(eur, "position") - minor(eur, "positionBeforePrincipalUnrepaid")).as("subtracted").isEqualTo(unrepaid);
+        assertThat(minor(eur, "customerFundedLiabilities")).isEqualTo(minor(eur, "liabilities") - unrepaid);
     }
 
     @Test
@@ -330,7 +330,7 @@ class SafeguardingReturnDatabaseTest {
         JsonNode gbp = figures(bodyOf(run), GBP);
         assertThat(minor(gbp, "position")).isEqualTo(-1_000_00);
         assertThat(gbp.get("positionNegative").asBoolean()).isTrue();
-        assertThat(gbp.get("positionBeforeLendingFundedNegative").asBoolean()).isTrue();
+        assertThat(gbp.get("positionBeforePrincipalUnrepaidNegative").asBoolean()).isTrue();
 
         RegulatorySubmissions.Acted validated = validated(drafted(activeForm(), month));
 

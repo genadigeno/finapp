@@ -240,6 +240,7 @@ Regulatory Obligation
 Regulatory Submission
 Safeguarding Position
 Lending Funded
+Principal Unrepaid
 
 Important: these names are not automatically aggregates or tables. Determine domain ownership and lifecycle before implementation.
 
@@ -352,6 +353,7 @@ never a Screening Result, which stays kyc's.)*
 *(`P14-TSK-013`, 2026-11-04: Prior-Period Adjustment is built - `PROPOSED -> POSTED | REJECTED`, a row beside the ledger's proposal, one transaction - and read "a back-dated posting" in the next sentence with its date: today, stored, never in or before the month it corrects.)*
 
 *(`P14-TSK-019`, 2026-11-05, added two to the accounting block: Safeguarding Position, a reference figure per currency and no statement that any obligation is met, and Lending Funded, the part of the platform's liabilities capital created, which is not capital and not an exact measure of loan money still in wallets.)*
+*(`P14-TSK-023`, 2026-11-05, by the owner's ruling, added one and corrected one: Principal Unrepaid, the safeguarding return's subtraction, outstanding and written off, and an upper bound on loan money still in wallets; and Lending Funded is what capital has deployed or promised, that plus committed, which has created no liability.)*
 
 *(`P14-TSK-012`, 2026-11-03, added two to the accounting block: Break Generation - which break of one (period, check, subject) a finding is, a person having decided on the one before it - and Nil Report, a counterparty's report with no lines through the existing door, how an honestly quiet month gets its run.)*
 *(The Phase 13 → 14 transition, 2026-10-29 — ADR-0113…0118 (`Proposed`), `PHASE_14_PLAN.md` §4 and §13 — added the

@@ -29,7 +29,7 @@ import org.junit.jupiter.api.Test;
  * What {@link JdbcPositionBreakdown} does with each origin its statement hands back (`P14-TSK-022`'s review, M-3): the real fold over stood-in rows, so a name this build does not know is proven to read as no origin and never to throw. An old instance can meet a later release's origin under a rolling
  * deploy, on {@code GET /v1/merchant/payable} and the {@code MERCHANT_PAYABLE} and {@code BNPL_THREE_WAY} proofs. That the statement's own {@code p.origin} is what PostgreSQL returns is {@code PriorPeriodAdjustmentDatabaseTest#whatAStatementShowsOfIt}'s, owed.
  */
-@DisplayName("a merchant's breakdown over each origin the statement can hand back (P14-TSK-022)")
+@DisplayName("a merchant's breakdown over each origin the statement can hand back (P14-TSK-022, P14-TSK-023)")
 class JdbcPositionBreakdownOriginTest {
 
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-11-04T09:00:00Z"), ZoneOffset.UTC);
@@ -118,11 +118,11 @@ class JdbcPositionBreakdownOriginTest {
     }
 
     @Test
-    @DisplayName("every origin it does know keeps its rule: ACCOUNTING and RECONCILIATION by their origin, facing nothing; MANUAL, and an entry no proposal posted, by what they face; one bucket per reading, the sum holding")
+    @DisplayName("every origin it knows reads by its origin: ACCOUNTING and RECONCILIATION each under its flag, MANUAL under neither, all three facing nothing; an entry no proposal posted, a NULL from the statement, by what it faces; one bucket per reading, the sum holding")
     void everyKnownOriginKeepsItsRule() {
         PositionBreakdown.Breakdown breakdown = breakdownOf(List.of(line("CREDIT", 100, "ACCOUNTING", FACING_A_WALLET, null), line("CREDIT", 20, "RECONCILIATION", FACING_A_WALLET, null), line("CREDIT", 3, "MANUAL", FACING_A_WALLET, null), line("CREDIT", 4, null, FACING_A_WALLET, null)));
 
-        assertThat(breakdown.buckets()).hasSize(3);
+        assertThat(breakdown.buckets()).hasSize(4);
         assertThat(breakdown.buckets()).filteredOn(PositionBreakdown.Bucket::accountingOrigin).singleElement().satisfies(bucket -> {
             assertThat(bucket.counterparty()).isEmpty();
             assertThat(bucket.total()).isEqualTo(Money.ofPersisted(100, EUR, 2));
@@ -131,7 +131,34 @@ class JdbcPositionBreakdownOriginTest {
             assertThat(bucket.counterparty()).isEmpty();
             assertThat(bucket.total()).isEqualTo(Money.ofPersisted(20, EUR, 2));
         });
-        assertThat(breakdown.buckets()).filteredOn(bucket -> bucket.counterparty().isPresent()).singleElement().satisfies(bucket -> assertThat(bucket.total()).as("MANUAL and no proposal, one reading").isEqualTo(Money.ofPersisted(7, EUR, 2)));
+        assertThat(breakdown.buckets()).filteredOn(bucket -> bucket.counterparty().isPresent()).singleElement().satisfies(bucket -> assertThat(bucket.total()).as("no proposal alone").isEqualTo(Money.ofPersisted(4, EUR, 2)));
+        assertThat(breakdown.buckets()).filteredOn(bucket -> bucket.counterparty().isEmpty() && !bucket.accountingOrigin() && !bucket.reconciliationAttributed()).singleElement().satisfies(bucket -> assertThat(bucket.total()).as("MANUAL").isEqualTo(Money.ofPersisted(3, EUR, 2)));
+        assertThat(signedSumOf(breakdown)).isEqualTo(breakdown.position());
+    }
+
+    @Test
+    @DisplayName("P14-TSK-023 (ac): a MANUAL line through the real fold, each direction, facing a wallet: no counterparty, no key, one bucket with a posting that faces nothing, folded once, so the sum holds and the term is the caller's other")
+    void aManualLineFacesNothing() {
+        PositionBreakdown.Breakdown breakdown = breakdownOf(List.of(line("CREDIT", 1_500, "MANUAL", FACING_A_WALLET, null), line("DEBIT", 400, "MANUAL", "CUSTOMER_WALLET|CREDIT", null), line("CREDIT", 7, null, null, null)));
+
+        assertThat(breakdown.buckets()).hasSize(2).allSatisfy(bucket -> {
+            assertThat(bucket.counterparty()).isEmpty();
+            assertThat(bucket.namespace()).isEmpty();
+            assertThat(bucket.accountingOrigin()).isFalse();
+            assertThat(bucket.reconciliationAttributed()).isFalse();
+        });
+        assertThat(breakdown.position()).isEqualTo(Money.ofPersisted(1_107, EUR, 2));
+        assertThat(signedSumOf(breakdown)).isEqualTo(breakdown.position());
+    }
+
+    @Test
+    @DisplayName("P14-TSK-023 (ac), walked: a reversal's entry no proposal posted, so the statement's scalar subquery returns NULL and its line reads by what it faces beside the MANUAL line it reverses, the sum holding at zero")
+    void aReversalOfAManualLineHasNoOrigin() {
+        PositionBreakdown.Breakdown breakdown = breakdownOf(List.of(line("CREDIT", 1_500, "MANUAL", FACING_A_WALLET, null), line("DEBIT", 1_500, null, "CUSTOMER_WALLET|CREDIT", null)));
+
+        assertThat(breakdown.buckets()).filteredOn(bucket -> bucket.direction() == Direction.DEBIT).singleElement().satisfies(bucket -> assertThat(bucket.counterparty()).contains(new PositionBreakdown.Counterparty(AccountPurpose.CUSTOMER_WALLET, Direction.CREDIT)));
+        assertThat(breakdown.buckets()).filteredOn(bucket -> bucket.direction() == Direction.CREDIT).singleElement().satisfies(bucket -> assertThat(bucket.counterparty()).isEmpty());
+        assertThat(breakdown.position()).isEqualTo(Money.ofPersisted(0, EUR, 2));
         assertThat(signedSumOf(breakdown)).isEqualTo(breakdown.position());
     }
 

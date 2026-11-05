@@ -113,12 +113,15 @@ Rests on `PHASE_12_PLAN.md` §1, §2.2 (B2), §3.2, §3.3, §6 (`INV-BNPL-02`, `
    `LendingBooksHaveOnePosterTest`'s capital rule unchanged — no bnpl operation posts `LENDING_CAPITAL`, and
    `BnplBooksHaveOnePosterTest` holds the mirror for the BNPL purposes).
 
-7. **The capital proof and the safeguarding term.** `LendingCapitalProof` (gauged `finapp.lending.capital.proof`,
+7. **The capital proof and capital's lending-funded figure.** `LendingCapitalProof` (gauged `finapp.lending.capital.proof`,
    alerting) gains the BNPL term in (b), headroom ≥ 0 at rest; (a), completeness of `LENDING_CAPITAL`'s lines, is
    unchanged. The published safeguarding adjustment becomes `lending_funded(c) = Σ committed + Σ principal outstanding
    of loans, lines and BNPL obligations`. BNPL creates no wallet money at purchase but creates merchant-payable
    liabilities without cash entering; a future safeguarding proof (Phase 14/15's) subtracts the capital-funded part
    of the platform's liabilities to customers and merchants by this one term, each movement explained by its entry.
+   *(Corrected by the owner, 2026-11-05, built by `P14-TSK-023`, as ADR-0096 section 6: `lending_funded` is capital's figure, and
+   the safeguarding return subtracts it less `committed`, which has created no liability. BNPL has no committed term, so a BNPL
+   principal counts in both alike.)*
    `finapp.lending.capital.headroom.low` is shared; the headroom amount stays an audited report, never a series
    (ADR-0072).
 
@@ -214,7 +217,7 @@ Refused: A29 kept; capital return and income recycling remain the open treasury 
 
 Positive:
 - Every BNPL receivable is backed by recognised platform capital from its own commit; one proof covers loans, lines
-  and BNPL; the safeguarding term stays one figure.
+  and BNPL; capital's lending-funded figure stays one figure.
 - A BNPL purchase is visible to the next credit decision from the instant it exists, with no gap and no double count.
 - Lending's code changes by one set of purposes; lending's races, battery and golden hashes re-run unchanged.
 
@@ -272,7 +275,7 @@ rule extended to `BNPL_AGREEMENT`), `INV-CRD-01`, `INV-CRD-09`, `INV-SET-06`, `I
   or 12 (`LOAN_WRITE_OFF_EXPENSE` and `BNPL_WRITE_OFF_EXPENSE` seeded, carrying no line), so no figure is wrong today;
   Phase 14's accounting design must charge the loss against capital (or subtract the write-off expense in the headroom)
   in the same commit. Recorded beside the write-off debt row in `CURRENT_STATE.md` §Known Architectural Debt.
-- **As built, the write-off's headroom** (`P14-TSK-021`, 2026-11-04, owner decision C6 (A)): the headroom subtracts a fourth term, `capital - committed - outstanding - writtenOff`. `writtenOff` is **derived, never a running figure**: CR - DR on the same four principal purposes (`LOAN_PRINCIPAL`, `LOAN_PRINCIPAL_DUE`, `BNPL_PRINCIPAL`, `BNPL_PRINCIPAL_DUE`) over the entries that also hold a line on a write-off expense (`PurposeBalances.netCreditBeside`). A write-off moves its principal from `outstanding` to `writtenOff` and the figure not at all, per currency, for loans and BNPL alike; interest and fees were never capital's (A29) and touch neither. It charges nothing to `LENDING_CAPITAL`, so `LendingCapitalProof`'s `unexplainedEntries` is untouched. Read **after** the outstanding term: a write-off committing between the two reads counts twice (low, never high) - capacity it could only under-offer. `lendingFunded` gains the same term, so safeguarding's figure does not jump: the wallet money the loan created is still there, still capital's. Proven by `LendingCapitalHeadroomTest#theHeadroomDoesNotRise`, `#theWrittenOffTermIsReadAfterTheOutstanding`, `#lendingFundedKeepsWhatWasWrittenOff`; over a real database by `LoanWriteOffDatabaseTest#theHeadroomDoesNotRise` and `BnplWriteOffLedgerDatabaseTest#theHeadroomDoesNotRise` (owed, C5).
+- **As built, the write-off's headroom** (`P14-TSK-021`, 2026-11-04, owner decision C6 (A)): the headroom subtracts a fourth term, `capital - committed - outstanding - writtenOff`. `writtenOff` is **derived, never a running figure**: CR - DR on the same four principal purposes (`LOAN_PRINCIPAL`, `LOAN_PRINCIPAL_DUE`, `BNPL_PRINCIPAL`, `BNPL_PRINCIPAL_DUE`) over the entries that also hold a line on a write-off expense (`PurposeBalances.netCreditBeside`). A write-off moves its principal from `outstanding` to `writtenOff` and the figure not at all, per currency, for loans and BNPL alike; interest and fees were never capital's (A29) and touch neither. It charges nothing to `LENDING_CAPITAL`, so `LendingCapitalProof`'s `unexplainedEntries` is untouched. Read **after** the outstanding term: a write-off committing between the two reads counts twice (low, never high) - capacity it could only under-offer. `lendingFunded` gains the same term, so capital's figure does not jump, nor the safeguarding return's `principalUnrepaid`, which holds the same written-off term (`P14-TSK-023`): the wallet money the loan created is still there, still capital's. Proven by `LendingCapitalHeadroomTest#theHeadroomDoesNotRise`, `#theWrittenOffTermIsReadAfterTheOutstanding`, `#lendingFundedKeepsWhatWasWrittenOff`; over a real database by `LoanWriteOffDatabaseTest#theHeadroomDoesNotRise` and `BnplWriteOffLedgerDatabaseTest#theHeadroomDoesNotRise` (owed, C5).
 - **Acceptance.** **As built** (`P12-DOC-001`, 2026-10-22): `Proposed` at the Phase 11 → 12 transition
   (2026-10-16); the Phase 12 review read this ADR against the code, corrected it in place above with dated
   notes, and accepted it.

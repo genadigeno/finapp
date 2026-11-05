@@ -844,7 +844,7 @@ class LendingCapitalDatabaseTest {
 
     @Test
     @Order(19)
-    @DisplayName("lending_funded includes BNPL principal (P12-TSK-005): the safeguarding term is committed + loan and"
+    @DisplayName("lending_funded includes BNPL principal (P12-TSK-005): capital's figure is committed + loan and"
             + " line principal + BNPL principal outstanding")
     void lendingFundedIncludesBnplPrincipal() throws Exception {
         LendingCapitalProof.CurrencyVerdict verdict = proofNow().currencies().stream()

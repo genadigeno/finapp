@@ -103,10 +103,22 @@ import lombok.RequiredArgsConstructor;
  * open to it) faces whatever its person chose, so by counterparty a credit facing a customer's wallet would read as a
  * capture, a debit as a refund, and one facing the recoverable as a chargeback, none of which happened. So it is classified
  * by its origin first, as an attribution is, under {@code accountingCorrections}. The merchant's transaction report calls the
- * same entry {@code OTHER}, labelled, and the two agree: its nets over such entries are this term. A {@code MANUAL} adjustment
- * keeps its old reading, which no ruling moved. <strong>Nothing stored reads a term</strong>: a close check's
- * {@code MERCHANT_PAYABLE} proof keeps only whether the terms sum, and no report definition reads this class, so no FINAL of a
- * closed month moves, regenerated or not.
+ * same entry {@code OTHER}, labelled, and the two agree: its nets over such entries are this term.
+ *
+ * <p><strong>So does an operator's adjustment (`P14-TSK-023`, the owner's ruling on `P14-TSK-022`'s item (ac)).</strong> A
+ * {@code MANUAL} line faces whatever its person chose, and read by that it was a capture, a refund or a chargeback that never
+ * happened, where the report already called it {@code OTHER}. {@link PositionBreakdown.Bucket#of} now drops what it faces, so it
+ * falls to the last branch below, {@code other}, signed as the liability reads it, in either direction. The three origins stay
+ * coherent: {@code RECONCILIATION} under {@code reconciliationAttributed}, {@code ACCOUNTING} under {@code accountingCorrections},
+ * {@code MANUAL} under {@code other}, each {@code OTHER} and labelled on the report. <strong>A merchant's figure moves here:</strong>
+ * this is a live read, so a line a merchant read as {@code captured} yesterday reads {@code other} today, and the total does not
+ * move, every line folded once. <strong>What still reads by what it faces:</strong> a line of an entry no proposal posted, a
+ * reversal's among them, and one of an origin this build does not know. No door reverses an adjustment: every reversal command
+ * reverses its own domain's posting, and an operator corrects an adjustment with another, which reads {@code other} and nets.
+ *
+ * <p><strong>Nothing stored reads a term</strong>: a close check's {@code MERCHANT_PAYABLE} proof keeps only whether the terms sum,
+ * {@code BNPL_THREE_WAY} reads the sum and the four keyed terms, which hold no adjustment, and no report definition reads this
+ * class, so no FINAL of a closed month moves, regenerated or not.
  *
  * <h2>Paid out, not in flight</h2>
  *
@@ -147,7 +159,8 @@ public final class MerchantPayable {
      *     {@code bnpl.refund:} (`P12-TSK-021` posts them)
      * @param bnplFeesReturned the BNPL fee those refunds returned — every payable CREDIT under
      *     {@code bnpl.refund:}
-     * @param other movements that are none of the above, SIGNED — an operator adjustment today
+     * @param other movements that are none of the above, SIGNED — every payable line of a {@code MANUAL}-origin
+     *     {@code ADJUSTMENT} entry, an operator's, whatever it faces (`P14-TSK-023`), and any other line no term names
      */
     public record Payable(
             Money position,
@@ -379,8 +392,9 @@ public final class MerchantPayable {
                 // classified above by its origin.
                 payoutsReturned = payoutsReturned.plus(bucket.total());
             } else {
-                // None of the shapes above. Signed as the liability reads it: a credit increases
-                // what is owed, a debit reduces it.
+                // None of the shapes above, every MANUAL line among them (P14-TSK-023: Bucket.of dropped
+                // what it faced). Signed as the liability reads it: a credit increases what is owed, a
+                // debit reduces it.
                 other = credit ? other.plus(bucket.total()) : other.minus(bucket.total());
             }
         }

@@ -247,12 +247,12 @@ commit and the date; do not delete the entry.
 
 - **Status:** `POSTPONED` (owner, 2026-11-05, accepting the recommendation after `P14-TSK-020`'s merge). **Required before any
   real regime.**
-- **What:** a person sees a shortfall only on the form's `POSITION` and `POSITION_BEFORE` lines at validation and attestation, and in
-  the run's two flags. Nothing pages. An accountant has to issue `SAFEGUARDING_POSITION` each month, nothing does it for them, and a
+- **What:** a person sees a shortfall only on the form's `POSITION_BEFORE` line, the figure that warns, and `POSITION` beside it, at validation
+  and attestation, and in the run's two flags, `positionBeforePrincipalUnrepaidNegative` and `positionNegative`. Nothing pages. An accountant has to issue `SAFEGUARDING_POSITION` each month, nothing does it for them, and a
   month nobody issues shows nothing at all.
 - **Consequence today:** none in this phase, because the return is a reference figure on a simulated channel and asserts no legal
   obligation. `OPERATIONS_RUNBOOK.md` section 10.7's close calendar names the run (`P14-TSK-023`).
 - **Fix:** issue the run with the close, and a gauge `finapp.accounting.safeguarding.shortfall`, the currencies whose
-  `positionBeforeLendingFunded` is negative in the latest FINAL at the month's present revision, with an alert. Keyed on that figure and
-  never on `position`, with no amount in any tag.
+  `positionBeforePrincipalUnrepaid` is negative in the latest FINAL at the month's present revision, with an alert. Keyed on that figure and
+  never on `position`, which can read over in a short month, with no amount in any tag.
 - **Owner of the fix:** whoever brings the first real regime; the post-phase clean-up at the latest.

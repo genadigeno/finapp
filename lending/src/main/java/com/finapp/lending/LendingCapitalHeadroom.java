@@ -141,12 +141,14 @@ public final class LendingCapitalHeadroom {
         }
 
         /**
-         * The safeguarding adjustment ADR-0096 section 6 publishes: the platform liabilities capital created and still
-         * funds - principal outstanding (loans, lines and BNPL obligations; ADR-0104 decision 7: BNPL creates
-         * merchant-payable liabilities without cash entering, as a disbursement creates wallet money) plus committed, plus
-         * the principal written off (`P14-TSK-021`): the wallet money a written-off loan created is still there, still
-         * capital's and no customer's, so a write-off must not raise what safeguarding holds customers funded. Capital
-         * recognised = headroom + this figure.
+         * Capital's own figure, what ADR-0096 section 6 publishes: what capital has deployed or promised - principal outstanding
+         * (loans, lines and BNPL obligations; ADR-0104 decision 7: BNPL creates merchant-payable liabilities without cash
+         * entering, as a disbursement creates wallet money) plus committed, plus the principal written off (`P14-TSK-021`).
+         * Capital recognised = headroom + this figure, and that identity is why committed is in it. <strong>It is not the
+         * safeguarding return's subtraction</strong> (the owner, 2026-11-05, `P14-TSK-023`): an accepted loan awaiting
+         * disbursement has created no wallet money, so that return subtracts this figure less committed, its
+         * {@code principalUnrepaid}, the written-off principal staying in because the wallet money that loan created is still
+         * there, still capital's and no customer's. {@code SafeguardingFormulaIsTheHeadroomsTest} pins the two.
          */
         public Money lendingFunded() {
             return outstanding.plus(committed).plus(writtenOff);

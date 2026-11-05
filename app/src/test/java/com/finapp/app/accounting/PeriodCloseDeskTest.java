@@ -7,6 +7,7 @@ import com.finapp.accounting.AccountingBreakStore;
 import com.finapp.accounting.AccountingErrorCode;
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.AccountingPeriodStore;
+import com.finapp.accounting.AccountingStorageException;
 import com.finapp.accounting.CheckVerdict;
 import com.finapp.accounting.CloseCheckCode;
 import com.finapp.accounting.CloseRunId;
@@ -15,6 +16,9 @@ import com.finapp.accounting.GlMappingVersionId;
 import com.finapp.accounting.PeriodCloses;
 import com.finapp.accounting.PeriodStatus;
 import com.finapp.accounting.PostingCutoff;
+import com.finapp.accounting.RegulatorySubmissionId;
+import com.finapp.accounting.ReturnsAReopenOvertakes;
+import com.finapp.accounting.SubmissionStatus;
 import com.finapp.accounting.ValuationRateSets;
 import com.finapp.accounting.ValuationRates;
 import com.finapp.accounting.ValuationStaleness;
@@ -26,6 +30,7 @@ import com.finapp.accounting.testing.InMemoryPeriodCloseStore;
 import com.finapp.accounting.testing.InMemoryValuationRateSetStore;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
+import com.finapp.identity.RoleName;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import com.finapp.platform.audit.AuditOutcome;
@@ -143,7 +148,17 @@ class PeriodCloseDeskTest {
     };
     private final com.finapp.accounting.PriorPeriodAdjustments priorPeriodAdjustments = new com.finapp.accounting.PriorPeriodAdjustments(periods, priorPeriod,
             new com.finapp.accounting.testing.InMemoryPriorPeriodPostings(), new com.finapp.accounting.testing.InMemoryGlMappingStore(), (uow, record) -> audited.add(record), (uow, envelope, payload, mediaType) -> { }, IDS, CLOCK);
-    private final PeriodCloseDesk desk = new PeriodCloseDesk(machine, priorPeriodAdjustments, new IdempotentExecutor(new Claims(), CLOCK, Duration.ofDays(1), Duration.ofSeconds(30)), transactions, AccountingFlowScope.NONE);
+    /** What the read would hand back: its own statement is {@code JdbcReturnsAReopenOvertakesTest}'s, and PostgreSQL's answer {@code PeriodReopenDatabaseTest}'s, owed. */
+    private final List<ReturnsAReopenOvertakes.Item> sent = new ArrayList<>();
+    private long sentInAll = -1;
+    private boolean sentUnreadable;
+    private final ReturnsAReopenOvertakes overtaken = (uow, period) -> {
+        if (sentUnreadable) {
+            throw new AccountingStorageException("reading the returns a reopen overtakes: 53300");
+        }
+        return new ReturnsAReopenOvertakes.Overtaken(sent, sentInAll < 0 ? sent.size() : sentInAll);
+    };
+    private final PeriodCloseDesk desk = new PeriodCloseDesk(machine, priorPeriodAdjustments, overtaken, new IdempotentExecutor(new Claims(), CLOCK, Duration.ofDays(1), Duration.ofSeconds(30)), transactions, AccountingFlowScope.NONE);
     private AccountingPeriodId march;
     private CloseRunId run;
 
@@ -345,6 +360,131 @@ class PeriodCloseDeskTest {
         return adjustment.value().toString();
     }
 
+    /** {@code march} closed, nothing posted against it, by these keys. */
+    private void closed(String key) {
+        PeriodCloseDesk.PeriodCloseReceipt proposal = propose(key + "-p");
+        assertThat(proposal.overtakenReturns()).as("a close's acts read none").isEmpty();
+        assertThat(proposal.overtakenReturnsTotal()).isZero();
+        assertThat(proposal.overtakenReturnsNote()).as("and say nothing of one").isNull();
+        PeriodCloseDesk.PeriodCloseReceipt closed = as(CONTROLLER, () -> desk.approve(key + "-a", period(), proposal.proposalId(), "agreed"));
+        assertThat(closed.overtakenReturns()).isEmpty();
+        assertThat(closed.overtakenReturnsNote()).isNull();
+    }
+
+    private ReturnsAReopenOvertakes.Item aReturn(SubmissionStatus status) {
+        return new ReturnsAReopenOvertakes.Item(RegulatorySubmissionId.next(IDS), "REF-SAFEGUARDING_POSITION-2", status);
+    }
+
+    private static PeriodCloseDesk.OvertakenReturn listed(ReturnsAReopenOvertakes.Item item) {
+        return new PeriodCloseDesk.OvertakenReturn(item.id().value().toString(), item.form(), item.status().name());
+    }
+
+    @Test
+    @DisplayName("P14-TSK-023 (a): each of a reopen's two receipts lists the returns it overtakes, read at that act: id, form and status, the approval's holding what was sent since the proposal, and neither stops anything or is named back")
+    void aReopensReceiptsListTheReturnsItOvertakes() throws Exception {
+        closed("k-l1");
+        ReturnsAReopenOvertakes.Item acknowledged = aReturn(SubmissionStatus.ACKNOWLEDGED);
+        sent.add(acknowledged);
+
+        PeriodCloseDesk.PeriodCloseReceipt proposed = as(ACCOUNTANT, () -> desk.proposeReopen("k-l2", period(), List.of(), "a correction"));
+
+        assertThat(proposed.status()).as("it stopped nothing").isEqualTo("CLOSED");
+        assertThat(proposed.overtakenReturns()).containsExactly(listed(acknowledged));
+        assertThat(proposed.overtakenReturnsTotal()).isEqualTo(1);
+        assertThat(proposed.overtakenReturnsNote()).isEqualTo(PeriodCloseDesk.OVERTAKEN_RETURNS_NOTE);
+
+        ReturnsAReopenOvertakes.Item since = aReturn(SubmissionStatus.SUBMITTED);
+        sent.add(0, since);
+        PeriodCloseDesk.PeriodCloseReceipt reopened = as(CONTROLLER, () -> desk.approveReopen("k-l3", period(), List.of(), "agreed"));
+
+        assertThat(reopened.status()).as("it stopped nothing").isEqualTo("OPEN");
+        assertThat(reopened.overtakenReturns()).as("read at this act, not the proposal's").containsExactly(listed(since), listed(acknowledged));
+        assertThat(reopened.overtakenReturnsTotal()).isEqualTo(2);
+        assertThat(reopened.overtakenReturnsNote()).isEqualTo(PeriodCloseDesk.OVERTAKEN_RETURNS_NOTE);
+        assertThat(PeriodCloseController.PeriodReopenRequest.class.getRecordComponents()).as("nothing to name back").extracting(java.lang.reflect.RecordComponent::getName).containsExactly("reason", "postedAdjustments");
+    }
+
+    @Test
+    @DisplayName("P14-TSK-023 (a): a month with no returns reads an empty list and a total of none, never an absence, on both receipts, and the words say an empty list is not nothing in flight")
+    void aMonthWithNoReturnsReadsAnEmptyList() throws Exception {
+        closed("k-e1");
+
+        PeriodCloseDesk.PeriodCloseReceipt proposed = as(ACCOUNTANT, () -> desk.proposeReopen("k-e2", period(), List.of(), "a correction"));
+        PeriodCloseDesk.PeriodCloseReceipt reopened = as(CONTROLLER, () -> desk.approveReopen("k-e3", period(), List.of(), "agreed"));
+
+        for (PeriodCloseDesk.PeriodCloseReceipt receipt : List.of(proposed, reopened)) {
+            assertThat(receipt.overtakenReturns()).isNotNull().isEmpty();
+            assertThat(receipt.overtakenReturnsTotal()).isZero();
+            assertThat(receipt.overtakenReturnsNote()).contains("does not mean nothing is in flight");
+            assertThat(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(receipt)).contains("\"overtakenReturns\":[]").contains("\"overtakenReturnsTotal\":0");
+        }
+    }
+
+    @Test
+    @DisplayName("P14-TSK-023 (a): the words say what the list is and is not: information, read at the act, it decides nothing and a status may have moved; what it leaves out, APPROVED and UNDELIVERED; and the one door that lists what stands is real, asks what they say, and neither of a reopen's two people holds it")
+    void theWordsSayWhatTheListIsNot() throws Exception {
+        assertThat(PeriodCloseDesk.OVERTAKEN_RETURNS_NOTE).contains("Information only").contains("it stopped nothing and decides nothing").contains("a status may have moved since").contains("SUBMITTED or ACKNOWLEDGED")
+                .contains("at most 20 of overtakenReturnsTotal").contains("a return not yet sent").contains("One APPROVED can still be sent").contains("UNDELIVERED").contains("does not mean nothing is in flight");
+        assertThat(PeriodCloseDesk.OVERTAKEN_RETURNS_NOTE).contains("GET /v1/operator/regulatory/submissions under REGULATORY_REPORT_PREPARE");
+        assertThat("/v1" + RegulatorySubmissionController.class.getAnnotation(org.springframework.web.bind.annotation.RequestMapping.class).path()[0]).isEqualTo("/v1/operator/regulatory/submissions");
+        assertThat(RegulatorySubmissionController.class.getMethod("listStandingRegulatorySubmissions", String.class, Integer.class).getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.REGULATORY_REPORT_PREPARE);
+        assertThat(java.util.Arrays.stream(RoleName.values()).filter(role -> role.permissions().contains(PermissionName.REGULATORY_REPORT_PREPARE))
+                .filter(role -> role.permissions().contains(PermissionName.ACCOUNTING_CLOSE_PROPOSE) || role.permissions().contains(PermissionName.ACCOUNTING_CLOSE_APPROVE)).toList()).as("as the words say").isEmpty();
+    }
+
+    @Test
+    @DisplayName("P14-TSK-023 (a): a key's replay returns the stored list, whatever the returns have since done; a repeat under a new key converges and reads what stands now; the receipt is no part of the fingerprint")
+    void aReplayReturnsTheStoredList() {
+        closed("k-s1");
+        ReturnsAReopenOvertakes.Item first = aReturn(SubmissionStatus.SUBMITTED);
+        sent.add(first);
+        PeriodCloseDesk.PeriodCloseReceipt proposed = as(ACCOUNTANT, () -> desk.proposeReopen("k-s2", period(), List.of(), "a correction"));
+
+        ReturnsAReopenOvertakes.Item moved = new ReturnsAReopenOvertakes.Item(first.id(), first.form(), SubmissionStatus.ACKNOWLEDGED);
+        sent.set(0, moved);
+        sent.add(aReturn(SubmissionStatus.ACKNOWLEDGED));
+
+        assertThat(as(ACCOUNTANT, () -> desk.proposeReopen("k-s2", period(), List.of(), "a correction"))).as("the stored receipt, not what stands").isEqualTo(proposed);
+        PeriodCloseDesk.PeriodCloseReceipt again = as(ACCOUNTANT, () -> desk.proposeReopen("k-s3", period(), List.of(), "a correction"));
+        assertThat(again.overtakenReturns()).as("the same person's repeat converges, and reads what stands").hasSize(2).contains(listed(moved));
+
+        UUID some = UUID.randomUUID();
+        assertThat(PeriodCloseDesk.reopenFingerprint("reopen-approval", march, java.util.Set.of(), "r")).as("a body naming none, exactly as before").isEqualTo("reopen-approval|" + march.value() + "|r");
+        assertThat(PeriodCloseDesk.reopenFingerprint("reopen-approval", march, java.util.Set.of(some), "r")).as("one naming some, exactly as before").isEqualTo("reopen-approval-named|" + march.value() + "|[" + some + "]|r");
+    }
+
+    @Test
+    @DisplayName("P14-TSK-023 (a): the bound: a month holding more than a receipt lists serves the newest twenty and how many there are, and the stored receipt holds no more than that, a form's every character surviving it")
+    void aLongMonthIsBounded() {
+        closed("k-b1");
+        for (int held = 0; held < ReturnsAReopenOvertakes.NEWEST; held++) {
+            sent.add(aReturn(SubmissionStatus.ACKNOWLEDGED));
+        }
+        sentInAll = 47;
+
+        PeriodCloseDesk.PeriodCloseReceipt proposed = as(ACCOUNTANT, () -> desk.proposeReopen("k-b2", period(), List.of(), "a correction"));
+
+        assertThat(proposed.overtakenReturns()).hasSize(20).allSatisfy(item -> assertThat(item.form()).isEqualTo("REF-SAFEGUARDING_POSITION-2"));
+        assertThat(proposed.overtakenReturnsTotal()).as("more than it lists").isEqualTo(47);
+        assertThat(as(ACCOUNTANT, () -> desk.proposeReopen("k-b2", period(), List.of(), "a correction"))).isEqualTo(proposed);
+        IdempotencyKey key = new IdempotencyKey(AccountingPeriodDesk.SCOPE + ACCOUNTANT.type().name() + ":" + ACCOUNTANT.id(), "k-b2");
+        assertThat(claims.get(key).response().body()).as("what is stored is bounded: twenty of about a hundred bytes, and no word").hasSizeLessThan(3_000);
+        assertThat(new String(claims.get(key).response().body(), java.nio.charset.StandardCharsets.UTF_8)).doesNotContain("Information only");
+    }
+
+    @Test
+    @DisplayName("P14-TSK-023 (a): the read failing fails the act, nothing kept, never an empty list for what could not be read; the same key then goes through")
+    void aReadThatFailsIsNoEmptyList() {
+        closed("k-f0");
+        sentUnreadable = true;
+
+        assertThatThrownBy(() -> as(ACCOUNTANT, () -> desk.proposeReopen("k-f1", period(), List.of(), "a correction"))).isInstanceOf(AccountingStorageException.class);
+        assertThat(closes.reopens()).as("nothing kept").isEmpty();
+
+        sentUnreadable = false;
+        assertThat(as(ACCOUNTANT, () -> desk.proposeReopen("k-f1", period(), List.of(), "a correction")).overtakenReturnsNote()).isNotNull();
+    }
+
     @Test
     @DisplayName("P14-TSK-022 (m): a reopen's two acts name what has posted: naming none or another is the adjustment's own 409 accounting.PriorPeriodAdjustmentStale with nothing kept, and the same key then goes through; a malformed id is that refusal, never a 500; the detail names a count, never an id")
     void aReopenNamesWhatHasPosted() {
@@ -385,21 +525,34 @@ class PeriodCloseDeskTest {
     }
 
     @Test
-    @DisplayName("P14-TSK-022: a stored reopen receipt stays readable: a row from before P14-TSK-013 has six fields and replays with an empty list; and a body naming none fingerprints exactly as it did, so a retry across the deploy replays and is no conflict")
+    @DisplayName("P14-TSK-022, P14-TSK-023: a stored reopen receipt stays readable: a row from before P14-TSK-013 has six fields, one from before P14-TSK-023 seven; each replays with an empty list, a total of none and no note, since it read no list; and a body naming none fingerprints exactly as it did, so a retry across the deploy replays and is no conflict")
     void aStoredReceiptStaysReadable() {
         as(ACCOUNTANT, () -> {
-            String key = "k-old";
-            String fingerprinted = PeriodCloseDesk.reopenFingerprint("reopen-proposal", march, java.util.Set.of(), "from before");
-            assertThat(fingerprinted).isEqualTo("reopen-proposal|" + march.value() + "|from before");
-            IdempotencyKey stored = new IdempotencyKey(AccountingPeriodDesk.SCOPE + ACCOUNTANT.type().name() + ":" + ACCOUNTANT.id(), key);
-            String sixFields = march.value() + "|" + MARCH + "|CLOSED|1||";
-            claims.put(stored, new IdempotencyRecord(stored, RequestFingerprint.sha256(fingerprinted.getBytes(java.nio.charset.StandardCharsets.UTF_8)), IdempotencyState.COMPLETED,
-                    StoredResponse.of(sixFields.getBytes(java.nio.charset.StandardCharsets.UTF_8), "text/plain"), CorrelationId.generate(IDS), CLOCK.instant(), CLOCK.instant().plus(Duration.ofDays(1))));
+            String adjustment = UUID.randomUUID().toString();
+            Map<String, java.util.function.Consumer<PeriodCloseDesk.PeriodCloseReceipt>> rows = new java.util.LinkedHashMap<>();
+            rows.put(march.value() + "|" + MARCH + "|CLOSED|1||", replayed -> assertThat(replayed.priorPeriodAdjustments()).isEmpty());
+            rows.put(march.value() + "|" + MARCH + "|CLOSED|1|||", replayed -> assertThat(replayed.priorPeriodAdjustments()).isEmpty());
+            rows.put(march.value() + "|" + MARCH + "|CLOSED|1|||" + adjustment, replayed -> assertThat(replayed.priorPeriodAdjustments()).containsExactly(adjustment));
+            int row = 0;
+            for (Map.Entry<String, java.util.function.Consumer<PeriodCloseDesk.PeriodCloseReceipt>> old : rows.entrySet()) {
+                String key = "k-old-" + row++;
+                String fingerprinted = PeriodCloseDesk.reopenFingerprint("reopen-proposal", march, java.util.Set.of(), "from before");
+                assertThat(fingerprinted).isEqualTo("reopen-proposal|" + march.value() + "|from before");
+                IdempotencyKey stored = new IdempotencyKey(AccountingPeriodDesk.SCOPE + ACCOUNTANT.type().name() + ":" + ACCOUNTANT.id(), key);
+                claims.put(stored, new IdempotencyRecord(stored, RequestFingerprint.sha256(fingerprinted.getBytes(java.nio.charset.StandardCharsets.UTF_8)), IdempotencyState.COMPLETED,
+                        StoredResponse.of(old.getKey().getBytes(java.nio.charset.StandardCharsets.UTF_8), "text/plain"), CorrelationId.generate(IDS), CLOCK.instant(), CLOCK.instant().plus(Duration.ofDays(1))));
 
-            PeriodCloseDesk.PeriodCloseReceipt replayed = desk.proposeReopen(key, period(), null, "from before");
+                PeriodCloseDesk.PeriodCloseReceipt replayed = desk.proposeReopen(key, period(), null, "from before");
 
-            assertThat(replayed.status()).isEqualTo("CLOSED");
-            assertThat(replayed.priorPeriodAdjustments()).isEmpty();
+                assertThat(replayed.status()).isEqualTo("CLOSED");
+                assertThat(replayed.revision()).isEqualTo(1);
+                assertThat(replayed.proposalId()).isNull();
+                assertThat(replayed.closeRunId()).isNull();
+                old.getValue().accept(replayed);
+                assertThat(replayed.overtakenReturns()).as("it read no list").isEmpty();
+                assertThat(replayed.overtakenReturnsTotal()).isZero();
+                assertThat(replayed.overtakenReturnsNote()).as("so it says nothing of one").isNull();
+            }
             return null;
         });
         UUID some = UUID.randomUUID();
