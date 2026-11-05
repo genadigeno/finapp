@@ -32,6 +32,12 @@ import lombok.RequiredArgsConstructor;
  * domain's refusals onto the error contract; a refused self-approval is recorded {@code FAILED} in a transaction of its
  * own. The machine, the order, the grace, the pin, the cutoff's move and the four eyes are the domain's and
  * {@code accounting V003}'s; nothing here decides them.
+ *
+ * <p><strong>An unlock's end</strong> (`P14-TSK-024`): a second person's rejection and the proposer's withdrawal, keyed and
+ * reasoned as the unlock's acts are. Each names only the period, as the proposal and the approval do - an unlock request has
+ * no id of its own - and ends the request pending when it acts, under the period's row; an end moves nothing, so the worst a
+ * stale one can do is end a later request its proposer then proposes again. A proposer's rejection of their own is recorded
+ * {@code FAILED} as a self-approval is.
  */
 @RequiredArgsConstructor
 public final class AccountingPeriodDesk {
@@ -41,6 +47,8 @@ public final class AccountingPeriodDesk {
     static final String LOCK_SPAN = "accounting.period.lock";
     static final String UNLOCK_PROPOSE_SPAN = "accounting.period.unlock.propose";
     static final String UNLOCK_APPROVE_SPAN = "accounting.period.unlock.approve";
+    static final String UNLOCK_REJECT_SPAN = "accounting.period.unlock.reject";
+    static final String UNLOCK_WITHDRAW_SPAN = "accounting.period.unlock.withdraw";
     static final String READ_SPAN = "accounting.period.read";
 
     /** The list's default and largest page - two years, and ten. */
@@ -95,6 +103,26 @@ public final class AccountingPeriodDesk {
         return flow.door(UNLOCK_APPROVE_SPAN, () -> keyed(actor, idempotencyKey,
                 "unlock-approval|" + id.value() + "|" + reason,
                 uow -> receipt(periods.approveUnlock(uow, id, actor, reason, correlation))));
+    }
+
+    /** Rejects the pending unlock - a second person's decision (`P14-TSK-024`): the period stays {@code LOCKED}, nothing moves. */
+    public AccountingPeriodReceipt rejectUnlock(String idempotencyKey, String rawId, String reason) {
+        AccountingPeriodId id = periodId(rawId);
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        return flow.door(UNLOCK_REJECT_SPAN, () -> keyed(actor, idempotencyKey,
+                "unlock-rejection|" + id.value() + "|" + reason,
+                uow -> receipt(periods.rejectUnlock(uow, id, actor, reason, correlation))));
+    }
+
+    /** Withdraws the pending unlock - its proposer's own act (`P14-TSK-024`): the period stays {@code LOCKED}, nothing moves. */
+    public AccountingPeriodReceipt withdrawUnlock(String idempotencyKey, String rawId, String reason) {
+        AccountingPeriodId id = periodId(rawId);
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        return flow.door(UNLOCK_WITHDRAW_SPAN, () -> keyed(actor, idempotencyKey,
+                "unlock-withdrawal|" + id.value() + "|" + reason,
+                uow -> receipt(periods.withdrawUnlock(uow, id, actor, reason, correlation))));
     }
 
     /** The latest periods, newest first - a read, unkeyed, in one transaction; {@code limit} held to 1..120. */
@@ -179,6 +207,8 @@ public final class AccountingPeriodDesk {
             throw notFound();
         } catch (AccountingPeriods.SelfApprovalRefused self) {
             throw refused(AccountingErrorCode.SELF_APPROVAL_REFUSED, self);
+        } catch (AccountingPeriods.NotTheProposer other) {
+            throw refused(AccountingErrorCode.NOT_THE_PROPOSER, other);
         } catch (AccountingPeriods.PeriodStale stale) {
             throw refused(AccountingErrorCode.PERIOD_STALE, stale);
         } catch (AccountingPeriods.PeriodNotLockable early) {

@@ -4887,7 +4887,7 @@ platform's own identifiers, months, versions, counters and the database's stamps
 | `period_event` | `revision` | `INTERNAL` | The period's revision at the act |
 | `period_event` | `actor` | `CONFIDENTIAL` | Who acted - the platform only for the open, a person otherwise, by `CHECK` |
 | `period_event` | `actor_type` | `INTERNAL` | A closed actor type |
-| `period_event` | `proposed_by` | `CONFIDENTIAL` | The unlock's proposer, named on its approval - never the approver, by `CHECK` |
+| `period_event` | `proposed_by` | `CONFIDENTIAL` | The proposer, named on an approval and a rejection - never that actor, by `CHECK` - and on a withdrawal, where it is the actor (`P14-TSK-024`) |
 | `period_event` | `pinned_mapping_version_id` | `INTERNAL` | The version a lock pinned - accounting's own row |
 | `period_event` | `reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
 | `period_event` | `occurred_at` | `INTERNAL` | The database's stamp |
@@ -5033,12 +5033,12 @@ so it is `CONFIDENTIAL`, served to an operator under `ACCOUNTING_READ` and read 
 | `close_check` | `judged_by` | `INTERNAL` | The versions the attempt read - codes and a set's id |
 | `close_check` | `failures` | `INTERNAL` | Closed codes |
 | `close_check` | `evidence` | `CONFIDENTIAL` | Canonical JSON: codes, ids, counts and aggregates per currency in minor units - never an owner reference or a name |
-| `close_check` | `concluded_at` | `INTERNAL` | The database's stamp |
+| `close_check` | `concluded_at` | `INTERNAL` | The database's stamp - served to the approver beside the evidence of a proposed attempt, under `ACCOUNTING_CLOSE_APPROVE` (`P14-TSK-024`) |
 | `close_check` | `correlation_id` | `INTERNAL` | The run's, or the re-run request's |
 
 ### `accounting.period_close`, `period_close_check` and `period_reopen` - the close record and the reopen - *added by `P14-TSK-012`*
 
-`accounting V008`: a person's proposal to close a `LOCKED` period, one row per proposal, with nine rows naming the attempts read; a person's proposal to reopen the latest `CLOSED` one, one per revision. Never deleted, `period_close_check` `INSERT`-only. **No money moves here, and no column is an amount.** `evidence` is a copy, for a `DISCLOSED` attempt, of `close_check.evidence` as it froze: canonical JSON of closed codes, ids, counts and aggregates per currency in minor units, so `CONFIDENTIAL` as there. `disclosure_reason` is **a person's explanation of a discrepancy, served to the approver under `ACCOUNTING_CLOSE_APPROVE`** and read audited, screened for instrument shapes (`AccountingReasons`), never logged, in no summary and no metric: `CONFIDENTIAL`, one step below a reason nobody reads. The proposal's, decision's and reopen's own reasons are person-written and never served: `RESTRICTED-PII`, as every accounting reason. The persons `CONFIDENTIAL`, their closed types `INTERNAL`; ids, codes, counts and the database's stamps `INTERNAL`. No customer or merchant route reads any of it (`NoCustomerSurfaceReadsAccountingTest`).
+`accounting V008`: a person's proposal to close a `LOCKED` period, one row per proposal, with nine rows naming the attempts read; a person's proposal to reopen the latest `CLOSED` one, one per revision *(`P14-TSK-024`, `V011`: one pending per period and one approved per revision, a pending one ended by a second person's rejection or its proposer's withdrawal, its end's person, stamp and reason beside it)*. Never deleted, `period_close_check` `INSERT`-only. **No money moves here, and no column is an amount.** `evidence` is a copy, for a `DISCLOSED` attempt, of `close_check.evidence` as it froze: canonical JSON of closed codes, ids, counts and aggregates per currency in minor units, so `CONFIDENTIAL` as there. `disclosure_reason` is **a person's explanation of a discrepancy, served to the approver under `ACCOUNTING_CLOSE_APPROVE`** and read audited, screened for instrument shapes (`AccountingReasons`), never logged, in no summary and no metric: `CONFIDENTIAL`, one step below a reason nobody reads. The proposal's, decision's and reopen's own reasons are person-written and never served: `RESTRICTED-PII`, as every accounting reason. The persons `CONFIDENTIAL`, their closed types `INTERNAL`; ids, codes, counts and the database's stamps `INTERNAL`. No customer or merchant route reads any of it (`NoCustomerSurfaceReadsAccountingTest`).
 
 | Table | Column | Level | Note |
 |---|---|---|---|
@@ -5071,8 +5071,8 @@ so it is `CONFIDENTIAL`, served to an operator under `ACCOUNTING_READ` and read 
 | `period_close_check` | `disclosure_reason` | `CONFIDENTIAL` | A person's explanation of a `DISCLOSED` attempt; screened for instrument shapes; served to the approver under `ACCOUNTING_CLOSE_APPROVE`, read audited; never logged, in no summary or metric |
 | `period_reopen` | `id` | `INTERNAL` | Generated - the proposal's identity |
 | `period_reopen` | `period_id` | `INTERNAL` | The accounting period |
-| `period_reopen` | `period_revision` | `INTERNAL` | The revision it would leave - one reopen per revision |
-| `period_reopen` | `status` | `INTERNAL` | The machine's state - `PROPOSED`, `APPROVED` |
+| `period_reopen` | `period_revision` | `INTERNAL` | The revision it would leave - one pending per period and one approved per revision (`P14-TSK-024`; one per revision until then) |
+| `period_reopen` | `status` | `INTERNAL` | The machine's state - `PROPOSED`, `APPROVED`, and since `P14-TSK-024` `REJECTED`, `WITHDRAWN` |
 | `period_reopen` | `proposed_by` | `CONFIDENTIAL` | The accountant who proposed it |
 | `period_reopen` | `proposed_by_type` | `INTERNAL` | A closed actor type - a person's, by `CHECK` |
 | `period_reopen` | `proposed_at` | `INTERNAL` | The database's stamp |
@@ -5082,6 +5082,30 @@ so it is `CONFIDENTIAL`, served to an operator under `ACCOUNTING_READ` and read 
 | `period_reopen` | `approved_at` | `INTERNAL` | The database's stamp |
 | `period_reopen` | `approval_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
 | `period_reopen` | `correlation_id` | `INTERNAL` | The proposing flow's correlation |
+| `period_reopen` | `ended_by` | `CONFIDENTIAL` | Who ended it without its effect (`P14-TSK-024`): a second person's rejection - never the proposer, by `CHECK` - or the proposer's own withdrawal |
+| `period_reopen` | `ended_by_type` | `INTERNAL` | A closed actor type - a person's |
+| `period_reopen` | `ended_at` | `INTERNAL` | The database's stamp |
+| `period_reopen` | `end_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
+
+### `accounting.period_unlock_end` - an unlock ended without its effect - *added by `P14-TSK-024`*
+
+`accounting V011`: a pending unlock rejected by a second person or withdrawn by its proposer, copied from the `LOCKED` period row that held it - its lock instance, revision, proposer and the instant it was proposed - in the transaction that clears the proposal from that row. `INSERT`-only, never deleted. **No money moves here, and no column is an amount**; the cutoff and the pin do not move. The persons `CONFIDENTIAL`, as on the period row they are copied from; their closed types, the outcome, ids and the database's stamps `INTERNAL`; the reason person-written and never served, `RESTRICTED-PII` as every accounting reason. No route serves the row: an act's receipt names the period, and a refusal names only the outcome. No customer or merchant route reads any of it (`NoCustomerSurfaceReadsAccountingTest`).
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `period_unlock_end` | `id` | `INTERNAL` | Generated - the end's identity |
+| `period_unlock_end` | `period_id` | `INTERNAL` | The accounting period |
+| `period_unlock_end` | `period_revision` | `INTERNAL` | The period's revision at the end |
+| `period_unlock_end` | `period_locked_at` | `INTERNAL` | The lock instance the request was made under - the database's stamp, copied |
+| `period_unlock_end` | `proposed_by` | `CONFIDENTIAL` | The accountant who proposed the unlock, copied from the period row |
+| `period_unlock_end` | `proposed_by_type` | `INTERNAL` | A closed actor type - a person's, by `CHECK` |
+| `period_unlock_end` | `proposed_at` | `INTERNAL` | When the unlock was proposed - the database's stamp, copied; with the lock instance, the request's identity |
+| `period_unlock_end` | `outcome` | `INTERNAL` | A closed code - `REJECTED`, `WITHDRAWN` |
+| `period_unlock_end` | `ended_by` | `CONFIDENTIAL` | The second person who rejected it, never the proposer, or the proposer who withdrew it - by `CHECK` |
+| `period_unlock_end` | `ended_by_type` | `INTERNAL` | A closed actor type - a person's, by `CHECK` |
+| `period_unlock_end` | `ended_at` | `INTERNAL` | The database's stamp |
+| `period_unlock_end` | `end_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
+| `period_unlock_end` | `correlation_id` | `INTERNAL` | The ending flow's correlation |
 
 ### `accounting.prior_period_adjustment` - the prior-period adjustment - *added by `P14-TSK-013`*
 
@@ -5139,7 +5163,7 @@ so it is `CONFIDENTIAL`, served to an operator under `ACCOUNTING_READ` and read 
 
 `accounting V010`: one return, `REFERENCE` only, content frozen from birth. Aggregates per currency and account, as the `FINAL` run it read; output, never truth. No customer name or instrument. Regulatory content is `CONFIDENTIAL` (`PHASE_14_PLAN.md` section 12).
 
-**A reopen's two receipts serve three of these columns** (`P14-TSK-023`): `id`, `form_code` and `status`, `INTERNAL` below, of each return `SUBMITTED` or `ACKNOWLEDGED` for the month, and how many in all. **Under `ACCOUNTING_CLOSE_APPROVE`** a financial controller reads them, who already holds `REGULATORY_REPORT_APPROVE` and attests these returns' content, so nothing here is new to that role. **Under `ACCOUNTING_CLOSE_PROPOSE`** an accountant reads them, who holds no `REGULATORY_*` permission, so this is wider than before, deliberately: the person reopening a month is told what it overtakes. Both stand: a form's code is `REF-...` configuration, a status the machine's word and an id opens no door to a role that lacks the regulatory permissions; no figure, content, person, reason, answer or provider's reference is on the list, and the statement selects none (`JdbcReturnsAReopenOvertakes`). The list is stored inside the key's `idempotency_record.response_body`, `RESTRICTED-FINANCIAL` above, which holds a whole response; a level above what it holds here. Each act's audit is as it was, and no log line prints the receipt.
+**A reopen's two receipts serve three of these columns** (`P14-TSK-023`): `id`, `form_code` and `status`, `INTERNAL` below, of each return `SUBMITTED` or `ACKNOWLEDGED` for the month, and how many in all. **So does the approver's read before deciding** (`P14-TSK-024`): `GET .../periods/{periodId}/close-proposal`, while a reopen is pending, the same statement and the same three columns, under `ACCOUNTING_CLOSE_APPROVE`, its record naming only how many were listed. **Under `ACCOUNTING_CLOSE_APPROVE`** a financial controller reads them, who already holds `REGULATORY_REPORT_APPROVE` and attests these returns' content, so nothing here is new to that role. **Under `ACCOUNTING_CLOSE_PROPOSE`** an accountant reads them, who holds no `REGULATORY_*` permission, so this is wider than before, deliberately: the person reopening a month is told what it overtakes. Both stand: a form's code is `REF-...` configuration, a status the machine's word and an id opens no door to a role that lacks the regulatory permissions; no figure, content, person, reason, answer or provider's reference is on the list, and the statement selects none (`JdbcReturnsAReopenOvertakes`). The list is stored inside the key's `idempotency_record.response_body`, `RESTRICTED-FINANCIAL` above, which holds a whole response; a level above what it holds here. Each act's audit is as it was, and no log line prints the receipt.
 
 | Table | Column | Level | Note |
 |---|---|---|---|

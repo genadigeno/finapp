@@ -23,7 +23,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * The close's and the reopen's doors (`P14-TSK-012`; ADR-0114; {@code PHASE_14_PLAN.md} sections 6, 10, 12, 13.5; {@code INV-ACC-09}, {@code -10}, {@code INV-AUD-04}): an accountant proposes a close on the attempts they read
- * and a reopen under {@code ACCOUNTING_CLOSE_PROPOSE}; a financial controller - a different person - reads what it decides, approves or rejects the close and approves the reopen under {@code ACCOUNTING_CLOSE_APPROVE}. Every act keyed
+ * and a reopen under {@code ACCOUNTING_CLOSE_PROPOSE}; a financial controller - a different person - reads what it decides, approves or rejects the close and approves the reopen under {@code ACCOUNTING_CLOSE_APPROVE}. A pending reopen ends without its
+ * effect (`P14-TSK-024`): rejected by a different person under {@code ACCOUNTING_CLOSE_APPROVE}, or withdrawn by its proposer under {@code ACCOUNTING_CLOSE_PROPOSE}; neither takes a {@code MULTI_FACTOR} session, as the approval does not. Every act keyed
  * per principal. A controller holds no {@code ACCOUNTING_READ}, so its read of what it approves is a route here (identity {@code V025}'s partition; the mapping diff's precedent). Reasons are never logged. The handlers' names are
  * distinctive (the springdoc {@code operationId} rule).
  */
@@ -48,7 +49,11 @@ public class PeriodCloseController {
                 : body.disclosures().stream().map(item -> new PeriodCloseDesk.StatedDisclosure(item.check(), item.attempt(), item.reason())).toList());
     }
 
-    /** The period's latest close proposal as its approver reads it: each attempt with its evidence, the reason per DISCLOSED attempt, whether it still stands, and the adjustments posted against the month, which a reopen's approver names. Audited. */
+    /**
+     * The period's latest close proposal as its approver reads it: each attempt with its evidence, when it concluded (concludedAt, the database's clock: nothing re-judges it at the approval) and the reason per DISCLOSED attempt, whether it still stands, and the
+     * adjustments posted against the month, which a reopen's approver names. On a pending reopen (reopenPending), the returns it would overtake (overtakenReturns, overtakenReturnsTotal, overtakenReturnsNote), read here holding nothing: information, which the approval's
+     * receipt reads again and may differ from; null when no reopen is pending. Audited.
+     */
     @GetMapping("/{periodId}/close-proposal")
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
     public PeriodCloseDesk.CloseProposalView readAccountingPeriodCloseProposal(@PathVariable("periodId") String periodId) {
@@ -105,6 +110,34 @@ public class PeriodCloseController {
         return desk.approveReopen(idempotencyKey, periodId, body.postedAdjustments(), body.reason());
     }
 
+    /**
+     * Rejects a pending reopen - a person other than its proposer: the reopen REJECTED, the period still CLOSED at its revision, nothing superseded and the cutoff unmoved; a new reopen may be proposed. A reason is required. The proposer is refused 403
+     * accounting.SelfApprovalRefused and withdraws instead. With none pending, 409 accounting.PeriodStale says whether it was approved, rejected or withdrawn.
+     */
+    @PostMapping(path = "/{periodId}/reopen-rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
+    @RequiresIdempotencyKey
+    public PeriodCloseDesk.PeriodCloseReceipt rejectAccountingPeriodReopen(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @PathVariable("periodId") String periodId,
+            @Valid @RequestBody ReopenEndRequest body) {
+        return desk.rejectReopen(idempotencyKey, periodId, body.reason());
+    }
+
+    /**
+     * Withdraws a pending reopen - its proposer alone: the reopen WITHDRAWN, the period still CLOSED at its revision, nothing superseded and the cutoff unmoved; a new reopen may be proposed. A reason is required. Anyone else is refused 403
+     * accounting.NotTheProposer. With none pending, 409 accounting.PeriodStale says whether it was approved, rejected or withdrawn.
+     */
+    @PostMapping(path = "/{periodId}/reopen-withdrawal", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
+    @RequiresIdempotencyKey
+    public PeriodCloseDesk.PeriodCloseReceipt withdrawAccountingPeriodReopen(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @PathVariable("periodId") String periodId,
+            @Valid @RequestBody ReopenEndRequest body) {
+        return desk.withdrawReopen(idempotencyKey, periodId, body.reason());
+    }
+
     // -----------------------------------------------------------------
 
     /** The proposal: the run read, the act's reason, a reason per DISCLOSED attempt (at most one per check). */
@@ -137,6 +170,17 @@ public class PeriodCloseController {
         @Override
         public String toString() {
             return "CloseDecisionRequest[" + proposalId + "]";
+        }
+    }
+
+    /** A reopen's end (`P14-TSK-024`): its reason ({@code accounting.ReasonRequired} when missing), and nothing to name - the end is of the reopen pending when it acts. */
+    @ClosedBody
+    public record ReopenEndRequest(@Size(max = 1000) String reason) {
+
+        /** The reason stays out of a log line: a record's generated {@code toString} would carry it. */
+        @Override
+        public String toString() {
+            return "ReopenEndRequest[]";
         }
     }
 

@@ -793,6 +793,8 @@ class CredentialReachesNoEmittedSinkTest {
                         "CloseProposalRequest",
                         "CloseDecisionRequest",
                         "PeriodReopenRequest",
+                        // P14-TSK-024: a reopen's rejection or withdrawal - a reason alone, screened by AccountingReasons, never served.
+                        "ReopenEndRequest",
                         // P14-TSK-013: the prior-period adjustment's bodies - ids, dates and decimal strings, and reasons screened by AccountingReasons.
                         "PriorPeriodAdjustmentRequest",
                         "PriorPeriodApprovalRequest",

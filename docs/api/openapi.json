@@ -472,6 +472,41 @@
           }
         }
       },
+      "accounting.NotTheProposer": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.NotTheProposer"
+                    },
+                    "status": {
+                      "const": 403
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.NotTheProposer"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[403] Only its proposer withdraws a pending unlock or reopen; another person rejects it. Nothing was changed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.PeriodNotLockable": {
         "content": {
           "application/problem+json": {
@@ -1232,7 +1267,7 @@
             }
           }
         },
-        "description": "[403] A proposal is decided by someone other than its proposer; the proposer may reject it.",
+        "description": "[403] A proposal is decided by someone other than its proposer; the proposer may reject it, except a pending unlock or reopen, which its proposer withdraws.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -16695,6 +16730,9 @@
           "check": {
             "type": "string"
           },
+          "concludedAt": {
+            "type": "string"
+          },
           "disclosureReason": {
             "type": "string"
           },
@@ -16758,6 +16796,19 @@
           "lockedAt": {
             "type": "string"
           },
+          "overtakenReturns": {
+            "items": {
+              "$ref": "#/components/schemas/OvertakenReturn"
+            },
+            "type": "array"
+          },
+          "overtakenReturnsNote": {
+            "type": "string"
+          },
+          "overtakenReturnsTotal": {
+            "format": "int64",
+            "type": "integer"
+          },
           "period": {
             "type": "string"
           },
@@ -16774,6 +16825,12 @@
             "type": "string"
           },
           "proposedAt": {
+            "type": "string"
+          },
+          "reopenPending": {
+            "type": "boolean"
+          },
+          "reopenProposedAt": {
             "type": "string"
           },
           "revision": {
@@ -26112,6 +26169,16 @@
         "required": [
           "reason"
         ],
+        "type": "object"
+      },
+      "ReopenEndRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "RepaymentAllocationView": {
@@ -35940,6 +36007,96 @@
         }
       }
     },
+    "/v1/operator/accounting/periods/{periodId}/reopen-rejection": {
+      "post": {
+        "operationId": "rejectAccountingPeriodReopen",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "periodId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReopenEndRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeriodCloseReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/periods/{periodId}/reopen-withdrawal": {
+      "post": {
+        "operationId": "withdrawAccountingPeriodReopen",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "periodId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReopenEndRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeriodCloseReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/accounting/periods/{periodId}/unlock-approval": {
       "post": {
         "operationId": "approveAccountingPeriodUnlock",
@@ -35988,6 +36145,96 @@
     "/v1/operator/accounting/periods/{periodId}/unlock-proposal": {
       "post": {
         "operationId": "proposeAccountingPeriodUnlock",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "periodId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountingPeriodActRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountingPeriodReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/periods/{periodId}/unlock-rejection": {
+      "post": {
+        "operationId": "rejectAccountingPeriodUnlock",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "periodId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountingPeriodActRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountingPeriodReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/periods/{periodId}/unlock-withdrawal": {
+      "post": {
+        "operationId": "withdrawAccountingPeriodUnlock",
         "parameters": [
           {
             "in": "header",

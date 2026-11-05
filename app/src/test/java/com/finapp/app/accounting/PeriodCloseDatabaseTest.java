@@ -24,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.finapp.accounting.AccountingBreakId;
 import com.finapp.accounting.AccountingBreakStore;
 import com.finapp.accounting.AccountingPeriodId;
+import com.finapp.accounting.AccountingPeriodStore;
 import com.finapp.accounting.AccountingPeriods;
 import com.finapp.accounting.AccountingReasons;
 import com.finapp.accounting.BreakFinding;
@@ -67,6 +68,10 @@ import org.junit.jupiter.api.Test;
  * <strong>Written and owed</strong> (owner decision C5: the database tiers are skipped per task).
  *
  * <p><strong>A database of its own</strong> ({@code own-container}): it closes January 1999, a shared fixture no other suite's January could then lock, and activates a GL mapping from it.
+ *
+ * <p><strong>An unlock's end</strong> (`P14-TSK-024`, {@code accounting V011}): {@link #aPendingUnlockEndsWithoutItsEffect} and {@link #anUnlocksRejectionRacingItsApprovalOneWins}. JUnit runs this class in its default order, by the hash of each name: the race second, after
+ * {@code anIncompleteRunCannotBeProposed}, and the end ninth, before {@code whatMovedRefusesTheApproval}. Neither depends on it: each locks January afresh, counts its own rows as a difference from what stood before it, and leaves January {@code LOCKED} or
+ * {@code OPEN}, which {@link #januaryIsOpen} returns to {@code OPEN} through the machine's own doors, a pending unlock approved and none proposed and approved. An end row is never deleted, so an earlier lock's stands; each case reads only its own lock's.
  */
 @Tag("database")
 @Tag("own-container") // its own JVM and database: ownContainerDatabaseTest, the javadoc says why
@@ -126,6 +131,139 @@ class PeriodCloseDatabaseTest {
         assertThat(count("SELECT count(*) FROM accounting.period_event WHERE act = 'CLOSED' AND period_id = '" + january.value() + "'")).isEqualTo(history + 1);
         assertThat(row(JANUARY).lockedAt()).as("the lock stands through CLOSED: ADR-0115").isPresent();
         assertThat(row(JANUARY).pinned()).isPresent();
+    }
+
+    // ------------------------------------------------------------------ an unlock's end (P14-TSK-024)
+
+    @Test
+    @DisplayName("P14-TSK-024 (d): a pending unlock ends without its effect: the proposer's rejection refused by the domain, the end row's CHECK and the history's; a raw clearing with no end, an end left beside the proposal, and an end of nothing refused for the owner itself; a second person's rejection leaves the lock, its pin, the revision and the cutoff, one end, one history row and one audit record; the repeat converges; the month free, and the proposer alone withdraws")
+    void aPendingUnlockEndsWithoutItsEffect() throws Exception {
+        AccountingPeriodId january = PeriodCloseFixture.locked(JANUARY);
+        String period = january.value().toString();
+        AccountingPeriodStore.PeriodRow locked = row(JANUARY);
+        Optional<java.time.LocalDate> cut = AccountingPeriodFixture.closedThrough();
+        Actor proposer = person();
+        inScope(proposer, uow -> periods().proposeUnlock(uow, january, proposer, "a missed accrual", correlation()));
+
+        assertThatThrownBy(() -> inScope(proposer, uow -> periods().rejectUnlock(uow, january, proposer, "mine", correlation()))).isInstanceOf(AccountingPeriods.SelfApprovalRefused.class);
+        refused(rawEnd(period, "'REJECTED', p.unlock_proposed_by"), "period_unlock_end_four_eyes");
+        refused("INSERT INTO accounting.period_event (id, period_id, act, from_status, to_status, revision, actor, actor_type, proposed_by, reason, occurred_at, correlation_id) VALUES ('"
+                + IDS.next() + "', '" + period + "', 'UNLOCK_REJECTED', 'LOCKED', 'LOCKED', 1, 'same', 'CUSTOMER', 'same', 'raw', clock_timestamp(), 'raw')", "period_event_four_eyes");
+        refused("UPDATE accounting.accounting_period SET unlock_proposed_by = NULL, unlock_proposed_by_type = NULL, unlock_proposed_at = NULL, unlock_proposal_reason = NULL WHERE id = '" + period + "'",
+                "only beside the record of its end");
+        refused(rawEnd(period, "'REJECTED', 'raw-other'"), "committed beside a period still holding");
+        assertThat(row(JANUARY).unlockPending()).as("every refusal left the request standing").isTrue();
+
+        long ends = count("SELECT count(*) FROM accounting.period_unlock_end WHERE period_id = '" + period + "'");
+        long history = count("SELECT count(*) FROM accounting.period_event WHERE act = 'UNLOCK_REJECTED' AND period_id = '" + period + "'");
+        long records = count("SELECT count(*) FROM platform.audit_record WHERE operation = 'accounting.PeriodUnlockRejected' AND target_id = '" + period + "'");
+        Actor rejecter = person();
+
+        AccountingPeriods.Acted rejected = inScope(rejecter, uow -> periods().rejectUnlock(uow, january, rejecter, "not needed after all", correlation()));
+
+        assertThat(rejected.status()).isEqualTo(PeriodStatus.LOCKED);
+        AccountingPeriodStore.PeriodRow after = row(JANUARY);
+        assertThat(after.status()).isEqualTo(PeriodStatus.LOCKED);
+        assertThat(after.lockedAt()).as("the same lock instance").isEqualTo(locked.lockedAt());
+        assertThat(after.pinned()).as("the same pin (INV-ACC-07)").isEqualTo(locked.pinned());
+        assertThat(after.revision()).isEqualTo(locked.revision());
+        assertThat(after.unlockPending()).isFalse();
+        assertThat(AccountingPeriodFixture.closedThrough()).as("no cutoff moved (INV-ACC-08)").isEqualTo(cut);
+        assertThat(count("SELECT count(*) FROM accounting.period_unlock_end WHERE period_id = '" + period + "' AND outcome = 'REJECTED' AND ended_by = '" + rejecter.id() + "' AND proposed_by = '"
+                + proposer.id() + "'")).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM accounting.period_unlock_end WHERE period_id = '" + period + "'")).isEqualTo(ends + 1);
+        assertThat(count("SELECT count(*) FROM accounting.period_event WHERE act = 'UNLOCK_REJECTED' AND period_id = '" + period + "' AND proposed_by = '" + proposer.id() + "'")).isPositive();
+        assertThat(count("SELECT count(*) FROM accounting.period_event WHERE act = 'UNLOCK_REJECTED' AND period_id = '" + period + "'")).isEqualTo(history + 1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'accounting.PeriodUnlockRejected' AND target_id = '" + period + "'")).isEqualTo(records + 1);
+
+        assertThat(inScope(rejecter, uow -> periods().rejectUnlock(uow, january, rejecter, "not needed after all", correlation())).replayed()).as("the same person's repeat converges").isTrue();
+        assertThat(count("SELECT count(*) FROM accounting.period_unlock_end WHERE period_id = '" + period + "'")).as("written once").isEqualTo(ends + 1);
+        refused(rawEnd(period, "'REJECTED', 'raw-other'"), "names the pending unlock");
+        assertThatThrownBy(() -> inScope(CONTROLLER, uow -> periods().approveUnlock(uow, january, CONTROLLER, "late", correlation()))).isInstanceOf(AccountingPeriods.PeriodStale.class)
+                .hasMessageContaining("was REJECTED");
+
+        Actor again = person();
+        inScope(again, uow -> periods().proposeUnlock(uow, january, again, "another accrual", correlation()));
+        assertThatThrownBy(() -> inScope(proposer, uow -> periods().withdrawUnlock(uow, january, proposer, "not mine", correlation()))).isInstanceOf(AccountingPeriods.NotTheProposer.class);
+        refused(rawEnd(period, "'WITHDRAWN', 'raw-other'"), "period_unlock_end_four_eyes");
+        assertThat(inScope(again, uow -> periods().withdrawUnlock(uow, january, again, "the wrong month", correlation())).status()).isEqualTo(PeriodStatus.LOCKED);
+        assertThat(count("SELECT count(*) FROM accounting.period_unlock_end WHERE period_id = '" + period + "' AND outcome = 'WITHDRAWN' AND ended_by = '" + again.id() + "'")).isEqualTo(1);
+        assertThat(row(JANUARY).lockedAt()).isEqualTo(locked.lockedAt());
+        refused("UPDATE accounting.period_unlock_end SET end_reason = 'edited' WHERE period_id = '" + period + "'", "append-only");
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024 (d), the race: five approvers and five rejecters of one pending unlock on ten connections, released together: exactly one commits; every other is refused by name - approved, or REJECTED - and the period is the winner's alone: OPEN with the cutoff back and no end, or LOCKED with one end and the cutoff where it stood")
+    void anUnlocksRejectionRacingItsApprovalOneWins() throws Exception {
+        AccountingPeriodId january = PeriodCloseFixture.locked(JANUARY);
+        String period = january.value().toString();
+        Optional<java.time.LocalDate> cut = AccountingPeriodFixture.closedThrough();
+        Actor proposer = person();
+        inScope(proposer, uow -> periods().proposeUnlock(uow, january, proposer, "a missed accrual", correlation()));
+        long ends = count("SELECT count(*) FROM accounting.period_unlock_end WHERE period_id = '" + period + "'");
+        ExecutorService pool = Executors.newFixedThreadPool(APPROVERS);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<Object>> approvals = new ArrayList<>();
+        List<Future<Object>> rejections = new ArrayList<>();
+        try {
+            for (int each = 0; each < APPROVERS / 2; each++) {
+                approvals.add(pool.submit(() -> {
+                    start.await();
+                    Actor approver = person();
+                    while (true) {
+                        try {
+                            return inScope(approver, uow -> periods().approveUnlock(uow, january, approver, "reviewed", correlation()));
+                        } catch (AccountingPeriods.PeriodStale stale) {
+                            return stale;
+                        } catch (com.finapp.accounting.PostingCutoff.CutoffBusy busy) {
+                            Thread.onSpinWait();
+                        }
+                    }
+                }));
+                rejections.add(pool.submit(() -> {
+                    start.await();
+                    Actor rejecter = person();
+                    try {
+                        return inScope(rejecter, uow -> periods().rejectUnlock(uow, january, rejecter, "not needed", correlation()));
+                    } catch (AccountingPeriods.PeriodStale stale) {
+                        return stale;
+                    }
+                }));
+            }
+            start.countDown();
+            List<Object> approved = new ArrayList<>();
+            for (Future<Object> outcome : approvals) {
+                approved.add(outcome.get(2, TimeUnit.MINUTES));
+            }
+            List<Object> ended = new ArrayList<>();
+            for (Future<Object> outcome : rejections) {
+                ended.add(outcome.get(2, TimeUnit.MINUTES));
+            }
+            long approvedOnce = approved.stream().filter(AccountingPeriods.Acted.class::isInstance).count();
+            long endedOnce = ended.stream().filter(AccountingPeriods.Acted.class::isInstance).count();
+            assertThat(approvedOnce + endedOnce).as("exactly one act commits, never both").isEqualTo(1);
+            String winner = approvedOnce == 1 ? "its unlock was approved" : "was REJECTED";
+            assertThat(ended.stream().filter(AccountingPeriods.PeriodStale.class::isInstance).map(Object::toString)).as("each rejecter that lost is told by name")
+                    .allMatch(message -> approvedOnce == 1 ? message.contains(winner) : message.contains("was REJECTED"));
+            if (approvedOnce == 1) {
+                assertThat(row(JANUARY).status()).isEqualTo(PeriodStatus.OPEN);
+                assertThat(count("SELECT count(*) FROM accounting.period_unlock_end WHERE period_id = '" + period + "'")).as("no end beside an approval").isEqualTo(ends);
+            } else {
+                assertThat(approved.stream().map(Object::toString)).as("each approver that lost is told it was rejected").allMatch(message -> message.contains("was REJECTED"));
+                assertThat(row(JANUARY).status()).isEqualTo(PeriodStatus.LOCKED);
+                assertThat(AccountingPeriodFixture.closedThrough()).isEqualTo(cut);
+                assertThat(count("SELECT count(*) FROM accounting.period_unlock_end WHERE period_id = '" + period + "'")).isEqualTo(ends + 1);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    /** An unlock's end as a raw writer would insert it, copied from the period row like the store's: {@code outcomeAndEnder} the outcome and the ender's id, as SQL. */
+    private static String rawEnd(String period, String outcomeAndEnder) {
+        return "INSERT INTO accounting.period_unlock_end (id, period_id, period_revision, period_locked_at, proposed_by, proposed_by_type, proposed_at, outcome, ended_by, ended_by_type, ended_at,"
+                + " end_reason, correlation_id) SELECT '" + IDS.next() + "', p.id, p.revision, p.locked_at, p.unlock_proposed_by, p.unlock_proposed_by_type, p.unlock_proposed_at, " + outcomeAndEnder
+                + ", 'CUSTOMER', clock_timestamp(), 'raw', 'raw' FROM accounting.accounting_period p WHERE p.id = '" + period + "'";
     }
 
     // ------------------------------------------------------------------ row 4

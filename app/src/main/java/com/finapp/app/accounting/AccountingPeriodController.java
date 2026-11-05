@@ -25,7 +25,10 @@ import org.springframework.web.bind.annotation.RestController;
  * owner decisions C9, C12): an accountant locks a period under {@code ACCOUNTING_CLOSE_PROPOSE} - the ledger's posting
  * cutoff advanced to its end and the GL mapping version pinned, in one transaction - and proposes its unlock under the
  * same permission; a financial controller - a different person - approves the unlock under
- * {@code ACCOUNTING_CLOSE_APPROVE}. Every act keyed per principal ({@code accounting.period:<type>:<id>}). The read: the
+ * {@code ACCOUNTING_CLOSE_APPROVE}. A pending unlock ends without its effect (`P14-TSK-024`): rejected by a different
+ * person under {@code ACCOUNTING_CLOSE_APPROVE}, or withdrawn by its proposer under {@code ACCOUNTING_CLOSE_PROPOSE}; neither
+ * takes a {@code MULTI_FACTOR} session, as the approval does not, since an end moves nothing. Every act keyed per principal
+ * ({@code accounting.period:<type>:<id>}). The read: the
  * latest periods under {@code ACCOUNTING_READ}. Periods are born by the system ({@code AccountingPeriods.openNext}), never
  * by a door. Reasons are RESTRICTED-PII and never served. The handlers' names are distinctive (the springdoc
  * {@code operationId} rule).
@@ -84,9 +87,37 @@ public class AccountingPeriodController {
         return desk.approveUnlock(idempotencyKey, periodId, body.reason());
     }
 
+    /**
+     * Rejects a pending unlock - a person other than its proposer: the period stays LOCKED under the same lock and pin, the cutoff unmoved, and a new unlock may be proposed; a reason is required.
+     * The proposer is refused 403 accounting.SelfApprovalRefused and withdraws instead. With none pending, 409 accounting.PeriodStale says whether it was approved, rejected or withdrawn.
+     */
+    @PostMapping(path = "/{periodId}/unlock-rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
+    @RequiresIdempotencyKey
+    public AccountingPeriodDesk.AccountingPeriodReceipt rejectAccountingPeriodUnlock(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @PathVariable("periodId") String periodId,
+            @Valid @RequestBody AccountingPeriodActRequest body) {
+        return desk.rejectUnlock(idempotencyKey, periodId, body.reason());
+    }
+
+    /**
+     * Withdraws a pending unlock - its proposer alone: the period stays LOCKED under the same lock and pin, the cutoff unmoved, and a new unlock may be proposed; a reason is required. Anyone else is
+     * refused 403 accounting.NotTheProposer. With none pending, 409 accounting.PeriodStale says whether it was approved, rejected or withdrawn.
+     */
+    @PostMapping(path = "/{periodId}/unlock-withdrawal", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
+    @RequiresIdempotencyKey
+    public AccountingPeriodDesk.AccountingPeriodReceipt withdrawAccountingPeriodUnlock(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @PathVariable("periodId") String periodId,
+            @Valid @RequestBody AccountingPeriodActRequest body) {
+        return desk.withdrawUnlock(idempotencyKey, periodId, body.reason());
+    }
+
     // -----------------------------------------------------------------
 
-    /** An act's reason - optional for the lock, required for the unlock's two acts ({@code accounting.ReasonRequired}). */
+    /** An act's reason - optional for the lock, required for the unlock's proposal, approval, rejection and withdrawal ({@code accounting.ReasonRequired}). */
     @ClosedBody
     public record AccountingPeriodActRequest(@Size(max = 1000) String reason) {}
 }

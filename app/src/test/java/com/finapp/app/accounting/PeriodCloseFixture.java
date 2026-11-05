@@ -124,7 +124,7 @@ final class PeriodCloseFixture {
 
     private static void reopen(AccountingPeriodId period) {
         Actor proposer = person();
-        Optional<PeriodCloseStore.ReopenRow> pending = inScope(proposer, uow -> CLOSES.reopenAt(uow, period, rowOf(period).revision()));
+        Optional<PeriodCloseStore.ReopenRow> pending = inScope(proposer, uow -> CLOSES.pendingReopen(uow, period));
         if (pending.isEmpty()) {
             inScope(proposer, uow -> MACHINE.proposeReopen(uow, period, proposer, posted(uow, period), "the suite restores the period", correlation()));
         }

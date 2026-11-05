@@ -101,7 +101,7 @@ class PeriodCloseDeskTest {
     private final InMemoryCloseRunStore runStore = new InMemoryCloseRunStore(periods);
     private final InMemoryAccountingBreakStore breaks = new InMemoryAccountingBreakStore();
     private final InMemoryValuationRateSetStore setStore = new InMemoryValuationRateSetStore().watching(periods);
-    private final InMemoryPeriodCloseStore closes = new InMemoryPeriodCloseStore(periods);
+    private final InMemoryPeriodCloseStore closes = new InMemoryPeriodCloseStore(periods, runStore);
     private final List<AuditRecord> audited = new ArrayList<>();
     private final List<String> events = new ArrayList<>();
     private final Map<IdempotencyKey, IdempotencyRecord> claims = new HashMap<>();
@@ -262,7 +262,6 @@ class PeriodCloseDeskTest {
     void theControllersRead() {
         refused(() -> as(CONTROLLER, () -> desk.proposal(period())), AccountingErrorCode.NOT_FOUND, 404);
         propose("k-1");
-        closes.attemptEvidenceIs(CloseCheckCode.RECONCILIATION_DISCLOSURE, "{\"suspenseUnowned\":\"1\"}");
 
         PeriodCloseDesk.CloseProposalView view = as(CONTROLLER, () -> desk.proposal(period()));
         assertThat(view.status()).isEqualTo("PROPOSED");
@@ -273,8 +272,10 @@ class PeriodCloseDeskTest {
         assertThat(view.checks()).filteredOn(check -> check.check().equals("RECONCILIATION_DISCLOSURE")).singleElement().satisfies(check -> {
             assertThat(check.status()).isEqualTo("DISCLOSED");
             assertThat(check.disclosureReason()).isEqualTo(DISCLOSURE);
-            assertThat(check.evidence()).isEqualTo("{\"suspenseUnowned\":\"1\"}");
+            assertThat(check.evidence()).as("the attempt's own evidence, read from its row").isEqualTo("{\"suspenseUnowned\":\"1\"}");
         });
+        assertThat(view.reopenPending()).isFalse();
+        assertThat(view.overtakenReturns()).as("no reopen pending, no list read: none served, never an empty one").isNull();
         assertThat(view.toString()).doesNotContain(ACCOUNTANT.id()).doesNotContain(REASON);
         AuditRecord read = audited.get(audited.size() - 1);
         assertThat(read.operation().code()).isEqualTo("accounting.CloseProposalRead");
@@ -309,7 +310,8 @@ class PeriodCloseDeskTest {
     void theRoutesAreThePartition() throws Exception {
         Map<String, PermissionName> expected = Map.of("proposeAccountingPeriodClose", PermissionName.ACCOUNTING_CLOSE_PROPOSE, "readAccountingPeriodCloseProposal", PermissionName.ACCOUNTING_CLOSE_APPROVE,
                 "approveAccountingPeriodClose", PermissionName.ACCOUNTING_CLOSE_APPROVE, "rejectAccountingPeriodClose", PermissionName.ACCOUNTING_CLOSE_APPROVE, "proposeAccountingPeriodReopen",
-                PermissionName.ACCOUNTING_CLOSE_PROPOSE, "approveAccountingPeriodReopen", PermissionName.ACCOUNTING_CLOSE_APPROVE);
+                PermissionName.ACCOUNTING_CLOSE_PROPOSE, "approveAccountingPeriodReopen", PermissionName.ACCOUNTING_CLOSE_APPROVE, "rejectAccountingPeriodReopen", PermissionName.ACCOUNTING_CLOSE_APPROVE,
+                "withdrawAccountingPeriodReopen", PermissionName.ACCOUNTING_CLOSE_PROPOSE);
         int seen = 0;
         for (Method method : PeriodCloseController.class.getDeclaredMethods()) {
             if (method.isAnnotationPresent(RequiresPermission.class)) {
@@ -609,13 +611,128 @@ class PeriodCloseDeskTest {
         assertThat(as(CONTROLLER, () -> desk.approveReopen("k-f3", period(), all, "agreed"))).as("and its long receipt replays").isEqualTo(reopened);
     }
 
+    // ------------------------------------------------------------------ P14-TSK-024: a reopen's end, and what the approver reads before deciding
+
+    @Test
+    @DisplayName("P14-TSK-024 (d): a reopen's rejection - a second person's: keyed, the key's replay the stored receipt, another body a conflict; CLOSED at the same revision, nothing published, no list read; the proposer's own 403 and recorded FAILED; the approval after it told by name; the month free")
+    void aReopensRejection() {
+        closed("k-x1");
+        as(ACCOUNTANT, () -> desk.proposeReopen("k-x2", period(), List.of(), "a correction"));
+        int published = events.size();
+        refused(() -> as(ACCOUNTANT, () -> desk.rejectReopen("k-x3", period(), "mine")), AccountingErrorCode.SELF_APPROVAL_REFUSED, 403);
+        assertThat(audited.get(audited.size() - 1).outcome()).isEqualTo(AuditOutcome.FAILED);
+        assertThat(audited.get(audited.size() - 1).changeSummary().orElseThrow()).contains("act=period:reopen-rejection");
+
+        PeriodCloseDesk.PeriodCloseReceipt rejected = as(CONTROLLER, () -> desk.rejectReopen("k-x4", period(), "make it a prior-period adjustment"));
+
+        assertThat(rejected.status()).isEqualTo("CLOSED");
+        assertThat(rejected.revision()).isEqualTo(1);
+        assertThat(rejected.overtakenReturns()).as("an end overtakes nothing, so no list is read or served").isNull();
+        assertThat(rejected.overtakenReturnsNote()).isNull();
+        assertThat(rejected.priorPeriodAdjustments()).isEmpty();
+        assertThat(events).hasSize(published);
+        assertThat(as(CONTROLLER, () -> desk.rejectReopen("k-x4", period(), "make it a prior-period adjustment"))).as("the key's replay").isEqualTo(rejected);
+        assertThatThrownBy(() -> as(CONTROLLER, () -> desk.rejectReopen("k-x4", period(), "another reason"))).isInstanceOf(IdempotencyConflictException.class);
+        assertThatThrownBy(() -> as(CONTROLLER, () -> desk.approveReopen("k-x5", period(), List.of(), "late")))
+                .isInstanceOfSatisfying(ApiException.class, refused -> {
+                    assertThat(refused.errorCode()).isEqualTo(AccountingErrorCode.PERIOD_STALE);
+                    assertThat(refused.clientDetail().orElseThrow()).contains("was REJECTED").doesNotContain("prior-period");
+                });
+        assertThat(closes.reopens()).extracting(row -> row.status().name()).containsExactly("REJECTED");
+        assertThat(as(ACCOUNTANT, () -> desk.proposeReopen("k-x6", period(), List.of(), "another correction")).status()).as("free for a new one").isEqualTo("CLOSED");
+        assertThat(audited).extracting(record -> record.operation().code()).contains("accounting.PeriodReopenRejected");
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024 (d): a reopen's withdrawal - its proposer's alone: anyone else 403 accounting.NotTheProposer with nothing kept; the proposer's keyed, CLOSED; none pending then 409 by name")
+    void aReopensWithdrawal() {
+        closed("k-w1");
+        as(ACCOUNTANT, () -> desk.proposeReopen("k-w2", period(), List.of(), "a correction"));
+        refused(() -> as(CONTROLLER, () -> desk.withdrawReopen("k-w3", period(), "theirs")), AccountingErrorCode.NOT_THE_PROPOSER, 403);
+        refused(() -> as(ACCOUNTANT, () -> desk.withdrawReopen("k-w4", period(), "")), AccountingErrorCode.REASON_REQUIRED, 422);
+        assertThat(closes.reopens()).extracting(row -> row.status().name()).containsExactly("PROPOSED");
+
+        assertThat(as(ACCOUNTANT, () -> desk.withdrawReopen("k-w4", period(), "proposed in error")).status()).isEqualTo("CLOSED");
+
+        assertThat(closes.reopens()).extracting(row -> row.status().name()).containsExactly("WITHDRAWN");
+        assertThatThrownBy(() -> as(CONTROLLER, () -> desk.rejectReopen("k-w5", period(), "late"))).isInstanceOfSatisfying(ApiException.class,
+                refused -> assertThat(refused.clientDetail().orElseThrow()).contains("was WITHDRAWN"));
+        refused(() -> as(ACCOUNTANT, () -> desk.withdrawReopen("k-w6", UUID.randomUUID().toString(), "none")), AccountingErrorCode.NOT_FOUND, 404);
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024 (-023's a): on a pending reopen the approver reads, before deciding, the returns it would overtake - the receipts' statement on the read's own transaction, newest first with the total - and a note saying it decides nothing and that the approval's receipt may differ; recorded with how many; no reopen pending, none read and none served")
+    void theApproverIsToldBeforeDeciding() {
+        closed("k-o1");
+        PeriodCloseDesk.CloseProposalView closedRead = as(CONTROLLER, () -> desk.proposal(period()));
+        assertThat(closedRead.reopenPending()).isFalse();
+        assertThat(closedRead.reopenProposedAt()).isNull();
+        assertThat(closedRead.overtakenReturns()).as("no reopen pending, no list read: none served").isNull();
+        assertThat(closedRead.overtakenReturnsTotal()).isNull();
+        assertThat(closedRead.overtakenReturnsNote()).isNull();
+
+        ReturnsAReopenOvertakes.Item acknowledged = aReturn(SubmissionStatus.ACKNOWLEDGED);
+        ReturnsAReopenOvertakes.Item submitted = aReturn(SubmissionStatus.SUBMITTED);
+        sent.add(submitted);
+        sent.add(acknowledged);
+        sentInAll = 23;
+        as(ACCOUNTANT, () -> desk.proposeReopen("k-o2", period(), List.of(), "a correction"));
+
+        PeriodCloseDesk.CloseProposalView read = as(CONTROLLER, () -> desk.proposal(period()));
+
+        assertThat(read.reopenPending()).isTrue();
+        assertThat(read.reopenProposedAt()).isEqualTo(closes.reopens().get(0).proposedAt().toString());
+        assertThat(read.overtakenReturns()).containsExactly(listed(submitted), listed(acknowledged));
+        assertThat(read.overtakenReturnsTotal()).isEqualTo(23);
+        assertThat(read.overtakenReturnsNote()).isEqualTo(PeriodCloseDesk.PENDING_REOPEN_NOTE);
+        AuditRecord recorded = audited.get(audited.size() - 1);
+        assertThat(recorded.operation().code()).isEqualTo("accounting.CloseProposalRead");
+        assertThat(recorded.changeSummary().orElseThrow()).contains("reopenPending=true").contains("overtakenReturns=23").doesNotContain(submitted.id().value().toString());
+
+        sent.clear();
+        sentInAll = -1;
+        PeriodCloseDesk.CloseProposalView none = as(CONTROLLER, () -> desk.proposal(period()));
+        assertThat(none.overtakenReturns()).as("read, and none: an empty list, never an absence").isNotNull().isEmpty();
+        assertThat(none.overtakenReturnsTotal()).isZero();
+
+        sentUnreadable = true;
+        assertThatThrownBy(() -> as(CONTROLLER, () -> desk.proposal(period()))).as("a list that cannot be read fails the read, never an empty one").isInstanceOf(AccountingStorageException.class);
+        sentUnreadable = false;
+
+        as(ACCOUNTANT, () -> desk.withdrawReopen("k-o3", period(), "proposed in error"));
+        assertThat(as(CONTROLLER, () -> desk.proposal(period())).overtakenReturns()).as("ended: none pending, none read").isNull();
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024: the read's note says what the receipts' says of the list, and that it was read holding nothing and decides nothing, and that the approval's receipt lists what stands at the approval, which can differ; the receipts' note is unchanged")
+    void theReadsNoteSaysItMayDiffer() {
+        assertThat(PeriodCloseDesk.PENDING_REOPEN_NOTE).contains("Information only").contains("holding nothing").contains("it decides nothing").contains("a status may have moved since")
+                .contains("The approval's receipt lists what stands when the approval holds the month, so it differs from this list when a return was sent or concluded in between")
+                .contains("SUBMITTED or ACKNOWLEDGED").contains("at most 20 of overtakenReturnsTotal").contains("does not mean nothing is in flight").contains("GET /v1/operator/regulatory/submissions under REGULATORY_REPORT_PREPARE");
+        assertThat(PeriodCloseDesk.OVERTAKEN_RETURNS_NOTE).startsWith("Information only, read while this act held the month: it stopped nothing and decides nothing, and a status may have moved since. Each return SUBMITTED or ACKNOWLEDGED");
+        assertThat(PeriodCloseDesk.PENDING_REOPEN_NOTE.substring(PeriodCloseDesk.PENDING_REOPEN_NOTE.indexOf(" Each return"))).as("the same words of what is listed")
+                .isEqualTo(PeriodCloseDesk.OVERTAKEN_RETURNS_NOTE.substring(PeriodCloseDesk.OVERTAKEN_RETURNS_NOTE.indexOf(" Each return")));
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024 (-012's j): every check the approver reads carries when its attempt concluded - the attempt's own concludedAt, never another stamp - so the person deciding sees as of when")
+    void eachCheckSaysWhenItConcluded() {
+        propose("k-c1");
+        PeriodCloseDesk.CloseProposalView view = as(CONTROLLER, () -> desk.proposal(period()));
+        Map<String, String> concluded = new HashMap<>();
+        runs.view(UOW, march).orElseThrow().checks().forEach(check -> concluded.put(check.check().name(), check.latest().concludedAt().orElseThrow().toString()));
+        assertThat(view.checks()).hasSize(CloseCheckCode.values().length).allSatisfy(check -> assertThat(check.concludedAt()).as(check.check()).isNotNull().isEqualTo(concluded.get(check.check())));
+        assertThat(view.checks()).allSatisfy(check -> assertThat(check.concludedAt()).isNotEqualTo(view.proposedAt()).isNotEqualTo(view.lockedAt()));
+    }
+
     @Test
     @DisplayName("the independent review, M-3: no body and no view prints a reason or evidence, whichever a log line were handed")
     void aBodysTextHoldsNoReason() {
         String secret = "a-persons-reason";
         for (Object record : List.of(new PeriodCloseController.CloseProposalRequest("run", secret, List.of(new PeriodCloseController.CloseDisclosureItem("CHECK", 1, secret))),
                 new PeriodCloseController.CloseDisclosureItem("CHECK", 1, secret), new PeriodCloseController.CloseDecisionRequest("proposal", secret), new PeriodCloseController.PeriodReopenRequest(secret, List.of(UUID.randomUUID().toString())),
-                new PeriodCloseDesk.StatedDisclosure("CHECK", 1, secret), new PeriodCloseDesk.CloseProposalCheckView("CHECK", 1, "DISCLOSED", "judge:v1", secret, secret))) {
+                new PeriodCloseDesk.StatedDisclosure("CHECK", 1, secret), new PeriodCloseDesk.CloseProposalCheckView("CHECK", 1, "DISCLOSED", "judge:v1", "2097-04-05T09:00:00Z", secret, secret),
+                new PeriodCloseController.ReopenEndRequest(secret))) {
             assertThat(record.toString()).as(record.getClass().getSimpleName()).doesNotContain(secret);
         }
     }

@@ -66,6 +66,16 @@ import lombok.RequiredArgsConstructor;
  * reopen does not stop an adjustment's approval (ruling (n)), so the set may have moved between the two acts, and an approver attests to what stands when they act. Read by a plain statement after the period's row is held: no writer reaches {@code POSTED} without that row {@code FOR SHARE}, and
  * {@code POSTED} is terminal, so the set cannot move while it is held; and the read takes no lock, so it adds no edge to the plan's order. Nothing about it is stored: what was named is what was posted, on the adjustments' own rows.
  *
+ * <p><strong>A reopen ended without its effect</strong> (`P14-TSK-024`, the owner's acceptance of `P14-TSK-012`'s item (d); {@code accounting V011}): a second person rejects it ({@link #rejectReopen}), or
+ * its proposer withdraws it ({@link #withdrawReopen}) - {@link PeriodRequestEnd}, each its own terminal state on the reopen's row, beside a history row. Nothing else moves: the period stays {@code CLOSED} at
+ * the same revision, nothing is superseded, the cutoff stands, and the month is free for a new proposal. (A1) the period {@code FOR UPDATE}, then (A4) the pending reopen {@code FOR UPDATE} - the approval's
+ * order without its neighbours - so an end and the approval serialise on the period row, and the second is told by name what the first did. A pending reopen whose next month has since locked can never be
+ * approved; an end is how it leaves.
+ *
+ * <p><strong>The approver's read</strong> ({@link #proposalOf}) serves each frozen attempt as it concluded: its evidence and {@code concludedAt}, read from the attempt's own row (`P14-TSK-024`, `-012`'s
+ * (j)). Nothing re-judges {@code SOURCE_COMPLETENESS}, {@code ACCRUALS_COMPLETE}, {@code PROJECTION_VERIFIED} or most of {@code RECONCILIATION_DISCLOSURE} at the approval, so the person deciding attests to
+ * what each judged no later than that instant. It names the reopen pending, if one is, for the reopen's approver.
+ *
  * <p>Nothing here posts. A reason is never logged, never in a summary and never in an exception: the audit record's reason column and the rows alone hold it.
  */
 @RequiredArgsConstructor
@@ -116,19 +126,29 @@ public final class PeriodCloses {
             Optional<CloseRunId> run, boolean replayed) {}
 
     /**
-     * What an approver reads: the proposal, its nine frozen attempts with their evidence as concluded, and whether it still stands.
+     * What an approver reads: the proposal, its nine frozen attempts with their evidence and when each concluded, whether it still stands, and the reopen pending on the period, if one is.
      *
      * @param stillStands readiness read again, every latest attempt the one frozen, the month's break counts and the set as they were - what {@link #approve} will ask
+     * @param pendingReopen the reopen pending on the {@code CLOSED} period at its present revision (`P14-TSK-024`) - what a reopen's approver decides; empty when none is
      */
-    public record ProposalView(PeriodCloseStore.CloseRow proposal, PeriodStatus periodStatus, List<CheckView> checks, boolean stillStands) {
+    public record ProposalView(PeriodCloseStore.CloseRow proposal, PeriodStatus periodStatus, List<CheckView> checks, boolean stillStands, Optional<PeriodCloseStore.ReopenRow> pendingReopen) {
 
         public ProposalView {
             checks = List.copyOf(checks);
+            Objects.requireNonNull(pendingReopen, "pendingReopen");
         }
     }
 
-    /** One check of a proposal as the approver reads it: the frozen row, and the evidence of the attempt it names. */
-    public record CheckView(PeriodCloseStore.CheckRow check, Optional<String> attemptEvidence) {
+    /**
+     * One check of a proposal as the approver reads it: the frozen row, and the attempt it names as that attempt concluded - its evidence and {@code concludedAt}, the database's clock as stored
+     * (`P14-TSK-024`). The frozen attempt is the one served: a later attempt is never this one's, and makes {@link ProposalView#stillStands} false.
+     */
+    public record CheckView(PeriodCloseStore.CheckRow check, PeriodCloseStore.FrozenAttempt attempt) {
+
+        public CheckView {
+            Objects.requireNonNull(check, "check");
+            Objects.requireNonNull(attempt, "attempt");
+        }
 
         /** The evidence is {@code CONFIDENTIAL} aggregates, served to the approver and never logged: a record's generated {@code toString} would carry it into a log line. */
         @Override
@@ -190,7 +210,7 @@ public final class PeriodCloses {
             throw new AccountingPeriods.PeriodStale("the period is " + row.status().name() + "; a close is proposed for a LOCKED period");
         }
         if (row.unlockPending()) {
-            throw new AccountingPeriods.PeriodStale("an unlock of the period is pending; it is decided first");
+            throw new AccountingPeriods.PeriodStale("an unlock of the period is pending; it is approved, rejected or withdrawn first");
         }
         Optional<CloseRuns.RunView> read = runs.view(unitOfWork, id);
         CloseRuns.Readiness readiness = CloseRuns.readinessOf(read);
@@ -442,7 +462,8 @@ public final class PeriodCloses {
             throw new AccountingPeriods.PeriodStale("the period is " + row.status().name() + "; only a CLOSED period reopens");
         }
         requireLatestClosed(unitOfWork, row);
-        Optional<PeriodCloseStore.ReopenRow> standing = closes.reopenAt(unitOfWork, id, row.revision());
+        Optional<PeriodCloseStore.ReopenRow> standing = closes.pendingReopen(unitOfWork, id);
+        standing.ifPresent(pending -> requireAtTheRevision(pending, row));
         if (standing.isPresent()) {
             if (standing.get().proposedBy().equals(actor.id()) && standing.get().proposalReason().equals(reasoned)) {
                 return new Acted(id, row.month(), row.status(), row.revision(), Optional.empty(), Optional.empty(), true);
@@ -480,7 +501,7 @@ public final class PeriodCloses {
         Optional<AccountingPeriodStore.PeriodRow> previous = periods.lockShared(unitOfWork, month.minusMonths(1));
         AccountingPeriodStore.PeriodRow row = periods.lock(unitOfWork, id).orElseThrow(AccountingPeriods.PeriodNotFound::new);
         if (row.status() == PeriodStatus.OPEN && row.revision() > 1) {
-            Optional<PeriodCloseStore.ReopenRow> last = closes.reopenAt(unitOfWork, id, row.revision() - 1);
+            Optional<PeriodCloseStore.ReopenRow> last = closes.approvedReopenAt(unitOfWork, id, row.revision() - 1);
             if (last.flatMap(PeriodCloseStore.ReopenRow::approvedBy).filter(actor.id()::equals).isPresent()) {
                 return new Acted(id, row.month(), row.status(), row.revision(), Optional.empty(), Optional.empty(), true);
             }
@@ -489,11 +510,9 @@ public final class PeriodCloses {
             throw new AccountingPeriods.PeriodStale("the period is " + row.status().name() + "; only a CLOSED period reopens");
         }
         requireLatestClosed(unitOfWork, row);
-        PeriodCloseStore.ReopenRow standing = closes.lockReopenAt(unitOfWork, id, row.revision())
-                .orElseThrow(() -> new AccountingPeriods.PeriodStale("no reopen of the period is proposed"));
-        if (standing.status() != PeriodReopenStatus.PROPOSED) {
-            throw new IllegalStateException("a CLOSED period's reopen of this revision is pending, or its revision would have moved");
-        }
+        PeriodCloseStore.ReopenRow standing = closes.lockPendingReopen(unitOfWork, id)
+                .orElseThrow(() -> new AccountingPeriods.PeriodStale(noReopenPending(unitOfWork, row)));
+        requireAtTheRevision(standing, row);
         if (standing.proposedBy().equals(actor.id())) {
             throw new AccountingPeriods.SelfApprovalRefused(id, row.month(), "period:reopen");
         }
@@ -523,6 +542,89 @@ public final class PeriodCloses {
         return new Acted(id, row.month(), PeriodStatus.OPEN, revision, Optional.empty(), Optional.empty(), false);
     }
 
+    // ------------------------------------------------------------------ a reopen's end
+
+    /**
+     * Rejects the pending reopen - a second person's decision against it (`P14-TSK-024`): the reopen {@code REJECTED}, the period still {@code CLOSED} at the same revision, nothing superseded, the
+     * cutoff unmoved, the month free for a new proposal. The same rejecter's repeat converges.
+     *
+     * @throws AccountingPeriods.PeriodNotFound when no period has this id
+     * @throws AccountingPeriods.PeriodStale when no reopen is pending - naming whether it was approved, rejected or withdrawn
+     * @throws AccountingPeriods.SelfApprovalRefused when the rejecter proposed it ({@code INV-AUD-04}): its proposer withdraws it
+     * @throws AccountingReasons.ReasonRequired for a missing, unbounded or instrument-bearing reason
+     */
+    public Acted rejectReopen(Connection unitOfWork, AccountingPeriodId id, Actor actor, String reason, CorrelationId correlation) {
+        return endReopen(unitOfWork, id, PeriodRequestEnd.REJECTED, actor, reason, correlation);
+    }
+
+    /**
+     * Withdraws the pending reopen - its proposer's own retraction (`P14-TSK-024`): as {@link #rejectReopen}, by the one person who may. The same proposer's repeat converges.
+     *
+     * @throws AccountingPeriods.PeriodNotFound when no period has this id
+     * @throws AccountingPeriods.PeriodStale when no reopen is pending - naming whether it was approved, rejected or withdrawn
+     * @throws AccountingPeriods.NotTheProposer when someone else asks
+     * @throws AccountingReasons.ReasonRequired for a missing, unbounded or instrument-bearing reason
+     */
+    public Acted withdrawReopen(Connection unitOfWork, AccountingPeriodId id, Actor actor, String reason, CorrelationId correlation) {
+        return endReopen(unitOfWork, id, PeriodRequestEnd.WITHDRAWN, actor, reason, correlation);
+    }
+
+    /** (A1) the period {@code FOR UPDATE}, then (A4) the pending reopen {@code FOR UPDATE}. No neighbour, no cutoff, no report run: an end needs none of them, and is not judged by "the latest closed". */
+    private Acted endReopen(Connection unitOfWork, AccountingPeriodId id, PeriodRequestEnd end, Actor actor, String reason, CorrelationId correlation) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(correlation, "correlation");
+        person(actor);
+        String reasoned = AccountingReasons.reasoned(reason);
+        AccountingPeriodStore.PeriodRow row = periods.lock(unitOfWork, id).orElseThrow(AccountingPeriods.PeriodNotFound::new);
+        Optional<PeriodCloseStore.ReopenRow> pending = closes.lockPendingReopen(unitOfWork, id);
+        if (pending.isEmpty()) {
+            if (row.status() == PeriodStatus.CLOSED) {
+                Optional<PeriodCloseStore.ReopenRow> last = closes.latestEndedReopenAt(unitOfWork, id, row.revision());
+                if (last.filter(ended -> ended.status() == end.reopenStatus() && ended.endedBy().filter(actor.id()::equals).isPresent()).isPresent()) {
+                    return new Acted(id, row.month(), row.status(), row.revision(), Optional.empty(), Optional.empty(), true);
+                }
+                throw new AccountingPeriods.PeriodStale(endedOrNone(last));
+            }
+            throw new AccountingPeriods.PeriodStale(row.status() == PeriodStatus.OPEN && row.revision() > 1 && closes.approvedReopenAt(unitOfWork, id, row.revision() - 1).isPresent()
+                    ? "the period is OPEN at revision " + row.revision() + ": its reopen was approved; nothing was changed"
+                    : "the period is " + row.status().name() + "; only a CLOSED period's pending reopen is ended");
+        }
+        PeriodCloseStore.ReopenRow standing = pending.get();
+        requireAtTheRevision(standing, row);
+        boolean own = standing.proposedBy().equals(actor.id());
+        if (end == PeriodRequestEnd.REJECTED && own) {
+            throw AccountingPeriods.SelfApprovalRefused.ofRejection(id, row.month(), "period:reopen-rejection");
+        }
+        if (end == PeriodRequestEnd.WITHDRAWN && !own) {
+            throw new AccountingPeriods.NotTheProposer("a reopen");
+        }
+        if (!closes.endReopen(unitOfWork, standing.id(), end, actor, reasoned)) {
+            throw new IllegalStateException("the locked reopen was decided by another writer: the FOR UPDATE protocol was bypassed");
+        }
+        periods.appendEvent(unitOfWork, new AccountingPeriodStore.EventRow(ids.next(), id, end.reopenAct(), Optional.of(PeriodStatus.CLOSED), PeriodStatus.CLOSED, row.revision(), actor,
+                Optional.of(standing.proposedBy()), Optional.empty(), Optional.of(reasoned), correlation));
+        record(unitOfWork, actor, end == PeriodRequestEnd.REJECTED ? AccountingAuditAction.PERIOD_REOPEN_REJECTED : AccountingAuditAction.PERIOD_REOPEN_WITHDRAWN, id, Optional.of(reasoned),
+                "period=" + row.month() + ", revision=" + row.revision() + ", reopen=" + standing.id().value(), correlation);
+        return new Acted(id, row.month(), PeriodStatus.CLOSED, row.revision(), Optional.empty(), Optional.empty(), false);
+    }
+
+    /** A pending reopen stands only beside its {@code CLOSED} period at its revision: leaving {@code CLOSED} is its own approval, and ending it moves nothing. */
+    private static void requireAtTheRevision(PeriodCloseStore.ReopenRow pending, AccountingPeriodStore.PeriodRow row) {
+        if (row.status() != PeriodStatus.CLOSED || pending.revision() != row.revision()) {
+            throw new IllegalStateException("a pending reopen stands only beside its CLOSED period at its revision");
+        }
+    }
+
+    /** What a {@code CLOSED} period with no reopen pending says to an act on one: the latest end at its revision, by name, or that none was proposed. */
+    private String noReopenPending(Connection unitOfWork, AccountingPeriodStore.PeriodRow row) {
+        return endedOrNone(closes.latestEndedReopenAt(unitOfWork, row.id(), row.revision()));
+    }
+
+    private static String endedOrNone(Optional<PeriodCloseStore.ReopenRow> last) {
+        return last.map(ended -> "the reopen proposed was " + ended.status().name() + "; none is pending, and nothing was changed").orElse("no reopen of the period is proposed");
+    }
+
     /** {@code INV-ACC-10}: the next period, when there is one, has not left {@code OPEN} - so periods closing in order, this is the latest closed. (A1) oldest first: the caller holds this row. */
     private void requireLatestClosed(Connection unitOfWork, AccountingPeriodStore.PeriodRow row) {
         Optional<AccountingPeriodStore.PeriodRow> next = periods.lockShared(unitOfWork, row.month().plusMonths(1));
@@ -541,7 +643,8 @@ public final class PeriodCloses {
     // ------------------------------------------------------------------ reads, refusals' records
 
     /**
-     * The period's latest proposal as an approver reads it: its nine frozen attempts with their evidence, and whether it still stands. Unlocked: {@link #approve} judges again on the row.
+     * The period's latest proposal as an approver reads it: its nine frozen attempts with their evidence and when each concluded, whether it still stands, and the reopen pending, if one is. Unlocked:
+     * {@link #approve} and {@link #approveReopen} judge again on the row.
      *
      * @throws AccountingPeriods.PeriodNotFound when no period has this id
      * @return empty when the period has had no proposal
@@ -551,20 +654,30 @@ public final class PeriodCloses {
         Objects.requireNonNull(id, "id");
         AccountingPeriodStore.PeriodRow row = periods.find(unitOfWork, id).orElseThrow(AccountingPeriods.PeriodNotFound::new);
         return closes.latest(unitOfWork, id).map(proposal -> {
-            Map<CloseCheckCode, String> evidence = closes.attemptEvidence(unitOfWork, proposal.id());
+            Map<CloseCheckCode, PeriodCloseStore.FrozenAttempt> attempts = closes.frozenAttempts(unitOfWork, proposal.id());
             List<CheckView> checks = closes.checks(unitOfWork, proposal.id()).stream()
-                    .map(check -> new CheckView(check, Optional.ofNullable(evidence.get(check.check()))))
+                    .map(check -> new CheckView(check, Optional.ofNullable(attempts.get(check.check()))
+                            .orElseThrow(() -> new IllegalStateException("a frozen check's attempt row is never deleted: " + check.check().name()))))
                     .toList();
             boolean stands = row.status() == PeriodStatus.CLOSE_PROPOSED && proposal.status() == PeriodCloseStatus.PROPOSED
                     && moved(unitOfWork, row, proposal).isEmpty();
-            return new ProposalView(proposal, row.status(), checks, stands);
+            Optional<PeriodCloseStore.ReopenRow> pendingReopen = row.status() == PeriodStatus.CLOSED
+                    ? closes.pendingReopen(unitOfWork, id).filter(pending -> pending.revision() == row.revision())
+                    : Optional.empty();
+            return new ProposalView(proposal, row.status(), checks, stands, pendingReopen);
         });
     }
 
-    /** Records an approver's read of what they decide ({@code accounting.CloseProposalRead}) - before it is served. */
-    public void recordRead(Connection unitOfWork, ProposalView view, Actor actor, CorrelationId correlation) {
+    /**
+     * Records an approver's read of what they decide ({@code accounting.CloseProposalRead}) - before it is served.
+     *
+     * @param overtakenReturns on a pending reopen, how many returns the read listed it would overtake (`P14-TSK-024`); empty when no list was read
+     */
+    public void recordRead(Connection unitOfWork, ProposalView view, Optional<Long> overtakenReturns, Actor actor, CorrelationId correlation) {
+        Objects.requireNonNull(overtakenReturns, "overtakenReturns");
         record(unitOfWork, actor, AccountingAuditAction.CLOSE_PROPOSAL_READ, view.proposal().period(), Optional.empty(), "period=" + view.proposal().month() + ", proposal="
-                + view.proposal().id().value() + ", status=" + view.proposal().status().name() + ", stillStands=" + view.stillStands(), correlation);
+                + view.proposal().id().value() + ", status=" + view.proposal().status().name() + ", stillStands=" + view.stillStands() + ", reopenPending=" + view.pendingReopen().isPresent()
+                + overtakenReturns.map(total -> ", overtakenReturns=" + total).orElse(""), correlation);
     }
 
     /**

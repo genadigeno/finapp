@@ -239,7 +239,9 @@ class AccountingVocabulariesTest {
                         "accounting.ReportDoorMismatch=409", "accounting.ReportAwaitsClose=409",
                         // P14-TSK-018: the regulatory framework's.
                         "accounting.RegulatorySubmissionStale=409", "accounting.RegulatorySubmissionLive=409", "accounting.RegulatorySubmissionInvalid=422", "accounting.RegulatorySourceNotFinal=409",
-                        "accounting.RegulatoryFigureUnresolved=422", "accounting.RegulatoryRunBytesDiffer=409", "accounting.RegulatoryObligationInvalid=422", "accounting.RegulatoryObligationStale=409", "accounting.RegulatoryProviderUnavailable=503");
+                        "accounting.RegulatoryFigureUnresolved=422", "accounting.RegulatoryRunBytesDiffer=409", "accounting.RegulatoryObligationInvalid=422", "accounting.RegulatoryObligationStale=409", "accounting.RegulatoryProviderUnavailable=503",
+                        // P14-TSK-024: another person withdrawing a pending unlock or reopen.
+                        "accounting.NotTheProposer=403");
         // P14-TSK-002: the posting rule register's audited read - no reason, an operator's read.
         assertThat(AccountingAuditAction.POSTING_RULES_READ.code()).isEqualTo("accounting.PostingRulesRead");
         assertThat(AccountingAuditAction.POSTING_RULES_READ.requiresReason()).isFalse();
@@ -251,6 +253,8 @@ class AccountingVocabulariesTest {
                         // P14-TSK-005: the open (the system's) and the lock unreasoned; the unlock's two acts reasoned.
                         "accounting.PeriodOpened=false", "accounting.PeriodLocked=false",
                         "accounting.PeriodUnlockProposed=true", "accounting.PeriodUnlocked=true",
+                        // P14-TSK-024: an unlock ended without its effect, a second person's rejection or its proposer's withdrawal, each reasoned.
+                        "accounting.PeriodUnlockRejected=true", "accounting.PeriodUnlockWithdrawn=true",
                         // P14-TSK-007: the GL read, an operator's read - no reason.
                         "accounting.GlRead=false",
                         // P14-TSK-008: a run's conclusion, a regeneration's comparison and an audited read - no reason.
@@ -271,7 +275,10 @@ class AccountingVocabulariesTest {
                         "accounting.OperationalReportRead=false",
                         // P14-TSK-012: the close's and the reopen's acts, each reasoned; the controller's read, an operator's read.
                         "accounting.PeriodCloseProposed=true", "accounting.PeriodClosed=true", "accounting.PeriodCloseRejected=true",
-                        "accounting.PeriodReopenProposed=true", "accounting.PeriodReopened=true", "accounting.CloseProposalRead=false",
+                        "accounting.PeriodReopenProposed=true", "accounting.PeriodReopened=true",
+                        // P14-TSK-024: a reopen ended without its effect, each reasoned.
+                        "accounting.PeriodReopenRejected=true", "accounting.PeriodReopenWithdrawn=true",
+                        "accounting.CloseProposalRead=false",
                         // P14-TSK-013: both acts and the rejection, each reasoned; the reads, an operator's.
                         "accounting.PriorPeriodAdjustmentProposed=true", "accounting.PriorPeriodAdjustmentPosted=true", "accounting.PriorPeriodAdjustmentRejected=true",
                         "accounting.PriorPeriodAdjustmentRead=false",

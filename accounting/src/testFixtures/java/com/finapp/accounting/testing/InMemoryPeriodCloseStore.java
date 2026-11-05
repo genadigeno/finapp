@@ -3,11 +3,13 @@ package com.finapp.accounting.testing;
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.AccountingPeriodStore;
 import com.finapp.accounting.CloseCheckCode;
+import com.finapp.accounting.CloseRunStore;
 import com.finapp.accounting.PeriodCloseId;
 import com.finapp.accounting.PeriodCloseStatus;
 import com.finapp.accounting.PeriodCloseStore;
 import com.finapp.accounting.PeriodReopenId;
 import com.finapp.accounting.PeriodReopenStatus;
+import com.finapp.accounting.PeriodRequestEnd;
 import com.finapp.platform.security.Actor;
 import java.sql.Connection;
 import java.time.Instant;
@@ -23,20 +25,23 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * {@link PeriodCloseStore} in memory (`P14-TSK-012`): the hermetic suites' store, holding the database's ranks the machine relies on - one pending proposal per period, one approved per revision, the
- * four-eyes {@code CHECK}s, one decision, one reopen per revision, the record append-only - so a defect the database would refuse is refused here too, as an {@link IllegalStateException} naming the rank. The real
- * ranks are {@code accounting V008}'s, proven by {@code PeriodCloseDatabaseTest} and {@code PeriodReopenDatabaseTest} (owed, C5).
+ * four-eyes {@code CHECK}s, one decision, one pending reopen per period and one approved per revision, an end four-eyed or the proposer's own (`P14-TSK-024`), the record append-only - so a defect the
+ * database would refuse is refused here too, as an {@link IllegalStateException} naming the rank. A frozen attempt is read from the run store's own row, as the database's join reads it. The real ranks are
+ * {@code accounting V008}'s and {@code V011}'s, proven by {@code PeriodCloseDatabaseTest} and {@code PeriodReopenDatabaseTest} (owed, C5).
  */
 public final class InMemoryPeriodCloseStore implements PeriodCloseStore {
 
     private final Map<PeriodCloseId, CloseRow> closes = new LinkedHashMap<>();
     private final Map<PeriodCloseId, List<CheckRow>> checks = new LinkedHashMap<>();
     private final Map<PeriodReopenId, ReopenRow> reopens = new LinkedHashMap<>();
-    private final Map<CloseCheckCode, String> evidence = new EnumMap<>(CloseCheckCode.class);
     private final AtomicLong clock = new AtomicLong();
     private final InMemoryAccountingPeriodStore periods;
+    /** Where a frozen attempt is read from, as {@code close_check} is joined. */
+    private final CloseRunStore runs;
 
-    public InMemoryPeriodCloseStore(InMemoryAccountingPeriodStore periods) {
+    public InMemoryPeriodCloseStore(InMemoryAccountingPeriodStore periods, CloseRunStore runs) {
         this.periods = periods;
+        this.runs = runs;
     }
 
     /** Every proposal, in birth order. */
@@ -63,11 +68,6 @@ public final class InMemoryPeriodCloseStore implements PeriodCloseStore {
             reopens.clear();
             reopens.putAll(reopensNow);
         };
-    }
-
-    /** What {@link #attemptEvidence} answers - the attempts' own text, set by the suite as its run concludes. */
-    public void attemptEvidenceIs(CloseCheckCode check, String text) {
-        evidence.put(check, text);
     }
 
     @Override
@@ -116,8 +116,18 @@ public final class InMemoryPeriodCloseStore implements PeriodCloseStore {
     }
 
     @Override
-    public Map<CloseCheckCode, String> attemptEvidence(Connection unitOfWork, PeriodCloseId id) {
-        return Map.copyOf(evidence);
+    public Map<CloseCheckCode, FrozenAttempt> frozenAttempts(Connection unitOfWork, PeriodCloseId id) {
+        CloseRow close = closes.get(id);
+        Map<CloseCheckCode, FrozenAttempt> frozen = new EnumMap<>(CloseCheckCode.class);
+        if (close == null) {
+            return frozen;
+        }
+        List<CloseRunStore.AttemptRow> attempts = runs.attempts(unitOfWork, close.run());
+        for (CheckRow check : checks.getOrDefault(id, List.of())) {
+            attempts.stream().filter(attempt -> attempt.id().equals(check.attemptId())).findFirst()
+                    .ifPresent(attempt -> frozen.put(check.check(), new FrozenAttempt(attempt.evidence().orElseThrow(), attempt.concludedAt().orElseThrow())));
+        }
+        return frozen;
     }
 
     @Override
@@ -140,21 +150,35 @@ public final class InMemoryPeriodCloseStore implements PeriodCloseStore {
 
     @Override
     public void insertReopen(Connection unitOfWork, NewReopen reopen) {
-        if (reopens.values().stream().anyMatch(row -> row.period().equals(reopen.period()) && row.revision() == reopen.revision())) {
-            throw new IllegalStateException("period_reopen_one_per_revision");
+        if (reopens.values().stream().anyMatch(row -> row.period().equals(reopen.period()) && row.status() == PeriodReopenStatus.PROPOSED)) {
+            throw new IllegalStateException("period_reopen_one_pending");
+        }
+        AccountingPeriodStore.PeriodRow period = periods.find(unitOfWork, reopen.period()).orElseThrow();
+        if (period.status() != com.finapp.accounting.PeriodStatus.CLOSED || period.revision() != reopen.revision()) {
+            throw new IllegalStateException("period_reopen_permits_only_machine_edges: a CLOSED period at its present revision");
         }
         reopens.put(reopen.id(), new ReopenRow(reopen.id(), reopen.period(), reopen.revision(), PeriodReopenStatus.PROPOSED, reopen.proposedBy().id(), now(), reopen.reason(),
-                Optional.empty(), Optional.empty()));
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()));
     }
 
     @Override
-    public Optional<ReopenRow> reopenAt(Connection unitOfWork, AccountingPeriodId period, int revision) {
-        return reopens.values().stream().filter(row -> row.period().equals(period) && row.revision() == revision).findFirst();
+    public Optional<ReopenRow> pendingReopen(Connection unitOfWork, AccountingPeriodId period) {
+        return reopens.values().stream().filter(row -> row.period().equals(period) && row.status() == PeriodReopenStatus.PROPOSED).findFirst();
     }
 
     @Override
-    public Optional<ReopenRow> lockReopenAt(Connection unitOfWork, AccountingPeriodId period, int revision) {
-        return reopenAt(unitOfWork, period, revision);
+    public Optional<ReopenRow> lockPendingReopen(Connection unitOfWork, AccountingPeriodId period) {
+        return pendingReopen(unitOfWork, period);
+    }
+
+    @Override
+    public Optional<ReopenRow> approvedReopenAt(Connection unitOfWork, AccountingPeriodId period, int revision) {
+        return reopens.values().stream().filter(row -> row.period().equals(period) && row.revision() == revision && row.status() == PeriodReopenStatus.APPROVED).findFirst();
+    }
+
+    @Override
+    public Optional<ReopenRow> latestEndedReopenAt(Connection unitOfWork, AccountingPeriodId period, int revision) {
+        return reopens.values().stream().filter(row -> row.period().equals(period) && row.revision() == revision && row.endedBy().isPresent()).reduce((earlier, later) -> later);
     }
 
     @Override
@@ -166,7 +190,28 @@ public final class InMemoryPeriodCloseStore implements PeriodCloseStore {
         if (row.proposedBy().equals(actor.id())) {
             throw new IllegalStateException("period_reopen_four_eyes");
         }
+        if (reopens.values().stream().anyMatch(other -> other.period().equals(row.period()) && other.revision() == row.revision() && other.status() == PeriodReopenStatus.APPROVED)) {
+            throw new IllegalStateException("period_reopen_one_approved");
+        }
         reopens.put(id, new ReopenRow(row.id(), row.period(), row.revision(), PeriodReopenStatus.APPROVED, row.proposedBy(), row.proposedAt(), row.proposalReason(),
+                Optional.of(actor.id()), Optional.of(now()), Optional.empty(), Optional.empty()));
+        return true;
+    }
+
+    @Override
+    public boolean endReopen(Connection unitOfWork, PeriodReopenId id, PeriodRequestEnd end, Actor actor, String reason) {
+        ReopenRow row = reopens.get(id);
+        if (row == null || row.status() != PeriodReopenStatus.PROPOSED) {
+            return false;
+        }
+        if ((end == PeriodRequestEnd.REJECTED) == row.proposedBy().equals(actor.id())) {
+            throw new IllegalStateException("period_reopen_end_four_eyes");
+        }
+        AccountingPeriodStore.PeriodRow period = periods.find(unitOfWork, row.period()).orElseThrow();
+        if (period.status() != com.finapp.accounting.PeriodStatus.CLOSED || period.revision() != row.revision()) {
+            throw new IllegalStateException("period_reopen_permits_only_machine_edges: ended while its period is CLOSED at its revision");
+        }
+        reopens.put(id, new ReopenRow(row.id(), row.period(), row.revision(), end.reopenStatus(), row.proposedBy(), row.proposedAt(), row.proposalReason(), Optional.empty(), Optional.empty(),
                 Optional.of(actor.id()), Optional.of(now())));
         return true;
     }

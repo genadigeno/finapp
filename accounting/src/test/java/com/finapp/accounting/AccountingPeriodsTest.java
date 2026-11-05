@@ -258,6 +258,148 @@ class AccountingPeriodsTest {
                 "advance unset -> 2026-09-30");
     }
 
+    // ------------------------------------------------------------------ an unlock's end (P14-TSK-024)
+
+    /** September locked and an unlock of it proposed by the accountant: the cutoff at its end, the pin held. */
+    private AccountingPeriodId lockedWithAnUnlockPending() {
+        AccountingPeriodId september = open(SEPTEMBER);
+        periods("2026-10-30").lock(UOW, september, accountant, null, correlation());
+        periods("2026-10-30").proposeUnlock(UOW, september, accountant, "a missed accrual", correlation());
+        return september;
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024 (d): a second person rejects a pending unlock: the period stays LOCKED under the same lock and pin, the cutoff unmoved, nothing published; the end recorded beside a history row naming the proposer and an audit record with its reason; the month free for a new proposal")
+    void aSecondPersonRejectsAPendingUnlock() {
+        AccountingPeriodId september = lockedWithAnUnlockPending();
+        AccountingPeriodStore.PeriodRow before = store.month(SEPTEMBER).orElseThrow();
+        int published = events.size();
+        List<String> moves = List.copyOf(cutoffMoves);
+
+        AccountingPeriods.Acted rejected = periods("2026-10-30").rejectUnlock(UOW, september, controller, "the accrual was caught up after all", correlation());
+
+        assertThat(rejected.status()).isEqualTo(PeriodStatus.LOCKED);
+        assertThat(rejected.unlockPending()).isFalse();
+        assertThat(rejected.replayed()).isFalse();
+        AccountingPeriodStore.PeriodRow after = store.month(SEPTEMBER).orElseThrow();
+        assertThat(after.lockedAt()).as("the same lock instance").isEqualTo(before.lockedAt());
+        assertThat(after.pinned()).as("the same pin (INV-ACC-07)").isEqualTo(before.pinned());
+        assertThat(after.revision()).isEqualTo(before.revision());
+        assertThat(after.unlockPending()).isFalse();
+        assertThat(cutoffMoves).as("no cutoff moved (INV-ACC-08)").isEqualTo(moves);
+        assertThat(closedThrough).contains(LocalDate.of(2026, 9, 30));
+        assertThat(events).as("an end publishes nothing").hasSize(published);
+        assertThat(store.unlockEnds()).singleElement().satisfies(end -> {
+            assertThat(end.outcome()).isEqualTo(PeriodRequestEnd.REJECTED);
+            assertThat(end.proposedBy()).isEqualTo(accountant.id());
+            assertThat(end.endedBy()).isEqualTo(controller.id());
+            assertThat(end.lockedAt()).isEqualTo(before.lockedAt().orElseThrow());
+            assertThat(end.proposedAt()).isEqualTo(before.unlockProposedAt().orElseThrow());
+        });
+        AccountingPeriodStore.EventRow history = store.history().get(store.history().size() - 1);
+        assertThat(history.act()).isEqualTo(AccountingPeriodStore.Act.UNLOCK_REJECTED);
+        assertThat(history.from()).contains(PeriodStatus.LOCKED);
+        assertThat(history.to()).isEqualTo(PeriodStatus.LOCKED);
+        assertThat(history.proposedBy()).contains(accountant.id());
+        AuditRecord record = audit.get(audit.size() - 1);
+        assertThat(record.operation().code()).isEqualTo("accounting.PeriodUnlockRejected");
+        assertThat(record.actor()).isEqualTo(controller);
+        assertThat(record.reason()).contains("the accrual was caught up after all");
+        assertThat(record.targetId()).isEqualTo(september.value().toString());
+        assertThat(record.outcome()).isEqualTo(AuditOutcome.SUCCEEDED);
+        assertThat(record.changeSummary().orElseThrow()).contains("period=2026-09").doesNotContain("caught up");
+
+        assertThat(periods("2026-10-30").proposeUnlock(UOW, september, accountant, "another accrual", correlation()).unlockPending()).as("free for a new one").isTrue();
+        assertThat(periods("2026-10-30").approveUnlock(UOW, september, controller, "reviewed", correlation()).status()).as("which carries its own effect").isEqualTo(PeriodStatus.OPEN);
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024 (d): four eyes as the acts: the proposer cannot reject their own (SelfApprovalRefused) and withdraws it instead; nobody else withdraws it (NotTheProposer); a person, never the platform; a reason required")
+    void aProposerWithdrawsAndNeverRejects() {
+        AccountingPeriodId september = lockedWithAnUnlockPending();
+        assertThatThrownBy(() -> periods("2026-10-30").rejectUnlock(UOW, september, accountant, "mine", correlation()))
+                .isInstanceOfSatisfying(AccountingPeriods.SelfApprovalRefused.class, self -> assertThat(self.summary()).contains("act=period:unlock-rejection"));
+        assertThatThrownBy(() -> periods("2026-10-30").withdrawUnlock(UOW, september, controller, "theirs", correlation()))
+                .isInstanceOf(AccountingPeriods.NotTheProposer.class).hasMessageContaining("only its proposer withdraws");
+        assertThatThrownBy(() -> periods("2026-10-30").rejectUnlock(UOW, september, Actor.SYSTEM, "the platform", correlation())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> periods("2026-10-30").rejectUnlock(UOW, september, controller, " ", correlation())).isInstanceOf(AccountingReasons.ReasonRequired.class);
+        assertThat(store.unlockEnds()).as("nothing written by a refusal").isEmpty();
+        assertThat(store.month(SEPTEMBER).orElseThrow().unlockPending()).isTrue();
+
+        AccountingPeriods.Acted withdrawn = periods("2026-10-30").withdrawUnlock(UOW, september, accountant, "proposed on the wrong month", correlation());
+
+        assertThat(withdrawn.status()).isEqualTo(PeriodStatus.LOCKED);
+        assertThat(store.unlockEnds()).singleElement().satisfies(end -> {
+            assertThat(end.outcome()).isEqualTo(PeriodRequestEnd.WITHDRAWN);
+            assertThat(end.endedBy()).isEqualTo(accountant.id());
+        });
+        AccountingPeriodStore.EventRow history = store.history().get(store.history().size() - 1);
+        assertThat(history.act()).isEqualTo(AccountingPeriodStore.Act.UNLOCK_WITHDRAWN);
+        assertThat(history.proposedBy()).as("the proposer named, who is the actor").contains(accountant.id());
+        assertThat(audit.get(audit.size() - 1).operation().code()).isEqualTo("accounting.PeriodUnlockWithdrawn");
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024 (d): the same request ended twice converges for the person who ended it and is refused, by name, to anyone else; the approval after an end is told it was REJECTED, an end after the approval that it was approved - each serialised on the period row, here in sequence (the race is PeriodCloseDatabaseTest's)")
+    void anEndAndItsApprovalTellTheLoserByName() {
+        AccountingPeriodId september = lockedWithAnUnlockPending();
+        periods("2026-10-30").rejectUnlock(UOW, september, controller, "not needed", correlation());
+
+        assertThat(periods("2026-10-30").rejectUnlock(UOW, september, controller, "not needed", correlation()).replayed()).as("the same person's repeat converges").isTrue();
+        assertThat(store.unlockEnds()).as("written once").hasSize(1);
+        assertThatThrownBy(() -> periods("2026-10-30").rejectUnlock(UOW, september, new Actor("controller-2", ActorType.CUSTOMER), "me too", correlation()))
+                .isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("was REJECTED").hasMessageContaining("nothing was changed");
+        assertThatThrownBy(() -> periods("2026-10-30").withdrawUnlock(UOW, september, accountant, "mine", correlation()))
+                .isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("was REJECTED");
+        assertThatThrownBy(() -> periods("2026-10-30").approveUnlock(UOW, september, controller, "late", correlation()))
+                .as("the approval's loser, told by name").isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("was REJECTED");
+        assertThat(closedThrough).contains(LocalDate.of(2026, 9, 30));
+
+        periods("2026-10-30").proposeUnlock(UOW, september, accountant, "after all", correlation());
+        periods("2026-10-30").approveUnlock(UOW, september, controller, "reviewed", correlation());
+        assertThatThrownBy(() -> periods("2026-10-30").rejectUnlock(UOW, september, new Actor("controller-2", ActorType.CUSTOMER), "too late", correlation()))
+                .as("the end's loser, told by name").isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("its unlock was approved");
+        assertThatThrownBy(() -> periods("2026-10-30").withdrawUnlock(UOW, september, accountant, "too late", correlation()))
+                .isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("its unlock was approved");
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024 (d): an end takes the period row FOR UPDATE - the request lives on it - as the approval does, so the two serialise on that row: the hermetic half; the race on ten connections is PeriodCloseDatabaseTest#anUnlocksRejectionRacingItsApprovalOneWins, owed")
+    void anEndTakesThePeriodRow() {
+        AccountingPeriodId september = lockedWithAnUnlockPending();
+        int before = store.rowLocks();
+        periods("2026-10-30").rejectUnlock(UOW, september, controller, "not needed", correlation());
+        assertThat(store.rowLocks()).as("the period row FOR UPDATE, once").isEqualTo(before + 1);
+        periods("2026-10-30").proposeUnlock(UOW, september, accountant, "again", correlation());
+        int again = store.rowLocks();
+        periods("2026-10-30").withdrawUnlock(UOW, september, accountant, "not needed", correlation());
+        assertThat(store.rowLocks()).isEqualTo(again + 1);
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024 (d): an end needs a pending unlock: a LOCKED period with none proposed, an OPEN one never locked, a CLOSED one - each refused by name, nothing written; an end under an earlier lock is not this lock's")
+    void anEndNeedsAPendingUnlock() {
+        AccountingPeriodId september = open(SEPTEMBER);
+        assertThatThrownBy(() -> periods("2026-10-30").rejectUnlock(UOW, september, controller, "none", correlation()))
+                .isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("only a LOCKED period's pending unlock is ended");
+        periods("2026-10-30").lock(UOW, september, accountant, null, correlation());
+        assertThatThrownBy(() -> periods("2026-10-30").rejectUnlock(UOW, september, controller, "none", correlation()))
+                .isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("no unlock of the period is proposed");
+        periods("2026-10-30").proposeUnlock(UOW, september, accountant, "first", correlation());
+        periods("2026-10-30").withdrawUnlock(UOW, september, accountant, "first withdrawn", correlation());
+        periods("2026-10-30").proposeUnlock(UOW, september, accountant, "second", correlation());
+        periods("2026-10-30").approveUnlock(UOW, september, controller, "reviewed", correlation());
+        periods("2026-10-30").lock(UOW, september, accountant, null, correlation());
+        assertThat(store.unlockEnds()).as("the first lock's end stands as history").hasSize(1);
+        assertThatThrownBy(() -> periods("2026-10-30").withdrawUnlock(UOW, september, accountant, "first withdrawn", correlation()))
+                .as("an end under an earlier lock is not this lock's: none was proposed under this one").isInstanceOf(AccountingPeriods.PeriodStale.class)
+                .hasMessageContaining("no unlock of the period is proposed");
+        store.closeForTest(SEPTEMBER);
+        assertThatThrownBy(() -> periods("2026-10-30").rejectUnlock(UOW, september, controller, "none", correlation()))
+                .isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("CLOSED");
+        assertThat(store.unlockEnds()).hasSize(1);
+    }
+
     @Test
     @DisplayName("a lock or unlock is a person's - never the platform's; a CLOSED period is past the lock")
     void personsOnlyAndPastTheLock() {

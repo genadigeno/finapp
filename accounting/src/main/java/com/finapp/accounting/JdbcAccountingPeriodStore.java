@@ -43,6 +43,24 @@ public final class JdbcAccountingPeriodStore implements AccountingPeriodStore {
             + " locked_by = NULL, locked_by_type = NULL, locked_at = NULL, pinned_mapping_version_id = NULL"
             + " WHERE id = ? AND status = 'CLOSED' AND revision = ?";
 
+    /**
+     * An unlock's end, first (`P14-TSK-024`): copied from the row this transaction holds {@code FOR UPDATE}, so the request's identity - its lock instance and the instant it was proposed - is the
+     * row's own bytes; conditional on the pending proposal of the proposer the act judged. {@code accounting V011}'s trigger judges it again, its {@code CHECK} the four eyes.
+     */
+    static final String INSERT_UNLOCK_END_SQL = "INSERT INTO accounting.period_unlock_end (id, period_id, period_revision, period_locked_at, proposed_by, proposed_by_type,"
+            + " proposed_at, outcome, ended_by, ended_by_type, ended_at, end_reason, correlation_id)"
+            + " SELECT ?, p.id, p.revision, p.locked_at, p.unlock_proposed_by, p.unlock_proposed_by_type, p.unlock_proposed_at, ?, ?, ?, clock_timestamp(), ?, ?"
+            + " FROM accounting.accounting_period p WHERE p.id = ? AND p.status = 'LOCKED' AND p.revision = ? AND p.unlock_proposed_by = ? AND p.unlock_approved_by IS NULL";
+
+    /** Then the proposal cleared whole, the lock and its pin as they were: {@code V011}'s edge admits it only beside the end's row. */
+    static final String CLEAR_UNLOCK_SQL = "UPDATE accounting.accounting_period SET unlock_proposed_by = NULL, unlock_proposed_by_type = NULL, unlock_proposed_at = NULL,"
+            + " unlock_proposal_reason = NULL WHERE id = ? AND status = 'LOCKED' AND revision = ? AND unlock_proposed_by = ? AND unlock_approved_by IS NULL";
+
+    /** The latest end under the period's present lock, joined on the row's own {@code locked_at} so no instant crosses the boundary; the database's stamp orders them, the id a tie. */
+    static final String LATEST_UNLOCK_END_SQL = "SELECT u.id, u.period_id, u.period_revision, u.period_locked_at, u.proposed_by, u.proposed_at, u.outcome, u.ended_by, u.ended_at"
+            + " FROM accounting.period_unlock_end u JOIN accounting.accounting_period p ON p.id = u.period_id AND p.locked_at = u.period_locked_at"
+            + " WHERE u.period_id = ? ORDER BY u.ended_at DESC, u.id DESC LIMIT 1";
+
     @Override
     public boolean insertIfAbsent(Connection unitOfWork, NewPeriod period) {
         try (PreparedStatement insert = unitOfWork.prepareStatement("INSERT INTO accounting.accounting_period (id,"
@@ -184,6 +202,53 @@ public final class JdbcAccountingPeriodStore implements AccountingPeriodStore {
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw failed("approving an accounting period's unlock", failure);
+        }
+    }
+
+    @Override
+    public boolean endUnlock(Connection unitOfWork, NewUnlockEnd end) {
+        try (PreparedStatement insert = unitOfWork.prepareStatement(INSERT_UNLOCK_END_SQL)) {
+            insert.setObject(1, end.id());
+            insert.setString(2, end.outcome().name());
+            insert.setString(3, end.endedBy().id());
+            insert.setString(4, end.endedBy().type().name());
+            insert.setString(5, end.reason());
+            insert.setString(6, end.correlation().value());
+            insert.setObject(7, end.period().value());
+            insert.setInt(8, end.revision());
+            insert.setString(9, end.proposedBy());
+            if (insert.executeUpdate() != 1) {
+                return false;
+            }
+        } catch (SQLException failure) {
+            throw failed("recording an unlock's end", failure);
+        }
+        try (PreparedStatement update = unitOfWork.prepareStatement(CLEAR_UNLOCK_SQL)) {
+            update.setObject(1, end.period().value());
+            update.setInt(2, end.revision());
+            update.setString(3, end.proposedBy());
+            if (update.executeUpdate() != 1) {
+                throw new IllegalStateException("the pending unlock moved between its end's record and its clearing, in one transaction: the FOR UPDATE protocol was bypassed");
+            }
+            return true;
+        } catch (SQLException failure) {
+            throw failed("clearing an ended unlock", failure);
+        }
+    }
+
+    @Override
+    public Optional<UnlockEndRow> latestUnlockEnd(Connection unitOfWork, AccountingPeriodId id) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(LATEST_UNLOCK_END_SQL)) {
+            read.setObject(1, id.value());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next()
+                        ? Optional.of(new UnlockEndRow(row.getObject("id", UUID.class), AccountingPeriodId.of(row.getObject("period_id", UUID.class)), row.getInt("period_revision"),
+                                row.getTimestamp("period_locked_at").toInstant(), row.getString("proposed_by"), row.getTimestamp("proposed_at").toInstant(),
+                                PeriodRequestEnd.valueOf(row.getString("outcome")), row.getString("ended_by"), row.getTimestamp("ended_at").toInstant()))
+                        : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw failed("reading an unlock's end", failure);
         }
     }
 

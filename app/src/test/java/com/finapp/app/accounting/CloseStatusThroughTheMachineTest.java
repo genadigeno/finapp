@@ -68,7 +68,7 @@ class CloseStatusThroughTheMachineTest {
     private final InMemoryCloseRunStore runStore = new InMemoryCloseRunStore(periods);
     private final InMemoryAccountingBreakStore breaks = new InMemoryAccountingBreakStore();
     private final InMemoryValuationRateSetStore setStore = new InMemoryValuationRateSetStore().watching(periods);
-    private final InMemoryPeriodCloseStore closes = new InMemoryPeriodCloseStore(periods);
+    private final InMemoryPeriodCloseStore closes = new InMemoryPeriodCloseStore(periods, runStore);
     private final CloseRuns runs = new CloseRuns(runStore, periods, breaks, CloseRuns.Leases.STANDARD, (uow, record) -> { }, IDS, CLOCK);
     private final ValuationRateSets sets = new ValuationRateSets(setStore, periods, new OneRate(), ValuationStaleness.standard(), (uow, record) -> { }, IDS, CLOCK);
     private final PeriodCloses machine = new PeriodCloses(periods, closes, runs, breaks, setStore, com.finapp.accounting.testing.MonthsThatRan.EVERY_MONTH, new NoCutoff(), (uow, period, actor, correlation) -> 0, new com.finapp.accounting.testing.InMemoryPriorPeriodAdjustmentStore(periods), (uow, record) -> { },
