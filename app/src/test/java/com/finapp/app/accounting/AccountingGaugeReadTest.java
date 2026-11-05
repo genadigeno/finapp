@@ -193,6 +193,10 @@ class AccountingGaugeReadTest {
             AccountingGaugeRead<Long> read = new AccountingGaugeRead<>("a reading with no first read", snapshots(), off, clock, FLOOR, connection -> value.get());
             off.start();
             assertThat(off.isRunning()).as("it still closes with the context").isTrue();
+            // One thread, in order: a read the start had asked for would have run before this.
+            CountDownLatch behindAnyRead = new CountDownLatch(1);
+            off.execute(behindAnyRead::countDown);
+            assertThat(behindAnyRead.await(30, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
             assertThat(opened).as("no background reader at the start").hasValue(0);
             assertThat(read.current()).as("no value yet, and asked for").isNull();
             awaitOpened(1);
