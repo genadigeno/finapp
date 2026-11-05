@@ -9,6 +9,7 @@ import static com.finapp.accounting.testing.ReportBodies.value;
 
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.CloseRecordReads;
+import com.finapp.accounting.CounterpartyPositionReads;
 import com.finapp.accounting.CutoffReaction;
 import com.finapp.accounting.DatingClass;
 import com.finapp.accounting.EntryType;
@@ -92,6 +93,7 @@ import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -322,11 +324,95 @@ final class AccountingBatteryBooks {
     // ------------------------------------------------------------------ the books as accounting reads them
 
     /** The posted journal through accounting's read ports, under {@code chart}. */
-    record Books(Chart chart, Journal journal, InMemoryTrialBalanceReads reads, InMemoryJournal lines,
+    record Books(Chart chart, Journal journal, TrialBalanceReads reads, CounterpartyPositionReads positions, JournalReads lines,
             List<JournalShapes.EntryShape> shapes) {}
 
-    /** The books of {@code journal} under {@code chart}, the lines served in posting order - or shuffled by {@code order}. */
+    /**
+     * The books of {@code journal} under {@code chart}: the entries in posting order and every read answered in the adapters'
+     * own order - or, with {@code order}, the entries shuffled and <strong>every list a read answers served in a seeded random
+     * order</strong> (a drill-down page aside, whose order is its contract), as SQL's {@code GROUP BY} promises none. The
+     * in-memory adapters sort what they group, so shuffling the entries alone would hand the folds the same lists.
+     */
     static Books books(Journal journal, Chart chart, Optional<Long> order) {
+        Books held = held(journal, chart, order);
+        if (order.isEmpty()) {
+            return held;
+        }
+        Random random = new Random(order.get());
+        TrialBalanceReads reads = held.reads();
+        CounterpartyPositionReads positions = held.positions();
+        JournalReads lines = held.lines();
+        return new Books(chart, journal, new TrialBalanceReads() {
+            @Override
+            public Optional<TrialBalanceReads.Period> period(Connection snapshot, AccountingPeriodId id) {
+                return reads.period(snapshot, id);
+            }
+
+            @Override
+            public GlMappingVersion version(Connection snapshot, GlMappingVersionId id) {
+                return reads.version(snapshot, id);
+            }
+
+            @Override
+            public List<JournalReads.Aggregate> before(Connection snapshot, LocalDate before, Optional<Instant> cut) {
+                return shuffled(reads.before(snapshot, before, cut), random);
+            }
+
+            @Override
+            public List<JournalReads.Aggregate> within(Connection snapshot, JournalReads.Range range, Optional<Instant> cut) {
+                return shuffled(reads.within(snapshot, range, cut), random);
+            }
+
+            @Override
+            public List<TrialBalanceReads.LedgerWindows> ledger(Connection snapshot, TrialBalanceReads.Period period, Optional<Instant> cut) {
+                return shuffled(reads.ledger(snapshot, period, cut), random);
+            }
+        }, new CounterpartyPositionReads() {
+            @Override
+            public List<JournalReads.Aggregate> before(Connection snapshot, LocalDate before, Optional<Instant> cut) {
+                return shuffled(positions.before(snapshot, before, cut), random);
+            }
+
+            @Override
+            public List<JournalReads.Aggregate> within(Connection snapshot, JournalReads.Range range, Optional<Instant> cut) {
+                return shuffled(positions.within(snapshot, range, cut), random);
+            }
+        }, new JournalReads() {
+            @Override
+            public List<JournalReads.Aggregate> aggregates(Connection snapshot, JournalReads.Range range) {
+                return shuffled(lines.aggregates(snapshot, range), random);
+            }
+
+            @Override
+            public List<JournalReads.Total> totals(Connection snapshot, JournalReads.Range range) {
+                return shuffled(lines.totals(snapshot, range), random);
+            }
+
+            @Override
+            public List<JournalReads.Line> lines(Connection snapshot, JournalReads.LineQuery query) {
+                return lines.lines(snapshot, query);
+            }
+
+            @Override
+            public Optional<JournalReads.Entry> entry(Connection snapshot, UUID entryId) {
+                return lines.entry(snapshot, entryId);
+            }
+
+            @Override
+            public long countLines(Connection snapshot, java.util.Set<String> keys, LocalDate fromInclusive) {
+                return lines.countLines(snapshot, keys, fromInclusive);
+            }
+        }, shuffled(held.shapes(), random));
+    }
+
+    private static <T> List<T> shuffled(List<T> served, Random random) {
+        List<T> copy = new ArrayList<>(served);
+        Collections.shuffle(copy, random);
+        return List.copyOf(copy);
+    }
+
+    /** The books as the adapters hold them, the entries in posting order or shuffled by {@code order}. */
+    private static Books held(Journal journal, Chart chart, Optional<Long> order) {
         InMemoryTrialBalanceReads reads = new InMemoryTrialBalanceReads();
         for (YearMonth month : AccountingBatteryWorld.MONTHS) {
             Version version = version(chart, month);
@@ -367,7 +453,7 @@ final class AccountingBatteryBooks {
             shapes.add(new JournalShapes.EntryShape(id, EntryType.POSTING, stored.postingDate(),
                     Optional.of(PostingRuleRegister.namespaceOf(key)), shapeLines));
         }
-        return new Books(chart, journal, reads, lines, List.copyOf(shapes));
+        return new Books(chart, journal, reads, reads.counterparties(), lines, List.copyOf(shapes));
     }
 
     // ------------------------------------------------------------------ the reports
@@ -382,9 +468,8 @@ final class AccountingBatteryBooks {
         ValuationRateReads valuation = valuation(rates);
         StatementNotes notes = notes(books.chart());
         TrialBalanceDefinition trialBalance = new TrialBalanceDefinition(books.reads(), valuation);
-        BalanceSheetDefinition sheet = new BalanceSheetDefinition(books.reads(), books.reads().counterparties(), valuation, notes);
-        IncomeStatementDefinition income = new IncomeStatementDefinition(books.reads(), books.reads().counterparties(), valuation,
-                notes);
+        BalanceSheetDefinition sheet = new BalanceSheetDefinition(books.reads(), books.positions(), valuation, notes);
+        IncomeStatementDefinition income = new IncomeStatementDefinition(books.reads(), books.positions(), valuation, notes);
         GeneralLedger ledger = new GeneralLedger(books.lines());
         RuleConformance conformance = new RuleConformance(register());
         for (YearMonth month : AccountingBatteryWorld.MONTHS) {

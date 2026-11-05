@@ -312,7 +312,8 @@ class AccountingBatteryHermeticTest {
     }
 
     @Test
-    @DisplayName("INV-ACC-04: the read order never shows - the journal served shuffled reports byte-identical content and facts")
+    @DisplayName("INV-ACC-04: the read order never shows - the entries shuffled and every list a read answers served in a random"
+            + " order, as SQL's GROUP BY promises none, every report's bytes and every fact are the same")
     void theReadOrderNeverShows() {
         Reported shuffled = AccountingBatteryBooks.report(AccountingBatteryBooks.books(posted, Chart.BASE, Optional.of(SEED * 7)),
                 RATES);
