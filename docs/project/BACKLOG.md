@@ -26612,7 +26612,7 @@ after `-002` and `-004`; `-007` after `-003` and `-005`; `-008` after `-005`; `-
 - **Acceptance criteria**: a month held by a projection drift or a reference gap has a recorded, four-eyes way on, and nothing in the journal moves.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API`. **Risk**: High, for the ledger's reach. **Cx**: L.
 
-**P14-TST-002 — The accounting battery** — `READY` (2026-11-06; marked by the coordinator at `P14-TSK-023`'s merge, master `7a39854d`; every dependency `COMPLETE`)
+**P14-TST-002 — The accounting battery** — `IN_PROGRESS` (2026-11-06; designed on branch `P14-TST-002` from master `2a3390b0`) *(read "`READY` (2026-11-06; marked by the coordinator at `P14-TSK-023`'s merge, master `7a39854d`; every dependency `COMPLETE`)" until its design)*
 - **Objective**: an independent oracle for the GL, trial balance, statements and translation over generated journals.
 - **Bounded context**: Accounting / Reporting. **Dependencies**: `-009`, `-015`, `-016`.
 - **Scope**: ≥ 10,000 generated entries over five currencies and twelve periods through the real posting services; an
