@@ -243,6 +243,7 @@ rule extended to `BNPL_AGREEMENT`), `INV-CRD-01`, `INV-CRD-09`, `INV-SET-06`, `I
 
 ## Follow-up
 
+- `P14-TSK-019` (2026-11-05) — decision 7's "future safeguarding proof", built: `SAFEGUARDING_POSITION`, as of each month's cutoff, BNPL's principal in its outstanding term by ledger purpose (ADR-0118's As built).
 - `P12-TSK-005` — the widened principal set in `LendingCapitalHeadroom` and `LendingCapitalProof`, `lending_funded`
   widened, the `BnplCapital` port in `app`; lending's acceptance, draw and reversal races re-run unchanged; a planted
   BNPL principal line lowers headroom and refuses the last loan acceptance.

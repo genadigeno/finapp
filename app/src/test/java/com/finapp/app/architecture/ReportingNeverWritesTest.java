@@ -227,7 +227,7 @@ class ReportingNeverWritesTest {
                 "com.finapp.app.accounting.ReconciliationMonthReads",
                 "com.finapp.app.accounting.AccountingCloseStatusReads", "com.finapp.app.accounting.LedgerFlooredPostings",
                 "com.finapp.app.accounting.ProductReconciliationDisclosure", "com.finapp.app.accounting.LedgerPriorPeriodCorrections",
-                "com.finapp.app.accounting.ReconciliationAsOfCutoffReads", "com.finapp.app.accounting.AccountingCloseRecordReads");
+                "com.finapp.app.accounting.ReconciliationAsOfCutoffReads", "com.finapp.app.accounting.AccountingCloseRecordReads", "com.finapp.app.accounting.LendingFundedAsOfCutoffReads");
         assertThat(adapterViolations(imported, adapterReach(imported, adapters, candidate -> candidate.getPackageName().equals("com.finapp.app.accounting"))))
                 .as("a report port's adapter, or an app class it reaches, that can write or reads a product's reports").isEmpty();
     }

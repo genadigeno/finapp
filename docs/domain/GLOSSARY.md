@@ -2624,6 +2624,16 @@ balance moves), nor a customer's conversion (two posted legs meeting on `FX_POSI
 verdict.
 **Owned by:** `accounting`
 
+### Safeguarding Position
+**Is:** a reference figure, per currency: cash and clearing receivables less the customer and merchant liabilities capital did not fund - `assets - (liabilities - lending_funded)` - read from a FINAL run of `SAFEGUARDING_POSITION` as of a month's cutoff, each term a line of its own, able to read negative and never floored, each liability its accounts in credit, gross, so a holder in debit is no cover for anyone else (`P14-TSK-019`, ADR-0118 decision 4, C13).
+**Not:** a statement that any safeguarding obligation is met: no regime's rules are claimed, and the return is `REFERENCE`. Nor the money in a segregated account: this platform holds none as such. Nor summed across currencies. Nor `LendingCapitalHeadroom`'s headroom, which judges what capital is free and is read live; nor proof of cover: a positive figure rises with an accepted loan and does not fall when loan money leaves wallets, which is why `positionBeforeLendingFunded` is served beside it.
+**Owned by:** `accounting`
+
+### Lending Funded
+**Is:** `lending_funded(c)`, the part of the platform's liabilities capital created: principal outstanding (loans, lines, BNPL), plus committed to loans awaiting disbursement, plus written off, whose wallet money is still there and still capital's (ADR-0096 section 6, `P14-TSK-021`). `LendingCapitalHeadroom.Headroom.lendingFunded` states it now; `LendingFundedAsOfCutoff.lendingFunded` states it as of a month's cutoff over frozen rows, pinned to the first by a test.
+**Not:** capital, which also holds headroom: capital recognised = headroom + this figure. Nor an exact measure of loan-funded money still in wallets: once a borrower withdraws, wallets fall and this does not. Nor, for its committed term, money anywhere yet: an accepted loan awaiting disbursement has posted nothing.
+**Owned by:** `lending`
+
 ### Translation Difference
 **Is:** the explicit line by which the sum of individually translated parts differs from the translated total under one
 rounding rule — shown, never absorbed (`INV-ACC-11`).

@@ -68,6 +68,10 @@ class BnplBooksHaveOnePosterTest {
             Map.of(
                     "PostingRuleCatalogue.java",
                     "READER (P14-TSK-002; permitted by P14-TSK-021, which found this guard red on master): the posting-rule register names each rule's accounts as data, to judge an entry already posted; it posts nothing and reaches no poster",
+                    "LendingFundedAsOfCutoff.java",
+                    "READER (P14-TSK-019): the principal purposes and write-off expenses lending_funded reads as of a cutoff, by name, on a read-only snapshot; it posts nothing and reaches no poster",
+                    "SafeguardingPositionDefinition.java",
+                    "READER (P14-TSK-019): the reference safeguarding return names each purpose's place in it, by name, over the journal's read-only reads; it posts nothing and reaches no poster",
                     "PurposeReportDefinition.java",
                     "READER (P14-TSK-017; permitted by P14-TSK-021, which found this guard red on master): a report's definition names the purposes it sums from journal lines, on a read-only snapshot; it posts nothing and reaches no poster",
                     "LendingCapitalHeadroom.java",

@@ -32,11 +32,13 @@ import lombok.RequiredArgsConstructor;
  *       recognised from bank evidence = headroom + committed + loan and BNPL principal outstanding + principal written off
  *       (ADR-0104 decision 7, the formula versioned by that change and by `P14-TSK-021`, whose write-off leaves no line on the
  *       capital for this proof to explain). One derivation, never a second copy of the formula here.
- *   <li><strong>The safeguarding adjustment</strong> - {@code lending_funded(c) = principal outstanding + committed}
- *       is published: the term by which a future safeguarding proof (Phase 14/15) subtracts the capital-funded part of
- *       the platform's liabilities - loan-funded wallet money and BNPL-funded merchant payables - from customer-funded
- *       money. Published, not judged - an amount, so it leaves only through the audited capital report, never a metric
- *       (ADR-0072).
+ *   <li><strong>The safeguarding adjustment</strong> - {@code lending_funded(c) = principal outstanding + committed + written off}
+ *       (`P14-TSK-021`) is published: the term by which a safeguarding position subtracts the capital-funded part of the
+ *       platform's liabilities - loan-funded wallet money and BNPL-funded merchant payables - from customer-funded money.
+ *       Published, not judged - an amount, so it leaves only through the audited capital report, never a metric (ADR-0072).
+ *       This reading is a live one: accounting's reference return (`P14-TSK-019`) states the same formula as of a month's
+ *       cutoff over frozen rows, through its own port, pinned to {@link LendingCapitalHeadroom.Headroom#lendingFunded} by
+ *       a test in {@code app}, because a FINAL may not read what moves.
  * </ol>
  *
  * <p>Read-only and deciding nothing: a failure is an alert ({@code finapp.lending.capital.proof}), never a correction

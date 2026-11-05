@@ -33,11 +33,11 @@ class AccountingVocabulariesTest {
                 "LEDGER_TRIAL_BALANCE", "GL_EQUALS_LEDGER", "RULE_CONFORMANCE", "SOURCE_COMPLETENESS",
                 "ACCRUALS_COMPLETE", "PROJECTION_VERIFIED", "RECONCILIATION_DISCLOSURE", "VALUATION_SET_APPROVED",
                 "OPEN_ACCOUNTING_BREAKS");
-        // Section 13.6's thirteen reports (the fourteenth, BALANCES, dropped by the owner, 2026-11-03: the trial balance's closing column).
+        // Section 13.6's thirteen reports (the fourteenth, BALANCES, dropped by the owner, 2026-11-03: the trial balance's closing column), and C13's reference return (P14-TSK-019).
         assertThat(names(ReportKind.values())).containsExactly(
                 "TRIAL_BALANCE", "GL_ACTIVITY", "REVENUE", "RECEIVABLES_PAYABLES",
                 "SETTLEMENT_POSITIONS", "SUSPENSE", "FX_RESULTS", "LOAN_PORTFOLIO",
-                "BNPL_EXPOSURE", "RECONCILIATION_STATUS", "CLOSE_STATUS", "BALANCE_SHEET", "INCOME_STATEMENT");
+                "BNPL_EXPOSURE", "RECONCILIATION_STATUS", "CLOSE_STATUS", "BALANCE_SHEET", "INCOME_STATEMENT", "SAFEGUARDING_POSITION");
         assertThat(names(RunStatus.values()))
                 .containsExactly("GENERATING", "FINAL", "PROVISIONAL", "FAILED", "SUPERSEDED");
         // Section 13.3's three levels: two of mapping, three of conformance, two of source.

@@ -7,6 +7,7 @@ import com.finapp.accounting.RegulatoryAdapters;
 import com.finapp.accounting.RegulatoryObligationConfiguration;
 import com.finapp.accounting.RegulatoryObligationId;
 import com.finapp.accounting.RegulatoryObligations;
+import com.finapp.accounting.RegulatoryReportingProvider;
 import com.finapp.accounting.RegulatoryRuleType;
 import com.finapp.accounting.RegulatorySubmissions;
 import com.finapp.accounting.ReportRunId;
@@ -15,6 +16,7 @@ import com.finapp.accounting.ReportRuns;
 import com.finapp.accounting.RunBasis;
 import com.finapp.accounting.RunStatus;
 import com.finapp.accounting.reporting.CanonicalJson;
+import com.finapp.accounting.reporting.ReportDefinition;
 import com.finapp.accounting.reporting.ReportDefinitions;
 import com.finapp.accounting.reporting.ReportGeneration;
 import com.finapp.accounting.reporting.RunParameters;
@@ -75,26 +77,35 @@ public final class RegulatoryWorld {
     public volatile boolean auditRefuses;
 
     public RegulatoryWorld(Clock clock) {
+        this(clock, List.of(), List.of());
+    }
+
+    /** The world, also holding {@code adapters} and {@code sources}: a suite's real form over a real definition (`P14-TSK-019`). */
+    public RegulatoryWorld(Clock clock, List<RegulatoryReportingProvider> adapters, List<ReportDefinition> sources) {
         this.clock = clock;
         this.ids = new IdGenerator(clock, new SecureRandom());
         this.runs = new InMemoryReportRunStore(clock, periods);
         this.obligationStore = new InMemoryRegulatoryObligationStore(clock);
         this.store = new InMemoryRegulatorySubmissionStore(clock, periods, obligationStore);
-        this.definitions = ReportDefinitions.of(new TestReportDefinition(SOURCE, 1, Set.of(), false, (snapshot, inputs) -> CanonicalJson.object()));
+        List<ReportDefinition> held = new ArrayList<>(sources);
+        held.add(new TestReportDefinition(SOURCE, 1, Set.of(), false, (snapshot, inputs) -> CanonicalJson.object()));
+        this.definitions = ReportDefinitions.of(held);
         this.outbox = (uow, envelope, payload, mediaType) -> {
             events.add(envelope);
             payloads.add(payload);
         };
         this.reportRuns = new ReportRuns(runs, periods, new InMemoryGlMappingStore(), definitions, ReportRuns.Leases.STANDARD, (uow, record) -> { }, outbox, ids, clock);
-        RegulatoryAdapters adapters = new RegulatoryAdapters(List.of(provider));
+        List<RegulatoryReportingProvider> filing = new ArrayList<>(adapters);
+        filing.add(provider);
+        RegulatoryAdapters filers = new RegulatoryAdapters(filing);
         AuditWriter<Connection> writer = (uow, record) -> {
             if (auditRefuses) {
                 throw new IllegalStateException("the audit writer refused");
             }
             audit.add(record);
         };
-        this.obligations = new RegulatoryObligations(obligationStore, adapters, definitions, writer, ids, clock);
-        this.submissions = new RegulatorySubmissions(periods, store, obligationStore, runs, adapters, writer, outbox, ids, clock, Duration.ofDays(1));
+        this.obligations = new RegulatoryObligations(obligationStore, filers, definitions, writer, ids, clock);
+        this.submissions = new RegulatorySubmissions(periods, store, obligationStore, runs, filers, writer, outbox, ids, clock, Duration.ofDays(1));
     }
 
     public CorrelationId correlation() {

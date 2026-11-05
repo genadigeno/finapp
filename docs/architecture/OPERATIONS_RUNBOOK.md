@@ -1652,6 +1652,72 @@ Every return here is `REFERENCE`, through a simulated adapter (ADR-0118, C4): no
 
 **To rehearse.** `finapp.accounting.regulatory.simulation` chooses what the simulated adapter answers: `ACKNOWLEDGE` by default, `REJECT`, `UNKNOWN_THEN_ACKNOWLEDGE`, `UNKNOWN`, `NEVER_RECEIVED`, `UNAVAILABLE`. An outside environment only. **Only `NEVER_RECEIVED` rehearses a month that moved before the send:** under the default, an inquiry answers `ACKNOWLEDGED` even for a send that was withheld and never went, since the simulator remembers nothing.
 
+#### The reference safeguarding position return: its configuration
+
+`P14-TSK-019`, ADR-0118 decision 4, C13. A **reference** return: no jurisdiction, channel or form it names is real, and it asserts nothing about any legal obligation. It enters through the four-eyes doors, with no migration and no seed, and the block below is exactly its proposal's body. `SafeguardingReturnTest` reads this block and takes it through the real doors, the real definition and the real machine, so it cannot drift: change the form by a later form version, here first.
+
+1. A `REGULATORY_REPORTER` proposes it: `POST /v1/operator/regulatory/obligations`, `REGULATORY_REPORT_PREPARE`, with the block as its body. The receipt names the configuration's hash.
+2. A second person, a `FINANCIAL_CONTROLLER` from a `MULTI_FACTOR` session, reads `GET .../{obligationId}/attestation` and activates it: `POST .../{obligationId}/activation` under `REGULATORY_REPORT_APPROVE`, naming that hash.
+3. Each month, once it is `CLOSED`, an accountant issues the run: `POST /v1/operator/accounting/report-runs` under `ACCOUNTING_REPORT_GENERATE`, definition `SAFEGUARDING_POSITION`. Nothing generates it by itself. Without it a draft is `409 accounting.RegulatorySourceNotFinal`.
+4. Draft, validate, approve and submit as any return.
+
+```json
+{
+  "jurisdictionCode": "REF",
+  "formCode": "REF-SAFEGUARDING-POSITION",
+  "formVersion": 1,
+  "adapterName": "simulated-reference",
+  "sources": [{"definition": "SAFEGUARDING_POSITION", "version": 1}],
+  "lines": [
+    {"code": "CASH_AT_BANK", "label": "Cash at bank", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].cashAtBank"},
+    {"code": "CLEARING_RECEIVABLES", "label": "Clearing receivables", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].clearingReceivables"},
+    {"code": "ASSETS", "label": "Assets: cash at bank and clearing receivables", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].assets"},
+    {"code": "CUSTOMER_WALLETS", "label": "Customer wallets in credit, gross", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].customerWallets"},
+    {"code": "CUSTOMER_WALLETS_NET", "label": "Customer wallets as the trial balance nets them, debt included: not the figure the position reads", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].customerWalletsNet"},
+    {"code": "MERCHANT_PAYABLES", "label": "Merchant payables in credit, gross", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].merchantPayables"},
+    {"code": "MERCHANT_PAYABLES_NET", "label": "Merchant payables as the trial balance nets them, debt included: not the figure the position reads", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].merchantPayablesNet"},
+    {"code": "CREDIT_BALANCES", "label": "Credit balances owed back to borrowers and BNPL customers, in credit, gross", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].creditBalances"},
+    {"code": "CREDIT_BALANCES_NET", "label": "Credit balances as the trial balance nets them, debt included: not the figure the position reads", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].creditBalancesNet"},
+    {"code": "CLEARING_PAYABLES", "label": "Clearing payables: money owed onward, the cash not yet gone", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].clearingPayables"},
+    {"code": "SUSPENSE_HELD", "label": "Suspense held as owed: its net credit", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].suspenseHeld"},
+    {"code": "LIABILITIES", "label": "Liabilities", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].liabilities"},
+    {"code": "PRINCIPAL_OUTSTANDING", "label": "Principal outstanding: loans, lines and BNPL", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].principalOutstanding"},
+    {"code": "PRINCIPAL_COMMITTED", "label": "Principal committed: accepted loans awaiting disbursement, no journal line behind it", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].principalCommitted"},
+    {"code": "PRINCIPAL_WRITTEN_OFF", "label": "Principal written off", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].principalWrittenOff"},
+    {"code": "LENDING_FUNDED", "label": "Lending funded: outstanding, committed and written off", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].lendingFunded"},
+    {"code": "CUSTOMER_FUNDED", "label": "Customer-funded liabilities: liabilities less lending funded. Can read negative, because lending funded does not fall when loan money leaves wallets", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].customerFundedLiabilities"},
+    {"code": "POSITION", "label": "Position after lending funded. Negative is short. Positive does not prove cover: it rises with an accepted loan and does not fall when loan money leaves. Read beside POSITION_BEFORE", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].position"},
+    {"code": "POSITION_BEFORE", "label": "Position before lending funded: assets less liabilities, every liability a claim on cash whoever funded it. Negative is short, whatever POSITION reads", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].positionBeforeLendingFunded"},
+    {"code": "MEMO_CHARGEBACKS", "label": "Memo, out of the position: chargebacks recoverable", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].chargebackRecoverable"},
+    {"code": "MEMO_FX_POSITION", "label": "Memo, out of the position: FX position", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].fxPosition"},
+    {"code": "MEMO_SUSPENSE_DEBIT", "label": "Memo, out of the position: suspense at a net debit", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].suspenseNetDebit"},
+    {"code": "MEMO_WALLET_DEBT", "label": "Memo, out of the position: customer wallets in debit, owed by those customers and no cover for anyone else", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].customerWalletDebt"},
+    {"code": "MEMO_MERCHANT_DEBT", "label": "Memo, out of the position: merchant payables in debit, owed by those merchants and no cover for anyone else", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].merchantDebt"},
+    {"code": "MEMO_CREDIT_BALANCE_DEBT", "label": "Memo, out of the position: credit balances in debit, owed by those holders and no cover for anyone else", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].creditBalanceDebt"}
+  ],
+  "rules": [
+    {"code": "ASSETS_FOOT", "type": "EQUALS", "left": ["ASSETS"], "right": ["CASH_AT_BANK", "CLEARING_RECEIVABLES"]},
+    {"code": "LIABILITIES_FOOT", "type": "EQUALS", "left": ["LIABILITIES"], "right": ["CUSTOMER_WALLETS", "MERCHANT_PAYABLES", "CREDIT_BALANCES", "CLEARING_PAYABLES", "SUSPENSE_HELD"]},
+    {"code": "CUSTOMER_WALLETS_FOOT", "type": "EQUALS", "left": ["CUSTOMER_WALLETS"], "right": ["MEMO_WALLET_DEBT", "CUSTOMER_WALLETS_NET"]},
+    {"code": "MERCHANT_PAYABLES_FOOT", "type": "EQUALS", "left": ["MERCHANT_PAYABLES"], "right": ["MEMO_MERCHANT_DEBT", "MERCHANT_PAYABLES_NET"]},
+    {"code": "CREDIT_BALANCES_FOOT", "type": "EQUALS", "left": ["CREDIT_BALANCES"], "right": ["MEMO_CREDIT_BALANCE_DEBT", "CREDIT_BALANCES_NET"]},
+    {"code": "LENDING_FUNDED_FOOT", "type": "EQUALS", "left": ["LENDING_FUNDED"], "right": ["PRINCIPAL_OUTSTANDING", "PRINCIPAL_COMMITTED", "PRINCIPAL_WRITTEN_OFF"]},
+    {"code": "CUSTOMER_FUNDED_FOOT", "type": "EQUALS", "left": ["CUSTOMER_FUNDED", "LENDING_FUNDED"], "right": ["LIABILITIES"]},
+    {"code": "POSITION_FOOT", "type": "EQUALS", "left": ["POSITION", "CUSTOMER_FUNDED"], "right": ["ASSETS"]},
+    {"code": "POSITION_BEFORE_FOOT", "type": "EQUALS", "left": ["POSITION_BEFORE", "LIABILITIES"], "right": ["ASSETS"]}
+  ],
+  "reason": "The reference safeguarding position return, form version 1. No legal obligation is asserted."
+}
+```
+
+**Every rule is arithmetic that must hold in any month.** No rule judges a position, so **a shortfall validates, and is reported**: a rule on it would make the return impossible to validate in exactly the month it matters, and the way on would be to change the configuration. Nothing alerts on one yet: `P14-TSK-019`'s owner item. A person sees it on the form's `POSITION` and `POSITION_BEFORE` lines at validation and at attestation, negative and never floored, and in the run's `positionNegative` and `positionBeforeLendingFundedNegative` flags per currency. **A `*_FOOT` rule failing on `CUSTOMER_WALLETS`, `MERCHANT_PAYABLES` or `CREDIT_BALANCES`** means the per-account read and the trial balance disagree on one snapshot: treat it as an integrity incident. The return stays `DRAFT`, and its way on is a withdrawal.
+
+**A currency.** Every figure is per currency and none crosses one. A currency with wallets and no lending carries true zeros from the run's own reads. A currency nothing touched has no line. A month with no line in any currency cannot be drawn: `422 accounting.RegulatoryFigureUnresolved`.
+
+**`PRINCIPAL_COMMITTED` has no journal line behind it.** An accepted loan awaiting its disbursement has posted nothing. The figure rests on lending's frozen rows, and the run's `drillDown` says so; no route under `ACCOUNTING_READ` lists those loans. `GET /v1/operator/reports/lending/capital?date={lastDay}` states the term under `LENDING_INVESTIGATE`.
+
+**Reading it.** **A positive `POSITION` does not prove cover.** It is ADR-0096's: it subtracts `lending_funded`, and so it rises with an accepted loan that has moved no money, and does not fall when a borrower withdraws what a loan created. Read `POSITION_BEFORE` beside it: negative there is short, whatever `POSITION` reads. `CUSTOMER_FUNDED` can read negative for the same reason, and that is a credit to nobody. **A holder in debit is no cover for anyone else:** the liabilities are their accounts in credit, gross, so wallets at +100 and -30 owe 100, and the -30 is `MEMO_WALLET_DEBT`, a receivable from that customer. `finapp.ledger.negative.positions` counts those accounts now; this is what they stood at at the cutoff. An FX conversion not yet covered is a true shortfall in its currency: `MEMO_FX_POSITION` says why.
+
 ### 10.7 The close calendar and a lock - `AccountingCloseOverdue`, `AccountingScheduleOff`
 
 **The calendar, as the code holds it.** (1) **A month opens by itself**: the schedule's open leg, `finapp.accounting.close.open-poll` (default an hour), inserts it if absent. No door births a period. `GET /v1/operator/accounting/periods` (`ACCOUNTING_READ`) lists them. (2) **It may lock from its last day plus two business days** (`finapp.accounting.period.lock-grace-business-days`; Monday to Friday, since no holiday calendar exists; never under 2), and only once the month before it is `CLOSED`. (3) **A person locks it**: `POST .../periods/{periodId}/lock` (`ACCOUNTING_CLOSE_PROPOSE`), keyed. In one transaction the ledger's cutoff moves to the month's end and the GL mapping version in force is pinned. From that commit no entry dated in the month commits (`INV-ACC-08`). `409 accounting.PeriodNotLockable`: too early, or the month before is not closed. `accounting.CutoffBusy`: postings held the cutoff through its attempts; nothing moved, ask again. (4) **The checks run by themselves**: within one poll of `finapp.accounting.close.checks-poll` (default 30 s) the schedule births the run and its nine attempts. `GET .../periods/{periodId}/close-run` (`ACCOUNTING_READ`). (5) **A valuation rate set is captured and approved**: `POST /v1/operator/accounting/valuation-rate-sets` (`ACCOUNTING_CLOSE_PROPOSE`), then `POST .../valuation-rate-sets/{setId}/approval` (`ACCOUNTING_CLOSE_APPROVE`), a different person. `VALUATION_SET_APPROVED` waits for it. (6) **An accountant proposes**: `POST .../periods/{periodId}/close-proposal` (`ACCOUNTING_CLOSE_PROPOSE`), keyed, a reason per `DISCLOSED` attempt. Section 10.3 if it is refused. (7) **A controller decides**: reads `GET .../periods/{periodId}/close-proposal` (`ACCOUNTING_CLOSE_APPROVE`), then `POST .../periods/{periodId}/close-approval` (`ACCOUNTING_CLOSE_APPROVE`) or `POST .../periods/{periodId}/close-rejection` (`ACCOUNTING_CLOSE_APPROVE`). The accountant who proposed cannot: `403 accounting.SelfApprovalRefused`.
