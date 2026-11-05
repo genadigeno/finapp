@@ -717,6 +717,41 @@
           }
         }
       },
+      "accounting.ReferenceGapRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.ReferenceGapRefused"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.ReferenceGapRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A reference-gap exception admits only the reference's last observation of a pair before the period's end, older than the staleness bound and named by its snapshot; that is not what the reference holds now. Nothing was written.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.RegulatoryFigureUnresolved": {
         "content": {
           "application/problem+json": {
@@ -1233,6 +1268,41 @@
           }
         },
         "description": "[403] A proposal is decided by someone other than its proposer; the proposer may reject it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "accounting.ValuationDoorMismatch": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.ValuationDoorMismatch"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.ValuationDoorMismatch"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A valuation rate set holding a reference gap is approved at its own door on a MULTI_FACTOR session, and a set holding none at the ordinary door; nothing was changed.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -6527,6 +6597,111 @@
           }
         }
       },
+      "ledger.ProjectionNotDrifting": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "ledger.ProjectionNotDrifting"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/ledger.ProjectionNotDrifting"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The account's balance projection agrees with its journal, or was posted to while being read; nothing to rebuild.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "ledger.ProjectionNotRebuildable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "ledger.ProjectionNotRebuildable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/ledger.ProjectionNotRebuildable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The account's balance projection cannot be rebuilt here; its history or its row's scale needs the migrator.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "ledger.ProjectionRebuildStanding": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "ledger.ProjectionRebuildStanding"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/ledger.ProjectionRebuildStanding"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A rebuild of this account's balance projection already awaits a decision.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "ledger.ProposalNotOpen": {
         "content": {
           "application/problem+json": {
@@ -6553,6 +6728,76 @@
           }
         },
         "description": "[409] The adjustment proposal is already decided; a new adjustment is a new proposal.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "ledger.RebuildNotOpen": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "ledger.RebuildNotOpen"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/ledger.RebuildNotOpen"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The projection rebuild is already decided; a later drift is a new proposal.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "ledger.RebuildSelfApprovalRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "ledger.RebuildSelfApprovalRefused"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/ledger.RebuildSelfApprovalRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A projection rebuild requires a second approver distinct from its proposer.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -19823,6 +20068,24 @@
         },
         "type": "object"
       },
+      "FiguresView": {
+        "properties": {
+          "appliedEntries": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "available": {
+            "type": "string"
+          },
+          "holds": {
+            "type": "string"
+          },
+          "posted": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "FileList": {
         "properties": {
           "files": {
@@ -24691,6 +24954,25 @@
         ],
         "type": "object"
       },
+      "ProjectionRebuildRequest": {
+        "properties": {
+          "ledgerAccountId": {
+            "maxLength": 36,
+            "minLength": 36,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "ledgerAccountId",
+          "reason"
+        ],
+        "type": "object"
+      },
       "ProposalAccountView": {
         "properties": {
           "accountId": {
@@ -25088,6 +25370,56 @@
         },
         "type": "object"
       },
+      "RebuildView": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "after": {
+            "$ref": "#/components/schemas/FiguresView"
+          },
+          "before": {
+            "$ref": "#/components/schemas/FiguresView"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "driftAsProposed": {
+            "type": "boolean"
+          },
+          "observedDerived": {
+            "$ref": "#/components/schemas/FiguresView"
+          },
+          "observedRow": {
+            "$ref": "#/components/schemas/FiguresView"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "rebuildId": {
+            "type": "string"
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RecoveryCompletionRequest": {
         "properties": {
           "password": {
@@ -25114,6 +25446,25 @@
         },
         "required": [
           "loginIdentifier"
+        ],
+        "type": "object"
+      },
+      "ReferenceGapBody": {
+        "properties": {
+          "pair": {
+            "maxLength": 7,
+            "minLength": 7,
+            "type": "string"
+          },
+          "snapshotId": {
+            "maxLength": 36,
+            "minLength": 36,
+            "type": "string"
+          }
+        },
+        "required": [
+          "pair",
+          "snapshotId"
         ],
         "type": "object"
       },
@@ -31104,6 +31455,33 @@
         },
         "type": "object"
       },
+      "ValuationRateSetGapCaptureRequest": {
+        "properties": {
+          "gaps": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenceGapBody"
+            },
+            "maxItems": 20,
+            "minItems": 0,
+            "type": "array"
+          },
+          "periodId": {
+            "maxLength": 36,
+            "minLength": 36,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "gaps",
+          "periodId"
+        ],
+        "type": "object"
+      },
       "ValuationRateSetReceipt": {
         "properties": {
           "asOf": {
@@ -31127,6 +31505,10 @@
               "$ref": "#/components/schemas/ValuationRateView"
             },
             "type": "array"
+          },
+          "referenceGaps": {
+            "format": "int32",
+            "type": "integer"
           },
           "status": {
             "type": "string"
@@ -31164,6 +31546,10 @@
             },
             "type": "array"
           },
+          "referenceGaps": {
+            "format": "int32",
+            "type": "integer"
+          },
           "status": {
             "type": "string"
           }
@@ -31172,8 +31558,15 @@
       },
       "ValuationRateView": {
         "properties": {
+          "ageHours": {
+            "format": "int64",
+            "type": "integer"
+          },
           "baseCurrency": {
             "type": "string"
+          },
+          "beyondBound": {
+            "type": "boolean"
           },
           "observedAt": {
             "type": "string"
@@ -31971,6 +32364,140 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/ledger/projection-rebuilds": {
+      "post": {
+        "operationId": "proposeProjectionRebuild",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectionRebuildRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RebuildView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/ledger/projection-rebuilds/{id}": {
+      "get": {
+        "operationId": "readProjectionRebuild",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RebuildView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/ledger/projection-rebuilds/{id}/approval": {
+      "post": {
+        "operationId": "approveProjectionRebuild",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RebuildView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/ledger/projection-rebuilds/{id}/rejection": {
+      "post": {
+        "operationId": "rejectProjectionRebuild",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RebuildView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }
@@ -36450,6 +36977,43 @@
         }
       }
     },
+    "/v1/operator/accounting/valuation-rate-sets/reference-gap": {
+      "post": {
+        "operationId": "captureValuationRateSetAcrossGap",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValuationRateSetGapCaptureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValuationRateSetReceipt"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
     "/v1/operator/accounting/valuation-rate-sets/{setId}": {
       "get": {
         "operationId": "readValuationRateSet",
@@ -36480,6 +37044,51 @@
     "/v1/operator/accounting/valuation-rate-sets/{setId}/approval": {
       "post": {
         "operationId": "approveValuationRateSet",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "setId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValuationRateSetDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValuationRateSetReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/valuation-rate-sets/{setId}/reference-gap-approval": {
+      "post": {
+        "operationId": "approveValuationRateSetAcrossGap",
         "parameters": [
           {
             "in": "header",

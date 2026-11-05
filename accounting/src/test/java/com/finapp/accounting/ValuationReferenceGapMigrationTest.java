@@ -83,17 +83,27 @@ class ValuationReferenceGapMigrationTest {
     }
 
     @Test
-    @DisplayName("every constraint name is held once across accounting's migrations")
+    @DisplayName("every constraint and trigger name V012 adds is its own: once in V012, and in no earlier accounting migration")
     void constraintNamesAreUnique() throws IOException, URISyntaxException {
-        List<String> names = new ArrayList<>();
+        Pattern named = Pattern.compile("(?:CONSTRAINT|CREATE TRIGGER)\\s+([a-z_]+)");
+        List<String> introduced = new ArrayList<>();
+        Matcher own = named.matcher(statements(RESOURCE));
+        while (own.find()) {
+            introduced.add(own.group(1));
+        }
+        List<String> earlier = new ArrayList<>();
         for (String resource : migrations()) {
-            // A DROP names a constraint an earlier migration made; only a creation counts.
-            Matcher matcher = Pattern.compile("(?<!DROP )CONSTRAINT ([a-z_]+)").matcher(statements(resource));
+            if (resource.equals(RESOURCE)) {
+                continue;
+            }
+            Matcher matcher = named.matcher(statements(resource));
             while (matcher.find()) {
-                names.add(matcher.group(1));
+                earlier.add(matcher.group(1));
             }
         }
-        assertThat(names).contains("valuation_rate_set_reference_gaps_counted").doesNotHaveDuplicates();
+        assertThat(introduced).containsExactlyInAnyOrder("valuation_rate_set_reference_gaps_counted",
+                "valuation_rate_set_reference_gap_reasoned", "valuation_rate_set_reference_gaps_are_frozen");
+        assertThat(earlier).as("the earlier migrations are read").hasSizeGreaterThan(100).doesNotContainAnyElementsOf(introduced);
     }
 
     // -----------------------------------------------------------------

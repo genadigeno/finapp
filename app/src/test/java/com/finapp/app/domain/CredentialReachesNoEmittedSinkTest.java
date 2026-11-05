@@ -781,6 +781,12 @@ class CredentialReachesNoEmittedSinkTest {
                         // (AccountingReasons).
                         "ValuationRateSetCaptureRequest",
                         "ValuationRateSetDecisionRequest",
+                        // P14-TSK-026: a reference gap's capture and the projection rebuild's proposal. No secret: a
+                        // period's or a ledger account's identifier, a REASON (screened by AccountingReasons on the gap's,
+                        // bounded on the rebuild's), and each excepted pair's code and reference snapshot id.
+                        "ValuationRateSetGapCaptureRequest",
+                        "ReferenceGapBody",
+                        "ProjectionRebuildRequest",
                         // P14-TSK-010: the break doors' bodies. No secret: a disclosure and REASONs screened for
                         // card-number and account shapes at the domain (AccountingReasons), and a journal entry's id.
                         "BreakAcknowledgementProposal",
