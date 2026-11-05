@@ -290,6 +290,26 @@ final class AccountingBatteryBooks {
         return LedgerAccountId.of(v7(1_000_000L + purpose * 1_000L + unit * 10L + line.owner()));
     }
 
+    /** An account as the ledger's account row holds it: its purpose, owner kind and owner. */
+    record Holder(String purpose, String ownerKind, int owner) {}
+
+    /** The ledger's accounts - every purpose of the chart in every currency, four wallets each - by id. */
+    static final Map<LedgerAccountId, Holder> ACCOUNTS = accounts();
+
+    private static Map<LedgerAccountId, Holder> accounts() {
+        Map<LedgerAccountId, Holder> accounts = new HashMap<>();
+        for (AccountingBatteryWorld.ChartRow row : AccountingBatteryWorld.CHART) {
+            int owners = row.purpose().equals(AccountingBatteryWorld.WALLET) ? AccountingBatteryWorld.WALLETS : 1;
+            for (AccountingBatteryWorld.Unit unit : AccountingBatteryWorld.UNITS) {
+                for (int owner = 0; owner < owners; owner++) {
+                    Line line = new Line(row.purpose(), row.ownerKind(), owner, true, 1);
+                    accounts.put(account(line, unit.currency()), new Holder(row.purpose(), row.ownerKind(), owner));
+                }
+            }
+        }
+        return Map.copyOf(accounts);
+    }
+
     private static int indexOfPurpose(String purpose) {
         for (int i = 0; i < AccountingBatteryWorld.CHART.size(); i++) {
             if (AccountingBatteryWorld.CHART.get(i).purpose().equals(purpose)) {
@@ -328,11 +348,9 @@ final class AccountingBatteryBooks {
             List<JournalLine> storedLines = stored.lines();
             for (int seq = 0; seq < storedLines.size(); seq++) {
                 JournalLine line = storedLines.get(seq);
-                // The account's purpose, owner kind and owner as the ledger's account row holds them: the world's line at seq.
-                Line held = posted.entry().lines().get(seq);
-                if (!account(held, line.amount().currency().code()).equals(line.account())) {
-                    throw new IllegalStateException("the stored line is not the generated one");
-                }
+                // The stored line joined to its account, as the SQL joins ledger_account: never the generated line.
+                Holder held = Optional.ofNullable(ACCOUNTS.get(line.account()))
+                        .orElseThrow(() -> new IllegalStateException("a stored line on no account of the chart"));
                 Side side = line.direction() == Direction.DEBIT ? Side.DEBIT : Side.CREDIT;
                 reads.line(new InMemoryTrialBalanceReads.JournalLine(stored.postingDate(), stored.createdAt(), held.purpose(),
                         held.ownerKind(), line.amount().currency().code(), line.amount().scale(), side, line.amount().minorUnits()));

@@ -231,7 +231,7 @@ class AccountingBatteryTest {
     @Test
     @DisplayName("the doors: every month CLOSED at revision 1 under its pin - the first version through June, the restated one"
             + " from July - with an approved valuation set, and the ledger's cutoff at the year's end")
-    void everyMonthClosedInOrderUnderItsPin() {
+    void everyMonthClosedUnderItsPin() {
         for (YearMonth month : AccountingBatteryWorld.MONTHS) {
             AccountingPeriodStore.PeriodRow period = row(month);
             assertThat(period.status()).as("%s", month).isEqualTo(PeriodStatus.CLOSED);
