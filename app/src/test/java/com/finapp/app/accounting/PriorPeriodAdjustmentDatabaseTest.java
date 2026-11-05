@@ -593,7 +593,7 @@ class PriorPeriodAdjustmentDatabaseTest {
         assertThat(owed.other()).isEqualTo(Money.ofMinorUnits(0, EUR));
         assertThat(owed.terms()).isEqualTo(owed.position());
 
-        // P14-TSK-023 (ac): the same fold over a MANUAL proposal's real line: the statement's own p.origin, a posted proposal's, so facing the wallet it reads other, and the report's OTHER agrees.
+        // P14-TSK-023 (ac): the same fold over a MANUAL proposal's real line: the statement's own p.origin, a posted proposal's, so facing the wallet it reads other. The report's OTHER for the same origin is BnplMerchantDrillDownTest#aManualAdjustmentIsNamedOther's, hermetic.
         Actor operator = person();
         AdjustmentProposalId manual = inScope(operator, uow -> adjustments().propose(uow, new AdjustmentCommand("ppa-suite-" + IDS.next(), LANDS_ON, LANDS_ON, "manual", "a person's", List.of(new JournalLine(customers.id(), Direction.DEBIT, Money.ofMinorUnits(700, EUR)), new JournalLine(payable.id(), Direction.CREDIT, Money.ofMinorUnits(700, EUR))))).proposalId());
         Actor secondPerson = person();

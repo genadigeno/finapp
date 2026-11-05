@@ -82,11 +82,11 @@ public final class PeriodCloseDesk {
      *
      * @param priorPeriodAdjustments on a reopen's two acts, the adjustments already posted against the month, read holding its row (`P14-TSK-013`): its figures at the next revision will still show what those corrected, each entry being dated in a later month, so
      *     whoever corrects the month directly must know they stand. What an act that judged its naming named, since `P14-TSK-022` refuses anything else; a repeat that converged compared nothing, and this is what stands now. Empty on a close's acts.
-     * @param overtakenReturns on a reopen's two acts, the returns {@code SUBMITTED} or {@code ACKNOWLEDGED} for the month, newest first, at most {@link ReturnsAReopenOvertakes#NEWEST} (`P14-TSK-023`). As read at that act: a list, never a gate, and {@link #overtakenReturnsNote} says what it does not hold. A month with none reads empty. Empty on a close's acts and on a receipt stored before it, as {@link #overtakenReturnsNote} tells apart.
-     * @param overtakenReturnsTotal how many there are, of which {@code overtakenReturns} is the newest
-     * @param overtakenReturnsNote what the list says and does not, on a reopen's act; null on a close's act and on a receipt stored before `P14-TSK-023`, neither of which read one
+     * @param overtakenReturns on a reopen's two acts, the returns {@code SUBMITTED} or {@code ACKNOWLEDGED} for the month, newest first, at most {@link ReturnsAReopenOvertakes#NEWEST} (`P14-TSK-023`). As read at that act: a list, never a gate, and {@link #overtakenReturnsNote} says what it does not hold. A month with none reads an empty list. <strong>Null where no list was read</strong>: on a close's acts, and on a receipt a reopen's key stored before `P14-TSK-023`, so "read, and none" and "never read" never look alike (the fix round's M-6).
+     * @param overtakenReturnsTotal how many there are, of which {@code overtakenReturns} is the newest; null where no list was read, as that list
+     * @param overtakenReturnsNote what the list says and does not, on a reopen's act; null where no list was read, as that list
      */
-    public record PeriodCloseReceipt(String id, String period, String status, int revision, String proposalId, String closeRunId, List<String> priorPeriodAdjustments, List<OvertakenReturn> overtakenReturns, long overtakenReturnsTotal, String overtakenReturnsNote) {}
+    public record PeriodCloseReceipt(String id, String period, String status, int revision, String proposalId, String closeRunId, List<String> priorPeriodAdjustments, List<OvertakenReturn> overtakenReturns, Long overtakenReturnsTotal, String overtakenReturnsNote) {}
 
     /** A return a reopen overtakes: its id, its form and its status as read. Never a figure, a person, a reason or a provider's reference. */
     public record OvertakenReturn(String id, String form, String status) {}
@@ -232,7 +232,7 @@ public final class PeriodCloseDesk {
 
     private static PeriodCloseReceipt receipt(PeriodCloses.Acted acted) {
         return new PeriodCloseReceipt(acted.id().value().toString(), acted.month().toString(), acted.status().name(), acted.revision(),
-                acted.proposal().map(id -> id.value().toString()).orElse(null), acted.run().map(id -> id.value().toString()).orElse(null), List.of(), List.of(), 0, null);
+                acted.proposal().map(id -> id.value().toString()).orElse(null), acted.run().map(id -> id.value().toString()).orElse(null), List.of(), null, null, null);
     }
 
     /**
@@ -270,13 +270,15 @@ public final class PeriodCloseDesk {
                 + String.join(",", receipt.priorPeriodAdjustments()) + read;
     }
 
-    /** A stored receipt read back. One stored before P14-TSK-013 has six fields, one before P14-TSK-023 or of a close's act seven: each reads as before, an empty list, a total of none and no note, since it read no list. */
+    /**
+     * A stored receipt read back. One stored before P14-TSK-013 has six fields, one before P14-TSK-023 or of a close's act seven: each reads as it did, and its list, total and note are null, since no list was read. One that read a list has nine, the last empty for a month with none.
+     */
     private static PeriodCloseReceipt parsed(String text) {
         String[] stored = text.split("\\|", -1);
         boolean read = stored.length > 8;
-        List<OvertakenReturn> overtaken = !read || stored[8].isEmpty() ? List.of() : Arrays.stream(stored[8].split(",")).map(item -> item.split("~", 3)).map(item -> new OvertakenReturn(item[0], item[1], item[2])).toList();
+        List<OvertakenReturn> overtaken = !read ? null : stored[8].isEmpty() ? List.of() : Arrays.stream(stored[8].split(",")).map(item -> item.split("~", 3)).map(item -> new OvertakenReturn(item[0], item[1], item[2])).toList();
         return new PeriodCloseReceipt(stored[0], stored[1], stored[2], Integer.parseInt(stored[3]), stored[4].isEmpty() ? null : stored[4],
-                stored[5].isEmpty() ? null : stored[5], stored.length < 7 || stored[6].isEmpty() ? List.of() : List.of(stored[6].split(",")), overtaken, read ? Long.parseLong(stored[7]) : 0, read ? OVERTAKEN_RETURNS_NOTE : null);
+                stored[5].isEmpty() ? null : stored[5], stored.length < 7 || stored[6].isEmpty() ? List.of() : List.of(stored[6].split(",")), overtaken, read ? Long.valueOf(stored[7]) : null, read ? OVERTAKEN_RETURNS_NOTE : null);
     }
 
     private <R> R selfApprovalRecorded(Actor actor, Supplier<R> work) {

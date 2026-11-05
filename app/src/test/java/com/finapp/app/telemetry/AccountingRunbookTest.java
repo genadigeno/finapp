@@ -6,6 +6,8 @@ import com.finapp.accounting.AccountingErrorCode;
 import com.finapp.accounting.CloseCheckCode;
 import com.finapp.accounting.reporting.ReportDefinitions;
 import com.finapp.app.accounting.PeriodCloseDesk;
+import com.finapp.app.accounting.RegulatoryAttentionMetrics;
+import com.finapp.app.accounting.RegulatorySubmissionMetrics;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.testing.RepositoryPaths;
@@ -43,7 +45,9 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
  *
  * <p><strong>Exactly what is held.</strong> Every alert of {@code accounting.yml} links to a section that exists and names it. A backticked route is a route of the running application: a whole {@code /v1/...} path, or a {@code .../} shorthand beginning with a literal segment and matched only under
  * {@code /operator/accounting} and {@code /operator/regulatory}, with the method it says. A route written beside a permission, in {@code (`X`)}, {@code under `X`} or {@code with `X`}, requires that permission on every route it matches. A permission-shaped name is a permission, a check, a report or a word of the code,
- * comments stripped. A backticked meter is registered, each label value it writes on a real series and each bare key on the meter; a property is read by the code. An alert is a rule of any rules file. An {@code accounting.*}, {@code regulatory.*}, {@code ledger.*}, {@code identity.*}, {@code bnpl.*} or
+ * comments stripped. A backticked meter is registered, each label value it writes on a real series and each bare key on the meter; section 10.6's shorthand, {@code attention{kind=...}} and a bare
+ * {@code outcome=...}, is read as {@code finapp.accounting.regulatory.attention} and {@code finapp.accounting.regulatory.submission}, whose label values it holds the same way (`P14-TSK-023`'s fix round, M-1: until then the shorthand was
+ * read as nothing, and a kind no series has passed). A property is read by the code. An alert is a rule of any rules file. An {@code accounting.*}, {@code regulatory.*}, {@code ledger.*}, {@code identity.*}, {@code bnpl.*} or
  * {@code lending.*} code is a string of the code, and a status written before an accounting code is that code's.
  *
  * <p><strong>What is not held.</strong> JSON fields, reasons and states in prose, a permission written any other way, a route's request or response, and whether a step helps an operator: a reader's to judge.
@@ -64,6 +68,8 @@ class AccountingRunbookTest {
     private static final Pattern CODE_LIKE = Pattern.compile("^(?:(\\d{3}) )?((?:accounting|regulatory|ledger|identity|bnpl|lending)\\.[A-Z][A-Za-z]+)$");
     private static final Pattern LABEL = Pattern.compile("([a-z_]+)(?:=\"?([A-Za-z0-9_.-]+)\"?)?");
     private static final Pattern ALERT_RULE = Pattern.compile("(?m)^\\s*-\\s*alert:\\s*([A-Za-z]+)\\s*$");
+    /** Section 10.6's shorthand for the two regulatory meters it names in full beside it: {@code attention{kind=...}}, the braces captured, and a bare {@code outcome=...}. */
+    private static final Pattern SHORTHAND = Pattern.compile("^(?:attention(\\{[^}]*})|outcome=[A-Za-z0-9_.-]+)$");
     private static final Pattern VARIABLE = Pattern.compile("\\{[^}]*}");
 
     @Autowired private MeterRegistry registry;
@@ -181,6 +187,13 @@ class AccountingRunbookTest {
                 assertThat(alerts).as("the alert `%s` exists", text).contains(text);
                 named++;
             }
+            Matcher shorthand = SHORTHAND.matcher(text);
+            if (shorthand.matches()) {
+                String name = shorthand.group(1) != null ? RegulatoryAttentionMetrics.ATTENTION : RegulatorySubmissionMetrics.SUBMISSION;
+                assertThat(meters).as("`%s` is shorthand for a registered meter", text).contains(name);
+                assertLabels(text, name, shorthand.group(1) != null ? shorthand.group(1) : "{" + text + "}");
+                named++;
+            }
             Matcher code = CODE_LIKE.matcher(text);
             if (code.matches()) {
                 assertThat(sources).as("the code `%s` exists", text).contains("\"" + code.group(2) + "\"");
@@ -231,6 +244,10 @@ class AccountingRunbookTest {
         assertThat(routesAndMethods().get(paths.stream().filter(path -> matches(path, normalised(".../periods/{periodId}/lock"))).findFirst().orElseThrow())).containsExactly("POST");
         assertThat(ROUTE_THEN_PERMISSION.matcher("`GET .../periods/{periodId}/close-run` (`ACCOUNTING_READ`)").find()).isTrue();
         assertThat(ROUTE_THEN_PERMISSION.matcher("`POST .../submissions/{submissionId}/non-delivery` under `REGULATORY_REPORT_SUBMIT`").find()).isTrue();
+        assertThat(SHORTHAND.matcher("attention{kind=stale_unsent}").matches()).as("M-1: the shorthand is read").isTrue();
+        assertThat(SHORTHAND.matcher("outcome=run_bytes_differ").matches()).isTrue();
+        assertThat(registry.find(RegulatoryAttentionMetrics.ATTENTION).tag("kind", "stale_unsent").meters()).as("a kind the shorthand writes is a real series").isNotEmpty();
+        assertThat(registry.find(RegulatoryAttentionMetrics.ATTENTION).tag("kind", "no_such_kind").meters()).as("and one no series has is told apart").isEmpty();
         assertThat(ROUTE_THEN_PERMISSION.matcher("`GET /v1/operator/regulatory/submissions` lists what stands, with `REGULATORY_REPORT_PREPARE`").find()).isTrue();
         assertThat(paths.stream().filter(path -> matches(path, normalised(".../breaks/{breakId}"))).toList()).as("a shorthand reads accounting's and regulatory's routes, never reconciliation's of that name")
                 .isNotEmpty().allSatisfy(path -> assertThat(path).contains("/operator/accounting/"));

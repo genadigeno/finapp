@@ -363,11 +363,12 @@ class PeriodCloseDeskTest {
     /** {@code march} closed, nothing posted against it, by these keys. */
     private void closed(String key) {
         PeriodCloseDesk.PeriodCloseReceipt proposal = propose(key + "-p");
-        assertThat(proposal.overtakenReturns()).as("a close's acts read none").isEmpty();
-        assertThat(proposal.overtakenReturnsTotal()).isZero();
+        assertThat(proposal.overtakenReturns()).as("M-6: a close's acts read no list, so serve none, never an empty one").isNull();
+        assertThat(proposal.overtakenReturnsTotal()).isNull();
         assertThat(proposal.overtakenReturnsNote()).as("and say nothing of one").isNull();
         PeriodCloseDesk.PeriodCloseReceipt closed = as(CONTROLLER, () -> desk.approve(key + "-a", period(), proposal.proposalId(), "agreed"));
-        assertThat(closed.overtakenReturns()).isEmpty();
+        assertThat(closed.overtakenReturns()).isNull();
+        assertThat(closed.overtakenReturnsTotal()).isNull();
         assertThat(closed.overtakenReturnsNote()).isNull();
     }
 
@@ -405,7 +406,7 @@ class PeriodCloseDeskTest {
     }
 
     @Test
-    @DisplayName("P14-TSK-023 (a): a month with no returns reads an empty list and a total of none, never an absence, on both receipts, and the words say an empty list is not nothing in flight")
+    @DisplayName("P14-TSK-023 (a): a month with no returns reads an empty list and a total of none, never an absence, on both receipts and on a replay, and the words say an empty list is not nothing in flight")
     void aMonthWithNoReturnsReadsAnEmptyList() throws Exception {
         closed("k-e1");
 
@@ -417,6 +418,7 @@ class PeriodCloseDeskTest {
             assertThat(receipt.overtakenReturnsTotal()).isZero();
             assertThat(receipt.overtakenReturnsNote()).contains("does not mean nothing is in flight");
             assertThat(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(receipt)).contains("\"overtakenReturns\":[]").contains("\"overtakenReturnsTotal\":0");
+            assertThat(as(ACCOUNTANT, () -> desk.proposeReopen("k-e2", period(), List.of(), "a correction"))).as("read, and none, survives its replay as read, and none").isEqualTo(proposed);
         }
     }
 
@@ -525,8 +527,9 @@ class PeriodCloseDeskTest {
     }
 
     @Test
-    @DisplayName("P14-TSK-022, P14-TSK-023: a stored reopen receipt stays readable: a row from before P14-TSK-013 has six fields, one from before P14-TSK-023 seven; each replays with an empty list, a total of none and no note, since it read no list; and a body naming none fingerprints exactly as it did, so a retry across the deploy replays and is no conflict")
-    void aStoredReceiptStaysReadable() {
+    @DisplayName("P14-TSK-022, P14-TSK-023: a stored reopen receipt stays readable: a row from before P14-TSK-013 has six fields, one from before P14-TSK-023 seven; each replays with its list, total and note null, since it read no list (M-6); and a body naming none fingerprints exactly as it did, so a retry across the deploy replays and is no conflict")
+    void aStoredReceiptStaysReadable() throws Exception {
+        List<PeriodCloseDesk.PeriodCloseReceipt> served = new java.util.ArrayList<>();
         as(ACCOUNTANT, () -> {
             String adjustment = UUID.randomUUID().toString();
             Map<String, java.util.function.Consumer<PeriodCloseDesk.PeriodCloseReceipt>> rows = new java.util.LinkedHashMap<>();
@@ -549,12 +552,17 @@ class PeriodCloseDeskTest {
                 assertThat(replayed.proposalId()).isNull();
                 assertThat(replayed.closeRunId()).isNull();
                 old.getValue().accept(replayed);
-                assertThat(replayed.overtakenReturns()).as("it read no list").isEmpty();
-                assertThat(replayed.overtakenReturnsTotal()).isZero();
-                assertThat(replayed.overtakenReturnsNote()).as("so it says nothing of one").isNull();
+                assertThat(replayed.overtakenReturns()).as("M-6: it read no list, so it serves none, never an empty one").isNull();
+                assertThat(replayed.overtakenReturnsTotal()).isNull();
+                assertThat(replayed.overtakenReturnsNote()).as("and says nothing of one").isNull();
+                served.add(replayed);
             }
             return null;
         });
+        assertThat(served).hasSize(3);
+        for (PeriodCloseDesk.PeriodCloseReceipt replayed : served) {
+            assertThat(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(replayed)).as("served as null").contains("\"overtakenReturns\":null").contains("\"overtakenReturnsTotal\":null");
+        }
         UUID some = UUID.randomUUID();
         assertThat(PeriodCloseDesk.reopenFingerprint("reopen-proposal", march, java.util.Set.of(some), "r")).as("another form, whatever a reason holds")
                 .isNotEqualTo(PeriodCloseDesk.reopenFingerprint("reopen-proposal", march, java.util.Set.of(), "[" + some + "]|r"));

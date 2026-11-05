@@ -338,7 +338,7 @@ class SafeguardingReturnTest {
 
         assertThat(line(february, "PRINCIPAL_COMMITTED", "EUR")).isZero();
         assertThat(line(february, "PRINCIPAL_UNREPAID", "EUR")).isEqualTo(30_00);
-        assertThat(line(february, "POSITION", "EUR")).as("a disbursement does not move it").isEqualTo(-20_00);
+        assertThat(line(february, "POSITION", "EUR")).as("landing on a wallet in credit with no fee, a disbursement does not move it").isEqualTo(-20_00);
         assertThat(line(february, "POSITION_BEFORE", "EUR")).as("the figure that warns falls by the principal").isEqualTo(-50_00);
     }
 

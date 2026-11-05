@@ -327,7 +327,7 @@ class SafeguardingPositionDefinitionTest {
     }
 
     @Test
-    @DisplayName("the owner's ruling, P14-TSK-019's (a): an acceptance moves no figure of the position: no cash and no liability stand behind it, so it is a line and nothing else, and it is committed that crosses at the disbursement, which leaves the position where it was and lowers the figure that warns by the principal")
+    @DisplayName("the owner's ruling, P14-TSK-019's (a): an acceptance moves no figure of the position: no cash and no liability stand behind it, so it is a line and nothing else, and it is committed that crosses at the disbursement, which, landing on a wallet in credit with no fee, leaves the position where it was and lowers the figure that warns by the principal")
     void anAcceptanceMovesNoFigureOfThePosition() {
         books.deposit(DAY_ONE, EUR, 2, 100_00).capital(DAY_ONE, EUR, 2, 50_00);
         CanonicalJson.Obj before = figures(EUR);
@@ -347,7 +347,7 @@ class SafeguardingPositionDefinitionTest {
         assertThat(figure(disbursed, "principalUnrepaid")).as("now it has created wallet money").isEqualTo(30_00);
         assertThat(figure(disbursed, "customerWallets")).isEqualTo(130_00);
         assertThat(figure(disbursed, "customerFundedLiabilities")).isEqualTo(100_00);
-        assertThat(figure(disbursed, "position")).as("a disbursement does not move it").isEqualTo(50_00);
+        assertThat(figure(disbursed, "position")).as("landing as a credit balance, with no fee, it does not move it").isEqualTo(50_00);
         assertThat(figure(disbursed, "positionBeforePrincipalUnrepaid")).as("the figure that warns falls by the principal: wallet money created, no cash entering").isEqualTo(20_00);
     }
 
@@ -372,6 +372,31 @@ class SafeguardingPositionDefinitionTest {
 
         assertThat(figure(disbursed, "position")).isEqualTo(-20_00);
         assertThat(figure(disbursed, "positionBeforePrincipalUnrepaid")).isEqualTo(-50_00);
+    }
+
+    @Test
+    @DisplayName("the fix round's M-3: a disbursement onto a wallet in debit raises position by the debt it clears and lowers the figure that warns by what it lands as a credit balance; a fee it earns raises position by the fee. A wallet at -10, 30 disbursed: position +10, the figure that warns -20; then 10 with a fee of 1 onto a wallet in credit: position +1, the figure that warns -9")
+    void aDisbursementOntoAHolderInDebt() {
+        books.depositFor("A", DAY_ONE, EUR, 2, 100_00).capital(DAY_ONE, EUR, 2, 30_00).withdraw(MONTH.atDay(2), EUR, 2, 10_00);
+        CanonicalJson.Obj before = figures(EUR);
+        assertThat(figure(before, "customerWalletDebt")).as("the borrower's wallet stands at -10").isEqualTo(10_00);
+        assertThat(figure(before, "position")).isEqualTo(20_00);
+        assertThat(figure(before, "positionBeforePrincipalUnrepaid")).isEqualTo(20_00);
+
+        books.accepted("onto-debt", MONTH.atDay(3), EUR, 2, 30_00).disbursed("onto-debt", MONTH.atDay(4));
+        CanonicalJson.Obj cleared = figures(EUR);
+
+        assertThat(figure(cleared, "customerWalletDebt")).as("cleared").isZero();
+        assertThat(figure(cleared, "customerWallets")).as("A's 100 and the 20 that landed").isEqualTo(120_00);
+        assertThat(figure(cleared, "principalUnrepaid")).isEqualTo(30_00);
+        assertThat(figure(cleared, "position") - figure(before, "position")).as("position rises by the debt it cleared").isEqualTo(10_00);
+        assertThat(figure(cleared, "positionBeforePrincipalUnrepaid") - figure(before, "positionBeforePrincipalUnrepaid")).as("the figure that warns falls by what landed").isEqualTo(-20_00);
+
+        books.accepted("with-a-fee", MONTH.atDay(5), EUR, 2, 10_00).disbursed("with-a-fee", MONTH.atDay(6), 1_00);
+        CanonicalJson.Obj feed = figures(EUR);
+
+        assertThat(figure(feed, "position") - figure(cleared, "position")).as("the fee it earned").isEqualTo(1_00);
+        assertThat(figure(feed, "positionBeforePrincipalUnrepaid") - figure(cleared, "positionBeforePrincipalUnrepaid")).as("the 9 that landed").isEqualTo(-9_00);
     }
 
     @Test
