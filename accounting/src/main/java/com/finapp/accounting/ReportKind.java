@@ -38,6 +38,6 @@ public enum ReportKind {
     BALANCE_SHEET,
     /** The income statement, from the statement sections; the current-period result computed (C8). */
     INCOME_STATEMENT,
-    /** The reference safeguarding position, per currency, {@code lending_funded} subtracted (`P14-TSK-019`, C13, ADR-0096 section 6). */
+    /** The reference safeguarding position, per currency, the principal unrepaid disclosed against the figure that warns (`P14-TSK-019`, `P14-TSK-023`, C13, ADR-0096 section 6 as corrected). */
     SAFEGUARDING_POSITION
 }

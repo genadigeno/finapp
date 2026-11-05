@@ -77,7 +77,10 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
                                             + " line.scale,"
                                             // The origin of the proposal that posted the entry, if
                                             // one did: journal_entry_id is UNIQUE (V010), so one row
-                                            // at most, and origin is NOT NULL since V015.
+                                            // at most, and origin is NOT NULL since V015. A proposal
+                                            // not approved holds it NULL and matches nothing, and a
+                                            // reversal's entry no proposal posted, so NULL here is
+                                            // an entry no proposal posted.
                                             + " (SELECT p.origin FROM ledger.adjustment_proposal p"
                                             + "   WHERE p.journal_entry_id = line.entry_id) AS origin,"
                                             + " (SELECT other_account.purpose || '|'"
@@ -122,11 +125,11 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
                                     row.getLong("amount_minor"), lineCurrency,
                                     row.getShort("scale"));
                     Direction direction = Direction.valueOf(row.getString("direction"));
-                    // The origin rule first (P8-TSK-015, ADR-0073 section 6; P14-TSK-022): a
-                    // resolution's attribution and a prior-period adjustment are never read by what
-                    // they face. Bucket.of states it. An ADJUSTMENT never matches PostingService's
-                    // scope, and of() keeps the Bucket's own refusal unreachable rather than trusting
-                    // the data to.
+                    // The origin rule first (P8-TSK-015, ADR-0073 section 6; P14-TSK-022, P14-TSK-023):
+                    // a line of any proposal, a resolution's attribution, a prior-period adjustment or
+                    // an operator's, is never read by what it faces. Bucket.of states it. An ADJUSTMENT
+                    // never matches PostingService's scope, and of() keeps the Bucket's own refusal
+                    // unreachable rather than trusting the data to.
                     Bucket line =
                             Bucket.of(
                                     direction,

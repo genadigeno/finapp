@@ -32,13 +32,14 @@ import lombok.RequiredArgsConstructor;
  *       recognised from bank evidence = headroom + committed + loan and BNPL principal outstanding + principal written off
  *       (ADR-0104 decision 7, the formula versioned by that change and by `P14-TSK-021`, whose write-off leaves no line on the
  *       capital for this proof to explain). One derivation, never a second copy of the formula here.
- *   <li><strong>The safeguarding adjustment</strong> - {@code lending_funded(c) = principal outstanding + committed + written off}
- *       (`P14-TSK-021`) is published: the term by which a safeguarding position subtracts the capital-funded part of the
- *       platform's liabilities - loan-funded wallet money and BNPL-funded merchant payables - from customer-funded money.
+ *   <li><strong>Capital's lending-funded figure</strong> - {@code lending_funded(c) = principal outstanding + committed + written off}
+ *       (`P14-TSK-021`) is published: what capital has deployed or promised, so capital recognised = headroom + this figure.
  *       Published, not judged - an amount, so it leaves only through the audited capital report, never a metric (ADR-0072).
- *       This reading is a live one: accounting's reference return (`P14-TSK-019`) states the same formula as of a month's
- *       cutoff over frozen rows, through its own port, pinned to {@link LendingCapitalHeadroom.Headroom#lendingFunded} by
- *       a test in {@code app}, because a FINAL may not read what moves.
+ *       <strong>It is not the safeguarding return's subtraction</strong> (the owner, 2026-11-05, `P14-TSK-023`, ADR-0096 section 6
+ *       as corrected): an accepted loan awaiting disbursement has created no wallet money, so accounting's reference return
+ *       subtracts only the outstanding and written-off terms, as of a month's cutoff over frozen rows, through its own port,
+ *       because a FINAL may not read what moves; {@code committed} stands beside it as a line. A test in {@code app} pins that
+ *       term + committed to {@link LendingCapitalHeadroom.Headroom#lendingFunded}.
  * </ol>
  *
  * <p>Read-only and deciding nothing: a failure is an alert ({@code finapp.lending.capital.proof}), never a correction
@@ -67,7 +68,7 @@ public final class LendingCapitalProof {
             return terms.currency();
         }
 
-        /** The safeguarding adjustment {@code lending_funded(c)}. */
+        /** Capital's figure {@code lending_funded(c)}: not the safeguarding return's subtraction, which leaves committed out. */
         public Money lendingFunded() {
             return terms.lendingFunded();
         }

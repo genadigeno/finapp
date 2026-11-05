@@ -51,7 +51,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@code SAFEGUARDING_POSITION} (`P14-TSK-019`; ADR-0118 decision 4, ADR-0096 section 6; {@code INV-ACC-04}, {@code INV-RAIL-04}): the real definition over books holding each term. What the port's statements read against PostgreSQL is {@code SafeguardingReturnDatabaseTest}'s (owed, C5); a form drawn from this body, through the real machine, is {@code SafeguardingReturnTest}'s in {@code app}.
+ * {@code SAFEGUARDING_POSITION} (`P14-TSK-019`, `P14-TSK-023`; ADR-0118 decision 4, ADR-0096 section 6 as the owner corrected it; {@code INV-ACC-04}, {@code INV-RAIL-04}): the real definition over books holding each term. What the port's statements read against PostgreSQL is {@code SafeguardingReturnDatabaseTest}'s (owed, C5); a form drawn from this body, through the real machine, is {@code SafeguardingReturnTest}'s in {@code app}.
  */
 @DisplayName("SAFEGUARDING_POSITION (P14-TSK-019)")
 class SafeguardingPositionDefinitionTest {
@@ -109,8 +109,8 @@ class SafeguardingPositionDefinitionTest {
     }
 
     @Test
-    @DisplayName("lending_funded is subtracted: position = assets - (liabilities - lendingFunded), and the terms stand as lines of their own")
-    void lendingFundedIsSubtracted() {
+    @DisplayName("principal unrepaid is subtracted: position = assets - (liabilities - principalUnrepaid), outstanding and written off with committed a line beside them, and the terms stand as lines of their own")
+    void principalUnrepaidIsSubtracted() {
         books.deposit(DAY_ONE, EUR, 2, 100_00).capital(DAY_ONE, EUR, 2, 50_00)
                 .accepted("disbursed", DAY_ONE, EUR, 2, 30_00).disbursed("disbursed", MONTH.atDay(2))
                 .accepted("waiting", MONTH.atDay(3), EUR, 2, 7_00)
@@ -126,12 +126,12 @@ class SafeguardingPositionDefinitionTest {
         assertThat(figure(eur, "principalCommitted")).isEqualTo(7_00);
         assertThat(text(eur, "principalCommittedLoans")).isEqualTo("1");
         assertThat(figure(eur, "principalWrittenOff")).isEqualTo(5_00);
-        assertThat(figure(eur, "lendingFunded")).isEqualTo(42_00);
-        assertThat(figure(eur, "customerFundedLiabilities")).isEqualTo(93_00);
-        assertThat(figure(eur, "position")).isEqualTo(57_00);
-        assertThat(figure(eur, "positionBeforeLendingFunded")).as("beside it, nothing subtracted: what the adjustment did stays visible").isEqualTo(15_00);
+        assertThat(figure(eur, "principalUnrepaid")).as("the 7 committed are not in it").isEqualTo(35_00);
+        assertThat(figure(eur, "customerFundedLiabilities")).isEqualTo(100_00);
+        assertThat(figure(eur, "position")).isEqualTo(50_00);
+        assertThat(figure(eur, "positionBeforePrincipalUnrepaid")).as("the figure that warns, nothing subtracted: what the adjustment did stays visible").isEqualTo(15_00);
         assertThat(flag(eur, "positionNegative")).isFalse();
-        assertThat(flag(eur, "positionBeforeLendingFundedNegative")).isFalse();
+        assertThat(flag(eur, "positionBeforePrincipalUnrepaidNegative")).isFalse();
     }
 
     @Test
@@ -146,7 +146,7 @@ class SafeguardingPositionDefinitionTest {
         assertThat(figure(before, "principalOutstanding")).isEqualTo(30_00);
         assertThat(figure(after, "principalOutstanding")).isZero();
         assertThat(figure(after, "principalWrittenOff")).as("the principal, never the whole expense").isEqualTo(30_00);
-        assertThat(figure(after, "lendingFunded")).isEqualTo(figure(before, "lendingFunded"));
+        assertThat(figure(after, "principalUnrepaid")).as("the written-off principal stays in the subtraction").isEqualTo(figure(before, "principalUnrepaid")).isEqualTo(30_00);
         assertThat(figure(after, "position")).isEqualTo(figure(before, "position"));
     }
 
@@ -159,12 +159,12 @@ class SafeguardingPositionDefinitionTest {
         CanonicalJson.Obj eur = figures(EUR);
         assertThat(figure(eur, "principalOutstanding")).isEqualTo(10_00);
         assertThat(figure(eur, "principalCommitted")).isZero();
-        assertThat(figure(eur, "lendingFunded")).isEqualTo(10_00);
+        assertThat(figure(eur, "principalUnrepaid")).isEqualTo(10_00);
 
         CanonicalJson.Obj gbp = figures("GBP");
         assertThat(figure(gbp, "principalOutstanding")).isZero();
         assertThat(figure(gbp, "principalCommitted")).isEqualTo(20_00);
-        assertThat(figure(gbp, "lendingFunded")).isEqualTo(20_00);
+        assertThat(figure(gbp, "principalUnrepaid")).as("committed is no part of it until it crosses").isZero();
     }
 
     @Test
@@ -210,7 +210,7 @@ class SafeguardingPositionDefinitionTest {
         assertThat(figure(eur, "customerWalletsNet")).as("what the trial balance says").isEqualTo(70_00);
         assertThat(figure(eur, "customerWallets") - figure(eur, "customerWalletDebt")).isEqualTo(figure(eur, "customerWalletsNet"));
         assertThat(figure(eur, "position")).isEqualTo(-30_00);
-        assertThat(figure(eur, "positionBeforeLendingFunded")).as("the figure that warns does not count it either").isEqualTo(-30_00);
+        assertThat(figure(eur, "positionBeforePrincipalUnrepaid")).as("the figure that warns does not count it either").isEqualTo(-30_00);
         assertThat(flag(eur, "positionNegative")).isTrue();
     }
 
@@ -250,23 +250,22 @@ class SafeguardingPositionDefinitionTest {
     }
 
     @Test
-    @DisplayName("I-2: each flag says its own figure: a month short before the adjustment and over after it reads positionNegative false and positionBeforeLendingFundedNegative true, and no flag is called shortfall")
+    @DisplayName("I-2: each flag says its own figure: a month short before the adjustment and over after it, loan money having left, reads positionNegative false and positionBeforePrincipalUnrepaidNegative true, and no flag is called shortfall")
     void eachFlagSaysItsOwnFigure() {
-        books.deposit(DAY_ONE, EUR, 2, 100_00).capital(DAY_ONE, EUR, 2, 30_00);
-        books.post(MONTH.atDay(2), EUR, 2, 50_00, CHARGEBACK, CASH);
-        books.accepted("loan", MONTH.atDay(5), EUR, 2, 30_00);
+        books.deposit(DAY_ONE, EUR, 2, 100_00).capital(DAY_ONE, EUR, 2, 30_00).accepted("loan", DAY_ONE, EUR, 2, 30_00).disbursed("loan", DAY_ONE).withdraw(MONTH.atDay(2), EUR, 2, 30_00);
+        books.post(MONTH.atDay(3), EUR, 2, 20_00, CHARGEBACK, CASH);
 
         CanonicalJson.Obj eur = figures(EUR);
 
         assertThat(figure(eur, "position")).isEqualTo(10_00);
         assertThat(flag(eur, "positionNegative")).isFalse();
-        assertThat(figure(eur, "positionBeforeLendingFunded")).isEqualTo(-20_00);
-        assertThat(flag(eur, "positionBeforeLendingFundedNegative")).isTrue();
+        assertThat(figure(eur, "positionBeforePrincipalUnrepaid")).isEqualTo(-20_00);
+        assertThat(flag(eur, "positionBeforePrincipalUnrepaidNegative")).isTrue();
         assertThat(eur.members()).doesNotContainKey("shortfall");
     }
 
     @Test
-    @DisplayName("I-2: customerFundedLiabilities can read negative, and the run says so: liabilities 100, lending funded 130")
+    @DisplayName("I-2: customerFundedLiabilities can read negative, and the run says so: liabilities 100, principal unrepaid 130")
     void customerFundedLiabilitiesCanReadNegative() {
         books.deposit(DAY_ONE, EUR, 2, 100_00).capital(DAY_ONE, EUR, 2, 130_00).accepted("loan", DAY_ONE, EUR, 2, 130_00).disbursed("loan", DAY_ONE).withdraw(MONTH.atDay(2), EUR, 2, 130_00);
 
@@ -274,7 +273,7 @@ class SafeguardingPositionDefinitionTest {
         CanonicalJson.Obj eur = objects(body, "currencies").get(0);
 
         assertThat(figure(eur, "liabilities")).isEqualTo(100_00);
-        assertThat(figure(eur, "lendingFunded")).isEqualTo(130_00);
+        assertThat(figure(eur, "principalUnrepaid")).isEqualTo(130_00);
         assertThat(figure(eur, "customerFundedLiabilities")).isEqualTo(-30_00);
         assertThat(text(object(body, "drillDown"), "customerFundedLiabilities")).contains("It can read negative");
     }
@@ -328,37 +327,98 @@ class SafeguardingPositionDefinitionTest {
     }
 
     @Test
-    @DisplayName("question 2, built as ruled and pinned for the owner: an acceptance lifts the position by the principal with no cash and no liability behind it, and the disbursement takes exactly that away")
-    void committedLiftsThePositionWithNothingBehindIt() {
+    @DisplayName("the owner's ruling, P14-TSK-019's (a): an acceptance moves no figure of the position: no cash and no liability stand behind it, so it is a line and nothing else, and it is committed that crosses at the disbursement, which, landing on a wallet in credit with no fee, leaves the position where it was and lowers the figure that warns by the principal")
+    void anAcceptanceMovesNoFigureOfThePosition() {
         books.deposit(DAY_ONE, EUR, 2, 100_00).capital(DAY_ONE, EUR, 2, 50_00);
-        long before = figure(figures(EUR), "position");
-        assertThat(before).isEqualTo(50_00);
+        CanonicalJson.Obj before = figures(EUR);
+        assertThat(figure(before, "position")).isEqualTo(50_00);
 
         books.accepted("loan", MONTH.atDay(5), EUR, 2, 30_00);
         CanonicalJson.Obj accepted = figures(EUR);
-        assertThat(figure(accepted, "cashAtBank")).isEqualTo(150_00);
-        assertThat(figure(accepted, "customerWallets")).isEqualTo(100_00);
-        assertThat(figure(accepted, "position")).as("nothing moved in the books").isEqualTo(80_00);
-        assertThat(figure(accepted, "positionBeforeLendingFunded")).as("the line that does not move").isEqualTo(50_00);
+        assertThat(figure(accepted, "principalCommitted")).as("disclosed").isEqualTo(30_00);
+        assertThat(text(accepted, "principalCommittedLoans")).isEqualTo("1");
+        for (String unmoved : List.of("cashAtBank", "assets", "customerWallets", "liabilities", "principalOutstanding", "principalWrittenOff", "principalUnrepaid", "customerFundedLiabilities", "position", "positionBeforePrincipalUnrepaid")) {
+            assertThat(figure(accepted, unmoved)).as(unmoved).isEqualTo(figure(before, unmoved));
+        }
 
         books.disbursed("loan", MONTH.atDay(6));
-        assertThat(figure(figures(EUR), "position")).isEqualTo(50_00);
+        CanonicalJson.Obj disbursed = figures(EUR);
+        assertThat(figure(disbursed, "principalCommitted")).isZero();
+        assertThat(figure(disbursed, "principalUnrepaid")).as("now it has created wallet money").isEqualTo(30_00);
+        assertThat(figure(disbursed, "customerWallets")).isEqualTo(130_00);
+        assertThat(figure(disbursed, "customerFundedLiabilities")).isEqualTo(100_00);
+        assertThat(figure(disbursed, "position")).as("landing as a credit balance, with no fee, it does not move it").isEqualTo(50_00);
+        assertThat(figure(disbursed, "positionBeforePrincipalUnrepaid")).as("the figure that warns falls by the principal: wallet money created, no cash entering").isEqualTo(20_00);
     }
 
     @Test
-    @DisplayName("question 2's reach, pinned for the owner: where capital < loss < capital + committed, an accepted loan reads a real shortfall as a surplus. Capital 30 admits the acceptance (INV-LND-13), loss 50, 30 accepted")
-    void committedCanMaskAShortfall() {
+    @DisplayName("the worked month: capital 30, which admits the acceptance (INV-LND-13), deposits 100, a loss of 50 and 30 accepted reads short by 20 on both positions, where it read 10 over until the owner's ruling; disbursed, -20 and -50")
+    void anAcceptanceCannotMaskAShortfall() {
         books.deposit(DAY_ONE, EUR, 2, 100_00).capital(DAY_ONE, EUR, 2, 30_00);
         books.post(MONTH.atDay(2), EUR, 2, 50_00, CHARGEBACK, CASH);
         assertThat(figure(figures(EUR), "position")).isEqualTo(-20_00);
 
         books.accepted("loan", MONTH.atDay(5), EUR, 2, 30_00);
-        CanonicalJson.Obj masked = figures(EUR);
+        CanonicalJson.Obj accepted = figures(EUR);
 
-        assertThat(figure(masked, "position")).isEqualTo(10_00);
-        assertThat(flag(masked, "positionNegative")).isFalse();
-        assertThat(figure(masked, "positionBeforeLendingFunded")).as("the separate line tells it").isEqualTo(-20_00);
-        assertThat(flag(masked, "positionBeforeLendingFundedNegative")).isTrue();
+        assertThat(figure(accepted, "position")).isEqualTo(-20_00);
+        assertThat(flag(accepted, "positionNegative")).isTrue();
+        assertThat(figure(accepted, "positionBeforePrincipalUnrepaid")).isEqualTo(-20_00);
+        assertThat(flag(accepted, "positionBeforePrincipalUnrepaidNegative")).isTrue();
+        assertThat(figure(accepted, "principalCommitted")).isEqualTo(30_00);
+
+        books.disbursed("loan", MONTH.atDay(6));
+        CanonicalJson.Obj disbursed = figures(EUR);
+
+        assertThat(figure(disbursed, "position")).isEqualTo(-20_00);
+        assertThat(figure(disbursed, "positionBeforePrincipalUnrepaid")).isEqualTo(-50_00);
+    }
+
+    @Test
+    @DisplayName("the fix round's M-3: a disbursement onto a wallet in debit raises position by the debt it clears and lowers the figure that warns by what it lands as a credit balance; a fee it earns raises position by the fee. A wallet at -10, 30 disbursed: position +10, the figure that warns -20; then 10 with a fee of 1 onto a wallet in credit: position +1, the figure that warns -9")
+    void aDisbursementOntoAHolderInDebt() {
+        books.depositFor("A", DAY_ONE, EUR, 2, 100_00).capital(DAY_ONE, EUR, 2, 30_00).withdraw(MONTH.atDay(2), EUR, 2, 10_00);
+        CanonicalJson.Obj before = figures(EUR);
+        assertThat(figure(before, "customerWalletDebt")).as("the borrower's wallet stands at -10").isEqualTo(10_00);
+        assertThat(figure(before, "position")).isEqualTo(20_00);
+        assertThat(figure(before, "positionBeforePrincipalUnrepaid")).isEqualTo(20_00);
+
+        books.accepted("onto-debt", MONTH.atDay(3), EUR, 2, 30_00).disbursed("onto-debt", MONTH.atDay(4));
+        CanonicalJson.Obj cleared = figures(EUR);
+
+        assertThat(figure(cleared, "customerWalletDebt")).as("cleared").isZero();
+        assertThat(figure(cleared, "customerWallets")).as("A's 100 and the 20 that landed").isEqualTo(120_00);
+        assertThat(figure(cleared, "principalUnrepaid")).isEqualTo(30_00);
+        assertThat(figure(cleared, "position") - figure(before, "position")).as("position rises by the debt it cleared").isEqualTo(10_00);
+        assertThat(figure(cleared, "positionBeforePrincipalUnrepaid") - figure(before, "positionBeforePrincipalUnrepaid")).as("the figure that warns falls by what landed").isEqualTo(-20_00);
+
+        books.accepted("with-a-fee", MONTH.atDay(5), EUR, 2, 10_00).disbursed("with-a-fee", MONTH.atDay(6), 1_00);
+        CanonicalJson.Obj feed = figures(EUR);
+
+        assertThat(figure(feed, "position") - figure(cleared, "position")).as("the fee it earned").isEqualTo(1_00);
+        assertThat(figure(feed, "positionBeforePrincipalUnrepaid") - figure(cleared, "positionBeforePrincipalUnrepaid")).as("the 9 that landed").isEqualTo(-9_00);
+    }
+
+    @Test
+    @DisplayName("what this ruling did not cure, stated precisely: a shortfall can still be masked on position, by loan money that has left. It reads zero or above in a month short on the figure that warns whenever principal unrepaid is at least that shortfall, and below it reads negative")
+    void loanMoneyThatLeftCanStillMaskAShortfall() {
+        books.deposit(DAY_ONE, EUR, 2, 100_00).capital(DAY_ONE, EUR, 2, 30_00).accepted("loan", DAY_ONE, EUR, 2, 30_00).disbursed("loan", DAY_ONE).withdraw(MONTH.atDay(2), EUR, 2, 30_00);
+        books.post(MONTH.atDay(3), EUR, 2, 20_00, CHARGEBACK, CASH);
+        CanonicalJson.Obj masked = figures(EUR);
+        assertThat(figure(masked, "cashAtBank")).isEqualTo(80_00);
+        assertThat(figure(masked, "customerWallets")).isEqualTo(100_00);
+        assertThat(figure(masked, "positionBeforePrincipalUnrepaid")).as("depositors are owed 100 against cash of 80").isEqualTo(-20_00);
+        assertThat(figure(masked, "principalUnrepaid")).isEqualTo(30_00);
+        assertThat(figure(masked, "position")).as("over, in a month that is short").isEqualTo(10_00);
+
+        books.post(MONTH.atDay(4), EUR, 2, 10_00, CHARGEBACK, CASH);
+        assertThat(figure(figures(EUR), "position")).as("the shortfall exactly the term: reads zero, still no warning").isZero();
+        assertThat(flag(figures(EUR), "positionNegative")).isFalse();
+        assertThat(figure(figures(EUR), "positionBeforePrincipalUnrepaid")).isEqualTo(-30_00);
+
+        books.post(MONTH.atDay(5), EUR, 2, 1, CHARGEBACK, CASH);
+        assertThat(figure(figures(EUR), "position")).as("past the term it reads short").isEqualTo(-1);
+        assertThat(flag(figures(EUR), "positionNegative")).isTrue();
     }
 
     @Test
@@ -373,12 +433,12 @@ class SafeguardingPositionDefinitionTest {
         assertThat(figure(withdrawn, "cashAtBank")).isEqualTo(120_00);
         assertThat(figure(withdrawn, "customerWallets")).isEqualTo(100_00);
         assertThat(figure(withdrawn, "position")).as("unmoved: capital, by double entry").isEqualTo(50_00);
-        assertThat(figure(withdrawn, "positionBeforeLendingFunded")).as("cash over depositors' money").isEqualTo(20_00);
+        assertThat(figure(withdrawn, "positionBeforePrincipalUnrepaid")).as("cash over depositors' money").isEqualTo(20_00);
     }
 
     @Test
-    @DisplayName("what the figure is, by double entry and pinned for the owner: capital plus results plus committed plus written off, less the assets the return leaves out, a holder's debt among them")
-    void thePositionIsCapitalResultsCommittedAndWrittenOff() {
+    @DisplayName("what each figure is, by double entry: position is capital plus results plus written off, and the figure that warns capital plus results less outstanding, each less the assets the return leaves out, a holder's debt among them; committed is in neither")
+    void thePositionIsCapitalResultsAndWrittenOff() {
         books.deposit(DAY_ONE, EUR, 2, 200_00).capital(DAY_ONE, EUR, 2, 100_00).accepted("lost", DAY_ONE, EUR, 2, 40_00).disbursed("lost", MONTH.atDay(2), 2_00).withdraw(MONTH.atDay(3), EUR, 2, 38_00);
         books.post(MONTH.atDay(4), EUR, 2, 3_00, SafeguardingBooks.LOAN_INTEREST_DUE, SafeguardingBooks.LOAN_INTEREST_INCOME);
         books.writtenOff(MONTH.atDay(5), EUR, 2, 40_00, 3_00);
@@ -386,14 +446,20 @@ class SafeguardingPositionDefinitionTest {
         long capital = 100_00;
         long results = 2_00 + 3_00 - 43_00;
         assertThat(figure(figures(EUR), "position")).as("the worked example: 300 - 38 cash less 200 owed, plus 40 written off").isEqualTo(102_00).isEqualTo(capital + results + 40_00);
+        assertThat(figure(figures(EUR), "positionBeforePrincipalUnrepaid")).as("nothing outstanding: 262 cash less 200 owed").isEqualTo(62_00).isEqualTo(capital + results);
 
         books.accepted("waiting", MONTH.atDay(6), EUR, 2, 7_00);
+        books.accepted("out", MONTH.atDay(6), EUR, 2, 11_00).disbursed("out", MONTH.atDay(6));
         books.post(MONTH.atDay(7), EUR, 2, 2_00, SafeguardingBooks.LOAN_INTEREST_DUE, SafeguardingBooks.LOAN_INTEREST_INCOME);
         books.withdrawFor("in-debit", MONTH.atDay(8), EUR, 2, 5_00);
         long resultsNow = results + 2_00;
         long leftOut = 2_00 + 5_00;
+        CanonicalJson.Obj eur = figures(EUR);
 
-        assertThat(figure(figures(EUR), "position")).isEqualTo(capital + resultsNow + 7_00 + 40_00 - leftOut);
+        assertThat(figure(eur, "principalCommitted")).isEqualTo(7_00);
+        assertThat(figure(eur, "position")).isEqualTo(capital + resultsNow + 40_00 - leftOut);
+        assertThat(figure(eur, "positionBeforePrincipalUnrepaid")).isEqualTo(capital + resultsNow - 11_00 - leftOut);
+        assertThat(figure(eur, "position") - figure(eur, "positionBeforePrincipalUnrepaid")).as("the one is the other plus the term").isEqualTo(figure(eur, "principalUnrepaid")).isEqualTo(11_00 + 40_00);
     }
 
     @Test
@@ -408,7 +474,7 @@ class SafeguardingPositionDefinitionTest {
         assertThat(figure(eur, "position")).isEqualTo(-130_00);
         assertThat(text(object(eur, "position"), "minor")).isEqualTo("-13000");
         assertThat(flag(eur, "positionNegative")).isTrue();
-        assertThat(flag(eur, "positionBeforeLendingFundedNegative")).isTrue();
+        assertThat(flag(eur, "positionBeforePrincipalUnrepaidNegative")).isTrue();
         assertThat(figure(eur, "chargebackRecoverable")).as("the memo says why").isEqualTo(130_00);
 
         CanonicalJson.Obj usd = figures("USD");
@@ -449,7 +515,7 @@ class SafeguardingPositionDefinitionTest {
 
         assertThat(figure(eur, "clearingReceivables")).as("never a position of 0").isEqualTo(10_00);
         assertThat(figure(eur, "clearingPayables")).isEqualTo(14_00);
-        assertThat(figure(eur, "position")).isEqualTo(figure(eur, "positionBeforeLendingFunded")).isZero();
+        assertThat(figure(eur, "position")).isEqualTo(figure(eur, "positionBeforePrincipalUnrepaid")).isZero();
         assertThat(objects(body, "rows").stream().filter(row -> text(row, "purpose").equals("FX_PROVIDER_CLEARING")).map(row -> text(row, "counterparty")).toList())
                 .containsExactly("fx-sim-a", "fx-sim-b");
     }
@@ -501,13 +567,14 @@ class SafeguardingPositionDefinitionTest {
                 assertThat(scale(element, member)).isEqualTo(Integer.parseInt(text(element, "scale")));
             }
         }
-        assertThat(minor(figures("GBP"), "lendingFunded")).isEqualTo(BigInteger.ZERO);
-        assertThat(scale(figures("GBP"), "lendingFunded")).isEqualTo(2);
+        assertThat(minor(figures("GBP"), "principalUnrepaid")).isEqualTo(BigInteger.ZERO);
+        assertThat(scale(figures("GBP"), "principalUnrepaid")).isEqualTo(2);
         assertThat(scale(figures("JPY"), "position")).isEqualTo(0);
         assertThat(figure(figures("JPY"), "customerWallets")).isEqualTo(900);
         assertThat(scale(figures("BHD"), "position")).isEqualTo(3);
         assertThat(figure(figures("BHD"), "customerWallets")).isEqualTo(12_345);
-        assertThat(figure(figures(EUR), "lendingFunded")).isEqualTo(5_00);
+        assertThat(figure(figures(EUR), "principalUnrepaid")).as("accepted, not disbursed").isZero();
+        assertThat(figure(figures(EUR), "principalCommitted")).isEqualTo(5_00);
     }
 
     @Test
@@ -518,7 +585,9 @@ class SafeguardingPositionDefinitionTest {
         CanonicalJson.Obj body = body();
 
         assertThat(objects(body, "currencies")).extracting(element -> text(element, "currency")).containsExactly("JPY");
-        assertThat(figure(figures("JPY"), "position")).isEqualTo(7_000);
+        assertThat(figure(figures("JPY"), "principalCommitted")).isEqualTo(7_000);
+        assertThat(figure(figures("JPY"), "position")).as("disclosed, and moving nothing").isZero();
+        assertThat(figure(figures("JPY"), "positionBeforePrincipalUnrepaid")).isZero();
     }
 
     @Test
@@ -609,9 +678,25 @@ class SafeguardingPositionDefinitionTest {
             assertThat(text(drillDown, journal)).as(journal).contains("GET /v1/operator/accounting/report-runs/{runId}/lines").contains("ACCOUNTING_READ");
         }
         String committed = text(drillDown, "principalCommitted");
-        assertThat(committed).startsWith("No journal line stands behind this figure").contains("lending's frozen rows").contains("No route under ACCOUNTING_READ lists those loans")
+        assertThat(committed).startsWith("No journal line stands behind this figure").contains("Disclosed and not subtracted").contains("it has created no wallet money").contains("lending's frozen rows").contains("No route under ACCOUNTING_READ lists those loans")
                 .contains("LENDING_INVESTIGATE, which ACCOUNTING_READ does not carry").doesNotContain("/report-runs/");
-        assertThat(text(drillDown, "position")).as("I-2: a positive figure proves nothing, and the run says so").contains("A positive figure proves no cover").contains("Read it beside positionBeforeLendingFunded");
+        assertThat(text(drillDown, "position")).as("I-2: a positive figure proves nothing, and the run says so").contains("A disclosure, not the figure that warns").contains("A positive figure proves no cover").contains("it can read over in a month positionBeforePrincipalUnrepaid reads short").contains("Read it beside positionBeforePrincipalUnrepaid");
+        assertThat(text(drillDown, "positionBeforePrincipalUnrepaid")).contains("The figure that warns").contains("short whatever position reads");
+        assertThat(text(drillDown, "principalUnrepaid")).contains("principalCommitted not among them").contains("A disclosure");
+    }
+
+    @Test
+    @DisplayName("P14-TSK-023: the words the run writes say the new thing: the statement, the drill-down and the mapping name the term and the figure that warns, and no word says the old thing: no member of the old name, no acceptance lifting a figure, no flag or figure named for a term that has gone")
+    void theOldTermsAndWordsAreGone() {
+        books.deposit(DAY_ONE, EUR, 2, 100_00).accepted("loan", DAY_ONE, EUR, 2, 5_00);
+        CanonicalJson.Obj body = body();
+        String words = CanonicalJson.text(body);
+
+        assertThat(words).doesNotContain("\"lendingFunded\"").doesNotContain("positionBeforeLendingFunded").doesNotContain("lending_funded").doesNotContain("rises with an accepted loan").doesNotContain("committed plus written off");
+        assertThat(text(object(body, "statement"), "rule")).contains("is the figure that warns").contains("principalUnrepaid is principal outstanding plus written off").contains("a disclosure").contains("an acceptance moves neither position").contains("subtracted from nothing");
+        assertThat(objects(body, "mapping").stream().filter(row -> text(row, "treatment").equals(SafeguardingPositionDefinition.Treatment.PRINCIPAL.name())).map(row -> text(row, "reason")).toList())
+                .hasSize(4).allSatisfy(reason -> assertThat(reason).startsWith("principalUnrepaid's outstanding term, a disclosure"));
+        assertThat(text(object(body, "drillDown"), "principalUnrepaid")).contains("Lending's capital report states capital's own lendingFunded figure, which is this plus principalCommitted");
     }
 
     @Test

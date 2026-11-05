@@ -345,9 +345,10 @@ public final class LendingReports {
      * One supported currency's lending capital on the date (ADR-0096 section 5): the capital recognised from bank
      * evidence, the principal committed to loans awaiting disbursement, the principal outstanding - loan, line and, since
      * `P12-TSK-005`, BNPL principal, the purposes {@link LendingCapitalHeadroom#principalPurposes()} names (ADR-0104
-     * decision 7) - the headroom left, and the safeguarding term - the liabilities capital created and still funds. Since
-     * `P14-TSK-021` the principal written off, which leaves the outstanding term and stays out of the headroom: capital recognised =
-     * headroom + committed + outstanding + written off, by date.
+     * decision 7) - the headroom left, and capital's own lending-funded figure, {@code lendingFundedMinor}: outstanding,
+     * committed and written off, not the safeguarding return's subtraction, which leaves committed out (ADR-0096 section 6 as
+     * corrected by the owner, 2026-11-05). Since `P14-TSK-021` the principal written off, which leaves the outstanding term and
+     * stays out of the headroom: capital recognised = headroom + committed + outstanding + written off, by date.
      */
     public record LendingCapitalRow(
             String currency, int scale, long recognisedMinor, long committedMinor, long outstandingMinor,

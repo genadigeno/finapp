@@ -4,6 +4,7 @@ import com.finapp.accounting.AccountingBreakStore;
 import com.finapp.accounting.AccountingPeriodStore;
 import com.finapp.accounting.CloseRuns;
 import com.finapp.accounting.JdbcPeriodCloseStore;
+import com.finapp.accounting.JdbcReturnsAReopenOvertakes;
 import com.finapp.accounting.PeriodCloseStore;
 import com.finapp.accounting.PeriodCloses;
 import com.finapp.accounting.PostingCutoff;
@@ -11,6 +12,7 @@ import com.finapp.accounting.PriorPeriodAdjustmentStore;
 import com.finapp.accounting.PriorPeriodAdjustments;
 import com.finapp.accounting.ReconciliationRunCoverage;
 import com.finapp.accounting.ReportRuns;
+import com.finapp.accounting.ReturnsAReopenOvertakes;
 import com.finapp.accounting.ValuationRateSetStore;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.idempotency.IdempotentExecutor;
@@ -52,12 +54,18 @@ public class PeriodCloseBeans {
     }
 
     @Bean
+    ReturnsAReopenOvertakes returnsAReopenOvertakes() {
+        return new JdbcReturnsAReopenOvertakes();
+    }
+
+    @Bean
     PeriodCloseDesk periodCloseDesk(
             PeriodCloses periodCloses,
             PriorPeriodAdjustments priorPeriodAdjustments,
+            ReturnsAReopenOvertakes returnsAReopenOvertakes,
             IdempotentExecutor idempotentExecutor,
             AccountingTransactions accountingTransactions,
             AccountingFlowScope accountingFlowScope) {
-        return new PeriodCloseDesk(periodCloses, priorPeriodAdjustments, idempotentExecutor, accountingTransactions, accountingFlowScope);
+        return new PeriodCloseDesk(periodCloses, priorPeriodAdjustments, returnsAReopenOvertakes, idempotentExecutor, accountingTransactions, accountingFlowScope);
     }
 }

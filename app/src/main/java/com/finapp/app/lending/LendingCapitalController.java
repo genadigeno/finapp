@@ -71,7 +71,7 @@ public class LendingCapitalController {
 
     /**
      * The capital report: per supported currency the recognised capital, committed and outstanding principal, the
-     * headroom and the safeguarding term, with the capital proof's verdict; and the most recent contributions with
+     * headroom and capital's lending-funded figure, with the capital proof's verdict; and the most recent contributions with
      * their derived recognition. Audited per serving ({@code lending.ReportRead}).
      */
     @GetMapping(path = "/capital")

@@ -122,8 +122,8 @@ public enum LendingAuditAction implements AuditableAction {
     REPORT_READ(
             "lending.ReportRead",
             "A holder of LENDING_INVESTIGATE was served a lending report - since P11-TSK-004 the capital report: per"
-                    + " currency the recognised capital, the committed and outstanding principal, the headroom and the"
-                    + " safeguarding term, and each contribution's derived recognition - read in one REPEATABLE READ"
+                    + " currency the recognised capital, the committed and outstanding principal, the headroom and"
+                    + " capital's lending-funded figure, and each contribution's derived recognition - read in one REPEATABLE READ"
                     + " snapshot and committed with this record, so no report is served without it. Amounts are an"
                     + " audited report, never a metric (ADR-0072). Since P11-TSK-030 also the portfolio, delinquency,"
                     + " accrual and capital operations reports as of a business date, each read in one read-only"

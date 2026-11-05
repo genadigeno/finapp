@@ -80,8 +80,14 @@ public interface PositionBreakdown<T> {
      * the lines belong to an {@code ADJUSTMENT} entry whose proposal is of origin
      * {@code ACCOUNTING}, a prior-period adjustment. Classified by that origin whatever the entry
      * faces, so its counterparty is empty: facing a customer's wallet it would otherwise read as a
-     * capture or a refund that never happened. A {@code MANUAL} adjustment has no such rule and
-     * reads by its counterparty, as it always has. {@link #of} is the rule's one statement.
+     * capture or a refund that never happened.
+     *
+     * <p>A {@code MANUAL} adjustment's lines read by that origin too (`P14-TSK-023`, the owner's ruling
+     * on `P14-TSK-022`'s item (ac)), for the same reason: their counterparty and any namespace are
+     * dropped, and no flag is added, because no reader tells them from any other line that faces
+     * nothing. Only a line of no known origin reads by what it faces: a posting's, a reversal's, whose
+     * entry no proposal posted, and one of an origin this build does not know. {@link #of} is the rule's
+     * one statement.
      */
     record Bucket(
             Direction direction,
@@ -111,11 +117,12 @@ public interface PositionBreakdown<T> {
         }
 
         /**
-         * One line's bucket, the origin rule stated once: a {@code RECONCILIATION} or an
-         * {@code ACCOUNTING} proposal's line is that origin's, its counterparty and any namespace
-         * dropped; anything else, a {@code MANUAL} proposal's or a posting's, keeps both.
+         * One line's bucket, the origin rule stated once: a line of any proposal, {@code RECONCILIATION},
+         * {@code ACCOUNTING} or {@code MANUAL}, reads by that origin, its counterparty and any namespace
+         * dropped, the first two each under a flag of their own; anything else keeps both.
          *
-         * @param origin the origin of the entry's proposal, empty for an entry no proposal posted
+         * @param origin the origin of the entry's proposal, empty for an entry no proposal posted, a
+         *     reversal of an adjustment among them, and for a name this build does not know
          * @param facing the first named counterparty purpose its entry touched
          * @param namespace the first named posting-key namespace its key begins with
          */
@@ -127,7 +134,7 @@ public interface PositionBreakdown<T> {
                 Optional<String> namespace) {
             boolean attributed = origin.filter(AdjustmentOrigin.RECONCILIATION::equals).isPresent();
             boolean accounting = origin.filter(AdjustmentOrigin.ACCOUNTING::equals).isPresent();
-            boolean byOrigin = attributed || accounting;
+            boolean byOrigin = origin.isPresent();
             return new Bucket(
                     direction,
                     byOrigin ? Optional.empty() : facing,

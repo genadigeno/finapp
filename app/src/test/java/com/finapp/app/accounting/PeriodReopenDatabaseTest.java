@@ -23,17 +23,36 @@ import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.AccountingPeriods;
 import com.finapp.accounting.CloseRunId;
 import com.finapp.accounting.JdbcGlMappingStore;
+import com.finapp.accounting.JdbcPriorPeriodAdjustmentStore;
+import com.finapp.accounting.JdbcRegulatoryObligationStore;
+import com.finapp.accounting.JdbcRegulatorySubmissionStore;
 import com.finapp.accounting.JdbcReportRunStore;
+import com.finapp.accounting.JdbcReturnsAReopenOvertakes;
 import com.finapp.accounting.JdbcValuationRateSetStore;
 import com.finapp.accounting.PeriodCloses;
 import com.finapp.accounting.PeriodStatus;
 import com.finapp.accounting.PostingCutoff;
+import com.finapp.accounting.PriorPeriodAdjustments;
+import com.finapp.accounting.RegulatoryAdapters;
+import com.finapp.accounting.RegulatoryObligationId;
+import com.finapp.accounting.RegulatoryObligations;
+import com.finapp.accounting.RegulatoryReportingProvider.Answer;
+import com.finapp.accounting.RegulatorySubmissionId;
+import com.finapp.accounting.RegulatorySubmissions;
+import com.finapp.accounting.ReportRunStore;
 import com.finapp.accounting.ReportRuns;
+import com.finapp.accounting.SubmissionStatus;
 import com.finapp.accounting.ValuationRateSetStore;
+import com.finapp.accounting.reporting.CanonicalJson;
 import com.finapp.accounting.reporting.ReportDefinitions;
 import com.finapp.accounting.reporting.ReportGeneration;
 import com.finapp.accounting.reporting.RunParameters;
 import com.finapp.accounting.reporting.TrialBalanceDefinition;
+import com.finapp.accounting.testing.InMemoryGlMappingStore;
+import com.finapp.accounting.testing.InMemoryPriorPeriodPostings;
+import com.finapp.accounting.testing.RegulatoryWorld;
+import com.finapp.accounting.testing.ScriptedRegulatoryProvider;
+import com.finapp.accounting.testing.TestReportDefinition;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AccountType;
 import com.finapp.ledger.Direction;
@@ -60,6 +79,7 @@ import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -68,12 +88,14 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -84,6 +106,8 @@ import org.junit.jupiter.api.Test;
  * + 1}; FINAL runs {@code SUPERSEDED} and nothing deleted, in one transaction; row 9, the reopen racing postings into the next period; a re-close a new run under the new lock. {@code accounting V008} executes here, and nowhere before the phase exit. <strong>Written and owed</strong> (owner decision C5).
  *
  * <p><strong>A database of its own</strong> ({@code own-container}): it closes and posts into January and February 1999, shared fixtures, and commits ledger lines.
+ *
+ * <p><strong>No case's month is clean by luck.</strong> A reopen moves a revision for good and a return is never deleted, so a month holding a return holds it for every later case. {@link #aReopensReceiptsListTheReturnsItOvertakes} is the only case here that makes one and the only one that reads any, and it asserts January's list empty <em>before</em> it makes one, whatever order JUnit runs the cases in. Every other case calls the machine and never reads a list, so what it leaves behind asks nothing of them: a stale draft or a return standing sent refuses no period's edge.
  */
 @Tag("database")
 @Tag("own-container") // its own JVM and database: ownContainerDatabaseTest, the javadoc says why
@@ -300,6 +324,160 @@ class PeriodReopenDatabaseTest {
         assertThat(closed.revision()).isEqualTo(row(JANUARY).revision());
         assertThat(inScope(Actor.SYSTEM, uow -> CLOSES.latest(uow, january)).orElseThrow().id()).isEqualTo(proposal.proposal().orElseThrow());
         assertThat(count("SELECT count(*) FROM accounting.period_close WHERE period_id = '" + january.value() + "' AND status = 'APPROVED'")).isGreaterThanOrEqualTo(2);
+    }
+
+    // ------------------------------------------------------------------ what a reopen's two receipts list (P14-TSK-023)
+
+    private static final JdbcRegulatoryObligationStore OBLIGATIONS = new JdbcRegulatoryObligationStore();
+    private static final JdbcRegulatorySubmissionStore SUBMISSIONS = new JdbcRegulatorySubmissionStore();
+    private static final ReportDefinitions SOURCES = ReportDefinitions.of(new TestReportDefinition(RegulatoryWorld.SOURCE, 1, Set.of(), false, (snapshot, inputs) -> CanonicalJson.object()));
+    private static final ReportRuns SOURCE_RUNS = new ReportRuns(new JdbcReportRunStore(), AccountingPeriodFixture.STORE, new JdbcGlMappingStore(), SOURCES, ReportRuns.Leases.STANDARD, new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, NOW);
+
+    private final ScriptedRegulatoryProvider provider = new ScriptedRegulatoryProvider();
+    private final RegulatoryAdapters adapters = new RegulatoryAdapters(List.of(provider));
+    private final RegulatorySubmissions returns = new RegulatorySubmissions(AccountingPeriodFixture.STORE, SUBMISSIONS, OBLIGATIONS, new JdbcReportRunStore(), adapters, new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, NOW, Duration.ofDays(1));
+    private final RegulatoryObligations obligations = new RegulatoryObligations(OBLIGATIONS, adapters, SOURCES, new JdbcAuditWriter(), IDS, NOW);
+    private final RegulatorySubmissionDriver driver = new RegulatorySubmissionDriver(returns, TRANSACTIONS, new RegulatorySubmissionMetrics(new SimpleMeterRegistry()), new CloseRunMetrics(new SimpleMeterRegistry()), AccountingFlowScope.NONE, Duration.ofMinutes(2), Duration.ofMinutes(15), 100);
+    private final PeriodCloseDesk desk = new PeriodCloseDesk(MACHINE,
+            new PriorPeriodAdjustments(AccountingPeriodFixture.STORE, new JdbcPriorPeriodAdjustmentStore(), new InMemoryPriorPeriodPostings(), new InMemoryGlMappingStore(), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, NOW),
+            new JdbcReturnsAReopenOvertakes(), new IdempotentExecutor(new JdbcIdempotencyRecordStore(), NOW, Duration.ofDays(1), Duration.ofMinutes(5)), TRANSACTIONS, AccountingFlowScope.NONE);
+
+    private static <R> R as(Actor actor, Supplier<R> work) {
+        try (SecurityContext.Scope scope = SecurityContext.enter(actor); CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)))) {
+            return work.get();
+        }
+    }
+
+    private static List<String> named(PeriodCloseDesk.PeriodCloseReceipt receipt) {
+        return receipt.overtakenReturns().stream().map(PeriodCloseDesk.OvertakenReturn::id).toList();
+    }
+
+    /** A return of a form of its own for {@code period}, as far as {@code to}, by the machine's own acts; a sending committed and no call made. Its form's own, so none of them meets another's one-live row. */
+    private RegulatorySubmissions.Acted aReturn(AccountingPeriodId period, SubmissionStatus to) {
+        String form = "REF-REOPEN-" + to.name();
+        Actor proposer = person();
+        RegulatoryObligations.Acted proposed = inScope(proposer, uow -> obligations.propose(uow, new RegulatoryObligations.Proposal(ScriptedRegulatoryProvider.JURISDICTION, form, 1, ScriptedRegulatoryProvider.NAME, RegulatoryWorld.configuration()), REASON, proposer, correlation()));
+        Actor activator = person();
+        inScope(activator, uow -> obligations.activate(uow, proposed.id(), proposed.configurationSha256(), REASON, activator, correlation()));
+        RegulatoryObligationId obligation = proposed.id();
+        Actor preparer = person();
+        RegulatorySubmissions.Acted acted = inScope(preparer, uow -> returns.draft(uow, new RegulatorySubmissions.Draft(obligation, period, Optional.empty(), REASON), preparer, correlation()));
+        RegulatorySubmissionId id = acted.id();
+        if (to == SubmissionStatus.DRAFT) {
+            return acted;
+        }
+        inScope(preparer, uow -> returns.validate(uow, id, preparer, correlation()));
+        if (to == SubmissionStatus.VALIDATED) {
+            return acted;
+        }
+        Actor approver = person();
+        RegulatorySubmissions.Attested read = new RegulatorySubmissions.Attested(acted.contentSha256(), acted.periodRevision());
+        if (to == SubmissionStatus.REFUSED) {
+            inScope(approver, uow -> returns.refuse(uow, id, REASON, approver, correlation()));
+            return acted;
+        }
+        inScope(approver, uow -> returns.approve(uow, id, read, REASON, approver, correlation()));
+        if (to == SubmissionStatus.APPROVED) {
+            return acted;
+        }
+        if (to == SubmissionStatus.WITHDRAWN) {
+            inScope(preparer, uow -> returns.withdraw(uow, id, REASON, preparer, correlation()));
+            return acted;
+        }
+        Actor sender = person();
+        inScope(sender, uow -> returns.submit(uow, id, read, REASON, sender, correlation()));
+        return acted;
+    }
+
+    @Test
+    @DisplayName("P14-TSK-023 (a): a reopen's two receipts through the real desk and statement: January with no return reads an empty list on both; closed again with a return of each status, only SUBMITTED and ACKNOWLEDGED are listed, newest sent first; the approval reads its own, holding what was sent since the proposal; a key's replay returns what it stored though the row moved; a repeat under a new key reads what stands; the next reopen lists every revision's")
+    void aReopensReceiptsListTheReturnsItOvertakes() {
+        PeriodCloseFixture.closed(JANUARY);
+        AccountingPeriodId january = id(JANUARY);
+        String period = january.value().toString();
+        List<String> none = inScope(Actor.SYSTEM, uow -> PeriodCloseFixture.posted(uow, january)).stream().map(Object::toString).toList();
+        assertThat(none).as("this suite posts no adjustment against a month, so both acts name none").isEmpty();
+
+        PeriodCloseDesk.PeriodCloseReceipt firstProposal = as(ACCOUNTANT, () -> desk.proposeReopen("reopen-none-p", period, none, "a correction was found"));
+        PeriodCloseDesk.PeriodCloseReceipt firstApproval = as(CONTROLLER, () -> desk.approveReopen("reopen-none-a", period, none, "agreed"));
+        for (PeriodCloseDesk.PeriodCloseReceipt receipt : List.of(firstProposal, firstApproval)) {
+            assertThat(receipt.overtakenReturns()).as("this suite's first return comes below, so no case's order can hold one here").isEmpty();
+            assertThat(receipt.overtakenReturnsTotal()).isZero();
+            assertThat(receipt.overtakenReturnsNote()).isEqualTo(PeriodCloseDesk.OVERTAKEN_RETURNS_NOTE);
+        }
+
+        PeriodCloseFixture.closed(JANUARY);
+        issued(january);
+        for (SubmissionStatus unsent : List.of(SubmissionStatus.DRAFT, SubmissionStatus.VALIDATED, SubmissionStatus.REFUSED, SubmissionStatus.WITHDRAWN)) {
+            aReturn(january, unsent);
+        }
+        RegulatorySubmissions.Acted approved = aReturn(january, SubmissionStatus.APPROVED);
+        RegulatorySubmissions.Acted acknowledged = aReturn(january, SubmissionStatus.ACKNOWLEDGED);
+        assertThat(driver.submitIfDue(acknowledged.id())).isTrue();
+        RegulatorySubmissions.Acted rejected = aReturn(january, SubmissionStatus.REJECTED);
+        provider.nextSubmit(() -> Answer.rejected(Optional.empty(), "NOT_ACCEPTED", "{}".getBytes(StandardCharsets.UTF_8)));
+        assertThat(driver.submitIfDue(rejected.id())).isTrue();
+        RegulatorySubmissions.Acted notReceived = aReturn(january, SubmissionStatus.UNDELIVERED);
+        // Not received, then not received again on the resend the driver permits while the month stands: SUBMITTED, a person's door to come.
+        provider.nextSubmit(() -> Answer.notReceived("{}".getBytes(StandardCharsets.UTF_8))).nextSubmit(() -> Answer.notReceived("{}".getBytes(StandardCharsets.UTF_8)));
+        assertThat(driver.submitIfDue(notReceived.id())).isTrue();
+        RegulatorySubmissions.Acted submitted = aReturn(january, SubmissionStatus.SUBMITTED);
+        assertThat(rows(acknowledged.id())).isEqualTo(SubmissionStatus.ACKNOWLEDGED);
+        assertThat(rows(rejected.id())).isEqualTo(SubmissionStatus.REJECTED);
+        assertThat(rows(submitted.id())).isEqualTo(SubmissionStatus.SUBMITTED);
+        assertThat(rows(notReceived.id())).as("not received, and still SUBMITTED until a person's door").isEqualTo(SubmissionStatus.SUBMITTED);
+
+        List<String> listed = List.of(submitted.id().value().toString(), notReceived.id().value().toString(), acknowledged.id().value().toString());
+        PeriodCloseDesk.PeriodCloseReceipt proposal = as(ACCOUNTANT, () -> desk.proposeReopen("reopen-each-p", period, none, "a correction was found"));
+
+        assertThat(named(proposal)).as("SUBMITTED and ACKNOWLEDGED alone, newest sent first").containsExactlyElementsOf(listed);
+        assertThat(proposal.overtakenReturnsTotal()).isEqualTo(3);
+        assertThat(proposal.overtakenReturns()).extracting(PeriodCloseDesk.OvertakenReturn::status).containsExactly("SUBMITTED", "SUBMITTED", "ACKNOWLEDGED");
+        assertThat(proposal.overtakenReturns()).extracting(PeriodCloseDesk.OvertakenReturn::form).containsExactly("REF-REOPEN-SUBMITTED", "REF-REOPEN-UNDELIVERED", "REF-REOPEN-ACKNOWLEDGED");
+
+        // A proposal stops no send: the APPROVED one goes now, and the approval's read has it.
+        Actor sender = person();
+        RegulatorySubmissions.Attested attested = new RegulatorySubmissions.Attested(approved.contentSha256(), approved.periodRevision());
+        inScope(sender, uow -> returns.submit(uow, approved.id(), attested, REASON, sender, correlation()));
+
+        PeriodCloseDesk.PeriodCloseReceipt approval = as(CONTROLLER, () -> desk.approveReopen("reopen-each-a", period, none, "agreed"));
+
+        assertThat(approval.status()).as("it stopped nothing").isEqualTo("OPEN");
+        assertThat(named(approval)).as("its own read").hasSize(4).startsWith(approved.id().value().toString());
+        assertThat(approval.overtakenReturnsTotal()).isEqualTo(4);
+        assertThat(as(ACCOUNTANT, () -> desk.proposeReopen("reopen-each-p", period, none, "a correction was found"))).as("the proposal's stored receipt, three, and the month now OPEN").isEqualTo(proposal);
+
+        // A status moved: the month having moved opens the door, and the return it held is UNDELIVERED. The key's replay says what was stored, a repeat under a new key what stands.
+        Optional<RegulatorySubmissions.Recorded> asked = driver.askBeforeNonDelivery(inScope(Actor.SYSTEM, uow -> SUBMISSIONS.find(uow, notReceived.id())).orElseThrow(), correlation());
+        Actor closer = person();
+        inScope(closer, uow -> returns.declareUndelivered(uow, notReceived.id(), asked, REASON, closer, correlation()));
+        assertThat(rows(notReceived.id())).isEqualTo(SubmissionStatus.UNDELIVERED);
+        assertThat(as(CONTROLLER, () -> desk.approveReopen("reopen-each-a", period, none, "agreed"))).as("the stored list, the row since moved").isEqualTo(approval);
+        PeriodCloseDesk.PeriodCloseReceipt repeated = as(CONTROLLER, () -> desk.approveReopen("reopen-each-a2", period, none, "agreed"));
+        assertThat(repeated.overtakenReturnsNote()).isEqualTo(PeriodCloseDesk.OVERTAKEN_RETURNS_NOTE);
+        List<String> standing = List.of(approved.id().value().toString(), submitted.id().value().toString(), acknowledged.id().value().toString());
+        assertThat(named(repeated)).as("the same person's repeat converges, reading what stands: an UNDELIVERED one is not on it").containsExactlyElementsOf(standing);
+
+        // The next reopen lists every revision's: read at the revision before this one, each of them.
+        PeriodCloseFixture.closed(JANUARY);
+        PeriodCloseDesk.PeriodCloseReceipt next = as(ACCOUNTANT, () -> desk.proposeReopen("reopen-next-p", period, none, "another correction"));
+        assertThat(named(next)).containsExactlyElementsOf(standing);
+        as(CONTROLLER, () -> desk.approveReopen("reopen-next-a", period, none, "agreed"));
+    }
+
+    private static SubmissionStatus rows(RegulatorySubmissionId id) {
+        return inScope(Actor.SYSTEM, uow -> SUBMISSIONS.find(uow, id)).orElseThrow().status();
+    }
+
+    /** A FINAL run of the source for the month at its present revision, its content the suite's, through the machine's own claim and completion. */
+    private static void issued(AccountingPeriodId period) {
+        Actor accountant = person();
+        inScope(accountant, uow -> {
+            ReportRuns.Claimed claimed = SOURCE_RUNS.claim(uow, RegulatoryWorld.SOURCE, period, RunParameters.none(), accountant, correlation());
+            ReportRunStore.RunRow run = claimed.run();
+            String content = CanonicalJson.text(CanonicalJson.object().put("definition", RegulatoryWorld.SOURCE).put("period", JANUARY.toString()).put("body", RegulatoryWorld.body(100_00, 100_00, 50_00, 50_00)));
+            return SOURCE_RUNS.complete(uow, run.id(), run.attempt(), new ReportGeneration.Generated(content, CanonicalJson.sha256(content), Optional.empty()), accountant);
+        });
     }
 
     // ------------------------------------------------------------------ plumbing

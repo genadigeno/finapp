@@ -79,7 +79,7 @@ public class PeriodCloseController {
 
     /**
      * Proposes reopening the latest CLOSED period, the next not locked, naming the adjustments posted against it (read at GET .../prior-period-adjustments of the period) - nothing moves until a different person approves; a reason is required. Naming other than what is posted now is 409
-     * accounting.PriorPeriodAdjustmentStale.
+     * accounting.PriorPeriodAdjustmentStale. The receipt lists the returns the reopen would overtake, as read at this act (overtakenReturns, overtakenReturnsTotal, overtakenReturnsNote): information, named back by nobody; the approval's receipt reads its own.
      */
     @PostMapping(path = "/{periodId}/reopen-proposal", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
@@ -93,7 +93,7 @@ public class PeriodCloseController {
 
     /**
      * Approves a pending reopen - a different person's act, naming the adjustments posted against the month (priorPeriodAdjustments of GET .../close-proposal, under this same permission): the period OPEN at its next revision, the cutoff back one period, its FINAL runs SUPERSEDED and nothing deleted;
-     * a reason is required. Naming other than what is posted now is 409 accounting.PriorPeriodAdjustmentStale: an adjustment may have posted since the proposal.
+     * a reason is required. Naming other than what is posted now is 409 accounting.PriorPeriodAdjustmentStale: an adjustment may have posted since the proposal. The receipt lists the returns this reopen overtook, as read at this act (overtakenReturns, overtakenReturnsTotal, overtakenReturnsNote): information, it refused nothing.
      */
     @PostMapping(path = "/{periodId}/reopen-approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)

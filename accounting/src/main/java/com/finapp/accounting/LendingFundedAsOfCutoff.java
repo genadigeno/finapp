@@ -14,9 +14,9 @@ import java.util.Set;
 import java.util.TreeMap;
 
 /**
- * What {@code lending_funded} rests on beyond the trial balance's reads, <strong>as of a period's cutoff, through reads that cannot move after the lock</strong> (`P14-TSK-019`; ADR-0096 section 6; ADR-0118 decision 4; {@code INV-ACC-04}): what a FINAL body may read, and {@code LendingCapitalHeadroom.atRest} is not, because its
- * {@code committed} is the loans {@code PENDING_DISBURSEMENT} now and its {@code outstanding} a present balance. {@code ReportingNeverWritesTest} refuses a report port's adapter any edge to {@code com.finapp.lending} for that reason. So the formula is held twice, {@link #lendingFunded} here and {@code LendingCapitalHeadroom.Headroom.lendingFunded} there, and {@code
- * SafeguardingFormulaIsTheHeadroomsTest} in {@code app}, which sees both, pins the two and their purpose sets together.
+ * What the safeguarding return's lending lines rest on beyond the trial balance's reads, <strong>as of a period's cutoff, through reads that cannot move after the lock</strong> (`P14-TSK-019`, `P14-TSK-023`; ADR-0096 section 6 as corrected; ADR-0118 decision 4; {@code INV-ACC-04}): what a FINAL body may read, and {@code LendingCapitalHeadroom.atRest} is not, because its
+ * {@code committed} is the loans {@code PENDING_DISBURSEMENT} now and its {@code outstanding} a present balance. {@code ReportingNeverWritesTest} refuses a report port's adapter any edge to {@code com.finapp.lending} for that reason. <strong>The port's name is capital's figure, as of a cutoff</strong>: {@code lending_funded}, {@code LendingCapitalHeadroom.Headroom.lendingFunded} there, is the principal outstanding, committed and written off, and the return subtracts only {@link #principalUnrepaid}, the outstanding and written-off terms, {@code committed} standing as a line beside it. So the relation is held here and there, and {@code
+ * SafeguardingFormulaIsTheHeadroomsTest} in {@code app}, which sees both, pins the return's term + committed to the headroom's figure, and the purpose sets together.
  *
  * <p><strong>Committed: immutable history can say it.</strong> An accepted, undisbursed loan posts nothing, and a loan's status moves, so it is never read. A loan's frozen facts ({@link LoanFacts}) can: it counts when its own servicing zone's business date of its opening is on or before the cutoff, and neither its disbursement's value date nor its cancellation's date is.
  *
@@ -40,10 +40,10 @@ public interface LendingFundedAsOfCutoff {
     Set<String> HELD_PER_ACCOUNT = Set.of("CUSTOMER_WALLET", "MERCHANT_PAYABLE", "LOAN_CREDIT_BALANCE", "BNPL_CREDIT_BALANCE");
 
     /**
-     * {@code lending_funded(c)}: the principal outstanding plus committed plus written off (ADR-0096 section 6, widened by `P14-TSK-021`, the owner's item (h)): the wallet money a written-off loan created is still there and still capital's, so a write-off must not raise what the return holds customers funded. The same sum as {@code Headroom.lendingFunded()}, in exact decimals.
+     * The return's term, in exact decimals: the principal outstanding plus written off (`P14-TSK-023`, the owner's ruling of 2026-11-05 correcting ADR-0096 section 6 for this return). The wallet money a written-off loan created is still there and still capital's, so a write-off must not raise what the return holds customers funded (`P14-TSK-021`, the owner's item (h)). <strong>Committed is not in it:</strong> an accepted loan awaiting disbursement has created no wallet money, so subtracting it would lift a position with nothing behind it. This + committed = {@code Headroom.lendingFunded()}, which keeps capital's identity.
      */
-    static BigDecimal lendingFunded(BigDecimal outstanding, BigDecimal committed, BigDecimal writtenOff) {
-        return outstanding.add(committed).add(writtenOff);
+    static BigDecimal principalUnrepaid(BigDecimal outstanding, BigDecimal writtenOff) {
+        return outstanding.add(writtenOff);
     }
 
     /** Per currency and scale, sorted: the principal of the loans that stood committed at the end of {@code cutoff}. */

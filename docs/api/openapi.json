@@ -23262,6 +23262,20 @@
         },
         "type": "object"
       },
+      "OvertakenReturn": {
+        "properties": {
+          "form": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "OwnerDeclarationRequest": {
         "properties": {
           "controlRole": {
@@ -23954,6 +23968,19 @@
           },
           "id": {
             "type": "string"
+          },
+          "overtakenReturns": {
+            "items": {
+              "$ref": "#/components/schemas/OvertakenReturn"
+            },
+            "type": "array"
+          },
+          "overtakenReturnsNote": {
+            "type": "string"
+          },
+          "overtakenReturnsTotal": {
+            "format": "int64",
+            "type": "integer"
           },
           "period": {
             "type": "string"

@@ -77,7 +77,9 @@ public final class LendingCapitalDesk {
     /**
      * One currency, in minor units at its scale: the capital recognised from bank evidence, the principal committed and
      * outstanding - loan, line and, since `P12-TSK-005`, BNPL principal in the one outstanding figure (ADR-0104 decision
-     * 7) - the headroom, the safeguarding term {@code lending_funded}, and whether the capital proof holds.
+     * 7) - the headroom, capital's own {@code lending_funded} (outstanding, committed and written off: capital recognised =
+     * headroom + this; not the safeguarding return's subtraction, which leaves committed out, ADR-0096 section 6 as corrected
+     * by the owner, 2026-11-05), and whether the capital proof holds. The field keeps its name, being capital's figure.
      */
     public record CurrencyCapitalView(
             String currency,

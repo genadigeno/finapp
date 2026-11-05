@@ -101,9 +101,9 @@ class LendingFundedAsOfCutoffTest {
     }
 
     @Test
-    @DisplayName("the formula: outstanding plus committed plus written off, exactly")
+    @DisplayName("the return's term: outstanding plus written off, exactly, committed not among it")
     void theFormula() {
-        assertThat(LendingFundedAsOfCutoff.lendingFunded(new BigDecimal("10.00"), new BigDecimal("2.50"), new BigDecimal("0.25"))).isEqualByComparingTo("12.75");
+        assertThat(LendingFundedAsOfCutoff.principalUnrepaid(new BigDecimal("10.00"), new BigDecimal("0.25"))).isEqualByComparingTo("10.25");
     }
 
     @Test

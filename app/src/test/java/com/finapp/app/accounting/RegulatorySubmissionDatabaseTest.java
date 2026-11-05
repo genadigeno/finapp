@@ -17,6 +17,7 @@ import com.finapp.accounting.AccountingPeriodStore;
 import com.finapp.accounting.JdbcRegulatoryObligationStore;
 import com.finapp.accounting.JdbcRegulatorySubmissionStore;
 import com.finapp.accounting.JdbcReportRunStore;
+import com.finapp.accounting.JdbcReturnsAReopenOvertakes;
 import com.finapp.accounting.JdbcGlMappingStore;
 import com.finapp.accounting.PeriodStatus;
 import com.finapp.accounting.RegulatoryAdapters;
@@ -32,6 +33,7 @@ import com.finapp.accounting.RegulatorySubmissions;
 import com.finapp.accounting.ReportRunId;
 import com.finapp.accounting.ReportRunStore;
 import com.finapp.accounting.ReportRuns;
+import com.finapp.accounting.ReturnsAReopenOvertakes;
 import com.finapp.accounting.RunContentParser;
 import com.finapp.accounting.SubmissionStatus;
 import com.finapp.accounting.reporting.CanonicalJson;
@@ -585,6 +587,65 @@ class RegulatorySubmissionDatabaseTest {
         assertThat(provider.inquiries()).isZero();
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type = '" + RegulatorySubmissions.SUBMITTED_EVENT + "' AND aggregate_id = '" + approved.id().value() + "'")).isZero();
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'regulatory.SubmissionSubmitted' AND target_id = '" + approved.id().value() + "'")).isZero();
+    }
+
+    @Test
+    @DisplayName("P14-TSK-023 (a): what a reopen's receipt reads against a send racing it, both orders: a send holding the period FOR SHARE keeps the approval waiting and is on its list, frozen at the old revision; an approval holding the period FOR UPDATE reads without it, and the send is then refused. A plain read on the approval's own transaction, taking no lock")
+    void whatAReceiptReadsAgainstASend() throws Exception {
+        Case first = approved();
+        proposeReopen(first.month());
+        AccountingPeriodId period = id(first.month());
+        Actor sender = person();
+        Actor approver = person();
+        CountDownLatch edgeMade = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        Future<RegulatorySubmissions.Acted> submit = pool.submit(() -> inScope(sender, uow -> {
+            RegulatorySubmissions.Acted acted = machine.submit(uow, first.id(), first.read(), REASON, sender, correlation());
+            edgeMade.countDown();
+            await(release);
+            return acted;
+        }));
+        assertThat(edgeMade.await(60, TimeUnit.SECONDS)).isTrue();
+        Future<ReturnsAReopenOvertakes.Overtaken> reopen = pool.submit(() -> inScope(approver, uow -> {
+            PeriodCloseFixture.MACHINE.approveReopen(uow, period, approver, PeriodCloseFixture.posted(uow, period), "the suite reopens it", correlation());
+            return new JdbcReturnsAReopenOvertakes().of(uow, period);
+        }));
+        assertThatThrownBy(() -> reopen.get(1, TimeUnit.SECONDS)).as("the approval waits on the row the send holds").isInstanceOf(TimeoutException.class);
+        release.countDown();
+        assertThat(submit.get(60, TimeUnit.SECONDS).status()).isEqualTo(SubmissionStatus.SUBMITTED);
+        ReturnsAReopenOvertakes.Overtaken held = reopen.get(60, TimeUnit.SECONDS);
+        pool.shutdownNow();
+        assertThat(held.newest()).as("committed before the approval held the period, so on its list").extracting(ReturnsAReopenOvertakes.Item::id).contains(first.id());
+
+        Case second = approved();
+        proposeReopen(second.month());
+        AccountingPeriodId nextPeriod = id(second.month());
+        Actor nextApprover = person();
+        Actor nextSender = person();
+        CountDownLatch read = new CountDownLatch(1);
+        CountDownLatch go = new CountDownLatch(1);
+        ExecutorService others = Executors.newFixedThreadPool(2);
+        Future<ReturnsAReopenOvertakes.Overtaken> reopening = others.submit(() -> inScope(nextApprover, uow -> {
+            PeriodCloseFixture.MACHINE.approveReopen(uow, nextPeriod, nextApprover, PeriodCloseFixture.posted(uow, nextPeriod), "the suite reopens it", correlation());
+            ReturnsAReopenOvertakes.Overtaken list = new JdbcReturnsAReopenOvertakes().of(uow, nextPeriod);
+            read.countDown();
+            await(go);
+            return list;
+        }));
+        assertThat(read.await(60, TimeUnit.SECONDS)).isTrue();
+        Future<Object> sending = others.submit(() -> {
+            try {
+                return inScope(nextSender, uow -> machine.submit(uow, second.id(), second.read(), REASON, nextSender, correlation()));
+            } catch (RuntimeException refused) {
+                return refused;
+            }
+        });
+        assertThatThrownBy(() -> sending.get(1, TimeUnit.SECONDS)).as("the send waits on the row the approval holds").isInstanceOf(TimeoutException.class);
+        go.countDown();
+        assertThat(reopening.get(60, TimeUnit.SECONDS).newest()).as("not sent when it read").extracting(ReturnsAReopenOvertakes.Item::id).doesNotContain(second.id());
+        assertThat(sending.get(60, TimeUnit.SECONDS)).as("and never sent").isInstanceOf(RegulatorySubmissions.SubmissionStale.class);
+        others.shutdownNow();
     }
 
     private static void await(CountDownLatch latch) {

@@ -10,6 +10,7 @@ import com.finapp.accounting.PeriodCloseId;
 import com.finapp.accounting.PeriodCloses;
 import com.finapp.accounting.PostingCutoff;
 import com.finapp.accounting.PriorPeriodAdjustments;
+import com.finapp.accounting.ReturnsAReopenOvertakes;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.CommandResult;
@@ -24,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -31,6 +33,7 @@ import java.util.TreeSet;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
@@ -45,6 +48,8 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>What leaves the read: the proposal, each frozen attempt with its evidence, and the proposer's reason <em>per {@code DISCLOSED} attempt</em>, which exists to be disclosed to the approver. Never a person; never the
  * proposal's or a decision's own reason.
+ *
+ * <p><strong>A reopen's two receipts list the returns it overtakes</strong> (`P14-TSK-023`, the owner's ruling on `P14-TSK-018`'s item (a)): {@link ReturnsAReopenOvertakes}, a plain read on the act's own transaction, holding the period's row. A list and no more: unlike the adjustments' it is named back by nobody and compared with nothing, so it decides nothing and refuses nothing. It is stored with the receipt and a replay returns what was stored; the words it is served with, {@link #OVERTAKEN_RETURNS_NOTE}, are not stored. The fingerprint does not move: a receipt is no part of a request. What a form's code and a return's status are, who reads them here and why that stands: {@code DATA_CLASSIFICATION.md}, the return's section.
  */
 @RequiredArgsConstructor
 public final class PeriodCloseDesk {
@@ -56,9 +61,18 @@ public final class PeriodCloseDesk {
     static final String REOPEN_PROPOSE_SPAN = "accounting.period.reopen.propose";
     static final String REOPEN_APPROVE_SPAN = "accounting.period.reopen.approve";
 
+    /**
+     * What a reopen's receipt says of its list, served and never stored: no field of this API carries a description (ADR-0015), and the person reading the receipt reads the receipt. It names the one door that lists what stands, and says who holds it, since neither of a reopen's two people does.
+     */
+    static final String OVERTAKEN_RETURNS_NOTE = "Information only, read while this act held the month: it stopped nothing and decides nothing, and a status may have moved since. Each return SUBMITTED or ACKNOWLEDGED for this month, newest first, at most "
+            + ReturnsAReopenOvertakes.NEWEST + " of overtakenReturnsTotal. Not listed: a return not yet sent. One APPROVED can still be sent until a reopen's approval moves the month's revision, and is stale and refused after it. Nor one UNDELIVERED, which may still reach the provider late. So an empty list does not mean nothing is in flight:"
+            + " GET /v1/operator/regulatory/submissions under REGULATORY_REPORT_PREPARE, which a regulatory reporter holds and neither of a reopen's two people does, lists what stands.";
+
     @NonNull private final PeriodCloses closes;
     /** What has posted against the month: a reopen's two people and a re-close's approver are told (`P14-TSK-013`). Read only. */
     @NonNull private final PriorPeriodAdjustments priorPeriodAdjustments;
+    /** What a reopen's two people are told it overtakes (`P14-TSK-023`). Read only. */
+    @NonNull private final ReturnsAReopenOvertakes overtaken;
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final AccountingTransactions transactions;
     @NonNull private final AccountingFlowScope flow;
@@ -68,8 +82,14 @@ public final class PeriodCloseDesk {
      *
      * @param priorPeriodAdjustments on a reopen's two acts, the adjustments already posted against the month, read holding its row (`P14-TSK-013`): its figures at the next revision will still show what those corrected, each entry being dated in a later month, so
      *     whoever corrects the month directly must know they stand. What an act that judged its naming named, since `P14-TSK-022` refuses anything else; a repeat that converged compared nothing, and this is what stands now. Empty on a close's acts.
+     * @param overtakenReturns on a reopen's two acts, the returns {@code SUBMITTED} or {@code ACKNOWLEDGED} for the month, newest first, at most {@link ReturnsAReopenOvertakes#NEWEST} (`P14-TSK-023`). As read at that act: a list, never a gate, and {@link #overtakenReturnsNote} says what it does not hold. A month with none reads an empty list. <strong>Null where no list was read</strong>: on a close's acts, and on a receipt a reopen's key stored before `P14-TSK-023`, so "read, and none" and "never read" never look alike (the fix round's M-6).
+     * @param overtakenReturnsTotal how many there are, of which {@code overtakenReturns} is the newest; null where no list was read, as that list
+     * @param overtakenReturnsNote what the list says and does not, on a reopen's act; null where no list was read, as that list
      */
-    public record PeriodCloseReceipt(String id, String period, String status, int revision, String proposalId, String closeRunId, List<String> priorPeriodAdjustments) {}
+    public record PeriodCloseReceipt(String id, String period, String status, int revision, String proposalId, String closeRunId, List<String> priorPeriodAdjustments, List<OvertakenReturn> overtakenReturns, Long overtakenReturnsTotal, String overtakenReturnsNote) {}
+
+    /** A return a reopen overtakes: its id, its form and its status as read. Never a figure, a person, a reason or a provider's reference. */
+    public record OvertakenReturn(String id, String form, String status) {}
 
     /** A person's reason for the attempt they read. */
     public record StatedDisclosure(String check, int attempt, String reason) {
@@ -149,7 +169,7 @@ public final class PeriodCloseDesk {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         return flow.door(REOPEN_PROPOSE_SPAN, () -> keyed(actor, idempotencyKey, reopenFingerprint("reopen-proposal", id, named, reason),
-                uow -> withPosted(uow, receipt(closes.proposeReopen(uow, id, actor, named, reason, correlation)), id)));
+                uow -> toldOfTheMonth(uow, receipt(closes.proposeReopen(uow, id, actor, named, reason, correlation)), id)));
     }
 
     public PeriodCloseReceipt approveReopen(String idempotencyKey, String rawId, List<String> rawPosted, String reason) {
@@ -158,7 +178,7 @@ public final class PeriodCloseDesk {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         return flow.door(REOPEN_APPROVE_SPAN, () -> keyed(actor, idempotencyKey, reopenFingerprint("reopen-approval", id, named, reason),
-                uow -> withPosted(uow, receipt(closes.approveReopen(uow, id, actor, named, reason, correlation)), id)));
+                uow -> toldOfTheMonth(uow, receipt(closes.approveReopen(uow, id, actor, named, reason, correlation)), id)));
     }
 
     /**
@@ -212,13 +232,17 @@ public final class PeriodCloseDesk {
 
     private static PeriodCloseReceipt receipt(PeriodCloses.Acted acted) {
         return new PeriodCloseReceipt(acted.id().value().toString(), acted.month().toString(), acted.status().name(), acted.revision(),
-                acted.proposal().map(id -> id.value().toString()).orElse(null), acted.run().map(id -> id.value().toString()).orElse(null), List.of());
+                acted.proposal().map(id -> id.value().toString()).orElse(null), acted.run().map(id -> id.value().toString()).orElse(null), List.of(), null, null, null);
     }
 
-    /** The receipt with what has posted against the month, read on the act's own transaction, still holding the period's row: an approval racing this act has committed, or will be refused. */
-    private PeriodCloseReceipt withPosted(Connection unitOfWork, PeriodCloseReceipt receipt, AccountingPeriodId id) {
+    /**
+     * The receipt with what a reopen's two people are told of the month, each read on the act's own transaction, still holding the period's row. What has posted against it: an approval racing this act has committed, or will be refused. What it overtakes: a plain read, no lock, so no edge; a send committed before this act held the row is here, one waiting on the row is not, and a conclusion takes no period, so a status can be stale. Information, and it decides nothing.
+     */
+    private PeriodCloseReceipt toldOfTheMonth(Connection unitOfWork, PeriodCloseReceipt receipt, AccountingPeriodId id) {
+        ReturnsAReopenOvertakes.Overtaken read = overtaken.of(unitOfWork, id);
         return new PeriodCloseReceipt(receipt.id(), receipt.period(), receipt.status(), receipt.revision(), receipt.proposalId(), receipt.closeRunId(),
-                priorPeriodAdjustments.postedAgainst(unitOfWork, id).stream().map(UUID::toString).toList());
+                priorPeriodAdjustments.postedAgainst(unitOfWork, id).stream().map(UUID::toString).toList(),
+                read.newest().stream().map(item -> new OvertakenReturn(item.id().value().toString(), item.form(), item.status().name())).toList(), read.total(), OVERTAKEN_RETURNS_NOTE);
     }
 
     // ------------------------------------------------------------------ plumbing
@@ -230,18 +254,31 @@ public final class PeriodCloseDesk {
         IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> selfApprovalRecorded(actor,
                 () -> transactions.inTransaction(unitOfWork -> executor.execute(unitOfWork, key, fingerprint, uow -> {
                     PeriodCloseReceipt receipt = act.apply(uow);
-                    String stored = receipt.id() + "|" + receipt.period() + "|" + receipt.status() + "|" + receipt.revision() + "|"
-                            + (receipt.proposalId() == null ? "" : receipt.proposalId()) + "|" + (receipt.closeRunId() == null ? "" : receipt.closeRunId()) + "|"
-                            + String.join(",", receipt.priorPeriodAdjustments());
-                    return CommandResult.succeeded(StoredResponse.of(stored.getBytes(StandardCharsets.UTF_8), "text/plain"));
+                    return CommandResult.succeeded(StoredResponse.of(stored(receipt).getBytes(StandardCharsets.UTF_8), "text/plain"));
                 }))));
-        String[] stored = new String(
-                        outcome.body().orElseThrow(() -> new IllegalStateException("a close act stores its receipt")),
-                        StandardCharsets.UTF_8)
-                .split("\\|", -1);
-        // A receipt stored before P14-TSK-013 has six fields.
+        return parsed(new String(outcome.body().orElseThrow(() -> new IllegalStateException("a close act stores its receipt")), StandardCharsets.UTF_8));
+    }
+
+    /**
+     * A receipt as it is stored, for a key's replay: a form's grammar and a status hold no field's separator. Its two list fields stand only on an act that read the list, so a close's act stores what it always did. The note is words, never stored.
+     */
+    private static String stored(PeriodCloseReceipt receipt) {
+        String read = receipt.overtakenReturnsNote() == null ? "" : "|" + receipt.overtakenReturnsTotal() + "|"
+                + receipt.overtakenReturns().stream().map(item -> item.id() + "~" + item.form() + "~" + item.status()).collect(Collectors.joining(","));
+        return receipt.id() + "|" + receipt.period() + "|" + receipt.status() + "|" + receipt.revision() + "|"
+                + (receipt.proposalId() == null ? "" : receipt.proposalId()) + "|" + (receipt.closeRunId() == null ? "" : receipt.closeRunId()) + "|"
+                + String.join(",", receipt.priorPeriodAdjustments()) + read;
+    }
+
+    /**
+     * A stored receipt read back. One stored before P14-TSK-013 has six fields, one before P14-TSK-023 or of a close's act seven: each reads as it did, and its list, total and note are null, since no list was read. One that read a list has nine, the last empty for a month with none.
+     */
+    private static PeriodCloseReceipt parsed(String text) {
+        String[] stored = text.split("\\|", -1);
+        boolean read = stored.length > 8;
+        List<OvertakenReturn> overtaken = !read ? null : stored[8].isEmpty() ? List.of() : Arrays.stream(stored[8].split(",")).map(item -> item.split("~", 3)).map(item -> new OvertakenReturn(item[0], item[1], item[2])).toList();
         return new PeriodCloseReceipt(stored[0], stored[1], stored[2], Integer.parseInt(stored[3]), stored[4].isEmpty() ? null : stored[4],
-                stored[5].isEmpty() ? null : stored[5], stored.length < 7 || stored[6].isEmpty() ? List.of() : List.of(stored[6].split(",")));
+                stored[5].isEmpty() ? null : stored[5], stored.length < 7 || stored[6].isEmpty() ? List.of() : List.of(stored[6].split(",")), overtaken, read ? Long.valueOf(stored[7]) : null, read ? OVERTAKEN_RETURNS_NOTE : null);
     }
 
     private <R> R selfApprovalRecorded(Actor actor, Supplier<R> work) {

@@ -5139,6 +5139,8 @@ so it is `CONFIDENTIAL`, served to an operator under `ACCOUNTING_READ` and read 
 
 `accounting V010`: one return, `REFERENCE` only, content frozen from birth. Aggregates per currency and account, as the `FINAL` run it read; output, never truth. No customer name or instrument. Regulatory content is `CONFIDENTIAL` (`PHASE_14_PLAN.md` section 12).
 
+**A reopen's two receipts serve three of these columns** (`P14-TSK-023`): `id`, `form_code` and `status`, `INTERNAL` below, of each return `SUBMITTED` or `ACKNOWLEDGED` for the month, and how many in all. **Under `ACCOUNTING_CLOSE_APPROVE`** a financial controller reads them, who already holds `REGULATORY_REPORT_APPROVE` and attests these returns' content, so nothing here is new to that role. **Under `ACCOUNTING_CLOSE_PROPOSE`** an accountant reads them, who holds no `REGULATORY_*` permission, so this is wider than before, deliberately: the person reopening a month is told what it overtakes. Both stand: a form's code is `REF-...` configuration, a status the machine's word and an id opens no door to a role that lacks the regulatory permissions; no figure, content, person, reason, answer or provider's reference is on the list, and the statement selects none (`JdbcReturnsAReopenOvertakes`). The list is stored inside the key's `idempotency_record.response_body`, `RESTRICTED-FINANCIAL` above, which holds a whole response; a level above what it holds here. Each act's audit is as it was, and no log line prints the receipt.
+
 | Table | Column | Level | Note |
 |---|---|---|---|
 | `regulatory_submission` | `id` | `INTERNAL` | Generated, and the key the provider deduplicates on |

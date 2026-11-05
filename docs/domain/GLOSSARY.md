@@ -2625,14 +2625,19 @@ verdict.
 **Owned by:** `accounting`
 
 ### Safeguarding Position
-**Is:** a reference figure, per currency: cash and clearing receivables less the customer and merchant liabilities capital did not fund - `assets - (liabilities - lending_funded)` - read from a FINAL run of `SAFEGUARDING_POSITION` as of a month's cutoff, each term a line of its own, able to read negative and never floored, each liability its accounts in credit, gross, so a holder in debit is no cover for anyone else (`P14-TSK-019`, ADR-0118 decision 4, C13).
-**Not:** a statement that any safeguarding obligation is met: no regime's rules are claimed, and the return is `REFERENCE`. Nor the money in a segregated account: this platform holds none as such. Nor summed across currencies. Nor `LendingCapitalHeadroom`'s headroom, which judges what capital is free and is read live; nor proof of cover: a positive figure rises with an accepted loan and does not fall when loan money leaves wallets, which is why `positionBeforeLendingFunded` is served beside it.
+**Is:** a reference figure, per currency, read from a FINAL run of `SAFEGUARDING_POSITION` as of a month's cutoff, each term a line of its own, able to read negative and never floored, each liability its accounts in credit, gross, so a holder in debit is no cover for anyone else (`P14-TSK-019`, `P14-TSK-023`, ADR-0118 decision 4, C13). Two figures: `positionBeforePrincipalUnrepaid`, `assets - liabilities`, every liability a claim on cash whoever funded it, **the figure that warns**; and `position`, `assets - (liabilities - principalUnrepaid)`, a disclosure.
+**Not:** a statement that any safeguarding obligation is met: no regime's rules are claimed, and the return is `REFERENCE`. Nor the money in a segregated account: this platform holds none as such. Nor summed across currencies. Nor `LendingCapitalHeadroom`'s headroom, which judges what capital is free and is read live. Nor, for `position`, proof of cover: it does not fall when loan money leaves wallets, so it can read over in a month the figure that warns reads short. An acceptance moves neither.
 **Owned by:** `accounting`
 
 ### Lending Funded
-**Is:** `lending_funded(c)`, the part of the platform's liabilities capital created: principal outstanding (loans, lines, BNPL), plus committed to loans awaiting disbursement, plus written off, whose wallet money is still there and still capital's (ADR-0096 section 6, `P14-TSK-021`). `LendingCapitalHeadroom.Headroom.lendingFunded` states it now; `LendingFundedAsOfCutoff.lendingFunded` states it as of a month's cutoff over frozen rows, pinned to the first by a test.
-**Not:** capital, which also holds headroom: capital recognised = headroom + this figure. Nor an exact measure of loan-funded money still in wallets: once a borrower withdraws, wallets fall and this does not. Nor, for its committed term, money anywhere yet: an accepted loan awaiting disbursement has posted nothing.
+**Is:** `lending_funded(c)`, what capital has deployed or promised: principal outstanding (loans, lines, BNPL), plus committed to loans awaiting disbursement, plus written off (ADR-0096 section 6, `P14-TSK-021`). Capital recognised = headroom + this figure. `LendingCapitalHeadroom.Headroom.lendingFunded` states it, and lending's capital reports publish it as `lendingFundedMinor`.
+**Not:** capital, which also holds headroom. Nor the safeguarding return's subtraction: that is Principal Unrepaid, this less committed (the owner, 2026-11-05, `P14-TSK-023`). Nor, for its committed term, money anywhere yet: an accepted loan awaiting disbursement has posted nothing.
 **Owned by:** `lending`
+
+### Principal Unrepaid
+**Is:** the safeguarding return's subtraction, per currency, as of a month's cutoff: principal outstanding (loans, lines, BNPL) plus principal written off, whose wallet money is still there and still capital's (`P14-TSK-023`, `P14-TSK-021`'s item (h); ADR-0096 section 6 as corrected). `LendingFundedAsOfCutoff.principalUnrepaid` states it. A disclosure beside the figure that warns: this + committed = Lending Funded, pinned by a test.
+**Not:** Lending Funded, which also holds committed: an accepted loan has created no wallet money, so no liability stands behind it. Nor an exact measure of loan-funded money still in wallets: once a borrower withdraws, wallets fall and this does not, which is why a positive position proves no cover.
+**Owned by:** `accounting`
 
 ### Translation Difference
 **Is:** the explicit line by which the sum of individually translated parts differs from the translated total under one
