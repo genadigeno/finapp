@@ -15,13 +15,18 @@ import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.env.Environment;
+import org.springframework.test.annotation.DirtiesContext;
 
 /**
  * The production wiring (`P14-TSK-020`'s independent review, I-1): <strong>every accounting read gauge of the real context reads on the refresher's thread, and a caller of any of them never touches the pool.</strong> A suite's in-line refresher hides the async path, so this boots the real beans over a data
- * source that holds the refresher's thread on a latch and records who else asked. The gauges come from the live registry, so a gauge wired to read on the caller fails here with no edit. It reads the gauges one by one and never scrapes: the other modules' classes still read on the scrape thread, which is the debt row and no part of this. The first reads, which the test contexts turn off, are turned on here: they are what holds the thread.
+ * source that holds the refresher's thread on a latch and records who else asked. The gauges come from the live registry, so a gauge wired to read on the caller fails here with no edit. It reads the gauges one by one and never scrapes: the other modules' classes still read on the scrape thread, which is the debt row and no part of this.
+ *
+ * <p><strong>On production's own configuration</strong>: {@code spring.config.location} names the main {@code application.yaml} alone, so the test resources' overlay, which turns the first reads off as it does every background worker, is not loaded and nothing here turns them back on. What holds the thread is what the code's default and production's file make of {@code finapp.accounting.gauges.read-at-start}: a default flipped, or the file setting it, fails here. So the workers that overlay holds off do run, against the closed port; the context is closed with the class, so they stop with it.
  */
 @Tag("slice")
-@SpringBootTest(properties = {"spring.datasource.url=jdbc:postgresql://127.0.0.1:1/absent", "finapp.accounting.sweeper.enabled=false", "finapp.accounting.gauges.read-at-start=true"})
+@SpringBootTest(properties = {"spring.config.location=classpath:/application.yaml", "spring.datasource.url=jdbc:postgresql://127.0.0.1:1/absent", "finapp.accounting.sweeper.enabled=false"})
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("every accounting gauge of the real context reads on the refresher's thread (P14-TSK-020)")
 class AccountingGaugeWiringTest {
 
@@ -38,6 +43,7 @@ class AccountingGaugeWiringTest {
 
     @Autowired private MeterRegistry registry;
     @Autowired private AccountingGaugeRefresher refresher;
+    @Autowired private Environment environment;
 
     @AfterAll
     static void letItGo() {
@@ -45,8 +51,9 @@ class AccountingGaugeWiringTest {
     }
 
     @Test
-    @DisplayName("the context's start asks for the first reads on the refresher's thread, which holds one connection; every read gauge answers no value to its caller at once, and the caller never asks the pool")
+    @DisplayName("on production's configuration, the context's start asks for the first reads on the refresher's thread, which holds one connection; every read gauge answers no value to its caller at once, and the caller never asks the pool")
     void everyGaugeReadsOnTheRefresher() throws Exception {
+        assertThat(environment.getProperty("finapp.outbox.relay.enabled")).as("the census: the test resources' overlay is not loaded").isNotEqualTo("false");
         assertThat(refresher.isRunning()).as("started with the context, closed with it").isTrue();
         assertThat(SOURCE.awaitHeld(60)).as("the start asked for a first read, and it is on the refresher's thread").isTrue();
 
