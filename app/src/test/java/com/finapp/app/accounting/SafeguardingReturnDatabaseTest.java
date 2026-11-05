@@ -258,6 +258,7 @@ class SafeguardingReturnDatabaseTest {
         post(day, bnpl, merchant, 13_00, EUR);
         post(day, interest, operational(AccountPurpose.LOAN_INTEREST_INCOME, EUR), 25, EUR);
         writeOff(day, day, loan, interest, 5_00, 25, EUR);
+        post(day, operational(AccountPurpose.BNPL_WRITE_OFF_EXPENSE, EUR), bnpl, 1_00, EUR);
         PeriodCloseFixture.closed(month);
 
         JsonNode eur = figures(bodyOf(issued(month)), EUR);
@@ -267,7 +268,7 @@ class SafeguardingReturnDatabaseTest {
         assertThat(minor(eur, "customerWallets")).isEqualTo(-raw("'CUSTOMER_WALLET'", lastDay, EUR));
         assertThat(minor(eur, "merchantPayables")).isEqualTo(-raw("'MERCHANT_PAYABLE'", lastDay, EUR));
         assertThat(minor(eur, "principalOutstanding")).isEqualTo(raw("'LOAN_PRINCIPAL','LOAN_PRINCIPAL_DUE','BNPL_PRINCIPAL','BNPL_PRINCIPAL_DUE'", lastDay, EUR));
-        assertThat(minor(eur, "principalWrittenOff")).isEqualTo(rawWrittenOff(lastDay, EUR)).isGreaterThanOrEqualTo(5_00);
+        assertThat(minor(eur, "principalWrittenOff")).isEqualTo(rawWrittenOff(lastDay, EUR)).isGreaterThanOrEqualTo(5_00 + 1_00);
         assertThat(minor(eur, "principalCommitted")).as("no loan was opened by a cutoff in 1999: the real statement's true zero").isZero();
         assertThat(eur.get("principalCommittedLoans").asText()).isEqualTo("0");
         long funded = minor(eur, "principalOutstanding") + minor(eur, "principalWrittenOff");

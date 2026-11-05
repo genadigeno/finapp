@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.TreeSet;
 import java.util.stream.Collectors;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -136,10 +135,10 @@ public final class SafeguardingPositionDefinition implements ReportDefinition {
             new Disposition("BNPL_INTEREST_INCOME/OPERATIONAL", Treatment.OUT, INCOME),
             new Disposition("BNPL_FEE_INCOME/OPERATIONAL", Treatment.OUT, INCOME));
 
-    private static final Map<String, Treatment> TREATMENTS = DISPOSITIONS.stream().collect(Collectors.toMap(Disposition::key, Disposition::treatment));
+    private static final Map<String, Treatment> TREATMENTS = DISPOSITIONS.stream().collect(Collectors.toUnmodifiableMap(Disposition::key, Disposition::treatment));
 
     /** What the journal's reads are folded over: every purpose but those out of the return. */
-    private static final Set<String> READ_KEYS = DISPOSITIONS.stream().filter(held -> held.treatment() != Treatment.OUT).map(Disposition::key).collect(Collectors.toCollection(TreeSet::new));
+    private static final Set<String> READ_KEYS = DISPOSITIONS.stream().filter(held -> held.treatment() != Treatment.OUT).map(Disposition::key).collect(Collectors.toUnmodifiableSet());
 
     private static final ReportStatement STATEMENT = new ReportStatement(
             "The ledger's journal lines by posting date, each read with its ledger account's purpose and owner kind, a counterparty's account also with the counterparty's code; lending's frozen facts of an instalment loan's opening, agreement principal and disbursement outcome; the pinned GL mapping version for the drill-down key."

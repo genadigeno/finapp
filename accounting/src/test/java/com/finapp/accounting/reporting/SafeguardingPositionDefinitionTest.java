@@ -263,6 +263,21 @@ class SafeguardingPositionDefinitionTest {
     }
 
     @Test
+    @DisplayName("what the figure is, by double entry and pinned for the owner: capital plus results plus committed, less the assets the return leaves out")
+    void thePositionIsCapitalResultsAndCommitted() {
+        books.deposit(DAY_ONE, EUR, 2, 100_00).capital(DAY_ONE, EUR, 2, 50_00).accepted("loan", DAY_ONE, EUR, 2, 30_00).disbursed("loan", MONTH.atDay(2), 1_00)
+                .accepted("waiting", MONTH.atDay(3), EUR, 2, 7_00).withdraw(MONTH.atDay(4), EUR, 2, 10_00);
+        books.post(MONTH.atDay(5), EUR, 2, 2_00, SafeguardingBooks.LOAN_INTEREST_DUE, "LOAN_INTEREST_INCOME/OPERATIONAL");
+
+        long capital = 50_00;
+        long results = 1_00 + 2_00;
+        long committed = 7_00;
+        long leftOut = 2_00;
+
+        assertThat(figure(figures(EUR), "position")).isEqualTo(capital + results + committed - leftOut);
+    }
+
+    @Test
     @DisplayName("a shortfall is a figure: negative, unfloored, flagged, per its own currency only")
     void aShortfallIsNegativeAndNeverFloored() {
         books.deposit(DAY_ONE, EUR, 2, 100_00);

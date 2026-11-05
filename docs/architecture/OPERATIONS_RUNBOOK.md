@@ -1630,6 +1630,7 @@ Every return here is `REFERENCE`, through a simulated adapter (ADR-0118, C4): no
 **`403 accounting.SelfApprovalRefused`.** The preparer approving, or the approver sending. One identity holding two roles is why it exists. Another person acts.
 
 **To rehearse.** `finapp.accounting.regulatory.simulation` chooses what the simulated adapter answers: `ACKNOWLEDGE` by default, `REJECT`, `UNKNOWN_THEN_ACKNOWLEDGE`, `UNKNOWN`, `NEVER_RECEIVED`, `UNAVAILABLE`. An outside environment only. **Only `NEVER_RECEIVED` rehearses a month that moved before the send:** under the default, an inquiry answers `ACKNOWLEDGED` even for a send that was withheld and never went, since the simulator remembers nothing.
+
 #### The reference safeguarding position return: its configuration
 
 `P14-TSK-019`, ADR-0118 decision 4, C13. A **reference** return: no jurisdiction, channel or form it names is real, and it asserts nothing about any legal obligation. It enters through the four-eyes doors, with no migration and no seed, and the block below is exactly its proposal's body. `SafeguardingReturnTest` reads this block and takes it through the real doors, the real definition and the real machine, so it cannot drift: change the form by a later form version, here first.

@@ -2,6 +2,7 @@ package com.finapp.app.lending;
 
 import static com.finapp.app.lending.LoanApplicationClient.field;
 import static com.finapp.app.lending.LoanApplicationClient.key;
+import static com.finapp.app.lending.LoanApplicationClient.line;
 import static com.finapp.app.lending.LoanApplicationClient.loan;
 import static com.finapp.app.lending.LoanApplicationClient.scalar;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -147,6 +148,12 @@ class SafeguardingCommittedDatabaseTest {
         assertThat(liveCommitted()).isZero();
         assertThat(committed(today)).as("the failure_reason's branch: released on its own date").isZero();
         assertThat(outstanding(today)).as("nothing posted").isEqualTo(3_617_43 + 5_123_87);
+
+        // A credit line commits no capital at acceptance (A28), and has no disbursement row to be read.
+        acceptedLoan(customers.consentingCustomer(), line("2483.19"));
+        assertThat(liveCommitted()).isZero();
+        assertThat(committed(today)).isZero();
+        assertThat(rows(today)).isZero();
     }
 
     private long committed(LocalDate cutoff) {
