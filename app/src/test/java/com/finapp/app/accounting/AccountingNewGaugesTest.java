@@ -98,6 +98,8 @@ class AccountingNewGaugesTest {
         new CloseCheckStallMetrics(runs, STALL, snapshots(), clock, registry);
         UUID holder = UUID.randomUUID();
         for (int claimed = 0; claimed < 8; claimed++) {
+            // The store's clock stands still unless moved: a row given back this instant would tie with those never claimed, and be taken again.
+            runs.advance(Duration.ofMillis(1));
             CloseRunStore.AttemptRow attempt = runs.claimNext(CONNECTION, holder, Duration.ofMinutes(2)).orElseThrow();
             if (attempt.check().raisesBreaks()) {
                 runs.conclude(CONNECTION, attempt.id(), holder, com.finapp.accounting.CheckVerdict.passed(attempt.check(), "close-run:v1",
