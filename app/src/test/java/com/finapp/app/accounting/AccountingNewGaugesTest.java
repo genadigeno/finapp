@@ -244,6 +244,15 @@ class AccountingNewGaugesTest {
         coverage.lines.add(line(SOURCE, "COMPLETED", false));
         clock.advance(Duration.ofSeconds(61));
         assertThat(gauge(ClosedMonthRunMetrics.UNRUN)).as("a corrected file's run counts").isZero();
+
+        // A later month closed: it alone is asked after, since only the latest closed month can reopen.
+        YearMonth april = MARCH.plusMonths(1);
+        periods.insertIfAbsent(CONNECTION, new AccountingPeriodStore.NewPeriod(AccountingPeriodId.next(IDS), april, CorrelationId.generate(IDS)));
+        periods.closeForTest(april);
+        coverage.asked.clear();
+        clock.advance(Duration.ofSeconds(61));
+        assertThat(gauge(ClosedMonthRunMetrics.UNRUN)).isZero();
+        assertThat(coverage.asked).containsExactly(april);
     }
 
     @Test
