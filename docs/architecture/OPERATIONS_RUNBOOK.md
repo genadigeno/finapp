@@ -1630,3 +1630,60 @@ Every return here is `REFERENCE`, through a simulated adapter (ADR-0118, C4): no
 **`403 accounting.SelfApprovalRefused`.** The preparer approving, or the approver sending. One identity holding two roles is why it exists. Another person acts.
 
 **To rehearse.** `finapp.accounting.regulatory.simulation` chooses what the simulated adapter answers: `ACKNOWLEDGE` by default, `REJECT`, `UNKNOWN_THEN_ACKNOWLEDGE`, `UNKNOWN`, `NEVER_RECEIVED`, `UNAVAILABLE`. An outside environment only. **Only `NEVER_RECEIVED` rehearses a month that moved before the send:** under the default, an inquiry answers `ACKNOWLEDGED` even for a send that was withheld and never went, since the simulator remembers nothing.
+#### The reference safeguarding position return: its configuration
+
+`P14-TSK-019`, ADR-0118 decision 4, C13. A **reference** return: no jurisdiction, channel or form it names is real, and it asserts nothing about any legal obligation. It enters through the four-eyes doors, with no migration and no seed, and the block below is exactly its proposal's body. `SafeguardingReturnTest` reads this block and takes it through the real doors, the real definition and the real machine, so it cannot drift: change the form by a later form version, here first.
+
+1. A `REGULATORY_REPORTER` proposes it: `POST /v1/operator/regulatory/obligations`, `REGULATORY_REPORT_PREPARE`, with the block as its body. The receipt names the configuration's hash.
+2. A second person, a `FINANCIAL_CONTROLLER` from a `MULTI_FACTOR` session, reads `GET .../{obligationId}/attestation` and activates it: `POST .../{obligationId}/activation` under `REGULATORY_REPORT_APPROVE`, naming that hash.
+3. Each month, once it is `CLOSED`, an accountant issues the run: `POST /v1/operator/accounting/report-runs` under `ACCOUNTING_REPORT_GENERATE`, definition `SAFEGUARDING_POSITION`. Nothing generates it by itself. Without it a draft is `409 accounting.RegulatorySourceNotFinal`.
+4. Draft, validate, approve and submit as any return.
+
+```json
+{
+  "jurisdictionCode": "REF",
+  "formCode": "REF-SAFEGUARDING-POSITION",
+  "formVersion": 1,
+  "adapterName": "simulated-reference",
+  "sources": [{"definition": "SAFEGUARDING_POSITION", "version": 1}],
+  "lines": [
+    {"code": "CASH_AT_BANK", "label": "Cash at bank", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].cashAtBank"},
+    {"code": "CLEARING_RECEIVABLES", "label": "Clearing receivables", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].clearingReceivables"},
+    {"code": "ASSETS", "label": "Assets: cash at bank and clearing receivables", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].assets"},
+    {"code": "CUSTOMER_WALLETS", "label": "Customer wallets", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].customerWallets"},
+    {"code": "MERCHANT_PAYABLES", "label": "Merchant payables", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].merchantPayables"},
+    {"code": "CREDIT_BALANCES", "label": "Credit balances owed back to borrowers and BNPL customers", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].creditBalances"},
+    {"code": "CLEARING_PAYABLES", "label": "Clearing payables: money owed onward, the cash not yet gone", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].clearingPayables"},
+    {"code": "SUSPENSE_HELD", "label": "Suspense held as owed: its net credit", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].suspenseHeld"},
+    {"code": "LIABILITIES", "label": "Liabilities", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].liabilities"},
+    {"code": "PRINCIPAL_OUTSTANDING", "label": "Principal outstanding: loans, lines and BNPL", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].principalOutstanding"},
+    {"code": "PRINCIPAL_COMMITTED", "label": "Principal committed: accepted loans awaiting disbursement, no journal line behind it", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].principalCommitted"},
+    {"code": "PRINCIPAL_WRITTEN_OFF", "label": "Principal written off", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].principalWrittenOff"},
+    {"code": "LENDING_FUNDED", "label": "Lending funded: outstanding, committed and written off", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].lendingFunded"},
+    {"code": "CUSTOMER_FUNDED", "label": "Customer-funded liabilities: liabilities less lending funded", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].customerFundedLiabilities"},
+    {"code": "POSITION", "label": "Safeguarding position: assets less customer-funded liabilities, negative when short", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].position"},
+    {"code": "POSITION_BEFORE", "label": "Position before lending funded: assets less liabilities", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].positionBeforeLendingFunded"},
+    {"code": "MEMO_CHARGEBACKS", "label": "Memo, out of the position: chargebacks recoverable", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].chargebackRecoverable"},
+    {"code": "MEMO_FX_POSITION", "label": "Memo, out of the position: FX position", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].fxPosition"},
+    {"code": "MEMO_SUSPENSE_DEBIT", "label": "Memo, out of the position: suspense at a net debit", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].suspenseNetDebit"}
+  ],
+  "rules": [
+    {"code": "ASSETS_FOOT", "type": "EQUALS", "left": ["ASSETS"], "right": ["CASH_AT_BANK", "CLEARING_RECEIVABLES"]},
+    {"code": "LIABILITIES_FOOT", "type": "EQUALS", "left": ["LIABILITIES"], "right": ["CUSTOMER_WALLETS", "MERCHANT_PAYABLES", "CREDIT_BALANCES", "CLEARING_PAYABLES", "SUSPENSE_HELD"]},
+    {"code": "LENDING_FUNDED_FOOT", "type": "EQUALS", "left": ["LENDING_FUNDED"], "right": ["PRINCIPAL_OUTSTANDING", "PRINCIPAL_COMMITTED", "PRINCIPAL_WRITTEN_OFF"]},
+    {"code": "CUSTOMER_FUNDED_FOOT", "type": "EQUALS", "left": ["CUSTOMER_FUNDED", "LENDING_FUNDED"], "right": ["LIABILITIES"]},
+    {"code": "POSITION_FOOT", "type": "EQUALS", "left": ["POSITION", "CUSTOMER_FUNDED"], "right": ["ASSETS"]},
+    {"code": "POSITION_BEFORE_FOOT", "type": "EQUALS", "left": ["POSITION_BEFORE", "LIABILITIES"], "right": ["ASSETS"]}
+  ],
+  "reason": "The reference safeguarding position return, form version 1. No legal obligation is asserted."
+}
+```
+
+**Every rule is arithmetic that must hold in any month.** No rule judges the position, so **a shortfall validates, and is reported**: a rule on it would make the return impossible to validate in exactly the month it matters, and the way on would be to change the configuration. Nothing alerts on a shortfall yet: `P14-TSK-019`'s owner item. A person sees it on the form's `POSITION` line at validation and at attestation, negative and never floored, and in the run's `shortfall` flag per currency.
+
+**A currency.** Every figure is per currency and none crosses one. A currency with wallets and no lending carries true zeros from the run's own reads. A currency nothing touched has no line. A month with no line in any currency cannot be drawn: `422 accounting.RegulatoryFigureUnresolved`.
+
+**`PRINCIPAL_COMMITTED` has no journal line behind it.** An accepted loan awaiting its disbursement has posted nothing. The figure rests on lending's frozen rows, and the run's `drillDown` says so; no route under `ACCOUNTING_READ` lists those loans. `GET /v1/operator/reports/lending/capital?date={lastDay}` states the term under `LENDING_INVESTIGATE`.
+
+**Reading it.** `position` is ADR-0096's: it subtracts `lending_funded`, and so it rises with an accepted loan that has moved no money, and does not fall when a borrower withdraws what a loan created. `POSITION_BEFORE` is beside it for that reason. An FX conversion not yet covered is a true shortfall in its currency: `MEMO_FX_POSITION` says why.
+

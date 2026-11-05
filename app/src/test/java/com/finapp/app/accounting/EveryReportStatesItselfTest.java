@@ -27,15 +27,15 @@ import org.springframework.boot.test.context.SpringBootTest;
 class EveryReportStatesItselfTest {
 
     private static final List<String> BUILT = List.of("BALANCE_SHEET", "BNPL_EXPOSURE", "CLOSE_STATUS", "FX_RESULTS", "GL_ACTIVITY", "INCOME_STATEMENT", "LOAN_PORTFOLIO",
-            "RECEIVABLES_PAYABLES", "RECONCILIATION_STATUS", "REVENUE", "SETTLEMENT_POSITIONS", "SUSPENSE", "TRIAL_BALANCE");
+            "RECEIVABLES_PAYABLES", "RECONCILIATION_STATUS", "REVENUE", "SAFEGUARDING_POSITION", "SETTLEMENT_POSITIONS", "SUSPENSE", "TRIAL_BALANCE");
 
     @Autowired private ReportDefinitions definitions;
 
     @Test
-    @DisplayName("the registry holds every report built - the two statements, the ten and the trial balance, every ReportKind's - each a ReportKind's name, and each states all five facts")
+    @DisplayName("the registry holds every report built - the two statements, the ten, the trial balance and the safeguarding return, every ReportKind's - each a ReportKind's name, and each states all five facts")
     void everyDefinitionStatesItself() {
         assertThat(definitions.codes()).containsAll(BUILT);
-        assertThat(BUILT).as("every kind this phase declares is built: thirteen").containsExactlyInAnyOrderElementsOf(java.util.Arrays.stream(ReportKind.values()).map(Enum::name).toList());
+        assertThat(BUILT).as("every kind this phase declares is built: fourteen").containsExactlyInAnyOrderElementsOf(java.util.Arrays.stream(ReportKind.values()).map(Enum::name).toList());
         for (String code : definitions.codes()) {
             ReportDefinition definition = definitions.current(code).orElseThrow();
             assertThat(ReportKind.valueOf(code).name()).isEqualTo(definition.code());
@@ -56,7 +56,7 @@ class EveryReportStatesItselfTest {
     }
 
     @Test
-    @DisplayName("translation is a decision too: the trial balance and the two statements take a rate set, and the owner has not settled the other ten's translated layout, so none of them does")
+    @DisplayName("translation is a decision too: the trial balance and the two statements take a rate set, and the owner has not settled the other ten's translated layout, so none of them does; the safeguarding return is per currency only")
     void onlyTheTrialBalanceAndTheStatementsTranslate() {
         assertThat(definitions.codes().stream().filter(code -> definitions.current(code).orElseThrow().takesValuationRateSet()).toList())
                 .containsExactly("BALANCE_SHEET", "INCOME_STATEMENT", "TRIAL_BALANCE");
