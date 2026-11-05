@@ -162,9 +162,9 @@ public class AccountingBeans {
 
     /** {@code finapp.accounting.period.open.age} - read from the database, cached 15 s. */
     @Bean
-    AccountingPeriodMetrics accountingPeriodMetrics(
-            AccountingPeriods accountingPeriods, DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
-        return new AccountingPeriodMetrics(accountingPeriods, dataSource::getConnection, clock, meterRegistry);
+    AccountingPeriodMetrics accountingPeriodMetrics(AccountingPeriods accountingPeriods,
+            @org.springframework.beans.factory.annotation.Qualifier(AccountingGaugeBeans.SNAPSHOTS) GlSnapshots snapshots, Clock clock, MeterRegistry meterRegistry) {
+        return new AccountingPeriodMetrics(accountingPeriods, snapshots, clock, meterRegistry);
     }
 
     // ------------------------------------------------------------------ the report runs (P14-TSK-008)

@@ -75,6 +75,17 @@ public final class InMemoryPriorPeriodAdjustmentStore implements PriorPeriodAdju
     }
 
     @Override
+    public long standingPast(Connection unitOfWork, java.time.Duration bound) {
+        Instant at = Instant.ofEpochSecond(stamps);
+        return rows.values().stream().filter(row -> row.status() == PriorPeriodAdjustmentStatus.PROPOSED && !row.proposedAt().plus(bound).isAfter(at)).count();
+    }
+
+    /** Moves what stands for the database's clock - a suite's way past a bound (`P14-TSK-020`). */
+    public void advance(java.time.Duration by) {
+        stamps += by.toSeconds();
+    }
+
+    @Override
     public List<Row> pending(Connection unitOfWork, int limit) {
         return rows.values().stream().filter(row -> row.status() == PriorPeriodAdjustmentStatus.PROPOSED).limit(limit).toList();
     }

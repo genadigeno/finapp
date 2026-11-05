@@ -20,6 +20,8 @@ import java.util.Objects;
  * outcome that cannot post - the deadline step's, retried on the cadence, or a door's - is never silent.
  * {@code wallet_unavailable} is an opening on a {@code CLOSED} obligation refused for want of an {@code ACTIVE} wallet;
  * {@code cooling_off} an opening inside the cooldown after its customer withdrew a dispute of the purchase (A5-F2).
+ * {@code written_off} (`P14-TSK-020`; `P14-TSK-022`'s routed note) an opening refused on the customer's written-off agreement: told to contact us, so this says how many were sent to a person, and
+ * nothing is stored under their key, so a customer who retries counts again. It names no customer, and no alert reads it: nothing is broken and no queue exists to send it to until {@code PI-007}.
  */
 public final class BnplDisputeMetrics {
 
@@ -44,7 +46,8 @@ public final class BnplDisputeMetrics {
         SELF_DEALING_REFUSED,
         WALLET_UNAVAILABLE,
         COOLING_OFF,
-        SWEEP_FAILED;
+        SWEEP_FAILED,
+        WRITTEN_OFF;
 
         String tag() {
             return name().toLowerCase(Locale.ROOT);

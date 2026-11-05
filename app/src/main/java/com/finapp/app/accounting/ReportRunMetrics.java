@@ -1,8 +1,10 @@
 package com.finapp.app.accounting;
 
 import com.finapp.accounting.ReportRunStore;
+import com.finapp.accounting.RunBasis;
 import com.finapp.accounting.RunStatus;
 import com.finapp.accounting.reporting.ReportDefinitions;
+import com.finapp.accounting.reporting.ReportRefused;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;
@@ -30,8 +32,23 @@ public final class ReportRunMetrics {
     /** Spelled with dots - exported as {@code finapp_accounting_report_diverged_total}. */
     public static final String DIVERGED = "finapp.accounting.report.diverged";
 
+    /** Spelled with dots - exported as {@code finapp_accounting_report_refused_total}. */
+    public static final String REFUSED = "finapp.accounting.report.refused";
+
     /** The {@code outcome} tag's values. */
     public static final List<String> OUTCOMES = List.of("final", "provisional", "failed");
+
+    /** A definition's refusal on a FINAL run: on a {@code CLOSED} month the journal moved under the close, or something bypassed the machine. It pages. */
+    public static final String REFUSED_FINAL = "final_run";
+
+    /** A definition's refusal on a PROVISIONAL run: a month still {@code OPEN}, where a mapping version can still answer it. */
+    public static final String REFUSED_PROVISIONAL = "provisional_run";
+
+    /** The approved set values no such currency: configuration, on any month, and the plain statement is unaffected. */
+    public static final String REFUSED_TRANSLATION = "translation_incomplete";
+
+    /** The {@code outcome} tag's values on {@link #REFUSED}: three classes for what an alert does, never the reason, which stays on the audit record (the owner's (aa)). */
+    public static final List<String> REFUSALS = List.of(REFUSED_FINAL, REFUSED_PROVISIONAL, REFUSED_TRANSLATION);
 
     private final MeterRegistry registry;
 
@@ -43,6 +60,15 @@ public final class ReportRunMetrics {
             }
             diverged(definition);
         }
+        for (String refusal : REFUSALS) {
+            refused(refusal);
+        }
+    }
+
+    /** A definition's refusal this instance concluded (`P14-TSK-020`; `P14-TSK-016`'s routed note), beside its {@code failed} count: the alert that tells an operator to read the audit record's {@code refusal=}. */
+    public void refused(RunBasis basis, ReportRefused.Reason reason) {
+        refused(reason == ReportRefused.Reason.TRANSLATION_INCOMPLETE ? REFUSED_TRANSLATION
+                : basis == RunBasis.FINAL ? REFUSED_FINAL : REFUSED_PROVISIONAL).increment();
     }
 
     /** A run this instance concluded - its completion or its failure. */
@@ -63,6 +89,14 @@ public final class ReportRunMetrics {
                 .description("Report runs concluded, by definition and outcome (final, provisional, failed)")
                 .tag("definition", definition)
                 .tag("outcome", outcome)
+                .register(registry);
+    }
+
+    private Counter refused(String refusal) {
+        return Counter.builder(REFUSED)
+                .description("Runs a report definition refused to answer, by class (final_run, provisional_run, translation_incomplete);"
+                        + " the audit record's refusal= holds why. Per instance; sum() aggregates")
+                .tag("outcome", refusal)
                 .register(registry);
     }
 

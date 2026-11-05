@@ -242,6 +242,9 @@ class BnplRefundDeskTest {
                         assertThat(refused.clientDetail().orElseThrow()).isEqualTo(com.finapp.bnpl.BnplObligations.WRITTEN_OFF_DISPUTE_REFUSED);
                     });
         }
+        // P14-TSK-020 (P14-TSK-022's routed note): how many customers were sent to a person, with no tag naming one.
+        assertThat(registry.get(BnplDisputeMetrics.DISPUTE).tag("outcome", "written_off").counter().count()).isEqualTo(1.0);
+        assertThat(registry.get(BnplDisputeMetrics.DISPUTE).tag("outcome", "written_off").counter().getId().getTags()).hasSize(1);
     }
 
     /** {@code BnplPurchaseStore.Owned}, the agreement the domain does not read here left as a record's zero. */

@@ -176,6 +176,27 @@ class PriorPeriodAdjustmentDatabaseTest {
         PeriodCloseFixture.closed(JANUARY);
     }
 
+    // ------------------------------------------------------------------ the gauge (P14-TSK-020)
+
+    /** A delta over this suite's own database: a case before it may leave one standing, and this one rejects its own, as {@code standing} counts only {@code PROPOSED}. */
+    @Test
+    @DisplayName("adjustment.standing's read: a proposal counts past the bound and not inside it, and a rejection ends it")
+    void aProposalStandsPastItsBound() throws Exception {
+        long before = standing(java.time.Duration.ofMillis(1));
+        long aDecadeBefore = standing(java.time.Duration.ofDays(3650));
+        PriorPeriodAdjustments.Acted proposed = propose();
+        Thread.sleep(5); // The statement measures "<= now - 1 ms": a real millisecond must pass, on the database's clock.
+        assertThat(standing(java.time.Duration.ofMillis(1))).isEqualTo(before + 1);
+        assertThat(standing(java.time.Duration.ofDays(3650))).as("inside the bound").isEqualTo(aDecadeBefore);
+        Actor rejecter = person();
+        inScope(rejecter, uow -> machine().reject(uow, proposed.id(), rejecter, "no longer owed", correlation()));
+        assertThat(standing(java.time.Duration.ofMillis(1))).isEqualTo(before);
+    }
+
+    private long standing(java.time.Duration bound) throws SQLException {
+        return inScope(Actor.SYSTEM, uow -> store.standingPast(uow, bound));
+    }
+
     // ------------------------------------------------------------------ the machine
 
     @Test

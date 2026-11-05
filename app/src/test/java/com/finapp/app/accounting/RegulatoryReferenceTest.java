@@ -171,13 +171,13 @@ class RegulatoryReferenceTest {
         boolean[] reachable = {true};
         int[] opens = {0};
         MovableClock clock = new MovableClock();
-        new RegulatoryAttentionMetrics(world.submissions, () -> {
+        new RegulatoryAttentionMetrics(world.submissions, new GlSnapshots(() -> {
             opens[0]++;
             if (!reachable[0]) {
                 throw new SQLException("unreachable");
             }
-            return readOnlyConnection();
-        }, clock, registry);
+            return new SnapshotSession().connection();
+        }, java.time.Duration.ofSeconds(2)), clock, registry);
 
         assertThat(registry.get(RegulatoryAttentionMetrics.ATTENTION).meters()).extracting(Meter::getId).extracting(meterId -> meterId.getTag("kind")).containsExactlyInAnyOrderElementsOf(RegulatoryAttentionMetrics.KINDS);
         assertThat(registry.get(RegulatoryAttentionMetrics.ATTENTION).tag("kind", "overdue").gauge().value()).isZero();

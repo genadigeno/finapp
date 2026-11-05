@@ -9,6 +9,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.Duration;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -113,6 +114,26 @@ public final class JdbcAccountingBreakStore implements AccountingBreakStore {
             return subjects;
         } catch (SQLException failure) {
             throw failed("reading a period's raised subjects", failure);
+        }
+    }
+
+    /** Every column here {@code NOT NULL}; {@code raised_at} the database's clock by {@code accounting V006}'s trigger, and {@code V008}'s after it. */
+    static final String AGED_OPEN_SQL = "SELECT break_type, count(*) FROM accounting.accounting_break"
+            + " WHERE status = 'OPEN' AND raised_at <= clock_timestamp() - ? * interval '1 millisecond' GROUP BY break_type";
+
+    @Override
+    public Map<BreakType, Long> agedOpenByType(Connection unitOfWork, Duration bound) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(AGED_OPEN_SQL)) {
+            read.setLong(1, bound.toMillis());
+            try (ResultSet row = read.executeQuery()) {
+                Map<BreakType, Long> aged = new EnumMap<>(BreakType.class);
+                while (row.next()) {
+                    aged.put(BreakType.valueOf(row.getString(1)), row.getLong(2));
+                }
+                return aged;
+            }
+        } catch (SQLException failure) {
+            throw failed("counting the accounting breaks open past their bound", failure);
         }
     }
 

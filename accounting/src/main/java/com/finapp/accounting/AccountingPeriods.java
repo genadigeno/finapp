@@ -385,7 +385,7 @@ public final class AccountingPeriods {
      */
     public long overdueDays(Connection unitOfWork) {
         return store.oldestUnclosed(unitOfWork)
-                .map(row -> Math.max(0L, ChronoUnit.DAYS.between(grace.lockableFrom(row.month()), today())))
+                .map(row -> Math.max(0L, ChronoUnit.DAYS.between(grace.lockableFrom(row.month()), store.today(unitOfWork))))
                 .orElse(0L);
     }
 

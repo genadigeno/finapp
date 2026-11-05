@@ -211,6 +211,7 @@ public final class ReportRunGenerator {
                 held.attempt(), refused.summary(), actor, held.correlation()));
         if (concluded.moved()) {
             metrics.concluded(concluded.run());
+            metrics.refused(concluded.run().basis(), refused.reason());
         }
         return concluded.run();
     }

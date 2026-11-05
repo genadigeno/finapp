@@ -39,6 +39,12 @@ public interface PriorPeriodAdjustmentStore {
     /** The oldest {@code limit} still {@code PROPOSED}. Unlocked. */
     List<Row> pending(Connection unitOfWork, int limit);
 
+    /**
+     * How many stand {@code PROPOSED}, born at least {@code bound} ago on the database's clock - {@code finapp.accounting.adjustment.standing} (`P14-TSK-020`; `P14-TSK-013`'s routed note). A count, whether or
+     * not each could still post: that is {@code blockedBy}, read by a person. Unlocked.
+     */
+    long standingPast(Connection unitOfWork, java.time.Duration bound);
+
     /** {@code PROPOSED -> POSTED}, naming the entry; {@code false} when it was no longer {@code PROPOSED}. */
     boolean markPosted(Connection unitOfWork, PriorPeriodAdjustmentId id, UUID entry, Actor actor, String reason);
 

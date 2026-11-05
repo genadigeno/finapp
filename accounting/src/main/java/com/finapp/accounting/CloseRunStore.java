@@ -32,6 +32,14 @@ public interface CloseRunStore {
      */
     long stalledLocks(Connection unitOfWork, Duration bound);
 
+    /**
+     * How many attempts have stood claimable for at least {@code bound} on the database's clock with nobody claiming them and no claim of a present run live anywhere
+     * (`P14-TSK-020`; `P14-TSK-017`'s review, I-5, the owner's ruling): {@code finapp.accounting.close.check.stalled}, the leg stalled after the run's birth. What {@link
+     * #claimNext} holds back never counts, so a dependency's wait is no stall, and neither does a queue behind a live worker: a small fleet draining nine attempts past a long
+     * judge is working. One count: every instance reads the same number.
+     */
+    long stalledAttempts(Connection unitOfWork, Duration bound);
+
     /** Births the run unless its lock instance has one; {@code true} when born. */
     boolean insertRunIfAbsent(Connection unitOfWork, NewRun run);
 

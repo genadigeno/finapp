@@ -85,6 +85,11 @@ class AlertRulesResolveTest {
 
     private static final String RISK_GROUP = "risk";
 
+    /** The accounting rules (P14-TSK-020), held to the same checks, the labels each filters on among them. */
+    private static final String ACCOUNTING_RULES = AccountingAlertRulesTest.RULES;
+
+    private static final String ACCOUNTING_GROUP = "accounting";
+
     /** A PromQL metric selector: an identifier not immediately followed by an opening bracket. */
     private static final Pattern METRIC = Pattern.compile("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\b(?!\\s*\\()");
 
@@ -118,7 +123,9 @@ class AlertRulesResolveTest {
                     "step", "bnpl_offered",
                     // P13-TSK-024: the risk rules select a fail-safe's reason, group by operation, kind and instance, and
                     // read their own TARGET label.
-                    "operation", "reason_code", "kind", "instance", "risk_judging");
+                    "operation", "reason_code", "kind", "instance", "risk_judging",
+                    // P14-TSK-020: the accounting rules select a check's outcome, and group by check, leg, command and definition.
+                    "check", "leg", "command", "definition");
 
     /** Every series PHASE_8_PLAN section 15 says is alerted, in its published form. */
     private static final Set<String> ALERTED_SERIES =
@@ -451,6 +458,36 @@ class AlertRulesResolveTest {
             assertThat(String.valueOf(map(rule.get("annotations")).get("invariant"))).containsPattern("INV-[A-Z]+-\\d+");
         });
         Path rulesFile = Path.of(PROMETHEUS_CONFIG).getParent().relativize(Path.of(RISK_RULES));
+        assertThat(list(yaml(PROMETHEUS_CONFIG).get("rule_files")).stream().map(String::valueOf))
+                .anySatisfy(pattern -> assertThat(
+                        FileSystems.getDefault().getPathMatcher("glob:" + pattern).matches(rulesFile)).isTrue());
+    }
+
+    /**
+     * The same resolution as {@code AccountingAlertRulesTest#everySelectorResolvesInARealScrape}, here with a database behind the scrape, so what it adds is what a dead database cannot show: <strong>every read gauge's statement ran on
+     * PostgreSQL and answered a number</strong>. Each is read at this scrape or within its floor: a NaN here is a statement that does not run, a grant that is missing, or a read past its 2 s, each a real finding. Order free: it reads no state another case leaves, and a count of anything is a number.
+     */
+    @Test
+    @DisplayName("the accounting rules: every selector published on a live instance with the labels it filters on, every read gauge a number and never NaN, the file loaded (P14-TSK-020)")
+    void theAccountingRulesResolve() {
+        List<Map<String, Object>> accounting = rules(ACCOUNTING_RULES, ACCOUNTING_GROUP);
+        assertThat(accounting).hasSizeGreaterThan(20);
+        Set<String> queried = accounting.stream().map(rule -> String.valueOf(rule.get("expr"))).flatMap(AlertRulesResolveTest::seriesIn)
+                .collect(Collectors.toCollection(TreeSet::new));
+        assertThat(publishedSeriesNames()).containsAll(queried);
+        List<RuleEvaluator.Sample> samples = RuleEvaluator.samples(scrape(), Map.of());
+        for (Map<String, Object> rule : accounting) {
+            for (String selector : RuleEvaluator.selectorsOf(String.valueOf(rule.get("expr")))) {
+                assertThat(RuleEvaluator.matching(samples, selector)).as("%s reads %s", rule.get("alert"), selector).isNotEmpty();
+            }
+        }
+        for (String gauge : List.of("finapp_accounting_close_run_stalled", "finapp_accounting_close_check_stalled", "finapp_accounting_period_open_age_days",
+                "finapp_accounting_gl_unmapped", "finapp_accounting_break_open", "finapp_accounting_break_aged", "finapp_accounting_adjustment_standing",
+                "finapp_accounting_close_month_unrun", "finapp_accounting_regulatory_attention")) {
+            assertThat(samples.stream().filter(sample -> sample.name().equals(gauge)).toList()).as(gauge).isNotEmpty()
+                    .allSatisfy(sample -> assertThat(sample.value()).as("%s read on PostgreSQL", gauge).isNotNaN());
+        }
+        Path rulesFile = Path.of(PROMETHEUS_CONFIG).getParent().relativize(Path.of(ACCOUNTING_RULES));
         assertThat(list(yaml(PROMETHEUS_CONFIG).get("rule_files")).stream().map(String::valueOf))
                 .anySatisfy(pattern -> assertThat(
                         FileSystems.getDefault().getPathMatcher("glob:" + pattern).matches(rulesFile)).isTrue());

@@ -133,9 +133,10 @@ public class OperationalReportBeans {
     }
 
     @Bean
-    CloseRunStallMetrics closeRunStallMetrics(CloseRunStore closeRunStore, CloseRunStall closeRunStall, DataSource dataSource,
+    CloseRunStallMetrics closeRunStallMetrics(CloseRunStore closeRunStore, CloseRunStall closeRunStall,
+            @org.springframework.beans.factory.annotation.Qualifier(AccountingGaugeBeans.SNAPSHOTS) GlSnapshots snapshots,
             Clock clock, MeterRegistry meterRegistry) {
-        return new CloseRunStallMetrics(closeRunStore, closeRunStall, dataSource::getConnection, clock, meterRegistry);
+        return new CloseRunStallMetrics(closeRunStore, closeRunStall, snapshots, clock, meterRegistry);
     }
 
     // ------------------------------------------------------------------ the door

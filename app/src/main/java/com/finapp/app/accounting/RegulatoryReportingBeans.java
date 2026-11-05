@@ -92,8 +92,9 @@ public class RegulatoryReportingBeans {
 
     /** {@code finapp.accounting.regulatory.attention{kind}} - whether or not this instance runs the schedule: the fleet with its leg off is exactly the one that must say so. */
     @Bean
-    RegulatoryAttentionMetrics regulatoryAttentionMetrics(RegulatorySubmissions regulatorySubmissions, DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
-        return new RegulatoryAttentionMetrics(regulatorySubmissions, dataSource::getConnection, clock, meterRegistry);
+    RegulatoryAttentionMetrics regulatoryAttentionMetrics(RegulatorySubmissions regulatorySubmissions,
+            @org.springframework.beans.factory.annotation.Qualifier(AccountingGaugeBeans.SNAPSHOTS) GlSnapshots snapshots, Clock clock, MeterRegistry meterRegistry) {
+        return new RegulatoryAttentionMetrics(regulatorySubmissions, snapshots, clock, meterRegistry);
     }
 
     /**

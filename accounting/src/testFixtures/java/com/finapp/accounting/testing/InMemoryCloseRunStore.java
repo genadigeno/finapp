@@ -105,6 +105,21 @@ public final class InMemoryCloseRunStore implements CloseRunStore {
     }
 
     @Override
+    public long stalledAttempts(Connection unitOfWork, Duration bound) {
+        return oneStatement(() -> {
+            boolean live = attempts.values().stream().anyMatch(attempt -> attempt.status == CloseCheckStatus.PENDING
+                    && attempt.holder != null && attempt.leaseUntil.isAfter(now) && holdsTheLock(unitOfWork, runs.get(attempt.run)));
+            return live ? 0L : attempts.values().stream()
+                    .filter(attempt -> attempt.status == CloseCheckStatus.PENDING && !attempt.leaseUntil.plus(bound).isAfter(now))
+                    .filter(attempt -> holdsTheLock(unitOfWork, runs.get(attempt.run)))
+                    .filter(attempt -> attempt.check != CloseCheckCode.OPEN_ACCOUNTING_BREAKS
+                            || attempts.values().stream().noneMatch(raising -> raising.run.equals(attempt.run)
+                                    && raising.status == CloseCheckStatus.PENDING && raising.check.raisesBreaks()))
+                    .count();
+        });
+    }
+
+    @Override
     public boolean insertRunIfAbsent(Connection unitOfWork, NewRun run) {
         return oneStatement(() -> {
             if (runs.values().stream().anyMatch(held -> held.period.equals(run.period()) && held.lockedAt.equals(run.lockedAt()))) {

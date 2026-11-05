@@ -264,7 +264,15 @@ public final class MetricNames {
                     // Which leg of a leaderless schedule (P14-TSK-011): a closed set of a class's own constants - open,
                     // checks, orphans - so a failing leg is named in one query (the plan's "every leg meters its claim
                     // failures"; section 8.4).
-                    "leg");
+                    "leg",
+                    // Which ledger command a cutoff refused or floored (P14-TSK-004 built it; P14-TSK-020 found it
+                    // missing here and MetricConventionTest red, since no per-task run read that package). Bounded by
+                    // the closed PostingObserver.Command - posting, reversal, adjustment - the code's own constants,
+                    // never a request's value, a key or a figure. The plan's own series carry it (PHASE_14_PLAN.md
+                    // section 16: finapp.accounting.cutoff.refused{command}, finapp.accounting.cutoff.floored{command}):
+                    // a ledger command carries no requesting module, so the plan's first thought, a module tag, could not
+                    // be filled, and the alert needs the adjustment door told apart from a poster's defect.
+                    "command");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling

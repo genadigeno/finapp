@@ -6,6 +6,7 @@ import com.finapp.accounting.PeriodStatus;
 import com.finapp.platform.security.Actor;
 import java.sql.Connection;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -29,6 +30,12 @@ public final class InMemoryAccountingPeriodStore implements AccountingPeriodStor
     private int rowLocks;
     /** Each lock's own stamp, as the database's clock_timestamp() would give it (`P14-TSK-008`: a lock instance). */
     private long lockInstances;
+    private LocalDate today = LocalDate.EPOCH;
+
+    /** What the database's clock reads today; a suite that reads an age sets it (`P14-TSK-020`). */
+    public void databaseToday(LocalDate day) {
+        this.today = day;
+    }
 
     /** The history, in order. */
     public List<EventRow> history() {
@@ -104,6 +111,11 @@ public final class InMemoryAccountingPeriodStore implements AccountingPeriodStor
     @Override
     public Optional<PeriodRow> oldestUnclosed(Connection unitOfWork) {
         return rows.values().stream().filter(row -> row.status() != PeriodStatus.CLOSED).findFirst();
+    }
+
+    @Override
+    public LocalDate today(Connection unitOfWork) {
+        return today;
     }
 
     @Override
