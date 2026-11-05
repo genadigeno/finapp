@@ -176,21 +176,88 @@ class ProductSourceProofsTest {
     }
 
     @Test
-    @DisplayName("P14-TSK-025 (a): what still reads the same, stated - a failure differing only in an amount (evidence holds none, the owner's limit) and a replay divergence of a kind"
-            + " already named on another fact of the same loan; LENDING_CAPITAL keeps its count, its proof's only name for a failing entry")
+    @DisplayName("P14-TSK-025 (a): what still reads the same, stated - a failure differing only in an amount (evidence holds none, the owner's limit), a position's or suspense's"
+            + " new open expectations and items once acknowledged (one fixed string a subject), and a replay divergence of a kind already named on another fact of the"
+            + " same loan; LENDING_CAPITAL keeps its count, its proof's only name for a failing entry")
     void whatStillReadsTheSame() {
         Book book = new Book();
         Map<String, String> before = findings(book);
         Book amounts = book.copy();
         amounts.positionMinor = 1;
         amounts.capitalMinor = 2;
+        amounts.openExpectations = 900;
+        amounts.openItems = 400;
+        amounts.suspenseOpenItems = 300;
         assertThat(findings(amounts)).isEqualTo(before);
         assertThat(before.get("LENDING_CAPITAL:EUR")).contains("unexplainedEntries=2");
-        assertThat(before.get("BNPL_THREE_WAY:EUR")).contains("merchantLegs=[" + book.failingMerchants.get(0) + ":[SUM]]")
-                .contains("identities=[" + book.failingPurchases.get(0) + ":[PRINCIPAL]]").doesNotContain("Failing=");
+        assertThat(before.get("BNPL_THREE_WAY:EUR")).contains("merchantLegsFailing=1, identitiesFailing=1, failingSetSha256=")
+                .contains("merchantLegs=[" + book.failingMerchants.get(0) + ":[SUM]]")
+                .contains("identities=[" + book.failingPurchases.get(0) + ":[PRINCIPAL]]");
         assertThat(before.get("POSITION:SETTLEMENT_CLEARING:EUR")).endsWith("position explained=false");
+        assertThat(before.get("POSITION:SUSPENSE_UNMATCHED:EUR")).endsWith("suspense explained=false");
         assertThat(before.get("POSITION:CASH_AT_BANK:EUR")).endsWith("cash explained=false, unbroken=true");
         assertThat(before.get("LOAN_REPLAY:" + book.loan)).endsWith("diverged=[ALLOCATION]");
+    }
+
+    @Test
+    @DisplayName("P14-TSK-025's fix round, I-1: BNPL_THREE_WAY's names run past the 2000-character cut and the newest id is last, so the counts and the failing set's digest"
+            + " stand before the names: a 46th failing purchase, newer than 45, reads changed, and so does one swapped for another at the same count, both past the cut")
+    void aFailureBeyondTheCutStillReadsChanged() {
+        Book book = new Book();
+        // Forty-six UUIDv7 ids in their sort order, the creation order the ids keep across milliseconds: the last is the newest.
+        List<UUID> ids = java.util.stream.Stream.generate(IDS::next).limit(46).sorted(java.util.Comparator.comparing(UUID::toString)).toList();
+        List<UUID> purchases = ids.subList(0, 45);
+        UUID newest = ids.get(45);
+        book.failingPurchases = List.copyOf(purchases);
+        String before = findings(book).get("BNPL_THREE_WAY:EUR");
+        assertThat(before).as("the names reach the cut").hasSize(com.finapp.accounting.BreakFinding.MAX_EVIDENCE)
+                .doesNotContain(purchases.get(44).toString()).contains("identitiesFailing=45, failingSetSha256=");
+
+        Book grown = book.copy();
+        grown.failingPurchases = java.util.stream.Stream.concat(purchases.stream(), java.util.stream.Stream.of(newest)).toList();
+        String afterGrowth = findings(grown).get("BNPL_THREE_WAY:EUR");
+        assertThat(afterGrowth).as("a new failure past the cut").doesNotContain(newest.toString()).isNotEqualTo(before);
+
+        Book swapped = book.copy();
+        List<UUID> swappedPurchases = new java.util.ArrayList<>(purchases.subList(0, 44));
+        swappedPurchases.add(newest);
+        swapped.failingPurchases = List.copyOf(swappedPurchases);
+        String afterSwap = findings(swapped).get("BNPL_THREE_WAY:EUR");
+        assertThat(afterSwap).as("one failure for another at the same count, both past the cut").contains("identitiesFailing=45, ")
+                .doesNotContain(newest.toString()).isNotEqualTo(before);
+
+        Book traffic = book.copy();
+        traffic.holdingPurchases = List.of(IDS.next(), IDS.next(), IDS.next());
+        traffic.holdingMerchants = List.of(UUID.randomUUID());
+        assertThat(findings(traffic).get("BNPL_THREE_WAY:EUR")).as("traffic around the same failing set moves nothing").isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("P14-TSK-025's fix round, I-1: every other reworded proof is bounded by its arms' names - a loan and an obligation failing every figure the ledger has and"
+            + " every rule, a replay diverging on every kind - and stays under the 2000-character cut, so only BNPL_THREE_WAY needs the digest")
+    void everyOtherProofFitsUnderTheCut() {
+        Money one = Money.ofMinorUnits(1, EUR);
+        Money two = Money.ofMinorUnits(2, EUR);
+        List<LoanSubledgerProof.Figure> loanFigures = java.util.Arrays.stream(AccountPurpose.values())
+                .map(purpose -> new LoanSubledgerProof.Figure(purpose, one, two)).toList();
+        List<BnplSubledgerProof.Figure> bnplFigures = java.util.Arrays.stream(AccountPurpose.values())
+                .map(purpose -> new BnplSubledgerProof.Figure(purpose, one, two)).toList();
+        LoanSubledgerProof.Verdict loanVerdict = new LoanSubledgerProof.Verdict(LoanId.of(loan), LoanKind.INSTALMENT, LoanStatus.ACTIVE, loanFigures,
+                false, 9, false, false, false);
+        List<LoanReplayProof.Finding> every = java.util.Arrays.stream(LoanReplayProof.Check.values())
+                .map(check -> new LoanReplayProof.Finding(check, UUID.randomUUID())).toList();
+        LendingProofs.Reading lending = new LendingProofs.Reading(List.of(new LendingProofs.Proven(loanVerdict,
+                new LoanReplayProof.Replay(LoanId.of(loan), LoanReplayProof.Verdict.DIVERGED, every, every.size()))));
+        BnplSubledgerProof.Verdict obligationVerdict = new BnplSubledgerProof.Verdict(BnplObligationId.of(obligation), BnplProduct.BNPL_PAY_IN_4,
+                BnplObligationStatus.ACTIVE, bnplFigures, false, 9, false, false, false);
+        BnplProofs.Reading bnpl = new BnplProofs.Reading(List.of(new BnplProofs.Proven(obligationVerdict, new BnplReplayProof.Replay(
+                BnplObligationId.of(obligation), BnplReplayProof.Verdict.IDENTICAL, List.of(), 1))), List.of());
+        com.finapp.accounting.SourceCompleteness completeness = new com.finapp.accounting.SourceCompleteness();
+        List<String> evidence = new java.util.ArrayList<>();
+        completeness.judge(SourceProofs.Source.LENDING, ProductSourceProofs.lendingReadings(lending)).findings().forEach(found -> evidence.add(found.evidence()));
+        completeness.judge(SourceProofs.Source.BNPL, ProductSourceProofs.bnplReadings(bnpl)).findings().forEach(found -> evidence.add(found.evidence()));
+        assertThat(evidence).hasSize(3).allSatisfy(text -> assertThat(text.length()).as(text.substring(0, 40))
+                .isLessThan(com.finapp.accounting.BreakFinding.MAX_EVIDENCE));
     }
 
     /** One failing book - each moving proof failing once - and the traffic around it, as the proofs' own verdict types state it. */

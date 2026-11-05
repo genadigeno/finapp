@@ -57,11 +57,24 @@ class SettlementV018MigrationTest {
         assertThat(sql)
                 .contains("CREATE OR REPLACE FUNCTION settlement.source_moves_forward_only()")
                 .contains("IF NEW.admitted_on > OLD.admitted_on THEN")
-                .contains("IF OLD.status = 'ACTIVE' AND NEW.status = 'RETIRED' AND NEW.retired_on IS NULL THEN NEW.retired_on := (now() AT TIME ZONE 'UTC')::date; END IF;")
+                .contains("NEW.retired_on := (now() AT TIME ZONE 'UTC')::date; END IF;")
                 .contains("IF NEW.retired_on IS NULL OR NEW.retired_on < OLD.retired_on THEN")
                 .contains("IF NEW.retired_on > (now() AT TIME ZONE 'UTC')::date THEN")
                 .as("the binding stands: no trigger re-created").doesNotContain("CREATE TRIGGER");
         assertThat(sql.indexOf("NEW.retired_on := ")).as("stamped before it is judged").isLessThan(sql.indexOf("IF NEW.retired_on IS DISTINCT FROM OLD.retired_on THEN"));
+    }
+
+    @Test
+    @DisplayName("the fix round's M-3: a retirement by a writer that holds UPDATE on retired_on - the migrator - must state its day, told apart by its column privilege and"
+            + " never by a role's name; only a writer that cannot state it, the application role, has today stamped, so a migration that forgets the day cannot wedge its month")
+    void aWriterThatCanStateTheDayMustStateIt() {
+        String sql = normalized(migration(MIGRATION));
+        String edge = "IF OLD.status = 'ACTIVE' AND NEW.status = 'RETIRED' AND NEW.retired_on IS NULL THEN"
+                + " IF has_column_privilege(current_user, 'settlement.source', 'retired_on', 'UPDATE') THEN"
+                + " RAISE EXCEPTION 'a retirement by a writer that can state its day must state it (P14-TSK-025):";
+        assertThat(sql).contains(edge);
+        assertThat(sql.indexOf(edge)).as("refused before anything is stamped").isLessThan(sql.indexOf("NEW.retired_on := (now() AT TIME ZONE 'UTC')::date;"));
+        assertThat(sql).as("no role named").doesNotContain("finapp_migrator").doesNotContain("finapp_app'").doesNotContain("session_user");
     }
 
     @Test

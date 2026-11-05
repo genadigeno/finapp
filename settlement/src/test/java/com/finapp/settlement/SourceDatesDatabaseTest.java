@@ -149,11 +149,26 @@ class SourceDatesDatabaseTest {
                     .withMessageContaining(refusal[1]);
             migrator.rollback();
         }
-        execute(migrator, "UPDATE settlement.source SET status = 'RETIRED' WHERE code = '" + PSP + "'");
+        execute(migrator, "UPDATE settlement.source SET status = 'RETIRED', retired_on = DATE '2026-01-31' WHERE code = '" + PSP + "'");
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> execute(migrator, "UPDATE settlement.source SET status = 'ACTIVE', retired_on = NULL WHERE code = '" + PSP + "'"))
                 .withMessageContaining("retires once");
         assertThat(LocalDate.EPOCH).as("the backfill's day").isEqualTo(LocalDate.of(1970, 1, 1));
+    }
+
+    @Test
+    @DisplayName("the fix round's M-3: a retirement by the migrator, which holds UPDATE on retired_on, must state its day - stamped with today it would wedge the month - while"
+            + " the application role's status edge, which cannot state it, is stamped")
+    void aMigrationMustStateTheDay() throws SQLException {
+        assertThatExceptionOfType(SQLException.class)
+                .isThrownBy(() -> execute(migrator, "UPDATE settlement.source SET status = 'RETIRED' WHERE code = '" + PSP + "'"))
+                .satisfies(refused -> assertThat(refused.getSQLState()).isEqualTo(RAISED))
+                .withMessageContaining("must state it");
+        migrator.rollback();
+        assertThat(one(migrator, "SELECT status FROM settlement.source WHERE code = '" + PSP + "'")).isEqualTo("ACTIVE");
+
+        execute(application, "UPDATE settlement.source SET status = 'RETIRED' WHERE code = '" + PSP + "'");
+        assertThat(one(application, "SELECT (retired_on IS NOT NULL)::text FROM settlement.source WHERE code = '" + PSP + "'")).isEqualTo("true");
     }
 
     private static void execute(Connection connection, String sql) throws SQLException {

@@ -18,19 +18,28 @@
 -- what then starts the requirement (P14-TSK-012's (k)). No build retires a source, so every row is ACTIVE; a row
 -- retired by hand stops this migration on its CHECK rather than have a day guessed for it.
 --
--- WHO SETS THEM: a migration, and nobody else. The default is dropped once the backfill stands, so a new source's
--- migration states its admission. finapp_app keeps SELECT on the table and UPDATE (status, next_sequence) alone:
--- no grant here. Retirement keeps its one door, the ACTIVE -> RETIRED edge; a writer that does not state the day
--- has the database's UTC day stamped by the trigger, so a status edge never leaves a retired row undated.
+-- WHO SETS THEM: a migration, and nobody else, because the days a migration states decide what an ended month
+-- requires: a retirement dated before a month, or an admission dated after it, excuses that month even when it is
+-- not yet closed, and an admission dated into a month requires it. Only a reviewed migration may state them. The
+-- default is dropped once the backfill stands, so a new source's migration states its admission. finapp_app keeps
+-- SELECT on the table and UPDATE (status, next_sequence) alone: no grant here. Retirement keeps its one door, the
+-- ACTIVE -> RETIRED edge. A writer that holds UPDATE on retired_on - the migrator, and any owner - must state the
+-- day, the last day the source served: stamped with today, a retirement on the 1st would require that month's run,
+-- which the shut door then refuses, and with periods closing in order every later month would wait on it for good
+-- (the fix round's M-3). A writer that cannot state it - the application role, through its status grant, which no
+-- door of the product uses - has the database's UTC day stamped, so a status edge never leaves a retired row
+-- undated. The writer is told apart by its column privilege, has_column_privilege(current_user, ...), never by a
+-- role's name.
 --
--- THE DAYS MOVE ONLY TOWARDS REQUIRING MORE, for every writer: admitted_on never later; retired_on set with the
--- edge, never cleared, never earlier, never past the database's UTC day. A correction can widen what a month
--- requires, and never excuse a month a source served.
+-- ONCE STANDING, THE DAYS MOVE ONLY TOWARDS REQUIRING MORE, for every writer: admitted_on never later; retired_on
+-- set with the edge, never cleared, never earlier, never past the database's UTC day. So a correction can widen
+-- what a month requires and never undo a day already standing. It cannot judge whether a first retirement's day
+-- is right: that is the migration's review.
 --
 -- WHAT IS UNCHANGED: settlement's own door. Ingestion refuses a RETIRED source by its status (SOURCE_RETIRED), as
 -- before; the days are accounting's reading of which months a source served. So a source retired before its last
--- month's run would leave that month asking a run its door refuses: retire it only once that month's run counts
--- (OPERATIONS_RUNBOOK.md section 10.16).
+-- month's run would leave that month asking a run its door refuses: retire it only once that month's run counts,
+-- with the day it last served (OPERATIONS_RUNBOOK.md section 10.16).
 
 ALTER TABLE settlement.source
     ADD COLUMN admitted_on DATE NOT NULL DEFAULT DATE '1970-01-01',
@@ -45,7 +54,7 @@ ALTER TABLE settlement.source
 COMMENT ON COLUMN settlement.source.admitted_on IS
     'The first day the source served (P14-TSK-025): a month requires its run only if admitted by the month''s last day. Set by a migration; never moves later.';
 COMMENT ON COLUMN settlement.source.retired_on IS
-    'The day the source was retired (P14-TSK-025), present exactly when RETIRED: a month requires its run unless retired before the month''s first day. Set with the edge, never earlier, never past the database''s day.';
+    'The last day the source served (P14-TSK-025), present exactly when RETIRED: a month requires its run unless retired before the month''s first day. Stated with the edge by a migration; stamped with the database''s day only for a writer that cannot state it; never earlier, never past the database''s day.';
 
 -- V002's three rules, verbatim, and the days' (P14-TSK-025). The trigger binding stands unchanged.
 CREATE OR REPLACE FUNCTION settlement.source_moves_forward_only()
@@ -69,6 +78,9 @@ BEGIN
         RAISE EXCEPTION 'a settlement source''s admission never moves later (P14-TSK-025): a later day would excuse a month it served';
     END IF;
     IF OLD.status = 'ACTIVE' AND NEW.status = 'RETIRED' AND NEW.retired_on IS NULL THEN
+        IF has_column_privilege(current_user, 'settlement.source', 'retired_on', 'UPDATE') THEN
+            RAISE EXCEPTION 'a retirement by a writer that can state its day must state it (P14-TSK-025): retired_on, the last day the source served, once that month''s run counts';
+        END IF;
         NEW.retired_on := (now() AT TIME ZONE 'UTC')::date;
     END IF;
     IF NEW.retired_on IS DISTINCT FROM OLD.retired_on THEN

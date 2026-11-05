@@ -1063,7 +1063,7 @@ columns hold platform actor identifiers (`audit_record.actor`'s reasoning), and 
 | `source` | `status` | `INTERNAL` | ACTIVE or RETIRED - operational state |
 | `source` | `next_sequence` | `INTERNAL` | The next statement sequence acceptance expects - a counter |
 | `source` | `admitted_on` | `INTERNAL` | The first day the source served (`P14-TSK-025`, `V018`): a property of the configuration, nobody's. Set by a migration; the application reads it (table `SELECT`) and cannot write it. Read by accounting's month read and served on `RECONCILIATION_STATUS` (`ACCOUNTING_READ`) and in `RECONCILIATION_DISCLOSURE`'s evidence, wherever the close run's attempts are read |
-| `source` | `retired_on` | `INTERNAL` | The day the source was retired, present exactly when `RETIRED` (`P14-TSK-025`, `V018`). Set with the retirement by a migration, or stamped with the database's day; served as `admitted_on` is |
+| `source` | `retired_on` | `INTERNAL` | The day the source was retired, present exactly when `RETIRED` (`P14-TSK-025`, `V018`). Stated with the retirement by a migration, which must state it; stamped with the database's day only when the application role's status edge retires it (`P14-TSK-025`'s fix round, M-3); served as `admitted_on` is |
 | `file` | `id` | `INTERNAL` | An aggregate identifier. Generated |
 | `file` | `source_id` | `INTERNAL` | The delivering source - an identifier of a thing |
 | `file` | `received_via` | `INTERNAL` | UPLOAD, PULL or READMISSION - which door |

@@ -15,13 +15,14 @@ import java.util.UUID;
  * {@code RECONCILIATION_DISCLOSURE} reads it (`P14-TSK-012`, {@link CloseChecks}), each on a {@code REPEATABLE READ READ ONLY} snapshot; {@link PeriodCloses} re-judges a month's run on it holding the period row, {@code READ COMMITTED}.
  *
  * <p><strong>Two statements, so on {@code READ COMMITTED} two instants</strong> (the independent review, I-2): the runs, whose repudiation is an {@code EXISTS} in that one statement, so a run and its repudiation are one instant; then the source register with
- * each source's rule sets, one statement, so a source and its rule sets are one instant. Only {@link CloseChecks.MonthRuns#ran} is judged there, and a register moving between them can misjudge only towards refusing: a source a migration admits between them, dated
- * in or before the month, has no line, so a refusal its run clears. A retirement between them leaves the month required, being dated on or after its first day, and a rule set activated between them is dated after any month that has ended (`P14-TSK-025`).
- * No run can be counted for a source that did not earn it, and none is hidden. Plain reads take no row lock, so holding a period row beside them closes no cycle. The application role holds {@code SELECT} on all four tables.
+ * each source's rule sets, one statement, so a source and its rule sets are one instant. Only {@link CloseChecks.MonthRuns#ran} is judged there. Between them a rule set activated is dated after any month that has ended, and the application
+ * role's status edge stamps today, so neither changes what an ended month requires; a migration's stated days can, as at any other time, below (`P14-TSK-025`). No run can be counted for a source that did not earn it, and none is hidden. Plain reads take no row
+ * lock, so holding a period row beside them closes no cycle. The application role holds {@code SELECT} on all four tables.
  *
  * <p><strong>What a month requires</strong> (`P14-TSK-025`; the owner's rulings of 2026-11-06 on `P14-TSK-012`'s (c), (e) and (k)): a run of each source {@link Source#requiredIn requiredIn} it, the one rule {@link
- * CloseChecks.MonthRuns#judge}, {@link PeriodCloses}' re-judge and {@link ClosedMonthRuns} read through {@link Coverage#required()}. Dated, so for a month that has ended the answer does not move: an admission only moves earlier, a retirement only later, and a
- * rule set's first activation keeps its instant.
+ * CloseChecks.MonthRuns#judge}, {@link PeriodCloses}' re-judge and {@link ClosedMonthRuns} read through {@link Coverage#required()}. Dated, so for a month that has ended nothing but a migration's stated days moves the answer: an activation now is dated after it,
+ * a rule set's first activation keeps its instant, and a day once standing moves only towards requiring more. <strong>A migration's days can require or excuse an ended month</strong>, closed or not: an admission dated into it requires it, fail closed;
+ * a retirement dated before it, or an admission dated after it, excuses it (the fix round's M-1). That is why only a reviewed migration states them (settlement {@code V018}).
  *
  * <p><strong>It judges nothing</strong> (`P14-TSK-017`'s review, I-4): it says which runs and sources exist, and which sources the month requires. What makes a month "run" is the check's, on the owner's ruling.
  *

@@ -2,6 +2,7 @@ package com.finapp.app.accounting;
 
 import com.finapp.accounting.AccountingStorageException;
 import com.finapp.accounting.SourceProofs;
+import com.finapp.accounting.reporting.CanonicalJson;
 import com.finapp.app.reconciliation.PositionProof;
 import com.finapp.bnpl.BnplProofs;
 import com.finapp.bnpl.BnplSubledgerProof;
@@ -42,12 +43,16 @@ import java.util.function.Function;
  * failing arms by name, the ids of the failing items a proof names, and the count of failing items a proof counts but does not name - and carries nothing that
  * moves while the failure does not: no lifecycle status ({@code status=}), no count of the book's open working set ({@code openExpectations=}, {@code openItems=}),
  * no statement sequence ({@code latestSequence=}), no count of a replay's diverged facts, which a divergence of one kind adds to with every new fact
- * ({@code findings=}). Where a proof names its failing items, the names replace their count ({@code BNPL_THREE_WAY}'s legs and identities): a count reads the
- * same when one item is fixed and another breaks. <strong>Kept on purpose</strong>: {@code LENDING_CAPITAL}'s {@code unexplainedEntries=}, the only name its
- * proof gives a failing entry: capital's lines are posted only in a statement's acceptance beside their recognition (reconciliation {@code V022}), so the
- * count moves only when an entry no recognition explains appears or goes. <strong>What still reads the same</strong>: a failure that differs only in an
- * amount (evidence holds none, the owner's limit); a replay divergence of a kind already named on another fact of the same loan; a difference past
- * {@link com.finapp.accounting.BreakFinding#MAX_EVIDENCE} characters, which only {@code BNPL_THREE_WAY}'s names can reach (`P14-TSK-012`'s (h)).
+ * ({@code findings=}). Where a proof names its failing items, the names join their count ({@code BNPL_THREE_WAY}'s legs and identities), because a count
+ * reads the same when one item is fixed and another breaks, and a digest of the whole failing set stands before the names, because the names can run past
+ * {@link com.finapp.accounting.BreakFinding#MAX_EVIDENCE} characters and the newest is always last ({@link #threeWayEvidence}; the fix round's I-1). Every other
+ * proof's evidence is bounded well under the cut by its arms' names ({@code ProductSourceProofsTest#everyOtherProofFitsUnderTheCut}). <strong>Kept on
+ * purpose</strong>: {@code LENDING_CAPITAL}'s {@code unexplainedEntries=}, the only name its proof gives a failing entry: capital's lines are posted only in a
+ * statement's acceptance beside their recognition (reconciliation {@code V022}), so the count moves only when an entry no recognition explains appears or goes.
+ * <strong>What still reads the same</strong>: a failure that differs only in an amount (evidence holds none, the owner's limit), and with it everything about a
+ * position or suspense subject once acknowledged, its evidence being one fixed string ({@code position explained=false}, {@code suspense explained=false}): new
+ * open expectations or items on it, new money movements, ride on that acknowledgement for the month; and a replay divergence of a kind already named on another
+ * fact of the same loan.
  *
  * <p>Two proofs have no census of their own, so this adapter enumerates their subjects with one {@code SELECT} each over
  * the ledger's chart - the {@code LedgerMonitoredLedger} precedent of an {@code app} read over another schema: the
@@ -157,14 +162,27 @@ public final class ProductSourceProofs implements SourceProofs {
                 .toList();
         List<Discrepancy> threeWay = reading.currencies().stream()
                 .filter(verdict -> !verdict.holds())
-                .map(verdict -> new Discrepancy(verdict.currency().code(), "fails=" + verdict.failures()
-                        + ", merchantLegs=" + verdict.merchantLegs().stream().filter(leg -> !leg.holds())
-                                .map(leg -> leg.merchant() + ":" + legFailures(leg)).sorted().toList()
-                        + ", identities=" + verdict.identities().stream().filter(identity -> !identity.holds())
-                                .map(identity -> identity.purchase().value() + ":" + identity.failures()).sorted().toList()))
+                .map(verdict -> new Discrepancy(verdict.currency().code(), threeWayEvidence(verdict)))
                 .toList();
         return List.of(new Reading(Proof.BNPL_SUBLEDGER, true, subledger),
                 new Reading(Proof.BNPL_THREE_WAY, true, threeWay));
+    }
+
+    /**
+     * One currency's failing three-way legs (`P14-TSK-025`'s fix round, I-1): the arms, then <strong>ahead of the names</strong> how many legs and purchases
+     * fail and the SHA-256 of the two whole sorted lists, each entry with its failures, then the lists themselves for a person to read. The names are ids
+     * that sort in their creation order, so the newest failure is always last and the first to fall past {@link com.finapp.accounting.BreakFinding#MAX_EVIDENCE}:
+     * the counts and the digest stand before the cut, so a failing set that grows, shrinks or swaps one item for another at the same count reads changed
+     * however long the lists. The failing set is the failure, so nothing here moves with traffic.
+     */
+    static String threeWayEvidence(BnplThreeWayProof.CurrencyVerdict verdict) {
+        List<String> legs = verdict.merchantLegs().stream().filter(leg -> !leg.holds())
+                .map(leg -> leg.merchant() + ":" + legFailures(leg)).sorted().toList();
+        List<String> identities = verdict.identities().stream().filter(identity -> !identity.holds())
+                .map(identity -> identity.purchase().value() + ":" + identity.failures()).sorted().toList();
+        String digest = CanonicalJson.sha256("merchantLegs=" + legs + "\nidentities=" + identities);
+        return "fails=" + verdict.failures() + ", merchantLegsFailing=" + legs.size() + ", identitiesFailing=" + identities.size()
+                + ", failingSetSha256=" + digest + ", merchantLegs=" + legs + ", identities=" + identities;
     }
 
     /** A merchant leg's failing arms by name, in the leg's own order - never a figure. */
