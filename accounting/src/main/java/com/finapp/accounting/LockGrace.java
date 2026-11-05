@@ -16,6 +16,8 @@ import java.time.YearMonth;
  * refuse a western zone's same-day postings for hours. Two business days put the lock's first instant past the period's last day
  * in every zone, so the ledger's cutoff never covers anyone's today. At most {@link #MAX_BUSINESS_DAYS}: a grace past a month
  * would let two periods await their lock at once, which the in-order close does not admit.
+ *
+ * <p><strong>A FINAL safeguarding return rests on this too</strong> (`P14-TSK-019`; {@code INV-ACC-04}). The ledger's cutoff protects journal lines, and a loan's acceptance and a failed disbursement post none. Only this minimum stops a western zone's {@code opened_at} or {@code decided_at}, stamped after the lock, from carrying a business date inside the locked month and moving {@code SAFEGUARDING_POSITION}'s committed term. Below two, that FINAL would not reproduce.
  */
 public record LockGrace(int businessDays) {
 

@@ -37,5 +37,7 @@ public enum ReportKind {
     /** The balance sheet, from the statement sections; retained earnings computed (C8). */
     BALANCE_SHEET,
     /** The income statement, from the statement sections; the current-period result computed (C8). */
-    INCOME_STATEMENT
+    INCOME_STATEMENT,
+    /** The reference safeguarding position, per currency, {@code lending_funded} subtracted (`P14-TSK-019`, C13, ADR-0096 section 6). */
+    SAFEGUARDING_POSITION
 }

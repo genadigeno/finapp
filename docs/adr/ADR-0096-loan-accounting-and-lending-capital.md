@@ -242,6 +242,7 @@ Financial impact: the operational ledger gains the loan book and the platform's 
 
 ## Follow-up
 
+- **Section 6's safeguarding proof, built by `P14-TSK-019` (2026-11-05):** `SAFEGUARDING_POSITION` subtracts `lending_funded`, its formula as widened by `P14-TSK-021`, read as of each month's cutoff over frozen rows and never from `LendingCapitalProof`, a live derivation: ADR-0118's As built. Two findings for the owner, `P14-TSK-019`'s items (a) and (b): `committed`, in this section's term, lifts a position by a principal with no liability behind it, and `outstanding` overstates loan-funded money still in wallets once a borrower has withdrawn it. Section 6's sentence, "unchanged by any lending act except the loans' own principal flows and repayments of interest and fees", does not hold of an acceptance, which moves customer liabilities less `lending_funded` by the committed term with no entry to explain it. The section stands as ruled until the owner decides.
 - Built by `P11-TSK-003` (ledger `V026`: `OwnerKind.LOAN`, the ten purposes, the seeded operational
   accounts, the adjustment guard), `P11-TSK-004` (contributions, reconciliation `V022`, the capital
   proof, the L6 lock-wait test), and each posting rule by the task that posts it (`-014`, `-016`,
