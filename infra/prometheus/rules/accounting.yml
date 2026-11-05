@@ -290,7 +290,7 @@ groups:
           summary: "An accounting gauge is not published by any instance"
           description: "The alerts reading it cannot fire. See OPERATIONS_RUNBOOK.md section 10.14."
       - alert: WriteOffApproved
-        # P14-TSK-021: a financial event an operator expects to know of, not a break. Fires once per product per hour of approvals. Nothing else in this file is an expected act; the plan's table says why.
+        # P14-TSK-021: a financial event an operator expects to know of, not a break: P14-TSK-021's note asks for it. It stays firing for an hour after the last approval, per product. Nothing else in this file fires on an expected act.
         expr: sum by (product) (increase(finapp_lending_write_off_total{outcome="approved"}[1h])) > 0 or sum by (product) (increase(finapp_bnpl_write_off_total{outcome="approved"}[1h])) > 0
         for: 1m
         labels:

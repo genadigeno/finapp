@@ -95,7 +95,7 @@ class AccountingAlertRulesTest {
 
     @Test
     @DisplayName("the published names are the code's constants, units included - the age's _days among them, a name the plan's table never said")
-    void theSeriesAreTheCodes() {
+    void theSeriesIsTheCodes() {
         assertThat(CloseRunStallMetrics.STALLED.replace('.', '_')).isEqualTo(RUN_STALLED);
         assertThat(CloseCheckStallMetrics.STALLED.replace('.', '_')).isEqualTo(CHECK_STALLED);
         assertThat(AccountingPeriodMetrics.OPEN_AGE.replace('.', '_') + "_days").isEqualTo(OPEN_AGE);

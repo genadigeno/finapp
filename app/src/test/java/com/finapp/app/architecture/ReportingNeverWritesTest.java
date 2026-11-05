@@ -198,7 +198,7 @@ class ReportingNeverWritesTest {
      * <strong>What moves after a lock is read only by a report that is never FINAL</strong> (`P14-TSK-017`; {@code INV-ACC-04}): a
      * report class that is not an {@link OperationalReportDefinition} - nor reached only from one - depends on none of {@link #MOVING}.
      * {@link SuspenseAsOfCutoff} is not among them: it reads the frozen stamps, and is what a FINAL body has instead. <strong>Through every accounting class on the way</strong> (`P14-TSK-020`; `P14-TSK-017`'s review, M-7: it read a class's own dependencies only, so a moving read one
-     * class further went unseen), stopping at an operational definition and never crossing {@link ReportDefinition} itself, from which every definition is an implementation.
+     * class further went unseen), stopping at an operational definition and never crossing {@link ReportDefinition} itself, from which every definition is an implementation. <strong>What this still does not see</strong>: it follows a class's own dependencies and never an interface to its implementations, so a moving read behind an accounting interface is not reached.
      */
     @ArchTest
     static void onlyAnOperationalDefinitionReadsWhatMoves(JavaClasses imported) {

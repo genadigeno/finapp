@@ -143,8 +143,8 @@ class AccountingRunbookTest {
         while (token.find()) {
             String text = token.group(1);
             if (PERMISSION_LIKE.matcher(text).matches()) {
-                // A check's code or a report's reads like a permission; each is held to its own declaration.
-                assertThat(permissions.contains(text) || notPermissions.contains(text) || sources.contains("\"" + text + "\""))
+                // A check's code, a report's or a proof's reads like a permission; each is held to its own declaration, a whole word of the sources.
+                assertThat(permissions.contains(text) || notPermissions.contains(text) || Pattern.compile("\\b" + text + "\\b").matcher(sources).find())
                         .as("`%s` is a permission, a check, a report or a declared code", text).isTrue();
                 named++;
             }
