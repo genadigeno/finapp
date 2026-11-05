@@ -17,6 +17,9 @@ commit and the date; do not delete the entry.
 | PI-005 | `POSTPONED` | P14-TSK-021, by the owner (2026-11-04) | lending, bnpl — a write-off approved in error has no way back; required before production use of write-offs |
 | PI-006 | `POSTPONED` | P14-TSK-021, by the owner (2026-11-04) | lending, bnpl — a written-off account has no recovery rule; required before production use of write-offs |
 | PI-007 | `POSTPONED` | P14-TSK-021, by the owner (2026-11-04) | bnpl — a written-off obligation has no refund rule and no dispute door; required before production use of write-offs |
+| PI-008 | `POSTPONED` | P14-TSK-018, by the owner (2026-11-05) | accounting — a regulatory return answered `UNKNOWN` for good has no person's door; required before any real regulatory channel |
+| PI-009 | `POSTPONED` | P14-TSK-018, by the owner (2026-11-05) | accounting — two returns can stand at the regulator after a non-delivery; required before any real regulatory channel |
+| PI-010 | `POSTPONED` | P14-TSK-018, by the owner (2026-11-05) | accounting — `overtaken` cannot clear when no correction is owed; required before any real regulatory channel |
 
 ---
 
@@ -166,6 +169,9 @@ commit and the date; do not delete the entry.
   to a bureau (its item (g)).
 - **Fix:** a posting rule, DR the wallet / CR a recovery account, reversible and four-eyed if manual. Decide (f) and (g) with it:
   what a recovery does to exposure, to the case and to any bureau report.
+- **Decide with it (owner, 2026-11-05, `P14-TSK-022`'s item (ab)):** both notices first say "Please contact us about repaying it", and until this is
+  built every door refuses that money. The owner and the qualified reviewer decide here whether that sentence stays. Until then
+  `OPERATIONS_RUNBOOK.md` section 7.13 tells a person what to say to that caller.
 - **Owner of the fix:** the post-phase clean-up, or sooner if the owner schedules it.
 
 ---
@@ -180,5 +186,56 @@ commit and the date; do not delete the entry.
   remove that right, which is why this cannot reach production as it stands.
 - **Consequence today:** `P14-TSK-022` gives the customer a route to a person, named in the notice and in the dispute's refusal.
   That person can review and escalate, but holds no door that settles the matter until this is built.
+- **Also required before production (owner, 2026-11-05, `P14-TSK-022`'s item (ab)):** no channel stands behind "contact us": this product names no phone,
+  address or queue to a customer anywhere, so a person reviews only what reaches one. Name the channel and who staffs it, and give
+  it to the qualified reviewer with the notice's wording.
 - **Fix:** a posting rule F12 for the refund, with the dispute door reopened on it.
 - **Owner of the fix:** the post-phase clean-up, or sooner if the owner schedules it.
+
+---
+
+## PI-008 — A regulatory return answered `UNKNOWN` for good has no person's door
+
+- **Status:** `POSTPONED` (owner, 2026-11-05, accepting the recommendation after `P14-TSK-018`'s merge). **Required before any
+  real regulatory channel.**
+- **What:** a return the provider never decides stays `SUBMITTED`, so it holds `regulatory_submission_one_live` and no correction of
+  that form and month can be drafted, even after a reopen. Nobody here may assert what a regulator holds, so nothing is built. The
+  instrument screen reaches the same place: it discards a definite acknowledgement whose reference merely holds an instrument's shape
+  (`TX2026110500001` always does; a 16-digit reference often holds a Luhn-valid window), so the regulator has acknowledged and the row
+  stays `SUBMITTED` for good.
+- **Consequence today:** none in this phase, because the simulated adapter cannot reach it. Past the horizon an answer that decides
+  nothing backs the inquiry off to at most one a day, and an `answer_anomaly` counts on `finapp.accounting.regulatory.submission`.
+- **Fix:** a four-eyes manual answer recording the regulator's own out-of-band reference, and a reference format agreed with the real
+  channel.
+- **Owner of the fix:** whoever brings the first real channel; the post-phase clean-up at the latest.
+
+---
+
+## PI-009 — Two returns can stand at the regulator after a non-delivery
+
+- **Status:** `POSTPONED` (owner, 2026-11-05, accepting the recommendation after `P14-TSK-018`'s merge). **Required before any
+  real regulatory channel.**
+- **What:** a return concluded `UNDELIVERED` and then corrected leaves two at the provider if the first send was only late. The
+  inquiry stops at the conclusion, so nothing would say so. It is worse once a month has moved: the month-moved door drops the horizon's
+  wait, so a send whose answer was lost, then a reopen, then one "not received" after the two-minute lease opens the door within minutes
+  rather than a day.
+- **Consequence today:** none in this phase, because the simulated adapter cannot hold two. `OPERATIONS_RUNBOOK.md` section 10.6 tells
+  the operator to ask whoever runs the provider before drafting the correction.
+- **Fix:** a correction's send names the id it supersedes in the adapter's own terms, the provider treating them as one; the inquiry
+  goes on after `UNDELIVERED`, on the ceiling, until a correction is acknowledged, so a late arrival surfaces as a contrary answer; and a
+  minimum dwell since the last send before the door opens.
+- **Owner of the fix:** whoever brings the first real channel; the post-phase clean-up at the latest.
+
+---
+
+## PI-010 — `overtaken` cannot clear when no correction is owed
+
+- **Status:** `POSTPONED` (owner, 2026-11-05, accepting the recommendation after `P14-TSK-018`'s merge). **Required before any
+  real regulatory channel.**
+- **What:** `overtaken` clears only once an acknowledged return of the form stands at the month's present revision. After a reopen
+  that changed nothing a person may decide that no correction is owed, and the standing list and the gauge then hold that return for
+  good.
+- **Consequence today:** a standing line nobody can clear. Alerts read `attention{kind=overtaken}`'s increase and not its level, so
+  this pages once and does not stay red.
+- **Fix:** a reasoned, four-eyes "no correction owed" act, audited, clearing that return's flag.
+- **Owner of the fix:** whoever brings the first real channel; the post-phase clean-up at the latest.
