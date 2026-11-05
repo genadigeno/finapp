@@ -41,7 +41,7 @@ class AccountingGaugeReadTest {
     private final List<String> openedOn = new CopyOnWriteArrayList<>();
     private final CountDownLatch release = new CountDownLatch(1);
     private final AccountingGaugeRefresher inLine = new AccountingGaugeRefresher(Runnable::run);
-    private final AccountingGaugeRefresher production = new AccountingGaugeRefresher();
+    private final AccountingGaugeRefresher production = new AccountingGaugeRefresher(true);
     private boolean unreachable;
 
     @AfterEach
@@ -183,6 +183,24 @@ class AccountingGaugeReadTest {
         assertThat(openedOn).containsExactly(AccountingGaugeRefresher.THREAD);
         awaitReading(read, 7L);
         assertThat(opened).as("the scrape's look finds it there, inside its floor").hasValue(1);
+    }
+
+    @Test
+    @DisplayName("with the first reads turned off, as a test context has them, the start opens nothing and a look still reads, on the refresher's thread")
+    void withTheFirstReadsOffALookStillReads() throws Exception {
+        AccountingGaugeRefresher off = new AccountingGaugeRefresher(false);
+        try {
+            AccountingGaugeRead<Long> read = new AccountingGaugeRead<>("a reading with no first read", snapshots(), off, clock, FLOOR, connection -> value.get());
+            off.start();
+            assertThat(off.isRunning()).as("it still closes with the context").isTrue();
+            assertThat(opened).as("no background reader at the start").hasValue(0);
+            assertThat(read.current()).as("no value yet, and asked for").isNull();
+            awaitOpened(1);
+            assertThat(openedOn).containsExactly(AccountingGaugeRefresher.THREAD);
+            awaitReading(read, 7L);
+        } finally {
+            off.stop();
+        }
     }
 
     // ------------------------------------------------------------------ the reading

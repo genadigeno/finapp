@@ -33,10 +33,13 @@ public class AccountingGaugeBeans {
         return new GlSnapshots(dataSource::getConnection, statementTimeout);
     }
 
-    /** One thread per instance, closed with the context: {@code AccountingGaugeWiringTest} holds that every accounting gauge reads on it. */
+    /**
+     * One thread per instance, closed with the context: {@code AccountingGaugeWiringTest} holds that every accounting gauge reads on it. {@code finapp.accounting.gauges.read-at-start} is for the test contexts, where a background reader would race what a suite asserts; turned off in production, a gauge reads
+     * first at the first scrape, and a NaN at a {@code delta} window's edge blinds that window's growth rules.
+     */
     @Bean
-    AccountingGaugeRefresher accountingGaugeRefresher() {
-        return new AccountingGaugeRefresher();
+    AccountingGaugeRefresher accountingGaugeRefresher(@Value("${finapp.accounting.gauges.read-at-start:true}") boolean readAtStart) {
+        return new AccountingGaugeRefresher(readAtStart);
     }
 
     /** {@code finapp.accounting.close.check.stalled}: the same bound as the run's birth. */
