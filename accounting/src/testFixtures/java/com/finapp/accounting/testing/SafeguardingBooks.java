@@ -16,8 +16,8 @@ import java.util.Optional;
 import java.util.TreeMap;
 
 /**
- * A safeguarding return's books in memory (`P14-TSK-019`): the journal {@link InMemoryTrialBalanceReads} holds, the acts that post to it as the real posting rules post, and {@link LendingFundedAsOfCutoff} answering over them: {@code committed} by the port's own real fold of each loan's frozen facts, {@code writtenOff} by the lines of each write-off entry. What the statements do against PostgreSQL is {@code
- * SafeguardingReturnDatabaseTest}'s (owed, C5). An act is recorded at noon UTC of its day unless stated, so a PROVISIONAL cut can fall between two. Shared by accounting's suites and app's. Test code: it ships in no jar.
+ * A safeguarding return's books in memory (`P14-TSK-019`): the journal {@link InMemoryTrialBalanceReads} holds, the acts that post to it as the real posting rules post, and {@link LendingFundedAsOfCutoff} answering over them: {@code committed} by the port's own real fold of each loan's frozen facts, {@code writtenOff} by the lines of each write-off entry, {@code heldPerAccount} by each holder's own balance. What the statements do against PostgreSQL is {@code
+ * SafeguardingReturnDatabaseTest}'s and {@code SafeguardingCommittedDatabaseTest}'s (owed, C5). An act is recorded at noon UTC of its day unless stated, so a PROVISIONAL cut can fall between two. An act names a holder only where it matters; otherwise every wallet and payable line is {@link #THE_ACCOUNT}'s. Shared by accounting's suites and app's. Test code: it ships in no jar.
  */
 public final class SafeguardingBooks implements LendingFundedAsOfCutoff {
 
@@ -29,6 +29,7 @@ public final class SafeguardingBooks implements LendingFundedAsOfCutoff {
     public static final String LOAN_PRINCIPAL_DUE = "LOAN_PRINCIPAL_DUE/LOAN";
     public static final String LOAN_INTEREST_DUE = "LOAN_INTEREST_DUE/LOAN";
     public static final String LOAN_FEE_INCOME = "LOAN_FEE_INCOME/OPERATIONAL";
+    public static final String LOAN_INTEREST_INCOME = "LOAN_INTEREST_INCOME/OPERATIONAL";
     public static final String LOAN_WRITE_OFF = "LOAN_WRITE_OFF_EXPENSE/OPERATIONAL";
     public static final String BNPL_PRINCIPAL = "BNPL_PRINCIPAL/BNPL_OBLIGATION";
     public static final String BNPL_WRITE_OFF = "BNPL_WRITE_OFF_EXPENSE/OPERATIONAL";
@@ -43,28 +44,61 @@ public final class SafeguardingBooks implements LendingFundedAsOfCutoff {
     public static final String CREDIT_BALANCE = "LOAN_CREDIT_BALANCE/LOAN";
     public static final String BNPL_CREDIT_BALANCE = "BNPL_CREDIT_BALANCE/BNPL_OBLIGATION";
 
+    /** The holder of every wallet and payable line an act does not name one for. */
+    public static final String THE_ACCOUNT = "the-account";
+
     /** One write-off entry's principal: credit-positive, as the port reads it. */
     private record WriteOff(LocalDate posted, Instant createdAt, String currency, int scale, long principal) {}
+
+    /** One line on an account of a purpose read per account, debit-positive. */
+    private record AccountLine(String purpose, String holder, LocalDate posted, Instant createdAt, String currency, int scale, long debitLessCredit) {}
 
     public final InMemoryTrialBalanceReads journal = new InMemoryTrialBalanceReads();
     private final Map<String, LoanFacts> loans = new LinkedHashMap<>();
     private final List<WriteOff> writeOffs = new ArrayList<>();
-    /** Set, and both of the port's reads fail as a store's do: how a suite shows an unreadable proof is never a zero. */
+    private final List<AccountLine> accountLines = new ArrayList<>();
+    /** Set, and every one of the port's reads fails as a store's does: how a suite shows an unreadable proof is never a zero. */
     public volatile boolean unreadable;
     /** Set, and only {@link #committed} fails. */
     public volatile boolean committedUnreadable;
     /** Set, and only {@link #writtenOff} fails. */
     public volatile boolean writtenOffUnreadable;
+    /** Set, and only {@link #heldPerAccount} fails. */
+    public volatile boolean heldUnreadable;
+    /** Added to what {@link #heldPerAccount} says is owed: how a suite shows the two reads drifting is seen. */
+    public volatile long plantedDrift;
 
     /** Noon UTC of {@code day}. */
     public static Instant noon(LocalDate day) {
         return day.atTime(12, 0).toInstant(ZoneOffset.UTC);
     }
 
-    /** One balanced two-line entry. */
+    /** One balanced two-line entry, each account {@link #THE_ACCOUNT}'s. */
     public SafeguardingBooks post(LocalDate day, String currency, int scale, long minor, String debit, String credit) {
+        return postFor(THE_ACCOUNT, day, currency, scale, minor, debit, credit);
+    }
+
+    /** One balanced two-line entry, a purpose read per account being {@code holder}'s. */
+    public SafeguardingBooks postFor(String holder, LocalDate day, String currency, int scale, long minor, String debit, String credit) {
         journal.post(day, noon(day), currency, scale, minor, debit, credit);
+        held(holder, debit, day, noon(day), currency, scale, minor);
+        held(holder, credit, day, noon(day), currency, scale, -minor);
         return this;
+    }
+
+    /** One balanced two-line entry, a counterparty's account among the two being {@code counterparty}'s. */
+    public SafeguardingBooks postCounterparty(String counterparty, LocalDate day, String currency, int scale, long minor, String debit, String credit) {
+        journal.postFor(counterparty, day, noon(day), currency, scale, minor, debit, credit);
+        held(THE_ACCOUNT, debit, day, noon(day), currency, scale, minor);
+        held(THE_ACCOUNT, credit, day, noon(day), currency, scale, -minor);
+        return this;
+    }
+
+    private void held(String holder, String key, LocalDate day, Instant at, String currency, int scale, long debitLessCredit) {
+        String purpose = key.split("/", 2)[0];
+        if (HELD_PER_ACCOUNT.contains(purpose)) {
+            accountLines.add(new AccountLine(purpose, holder, day, at, currency, scale, debitLessCredit));
+        }
     }
 
     /** A customer's money in: cash up, a wallet up. */
@@ -72,9 +106,19 @@ public final class SafeguardingBooks implements LendingFundedAsOfCutoff {
         return post(day, currency, scale, minor, CASH, WALLET);
     }
 
+    /** {@code holder}'s money in. */
+    public SafeguardingBooks depositFor(String holder, LocalDate day, String currency, int scale, long minor) {
+        return postFor(holder, day, currency, scale, minor, CASH, WALLET);
+    }
+
     /** A customer's money out: a wallet down, cash down. */
     public SafeguardingBooks withdraw(LocalDate day, String currency, int scale, long minor) {
         return post(day, currency, scale, minor, WALLET, CASH);
+    }
+
+    /** {@code holder}'s money out, whatever the wallet holds: a charged-back top-up already spent leaves it in debit. */
+    public SafeguardingBooks withdrawFor(String holder, LocalDate day, String currency, int scale, long minor) {
+        return postFor(holder, day, currency, scale, minor, WALLET, CASH);
     }
 
     /** Capital recognised: rule 0. */
@@ -88,21 +132,36 @@ public final class SafeguardingBooks implements LendingFundedAsOfCutoff {
         return this;
     }
 
-    /** Rule 1, the fee deducted: DR LOAN_PRINCIPAL P / CR CUSTOMER_WALLET P - f, CR LOAN_FEE_INCOME f; the journal line dated the value date. */
+    /** Rule 1, the fee deducted: DR LOAN_PRINCIPAL P / CR CUSTOMER_WALLET P - f, CR LOAN_FEE_INCOME f; the journal line dated the value date, as {@code LoanDisbursements} dates it. */
     public SafeguardingBooks disbursed(String loan, LocalDate on, long fee) {
-        LoanFacts held = loans.get(loan);
-        long principal = held.principal().longValueExact();
-        journal.line(new InMemoryTrialBalanceReads.JournalLine(on, noon(on), "LOAN_PRINCIPAL", "LOAN", held.currency(), held.scale(), Side.DEBIT, principal));
-        journal.line(new InMemoryTrialBalanceReads.JournalLine(on, noon(on), "CUSTOMER_WALLET", "CUSTOMER", held.currency(), held.scale(), Side.CREDIT, principal - fee));
-        if (fee > 0) {
-            journal.line(new InMemoryTrialBalanceReads.JournalLine(on, noon(on), "LOAN_FEE_INCOME", "OPERATIONAL", held.currency(), held.scale(), Side.CREDIT, fee));
-        }
-        loans.put(loan, new LoanFacts(held.currency(), held.scale(), held.principal(), held.openedOn(), held.openedAt(), Optional.of(on), Optional.empty(), Optional.of(noon(on))));
-        return this;
+        return disbursed(loan, on, on, noon(on), fee);
     }
 
     public SafeguardingBooks disbursed(String loan, LocalDate on) {
         return disbursed(loan, on, 0);
+    }
+
+    /** A disbursement whose journal line is dated {@code posted} and whose outcome is dated {@code valued}: what the real poster never does, so a suite can show what its one date is holding up. */
+    public SafeguardingBooks disbursedOnTwoDates(String loan, LocalDate valued, LocalDate posted) {
+        return disbursed(loan, valued, posted, noon(valued), 0);
+    }
+
+    /** A disbursement whose entry is created at noon of {@code on} and decided at {@code decidedAt}, as one transaction's two statements are: what a PROVISIONAL cut can fall between. */
+    public SafeguardingBooks disbursedDecidedAt(String loan, LocalDate on, Instant decidedAt) {
+        return disbursed(loan, on, on, decidedAt, 0);
+    }
+
+    private SafeguardingBooks disbursed(String loan, LocalDate valued, LocalDate posted, Instant decidedAt, long fee) {
+        LoanFacts held = loans.get(loan);
+        long principal = held.principal().longValueExact();
+        journal.line(new InMemoryTrialBalanceReads.JournalLine(posted, noon(posted), "LOAN_PRINCIPAL", "LOAN", held.currency(), held.scale(), Side.DEBIT, principal));
+        journal.line(new InMemoryTrialBalanceReads.JournalLine(posted, noon(posted), "CUSTOMER_WALLET", "CUSTOMER", held.currency(), held.scale(), Side.CREDIT, principal - fee));
+        held(THE_ACCOUNT, WALLET, posted, noon(posted), held.currency(), held.scale(), -(principal - fee));
+        if (fee > 0) {
+            journal.line(new InMemoryTrialBalanceReads.JournalLine(posted, noon(posted), "LOAN_FEE_INCOME", "OPERATIONAL", held.currency(), held.scale(), Side.CREDIT, fee));
+        }
+        loans.put(loan, new LoanFacts(held.currency(), held.scale(), held.principal(), held.openedOn(), held.openedAt(), Optional.of(valued), Optional.empty(), Optional.of(decidedAt)));
+        return this;
     }
 
     /** A failed disbursement: {@code CANCELLED}, nothing posted. */
@@ -144,9 +203,33 @@ public final class SafeguardingBooks implements LendingFundedAsOfCutoff {
         return new ArrayList<>(folded.values());
     }
 
+    @Override
+    public List<HeldPerAccount> heldPerAccount(Connection snapshot, LocalDate cutoff, Optional<Instant> cut) {
+        refuseWhen(unreadable || heldUnreadable);
+        Map<String, Long> balances = new TreeMap<>();
+        Map<String, AccountLine> exemplars = new TreeMap<>();
+        for (AccountLine line : accountLines) {
+            if (!line.posted().isAfter(cutoff) && cut.filter(line.createdAt()::isAfter).isEmpty()) {
+                String account = String.join("\u0000", line.purpose(), line.currency(), Integer.toString(line.scale()), line.holder());
+                balances.merge(account, line.debitLessCredit(), Long::sum);
+                exemplars.putIfAbsent(account, line);
+            }
+        }
+        Map<String, HeldPerAccount> folded = new TreeMap<>();
+        balances.forEach((account, balance) -> {
+            AccountLine line = exemplars.get(account);
+            HeldPerAccount one = new HeldPerAccount(line.purpose(), line.currency(), line.scale(), BigInteger.valueOf(Math.max(-balance, 0)), BigInteger.valueOf(Math.max(balance, 0)), balance > 0 ? 1 : 0);
+            folded.merge(String.join("\u0000", line.purpose(), line.currency(), Integer.toString(line.scale())), one,
+                    (held, other) -> new HeldPerAccount(held.purpose(), held.currency(), held.scale(), held.owedMinor().add(other.owedMinor()), held.debtMinor().add(other.debtMinor()), held.debtors() + other.debtors()));
+        });
+        List<HeldPerAccount> answered = new ArrayList<>();
+        folded.values().forEach(held -> answered.add(plantedDrift == 0 ? held : new HeldPerAccount(held.purpose(), held.currency(), held.scale(), held.owedMinor().add(BigInteger.valueOf(plantedDrift)), held.debtMinor(), held.debtors())));
+        return answered;
+    }
+
     private static void refuseWhen(boolean unreadable) {
         if (unreadable) {
-            throw new AccountingStorageException("reading lending_funded as of the cutoff: SQLSTATE 08006");
+            throw new AccountingStorageException("reading the return's frozen rows as of the cutoff: SQLSTATE 08006");
         }
     }
 }

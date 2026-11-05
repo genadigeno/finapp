@@ -265,8 +265,8 @@ class SafeguardingReturnDatabaseTest {
         LocalDate lastDay = month.atEndOfMonth();
 
         assertThat(minor(eur, "cashAtBank")).isEqualTo(raw("'CASH_AT_BANK'", lastDay, EUR));
-        assertThat(minor(eur, "customerWallets")).isEqualTo(-raw("'CUSTOMER_WALLET'", lastDay, EUR));
-        assertThat(minor(eur, "merchantPayables")).isEqualTo(-raw("'MERCHANT_PAYABLE'", lastDay, EUR));
+        assertThat(minor(eur, "customerWalletsNet")).isEqualTo(-raw("'CUSTOMER_WALLET'", lastDay, EUR));
+        assertThat(minor(eur, "merchantPayablesNet")).isEqualTo(-raw("'MERCHANT_PAYABLE'", lastDay, EUR));
         assertThat(minor(eur, "principalOutstanding")).isEqualTo(raw("'LOAN_PRINCIPAL','LOAN_PRINCIPAL_DUE','BNPL_PRINCIPAL','BNPL_PRINCIPAL_DUE'", lastDay, EUR));
         assertThat(minor(eur, "principalWrittenOff")).isEqualTo(rawWrittenOff(lastDay, EUR)).isGreaterThanOrEqualTo(5_00 + 1_00);
         assertThat(minor(eur, "principalCommitted")).as("no loan was opened by a cutoff in 1999: the real statement's true zero").isZero();
@@ -329,7 +329,8 @@ class SafeguardingReturnDatabaseTest {
         ReportRunStore.RunRow run = issued(month);
         JsonNode gbp = figures(bodyOf(run), GBP);
         assertThat(minor(gbp, "position")).isEqualTo(-1_000_00);
-        assertThat(gbp.get("shortfall").asBoolean()).isTrue();
+        assertThat(gbp.get("positionNegative").asBoolean()).isTrue();
+        assertThat(gbp.get("positionBeforeLendingFundedNegative").asBoolean()).isTrue();
 
         RegulatorySubmissions.Acted validated = validated(drafted(activeForm(), month));
 
@@ -338,6 +339,60 @@ class SafeguardingReturnDatabaseTest {
         List<RegulatoryFormLine> lines = inScope(Actor.SYSTEM, uow -> STORE.lines(uow, validated.id()));
         assertThat(lines).filteredOn(line -> line.code().equals("POSITION") && line.currency().equals("GBP"))
                 .singleElement().satisfies(line -> assertThat(line.minor().longValueExact()).isEqualTo(-1_000_00));
+    }
+
+    // ------------------------------------------------------------------ I-1
+
+    @Test
+    @DisplayName("I-1, on the real statement: a wallet and a payable truly in debit: gross and debt each equal this suite's own per-account fold of the journal, each footing to the trial balance's net through the real form, and the debt no cover")
+    void aWalletAndAPayableInDebtAreNoCover() throws Exception {
+        YearMonth month = openMonth();
+        LocalDate day = month.atDay(13);
+        LedgerAccount cash = operational(AccountPurpose.CASH_AT_BANK, EUR);
+        post(day, cash, owned(AccountPurpose.CUSTOMER_WALLET, AccountType.LIABILITY, EUR), 100_00, EUR);
+        post(day, owned(AccountPurpose.CUSTOMER_WALLET, AccountType.LIABILITY, EUR), cash, 30_00, EUR);
+        post(day, cash, owned(AccountPurpose.MERCHANT_PAYABLE, AccountType.LIABILITY, EUR), 50_00, EUR);
+        post(day, owned(AccountPurpose.MERCHANT_PAYABLE, AccountType.LIABILITY, EUR), cash, 20_00, EUR);
+        PeriodCloseFixture.closed(month);
+        LocalDate lastDay = month.atEndOfMonth();
+
+        JsonNode eur = figures(bodyOf(issued(month)), EUR);
+
+        long[] wallets = rawPerAccount("CUSTOMER_WALLET", lastDay, EUR);
+        long[] payables = rawPerAccount("MERCHANT_PAYABLE", lastDay, EUR);
+        assertThat(minor(eur, "customerWallets")).as("this suite's own fold of every wallet in credit").isEqualTo(wallets[0]).isGreaterThanOrEqualTo(100_00);
+        assertThat(minor(eur, "customerWalletDebt")).as("and of every wallet in debit").isEqualTo(wallets[1]).isGreaterThanOrEqualTo(30_00);
+        assertThat(minor(eur, "merchantPayables")).isEqualTo(payables[0]).isGreaterThanOrEqualTo(50_00);
+        assertThat(minor(eur, "merchantDebt")).isEqualTo(payables[1]).isGreaterThanOrEqualTo(20_00);
+        assertThat(minor(eur, "customerWallets") - minor(eur, "customerWalletDebt")).isEqualTo(minor(eur, "customerWalletsNet")).isEqualTo(-raw("'CUSTOMER_WALLET'", lastDay, EUR));
+        assertThat(minor(eur, "merchantPayables") - minor(eur, "merchantDebt")).isEqualTo(minor(eur, "merchantPayablesNet")).isEqualTo(-raw("'MERCHANT_PAYABLE'", lastDay, EUR));
+        assertThat(eur.get("customerWalletDebtAccounts").asLong()).isGreaterThanOrEqualTo(1);
+        assertThat(minor(eur, "liabilities")).as("gross, the debt no cover").isGreaterThanOrEqualTo(minor(eur, "customerWallets") + minor(eur, "merchantPayables"));
+
+        RegulatorySubmissions.Acted validated = validated(drafted(activeForm(), month));
+        assertThat(validated.status()).as("the footings hold on real reads").isEqualTo(SubmissionStatus.VALIDATED);
+    }
+
+    /** This suite's own fold, in Java, of each account's balance by posting date: {in credit, in debit}, both positive. No statement of the definition's. */
+    private static long[] rawPerAccount(String purpose, LocalDate through, CurrencyCode currency) throws SQLException {
+        String sql = "SELECT line.ledger_account_id, line.direction, line.amount_minor FROM ledger.journal_line line"
+                + " JOIN ledger.journal_entry entry ON entry.id = line.entry_id JOIN ledger.ledger_account account ON account.id = line.ledger_account_id"
+                + " WHERE account.purpose = ? AND line.currency = ? AND entry.posting_date <= ?";
+        java.util.Map<java.util.UUID, Long> balances = new java.util.HashMap<>();
+        try (Connection migrator = DatabaseRoles.migrator(); PreparedStatement read = migrator.prepareStatement(sql)) {
+            read.setString(1, purpose);
+            read.setString(2, currency.code());
+            read.setObject(3, through);
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    long amount = row.getLong("amount_minor");
+                    balances.merge(row.getObject("ledger_account_id", java.util.UUID.class), "DEBIT".equals(row.getString("direction")) ? amount : -amount, Long::sum);
+                }
+            }
+        }
+        long owed = balances.values().stream().filter(balance -> balance < 0).mapToLong(balance -> -balance).sum();
+        long debt = balances.values().stream().filter(balance -> balance > 0).mapToLong(Long::longValue).sum();
+        return new long[] {owed, debt};
     }
 
     // ------------------------------------------------------------------ as of the cutoff

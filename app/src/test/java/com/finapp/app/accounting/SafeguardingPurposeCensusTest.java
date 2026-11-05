@@ -2,13 +2,17 @@ package com.finapp.app.accounting;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.accounting.LendingFundedAsOfCutoff;
 import com.finapp.accounting.reporting.SafeguardingPositionDefinition;
 import com.finapp.accounting.reporting.SafeguardingPositionDefinition.Disposition;
 import com.finapp.accounting.reporting.SafeguardingPositionDefinition.Treatment;
 import com.finapp.ledger.AccountPurpose;
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
@@ -71,6 +75,32 @@ class SafeguardingPurposeCensusTest {
         }
         assertThat(treatment(AccountPurpose.LOAN_WRITE_OFF_EXPENSE)).isEqualTo(Treatment.WRITE_OFF_ROUTE);
         assertThat(treatment(AccountPurpose.BNPL_WRITE_OFF_EXPENSE)).isEqualTo(Treatment.WRITE_OFF_ROUTE);
+    }
+
+    @Test
+    @DisplayName("I-1: every purpose in the position nets no holder against another, and its reason says how: one account per currency, one per counterparty and currency, or read per account. A many-holder purpose added later fails here until it is read per account")
+    void noPurposeInThePositionNetsOneHolderAgainstAnother() {
+        Set<Treatment> inThePosition = EnumSet.of(Treatment.CASH, Treatment.CLEARING_RECEIVABLE, Treatment.COUNTERPARTY_CLEARING, Treatment.CUSTOMER_WALLET, Treatment.MERCHANT_PAYABLE, Treatment.CREDIT_BALANCE, Treatment.CLEARING_PAYABLE, Treatment.SUSPENSE);
+        Set<String> perAccount = new TreeSet<>();
+        for (AccountPurpose purpose : AccountPurpose.values()) {
+            Disposition held = HELD.get(key(purpose));
+            if (!inThePosition.contains(held.treatment())) {
+                assertThat(LendingFundedAsOfCutoff.HELD_PER_ACCOUNT).as(purpose.name()).doesNotContain(purpose.name());
+                continue;
+            }
+            switch (purpose.ownerKind()) {
+                case OPERATIONAL, SUSPENSE -> assertThat(held.reason()).as(purpose.name()).contains("one account per currency");
+                case COUNTERPARTY -> {
+                    assertThat(held.treatment()).as(purpose.name()).isEqualTo(Treatment.COUNTERPARTY_CLEARING);
+                    assertThat(held.reason()).as(purpose.name()).contains("one account per counterparty and currency");
+                }
+                default -> {
+                    assertThat(held.reason()).as(purpose.name()).contains("read per account");
+                    perAccount.add(purpose.name());
+                }
+            }
+        }
+        assertThat(perAccount).isEqualTo(new TreeSet<>(LendingFundedAsOfCutoff.HELD_PER_ACCOUNT));
     }
 
     private static Treatment treatment(AccountPurpose purpose) {

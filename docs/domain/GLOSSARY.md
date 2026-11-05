@@ -2625,8 +2625,8 @@ verdict.
 **Owned by:** `accounting`
 
 ### Safeguarding Position
-**Is:** a reference figure, per currency: cash and clearing receivables less the customer and merchant liabilities capital did not fund - `assets - (liabilities - lending_funded)` - read from a FINAL run of `SAFEGUARDING_POSITION` as of a month's cutoff, each term a line of its own, negative and never floored when short (`P14-TSK-019`, ADR-0118 decision 4, C13).
-**Not:** a statement that any safeguarding obligation is met: no regime's rules are claimed, and the return is `REFERENCE`. Nor the money in a segregated account: this platform holds none as such. Nor summed across currencies. Nor `LendingCapitalHeadroom`'s headroom, which judges what capital is free and is read live; nor proof that money is covered once loan-funded money has left wallets, which is why `positionBeforeLendingFunded` is served beside it.
+**Is:** a reference figure, per currency: cash and clearing receivables less the customer and merchant liabilities capital did not fund - `assets - (liabilities - lending_funded)` - read from a FINAL run of `SAFEGUARDING_POSITION` as of a month's cutoff, each term a line of its own, able to read negative and never floored, each liability its accounts in credit, gross, so a holder in debit is no cover for anyone else (`P14-TSK-019`, ADR-0118 decision 4, C13).
+**Not:** a statement that any safeguarding obligation is met: no regime's rules are claimed, and the return is `REFERENCE`. Nor the money in a segregated account: this platform holds none as such. Nor summed across currencies. Nor `LendingCapitalHeadroom`'s headroom, which judges what capital is free and is read live; nor proof of cover: a positive figure rises with an accepted loan and does not fall when loan money leaves wallets, which is why `positionBeforeLendingFunded` is served beside it.
 **Owned by:** `accounting`
 
 ### Lending Funded

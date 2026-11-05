@@ -28,10 +28,10 @@ import java.util.stream.Collectors;
  *
  * <p><strong>Each statement names one module's schema</strong>, and the definition combines them in Java (ADR-0006). {@code SELECT} only, on the definition's snapshot, one statement each, no lock.
  *
- * <p><strong>{@link #COMMITTED_FACTS} reads no status.</strong> Every column it selects is frozen by a trigger for every writer: a loan's identity and {@code opened_at} (lending {@code V006}, {@code V032}), agreement version 1 (INSERT-only), an offer's terms version, the term set, and a disbursement's {@code value_date}, {@code decided_at} and {@code failure_reason} (NULL while {@code PENDING}, frozen once terminal). A later decision has a later date,
- * so no later act can change what {@link LendingFundedAsOfCutoff.LoanFacts#stoodCommitted} decides of a past cutoff. Driven from {@code loan_disbursement}: one row per instalment loan, born beside it and required at its commit by a deferred check, so the inner joins lose no loan, a credit line - which commits no capital (A28) - has no row, and the where clause bounds the read to what could count: a loan that stood, one since disbursed, one cancelled.
+ * <p><strong>{@link #COMMITTED_FACTS} reads no status.</strong> Every column it selects is frozen by a trigger for every writer: a loan's identity and {@code opened_at} (lending {@code V006}, {@code V032}), agreement version 1 (INSERT-only), an offer's terms version, the term set, and a disbursement's {@code value_date}, {@code decided_at} and {@code failure_reason} (NULL while {@code PENDING}, frozen once terminal). A later decision has a later date, and {@code LockGrace}'s minimum keeps a western zone's from dating inside a locked month,
+ * so no later act can change what {@link LendingFundedAsOfCutoff.LoanFacts#stoodCommitted} decides of a locked cutoff. Driven from {@code loan_disbursement}: one row per instalment loan, born beside it and required at its commit by a deferred check, so the inner joins lose no loan, a credit line - which commits no capital (A28) - has no row, and the where clause bounds the read to what could count: a loan that stood, one since disbursed, one cancelled.
  *
- * <p><strong>NULL.</strong> {@code value_date} is the one nullable column compared in SQL, and the predicate names both branches. Everything else nullable is decided in Java, on an {@link Optional}. The statements' behaviour against PostgreSQL is {@code SafeguardingReturnDatabaseTest}'s (owed, C5).
+ * <p><strong>NULL.</strong> {@code value_date} is the one nullable column compared in SQL, and the predicate names both branches. Everything else nullable is decided in Java, on an {@link Optional}. {@link #HELD_PER_ACCOUNT_LINES} compares only sums of {@code NOT NULL} columns. The statements' behaviour against PostgreSQL is {@code SafeguardingReturnDatabaseTest}'s (owed, C5).
  */
 public final class LendingFundedAsOfCutoffReads implements LendingFundedAsOfCutoff {
 
@@ -58,6 +58,23 @@ public final class LendingFundedAsOfCutoffReads implements LendingFundedAsOfCuto
             + " AND EXISTS (SELECT 1 FROM ledger.journal_line beside"
             + " JOIN ledger.ledger_account beside_account ON beside_account.id = beside.ledger_account_id"
             + " WHERE beside.entry_id = line.entry_id AND beside_account.purpose IN (" + quoted(WRITE_OFF_EXPENSES) + "))";
+
+    /**
+     * Each {@link #HELD_PER_ACCOUNT} account's balance by posting date, debit-positive, then those in credit and those in debit summed apart per purpose, currency and scale. By {@code account.id}, the one thing the trial balance's reads do not group by: a wallet in debit never nets another's money here. Scale is a key, so no balance crosses one.
+     */
+    static final String HELD_PER_ACCOUNT_LINES = "SELECT balance.purpose, balance.currency, balance.scale,"
+            + " SUM(CASE WHEN balance.debit_less_credit < 0 THEN -balance.debit_less_credit ELSE 0 END) AS owed,"
+            + " SUM(CASE WHEN balance.debit_less_credit > 0 THEN balance.debit_less_credit ELSE 0 END) AS debt,"
+            + " COUNT(*) FILTER (WHERE balance.debit_less_credit > 0) AS debtors"
+            + " FROM (SELECT account.id, account.purpose, line.currency, line.scale,"
+            + " SUM(CASE WHEN line.direction = 'DEBIT' THEN line.amount_minor ELSE -line.amount_minor END) AS debit_less_credit"
+            + " FROM ledger.journal_entry entry"
+            + " JOIN ledger.journal_line line ON line.entry_id = entry.id"
+            + " JOIN ledger.ledger_account account ON account.id = line.ledger_account_id"
+            + " WHERE entry.posting_date <= ? AND account.purpose IN (" + quoted(HELD_PER_ACCOUNT) + ")";
+
+    static final String HELD_PER_ACCOUNT_GROUPS = " GROUP BY account.id, account.purpose, line.currency, line.scale) balance"
+            + " GROUP BY balance.purpose, balance.currency, balance.scale ORDER BY balance.purpose, balance.currency, balance.scale";
 
     /** A PROVISIONAL run's cut: entries created at or before its claim. */
     static final String AT_THE_CUT = " AND entry.created_at <= ?";
@@ -113,6 +130,29 @@ public final class LendingFundedAsOfCutoffReads implements LendingFundedAsOfCuto
             return new ArrayList<>(folded.values());
         } catch (SQLException failure) {
             throw new AccountingStorageException(DatabaseFailure.describe("reading the principal written off as of the cutoff", failure));
+        }
+    }
+
+    @Override
+    public List<HeldPerAccount> heldPerAccount(Connection snapshot, LocalDate cutoff, Optional<Instant> cut) {
+        Objects.requireNonNull(snapshot, "snapshot");
+        Objects.requireNonNull(cutoff, "cutoff");
+        Objects.requireNonNull(cut, "cut");
+        try (PreparedStatement read = snapshot.prepareStatement(HELD_PER_ACCOUNT_LINES + (cut.isPresent() ? AT_THE_CUT : "") + HELD_PER_ACCOUNT_GROUPS)) {
+            read.setDate(1, Date.valueOf(cutoff));
+            if (cut.isPresent()) {
+                read.setTimestamp(2, Timestamp.from(cut.get()));
+            }
+            List<HeldPerAccount> held = new ArrayList<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    held.add(new HeldPerAccount(row.getString("purpose"), row.getString("currency").stripTrailing(), row.getInt("scale"), row.getBigDecimal("owed").toBigIntegerExact(),
+                            row.getBigDecimal("debt").toBigIntegerExact(), row.getLong("debtors")));
+                }
+            }
+            return held;
+        } catch (SQLException failure) {
+            throw new AccountingStorageException(DatabaseFailure.describe("reading the liabilities per account as of the cutoff", failure));
         }
     }
 

@@ -1651,9 +1651,12 @@ Every return here is `REFERENCE`, through a simulated adapter (ADR-0118, C4): no
     {"code": "CASH_AT_BANK", "label": "Cash at bank", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].cashAtBank"},
     {"code": "CLEARING_RECEIVABLES", "label": "Clearing receivables", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].clearingReceivables"},
     {"code": "ASSETS", "label": "Assets: cash at bank and clearing receivables", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].assets"},
-    {"code": "CUSTOMER_WALLETS", "label": "Customer wallets", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].customerWallets"},
-    {"code": "MERCHANT_PAYABLES", "label": "Merchant payables", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].merchantPayables"},
-    {"code": "CREDIT_BALANCES", "label": "Credit balances owed back to borrowers and BNPL customers", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].creditBalances"},
+    {"code": "CUSTOMER_WALLETS", "label": "Customer wallets in credit, gross", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].customerWallets"},
+    {"code": "CUSTOMER_WALLETS_NET", "label": "Customer wallets as the trial balance nets them, debt included: not the figure the position reads", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].customerWalletsNet"},
+    {"code": "MERCHANT_PAYABLES", "label": "Merchant payables in credit, gross", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].merchantPayables"},
+    {"code": "MERCHANT_PAYABLES_NET", "label": "Merchant payables as the trial balance nets them, debt included: not the figure the position reads", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].merchantPayablesNet"},
+    {"code": "CREDIT_BALANCES", "label": "Credit balances owed back to borrowers and BNPL customers, in credit, gross", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].creditBalances"},
+    {"code": "CREDIT_BALANCES_NET", "label": "Credit balances as the trial balance nets them, debt included: not the figure the position reads", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].creditBalancesNet"},
     {"code": "CLEARING_PAYABLES", "label": "Clearing payables: money owed onward, the cash not yet gone", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].clearingPayables"},
     {"code": "SUSPENSE_HELD", "label": "Suspense held as owed: its net credit", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].suspenseHeld"},
     {"code": "LIABILITIES", "label": "Liabilities", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].liabilities"},
@@ -1661,16 +1664,22 @@ Every return here is `REFERENCE`, through a simulated adapter (ADR-0118, C4): no
     {"code": "PRINCIPAL_COMMITTED", "label": "Principal committed: accepted loans awaiting disbursement, no journal line behind it", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].principalCommitted"},
     {"code": "PRINCIPAL_WRITTEN_OFF", "label": "Principal written off", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].principalWrittenOff"},
     {"code": "LENDING_FUNDED", "label": "Lending funded: outstanding, committed and written off", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].lendingFunded"},
-    {"code": "CUSTOMER_FUNDED", "label": "Customer-funded liabilities: liabilities less lending funded", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].customerFundedLiabilities"},
-    {"code": "POSITION", "label": "Safeguarding position: assets less customer-funded liabilities, negative when short", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].position"},
-    {"code": "POSITION_BEFORE", "label": "Position before lending funded: assets less liabilities", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].positionBeforeLendingFunded"},
+    {"code": "CUSTOMER_FUNDED", "label": "Customer-funded liabilities: liabilities less lending funded. Can read negative, because lending funded does not fall when loan money leaves wallets", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].customerFundedLiabilities"},
+    {"code": "POSITION", "label": "Position after lending funded. Negative is short. Positive does not prove cover: it rises with an accepted loan and does not fall when loan money leaves. Read beside POSITION_BEFORE", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].position"},
+    {"code": "POSITION_BEFORE", "label": "Position before lending funded: assets less liabilities, every liability a claim on cash whoever funded it. Negative is short, whatever POSITION reads", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].positionBeforeLendingFunded"},
     {"code": "MEMO_CHARGEBACKS", "label": "Memo, out of the position: chargebacks recoverable", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].chargebackRecoverable"},
     {"code": "MEMO_FX_POSITION", "label": "Memo, out of the position: FX position", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].fxPosition"},
-    {"code": "MEMO_SUSPENSE_DEBIT", "label": "Memo, out of the position: suspense at a net debit", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].suspenseNetDebit"}
+    {"code": "MEMO_SUSPENSE_DEBIT", "label": "Memo, out of the position: suspense at a net debit", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].suspenseNetDebit"},
+    {"code": "MEMO_WALLET_DEBT", "label": "Memo, out of the position: customer wallets in debit, owed by those customers and no cover for anyone else", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].customerWalletDebt"},
+    {"code": "MEMO_MERCHANT_DEBT", "label": "Memo, out of the position: merchant payables in debit, owed by those merchants and no cover for anyone else", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].merchantDebt"},
+    {"code": "MEMO_CREDIT_BALANCE_DEBT", "label": "Memo, out of the position: credit balances in debit, owed by those holders and no cover for anyone else", "source": "SAFEGUARDING_POSITION", "figure": "body.currencies[currency=*].creditBalanceDebt"}
   ],
   "rules": [
     {"code": "ASSETS_FOOT", "type": "EQUALS", "left": ["ASSETS"], "right": ["CASH_AT_BANK", "CLEARING_RECEIVABLES"]},
     {"code": "LIABILITIES_FOOT", "type": "EQUALS", "left": ["LIABILITIES"], "right": ["CUSTOMER_WALLETS", "MERCHANT_PAYABLES", "CREDIT_BALANCES", "CLEARING_PAYABLES", "SUSPENSE_HELD"]},
+    {"code": "CUSTOMER_WALLETS_FOOT", "type": "EQUALS", "left": ["CUSTOMER_WALLETS"], "right": ["MEMO_WALLET_DEBT", "CUSTOMER_WALLETS_NET"]},
+    {"code": "MERCHANT_PAYABLES_FOOT", "type": "EQUALS", "left": ["MERCHANT_PAYABLES"], "right": ["MEMO_MERCHANT_DEBT", "MERCHANT_PAYABLES_NET"]},
+    {"code": "CREDIT_BALANCES_FOOT", "type": "EQUALS", "left": ["CREDIT_BALANCES"], "right": ["MEMO_CREDIT_BALANCE_DEBT", "CREDIT_BALANCES_NET"]},
     {"code": "LENDING_FUNDED_FOOT", "type": "EQUALS", "left": ["LENDING_FUNDED"], "right": ["PRINCIPAL_OUTSTANDING", "PRINCIPAL_COMMITTED", "PRINCIPAL_WRITTEN_OFF"]},
     {"code": "CUSTOMER_FUNDED_FOOT", "type": "EQUALS", "left": ["CUSTOMER_FUNDED", "LENDING_FUNDED"], "right": ["LIABILITIES"]},
     {"code": "POSITION_FOOT", "type": "EQUALS", "left": ["POSITION", "CUSTOMER_FUNDED"], "right": ["ASSETS"]},
@@ -1680,11 +1689,11 @@ Every return here is `REFERENCE`, through a simulated adapter (ADR-0118, C4): no
 }
 ```
 
-**Every rule is arithmetic that must hold in any month.** No rule judges the position, so **a shortfall validates, and is reported**: a rule on it would make the return impossible to validate in exactly the month it matters, and the way on would be to change the configuration. Nothing alerts on a shortfall yet: `P14-TSK-019`'s owner item. A person sees it on the form's `POSITION` line at validation and at attestation, negative and never floored, and in the run's `shortfall` flag per currency.
+**Every rule is arithmetic that must hold in any month.** No rule judges a position, so **a shortfall validates, and is reported**: a rule on it would make the return impossible to validate in exactly the month it matters, and the way on would be to change the configuration. Nothing alerts on one yet: `P14-TSK-019`'s owner item. A person sees it on the form's `POSITION` and `POSITION_BEFORE` lines at validation and at attestation, negative and never floored, and in the run's `positionNegative` and `positionBeforeLendingFundedNegative` flags per currency. **A `*_FOOT` rule failing on `CUSTOMER_WALLETS`, `MERCHANT_PAYABLES` or `CREDIT_BALANCES`** means the per-account read and the trial balance disagree on one snapshot: treat it as an integrity incident. The return stays `DRAFT`, and its way on is a withdrawal.
 
 **A currency.** Every figure is per currency and none crosses one. A currency with wallets and no lending carries true zeros from the run's own reads. A currency nothing touched has no line. A month with no line in any currency cannot be drawn: `422 accounting.RegulatoryFigureUnresolved`.
 
 **`PRINCIPAL_COMMITTED` has no journal line behind it.** An accepted loan awaiting its disbursement has posted nothing. The figure rests on lending's frozen rows, and the run's `drillDown` says so; no route under `ACCOUNTING_READ` lists those loans. `GET /v1/operator/reports/lending/capital?date={lastDay}` states the term under `LENDING_INVESTIGATE`.
 
-**Reading it.** `position` is ADR-0096's: it subtracts `lending_funded`, and so it rises with an accepted loan that has moved no money, and does not fall when a borrower withdraws what a loan created. `POSITION_BEFORE` is beside it for that reason. An FX conversion not yet covered is a true shortfall in its currency: `MEMO_FX_POSITION` says why.
+**Reading it.** **A positive `POSITION` does not prove cover.** It is ADR-0096's: it subtracts `lending_funded`, and so it rises with an accepted loan that has moved no money, and does not fall when a borrower withdraws what a loan created. Read `POSITION_BEFORE` beside it: negative there is short, whatever `POSITION` reads. `CUSTOMER_FUNDED` can read negative for the same reason, and that is a credit to nobody. **A holder in debit is no cover for anyone else:** the liabilities are their accounts in credit, gross, so wallets at +100 and -30 owe 100, and the -30 is `MEMO_WALLET_DEBT`, a receivable from that customer. `finapp.ledger.negative.positions` counts those accounts now; this is what they stood at at the cutoff. An FX conversion not yet covered is a true shortfall in its currency: `MEMO_FX_POSITION` says why.
 

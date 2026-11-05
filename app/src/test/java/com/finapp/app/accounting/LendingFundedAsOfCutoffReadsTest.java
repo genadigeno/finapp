@@ -57,10 +57,13 @@ class LendingFundedAsOfCutoffReadsTest {
     void eachStatementIsOneRead() throws SQLException {
         assertThat(schemasIn(LendingFundedAsOfCutoffReads.COMMITTED_FACTS)).containsExactly("lending");
         assertThat(schemasIn(LendingFundedAsOfCutoffReads.WRITTEN_OFF)).containsExactly("ledger");
+        assertThat(schemasIn(LendingFundedAsOfCutoffReads.HELD_PER_ACCOUNT_LINES + LendingFundedAsOfCutoffReads.HELD_PER_ACCOUNT_GROUPS)).containsExactly("ledger");
         Connection view = new ReadOnlySnapshot(new ScriptedStatements(ignored -> List.of(row())).connection(), Duration.ofSeconds(5), () -> 0L).connection();
         for (String sql : List.of(LendingFundedAsOfCutoffReads.COMMITTED_FACTS,
                 LendingFundedAsOfCutoffReads.WRITTEN_OFF + LendingFundedAsOfCutoffReads.WRITTEN_OFF_GROUPS,
-                LendingFundedAsOfCutoffReads.WRITTEN_OFF + LendingFundedAsOfCutoffReads.AT_THE_CUT + LendingFundedAsOfCutoffReads.WRITTEN_OFF_GROUPS)) {
+                LendingFundedAsOfCutoffReads.WRITTEN_OFF + LendingFundedAsOfCutoffReads.AT_THE_CUT + LendingFundedAsOfCutoffReads.WRITTEN_OFF_GROUPS,
+                LendingFundedAsOfCutoffReads.HELD_PER_ACCOUNT_LINES + LendingFundedAsOfCutoffReads.HELD_PER_ACCOUNT_GROUPS,
+                LendingFundedAsOfCutoffReads.HELD_PER_ACCOUNT_LINES + LendingFundedAsOfCutoffReads.AT_THE_CUT + LendingFundedAsOfCutoffReads.HELD_PER_ACCOUNT_GROUPS)) {
             try (var admitted = view.prepareStatement(sql)) {
                 assertThat(admitted).isNotNull();
             }
@@ -91,6 +94,44 @@ class LendingFundedAsOfCutoffReadsTest {
     }
 
     @Test
+    @DisplayName("I-1: the per-account read groups by account first, the one thing the trial balance's does not, then sums those in credit apart from those in debit; by posting date, on the four purposes, no holder named")
+    void theHeldReadGroupsByAccount() {
+        String sql = LendingFundedAsOfCutoffReads.HELD_PER_ACCOUNT_LINES + LendingFundedAsOfCutoffReads.HELD_PER_ACCOUNT_GROUPS;
+        assertThat(LendingFundedAsOfCutoffReads.HELD_PER_ACCOUNT_GROUPS).startsWith(" GROUP BY account.id, account.purpose, line.currency, line.scale) balance GROUP BY balance.purpose, balance.currency, balance.scale");
+        assertThat(sql).contains("entry.posting_date <= ?").doesNotContain("value_date");
+        assertThat(sql).contains("'BNPL_CREDIT_BALANCE', 'CUSTOMER_WALLET', 'LOAN_CREDIT_BALANCE', 'MERCHANT_PAYABLE'");
+        assertThat(sql).contains("WHEN balance.debit_less_credit < 0 THEN -balance.debit_less_credit ELSE 0 END) AS owed");
+        assertThat(sql).contains("WHEN balance.debit_less_credit > 0 THEN balance.debit_less_credit ELSE 0 END) AS debt");
+        assertThat(sql.toLowerCase(Locale.ROOT)).doesNotContain("owner_ref").doesNotContain("reference").doesNotContain("reason");
+    }
+
+    @Test
+    @DisplayName("I-1: what the per-account read answers is carried per purpose, currency and scale, past a long, the debtors counted, the cut the journal's own")
+    void theHeldReadFolds() {
+        Instant cut = MIDDAY.plusSeconds(10);
+        ScriptedStatements statements = new ScriptedStatements(sql -> List.of(
+                row("purpose", "CUSTOMER_WALLET", "currency", "EUR", "scale", 2, "owed", new BigDecimal("9223372036854775808"), "debt", new BigDecimal("30"), "debtors", 1L),
+                row("purpose", "MERCHANT_PAYABLE", "currency", "USD", "scale", 3, "owed", new BigDecimal("0"), "debt", new BigDecimal("7"), "debtors", 2L)));
+
+        List<LendingFundedAsOfCutoff.HeldPerAccount> held = reads.heldPerAccount(statements.connection(), CUTOFF, Optional.of(cut));
+
+        assertThat(held).extracting(LendingFundedAsOfCutoff.HeldPerAccount::purpose, LendingFundedAsOfCutoff.HeldPerAccount::currency, LendingFundedAsOfCutoff.HeldPerAccount::scale, LendingFundedAsOfCutoff.HeldPerAccount::owedMinor, LendingFundedAsOfCutoff.HeldPerAccount::debtMinor, LendingFundedAsOfCutoff.HeldPerAccount::debtors).containsExactly(
+                org.assertj.core.groups.Tuple.tuple("CUSTOMER_WALLET", "EUR", 2, new BigInteger("9223372036854775808"), BigInteger.valueOf(30), 1L),
+                org.assertj.core.groups.Tuple.tuple("MERCHANT_PAYABLE", "USD", 3, BigInteger.ZERO, BigInteger.valueOf(7), 2L));
+        assertThat(statements.prepared).singleElement().asString().contains(LendingFundedAsOfCutoffReads.AT_THE_CUT + LendingFundedAsOfCutoffReads.HELD_PER_ACCOUNT_GROUPS);
+        assertThat(statements.bound).containsExactly(Date.valueOf(CUTOFF), Timestamp.from(cut));
+        assertThat(held.get(0).toString()).doesNotContain("9223372036854775808");
+    }
+
+    @Test
+    @DisplayName("the crossing's one date, in the poster's own words: the disbursement posts on its value date, as stated. A text pin; against the real poster it is SafeguardingCommittedDatabaseTest#theRealPosterDatesItsLineTheValueDate, owed")
+    void thePosterDatesItsLineTheValueDate() throws Exception {
+        String source = java.nio.file.Files.readString(com.finapp.platform.testing.RepositoryPaths.locate("lending/src/main/java/com/finapp/lending/LoanDisbursements.java"));
+
+        assertThat(source).contains("POSTING_KEY_PREFIX + loan.id().value(), valueDate, valueDate, loan.id().value().toString(), lines));");
+    }
+
+    @Test
     @DisplayName("the facts are folded by the port's own rule, each column read to its own fact and every absence an absence, the cutoff bound as the statement's parameter, and char(3)'s padding gone")
     void theFactsAreFolded() {
         ScriptedStatements statements = new ScriptedStatements(sql -> List.of(
@@ -114,6 +155,7 @@ class LendingFundedAsOfCutoffReadsTest {
     void nothingIsAnEmptyAnswer() {
         assertThat(reads.committed(new ScriptedStatements(sql -> List.of()).connection(), CUTOFF, Optional.empty())).isEmpty();
         assertThat(reads.writtenOff(new ScriptedStatements(sql -> List.of()).connection(), CUTOFF, Optional.empty())).isEmpty();
+        assertThat(reads.heldPerAccount(new ScriptedStatements(sql -> List.of()).connection(), CUTOFF, Optional.empty())).isEmpty();
     }
 
     @Test
@@ -165,5 +207,7 @@ class LendingFundedAsOfCutoffReadsTest {
                 .hasMessageContaining("committed").hasMessageNotContaining("secret");
         assertThatThrownBy(() -> reads.writtenOff(broken, CUTOFF, Optional.empty())).isInstanceOf(AccountingStorageException.class)
                 .hasMessageContaining("written off").hasMessageNotContaining("secret");
+        assertThatThrownBy(() -> reads.heldPerAccount(broken, CUTOFF, Optional.empty())).isInstanceOf(AccountingStorageException.class)
+                .hasMessageContaining("per account").hasMessageNotContaining("secret");
     }
 }

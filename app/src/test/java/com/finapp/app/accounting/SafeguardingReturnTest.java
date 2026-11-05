@@ -231,6 +231,7 @@ class SafeguardingReturnTest {
 
         assertThat(request.rules()).allSatisfy(rule -> assertThat(rule.type()).as(rule.code()).isEqualTo("EQUALS"));
         assertThat(request.rules().stream().filter(rule -> rule.code().equals("POSITION_FOOT")).findFirst().orElseThrow().left()).containsExactly("POSITION", "CUSTOMER_FUNDED");
+        assertThat(request.rules()).extracting(RegulatoryObligationController.RegulatoryObligationRuleRequest::code).contains("CUSTOMER_WALLETS_FOOT", "MERCHANT_PAYABLES_FOOT", "CREDIT_BALANCES_FOOT");
     }
 
     @Test
@@ -259,7 +260,7 @@ class SafeguardingReturnTest {
         List<RegulatoryFormLine> lines = linesOf(validated);
 
         assertThat(validated.status()).isEqualTo(SubmissionStatus.VALIDATED);
-        assertThat(lines).hasSize(19 * 2);
+        assertThat(lines).hasSize(25 * 2);
         assertThat(lines).allSatisfy(held -> assertThat(held.run()).isEqualTo(run.id()));
         assertThat(line(lines, "ASSETS", "EUR")).isEqualTo(150_00);
         assertThat(line(lines, "LIABILITIES", "EUR")).isEqualTo(130_00);
@@ -271,13 +272,18 @@ class SafeguardingReturnTest {
     }
 
     @Test
-    @DisplayName("question 3: a shortfall month reaches VALIDATED, APPROVED and SUBMITTED, its position negative on the form, the rules all passed, a currency at a time")
+    @DisplayName("question 3: a shortfall month reaches VALIDATED, APPROVED and SUBMITTED, the rules all passed, a currency at a time: short on POSITION in one, short on POSITION_BEFORE and positive on POSITION in another, and the run's flags say each its own")
     void aShortfallMonthIsReportable() {
         books.deposit(DAY_ONE, "EUR", 2, 100_00);
         books.post(JANUARY.atDay(2), "EUR", 2, 130_00, SafeguardingBooks.CHARGEBACK, SafeguardingBooks.CASH);
         books.deposit(DAY_ONE, "GBP", 2, 40_00);
+        books.deposit(DAY_ONE, "USD", 2, 100_00).capital(DAY_ONE, "USD", 2, 30_00).accepted("masking", JANUARY.atDay(5), "USD", 2, 30_00);
+        books.post(JANUARY.atDay(2), "USD", 2, 50_00, SafeguardingBooks.CHARGEBACK, SafeguardingBooks.CASH);
         closed(JANUARY);
-        issued(JANUARY);
+        CanonicalJson.Obj body = bodyOf(issued(JANUARY));
+        assertThat(com.finapp.accounting.testing.ReportBodies.flag(figures(body, "USD"), "positionNegative")).isFalse();
+        assertThat(com.finapp.accounting.testing.ReportBodies.flag(figures(body, "USD"), "positionBeforeLendingFundedNegative")).isTrue();
+        assertThat(com.finapp.accounting.testing.ReportBodies.flag(figures(body, "EUR"), "positionNegative")).isTrue();
 
         RegulatorySubmissions.Acted validated = world.validated(world.drafted(obligation, JANUARY));
 
@@ -287,7 +293,63 @@ class SafeguardingReturnTest {
         assertThat(line(lines, "POSITION", "EUR")).isEqualTo(-130_00);
         assertThat(line(lines, "MEMO_CHARGEBACKS", "EUR")).as("the memo says why").isEqualTo(130_00);
         assertThat(line(lines, "POSITION", "GBP")).as("never met by another currency").isZero();
+        assertThat(line(lines, "POSITION", "USD")).as("positive").isEqualTo(10_00);
+        assertThat(line(lines, "POSITION_BEFORE", "USD")).as("and short").isEqualTo(-20_00);
         assertThat(world.submitted(world.approved(validated)).status()).isEqualTo(SubmissionStatus.SUBMITTED);
+    }
+
+    @Test
+    @DisplayName("I-1: a wallet and a payable in debit: gross on the form, the debt a memo line out of the position, the footings passing, the month reading short")
+    void debtIsGrossOnTheFormAndOutOfThePosition() {
+        books.depositFor("A", DAY_ONE, "EUR", 2, 100_00).withdrawFor("B", JANUARY.atDay(2), "EUR", 2, 30_00);
+        books.postFor("M1", DAY_ONE, "EUR", 2, 50_00, SafeguardingBooks.CASH, SafeguardingBooks.MERCHANT).postFor("M2", JANUARY.atDay(2), "EUR", 2, 20_00, SafeguardingBooks.MERCHANT, SafeguardingBooks.CASH);
+        closed(JANUARY);
+        issued(JANUARY);
+
+        RegulatorySubmissions.Acted validated = world.validated(world.drafted(obligation, JANUARY));
+        List<RegulatoryFormLine> lines = linesOf(validated);
+
+        assertThat(validated.status()).isEqualTo(SubmissionStatus.VALIDATED);
+        assertThat(line(lines, "CUSTOMER_WALLETS", "EUR")).isEqualTo(100_00);
+        assertThat(line(lines, "MEMO_WALLET_DEBT", "EUR")).isEqualTo(30_00);
+        assertThat(line(lines, "CUSTOMER_WALLETS_NET", "EUR")).isEqualTo(70_00);
+        assertThat(line(lines, "MERCHANT_PAYABLES", "EUR")).isEqualTo(50_00);
+        assertThat(line(lines, "MEMO_MERCHANT_DEBT", "EUR")).isEqualTo(20_00);
+        assertThat(line(lines, "MERCHANT_PAYABLES_NET", "EUR")).isEqualTo(30_00);
+        assertThat(line(lines, "ASSETS", "EUR")).isEqualTo(100_00);
+        assertThat(line(lines, "LIABILITIES", "EUR")).isEqualTo(150_00);
+        assertThat(line(lines, "POSITION_BEFORE", "EUR")).isEqualTo(-50_00);
+    }
+
+    @Test
+    @DisplayName("I-1: the per-account read and the trial balance drifting apart on one snapshot fail each of the three footings and no other rule: the return stays DRAFT")
+    void aDriftBetweenTheTwoReadsFailsValidation() {
+        anOrdinaryMonth();
+        books.postFor("M", DAY_ONE, "EUR", 2, 5_00, SafeguardingBooks.CASH, SafeguardingBooks.MERCHANT).postFor("L", DAY_ONE, "EUR", 2, 3_00, SafeguardingBooks.CASH, SafeguardingBooks.CREDIT_BALANCE);
+        books.plantedDrift = 1;
+        closed(JANUARY);
+        issued(JANUARY);
+
+        RegulatorySubmissions.Acted validated = world.validated(world.drafted(obligation, JANUARY));
+
+        assertThat(validated.status()).isEqualTo(SubmissionStatus.DRAFT);
+        assertThat(validated.validationPassed()).contains(false);
+        assertThat(world.submissions.view(UOW, validated.id()).validation().orElseThrow().findings()).filteredOn(finding -> !finding.passed())
+                .extracting(com.finapp.accounting.RegulatoryValidation.Finding::rule).containsOnly("CUSTOMER_WALLETS_FOOT", "MERCHANT_PAYABLES_FOOT", "CREDIT_BALANCES_FOOT");
+    }
+
+    @Test
+    @DisplayName("I-2: the words an approver attests and the run's say a positive POSITION proves no cover, and no line or flag says shortfall of it")
+    void thePositionsWordsSayItProvesNoCover() throws Exception {
+        anOrdinaryMonth();
+        closed(JANUARY);
+        CanonicalJson.Obj body = bodyOf(issued(JANUARY));
+
+        RegulatoryFormLine position = linesOf(world.drafted(obligation, JANUARY)).stream().filter(held -> held.code().equals("POSITION")).findFirst().orElseThrow();
+
+        assertThat(position.label()).contains("Positive does not prove cover").contains("rises with an accepted loan").contains("POSITION_BEFORE");
+        assertThat(text(object(body, "drillDown"), "position")).contains("A positive figure proves no cover");
+        assertThat(CanonicalJson.text(body)).doesNotContain("\"shortfall\"");
     }
 
     @Test
@@ -463,7 +525,7 @@ class SafeguardingReturnTest {
         RegulatorySubmissions.Acted drafted = world.drafted(obligation, JANUARY);
         RegulatorySubmissions.View view = world.submissions.view(UOW, drafted.id());
 
-        assertThat(view.lines()).hasSize(19 * 2).allSatisfy(held -> {
+        assertThat(view.lines()).hasSize(25 * 2).allSatisfy(held -> {
             RegulatoryFormLine line = held.line();
             assertThat(line.run()).isEqualTo(run.id());
             assertThat(line.runSha256()).isEqualTo(run.contentSha256().orElseThrow());

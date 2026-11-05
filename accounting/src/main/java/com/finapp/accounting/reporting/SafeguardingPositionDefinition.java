@@ -23,20 +23,23 @@ import lombok.RequiredArgsConstructor;
  *
  * <pre>
  * assets                    = cash at bank + clearing receivables
- * liabilities               = customer wallets + merchant payables + credit balances + clearing payables + suspense held
+ * liabilities               = customer wallets + merchant payables + credit balances (each gross) + clearing payables + suspense held
  * lendingFunded             = principal outstanding + committed + written off
  * customerFundedLiabilities = liabilities - lendingFunded
  * position                  = assets - customerFundedLiabilities
  * </pre>
  *
- * <p><strong>FINAL, because every read is frozen.</strong> The journal's reads are the trial balance's own statements, by posting date, and the ledger refuses a line dated in a locked period; {@code committed} and {@code writtenOff} come through {@link LendingFundedAsOfCutoff}, never lending's live proof. A later disbursement, cancellation, acceptance or write-off changes no byte of a month already locked. A reopen
+ * <p><strong>FINAL, because every read is frozen.</strong> The journal's reads are the trial balance's own statements, by posting date, and the ledger refuses a line dated in a locked period; {@code committed} and {@code writtenOff} come through {@link LendingFundedAsOfCutoff}, never lending's live proof. A loan's own dates carry no such refusal: {@link com.finapp.accounting.LockGrace}'s minimum is what keeps a western zone's from dating inside a locked month. A later disbursement, cancellation, acceptance or write-off changes no byte of a month already locked. A reopen
  * supersedes the run; its new revision holds every journal line dated in the month, and {@code committed} does not move, because no fact behind it did.
  *
  * <p><strong>Mapped by ledger purpose, under this version</strong> ({@link #DISPOSITIONS}), never through a GL mapping's sections: a new mapping version can move no figure here. The version a run pins decides only each row's {@code glAccount}, the drill-down key. {@code SafeguardingPurposeCensusTest} holds the table total over the ledger's enum, so a purpose a later phase adds fails until someone disposes of it.
  *
  * <p><strong>Nothing nets between counterparties</strong> ({@code INV-RAIL-04}): each counterparty of a {@code COUNTERPARTY}-owned purpose is a row of its own, its debit balance a clearing receivable and its credit balance a clearing payable, never set against another's. The position is the same either way; the two lines are gross. An operational clearing account is one account per currency: a figure against its normal side reads negative and is never moved.
  *
- * <p><strong>A shortfall is a figure, never a refusal.</strong> A position reads negative, unfloored; {@code shortfall} says so beside it. A form's rule on it would make the return impossible to validate in exactly the month it matters.
+ * <p><strong>A holder in debit is no cover for anyone else</strong> (ADR-0061 section 5). The trial balance's reads sum a purpose across its accounts, so wallets A at +100 and B at -30 read 70, and against cash of 70 a position of 0. The platform owes A 100. So the four purposes with many holders are read per account too ({@link LendingFundedAsOfCutoff#heldPerAccount}): each liability is its accounts in credit, gross; its accounts in debit stand beside the position as debt, out of it, as chargebacks do; and each writes the
+ * trial balance's net beside them, so a form's footing holds the two reads to each other. Every other purpose in the position has one account per currency, or one per counterparty and currency, so it nets no holder against another: {@link #DISPOSITIONS} says which is which.
+ *
+ * <p><strong>A figure, never a refusal, and named for what it says.</strong> A position can read negative, unfloored, and a form's rule on it would make the return impossible to validate in exactly the month it matters. {@code positionNegative} and {@code positionBeforeLendingFundedNegative} each say so of their own figure, and there is no flag called shortfall: {@code position} rises with an accepted loan and does not fall when loan money leaves, so a positive figure proves no cover (ADR-0118's As built).
  *
  * <p><strong>A zero is a read that succeeded.</strong> Each element of {@code currencies} holds every term: a currency with wallets and no lending carries zero terms from this run's own reads, and a read that fails throws, so no FINAL exists and the draft is refused. A currency nothing touched has no element: no scale exists without an amount, and no JDK table decides one ({@code ReportingNeverWritesTest}).
  *
@@ -94,18 +97,18 @@ public final class SafeguardingPositionDefinition implements ReportDefinition {
 
     /** Every ledger purpose, in or out, with why. What a change here produces is a new {@link #VERSION}. */
     public static final List<Disposition> DISPOSITIONS = List.of(
-            new Disposition("CASH_AT_BANK/OPERATIONAL", Treatment.CASH, "the platform's cash, which only the bank's statement posts"),
-            new Disposition("SETTLEMENT_CLEARING/OPERATIONAL", Treatment.CLEARING_RECEIVABLE, "what the card rail owes, in flight to cash"),
-            new Disposition("INSTANT_CLEARING/OPERATIONAL", Treatment.CLEARING_RECEIVABLE, "what the instant scheme owes, in flight to cash"),
-            new Disposition("FX_PROVIDER_CLEARING/COUNTERPARTY", Treatment.COUNTERPARTY_CLEARING, "what an FX provider owes, or is owed: each counterparty on its own side"),
-            new Disposition("CORRIDOR_CLEARING/COUNTERPARTY", Treatment.COUNTERPARTY_CLEARING, "what a corridor provider is owed, or owes: the wallet was debited and the cash has not left"),
-            new Disposition("CUSTOMER_WALLET/CUSTOMER", Treatment.CUSTOMER_WALLET, "a customer's stored value"),
-            new Disposition("MERCHANT_PAYABLE/MERCHANT", Treatment.MERCHANT_PAYABLE, "what the platform owes a merchant, a BNPL purchase's financing among it"),
-            new Disposition("LOAN_CREDIT_BALANCE/LOAN", Treatment.CREDIT_BALANCE, "money received beyond every receivable, owed back to a borrower"),
-            new Disposition("BNPL_CREDIT_BALANCE/BNPL_OBLIGATION", Treatment.CREDIT_BALANCE, "money received beyond every receivable, owed back to a BNPL customer"),
-            new Disposition("PAYOUT_CLEARING/OPERATIONAL", Treatment.CLEARING_PAYABLE, "a payout instructed: the payable was debited and the cash has not left, so out the position would swing by every payout in flight"),
-            new Disposition("SUSPENSE_UNMATCHED/SUSPENSE", Treatment.SUSPENSE, "money received and not attributed may be a customer's, so a net credit is held as owed; a net debit is unexplained money gone, never a negative liability hiding a shortfall"),
-            new Disposition("LOAN_PRINCIPAL/LOAN", Treatment.PRINCIPAL, "lending_funded's outstanding term; not an asset here, because a loan is not cash"),
+            new Disposition("CASH_AT_BANK/OPERATIONAL", Treatment.CASH, "the platform's cash, which only the bank's statement posts; one account per currency, so no holder nets against another"),
+            new Disposition("SETTLEMENT_CLEARING/OPERATIONAL", Treatment.CLEARING_RECEIVABLE, "what the card rail owes, in flight to cash; one account per currency, so no holder nets against another, and a credit balance reads negative"),
+            new Disposition("INSTANT_CLEARING/OPERATIONAL", Treatment.CLEARING_RECEIVABLE, "what the instant scheme owes, in flight to cash; one account per currency, so no holder nets against another, and a credit balance reads negative"),
+            new Disposition("FX_PROVIDER_CLEARING/COUNTERPARTY", Treatment.COUNTERPARTY_CLEARING, "what an FX provider owes, or is owed: one account per counterparty and currency, each on its own side"),
+            new Disposition("CORRIDOR_CLEARING/COUNTERPARTY", Treatment.COUNTERPARTY_CLEARING, "what a corridor provider is owed, or owes: one account per counterparty and currency, each on its own side; the wallet was debited and the cash has not left"),
+            new Disposition("CUSTOMER_WALLET/CUSTOMER", Treatment.CUSTOMER_WALLET, "a customer's stored value, read per account: a wallet in credit is owed gross, and a wallet in debit is a receivable from that customer, out of the position and no cover for another's money"),
+            new Disposition("MERCHANT_PAYABLE/MERCHANT", Treatment.MERCHANT_PAYABLE, "what the platform owes a merchant, a BNPL purchase's financing among it, read per account: a payable in credit is owed gross, and merchant debt is out of the position and no cover for another's money"),
+            new Disposition("LOAN_CREDIT_BALANCE/LOAN", Treatment.CREDIT_BALANCE, "money received beyond every receivable, owed back to a borrower, read per account as a wallet is: an account in debit is out of the position"),
+            new Disposition("BNPL_CREDIT_BALANCE/BNPL_OBLIGATION", Treatment.CREDIT_BALANCE, "money received beyond every receivable, owed back to a BNPL customer, read per account as a wallet is: an account in debit is out of the position"),
+            new Disposition("PAYOUT_CLEARING/OPERATIONAL", Treatment.CLEARING_PAYABLE, "a payout instructed: the payable was debited and the cash has not left, so out the position would swing by every payout in flight; one account per currency, so no holder nets against another"),
+            new Disposition("SUSPENSE_UNMATCHED/SUSPENSE", Treatment.SUSPENSE, "money received and not attributed may be a customer's, so a net credit is held as owed; a net debit is unexplained money gone, never a negative liability hiding a shortfall; one account per currency, its items gross in SUSPENSE"),
+            new Disposition("LOAN_PRINCIPAL/LOAN", Treatment.PRINCIPAL, "lending_funded's outstanding term; not an asset here, because a loan is not cash; summed by purpose as the headroom sums it, so a credit on one loan could only lower the adjustment"),
             new Disposition("LOAN_PRINCIPAL_DUE/LOAN", Treatment.PRINCIPAL, "lending_funded's outstanding term: billed principal, still capital's"),
             new Disposition("BNPL_PRINCIPAL/BNPL_OBLIGATION", Treatment.PRINCIPAL, "lending_funded's outstanding term: a BNPL purchase created a payable with no cash entering"),
             new Disposition("BNPL_PRINCIPAL_DUE/BNPL_OBLIGATION", Treatment.PRINCIPAL, "lending_funded's outstanding term: billed principal, still capital's"),
@@ -143,11 +146,11 @@ public final class SafeguardingPositionDefinition implements ReportDefinition {
     private static final ReportStatement STATEMENT = new ReportStatement(
             "The ledger's journal lines by posting date, each read with its ledger account's purpose and owner kind, a counterparty's account also with the counterparty's code; lending's frozen facts of an instalment loan's opening, agreement principal and disbursement outcome; the pinned GL mapping version for the drill-down key."
                     + " Never a loan's status, lending's live capital proof, a projection, a cache or a gauge.",
-            "Per currency: assets are cash at bank and clearing receivables; liabilities are customer wallets, merchant payables, credit balances, clearing payables and suspense at its net credit; lendingFunded is principal outstanding plus committed plus written off; position is assets less liabilities plus lendingFunded, and positionBeforeLendingFunded assets less liabilities."
-                    + " Each purpose's place is in mapping, under this version, never a GL mapping's. A reference figure: no legal obligation is asserted, and nothing here states that one is met.",
-            "A journal line counts by its posting date through the period's last day. A loan counts as committed by its own servicing zone's business date: opened on or before the last day, and neither its disbursement's value date, which is its journal line's posting date, nor its cancellation's date on or before it, so it crosses to outstanding on one date. A FINAL run is as of its"
-                    + " period's lock. A PROVISIONAL one is as of its cut, entries created and loan facts recorded at or before its claim.",
-            "Per currency, one scale: the largest its own amounts carry, an exact rescale, no JDK currency table. Never summed across currencies, and no counterparty's credit balance set against another's debit balance. Minor units in strings beside currency and scale; a row debit-positive, a currency's figure positive on its own side, a position negative when short and never floored. Not translated: no run takes a valuation rate set.",
+            "Per currency: assets are cash at bank and clearing receivables; liabilities are customer wallets, merchant payables and credit balances, each its accounts in credit, gross, with clearing payables and suspense at its net credit; an account in debit is debt, beside the position and out of it; lendingFunded is principal outstanding plus committed plus written off; position is assets less liabilities plus lendingFunded, and positionBeforeLendingFunded assets less liabilities."
+                    + " A positive position proves no cover: it rises with an accepted loan and does not fall when loan money leaves, so it is read beside positionBeforeLendingFunded. Each purpose's place is in mapping, under this version, never a GL mapping's. A reference figure: no legal obligation is asserted, and nothing here states that one is met.",
+            "A journal line counts by its posting date through the period's last day. A loan counts as committed by its own servicing zone's business date: opened on or before the last day, and neither its disbursement's value date, which is its journal line's posting date, nor its cancellation's date on or before it, so in a FINAL run it crosses to outstanding on one date. A FINAL run is as of its"
+                    + " period's lock. A PROVISIONAL one is as of its cut, entries created and loan facts recorded at or before its claim, and a disbursement straddling the cut can read in both terms or neither.",
+            "Per currency, one scale: the largest its own amounts carry, an exact rescale, no JDK currency table. Never summed across currencies, and no counterparty's credit balance set against another's debit balance. Minor units in strings beside currency and scale; a row debit-positive, a currency's figure positive on its own side, a position or customerFundedLiabilities able to read negative and never floored. Not translated: no run takes a valuation rate set.",
             "FINAL for a period no longer OPEN: byte-identical on regeneration while its lock stands, superseded by an unlock or a reopen. PROVISIONAL for an OPEN period: labelled, reused within its freshness window, never issued.");
 
     private static final String LINES_ROUTE = "GET /v1/operator/accounting/report-runs/{runId}/lines?account={glAccount}&currency={currency}&month={month} (ACCOUNTING_READ, audited), under this run's version, walking back a month at a time until the row's openingLines are counted";
@@ -180,26 +183,29 @@ public final class SafeguardingPositionDefinition implements ReportDefinition {
         List<JournalReads.Aggregate> opening = PurposeRows.perCounterparty(reads.before(snapshot, inputs.start(), read.cut()), positions.before(snapshot, inputs.start(), read.cut()));
         List<JournalReads.Aggregate> movement = PurposeRows.perCounterparty(reads.within(snapshot, read.range(), read.cut()), positions.within(snapshot, read.range(), read.cut()));
         List<PurposeRows.Row> rows = PurposeRows.fold(opening, movement, READ_KEYS);
-        // A failure of either read throws here, and no body is written: never a zero for what could not be read.
+        // A failure of any read throws here, and no body is written: never a zero for what could not be read.
         List<LendingFundedAsOfCutoff.Committed> committed = lending.committed(snapshot, cutoff, read.cut());
         List<LendingFundedAsOfCutoff.WrittenOff> writtenOff = lending.writtenOff(snapshot, cutoff, read.cut());
+        List<LendingFundedAsOfCutoff.HeldPerAccount> held = lending.heldPerAccount(snapshot, cutoff, read.cut());
 
         Map<String, Integer> scales = new TreeMap<>(PurposeRows.scales(rows));
-        committed.forEach(held -> scales.merge(held.currency(), held.scale(), Math::max));
-        writtenOff.forEach(held -> scales.merge(held.currency(), held.scale(), Math::max));
+        committed.forEach(loan -> scales.merge(loan.currency(), loan.scale(), Math::max));
+        writtenOff.forEach(off -> scales.merge(off.currency(), off.scale(), Math::max));
+        held.forEach(account -> scales.merge(account.currency(), account.scale(), Math::max));
 
         Map<String, Figures> figures = new TreeMap<>();
         scales.forEach((currency, scale) -> figures.put(currency, new Figures(currency, scale)));
         rows.forEach(row -> figures.get(row.currency()).add(row));
-        committed.forEach(held -> figures.get(held.currency()).committed(held));
-        writtenOff.forEach(held -> figures.get(held.currency()).writtenOff(held));
+        committed.forEach(loan -> figures.get(loan.currency()).committed(loan));
+        writtenOff.forEach(off -> figures.get(off.currency()).writtenOff(off));
+        held.forEach(account -> figures.get(account.currency()).held(account));
 
         CanonicalJson.Arr currencies = CanonicalJson.array();
         figures.values().forEach(figure -> currencies.add(figure.asValue()));
         CanonicalJson.Arr written = CanonicalJson.array();
         rows.forEach(row -> written.add(rowOf(row, scales.get(row.currency()), read)));
         CanonicalJson.Arr mapping = CanonicalJson.array();
-        DISPOSITIONS.forEach(held -> mapping.add(CanonicalJson.object().put("key", held.key()).put("treatment", held.treatment().name()).put("reason", held.reason())));
+        DISPOSITIONS.forEach(disposition -> mapping.add(CanonicalJson.object().put("key", disposition.key()).put("treatment", disposition.treatment().name()).put("reason", disposition.reason())));
         return read.ranges(CanonicalJson.object()
                 .put("statement", STATEMENT.asValue())
                 .put("standing", "REFERENCE")
@@ -232,9 +238,15 @@ public final class SafeguardingPositionDefinition implements ReportDefinition {
                 .put("cashAtBank", rowsOf(Treatment.CASH))
                 .put("clearingReceivables", rowsOf(Treatment.CLEARING_RECEIVABLE) + " And the rows of treatment " + Treatment.COUNTERPARTY_CLEARING + " standing in debit, each counterparty on its own.")
                 .put("assets", FOOTS)
-                .put("customerWallets", rowsOf(Treatment.CUSTOMER_WALLET))
-                .put("merchantPayables", rowsOf(Treatment.MERCHANT_PAYABLE))
-                .put("creditBalances", rowsOf(Treatment.CREDIT_BALANCE))
+                .put("customerWallets", gross("wallets", "customerWalletsNet", "customerWalletDebt"))
+                .put("customerWalletsNet", rowsOf(Treatment.CUSTOMER_WALLET) + " The trial balance's sum across accounts, debt netted: not the position's figure.")
+                .put("customerWalletDebt", debt("wallets", "a receivable from that customer"))
+                .put("merchantPayables", gross("payables", "merchantPayablesNet", "merchantDebt"))
+                .put("merchantPayablesNet", rowsOf(Treatment.MERCHANT_PAYABLE) + " The trial balance's sum across accounts, debt netted: not the position's figure.")
+                .put("merchantDebt", debt("payables", "what that merchant owes the platform"))
+                .put("creditBalances", gross("credit balances", "creditBalancesNet", "creditBalanceDebt"))
+                .put("creditBalancesNet", rowsOf(Treatment.CREDIT_BALANCE) + " The trial balance's sum across accounts, debt netted: not the position's figure.")
+                .put("creditBalanceDebt", debt("credit balances", "what that holder owes the platform"))
                 .put("clearingPayables", rowsOf(Treatment.CLEARING_PAYABLE) + " And the rows of treatment " + Treatment.COUNTERPARTY_CLEARING + " standing in credit, each counterparty on its own.")
                 .put("suspenseHeld", rowsOf(Treatment.SUSPENSE) + " Held at its net credit: SUSPENSE's own report shows the register's items gross, per side.")
                 .put("liabilities", FOOTS)
@@ -243,13 +255,21 @@ public final class SafeguardingPositionDefinition implements ReportDefinition {
                         + " Lending's GET /v1/operator/reports/lending/capital?date={lastDay} states this term for the same date under LENDING_INVESTIGATE, which ACCOUNTING_READ does not carry.")
                 .put("principalWrittenOff", "The rows of treatment " + Treatment.WRITE_OFF_ROUTE + " name the expense accounts: their lines by " + LINES_ROUTE + "; each line's entry by " + ENTRY_ROUTE + ". This figure is the credits less the debits, on the outstanding term's purposes, of those entries. The expense itself is larger: it also holds interest and fees, which capital never funded.")
                 .put("lendingFunded", FOOTS)
-                .put("customerFundedLiabilities", "liabilities less lendingFunded; each is drilled by its own member here.")
-                .put("position", "assets less customerFundedLiabilities; each is drilled by its own member here. Negative is a shortfall, reported and never floored.")
-                .put("positionBeforeLendingFunded", "assets less liabilities; each is drilled by its own member here. Nothing is subtracted, so a reader can see what the adjustment did.")
+                .put("customerFundedLiabilities", "liabilities less lendingFunded; each is drilled by its own member here. It can read negative: lendingFunded does not fall when loan money leaves wallets, so it can exceed what is still owed, and a negative figure here is a credit to nobody.")
+                .put("position", "assets less customerFundedLiabilities; each is drilled by its own member here. Negative says short by this figure, reported and never floored. A positive figure proves no cover: it rises with an accepted loan and does not fall when loan money leaves. Read it beside positionBeforeLendingFunded.")
+                .put("positionBeforeLendingFunded", "assets less liabilities; each is drilled by its own member here. Nothing is subtracted, every liability a claim on cash whoever funded it, so a negative figure here is short whatever position reads.")
                 .put("chargebackRecoverable", rowsOf(Treatment.MEMO) + " Out of the position.")
                 .put("fxPosition", rowsOf(Treatment.MEMO) + " Out of the position.")
                 .put("suspenseNetDebit", rowsOf(Treatment.SUSPENSE) + " Out of the position: unexplained money gone, never a negative liability.")
                 .put("glAccountNull", "A row whose glAccount is null: the run's version has no rule for its purpose, or the run has no version. The routes above are keyed by an account, so such a row has none from here; a month with one does not close (GL_EQUALS_LEDGER).");
+    }
+
+    private static String gross(String of, String net, String debt) {
+        return "The " + of + " standing in credit, each account its own, summed gross by the per-account read of the journal by posting date. Less " + debt + ", it foots to " + net + ". Their lines by " + LINES_ROUTE + ", which name each owner by reference.";
+    }
+
+    private static String debt(String of, String what) {
+        return "The " + of + " standing in debit, each account its own, summed: " + what + ", out of the position and no cover for anyone else's money. Their lines by " + LINES_ROUTE + "; no route lists these accounts as a set, and the count is beside this figure.";
     }
 
     private static String rowsOf(Treatment treatment) {
@@ -262,9 +282,18 @@ public final class SafeguardingPositionDefinition implements ReportDefinition {
         private final int scale;
         private BigDecimal cash = BigDecimal.ZERO;
         private BigDecimal clearingReceivables = BigDecimal.ZERO;
+        private BigDecimal walletsNet = BigDecimal.ZERO;
+        private BigDecimal merchantsNet = BigDecimal.ZERO;
+        private BigDecimal creditBalancesNet = BigDecimal.ZERO;
         private BigDecimal wallets = BigDecimal.ZERO;
+        private BigDecimal walletDebt = BigDecimal.ZERO;
+        private long walletDebtors;
         private BigDecimal merchants = BigDecimal.ZERO;
+        private BigDecimal merchantDebt = BigDecimal.ZERO;
+        private long merchantDebtors;
         private BigDecimal creditBalances = BigDecimal.ZERO;
+        private BigDecimal creditBalanceDebt = BigDecimal.ZERO;
+        private long creditBalanceDebtors;
         private BigDecimal clearingPayables = BigDecimal.ZERO;
         private BigDecimal suspense = BigDecimal.ZERO;
         private BigDecimal outstanding = BigDecimal.ZERO;
@@ -291,9 +320,9 @@ public final class SafeguardingPositionDefinition implements ReportDefinition {
                         clearingPayables = clearingPayables.add(closing.negate());
                     }
                 }
-                case CUSTOMER_WALLET -> wallets = wallets.add(closing.negate());
-                case MERCHANT_PAYABLE -> merchants = merchants.add(closing.negate());
-                case CREDIT_BALANCE -> creditBalances = creditBalances.add(closing.negate());
+                case CUSTOMER_WALLET -> walletsNet = walletsNet.add(closing.negate());
+                case MERCHANT_PAYABLE -> merchantsNet = merchantsNet.add(closing.negate());
+                case CREDIT_BALANCE -> creditBalancesNet = creditBalancesNet.add(closing.negate());
                 case CLEARING_PAYABLE -> clearingPayables = clearingPayables.add(closing.negate());
                 case SUSPENSE -> suspense = suspense.add(closing.negate());
                 case PRINCIPAL -> outstanding = outstanding.add(closing);
@@ -313,8 +342,29 @@ public final class SafeguardingPositionDefinition implements ReportDefinition {
             committedLoans += held.loans();
         }
 
-        void writtenOff(LendingFundedAsOfCutoff.WrittenOff held) {
-            writtenOff = writtenOff.add(held.amount());
+        void writtenOff(LendingFundedAsOfCutoff.WrittenOff off) {
+            writtenOff = writtenOff.add(off.amount());
+        }
+
+        void held(LendingFundedAsOfCutoff.HeldPerAccount account) {
+            switch (account.purpose()) {
+                case "CUSTOMER_WALLET" -> {
+                    wallets = wallets.add(account.owed());
+                    walletDebt = walletDebt.add(account.debt());
+                    walletDebtors += account.debtors();
+                }
+                case "MERCHANT_PAYABLE" -> {
+                    merchants = merchants.add(account.owed());
+                    merchantDebt = merchantDebt.add(account.debt());
+                    merchantDebtors += account.debtors();
+                }
+                case "LOAN_CREDIT_BALANCE", "BNPL_CREDIT_BALANCE" -> {
+                    creditBalances = creditBalances.add(account.owed());
+                    creditBalanceDebt = creditBalanceDebt.add(account.debt());
+                    creditBalanceDebtors += account.debtors();
+                }
+                default -> throw new IllegalStateException("a purpose read per account has its place in the return: " + account.purpose());
+            }
         }
 
         CanonicalJson.Obj asValue() {
@@ -324,6 +374,7 @@ public final class SafeguardingPositionDefinition implements ReportDefinition {
             BigDecimal lendingFunded = LendingFundedAsOfCutoff.lendingFunded(outstanding, committed, writtenOff);
             BigDecimal customerFunded = liabilities.subtract(lendingFunded);
             BigDecimal position = assets.subtract(customerFunded);
+            BigDecimal positionBefore = assets.subtract(liabilities);
             return CanonicalJson.object()
                     .put("currency", currency)
                     .put("scale", scale)
@@ -331,8 +382,17 @@ public final class SafeguardingPositionDefinition implements ReportDefinition {
                     .put("clearingReceivables", amount(clearingReceivables))
                     .put("assets", amount(assets))
                     .put("customerWallets", amount(wallets))
+                    .put("customerWalletsNet", amount(walletsNet))
+                    .put("customerWalletDebt", amount(walletDebt))
+                    .put("customerWalletDebtAccounts", walletDebtors)
                     .put("merchantPayables", amount(merchants))
+                    .put("merchantPayablesNet", amount(merchantsNet))
+                    .put("merchantDebt", amount(merchantDebt))
+                    .put("merchantDebtAccounts", merchantDebtors)
                     .put("creditBalances", amount(creditBalances))
+                    .put("creditBalancesNet", amount(creditBalancesNet))
+                    .put("creditBalanceDebt", amount(creditBalanceDebt))
+                    .put("creditBalanceDebtAccounts", creditBalanceDebtors)
                     .put("clearingPayables", amount(clearingPayables))
                     .put("suspenseHeld", amount(suspenseHeld))
                     .put("liabilities", amount(liabilities))
@@ -343,8 +403,9 @@ public final class SafeguardingPositionDefinition implements ReportDefinition {
                     .put("lendingFunded", amount(lendingFunded))
                     .put("customerFundedLiabilities", amount(customerFunded))
                     .put("position", amount(position))
-                    .put("positionBeforeLendingFunded", amount(assets.subtract(liabilities)))
-                    .put("shortfall", position.signum() < 0)
+                    .put("positionNegative", position.signum() < 0)
+                    .put("positionBeforeLendingFunded", amount(positionBefore))
+                    .put("positionBeforeLendingFundedNegative", positionBefore.signum() < 0)
                     .put("chargebackRecoverable", amount(chargebacks))
                     .put("fxPosition", amount(fxPosition))
                     .put("suspenseNetDebit", amount(suspense.negate().max(BigDecimal.ZERO)));
