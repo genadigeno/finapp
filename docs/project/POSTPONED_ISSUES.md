@@ -254,5 +254,6 @@ commit and the date; do not delete the entry.
   obligation. `OPERATIONS_RUNBOOK.md` section 10.7's close calendar names the run (`P14-TSK-023`).
 - **Fix:** issue the run with the close, and a gauge `finapp.accounting.safeguarding.shortfall`, the currencies whose
   `positionBeforePrincipalUnrepaid` is negative in the latest FINAL at the month's present revision, with an alert. Keyed on that figure and
-  never on `position`, which can read over in a short month, with no amount in any tag.
+  never on `position`, which can read over in a short month, with no amount in any tag. Its alert reads `MEMO_CHARGEBACKS`, `MEMO_WALLET_DEBT` and
+  `MEMO_FX_POSITION` beside the figure, since once capital is fully lent an ordinary chargeback in flight or a holder's debt reads short (`P14-TSK-023`'s (b), accepted 2026-11-06).
 - **Owner of the fix:** whoever brings the first real regime; the post-phase clean-up at the latest.

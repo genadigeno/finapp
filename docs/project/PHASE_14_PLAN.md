@@ -800,7 +800,7 @@ adds deliberately (`check`, `definition`); no tag carries an id, an amount or a 
 | **M14.7 Regulatory reporting** | the framework and simulated adapter; the safeguarding return (C13) | `-018`, `-019` |
 | **M14.8 Operations** | meters, alerts, runbook §10 | `-020` |
 | **M14.9 Write-off (optional, C6)** | write-off under four eyes with the headroom fix | `-021` *(closed at 1 of 1, 2026-11-04)* |
-| **M14.10 Exit** | the owner's rulings on prior-period adjustments built, and two more of 2026-11-05; the battery, the review (the storm postponed) | `-022`, `-023`, `P14-TST-002`, `P14-TST-001` (`POSTPONED`), `P14-DOC-001` |
+| **M14.10 Exit** | the owner's rulings on prior-period adjustments built, two more of 2026-11-05, and those of 2026-11-06; the battery, the review (the storm postponed) | `-022`, `-023`, `-024`, `-025`, `-026`, `P14-TST-002`, `P14-TST-001` (`POSTPONED`), `P14-DOC-001` |
 
 **Cut order:** `-021`, then `-019`, then `-017`'s portfolio/exposure re-statements. **Never cut:** the cutoff (`-004`),
 four-eyes close (`-012`), report reproducibility (`-008`), conformance (`-010`), the battery.
@@ -832,13 +832,16 @@ four-eyes close (`-012`), report reproducibility (`-008`), conformance (`-010`),
 | `P14-TSK-021` | Loan and BNPL write-off under four eyes (C6, cut candidate) | M14.9 | `-002`, `-007` | lending, bnpl (then numbered) | `DOD-FIN`, `DOD-SEC` |
 | `P14-TSK-022` | The owner's rulings on prior-period adjustments (added 2026-11-04), and two more of that day | M14.10 | `-013`, `-016`, `-021` | none expected | `DOD-FIN`, `DOD-SEC`, `DOD-API` |
 | `P14-TSK-023` | A reopen's receipts list the returns it overtakes; a merchant's `MANUAL` line read by origin; `committed` out of the safeguarding subtraction (added 2026-11-05) | M14.10 | `-018`, `-019`, `-022` | none expected | `DOD-FIN`, `DOD-API` |
+| `P14-TSK-024` | The close's withdrawals and the approver's read (added 2026-11-06) | M14.10 | `-012`, `-023` | accounting `V011` if needed | `DOD-FIN`, `DOD-SEC`, `DOD-API` |
+| `P14-TSK-025` | What a month requires of a source (added 2026-11-06) | M14.10 | `-012` | settlement `V018` | `DOD-FIN` |
+| `P14-TSK-026` | The two states no door leaves: a projection rebuild and a reference gap (added 2026-11-06) | M14.10 | `-012`, `-014` | ledger `V031`, accounting `V012` if needed; ADR-0119 | `DOD-FIN`, `DOD-SEC`, `DOD-API` |
 | `P14-TST-002` | The accounting battery | M14.10 | `-009`, `-015`, `-016` | none | `DOD-TEST` |
 | `P14-TST-001` | The accounting storm — `POSTPONED` (PI-004) | M14.10 | all | none | `DOD-TEST` |
 | `P14-DOC-001` | The Phase 14 exit review | M14.10 | all but `TST-001` | none | `DOD-DOC` |
 
 Migration numbers here are the planned landing order (waves: **A** `-001`; **B** `-002`, `-003`, `-004`; **C** `-005`,
 `-006`; **D** `-007`, `-008`, `-014`; **E** `-009`, `-010`; **F** `-011`, `-015`; **G** `-012`, `-017`; **H** `-013`,
-`-021`; **I** `-016`; **J** `-018`; **K** `-019`, `-020`; **L** `P14-TST-002`, then `P14-DOC-001`); each wave's board
+`-021`; **I** `-016`; **J** `-018`; **K** `-019`, `-020`; **L** `P14-TST-002`, `-024`, `-025` and `-026` in parallel (added 2026-11-06), then `P14-DOC-001`); each wave's board
 re-verifies them and renumbers rather than land a lower number after a higher. Critical path: `-001` → `-003` → `-005` →
 `-007` → `-009` → `-011` → `-012` → `-013` → `-016` → `-018` → `-020` → `TST-002` → `DOC-001`.
 
