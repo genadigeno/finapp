@@ -1062,6 +1062,8 @@ columns hold platform actor identifiers (`audit_record.actor`'s reasoning), and 
 | `source` | `kind` | `INTERNAL` | Which statement family. Four values, none about a person |
 | `source` | `status` | `INTERNAL` | ACTIVE or RETIRED - operational state |
 | `source` | `next_sequence` | `INTERNAL` | The next statement sequence acceptance expects - a counter |
+| `source` | `admitted_on` | `INTERNAL` | The first day the source served (`P14-TSK-025`, `V018`): a property of the configuration, nobody's. Set by a migration; the application reads it (table `SELECT`) and cannot write it. Read by accounting's month read and served on `RECONCILIATION_STATUS` (`ACCOUNTING_READ`) and in `RECONCILIATION_DISCLOSURE`'s evidence, wherever the close run's attempts are read |
+| `source` | `retired_on` | `INTERNAL` | The day the source was retired, present exactly when `RETIRED` (`P14-TSK-025`, `V018`). Set with the retirement by a migration, or stamped with the database's day; served as `admitted_on` is |
 | `file` | `id` | `INTERNAL` | An aggregate identifier. Generated |
 | `file` | `source_id` | `INTERNAL` | The delivering source - an identifier of a thing |
 | `file` | `received_via` | `INTERNAL` | UPLOAD, PULL or READMISSION - which door |
@@ -1232,7 +1234,7 @@ counters and dates of things.
 | `rule_set` | `reason` | `CONFIDENTIAL` | Free prose by a person about a decision (`audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by reconciliation `V019`'s `rule_set_reason_no_instrument_shape` (corrected 2026-10-02 by the Phase 8 → 9 transition, SEC-03/SEC-04; the shared `InstrumentShapes` rule) |
 | `rule_set` | `created_at` | `INTERNAL` | A property of the artefact |
 | `rule_set` | `correlation_id` | `INTERNAL` | The flow's correlation |
-| `rule_set` | `decided_at` | `INTERNAL` | When the version was activated or rejected (`P8-TSK-022`, `V012`); the seed's is its creation |
+| `rule_set` | `decided_at` | `INTERNAL` | When the version was activated or rejected (`P8-TSK-022`, `V012`); the seed's is its creation. *(`P14-TSK-025`: accounting's month read takes the least of a source's activated versions as a UTC day, the day the months start requiring the source, served as `settlement.source.admitted_on` is; it compares `proposed_by` with the seed's `migration:V002` and never selects it or `decided_by`)* |
 | `rule_set_event` | `seq` | `INTERNAL` | The history's server-assigned order |
 | `rule_set_event` | `rule_set_id` | `INTERNAL` | The moved version - an identifier of a thing |
 | `rule_set_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at the proposal |
@@ -4914,7 +4916,7 @@ and in the statements' notes (`INV-ACC-05`) but is a person's text: screened for
 | `accounting_break` | `break_type` | `INTERNAL` | A closed `BreakType`, each on its check by `CHECK` |
 | `accounting_break` | `generation` | `INTERNAL` | Which break of this (period, check, subject) this is - `accounting V008`, `P14-TSK-012`, ADR-0117's ruling; a count, frozen from birth |
 | `accounting_break` | `subject_ref` | `CONFIDENTIAL` | What the discrepancy is about by identifier - an entry id, a namespace, a purpose/owner-kind key, a currency, a proof's subject (a loan, obligation, merchant payable or ledger account id) |
-| `accounting_break` | `evidence` | `CONFIDENTIAL` | Codes, identifiers and counts only - the rules tried, the lines' purposes and sides, a proof's failing arms; never an amount |
+| `accounting_break` | `evidence` | `CONFIDENTIAL` | Codes, identifiers and counts only - the rules tried, the lines' purposes and sides, a proof's failing arms; never an amount. *(`P14-TSK-025`: a source proof's evidence names only what is failing - since then `BNPL_THREE_WAY`'s also names its failing merchant legs and purchases by id, identifiers its subject's peers already carry, and no lifecycle status, open count or statement sequence)* |
 | `accounting_break` | `judged_by` | `INTERNAL` | The register version the check judged by - `posting-rules:v<n>`, `gl-mapping:v<n>`, `source-proofs:v<n>` |
 | `accounting_break` | `status` | `INTERNAL` | The machine's state - `OPEN`, `ACKNOWLEDGED`, `RESOLVED` |
 | `accounting_break` | `raised_at` | `INTERNAL` | The database's stamp of the birth |
