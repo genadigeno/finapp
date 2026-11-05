@@ -203,9 +203,6 @@ dependencies {
     // The GL mapping fixtures (P14-TSK-003, owner decision C2): the reference version proven total and compatible here
     // against the ledger's own enum and seed (LedgerPurposeChartTest), and the desk's in-memory store - one reference.
     testImplementation(testFixtures(project(":accounting")))
-    // The engines' second JVM (SecondJvm, creditmath's published test fixtures - one harness, never a copy): the accounting
-    // battery (P14-TST-002) regenerates its journal and every report in a process with other defaults and compares the bytes.
-    testImplementation(testFixtures(project(":creditmath")))
 
     // Architecture rules live here because `app` is the only module that sees every other
     // one — enforcing a boundary requires being able to observe both sides of it. As

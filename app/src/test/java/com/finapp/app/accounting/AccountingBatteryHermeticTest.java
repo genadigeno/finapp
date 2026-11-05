@@ -17,7 +17,6 @@ import com.finapp.app.accounting.AccountingBatteryWorld.Chart;
 import com.finapp.app.accounting.AccountingBatteryWorld.ChartRow;
 import com.finapp.app.accounting.AccountingBatteryWorld.Entry;
 import com.finapp.app.accounting.AccountingBatteryWorld.Line;
-import com.finapp.creditmath.testing.SecondJvm;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -91,8 +90,7 @@ class AccountingBatteryHermeticTest {
     @BeforeAll
     static void battery() throws Exception {
         // The second JVM first, so it works while this one does.
-        SecondJvm.Started child = SecondJvm.start(AccountingBatteryInAnotherJvm.class, "1g", Long.toString(SEED),
-                Integer.toString(AccountingBatteryWorld.ENTRIES));
+        AccountingBatteryInAnotherJvm.Started child = AccountingBatteryInAnotherJvm.start(SEED, AccountingBatteryWorld.ENTRIES);
         try {
             journal = AccountingBatteryWorld.generate(SEED, AccountingBatteryWorld.ENTRIES);
             posted = AccountingBatteryBooks.post(journal, SEED);
