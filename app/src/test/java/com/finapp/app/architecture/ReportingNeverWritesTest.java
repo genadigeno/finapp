@@ -197,11 +197,12 @@ class ReportingNeverWritesTest {
     /**
      * <strong>What moves after a lock is read only by a report that is never FINAL</strong> (`P14-TSK-017`; {@code INV-ACC-04}): a
      * report class that is not an {@link OperationalReportDefinition} - nor reached only from one - depends on none of {@link #MOVING}.
-     * {@link SuspenseAsOfCutoff} is not among them: it reads the frozen stamps, and is what a FINAL body has instead.
+     * {@link SuspenseAsOfCutoff} is not among them: it reads the frozen stamps, and is what a FINAL body has instead. <strong>Through every accounting class on the way</strong> (`P14-TSK-020`; `P14-TSK-017`'s review, M-7: it read a class's own dependencies only, so a moving read one
+     * class further went unseen), stopping at an operational definition and never crossing {@link ReportDefinition} itself, from which every definition is an implementation. <strong>What this still does not see</strong>: it follows a class's own dependencies and never an interface to its implementations, so a moving read behind an accounting interface is not reached.
      */
     @ArchTest
     static void onlyAnOperationalDefinitionReadsWhatMoves(JavaClasses imported) {
-        assertThat(finalReadersOfWhatMoves(imported, ReportingNeverWritesTest::isReportingClass))
+        assertThat(finalReadersOfWhatMoves(imported, ReportingNeverWritesTest::isReportingClass, candidate -> candidate.getPackageName().startsWith(ACCOUNTING)))
                 .as("a FINAL report class reading what keeps moving after a lock (INV-ACC-04)")
                 .isEmpty();
     }
@@ -212,7 +213,8 @@ class ReportingNeverWritesTest {
      * So each adapter - every {@code app} class implementing a port report code depends on - is held here, by its own accesses (calls and
      * method references alike): no JDBC write and no {@code Connection} mutator; no writer type; no {@code com.finapp.lending},
      * {@code com.finapp.bnpl} or their {@code app} desks, so the portfolio and the exposure cannot be sourced from live rows; and of a
-     * store or {@code CloseRuns}, only the reads {@link #ADAPTER_STORE_READS} names.
+     * store or {@code CloseRuns}, only the reads {@link #ADAPTER_STORE_READS} names. <strong>And every {@code app.accounting} class an adapter reaches</strong> (`P14-TSK-020`; `P14-TSK-017`'s review, M-7: it was one hop, so a helper's write went unseen): an adapter's helper is held as the adapter is.
+     * <strong>What this still does not see</strong>: a class outside {@code com.finapp.app.accounting}, such as reconciliation's {@code ReportReadings} implementation a port's adapter calls. Following it would walk into another module's own writers, whose reads and writes share a class; the read-only transaction is what holds it, at run time.
      */
     @ArchTest
     static void noReportPortAdapterWrites(JavaClasses imported) {
@@ -226,8 +228,8 @@ class ReportingNeverWritesTest {
                 "com.finapp.app.accounting.AccountingCloseStatusReads", "com.finapp.app.accounting.LedgerFlooredPostings",
                 "com.finapp.app.accounting.ProductReconciliationDisclosure", "com.finapp.app.accounting.LedgerPriorPeriodCorrections",
                 "com.finapp.app.accounting.ReconciliationAsOfCutoffReads", "com.finapp.app.accounting.AccountingCloseRecordReads", "com.finapp.app.accounting.LendingFundedAsOfCutoffReads");
-        assertThat(adapterViolations(imported, adapters)).as("a report port's adapter that can write, or reads a product's reports")
-                .isEmpty();
+        assertThat(adapterViolations(imported, adapterReach(imported, adapters, candidate -> candidate.getPackageName().equals("com.finapp.app.accounting"))))
+                .as("a report port's adapter, or an app class it reaches, that can write or reads a product's reports").isEmpty();
     }
 
     /**
@@ -426,8 +428,28 @@ class ReportingNeverWritesTest {
                 PlantedOperationalReadingWhatMoves.class, PlantedFinalReadingTheFrozenRegister.class,
                 ReconciliationRunCoverage.class, CloseStatusReads.class, SuspenseAsOfCutoff.class,
                 OperationalReportDefinition.class, ReportDefinition.class);
-        assertThat(finalReadersOfWhatMoves(planted, candidate -> candidate.getSimpleName().startsWith("Planted")))
+        assertThat(finalReadersOfWhatMoves(planted, candidate -> candidate.getSimpleName().startsWith("Planted"), candidate -> false))
                 .singleElement().asString().contains("PlantedFinalReadingWhatMoves").contains("ReconciliationRunCoverage");
+    }
+
+    @Test
+    @DisplayName("M-7: a read that moves one class further is refused at the class holding it, the FINAL class's helper; an operational definition's own is not (P14-TSK-020)")
+    void aMovingReadOneClassFurtherIsRefused() {
+        JavaClasses planted = new ClassFileImporter().importClasses(PlantedFinalThroughAHelper.class, PlantedHelperReadingWhatMoves.class,
+                PlantedOperationalReadingWhatMoves.class, ReconciliationRunCoverage.class, CloseStatusReads.class, OperationalReportDefinition.class, ReportDefinition.class);
+        assertThat(finalReadersOfWhatMoves(planted, candidate -> candidate.getSimpleName().equals("PlantedFinalThroughAHelper"),
+                candidate -> candidate.getSimpleName().startsWith("Planted")))
+                .singleElement().asString().contains("PlantedHelperReadingWhatMoves").contains("ReconciliationRunCoverage");
+    }
+
+    @Test
+    @DisplayName("M-7: a write one class further than an adapter is refused at the helper that holds it (P14-TSK-020)")
+    void aWriteOneClassFurtherThanAnAdapterIsRefused() {
+        JavaClasses planted = new ClassFileImporter().importClasses(PlantedAdapterThroughAHelper.class, PlantedAdapterHelperWriting.class, PreparedStatement.class);
+        Set<String> adapters = Set.of(PlantedAdapterThroughAHelper.class.getName());
+        assertThat(adapterViolations(planted, adapters)).as("one hop saw nothing").isEmpty();
+        assertThat(adapterViolations(planted, adapterReach(planted, adapters, candidate -> candidate.getSimpleName().startsWith("Planted"))))
+                .singleElement().asString().contains("PlantedAdapterHelperWriting").contains("executeUpdate");
     }
 
     @Test
@@ -587,20 +609,48 @@ class ReportingNeverWritesTest {
         return reaching;
     }
 
-    /** Every report class, not an operational definition, that depends on a read that moves. */
-    static Set<String> finalReadersOfWhatMoves(JavaClasses classes, Predicate<JavaClass> reports) {
+    /** Every report class, not an operational definition, from which a read that moves is reachable through {@code followed}, at the class that holds it. */
+    static Set<String> finalReadersOfWhatMoves(JavaClasses classes, Predicate<JavaClass> reports, Predicate<JavaClass> followed) {
         Set<String> readers = new TreeSet<>();
-        classes.stream().filter(reports)
-                .filter(candidate -> !candidate.isAssignableTo(OperationalReportDefinition.class.getName()))
-                .forEach(candidate -> {
-                    List<String> moving = candidate.getDirectDependenciesFromSelf().stream()
-                            .map(dependency -> dependency.getTargetClass().getName())
-                            .filter(MOVING::contains).distinct().sorted().toList();
-                    if (!moving.isEmpty()) {
-                        readers.add(candidate.getName() + " -> " + moving);
-                    }
-                });
+        Set<String> reached = new TreeSet<>();
+        Deque<JavaClass> pending = new ArrayDeque<>();
+        classes.stream().filter(reports).filter(candidate -> !isOperational(candidate)).forEach(pending::add);
+        while (!pending.isEmpty()) {
+            JavaClass current = pending.pop();
+            if (!reached.add(current.getName())) {
+                continue;
+            }
+            List<String> moving = current.getDirectDependenciesFromSelf().stream()
+                    .map(dependency -> dependency.getTargetClass().getName())
+                    .filter(MOVING::contains).distinct().sorted().toList();
+            if (!moving.isEmpty()) {
+                readers.add(current.getName() + " -> " + moving);
+            }
+            current.getDirectDependenciesFromSelf().stream()
+                    .map(Dependency::getTargetClass)
+                    .filter(target -> !isOperational(target) && !MOVING.contains(target.getName()) && !target.getName().equals(ReportDefinition.class.getName()))
+                    .filter(followed)
+                    .forEach(pending::add);
+        }
         return readers;
+    }
+
+    private static boolean isOperational(JavaClass candidate) {
+        return candidate.isAssignableTo(OperationalReportDefinition.class.getName());
+    }
+
+    /** {@code adapters} and every class they reach through {@code followed}: a helper's accesses are held as the adapter's are. */
+    static Set<String> adapterReach(JavaClasses classes, Set<String> adapters, Predicate<JavaClass> followed) {
+        Set<String> reached = new TreeSet<>();
+        Deque<JavaClass> pending = new ArrayDeque<>();
+        adapters.forEach(name -> pending.add(classes.get(name)));
+        while (!pending.isEmpty()) {
+            JavaClass current = pending.pop();
+            if (reached.add(current.getName())) {
+                current.getDirectDependenciesFromSelf().stream().map(Dependency::getTargetClass).filter(followed).forEach(pending::add);
+            }
+        }
+        return reached;
     }
 
     /** Every {@code app} class - or, for a planted suite, any class - implementing an interface a report class depends on. */
@@ -899,6 +949,26 @@ class ReportingNeverWritesTest {
     static class PlantedClaimer {
         void ask(PlantedRuns runs) {
             runs.claim();
+        }
+    }
+
+    /** A FINAL report class one class from a read that moves. */
+    static class PlantedFinalThroughAHelper {
+        PlantedHelperReadingWhatMoves helper;
+    }
+
+    static class PlantedHelperReadingWhatMoves {
+        ReconciliationRunCoverage coverage;
+    }
+
+    /** An adapter one class from a write. */
+    static class PlantedAdapterThroughAHelper {
+        PlantedAdapterHelperWriting helper;
+    }
+
+    static class PlantedAdapterHelperWriting {
+        int touch(PreparedStatement statement) throws SQLException {
+            return statement.executeUpdate();
         }
     }
 

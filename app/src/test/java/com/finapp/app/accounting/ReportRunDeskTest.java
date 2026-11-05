@@ -268,6 +268,9 @@ class ReportRunDeskTest {
             assertThat(record.changeSummary()).hasValueSatisfying(summary -> assertThat(summary).contains("failure=DEFINITION_FAILED").contains("refusal=OUT_OF_BALANCE:EUR"));
         });
         assertThat(registry.get(ReportRunMetrics.RUN).tag("definition", "TEST_REFUSING").tag("outcome", "failed").counter().count()).isEqualTo(1.0);
+        // P14-TSK-020 (P14-TSK-016's routed note): by class, the reason staying on the record above.
+        assertThat(registry.get(ReportRunMetrics.REFUSED).tag("outcome", ReportRunMetrics.REFUSED_FINAL).counter().count()).as("a locked month's run is FINAL").isEqualTo(1.0);
+        assertThat(registry.get(ReportRunMetrics.REFUSED).tag("outcome", ReportRunMetrics.REFUSED_PROVISIONAL).counter().count()).isZero();
 
         refusing = false;
         ReportRunDesk.ReportRunView again = as(ACCOUNTANT, () -> desk.generate("key-2", "TEST_REFUSING", september, Map.of(), null));
@@ -290,6 +293,18 @@ class ReportRunDeskTest {
         assertThat(audited).filteredOn(record -> record.operation().code().equals("accounting.ReportRegenerated")).singleElement().satisfies(record -> assertThat(record.changeSummary())
                 .as("the record is the one place the reason is: a claim of this question answers the standing FINAL, and generates nothing").hasValueSatisfying(summary -> assertThat(summary).contains("result=DIVERGED").contains("refusal=OUT_OF_BALANCE:EUR")));
         assertThat(as(ACCOUNTANT, () -> desk.generate("key-again", "TEST_REFUSING", september, Map.of(), null)).status()).as("asked again, the FINAL stands").isEqualTo("FINAL");
+    }
+
+    @Test
+    @DisplayName("a refusal's class (P14-TSK-020): FINAL pages, PROVISIONAL does not, and a set's hole is configuration on any month; three classes, never the reason, which stays on the record")
+    void aRefusalsClass() {
+        metrics.refused(com.finapp.accounting.RunBasis.FINAL, com.finapp.accounting.reporting.ReportRefused.Reason.OUT_OF_BALANCE);
+        metrics.refused(com.finapp.accounting.RunBasis.PROVISIONAL, com.finapp.accounting.reporting.ReportRefused.Reason.UNCLASSIFIED);
+        metrics.refused(com.finapp.accounting.RunBasis.FINAL, com.finapp.accounting.reporting.ReportRefused.Reason.TRANSLATION_INCOMPLETE);
+        metrics.refused(com.finapp.accounting.RunBasis.PROVISIONAL, com.finapp.accounting.reporting.ReportRefused.Reason.TRANSLATION_INCOMPLETE);
+        assertThat(registry.get(ReportRunMetrics.REFUSED).tag("outcome", ReportRunMetrics.REFUSED_FINAL).counter().count()).isEqualTo(1.0);
+        assertThat(registry.get(ReportRunMetrics.REFUSED).tag("outcome", ReportRunMetrics.REFUSED_PROVISIONAL).counter().count()).isEqualTo(1.0);
+        assertThat(registry.get(ReportRunMetrics.REFUSED).tag("outcome", ReportRunMetrics.REFUSED_TRANSLATION).counter().count()).isEqualTo(2.0);
     }
 
     @Test

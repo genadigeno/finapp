@@ -4,16 +4,11 @@ import com.finapp.accounting.RegulatorySubmissionStore;
 import com.finapp.accounting.RegulatorySubmissions;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.sql.Connection;
-import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.ToLongFunction;
-import lombok.extern.slf4j.Slf4j;
 
 /**
  * {@code finapp.accounting.regulatory.attention{kind}} (`P14-TSK-018`; {@code PHASE_14_PLAN.md} section 16; {@code INV-ACC-13}): what stands on the regulatory submissions needing someone's eye, so a return never delivered, or overtaken by a reopen, is not
@@ -28,10 +23,9 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>A contrary answer is no state that clears, so it is not here: an alert reads {@code increase} of {@code finapp.accounting.regulatory.submission{outcome="contrary"}}, and the standing list names the return.
  *
- * <p><strong>From the database, on the database's clock</strong>: every instance publishes the same numbers with no leader - aggregate with {@code max()}, never {@code sum()}. No value (NaN at Micrometer's edge) when unreadable, never a zero for a read that failed. Cached
- * for 15 s ({@code CloseRunStallMetrics}' floor). The tag closed in the code: a count names no return. Alerts: `P14-TSK-020`'s.
+ * <p><strong>From the database, on the database's clock</strong>: every instance publishes the same numbers with no leader - aggregate with {@code max()}, never {@code sum()}. No value (NaN at Micrometer's edge) when unreadable, never a zero for a read that failed. Bounded by {@link AccountingGaugeRead} (`P14-TSK-020`: it had no statement timeout of its own until then), cached
+ * for 15 s ({@code CloseRunStallMetrics}' floor). The tag closed in the code: a count names no return. Alerts: `P14-TSK-020`'s, {@code overdue} and {@code overtaken} on their growth, since each can hold for good.
  */
-@Slf4j
 public final class RegulatoryAttentionMetrics {
 
     /** Spelled with dots - exported as {@code finapp_accounting_regulatory_attention}, the plan's name. */
@@ -42,33 +36,22 @@ public final class RegulatoryAttentionMetrics {
 
     private static final Duration MIN_REFRESH = Duration.ofSeconds(15);
 
-    /** A connection source - its own seam, the metrics precedent. */
-    public interface Connections {
-        Connection open() throws SQLException;
-    }
+    private final AccountingGaugeRead<RegulatorySubmissionStore.Attention> read;
 
-    private final RegulatorySubmissions submissions;
-    private final Connections connections;
-    private final Clock clock;
-    private final AtomicReference<Cached> cached = new AtomicReference<>(new Cached(Instant.EPOCH, null));
-
-    private record Cached(Instant takenAt, RegulatorySubmissionStore.Attention attention) {}
-
-    public RegulatoryAttentionMetrics(RegulatorySubmissions submissions, Connections connections, Clock clock, MeterRegistry registry) {
-        this.submissions = Objects.requireNonNull(submissions, "submissions");
-        this.connections = Objects.requireNonNull(connections, "connections");
-        this.clock = Objects.requireNonNull(clock, "clock");
+    public RegulatoryAttentionMetrics(RegulatorySubmissions submissions, GlSnapshots snapshots, AccountingGaugeRefresher refresher, Clock clock, MeterRegistry registry) {
+        Objects.requireNonNull(submissions, "submissions");
         Objects.requireNonNull(registry, "registry");
+        this.read = new AccountingGaugeRead<>("What stands on the regulatory submissions", snapshots, refresher, clock, MIN_REFRESH, submissions::attention);
         gauge(registry, "overdue", RegulatorySubmissionStore.Attention::overdue);
         gauge(registry, "resends_exhausted", RegulatorySubmissionStore.Attention::resendsExhausted);
         gauge(registry, "overtaken", RegulatorySubmissionStore.Attention::overtaken);
         gauge(registry, "stale_unsent", RegulatorySubmissionStore.Attention::staleUnsent);
     }
 
-    private void gauge(MeterRegistry registry, String kind, ToLongFunction<RegulatorySubmissionStore.Attention> read) {
+    private void gauge(MeterRegistry registry, String kind, ToLongFunction<RegulatorySubmissionStore.Attention> value) {
         Gauge.builder(ATTENTION, () -> {
             RegulatorySubmissionStore.Attention attention = attention();
-            return attention == null ? null : (Number) read.applyAsLong(attention);
+            return attention == null ? null : (Number) value.applyAsLong(attention);
         })
                 .tag("kind", kind)
                 .description("What stands on the regulatory submissions needing someone's eye; no value when unreadable. Fleet-wide from every instance: aggregate with max(), never sum()")
@@ -78,19 +61,6 @@ public final class RegulatoryAttentionMetrics {
 
     /** The cached counts; {@code null} - no value - when the read failed. */
     RegulatorySubmissionStore.Attention attention() {
-        Cached current = cached.get();
-        if (Duration.between(current.takenAt(), clock.instant()).compareTo(MIN_REFRESH) < 0) {
-            return current.attention();
-        }
-        Cached fresh;
-        try (Connection connection = connections.open()) {
-            connection.setReadOnly(true);
-            fresh = new Cached(clock.instant(), submissions.attention(connection));
-        } catch (SQLException | RuntimeException unreadable) {
-            log.warn("What stands on the regulatory submissions could not be read: {}", unreadable.getClass().getSimpleName());
-            fresh = new Cached(clock.instant(), null);
-        }
-        cached.set(fresh);
-        return fresh.attention();
+        return read.current();
     }
 }

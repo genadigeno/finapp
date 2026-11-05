@@ -115,8 +115,8 @@ public class AccountingBeans {
     /** {@code finapp.accounting.gl.unmapped} - fed from the database by `P14-TSK-007` (registered at zero by `-003`). */
     @Bean
     AccountingMappingMetrics accountingMappingMetrics(com.finapp.accounting.GlMappingGap glMappingGap,
-            GlSnapshots glSnapshots, Clock clock, MeterRegistry meterRegistry) {
-        return new AccountingMappingMetrics(glMappingGap, glSnapshots, clock, meterRegistry);
+            GlSnapshots glSnapshots, AccountingGaugeRefresher accountingGaugeRefresher, Clock clock, MeterRegistry meterRegistry) {
+        return new AccountingMappingMetrics(glMappingGap, glSnapshots, accountingGaugeRefresher, clock, meterRegistry);
     }
 
     // ------------------------------------------------------------------ the periods (P14-TSK-005)
@@ -162,9 +162,9 @@ public class AccountingBeans {
 
     /** {@code finapp.accounting.period.open.age} - read from the database, cached 15 s. */
     @Bean
-    AccountingPeriodMetrics accountingPeriodMetrics(
-            AccountingPeriods accountingPeriods, DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
-        return new AccountingPeriodMetrics(accountingPeriods, dataSource::getConnection, clock, meterRegistry);
+    AccountingPeriodMetrics accountingPeriodMetrics(AccountingPeriods accountingPeriods,
+            @org.springframework.beans.factory.annotation.Qualifier(AccountingGaugeBeans.SNAPSHOTS) GlSnapshots snapshots, AccountingGaugeRefresher accountingGaugeRefresher, Clock clock, MeterRegistry meterRegistry) {
+        return new AccountingPeriodMetrics(accountingPeriods, snapshots, accountingGaugeRefresher, clock, meterRegistry);
     }
 
     // ------------------------------------------------------------------ the report runs (P14-TSK-008)

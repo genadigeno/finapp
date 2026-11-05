@@ -136,7 +136,7 @@ groups:
           severity: ticket
         annotations:
           summary: "The settlement source {{ $labels.source }} has no active rule set"
-          description: "Reports from {{ $labels.source }} cannot be matched until two controllers activate its rule set v1."
+          description: "Reports from {{ $labels.source }} cannot be matched until two controllers activate its rule set v1, and they wait PARSED, so an accounting month cannot have its run: RECONCILIATION_DISCLOSURE stands MONTH_NOT_RUN (P14-TSK-012, OPERATIONS_RUNBOOK.md section 10.3)."
 
       - alert: CrossBorderCancellationSpike
         # The free-option watch: cancellations above a fifth of the payments submitted in an hour.

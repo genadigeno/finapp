@@ -175,6 +175,7 @@ public final class BnplDisputeDesk {
                 return party;
             }, (unitOfWork, party) -> disputes.open(unitOfWork, agreement, party, request, actor, correlation));
         } catch (BnplWrittenOffRefused writtenOff) {
+            metrics.record(BnplDisputeMetrics.Outcome.WRITTEN_OFF);
             throw writtenOffForACustomer();
         }
     }

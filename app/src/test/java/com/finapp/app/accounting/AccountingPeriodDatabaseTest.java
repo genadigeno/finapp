@@ -70,6 +70,20 @@ class AccountingPeriodDatabaseTest {
     }
 
     @Test
+    @DisplayName("the age's date is the database's own, UTC, whichever zone the session holds (P14-TSK-020): every instance measures from one day")
+    void theAgeReadsTheDatabasesDate() throws Exception {
+        try (Connection connection = DatabaseRoles.application(); Statement session = connection.createStatement()) {
+            session.execute("SET TIME ZONE 'Pacific/Kiritimati'");
+            try (ResultSet utc = session.executeQuery("SELECT (now() AT TIME ZONE 'UTC')::date")) {
+                utc.next();
+                LocalDate expected = utc.getObject(1, LocalDate.class);
+                // A day's turn between the two statements would read the next day, and nothing else.
+                assertThat(AccountingPeriodFixture.STORE.today(connection)).isBetween(expected, expected.plusDays(1));
+            }
+        }
+    }
+
+    @Test
     @DisplayName("contention row 2: ten lockers on ten connections - one edge, one history row, one event, one audit"
             + " record, one cutoff move; the other nine converge on LOCKED")
     void twoLocksOneEdge() throws Exception {

@@ -27,6 +27,16 @@ public final class JdbcCloseRunStore implements CloseRunStore {
     private static final String LEASE = "clock_timestamp() + ? * interval '1 millisecond'";
 
     /**
+     * What the claim holds back, one string with {@link #STALLED_ATTEMPTS_SQL} so the two can never disagree (`P14-TSK-020`): a run an unlock left behind is nobody's, and {@code
+     * OPEN_ACCOUNTING_BREAKS} waits for the run's raising checks. {@code candidate}, {@code run} and {@code period} are the statement's own.
+     */
+    private static final String CLAIMABLE_UNDER_THE_LOCK = " AND period.status = 'LOCKED' AND period.locked_at = run.period_locked_at"
+            + " AND (candidate.check_code <> 'OPEN_ACCOUNTING_BREAKS' OR NOT EXISTS (SELECT 1"
+            + " FROM accounting.close_check raising WHERE raising.close_run_id = candidate.close_run_id"
+            + " AND raising.status = 'PENDING'"
+            + " AND raising.check_code IN ('GL_EQUALS_LEDGER', 'RULE_CONFORMANCE', 'SOURCE_COMPLETENESS')))";
+
+    /**
      * The claim: one statement, so no row is held past it. The subselect takes one claimable row {@code FOR UPDATE SKIP
      * LOCKED} - ten workers take disjoint rows and none waits on another - and the {@code UPDATE} makes this worker its
      * holder; a holder still on the row had lapsed, so it counts one reclaim. The period's present lock is read here
@@ -40,11 +50,7 @@ public final class JdbcCloseRunStore implements CloseRunStore {
             + " JOIN accounting.close_run run ON run.id = candidate.close_run_id"
             + " JOIN accounting.accounting_period period ON period.id = run.period_id"
             + " WHERE candidate.status = 'PENDING' AND candidate.lease_until <= clock_timestamp()"
-            + " AND period.status = 'LOCKED' AND period.locked_at = run.period_locked_at"
-            + " AND (candidate.check_code <> 'OPEN_ACCOUNTING_BREAKS' OR NOT EXISTS (SELECT 1"
-            + " FROM accounting.close_check raising WHERE raising.close_run_id = candidate.close_run_id"
-            + " AND raising.status = 'PENDING'"
-            + " AND raising.check_code IN ('GL_EQUALS_LEDGER', 'RULE_CONFORMANCE', 'SOURCE_COMPLETENESS')))"
+            + CLAIMABLE_UNDER_THE_LOCK
             + " ORDER BY candidate.lease_until, candidate.id LIMIT 1 FOR UPDATE OF candidate SKIP LOCKED)"
             + " AND attempt.status = 'PENDING'"
             + " RETURNING attempt.id, attempt.close_run_id, attempt.check_code, attempt.attempt, attempt.status,"
@@ -84,6 +90,24 @@ public final class JdbcCloseRunStore implements CloseRunStore {
             + " AND period.locked_at <= clock_timestamp() - ? * interval '1 millisecond'"
             + " AND NOT EXISTS (SELECT 1 FROM accounting.close_run run"
             + " WHERE run.period_id = period.id AND run.period_locked_at = period.locked_at)";
+
+    /**
+     * The attempts claimable for at least the bound, on the database's clock (`P14-TSK-020`; the owner's ruling on `P14-TSK-017`'s I-5): {@code lease_until} is the instant a row became
+     * claimable, stamped by the database at a birth and a claim, and moved forward by a deferral and a renewal, so a set awaited and a live worker never read as stalled. {@link
+     * #CLAIMABLE_UNDER_THE_LOCK} is the claim's own predicate. <strong>And no claim of a present run is live</strong>: a worker renewing proves a leg alive, and the attempts behind it are a
+     * queue, not a stall. <strong>What that costs</strong>: {@link #RENEW_SQL} bounds a claim at {@code finapp.accounting.close.max-run} from that claim, so a judge hung with its heartbeat alive hides a stall for {@code max-run} plus a lease from the last claim. A reclaim starts a new window, so a judge that hangs every time walks the fleet: see {@code CloseCheckStallMetrics}. {@code holder} is nullable
+     * and is asked by name; every other column here is {@code NOT NULL} but {@code locked_at}, which an {@code =} reads as not true when unset, as the claim does.
+     */
+    static final String STALLED_ATTEMPTS_SQL = "SELECT count(*) FROM accounting.close_check candidate"
+            + " JOIN accounting.close_run run ON run.id = candidate.close_run_id"
+            + " JOIN accounting.accounting_period period ON period.id = run.period_id"
+            + " WHERE candidate.status = 'PENDING' AND candidate.lease_until <= clock_timestamp() - ? * interval '1 millisecond'"
+            + CLAIMABLE_UNDER_THE_LOCK
+            + " AND NOT EXISTS (SELECT 1 FROM accounting.close_check live"
+            + " JOIN accounting.close_run live_run ON live_run.id = live.close_run_id"
+            + " JOIN accounting.accounting_period live_period ON live_period.id = live_run.period_id"
+            + " WHERE live.status = 'PENDING' AND live.holder IS NOT NULL AND live.lease_until > clock_timestamp()"
+            + " AND live_period.status = 'LOCKED' AND live_period.locked_at = live_run.period_locked_at)";
 
     static final String INSERT_RUN_SQL = "INSERT INTO accounting.close_run (id, period_id, period_locked_at, period_revision,"
             + " started_at, correlation_id) VALUES (?, ?, ?, ?, clock_timestamp(), ?)"
@@ -131,6 +155,19 @@ public final class JdbcCloseRunStore implements CloseRunStore {
             }
         } catch (SQLException failure) {
             throw failed("reading the locks past their bound with no close run", failure);
+        }
+    }
+
+    @Override
+    public long stalledAttempts(Connection unitOfWork, Duration bound) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(STALLED_ATTEMPTS_SQL)) {
+            read.setLong(1, bound.toMillis());
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        } catch (SQLException failure) {
+            throw failed("reading the close checks past their bound with nobody claiming them", failure);
         }
     }
 

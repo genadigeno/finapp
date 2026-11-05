@@ -89,7 +89,7 @@ public final class CloseRunMetrics {
 
     private Counter leg(String leg) {
         return Counter.builder(LEG_FAILED)
-                .description("The close schedule's legs that failed, by leg (open, checks, orphans)")
+                .description("The close schedule's legs that failed, by leg (open, checks, orphans, inquiry)")
                 .tag("leg", leg)
                 .register(registry);
     }

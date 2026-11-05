@@ -24,7 +24,7 @@ import java.util.regex.Pattern;
  * arith    := term (('+' | '-') term)*
  * term     := primary ('/' primary)*
  * primary  := '(' arith ')'  |  vector
- * vector   := AGG ('by' '(' label (',' label)* ')')? '(' inner ')'  |  selector ('!=' selector)?
+ * vector   := AGG ('by' '(' label (',' label)* ')')? '(' inner ')'  |  'absent' '(' selector ')'  |  selector ('!=' selector)?
  * inner    := ('increase' | 'delta') '(' selector '[' duration ']' ')'  |  selector ('!=' selector)?
  * selector := name ('{' label ('=' | '!=') "value" (',' ...)* '}')?          AGG: max | min | sum
  * </pre>
@@ -36,7 +36,8 @@ import java.util.regex.Pattern;
  * monitoring lag's growth); {@code or} adds the right side's series whose labels the left lacks; {@code +}, {@code -} and
  * {@code /} between two vectors match their elements one to one on identical label sets, keep the left's labels and drop
  * an element with no partner - so {@code 0 / 0} is NaN and fires no threshold (`P13-TSK-024`: the evaluation latency's
- * share above its budget's bucket). Target labels a scrape configuration attaches - {@code job}, {@code instance}, static
+ * share above its budget's bucket); {@code absent} (`P14-TSK-020`) answers one element when no sample of {@code after} matches its selector and none otherwise, with no labels: unlike Prometheus it copies no matcher's value, so
+ * a rule reads it on a plain name. Target labels a scrape configuration attaches - {@code job}, {@code instance}, static
  * labels - are added to every sample by the caller, as Prometheus does. A rule FIRES when its result is non-empty.
  */
 final class RuleEvaluator {
@@ -63,6 +64,7 @@ final class RuleEvaluator {
             "\\s*(\"(?:[^\"\\\\]|\\\\.)*\"|[a-zA-Z_:][a-zA-Z0-9_:]*|[0-9]+(?:\\.[0-9]+)?[smhd]?|>=|<=|==|!=|[(){}\\[\\],<>=+\\-/])");
     private static final Set<String> AGGREGATIONS = Set.of("max", "min", "sum");
     private static final Set<String> RANGE_FUNCTIONS = Set.of("increase", "delta");
+    private static final String ABSENT = "absent";
 
     private final List<String> tokens;
     private final List<Sample> before;
@@ -218,6 +220,13 @@ final class RuleEvaluator {
             take(")");
             return aggregate(head, by, inner);
         }
+        if (head.equals(ABSENT)) {
+            at++;
+            take("(");
+            List<Sample> found = selector(after, new String[1]);
+            take(")");
+            return found.isEmpty() ? List.of(new Element(Map.of(), 1)) : List.of();
+        }
         return selfCompared();
     }
 
@@ -276,7 +285,7 @@ final class RuleEvaluator {
     private List<Sample> selector(List<Sample> scrape, String[] spelled) {
         String name = tokens.get(at++);
         if (!name.matches("[a-zA-Z_:][a-zA-Z0-9_:]*") || AGGREGATIONS.contains(name) || RANGE_FUNCTIONS.contains(name)
-                || name.equals("or") || name.equals("by")) {
+                || name.equals("or") || name.equals("by") || name.equals(ABSENT)) {
             throw new IllegalArgumentException("not a series name: " + name);
         }
         StringBuilder spelling = new StringBuilder(name);
@@ -308,7 +317,8 @@ final class RuleEvaluator {
         return matching(scrape, spelled[0]);
     }
 
-    private static List<Sample> matching(List<Sample> scrape, String spelling) {
+    /** The samples of {@code scrape} a selector {@link #selectorsOf} spelled matches. */
+    static List<Sample> matching(List<Sample> scrape, String spelling) {
         int brace = spelling.indexOf('{');
         String name = brace < 0 ? spelling : spelling.substring(0, brace);
         Map<String, String[]> matchers = new TreeMap<>();
@@ -414,6 +424,27 @@ final class RuleEvaluator {
         return tokens;
     }
 
+    /**
+     * Each selector an expression names, spelled as {@link #matching} reads it: its series name and its label matchers (`P14-TSK-020`), so a guard can hold a rule's labels to a real scrape as well as its names.
+     */
+    static Set<String> selectorsOf(String expr) {
+        Set<String> selectors = new TreeSet<>();
+        Set<String> names = seriesOf(expr);
+        List<String> tokens = tokenize(expr);
+        for (int i = 0; i < tokens.size(); i++) {
+            if (!names.contains(tokens.get(i))) {
+                continue;
+            }
+            StringBuilder spelling = new StringBuilder(tokens.get(i));
+            if (i + 1 < tokens.size() && tokens.get(i + 1).equals("{")) {
+                int close = tokens.subList(i, tokens.size()).indexOf("}") + i;
+                tokens.subList(i + 1, close + 1).forEach(spelling::append);
+            }
+            selectors.add(spelling.toString());
+        }
+        return selectors;
+    }
+
     /** The series names an expression selects - for coverage checks. */
     static Set<String> seriesOf(String expr) {
         Set<String> names = new TreeSet<>();
@@ -423,7 +454,7 @@ final class RuleEvaluator {
             boolean afterBrace = i > 0 && (tokens.get(i - 1).equals("{") || tokens.get(i - 1).equals(","));
             boolean label = afterBrace || (i > 1 && tokens.get(i - 2).equals("by")) || (i > 0 && tokens.get(i - 1).equals("by"));
             if (token.matches("[a-zA-Z_:][a-zA-Z0-9_:]*") && !AGGREGATIONS.contains(token) && !RANGE_FUNCTIONS.contains(token)
-                    && !token.equals("or") && !token.equals("by") && !label && !(i + 1 < tokens.size()
+                    && !token.equals(ABSENT) && !token.equals("or") && !token.equals("by") && !label && !(i + 1 < tokens.size()
                     && (tokens.get(i + 1).equals("=") || tokens.get(i + 1).equals("!=") && i + 2 < tokens.size()
                             && tokens.get(i + 2).startsWith("\"")))) {
                 names.add(token);

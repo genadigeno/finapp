@@ -9,6 +9,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
@@ -100,6 +101,19 @@ public final class JdbcAccountingPeriodStore implements AccountingPeriodStore {
     public Optional<PeriodRow> oldestUnclosed(Connection unitOfWork) {
         return unparameterised(unitOfWork, ROW + " WHERE p.status <> 'CLOSED' ORDER BY p.period_start LIMIT 1",
                 "reading the oldest unclosed accounting period");
+    }
+
+    /** The database's own date, UTC: a {@code timestamptz} {@code AT TIME ZONE 'UTC'} is a plain timestamp, whose date no session's zone moves. */
+    static final String TODAY_SQL = "SELECT (clock_timestamp() AT TIME ZONE 'UTC')::date";
+
+    @Override
+    public LocalDate today(Connection unitOfWork) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(TODAY_SQL); ResultSet row = read.executeQuery()) {
+            row.next();
+            return row.getObject(1, LocalDate.class);
+        } catch (SQLException failure) {
+            throw failed("reading the database's date", failure);
+        }
     }
 
     @Override

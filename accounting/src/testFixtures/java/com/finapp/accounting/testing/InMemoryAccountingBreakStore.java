@@ -36,6 +36,11 @@ public final class InMemoryAccountingBreakStore implements AccountingBreakStore 
     private int rowLocks;
     private boolean uniqueKeyDisarmed;
 
+    /** Moves what stands for the database's clock - a suite's way past a bound (`P14-TSK-020`). */
+    public void advance(java.time.Duration by) {
+        clock.addAndGet(by.toSeconds());
+    }
+
     /** The case file, in order. */
     public List<EventRow> history() {
         return List.copyOf(history);
@@ -119,6 +124,15 @@ public final class InMemoryAccountingBreakStore implements AccountingBreakStore 
     private static int compare(UUID left, UUID right) {
         int high = Long.compareUnsigned(left.getMostSignificantBits(), right.getMostSignificantBits());
         return high != 0 ? high : Long.compareUnsigned(left.getLeastSignificantBits(), right.getLeastSignificantBits());
+    }
+
+    @Override
+    public Map<BreakType, Long> agedOpenByType(Connection unitOfWork, java.time.Duration bound) {
+        Instant at = Instant.EPOCH.plusSeconds(clock.get());
+        Map<BreakType, Long> aged = new EnumMap<>(BreakType.class);
+        rows.values().stream().filter(row -> row.status() == BreakStatus.OPEN && !row.raisedAt().plus(bound).isAfter(at))
+                .forEach(row -> aged.merge(row.type(), 1L, Long::sum));
+        return aged;
     }
 
     @Override

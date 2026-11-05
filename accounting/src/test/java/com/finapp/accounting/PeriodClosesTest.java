@@ -520,6 +520,7 @@ class PeriodClosesTest {
     void theOpenAgeFallsOnClose() {
         AccountingPeriods read = new AccountingPeriods(periods, new com.finapp.accounting.testing.InMemoryGlMappingStore(), cutoff, LockGrace.standard(), (uow, record) -> { },
                 (uow, envelope, payload, mediaType) -> { }, IDS, Clock.fixed(Instant.parse("2097-06-20T09:00:00Z"), ZoneOffset.UTC), supersession);
+        periods.databaseToday(java.time.LocalDate.parse("2097-06-20"));
         long before = read.overdueDays(UOW);
         assertThat(before).isPositive();
 

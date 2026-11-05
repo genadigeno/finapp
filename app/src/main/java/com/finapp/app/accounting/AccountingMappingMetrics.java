@@ -5,10 +5,7 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicReference;
-import lombok.extern.slf4j.Slf4j;
 
 /**
  * {@code finapp.accounting.gl.unmapped} (`P14-TSK-003` registered it at zero; `P14-TSK-007` feeds it;
@@ -18,11 +15,10 @@ import lombok.extern.slf4j.Slf4j;
  * ({@link GlMappingGap}, on a {@link GlSnapshots} read-only snapshot), so every instance reports the same value -
  * aggregate with {@code max()}, never {@code sum()}. In the normal state - the version total over the ledger's purposes -
  * the reading is 0 without a journal read; 0 with no active version (the GL then answers
- * {@code accounting.NoActiveMapping}, not a gap). Cached for 60 s; unreadable is no value (NaN at Micrometer's edge),
+ * {@code accounting.NoActiveMapping}, not a gap). Bounded by {@link AccountingGaugeRead} on the snapshots it is given, whose 10 s suits a journal read; cached for 60 s; unreadable is no value (NaN at Micrometer's edge),
  * never a zero for a read that failed. No tag, no id, no amount; a count read as a {@code Long} - never a floating-point
  * signature ({@code NoFloatingPointMoneyRulesTest}).
  */
-@Slf4j
 public final class AccountingMappingMetrics {
 
     /** Spelled with dots - exported as {@code finapp_accounting_gl_unmapped}, the plan's name. */
@@ -30,17 +26,11 @@ public final class AccountingMappingMetrics {
 
     private static final Duration MIN_REFRESH = Duration.ofSeconds(60);
 
-    private final GlMappingGap gap;
-    private final GlSnapshots snapshots;
-    private final Clock clock;
-    private final AtomicReference<Cached> cached = new AtomicReference<>(new Cached(Instant.EPOCH, null));
+    private final AccountingGaugeRead<Long> read;
 
-    private record Cached(Instant takenAt, Long lines) {}
-
-    public AccountingMappingMetrics(GlMappingGap gap, GlSnapshots snapshots, Clock clock, MeterRegistry registry) {
-        this.gap = Objects.requireNonNull(gap, "gap");
-        this.snapshots = Objects.requireNonNull(snapshots, "snapshots");
-        this.clock = Objects.requireNonNull(clock, "clock");
+    public AccountingMappingMetrics(GlMappingGap gap, GlSnapshots snapshots, AccountingGaugeRefresher refresher, Clock clock, MeterRegistry registry) {
+        Objects.requireNonNull(gap, "gap");
+        this.read = new AccountingGaugeRead<>("The unmapped GL lines", snapshots, refresher, clock, MIN_REFRESH, gap::unmappedLines);
         Gauge.builder(UNMAPPED, this::unmappedLines)
                 .description("Journal lines in the open period whose purpose the active GL mapping version does not map"
                         + " - shown in the GL's unmapped bucket, never dropped; 0 under a total version or none, no value"
@@ -51,18 +41,6 @@ public final class AccountingMappingMetrics {
 
     /** The cached reading; {@code null} - no value - when the read failed. */
     Long unmappedLines() {
-        Cached current = cached.get();
-        if (Duration.between(current.takenAt(), clock.instant()).compareTo(MIN_REFRESH) < 0) {
-            return current.lines();
-        }
-        Cached fresh;
-        try {
-            fresh = new Cached(clock.instant(), snapshots.read(gap::unmappedLines));
-        } catch (RuntimeException unreadable) {
-            log.warn("The unmapped GL lines could not be read: {}", unreadable.getClass().getSimpleName());
-            fresh = new Cached(clock.instant(), null);
-        }
-        cached.set(fresh);
-        return fresh.lines();
+        return read.current();
     }
 }

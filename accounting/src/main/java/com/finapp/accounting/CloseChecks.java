@@ -347,7 +347,7 @@ public final class CloseChecks {
         }
 
         /** The owner's rule: {@code BATCH}, {@code COMPLETED}, and its batch not repudiated. */
-        private static boolean counts(ReconciliationRunCoverage.Line line) {
+        static boolean counts(ReconciliationRunCoverage.Line line) {
             return ReconciliationRunCoverage.Coverage.BATCH.equals(line.kind())
                     && ReconciliationRunCoverage.Coverage.COMPLETED.equals(line.status()) && !line.repudiated();
         }

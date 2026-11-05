@@ -276,8 +276,11 @@ class AccountingPeriodsTest {
     void overdueDays() {
         assertThat(periods("2026-10-30").overdueDays(UOW)).isZero();
         open(SEPTEMBER);
+        store.databaseToday(java.time.LocalDate.parse("2026-10-01"));
         assertThat(periods("2026-10-01").overdueDays(UOW)).isZero();
+        store.databaseToday(java.time.LocalDate.parse("2026-10-12"));
         assertThat(periods("2026-10-12").overdueDays(UOW)).isEqualTo(10);
+        assertThat(periods("2026-10-01").overdueDays(UOW)).as("the database's date, whatever this instance's clock reads (P14-TSK-020)").isEqualTo(10);
         store.closeForTest(SEPTEMBER);
         assertThat(periods("2026-10-12").overdueDays(UOW)).isZero();
     }

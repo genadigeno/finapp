@@ -92,6 +92,23 @@ public final class JdbcPriorPeriodAdjustmentStore implements PriorPeriodAdjustme
         return ofPeriod(unitOfWork, OF_CORRECTED_SQL, corrected, "reading a month's prior-period adjustments");
     }
 
+    /** {@code status} and {@code proposed_at} are {@code NOT NULL}; {@code proposed_at} the database's clock by {@code accounting V009}'s trigger; {@code prior_period_adjustment_pending} serves it. */
+    static final String STANDING_SQL = "SELECT count(*) FROM accounting.prior_period_adjustment"
+            + " WHERE status = 'PROPOSED' AND proposed_at <= clock_timestamp() - ? * interval '1 millisecond'";
+
+    @Override
+    public long standingPast(Connection unitOfWork, java.time.Duration bound) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(STANDING_SQL)) {
+            read.setLong(1, bound.toMillis());
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        } catch (SQLException failure) {
+            throw failed("counting the prior-period adjustments standing past their bound", failure);
+        }
+    }
+
     @Override
     public List<Row> pending(Connection unitOfWork, int limit) {
         try (PreparedStatement read = unitOfWork.prepareStatement(PENDING_SQL)) {

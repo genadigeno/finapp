@@ -119,8 +119,8 @@ public class AccountingBreakBeans {
 
     /** {@code finapp.accounting.break.open{type}} - read from the database, cached 15 s. */
     @Bean
-    AccountingBreakMetrics accountingBreakMetrics(
-            AccountingBreaks accountingBreaks, DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
-        return new AccountingBreakMetrics(accountingBreaks, dataSource::getConnection, clock, meterRegistry);
+    AccountingBreakMetrics accountingBreakMetrics(AccountingBreaks accountingBreaks,
+            @org.springframework.beans.factory.annotation.Qualifier(AccountingGaugeBeans.SNAPSHOTS) GlSnapshots snapshots, AccountingGaugeRefresher accountingGaugeRefresher, Clock clock, MeterRegistry meterRegistry) {
+        return new AccountingBreakMetrics(accountingBreaks, snapshots, accountingGaugeRefresher, clock, meterRegistry);
     }
 }

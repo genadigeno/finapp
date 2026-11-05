@@ -1,19 +1,22 @@
-# Accounting alerts (PHASE_14_PLAN.md section 16; ADR-0114, ADR-0115). Each alert's procedure is OPERATIONS_RUNBOOK.md section 10.
+# Accounting alerts (PHASE_14_PLAN.md section 16; ADR-0114, ADR-0115, ADR-0118). Each alert's procedure is the OPERATIONS_RUNBOOK.md section its description names.
 #
-# P14-TSK-017 opens this file with the one alert the close run's birth stands on: P14-TSK-020 owns the rest of the plan's table
-# (AccountingCloseOverdue, AccountingCloseCheckFailed, AccountingPostingIntoClosedPeriod, AccountingMappingGap, AccountingBreakAged,
-# AccountingReportDiverged, RegulatorySubmissionRejected) and AlertRulesResolveTest#theAccountingRulesResolve.
-#
-# Every expression names a series the application publishes - AccountingAlertRulesTest evaluates every rule over a scrape whose one
-# sample breaks its condition and proves that alert, and only it, fires, and that none fires on a healthy scrape. The expressions keep
-# to the small grammar that test evaluates; a rule outside it fails the test rather than going unchecked.
+# Every expression names a series the application publishes, with the labels it filters on: AccountingAlertRulesTest resolves each selector against a real scrape of a freshly started instance, then
+# evaluates every rule over that scrape with one sample broken and proves that alert, and only it, fires, and that none fires on a healthy scrape. The evaluator is RuleEvaluator, written here, not
+# Prometheus: it proves the expression, read as this file means it, and no more. No promtool ran on this file (not installed, and the docker daemon was down); routing and paging are Phase 15's. The
+# expressions keep to the small grammar that test evaluates; a rule outside it fails the test rather than going unchecked. Live resolution with a database is AlertRulesResolveTest#theAccountingRulesResolve (owed, C5).
 #
 # Conventions (credit.yml's):
-# - Gauges read the shared database, so every instance publishes the same reading: aggregate with max(), never sum().
-# - A gauge that cannot be read is NaN, never zero and never its last value; x != x holds only for NaN, so the threshold rule cannot
-#   see it and the unreadable rule can.
-# - Never a figure anywhere: no amount, period or subject exists in these series to name.
-# - Local development only: no Alertmanager is wired; routing and paging are Phase 15's.
+# - Gauges read the shared database on its clock, so every instance publishes the same reading: aggregate with max(), never sum().
+# - A counter is per instance: sum() of increase(). A restart is a counter reset, which increase() reads as no event. Every outcome read here is registered at zero from startup, on every instance: increase()
+#   cannot see the first event of a series born at that event. An event in the one scrape interval between an instance's start and its first scrape is still unseen; nothing here closes that.
+# - A gauge that cannot be read is NaN, never zero and never its last value; x != x holds only for NaN, so a threshold rule cannot see it and the unreadable rule can. Accounting's gauges read on their own thread, never on the scrape, so
+#   that holds in any scrape that completes. It does not hold when the scrape is lost: the other modules' gauges still read on the scrape thread, so with the pool exhausted or the database gone nothing is stored at all, an unreadable rule cannot
+#   hold its for, and one instance in that state fires nothing here. absent() is the other half: no instance publishes the series at all, so every threshold rule on it is green for the wrong reason. Nothing in the repository reads up. OPERATIONS_RUNBOOK.md section 10.14.
+# - A level that can hold for good with no door out alerts on its growth (delta), or it fires for good and gets muted: overtaken (the owner's ruling, PI-010) and overdue (an UNKNOWN for good, PI-008). A level
+#   a person's act clears stays a level.
+# - increase() extrapolates, so one event can read just above 1: a rule meaning "more than one" says > 1.5.
+# - Never a figure anywhere: no amount, period, subject or return exists in these series to name.
+# - The bounds are AccountingObjectives' defaults, held equal to this file by AccountingAlertRulesTest. Local development only: no Alertmanager is wired.
 
 groups:
   - name: accounting
@@ -22,7 +25,7 @@ groups:
         # A period LOCKED past the bound (10 polls of the check leg by default, 5 minutes; never under 3) with no close run under its
         # present lock. The lock is the ledger's protection and waits for nothing, so the run is born by the schedule's check leg, not
         # in the lock's transaction - the recorded deviation the owner ratified on this condition. The books are cut and nothing is
-        # judging them: the schedule is off everywhere, or its leg fails on every instance.
+        # judging them: the schedule is off everywhere, or its leg fails on every instance. A minute, since the bound has already waited.
         expr: max(finapp_accounting_close_run_stalled) > 0
         for: 1m
         labels:
@@ -39,3 +42,270 @@ groups:
         annotations:
           summary: "Whether a close run has stalled cannot be read"
           description: "finapp.accounting.close.run.stalled has no value. See OPERATIONS_RUNBOOK.md section 10.1."
+      - alert: AccountingCloseCheckStalled
+        # The owner's ruling on P14-TSK-017's I-5: attempts of a present run claimable past the same bound with nobody claiming them. What the claim holds back never counts, a deferred attempt
+        # (a set awaited) is re-claimed every poll, and a queue behind a live claim is a leg at work, so none of those is firing here. The cost: a hung judge's heartbeat hides it for max-run plus a lease from its last claim, 2 h 02; a judge that
+        # hangs on every reclaim walks the fleet, so on 1 to 4 instances this fires near N x 2 h 02, and on 5 or more never: at about 8 h 08 the attempt concludes WORKERS_EXHAUSTED, a ticket, four legs still stuck. OPERATIONS_RUNBOOK.md section 10.9.
+        expr: max(finapp_accounting_close_check_stalled) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "A close check has stood claimable with nobody claiming it"
+          description: "The check leg stopped after the run was born: nothing is judging this month. See OPERATIONS_RUNBOOK.md section 10.9."
+      - alert: AccountingCloseCheckStallUnreadable
+        expr: max(finapp_accounting_close_check_stalled != finapp_accounting_close_check_stalled)
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Whether a close check has stalled cannot be read"
+          description: "finapp.accounting.close.check.stalled has no value. See OPERATIONS_RUNBOOK.md section 10.9."
+      - alert: AccountingCloseOverdue
+        # The oldest month not CLOSED, in whole days past the first day it could lock. Seven days hold five business days: a month closed inside a working week never reaches it (AccountingObjectives, an owner
+        # item). The gauge moves once a day, so an hour's wait costs nothing. A reopened month reads its whole age, so a reopen fires this within the hour: that month is unclosed, and the runbook says so.
+        expr: max(finapp_accounting_period_open_age_days) > 7
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The oldest unclosed accounting period is past its close week"
+          description: "A month has stood unclosed {{ $value }} days past the day it could lock, and later months wait behind it: the close is in order. See OPERATIONS_RUNBOOK.md section 10.7."
+      - alert: AccountingScheduleOff
+        # No instance runs the close schedule: no month opens, no check runs, no return is asked after. max(), since one instance off is no break: the others take every leg.
+        expr: max(finapp_accounting_sweeper_enabled) == 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "No instance runs the accounting close schedule"
+          description: "finapp.accounting.sweeper.enabled is 0 on every instance. See OPERATIONS_RUNBOOK.md section 10.7."
+      - alert: AccountingCloseCheckFailed
+        # An attempt concluded FAILED: the month cannot be proposed. deferred (a set awaited, P14-TSK-012's item 1), overtaken and disclosed are not. An event, so an hour's window: a person re-running sees it again.
+        expr: sum by (check) (increase(finapp_accounting_close_check_total{outcome="failed"}[1h])) > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The close check {{ $labels.check }} failed"
+          description: "A month's check failed, and no door discloses a must-pass one. See OPERATIONS_RUNBOOK.md section 10.9, then section 10.3 for the check by name."
+      - alert: AccountingCloseLegFailing
+        # A leg of the close schedule threw: open (hourly), checks and orphans and inquiry (each within a minute). More than one in two hours, so one blip is silent and the hourly leg's second failure is seen.
+        expr: sum by (leg) (increase(finapp_accounting_close_leg_failed_total[2h])) > 1.5
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The accounting close schedule's {{ $labels.leg }} leg keeps failing"
+          description: "The leg counted failures and is logged by class. See OPERATIONS_RUNBOOK.md section 10.9; for the inquiry leg, section 10.6."
+      - alert: AccountingPostingIntoClosedPeriod
+        # A posting or a reversal refused ledger.PeriodClosed. Every system poster floors (C3) and a rule dated today is never reached, and every reversal poster dates today or later, so at rest nothing counts; one that does is a defect or a clock behind the database's, and a poster's sweep would re-drive it.
+        expr: sum by (command) (increase(finapp_accounting_cutoff_refused_total{command!="adjustment"}[15m])) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "A {{ $labels.command }} was refused at the accounting cutoff"
+          description: "An entry dated into a locked or closed period was refused and nothing was written. See OPERATIONS_RUNBOOK.md section 10.8."
+      - alert: AccountingAdjustmentIntoClosedPeriod
+        # A person's adjustment refused at its approval (REFUSED_AT_APPROVAL): it stands PROPOSED, the same door as AccountingAdjustmentStanding (P14-TSK-013's routed note). A person is there to read the refusal, so a ticket.
+        expr: sum(increase(finapp_accounting_cutoff_refused_total{command="adjustment"}[1h])) > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "An adjustment's approval was refused at the accounting cutoff"
+          description: "The month it is dated in is locked or closed, and the proposal stands. See OPERATIONS_RUNBOOK.md section 10.4."
+      - alert: AccountingAdjustmentStanding
+        # A prior-period adjustment PROPOSED past finapp.accounting.adjustment.standing-after, 7 days by default on the database's clock: it may no longer be able to post, and only a person's rejection ends it.
+        expr: max(finapp_accounting_adjustment_standing) > 0
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A prior-period adjustment has stood proposed past its week"
+          description: "Nothing moves a proposal but a person, whether or not it can still post. See OPERATIONS_RUNBOOK.md section 10.4."
+      - alert: AccountingMappingGap
+        # Lines in the open period the active version does not map. 0 under a total version, and 0 with no version at all: that state is the first activation's, not this alert's.
+        expr: max(finapp_accounting_gl_unmapped) > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Journal lines in the open period have no GL mapping"
+          description: "They stand in the GL's unmapped bucket, and a month holding them cannot pass GL_EQUALS_LEDGER. See OPERATIONS_RUNBOOK.md section 10.12."
+      - alert: AccountingBreakAged
+        # A break still OPEN past finapp.accounting.break.aged-after, 7 days by default. OPEN alone: an ACKNOWLEDGED generation, superseded or not, was decided and can stand for good (P14-TSK-012's item 2), so this never reads break.open.
+        expr: max by (type) (finapp_accounting_break_aged) > 0
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: "An accounting break of type {{ $labels.type }} has stood open past its week"
+          description: "Nobody has decided on it, and it blocks its month if that month is not yet closed. See OPERATIONS_RUNBOOK.md section 10.13."
+      - alert: AccountingReportDiverged
+        # A FINAL run's regeneration was not IDENTICAL, an empty regeneratedSha256 among them (a definition now refusing what it issued, P14-TSK-016). Counted once per keyed regeneration, so at rest nothing counts.
+        expr: sum by (definition) (increase(finapp_accounting_report_diverged_total[1h])) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "A FINAL {{ $labels.definition }} run did not reproduce"
+          description: "A FINAL report that does not reproduce is an incident, never a repair. See OPERATIONS_RUNBOOK.md section 10.10, and section 10.5 for a statement."
+      - alert: AccountingClosedMonthStatementRefused
+        # A definition refused on a FINAL run, a set's hole apart (translation_incomplete is configuration): on a CLOSED month the journal moved under the close, or something bypassed the machine (P14-TSK-016). AccountingReportRunFailed fires with it.
+        expr: sum(increase(finapp_accounting_report_refused_total{outcome="final_run"}[1h])) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "A statement of a closed month was refused"
+          description: "The reason stays on the audit record: read refusal= on accounting.ReportGenerated for the run, which never reaches this alert (the owner's (aa)). See OPERATIONS_RUNBOOK.md section 10.5."
+      - alert: AccountingReportRunFailed
+        # Any run ended FAILED: a refusal on an open month, a set's hole, a time bound, a retired definition. A new revision can be asked, so a ticket.
+        expr: sum by (definition) (increase(finapp_accounting_report_run_total{outcome="failed"}[1h])) > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A {{ $labels.definition }} report run failed"
+          description: "Read the run and accounting.ReportGenerated in the audit record, whose refusal= says why when a definition refused. See OPERATIONS_RUNBOOK.md section 10.5."
+      - alert: AccountingClosedMonthLostItsRun
+        # A repudiation after a month closed took its counting run for a source (P14-TSK-012's item 7). The latest closed month alone, the one a reopen can reach; what a person does about it is owner item (l), still open.
+        expr: max(finapp_accounting_close_month_unrun) > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The latest closed month has a source with no run that counts"
+          description: "A batch was repudiated after the close, and the month says nothing of it until asked. See OPERATIONS_RUNBOOK.md section 10.11."
+      - alert: RegulatorySubmissionRejected
+        expr: sum(increase(finapp_accounting_regulatory_submission_total{outcome="rejected"}[1h])) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "A provider rejected a regulatory return"
+          description: "Its code and bytes are on the read. See OPERATIONS_RUNBOOK.md section 10.6."
+      - alert: RegulatoryContraryAnswer
+        # A contrary answer never clears, so no gauge holds it: the counter's increase, and the standing list names the return (P14-TSK-018).
+        expr: sum(increase(finapp_accounting_regulatory_submission_total{outcome="contrary"}[1h])) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "A provider's answer contradicts a concluded regulatory return"
+          description: "Do not resend and do not write to the row. See OPERATIONS_RUNBOOK.md section 10.6."
+      - alert: RegulatoryRunBytesDiffer
+        expr: sum(increase(finapp_accounting_regulatory_submission_total{outcome="run_bytes_differ"}[1h])) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "A FINAL run's bytes no longer prove against its stored hash"
+          description: "Report runs are frozen, so someone wrote to one: an integrity incident. See OPERATIONS_RUNBOOK.md section 10.6."
+      - alert: RegulatorySendWithheld
+        expr: sum(increase(finapp_accounting_regulatory_submission_total{outcome="send_withheld_month_moved"}[1h])) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "A regulatory return's first send was withheld: its month moved"
+          description: "The platform does not send figures the books no longer say. See OPERATIONS_RUNBOOK.md section 10.6."
+      - alert: RegulatoryResendWithheld
+        expr: sum(increase(finapp_accounting_regulatory_submission_total{outcome="not_resent_month_moved"}[1h])) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "A regulatory return was not resent: its month moved"
+          description: "The platform does not send figures the books no longer say. See OPERATIONS_RUNBOOK.md section 10.6."
+      - alert: RegulatoryAnswerAnomaly
+        # A definite acknowledgement can read UNKNOWN when its reference merely holds an instrument's shape, and that return is then SUBMITTED for good, its form and month held.
+        expr: sum(increase(finapp_accounting_regulatory_submission_total{outcome="answer_anomaly"}[1h])) > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A provider's answer on a regulatory return was screened as an anomaly"
+          description: "Read the answer's bytes and escalate; nothing here clears it. See OPERATIONS_RUNBOOK.md section 10.6."
+      - alert: RegulatoryReturnOverdue
+        # Growth, not level: a return answered UNKNOWN for good stays overdue for good with no door (PI-008), and a level rule would then hide every later one. delta reads the hour's two ends: a rise netted against a clearing inside the hour is not seen, nor one with a NaN at either end.
+        expr: max(delta(finapp_accounting_regulatory_attention{kind="overdue"}[1h])) > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A regulatory return went past its answer horizon"
+          description: "SUBMITTED, past finapp.accounting.regulatory.answer-horizon, one day by default. See OPERATIONS_RUNBOOK.md section 10.6."
+      - alert: RegulatoryReturnOvertaken
+        # Growth, not level, by the owner's ruling (PI-010): it holds for good when a person decides no correction is owed. delta reads the hour's two ends: a rise netted against a clearing inside the hour is not seen, nor one with a NaN at either end.
+        expr: max(delta(finapp_accounting_regulatory_attention{kind="overtaken"}[1h])) > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A regulatory return was overtaken by a reopen"
+          description: "The regulator holds, or may hold, a figure the books no longer say. See OPERATIONS_RUNBOOK.md section 10.6."
+      - alert: RegulatoryResendsExhausted
+        # A level: a person's door clears it.
+        expr: max(finapp_accounting_regulatory_attention{kind="resends_exhausted"}) > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A regulatory return spent its resends with the provider still answering not received"
+          description: "A person's door is open. See OPERATIONS_RUNBOOK.md section 10.6."
+      - alert: RegulatoryStaleUnsent
+        # A level: a withdrawal or a refusal clears it. An hour, since a reopen's drafts are a preparer's to clear and nothing is sent meanwhile.
+        expr: max(finapp_accounting_regulatory_attention{kind="stale_unsent"}) > 0
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A regulatory return not yet sent has been overtaken by its month"
+          description: "No act going forward will pass. See OPERATIONS_RUNBOOK.md section 10.6."
+      - alert: RegulatoryAttentionUnreadable
+        expr: max(finapp_accounting_regulatory_attention != finapp_accounting_regulatory_attention)
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "What stands on the regulatory returns cannot be read"
+          description: "finapp.accounting.regulatory.attention has no value. See OPERATIONS_RUNBOOK.md section 10.6, and section 10.14 for the read."
+      - alert: AccountingGaugesUnreadable
+        # NaN in scrapes that complete: a read failed. Each gauge with no unreadable rule of its own. With the database gone or the pool exhausted the scrape itself is lost and this cannot hold its for: OPERATIONS_RUNBOOK.md section 10.14.
+        expr: max(finapp_accounting_period_open_age_days != finapp_accounting_period_open_age_days) or max(finapp_accounting_gl_unmapped != finapp_accounting_gl_unmapped) or max(finapp_accounting_break_open != finapp_accounting_break_open) or max(finapp_accounting_break_aged != finapp_accounting_break_aged) or max(finapp_accounting_adjustment_standing != finapp_accounting_adjustment_standing) or max(finapp_accounting_close_month_unrun != finapp_accounting_close_month_unrun)
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "An accounting gauge cannot be read"
+          description: "A gauge read failed or outlived its bound, so the alerts on it cannot fire. See OPERATIONS_RUNBOOK.md section 10.14."
+      - alert: AccountingGaugesAbsent
+        # No instance publishes the series at all: the fleet is down, every instance's scrape is being lost (the database gone or the pool exhausted), or a release dropped a meter. Every threshold rule on it is then green for the wrong reason. A ticket guarding rules that page: an owner item.
+        expr: absent(finapp_accounting_close_run_stalled) or absent(finapp_accounting_close_check_stalled) or absent(finapp_accounting_period_open_age_days) or absent(finapp_accounting_sweeper_enabled) or absent(finapp_accounting_adjustment_standing) or absent(finapp_accounting_gl_unmapped) or absent(finapp_accounting_break_open) or absent(finapp_accounting_break_aged) or absent(finapp_accounting_close_month_unrun) or absent(finapp_accounting_regulatory_attention)
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "An accounting gauge is not published by any instance"
+          description: "The alerts reading it cannot fire. See OPERATIONS_RUNBOOK.md section 10.14."
+      - alert: WriteOffApproved
+        # P14-TSK-021: a financial event an operator expects to know of, not a break: P14-TSK-021's note asks for it. It stays firing for an hour after the last approval, per product. Nothing else in this file fires on an expected act.
+        expr: sum by (product) (increase(finapp_lending_write_off_total{outcome="approved"}[1h])) > 0 or sum by (product) (increase(finapp_bnpl_write_off_total{outcome="approved"}[1h])) > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A {{ $labels.product }} write-off was approved"
+          description: "Its entry stands, and nothing leaves WRITTEN_OFF. See OPERATIONS_RUNBOOK.md section 7.13."
+      - alert: WriteOffSelfDealingRefused
+        # P14-TSK-021: a signal for the security desk: an operator acting on their own party's account.
+        expr: sum by (product) (increase(finapp_lending_write_off_total{outcome="self_dealing_refused"}[1h])) > 0 or sum by (product) (increase(finapp_bnpl_write_off_total{outcome="self_dealing_refused"}[1h])) > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A {{ $labels.product }} write-off was refused as self-dealing"
+          description: "For the security desk: the audit record names who. See OPERATIONS_RUNBOOK.md section 7.13."

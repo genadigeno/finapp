@@ -53,6 +53,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -96,6 +97,23 @@ class AccountingBreakDatabaseTest {
     private final GlSnapshots snapshots = new GlSnapshots(DatabaseRoles::application, Duration.ofSeconds(30));
     private SourceProofs proofs = (snapshot, source) -> source.proofs().stream()
             .map(proof -> new SourceProofs.Reading(proof, true, List.of())).toList();
+
+    /**
+     * `P14-TSK-020`; `P14-TSK-012`'s item 2: the read behind {@code AccountingBreakAged}. A delta: other cases of this shared suite leave breaks in their own random months, and the read has no month in it. {@code raisedBreak} is an {@code OPEN} {@code SHAPE_MISMATCH} of this case's own.
+     */
+    @Test
+    @DisplayName("break.aged's read: an OPEN break counts past the bound and not inside it, on the database's clock, under its type")
+    void anOpenBreakAgesOnTheDatabasesClock() throws Exception {
+        JdbcAccountingBreakStore store = new JdbcAccountingBreakStore();
+        Map<BreakType, Long> before = inScope(Actor.SYSTEM, uow -> store.agedOpenByType(uow, Duration.ofMillis(1)));
+        Map<BreakType, Long> yearBefore = inScope(Actor.SYSTEM, uow -> store.agedOpenByType(uow, Duration.ofDays(3650)));
+        raisedBreak();
+        Thread.sleep(5); // The statement measures "<= now - 1 ms": a real millisecond must pass, on the database's clock.
+        Map<BreakType, Long> after = inScope(Actor.SYSTEM, uow -> store.agedOpenByType(uow, Duration.ofMillis(1)));
+        assertThat(after.getOrDefault(BreakType.SHAPE_MISMATCH, 0L)).isGreaterThan(before.getOrDefault(BreakType.SHAPE_MISMATCH, 0L));
+        Map<BreakType, Long> yearAfter = inScope(Actor.SYSTEM, uow -> store.agedOpenByType(uow, Duration.ofDays(3650)));
+        assertThat(yearAfter).as("inside the bound").isEqualTo(yearBefore);
+    }
 
     @Test
     @DisplayName("two raises, one break: the check run twice leaves one row for the subject, one RAISED case-file row,"

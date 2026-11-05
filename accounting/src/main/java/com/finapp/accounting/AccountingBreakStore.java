@@ -3,6 +3,7 @@ package com.finapp.accounting;
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.sql.Connection;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.YearMonth;
 import java.util.List;
@@ -188,6 +189,12 @@ public interface AccountingBreakStore {
 
     /** How many breaks are not {@code RESOLVED}, per type - {@code finapp.accounting.break.open{type}}. */
     Map<BreakType, Long> openByType(Connection unitOfWork);
+
+    /**
+     * How many breaks are {@code OPEN}, raised at least {@code bound} ago on the database's clock, per type - {@code finapp.accounting.break.aged{type}} (`P14-TSK-020`; `P14-TSK-012`'s item 2).
+     * {@code OPEN} alone: an {@code ACKNOWLEDGED} generation, superseded or not, was decided by two people and can stand for good, so it never asks anyone anything.
+     */
+    Map<BreakType, Long> agedOpenByType(Connection unitOfWork, Duration bound);
 
     /** How many breaks of {@code period} per status - a status with none absent ({@code OPEN_ACCOUNTING_BREAKS}, `P14-TSK-011`). */
     Map<BreakStatus, Long> countByStatus(Connection unitOfWork, YearMonth period);
