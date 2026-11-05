@@ -29,13 +29,13 @@ import java.util.stream.Collectors;
  * <p><strong>Each statement names one module's schema</strong>, and the definition combines them in Java (ADR-0006). {@code SELECT} only, on the definition's snapshot, one statement each, no lock.
  *
  * <p><strong>{@link #COMMITTED_FACTS} reads no status.</strong> Every column it selects is frozen by a trigger for every writer: a loan's identity and {@code opened_at} (lending {@code V006}, {@code V032}), agreement version 1 (INSERT-only), an offer's terms version, the term set, and a disbursement's {@code value_date}, {@code decided_at} and {@code failure_reason} (NULL while {@code PENDING}, frozen once terminal). A later decision has a later date,
- * so no later act can change what {@link LendingFundedAsOfCutoff.LoanFacts#stoodCommitted} decides of a past cutoff. Driven from {@code loan_disbursement}: one row per instalment loan, born beside it and required at its commit by a deferred check, so the inner joins lose no loan, a credit line - which commits no capital (A28) - has no row, and the where clause's one predicate bounds the read to what could count.
+ * so no later act can change what {@link LendingFundedAsOfCutoff.LoanFacts#stoodCommitted} decides of a past cutoff. Driven from {@code loan_disbursement}: one row per instalment loan, born beside it and required at its commit by a deferred check, so the inner joins lose no loan, a credit line - which commits no capital (A28) - has no row, and the where clause bounds the read to what could count: a loan that stood, one since disbursed, one cancelled.
  *
  * <p><strong>NULL.</strong> {@code value_date} is the one nullable column compared in SQL, and the predicate names both branches. Everything else nullable is decided in Java, on an {@link Optional}. The statements' behaviour against PostgreSQL is {@code SafeguardingReturnDatabaseTest}'s (owed, C5).
  */
 public final class LendingFundedAsOfCutoffReads implements LendingFundedAsOfCutoff {
 
-    /** Each instalment loan not disbursed by the cutoff: its frozen facts. */
+    /** Each instalment loan opened by the cutoff and not disbursed by it: its frozen facts. An old month's regeneration reads only what stood then, never every loan since. */
     static final String COMMITTED_FACTS = "SELECT loan.currency, agreement.scale, agreement.amount_minor, loan.opened_at,"
             + " lending.business_date(loan.opened_at, terms.servicing_zone) AS opened_on,"
             + " disbursement.value_date, disbursement.decided_at,"
@@ -46,7 +46,8 @@ public final class LendingFundedAsOfCutoffReads implements LendingFundedAsOfCuto
             + " JOIN lending.loan_agreement agreement ON agreement.loan_id = loan.id AND agreement.version = 1"
             + " JOIN lending.loan_offer offer ON offer.id = loan.offer_id"
             + " JOIN lending.loan_terms terms ON terms.terms_version_id = offer.terms_version_id"
-            + " WHERE disbursement.value_date IS NULL OR disbursement.value_date > ?";
+            + " WHERE lending.business_date(loan.opened_at, terms.servicing_zone) <= ?"
+            + " AND (disbursement.value_date IS NULL OR disbursement.value_date > ?)";
 
     /** The outstanding term's purposes' lines of the entries holding a line on a write-off expense, per currency, scale and side. The names are this codebase's own constants, and a statement never carries a value from anywhere else. */
     static final String WRITTEN_OFF = "SELECT line.currency, line.scale, line.direction, SUM(line.amount_minor) AS total, COUNT(*) AS lines"
@@ -74,6 +75,7 @@ public final class LendingFundedAsOfCutoffReads implements LendingFundedAsOfCuto
         Objects.requireNonNull(cut, "cut");
         try (PreparedStatement read = snapshot.prepareStatement(COMMITTED_FACTS)) {
             read.setDate(1, Date.valueOf(cutoff));
+            read.setDate(2, Date.valueOf(cutoff));
             List<LoanFacts> facts = new ArrayList<>();
             try (ResultSet row = read.executeQuery()) {
                 while (row.next()) {

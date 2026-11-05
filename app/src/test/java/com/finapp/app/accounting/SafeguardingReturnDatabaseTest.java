@@ -343,7 +343,7 @@ class SafeguardingReturnDatabaseTest {
     // ------------------------------------------------------------------ as of the cutoff
 
     @Test
-    @DisplayName("the journal's reads are by posting date: a write-off valued in the month and posted after it is in neither the month's outstanding nor its written off, on the real statement, and is in the next month's")
+    @DisplayName("the journal's reads are by posting date: a write-off valued in the month and posted after it has not happened as of the month, its principal still outstanding and nothing more written off, on the real statements, and is written off by the next month's")
     void aBackDatedWriteOffCountsByItsPostingDate() throws Exception {
         YearMonth month = openMonth();
         LedgerAccount loan = owned(AccountPurpose.LOAN_PRINCIPAL, AccountType.ASSET, EUR);
@@ -411,7 +411,7 @@ class SafeguardingReturnDatabaseTest {
     // ------------------------------------------------------------------ ten instances
 
     @Test
-    @DisplayName("ten instances race to issue one month's FINAL: one run, FINAL, its one hash; each read the same bytes")
+    @DisplayName("ten instances race to issue one month's FINAL: one run, FINAL, its stored hash its content's, and regenerating it identical")
     void tenInstancesIssueOneFinal() throws Exception {
         YearMonth month = openMonth();
         post(month.atDay(8), operational(AccountPurpose.CASH_AT_BANK, EUR), owned(AccountPurpose.CUSTOMER_WALLET, AccountType.LIABILITY, EUR), 11_00, EUR);

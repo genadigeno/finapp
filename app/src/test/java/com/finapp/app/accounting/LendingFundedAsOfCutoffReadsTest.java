@@ -74,7 +74,8 @@ class LendingFundedAsOfCutoffReadsTest {
         assertThat(lowered).doesNotContain("status").doesNotContain("party").doesNotContain("actor").doesNotContain("reason,").doesNotContain("correlation");
         assertThat(lowered).as("only ever the agreement's first version: an amendment exists only on an ACTIVE loan").contains("agreement.version = 1");
         assertThat(lowered).as("a cancellation's date only when it was one").contains("case when disbursement.failure_reason is not null");
-        assertThat(lowered).as("the one nullable comparison in SQL names both branches").contains("disbursement.value_date is null or disbursement.value_date > ?");
+        assertThat(lowered).as("the one nullable comparison in SQL names both branches").contains("and (disbursement.value_date is null or disbursement.value_date > ?)");
+        assertThat(lowered).as("an old month's regeneration reads what stood then, never every loan since").contains("where lending.business_date(loan.opened_at, terms.servicing_zone) <= ?");
         assertThat(lowered).as("driven from one row per instalment loan, so no join multiplies a loan").contains("from lending.loan_disbursement disbursement");
     }
 
@@ -105,7 +106,7 @@ class LendingFundedAsOfCutoffReadsTest {
         assertThat(committed).extracting(LendingFundedAsOfCutoff.Committed::currency, LendingFundedAsOfCutoff.Committed::scale, LendingFundedAsOfCutoff.Committed::minor, LendingFundedAsOfCutoff.Committed::loans)
                 .containsExactly(org.assertj.core.groups.Tuple.tuple("EUR", 2, BigInteger.valueOf(110_00), 3L), org.assertj.core.groups.Tuple.tuple("USD", 0, BigInteger.valueOf(7), 1L));
         assertThat(statements.prepared).containsExactly(LendingFundedAsOfCutoffReads.COMMITTED_FACTS);
-        assertThat(statements.bound).containsExactly(Date.valueOf(CUTOFF));
+        assertThat(statements.bound).containsExactly(Date.valueOf(CUTOFF), Date.valueOf(CUTOFF));
     }
 
     @Test
@@ -123,7 +124,7 @@ class LendingFundedAsOfCutoffReadsTest {
                 loan("EUR", 2, 10_00, CUTOFF.minusDays(9), MIDDAY.plusSeconds(20), null, null, null),
                 loan("EUR", 2, 20_00, CUTOFF.minusDays(9), MIDDAY, null, null, null)));
         assertThat(reads.committed(facts.connection(), CUTOFF, Optional.of(cut))).singleElement().satisfies(held -> assertThat(held.minor()).isEqualTo(BigInteger.valueOf(20_00)));
-        assertThat(facts.bound).as("the statement is the same one, with the same one parameter").containsExactly(Date.valueOf(CUTOFF));
+        assertThat(facts.bound).as("the statement is the same one, with the same parameters").containsExactly(Date.valueOf(CUTOFF), Date.valueOf(CUTOFF));
 
         ScriptedStatements lines = new ScriptedStatements(sql -> List.of());
         reads.writtenOff(lines.connection(), CUTOFF, Optional.of(cut));

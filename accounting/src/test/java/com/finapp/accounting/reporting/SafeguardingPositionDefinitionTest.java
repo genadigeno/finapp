@@ -167,7 +167,7 @@ class SafeguardingPositionDefinitionTest {
     }
 
     @Test
-    @DisplayName("as of the cutoff: a line on the last day counts, a line posted after it does not, whatever it is about, and a loan and a line alike and BNPL's principal with them")
+    @DisplayName("as of the cutoff: a line on the last day counts and a line posted after it does not; principal not yet due, due, and BNPL's alike, and a billing between the first two moves nothing")
     void theJournalIsReadByPostingDate() {
         books.post(LAST_DAY, EUR, 2, 11_00, LOAN_PRINCIPAL, WALLET);
         books.post(MONTH.atDay(2), EUR, 2, 3_00, LOAN_PRINCIPAL_DUE, LOAN_PRINCIPAL);
