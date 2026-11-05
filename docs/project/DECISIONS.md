@@ -1203,7 +1203,7 @@ Planned by the Phase 13 → 14 transition (2026-10-29) in `PHASE_14_PLAN.md`, wi
 as recommended defaults awaiting ratification; nothing of it is built. The phase's tasks are `P14-TSK-001`…`-021`,
 `P14-TST-001` (planned and `POSTPONED`, PI-004), `P14-TST-002` and `P14-DOC-001`, whose review reads each ADR against the
 code. The invariants are `INV-ACC-06`…`-14` (nine new beside `INV-ACC-01`…`-05`; the catalogue 162 → 171). The phase's
-ADRs are ADR-0113…ADR-0118; **the next free number is ADR-0119.** Phase 14 moves no money and creates no competing
+ADRs are ADR-0113…ADR-0119 (ADR-0119 written by `P14-TSK-026`); **the next free number is ADR-0120.** Phase 14 moves no money and creates no competing
 record: every GL figure is a function of the journal.
 
 **One `accounting` module, the GL a versioned mapping over the one journal.** Schema `accounting`, edges to `platform` and

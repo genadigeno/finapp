@@ -154,6 +154,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0116](ADR-0116-multi-currency-valuation-and-reporting-currency-translation.md) | Multi-currency valuation: a functional currency, valuation rate sets separate from execution, translation at report time | Proposed | 14 | Accounting / General Ledger · Reporting · FX |
 | [0117](ADR-0117-the-posting-rule-register-gl-reconciliation-and-accounting-breaks.md) | The posting rule register, GL to ledger to source reconciliation, and accounting breaks | Proposed | 14 | Accounting / General Ledger · Reconciliation · every posting module |
 | [0118](ADR-0118-regulatory-reporting-behind-jurisdiction-adapters.md) | Regulatory reporting behind jurisdiction adapters: obligations as configuration, submissions from FINAL runs, a simulated reference adapter | Proposed | 14 | Reporting · Accounting / General Ledger · Lending |
+| [0119](ADR-0119-a-projection-rebuild-door-and-a-reference-gaps-way-on.md) | A four-eyes projection rebuild, and a reference gap's way on: the real last observation, disclosed | Proposed | 14 | Ledger · Accounting / General Ledger · FX |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch
@@ -221,4 +222,6 @@ with no ledger edge) and the accounting period and close model as ADR-0114 (the 
 at insert under namespace `14`, the four-eyes close, prior-period adjustments). The transition also wrote ADR-0115
 (reproducible report runs — `DELIVERY_PLAN.md` §Phase 14's "reporting read-model architecture"), ADR-0116 (valuation
 and translation), ADR-0117 (the posting rule register and accounting breaks) and ADR-0118 (regulatory reporting behind
-adapters). All six `Proposed`; the next free number is ADR-0119.)*
+adapters). All six `Proposed`; the next free number is ADR-0119.)* *(`P14-TSK-026`, 2026-11-06, wrote ADR-0119 - a four-eyes
+projection rebuild (ADR-0041 rule 2 built) and a reference gap's way on, superseding ADR-0116 decision 2 in part; the next
+free number is ADR-0120.)*
