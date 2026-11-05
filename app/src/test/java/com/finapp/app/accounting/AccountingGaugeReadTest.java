@@ -93,6 +93,10 @@ class AccountingGaugeReadTest {
             assertThat(opened).as("no second connection for this gauge").hasValue(1);
             release.countDown();
             awaitReading(read, 7L);
+            CountDownLatch drained = new CountDownLatch(1);
+            production.execute(drained::countDown);
+            assertThat(drained.await(WAIT.toSeconds(), TimeUnit.SECONDS)).as("whatever was queued has run").isTrue();
+            assertThat(opened).as("two asks while one read stood in flight: one read, its single flight").hasValue(1);
         } finally {
             release.countDown();
             scrape.shutdownNow();
