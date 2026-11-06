@@ -451,8 +451,12 @@ class AccountingBatteryTest {
      * BNPL books; projection verification the products' proofs; the reconciliation disclosure a month's reconciliation runs - none
      * of them this journal's to answer, and each judged by its own suite ({@code CloseRunDatabaseTest}, {@code
      * AccountingSourceProofsDatabaseTest}).
+     *
+     * <p>A name in {@code CheckVerdict.JUDGED_BY}'s grammar ({@code accounting V007}'s {@code close_check_judged_by_a_version}):
+     * the phase's database pass found it written {@code battery:the-suite's-verdict}, whose apostrophe the grammar refuses, so
+     * the battery stopped at its first stub verdict before any fact was compared ({@code P14-DOC-001}, the battery's wiring).
      */
-    static final String STUB = "battery:the-suite's-verdict";
+    static final String STUB = "battery:the-suites-verdict";
 
     /** What each judged check concluded, by {@code month CHECK}. */
     private static final Map<String, CheckVerdict> VERDICTS = new TreeMap<>();

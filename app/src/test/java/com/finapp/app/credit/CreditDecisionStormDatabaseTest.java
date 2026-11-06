@@ -1502,38 +1502,27 @@ class CreditDecisionStormDatabaseTest {
 
         Path out = Files.createTempFile("storm-replay", ".txt");
         Path log = Files.createTempFile("storm-replay", ".log");
-        Path coordinates = Files.createTempFile("storm-replay", ".args");
+        Path options = Files.createTempFile("storm-replay", ".args");
         try {
-            List<String> properties = new ArrayList<>();
-            for (String property : List.of("finapp.db.url", "finapp.db.app.user", "finapp.db.app.password")) {
-                properties.add(quoted("-D" + property + "=" + DatabaseRoles.required(property)));
-            }
-            Files.write(coordinates, properties, StandardCharsets.UTF_8);
-            String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-            List<String> command = new ArrayList<>(List.of(java, "-Xmx1g", "@" + coordinates,
-                    "-Dfile.encoding=UTF-16", "-Duser.language=ar", "-Duser.country=EG", "-Duser.timezone=America/Adak",
-                    "-cp", System.getProperty("java.class.path"), ReplayInAnotherJvm.class.getName(), out.toString()));
-            Process child = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile()).start();
+            // The coordinates, the options and the classpath in an argument file (ReplayInAnotherJvm.launch): never on a command
+            // line, which Windows refuses past 32,767 characters on app's classpath from a deep checkout (P14-DOC-001).
+            Process child = ReplayInAnotherJvm.start(options, out, log);
             assertThat(child.waitFor(10, TimeUnit.MINUTES)).as("the second JVM finished").isTrue();
             assertThat(child.exitValue()).as(Files.readString(log, StandardCharsets.UTF_8)).isZero();
             List<String> theirs = Files.readAllLines(out, StandardCharsets.UTF_8);
-            assertThat(theirs.get(0)).isEqualTo("charset=UTF-16 locale=ar-EG zone=America/Adak");
+            assertThat(theirs.get(0)).isEqualTo(ReplayInAnotherJvm.CHILD_DEFAULTS);
             assertThat(theirs.subList(1, theirs.size())).as("the replay census: a second JVM reaches every verdict")
                     .isEqualTo(lines);
         } finally {
             Files.deleteIfExists(out);
             Files.deleteIfExists(log);
-            Files.deleteIfExists(coordinates);
+            Files.deleteIfExists(options);
         }
         assertThat(reasonsOutOfRuleOrder()).as("the replay census: reasons in rule order, from the rows alone").isEmpty();
         CreditReplayProof.Report gauge = context.getBean(CreditReplayMetrics.class).readNow();
         assertThat(gauge.diverged()).isEmpty();
         System.out.printf("P10-TST-001 REPLAY: %d decisions IDENTICAL in two JVMs (%d by a person)%n", decisions,
                 count("SELECT count(*) FROM credit.credit_decision WHERE decided_by_type = 'EMPLOYEE'"));
-    }
-
-    private static String quoted(String argument) {
-        return "\"" + argument.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     /** Engine version 1's reasons recomputed from each platform decision's stored rule results and pinned rules. */

@@ -461,38 +461,23 @@ class DecisionReproducibilityBatteryTest {
     void aSecondJvmReplaysIdentically() throws Exception {
         Path out = Files.createTempFile("battery-replay", ".txt");
         Path log = Files.createTempFile("battery-replay", ".log");
-        Path coordinates = Files.createTempFile("battery-replay", ".args");
+        Path options = Files.createTempFile("battery-replay", ".args");
         try {
-            // The database's coordinates reach the second JVM through an argument file, read at its start and deleted
-            // after - never on a command line another process on the machine could list.
-            List<String> properties = new ArrayList<>();
-            for (String property : List.of("finapp.db.url", "finapp.db.app.user", "finapp.db.app.password")) {
-                properties.add(quoted("-D" + property + "=" + DatabaseRoles.required(property)));
-            }
-            Files.write(coordinates, properties, StandardCharsets.UTF_8);
-            String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-            List<String> command = new ArrayList<>(List.of(java, "-Xmx1g", "@" + coordinates,
-                    "-Dfile.encoding=UTF-16", "-Duser.language=ar", "-Duser.country=EG", "-Duser.timezone=America/Adak"));
-            command.addAll(List.of("-cp", System.getProperty("java.class.path"), ReplayInAnotherJvm.class.getName(),
-                    out.toString()));
-            Process child = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile()).start();
+            // The database's coordinates, the child's options and the classpath reach the second JVM through an argument
+            // file, read at its start and deleted after - never on a command line another process on the machine could list,
+            // nor one Windows refuses past 32,767 characters (ReplayInAnotherJvm.launch).
+            Process child = ReplayInAnotherJvm.start(options, out, log);
             assertThat(child.waitFor(15, TimeUnit.MINUTES)).as("the second JVM finished").isTrue();
             assertThat(child.exitValue()).as(Files.readString(log, StandardCharsets.UTF_8)).isZero();
             List<String> lines = Files.readAllLines(out, StandardCharsets.UTF_8);
-            assertThat(lines.get(0)).as("the defaults it ran under")
-                    .isEqualTo("charset=UTF-16 locale=ar-EG zone=America/Adak");
+            assertThat(lines.get(0)).as("the defaults it ran under").isEqualTo(ReplayInAnotherJvm.CHILD_DEFAULTS);
             assertThat(ReplayInAnotherJvm.defaults()).as("and this JVM's differ").isNotEqualTo(lines.get(0));
             assertThat(lines.subList(1, lines.size())).isEqualTo(lines(reference));
         } finally {
             Files.deleteIfExists(out);
             Files.deleteIfExists(log);
-            Files.deleteIfExists(coordinates);
+            Files.deleteIfExists(options);
         }
-    }
-
-    /** One argument-file argument: quoted, its backslashes and quotes escaped. */
-    private static String quoted(String argument) {
-        return "\"" + argument.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     // ------------------------------------------------------------------ the oracles
