@@ -324,6 +324,9 @@ tasks.named<Test>("databaseTest") {
 // TestTaxonomyTest holds this list equal to the tagged set.
 extra["ownContainerSuites"] =
     listOf(
+        // P14-TST-002: it opens the year 2001 as the database's first periods and closes all twelve for good, activates two
+        // mapping versions and commits some 22,000 journal lines on operational accounts no expectation names.
+        "com.finapp.app.accounting.AccountingBatteryTest",
         "com.finapp.app.accounting.GlReadModelDatabaseTest",
         "com.finapp.app.accounting.OperationalReportsDatabaseTest",
         "com.finapp.app.accounting.PeriodCloseDatabaseTest",
