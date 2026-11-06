@@ -39,6 +39,7 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -229,6 +230,7 @@ class AccountingNewGaugesTest {
 
     private static final UUID SOURCE = UUID.randomUUID();
     private static final UUID NEWCOMER = UUID.randomUUID();
+    private static final UUID LATECOMER = UUID.randomUUID();
 
     @Test
     @DisplayName("close.month.unrun: no closed month is 0; the latest closed month's source with a repudiated run and no counting run is 1; a counting run beside it is 0")
@@ -256,10 +258,13 @@ class AccountingNewGaugesTest {
     }
 
     @Test
-    @DisplayName("close.month.unrun: a source admitted after the close has no run and lost none, so it never counts - MonthRuns.ran alone would read false; unreadable is no value")
+    @DisplayName("close.month.unrun: a source with no run at all lost none, so it never counts - MonthRuns.ran alone would read false - and one admitted after the month (P14-TSK-025) is not the month's to require; unreadable is no value")
     void aNewcomerIsNoRepudiation() {
         LineSource coverage = new LineSource();
         coverage.sources.add(new ReconciliationRunCoverage.Source(NEWCOMER, "newcomer", ReconciliationRunCoverage.SourceState.ACTIVE));
+        coverage.sources.add(new ReconciliationRunCoverage.Source(LATECOMER, "latecomer", ReconciliationRunCoverage.SourceState.ACTIVE,
+                MARCH.plusMonths(1).atDay(1), Optional.empty(), Optional.of(LocalDate.EPOCH)));
+        coverage.lines.add(line(LATECOMER, "COMPLETED", true));
         periods.closeForTest(MARCH);
         new ClosedMonthRunMetrics(new ClosedMonthRuns(periods, coverage), snapshots(), new AccountingGaugeRefresher(Runnable::run), clock, registry);
         assertThat(gauge(ClosedMonthRunMetrics.UNRUN)).isZero();
@@ -270,16 +275,31 @@ class AccountingNewGaugesTest {
     }
 
     @Test
-    @DisplayName("close.month.unrun: a retired or undeclared source's repudiated run is no gap in the month: the rule asks only of an ACTIVE source, and so does this")
+    @DisplayName("close.month.unrun: the repudiated run of a source the month does not require is no gap in it - retired before it, undeclared, or with no rule set active by its last day - and of one retired within it is (P14-TSK-025): the check's one rule, Coverage.required")
     void onlyAnActiveSourceCounts() {
-        for (ReconciliationRunCoverage.SourceState state : List.of(ReconciliationRunCoverage.SourceState.RETIRED, ReconciliationRunCoverage.SourceState.UNDECLARED)) {
+        LocalDate first = MARCH.atDay(1);
+        Map<String, ReconciliationRunCoverage.Source> notRequired = Map.of(
+                "retired before the month", new ReconciliationRunCoverage.Source(SOURCE, "source", ReconciliationRunCoverage.SourceState.RETIRED, LocalDate.EPOCH,
+                        Optional.of(first.minusDays(1)), Optional.of(LocalDate.EPOCH)),
+                "undeclared", new ReconciliationRunCoverage.Source(SOURCE, "source", ReconciliationRunCoverage.SourceState.UNDECLARED),
+                "no rule set", new ReconciliationRunCoverage.Source(SOURCE, "source", ReconciliationRunCoverage.SourceState.ACTIVE, LocalDate.EPOCH,
+                        Optional.empty(), Optional.empty()),
+                "a rule set activated after the month", new ReconciliationRunCoverage.Source(SOURCE, "source", ReconciliationRunCoverage.SourceState.ACTIVE,
+                        LocalDate.EPOCH, Optional.empty(), Optional.of(MARCH.atEndOfMonth().plusDays(1))));
+        periods.closeForTest(MARCH);
+        notRequired.forEach((why, source) -> {
             LineSource coverage = new LineSource();
             coverage.sources.clear();
-            coverage.sources.add(new ReconciliationRunCoverage.Source(SOURCE, "source", state));
+            coverage.sources.add(source);
             coverage.lines.add(line(SOURCE, "COMPLETED", true));
-            periods.closeForTest(MARCH);
-            assertThat(new ClosedMonthRuns(periods, coverage).repudiatedWithoutARun(CONNECTION)).as(state.name()).isZero();
-        }
+            assertThat(new ClosedMonthRuns(periods, coverage).repudiatedWithoutARun(CONNECTION)).as(why).isZero();
+        });
+        LineSource retiredWithin = new LineSource();
+        retiredWithin.sources.clear();
+        retiredWithin.sources.add(new ReconciliationRunCoverage.Source(SOURCE, "source", ReconciliationRunCoverage.SourceState.RETIRED, LocalDate.EPOCH,
+                Optional.of(first), Optional.of(LocalDate.EPOCH)));
+        retiredWithin.lines.add(line(SOURCE, "COMPLETED", true));
+        assertThat(new ClosedMonthRuns(periods, retiredWithin).repudiatedWithoutARun(CONNECTION)).as("retired on the month's first day, it served the month").isEqualTo(1);
     }
 
     private static ReconciliationRunCoverage.Line line(UUID source, String status, boolean repudiated) {

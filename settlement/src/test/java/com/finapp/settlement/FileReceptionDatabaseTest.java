@@ -166,12 +166,12 @@ class FileReceptionDatabaseTest {
                 Statement seed = migrator.createStatement()) {
             migrator.setAutoCommit(false);
             seed.execute(
-                    "INSERT INTO settlement.source (id, code, kind, status, next_sequence)"
+                    "INSERT INTO settlement.source (id, code, kind, status, next_sequence, admitted_on)"
                             + " VALUES ('" + RETIRED_SOURCE_ID + "', '" + RETIRED_SOURCE
-                            + "', 'PSP_SETTLEMENT_REPORT', 'ACTIVE', 1)"
+                            + "', 'PSP_SETTLEMENT_REPORT', 'ACTIVE', 1, DATE '1970-01-01')"
                             + " ON CONFLICT (code) DO NOTHING");
             seed.execute(
-                    "UPDATE settlement.source SET status = 'RETIRED' WHERE id = '"
+                    "UPDATE settlement.source SET status = 'RETIRED', retired_on = DATE '2026-01-01' WHERE id = '"
                             + RETIRED_SOURCE_ID + "'");
             migrator.commit();
         }

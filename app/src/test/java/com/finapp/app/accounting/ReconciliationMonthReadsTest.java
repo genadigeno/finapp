@@ -22,10 +22,13 @@ import java.sql.Date;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.UUID;
@@ -113,14 +116,70 @@ class ReconciliationMonthReadsTest {
 
         ReconciliationMonthReads missing = new ReconciliationMonthReads(readings, Set.of("simulated-bank.statement", "never-seeded.settlement"));
         assertThatThrownBy(() -> missing.ofMonth(sources().connection(), MARCH)).isInstanceOf(IllegalStateException.class).hasMessageContaining("deployment");
-        assertThat(ReconciliationMonthReads.SOURCES_SQL).isEqualTo("SELECT id, code, status FROM settlement.source ORDER BY code");
+    }
+
+    @Test
+    @DisplayName("P14-TSK-025, the statement: one SELECT over settlement's source and reconciliation's rule set, each source with its two days, whether V002 seeded its rule set"
+            + " and the first activation of a version ACTIVE or RETIRED; no lock, no write, and the proposer only compared, never selected")
+    void theSourcesStatement() {
+        String sql = ReconciliationMonthReads.SOURCES_SQL;
+        assertThat(sql).startsWith("SELECT s.id, s.code, s.status, s.admitted_on, s.retired_on,")
+                .contains("EXISTS (SELECT 1 FROM reconciliation.rule_set r WHERE r.source_id = s.id AND r.status IN ('ACTIVE', 'RETIRED')"
+                        + " AND r.proposed_by = 'migration:V002') AS rule_set_seeded")
+                .contains("(SELECT min(r.decided_at) FROM reconciliation.rule_set r WHERE r.source_id = s.id AND r.status IN ('ACTIVE', 'RETIRED'))"
+                        + " AS rule_set_first_activated")
+                .endsWith("FROM settlement.source s ORDER BY s.code");
+        String upper = sql.toUpperCase(Locale.ROOT);
+        for (String forbidden : List.of("INSERT", "UPDATE", "DELETE", "FOR SHARE", "FOR UPDATE", "PG_ADVISORY", "R.PROPOSED_BY,", "R.DECIDED_BY")) {
+            assertThat(upper).as(forbidden).doesNotContain(forbidden);
+        }
+    }
+
+    @Test
+    @DisplayName("P14-TSK-025, the mapping: the two days as stored; a seeded rule set stands from the source's admission; otherwise the first activation's UTC day,"
+            + " on either side of midnight; never activated, none - so the source is required only from that day")
+    void eachSourcesDays() {
+        UUID seeded = UUID.nameUUIDFromBytes(new byte[] {1});
+        UUID activated = UUID.nameUUIDFromBytes(new byte[] {2});
+        UUID lateEvening = UUID.nameUUIDFromBytes(new byte[] {3});
+        UUID never = UUID.nameUUIDFromBytes(new byte[] {4});
+        UUID retired = UUID.nameUUIDFromBytes(new byte[] {5});
+        ScriptedStatements script = new ScriptedStatements(sql -> List.of(
+                source(seeded, "simulated-psp.settlement", "ACTIVE", LocalDate.EPOCH, null, true, OffsetDateTime.parse("2026-09-29T12:00:00Z")),
+                source(activated, "fx-sim-a.trade-report", "ACTIVE", LocalDate.EPOCH, null, false, OffsetDateTime.parse("2097-03-31T23:59:59Z")),
+                source(lateEvening, "fx-sim-b.trade-report", "ACTIVE", LocalDate.EPOCH, null, false, OffsetDateTime.parse("2097-03-31T23:30:00-02:00")),
+                source(never, "corridor-sim-a.settlement", "ACTIVE", LocalDate.EPOCH, null, false, null),
+                source(retired, "old-psp.settlement", "RETIRED", LocalDate.of(2001, 1, 1), LocalDate.of(2097, 3, 1), false, OffsetDateTime.parse("2001-01-01T00:00:00Z"))));
+        ReconciliationRunCoverage.Coverage coverage = new ReconciliationMonthReads(readings,
+                Set.of("simulated-psp.settlement", "fx-sim-a.trade-report", "fx-sim-b.trade-report", "corridor-sim-a.settlement")).ofMonth(script.connection(), MARCH);
+
+        assertThat(coverage.sources()).extracting(ReconciliationRunCoverage.Source::code, ReconciliationRunCoverage.Source::ruleSetActiveOn).containsExactly(
+                org.assertj.core.groups.Tuple.tuple("simulated-psp.settlement", Optional.of(LocalDate.EPOCH)),
+                org.assertj.core.groups.Tuple.tuple("fx-sim-a.trade-report", Optional.of(LocalDate.of(2097, 3, 31))),
+                org.assertj.core.groups.Tuple.tuple("fx-sim-b.trade-report", Optional.of(LocalDate.of(2097, 4, 1))),
+                org.assertj.core.groups.Tuple.tuple("corridor-sim-a.settlement", Optional.empty()),
+                org.assertj.core.groups.Tuple.tuple("old-psp.settlement", Optional.of(LocalDate.of(2001, 1, 1))));
+        assertThat(coverage.sources().get(4).retiredOn()).contains(LocalDate.of(2097, 3, 1));
+        assertThat(coverage.sources().get(4).admittedOn()).isEqualTo(LocalDate.of(2001, 1, 1));
+        assertThat(coverage.required()).extracting(ReconciliationRunCoverage.Source::code)
+                .as("the seed, activated on the last day, and retired within the month: required; activated the next UTC day, or never: not")
+                .containsExactly("simulated-psp.settlement", "fx-sim-a.trade-report", "old-psp.settlement");
+        assertThat(ReconciliationMonthReads.ruleSetActiveOn(LocalDate.of(1999, 1, 1), true, Optional.empty())).contains(LocalDate.of(1999, 1, 1));
+    }
+
+    private static Map<String, Object> source(UUID id, String code, String status, LocalDate admittedOn, LocalDate retiredOn, boolean seeded,
+            OffsetDateTime firstActivated) {
+        Map<String, Object> row = row("id", id, "code", code, "status", status, "admitted_on", admittedOn, "rule_set_seeded", seeded);
+        row.put("retired_on", retiredOn);
+        row.put("rule_set_first_activated", firstActivated);
+        return row;
     }
 
     private static ScriptedStatements sources() {
         return new ScriptedStatements(sql -> List.of(
-                row("id", UUID.nameUUIDFromBytes(new byte[] {1}), "code", "simulated-bank.statement", "status", "ACTIVE"),
-                row("id", UUID.nameUUIDFromBytes(new byte[] {2}), "code", "old-psp.settlement", "status", "RETIRED"),
-                row("id", UUID.nameUUIDFromBytes(new byte[] {3}), "code", "nobody-declares.this", "status", "ACTIVE")));
+                source(UUID.nameUUIDFromBytes(new byte[] {1}), "simulated-bank.statement", "ACTIVE", LocalDate.EPOCH, null, true, null),
+                source(UUID.nameUUIDFromBytes(new byte[] {2}), "old-psp.settlement", "RETIRED", LocalDate.EPOCH, LocalDate.of(2097, 1, 31), true, null),
+                source(UUID.nameUUIDFromBytes(new byte[] {3}), "nobody-declares.this", "ACTIVE", LocalDate.EPOCH, null, false, null)));
     }
 
     @Test

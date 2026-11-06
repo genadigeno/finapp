@@ -295,15 +295,15 @@ class BatchAcceptanceDatabaseTest {
                 Statement seed = migrator.createStatement()) {
             migrator.setAutoCommit(false);
             seed.execute(
-                    "INSERT INTO settlement.source (id, code, kind, status, next_sequence)"
+                    "INSERT INTO settlement.source (id, code, kind, status, next_sequence, admitted_on)"
                             + " VALUES ('" + RETIRING_SOURCE_ID + "', '" + RETIRING_SOURCE
-                            + "', 'PSP_SETTLEMENT_REPORT', 'ACTIVE', 1)"
+                            + "', 'PSP_SETTLEMENT_REPORT', 'ACTIVE', 1, DATE '1970-01-01')"
                             + " ON CONFLICT (code) DO NOTHING");
             // The counterparty's source, its registry row and its one account (P9-TSK-010).
             seed.execute(
-                    "INSERT INTO settlement.source (id, code, kind, status, next_sequence)"
+                    "INSERT INTO settlement.source (id, code, kind, status, next_sequence, admitted_on)"
                             + " VALUES ('" + COUNTERPARTY_SOURCE_ID + "', '" + COUNTERPARTY_SOURCE
-                            + "', 'PSP_SETTLEMENT_REPORT', 'ACTIVE', 1)"
+                            + "', 'PSP_SETTLEMENT_REPORT', 'ACTIVE', 1, DATE '1970-01-01')"
                             + " ON CONFLICT (code) DO NOTHING");
             seed.execute(
                     "INSERT INTO ledger.counterparty (id, code, kind) VALUES ('" + COUNTERPARTY_ID
