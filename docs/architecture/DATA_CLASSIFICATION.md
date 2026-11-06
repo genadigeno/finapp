@@ -430,7 +430,7 @@ adjustment's are; the reason person-written.
 | `projection_rebuild` | `currency` | `INTERNAL` | As `account_balance.currency` |
 | `projection_rebuild` | `scale` | `INTERNAL` | Precision metadata of the figures |
 | `projection_rebuild` | `status` | `INTERNAL` | The machine's state |
-| `projection_rebuild` | `reason` | `RESTRICTED-FINANCIAL` | Person-written prose about an account's books - `adjustment_proposal.reason`'s reasoning |
+| `projection_rebuild` | `reason` | `RESTRICTED-FINANCIAL` | Person-written prose about an account's books - `adjustment_proposal.reason`'s reasoning; screened before it is stored (no card-number or bank-account shape, `InstrumentShapes` - the review's fix round, M-3), since it is served to the approver and copied into the audit record |
 | `projection_rebuild` | `proposed_by` | `CONFIDENTIAL` | The ledger operator who proposed it |
 | `projection_rebuild` | `proposed_at` | `INTERNAL` | The application's stamp |
 | `projection_rebuild` | `observed_row` | `INTERNAL` | Whether a row existed - a flag |

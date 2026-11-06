@@ -657,7 +657,10 @@ and the holds derive, or an entry committed mid-reading (read again) - nothing t
 `ledger.ProjectionNotRebuildable` (409): an underivable history, a row at a scale its history does not have, or a row standing
 for no entries - each the migrator's, never this door's. `ledger.RebuildSelfApprovalRefused` and `ledger.RebuildNotOpen` (409)
 are the adjustment's four-eyes pair for this machine: the same approver's retry converges, a repeated rejection converges, and
-neither ever names a figure. Every door is keyed (`api.IdempotencyKeyRequired`, `api.IdempotencyConflict` as anywhere); an
+neither ever names a figure; a refused self-approval is recorded `FAILED` (`ledger.SelfApprovalRefused`) in a transaction of its
+own before the 409 answers. A proposal's reason the body's `@NotBlank` lets through but the domain refuses - Unicode whitespace
+only, or one holding a card-number or bank-account shape - is `422 api.ValidationFailed`, its detail never repeating the
+reason (the review's fix round, M-3 and M-4). Every door is keyed (`api.IdempotencyKeyRequired`, `api.IdempotencyConflict` as anywhere); an
 unknown or malformed rebuild or account is one `api.NotFound`; the approval below `MULTI_FACTOR` is `403
 identity.AssuranceRequired`, before anything is read. A detail names the account and the rebuild, never an amount.
 

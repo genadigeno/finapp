@@ -312,6 +312,13 @@ class ValuationRateSetDeskTest {
         refused(() -> as(ACCOUNTANT, () -> desk.captureAcrossGap("gap-r", september, null,
                 List.of(new ValuationRateSetDesk.ReferenceGapRequest("EUR/GBP", GBP_SNAPSHOT.toString())))),
                 AccountingErrorCode.REASON_REQUIRED, 422);
+        // A reason of Unicode whitespace passes the body's @NotBlank (ASCII trim): the screen's isBlank refuses it, a 422
+        // and never a 500 (P14-TSK-026's fix round, M-4).
+        for (String blank : List.of("　", "　 ")) {
+            refused(() -> as(ACCOUNTANT, () -> desk.captureAcrossGap("gap-ws" + blank.length(), september, blank,
+                    List.of(new ValuationRateSetDesk.ReferenceGapRequest("EUR/GBP", GBP_SNAPSHOT.toString())))),
+                    AccountingErrorCode.REASON_REQUIRED, 422);
+        }
         assertThat(store.all()).isEmpty();
 
         ValuationRateSetDesk.ValuationRateSetReceipt captured = as(ACCOUNTANT, () -> desk.captureAcrossGap("gap-3", september,
@@ -332,6 +339,8 @@ class ValuationRateSetDeskTest {
                 AccountingErrorCode.VALUATION_DOOR_MISMATCH, 409);
         refused(() -> as(ACCOUNTANT, () -> desk.approveAcrossGap("gap-5", captured.id(), "mine")),
                 AccountingErrorCode.SELF_APPROVAL_REFUSED, 403);
+        refused(() -> as(CONTROLLER, () -> desk.approveAcrossGap("gap-5w", captured.id(), "　")),
+                AccountingErrorCode.REASON_REQUIRED, 422);
         ValuationRateSetDesk.ValuationRateSetReceipt approved =
                 as(CONTROLLER, () -> desk.approveAcrossGap("gap-6", captured.id(), "a real observation, its age disclosed"));
         assertThat(approved.status()).isEqualTo("APPROVED");

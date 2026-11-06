@@ -1,6 +1,7 @@
 package com.finapp.ledger;
 
 import com.finapp.sharedkernel.money.CurrencyCode;
+import com.finapp.sharedkernel.security.InstrumentShapes;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
@@ -114,7 +115,8 @@ public final class ProjectionRebuild {
      *
      * @throws ProjectionNotDriftingException the reading agrees, or an entry committed mid-reading
      * @throws ProjectionNotRebuildableException the row's scale is not the derivation's, or a row stands with no entries
-     * @throws IllegalArgumentException a reason that is blank or longer than {@value #MAX_REASON_LENGTH}
+     * @throws RebuildReasonRefusedException a reason that is blank, longer than {@value #MAX_REASON_LENGTH} or holds an
+     *     instrument shape
      */
     public static ProjectionRebuild propose(
             ProjectionRebuildId id,
@@ -207,7 +209,7 @@ public final class ProjectionRebuild {
             throw new RebuildNotOpenException(id, status);
         }
         if (proposedBy.equals(approver)) {
-            throw new RebuildSelfApprovalRefusedException(id);
+            throw new RebuildSelfApprovalRefusedException(id, account);
         }
     }
 
@@ -225,9 +227,23 @@ public final class ProjectionRebuild {
                 observedDerived, Optional.of(by), Optional.of(at), found);
     }
 
+    /**
+     * The reason, screened as every person-written reason is ({@code AccountingReasons}' screen; {@code INV-AUD-02}): it is
+     * stored in the rebuild's row and its audit record and served to the approver, so it holds no card-number or
+     * bank-account shape ({@link InstrumentShapes}, the platform's one screen). Blank is {@link String#isBlank()}'s -
+     * Unicode whitespace, which the request's {@code @NotBlank} (ASCII trim) lets through. The bound is the raw length, so
+     * V031's {@code length(btrim(reason)) BETWEEN 1 AND 1000} always holds of what passes.
+     *
+     * @throws RebuildReasonRefusedException a reason missing, blank, longer than {@value #MAX_REASON_LENGTH} or holding an
+     *     instrument shape
+     */
     private static String reasoned(String reason) {
-        if (reason == null || reason.isBlank() || reason.strip().length() > MAX_REASON_LENGTH) {
-            throw new IllegalArgumentException("a rebuild's reason is 1 to " + MAX_REASON_LENGTH + " characters");
+        if (reason == null || reason.isBlank() || reason.length() > MAX_REASON_LENGTH) {
+            throw new RebuildReasonRefusedException("a rebuild's reason is 1 to " + MAX_REASON_LENGTH
+                    + " characters, not all of them whitespace");
+        }
+        if (InstrumentShapes.holdsAny(reason)) {
+            throw new RebuildReasonRefusedException("a rebuild's reason must not hold a card-number or bank-account shape");
         }
         return reason;
     }

@@ -17,7 +17,15 @@ final class NoDatabase {
 
     /** A template that begins, commits and rolls back nothing. */
     static TransactionTemplate transactions() {
-        return new TransactionTemplate(new NoTransactions());
+        return transactions(new java.util.ArrayList<>());
+    }
+
+    /**
+     * A template that begins, commits and rolls back nothing, writing each of those words to {@code trail} as it happens -
+     * so a suite can read which transaction a write fell in.
+     */
+    static TransactionTemplate transactions(java.util.List<String> trail) {
+        return new TransactionTemplate(new NoTransactions(trail));
     }
 
     /** One connection, "closed" by {@code DataSourceUtils} and otherwise never touched. */
@@ -29,19 +37,31 @@ final class NoDatabase {
 
         private static final long serialVersionUID = 1L;
 
+        private final transient java.util.List<String> trail;
+
+        NoTransactions(java.util.List<String> trail) {
+            this.trail = trail;
+        }
+
         @Override
         protected Object doGetTransaction() {
             return new Object();
         }
 
         @Override
-        protected void doBegin(Object transaction, org.springframework.transaction.TransactionDefinition definition) {}
+        protected void doBegin(Object transaction, org.springframework.transaction.TransactionDefinition definition) {
+            trail.add("begin");
+        }
 
         @Override
-        protected void doCommit(DefaultTransactionStatus status) {}
+        protected void doCommit(DefaultTransactionStatus status) {
+            trail.add("commit");
+        }
 
         @Override
-        protected void doRollback(DefaultTransactionStatus status) {}
+        protected void doRollback(DefaultTransactionStatus status) {
+            trail.add("rollback");
+        }
     }
 
     private static final class OneConnection implements javax.sql.DataSource {

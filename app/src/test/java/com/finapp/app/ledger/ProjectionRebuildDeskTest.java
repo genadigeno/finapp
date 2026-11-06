@@ -15,6 +15,9 @@ import com.finapp.ledger.ProjectionRebuildStore;
 import com.finapp.ledger.ProjectionRebuilds;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.ErrorCode;
+import com.finapp.platform.api.PlatformErrorCode;
+import com.finapp.platform.audit.AuditOutcome;
+import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.IdempotencyKey;
 import com.finapp.platform.idempotency.IdempotencyRecord;
@@ -46,10 +49,11 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The {@code /v1/ledger/projection-rebuilds} boundary (`P14-TSK-026`, ADR-0119 decision 1) without a database: the ledger's
- * refusals on the error contract (one {@code 404} for unknown and malformed, the five {@code 409}s), the figures as exact
- * decimal strings with {@code available = posted - holds}, and the meter - one count per concluded act, a replay counting
- * nothing, a refusal counted {@code refused}. The protocol itself is {@code ProjectionRebuildsTest}'s; the database's
- * {@code ProjectionRebuildDatabaseTest}'s (owed).
+ * refusals on the error contract (one {@code 404} for unknown and malformed, the five {@code 409}s, the reason screen's
+ * {@code 422}), a refused self-approval recorded {@code FAILED} in a transaction of its own after the act's rolled back (the
+ * template's trail read), the figures as exact decimal strings with {@code available = posted - holds}, and the meter - one
+ * count per concluded act, a replay counting nothing, a refusal counted {@code refused}. The protocol itself is
+ * {@code ProjectionRebuildsTest}'s; the database's {@code ProjectionRebuildDatabaseTest}'s (owed).
  */
 @DisplayName("the projection rebuild doors' boundary (P14-TSK-026)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
@@ -65,6 +69,8 @@ class ProjectionRebuildDeskTest {
     private final Map<ProjectionRebuildId, ProjectionRebuild> rebuilds = new HashMap<>();
     private final Map<IdempotencyKey, IdempotencyRecord> claims = new HashMap<>();
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    private final java.util.List<String> trail = new java.util.ArrayList<>();
+    private final java.util.List<AuditRecord> audits = new java.util.ArrayList<>();
     private ProjectionFigures row = new ProjectionFigures(12_345, 2_000, 3);
     private ProjectionFigures journal = new ProjectionFigures(12_500, 2_000, 4);
 
@@ -123,6 +129,54 @@ class ProjectionRebuildDeskTest {
         assertThat(count("rejected")).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("a refused self-approval is recorded FAILED in a transaction of its own after the act rolled back - the"
+            + " refused proposer the actor, the rebuild the target - then answered 409 and counted refused (the fix round's"
+            + " I-1, accounting's selfApprovalRecorded shape)")
+    void aRefusedSelfApprovalIsRecordedInItsOwnTransaction() {
+        String id = as(PROPOSER, () -> desk().propose(account.value().toString(), "row lost an entry", "s1")).rebuildId();
+        trail.clear();
+        audits.clear();
+        refusedAs(PROPOSER, () -> desk().approve(id, "s2"), LedgerErrorCode.REBUILD_SELF_APPROVAL_REFUSED, 409);
+        assertThat(trail).as("the act's transaction rolled back; the record's own began after it and committed")
+                .containsExactly("begin", "rollback", "begin", "audit ledger.SelfApprovalRefused FAILED", "commit");
+        assertThat(audits).singleElement().satisfies(record -> {
+            assertThat(record.outcome()).isEqualTo(AuditOutcome.FAILED);
+            assertThat(record.actor()).isEqualTo(PROPOSER);
+            assertThat(record.targetType()).isEqualTo("projection_rebuild");
+            assertThat(record.targetId()).isEqualTo(id);
+            assertThat(record.changeSummary().orElseThrow()).contains("act=projection-rebuild:approve")
+                    .contains(account.value().toString());
+        });
+        assertThat(rebuilds.values()).singleElement().extracting(ProjectionRebuild::status)
+                .isEqualTo(ProjectionRebuildStatus.PROPOSED);
+        assertThat(count("refused")).isEqualTo(1);
+
+        trail.clear();
+        audits.clear();
+        refusedAs(APPROVER, () -> desk().approve("019a0000-0000-7000-8000-000000000000", "s3"), PlatformErrorCode.NOT_FOUND,
+                404);
+        assertThat(audits).as("only a self-approval is recorded by this path; a 404 records nothing").isEmpty();
+    }
+
+    @Test
+    @DisplayName("a reason the body's @NotBlank lets through - ideographic or other Unicode whitespace only - and one"
+            + " holding a card number or an IBAN are the request's 422, never a 500, the reason never echoed, nothing"
+            + " written (the fix round's M-3, M-4)")
+    void aReasonTheScreenRefusesIs422() {
+        for (String reason : java.util.List.of("　", "　 ", "card 4111 1111 1111 1111 posted twice",
+                "IBAN GB82 WEST 1234 5698 7654 32 in the memo")) {
+            assertThatThrownBy(() -> as(PROPOSER, () -> desk().propose(account.value().toString(), reason,
+                    "m-" + reason.hashCode()))).isInstanceOfSatisfying(ApiException.class, refused -> {
+                        assertThat(refused.errorCode()).isEqualTo(PlatformErrorCode.VALIDATION_FAILED);
+                        assertThat(refused.errorCode().status()).isEqualTo(422);
+                        assertThat(refused.clientDetail().orElseThrow()).doesNotContain("4111").doesNotContain("GB82");
+                    });
+        }
+        assertThat(rebuilds).isEmpty();
+        assertThat(audits).isEmpty();
+    }
+
     // -----------------------------------------------------------------
 
     private void refused(Supplier<?> act, ErrorCode code, int status) {
@@ -144,8 +198,11 @@ class ProjectionRebuildDeskTest {
     private LedgerProjectionRebuilds desk() {
         ProjectionRebuilds service = new ProjectionRebuilds(
                 new IdempotentExecutor(new Claims(), CLOCK, Duration.ofDays(1), Duration.ofMinutes(5)), new Store(), new Rows(),
-                (uow, record) -> { }, IDS, CLOCK);
-        return new LedgerProjectionRebuilds(service, NoDatabase.transactions(), NoDatabase.oneConnection(),
+                (uow, record) -> {
+                    audits.add(record);
+                    trail.add("audit " + record.operation().code() + " " + record.outcome());
+                }, IDS, CLOCK);
+        return new LedgerProjectionRebuilds(service, NoDatabase.transactions(trail), NoDatabase.oneConnection(),
                 new ProjectionRebuildMetrics(registry));
     }
 

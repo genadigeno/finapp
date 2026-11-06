@@ -47,7 +47,8 @@ import org.junit.jupiter.api.TestMethodOrder;
  * A reference gap's way on against a live PostgreSQL (`P14-TSK-026`; {@code accounting V012}, ADR-0119 decision 2;
  * {@code INV-ACC-11}, {@code INV-AUD-04}) - owed to the Phase 14 database pass (C5): V012's ranks for a raw writer (a flagged
  * rate only within its set's declared count, only older than the bound, a set declaring a gap only with its reason and only
- * committing with exactly that many flagged, the count frozen); the exception end to end over {@code fx.rate_snapshot} - the
+ * committing with exactly that many flagged, the count privilege-refused to the application role and frozen by the trigger
+ * for the migrator); the exception end to end over {@code fx.rate_snapshot} - the
  * real observation stored with its provenance and flagged, refused at the ordinary door and to its capturer; a late
  * observation refusing the approval; and, last, the one approval.
  *
@@ -87,7 +88,8 @@ class ValuationReferenceGapDatabaseTest {
     @Test
     @Order(1)
     @DisplayName("V012 for a raw writer: a flagged rate refused without a declared gap, inside the bound, or past its count; a"
-            + " gap declared without a reason refused; a set declaring a gap commits only with it flagged; the count frozen")
+            + " gap declared without a reason refused; a set declaring a gap commits only with it flagged; the count"
+            + " privilege-refused to the application role and frozen by V012's trigger for the migrator")
     void theSchemaHoldsTheGapForEveryWriter() throws SQLException {
         UUID period = id(JANUARY).value();
         String old = "timestamptz '1999-01-15 08:00:00+00'";
@@ -101,9 +103,33 @@ class ValuationReferenceGapDatabaseTest {
         // Declared and flagged: born; then committed without its flagged rate - the deferred check.
         refusedInTransaction(List.of(rawSet(UUID.randomUUID(), period, 1, "'silent'"), "%RATE%" + recent + ", false"),
                 "P0001");
+        // The application role cannot reach the count at all: privilege-refused, before any trigger.
         try (Connection app = DatabaseRoles.application(); Statement statement = app.createStatement()) {
             assertThatThrownBy(() -> statement.execute("UPDATE accounting.valuation_rate_set SET reference_gaps = 0"))
                     .isInstanceOfSatisfying(SQLException.class, refused -> assertThat(refused.getSQLState()).isEqualTo("42501"));
+        }
+        // The freeze itself, reached only by a writer the grants do not stop (the fix round's M-5): the migrator, on a set
+        // it inserted, moving it by an edge V005's trigger admits - so V012's trigger is the one that refuses, and only the
+        // count's change: the same edge without it is granted.
+        String edge = "UPDATE accounting.valuation_rate_set SET status = 'REJECTED', decided_by = 'raw-decider',"
+                + " decided_by_type = 'CUSTOMER', decided_at = clock_timestamp(), decision_reason = 'raw'";
+        for (boolean withTheCount : List.of(true, false)) {
+            try (Connection migrator = DatabaseRoles.migrator(); Statement statement = migrator.createStatement()) {
+                migrator.setAutoCommit(false);
+                String raw = rawSet(UUID.randomUUID(), period, 0, "NULL");
+                String set = raw.substring(raw.indexOf('#') + 1);
+                statement.execute(raw.substring(0, raw.indexOf('#')));
+                String update = edge + (withTheCount ? ", reference_gaps = 1" : "") + " WHERE id = '" + set + "'";
+                if (withTheCount) {
+                    assertThatThrownBy(() -> statement.execute(update)).isInstanceOfSatisfying(SQLException.class, refused -> {
+                        assertThat(refused.getSQLState()).isEqualTo("P0001");
+                        assertThat(refused.getMessage()).contains("reference gaps are frozen");
+                    });
+                } else {
+                    assertThat(statement.executeUpdate(update)).as("the edge alone is V005's to grant").isEqualTo(1);
+                }
+                migrator.rollback();
+            }
         }
     }
 

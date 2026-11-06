@@ -165,6 +165,59 @@ class ProjectionRebuildsTest {
     }
 
     @Test
+    @DisplayName("a refused self-approval is recordable FAILED: the refused proposer the actor, the rebuild the target, the"
+            + " summary its id, account and act - never an amount (the fix round's I-1; the desk opens its transaction)")
+    void aRefusedSelfApprovalIsRecordedFailed() {
+        world.journal(5_000, 2).row(4_000, 0, 2);
+        ProjectionRebuild rebuild = proposed();
+        audited.clear();
+        RebuildSelfApprovalRefusedException refusal = org.assertj.core.api.Assertions.catchThrowableOfType(
+                RebuildSelfApprovalRefusedException.class,
+                () -> as(PROPOSER, () -> rebuilds().approve(UOW, rebuild.id(), "k2")));
+        assertThat(audited).as("the refused act itself records nothing - its transaction rolls back").isEmpty();
+        as(PROPOSER, () -> {
+            rebuilds().recordRefusal(UOW, refusal);
+            return null;
+        });
+        assertThat(audited).singleElement().satisfies(record -> {
+            assertThat(record.operation()).isEqualTo(LedgerAuditAction.SELF_APPROVAL_REFUSED);
+            assertThat(record.operation().code()).isEqualTo("ledger.SelfApprovalRefused");
+            assertThat(record.outcome()).isEqualTo(com.finapp.platform.audit.AuditOutcome.FAILED);
+            assertThat(record.actor()).isEqualTo(PROPOSER);
+            assertThat(record.targetType()).isEqualTo("projection_rebuild");
+            assertThat(record.targetId()).isEqualTo(rebuild.id().value().toString());
+            assertThat(record.reason()).isEmpty();
+            assertThat(record.changeSummary().orElseThrow()).contains("rebuild=" + rebuild.id())
+                    .contains("account=" + account).contains("act=projection-rebuild:approve")
+                    .doesNotContain("5000").doesNotContain("4000");
+        });
+        assertThat(store.rows.get(rebuild.id()).status()).isEqualTo(ProjectionRebuildStatus.PROPOSED);
+    }
+
+    @Test
+    @DisplayName("a reason is screened as every person-written reason is: missing, empty, ASCII or Unicode whitespace only"
+            + " (an ideographic space included), past 1000 characters, or holding a card number or an IBAN is refused - the"
+            + " message never repeating it - and nothing is written (the fix round's M-3, M-4)")
+    void aReasonIsScreened() {
+        world.journal(5_000, 2).row(4_000, 0, 2);
+        List<String> refused = new ArrayList<>(List.of("", "   ", " \t\n", "　", "　　", "  ",
+                "card 4111 1111 1111 1111 was in the batch", "paid from GB82 WEST 1234 5698 7654 32", "x".repeat(1001)));
+        refused.add(null);
+        int key = 0;
+        for (String reason : refused) {
+            String k = "screen-" + key++;
+            assertThatThrownBy(() -> as(PROPOSER, () -> rebuilds().propose(UOW, account, reason, k)))
+                    .as("reason %s", reason == null ? "null" : reason.length() > 40 ? reason.length() + " chars" : reason)
+                    .isInstanceOf(RebuildReasonRefusedException.class)
+                    .satisfies(thrown -> assertThat(thrown.getMessage()).doesNotContain("4111").doesNotContain("GB82"));
+        }
+        assertThat(store.rows).isEmpty();
+        assertThat(audited).isEmpty();
+        assertThat(as(PROPOSER, () -> rebuilds().propose(UOW, account, "x".repeat(1000), "screen-ok")).rebuild().reason())
+                .hasSize(1000);
+    }
+
+    @Test
     @DisplayName("keyed and converging: a retried key replays; the same approver under a new key converges writing nothing;"
             + " another person meets RebuildNotOpen; a key reused for another account is a conflict")
     void keyedAndConverging() {

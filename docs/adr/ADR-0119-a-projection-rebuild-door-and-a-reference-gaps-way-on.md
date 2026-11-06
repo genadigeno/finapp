@@ -29,9 +29,9 @@ Two states hold a month's close with no product door (`P14-TSK-012`'s gate, item
 ## Decision
 
 1. **A projection rebuild is a person's four-eyes ledger act, never automatic.** One account at a time.
-   - **Proposal** (`LEDGER_ADJUST`, keyed, reasoned): records the drift the proposer observed - the projection row's
-     figures (or its absence) and the figures the journal and the `ACTIVE` holds derive, read by the verification's own
-     seq-bracketed protocol, unlocked. Refused when the reading is clean, when an entry committed mid-reading, when a
+   - **Proposal** (`LEDGER_ADJUST`, keyed, reasoned - the reason screened as every person-written reason is): records
+     the drift the proposer observed - the projection row's figures (or its absence) and the figures the journal and the
+     `ACTIVE` holds derive, read by the verification's own seq-bracketed protocol, unlocked. Refused when the reading is clean, when an entry committed mid-reading, when a
      rebuild of the account already stands, or when the history cannot be derived at the row's scale. One `PROPOSED`
      rebuild per account (a partial unique index).
    - **Approval** (`LEDGER_ADJUST` and `MULTI_FACTOR`, keyed, a second person): **recomputes at its own moment, under the
@@ -50,7 +50,8 @@ Two states hold a month's close with no product door (`P14-TSK-012`'s gate, item
      (`last_entry_seq >= 1`) and refuses: deleting it is the migrator's act, as V006 says.
    - **Nothing to correct**: `UNCHANGED`, the projection untouched, the act recorded.
    - **The record** (`ledger.projection_rebuild`, `V031`): the proposer's observation, the approval's figures before and
-     after, both persons, the instants; four eyes by the domain and a `CHECK`; `INSERT`, `SELECT` and the decision's
+     after, both persons, the instants; four eyes by the domain and a `CHECK`, a proposer's refused approval recorded
+     `FAILED` (`ledger.SelfApprovalRefused`) in a transaction of its own; `INSERT`, `SELECT` and the decision's
      columns only, no `DELETE`. The approver attests that the account's projection be made what the journal says at the
      approval's moment; the two drifts (proposed and found) are both recorded and may differ when postings or another
      repair intervened.
@@ -69,6 +70,15 @@ Two states hold a month's close with no product door (`P14-TSK-012`'s gate, item
    - **Approval** by a different person through its own door, `ACCOUNTING_CLOSE_APPROVE` and `MULTI_FACTOR`, which
      re-reads the reference and refuses if the named observation is no longer the last before the end. The ordinary door
      refuses a set holding a gap, and the gap door a set holding none.
+   - **The window the re-read leaves open** (accepted, not closed): the re-read runs under the period's and the set's
+     locks, but `fx`'s inserts into `fx.rate_snapshot` are not serialised with it - nothing in `accounting` can lock
+     another module's table (ADR-0029), and the reference arrives late by nature. An observation of the pair, observed
+     before the period end, that lands after the approval's re-read leaves an approved set holding a rate that is no
+     longer the reference's last before the end. What the set holds is still a real observation with its source, snapshot
+     and `observed_at`, its age disclosed on every translated content; it is not the last one. The set stands for its
+     period (no supersession, as for any approved set), and the late observation is the reference's own record, so the gap
+     between them stays explainable. A close that must not stand on it is the controller's to hold until the reference is
+     settled, before approving.
    - **Disclosure**: the set's receipt and read state, per rate, whether it is beyond the bound and its age in whole
      hours at the period end; every translated report content (the trial balance, the balance sheet, the income
      statement - the three definitions that translate, through `Translation.section`) names each such pair, its snapshot,
@@ -117,7 +127,11 @@ four-column `UPDATE`; `READ COMMITTED` asserted), `JdbcProjectionRebuildStore`; 
 (`ProjectionRebuildController`, `LedgerProjectionRebuilds`), `LEDGER_ADJUST` on all four routes and `MULTI_FACTOR` on the
 approval, and `finapp.ledger.projection.rebuild{outcome}`. Five `ledger.*` codes (the adjustment's titles name an adjustment, so
 none is borrowed) and three audit actions, `ledger.ProjectionRebuildProposed` (reasoned), `ledger.ProjectionRebuilt`,
-`ledger.ProjectionRebuildRejected`; the figures before and after on the row, never in a summary. **Who**: the ledger operator
+`ledger.ProjectionRebuildRejected`; the figures before and after on the row, never in a summary. *(The review's fix round
+added a fourth, `ledger.SelfApprovalRefused`: a proposer's refused approval recorded `FAILED` in a transaction of its own
+after the act rolled back, accounting's shape; and screened the proposal's reason as every person-written reason is - blank
+by `isBlank` (Unicode whitespace, which the body's `@NotBlank` passes) and no instrument shape (`InstrumentShapes`) - a
+`422 api.ValidationFailed`, never a `500`. The manual adjustment's door has both gaps still; routed to `P14-DOC-001`.)* **Who**: the ledger operator
 proposes and a second ledger operator approves; an accountant who sees the drift cannot rebuild and a controller cannot, and
 a ledger operator closes no month (`LEDGER_ADJUST` reused, not a new permission: an owner item). **Decision 2**: accounting
 `V012` (`valuation_rate_set.reference_gaps`, `valuation_rate.beyond_bound`, V005's two functions replaced with every check they

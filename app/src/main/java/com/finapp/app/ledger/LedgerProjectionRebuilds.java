@@ -13,6 +13,7 @@ import com.finapp.ledger.ProjectionRebuildStandingException;
 import com.finapp.ledger.ProjectionRebuildStatus;
 import com.finapp.ledger.ProjectionRebuilds;
 import com.finapp.ledger.RebuildNotOpenException;
+import com.finapp.ledger.RebuildReasonRefusedException;
 import com.finapp.ledger.RebuildSelfApprovalRefusedException;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.ErrorCode;
@@ -94,10 +95,13 @@ public final class LedgerProjectionRebuilds {
         return render(inOneTransaction(uow -> rebuilds.find(uow, id)).orElseThrow(LedgerProjectionRebuilds::notFound), false);
     }
 
-    /** Approves as a second person, under the posting's locks: {@code APPLIED} or {@code UNCHANGED}. */
+    /**
+     * Approves as a second person, under the posting's locks: {@code APPLIED} or {@code UNCHANGED}. A refused
+     * self-approval is recorded {@code FAILED} in a transaction of its own after the act rolled back, then refused.
+     */
     public RebuildView approve(String rawId, String idempotencyKey) {
         ProjectionRebuildId id = rebuildOrAbsent(rawId);
-        return acted(() -> inOneTransaction(uow -> rebuilds.approve(uow, id, idempotencyKey)));
+        return acted(() -> selfApprovalRecorded(() -> inOneTransaction(uow -> rebuilds.approve(uow, id, idempotencyKey))));
     }
 
     /** Rejects or withdraws; converges on a rebuild already rejected. */
@@ -123,11 +127,32 @@ public final class LedgerProjectionRebuilds {
             throw refused(LedgerErrorCode.REBUILD_SELF_APPROVAL_REFUSED, refusal);
         } catch (RebuildNotOpenException refusal) {
             throw refused(LedgerErrorCode.REBUILD_NOT_OPEN, refusal);
+        } catch (RebuildReasonRefusedException refusal) {
+            // A reason of Unicode whitespace passes the body's @NotBlank (ASCII trim), and the instrument screen is the
+            // domain's: both the caller's to correct, the request's own 422 - never a 500 (the fix round's M-3, M-4).
+            throw refused(PlatformErrorCode.VALIDATION_FAILED, refusal);
         }
         if (!outcome.replayed()) {
             metrics.count(outcome.rebuild().status().name().toLowerCase(Locale.ROOT));
         }
         return render(outcome.rebuild(), outcome.replayed());
+    }
+
+    /**
+     * {@code work}, a refused self-approval recorded {@code FAILED} in a transaction of its own after the act rolled back
+     * ({@code ledger.SelfApprovalRefused}, {@code INV-AUD-04}), then refused as before - {@code ValuationRateSetDesk}'s
+     * shape. The record's own transaction is the point: the act's rolled back with the refusal, as it must.
+     */
+    private <R> R selfApprovalRecorded(Supplier<R> work) {
+        try {
+            return work.get();
+        } catch (RebuildSelfApprovalRefusedException self) {
+            inOneTransaction(uow -> {
+                rebuilds.recordRefusal(uow, self);
+                return null;
+            });
+            throw self;
+        }
     }
 
     static RebuildView render(ProjectionRebuild rebuild, boolean replayed) {

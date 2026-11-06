@@ -93,6 +93,7 @@ public final class ProjectionRebuilds {
      * @throws ProjectionRebuildStandingException a rebuild of the account already awaits a decision
      * @throws ProjectionNotDriftingException the projection agrees with its journal, or was posted to mid-reading
      * @throws ProjectionNotRebuildableException the history or the row's scale is not this door's to correct
+     * @throws RebuildReasonRefusedException the reason is missing, blank, unbounded or holds an instrument shape
      */
     public Outcome propose(Connection unitOfWork, LedgerAccountId account, String reason, String idempotencyKey) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
@@ -125,7 +126,8 @@ public final class ProjectionRebuilds {
      *
      * @throws ProjectionRebuildNotFoundException no such rebuild
      * @throws RebuildNotOpenException the rebuild is decided otherwise
-     * @throws RebuildSelfApprovalRefusedException the approver proposed it ({@code INV-AUD-04}); nothing written
+     * @throws RebuildSelfApprovalRefusedException the approver proposed it ({@code INV-AUD-04}); nothing written - the
+     *     caller records the attempt with {@link #recordRefusal} after the rollback
      * @throws ProjectionNotRebuildableException the history or the row's scale is no longer this door's to correct
      */
     public Outcome approve(Connection unitOfWork, ProjectionRebuildId id, String idempotencyKey) {
@@ -174,6 +176,19 @@ public final class ProjectionRebuilds {
                             correlation);
                     return id;
                 });
+    }
+
+    /**
+     * Records a refused self-approval {@code FAILED} ({@link LedgerAuditAction#SELF_APPROVAL_REFUSED}; {@code INV-AUD-04}) -
+     * in {@code unitOfWork}, a transaction of its own that the caller opens <em>after</em> the refused act rolled back, so
+     * the attempt survives while the refusal itself still writes nothing. The actor is the session's, the one refused.
+     */
+    public void recordRefusal(Connection unitOfWork, RebuildSelfApprovalRefusedException refused) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(refused, "refused must not be null");
+        audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), person(), clock.instant(),
+                LedgerAuditAction.SELF_APPROVAL_REFUSED, TARGET_TYPE, refused.target(), Optional.empty(),
+                AuditOutcome.FAILED, correlation(), Optional.of(refused.summary())));
     }
 
     /** The rebuild in full, unlocked - what the approver reads before deciding. */

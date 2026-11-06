@@ -78,8 +78,9 @@ import org.junit.jupiter.api.TestMethodOrder;
  * for it - <em>would fail</em> if the rebuild summed before taking the row (its sum would miss the posting, and the row end
  * 300 short of the journal); (3) the approval holding the row, paused after its derivation, while a posting waits for it -
  * <em>would fail</em> if the rebuild wrote anything but its own derivation or the posting's increment were lost (the row
- * would not equal the journal); (4) a hold placed while the approval holds the account's key share - <em>would deadlock or
- * time out</em> if the rebuild took the row before the key share; (5) two approvers of one rebuild serialised on its row.
+ * would not equal the journal); (4) a placer holding the account {@code FOR UPDATE} first, the approval observed blocked
+ * behind it before the hold updates the row - <em>would deadlock</em> ({@code 40P01}) if the rebuild took the row before the
+ * key share; (5) two approvers of one rebuild serialised on its row.
  *
  * <p><strong>State across cases</strong>, in the order {@link Order} fixes: every case makes its own wallet, posts its own
  * entries against the one shared {@code CHARGEBACK_RECOVERABLE} USD account (whose projection only grows, consistently) and
@@ -192,30 +193,46 @@ class ProjectionRebuildDatabaseTest {
         assertThat(entriesOf(wallet.id())).isEqualTo(3);
     }
 
+    /**
+     * The lock-order case, built so that an inversion deadlocks (the fix round's M-1 - the case it replaces paused the
+     * approval after both its locks were held, which no order of them could fail). The placer takes the account
+     * {@code FOR UPDATE} first, as {@code HoldService.place} does, and holds it; the approval starts and is observed blocked
+     * behind the placer's session; only then does the placer place the hold, which updates the projection row, and commit.
+     *
+     * <p>Walked by hand. <strong>The posting's order</strong> (the account {@code FOR KEY SHARE}, then the row): the
+     * approval waits at the key share holding no row lock, so the placer's {@code UPDATE} of the row is granted, it commits,
+     * and the approval then locks the row and derives the hold among the {@code ACTIVE} holds - both complete, the row
+     * {@code CLEAN}. <strong>The inverted order</strong> (the row, then the key share): the approval holds the row
+     * {@code FOR UPDATE} and waits behind the placer for the key share; the placer's {@code UPDATE} of the row then waits
+     * behind the approval - a cycle PostgreSQL breaks after {@code deadlock_timeout} with {@code 40P01} in one of the two,
+     * and this case fails whichever it is.
+     */
     @Test
     @Order(4)
-    @DisplayName("a hold placed while the approval holds the account's key share and its row waits, then lands on the"
-            + " written row - no deadlock, and the row's holds are the ACTIVE holds")
-    void aHoldWaitsBehindTheRebuild() throws Exception {
+    @DisplayName("a placer holding the account FOR UPDATE: the approval waits behind it holding no row lock, so the hold's"
+            + " update of the row is granted and both complete - the rows' holds the ACTIVE holds; the row taken before the"
+            + " key share would deadlock here (40P01)")
+    void aHoldHeldFirstCannotDeadlockTheRebuild() throws Exception {
         LedgerAccount wallet = postedWallet(5_000, 1_200);
         drift(wallet.id(), 777);
         ProjectionRebuildId id = proposed(wallet.id());
-        Paused paused = new Paused(real);
-        ExecutorService pool = Executors.newFixedThreadPool(2);
-        try {
+        ExecutorService pool = Executors.newFixedThreadPool(1);
+        try (Connection placer = DatabaseRoles.application();
+                SecurityContext.Scope who = SecurityContext.enterSystem();
+                CorrelationContext.Scope flow = flow()) {
+            placer.setAutoCommit(false);
+            // The hold's first lock, taken and held: HoldService.place takes it again in this transaction, re-entrantly.
+            assertThat(accounts.lockForUpdate(placer, wallet.id())).isPresent();
             Future<ProjectionRebuilds.Outcome> approval =
-                    pool.submit(() -> committedAs(APPROVER, uow -> rebuilds(paused).approve(uow, id, key())));
-            assertThat(paused.derived.await(30, TimeUnit.SECONDS)).isTrue();
-            Future<Void> hold = pool.submit(() -> {
-                committedAs(Actor.SYSTEM, uow -> holdService().place(uow, wallet.id(), Money.ofMinorUnits(250, USD)));
-                return null;
-            });
-            awaitWaiters(paused.pid, hold);
-            paused.release.countDown();
-            approval.get(30, TimeUnit.SECONDS);
-            hold.get(30, TimeUnit.SECONDS);
+                    pool.submit(() -> committedAs(APPROVER, uow -> rebuilds(real).approve(uow, id, key())));
+            awaitWaiters(pid(placer), approval);
+            holdService().place(placer, wallet.id(), Money.ofMinorUnits(250, USD));
+            placer.commit();
+            ProjectionRebuilds.Outcome outcome = approval.get(30, TimeUnit.SECONDS);
+            assertThat(outcome.rebuild().status()).isEqualTo(ProjectionRebuildStatus.APPLIED);
+            assertThat(outcome.rebuild().approval().orElseThrow().after().holdsMinor())
+                    .as("the approval derived after the placer committed: the hold is among the ACTIVE holds").isEqualTo(250);
         } finally {
-            paused.release.countDown();
             pool.shutdownNow();
         }
         assertProjectionIsTheJournal(wallet.id());
@@ -270,8 +287,9 @@ class ProjectionRebuildDatabaseTest {
 
     @Test
     @Order(7)
-    @DisplayName("the schema: four eyes and one standing rebuild for every writer; the payload unwritable, nothing deleted;"
-            + " and the application role cannot update a journal line")
+    @DisplayName("the schema: four eyes and one standing rebuild for every writer; for the application role the payload,"
+            + " a delete and a journal line privilege-refused (42501); for the migrator, which holds every privilege, the"
+            + " payload frozen, a delete and a truncate refused by the triggers (23514)")
     void theSchemaHoldsForEveryWriter() throws Exception {
         LedgerAccount wallet = postedWallet(1_000, 100);
         UUID first = UUID.randomUUID();
@@ -304,6 +322,58 @@ class ProjectionRebuildDatabaseTest {
                 assertThat(sqlState(statement::executeUpdate)).as(denied).isEqualTo("42501");
             }
         }
+        // The triggers themselves, reached only by a writer the grants do not stop (the fix round's M-5): the migrator,
+        // on a row it inserted, inside a transaction it rolls back. Each refusal names its trigger, so a CHECK's 23514
+        // cannot stand in for it.
+        for (String frozen : List.of("UPDATE ledger.projection_rebuild SET reason = 'rewritten' WHERE id = ?",
+                "UPDATE ledger.projection_rebuild SET observed_derived_posted_minor = 2 WHERE id = ?",
+                "DELETE FROM ledger.projection_rebuild WHERE id = ?")) {
+            try (Connection migrator = DatabaseRoles.migrator()) {
+                migrator.setAutoCommit(false);
+                UUID row = UUID.randomUUID();
+                insertRaw(migrator, row, wallet.id());
+                try (PreparedStatement statement = migrator.prepareStatement(frozen)) {
+                    statement.setObject(1, row);
+                    assertThat(refusal(statement::executeUpdate)).as(frozen).startsWith("23514 ")
+                            .contains(frozen.startsWith("DELETE") ? "ledger_projection_rebuild_is_kept"
+                                    : "ledger_projection_rebuild_is_frozen");
+                }
+                migrator.rollback();
+            }
+        }
+        try (Connection migrator = DatabaseRoles.migrator();
+                PreparedStatement truncate = migrator.prepareStatement("TRUNCATE ledger.projection_rebuild")) {
+            migrator.setAutoCommit(false);
+            assertThat(refusal(truncate::executeUpdate)).startsWith("23514 ").contains("ledger_projection_rebuild_is_kept");
+            migrator.rollback();
+        }
+    }
+
+    @Test
+    @Order(8)
+    @DisplayName("a refused self-approval leaves the rebuild PROPOSED and nothing of the act, and its FAILED record - written"
+            + " in a transaction of its own after the rollback, as the desk does - is in platform.audit_record once (the"
+            + " fix round's I-1)")
+    void aRefusedSelfApprovalIsRecordedOnce() throws Exception {
+        LedgerAccount wallet = postedWallet(5_000, 1_200);
+        drift(wallet.id(), 777);
+        ProjectionRebuildId id = proposed(wallet.id());
+        com.finapp.ledger.RebuildSelfApprovalRefusedException refusal = org.assertj.core.api.Assertions.catchThrowableOfType(
+                com.finapp.ledger.RebuildSelfApprovalRefusedException.class,
+                () -> committedAs(PROPOSER, uow -> rebuilds(real).approve(uow, id, key())));
+        assertThat(refusal).isNotNull();
+        committedAs(PROPOSER, uow -> {
+            rebuilds(real).recordRefusal(uow, refusal);
+            return null;
+        });
+        String target = id.value().toString();
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'ledger.SelfApprovalRefused' AND"
+                + " outcome = 'FAILED' AND actor_id = 'rebuild-proposer' AND target_type = 'projection_rebuild' AND"
+                + " target_id = ?", target)).as("recorded FAILED, once").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'ledger.ProjectionRebuilt' AND"
+                + " target_id = ?", target)).as("the refused act's own record rolled back with it").isZero();
+        assertThat(count("SELECT count(*) FROM ledger.projection_rebuild WHERE status = 'PROPOSED' AND id = ?::uuid", target))
+                .isEqualTo(1);
     }
 
     // ------------------------------------------------------------------ fixtures
@@ -523,6 +593,26 @@ class ProjectionRebuildDatabaseTest {
             return "none";
         } catch (SQLException refused) {
             return refused.getSQLState();
+        }
+    }
+
+    /** The refusal's state and message - so a trigger's 23514 is told from a CHECK's. */
+    private static String refusal(Statement statement) {
+        try {
+            statement.run();
+            return "none";
+        } catch (SQLException refused) {
+            return refused.getSQLState() + " " + refused.getMessage();
+        }
+    }
+
+    private static long count(String sql, String parameter) throws SQLException {
+        try (Connection app = DatabaseRoles.application(); PreparedStatement select = app.prepareStatement(sql)) {
+            select.setString(1, parameter);
+            try (ResultSet row = select.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
         }
     }
 
