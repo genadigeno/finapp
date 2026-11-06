@@ -229,6 +229,18 @@ class PeriodClosesTest {
     }
 
     @Test
+    @DisplayName("P14-DOC-001 (P14-TSK-026's (c)): the close's approver is told on the close's own read whether the set it names holds a reference gap - 0 for an ordinary capture, the set's own count for a gap set, read by the set's id")
+    void theApproversReadNamesTheSetsReferenceGaps() {
+        CloseRunId run = readyRun();
+        machine.propose(UOW, march, run, List.of(), ACCOUNTANT, REASON, correlation());
+        ValuationRateSetId named = closes.closes().get(0).rateSet();
+        assertThat(machine.proposalOf(UOW, march).orElseThrow().referenceGaps()).as("an ordinary capture").isZero();
+
+        setStore.readAsAGapSet(named, 2);
+        assertThat(machine.proposalOf(UOW, march).orElseThrow().referenceGaps()).as("the named set's own count").isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("what was disclosed is frozen in the close record - the attempt, a copy of its evidence, the person's reason; the nine attempts named; the run, pin, rate set and the month's breaks recorded")
     void theDisclosureIsFrozen() {
         CloseRunId run = readyRun(CloseCheckCode.RECONCILIATION_DISCLOSURE);
@@ -759,6 +771,35 @@ class PeriodClosesTest {
     }
 
     @Test
+    @DisplayName("P14-DOC-001 (P14-TSK-024's re-review (a)): a repeat converges whatever was proposed or ended since - the controller's rejection of the first, repeated after a second was proposed and withdrawn, and again while a third is pending: nothing written, the third still pending; anyone else is told by name")
+    void aReopensRepeatConvergesWhateverEndedSince() {
+        closed();
+        machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "a correction", correlation());
+        PeriodReopenId first = read(march);
+        machine.rejectReopen(UOW, march, first, CONTROLLER, "not needed", correlation());
+        machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "another", correlation());
+        machine.withdrawReopen(UOW, march, read(march), ACCOUNTANT, "proposed in error", correlation());
+
+        assertThat(machine.rejectReopen(UOW, march, first, CONTROLLER, "not needed", correlation()).replayed())
+                .as("the first's rejection, repeated after the second ended: converged, not 'no reopen is pending'").isTrue();
+        assertThatThrownBy(() -> machine.rejectReopen(UOW, march, first, OTHER_CONTROLLER, "me too", correlation()))
+                .as("another person, told by name").isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("the reopen named was REJECTED");
+        machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "a third", correlation());
+        PeriodReopenId third = read(march);
+        int reopens = closes.reopens().size();
+        int records = audit.size();
+        assertThat(machine.rejectReopen(UOW, march, first, CONTROLLER, "not needed", correlation()).replayed())
+                .as("and while a third is pending: converged, not RequestStale").isTrue();
+        assertThat(machine.pendingOf(UOW, march).reopen().map(PeriodCloseStore.ReopenRow::id)).as("the third still pending").contains(third);
+        assertThat(closes.reopens()).as("nothing written").hasSize(reopens);
+        assertThat(closes.reopens().stream().filter(row -> row.id().equals(third)).findFirst().orElseThrow().status()).isEqualTo(PeriodReopenStatus.PROPOSED);
+        assertThat(audit).as("no record of a repeat").hasSize(records);
+        assertThat(order).isEmpty();
+        assertThatThrownBy(() -> machine.rejectReopen(UOW, march, first, OTHER_CONTROLLER, "me too", correlation()))
+                .as("another person, while the third is pending: the one read is not the one pending").isInstanceOf(AccountingPeriods.RequestStale.class);
+    }
+
+    @Test
     @DisplayName("P14-TSK-024 (d): a reopen's end takes the period row FOR UPDATE before the reopen's, as the approval does, so the two serialise on the period row: the hermetic half; the race on ten connections is PeriodReopenDatabaseTest#aRejectionRacingTheApprovalOneWins, owed")
     void aReopensEndTakesThePeriodRow() {
         closed();
@@ -1066,7 +1107,7 @@ class PeriodClosesTest {
         PeriodCloseStore.ReopenRow reopen = new PeriodCloseStore.ReopenRow(PeriodReopenId.next(IDS), period, 1, PeriodReopenStatus.PROPOSED, "someone", Instant.EPOCH, reason, Optional.empty(), Optional.empty(),
                 Optional.empty(), Optional.empty());
         for (Object record : List.of(new PeriodCloses.Disclosure(CloseCheckCode.RECONCILIATION_DISCLOSURE, 1, reason), disclosed, new PeriodCloses.CheckView(disclosed, frozen), frozen, row,
-                new PeriodCloses.ProposalView(row, PeriodStatus.CLOSE_PROPOSED, List.of(new PeriodCloses.CheckView(disclosed, frozen)), true, Optional.of(reopen)),
+                new PeriodCloses.ProposalView(row, PeriodStatus.CLOSE_PROPOSED, List.of(new PeriodCloses.CheckView(disclosed, frozen)), true, Optional.of(reopen), 0),
                 new PeriodCloseStore.NewClose(id, period, 1, Instant.EPOCH, run, GlMappingVersionId.next(IDS), ValuationRateSetId.next(IDS), 0, 0, person, reason, correlation()),
                 new PeriodCloseStore.NewReopen(PeriodReopenId.next(IDS), period, 1, person, reason, correlation()), reopen,
                 new AccountingPeriodStore.NewUnlockEnd(UUID.randomUUID(), period, 1, "someone", PeriodRequestEnd.REJECTED, person, reason, correlation()))) {

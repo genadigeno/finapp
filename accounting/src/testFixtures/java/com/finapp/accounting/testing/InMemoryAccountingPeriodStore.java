@@ -193,9 +193,10 @@ public final class InMemoryAccountingPeriodStore implements AccountingPeriodStor
     }
 
     @Override
-    public Optional<UnlockEndRow> latestUnlockEnd(Connection unitOfWork, AccountingPeriodId id) {
+    public Optional<UnlockEndRow> unlockEnd(Connection unitOfWork, AccountingPeriodId id, Instant proposedAt) {
         Optional<Instant> lockedAt = find(unitOfWork, id).flatMap(PeriodRow::lockedAt);
-        return ends.stream().filter(end -> end.period().equals(id) && lockedAt.filter(end.lockedAt()::equals).isPresent()).reduce((earlier, later) -> later);
+        return ends.stream().filter(end -> end.period().equals(id) && lockedAt.filter(end.lockedAt()::equals).isPresent() && end.proposedAt().equals(proposedAt))
+                .findFirst();
     }
 
     private Instant stamp() {

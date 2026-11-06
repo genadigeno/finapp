@@ -415,6 +415,29 @@ never authoritative, and read by no financial decision (`INV-BAL-05`). A derived
 | `account_balance` | `last_entry_seq` | `INTERNAL` | An applied-entry count — activity volume, the `journal_entry.created_at` question at most, and it dates nothing |
 | `account_balance` | `updated_at` | `CONFIDENTIAL` | System time of the last posting still dates financial activity — `journal_entry.created_at`'s reasoning |
 
+### `ledger.posting_cutoff` and `posting_cutoff_event` — *added by `P14-TSK-004`, registered by `P14-DOC-001`*
+
+`ledger V028`: the one row saying through which day the journal is closed, and its append-only history of moves (ADR-0114,
+`INV-ACC-08`). *(Registered by the Phase 14 exit review, 2026-11-06: `P14-TSK-004` added both tables with no row here, and
+`ColumnClassificationTest`, a database suite first run at the phase's database pass, found them.)* The move's reason is the
+platform's own text ("accounting period … locked"), never a person's prose.
+
+| Table | Column | Level | Basis |
+|---|---|---|---|
+| `posting_cutoff` | `id` | `INTERNAL` | The one row's fixed identity |
+| `posting_cutoff` | `closed_through` | `INTERNAL` | A month end - a date of the platform's books, no person |
+| `posting_cutoff` | `revision` | `INTERNAL` | A move counter |
+| `posting_cutoff_event` | `id` | `INTERNAL` | Generated |
+| `posting_cutoff_event` | `revision` | `INTERNAL` | The move's counter |
+| `posting_cutoff_event` | `movement` | `INTERNAL` | `ADVANCE` or `MOVE_BACK` - a closed vocabulary |
+| `posting_cutoff_event` | `from_closed_through` | `INTERNAL` | A month end |
+| `posting_cutoff_event` | `to_closed_through` | `INTERNAL` | A month end |
+| `posting_cutoff_event` | `actor_id` | `CONFIDENTIAL` | Who moved it (`audit_record.actor`'s reasoning) |
+| `posting_cutoff_event` | `correlation_id` | `INTERNAL` | The move's correlation |
+| `posting_cutoff_event` | `causation_id` | `INTERNAL` | The move's causation |
+| `posting_cutoff_event` | `reason` | `INTERNAL` | The platform's own text naming the period moved - never person-written |
+| `posting_cutoff_event` | `occurred_at` | `INTERNAL` | When it moved |
+
 ### `ledger.projection_rebuild` — *added by `P14-TSK-026`*
 
 A four-eyes rebuild of one account's balance projection (ADR-0119 decision 1, `V031`): what the proposer observed, what the
@@ -1442,16 +1465,16 @@ counters and dates of things.
 | `break` | `resolved_at` | `INTERNAL` | When it closed, exactly with RESOLVED |
 | `break` | `status_changed_at` | `INTERNAL` | When the machine last moved |
 | `break` | `correlation_id` | `INTERNAL` | The flow's correlation |
-| `break_event` | `seq` | `INTERNAL` | The history's server-assigned order |
-| `break_event` | `break_id` | `INTERNAL` | The moved break - an identifier of a thing |
-| `break_event` | `event_type` | `INTERNAL` | RAISED and its siblings - a closed vocabulary |
-| `break_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
-| `break_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
-| `break_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason - a person's prose where one is. Screened for card-number and account-identifier shapes at the domain and by reconciliation `V019`'s `break_event_reason_no_instrument_shape` (corrected 2026-10-02 by the Phase 8 → 9 transition, SEC-03/SEC-04; the shared `InstrumentShapes` rule) |
-| `break_event` | `detail` | `INTERNAL` | Identifiers and enumerated names only (INV-AUD-02) |
-| `break_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
-| `break_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
-| `break_event` | `resolution_id` | `INTERNAL` | The resolution a RESOLVED edge names - an identifier of a thing (V015, P8-DOC-001) |
+| `reconciliation.break_event` | `seq` | `INTERNAL` | The history's server-assigned order |
+| `reconciliation.break_event` | `break_id` | `INTERNAL` | The moved break - an identifier of a thing |
+| `reconciliation.break_event` | `event_type` | `INTERNAL` | RAISED and its siblings - a closed vocabulary |
+| `reconciliation.break_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
+| `reconciliation.break_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `reconciliation.break_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason - a person's prose where one is. Screened for card-number and account-identifier shapes at the domain and by reconciliation `V019`'s `break_event_reason_no_instrument_shape` (corrected 2026-10-02 by the Phase 8 → 9 transition, SEC-03/SEC-04; the shared `InstrumentShapes` rule) |
+| `reconciliation.break_event` | `detail` | `INTERNAL` | Identifiers and enumerated names only (INV-AUD-02) |
+| `reconciliation.break_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
+| `reconciliation.break_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `reconciliation.break_event` | `resolution_id` | `INTERNAL` | The resolution a RESOLVED edge names - an identifier of a thing (V015, P8-DOC-001) |
 | `break_note` | `id` | `INTERNAL` | A record identifier. Generated |
 | `break_note` | `break_id` | `INTERNAL` | The noted break - an identifier of a thing |
 | `break_note` | `body` | `CONFIDENTIAL` | **An investigator's own words** - never logged, evented or audited; screened at the database for PAN and IBAN shapes (INV-PAY-02, INV-RAIL-03). Screened for card-number and account-identifier shapes at the domain and by reconciliation `V019`'s re-added `break_note_no_card_number` and `break_note_no_account_shape` over the twin (corrected 2026-10-02 by the Phase 8 → 9 transition, SEC-03/SEC-04; the shared `InstrumentShapes` rule) |
@@ -4971,18 +4994,18 @@ and in the statements' notes (`INV-ACC-05`) but is a person's text: screened for
 | `accounting_break` | `resolved_at` | `INTERNAL` | The database's stamp of the resolution |
 | `accounting_break` | `resolving_entry_id` | `INTERNAL` | The correcting journal entry's id - the ledger's own row, by reference (no cross-schema key) |
 | `accounting_break` | `resolution_reason` | `RESTRICTED-PII` | As `ack_approval_reason` |
-| `break_event` | `id` | `INTERNAL` | Generated - the case-file row's identity |
-| `break_event` | `break_id` | `INTERNAL` | The break - accounting's own row |
-| `break_event` | `act` | `INTERNAL` | A closed `AccountingBreakStore.Act`, each on its edge by `CHECK` |
-| `break_event` | `from_status` | `INTERNAL` | A closed `BreakStatus` |
-| `break_event` | `to_status` | `INTERNAL` | A closed `BreakStatus` |
-| `break_event` | `actor` | `CONFIDENTIAL` | Who acted - the run's actor for the raise, a person otherwise |
-| `break_event` | `actor_type` | `INTERNAL` | A closed actor type |
-| `break_event` | `proposed_by` | `CONFIDENTIAL` | On the acknowledgement: its proposer - never the actor, by `CHECK` |
-| `break_event` | `resolving_entry_id` | `INTERNAL` | On the resolution: the correcting journal entry's id |
-| `break_event` | `reason` | `RESTRICTED-PII` | Person-written - the proposal's row carries the disclosure, which is `CONFIDENTIAL` on the break's row and kept at the ceiling here; never served from the case file |
-| `break_event` | `occurred_at` | `INTERNAL` | The database's stamp |
-| `break_event` | `correlation_id` | `INTERNAL` | The act's correlation |
+| `accounting.break_event` | `id` | `INTERNAL` | Generated - the case-file row's identity |
+| `accounting.break_event` | `break_id` | `INTERNAL` | The break - accounting's own row |
+| `accounting.break_event` | `act` | `INTERNAL` | A closed `AccountingBreakStore.Act`, each on its edge by `CHECK` |
+| `accounting.break_event` | `from_status` | `INTERNAL` | A closed `BreakStatus` |
+| `accounting.break_event` | `to_status` | `INTERNAL` | A closed `BreakStatus` |
+| `accounting.break_event` | `actor` | `CONFIDENTIAL` | Who acted - the run's actor for the raise, a person otherwise |
+| `accounting.break_event` | `actor_type` | `INTERNAL` | A closed actor type |
+| `accounting.break_event` | `proposed_by` | `CONFIDENTIAL` | On the acknowledgement: its proposer - never the actor, by `CHECK` |
+| `accounting.break_event` | `resolving_entry_id` | `INTERNAL` | On the resolution: the correcting journal entry's id |
+| `accounting.break_event` | `reason` | `RESTRICTED-PII` | Person-written - the proposal's row carries the disclosure, which is `CONFIDENTIAL` on the break's row and kept at the ceiling here; never served from the case file |
+| `accounting.break_event` | `occurred_at` | `INTERNAL` | The database's stamp |
+| `accounting.break_event` | `correlation_id` | `INTERNAL` | The act's correlation |
 
 ### `accounting.valuation_rate_set` and `valuation_rate` - the valuation rate set - *added by `P14-TSK-014`*
 

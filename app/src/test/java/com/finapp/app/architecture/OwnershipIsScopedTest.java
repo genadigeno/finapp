@@ -1991,12 +1991,12 @@ class OwnershipIsScopedTest {
                                         + " proposal; four eyes by CHECK; behind"
                                         + " @RequiresPermission(ACCOUNTING_CLOSE_APPROVE).")),
                     Map.entry(
-                            "com.finapp.accounting.JdbcAccountingPeriodStore.latestUnlockEnd",
+                            "com.finapp.accounting.JdbcAccountingPeriodStore.unlockEnd",
                             new Entry(
                                     Scope.ADMINISTERED,
-                                    "P14-TSK-024. An unlock's latest end under the present lock, for the id of the period row this transaction locked FOR UPDATE"
-                                        + " - read to tell a repeat or a loser what was done; behind @RequiresPermission(ACCOUNTING_CLOSE_APPROVE or"
-                                        + " ACCOUNTING_CLOSE_PROPOSE), the platform's books, no owner to scope by.")),
+                                    "P14-TSK-024, P14-DOC-001. The end of the unlock named by when it was proposed, under the present lock, for the id of the"
+                                        + " period row this transaction locked FOR UPDATE - read to tell a repeat or a loser what was done; behind"
+                                        + " @RequiresPermission(ACCOUNTING_CLOSE_APPROVE or ACCOUNTING_CLOSE_PROPOSE), the platform's books, no owner to scope by.")),
                     Map.entry(
                             "com.finapp.accounting.JdbcValuationRateSetStore.byId",
                             new Entry(
@@ -2158,9 +2158,9 @@ class OwnershipIsScopedTest {
                             "com.finapp.accounting.JdbcPeriodCloseStore.oneReopen",
                             new Entry(
                                     Scope.ADMINISTERED,
-                                    "P14-TSK-012, P14-TSK-024. pendingReopen, lockPendingReopen, approvedReopenAt and latestEndedReopenAt's one helper: a reopen"
-                                        + " by the period the operator's permission-guarded request named and, where it asks, the revision its row holds - a calendar"
-                                        + " month of the platform's books, no owner to scope by.")),
+                                    "P14-TSK-012, P14-TSK-024, P14-DOC-001. pendingReopen, lockPendingReopen, approvedReopenAt and endedReopen's one helper: a"
+                                        + " reopen by the period the operator's permission-guarded request named and, where it asks, the revision its row holds or"
+                                        + " the reopen the request named - a calendar month of the platform's books, no owner to scope by.")),
                     Map.entry(
                             "com.finapp.accounting.JdbcValuationRateSetStore.countByStatus",
                             new Entry(

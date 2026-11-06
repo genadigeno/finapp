@@ -403,7 +403,13 @@ public final class GeneralLedgerDesk {
         }
     }
 
-    /** One journal entry's GL view: the entry and each line with the GL account it maps to under its month's version. */
+    /**
+     * One journal entry's GL view: the entry and each line with the GL account it maps to under its month's version.
+     *
+     * @param namespace the posting key namespace the entry is judged under - its rule's key in the posting rule register (`P14-DOC-001`:
+     *     a figure's line names its entry, and the entry its namespace, the gate's criterion 2); null where the entry's scope has no
+     *     namespace. Never the entry's free-text reference. Additive under {@code v1} (ADR-0015)
+     */
     public record GlEntryView(
             String entryId,
             String entryType,
@@ -414,7 +420,8 @@ public final class GeneralLedgerDesk {
             String periodStatus,
             String mappingVersionId,
             int mappingVersion,
-            List<GlLineView> lines) {
+            List<GlLineView> lines,
+            String namespace) {
 
         static GlEntryView of(GlEntry view) {
             JournalReads.Entry entry = view.entry();
@@ -423,7 +430,7 @@ public final class GeneralLedgerDesk {
                     entry.valueDate().toString(), entry.reverses().map(UUID::toString).orElse(null),
                     mapping.period().toString(), status(mapping), mapping.versionId().value().toString(),
                     mapping.version(), view.lines().stream().map(mapped -> GlLineView.of(mapped.line(),
-                            mapped.glAccountCode().orElse("UNMAPPED"))).toList());
+                            mapped.glAccountCode().orElse("UNMAPPED"))).toList(), entry.namespace().orElse(null));
         }
     }
 

@@ -440,6 +440,39 @@ class AccountingPeriodsTest {
     }
 
     @Test
+    @DisplayName("P14-DOC-001 (P14-TSK-024's re-review (a)): a repeat converges whatever was proposed or ended since - the controller's rejection of the first, repeated after a second was proposed and withdrawn, and again while a third is pending: nothing written, the third still pending; anyone else is told by name")
+    void aRepeatConvergesWhateverEndedSince() {
+        AccountingPeriodId september = lockedWithAnUnlockPending();
+        Instant first = pending(september);
+        periods("2026-10-30").rejectUnlock(UOW, september, first, controller, "not needed", correlation());
+        periods("2026-10-30").proposeUnlock(UOW, september, accountant, "second", correlation());
+        periods("2026-10-30").withdrawUnlock(UOW, september, pending(september), accountant, "proposed in error", correlation());
+        int ends = store.unlockEnds().size();
+        int history = store.history().size();
+        int records = audit.size();
+
+        assertThat(periods("2026-10-30").rejectUnlock(UOW, september, first, controller, "not needed", correlation()).replayed())
+                .as("the first's rejection, repeated after the second ended: converged, not 'no unlock is pending'").isTrue();
+        assertThatThrownBy(() -> periods("2026-10-30").rejectUnlock(UOW, september, first, new Actor("controller-2", ActorType.CUSTOMER), "me too", correlation()))
+                .as("another person, told by name").isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("the unlock named was REJECTED");
+        periods("2026-10-30").proposeUnlock(UOW, september, accountant, "third", correlation());
+        Instant third = pending(september);
+        int proposed = store.history().size();
+        int proposedRecords = audit.size();
+        assertThat(periods("2026-10-30").rejectUnlock(UOW, september, first, controller, "not needed", correlation()).replayed())
+                .as("and while a third is pending: converged, not RequestStale").isTrue();
+        assertThat(pending(september)).as("the third still pending, untouched").isEqualTo(third);
+        assertThat(store.unlockEnds()).as("no end written by a repeat").hasSize(ends);
+        assertThat(store.history()).as("the repeats wrote no history").hasSize(proposed);
+        assertThat(audit).as("nor an audit record").hasSize(proposedRecords);
+        assertThat(proposed).as("the third's proposal is the only row between").isEqualTo(history + 1);
+        assertThat(proposedRecords).isEqualTo(records + 1);
+        assertThatThrownBy(() -> periods("2026-10-30").rejectUnlock(UOW, september, first, new Actor("controller-2", ActorType.CUSTOMER), "me too", correlation()))
+                .as("another person, while the third is pending: the one read is not the one pending").isInstanceOf(AccountingPeriods.RequestStale.class);
+        assertThat(pending(september)).isEqualTo(third);
+    }
+
+    @Test
     @DisplayName("P14-TSK-024 (d): an end takes the period row FOR UPDATE - the request lives on it - as the approval does, so the two serialise on that row: the hermetic half; the race on ten connections is PeriodCloseDatabaseTest#anUnlocksRejectionRacingItsApprovalOneWins, owed")
     void anEndTakesThePeriodRow() {
         AccountingPeriodId september = lockedWithAnUnlockPending();

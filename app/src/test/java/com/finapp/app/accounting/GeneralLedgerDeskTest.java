@@ -175,10 +175,21 @@ class GeneralLedgerDeskTest {
         assertThat(view.lines()).extracting(GeneralLedgerDesk.GlLineView::glAccountCode).containsExactly("1100", "2000");
         assertThat(view.period()).isEqualTo("2026-11");
         assertThat(view.mappingVersion()).isEqualTo(1);
+        assertThat(view.namespace()).as("a reader that does not say serves none, never a guess").isNull();
         assertThat(audit).singleElement().satisfies(record -> {
             assertThat(record.targetType()).isEqualTo("journal_entry");
             assertThat(record.targetId()).isEqualTo(entry.id().toString());
         });
+
+        // P14-DOC-001 (the gate's criterion 2): the entry names the namespace it is judged under, as the reader says it.
+        UUID id = UUID.randomUUID();
+        LocalDate day = LocalDate.of(2026, 11, 4);
+        JournalReads.Entry named = new JournalReads.Entry(id, "POSTING", day, day, Optional.empty(), List.of(
+                InMemoryJournal.line(id, 0, day, "SETTLEMENT_CLEARING", "OPERATIONAL", Optional.empty(), Side.DEBIT, 500, "EUR", 2),
+                InMemoryJournal.line(id, 1, day, "CUSTOMER_WALLET", "CUSTOMER", Optional.empty(), Side.CREDIT, 500, "EUR", 2)),
+                Optional.of("transfer"));
+        journal.post(named);
+        assertThat(as(accountant, () -> desk().entry(named.id().toString())).namespace()).isEqualTo("transfer");
     }
 
     @Test

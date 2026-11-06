@@ -56,10 +56,13 @@ public final class JdbcAccountingPeriodStore implements AccountingPeriodStore {
     static final String CLEAR_UNLOCK_SQL = "UPDATE accounting.accounting_period SET unlock_proposed_by = NULL, unlock_proposed_by_type = NULL, unlock_proposed_at = NULL,"
             + " unlock_proposal_reason = NULL WHERE id = ? AND status = 'LOCKED' AND revision = ? AND unlock_proposed_by = ? AND unlock_approved_by IS NULL";
 
-    /** The latest end under the period's present lock, joined on the row's own {@code locked_at} so no instant crosses the boundary; the database's stamp orders them, the id a tie. */
-    static final String LATEST_UNLOCK_END_SQL = "SELECT u.id, u.period_id, u.period_revision, u.period_locked_at, u.proposed_by, u.proposed_at, u.outcome, u.ended_by, u.ended_at"
+    /**
+     * The end of the unlock named by when it was proposed, under the period's present lock - joined on the row's own {@code locked_at}, so no lock instance crosses the boundary: {@code
+     * period_unlock_end_once}'s key, at most one row (`P14-DOC-001`, `P14-TSK-024`'s re-review (a); until then the lock's latest end, by the database's stamp).
+     */
+    static final String UNLOCK_END_SQL = "SELECT u.id, u.period_id, u.period_revision, u.period_locked_at, u.proposed_by, u.proposed_at, u.outcome, u.ended_by, u.ended_at"
             + " FROM accounting.period_unlock_end u JOIN accounting.accounting_period p ON p.id = u.period_id AND p.locked_at = u.period_locked_at"
-            + " WHERE u.period_id = ? ORDER BY u.ended_at DESC, u.id DESC LIMIT 1";
+            + " WHERE u.period_id = ? AND u.proposed_at = ?";
 
     @Override
     public boolean insertIfAbsent(Connection unitOfWork, NewPeriod period) {
@@ -237,9 +240,10 @@ public final class JdbcAccountingPeriodStore implements AccountingPeriodStore {
     }
 
     @Override
-    public Optional<UnlockEndRow> latestUnlockEnd(Connection unitOfWork, AccountingPeriodId id) {
-        try (PreparedStatement read = unitOfWork.prepareStatement(LATEST_UNLOCK_END_SQL)) {
+    public Optional<UnlockEndRow> unlockEnd(Connection unitOfWork, AccountingPeriodId id, Instant proposedAt) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(UNLOCK_END_SQL)) {
             read.setObject(1, id.value());
+            read.setTimestamp(2, Timestamp.from(proposedAt));
             try (ResultSet row = read.executeQuery()) {
                 return row.next()
                         ? Optional.of(new UnlockEndRow(row.getObject("id", UUID.class), AccountingPeriodId.of(row.getObject("period_id", UUID.class)), row.getInt("period_revision"),

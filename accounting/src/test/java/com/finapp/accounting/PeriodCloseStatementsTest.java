@@ -52,14 +52,17 @@ class PeriodCloseStatementsTest {
                 .endsWith("WHERE id = ? AND status = 'PROPOSED'");
         assertThat(JdbcPeriodCloseStore.PENDING_REOPEN_SQL).endsWith("WHERE period_id = ? AND status = 'PROPOSED'");
         assertThat(JdbcPeriodCloseStore.APPROVED_REOPEN_AT_SQL).endsWith("WHERE period_id = ? AND period_revision = ? AND status = 'APPROVED'");
-        assertThat(JdbcPeriodCloseStore.LATEST_ENDED_REOPEN_AT_SQL).endsWith("WHERE period_id = ? AND period_revision = ? AND status IN ('REJECTED', 'WITHDRAWN') ORDER BY ended_at DESC, id DESC LIMIT 1");
+        // P14-DOC-001 (P14-TSK-024's re-review (a)): the reopen named, by its id - never a revision's latest end.
+        assertThat(JdbcPeriodCloseStore.ENDED_REOPEN_SQL).endsWith("WHERE period_id = ? AND id = ? AND status IN ('REJECTED', 'WITHDRAWN')")
+                .doesNotContain("ORDER BY").doesNotContain("LIMIT");
         assertThat(JdbcAccountingPeriodStore.INSERT_UNLOCK_END_SQL)
                 .contains("SELECT ?, p.id, p.revision, p.locked_at, p.unlock_proposed_by, p.unlock_proposed_by_type, p.unlock_proposed_at, ?, ?, ?, clock_timestamp(), ?, ?")
                 .endsWith("WHERE p.id = ? AND p.status = 'LOCKED' AND p.revision = ? AND p.unlock_proposed_by = ? AND p.unlock_approved_by IS NULL");
         assertThat(JdbcAccountingPeriodStore.CLEAR_UNLOCK_SQL).startsWith("UPDATE accounting.accounting_period SET unlock_proposed_by = NULL, unlock_proposed_by_type = NULL, unlock_proposed_at = NULL, unlock_proposal_reason = NULL WHERE")
                 .endsWith("WHERE id = ? AND status = 'LOCKED' AND revision = ? AND unlock_proposed_by = ? AND unlock_approved_by IS NULL").doesNotContain("locked_").doesNotContain("pinned_");
-        assertThat(JdbcAccountingPeriodStore.LATEST_UNLOCK_END_SQL).contains("JOIN accounting.accounting_period p ON p.id = u.period_id AND p.locked_at = u.period_locked_at")
-                .endsWith("WHERE u.period_id = ? ORDER BY u.ended_at DESC, u.id DESC LIMIT 1");
+        // P14-DOC-001: the unlock named, by period_unlock_end_once's key - the lock instance the period's own row's, never a lock's latest end.
+        assertThat(JdbcAccountingPeriodStore.UNLOCK_END_SQL).contains("JOIN accounting.accounting_period p ON p.id = u.period_id AND p.locked_at = u.period_locked_at")
+                .endsWith("WHERE u.period_id = ? AND u.proposed_at = ?").doesNotContain("ORDER BY").doesNotContain("LIMIT");
     }
 
     @Test

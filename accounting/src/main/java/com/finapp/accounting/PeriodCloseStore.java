@@ -55,8 +55,11 @@ public interface PeriodCloseStore {
     /** The reopen approved at this revision - at most one ({@code period_reopen_one_approved}) - unlocked. */
     Optional<ReopenRow> approvedReopenAt(Connection unitOfWork, AccountingPeriodId period, int revision);
 
-    /** The latest reopen of this revision ended without its effect, by the database's stamp, unlocked; empty when none was (`P14-TSK-024`). */
-    Optional<ReopenRow> latestEndedReopenAt(Connection unitOfWork, AccountingPeriodId period, int revision);
+    /**
+     * The period's reopen {@code id}, when it ended without its effect ({@code REJECTED} or {@code WITHDRAWN}), unlocked - an ended reopen is terminal; empty when it did not, or is not the period's
+     * (`P14-DOC-001`, `P14-TSK-024`'s re-review (a): the request named, never "the latest end").
+     */
+    Optional<ReopenRow> endedReopen(Connection unitOfWork, AccountingPeriodId period, PeriodReopenId id);
 
     /** {@code PROPOSED -> APPROVED}; {@code false} when no longer {@code PROPOSED}. */
     boolean approveReopen(Connection unitOfWork, PeriodReopenId id, Actor actor, String reason);

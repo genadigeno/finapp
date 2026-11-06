@@ -240,6 +240,9 @@ class GlReadModelDatabaseTest {
                 .containsExactly("1100", "2000");
         assertThat(view.lines()).allSatisfy(line -> assertThat(line.line().postingDate()).isEqualTo(MONTH.atDay(20)));
         assertThat(view.lines().get(1).line().ownerRef()).isPresent();
+        // P14-DOC-001 (the gate's criterion 2): the entry names the namespace it is judged under - read from its scope as the
+        // conformance judge reads it, the ledger's prefix stripped; a key with no colon is its own namespace.
+        assertThat(view.entry().namespace()).hasValueSatisfying(namespace -> assertThat(namespace).startsWith("gl-read-"));
     }
 
     @Test

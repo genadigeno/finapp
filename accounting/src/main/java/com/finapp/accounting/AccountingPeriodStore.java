@@ -65,8 +65,12 @@ public interface AccountingPeriodStore {
      */
     boolean endUnlock(Connection unitOfWork, NewUnlockEnd end);
 
-    /** The latest end of an unlock under the period's present lock, by the database's stamp; empty when the period is not locked or none was ended under it. Unlocked. */
-    Optional<UnlockEndRow> latestUnlockEnd(Connection unitOfWork, AccountingPeriodId id);
+    /**
+     * The end of the unlock proposed at {@code proposedAt} under the period's present lock - {@code period_unlock_end_once}'s key, the lock instance read from the period's own row, never the
+     * caller's - empty when the period is not locked or that unlock did not end under it. Unlocked: an end is insert-only (`P14-DOC-001`, `P14-TSK-024`'s re-review (a): the request named, never
+     * "the latest end").
+     */
+    Optional<UnlockEndRow> unlockEnd(Connection unitOfWork, AccountingPeriodId id, Instant proposedAt);
 
     /** {@code LOCKED -> CLOSE_PROPOSED} at {@code revision}, no unlock pending (`P14-TSK-012`); {@code false} when the row was not there. */
     boolean markCloseProposed(Connection unitOfWork, AccountingPeriodId id, int revision);

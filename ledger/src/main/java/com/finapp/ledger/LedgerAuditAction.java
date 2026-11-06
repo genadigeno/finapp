@@ -170,14 +170,15 @@ public enum LedgerAuditAction implements AuditableAction {
      * writing nothing. Its target the rebuild; the summary names it, its account and the act - never an amount.
      *
      * <p>No reason: the attempt is the fact. Emitted by {@code ProjectionRebuilds.recordRefusal}, called by the desk after
-     * the refused approval's transaction rolled back. The manual adjustment's approval refuses its proposer without a record
-     * yet - routed to {@code P14-DOC-001}, not widened here.
+     * the refused approval's transaction rolled back - and, since {@code P14-DOC-001} (the exit review, routed by
+     * `P14-TSK-026`'s fix round), by {@code AdjustmentService.recordRefusal} for a {@code MANUAL} adjustment's approval by
+     * its own initiator, whose target is the proposal and whose summary names it and the act.
      */
     SELF_APPROVAL_REFUSED(
             "ledger.SelfApprovalRefused",
-            "A proposer tried to approve their own projection rebuild and was refused before anything was written;"
-                    + " recorded FAILED in a transaction of its own after the act rolled back. The record names the"
-                    + " rebuild, its account and the act, never an amount.",
+            "A proposer tried to approve their own projection rebuild or manual adjustment and was refused before anything"
+                    + " was written; recorded FAILED in a transaction of its own after the act rolled back. The record"
+                    + " names the rebuild or the proposal and the act, never an amount.",
             false);
 
     private final String code;

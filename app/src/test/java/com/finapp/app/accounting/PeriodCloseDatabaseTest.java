@@ -225,6 +225,38 @@ class PeriodCloseDatabaseTest {
     }
 
     @Test
+    @DisplayName("P14-DOC-001 (P14-TSK-024's re-review (a)): Carol's rejection of the first unlock, repeated after Dave proposed and withdrew a second, converges - the named end read by period_unlock_end_once's key, its instant bound and read back exactly - and again while a third is pending; nothing written, the third still pending")
+    void aRepeatConvergesWhateverEndedSince() throws Exception {
+        AccountingPeriodId january = PeriodCloseFixture.locked(JANUARY);
+        String period = january.value().toString();
+        Actor alice = person();
+        inScope(alice, uow -> periods().proposeUnlock(uow, january, alice, "a missed accrual", correlation()));
+        Instant first = pendingUnlock(january);
+        Actor carol = person();
+        inScope(carol, uow -> periods().rejectUnlock(uow, january, first, carol, "not needed", correlation()));
+        Actor dave = person();
+        inScope(dave, uow -> periods().proposeUnlock(uow, january, dave, "another accrual", correlation()));
+        Instant second = pendingUnlock(january);
+        inScope(dave, uow -> periods().withdrawUnlock(uow, january, second, dave, "proposed in error", correlation()));
+        long ends = count("SELECT count(*) FROM accounting.period_unlock_end WHERE period_id = '" + period + "'");
+        long records = count("SELECT count(*) FROM platform.audit_record WHERE operation = 'accounting.PeriodUnlockRejected' AND target_id = '" + period + "'");
+
+        assertThat(inScope(carol, uow -> periods().rejectUnlock(uow, january, first, carol, "not needed", correlation())).replayed())
+                .as("converged, not 409 'no unlock of the period is pending'").isTrue();
+        inScope(alice, uow -> periods().proposeUnlock(uow, january, alice, "a third", correlation()));
+        Instant third = pendingUnlock(january);
+        assertThat(inScope(carol, uow -> periods().rejectUnlock(uow, january, first, carol, "not needed", correlation())).replayed())
+                .as("converged, not 409 RequestStale").isTrue();
+        assertThat(row(JANUARY).unlockProposedAt()).as("the third still pending").contains(third);
+        assertThat(count("SELECT count(*) FROM accounting.period_unlock_end WHERE period_id = '" + period + "'")).as("no end written").isEqualTo(ends);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'accounting.PeriodUnlockRejected' AND target_id = '" + period + "'"))
+                .as("no record of a repeat").isEqualTo(records);
+        assertThatThrownBy(() -> inScope(dave, uow -> periods().rejectUnlock(uow, january, first, dave, "me too", correlation())))
+                .as("another person: the one read is not the one pending").isInstanceOf(AccountingPeriods.RequestStale.class);
+        inScope(dave, uow -> periods().rejectUnlock(uow, january, third, dave, "not this one either", correlation()));
+    }
+
+    @Test
     @DisplayName("P14-TSK-024 (d), the race: five approvers and five rejecters of one pending unlock on ten connections, released together: exactly one commits; every other is refused by name - approved, or REJECTED - and the period is the winner's alone: OPEN with the cutoff back and no end, or LOCKED with one end and the cutoff where it stood")
     void anUnlocksRejectionRacingItsApprovalOneWins() throws Exception {
         AccountingPeriodId january = PeriodCloseFixture.locked(JANUARY);

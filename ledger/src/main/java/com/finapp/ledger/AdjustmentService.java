@@ -289,6 +289,31 @@ public final class AdjustmentService {
         return observed(() -> doApprove(unitOfWork, id, AdjustmentOrigin.MANUAL));
     }
 
+    /**
+     * Records a refused self-approval of a {@code MANUAL} proposal ({@code ledger.SelfApprovalRefused}, {@code FAILED};
+     * {@code INV-AUD-04}) on {@code unitOfWork} - the caller's own transaction, opened after the refused act rolled back, so
+     * the attempt survives the rollback that keeps the refusal writing nothing ({@code P14-DOC-001}; the projection
+     * rebuild's shape, {@code ProjectionRebuilds.recordRefusal}). The actor is the one who tried; no reason - the attempt is
+     * the fact; the summary names the proposal and the act, never an amount.
+     */
+    public void recordRefusal(Connection unitOfWork, SelfApprovalRefusedException refused) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(refused, "refused must not be null");
+        audit.append(
+                unitOfWork,
+                new AuditRecord(
+                        AuditId.next(ids),
+                        SecurityContext.require(),
+                        clock.instant(),
+                        LedgerAuditAction.SELF_APPROVAL_REFUSED,
+                        PROPOSAL_TARGET_TYPE,
+                        refused.target(),
+                        Optional.empty(),
+                        AuditOutcome.FAILED,
+                        resolvedCorrelation().correlationId(),
+                        Optional.of(refused.summary())));
+    }
+
     private PostingResult observed(java.util.function.Supplier<PostingResult> approval) {
         Instant started = clock.instant();
         try {

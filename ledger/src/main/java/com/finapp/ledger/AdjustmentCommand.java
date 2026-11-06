@@ -1,5 +1,6 @@
 package com.finapp.ledger;
 
+import com.finapp.sharedkernel.security.InstrumentShapes;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
@@ -45,9 +46,21 @@ public record AdjustmentCommand(
         Objects.requireNonNull(reference, "reference must not be null");
         Objects.requireNonNull(reason, "reason must not be null");
         if (reason.isBlank()) {
-            throw new IllegalArgumentException(
+            throw new AdjustmentReasonRefusedException(
                     "an adjustment records its reason (INV-REV-04): the justification is the"
                             + " only evidence the movement was legitimate");
+        }
+        // P14-DOC-001 (the exit review, routed by P14-TSK-026's fix round): the reason and the reference are stored in the
+        // proposal, its audit record and the posted entry, and served to the approver - so neither may hold a card-number
+        // or bank-account shape (InstrumentShapes, the platform's one screen; INV-AUD-02), as the rebuild's and every
+        // accounting reason already may not. The message never repeats the text it refused.
+        if (InstrumentShapes.holdsAny(reason)) {
+            throw new AdjustmentReasonRefusedException(
+                    "an adjustment's reason must not hold a card-number or bank-account shape");
+        }
+        if (InstrumentShapes.holdsAny(reference)) {
+            throw new AdjustmentReasonRefusedException(
+                    "an adjustment's reference must not hold a card-number or bank-account shape");
         }
         Objects.requireNonNull(lines, "lines must not be null");
         lines = List.copyOf(lines);

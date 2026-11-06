@@ -71,8 +71,11 @@ public final class JdbcPeriodCloseStore implements PeriodCloseStore {
     /** The approved one of a revision: {@code period_reopen_one_approved}. */
     static final String APPROVED_REOPEN_AT_SQL = REOPEN + " WHERE period_id = ? AND period_revision = ? AND status = 'APPROVED'";
 
-    /** A revision's latest end, by the database's stamp; the id, a UUIDv7, settles a tie. */
-    static final String LATEST_ENDED_REOPEN_AT_SQL = REOPEN + " WHERE period_id = ? AND period_revision = ? AND status IN ('REJECTED', 'WITHDRAWN') ORDER BY ended_at DESC, id DESC LIMIT 1";
+    /**
+     * The reopen named, by its id, when it ended without its effect - whatever ended or was proposed after it (`P14-DOC-001`, `P14-TSK-024`'s re-review (a)): the primary key admits at most one.
+     * It read a revision's latest end until then, so a retry naming the first of two ended reopens was told there was none.
+     */
+    static final String ENDED_REOPEN_SQL = REOPEN + " WHERE period_id = ? AND id = ? AND status IN ('REJECTED', 'WITHDRAWN')";
 
     /** The one approval: conditional on {@code PROPOSED}. */
     static final String APPROVE_REOPEN_SQL = "UPDATE accounting.period_reopen SET status = 'APPROVED', approved_by = ?, approved_by_type = ?,"
@@ -223,8 +226,8 @@ public final class JdbcPeriodCloseStore implements PeriodCloseStore {
     }
 
     @Override
-    public Optional<ReopenRow> latestEndedReopenAt(Connection unitOfWork, AccountingPeriodId period, int revision) {
-        return oneReopen(unitOfWork, LATEST_ENDED_REOPEN_AT_SQL, period, Optional.of(revision), "reading an ended reopen");
+    public Optional<ReopenRow> endedReopen(Connection unitOfWork, AccountingPeriodId period, PeriodReopenId id) {
+        return oneReopen(unitOfWork, ENDED_REOPEN_SQL, period, Optional.of(id.value()), "reading an ended reopen");
     }
 
     @Override
@@ -288,12 +291,12 @@ public final class JdbcPeriodCloseStore implements PeriodCloseStore {
                 CorrelationId.of(row.getString("correlation_id")));
     }
 
-    /** One reopen row by the period and, when the statement names one, the revision - each statement's own arbiter admits at most one. */
-    private static Optional<ReopenRow> oneReopen(Connection unitOfWork, String sql, AccountingPeriodId period, Optional<Integer> revision, String operation) {
+    /** One reopen row by the period and, when the statement names one, the revision or the reopen's id - each statement's own arbiter admits at most one. */
+    private static Optional<ReopenRow> oneReopen(Connection unitOfWork, String sql, AccountingPeriodId period, Optional<Object> second, String operation) {
         try (PreparedStatement read = unitOfWork.prepareStatement(sql)) {
             read.setObject(1, period.value());
-            if (revision.isPresent()) {
-                read.setInt(2, revision.get());
+            if (second.isPresent()) {
+                read.setObject(2, second.get());
             }
             try (ResultSet row = read.executeQuery()) {
                 return row.next()

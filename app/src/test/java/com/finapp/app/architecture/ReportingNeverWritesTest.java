@@ -21,7 +21,11 @@ import com.finapp.accounting.reporting.IncomeStatementDefinition;
 import com.finapp.accounting.reporting.OperationalReportDefinition;
 import com.finapp.accounting.reporting.ReportDefinition;
 import com.finapp.app.lending.LendingReports;
+import com.finapp.ledger.AdjustmentService;
+import com.finapp.ledger.HoldService;
 import com.finapp.ledger.PostingService;
+import com.finapp.ledger.ProjectionRebuilds;
+import com.finapp.ledger.ReversalService;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.audit.JdbcAuditWriter;
 import com.finapp.platform.idempotency.IdempotencyRecordStore;
@@ -147,8 +151,13 @@ class ReportingNeverWritesTest {
             PastTheCutoffPostings.class.getName(),
             CloseStatusReads.class.getName());
 
-    /** The ledger's writers by name - an adapter may read the ledger's tables, and hold none of these. */
-    static final Set<String> LEDGER_WRITERS = Set.of(PostingService.class.getName());
+    /**
+     * The ledger's writers by name - an adapter may read the ledger's tables, and hold none of these. Until {@code P14-DOC-001} (the exit
+     * review's gate audit, D4) this named {@code PostingService} alone, so an adapter holding the reversal, the adjustment, the hold or the
+     * projection rebuild service passed; every ledger service that writes a ledger table is named now.
+     */
+    static final Set<String> LEDGER_WRITERS = Set.of(PostingService.class.getName(), ReversalService.class.getName(),
+            AdjustmentService.class.getName(), HoldService.class.getName(), ProjectionRebuilds.class.getName());
 
     /** What a report port's adapter may call of a store or of {@code CloseRuns}: reads, on the snapshot it is handed. */
     static final Set<String> ADAPTER_STORE_READS = Set.of("find", "view", "content", "rates", "approvedFor", "countByStatus", "proposedOf");
@@ -467,6 +476,24 @@ class ReportingNeverWritesTest {
                 .anySatisfy(found -> assertThat(found).contains("PlantedAdapterByReference").contains("executeUpdate"))
                 .anySatisfy(found -> assertThat(found).contains("PlantedAdapterOnALendingReport").contains("LendingReports"))
                 .anySatisfy(found -> assertThat(found).contains("PlantedAdapterWritingAStore").contains("insertRunIfAbsent"));
+    }
+
+    @Test
+    @DisplayName("P14-DOC-001: a report port's adapter holding any of the ledger's writing services - posting, reversal, adjustment, hold, projection"
+            + " rebuild - is refused, each by name")
+    void anAdapterHoldingAnyLedgerWriterIsRefused() {
+        JavaClasses planted = new ClassFileImporter().importClasses(PlantedPort.class, PlantedPortUser.class,
+                PlantedAdapterPosting.class, PlantedAdapterReversing.class, PlantedAdapterAdjusting.class, PlantedAdapterHolding.class,
+                PlantedAdapterRebuilding.class, PlantedAdapterReadingAStore.class, PostingService.class, ReversalService.class,
+                AdjustmentService.class, HoldService.class, ProjectionRebuilds.class);
+        Set<String> adapters = reportPortAdapters(planted, candidate -> candidate.getSimpleName().equals("PlantedPortUser"));
+        assertThat(adapters).as("every implementor of the port report code depends on").hasSize(6);
+        assertThat(adapterViolations(planted, adapters)).hasSize(5)
+                .anySatisfy(found -> assertThat(found).contains("PlantedAdapterPosting").contains("PostingService"))
+                .anySatisfy(found -> assertThat(found).contains("PlantedAdapterReversing").contains("ReversalService"))
+                .anySatisfy(found -> assertThat(found).contains("PlantedAdapterAdjusting").contains("AdjustmentService"))
+                .anySatisfy(found -> assertThat(found).contains("PlantedAdapterHolding").contains("HoldService"))
+                .anySatisfy(found -> assertThat(found).contains("PlantedAdapterRebuilding").contains("ProjectionRebuilds"));
     }
 
     @Test
@@ -918,6 +945,27 @@ class ReportingNeverWritesTest {
         boolean touch(CloseRunStore store, Connection connection, CloseRunStore.NewRun run) {
             return store.insertRunIfAbsent(connection, run);
         }
+    }
+
+    /** Adapters holding a ledger writing service, each (`P14-DOC-001`). */
+    static class PlantedAdapterPosting implements PlantedPort {
+        PostingService writer;
+    }
+
+    static class PlantedAdapterReversing implements PlantedPort {
+        ReversalService writer;
+    }
+
+    static class PlantedAdapterAdjusting implements PlantedPort {
+        AdjustmentService writer;
+    }
+
+    static class PlantedAdapterHolding implements PlantedPort {
+        HoldService writer;
+    }
+
+    static class PlantedAdapterRebuilding implements PlantedPort {
+        ProjectionRebuilds writer;
     }
 
     /** An adapter calling only a read of a store - not flagged. */
