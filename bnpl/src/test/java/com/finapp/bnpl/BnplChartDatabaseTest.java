@@ -281,12 +281,13 @@ class BnplChartDatabaseTest {
                         .isInstanceOf(AdjustmentOnReconciledPositionException.class);
                 app.rollback();
 
-                // The database rank, past every domain guard: V027's re-stated trigger.
+                // The database rank, past every domain guard: V027's trigger as ledger V030 (P14-TSK-013) re-stated it,
+                // its words widened when the ACCOUNTING origin joined MANUAL - "closed to free and prior-period adjustments".
                 UUID proposal = plantManualProposal(app);
                 assertThatThrownBy(() -> plantLine(app, proposal, account))
                         .as("the trigger refuses a raw MANUAL line on %s", account.purpose())
                         .isInstanceOf(SQLException.class)
-                        .hasMessageContaining("closed to free adjustments");
+                        .hasMessageContaining("closed to free and prior-period adjustments");
                 app.rollback();
             }
         }

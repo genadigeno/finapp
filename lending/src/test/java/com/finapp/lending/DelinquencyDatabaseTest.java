@@ -445,8 +445,23 @@ class DelinquencyDatabaseTest {
                     + loan.value() + "'", "P0001", "immutable");
             refused(migrator, "DELETE FROM lending.loan_condition_event WHERE loan_id = '" + loan.value() + "'", "P0001",
                     "immutable");
-            refused(migrator, "TRUNCATE lending.loan_condition_event", "P0001", "");
+            // A plain TRUNCATE is refused before any trigger fires: lending V032's loan_write_off_default_fk references this
+            // table, and PostgreSQL refuses to truncate a referenced table alone (0A000).
+            refused(migrator, "TRUNCATE lending.loan_condition_event", "0A000", "referenced in a foreign key constraint");
+            // With CASCADE the truncation reaches the statement triggers, which refuse it - in a transaction rolled back.
+            migrator.setAutoCommit(false);
+            try {
+                refused(migrator, "TRUNCATE lending.loan_condition_event CASCADE", "P0001", "never truncated");
+            } finally {
+                migrator.rollback();
+                migrator.setAutoCommit(true);
+            }
         }
+        // The foreign key must not hide a dropped trigger: the table's OWN statement trigger still stands, enabled, BEFORE TRUNCATE.
+        assertThat(count("SELECT count(*) FROM pg_trigger t WHERE t.tgrelid = 'lending.loan_condition_event'::regclass"
+                + " AND t.tgname = 'loan_condition_event_is_never_truncated' AND NOT t.tgisinternal AND t.tgenabled <> 'D'"
+                + " AND (t.tgtype & 32) <> 0 AND (t.tgtype & 2) <> 0 AND t.tgfoid = 'lending.loan_is_never_truncated'::regproc"))
+                .as("loan_condition_event's own BEFORE TRUNCATE trigger").isEqualTo(1);
         advance(loan, 1);
         // The derivation, for every writer: today's DPD is 2, still B1 - only a DEFAULT row or no row could be true.
         refusedAlone(raw(loan, "DELINQUENCY", 31, "B2_30_59", "B1_1_29", false), "P0001", "derived");

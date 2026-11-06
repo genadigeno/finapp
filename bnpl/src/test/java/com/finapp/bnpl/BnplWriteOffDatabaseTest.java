@@ -106,7 +106,12 @@ class BnplWriteOffDatabaseTest {
                 }
             });
             String status = scalar("SELECT status FROM bnpl.bnpl_obligation WHERE id = '" + bought.id() + "'");
-            long repayments = count("SELECT count(*) FROM bnpl.bnpl_repayment WHERE obligation_id = '" + bought.id() + "'");
+            // The racing repayment's own row, by its kind and key: a pay-in-4 obligation already holds instalment 1's AT_PURCHASE
+            // repayment from its birth (bnpl V006), which is neither the race's nor anything a write-off refuses.
+            long repayments = count("SELECT count(*) FROM bnpl.bnpl_repayment WHERE obligation_id = '" + bought.id()
+                    + "' AND kind = 'CUSTOMER' AND request_key = '" + key + "'");
+            assertThat(count("SELECT count(*) FROM bnpl.bnpl_repayment WHERE obligation_id = '" + bought.id() + "' AND kind <> 'AT_PURCHASE'"))
+                    .as("no repayment but the race's").isEqualTo(repayments);
             if (status.equals("WRITTEN_OFF")) {
                 assertThat(outcomes).containsExactlyInAnyOrder("REFUSED", "APPROVED");
                 assertThat(repayments).isZero();
@@ -231,12 +236,25 @@ class BnplWriteOffDatabaseTest {
     @DisplayName("a refund moves the agreement's version with its lines: what was proposed before it is stale in the domain, and V020's rank refuses"
             + " the same raw decision on the version alone")
     void aRefundMovesTheVersion() throws SQLException {
-        BnplConditionDatabaseWorld.Purchased bought = defaulted();
-        LocalDate day = dayOf(bought);
+        // A refund moves the agreement's version only when it cancels or shortens an unbilled instalment (BnplRefunds; ADR-0105
+        // decision 2.4, INV-HIST-04) - a billed instalment is kept as its billing billed it. A pay-in-4 obligation at DPD 90 has
+        // every instalment billed (its last falls due 28 days after its second), so no refund of it can move the version: the
+        // case is a pay-in-6 obligation defaulted on its first instalment, whose last instalments are still unbilled.
+        BnplConditionDatabaseWorld.Purchased bought = defaultedPayInSix();
+        LocalDate day = bought.due(1).plusDays(90);
         BnplWriteOffs.Proposed proposed = propose(day, bought, world.operator());
         long version = count("SELECT max(version) FROM bnpl.bnpl_agreement WHERE obligation_id = '" + bought.id() + "'");
-        world.base.refundOn(day, bought, "refund-before", 150_00);
+        String billedDue = "SELECT coalesce(sum(bnpl.billing_component_billed(b.id, 'PRINCIPAL') - bnpl.billing_component_paid(b.id,"
+                + " 'PRINCIPAL')), 0) || ':' || coalesce(sum(bnpl.billing_component_billed(b.id, 'INTEREST')"
+                + " - bnpl.billing_component_paid(b.id, 'INTEREST')), 0) || ':' || coalesce(sum(bnpl.billing_component_billed(b.id, 'FEES')"
+                + " - bnpl.billing_component_paid(b.id, 'FEES')), 0) FROM bnpl.bnpl_billing b WHERE b.obligation_id = '" + bought.id() + "'";
+        String dueBefore = scalar(billedDue);
+        world.base.refundOn(day, bought, "refund-before", 50_00);
         assertThat(count("SELECT max(version) FROM bnpl.bnpl_agreement WHERE obligation_id = '" + bought.id() + "'")).isEqualTo(version + 1);
+        assertThat(scalar(billedDue)).as("the refund shortened an unbilled instalment only: what the billed items have due stands, so the"
+                + " raw decision below differs from an admissible one on the version alone").isEqualTo(dueBefore);
+        assertThat(dueBefore).isEqualTo(proposed.writeOff().position().principalDue().minorUnits() + ":"
+                + proposed.writeOff().position().interestDue().minorUnits() + ":" + proposed.writeOff().position().feesDue().minorUnits());
         assertThatExceptionOfType(BnplWriteOffs.Stale.class).isThrownBy(() ->
                 approve(day, bought, proposed.writeOff().id(), proposed.writeOff().position(), world.operator()));
         refusedFramed(day, rawApproval(day, bought, proposed), "P0001", "under the agreement version it was proposed on");
@@ -330,6 +348,33 @@ class BnplWriteOffDatabaseTest {
         try {
             assertThat(count("SELECT count(*) FROM bnpl.bnpl_condition_event WHERE kind = 'DEFAULT' AND defaulted AND obligation_id = '"
                     + bought.id() + "'")).as("defaulted at ninety").isEqualTo(1);
+        } catch (SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
+        return bought;
+    }
+
+    /**
+     * A fresh pay-in-6 obligation, its first instalment unpaid 90 days, as {@code BnplConditionDatabaseTest} walks one: every instalment
+     * due before the default day billed on its due date, its period accrued first (T-acc, then T-svc); then the default day's step.
+     * Its last instalments fall due after the default day, so they are still unbilled - what a refund can shorten.
+     */
+    private BnplConditionDatabaseWorld.Purchased defaultedPayInSix() {
+        BnplConditionDatabaseWorld.Purchased bought = world.base.payInN(BnplPlan.PAY_IN_6_MONTHS);
+        LocalDate defaultDay = bought.due(1).plusDays(90);
+        for (BnplPurchaseStore.StoredInstalment instalment : bought.schedule().instalments()) {
+            if (instalment.dueDate().isBefore(defaultDay)) {
+                world.base.catchUpOn(instalment.dueDate(), bought);
+                world.base.serviceOn(instalment.dueDate(), bought);
+            }
+        }
+        world.base.catchUpOn(defaultDay, bought);
+        world.base.serviceOn(defaultDay, bought);
+        try {
+            assertThat(count("SELECT count(*) FROM bnpl.bnpl_condition_event WHERE kind = 'DEFAULT' AND defaulted AND obligation_id = '"
+                    + bought.id() + "'")).as("defaulted at ninety").isEqualTo(1);
+            assertThat(count("SELECT count(*) FROM bnpl.bnpl_billing WHERE obligation_id = '" + bought.id() + "'"))
+                    .as("an instalment still unbilled").isLessThan(bought.schedule().instalments().size());
         } catch (SQLException failure) {
             throw new IllegalStateException(failure);
         }

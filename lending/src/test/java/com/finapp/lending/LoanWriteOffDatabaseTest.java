@@ -1,6 +1,5 @@
 package com.finapp.lending;
 
-import static com.finapp.lending.DelinquencyDatabaseTest.day;
 import static com.finapp.lending.DelinquencyDatabaseTest.dueToday;
 import static com.finapp.lending.DisbursementWorld.BALANCES;
 import static com.finapp.lending.DisbursementWorld.BILLING_STORE;
@@ -38,6 +37,7 @@ import com.finapp.platform.audit.JdbcAuditWriter;
 import com.finapp.platform.outbox.JdbcOutboxWriter;
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.money.CurrencyCode;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -394,14 +394,28 @@ class LoanWriteOffDatabaseTest {
                 + " JOIN ledger.journal_entry e ON e.id = ln.entry_id WHERE a.owner_ref = ? AND e.posting_date <= " + through, loan.value());
     }
 
-    /** A fresh loan past its first due date by DPD 90, as {@code DelinquencyDatabaseTest} walks it: serviced, flagged, every date accrued. */
+    /**
+     * A fresh loan defaulted by the real servicing step, its calendar on its repayment day: disbursed by T-dis, its schedule
+     * re-projected from a month before the latest repayment day at least ninety days back (as {@code AmendmentDatabaseTest#onItsDay}
+     * places one), then serviced until caught up - every elapsed date accrued, every instalment due billed, the condition derived at
+     * today's DPD of ninety or more. Re-projected, never shifted: {@code dueToday} and {@code advance} move every date by the same
+     * number of days, which leaves the monthly calendar off its day - no real loan is; the replay names such a schedule SCHEDULE
+     * ({@code RepaymentDatabaseTest#assertApplicationsReplay}) and an amendment's recalculation refuses it INVALID_REQUEST, so a
+     * case asserting either read the fixture, never the write-off.
+     */
     private static LoanId defaulted() {
-        LoanId loan = dueToday(5_000_00);
-        service(loan);
-        day(loan, 1);
-        day(loan, 59);
-        day(loan, 29);
-        day(loan, 1);
+        LoanId loan = InterestAccrualDatabaseTest.disbursed(5_000_00, 12);
+        int repaymentDay = Math.toIntExact(count("SELECT repayment_day FROM lending.loan_agreement WHERE loan_id = ? AND version = 1",
+                loan.value()));
+        LocalDate limit = businessDate(loan).minusDays(90);
+        LocalDate due = limit.withDayOfMonth(Math.min(repaymentDay, limit.lengthOfMonth()));
+        if (due.isAfter(limit)) {
+            due = due.minusMonths(1);
+        }
+        InstalmentBillingDatabaseTest.reproject(loan, due.minusMonths(1), repaymentDay);
+        InstalmentBillingDatabaseTest.serviceUntilCaughtUp(loan);
+        assertThat(scalar("SELECT min(due_date)::text FROM lending.loan_instalment WHERE loan_id = ?", loan.value()))
+                .as("the first instalment fell due ninety days or more before today").isEqualTo(due.toString());
         assertThat(count("SELECT count(*) FROM lending.loan_condition_event WHERE kind = 'DEFAULT' AND defaulted AND loan_id = ?",
                 loan.value())).as("defaulted at ninety").isEqualTo(1);
         return loan;

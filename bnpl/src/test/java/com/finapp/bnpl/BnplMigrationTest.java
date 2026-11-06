@@ -119,6 +119,8 @@ class BnplMigrationTest {
                 "bnpl_repayment_reversal", "bnpl_waiver", "bnpl_waiver_decision",
                 // V019 (the Phase 12 transition gate's R3, A7-3): a reversal's release of the late fee it re-opened.
                 "bnpl_reversal_fee_release",
+                // V020 (P14-TSK-021): the write-off's proposal and its decision.
+                "bnpl_write_off", "bnpl_write_off_decision",
                 "bnpl_schedule", "bnpl_terms", "bnpl_terms_version", "bnpl_terms_version_event", "flyway_schema_history",
                 "merchant_financing", "purchase", "purchase_event");
         assertThat(column("SELECT viewname FROM pg_views WHERE schemaname = '" + SCHEMA + "'"))
@@ -173,7 +175,11 @@ class BnplMigrationTest {
                 // V018 (the Phase 12 -> 13 gate's R1): the four-eyes amount and the withdrawal's cooldown;
                 // dispute_clock_start and the two dispute trigger functions replaced, listed above.
                 "dispute_four_eyes_amount", "dispute_withdrawal_cooldown",
-                "bnpl_dispute_respects_the_withdrawal_cooldown");
+                "bnpl_dispute_respects_the_withdrawal_cooldown",
+                // V020 (P14-TSK-021): the write-off's two born-once triggers and the refusal of a refund or a dispute on a
+                // written-off obligation; bnpl_obligation_permits_only_machine_edges replaced, listed above.
+                "bnpl_write_off_is_born_once", "bnpl_write_off_decision_is_born_once",
+                "nothing_is_refunded_or_disputed_on_a_written_off_obligation");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication("SELECT * FROM " + SCHEMA + ".flyway_schema_history"))
