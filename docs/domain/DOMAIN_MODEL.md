@@ -241,6 +241,8 @@ Regulatory Submission
 Safeguarding Position
 Lending Funded
 Principal Unrepaid
+Projection Rebuild
+Reference Gap
 
 Important: these names are not automatically aggregates or tables. Determine domain ownership and lifecycle before implementation.
 
@@ -367,6 +369,15 @@ cutoff is the ledger's and not a report filter, a report run is output and never
 executed rate, an accounting break is not a reconciliation break, a prior-period adjustment is not a back-dated
 posting, and a regulatory submission is not Phase 13's Regulatory Report. Nothing of Phase 14 is built: each is the
 planned design, defined in the glossary's §8b with the same guard.)*
+*(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: the note above read "Nothing of Phase 14 is built:
+each is the planned design" - true at the transition; `P14-TSK-001`…`-026` built every term, and the glossary's §8b
+states each as built, read against the code by this review. The transition's eighteen grew to twenty-five through the
+phase - Close Run (`P14-TSK-011`) and Operational Report (`P14-TSK-017`) were added to the list and the glossary without a
+note here, beside the five the notes above record - and the review added two, each a distinct concept Phase 14 built and
+neither list named: **Projection Rebuild** (`P14-TSK-026`, ADR-0119 decision 1), the ledger's four-eyes rebuild of one
+account's balance projection from its journal, never a posting; and **Reference Gap** (ADR-0119 decision 2), a valued
+pair admitted beyond the staleness bound at the reference's real last observation, flagged and disclosed, never a typed
+rate. The accounting block holds twenty-seven terms.)*
 
 ---
 

@@ -1027,7 +1027,7 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `bnpl_fee_pin` | `gross_amount_minor` | `RESTRICTED-FINANCIAL` | An amount - what was financed, never what is owed (`INV-MER-02`) |
 | `bnpl_fee_pin` | `gross_currency` | `INTERNAL` | Part of the monetary shape; meaningless without the amount |
 | `bnpl_fee_pin` | `gross_scale` | `INTERNAL` | As `gross_currency` |
-| `bnpl_fee_pin` | `pinned_at` | `CONFIDENTIAL` | When the price was fixed - with `pinned_by`, the provenance of a money decision - the database's instant in the pinning transaction (merchant `V012`, the gate's A3-M1) |
+| `bnpl_fee_pin` | `pinned_at` | `CONFIDENTIAL` | When the price was fixed - with `pinned_by`, the provenance of a money decision - the pin's own insert's stamp, `GREATEST(clock_timestamp(), transaction_timestamp())`, written by the trigger over whatever the writer supplied and read back by `RETURNING` (merchant `V013`). *Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "the database's instant in the pinning transaction (merchant `V012`, the gate's A3-M1)" - an instant the domain read a statement before the insert, which a backward database clock step put after the insert's clock. The level is unchanged.* |
 | `bnpl_fee_pin` | `pinned_by` | `RESTRICTED-PII` | The acting identity (the customer whose acceptance made the purchase) - `audit_record.actor_id`'s model |
 
 ### `checkout` — *added by `P6-TSK-006`*
@@ -1373,6 +1373,8 @@ counters and dates of things.
 | `reference_alias` | `correlation_id` | `INTERNAL` | The flow's correlation |
 
 **The runs and the external items** — *added by `P8-TSK-009`* (§5.3, §5.4, ADR-0064): the accepted batch's unit of matching work and its working copies. The item's money triple is `RESTRICTED-FINANCIAL` (a person's or counterparty's transaction), its keys `CONFIDENTIAL` (the match keys), a reprocess's reason `CONFIDENTIAL` prose; everything else identifiers, enums, counters and dates of things.
+
+*(`P14-DOC-001`, the Phase 14 exit review, 2026-11-06: the `break_event` rows below are keyed `reconciliation.break_event` since this review - accounting `V006` added a second `break_event` table, so the name is shared by two schemas and `ColumnClassificationTest#tableNamesSharedBySchemasAreQualified` keys its columns on `schema.table.column`; a bare row would merge the two tables' columns into one set. The classifications are unchanged.)*
 
 | Table | Column | Level | Why |
 |---|---|---|---|
@@ -4954,7 +4956,7 @@ platform's own identifiers, months, versions, counters and the database's stamps
 | `period_event` | `correlation_id` | `INTERNAL` | The act's correlation |
 ### `accounting.accounting_break` and `break_event` - the accounting break - *added by `P14-TSK-010`*
 
-`accounting V006`: one row per (period month, check, subject) - `accounting_break_born_once`, `INV-ACC-12` - raised by
+`accounting V006`: one row per (period month, check, subject) and, since `V008`, generation - `accounting_break_born_once`, `INV-ACC-12` - raised by
 one of the three GL-side checks (GL = ledger, rule conformance, source completeness), never corrected; its machine
 `OPEN → ACKNOWLEDGED → RESOLVED` (the acknowledgement four-eyes, the resolution by reference to a correcting journal
 entry) and its append-only case file; no `DELETE` for any role. **No money**: the evidence is closed codes, the
@@ -4965,6 +4967,12 @@ reads accounting, `NoCustomerSurfaceReadsAccountingTest`) - as is the disclosure
 and in the statements' notes (`INV-ACC-05`) but is a person's text: screened for instrument shapes
 (`AccountingReasons`). Every other person-written text is `RESTRICTED-PII` and never served; the people are
 `CONFIDENTIAL`; closed codes and the database's stamps `INTERNAL`.
+*(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: the key read "one row per (period month, check,
+subject)" - `V008:38` rebuilt `accounting_break_born_once` as `UNIQUE (period_start, check_code, subject_ref, generation)`,
+`P14-TSK-012`. And the `break_event` rows below are keyed `accounting.break_event` since this review: reconciliation
+holds a `break_event` too, so `ColumnClassificationTest#tableNamesSharedBySchemasAreQualified` keys the shared name's
+columns on `schema.table.column`, and the reconciliation section's rows are qualified the same way. The classifications
+are unchanged.)*
 
 | Table | Column | Level | Note |
 |---|---|---|---|

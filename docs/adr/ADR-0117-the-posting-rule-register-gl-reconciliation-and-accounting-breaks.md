@@ -1,6 +1,6 @@
 # ADR-0117 — The posting rule register, GL ↔ ledger ↔ source reconciliation, and accounting breaks
 
-Status: Proposed
+Status: Accepted (2026-11-06, `P14-DOC-001` — read against the code and corrected first)
 Date: 2026-10-29
 Phase: 14
 Context: Accounting / General Ledger · Reconciliation · every posting module
@@ -38,13 +38,27 @@ and park value in suspense; a GL-side discrepancy has neither.
    `FLOORED_AT_FIRST_OPEN` (its poster asks the ledger for the floor), `REFUSED_AT_APPROVAL` (a person's adjustment) -
    coherent with its dating by construction; the seven system rules versioned to 2, effective 2026-10-30; catalogue
    version 2, 65 rule versions; `PostingRuleRegisterTest` holds the floor to the source both ways.)*
+   *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: the counts above are their tasks' own. The
+   register now stands at **catalogue version 4** (`PostingRuleRegister.CATALOGUE_VERSION`,
+   `PostingRuleRegister.java:35-40`): version 3 added `ACC-PRIOR-PERIOD`, keyed by the proposal's origin `ACCOUNTING`
+   (`P14-TSK-013`), and version 4 the two write-offs `LND-14` and `BNPL-F11` (`P14-TSK-021`, C6) - **61 rules, 68 rule
+   versions** (`PostingRuleCatalogueTest`), the adjustment rules keyed by the three origins `MANUAL`, `RECONCILIATION`
+   and `ACCOUNTING`. `ECONOMIC_DATE` is still lending's accrual and the manual adjustment; **ten** rules are now
+   `STORED_ROW`, the prior-period adjustment the tenth (`PostingRuleCatalogue.java`).)*
 2. **Three checks per period**, each a close check: GL = ledger (mapping totality, no double mapping, sums equal per
    currency); rule conformance (namespace registered, shape conforming); source completeness (the existing proofs'
    verdicts through `SourceProofs`, never re-implemented).
-3. **Accounting breaks** (owner decision C11): `accounting_break` born once per `(period, check, subject)`, types
-   `MAPPING_GAP`, `DOUBLE_MAPPING`, `UNREGISTERED_POSTING`, `SHAPE_MISMATCH`, `UNBALANCED_ENTRY`, `SOURCE_DISCREPANCY`,
-   `SOURCE_DELAYED`; `OPEN → ACKNOWLEDGED → RESOLVED`; acknowledgement four-eyes with a disclosure; resolution only by
-   reference to a correcting entry posted through the owning domain's door. Never deleted, never self-corrected.
+3. **Accounting breaks** (owner decision C11): `accounting_break` born once per `(period, check, subject, generation)`,
+   types `MAPPING_GAP`, `DOUBLE_MAPPING`, `UNREGISTERED_POSTING`, `SHAPE_MISMATCH`, `UNBALANCED_ENTRY`,
+   `SOURCE_DISCREPANCY`, `SOURCE_DELAYED` (declared, never raised: no built proof tells a delay from a discrepancy);
+   `OPEN → ACKNOWLEDGED`, and `OPEN` or `ACKNOWLEDGED → RESOLVED`; acknowledgement four-eyes with a disclosure; resolution
+   only by reference to a correcting entry posted through the owning domain's door. Never deleted, never self-corrected.
+   *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "born once per `(period, check,
+   subject)`", "`SOURCE_DELAYED`" unqualified and "`OPEN → ACKNOWLEDGED → RESOLVED`". `P14-TSK-012`'s `V008` took the
+   generation into `accounting_break_born_once`'s key (`V008:35-38`; the Open questions' first entry). `SOURCE_DELAYED`
+   is in `BreakType` and never raised (`SourceCompleteness.java:20`; accrual lag is the close run's `ACCRUALS_COMPLETE`).
+   An `OPEN` break may be resolved without first being acknowledged: `V006`'s edge trigger admits `OPEN` and
+   `ACKNOWLEDGED` alike to `RESOLVED` (`V006:165`, its refusal naming the edges at `V006:174`).)*
    *(As built by `P14-TSK-010`, 2026-10-31, accounting `V006`: decisions 2 and 3 as one callable the close run invokes
    per check, `AccountingChecks.run` → `CheckOutcome` (`PASSED` only when the judge read everything and found nothing;
    any discrepancy, unavailable proof, unreadable judge or month without a mapping version `FAILED` with its reason;
@@ -94,7 +108,7 @@ Line-shape conformance for amounts (e.g. fee ≤ gross) as rule predicates, if t
 
 ## Open questions
 
-- **Resolved. As built by `P14-TSK-012`, 2026-11-03, accounting `V008`**: `accounting_break.generation`, in `accounting_break_born_once`'s key `(period_start, check_code, subject_ref, generation)`, rows already in the table generation 1 by the column's default; the trigger allows a later generation only over the one before it, decided and reading differently, and lets a racer through to `ON CONFLICT DO NOTHING`, so ten workers judging one changed finding insert one row. `held` answers each subject's latest generation. An `OPEN` latest raises nothing; a decided latest is compared by **exact string with `BreakFinding`'s normalised evidence**, so "unchanged" holds no clock and no walk order: the first entries of a namespace are the first by (posting date, id), currencies, keys and lists sorted. Unchanged counts as disclosed (`knownAcknowledged`, `knownResolved`); changed is `FINDING_CHANGED`, a new break, `FAILED` until decided. `RECURRED` and `ACKNOWLEDGED_CHANGED` are gone, and `CloseChecks.verdictOf` asks `decided()`. **An overtaken worker**: its generation number comes from what it read, so it can never mint an older generation, and once that generation exists it writes nothing; if it is first, its raise is a real finding from a real snapshot and only makes the close harder, fail closed, and `CloseRuns`' re-judging of `OPEN_ACCOUNTING_BREAKS` (`-011`'s M-1) births the attempt that shows it; the approval then refuses. **Limits, stated**: no amounts (the owner's); a difference past `BreakFinding`'s 2000-character cut is unseen; a release that changes an evidence format reads as changed, one more acknowledgement; **and `SOURCE_COMPLETENESS`'s evidence is a proof over the live book**, so more than the discrepancy can move it: `POSITION`'s `openExpectations=` and `openItems=` and `CASH_AT_BANK`'s `latestSequence=`, a loan's or an obligation's `status=`, `LOAN_REPLAY`'s `findings=`, `LENDING_CAPITAL`'s `unexplainedEntries=`, `BNPL_THREE_WAY`'s `merchantLegsFailing=` and `identitiesFailing=`. Under traffic such a subject can read as changed between an acknowledgement and a re-run, the same discrepancy a new generation each time (an owner item). Tests: `AccountingChecksTest#aChangedFindingIsANewGeneration`, `#aResolvedBreaksUnchangedFindingCountsAsDisclosed`, `#aResolvedBreaksChangedFindingIsANewGeneration`, `#workersReadingOneHeldRaiseOneGeneration` (sequential; the ten-way race is the database case), `#aLaterGenerationFollowsADecidedOne`, `#theComparisonIsCanonical`, `PeriodCloseMigrationTest#theGenerationsMigration`, `PeriodCloseDatabaseTest#theGenerationInTheKey` (owed, C5).
+- **Resolved. As built by `P14-TSK-012`, 2026-11-03, accounting `V008`**: `accounting_break.generation`, in `accounting_break_born_once`'s key `(period_start, check_code, subject_ref, generation)`, rows already in the table generation 1 by the column's default; the trigger allows a later generation only over the one before it, decided and reading differently, and lets a racer through to `ON CONFLICT DO NOTHING`, so ten workers judging one changed finding insert one row. `held` answers each subject's latest generation. An `OPEN` latest raises nothing; a decided latest is compared by **exact string with `BreakFinding`'s normalised evidence**, so "unchanged" holds no clock and no walk order: the first entries of a namespace are the first by (posting date, id), currencies, keys and lists sorted. Unchanged counts as disclosed (`knownAcknowledged`, `knownResolved`); changed is `FINDING_CHANGED`, a new break, `FAILED` until decided. `RECURRED` and `ACKNOWLEDGED_CHANGED` are gone, and `CloseChecks.verdictOf` asks `decided()`. **An overtaken worker**: its generation number comes from what it read, so it can never mint an older generation, and once that generation exists it writes nothing; if it is first, its raise is a real finding from a real snapshot and only makes the close harder, fail closed, and `CloseRuns`' re-judging of `OPEN_ACCOUNTING_BREAKS` (`-011`'s M-1) births the attempt that shows it; the approval then refuses. *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: "the approval then refuses" holds only for a raise that commits before the approval's read. A raise takes no period row, so an overtaken worker's can commit after that read and land as an `OPEN` break on a month just `CLOSED` - never hidden (listed and aged by `finapp.accounting.break.aged` as any `OPEN` break), but not stopping a close already approved; `PeriodCloses`' class javadoc states the window. **The owner accepted this limit on 2026-11-06** (`P14-TSK-012`'s item (i), `DECISIONS.md` "The close's open questions"): such a break may stand `OPEN` on a `CLOSED` month.)* **Limits, stated**: no amounts (the owner's); a difference past `BreakFinding`'s 2000-character cut is unseen; a release that changes an evidence format reads as changed, one more acknowledgement; **and `SOURCE_COMPLETENESS`'s evidence is a proof over the live book**, so more than the discrepancy can move it: `POSITION`'s `openExpectations=` and `openItems=` and `CASH_AT_BANK`'s `latestSequence=`, a loan's or an obligation's `status=`, `LOAN_REPLAY`'s `findings=`, `LENDING_CAPITAL`'s `unexplainedEntries=`, `BNPL_THREE_WAY`'s `merchantLegsFailing=` and `identitiesFailing=`. Under traffic such a subject can read as changed between an acknowledgement and a re-run, the same discrepancy a new generation each time (an owner item). Tests: `AccountingChecksTest#aChangedFindingIsANewGeneration`, `#aResolvedBreaksUnchangedFindingCountsAsDisclosed`, `#aResolvedBreaksChangedFindingIsANewGeneration`, `#workersReadingOneHeldRaiseOneGeneration` (sequential; the ten-way race is the database case), `#aLaterGenerationFollowsADecidedOne`, `#theComparisonIsCanonical`, `PeriodCloseMigrationTest#theGenerationsMigration`, `PeriodCloseDatabaseTest#theGenerationInTheKey` (owed, C5).
 - **Ruled by the owner, 2026-11-02: the two questions below are one rule, built by `P14-TSK-012`.** A finding is compared with the evidence a person decided
   on. **Unchanged**: it counts as disclosed - a `RESOLVED` break's by its correcting entry, so it no longer reads `RECURRED`; an `ACKNOWLEDGED` break's as today.
   **Changed**: it becomes a new break under a generation in the key, needing its own four-eyes acknowledgement; until then the check is `FAILED`. So an immutable
@@ -114,7 +128,10 @@ Line-shape conformance for amounts (e.g. fee ≤ gross) as rule predicates, if t
   `RECURRED` on every re-run: that discrepancy is never gone, and the close of its period - periods closing in order, of every later one - is blocked for
   good. So the answer is a precondition of `P14-TSK-012`, not a refinement: a re-raise or a generation gives the finding a new break to acknowledge; the
   default gives it no way out.)*
-- **What an acknowledgement holds** (`P14-TSK-011`'s review, I-1; open, the same owner decision as the recurrence above): four eyes acknowledge what a
+- **What an acknowledgement holds** (`P14-TSK-011`'s review, I-1; open, the same owner decision as the recurrence above) *(superseded by
+  `P14-TSK-012`: ruled 2026-11-02 and built - the first two entries above; `ACKNOWLEDGED_CHANGED` no longer exists, a changed finding being
+  `FINDING_CHANGED` and a new generation. Labelled by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06; the text below is the question's
+  history)*: four eyes acknowledge what a
   break's evidence says, and the key holds only a subject, so `namespace:<TYPE> <ns>` and `<PROOF>:<subject>` could change after the acknowledgement and
   still read disclosed, across an unlock too. **The safe default as built**: `held` answers the break's evidence, and a finding differing from it is
   `FAILED ACKNOWLEDGED_CHANGED`, never `DISCLOSED`, its subject on the attempt; nothing is re-raised and the break stays what it was. Evidence of unchanged
@@ -127,7 +144,9 @@ Line-shape conformance for amounts (e.g. fee ≤ gross) as rule predicates, if t
   person decides it remain the controller's audited judgement.
 - **A mirror reversal** (M-7): a reversal of a nonconforming entry is judged against its own REVERSAL rule at the
   reversal's date, so it raises its own break - whether a reversal should instead be judged as its original's mirror is
-  open.
+  open. *(Ruled by the owner, 2026-11-06, `DECISIONS.md` "The close's open questions"; recorded by `P14-DOC-001`, the
+  Phase 14 exit review: no door reverses an adjustment today, and a door reversing an adjustment, if ever built, reads
+  its reversal by the original's origin. Every other reversal stays judged against its own `REVERSAL` rule, as built.)*
 
 *(The independent review of `P14-TSK-010`, 2026-11-01, said FIX FIRST; fixed on the branch: I-1 (`RECURRED`, the known
 findings split by status), I-2 (the correcting entry's plausibility, a refusal recorded `FAILED`), I-3 (a database case

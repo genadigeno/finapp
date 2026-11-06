@@ -167,9 +167,13 @@ only):
   Lending's unlocked read of its committed principal and the journal lines - the only Lending code a BNPL
   transaction runs, and no Lending table row is locked *(`P12-DOC-001`, 2026-10-22: added by the Phase 12 exit review)*.
 - **Downstream, deferred:** collections (Case Management, 23 — Phase 13) consumes
-  `LoanDelinquencyChanged` and `LoanDefaulted`; write-off, provisioning and the GL (Accounting, 25 —
-  Phase 14) map Lending's purposes; refinance is decided by the Phase 11 → 12 transition — *decided
-  2026-10-16: not Phase 12 (`PHASE_12_PLAN.md` §20)*.
+  `LoanDelinquencyChanged` and `LoanDefaulted`; the GL (Accounting, 25 — Phase 14) maps Lending's purposes, and
+  the write-off is built (`P14-TSK-021`, owner decision C6 (A): `/v1/operator/loans/{id}/write-offs`, four-eyes, the
+  approval `MULTI_FACTOR`, lending `V032`); only provisioning (ECL) and effective-interest amortisation stay deferred,
+  disclosed in the statements' notes; refinance is decided by the Phase 11 → 12 transition — *decided
+  2026-10-16: not Phase 12 (`PHASE_12_PLAN.md` §20)*. *(Corrected by `P14-DOC-001`, the Phase 14 exit review,
+  2026-11-06: this read "write-off, provisioning and the GL (Accounting, 25 — Phase 14) map Lending's purposes" -
+  the write-off is `LoanWriteOffController`'s, built.)*
   **Production originates nothing** until a real bureau is connected (unresolved #13/#14): Phase 11
   proves origination against the simulators.
 
@@ -272,8 +276,12 @@ module depends on `bnpl`):
 - **Risk (20), Fraud (21), AML (22)** — nothing in Phase 12: a BNPL purchase is screened only through
   Credit and KYC standing; Credit's `CreditRiskSignal` seam still answers `NOT_ASSESSED`.
 - **Downstream, deferred:** collections (Case Management, 23 — Phase 13) consumes
-  `BnplDelinquencyChanged` and `BnplDefaulted`; write-off, provisioning and the merchant discount's
-  effective-interest treatment (Accounting, 25 — Phase 14) map BNPL's purposes. **Production
+  `BnplDelinquencyChanged` and `BnplDefaulted`; the GL (Accounting, 25 — Phase 14) maps BNPL's purposes, and the
+  write-off is built (`P14-TSK-021`, owner decision C6 (A): `/v1/operator/bnpl-agreements/{id}/write-offs`, four-eyes,
+  the approval `MULTI_FACTOR`, bnpl `V020`); only provisioning and the merchant discount's effective-interest treatment
+  stay deferred, disclosed in the statements' notes. *(Corrected by `P14-DOC-001`, the Phase 14 exit review,
+  2026-11-06: this read "write-off, provisioning and the merchant discount's effective-interest treatment (Accounting,
+  25 — Phase 14) map BNPL's purposes" - the write-off is `BnplWriteOffController`'s, built.)* **Production
   originates nothing**: like Lending, BNPL is offered only while an `ACTIVE`, four-eyes BNPL terms
   version exists, production activates none until a real bureau is connected (unresolved #13/#14) and the
   activation gate of `OPERATIONS_RUNBOOK.md` §8.1 is passed (among it the legal review of the merchant
@@ -537,10 +545,15 @@ active (`PHASE_13_PLAN.md` §1.1). *(`P13-DOC-001`, 2026-10-27: the sweep's aler
 force: a default's `OBLIGATION_DEFAULTED` (`-025`) and a rescreening's `SCREENING_HIT` (`-022`).)*
 
 **Accounting / General Ledger (25) and Reporting (27)** were bounded by the Phase 13 → 14 transition (ADR-0113,
-`Proposed`, 2026-10-29; `PHASE_14_PLAN.md` §4) — *the boundary built by `P14-TSK-001` (2026-10-29): the module with
-its edges (`AccountingModuleIsolationTest`), the schema floor (`V001`, no table), the closed vocabularies, the nine ports
-declared empty, the roles as a partition (identity `V025`; the security boundary below); no state yet - each task
-corrects this paragraph to the code.* Two contexts in **one module, `accounting`** (schema `accounting`,
+`Proposed`, 2026-10-29, `Accepted` by `P14-DOC-001`; `PHASE_14_PLAN.md` §4) — *the boundary built by `P14-TSK-001`
+(2026-10-29): the module with its edges (`AccountingModuleIsolationTest`), the schema floor (`V001`, no table), the
+closed vocabularies, the ports declared, the roles as a partition (identity `V025`; the security boundary below). As
+built at the Phase 14 exit review (2026-11-06): the state of accounting `V001`…`V012` - GL mapping versions with their
+GL accounts and rules, accounting periods and their event history, report runs, valuation rate sets, accounting breaks,
+the close run and its checks, the four-eyes period close and reopen, the unlock's and reopen's ends, prior-period
+adjustments, regulatory obligations and submissions.* *(Corrected by `P14-DOC-001`, the Phase 14 exit review,
+2026-11-06: this read "the nine ports declared empty, … no state yet - each task corrects this paragraph to the code",
+`P14-TSK-001`'s state.)* Two contexts in **one module, `accounting`** (schema `accounting`,
 Flyway `accounting/V001…`), regulatory reporting inside it behind an adapter (split trigger: regulatory reporting
 acquiring retention or segregation obligations the GL does not share). **The module creates no competing record and
 holds no balance**: every GL figure is a function of the ledger's journal lines × the mapping version the period pins;
@@ -564,17 +577,43 @@ disclosure and fx's reference rates through ports `app` implements.
   accountant's alone, the controller reading what it decides under its approve permissions; the holders need not be
   disjoint, so approver ≠ proposer is the binding control, `accounting.SelfApprovalRefused`)*.
 - **Reporting (27)** — *responsibility:* immutable, reproducible report runs (trial balance, GL activity, statements,
-  revenue, receivables and payables, settlement positions, suspense, FX results, loan portfolio, BNPL exposure,
-  reconciliation and close status) with drill-down to journal lines; regulatory obligations and submissions behind
+  revenue, receivables and payables, settlement positions, suspense, FX results, loan portfolio, BNPL exposure, the
+  safeguarding position) with drill-down to journal lines, and two operational reports read live and never a run -
+  reconciliation status and close status (`OperationalReportDefinition`, refused by `ReportRuns.claim`, `P14-TSK-017`);
+  regulatory obligations and submissions behind
   `RegulatoryReportingProvider` (simulated, owner decision C4). *Owned state:* Report Run, Regulatory Obligation,
   Regulatory Submission. *Not owned:* the operational live reports (lending, bnpl, reconciliation, merchant, risk keep
   theirs, labelled operational). *Transaction boundary:* claim and completion its own; reads `REPEATABLE READ READ ONLY`
-  (`INV-ACC-14`). *Failure:* a generator's death re-claimed by lease; a provider's unknown answer an inquiry. *(As built, `P14-TSK-018`: the framework sits in module `accounting` outside its read-only `reporting` package, which holds no writer; a return reads a FINAL run through its store and takes the period row, and writes only its own six tables.)*
-- **Ledger (7)** — gains the Posting Cutoff, an index for period reads and the `ACCOUNTING` adjustment origin; its
-  grants, its single-writer rule and its trial balance are unchanged.
+  (`INV-ACC-14`). *Failure:* a generator's death re-claimed by lease; a provider's unknown answer an inquiry. *(As built, `P14-TSK-018`: the framework sits in module `accounting` outside its read-only `reporting` package, which holds no writer; a return reads a FINAL run through its store and takes the period row, and writes only its own six tables.)* *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: the list read "… BNPL exposure, reconciliation and close status)" - `RECONCILIATION_STATUS` and `CLOSE_STATUS` are operational, never a run (`ReportKind.java`, `ReconciliationStatusDefinition`, `CloseStatusDefinition`), and `SAFEGUARDING_POSITION` (`P14-TSK-019`, `P14-TSK-023`) was missing.)*
+- **Ledger (7)** — gains the Posting Cutoff (`V028`) and, since `V032`, its twin on `journal_line` (a line joining an
+  entry dated on or before the cutoff is refused, namespace `14` key `cutoff` shared, SQLSTATE `LDCUT`), an index for
+  period reads (`V029`), the `ACCOUNTING` adjustment origin (`V030`) and the four-eyes **projection rebuild**
+  (`P14-TSK-026`, ADR-0119: `ledger.projection_rebuild`, `V031`, `finapp_app` granted `SELECT`, `INSERT` and a column
+  `UPDATE` of its decision columns, no `DELETE`; `/v1/ledger/projection-rebuilds`, `LEDGER_ADJUST`, the approval
+  `MULTI_FACTOR`); the manual adjustment door records a refused self-approval `FAILED` (`ledger.SelfApprovalRefused`)
+  in a transaction of its own and screens its reason and reference (`InstrumentShapes`,
+  `AdjustmentReasonRefusedException`, 422). The journal's and the projection's grants, its single-writer rule and its
+  trial balance are unchanged.
 - **Lending (18)** — its daily accrual floors its posting date at the first open date when the accrual date is locked
-  (C3, `P14-TSK-006`); write-off, if C6 (A), is its four-eyes command.
-- **Reconciliation (14), FX (15), BNPL (19), Merchant (12)** — read through ports; nothing of theirs changes.
+  (C3, `P14-TSK-006`); the write-off is built as its four-eyes command (C6 (A), `P14-TSK-021`, lending `V032`). A
+  retired terms version's `effective_to` can still fall before an offer pinned to it when the database clock steps back
+  between the offer and the retirement (`V030:247`): a defect found by `P14-DOC-001`'s database pass and postponed by the
+  owner as `PI-014`.
+- **BNPL (19)** — its accrual's lag read by the close (C3, `P14-TSK-006`); the write-off, four-eyes (C6 (A),
+  `P14-TSK-021`, bnpl `V020`). Its terms retirement has the same postponed defect (`V002:343`, `PI-014`).
+- **Merchant (12)** — `MerchantPayable` classifies an `ACCOUNTING`-origin and an operator's `MANUAL` line by its origin
+  (`P14-TSK-022`, `P14-TSK-023`); `PayoutReturns` floors a return's posting date at the first open date (C3,
+  `P14-TSK-006`); a BNPL fee pin is stamped by its own insert (merchant `V013`, `P14-DOC-001`).
+- **FX (15)** — a conversion and a cover outcome are dated by their stored day, floored at the first open date (C3,
+  `P14-TSK-006`; `FX-TRADE`, `FX-COVER` version 2); its reference snapshots read through `ValuationRates`.
+- **Reconciliation (14)** — `Suspense`'s postings floored at the first open date (C3, `P14-TSK-006`); `ReportReadings`
+  serves the suspense register as of an instant and the runs' counts the close reads (`P14-TSK-011`, `-017`, `-012`).
+- **Settlement (13)** — `BatchAcceptance` floored at the first open date (C3, `P14-TSK-006`); a source's admission and
+  retirement days (settlement `V018`, `P14-TSK-025`), which the close's run coverage reads.
+  *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: these lines read "Ledger (7) — gains the Posting
+  Cutoff, an index for period reads and the `ACCOUNTING` adjustment origin", "Lending (18) — … write-off, if C6 (A), is its
+  four-eyes command" and "Reconciliation (14), FX (15), BNPL (19), Merchant (12) — read through ports; nothing of theirs
+  changes"; each of them changed in Phase 14, and Settlement was not named.)*
 
 1. Party & Customer
 2. Identity, Authentication & Authorization

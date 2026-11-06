@@ -27,7 +27,10 @@ Detailed architectural decisions. The human-readable index of *what* was decided
   2026-10-15) in the same way; ADR-0101…0106 were written `Proposed` at the Phase 11 → 12
   transition (2026-10-16) and accepted by the Phase 12 review (`P12-DOC-001`, 2026-10-22) in the
   same way; ADR-0107…0112 were written `Proposed` at the Phase 12 → 13 transition (2026-10-22) and
-  accepted by the Phase 13 review (`P13-DOC-001`, 2026-10-27) in the same way.
+  accepted by the Phase 13 review (`P13-DOC-001`, 2026-10-27) in the same way; ADR-0113…0118 were
+  written `Proposed` at the Phase 13 → 14 transition (2026-10-29), and ADR-0119 by `P14-TSK-026`
+  (2026-11-06), and all seven were accepted by the Phase 14 review (`P14-DOC-001`, 2026-11-06) in
+  the same way; ADR-0116 stands superseded in part by ADR-0119, its header naming the part.
   *(The Phase 7 review's acceptance was missing from this line until the Phase 7 → 8
   transition added it with the Phase 8 decisions.)*
 - A decision found in code but absent from this record is architectural debt.
@@ -148,13 +151,13 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0110](ADR-0110-the-case-model.md) | The case model shared by fraud, ATO, merchant abuse, AML and collections: born-once alerts, one open case per subject and kind, concurrent updates by revision, four-eyes dispositions | Accepted | 13 | Risk (Case Management) · Identity · Audit |
 | [0111](ADR-0111-aml-monitoring-from-the-ledger-journal-and-the-regulatory-report.md) | AML transaction monitoring from the ledger journal, and the regulatory report as an artefact distinct from the investigation, behind a filing port | Accepted | 13 | Risk (AML) · Ledger · KYC · Audit |
 | [0112](ADR-0112-downstream-actions-through-the-owning-domains.md) | Downstream actions as keyed commands through the owning domains: risk never mutates authoritative state and never reverses a transaction | Accepted | 13 | Risk · Identity · Accounts · Merchant · Cross-border · Payments · KYC |
-| [0113](ADR-0113-the-accounting-bounded-context-and-the-gl-as-a-versioned-mapping.md) | The `accounting` bounded context: the General Ledger as a versioned mapping over the one journal, no second ledger, no ledger edge | Proposed | 14 | Accounting / General Ledger · Reporting · Ledger |
-| [0114](ADR-0114-accounting-periods-the-ledger-posting-cutoff-and-the-close.md) | Accounting periods, the posting cutoff enforced by the ledger, and the four-eyes close | Proposed | 14 | Accounting / General Ledger · Ledger · Lending |
-| [0115](ADR-0115-reporting-as-immutable-reproducible-report-runs.md) | Financial reporting as immutable, reproducible report runs over a pinned journal cut | Proposed | 14 | Reporting · Accounting / General Ledger |
-| [0116](ADR-0116-multi-currency-valuation-and-reporting-currency-translation.md) | Multi-currency valuation: a functional currency, valuation rate sets separate from execution, translation at report time | Proposed | 14 | Accounting / General Ledger · Reporting · FX |
-| [0117](ADR-0117-the-posting-rule-register-gl-reconciliation-and-accounting-breaks.md) | The posting rule register, GL to ledger to source reconciliation, and accounting breaks | Proposed | 14 | Accounting / General Ledger · Reconciliation · every posting module |
-| [0118](ADR-0118-regulatory-reporting-behind-jurisdiction-adapters.md) | Regulatory reporting behind jurisdiction adapters: obligations as configuration, submissions from FINAL runs, a simulated reference adapter | Proposed | 14 | Reporting · Accounting / General Ledger · Lending |
-| [0119](ADR-0119-a-projection-rebuild-door-and-a-reference-gaps-way-on.md) | A four-eyes projection rebuild, and a reference gap's way on: the real last observation, disclosed | Proposed | 14 | Ledger · Accounting / General Ledger · FX |
+| [0113](ADR-0113-the-accounting-bounded-context-and-the-gl-as-a-versioned-mapping.md) | The `accounting` bounded context: the General Ledger as a versioned mapping over the one journal, no second ledger, no ledger edge | Accepted | 14 | Accounting / General Ledger · Reporting · Ledger |
+| [0114](ADR-0114-accounting-periods-the-ledger-posting-cutoff-and-the-close.md) | Accounting periods, the posting cutoff enforced by the ledger, and the four-eyes close | Accepted | 14 | Accounting / General Ledger · Ledger · Lending |
+| [0115](ADR-0115-reporting-as-immutable-reproducible-report-runs.md) | Financial reporting as immutable, reproducible report runs over a pinned journal cut | Accepted | 14 | Reporting · Accounting / General Ledger |
+| [0116](ADR-0116-multi-currency-valuation-and-reporting-currency-translation.md) | Multi-currency valuation: a functional currency, valuation rate sets separate from execution, translation at report time | Accepted | 14 | Accounting / General Ledger · Reporting · FX |
+| [0117](ADR-0117-the-posting-rule-register-gl-reconciliation-and-accounting-breaks.md) | The posting rule register, GL to ledger to source reconciliation, and accounting breaks | Accepted | 14 | Accounting / General Ledger · Reconciliation · every posting module |
+| [0118](ADR-0118-regulatory-reporting-behind-jurisdiction-adapters.md) | Regulatory reporting behind jurisdiction adapters: obligations as configuration, submissions from FINAL runs, a simulated reference adapter | Accepted | 14 | Reporting · Accounting / General Ledger · Lending |
+| [0119](ADR-0119-a-projection-rebuild-door-and-a-reference-gaps-way-on.md) | A four-eyes projection rebuild, and a reference gap's way on: the real last observation, disclosed | Accepted | 14 | Ledger · Accounting / General Ledger · FX |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch

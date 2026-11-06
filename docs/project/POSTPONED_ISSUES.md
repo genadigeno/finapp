@@ -270,7 +270,7 @@ commit and the date; do not delete the entry.
   tier on the final code. Postpone it"). **Due at the next phase's database pass at the latest.**
 - **What:** the Phase 14 exit review ran the phase's one database pass (C5) on the tree as merged: every database tier of
   every module Phase 14 changed - accounting, bnpl, fx, lending, platform, reconciliation, risk, settlement, and `app`'s
-  whole tier, shared and own-container - first run 133 + 320 suites, 3,677 tests, 66 failed. It then landed test repairs and
+  whole tier, shared and own-container - first run 134 + 320 suites, 3,682 tests, 66 failed. It then landed test repairs and
   production fixes and re-ran only the suites that had failed and those that test what a fix changed (105 suites, 1,068
   tests, then lending's tier whole), plus the storms once each on the triage branches. No clean run of every tier on the
   final tree was made.
@@ -343,6 +343,10 @@ commit and the date; do not delete the entry.
   4. **`MerchantPayoutDatabaseTest` "a suspension racing a dispatch waits for it" (app, shared tier) - unclassified, most
      likely a load flake:** once, the provider call outlasted the suite's 0.7 s timeout on a machine running several builds
      (measured on the JVM's clock); green in every other run.
+  5. **`RiskStormTest` (app, own-container) - unclassified, most likely load.** Its first run in the pass was red on its C1
+     census - two `CARD_PAYMENT` `TIMEOUT` fail-safes no scene had forced (the 250 ms read budget met on a loaded machine:
+     Phase 13's item 77 class); a later run met a restart-cut re-send answered `409 api.IdempotencyInProgress`, which the
+     triage repaired in the storm's door (it retries the key shortly); two further runs were green (about 42 minutes each).
 - **Not run at all:** the `kafkaTest` tier (Phase 14 changed nothing it covers); the storms (`BnplStormDatabaseTest`,
   `RiskStormTest`, `LendingStormDatabaseTest`, ...) ran only as the triage needed, on triage branches, not on the final tree.
 - **Owner of the fix:** the next phase's database pass at the latest; item 2 before any production restart policy relies on

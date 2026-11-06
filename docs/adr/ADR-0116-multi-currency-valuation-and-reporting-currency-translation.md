@@ -1,9 +1,13 @@
 # ADR-0116 — Multi-currency valuation: a functional currency, valuation rate sets separate from execution, translation at report time
 
-Status: Proposed
+Status: Accepted (2026-11-06, `P14-DOC-001` — read against the code and corrected first)
 Date: 2026-10-29
 Phase: 14
 Context: Accounting / General Ledger · Reporting · FX
+Superseded in part by: ADR-0119 (decision 2's capture rule, for a pair named in a four-eyes reference-gap exception; the
+rest of this ADR stands). *(Added by `P14-DOC-001`, 2026-11-06: `README.md`'s rule marks a wholly superseded ADR
+`Superseded by ADR-NNNN` in its status; for a part, the status stays and this line names the part, as ADR-0119's own
+`Supersedes:` line does from the other side.)*
 Supersedes: nothing. Takes up what ADR-0076 deferred ("no revaluation, no functional currency, no unrealised P&L —
 Phase 14", D30) and `DECISIONS.md` §Deferred's row for it. Rests on `PHASE_14_PLAN.md` §13.4 and `INV-ACC-11`,
 `INV-FX-05`, `INV-MON-03`, `-04`.
@@ -18,16 +22,29 @@ Statements need one reporting currency; customer execution rates must never be r
 
 1. **Functional = reporting currency = EUR** (owner decision C1). Transaction-currency columns are always shown beside
    the translation.
-2. **A valuation rate set** is captured when a period locks from `fx.rate_snapshot` reference rates through the
-   `ValuationRates` port — per pair, the last observation at or before the period end within a staleness bound, with
-   source, `observed_at` and snapshot id — approved four-eyes, immutable, pinned by every FINAL run. It never reads a
-   customer quote, an executed trade or a cover rate.
+2. **A valuation rate set** is captured by a person while the period is `LOCKED`, from `fx.rate_snapshot` reference
+   rates through the `ValuationRates` port — per pair, the last observation at or before the period end within a
+   staleness bound, with source, `observed_at` and snapshot id — approved four-eyes, immutable, pinned by every
+   translated run (FINAL or PROVISIONAL) that names it. It never reads a customer quote, an executed trade or a cover
+   rate. *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "captured when a period locks" and
+   "pinned by every FINAL run". The capture is an accountant's act after the lock, never part of it
+   (`ValuationRateSets`, `POST .../valuation-rate-sets` under `ACCOUNTING_CLOSE_PROPOSE`; `P14-TSK-014`'s As built
+   below), so a stale reference never blocks the cutoff. Only a run whose parameters name a set pins one
+   (`RunParameters.valuationRateSet`; `report_run_rate_set_is_a_parameter`, `V004:100-101`): the close's `TRIAL_BALANCE`,
+   the plain runs of every definition and a regulatory submission's sources are FINAL and pin none (`P14-TSK-015`'s As
+   built below).)*
 3. **Translation is a reporting act**: each line group translated at the pinned rate, `HALF_EVEN` to the reporting minor
    unit; the difference between the sum of translated parts and the translated total is an explicit **translation
    difference** line. Nothing is posted; no journal line changes (C7 A).
 4. **Realised vs unrealised**: realised results are reported from their posted purposes; unrealised revaluation is not
-   posted in Phase 14 and is disclosed as a translation effect. Posting revaluation (C7 B) is a later, qualified decision
-   that would add purposes and an auto-reversing rule, without rewriting any closed period.
+   posted in Phase 14. The balance sheet and the income statement disclose it as a translation effect in a note - which
+   no figure states, a reader finding it by comparing two runs; a translated `TRIAL_BALANCE` carries no such member.
+   Posting revaluation (C7 B) is a later, qualified decision that would add purposes and an auto-reversing rule, without
+   rewriting any closed period. *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "is not
+   posted in Phase 14 and is disclosed as a translation effect", of every translated report. The disclosure is
+   `StatementNotes.UNREALISED_FX` (`StatementNotes.java:38-40`, the `unrealisedFx` note), written by
+   `BalanceSheetDefinition` and `IncomeStatementDefinition` alone; the trial balance's content, version 1 unchanged, has
+   no notes, as `P14-TSK-015`'s As built below says.)*
 
 ## Alternatives Considered
 
@@ -113,10 +130,15 @@ does not change this design**: it would mint a new
 set id, a new parameters hash, a new question and a new run; the one touch point is `pinnedBy`, which would have to admit a
 superseded set for the regeneration of a run that pinned it.
 
-`P14-TSK-016` (2026-11-04), no migration. **The statements take a set** by the same `RunParameters.valuationRateSet`, `Translation` as it stands, every column at the run's one set. **Balanced through the difference lines**: the balance sheet's two columns, `assets` and `liabilitiesEquityAndResult` (each liability and equity row, and per currency one part for retained earnings and one for the result), have equal originals per currency, and a translated total is a function of the original total alone, so they agree per currency and across them, each column's parts plus its own difference line reaching the total. `translation.balanced` compares them, computed and refused if false. The income statement's columns are `revenue`, `expenses`, `result` and `netRealisedFx`, each on its own, so revenue less expenses need not foot to the result by a cent; its `result` per currency is the balance sheet's translated result, one function of one original. **A real hole refuses the run** (`ReportRefused`, `TRANSLATION_INCOMPLETE`, naming the currencies; the owner's ruling below), `total()` never read; a zero needs no rate (`ZERO_NO_RATE`). **Completeness is carried** (`P14-TSK-015`'s review, I-1(a)): `ReportGeneration.Generated` reads `translation.complete` and `translation.untranslated` from any body, so a trial balance's hole shows too, on `accounting.ReportRunCompleted` (`translationComplete`, `untranslatedCount`, `untranslated` joined by `_`, the event grammar's one separator) and the audit summary; no content changed, so no version moved. **M-7 decided: the note says so**, on a plain run and a translated one alike: a translated row need not cross-foot, and a translated closing is not comparable with last month's when rates moved, that gap being the unrealised effect, which no figure states and a reader finds by comparing two runs. An income statement translates at the period's closing set, not an average: C7 A's one set, a policy the note names by "one pinned valuation rate set" and an owner's question. **The layout is one class**, `StatementTranslation` and the definitions' two calls to it, and **is not decided**: the owner settles it before the first translated FINAL, and no FINAL run being issued yet it can change inside version 1 until then.
+`P14-TSK-016` (2026-11-04), no migration. **The statements take a set** by the same `RunParameters.valuationRateSet`, `Translation` as it stands, every column at the run's one set. **Balanced through the difference lines**: the balance sheet's two columns, `assets` and `liabilitiesEquityAndResult` (each liability and equity row, and per currency one part for retained earnings and one for the result), have equal originals per currency, and a translated total is a function of the original total alone, so they agree per currency and across them, each column's parts plus its own difference line reaching the total. `translation.balanced` compares them, computed and refused if false. The income statement's columns are `revenue`, `expenses`, `result` and `netRealisedFx`, each on its own, so revenue less expenses need not foot to the result by a cent; its `result` per currency is the balance sheet's translated result, one function of one original. **A real hole refuses the run** (`ReportRefused`, `TRANSLATION_INCOMPLETE`, naming the currencies; the owner's ruling below), `total()` never read; a zero needs no rate (`ZERO_NO_RATE`). **Completeness is carried** (`P14-TSK-015`'s review, I-1(a)): `ReportGeneration.Generated` reads `translation.complete` and `translation.untranslated` from any body, so a trial balance's hole shows too, on `accounting.ReportRunCompleted` (`translationComplete`, `untranslatedCount`, `untranslated` joined by `_`, the event grammar's one separator) and the audit summary; no content changed, so no version moved. **M-7 decided: the note says so**, on a plain run and a translated one alike: a translated row need not cross-foot, and a translated closing is not comparable with last month's when rates moved, that gap being the unrealised effect, which no figure states and a reader finds by comparing two runs. An income statement translates at the period's closing set, not an average: C7 A's one set, a policy the note names by "one pinned valuation rate set" and an owner's question. **The layout is one class**, `StatementTranslation` and the definitions' two calls to it, and **is not decided**: the owner settles it before the first translated FINAL, and no FINAL run being issued yet it can change inside version 1 until then. *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: decided - the owner accepted the translated layout as built on 2026-11-04, after `P14-TSK-021`'s merge (`DECISIONS.md` "What a write-off still owes before production, and what a statement stands as").)*
 
 **Ruled by the owner, 2026-11-03.** A FINAL run with a missing rate stays issued, with the gap disclosed, and a statement still refuses it. Indicative translation of an open period is left out. **Still open: the translated
 body's shape**, for the owner to look at before the first translated FINAL, because a later change means a new version.
+*(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: the shape is no longer open - accepted as built on
+2026-11-04, above. **The one open point** is `P14-TSK-026`'s owner item (g): whether a statement's notes add a sentence
+for a reference gap, beside the `translation.referenceGaps` member every translated figure already travels with
+(ADR-0119). Its recommendation, accepted, is to decide it before the first translated FINAL, while it can still change
+inside version 1.)*
 
 *(**Superseded in part by ADR-0119**, `P14-TSK-026`, 2026-11-06: decision 2's "one stale or missing pair refuses the whole
 capture" stands for every pair a person does not name. For a pair named in a four-eyes capture exception, the set holds the
