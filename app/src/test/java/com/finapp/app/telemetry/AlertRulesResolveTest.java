@@ -469,6 +469,7 @@ class AlertRulesResolveTest {
      */
     @Test
     @DisplayName("the accounting rules: every selector published on a live instance with the labels it filters on, every read gauge a number and never NaN, the file loaded (P14-TSK-020)")
+    // POSTPONED_ISSUES.md PI-014 (2), P14-DOC-001: red after a paused context restarts - AccountingGaugeRefresher cannot restart, a production defect, not fixed.
     void theAccountingRulesResolve() throws InterruptedException {
         List<Map<String, Object>> accounting = rules(ACCOUNTING_RULES, ACCOUNTING_GROUP);
         assertThat(accounting).hasSizeGreaterThan(20);

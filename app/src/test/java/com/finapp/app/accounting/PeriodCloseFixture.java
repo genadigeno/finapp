@@ -238,6 +238,7 @@ final class PeriodCloseFixture {
     }
 
     /** {@code month} proposed, by {@link #ACCOUNTANT}, with no check disclosed. */
+    // POSTPONED_ISSUES.md PI-013, P14-DOC-001: the close proposed here can be refused "no close run yet" after a backward database clock step - a production defect, not fixed.
     static PeriodCloses.Acted proposed(YearMonth month) {
         CloseRunId run = ready(month);
         return inScope(ACCOUNTANT, uow -> MACHINE.propose(uow, id(month), run, List.of(), ACCOUNTANT, REASON, correlation()));
