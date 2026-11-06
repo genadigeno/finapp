@@ -382,6 +382,10 @@ extra["ownContainerSuites"] =
         // EUR-JPY-JP ones refused (the suite's high-risk corridor), its non-EUR-leg ones refused by the fail-safe.
         "com.finapp.app.fx.CrossBorderRiskSeamDatabaseTest",
         "com.finapp.app.fx.FxCrossBorderStormDatabaseTest",
+        // P14-DOC-001's database pass: the FX position report lists every open cover leg in the database, oldest first,
+        // bounded at 100 - the suite's new leg is listed only while fewer than 100 older legs stand open, and a shared
+        // container holds hundreds (the value battery executes one cover in twenty by design).
+        "com.finapp.app.fx.Phase9ReportsDatabaseTest",
         "com.finapp.app.lending.BnplCapitalDatabaseTest",
         "com.finapp.app.lending.LendingCapitalDatabaseTest",
         "com.finapp.app.lending.LendingCreditExposureDatabaseTest",
@@ -437,6 +441,10 @@ extra["ownContainerSuites"] =
         "com.finapp.app.settlement.BankStatementCashDatabaseTest",
         "com.finapp.app.settlement.PayoutSettlementCashDatabaseTest",
         "com.finapp.app.settlement.SchemeCycleCashDatabaseTest",
+        // P14-DOC-001's database pass: its rebuild deletes every unheld expectation in the database as the root, commits,
+        // and holds every verdict explained after the backfill - another suite's port-opened expectation over a fixture
+        // entry (FxProviderSourceDatabaseTest's FX_BUY_LEG) is deleted and never re-derived, failing it and the residue.
+        "com.finapp.app.settlement.SettlementAcceptanceDatabaseTest",
         "com.finapp.app.transfers.TransferRiskSeamDatabaseTest",
     )
 

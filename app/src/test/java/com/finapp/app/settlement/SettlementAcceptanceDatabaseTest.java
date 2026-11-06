@@ -43,8 +43,17 @@ import org.springframework.boot.test.context.SpringBootTest;
  * {@code value date + funding_lag_days}, and the position identity holding WITH EVERY ITEM
  * PENDING — balance = open remainders − open item remainders — while the completeness
  * verifier knows every recognition entry ({@code INV-REC-06} extended, ADR-0067 §9).
+ *
+ * <p><strong>Run apart</strong> (P14-DOC-001's database pass). The register's rebuild empties the WHOLE register as
+ * the platform's root and commits it, then holds EVERY verdict explained once the backfill has re-derived what the
+ * books alone can re-derive - an absolute claim over the database, true only when every expectation in it is a real
+ * operation's. A shared container also holds expectations other suites open through a production port over a fixture
+ * entry no backfill can adopt ({@code FxProviderSourceDatabaseTest}'s cover leg on {@code fx-sim-a}'s EUR position,
+ * 123.45 EUR): deleted here, it failed this suite's rebuilt FX_PROVIDER_CLEARING EUR verdict and, at rest,
+ * {@code ReconciledPositionResidueDatabaseTest}'s - a line this suite had un-named, not one its writer left unexplained.
  */
 @Tag("database")
+@Tag("own-container") // its own JVM and database: ownContainerDatabaseTest, the javadoc says why
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 @SpringBootTest
 @DisplayName("acceptance's intake and the extended proof (P8-TSK-009)")

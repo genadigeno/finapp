@@ -92,17 +92,24 @@ class BalanceDerivationDatabaseTest {
             // container. FEE_REVENUE (P8-TSK-006's substitute) is REVENUE and would drop the type.
             LedgerAccount asset = operational(app, AccountPurpose.CHARGEBACK_RECOVERABLE);
             LedgerAccount fees = operational(app, AccountPurpose.FEE_REVENUE);
-            LedgerAccount residual = operational(app, AccountPurpose.ROUNDING_RESIDUAL);
+            // The EXPENSE: DISPUTE_COSTS. It was ROUNDING_RESIDUAL until P14-DOC-001's database pass:
+            // that is an FX book (P9-TSK-013, INV-FX-06) whose proof reads the account's whole balance
+            // against fx's own rows, so this committed 300 stood in every later FX proof in the
+            // shared container as an unexplained ROUNDING_RESIDUAL USD line (FxProofDatabaseTest,
+            // FxTradeReversalRaceDatabaseTest, FxValuePreservationBatteryDatabaseTest,
+            // UnwindRetryDatabaseTest). DISPUTE_COSTS is an operational EXPENSE no whole-account
+            // proof claims - the dispute suites judge their own disputes' entries alone.
+            LedgerAccount expense = operational(app, AccountPurpose.DISPUTE_COSTS);
             // The four reachable types, by their derived normal balances: ASSET and EXPENSE
             // debit-normal, LIABILITY and REVENUE credit-normal (the aggregate exposes the
             // derivation's product, not the input - P3-TSK-002's no-free-choices rule).
             assertThat(asset.normalBalance()).isEqualTo(NormalBalance.DEBIT);
-            assertThat(residual.normalBalance()).isEqualTo(NormalBalance.DEBIT);
+            assertThat(expense.normalBalance()).isEqualTo(NormalBalance.DEBIT);
             assertThat(fees.normalBalance()).isEqualTo(NormalBalance.CREDIT);
             assertThat(wallet.normalBalance()).isEqualTo(NormalBalance.CREDIT);
 
             post(app, entry(asset, Direction.DEBIT, wallet, Direction.CREDIT, 5000));
-            post(app, entry(residual, Direction.DEBIT, fees, Direction.CREDIT, 300));
+            post(app, entry(expense, Direction.DEBIT, fees, Direction.CREDIT, 300));
             // Both directions on one account, so the fold's subtraction is exercised on rows.
             post(app, entry(wallet, Direction.DEBIT, asset, Direction.CREDIT, 1200));
             app.commit();
@@ -112,7 +119,7 @@ class BalanceDerivationDatabaseTest {
             // independent recomputation, which is the property under test.
             assertThat(derivation.derive(app, wallet.id(), AsOf.latest()).settled())
                     .isEqualTo(Money.ofMinorUnits(3800, USD));
-            for (LedgerAccount account : List.of(wallet, asset, fees, residual)) {
+            for (LedgerAccount account : List.of(wallet, asset, fees, expense)) {
                 DerivedBalance derived = derivation.derive(app, account.id(), AsOf.latest());
                 assertThat(derived.settled().currency())
                         .as("%s: the balance is in the account's own currency", account.id())
