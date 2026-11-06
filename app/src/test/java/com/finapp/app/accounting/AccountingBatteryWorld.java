@@ -25,11 +25,14 @@ import java.util.TreeMap;
  * chart is written out here, not read from {@code ReferenceGlMapping}, and the census holds the two equal - a second statement
  * of the mapping, checked rather than trusted.
  *
- * <p><strong>Nothing passes by construction.</strong> A value date is drawn apart from its posting date, a fifth of them in the
- * month before, so a fold reading the wrong date moves a figure; a quarter of the posting dates are a month's first or last day;
- * amounts run from one minor unit to ten million, so a translation meets ties and parts below a cent; entries hold two, three or
- * four lines. The same {@code (seed, entries)} is the same journal in every JVM: {@link Random}'s sequence is specified, nothing
- * here reads a clock, a locale, a hash order or a default charset.
+ * <p><strong>Nothing passes by construction.</strong> A quarter of the posting dates are a month's first or last day; amounts run
+ * from one minor unit to ten million, so a translation meets ties and parts below a cent; entries hold two, three or four lines;
+ * from July one GL account gathers two purposes, so a component writer is read apart from its row. A value date is drawn apart
+ * from its posting date - a fifth one to 31 days before it, the rest that day or up to two before - but only the database half
+ * can see a fold read the wrong one: the hermetic half's in-memory reads window by posting date and carry no value date into a
+ * figure, so there the spread proves nothing, and the census's floors say only the journal posted there has it. The same {@code (seed,
+ * entries)} is the same journal in every JVM: {@link Random}'s sequence is specified, nothing here reads a clock, a locale, a
+ * hash order or a default charset.
  */
 final class AccountingBatteryWorld {
 
@@ -94,14 +97,25 @@ final class AccountingBatteryWorld {
         }
     }
 
-    /** Which chart: the battery's own, or the perturbation's (a purpose moved between two sections). */
+    /**
+     * Which chart: the battery's own; the perturbation moving a purpose between two sections; the perturbation leaving one
+     * purpose unmapped for {@link #PERTURBED}, a version pinned for that month alone (a non-total version no production
+     * activation admits - it stands for a line on a purpose its version does not map, the branch the folds keep for it).
+     */
     enum Chart {
         BASE,
-        MOVED
+        MOVED,
+        UNMAPPED
     }
 
-    /** The restated fee account from {@link #RESTATED_FROM}: same section, another code - the version change in the year. */
+    /**
+     * The restated account from {@link #RESTATED_FROM}: fee income and reconciliation gains together, in the fee section - the
+     * version change in the year, and the one GL account of two purposes.
+     */
     static final String RESTATED_FEES = "4090";
+
+    /** The purpose {@link Chart#UNMAPPED} leaves without a rule in {@link #PERTURBED}. */
+    static final String UNMAPPED_PURPOSE = PROCESSING;
 
     /** The perturbation: chargebacks recoverable moved from other assets to the clearing receivables, under a new code. */
     static final String MOVED_PURPOSE = CHARGEBACK;
@@ -131,18 +145,24 @@ final class AccountingBatteryWorld {
             new ChartRow(RESIDUAL, "OPERATIONAL", "5210", "Rounding residual", "EXPENSE", "FX_RESULT"),
             new ChartRow(RECON_LOSSES, "OPERATIONAL", "5300", "Reconciliation losses", "EXPENSE", "OTHER_EXPENSES"));
 
-    /** The rows {@code month} reads under {@code chart}: the version change from July, and the perturbation's move. */
+    /**
+     * The rows {@code month} reads under {@code chart}: from July fee income and reconciliation gains on the restated account;
+     * the perturbations' move and gap.
+     */
     static List<ChartRow> chart(Chart chart, YearMonth month) {
         List<ChartRow> rows = new ArrayList<>();
         for (ChartRow row : CHART) {
             ChartRow read = row;
-            if (row.purpose().equals(FEES) && !month.isBefore(RESTATED_FROM)) {
-                read = new ChartRow(row.purpose(), row.ownerKind(), RESTATED_FEES, "Fee income - restated", row.classification(),
-                        row.section());
+            if ((row.purpose().equals(FEES) || row.purpose().equals(RECON_GAINS)) && !month.isBefore(RESTATED_FROM)) {
+                read = new ChartRow(row.purpose(), row.ownerKind(), RESTATED_FEES, "Fee and reconciliation income - restated",
+                        "REVENUE", "FEE_AND_COMMISSION_INCOME");
             }
             if (chart == Chart.MOVED && row.purpose().equals(MOVED_PURPOSE)) {
                 read = new ChartRow(row.purpose(), row.ownerKind(), MOVED_TO, "Chargebacks recoverable - moved", row.classification(),
                         MOVED_TO_SECTION);
+            }
+            if (chart == Chart.UNMAPPED && month.equals(PERTURBED) && row.purpose().equals(UNMAPPED_PURPOSE)) {
+                continue;
             }
             rows.add(read);
         }
@@ -152,6 +172,11 @@ final class AccountingBatteryWorld {
     /** The version number {@code month} pins: the first, and the restated one from July. */
     static int versionOf(YearMonth month) {
         return month.isBefore(RESTATED_FROM) ? 1 : 2;
+    }
+
+    /** Which version {@code month} pins under {@code chart} - the restatement's, or the gap's for its one month. */
+    static String versionKey(Chart chart, YearMonth month) {
+        return chart == Chart.UNMAPPED && month.equals(PERTURBED) ? "gap" : Integer.toString(versionOf(month));
     }
 
     // ------------------------------------------------------------------ the kinds

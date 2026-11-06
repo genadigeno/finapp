@@ -15,12 +15,21 @@ import static com.finapp.app.accounting.PeriodCloseFixture.REASON;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.accounting.AccountingBreaks;
+import com.finapp.accounting.AccountingChecks;
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.AccountingPeriodStore;
+import com.finapp.accounting.AccrualCompleteness;
+import com.finapp.accounting.CheckVerdict;
+import com.finapp.accounting.CloseCheckCode;
+import com.finapp.accounting.CloseCheckStatus;
+import com.finapp.accounting.CloseChecks;
 import com.finapp.accounting.CloseRunId;
+import com.finapp.accounting.CloseRuns;
 import com.finapp.accounting.GlMappingAdministration;
 import com.finapp.accounting.GlMappingVersion;
 import com.finapp.accounting.GlPins;
+import com.finapp.accounting.JdbcAccountingBreakStore;
 import com.finapp.accounting.JdbcGlMappingStore;
 import com.finapp.accounting.JdbcPeriodPins;
 import com.finapp.accounting.JdbcReportRunStore;
@@ -34,6 +43,7 @@ import com.finapp.accounting.ReportRuns;
 import com.finapp.accounting.RuleConformance;
 import com.finapp.accounting.RunBasis;
 import com.finapp.accounting.RunStatus;
+import com.finapp.accounting.SourceProofs;
 import com.finapp.accounting.TrialBalanceReads;
 import com.finapp.accounting.ValuationRateSetStore;
 import com.finapp.accounting.ValuationRateSets;
@@ -95,6 +105,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -125,16 +136,19 @@ import org.junit.jupiter.api.Test;
  *   <li>the reference version proposed and activated by two persons from January, and the restated one from July - the July
  *       activation retiring the first, whose months it never reaches (never retroactive: no period is locked yet);
  *   <li>the accounts: the seeded operational ones per purpose and currency, four customers' wallets per currency created;
- *   <li>the journal posted in batches of 50 per transaction ({@code PostingService} joins the caller's), every 97th entry posted a
- *       second time under its key and replayed - every entry before any lock, so the ledger's cutoff refuses none;
+ *   <li>the journal posted in batches of 50 per transaction ({@code PostingService} joins the caller's) - every entry before any
+ *       lock, so the ledger's cutoff refuses none; then every 97th entry's command sent again after its first committed, each in a
+ *       transaction and a correlation of its own, a client's retry the idempotency record answers;
  *   <li>then each month in order: locked (the ledger's cutoff advanced to its end under advisory key {@code (14, 'cutoff')}
  *       exclusive, the month's version pinned under {@code (14, 'mapping')} shared - no poster holds either, so neither waits; the
  *       previous month is {@code CLOSED}, which a lock requires); its valuation set captured from the world's rates and approved by
- *       another person; its close run started and every check concluded by this suite's own verdict ({@link PeriodCloseFixture},
- *       as every close suite does - the judges are {@code CloseRunDatabaseTest}'s, and a real rule-conformance judge reads this
- *       journal under the production register, where the battery's namespaces are unregistered); proposed by one person and
- *       approved by another; and its three FINAL runs - {@code TRIAL_BALANCE}, {@code BALANCE_SHEET}, {@code INCOME_STATEMENT} -
- *       claimed and generated through the real claim and generator, translated at the month's approved set;
+ *       another person; its close run started and its checks concluded - the ledger trial balance, GL = ledger, rule conformance
+ *       (under the battery's own register: under production's, its kinds are no poster's and unregistered) and the approved set by
+ *       the <strong>real judges</strong>, the open breaks in the run's own conclusion, and only source completeness, accruals,
+ *       projections and the reconciliation disclosure by the suite's verdict, none of them this journal's to answer
+ *       ({@link #STUB}); proposed by one person and approved by another; and its three FINAL runs - {@code TRIAL_BALANCE}, {@code
+ *       BALANCE_SHEET}, {@code INCOME_STATEMENT} - claimed and generated through the real claim and generator, translated at the
+ *       month's approved set;
  *   <li>every fact read: each run's definition again on a {@code REPEATABLE READ READ ONLY} snapshot through {@link
  *       ReadOnlySnapshot}, the GL through {@code LedgerJournalReads} under {@code GlPins}, conformance through {@code
  *       LedgerJournalShapes} under the battery's register.
@@ -245,6 +259,20 @@ class AccountingBatteryTest {
     }
 
     @Test
+    @DisplayName("the closes' judges: in every month the ledger trial balance, GL = ledger, rule conformance under the battery's"
+            + " register and the approved set were concluded PASSED by the real judges, not the suite's verdict")
+    void theRealJudgesPassedWhatTheyJudged() {
+        for (YearMonth month : AccountingBatteryWorld.MONTHS) {
+            for (CloseCheckCode check : JUDGED) {
+                CheckVerdict verdict = VERDICTS.get(month + " " + check);
+                assertThat(verdict).as("%s %s judged", month, check).isNotNull();
+                assertThat(verdict.status()).as("%s %s: %s", month, check, verdict.failures()).isEqualTo(CloseCheckStatus.PASSED);
+                assertThat(verdict.judgedBy()).as("%s %s", month, check).isNotEqualTo(STUB);
+            }
+        }
+    }
+
+    @Test
     @DisplayName("INV-ACC-01, -06: every month's FINAL trial balance is the oracle's - rows, currency proofs, verdict - and its"
             + " translation")
     void theTrialBalanceIsTheOracles() {
@@ -342,7 +370,11 @@ class AccountingBatteryTest {
         }
     }
 
-    /** The journal through the real posting service, {@link #BATCH} entries per transaction, every 97th replayed in its own. */
+    /**
+     * The journal through the real posting service, {@link #BATCH} entries per transaction; then every 97th entry's command sent
+     * again, after its first has committed, each in a transaction of its own and with a correlation of its own - the client's
+     * retry the idempotency record answers, never a second effect.
+     */
     private static void post() throws SQLException {
         for (int from = 0; from < journal.size(); from += BATCH) {
             List<Entry> batch = journal.subList(from, Math.min(from + BATCH, journal.size()));
@@ -352,15 +384,22 @@ class AccountingBatteryTest {
                 app.setAutoCommit(false);
                 PostingService postings = postings();
                 for (Entry entry : batch) {
-                    PostingCommand command = command(entry);
-                    PostingResult first = postings.post(app, command);
-                    INDEX_OF.put(first.entryId().value(), entry.index());
-                    if (entry.index() % AccountingBatteryWorld.REPLAYED == 0) {
-                        PostingResult again = postings.post(app, command);
-                        replays += again.replayed() && again.entryId().equals(first.entryId()) ? 1 : 0;
-                    }
+                    INDEX_OF.put(postings.post(app, command(entry)).entryId().value(), entry.index());
                 }
                 app.commit();
+            }
+        }
+        for (Entry entry : journal) {
+            if (entry.index() % AccountingBatteryWorld.REPLAYED != 0) {
+                continue;
+            }
+            try (Connection app = DatabaseRoles.application();
+                    SecurityContext.Scope actor = SecurityContext.enterSystem();
+                    CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)))) {
+                app.setAutoCommit(false);
+                PostingResult again = postings().post(app, command(entry));
+                app.commit();
+                replays += again.replayed() && Integer.valueOf(entry.index()).equals(INDEX_OF.get(again.entryId().value())) ? 1 : 0;
             }
         }
     }
@@ -391,10 +430,86 @@ class AccountingBatteryTest {
         Actor approver = person();
         inScope(approver, uow -> valuation.approve(uow, captured.id(), approver, "the battery's rates", correlation()));
         CloseRunId run = PeriodCloseFixture.started(period);
-        PeriodCloseFixture.concludeAll(Set.of(), Set.of());
+        conclude(month);
         PeriodCloses.Acted proposed = inScope(ACCOUNTANT, uow -> MACHINE.propose(uow, period, run, List.of(), ACCOUNTANT, REASON,
                 correlation()));
         inScope(CONTROLLER, uow -> MACHINE.approve(uow, period, proposed.proposal().orElseThrow(), CONTROLLER, REASON, correlation()));
+    }
+
+    /**
+     * The checks the real judges conclude: the ledger trial balance (a FINAL {@code TRIAL_BALANCE} run's verdict), GL = ledger
+     * and rule conformance (the real {@code AccountingChecks} over {@code LedgerJournalShapes} and the GL door - conformance under
+     * the battery's own register, its kinds being no production poster's), the approved set, and the open breaks (concluded in
+     * the run's own conclusion).
+     */
+    private static final Set<CloseCheckCode> JUDGED = EnumSet.of(CloseCheckCode.LEDGER_TRIAL_BALANCE, CloseCheckCode.GL_EQUALS_LEDGER,
+            CloseCheckCode.RULE_CONFORMANCE, CloseCheckCode.VALUATION_SET_APPROVED);
+
+    /**
+     * The checks concluded by the suite's own verdict, as {@code PeriodCloseFixture} concludes them, each for a reason: source
+     * completeness asks the products' sources and their expectations, of which this journal has none; accruals ask the loan and
+     * BNPL books; projection verification the products' proofs; the reconciliation disclosure a month's reconciliation runs - none
+     * of them this journal's to answer, and each judged by its own suite ({@code CloseRunDatabaseTest}, {@code
+     * AccountingSourceProofsDatabaseTest}).
+     */
+    static final String STUB = "battery:the-suite's-verdict";
+
+    /** What each judged check concluded, by {@code month CHECK}. */
+    private static final Map<String, CheckVerdict> VERDICTS = new TreeMap<>();
+
+    /** Every claimable check of {@code month}'s run concluded: the {@link #JUDGED} by the real judges, the rest by the suite. */
+    private static void conclude(YearMonth month) {
+        CloseChecks judges = judges();
+        while (true) {
+            Optional<CloseRuns.ClaimedCheck> held = inScope(Actor.SYSTEM, uow -> PeriodCloseFixture.RUNS.claim(uow, Actor.SYSTEM));
+            if (held.isEmpty()) {
+                return;
+            }
+            CloseRuns.ClaimedCheck claimed = held.get();
+            if (claimed.check() == CloseCheckCode.OPEN_ACCOUNTING_BREAKS) {
+                inScope(Actor.SYSTEM, uow -> PeriodCloseFixture.RUNS.concludeOpenBreaks(uow, claimed));
+                continue;
+            }
+            CheckVerdict verdict;
+            if (JUDGED.contains(claimed.check())) {
+                verdict = judges.judge(claimed).orElseThrow(() -> new AssertionError(month + " " + claimed.check()
+                        + ": the judge answered in progress"));
+                VERDICTS.put(month + " " + claimed.check(), verdict);
+            } else {
+                verdict = CheckVerdict.passed(claimed.check(), STUB, CanonicalJson.object().put("check", claimed.check().name()));
+            }
+            inScope(Actor.SYSTEM, uow -> PeriodCloseFixture.RUNS.conclude(uow, claimed, verdict));
+        }
+    }
+
+    /** The real judges, wired as the close's worker wires them, over this database. */
+    private static CloseChecks judges() {
+        SourceProofs unasked = (snapshot, source) -> {
+            throw new AssertionError("source completeness and projections are concluded by the suite's verdict");
+        };
+        AccrualCompleteness accruals = new AccrualCompleteness() {
+            @Override
+            public List<Lagging> lagging(Connection unitOfWork) {
+                throw new AssertionError("accruals are concluded by the suite's verdict");
+            }
+
+            @Override
+            public List<Floored> flooredPast(Connection unitOfWork, LocalDate periodEnd) {
+                throw new AssertionError("accruals are concluded by the suite's verdict");
+            }
+        };
+        AccountingChecks checks = new AccountingChecks(new GeneralLedger(new LedgerJournalReads()), PINS, new LedgerJournalShapes(),
+                unasked, AccountingBatteryBooks.register(), new AccountingBreaks(new JdbcAccountingBreakStore(),
+                        new LedgerJournalReads(), new JdbcAuditWriter(), new JdbcOutboxWriter(), IDS, NOW),
+                GL_SNAPSHOTS::read, TRANSACTIONS::inTransaction);
+        ValuationRateSets sets = new ValuationRateSets(PeriodCloseFixture.SETS, AccountingPeriodFixture.STORE, new WorldRates(),
+                ValuationStaleness.standard(), new JdbcAuditWriter(), IDS, NOW);
+        return new CloseChecks(checks::run, new FinalTrialBalanceReader(runs(), generator(), TRANSACTIONS,
+                FinalTrialBalanceReader.overSnapshots(SNAPSHOTS)), accruals, unasked, (snapshot, period) -> {
+                    throw new AssertionError("the disclosure is concluded by the suite's verdict");
+                }, (connection, period) -> {
+                    throw new AssertionError("the disclosure is concluded by the suite's verdict");
+                }, sets, AccountingPeriodFixture.STORE, GL_SNAPSHOTS::read);
     }
 
     /** {@code month}'s three FINAL runs, translated at its approved set. */

@@ -152,21 +152,33 @@ final class AccountingBatteryBooks {
     /** A production version: its id, its number and its content. */
     record Version(GlMappingVersionId id, int number, GlMappingVersion content) {}
 
-    /** The version {@code month} pins under {@code chart}: the reference (from January), restated from July; moved when perturbed. */
+    /**
+     * The version {@code month} pins under {@code chart}: the reference (from January), restated from July; moved when perturbed;
+     * and for {@link Chart#UNMAPPED}'s month a version of its own, the reference without one purpose's rule.
+     */
     static Version version(Chart chart, YearMonth month) {
         int number = AccountingBatteryWorld.versionOf(month);
+        if (chart == Chart.UNMAPPED && month.equals(AccountingBatteryWorld.PERTURBED)) {
+            return new Version(GlMappingVersionId.of(v7(30)), 3, ReferenceGlMapping.without(AccountingBatteryWorld.MONTHS.get(0),
+                    java.util.Set.of(AccountingBatteryWorld.UNMAPPED_PURPOSE)));
+        }
         return new Version(GlMappingVersionId.of(v7((chart == Chart.MOVED ? 10 : 0) + number)), number, content(chart, number));
     }
 
-    /** The content of version {@code number} under {@code chart}, from {@code ReferenceGlMapping} - never from the world's chart. */
+    /**
+     * The content of version {@code number} under {@code chart}, from {@code ReferenceGlMapping} - never from the world's chart:
+     * the second restates fee income and reconciliation gains onto one new account, so it holds an account of two purposes.
+     */
     static GlMappingVersion content(Chart chart, int number) {
         YearMonth from = number == 1 ? AccountingBatteryWorld.MONTHS.get(0) : AccountingBatteryWorld.RESTATED_FROM;
         GlMappingVersion reference = ReferenceGlMapping.version(from);
         List<GlAccount> accounts = new ArrayList<>(reference.accounts());
         List<MappingRule> rules = new ArrayList<>(reference.rules());
         if (number == 2) {
-            restate(accounts, rules, AccountingBatteryWorld.FEES, new GlAccount(AccountingBatteryWorld.RESTATED_FEES,
-                    "Fee income - restated", GlClassification.REVENUE, StatementSection.FEE_AND_COMMISSION_INCOME));
+            GlAccount restated = new GlAccount(AccountingBatteryWorld.RESTATED_FEES, "Fee and reconciliation income - restated",
+                    GlClassification.REVENUE, StatementSection.FEE_AND_COMMISSION_INCOME);
+            restate(accounts, rules, AccountingBatteryWorld.FEES, restated);
+            restate(accounts, rules, AccountingBatteryWorld.RECON_GAINS, restated);
         }
         if (chart == Chart.MOVED) {
             restate(accounts, rules, AccountingBatteryWorld.MOVED_PURPOSE, new GlAccount(AccountingBatteryWorld.MOVED_TO,
@@ -183,7 +195,9 @@ final class AccountingBatteryBooks {
         if (rules.stream().noneMatch(rule -> rule.glAccountCode().equals(retired))) {
             accounts.removeIf(account -> account.code().equals(retired));
         }
-        accounts.add(to);
+        if (accounts.stream().noneMatch(account -> account.code().equals(to.code()))) {
+            accounts.add(to);
+        }
     }
 
     static AccountingPeriodId period(YearMonth month) {
@@ -546,32 +560,52 @@ final class AccountingBatteryBooks {
 
     // ------------------------------------------------------------------ the facts, read from production's output
 
+    /**
+     * The trial balance's facts: {@code TB} from the issued <strong>body</strong> - every row's opening, debits, credits, closing
+     * and lines at the scale written, each currency's proofs, the verdict - and {@code TBO} the fold's rows as the object holds
+     * them, the opening's and the movement's sides apart; {@code TBT} the body's translation.
+     */
     static void trialBalanceFacts(SortedMap<String, String> facts, String m, TrialBalance balance, CanonicalJson.Obj body) {
-        for (TrialBalance.AccountRow row : balance.accounts()) {
-            facts.put("TB|" + m + "|A:" + row.account().code() + "|" + row.currency(), sides(row.opening()) + " " + sides(row.movement()));
-        }
-        for (TrialBalance.UnmappedRow row : balance.unmapped()) {
-            facts.put("TB|" + m + "|U:" + row.purpose() + "/" + row.ownerKind() + "|" + row.currency(),
-                    sides(row.opening()) + " " + sides(row.movement()));
-        }
-        for (TrialBalance.CurrencyCheck check : balance.currencies()) {
-            facts.put("TB|" + m + "|C:" + check.currency(), "o=" + sides(check.opening()) + " m=" + sides(check.movement())
-                    + " ledger=o:" + sides(check.ledgerOpening()) + ",m:" + sides(check.ledgerMovement()) + ",c:"
-                    + sides(check.ledgerClosing()) + " dr=" + normal(check.closingDebitBalances()) + " cr="
-                    + normal(check.closingCreditBalances()) + " unmapped=" + check.unmappedLines() + " zero=" + check.zero()
-                    + " openingZero=" + check.openingZero() + " periodZero=" + check.periodZero() + " equalsLedger="
-                    + check.equalsLedger());
-        }
-        facts.put("TB|" + m + "|verdict", "passes=" + balance.passes() + " fullyMapped=" + balance.fullyMapped() + " reclassified="
-                + balance.openingReclassified());
         for (CanonicalJson.Obj row : objects(body, "accounts")) {
-            facts.put("TBT|" + m + "|row|A:" + text(row, "account") + "|" + text(row, "currency"), translatedRow(row));
+            String key = "A:" + text(row, "account") + "|" + text(row, "currency");
+            facts.put("TB|" + m + "|" + key, tbRow(row));
+            facts.put("TBT|" + m + "|row|" + key, translatedRow(row));
         }
         for (CanonicalJson.Obj row : objects(body, "unmapped")) {
-            facts.put("TBT|" + m + "|row|U:" + text(row, "purpose") + "/" + text(row, "ownerKind") + "|" + text(row, "currency"),
-                    translatedRow(row));
+            String key = "U:" + text(row, "purpose") + "/" + text(row, "ownerKind") + "|" + text(row, "currency");
+            facts.put("TB|" + m + "|" + key, tbRow(row));
+            facts.put("TBT|" + m + "|row|" + key, translatedRow(row));
+        }
+        for (CanonicalJson.Obj check : objects(body, "currencies")) {
+            CanonicalJson.Obj ledger = object(check, "ledger");
+            facts.put("TB|" + m + "|C:" + text(check, "currency"), "scale=" + text(check, "scale") + " o=" + sides(check, "opening")
+                    + " m=" + sides(check, "movement") + " c=" + sides(check, "closing") + " ledger=o:" + sides(ledger, "opening")
+                    + ",m:" + sides(ledger, "movement") + ",c:" + sides(ledger, "closing") + " dr=" + money(check, "closingDebitBalances")
+                    + " cr=" + money(check, "closingCreditBalances") + " openingZero=" + flag(check, "openingZero") + " periodZero="
+                    + flag(check, "periodZero") + " zero=" + flag(check, "zero") + " equalsLedger=" + flag(check, "equalsLedger")
+                    + " unmapped=" + text(check, "unmappedLines"));
+        }
+        CanonicalJson.Obj verdict = object(body, "verdict");
+        facts.put("TB|" + m + "|verdict", "openingBalanced=" + flag(verdict, "openingBalanced") + " periodBalanced="
+                + flag(verdict, "periodBalanced") + " balanced=" + flag(verdict, "balanced") + " equalsLedger="
+                + flag(verdict, "equalsLedger") + " rangeIsThePeriods=" + flag(verdict, "rangeIsThePeriods") + " fullyMapped="
+                + flag(verdict, "fullyMapped") + " outOfBalance=[" + texts(verdict, "outOfBalance") + "] disagreeing=["
+                + texts(verdict, "disagreeing") + "] passes=" + flag(verdict, "passes") + " reclassified="
+                + flag(body, "openingReclassified") + " previousPin=" + (isNull(body, "previousPeriodPin") ? "null" : "present"));
+        for (TrialBalance.AccountRow row : balance.accounts()) {
+            facts.put("TBO|" + m + "|A:" + row.account().code() + "|" + row.currency(), plain(row.opening()) + " "
+                    + plain(row.movement()));
+        }
+        for (TrialBalance.UnmappedRow row : balance.unmapped()) {
+            facts.put("TBO|" + m + "|U:" + row.purpose() + "/" + row.ownerKind() + "|" + row.currency(), plain(row.opening()) + " "
+                    + plain(row.movement()));
         }
         translationFacts(facts, "TBT|" + m, object(body, "translation"));
+    }
+
+    private static String tbRow(CanonicalJson.Obj row) {
+        return money(row, "opening") + " " + money(row, "debits") + " " + money(row, "credits") + " " + money(row, "closing") + " "
+                + text(row, "lines");
     }
 
     private static String translatedRow(CanonicalJson.Obj row) {
@@ -582,18 +616,18 @@ final class AccountingBatteryBooks {
 
     static void glFacts(SortedMap<String, String> facts, String m, GlBalances gl) {
         for (GlFigure figure : gl.figures()) {
-            facts.put("GL|" + m + "|" + figure.account().code() + "|" + figure.currency(), normal(figure.debits()) + "/"
-                    + normal(figure.credits()) + "/" + figure.lines());
+            facts.put("GL|" + m + "|" + figure.account().code() + "|" + figure.currency(), written(figure.debits()) + "/"
+                    + written(figure.credits()) + "/" + figure.lines());
         }
         for (GlBalances.Unmapped gap : gl.unmapped()) {
-            facts.put("GL|" + m + "|U:" + gap.key() + "|" + gap.currency(), normal(gap.debits()) + "/" + normal(gap.credits()) + "/"
+            facts.put("GL|" + m + "|U:" + gap.key() + "|" + gap.currency(), written(gap.debits()) + "/" + written(gap.credits()) + "/"
                     + gap.lines());
         }
         for (GlBalances.Agreement agreement : gl.agreement()) {
-            facts.put("GL|" + m + "|=" + agreement.currency(), "gl=" + normal(agreement.glDebits()) + "/"
-                    + normal(agreement.glCredits()) + "/" + agreement.glLines() + " unmapped=" + normal(agreement.unmappedDebits())
-                    + "/" + normal(agreement.unmappedCredits()) + "/" + agreement.unmappedLines() + " ledger="
-                    + normal(agreement.ledgerDebits()) + "/" + normal(agreement.ledgerCredits()) + "/" + agreement.ledgerLines());
+            facts.put("GL|" + m + "|=" + agreement.currency(), "gl=" + written(agreement.glDebits()) + "/"
+                    + written(agreement.glCredits()) + "/" + agreement.glLines() + " unmapped=" + written(agreement.unmappedDebits())
+                    + "/" + written(agreement.unmappedCredits()) + "/" + agreement.unmappedLines() + " ledger="
+                    + written(agreement.ledgerDebits()) + "/" + written(agreement.ledgerCredits()) + "/" + agreement.ledgerLines());
         }
     }
 
@@ -601,12 +635,19 @@ final class AccountingBatteryBooks {
         for (CanonicalJson.Obj section : objects(body, "sections")) {
             String name = text(section, "section");
             for (CanonicalJson.Obj row : objects(section, "rows")) {
-                String code = text(row, "glAccount");
-                String currency = text(row, "currency");
-                facts.put("BS|" + m + "|row|" + name + "|" + code + "|" + currency, money(row, "opening") + " " + money(row, "debits")
-                        + " " + money(row, "credits") + " " + money(row, "closing") + " " + text(row, "lines") + " "
-                        + text(row, "openingLines"));
-                facts.put("BST|" + m + "|row|" + code + "|" + currency, money(object(row, "translated"), "closing"));
+                String at = text(row, "glAccount") + "|" + text(row, "currency");
+                facts.put("BS|" + m + "|row|" + name + "|" + at, money(row, "opening") + " " + money(row, "debits") + " "
+                        + money(row, "credits") + " " + money(row, "closing") + " " + text(row, "lines") + " "
+                        + text(row, "openingLines") + " gross=" + (isNull(row, "counterpartyGross") ? "null"
+                                : money(object(row, "counterpartyGross"), "onNormalSide") + "/"
+                                        + money(object(row, "counterpartyGross"), "againstNormalSide")));
+                for (CanonicalJson.Obj component : objects(row, "components")) {
+                    facts.put("BS|" + m + "|comp|" + at + "|" + text(component, "purpose") + "/" + text(component, "ownerKind"),
+                            money(component, "opening") + " " + money(component, "debits") + " " + money(component, "credits") + " "
+                                    + money(component, "closing") + " " + text(component, "lines") + " "
+                                    + text(component, "openingLines") + " cp=" + counterparty(component));
+                }
+                facts.put("BST|" + m + "|row|" + at, money(object(row, "translated"), "closing"));
             }
             for (CanonicalJson.Obj total : objects(section, "totals")) {
                 facts.put("BS|" + m + "|total|" + name + "|" + text(total, "classification") + "|" + text(total, "currency"),
@@ -617,11 +658,20 @@ final class AccountingBatteryBooks {
             String currency = text(equation, "currency");
             facts.put("BS|" + m + "|eq|" + currency, "assets=" + money(equation, "assets") + " liabilities="
                     + money(equation, "liabilities") + " equity=" + money(equation, "equity") + " retained="
-                    + money(equation, "retainedEarnings") + " result=" + money(equation, "currentPeriodResult") + " difference="
-                    + money(equation, "difference"));
+                    + money(equation, "retainedEarnings") + " result=" + money(equation, "currentPeriodResult") + " ler="
+                    + money(equation, "liabilitiesEquityAndResult") + " difference=" + money(equation, "difference") + " journal="
+                    + sides(equation, "journal") + " ledger=" + sides(equation, "ledger"));
             CanonicalJson.Obj translated = object(equation, "translated");
             facts.put("BST|" + m + "|eq|" + currency, money(translated, "retainedEarnings") + " "
                     + money(translated, "currentPeriodResult"));
+        }
+        for (String part : List.of("retainedEarnings", "currentPeriodResult")) {
+            String family = part.equals("retainedEarnings") ? "retained" : "current";
+            for (CanonicalJson.Obj component : objects(object(body, part), "components")) {
+                facts.put("BS|" + m + "|" + family + "|" + text(component, "glAccount") + "|" + text(component, "currency"),
+                        money(component, "debits") + "/" + money(component, "credits") + "/" + text(component, "lines") + " "
+                                + money(component, "amount"));
+            }
         }
         facts.put("BS|" + m + "|bridge", Boolean.toString(!isNull(body, "reclassification")));
         CanonicalJson.Obj translation = object(body, "translation");
@@ -633,11 +683,15 @@ final class AccountingBatteryBooks {
         for (CanonicalJson.Obj section : objects(body, "sections")) {
             String name = text(section, "section");
             for (CanonicalJson.Obj row : objects(section, "rows")) {
-                String code = text(row, "glAccount");
-                String currency = text(row, "currency");
-                facts.put("IS|" + m + "|row|" + name + "|" + code + "|" + currency, money(row, "debits") + " " + money(row, "credits")
-                        + " " + money(row, "net") + " " + text(row, "lines"));
-                facts.put("IST|" + m + "|row|" + code + "|" + currency, money(object(row, "translated"), "net"));
+                String at = text(row, "glAccount") + "|" + text(row, "currency");
+                facts.put("IS|" + m + "|row|" + name + "|" + at, money(row, "debits") + " " + money(row, "credits") + " "
+                        + money(row, "net") + " " + text(row, "lines"));
+                for (CanonicalJson.Obj component : objects(row, "components")) {
+                    facts.put("IS|" + m + "|comp|" + at + "|" + text(component, "purpose") + "/" + text(component, "ownerKind"),
+                            money(component, "debits") + " " + money(component, "credits") + " " + money(component, "net") + " "
+                                    + text(component, "lines") + " cp=" + counterparty(component));
+                }
+                facts.put("IST|" + m + "|row|" + at, money(object(row, "translated"), "net"));
             }
             for (CanonicalJson.Obj total : objects(section, "totals")) {
                 facts.put("IS|" + m + "|total|" + name + "|" + text(total, "classification") + "|" + text(total, "currency"),
@@ -659,7 +713,7 @@ final class AccountingBatteryBooks {
     private static void translationFacts(SortedMap<String, String> facts, String prefix, CanonicalJson.Obj translation) {
         for (CanonicalJson.Obj rate : objects(translation, "rates")) {
             if (text(rate, "basis").equals("PINNED_RATE")) {
-                facts.put(prefix + "|rate|" + text(rate, "currency"), normal(new BigDecimal(text(rate, "rate"))));
+                facts.put(prefix + "|rate|" + text(rate, "currency"), written(new BigDecimal(text(rate, "rate"))));
             }
         }
         for (CanonicalJson.Obj currency : objects(translation, "currencies")) {
@@ -699,14 +753,26 @@ final class AccountingBatteryBooks {
 
     // ------------------------------------------------------------------ text
 
-    private static String sides(TrialBalance.Sides sides) {
+    /** A {@code {debits, credits, lines}} member, each amount with its scale. */
+    private static String sides(CanonicalJson.Obj from, String name) {
+        CanonicalJson.Obj sides = object(from, name);
+        return money(sides, "debits") + "/" + money(sides, "credits") + "/" + text(sides, "lines");
+    }
+
+    /** The fold's sides as plain numbers - the {@code TBO} family, whose zeros carry no scale. */
+    private static String plain(TrialBalance.Sides sides) {
         return normal(sides.debits()) + "/" + normal(sides.credits()) + "/" + sides.lines();
     }
 
-    /** An amount member {@code {"currency","minor","scale"}} as a plain number. */
+    /** An amount member {@code {"currency","minor","scale"}}: its minor units and its scale, as written - {@code 12345@2}. */
     private static String money(CanonicalJson.Obj from, String name) {
         CanonicalJson.Obj amount = (CanonicalJson.Obj) value(from, name);
-        return normal(new BigDecimal(new BigInteger(text(amount, "minor")), Integer.parseInt(text(amount, "scale"))));
+        return text(amount, "minor") + "@" + text(amount, "scale");
+    }
+
+    /** A decimal as minor units and scale - {@code 12345@2}. */
+    static String written(BigDecimal value) {
+        return value.unscaledValue() + "@" + value.scale();
     }
 
     /** A plain number, trailing zeros dropped, zero as {@code 0}. */
@@ -714,6 +780,15 @@ final class AccountingBatteryBooks {
         return value.signum() == 0 ? "0" : value.stripTrailingZeros().toPlainString();
     }
 
+    private static String counterparty(CanonicalJson.Obj component) {
+        return isNull(component, "counterparty") ? "null" : text(component, "counterparty");
+    }
+
+    private static String texts(CanonicalJson.Obj from, String name) {
+        List<String> texts = new ArrayList<>();
+        ((CanonicalJson.Arr) value(from, name)).elements().forEach(element -> texts.add(((CanonicalJson.Text) element).value()));
+        return String.join(",", texts);
+    }
     // ------------------------------------------------------------------ the second JVM's lines
 
     /** What two JVMs compare: the journal's fingerprint, every report's content hash, the facts' digest. */

@@ -21,22 +21,28 @@ import java.util.function.Function;
 
 /**
  * The accounting battery's oracle (`P14-TST-002`): every figure the trial balance, the GL, the two statements, their translation
- * and rule conformance report for each of the twelve months, computed <strong>from the generated lines alone</strong> - the
- * {@link AccountingBatteryWorld}'s entries, chart, rates and shapes - as facts keyed the way {@code AccountingBatteryBooks}
- * reads the production output, so the two compare as maps.
+ * and rule conformance write for each of the twelve months, computed <strong>from the generated lines alone</strong> - the
+ * {@link AccountingBatteryWorld}'s entries, chart, rates and shapes - as facts keyed the way {@code AccountingBatteryBooks} reads
+ * the production output, so the two compare as maps.
  *
  * <p><strong>It reaches no production fold.</strong> Not {@code TrialBalance.fold}, {@code StatementFigures}, {@code
  * GeneralLedger.fold}, {@code Translation} or {@code RuleConformance}: it names no class outside this one and the world (JDK
- * aside), which {@code AccountingBatteryHermeticTest#theOracleSharesNoCode} holds by reading the class files. It is written from
- * what the definitions <em>say</em> they compute (their javadocs), with its own arithmetic: sums of {@link BigInteger} minor
- * units at each currency's one scale, and a translation divided in {@link BigInteger}s and rounded half-even by hand - never
- * {@code BigDecimal.divide}, so the oracle and {@code Translation} cannot share a rounding.
+ * aside) and reaches nothing by reflection, which {@code AccountingBatteryHermeticTest#theOracleSharesNoCode} holds by reading the
+ * class files. It is written from what the definitions <em>say</em> they write (their javadocs), with its own arithmetic: sums
+ * of {@link BigInteger} minor units at each currency's one scale, and a translation divided in {@link BigInteger}s and rounded
+ * half-even by hand - never {@code BigDecimal.divide}, so the oracle and {@code Translation} cannot share a rounding.
  *
- * <p>Fact families (keys {@code FAMILY|month|...}): {@code TB} rows, currency proofs and the verdict; {@code GL} figures and the
- * agreement; {@code BS} rows, section totals, the equation, the bridge's presence; {@code IS} rows, section totals, the result
- * and net realised FX; {@code TBT}, {@code BST}, {@code IST} the translation of each - per column and currency the original,
- * translated parts, difference and total, the report-wide figures, every row's translated figure, the rates, and the balance
- * sheet's {@code balanced}; {@code RC} conformance's findings.
+ * <p><strong>A figure is its minor units and its scale</strong> ({@code 12345@2}): an exact amount written at the wrong scale is
+ * a different fact. Each currency is written at its own scale, a translated figure at the reporting currency's two places, a
+ * rate at {@code NUMERIC(20,10)}'s ten.
+ *
+ * <p>Fact families (keys {@code FAMILY|month|...}): {@code TB} the trial balance's body - rows, unmapped rows, per-currency
+ * proofs and the verdict - and {@code TBO} its rows' opening and movement sides as the fold holds them; {@code GL} figures and
+ * the agreement; {@code BS} rows, their components, section totals, the equation with the journal's and the ledger's own totals,
+ * the breakdowns of retained earnings and the result, the bridge's presence, or the refusal; {@code IS} rows, components, section
+ * totals, the result and net realised FX, or the refusal; {@code TBT}, {@code BST}, {@code IST} each report's translation - per
+ * column and currency the original, translated parts, difference and total, the report-wide figures, every row's translated
+ * figure, the rates, and the balance sheet's {@code balanced}; {@code RC} conformance's findings.
  */
 final class AccountingBatteryOracle {
 
@@ -50,6 +56,8 @@ final class AccountingBatteryOracle {
     private static final String EXPENSE = "EXPENSE";
     private static final String FX_GAINS = AccountingBatteryWorld.FX_GAINS + "/OPERATIONAL";
     private static final String FX_LOSSES = AccountingBatteryWorld.FX_LOSSES + "/OPERATIONAL";
+    private static final int REPORTING_SCALE = 2;
+    private static final int RATE_SCALE = 10;
 
     /** Debits, credits and a count of lines, in minor units. */
     private static final class Sides {
@@ -66,12 +74,24 @@ final class AccountingBatteryOracle {
             lines++;
         }
 
+        void add(Sides other) {
+            debits = debits.add(other.debits);
+            credits = credits.add(other.credits);
+            lines += other.lines;
+        }
+
         BigInteger net() {
             return debits.subtract(credits);
         }
     }
 
-    /** One GL account (or unmapped key) in one currency: its row's account, the lines before the month and in it. */
+    /** One purpose's lines inside a row: before the month and in it. */
+    private static final class Component {
+        private final Sides opening = new Sides();
+        private final Sides movement = new Sides();
+    }
+
+    /** One GL account (or unmapped key) in one currency: its row's account, the lines before the month and in it, by purpose. */
     private static final class Row {
         private final Optional<ChartRow> account;
         private final String key;
@@ -81,6 +101,7 @@ final class AccountingBatteryOracle {
         private final Sides movement = new Sides();
         private final Sides fxGains = new Sides();
         private final Sides fxLosses = new Sides();
+        private final SortedMap<String, Component> components = new TreeMap<>();
 
         Row(Optional<ChartRow> account, String key, String currency, int scale) {
             this.account = account;
@@ -138,7 +159,9 @@ final class AccountingBatteryOracle {
                 Optional<ChartRow> account = Optional.ofNullable(rules.get(line.key()));
                 String rowKey = account.map(found -> "A:" + found.code()).orElse("U:" + line.key()) + "|" + entry.currency();
                 Row row = rows.computeIfAbsent(rowKey, ignored -> new Row(account, line.key(), entry.currency(), entry.scale()));
+                Component component = row.components.computeIfAbsent(line.key(), ignored -> new Component());
                 (before ? row.opening : row.movement).add(line.debit(), line.minor());
+                (before ? component.opening : component.movement).add(line.debit(), line.minor());
                 (before ? currency[0] : currency[1]).add(line.debit(), line.minor());
                 if (!before && line.key().equals(FX_GAINS)) {
                     row.fxGains.add(line.debit(), line.minor());
@@ -147,10 +170,11 @@ final class AccountingBatteryOracle {
                 }
             }
         }
-        boolean reclassified = !month.equals(AccountingBatteryWorld.MONTHS.get(0))
-                && AccountingBatteryWorld.versionOf(month.minusMonths(1)) != AccountingBatteryWorld.versionOf(month);
+        boolean first = month.equals(AccountingBatteryWorld.MONTHS.get(0));
+        boolean reclassified = !first && !AccountingBatteryWorld.versionKey(chart, month.minusMonths(1))
+                .equals(AccountingBatteryWorld.versionKey(chart, month));
 
-        List<String> outOfBalance = trialBalance(facts, m, rows, currencies, reclassified, rates);
+        List<String> outOfBalance = trialBalance(facts, m, rows, currencies, reclassified, first, rates);
         generalLedger(facts, m, rows, currencies);
         statements(facts, m, rows, currencies, scales, reclassified, outOfBalance, rates);
         conformance(facts, entries, month);
@@ -160,15 +184,21 @@ final class AccountingBatteryOracle {
 
     /** The trial balance's facts; returns the currencies not zero every way, sorted. */
     private static List<String> trialBalance(SortedMap<String, String> facts, String m, SortedMap<String, Row> rows,
-            SortedMap<String, Sides[]> currencies, boolean reclassified, SortedMap<String, BigDecimal> rates) {
+            SortedMap<String, Sides[]> currencies, boolean reclassified, boolean first, SortedMap<String, BigDecimal> rates) {
         List<String> outOfBalance = new ArrayList<>();
         boolean mapped = true;
+        boolean openingBalanced = true;
+        boolean periodBalanced = true;
+        boolean balanced = true;
         List<Part[]> parts = new ArrayList<>();
         for (Map.Entry<String, Row> held : rows.entrySet()) {
             Row row = held.getValue();
-            facts.put("TB|" + m + "|" + held.getKey(), sides(row.opening, row.scale) + " " + sides(row.movement, row.scale));
-            mapped &= row.account.isPresent();
             BigInteger closing = row.closingNet();
+            facts.put("TB|" + m + "|" + held.getKey(), amount(row.opening.net(), row.scale) + " " + amount(row.movement.debits,
+                    row.scale) + " " + amount(row.movement.credits, row.scale) + " " + amount(closing, row.scale) + " "
+                    + row.movement.lines);
+            facts.put("TBO|" + m + "|" + held.getKey(), plain(row.opening, row.scale) + " " + plain(row.movement, row.scale));
+            mapped &= row.account.isPresent();
             parts.add(new Part[] {new Part(row.currency, row.scale, row.opening.net()), new Part(row.currency, row.scale,
                     row.movement.debits), new Part(row.currency, row.scale, row.movement.credits), new Part(row.currency, row.scale,
                     closing)});
@@ -181,6 +211,9 @@ final class AccountingBatteryOracle {
             String currency = held.getKey();
             Sides opening = held.getValue()[0];
             Sides movement = held.getValue()[1];
+            Sides closing = new Sides();
+            closing.add(opening);
+            closing.add(movement);
             int scale = AccountingBatteryWorld.unit(currency).scale();
             BigInteger debitBalances = BigInteger.ZERO;
             BigInteger creditBalances = BigInteger.ZERO;
@@ -189,33 +222,36 @@ final class AccountingBatteryOracle {
                 if (!row.currency.equals(currency)) {
                     continue;
                 }
-                BigInteger closing = row.closingNet();
-                if (closing.signum() > 0) {
-                    debitBalances = debitBalances.add(closing);
+                BigInteger rowClosing = row.closingNet();
+                if (rowClosing.signum() > 0) {
+                    debitBalances = debitBalances.add(rowClosing);
                 } else {
-                    creditBalances = creditBalances.add(closing.negate());
+                    creditBalances = creditBalances.add(rowClosing.negate());
                 }
                 if (row.account.isEmpty()) {
                     unmappedLines += row.opening.lines + row.movement.lines;
                 }
             }
-            BigInteger closingDebits = opening.debits.add(movement.debits);
-            BigInteger closingCredits = opening.credits.add(movement.credits);
-            boolean zero = closingDebits.equals(closingCredits) && debitBalances.equals(creditBalances);
+            boolean zero = closing.debits.equals(closing.credits) && debitBalances.equals(creditBalances);
             boolean openingZero = opening.debits.equals(opening.credits);
             boolean periodZero = movement.debits.equals(movement.credits);
+            openingBalanced &= openingZero;
+            periodBalanced &= periodZero;
+            balanced &= zero;
             if (!(zero && openingZero && periodZero)) {
                 outOfBalance.add(currency);
             }
             // The ledger's side is the same lines, joined to no account: the journal's own totals.
-            facts.put("TB|" + m + "|C:" + currency, "o=" + sides(opening, scale) + " m=" + sides(movement, scale) + " ledger=o:"
-                    + sides(opening, scale) + ",m:" + sides(movement, scale) + ",c:" + amount(closingDebits, scale) + "/"
-                    + amount(closingCredits, scale) + "/" + (opening.lines + movement.lines) + " dr=" + amount(debitBalances, scale)
-                    + " cr=" + amount(creditBalances, scale) + " unmapped=" + unmappedLines + " zero=" + zero + " openingZero="
-                    + openingZero + " periodZero=" + periodZero + " equalsLedger=true");
+            facts.put("TB|" + m + "|C:" + currency, "scale=" + scale + " o=" + sides(opening, scale) + " m=" + sides(movement, scale)
+                    + " c=" + sides(closing, scale) + " ledger=o:" + sides(opening, scale) + ",m:" + sides(movement, scale) + ",c:"
+                    + sides(closing, scale) + " dr=" + amount(debitBalances, scale) + " cr=" + amount(creditBalances, scale)
+                    + " openingZero=" + openingZero + " periodZero=" + periodZero + " zero=" + zero + " equalsLedger=true unmapped="
+                    + unmappedLines);
         }
-        facts.put("TB|" + m + "|verdict", "passes=" + outOfBalance.isEmpty() + " fullyMapped=" + mapped + " reclassified="
-                + reclassified);
+        facts.put("TB|" + m + "|verdict", "openingBalanced=" + openingBalanced + " periodBalanced=" + periodBalanced + " balanced="
+                + balanced + " equalsLedger=true rangeIsThePeriods=true fullyMapped=" + mapped + " outOfBalance=["
+                + String.join(",", outOfBalance) + "] disagreeing=[] passes=" + outOfBalance.isEmpty() + " reclassified="
+                + reclassified + " previousPin=" + (first ? "null" : "present"));
         List<String> names = List.of("opening", "debits", "credits", "closing");
         SortedMap<String, List<Part>> columns = new TreeMap<>();
         for (int i = 0; i < names.size(); i++) {
@@ -234,8 +270,7 @@ final class AccountingBatteryOracle {
     private static void generalLedger(SortedMap<String, String> facts, String m, SortedMap<String, Row> rows,
             SortedMap<String, Sides[]> currencies) {
         SortedMap<String, Sides> unmapped = new TreeMap<>();
-        for (Map.Entry<String, Row> held : rows.entrySet()) {
-            Row row = held.getValue();
+        for (Row row : rows.values()) {
             if (row.movement.lines == 0) {
                 continue;
             }
@@ -243,10 +278,7 @@ final class AccountingBatteryOracle {
                 facts.put("GL|" + m + "|" + row.account.get().code() + "|" + row.currency, sides(row.movement, row.scale));
             } else {
                 facts.put("GL|" + m + "|U:" + row.key + "|" + row.currency, sides(row.movement, row.scale));
-                Sides gap = unmapped.computeIfAbsent(row.currency, ignored -> new Sides());
-                gap.debits = gap.debits.add(row.movement.debits);
-                gap.credits = gap.credits.add(row.movement.credits);
-                gap.lines += row.movement.lines;
+                unmapped.computeIfAbsent(row.currency, ignored -> new Sides()).add(row.movement);
             }
         }
         for (Map.Entry<String, Sides[]> held : currencies.entrySet()) {
@@ -292,25 +324,45 @@ final class AccountingBatteryOracle {
             ChartRow account = row.account.orElseThrow();
             String code = account.code();
             String classification = account.classification();
+            String at = code + "|" + row.currency;
             if (classification.equals(ASSET) || classification.equals(LIABILITY) || classification.equals(EQUITY)) {
                 BigInteger closing = row.normal(row.closingNet());
-                facts.put("BS|" + m + "|row|" + account.section() + "|" + code + "|" + row.currency,
-                        amount(row.normal(row.opening.net()), row.scale) + " " + amount(row.movement.debits, row.scale) + " "
-                                + amount(row.movement.credits, row.scale) + " " + amount(closing, row.scale) + " "
-                                + row.movement.lines + " " + row.opening.lines);
+                facts.put("BS|" + m + "|row|" + account.section() + "|" + at, amount(row.normal(row.opening.net()), row.scale) + " "
+                        + amount(row.movement.debits, row.scale) + " " + amount(row.movement.credits, row.scale) + " "
+                        + amount(closing, row.scale) + " " + row.movement.lines + " " + row.opening.lines + " gross=null");
+                row.components.forEach((key, component) -> facts.put("BS|" + m + "|comp|" + at + "|" + key,
+                        amount(row.normal(component.opening.net()), row.scale) + " " + amount(component.movement.debits, row.scale)
+                                + " " + amount(component.movement.credits, row.scale) + " "
+                                + amount(row.normal(component.opening.net().add(component.movement.net())), row.scale) + " "
+                                + component.movement.lines + " " + component.opening.lines + " cp=null"));
                 sheetTotals.merge(account.section() + "|" + classification + "|" + row.currency, closing, BigInteger::add);
                 sheet.get(classification.equals(ASSET) ? "assets" : "liabilitiesEquityAndResult")
                         .add(new Part(row.currency, row.scale, closing));
-                facts.put("BST|" + m + "|row|" + code + "|" + row.currency, cents(row.currency, row.scale, closing, rates));
-            } else if (row.movement.lines > 0) {
+                facts.put("BST|" + m + "|row|" + at, cents(row.currency, row.scale, closing, rates));
+                continue;
+            }
+            // A revenue or an expense: its part in retained earnings (lines before the month) and in the result (lines in it).
+            if (row.opening.lines > 0) {
+                facts.put("BS|" + m + "|retained|" + at, sides(row.opening, row.scale) + " " + amount(row.opening.net().negate(),
+                        row.scale));
+            }
+            if (row.movement.lines > 0) {
+                facts.put("BS|" + m + "|current|" + at, sides(row.movement, row.scale) + " " + amount(row.movement.net().negate(),
+                        row.scale));
                 BigInteger net = row.normal(row.movement.net());
-                facts.put("IS|" + m + "|row|" + account.section() + "|" + code + "|" + row.currency,
-                        amount(row.movement.debits, row.scale) + " " + amount(row.movement.credits, row.scale) + " "
-                                + amount(net, row.scale) + " " + row.movement.lines);
+                facts.put("IS|" + m + "|row|" + account.section() + "|" + at, amount(row.movement.debits, row.scale) + " "
+                        + amount(row.movement.credits, row.scale) + " " + amount(net, row.scale) + " " + row.movement.lines);
+                row.components.forEach((key, component) -> {
+                    if (component.movement.lines > 0) {
+                        facts.put("IS|" + m + "|comp|" + at + "|" + key, amount(component.movement.debits, row.scale) + " "
+                                + amount(component.movement.credits, row.scale) + " "
+                                + amount(row.normal(component.movement.net()), row.scale) + " " + component.movement.lines + " cp=null");
+                    }
+                });
                 incomeTotals.merge(account.section() + "|" + classification + "|" + row.currency, net, BigInteger::add);
                 income.get(classification.equals(REVENUE) ? "revenue" : "expenses").add(new Part(row.currency, row.scale, net));
                 income.get("result").add(new Part(row.currency, row.scale, row.movement.net().negate()));
-                facts.put("IST|" + m + "|row|" + code + "|" + row.currency, cents(row.currency, row.scale, net, rates));
+                facts.put("IST|" + m + "|row|" + at, cents(row.currency, row.scale, net, rates));
                 if (row.fxGains.lines > 0 || row.fxLosses.lines > 0) {
                     BigInteger[] held = fx.computeIfAbsent(row.currency, ignored -> new BigInteger[] {BigInteger.ZERO, BigInteger.ZERO});
                     held[0] = held[0].add(row.fxGains.net().negate());
@@ -321,8 +373,12 @@ final class AccountingBatteryOracle {
         sheetTotals.forEach((key, total) -> facts.put("BS|" + m + "|total|" + key, amount(total, scaleOf(key, scales))));
         incomeTotals.forEach((key, total) -> facts.put("IS|" + m + "|total|" + key, amount(total, scaleOf(key, scales))));
 
-        for (String currency : currencies.keySet()) {
+        for (Map.Entry<String, Sides[]> held : currencies.entrySet()) {
+            String currency = held.getKey();
             int scale = scales.get(currency);
+            Sides journal = new Sides();
+            journal.add(held.getValue()[0]);
+            journal.add(held.getValue()[1]);
             BigInteger assets = BigInteger.ZERO;
             BigInteger liabilities = BigInteger.ZERO;
             BigInteger equity = BigInteger.ZERO;
@@ -341,22 +397,21 @@ final class AccountingBatteryOracle {
                     default -> {
                         before = before.add(row.opening.net());
                         within = within.add(row.movement.net());
-                        if (row.movement.lines > 0) {
-                            if (row.classification().equals(REVENUE)) {
-                                revenue = revenue.add(row.movement.net().negate());
-                            } else {
-                                expenses = expenses.add(row.movement.net());
-                            }
+                        if (row.classification().equals(REVENUE)) {
+                            revenue = revenue.add(row.movement.net().negate());
+                        } else {
+                            expenses = expenses.add(row.movement.net());
                         }
                     }
                 }
             }
             BigInteger retained = before.negate();
             BigInteger result = within.negate();
-            BigInteger difference = assets.subtract(liabilities.add(equity).add(retained).add(result));
+            BigInteger owed = liabilities.add(equity).add(retained).add(result);
             facts.put("BS|" + m + "|eq|" + currency, "assets=" + amount(assets, scale) + " liabilities=" + amount(liabilities, scale)
                     + " equity=" + amount(equity, scale) + " retained=" + amount(retained, scale) + " result=" + amount(result, scale)
-                    + " difference=" + amount(difference, scale));
+                    + " ler=" + amount(owed, scale) + " difference=" + amount(assets.subtract(owed), scale) + " journal="
+                    + sides(journal, scale) + " ledger=" + sides(journal, scale));
             facts.put("IS|" + m + "|result|" + currency, "revenue=" + amount(revenue, scale) + " expenses="
                     + amount(expenses, scale) + " result=" + amount(result, scale));
             sheet.get("liabilitiesEquityAndResult").add(new Part(currency, scale, retained));
@@ -376,18 +431,14 @@ final class AccountingBatteryOracle {
 
         SortedMap<String, Group[]> sheetGroups = translation(facts, "BST|" + m, sheet, rates);
         boolean balanced = true;
-        TreeSet<String> union = new TreeSet<>(sheetGroups.keySet());
-        for (String currency : union) {
-            Group[] pair = sheetGroups.get(currency);
-            BigInteger left = pair[0] == null ? BigInteger.ZERO : pair[0].total;
-            BigInteger right = pair[1] == null ? BigInteger.ZERO : pair[1].total;
-            balanced &= left.equals(right);
-        }
         BigInteger leftTotal = BigInteger.ZERO;
         BigInteger rightTotal = BigInteger.ZERO;
         for (Group[] pair : sheetGroups.values()) {
-            leftTotal = leftTotal.add(pair[0] == null ? BigInteger.ZERO : pair[0].total);
-            rightTotal = rightTotal.add(pair[1] == null ? BigInteger.ZERO : pair[1].total);
+            BigInteger left = pair[0] == null ? BigInteger.ZERO : pair[0].total;
+            BigInteger right = pair[1] == null ? BigInteger.ZERO : pair[1].total;
+            balanced &= left.equals(right);
+            leftTotal = leftTotal.add(left);
+            rightTotal = rightTotal.add(right);
         }
         balanced &= leftTotal.equals(rightTotal);
         facts.put("BST|" + m + "|balanced", Boolean.toString(balanced));
@@ -434,22 +485,26 @@ final class AccountingBatteryOracle {
                 Group group = held.getValue();
                 group.total = rounded(held.getKey(), group.scale, group.original, rates);
                 facts.put(prefix + "|" + name + "|" + held.getKey(), amount(group.original, group.scale) + " "
-                        + amount(group.parts, 2) + " " + amount(group.total.subtract(group.parts), 2) + " " + amount(group.total, 2));
+                        + amount(group.parts, REPORTING_SCALE) + " " + amount(group.total.subtract(group.parts), REPORTING_SCALE) + " "
+                        + amount(group.total, REPORTING_SCALE));
                 parts = parts.add(group.parts);
                 totals = totals.add(group.total);
                 if (c < 2) {
                     firstTwo.computeIfAbsent(held.getKey(), ignored -> new Group[2])[c] = group;
                 }
             }
-            facts.put(prefix + "|" + name + "|*", amount(parts, 2) + " " + amount(totals.subtract(parts), 2) + " " + amount(totals, 2));
+            facts.put(prefix + "|" + name + "|*", amount(parts, REPORTING_SCALE) + " " + amount(totals.subtract(parts), REPORTING_SCALE)
+                    + " " + amount(totals, REPORTING_SCALE));
         }
-        rates.forEach((currency, rate) -> facts.put(prefix + "|rate|" + currency, normal(rate)));
+        // A rate is written at NUMERIC(20,10)'s ten places, exactly.
+        rates.forEach((currency, rate) -> facts.put(prefix + "|rate|" + currency,
+                amount(rate.unscaledValue().multiply(BigInteger.TEN.pow(RATE_SCALE - rate.scale())), RATE_SCALE)));
         return firstTwo;
     }
 
-    /** {@code minor} at {@code scale} in {@code currency}, in reporting cents, as text. */
+    /** {@code minor} at {@code scale} in {@code currency}, in reporting cents, as a fact. */
     private static String cents(String currency, int scale, BigInteger minor, SortedMap<String, BigDecimal> rates) {
-        return amount(rounded(currency, scale, minor, rates), 2);
+        return amount(rounded(currency, scale, minor, rates), REPORTING_SCALE);
     }
 
     /**
@@ -459,14 +514,14 @@ final class AccountingBatteryOracle {
      */
     static BigInteger rounded(String currency, int scale, BigInteger minor, SortedMap<String, BigDecimal> rates) {
         if (currency.equals(EUR)) {
-            int shift = 2 - scale;
+            int shift = REPORTING_SCALE - scale;
             return shift >= 0 ? minor.multiply(BigInteger.TEN.pow(shift)) : divide(minor, BigInteger.TEN.pow(-shift));
         }
         BigDecimal rate = rates.get(currency);
         if (rate == null) {
             throw new IllegalStateException("the world values every currency it posts: " + currency);
         }
-        int exponent = rate.scale() - scale + 2;
+        int exponent = rate.scale() - scale + REPORTING_SCALE;
         BigInteger numerator = exponent >= 0 ? minor.multiply(BigInteger.TEN.pow(exponent)) : minor;
         BigInteger denominator = exponent >= 0 ? rate.unscaledValue() : rate.unscaledValue().multiply(BigInteger.TEN.pow(-exponent));
         return divide(numerator, denominator);
@@ -546,12 +601,18 @@ final class AccountingBatteryOracle {
         return amount(sides.debits, scale) + "/" + amount(sides.credits, scale) + "/" + sides.lines;
     }
 
-    /** Minor units at a scale as a plain number, trailing zeros dropped, zero as {@code 0} - how both sides write a figure. */
+    /** Minor units and their scale: {@code 12345@2} - the amount and how it is written, both compared. */
     static String amount(BigInteger minor, int scale) {
-        return normal(new BigDecimal(minor, scale));
+        return minor + "@" + scale;
     }
 
-    private static String normal(BigDecimal value) {
+    /** The fold's sides as plain numbers - the {@code TBO} family, the object's, whose zeros carry no scale. */
+    private static String plain(Sides sides, int scale) {
+        return number(sides.debits, scale) + "/" + number(sides.credits, scale) + "/" + sides.lines;
+    }
+
+    private static String number(BigInteger minor, int scale) {
+        BigDecimal value = new BigDecimal(minor, scale);
         return value.signum() == 0 ? "0" : value.stripTrailingZeros().toPlainString();
     }
 }

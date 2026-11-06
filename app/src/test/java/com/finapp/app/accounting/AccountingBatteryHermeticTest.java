@@ -38,7 +38,6 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeAll;
@@ -57,8 +56,8 @@ import org.junit.jupiter.api.Test;
  *   <li>the trial balance, the GL and its drill-down, both statements, their translation and rule conformance, each 100% the
  *       oracle's;
  *   <li>the same lines written by a second JVM with other defaults, and by this one with the journal served in another order;
- *   <li>three perturbations - a mapping rule, a rate, a planted shape - each flipping exactly the facts the oracle names, the
- *       oracle and production agreeing under each.
+ *   <li>four perturbations - a mapping rule, a rate, a planted shape, a purpose unmapped - each flipping exactly the facts the
+ *       oracle names, the oracle and production agreeing under each.
  * </ul>
  *
  * <p><strong>What is not here</strong>: the SQL. The read adapters are the accounting module's in-memory ones, the stand-ins for
@@ -136,6 +135,8 @@ class AccountingBatteryHermeticTest {
         for (AccountingBatteryWorld.Kind kind : AccountingBatteryWorld.KINDS) {
             assertThat(journal).as(kind.namespace()).anyMatch(entry -> entry.namespace().equals(kind.namespace()));
         }
+        // The value-date spread is the database half's to use: the hermetic reads window by posting date and carry no value
+        // date into a figure, so here these floors say only that the journal the database half posts has the spread.
         long apart = journal.stream().filter(entry -> !entry.valueDate().equals(entry.postingDate())).count();
         long otherMonth = journal.stream().filter(entry -> !YearMonth.from(entry.valueDate()).equals(YearMonth.from(entry.postingDate())))
                 .count();
@@ -144,17 +145,29 @@ class AccountingBatteryHermeticTest {
         List<Long> amounts = journal.stream().flatMap(entry -> entry.lines().stream()).map(Line::minor).sorted().toList();
         assertThat(amounts.get(0)).as("the smallest line").isEqualTo(1L);
         assertThat(amounts.get(amounts.size() - 1)).as("the largest line").isGreaterThan(5_000_000L);
-        // Every classification and both statements' sections reached.
-        for (String classification : List.of("ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE")) {
-            assertThat(AccountingBatteryWorld.CHART).anyMatch(row -> row.classification().equals(classification));
+        // Every classification reached by the journal's own lines, each line's purpose read through the chart.
+        Set<String> reached = new TreeSet<>();
+        for (Entry entry : journal) {
+            for (Line line : entry.lines()) {
+                AccountingBatteryWorld.CHART.stream().filter(row -> row.key().equals(line.key())).findFirst()
+                        .ifPresent(row -> reached.add(row.classification()));
+            }
         }
+        assertThat(reached).containsExactlyInAnyOrder("ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE");
+        // From July one account gathers two purposes, in every currency, so a component writer is read apart from its row.
+        assertThat(oracle.keySet()).anyMatch(key -> key.startsWith("IS|2001-07|comp|" + AccountingBatteryWorld.RESTATED_FEES + "|")
+                && key.endsWith("|" + AccountingBatteryWorld.RECON_GAINS + "/OPERATIONAL"))
+                .anyMatch(key -> key.startsWith("IS|2001-07|comp|" + AccountingBatteryWorld.RESTATED_FEES + "|")
+                        && key.endsWith("|" + AccountingBatteryWorld.FEES + "/OPERATIONAL"));
         assertThat(production.facts().keySet()).noneMatch(key -> key.endsWith("|refused"));
         // Ties are met, not hoped for: at EUR/GBP 0.8000 a pound figure of 2 mod 4 pence is exactly half a cent from two.
         long ties = 0;
         for (Map.Entry<String, String> row : oracle.entrySet()) {
             if (row.getKey().matches("TB\\|2001-(01|03|05|07|09|11)\\|A:\\d+\\|GBP")) {
-                for (BigDecimal figure : figures(row.getValue())) {
-                    ties += figure.movePointRight(2).toBigIntegerExact().abs().mod(java.math.BigInteger.valueOf(4)).intValue() == 2 ? 1 : 0;
+                String[] figures = row.getValue().split(" ");
+                for (int i = 0; i < 4; i++) {
+                    java.math.BigInteger minor = new java.math.BigInteger(figures[i].substring(0, figures[i].indexOf('@')));
+                    ties += minor.abs().mod(java.math.BigInteger.valueOf(4)).intValue() == 2 ? 1 : 0;
                 }
             }
         }
@@ -174,8 +187,15 @@ class AccountingBatteryHermeticTest {
         for (Chart chart : Chart.values()) {
             for (YearMonth month : AccountingBatteryWorld.MONTHS) {
                 GlMappingVersion version = AccountingBatteryBooks.version(chart, month).content();
-                for (ChartRow row : AccountingBatteryWorld.chart(chart, month)) {
+                List<ChartRow> rows = AccountingBatteryWorld.chart(chart, month);
+                for (ChartRow row : rows) {
                     assertRow(version, row);
+                }
+                // A purpose the world leaves out of a month's chart is out of the version too.
+                for (ChartRow row : AccountingBatteryWorld.CHART) {
+                    if (rows.stream().noneMatch(held -> held.key().equals(row.key()))) {
+                        assertThat(version.rulesByKey()).as("%s %s %s", chart, month, row.key()).doesNotContainKey(row.key());
+                    }
                 }
             }
         }
@@ -193,16 +213,18 @@ class AccountingBatteryHermeticTest {
     // ------------------------------------------------------------------ the folds against the oracle
 
     @Test
-    @DisplayName("INV-ACC-01, -06: the period trial balance is the oracle's - every GL account's opening, debits, credits and"
-            + " lines per currency, every currency's three legs zero and equal to the ledger, the verdict, the July restatement")
+    @DisplayName("INV-ACC-01, -06: the period trial balance is the oracle's, read from the issued body - every row's opening,"
+            + " debits, credits, closing and lines at the scale written, every currency's three legs zero and equal to the ledger,"
+            + " the verdict, the July restatement - and the fold's own rows, opening and movement apart")
     void theTrialBalanceIsTheOracles() {
-        assertAgree("TB|");
+        assertAgree("TB|", "TBO|");
         for (YearMonth month : AccountingBatteryWorld.MONTHS) {
             assertThat(oracle.get("TB|" + month + "|verdict")).as("%s - the oracle's own claim", month)
-                    .isEqualTo("passes=true fullyMapped=true reclassified=" + month.equals(AccountingBatteryWorld.RESTATED_FROM));
+                    .contains("fullyMapped=true", "passes=true", "reclassified=" + month.equals(AccountingBatteryWorld.RESTATED_FROM));
             for (AccountingBatteryWorld.Unit unit : AccountingBatteryWorld.UNITS) {
                 assertThat(production.facts().get("TB|" + month + "|C:" + unit.currency())).as("%s %s", month, unit.currency())
-                        .contains("zero=true openingZero=true periodZero=true equalsLedger=true");
+                        .startsWith("scale=" + unit.scale() + " ")
+                        .contains("openingZero=true periodZero=true zero=true equalsLedger=true");
             }
         }
     }
@@ -226,8 +248,9 @@ class AccountingBatteryHermeticTest {
                     continue;
                 }
                 String[] keys = fact.getKey().substring(prefix.length()).split("\\|");
-                BigDecimal debits = BigDecimal.ZERO;
-                BigDecimal credits = BigDecimal.ZERO;
+                int scale = AccountingBatteryWorld.unit(keys[1]).scale();
+                java.math.BigInteger debits = java.math.BigInteger.ZERO;
+                java.math.BigInteger credits = java.math.BigInteger.ZERO;
                 long lines = 0;
                 Optional<JournalReads.LineCursor> after = Optional.empty();
                 int walked = 0;
@@ -235,14 +258,15 @@ class AccountingBatteryHermeticTest {
                     walked++;
                     GlActivity page = ledger.activity(AccountingBatteryBooks.NO_SQL, mapping, keys[0], keys[1], after, PAGE);
                     for (JournalReads.Line line : page.lines()) {
-                        BigDecimal amount = BigDecimal.valueOf(line.minorUnits(), line.scale());
+                        assertThat(line.scale()).as("a line of %s at its currency's scale", keys[1]).isEqualTo(scale);
+                        java.math.BigInteger amount = java.math.BigInteger.valueOf(line.minorUnits());
                         debits = line.side() == com.finapp.accounting.Side.DEBIT ? debits.add(amount) : debits;
                         credits = line.side() == com.finapp.accounting.Side.CREDIT ? credits.add(amount) : credits;
                         lines++;
                     }
                     after = page.next();
                 } while (after.isPresent());
-                assertThat(AccountingBatteryBooks.normal(debits) + "/" + AccountingBatteryBooks.normal(credits) + "/" + lines)
+                assertThat(debits + "@" + scale + "/" + credits + "@" + scale + "/" + lines)
                         .as("%s drilled to its lines", fact.getKey()).isEqualTo(fact.getValue());
                 figures++;
                 pages += walked > 1 ? 1 : 0;
@@ -257,15 +281,16 @@ class AccountingBatteryHermeticTest {
 
     @Test
     @DisplayName("INV-ACC-06: both statements are the oracle's - per month and currency assets = liabilities + equity + retained"
-            + " earnings + the result, each side from its own lines, every section total and row, the income statement's result"
-            + " the balance sheet's, net realised FX")
+            + " earnings + the result, each side from its own lines, the journal's and the ledger's own totals beside it; every"
+            + " section total, row and component; the breakdowns of retained earnings and the result; the income statement's result"
+            + " the balance sheet's; net realised FX")
     void theStatementsAreTheOracles() {
         assertAgree("BS|", "IS|");
         for (YearMonth month : AccountingBatteryWorld.MONTHS) {
             for (AccountingBatteryWorld.Unit unit : AccountingBatteryWorld.UNITS) {
                 String equation = production.facts().get("BS|" + month + "|eq|" + unit.currency());
-                assertThat(equation).as("%s %s", month, unit.currency()).endsWith(" difference=0");
-                String result = equation.substring(equation.indexOf(" result=") + 1, equation.indexOf(" difference="));
+                assertThat(equation).as("%s %s", month, unit.currency()).contains(" difference=0@" + unit.scale() + " ");
+                String result = equation.substring(equation.indexOf(" result=") + 1, equation.indexOf(" ler="));
                 assertThat(production.facts().get("IS|" + month + "|result|" + unit.currency())).as("one result, both statements")
                         .endsWith(" " + result);
             }
@@ -285,7 +310,7 @@ class AccountingBatteryHermeticTest {
         }
         long differences = production.facts().entrySet().stream()
                 .filter(fact -> fact.getKey().matches("(TBT|BST|IST)\\|[^|]+\\|(?!rate\\||eq\\|)[a-zA-Z]+\\|[A-Z]{3}"))
-                .filter(fact -> !fact.getValue().split(" ")[2].equals("0")).count();
+                .filter(fact -> !fact.getValue().split(" ")[2].startsWith("0@")).count();
         assertThat(differences).as("difference lines that are not zero - the explicit line is exercised").isGreaterThan(10);
     }
 
@@ -345,7 +370,35 @@ class AccountingBatteryHermeticTest {
                     + AccountingBatteryWorld.MOVED_FROM_SECTION + "|" + AccountingBatteryWorld.MOVED_FROM + "|"));
             assertThat(named).as("%s: and arrives in the clearing receivables", month).anyMatch(key -> key.startsWith("BS|" + month
                     + "|row|" + AccountingBatteryWorld.MOVED_TO_SECTION + "|" + AccountingBatteryWorld.MOVED_TO + "|"));
+            assertThat(named).as("%s: other assets' asset total moves", month).anyMatch(key -> key.startsWith("BS|" + month
+                    + "|total|" + AccountingBatteryWorld.MOVED_FROM_SECTION + "|ASSET|"));
+            assertThat(named).as("%s: and so does the clearing receivables'", month).anyMatch(key -> key.startsWith("BS|" + month
+                    + "|total|" + AccountingBatteryWorld.MOVED_TO_SECTION + "|ASSET|"));
         }
+    }
+
+    @Test
+    @DisplayName("a purpose left unmapped for one month: June pins a version without processing costs - its lines an unmapped"
+            + " trial balance row and an unmapped GL bucket, the trial balance not fully mapped and still passing, both statements"
+            + " refused UNCLASSIFIED - exactly the facts the oracle names, all of them June's, production the oracle's")
+    void aPurposeUnmappedForAMonthIsShownAndRefused() {
+        Reported gap = AccountingBatteryBooks.report(AccountingBatteryBooks.books(posted, Chart.UNMAPPED, Optional.empty()), RATES);
+        SortedMap<String, String> gapOracle = AccountingBatteryOracle.facts(journal, Chart.UNMAPPED, RATES);
+        assertThat(differences(gapOracle, gap.facts())).as("production is the oracle's over the gap").isEmpty();
+        Set<String> named = flipped(oracle, gapOracle);
+        assertThat(flipped(production.facts(), gap.facts())).as("production flips exactly what the oracle names").isEqualTo(named);
+        String june = AccountingBatteryWorld.PERTURBED.toString();
+        String purpose = AccountingBatteryWorld.UNMAPPED_PURPOSE + "/OPERATIONAL";
+        assertThat(named).as("June's alone").isNotEmpty().allMatch(key -> key.split("\\|")[1].equals(june));
+        assertThat(named).contains("TB|" + june + "|verdict", "BS|" + june + "|refused", "IS|" + june + "|refused");
+        assertThat(named).anyMatch(key -> key.startsWith("TB|" + june + "|U:" + purpose + "|"))
+                .anyMatch(key -> key.startsWith("GL|" + june + "|U:" + purpose + "|"))
+                .anyMatch(key -> key.startsWith("TBT|" + june + "|row|U:" + purpose + "|"));
+        assertThat(gap.facts().get("TB|" + june + "|verdict")).contains("fullyMapped=false", "passes=true", "reclassified=true");
+        assertThat(gap.facts().get("BS|" + june + "|refused")).isEqualTo("UNCLASSIFIED");
+        assertThat(gap.facts().keySet()).as("no statement figure of June stands")
+                .noneMatch(key -> key.matches("(BS|IS|BST|IST)\\|" + june + "\\|(?!refused).*"));
+        assertThat(gap.contents().get(june + " BALANCE_SHEET")).isEqualTo("refused UNCLASSIFIED");
     }
 
     @Test
@@ -389,52 +442,90 @@ class AccountingBatteryHermeticTest {
     // ------------------------------------------------------------------ independence
 
     /** The classes the oracle may name: itself and the world - nothing of the code it checks. */
-    private static final Pattern REFERENCE = Pattern.compile("com/finapp/[A-Za-z0-9_/$]+");
+    private static final Pattern SLASHED = Pattern.compile("com/finapp/[A-Za-z0-9_/$]+");
+    /** A dotted name - what {@code Class.forName} or a string of a class's name would carry. None is allowed. */
+    private static final Pattern DOTTED = Pattern.compile("com\\.finapp\\.[A-Za-z0-9_.$]+");
     private static final Set<String> ALLOWED = Set.of("com/finapp/app/accounting/AccountingBatteryOracle",
             "com/finapp/app/accounting/AccountingBatteryWorld");
+    /** Owners whose every member is a way round a name: reflection, method and variable handles, class loading. */
+    private static final Set<String> REFLECTIVE_OWNERS = Set.of("java/lang/invoke/MethodHandles", "java/lang/invoke/MethodHandles$Lookup",
+            "java/lang/invoke/MethodHandle", "java/lang/invoke/VarHandle", "java/lang/ClassLoader");
+    /** {@code java/lang/Class}'s members that reach a class or a member by name. */
+    private static final Set<String> REFLECTIVE_CLASS_MEMBERS = Set.of("forName", "getMethod", "getMethods", "getDeclaredMethod",
+            "getDeclaredMethods", "getConstructor", "getConstructors", "getDeclaredConstructor", "getDeclaredConstructors", "getField",
+            "getFields", "getDeclaredField", "getDeclaredFields", "getRecordComponents", "newInstance");
 
     @Test
     @DisplayName("the oracle shares no code with what it checks: its class files and the world's name no com.finapp class but"
-            + " theirs - read from the constant pools, so a fully-qualified use, a descriptor or a nested class cannot hide; and the"
-            + " reading has teeth, finding the folds in the books' class file")
+            + " theirs, slashed or dotted, and reach nothing by reflection, a handle or a class loader - read from the constant"
+            + " pools, so a fully-qualified use, a descriptor, a string or a nested class cannot hide; and the reading has teeth on"
+            + " the books' class file and on a reflective fixture")
     void theOracleSharesNoCode() throws Exception {
         for (Class<?> type : List.of(AccountingBatteryOracle.class, AccountingBatteryWorld.class)) {
-            Set<String> named = referencesOf(type);
-            assertThat(named).as("%s's class files name com.finapp", type.getSimpleName()).isNotEmpty();
-            assertThat(named).as("%s names only the oracle and the world", type.getSimpleName())
+            Scan scan = scanOf(type);
+            assertThat(scan.slashed()).as("%s's class files name com.finapp", type.getSimpleName()).isNotEmpty();
+            assertThat(scan.slashed()).as("%s names only the oracle and the world", type.getSimpleName())
                     .allMatch(reference -> ALLOWED.stream().anyMatch(allowed -> reference.equals(allowed)
                             || reference.startsWith(allowed + "$")));
+            assertThat(scan.dotted()).as("%s carries no dotted com.finapp name", type.getSimpleName()).isEmpty();
+            assertThat(scan.reflective()).as("%s reaches nothing reflectively", type.getSimpleName()).isEmpty();
         }
-        assertThat(referencesOf(AccountingBatteryBooks.class)).as("the reading finds what the books call")
+        assertThat(scanOf(AccountingBatteryBooks.class).slashed()).as("the reading finds what the books call")
                 .contains("com/finapp/accounting/reporting/TrialBalanceDefinition", "com/finapp/accounting/reporting/GeneralLedger",
                         "com/finapp/accounting/reporting/BalanceSheetDefinition", "com/finapp/ledger/PostingService");
+        Scan reach = scanOf(ReflectiveReach.class);
+        assertThat(reach.dotted()).as("the reading finds a dotted name").contains("com.finapp.accounting.reporting.TrialBalance");
+        assertThat(reach.reflective()).as("and every reflective way round a name")
+                .contains("java/lang/Class.forName", "java/lang/Class.getMethod", "java/lang/reflect/Method.invoke",
+                        "java/lang/invoke/MethodHandles.lookup", "java/lang/invoke/MethodHandles$Lookup.findStatic");
     }
 
-    /** Every {@code com/finapp/...} name in the constant pools of {@code type}'s class file and its nested and anonymous ones'. */
-    private static Set<String> referencesOf(Class<?> type) throws IOException, URISyntaxException {
-        Path file = Path.of(Objects.requireNonNull(type.getResource(type.getSimpleName() + ".class")).toURI());
-        Set<String> names = new TreeSet<>();
+    /** The scanner's teeth: never run, only read - every way round a class's name the oracle must not take. */
+    @SuppressWarnings("unused")
+    private static final class ReflectiveReach {
+
+        private ReflectiveReach() {}
+
+        static Object reach() throws Throwable {
+            java.lang.reflect.Method passes = Class.forName("com.finapp.accounting.reporting.TrialBalance").getMethod("passes");
+            Object found = passes.invoke(null);
+            return java.lang.invoke.MethodHandles.lookup().findStatic(ReflectiveReach.class, "reach",
+                    java.lang.invoke.MethodType.methodType(Object.class)) == null ? found : passes;
+        }
+    }
+
+    /** What a class's constant pools hold: slashed and dotted {@code com.finapp} names, and members reached reflectively. */
+    private record Scan(Set<String> slashed, Set<String> dotted, Set<String> reflective) {}
+
+    /** {@code type}'s class file and its nested and anonymous ones', scanned together. */
+    private static Scan scanOf(Class<?> type) throws IOException, URISyntaxException {
+        Path file = Path.of(Objects.requireNonNull(type.getResource(type.getName().substring(type.getName().lastIndexOf('.') + 1)
+                + ".class")).toURI());
+        String stem = file.getFileName().toString().replace(".class", "");
+        Scan all = new Scan(new TreeSet<>(), new TreeSet<>(), new TreeSet<>());
         int files = 0;
         try (Stream<Path> siblings = Files.list(file.getParent())) {
             for (Path sibling : siblings.toList()) {
                 String name = sibling.getFileName().toString();
-                if (name.equals(type.getSimpleName() + ".class") || name.startsWith(type.getSimpleName() + "$")) {
-                    for (String text : utf8Constants(sibling)) {
-                        Matcher matcher = REFERENCE.matcher(text);
-                        while (matcher.find()) {
-                            names.add(matcher.group());
-                        }
-                    }
+                if (name.equals(stem + ".class") || name.startsWith(stem + "$")) {
+                    Scan one = scan(sibling);
+                    all.slashed().addAll(one.slashed());
+                    all.dotted().addAll(one.dotted());
+                    all.reflective().addAll(one.reflective());
                     files++;
                 }
             }
         }
-        assertThat(files).as("%s's class files", type.getSimpleName()).isGreaterThan(1);
-        return names;
+        assertThat(files).as("%s's class files", type.getSimpleName()).isPositive();
+        return all;
     }
 
-    /** The {@code CONSTANT_Utf8} entries of a class file - every class name, descriptor and signature it holds. */
-    private static List<String> utf8Constants(Path classFile) {
+    /**
+     * One class file's constant pool, read whole: every {@code CONSTANT_Utf8} for {@code com.finapp} names, slashed (class names,
+     * descriptors, signatures) and dotted (strings); every field, method and interface-method reference resolved to its owner
+     * and name, and every class constant, for the reflective ways round a name.
+     */
+    private static Scan scan(Path classFile) {
         try (InputStream bytes = Files.newInputStream(classFile); DataInputStream in = new DataInputStream(bytes)) {
             if (in.readInt() != 0xCAFEBABE) {
                 throw new IllegalStateException("not a class file: " + classFile);
@@ -442,18 +533,24 @@ class AccountingBatteryHermeticTest {
             in.readUnsignedShort();
             in.readUnsignedShort();
             int count = in.readUnsignedShort();
-            List<String> texts = new ArrayList<>();
+            String[] utf8 = new String[count];
+            int[] classNames = new int[count];
+            int[][] namesAndTypes = new int[count][];
+            List<int[]> members = new ArrayList<>();
             for (int i = 1; i < count; i++) {
                 int tag = in.readUnsignedByte();
                 switch (tag) {
-                    case 1 -> texts.add(in.readUTF());
+                    case 1 -> utf8[i] = in.readUTF();
                     case 3, 4 -> in.readInt();
                     case 5, 6 -> {
                         in.readLong();
                         i++;
                     }
-                    case 7, 8, 16, 19, 20 -> in.readUnsignedShort();
-                    case 9, 10, 11, 12, 17, 18 -> in.readInt();
+                    case 7 -> classNames[i] = in.readUnsignedShort();
+                    case 8, 16, 19, 20 -> in.readUnsignedShort();
+                    case 9, 10, 11 -> members.add(new int[] {in.readUnsignedShort(), in.readUnsignedShort()});
+                    case 12 -> namesAndTypes[i] = new int[] {in.readUnsignedShort(), in.readUnsignedShort()};
+                    case 17, 18 -> in.readInt();
                     case 15 -> {
                         in.readUnsignedByte();
                         in.readUnsignedShort();
@@ -461,25 +558,33 @@ class AccountingBatteryHermeticTest {
                     default -> throw new IllegalStateException("constant pool tag " + tag + " in " + classFile);
                 }
             }
-            return texts;
+            Scan scan = new Scan(new TreeSet<>(), new TreeSet<>(), new TreeSet<>());
+            for (String text : utf8) {
+                if (text != null) {
+                    SLASHED.matcher(text).results().forEach(found -> scan.slashed().add(found.group()));
+                    DOTTED.matcher(text).results().forEach(found -> scan.dotted().add(found.group()));
+                }
+            }
+            for (int i = 1; i < count; i++) {
+                if (classNames[i] != 0 && utf8[classNames[i]].startsWith("java/lang/reflect/")) {
+                    scan.reflective().add(utf8[classNames[i]]);
+                }
+            }
+            for (int[] member : members) {
+                String owner = utf8[classNames[member[0]]];
+                String name = utf8[namesAndTypes[member[1]][0]];
+                if (owner.startsWith("java/lang/reflect/") || REFLECTIVE_OWNERS.contains(owner)
+                        || (owner.equals("java/lang/Class") && REFLECTIVE_CLASS_MEMBERS.contains(name))) {
+                    scan.reflective().add(owner + "." + name);
+                }
+            }
+            return scan;
         } catch (IOException failed) {
             throw new UncheckedIOException(failed);
         }
     }
 
     // ------------------------------------------------------------------ plumbing
-
-    /** A trial balance row's four translated originals - the opening, the debits, the credits, the closing - from its fact. */
-    private static List<BigDecimal> figures(String fact) {
-        String[] windows = fact.split(" ");
-        String[] opening = windows[0].split("/");
-        String[] movement = windows[1].split("/");
-        BigDecimal net = new BigDecimal(opening[0]).subtract(new BigDecimal(opening[1]));
-        BigDecimal debits = new BigDecimal(movement[0]);
-        BigDecimal credits = new BigDecimal(movement[1]);
-        return List.of(net, debits, credits, net.add(debits).subtract(credits));
-    }
-
     /** The families of production's facts equal to the oracle's, every key. */
     private static void assertAgree(String... families) {
         SortedMap<String, String> expected = family(oracle, families);
