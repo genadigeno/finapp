@@ -26641,7 +26641,7 @@ storm runs after the project's phases)
 - **Scope, fields**: as `P13-TST-001`'s shape; planned here so the phase's evidence is named; its evidence deferred, not
   claimed. **Definition of done**: `DOD-TEST`.
 
-**P14-DOC-001 — The Phase 14 exit review** — `PLANNED`
+**P14-DOC-001 — The Phase 14 exit review** — `READY` (2026-11-06; marked by the coordinator at `P14-TSK-026`'s merge, master `1a8df3d5`; every dependency `COMPLETE`)
 - **Objective**: read every ADR, invariant and register row against the code; run the owner-authorised database pass
   (C5); rule the gate clause by clause; ratify or record C1–C13; accept ADR-0113…0118 or correct them.
 - **Dependencies**: every item but `P14-TST-001`. **Definition of done**: `DOD-DOC`. **Risk**: Low. **Cx**: L.
