@@ -4873,7 +4873,7 @@ platform's own identifiers, months, versions, counters and the database's stamps
 | `accounting_period` | `pinned_mapping_version_id` | `INTERNAL` | The GL mapping version the lock pinned - accounting's own row |
 | `accounting_period` | `unlock_proposed_by` | `CONFIDENTIAL` | The accountant who proposed the unlock |
 | `accounting_period` | `unlock_proposed_by_type` | `INTERNAL` | A closed actor type - a person's |
-| `accounting_period` | `unlock_proposed_at` | `INTERNAL` | The database's stamp |
+| `accounting_period` | `unlock_proposed_at` | `INTERNAL` | The database's stamp - a pending unlock's identity, which its approval, rejection and withdrawal name; served as `unlockProposedAt` on the period list (`ACCOUNTING_READ`) and `GET .../periods/{periodId}/requests` (`ACCOUNTING_CLOSE_APPROVE`) (`P14-TSK-024`) |
 | `accounting_period` | `unlock_proposal_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
 | `accounting_period` | `unlock_approved_by` | `CONFIDENTIAL` | The second person who approved the unlock - never the proposer, by `CHECK` |
 | `accounting_period` | `unlock_approved_by_type` | `INTERNAL` | A closed actor type - a person's |
@@ -5069,13 +5069,13 @@ so it is `CONFIDENTIAL`, served to an operator under `ACCOUNTING_READ` and read 
 | `period_close_check` | `judged_by` | `INTERNAL` | The versions the attempt read |
 | `period_close_check` | `evidence` | `CONFIDENTIAL` | For a `DISCLOSED` attempt, a copy of what it disclosed - codes, ids, counts and aggregates per currency; never an owner reference, a name or a line; served to the approver, read audited |
 | `period_close_check` | `disclosure_reason` | `CONFIDENTIAL` | A person's explanation of a `DISCLOSED` attempt; screened for instrument shapes; served to the approver under `ACCOUNTING_CLOSE_APPROVE`, read audited; never logged, in no summary or metric |
-| `period_reopen` | `id` | `INTERNAL` | Generated - the proposal's identity |
+| `period_reopen` | `id` | `INTERNAL` | Generated - the proposal's identity, which a pending reopen's approval, rejection and withdrawal name; served as `reopenId` on the period list, the approver's read and `GET .../periods/{periodId}/requests` (`P14-TSK-024`) |
 | `period_reopen` | `period_id` | `INTERNAL` | The accounting period |
 | `period_reopen` | `period_revision` | `INTERNAL` | The revision it would leave - one pending per period and one approved per revision (`P14-TSK-024`; one per revision until then) |
 | `period_reopen` | `status` | `INTERNAL` | The machine's state - `PROPOSED`, `APPROVED`, and since `P14-TSK-024` `REJECTED`, `WITHDRAWN` |
 | `period_reopen` | `proposed_by` | `CONFIDENTIAL` | The accountant who proposed it |
 | `period_reopen` | `proposed_by_type` | `INTERNAL` | A closed actor type - a person's, by `CHECK` |
-| `period_reopen` | `proposed_at` | `INTERNAL` | The database's stamp |
+| `period_reopen` | `proposed_at` | `INTERNAL` | The database's stamp - served as `reopenProposedAt` beside `reopenId`, while pending |
 | `period_reopen` | `proposal_reason` | `RESTRICTED-PII` | Person-written; screened for instrument shapes; never served or logged |
 | `period_reopen` | `approved_by` | `CONFIDENTIAL` | The second person who approved it - never the proposer, by `CHECK` |
 | `period_reopen` | `approved_by_type` | `INTERNAL` | A closed actor type - a person's |

@@ -1,11 +1,14 @@
 package com.finapp.app.accounting;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 import lombok.NonNull;
@@ -25,10 +28,12 @@ import org.springframework.web.bind.annotation.RestController;
  * owner decisions C9, C12): an accountant locks a period under {@code ACCOUNTING_CLOSE_PROPOSE} - the ledger's posting
  * cutoff advanced to its end and the GL mapping version pinned, in one transaction - and proposes its unlock under the
  * same permission; a financial controller - a different person - approves the unlock under
- * {@code ACCOUNTING_CLOSE_APPROVE}. A pending unlock ends without its effect (`P14-TSK-024`): rejected by a different
- * person under {@code ACCOUNTING_CLOSE_APPROVE}, or withdrawn by its proposer under {@code ACCOUNTING_CLOSE_PROPOSE}; neither
- * takes a {@code MULTI_FACTOR} session, as the approval does not, since an end moves nothing. Every act keyed per principal
- * ({@code accounting.period:<type>:<id>}). The read: the
+ * {@code ACCOUNTING_CLOSE_APPROVE}, from a {@code MULTI_FACTOR} session (`P14-TSK-024`, the owner's acceptance: it moves the
+ * ledger's cutoff and supersedes FINAL runs). A pending unlock ends without its effect (`P14-TSK-024`): rejected by a
+ * different person under {@code ACCOUNTING_CLOSE_APPROVE}, or withdrawn by its proposer under
+ * {@code ACCOUNTING_CLOSE_PROPOSE}, each from a session of any assurance, since an end moves nothing. The approval, the
+ * rejection and the withdrawal each name the unlock they decide by {@code unlockProposedAt}, as read. Every act keyed per
+ * principal ({@code accounting.period:<type>:<id>}). The read: the
  * latest periods under {@code ACCOUNTING_READ}. Periods are born by the system ({@code AccountingPeriods.openNext}), never
  * by a door. Reasons are RESTRICTED-PII and never served. The handlers' names are distinctive (the springdoc
  * {@code operationId} rule).
@@ -40,7 +45,7 @@ public class AccountingPeriodController {
 
     @NonNull private final AccountingPeriodDesk desk;
 
-    /** The latest periods, newest first ({@code limit} 1 to 120, default 24): status, grace, pin, a pending unlock. */
+    /** The latest periods, newest first ({@code limit} 1 to 120, default 24): status, grace, pin, a pending unlock and a pending reopen, each with what its acts name. */
     @GetMapping
     @RequiresPermission(PermissionName.ACCOUNTING_READ)
     public List<AccountingPeriodDesk.AccountingPeriodView> listAccountingPeriods(
@@ -74,22 +79,24 @@ public class AccountingPeriodController {
     }
 
     /**
-     * Approves a pending unlock - a different person's act: the cutoff moved back one period, the period OPEN again;
-     * a reason is required.
+     * Approves the pending unlock named (unlockProposedAt, as read at GET .../periods/{periodId}/requests) - a different person's act, from a MULTI_FACTOR session (403 identity.AssuranceRequired
+     * below it): the cutoff moved back one period, the period OPEN again; a reason is required. Another unlock pending is 409 accounting.RequestStale, recorded.
      */
     @PostMapping(path = "/{periodId}/unlock-approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @RequiresIdempotencyKey
     public AccountingPeriodDesk.AccountingPeriodReceipt approveAccountingPeriodUnlock(
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("periodId") String periodId,
-            @Valid @RequestBody AccountingPeriodActRequest body) {
-        return desk.approveUnlock(idempotencyKey, periodId, body.reason());
+            @Valid @RequestBody UnlockDecisionRequest body) {
+        return desk.approveUnlock(idempotencyKey, periodId, body.unlockProposedAt(), body.reason());
     }
 
     /**
-     * Rejects a pending unlock - a person other than its proposer: the period stays LOCKED under the same lock and pin, the cutoff unmoved, and a new unlock may be proposed; a reason is required.
-     * The proposer is refused 403 accounting.SelfApprovalRefused and withdraws instead. With none pending, 409 accounting.PeriodStale says whether it was approved, rejected or withdrawn.
+     * Rejects the pending unlock named (unlockProposedAt) - a person other than its proposer: the period stays LOCKED under the same lock and pin, the cutoff unmoved, and a new unlock may be
+     * proposed; a reason is required. The proposer is refused 403 accounting.SelfApprovalRefused and withdraws instead. Another unlock pending is 409 accounting.RequestStale; with none pending, 409
+     * accounting.PeriodStale says whether the one named was approved, rejected or withdrawn.
      */
     @PostMapping(path = "/{periodId}/unlock-rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
@@ -97,13 +104,14 @@ public class AccountingPeriodController {
     public AccountingPeriodDesk.AccountingPeriodReceipt rejectAccountingPeriodUnlock(
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("periodId") String periodId,
-            @Valid @RequestBody AccountingPeriodActRequest body) {
-        return desk.rejectUnlock(idempotencyKey, periodId, body.reason());
+            @Valid @RequestBody UnlockDecisionRequest body) {
+        return desk.rejectUnlock(idempotencyKey, periodId, body.unlockProposedAt(), body.reason());
     }
 
     /**
-     * Withdraws a pending unlock - its proposer alone: the period stays LOCKED under the same lock and pin, the cutoff unmoved, and a new unlock may be proposed; a reason is required. Anyone else is
-     * refused 403 accounting.NotTheProposer. With none pending, 409 accounting.PeriodStale says whether it was approved, rejected or withdrawn.
+     * Withdraws the pending unlock named (unlockProposedAt, as the list serves it) - its proposer alone: the period stays LOCKED under the same lock and pin, the cutoff unmoved, and a new unlock may
+     * be proposed; a reason is required. Anyone else is refused 403 accounting.NotTheProposer, recorded. Another unlock pending is 409 accounting.RequestStale; with none pending, 409
+     * accounting.PeriodStale says whether the one named was approved, rejected or withdrawn.
      */
     @PostMapping(path = "/{periodId}/unlock-withdrawal", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
@@ -111,13 +119,27 @@ public class AccountingPeriodController {
     public AccountingPeriodDesk.AccountingPeriodReceipt withdrawAccountingPeriodUnlock(
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("periodId") String periodId,
-            @Valid @RequestBody AccountingPeriodActRequest body) {
-        return desk.withdrawUnlock(idempotencyKey, periodId, body.reason());
+            @Valid @RequestBody UnlockDecisionRequest body) {
+        return desk.withdrawUnlock(idempotencyKey, periodId, body.unlockProposedAt(), body.reason());
     }
 
     // -----------------------------------------------------------------
 
-    /** An act's reason - optional for the lock, required for the unlock's proposal, approval, rejection and withdrawal ({@code accounting.ReasonRequired}). */
+    /** An act's reason - optional for the lock, required for the unlock's proposal ({@code accounting.ReasonRequired}). */
     @ClosedBody
     public record AccountingPeriodActRequest(@Size(max = 1000) String reason) {}
+
+    /**
+     * A decision on a pending unlock - its approval, rejection or withdrawal (`P14-TSK-024`): the unlock read, by when it was proposed ({@code unlockProposedAt}, an ISO-8601 instant as served), and a
+     * reason ({@code accounting.ReasonRequired} when missing).
+     */
+    @ClosedBody
+    public record UnlockDecisionRequest(@NotNull @Size(max = 64) String unlockProposedAt, @Size(max = 1000) String reason) {
+
+        /** The reason stays out of a log line: a record's generated {@code toString} would carry it. */
+        @Override
+        public String toString() {
+            return "UnlockDecisionRequest[" + unlockProposedAt + "]";
+        }
+    }
 }

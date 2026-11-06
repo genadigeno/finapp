@@ -155,9 +155,11 @@ public class AccountingBeans {
             AccountingPeriods accountingPeriods,
             IdempotentExecutor idempotentExecutor,
             AccountingTransactions accountingTransactions,
-            AccountingFlowScope accountingFlowScope) {
+            AccountingFlowScope accountingFlowScope,
+            com.finapp.accounting.PeriodCloses periodCloses) {
+        // The list names the reopen pending on a period (P14-TSK-024), which the close's machine reads.
         return new AccountingPeriodDesk(accountingPeriods, idempotentExecutor, accountingTransactions,
-                accountingFlowScope);
+                accountingFlowScope, periodCloses::pendingReopenOf);
     }
 
     /** {@code finapp.accounting.period.open.age} - read from the database, cached 15 s. */

@@ -1242,6 +1242,41 @@
           }
         }
       },
+      "accounting.RequestStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounting.RequestStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounting.RequestStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The unlock or reopen named is not the one pending: another was proposed after the one read. Nothing was changed; read it and decide again.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounting.SelfApprovalRefused": {
         "content": {
           "application/problem+json": {
@@ -12229,6 +12264,15 @@
           "period": {
             "type": "string"
           },
+          "reopenId": {
+            "type": "string"
+          },
+          "reopenPending": {
+            "type": "boolean"
+          },
+          "reopenProposedAt": {
+            "type": "string"
+          },
           "revision": {
             "format": "int32",
             "type": "integer"
@@ -16825,6 +16869,9 @@
             "type": "string"
           },
           "proposedAt": {
+            "type": "string"
+          },
+          "reopenId": {
             "type": "string"
           },
           "reopenPending": {
@@ -24081,6 +24128,39 @@
         },
         "type": "object"
       },
+      "PeriodRequestsView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "period": {
+            "type": "string"
+          },
+          "reopenId": {
+            "type": "string"
+          },
+          "reopenPending": {
+            "type": "boolean"
+          },
+          "reopenProposedAt": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "unlockPending": {
+            "type": "boolean"
+          },
+          "unlockProposedAt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "PeriodView": {
         "properties": {
           "closingBalance": {
@@ -26171,14 +26251,50 @@
         ],
         "type": "object"
       },
+      "ReopenApprovalRequest": {
+        "properties": {
+          "postedAdjustments": {
+            "items": {
+              "maxLength": 64,
+              "minLength": 0,
+              "type": "string"
+            },
+            "maxItems": 201,
+            "minItems": 0,
+            "type": "array"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "reopenId": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reopenId"
+        ],
+        "type": "object"
+      },
       "ReopenEndRequest": {
         "properties": {
           "reason": {
             "maxLength": 1000,
             "minLength": 0,
             "type": "string"
+          },
+          "reopenId": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
           }
         },
+        "required": [
+          "reopenId"
+        ],
         "type": "object"
       },
       "RepaymentAllocationView": {
@@ -30987,6 +31103,24 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "UnlockDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "unlockProposedAt": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "unlockProposedAt"
+        ],
         "type": "object"
       },
       "UnmatchedFigure": {
@@ -35942,7 +36076,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PeriodReopenRequest"
+                "$ref": "#/components/schemas/ReopenApprovalRequest"
               }
             }
           },
@@ -36097,6 +36231,33 @@
         }
       }
     },
+    "/v1/operator/accounting/periods/{periodId}/requests": {
+      "get": {
+        "operationId": "readAccountingPeriodRequests",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "periodId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeriodRequestsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/accounting/periods/{periodId}/unlock-approval": {
       "post": {
         "operationId": "approveAccountingPeriodUnlock",
@@ -36122,7 +36283,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AccountingPeriodActRequest"
+                "$ref": "#/components/schemas/UnlockDecisionRequest"
               }
             }
           },
@@ -36212,7 +36373,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AccountingPeriodActRequest"
+                "$ref": "#/components/schemas/UnlockDecisionRequest"
               }
             }
           },
@@ -36257,7 +36418,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AccountingPeriodActRequest"
+                "$ref": "#/components/schemas/UnlockDecisionRequest"
               }
             }
           },

@@ -282,7 +282,16 @@ public enum AccountingErrorCode implements ErrorCode {
     NOT_THE_PROPOSER(
             "accounting.NotTheProposer",
             403,
-            "Only its proposer withdraws a pending unlock or reopen; another person rejects it. Nothing was changed.");
+            "Only its proposer withdraws a pending unlock or reopen; another person rejects it. Nothing was changed."),
+
+    /**
+     * The approval, rejection and withdrawal doors of a pending unlock and a pending reopen (`P14-TSK-024`'s fix round): the request named is not the one pending - another was proposed after
+     * the one the person read, the first having ended. {@code 409}: read it again and decide; the refusal is recorded.
+     */
+    REQUEST_STALE(
+            "accounting.RequestStale",
+            409,
+            "The unlock or reopen named is not the one pending: another was proposed after the one read. Nothing was changed; read it and decide again.");
 
     private final String code;
     private final int status;

@@ -8,6 +8,7 @@ import com.finapp.accounting.CloseCheckCode;
 import com.finapp.accounting.CloseRunId;
 import com.finapp.accounting.PeriodCloseId;
 import com.finapp.accounting.PeriodCloses;
+import com.finapp.accounting.PeriodReopenId;
 import com.finapp.accounting.PostingCutoff;
 import com.finapp.accounting.PriorPeriodAdjustments;
 import com.finapp.accounting.ReturnsAReopenOvertakes;
@@ -56,7 +57,12 @@ import lombok.RequiredArgsConstructor;
  * on the read's own transaction, holding nothing, with {@link #PENDING_REOPEN_NOTE}. It is information: the approval's receipt reads its own list holding the month, and the two differ when a return was sent or concluded in between; the note says so. No reopen pending, no list read, and its
  * three fields are null.
  *
- * <p><strong>A reopen's end</strong> (`P14-TSK-024`): a second person's rejection and the proposer's withdrawal, keyed and reasoned as the acts are, naming only the period as the acts do; each ends the reopen pending when it acts, under the period's row. Its receipt reads no list: an end overtakes nothing.
+ * <p><strong>A reopen's end</strong> (`P14-TSK-024`): a second person's rejection and the proposer's withdrawal, keyed and reasoned as the acts are, each under the period's row. Its receipt reads no list: an end overtakes nothing.
+ *
+ * <p><strong>Every act on a pending reopen names it</strong> (`P14-TSK-024`'s fix round): an end makes a pending reopen replaceable within seconds, so the approval, the rejection and the withdrawal each name
+ * the reopen read by {@code reopenId}, which the approver's read, {@link #requests} and the accountant's period list serve; the fingerprint covers it, so the same key naming another reopen is the executor's
+ * conflict. Another pending is {@code 409 accounting.RequestStale}, recorded {@code FAILED} as a self-approval and another person's withdrawal are. The close's approval and rejection named their proposal
+ * from the first. {@link #requests} serves the controller what each act names, an unlock by {@code unlockProposedAt}: a controller holds no {@code ACCOUNTING_READ}, so the period list is not theirs.
  */
 @RequiredArgsConstructor
 public final class PeriodCloseDesk {
@@ -69,6 +75,7 @@ public final class PeriodCloseDesk {
     static final String REOPEN_APPROVE_SPAN = "accounting.period.reopen.approve";
     static final String REOPEN_REJECT_SPAN = "accounting.period.reopen.reject";
     static final String REOPEN_WITHDRAW_SPAN = "accounting.period.reopen.withdraw";
+    static final String REQUESTS_READ_SPAN = "accounting.period.requests.read";
 
     /** What the list holds and leaves out, the same words wherever it is served: what each of the two notes below says after its first sentence. */
     private static final String WHAT_IS_LISTED = " Each return SUBMITTED or ACKNOWLEDGED for this month, newest first, at most "
@@ -138,6 +145,7 @@ public final class PeriodCloseDesk {
      * A period's latest close proposal. {@code stillStands} when the approval would find what it read still standing; when false the way on is to reject and propose again.
      *
      * @param reopenPending a reopen of the {@code CLOSED} period is pending (`P14-TSK-024`): what its approver decides, this proposal being the close it would reopen
+     * @param reopenId that reopen's id, which its approval and rejection name; null when none is pending
      * @param reopenProposedAt when that reopen was proposed, the database's clock; null when none is pending
      * @param overtakenReturns on a pending reopen, the returns it would overtake, newest first, at most {@link ReturnsAReopenOvertakes#NEWEST}: the receipts' statement, read here holding nothing. <strong>Null when no reopen is pending</strong>, since no list was read
      * @param overtakenReturnsTotal how many there are; null as that list
@@ -160,10 +168,18 @@ public final class PeriodCloseDesk {
             List<CloseProposalCheckView> checks,
             List<String> priorPeriodAdjustments,
             boolean reopenPending,
+            String reopenId,
             String reopenProposedAt,
             List<OvertakenReturn> overtakenReturns,
             Long overtakenReturnsTotal,
             String overtakenReturnsNote) {}
+
+    /**
+     * A period's pending requests as the controller reads them before deciding one (`P14-TSK-024`'s fix round): what each act names - an unlock by when it was proposed, a reopen by its id - and
+     * when the reopen was proposed. No person, no reason, no figure. Null where none is pending.
+     */
+    public record PeriodRequestsView(String id, String period, String status, int revision, boolean unlockPending, String unlockProposedAt, boolean reopenPending, String reopenId,
+            String reopenProposedAt) {}
 
     public PeriodCloseReceipt propose(String idempotencyKey, String rawId, String rawRun, String reason, List<StatedDisclosure> disclosures) {
         AccountingPeriodId id = periodId(rawId);
@@ -202,42 +218,58 @@ public final class PeriodCloseDesk {
         Set<UUID> named = namedAdjustments(rawPosted);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        return flow.door(REOPEN_PROPOSE_SPAN, () -> keyed(actor, idempotencyKey, reopenFingerprint("reopen-proposal", id, named, reason),
+        return flow.door(REOPEN_PROPOSE_SPAN, () -> keyed(actor, idempotencyKey, reopenFingerprint("reopen-proposal", id, Optional.empty(), named, reason),
                 uow -> toldOfTheMonth(uow, receipt(closes.proposeReopen(uow, id, actor, named, reason, correlation)), id)));
     }
 
-    public PeriodCloseReceipt approveReopen(String idempotencyKey, String rawId, List<String> rawPosted, String reason) {
+    public PeriodCloseReceipt approveReopen(String idempotencyKey, String rawId, String rawReopen, List<String> rawPosted, String reason) {
         AccountingPeriodId id = periodId(rawId);
+        PeriodReopenId requested = requestedReopen(rawReopen);
         Set<UUID> named = namedAdjustments(rawPosted);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        return flow.door(REOPEN_APPROVE_SPAN, () -> keyed(actor, idempotencyKey, reopenFingerprint("reopen-approval", id, named, reason),
-                uow -> toldOfTheMonth(uow, receipt(closes.approveReopen(uow, id, actor, named, reason, correlation)), id)));
+        return flow.door(REOPEN_APPROVE_SPAN, () -> keyed(actor, idempotencyKey, reopenFingerprint("reopen-approval", id, Optional.of(requested), named, reason),
+                uow -> toldOfTheMonth(uow, receipt(closes.approveReopen(uow, id, requested, actor, named, reason, correlation)), id)));
     }
 
-    /** Rejects the pending reopen - a second person's decision (`P14-TSK-024`): the period stays {@code CLOSED} at its revision, nothing moves. */
-    public PeriodCloseReceipt rejectReopen(String idempotencyKey, String rawId, String reason) {
+    /** Rejects the pending reopen named - a second person's decision (`P14-TSK-024`): the period stays {@code CLOSED} at its revision, nothing moves. */
+    public PeriodCloseReceipt rejectReopen(String idempotencyKey, String rawId, String rawReopen, String reason) {
         AccountingPeriodId id = periodId(rawId);
+        PeriodReopenId requested = requestedReopen(rawReopen);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        return flow.door(REOPEN_REJECT_SPAN, () -> keyed(actor, idempotencyKey, "reopen-rejection|" + id.value() + "|" + reason,
-                uow -> receipt(closes.rejectReopen(uow, id, actor, reason, correlation))));
+        return flow.door(REOPEN_REJECT_SPAN, () -> keyed(actor, idempotencyKey, "reopen-rejection|" + id.value() + "@" + requested.value() + "|" + reason,
+                uow -> receipt(closes.rejectReopen(uow, id, requested, actor, reason, correlation))));
     }
 
-    /** Withdraws the pending reopen - its proposer's own act (`P14-TSK-024`): the period stays {@code CLOSED} at its revision, nothing moves. */
-    public PeriodCloseReceipt withdrawReopen(String idempotencyKey, String rawId, String reason) {
+    /** Withdraws the pending reopen named - its proposer's own act (`P14-TSK-024`): the period stays {@code CLOSED} at its revision, nothing moves. */
+    public PeriodCloseReceipt withdrawReopen(String idempotencyKey, String rawId, String rawReopen, String reason) {
         AccountingPeriodId id = periodId(rawId);
+        PeriodReopenId requested = requestedReopen(rawReopen);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        return flow.door(REOPEN_WITHDRAW_SPAN, () -> keyed(actor, idempotencyKey, "reopen-withdrawal|" + id.value() + "|" + reason,
-                uow -> receipt(closes.withdrawReopen(uow, id, actor, reason, correlation))));
+        return flow.door(REOPEN_WITHDRAW_SPAN, () -> keyed(actor, idempotencyKey, "reopen-withdrawal|" + id.value() + "@" + requested.value() + "|" + reason,
+                uow -> receipt(closes.withdrawReopen(uow, id, requested, actor, reason, correlation))));
     }
 
     /**
-     * A reopen's fingerprint: the same key naming another set is the executor's conflict. A body naming none reads exactly as one did before `P14-TSK-022`, so a retry across the deploy replays its receipt; one naming some has a prefix of its own, so the two forms can never be the same text whatever a reason holds.
+     * A reopen's fingerprint: the same key naming another set, or another reopen, is the executor's conflict. A proposal naming none reads exactly as one did before `P14-TSK-022`, so a retry across the deploy replays its receipt; one naming some has a prefix of its own, so the two forms can never be the same text whatever a reason holds. An approval names the reopen it decides
+     * (`P14-TSK-024`) beside the period, a body the old form never had, so its text differs from every earlier one.
      */
-    static String reopenFingerprint(String act, AccountingPeriodId id, Set<UUID> named, String reason) {
-        return named.isEmpty() ? act + "|" + id.value() + "|" + reason : act + "-named|" + id.value() + "|" + new TreeSet<>(named) + "|" + reason;
+    static String reopenFingerprint(String act, AccountingPeriodId id, Optional<PeriodReopenId> requested, Set<UUID> named, String reason) {
+        String period = id.value() + requested.map(reopen -> "@" + reopen.value()).orElse("");
+        return named.isEmpty() ? act + "|" + period + "|" + reason : act + "-named|" + period + "|" + new TreeSet<>(named) + "|" + reason;
+    }
+
+    /** A period's pending requests, as the controller reads them before deciding one - a plain read, unrecorded as the period list is, for it serves no person, reason or figure. */
+    public PeriodRequestsView requests(String rawId) {
+        AccountingPeriodId id = periodId(rawId);
+        return flow.door(REQUESTS_READ_SPAN, () -> guarded(() -> transactions.inTransaction(uow -> {
+            PeriodCloses.PendingRequests pending = closes.pendingOf(uow, id);
+            return new PeriodRequestsView(pending.period().id().value().toString(), pending.period().month().toString(), pending.period().status().name(), pending.period().revision(),
+                    pending.unlockProposedAt().isPresent(), pending.unlockProposedAt().map(Instant::toString).orElse(null), pending.reopen().isPresent(),
+                    pending.reopen().map(reopen -> reopen.id().value().toString()).orElse(null), pending.reopen().map(reopen -> reopen.proposedAt().toString()).orElse(null));
+        })));
     }
 
     /**
@@ -287,6 +319,7 @@ public final class PeriodCloseDesk {
                         check.check().disclosureReason().orElse(null))).toList(),
                 posted.stream().map(UUID::toString).toList(),
                 view.pendingReopen().isPresent(),
+                view.pendingReopen().map(reopen -> reopen.id().value().toString()).orElse(null),
                 view.pendingReopen().map(reopen -> reopen.proposedAt().toString()).orElse(null),
                 overtaken.map(PeriodCloseDesk::listed).orElse(null),
                 overtaken.map(ReturnsAReopenOvertakes.Overtaken::total).orElse(null),
@@ -314,11 +347,11 @@ public final class PeriodCloseDesk {
 
     // ------------------------------------------------------------------ plumbing
 
-    /** One keyed act in one transaction - a lost response replays the stored receipt; a refusal stores nothing; a self-approval is recorded {@code FAILED} in a transaction of its own. */
+    /** One keyed act in one transaction - a lost response replays the stored receipt; a refusal stores nothing; a self-approval, another person's withdrawal and an act on another reopen are recorded {@code FAILED} in a transaction of their own. */
     private PeriodCloseReceipt keyed(Actor actor, String idempotencyKey, String fingerprinted, Function<Connection, PeriodCloseReceipt> act) {
         IdempotencyKey key = new IdempotencyKey(AccountingPeriodDesk.SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
-        IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> selfApprovalRecorded(actor,
+        IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> refusalRecorded(actor,
                 () -> transactions.inTransaction(unitOfWork -> executor.execute(unitOfWork, key, fingerprint, uow -> {
                     PeriodCloseReceipt receipt = act.apply(uow);
                     return CommandResult.succeeded(StoredResponse.of(stored(receipt).getBytes(StandardCharsets.UTF_8), "text/plain"));
@@ -348,16 +381,17 @@ public final class PeriodCloseDesk {
                 stored[5].isEmpty() ? null : stored[5], stored.length < 7 || stored[6].isEmpty() ? List.of() : List.of(stored[6].split(",")), overtaken, read ? Long.valueOf(stored[7]) : null, read ? OVERTAKEN_RETURNS_NOTE : null);
     }
 
-    private <R> R selfApprovalRecorded(Actor actor, Supplier<R> work) {
+    /** {@code work}, a refusal the doors keep ({@link AccountingPeriods.RecordedRefusal}) recorded {@code FAILED} in a transaction of its own after the act rolled back, then refused as before. */
+    private <R> R refusalRecorded(Actor actor, Supplier<R> work) {
         try {
             return work.get();
-        } catch (AccountingPeriods.SelfApprovalRefused self) {
+        } catch (AccountingPeriods.RecordedRefusal refused) {
             CorrelationId correlation = correlation();
             transactions.inTransaction(uow -> {
-                closes.recordRefusal(uow, self, actor, correlation);
+                closes.recordRefusal(uow, refused, actor, correlation);
                 return null;
             });
-            throw self;
+            throw refused;
         }
     }
 
@@ -371,6 +405,8 @@ public final class PeriodCloseDesk {
             throw refused(AccountingErrorCode.SELF_APPROVAL_REFUSED, self);
         } catch (AccountingPeriods.NotTheProposer other) {
             throw refused(AccountingErrorCode.NOT_THE_PROPOSER, other);
+        } catch (AccountingPeriods.RequestStale another) {
+            throw refused(AccountingErrorCode.REQUEST_STALE, another);
         } catch (AccountingPeriods.PeriodStale stale) {
             throw refused(AccountingErrorCode.PERIOD_STALE, stale);
         } catch (PeriodCloses.CloseNotReady notReady) {
@@ -409,6 +445,15 @@ public final class PeriodCloseDesk {
             return UUID.fromString(raw);
         } catch (IllegalArgumentException | NullPointerException malformed) {
             throw new ApiException(AccountingErrorCode.CLOSE_PROPOSAL_STALE, "An accounting period command was refused", what + " named is no such record.");
+        }
+    }
+
+    /** The reopen a body names, by its id: one that cannot be an id names no request, the refusal naming another gets. */
+    private static PeriodReopenId requestedReopen(String raw) {
+        try {
+            return PeriodReopenId.of(UUID.fromString(raw));
+        } catch (IllegalArgumentException | NullPointerException malformed) {
+            throw new ApiException(AccountingErrorCode.REQUEST_STALE, "An accounting period command was refused", "the reopen named is no such request.");
         }
     }
 

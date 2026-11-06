@@ -122,7 +122,7 @@ class CloseStatusThroughTheMachineTest {
         assertThat(closed.get("revision").asInt()).isEqualTo(1);
 
         machine.proposeReopen(UOW, march, ACCOUNTANT, java.util.Set.of(), "a correction", CorrelationId.generate(IDS));
-        machine.approveReopen(UOW, march, CONTROLLER, java.util.Set.of(), "agreed", CorrelationId.generate(IDS));
+        machine.approveReopen(UOW, march, machine.pendingOf(UOW, march).reopen().orElseThrow().id(), CONTROLLER, java.util.Set.of(), "agreed", CorrelationId.generate(IDS));
         JsonNode reopened = read(lockedAt);
         assertThat(reopened.get("status").asText()).isEqualTo("OPEN");
         assertThat(reopened.get("revision").asInt()).isEqualTo(2);

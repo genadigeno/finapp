@@ -29,6 +29,24 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " names it and the act - never an amount or an owner reference.",
             false),
 
+    /** Somebody other than its proposer tried to withdraw a pending unlock or reopen and was refused (`P14-TSK-024`). */
+    NOT_THE_PROPOSER(
+            "accounting.NotTheProposer",
+            "Somebody other than its proposer tried to withdraw a pending unlock or reopen (P14-TSK-024; POST .../periods/{id}/unlock-withdrawal or reopen-withdrawal,"
+                    + " ACCOUNTING_CLOSE_PROPOSE) and was refused 403 accounting.NotTheProposer before anything was written: a withdrawal is its proposer's own retraction, and another"
+                    + " person's end of it is a rejection under ACCOUNTING_CLOSE_APPROVE - an accountant ending a colleague's request is what four eyes stops. Recorded FAILED in a"
+                    + " transaction of its own after the act rolled back, as a self-approval is. Its target the period; the summary its month and the act.",
+            false),
+
+    /** An act named an unlock or a reopen that is not the one pending, and was refused (`P14-TSK-024`). */
+    REQUEST_STALE(
+            "accounting.RequestStale",
+            "An approval, a rejection or a withdrawal named a pending unlock or reopen that is not the one pending - another proposed after the one the person read, the first"
+                    + " having ended (P14-TSK-024; POST .../periods/{id}/unlock-approval, unlock-rejection, unlock-withdrawal, reopen-approval, reopen-rejection, reopen-withdrawal) -"
+                    + " and was refused 409 accounting.RequestStale before anything was written, judged holding the period's row. Recorded FAILED in a transaction of its own after"
+                    + " the act rolled back, so an attempt to decide a request nobody read is kept. Its target the period; the summary its month and the act.",
+            false),
+
     /** An accountant read the posting rule register (`P14-TSK-002`, ACCOUNTING_READ) - every serving recorded. */
     POSTING_RULES_READ(
             "accounting.PostingRulesRead",

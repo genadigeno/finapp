@@ -451,7 +451,7 @@ class SafeguardingReturnDatabaseTest {
         Actor proposer = person();
         inScope(proposer, uow -> PeriodCloseFixture.MACHINE.proposeReopen(uow, period, proposer, PeriodCloseFixture.posted(uow, period), "the suite reopens it", correlation()));
         Actor approver = person();
-        inScope(approver, uow -> PeriodCloseFixture.MACHINE.approveReopen(uow, period, approver, PeriodCloseFixture.posted(uow, period), "the suite reopens it", correlation()));
+        inScope(approver, uow -> PeriodCloseFixture.MACHINE.approveReopen(uow, period, PeriodCloseFixture.MACHINE.pendingOf(uow, period).reopen().orElseThrow().id(), approver, PeriodCloseFixture.posted(uow, period), "the suite reopens it", correlation()));
 
         post(month.atEndOfMonth(), wallet, operational(AccountPurpose.FEE_REVENUE, EUR), 2_00, EUR);
         PeriodCloseFixture.closed(month);

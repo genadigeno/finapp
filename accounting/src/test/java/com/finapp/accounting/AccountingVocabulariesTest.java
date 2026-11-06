@@ -240,14 +240,17 @@ class AccountingVocabulariesTest {
                         // P14-TSK-018: the regulatory framework's.
                         "accounting.RegulatorySubmissionStale=409", "accounting.RegulatorySubmissionLive=409", "accounting.RegulatorySubmissionInvalid=422", "accounting.RegulatorySourceNotFinal=409",
                         "accounting.RegulatoryFigureUnresolved=422", "accounting.RegulatoryRunBytesDiffer=409", "accounting.RegulatoryObligationInvalid=422", "accounting.RegulatoryObligationStale=409", "accounting.RegulatoryProviderUnavailable=503",
-                        // P14-TSK-024: another person withdrawing a pending unlock or reopen.
-                        "accounting.NotTheProposer=403");
+                        // P14-TSK-024: another person withdrawing a pending unlock or reopen; an act naming a request other than the one pending.
+                        "accounting.NotTheProposer=403", "accounting.RequestStale=409");
         // P14-TSK-002: the posting rule register's audited read - no reason, an operator's read.
         assertThat(AccountingAuditAction.POSTING_RULES_READ.code()).isEqualTo("accounting.PostingRulesRead");
         assertThat(AccountingAuditAction.POSTING_RULES_READ.requiresReason()).isFalse();
         // P14-TSK-003: the mapping's three acts, each reasoned.
         assertThat(Arrays.stream(AccountingAuditAction.values()).map(a -> a.code() + "=" + a.requiresReason()).toList())
-                .containsExactly("accounting.SelfApprovalRefused=false", "accounting.PostingRulesRead=false",
+                .containsExactly("accounting.SelfApprovalRefused=false",
+                        // P14-TSK-024: the period doors' two other kept refusals, recorded FAILED as a self-approval is.
+                        "accounting.NotTheProposer=false", "accounting.RequestStale=false",
+                        "accounting.PostingRulesRead=false",
                         "accounting.MappingProposed=true", "accounting.MappingActivated=true",
                         "accounting.MappingRejected=true",
                         // P14-TSK-005: the open (the system's) and the lock unreasoned; the unlock's two acts reasoned.

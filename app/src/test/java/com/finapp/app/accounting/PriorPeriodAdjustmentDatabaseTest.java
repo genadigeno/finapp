@@ -305,7 +305,7 @@ class PriorPeriodAdjustmentDatabaseTest {
         PriorPeriodAdjustments.Acted proposed = propose();
         int revision = row(JANUARY).revision();
         inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, id(JANUARY), ACCOUNTANT, PeriodCloseFixture.posted(uow, id(JANUARY)), "a correction was found", correlation()));
-        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, id(JANUARY), CONTROLLER, PeriodCloseFixture.posted(uow, id(JANUARY)), "agreed", correlation()));
+        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, id(JANUARY), MACHINE.pendingOf(uow, id(JANUARY)).reopen().orElseThrow().id(), CONTROLLER, PeriodCloseFixture.posted(uow, id(JANUARY)), "agreed", correlation()));
 
         assertThatThrownBy(() -> approve(proposed, person())).isInstanceOf(AccountingPeriods.PeriodStale.class);
         assertStillProposed(proposed);
@@ -355,7 +355,7 @@ class PriorPeriodAdjustmentDatabaseTest {
         assertThat(text("SELECT target_revision::text FROM accounting.prior_period_adjustment WHERE id = '" + proposed.id().value() + "'")).isEqualTo("1");
         PeriodCloseFixture.closed(FEBRUARY);
         inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, id(FEBRUARY), ACCOUNTANT, PeriodCloseFixture.posted(uow, id(FEBRUARY)), "a correction was found", correlation()));
-        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, id(FEBRUARY), CONTROLLER, PeriodCloseFixture.posted(uow, id(FEBRUARY)), "agreed", correlation()));
+        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, id(FEBRUARY), MACHINE.pendingOf(uow, id(FEBRUARY)).reopen().orElseThrow().id(), CONTROLLER, PeriodCloseFixture.posted(uow, id(FEBRUARY)), "agreed", correlation()));
         assertThat(row(FEBRUARY).status()).isEqualTo(PeriodStatus.OPEN);
         assertThat(row(FEBRUARY).revision()).isEqualTo(2);
         assertThat(row(JANUARY).status()).isEqualTo(PeriodStatus.CLOSED);
@@ -415,7 +415,7 @@ class PriorPeriodAdjustmentDatabaseTest {
                 () -> {
                     while (true) {
                         try {
-                            return inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, namedBeforeTheRace, "agreed", correlation()));
+                            return inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, MACHINE.pendingOf(uow, january).reopen().orElseThrow().id(), CONTROLLER, namedBeforeTheRace, "agreed", correlation()));
                         } catch (PostingCutoff.CutoffBusy busy) {
                             Thread.onSpinWait();
                         }
@@ -431,7 +431,7 @@ class PriorPeriodAdjustmentDatabaseTest {
             assertThat(count("SELECT count(*) FROM accounting.report_run WHERE period_id = '" + january.value() + "' AND status = 'SUPERSEDED' AND period_revision = " + revision)).as("no run superseded by a refused reopen").isZero();
             while (true) {
                 try {
-                    inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, PeriodCloseFixture.posted(uow, january), "agreed", correlation()));
+                    inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, MACHINE.pendingOf(uow, january).reopen().orElseThrow().id(), CONTROLLER, PeriodCloseFixture.posted(uow, january), "agreed", correlation()));
                     break;
                 } catch (PostingCutoff.CutoffBusy busy) {
                     Thread.onSpinWait();
@@ -467,12 +467,12 @@ class PriorPeriodAdjustmentDatabaseTest {
         Set<UUID> afterSecond = inScope(CONTROLLER, uow -> PeriodCloseFixture.posted(uow, january));
         assertThat(afterSecond).contains(second.id().value()).hasSize(afterFirst.size() + 1);
 
-        assertThatThrownBy(() -> inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, afterFirst, "agreed", correlation()))).isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class);
+        assertThatThrownBy(() -> inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, MACHINE.pendingOf(uow, january).reopen().orElseThrow().id(), CONTROLLER, afterFirst, "agreed", correlation()))).isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class);
         assertThat(row(JANUARY).status()).isEqualTo(PeriodStatus.CLOSED);
         assertThat(row(JANUARY).revision()).isEqualTo(revision);
         assertThat(count("SELECT count(*) FROM accounting.period_reopen WHERE period_id = '" + january.value() + "' AND period_revision = " + revision + " AND status = 'PROPOSED'")).as("it stands").isEqualTo(1);
 
-        PeriodCloses.Acted reopened = inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, afterSecond, "agreed", correlation()));
+        PeriodCloses.Acted reopened = inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, MACHINE.pendingOf(uow, january).reopen().orElseThrow().id(), CONTROLLER, afterSecond, "agreed", correlation()));
         assertThat(reopened.status()).isEqualTo(PeriodStatus.OPEN);
         assertThat(reopened.revision()).isEqualTo(revision + 1);
     }
@@ -756,7 +756,7 @@ class PriorPeriodAdjustmentDatabaseTest {
         rawRefused("DELETE FROM accounting.prior_period_adjustment" + row, "42501");
 
         inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, id(JANUARY), ACCOUNTANT, PeriodCloseFixture.posted(uow, id(JANUARY)), "a correction was found", correlation()));
-        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, id(JANUARY), CONTROLLER, PeriodCloseFixture.posted(uow, id(JANUARY)), "agreed", correlation()));
+        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, id(JANUARY), MACHINE.pendingOf(uow, id(JANUARY)).reopen().orElseThrow().id(), CONTROLLER, PeriodCloseFixture.posted(uow, id(JANUARY)), "agreed", correlation()));
         rawRefused("UPDATE accounting.prior_period_adjustment SET status = 'POSTED', decided_by = 'someone-else', decided_by_type = 'EMPLOYEE', decided_at = now(), decision_reason = 'raw', journal_entry_id = '" + IDS.next() + "'" + row, RAISED);
 
         raw("UPDATE accounting.prior_period_adjustment SET status = 'REJECTED', decided_by = 'someone-else', decided_by_type = 'EMPLOYEE', decided_at = now(), decision_reason = 'raw'" + row);

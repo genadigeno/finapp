@@ -398,7 +398,7 @@ class ReportRunsTest {
                     return 0;
                 });
         periods.proposeUnlock(UOW, september, ACCOUNTANT, "a correction", correlation());
-        periods.approveUnlock(UOW, september, CONTROLLER, "reviewed", correlation());
+        periods.approveUnlock(UOW, september, periods.pendingUnlock(UOW, september).orElseThrow(), CONTROLLER, "reviewed", correlation());
         assertThat(order).containsExactly("supersedeFinal", "cutoff.moveBack");
     }
 
@@ -463,7 +463,7 @@ class ReportRunsTest {
 
     private void unlock(AccountingPeriodId id) {
         periods().proposeUnlock(UOW, id, ACCOUNTANT, "a correction", correlation());
-        periods().approveUnlock(UOW, id, CONTROLLER, "reviewed", correlation());
+        periods().approveUnlock(UOW, id, periods().pendingUnlock(UOW, id).orElseThrow(), CONTROLLER, "reviewed", correlation());
     }
 
     private static RunParameters probe(String value) {
