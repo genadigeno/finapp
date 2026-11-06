@@ -11,7 +11,8 @@ import java.util.Optional;
 
 /**
  * The close and reopen proposal rows (`P14-TSK-012`; {@code accounting V008}): {@code period_close} and its nine {@code period_close_check} rows, {@code period_reopen}. Every move a
- * conditional {@code UPDATE} under {@code V008}'s edge triggers, which judge every writer again; no delete exists. The period's own edges are {@link AccountingPeriodStore}'s.
+ * conditional {@code UPDATE} under {@code V008}'s edge triggers, which judge every writer again; no delete exists. The period's own edges are {@link AccountingPeriodStore}'s. A reopen ends
+ * without its effect too (`P14-TSK-024`, {@code accounting V011}): at most one {@code PROPOSED} per period and one {@code APPROVED} per revision, so a revision can hold several ended ones.
  */
 public interface PeriodCloseStore {
 
@@ -33,8 +34,11 @@ public interface PeriodCloseStore {
     /** The proposal's checks, in the checks' order. */
     List<CheckRow> checks(Connection unitOfWork, PeriodCloseId id);
 
-    /** Each check's attempt's evidence, as that attempt froze it - what an approver reads for a {@code PASSED} attempt, whose row holds no copy. */
-    java.util.Map<CloseCheckCode, String> attemptEvidence(Connection unitOfWork, PeriodCloseId id);
+    /**
+     * Each frozen check's attempt as that attempt concluded, read from its own {@code close_check} row (`P14-TSK-024`, `P14-TSK-012`'s (j)): its evidence - what an approver reads for a {@code
+     * PASSED} attempt, whose frozen row holds no copy - and when it concluded, on the database's clock as stored. One entry per frozen check.
+     */
+    java.util.Map<CloseCheckCode, FrozenAttempt> frozenAttempts(Connection unitOfWork, PeriodCloseId id);
 
     /** {@code PROPOSED ->} {@code decision}; {@code false} when no longer {@code PROPOSED}. */
     boolean decide(Connection unitOfWork, PeriodCloseId id, PeriodCloseStatus decision, Actor actor, String reason);
@@ -42,14 +46,23 @@ public interface PeriodCloseStore {
     /** Births a reopen proposal {@code PROPOSED} at the period's revision. */
     void insertReopen(Connection unitOfWork, NewReopen reopen);
 
-    /** The reopen proposal of this revision, unlocked. */
-    Optional<ReopenRow> reopenAt(Connection unitOfWork, AccountingPeriodId period, int revision);
+    /** The period's pending reopen - at most one ({@code period_reopen_one_pending}) - unlocked. */
+    Optional<ReopenRow> pendingReopen(Connection unitOfWork, AccountingPeriodId period);
 
-    /** The reopen proposal of this revision {@code FOR UPDATE}. */
-    Optional<ReopenRow> lockReopenAt(Connection unitOfWork, AccountingPeriodId period, int revision);
+    /** The period's pending reopen {@code FOR UPDATE}. */
+    Optional<ReopenRow> lockPendingReopen(Connection unitOfWork, AccountingPeriodId period);
+
+    /** The reopen approved at this revision - at most one ({@code period_reopen_one_approved}) - unlocked. */
+    Optional<ReopenRow> approvedReopenAt(Connection unitOfWork, AccountingPeriodId period, int revision);
+
+    /** The latest reopen of this revision ended without its effect, by the database's stamp, unlocked; empty when none was (`P14-TSK-024`). */
+    Optional<ReopenRow> latestEndedReopenAt(Connection unitOfWork, AccountingPeriodId period, int revision);
 
     /** {@code PROPOSED -> APPROVED}; {@code false} when no longer {@code PROPOSED}. */
     boolean approveReopen(Connection unitOfWork, PeriodReopenId id, Actor actor, String reason);
+
+    /** {@code PROPOSED -> REJECTED | WITHDRAWN} (`P14-TSK-024`); {@code false} when no longer {@code PROPOSED}. {@code accounting V011} holds the four eyes. */
+    boolean endReopen(Connection unitOfWork, PeriodReopenId id, PeriodRequestEnd end, Actor actor, String reason);
 
     // ------------------------------------------------------------------ rows
 
@@ -147,6 +160,26 @@ public interface PeriodCloseStore {
         }
     }
 
+    /**
+     * A frozen check's attempt as it concluded (`P14-TSK-024`).
+     *
+     * @param evidence the attempt's evidence, {@code CONFIDENTIAL}, never logged
+     * @param concludedAt when the attempt's conclusion was written, the database's {@code clock_timestamp()} as {@code close_check.concluded_at} stores it: what it judged was read before then
+     */
+    record FrozenAttempt(String evidence, Instant concludedAt) {
+
+        public FrozenAttempt {
+            Objects.requireNonNull(evidence, "evidence");
+            Objects.requireNonNull(concludedAt, "concludedAt");
+        }
+
+        /** The evidence is {@code CONFIDENTIAL}: a record's generated {@code toString} would carry it into a log line. */
+        @Override
+        public String toString() {
+            return "FrozenAttempt[" + concludedAt + "]";
+        }
+    }
+
     /** A reopen proposal to birth. */
     record NewReopen(PeriodReopenId id, AccountingPeriodId period, int revision, Actor proposedBy, String reason, CorrelationId correlation) {
 
@@ -165,9 +198,9 @@ public interface PeriodCloseStore {
         }
     }
 
-    /** A reopen proposal as stored - the proposer's reason read only to tell a repeat from another act, and never served. */
+    /** A reopen proposal as stored - the proposer's reason read only to tell a repeat from another act, and never served; no end's reason is read at all. */
     record ReopenRow(PeriodReopenId id, AccountingPeriodId period, int revision, PeriodReopenStatus status, String proposedBy, Instant proposedAt,
-            String proposalReason, Optional<String> approvedBy, Optional<Instant> approvedAt) {
+            String proposalReason, Optional<String> approvedBy, Optional<Instant> approvedAt, Optional<String> endedBy, Optional<Instant> endedAt) {
 
         public ReopenRow {
             Objects.requireNonNull(id, "id");
@@ -178,6 +211,8 @@ public interface PeriodCloseStore {
             Objects.requireNonNull(proposalReason, "proposalReason");
             Objects.requireNonNull(approvedBy, "approvedBy");
             Objects.requireNonNull(approvedAt, "approvedAt");
+            Objects.requireNonNull(endedBy, "endedBy");
+            Objects.requireNonNull(endedAt, "endedAt");
         }
 
         /** {@link #proposalReason} never leaves in a text form. */

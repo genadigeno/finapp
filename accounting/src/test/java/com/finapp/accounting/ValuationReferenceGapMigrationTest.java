@@ -110,14 +110,15 @@ class ValuationReferenceGapMigrationTest {
 
     /**
      * Accounting's migrations as this branch holds them, named: the module's resources reach the test classpath in a jar, so
-     * a directory listing is not available. {@code V011} is `P14-TSK-024`'s, merged beside this one.
+     * a directory listing is not available. {@code V011} is `P14-TSK-024`'s, merged before this one.
      */
     private static List<String> migrations() throws IOException, URISyntaxException {
         return Stream.of("V001__initialise_accounting_schema.sql", "V002__the_gl_chart_and_mapping_as_versioned_data.sql",
                 "V003__accounting_periods_open_lock_unlock.sql", "V004__report_runs_immutable_reproducible.sql",
                 "V005__valuation_rate_sets.sql", "V006__accounting_breaks.sql", "V007__the_close_run_and_its_checks.sql",
                 "V008__four_eyes_close_rejection_and_reopen.sql", "V009__prior_period_adjustments.sql",
-                "V010__regulatory_obligations_and_submissions.sql", "V012__valuation_reference_gap.sql")
+                "V010__regulatory_obligations_and_submissions.sql", "V011__the_close_s_withdrawals.sql",
+                "V012__valuation_reference_gap.sql")
                 .map(name -> DIRECTORY + "/" + name).toList();
     }
 

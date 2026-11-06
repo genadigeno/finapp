@@ -262,9 +262,9 @@ class ReadmissionDatabaseTest {
                 Statement seed = migrator.createStatement()) {
             migrator.setAutoCommit(false);
             seed.execute(
-                    "INSERT INTO settlement.source (id, code, kind, status, next_sequence)"
+                    "INSERT INTO settlement.source (id, code, kind, status, next_sequence, admitted_on)"
                             + " VALUES ('" + RETIRING_SOURCE_ID + "', '" + RETIRING_SOURCE
-                            + "', 'PSP_SETTLEMENT_REPORT', 'ACTIVE', 1)"
+                            + "', 'PSP_SETTLEMENT_REPORT', 'ACTIVE', 1, DATE '1970-01-01')"
                             + " ON CONFLICT (code) DO NOTHING");
             migrator.commit();
         }

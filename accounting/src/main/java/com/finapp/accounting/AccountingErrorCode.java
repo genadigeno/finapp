@@ -18,7 +18,7 @@ public enum AccountingErrorCode implements ErrorCode {
     SELF_APPROVAL_REFUSED(
             "accounting.SelfApprovalRefused",
             403,
-            "A proposal is decided by someone other than its proposer; the proposer may reject it."),
+            "A proposal is decided by someone other than its proposer; the proposer may reject it, except a pending unlock or reopen, which its proposer withdraws."),
 
     /** The mapping doors' (`P14-TSK-003`): the version is not coherent in itself. */
     MAPPING_INVALID(
@@ -274,6 +274,25 @@ public enum AccountingErrorCode implements ErrorCode {
             "accounting.RegulatoryProviderUnavailable",
             503,
             "The provider could not be asked at this act, or its answer not kept, so nothing was concluded: a return is concluded undelivered only on what the provider says now. The return stands SUBMITTED. Ask again."),
+
+    /**
+     * The withdrawal doors of a pending unlock and a pending reopen (`P14-TSK-024`): somebody other than its proposer asked. A withdrawal is the proposer's own retraction; another person's
+     * end is a rejection, under {@code ACCOUNTING_CLOSE_APPROVE}. {@code 403}: a forbidden act, as a self-approval is - not a conflict a retry resolves.
+     */
+    NOT_THE_PROPOSER(
+            "accounting.NotTheProposer",
+            403,
+            "Only its proposer withdraws a pending unlock or reopen; another person rejects it. Nothing was changed."),
+
+    /**
+     * The approval, rejection and withdrawal doors of a pending unlock and a pending reopen (`P14-TSK-024`'s fix round): the request named is not the one pending - another was proposed after
+     * the one the person read, the first having ended. {@code 409}: read it again and decide; the refusal is recorded.
+     */
+    REQUEST_STALE(
+            "accounting.RequestStale",
+            409,
+            "The unlock or reopen named is not the one pending: another was proposed after the one read. Nothing was changed; read it and decide again."),
+
     /**
      * A reference-gap exception (`P14-TSK-026`, ADR-0119 decision 2) named a pair that is not a gap - it has an observation
      * inside the bound, or none before the period's end at all - or an observation that is not the reference's last before

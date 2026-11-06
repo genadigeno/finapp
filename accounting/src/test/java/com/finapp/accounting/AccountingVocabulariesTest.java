@@ -240,6 +240,8 @@ class AccountingVocabulariesTest {
                         // P14-TSK-018: the regulatory framework's.
                         "accounting.RegulatorySubmissionStale=409", "accounting.RegulatorySubmissionLive=409", "accounting.RegulatorySubmissionInvalid=422", "accounting.RegulatorySourceNotFinal=409",
                         "accounting.RegulatoryFigureUnresolved=422", "accounting.RegulatoryRunBytesDiffer=409", "accounting.RegulatoryObligationInvalid=422", "accounting.RegulatoryObligationStale=409", "accounting.RegulatoryProviderUnavailable=503",
+                        // P14-TSK-024: another person withdrawing a pending unlock or reopen; an act naming a request other than the one pending.
+                        "accounting.NotTheProposer=403", "accounting.RequestStale=409",
                         // P14-TSK-026: a reference gap's way on - a gap that is none or not the one named, and the wrong door.
                         "accounting.ReferenceGapRefused=409", "accounting.ValuationDoorMismatch=409");
         // P14-TSK-002: the posting rule register's audited read - no reason, an operator's read.
@@ -247,12 +249,17 @@ class AccountingVocabulariesTest {
         assertThat(AccountingAuditAction.POSTING_RULES_READ.requiresReason()).isFalse();
         // P14-TSK-003: the mapping's three acts, each reasoned.
         assertThat(Arrays.stream(AccountingAuditAction.values()).map(a -> a.code() + "=" + a.requiresReason()).toList())
-                .containsExactly("accounting.SelfApprovalRefused=false", "accounting.PostingRulesRead=false",
+                .containsExactly("accounting.SelfApprovalRefused=false",
+                        // P14-TSK-024: the period doors' two other kept refusals, recorded FAILED as a self-approval is.
+                        "accounting.NotTheProposer=false", "accounting.RequestStale=false",
+                        "accounting.PostingRulesRead=false",
                         "accounting.MappingProposed=true", "accounting.MappingActivated=true",
                         "accounting.MappingRejected=true",
                         // P14-TSK-005: the open (the system's) and the lock unreasoned; the unlock's two acts reasoned.
                         "accounting.PeriodOpened=false", "accounting.PeriodLocked=false",
                         "accounting.PeriodUnlockProposed=true", "accounting.PeriodUnlocked=true",
+                        // P14-TSK-024: an unlock ended without its effect, a second person's rejection or its proposer's withdrawal, each reasoned.
+                        "accounting.PeriodUnlockRejected=true", "accounting.PeriodUnlockWithdrawn=true",
                         // P14-TSK-007: the GL read, an operator's read - no reason.
                         "accounting.GlRead=false",
                         // P14-TSK-008: a run's conclusion, a regeneration's comparison and an audited read - no reason.
@@ -276,7 +283,10 @@ class AccountingVocabulariesTest {
                         "accounting.OperationalReportRead=false",
                         // P14-TSK-012: the close's and the reopen's acts, each reasoned; the controller's read, an operator's read.
                         "accounting.PeriodCloseProposed=true", "accounting.PeriodClosed=true", "accounting.PeriodCloseRejected=true",
-                        "accounting.PeriodReopenProposed=true", "accounting.PeriodReopened=true", "accounting.CloseProposalRead=false",
+                        "accounting.PeriodReopenProposed=true", "accounting.PeriodReopened=true",
+                        // P14-TSK-024: a reopen ended without its effect, each reasoned.
+                        "accounting.PeriodReopenRejected=true", "accounting.PeriodReopenWithdrawn=true",
+                        "accounting.CloseProposalRead=false",
                         // P14-TSK-013: both acts and the rejection, each reasoned; the reads, an operator's.
                         "accounting.PriorPeriodAdjustmentProposed=true", "accounting.PriorPeriodAdjustmentPosted=true", "accounting.PriorPeriodAdjustmentRejected=true",
                         "accounting.PriorPeriodAdjustmentRead=false",

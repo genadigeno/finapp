@@ -18,7 +18,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The two approvals that post a person's decision take {@code MULTI_FACTOR} (`P14-TSK-022`, the owner's rulings (r) and of 2026-11-04): a prior-period adjustment's, and {@code LEDGER_ADJUST}'s, the wider door; neither door's proposal, read or rejection. The real interceptor over each real handler, so the refusal, its code and what it
+ * The approvals that post a person's decision take {@code MULTI_FACTOR} (`P14-TSK-022`, the owner's rulings (r) and of 2026-11-04): a prior-period adjustment's, and {@code LEDGER_ADJUST}'s, the wider door; neither door's proposal, read or rejection.
+ * So do the three that move the ledger's cutoff or freeze or supersede a month's FINAL runs (`P14-TSK-024`, the owner's acceptance of its item (b)): a period's unlock, close and reopen approvals; their ends,
+ * proposals, the close's rejection and the reads do not, since none of them moves anything. The real interceptor over each real handler, so the refusal, its code and what it
  * runs before are proven with no database; a real session row against the real door is {@code AdjustmentEndpointDatabaseTest}'s, owed. Model: {@code LoanWriteOffDeskTest}'s pin and {@code RiskStepUpRoutesTest}.
  */
 @DisplayName("the two approvals' step-up: MULTI_FACTOR exactly there (P14-TSK-022)")
@@ -148,8 +150,37 @@ class ApprovalAssuranceTest {
         }
     }
 
+    @Test
+    @DisplayName("P14-TSK-024: a period's three approvals step up - the unlock's, the close's and the reopen's - and nothing else on their controllers does: the proposals, the ends, the close's rejection and the reads stay at a session's assurance")
+    void thePeriodApprovalsArePinned() {
+        List<String> steppedUp = List.of("approveAccountingPeriodUnlock", "approveAccountingPeriodClose", "approveAccountingPeriodReopen");
+        int seen = 0;
+        for (Class<?> controller : List.of(com.finapp.app.accounting.AccountingPeriodController.class, com.finapp.app.accounting.PeriodCloseController.class)) {
+            for (Method method : controller.getDeclaredMethods()) {
+                if (method.isAnnotationPresent(RequiresPermission.class)) {
+                    RequiresAssurance declared = method.getAnnotation(RequiresAssurance.class);
+                    if (steppedUp.contains(method.getName())) {
+                        seen++;
+                        assertThat(declared.value()).as(method.getName()).isEqualTo(AssuranceLevel.MULTI_FACTOR);
+                        assertThat(method.getAnnotation(RequiresPermission.class).value()).as(method.getName()).isEqualTo(PermissionName.ACCOUNTING_CLOSE_APPROVE);
+                    } else {
+                        assertThat(declared).as(method.getName()).isNull();
+                    }
+                }
+            }
+        }
+        assertThat(seen).isEqualTo(steppedUp.size());
+    }
+
     private static List<Door> doors() throws Exception {
-        return List.of(new Door(ledger("approve", String.class), Set.of(RoleName.LEDGER_OPERATOR)), new Door(priorPeriod("approvePriorPeriodAdjustment"), Set.of(RoleName.FINANCIAL_CONTROLLER)));
+        return List.of(new Door(ledger("approve", String.class), Set.of(RoleName.LEDGER_OPERATOR)), new Door(priorPeriod("approvePriorPeriodAdjustment"), Set.of(RoleName.FINANCIAL_CONTROLLER)),
+                new Door(period(com.finapp.app.accounting.AccountingPeriodController.class, "approveAccountingPeriodUnlock"), Set.of(RoleName.FINANCIAL_CONTROLLER)),
+                new Door(period(com.finapp.app.accounting.PeriodCloseController.class, "approveAccountingPeriodClose"), Set.of(RoleName.FINANCIAL_CONTROLLER)),
+                new Door(period(com.finapp.app.accounting.PeriodCloseController.class, "approveAccountingPeriodReopen"), Set.of(RoleName.FINANCIAL_CONTROLLER)));
+    }
+
+    private static Method period(Class<?> controller, String name) {
+        return List.of(controller.getDeclaredMethods()).stream().filter(method -> method.getName().equals(name)).findFirst().orElseThrow();
     }
 
     /** An approval and the role that may knock at it. */

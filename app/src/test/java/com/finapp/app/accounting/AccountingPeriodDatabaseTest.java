@@ -183,7 +183,7 @@ class AccountingPeriodDatabaseTest {
         assertThat(closedThrough()).as("a proposal moves nothing").contains(LocalDate.of(1999, 1, 31));
         CorrelationId approval = correlation();
         AccountingPeriods.Acted unlocked = inScope(controller, approval,
-                uow -> periods().approveUnlock(uow, january, controller, "reviewed", approval));
+                uow -> periods().approveUnlock(uow, january, periods().pendingUnlock(uow, january).orElseThrow(), controller, "reviewed", approval));
         assertThat(unlocked.status()).isEqualTo(PeriodStatus.OPEN);
         assertThat(row(JANUARY).pinned()).isEmpty();
         assertThat(closedThrough()).isEmpty();
@@ -221,7 +221,7 @@ class AccountingPeriodDatabaseTest {
         Actor accountant = person();
         inScope(accountant, uow -> periods().lock(uow, january, accountant, null, correlation()));
         inScope(accountant, uow -> periods().proposeUnlock(uow, january, accountant, "mine", correlation()));
-        assertThatThrownBy(() -> inScope(accountant, uow -> periods().approveUnlock(uow, january,
+        assertThatThrownBy(() -> inScope(accountant, uow -> periods().approveUnlock(uow, january, periods().pendingUnlock(uow, january).orElseThrow(),
                 SecurityContext.require(), "mine", correlation())))
                 .isInstanceOf(AccountingPeriods.SelfApprovalRefused.class);
         assertThat(row(JANUARY).unlockPending()).isTrue();

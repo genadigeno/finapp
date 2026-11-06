@@ -489,6 +489,15 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/accounting/periods/{periodId}/close-rejection", PermissionName.ACCOUNTING_CLOSE_APPROVE),
                     entry("POST /v1/operator/accounting/periods/{periodId}/reopen-proposal", PermissionName.ACCOUNTING_CLOSE_PROPOSE),
                     entry("POST /v1/operator/accounting/periods/{periodId}/reopen-approval", PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    // P14-TSK-024: a pending unlock or reopen ended without its effect - the rejection a second person's under the approver's
+                    // permission, the withdrawal its proposer's under the proposer's; the negatives are AccountingPeriodDeskTest's and
+                    // PeriodCloseDeskTest's route declarations.
+                    entry("POST /v1/operator/accounting/periods/{periodId}/unlock-rejection", PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    entry("POST /v1/operator/accounting/periods/{periodId}/unlock-withdrawal", PermissionName.ACCOUNTING_CLOSE_PROPOSE),
+                    entry("POST /v1/operator/accounting/periods/{periodId}/reopen-rejection", PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    entry("POST /v1/operator/accounting/periods/{periodId}/reopen-withdrawal", PermissionName.ACCOUNTING_CLOSE_PROPOSE),
+                    // P14-TSK-024's fix round: the controller's read of what each decision on a pending request names (a controller holds no ACCOUNTING_READ).
+                    entry("GET /v1/operator/accounting/periods/{periodId}/requests", PermissionName.ACCOUNTING_CLOSE_APPROVE),
                     // P14-TSK-010: the accounting breaks - the list the accountant's, the acknowledgement's proposal
                     // ACCOUNTING_ADJUST_PROPOSE, the controller's read of one break, the approval (four eyes) and the
                     // resolution by reference ACCOUNTING_ADJUST_APPROVE (identity V025's partition); the negatives are

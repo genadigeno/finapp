@@ -61,6 +61,9 @@ import org.springframework.boot.test.context.SpringBootTest;
  *
  * <p><strong>Rule sets</strong>: reconciliation {@code V002} seeds the four first sources' rule sets; no migration seeds a counterparty's (D26, {@code OPERATIONS_RUNBOOK.md} section 3), and with none a parsed report waits {@code PARSED}
  * with backoff. So a person activates the other four, four eyes, as a deployment must before such a source can have a run; {@link #everySourceHasItsRuleSet} does it through the same administration.
+ * <strong>Since `P14-TSK-025`</strong> a source is required only from the day its first rule set stood active: this suite activates the four at its own {@code Instant.now()}, years after March 1999, so March
+ * requires the four seeded sources alone, and the counterparties' nil reports are runs beside it, finished and counted for nothing. That a source activated by a month's last day is required in it is
+ * {@code SourceRequirementDatabaseTest}'s.
  *
  * <p><strong>A repudiation</strong> ({@link #aRepudiatedBatchsRunCountsForNothingAndTheNextBatchCounts}): the run stands and counts for nothing; settlement's live uniques exclude {@code REPUDIATED}, so a new batch of the same source, date and
  * identity is admitted, with its own run.
@@ -80,6 +83,9 @@ class QuietMonthDatabaseTest {
     /** A month of its own, so the two cases read nothing of each other's. */
     private static final YearMonth REPUDIATED_MONTH = YearMonth.of(1999, 4);
     private static final String PSP = "simulated-psp.settlement";
+    /** Reconciliation {@code V002}'s four seeded rule sets' sources: required from their admission, 1970-01-01 (settlement {@code V018}). */
+    private static final java.util.Set<String> SEEDED_BY_V002 = java.util.Set.of(PSP, "simulated-scheme.cycle-report", "simulated-payout.settlement",
+            "simulated-bank.statement");
 
     @Autowired private SettlementSources sources;
     @Autowired private FileReception<Connection> reception;
@@ -102,12 +108,17 @@ class QuietMonthDatabaseTest {
     }
 
     @Test
-    @DisplayName("no run: FAILED MONTH_NOT_RUN, naming every active source; nil reports through the door: COMPLETED BATCH runs, posting nothing, the month run")
+    @DisplayName("no run: FAILED MONTH_NOT_RUN, naming every source the month requires - the four seeded ones, not the four whose rule sets this suite activated years after it; nil reports through the door: COMPLETED BATCH runs, posting nothing, the month run")
     void aQuietMonthRunsOnNilReports() throws Exception {
         CheckVerdict quiet = judged(MONTH);
         assertThat(quiet.status()).isEqualTo(CloseCheckStatus.FAILED);
         assertThat(quiet.failures()).containsExactly(CloseChecks.MONTH_NOT_RUN);
-        sources.declared().forEach(source -> assertThat(quiet.evidence()).contains(source.code()));
+        sources.declared().forEach(source -> assertThat(quiet.evidence()).as("every source on the record").contains(source.code()));
+        String notRun = sourcesNotRun(MONTH);
+        for (SettlementSourceDescriptor source : sources.declared()) {
+            boolean seeded = SEEDED_BY_V002.contains(source.code());
+            assertThat(notRun.contains("\"" + source.code() + "\"")).as("%s: required in March 1999 only by its seed (P14-TSK-025)", source.code()).isEqualTo(seeded);
+        }
 
         for (SettlementSourceDescriptor source : sources.declared()) {
             pull(source, nilReport(source));

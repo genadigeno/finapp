@@ -14,7 +14,7 @@ import java.util.UUID;
  * Persistence for the accounting periods (`P14-TSK-005`, {@code accounting V003}): the machine row
  * ({@code accounting_period}, one per calendar month, contiguous; its act columns the only ones that move, each by a
  * conditional {@code UPDATE ... WHERE status = :from AND revision = :rev}) and its history ({@code period_event},
- * append-only).
+ * append-only); and an unlock's end (`P14-TSK-024`, {@code accounting V011}'s {@code period_unlock_end}, INSERT-only).
  *
  * <p>The lock order (the plan's section 8.2, A1): the previous period {@link #lockShared FOR SHARE}, then the period
  * {@link #lock FOR UPDATE} - oldest first.
@@ -57,6 +57,17 @@ public interface AccountingPeriodStore {
     /** {@code LOCKED -> OPEN} by the pending proposal's approval; {@code false} when nothing was pending. */
     boolean approveUnlock(Connection unitOfWork, AccountingPeriodId id, int revision, Actor actor, String reason);
 
+    /**
+     * Ends the pending unlock without its effect (`P14-TSK-024`): its end's row copied from the period row - the lock instance, the revision, the proposer and the instant it was proposed, never
+     * round-tripped through here - then the proposal cleared from that row, the period still {@code LOCKED} under the same lock and pin. {@code accounting V011} judges both statements for every writer.
+     *
+     * @return {@code false} when the row holds no pending proposal by {@code end.proposedBy()} at {@code end.revision()}, and nothing was written
+     */
+    boolean endUnlock(Connection unitOfWork, NewUnlockEnd end);
+
+    /** The latest end of an unlock under the period's present lock, by the database's stamp; empty when the period is not locked or none was ended under it. Unlocked. */
+    Optional<UnlockEndRow> latestUnlockEnd(Connection unitOfWork, AccountingPeriodId id);
+
     /** {@code LOCKED -> CLOSE_PROPOSED} at {@code revision}, no unlock pending (`P14-TSK-012`); {@code false} when the row was not there. */
     boolean markCloseProposed(Connection unitOfWork, AccountingPeriodId id, int revision);
 
@@ -84,7 +95,15 @@ public interface AccountingPeriodStore {
         CLOSED,
         CLOSE_REJECTED,
         REOPEN_PROPOSED,
-        REOPENED
+        REOPENED,
+        /** A pending unlock rejected by a second person (`P14-TSK-024`): {@code LOCKED -> LOCKED}, its proposer named. */
+        UNLOCK_REJECTED,
+        /** A pending unlock withdrawn by its proposer (`P14-TSK-024`): {@code LOCKED -> LOCKED}, its proposer named, who is the actor. */
+        UNLOCK_WITHDRAWN,
+        /** A pending reopen rejected by a second person (`P14-TSK-024`): {@code CLOSED -> CLOSED}, its proposer named. */
+        REOPEN_REJECTED,
+        /** A pending reopen withdrawn by its proposer (`P14-TSK-024`): {@code CLOSED -> CLOSED}, its proposer named, who is the actor. */
+        REOPEN_WITHDRAWN
     }
 
     /** A period to birth. */
@@ -122,6 +141,34 @@ public interface AccountingPeriodStore {
             return status == PeriodStatus.LOCKED && unlockProposedBy.isPresent() && unlockApprovedBy.isEmpty();
         }
     }
+
+    /**
+     * An unlock's end to record (`P14-TSK-024`).
+     *
+     * @param proposedBy the proposer the act judged against - the statement ends only that person's pending proposal
+     */
+    record NewUnlockEnd(UUID id, AccountingPeriodId period, int revision, String proposedBy, PeriodRequestEnd outcome, Actor endedBy, String reason, CorrelationId correlation) {
+
+        public NewUnlockEnd {
+            java.util.Objects.requireNonNull(id, "id");
+            java.util.Objects.requireNonNull(period, "period");
+            java.util.Objects.requireNonNull(proposedBy, "proposedBy");
+            java.util.Objects.requireNonNull(outcome, "outcome");
+            java.util.Objects.requireNonNull(endedBy, "endedBy");
+            java.util.Objects.requireNonNull(reason, "reason");
+            java.util.Objects.requireNonNull(correlation, "correlation");
+        }
+
+        /** The reason never leaves in a text form: a record's generated {@code toString} would carry it into a log line. */
+        @Override
+        public String toString() {
+            return "NewUnlockEnd[" + period.value() + ", revision=" + revision + ", " + outcome + "]";
+        }
+    }
+
+    /** An unlock's end as stored - never its reason, which no reader is served. */
+    record UnlockEndRow(UUID id, AccountingPeriodId period, int revision, Instant lockedAt, String proposedBy, Instant proposedAt, PeriodRequestEnd outcome, String endedBy,
+            Instant endedAt) {}
 
     /** One act, as history. */
     record EventRow(

@@ -28,7 +28,7 @@ class PeriodCloseStatementsTest {
         assertThat(JdbcPeriodCloseStore.DECIDE_SQL).endsWith("WHERE id = ? AND status = 'PROPOSED'");
         assertThat(JdbcPeriodCloseStore.APPROVE_REOPEN_SQL).endsWith("WHERE id = ? AND status = 'PROPOSED'");
         assertThat(JdbcPeriodCloseStore.LOCK_CLOSE_SQL).endsWith("WHERE c.id = ? FOR UPDATE OF c");
-        assertThat(JdbcPeriodCloseStore.LOCK_REOPEN_AT_SQL).endsWith("WHERE period_id = ? AND period_revision = ? FOR UPDATE");
+        assertThat(JdbcPeriodCloseStore.LOCK_PENDING_REOPEN_SQL).as("P14-TSK-024: the pending one, which the partial unique keeps single").endsWith("WHERE period_id = ? AND status = 'PROPOSED' FOR UPDATE");
         assertThat(JdbcPeriodCloseStore.LATEST_CLOSE_SQL).endsWith("WHERE c.period_id = ? ORDER BY c.proposed_at DESC, c.id DESC LIMIT 1");
     }
 
@@ -39,9 +39,27 @@ class PeriodCloseStatementsTest {
     }
 
     @Test
-    @DisplayName("the attempt evidence is the frozen attempt's own, joined by the id the close record names")
+    @DisplayName("the attempt evidence and when it concluded are the frozen attempt's own, joined by the id the close record names (P14-TSK-024: concluded_at as stored, never another stamp)")
     void theAttemptsEvidenceIsItsOwn() {
-        assertThat(JdbcPeriodCloseStore.ATTEMPT_EVIDENCE_SQL).contains("JOIN accounting.close_check a ON a.id = f.close_check_id").endsWith("WHERE f.close_id = ?");
+        assertThat(JdbcPeriodCloseStore.FROZEN_ATTEMPTS_SQL).startsWith("SELECT f.check_code, a.evidence, a.concluded_at FROM accounting.period_close_check f")
+                .contains("JOIN accounting.close_check a ON a.id = f.close_check_id").endsWith("WHERE f.close_id = ?");
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024: an end is conditional on PROPOSED, as the approval is; the unlock's end copies the request from the row the act holds and clears only that proposal; the lookups name the arbiter that keeps each single")
+    void theEndsAreConditional() {
+        assertThat(JdbcPeriodCloseStore.END_REOPEN_SQL).startsWith("UPDATE accounting.period_reopen SET status = ?, ended_by = ?, ended_by_type = ?, ended_at = clock_timestamp(), end_reason = ?")
+                .endsWith("WHERE id = ? AND status = 'PROPOSED'");
+        assertThat(JdbcPeriodCloseStore.PENDING_REOPEN_SQL).endsWith("WHERE period_id = ? AND status = 'PROPOSED'");
+        assertThat(JdbcPeriodCloseStore.APPROVED_REOPEN_AT_SQL).endsWith("WHERE period_id = ? AND period_revision = ? AND status = 'APPROVED'");
+        assertThat(JdbcPeriodCloseStore.LATEST_ENDED_REOPEN_AT_SQL).endsWith("WHERE period_id = ? AND period_revision = ? AND status IN ('REJECTED', 'WITHDRAWN') ORDER BY ended_at DESC, id DESC LIMIT 1");
+        assertThat(JdbcAccountingPeriodStore.INSERT_UNLOCK_END_SQL)
+                .contains("SELECT ?, p.id, p.revision, p.locked_at, p.unlock_proposed_by, p.unlock_proposed_by_type, p.unlock_proposed_at, ?, ?, ?, clock_timestamp(), ?, ?")
+                .endsWith("WHERE p.id = ? AND p.status = 'LOCKED' AND p.revision = ? AND p.unlock_proposed_by = ? AND p.unlock_approved_by IS NULL");
+        assertThat(JdbcAccountingPeriodStore.CLEAR_UNLOCK_SQL).startsWith("UPDATE accounting.accounting_period SET unlock_proposed_by = NULL, unlock_proposed_by_type = NULL, unlock_proposed_at = NULL, unlock_proposal_reason = NULL WHERE")
+                .endsWith("WHERE id = ? AND status = 'LOCKED' AND revision = ? AND unlock_proposed_by = ? AND unlock_approved_by IS NULL").doesNotContain("locked_").doesNotContain("pinned_");
+        assertThat(JdbcAccountingPeriodStore.LATEST_UNLOCK_END_SQL).contains("JOIN accounting.accounting_period p ON p.id = u.period_id AND p.locked_at = u.period_locked_at")
+                .endsWith("WHERE u.period_id = ? ORDER BY u.ended_at DESC, u.id DESC LIMIT 1");
     }
 
     @Test

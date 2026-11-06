@@ -169,7 +169,7 @@ class RegulatorySubmissionDatabaseTest {
     private static void approveReopen(YearMonth month) {
         AccountingPeriodId period = id(month);
         Actor approver = person();
-        inScope(approver, uow -> PeriodCloseFixture.MACHINE.approveReopen(uow, period, approver, PeriodCloseFixture.posted(uow, period), "the suite reopens it", correlation()));
+        inScope(approver, uow -> PeriodCloseFixture.MACHINE.approveReopen(uow, period, PeriodCloseFixture.MACHINE.pendingOf(uow, period).reopen().orElseThrow().id(), approver, PeriodCloseFixture.posted(uow, period), "the suite reopens it", correlation()));
     }
 
     /** A FINAL run of the source for {@code month}, its content the suite's, through the machine's own claim and completion. */
@@ -562,7 +562,7 @@ class RegulatorySubmissionDatabaseTest {
         CountDownLatch release = new CountDownLatch(1);
         ExecutorService pool = Executors.newFixedThreadPool(2);
         Future<?> reopen = pool.submit(() -> inScope(approver, uow -> {
-            PeriodCloseFixture.MACHINE.approveReopen(uow, period, approver, PeriodCloseFixture.posted(uow, period), "the suite reopens it", correlation());
+            PeriodCloseFixture.MACHINE.approveReopen(uow, period, PeriodCloseFixture.MACHINE.pendingOf(uow, period).reopen().orElseThrow().id(), approver, PeriodCloseFixture.posted(uow, period), "the suite reopens it", correlation());
             edgeMade.countDown();
             await(release);
             return null;
@@ -608,7 +608,7 @@ class RegulatorySubmissionDatabaseTest {
         }));
         assertThat(edgeMade.await(60, TimeUnit.SECONDS)).isTrue();
         Future<ReturnsAReopenOvertakes.Overtaken> reopen = pool.submit(() -> inScope(approver, uow -> {
-            PeriodCloseFixture.MACHINE.approveReopen(uow, period, approver, PeriodCloseFixture.posted(uow, period), "the suite reopens it", correlation());
+            PeriodCloseFixture.MACHINE.approveReopen(uow, period, PeriodCloseFixture.MACHINE.pendingOf(uow, period).reopen().orElseThrow().id(), approver, PeriodCloseFixture.posted(uow, period), "the suite reopens it", correlation());
             return new JdbcReturnsAReopenOvertakes().of(uow, period);
         }));
         assertThatThrownBy(() -> reopen.get(1, TimeUnit.SECONDS)).as("the approval waits on the row the send holds").isInstanceOf(TimeoutException.class);
@@ -627,7 +627,7 @@ class RegulatorySubmissionDatabaseTest {
         CountDownLatch go = new CountDownLatch(1);
         ExecutorService others = Executors.newFixedThreadPool(2);
         Future<ReturnsAReopenOvertakes.Overtaken> reopening = others.submit(() -> inScope(nextApprover, uow -> {
-            PeriodCloseFixture.MACHINE.approveReopen(uow, nextPeriod, nextApprover, PeriodCloseFixture.posted(uow, nextPeriod), "the suite reopens it", correlation());
+            PeriodCloseFixture.MACHINE.approveReopen(uow, nextPeriod, PeriodCloseFixture.MACHINE.pendingOf(uow, nextPeriod).reopen().orElseThrow().id(), nextApprover, PeriodCloseFixture.posted(uow, nextPeriod), "the suite reopens it", correlation());
             ReturnsAReopenOvertakes.Overtaken list = new JdbcReturnsAReopenOvertakes().of(uow, nextPeriod);
             read.countDown();
             await(go);

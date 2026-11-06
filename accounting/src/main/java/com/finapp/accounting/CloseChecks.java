@@ -34,12 +34,14 @@ import lombok.extern.slf4j.Slf4j;
  * ({@code INV-ACC-09}, {@link PeriodCloses}).
  *
  * <p><strong>{@code RECONCILIATION_DISCLOSURE} and a month's run</strong> (the owner's rulings of 2026-11-02 and 2026-11-03): a month's run is a {@code
- * COMPLETED} {@code BATCH} run with a business date in the month, of a batch not repudiated, <strong>for each active source</strong>; a run in another status
- * counts for nothing, a {@code REPROCESS} alone counts for nothing, and a repudiated batch's run counts for nothing, its evidence withdrawn. A source is active when
- * {@code settlement.source} says {@code ACTIVE} and this build declares it. <strong>A month with no activity gets its run from the counterparty's nil report</strong>:
- * a file with no lines through the existing door - pulled, the channel its authentication, or uploaded and attested by a second person - accepted with no posting,
- * its run going {@code OPEN -> COMPLETED} at no items. Runs are born only in that acceptance's transaction, from a stored file, so the platform cannot mint one to satisfy this
- * check. A retired source's door is shut, so it is not required: requiring it would wedge; its unfinished or repudiated runs are disclosed, never ignored.
+ * COMPLETED} {@code BATCH} run with a business date in the month, of a batch not repudiated, <strong>for each source the month requires</strong>; a run in another status
+ * counts for nothing, a {@code REPROCESS} alone counts for nothing, and a repudiated batch's run counts for nothing, its evidence withdrawn. <strong>A month requires a source</strong>
+ * (`P14-TSK-025`, the owner's rulings of 2026-11-06; {@link ReconciliationRunCoverage.Source#requiredIn}) that this build declares, admitted by the month's last day, not retired
+ * before its first, and whose rule set stood active by its last day: the active sources of the owner's (e), narrowed by the dates of (c) and the rule set of (k). <strong>A month
+ * with no activity gets its run from the counterparty's nil report</strong>: a file with no lines through the existing door - pulled, the channel its authentication, or uploaded
+ * and attested by a second person - accepted with no posting, its run going {@code OPEN -> COMPLETED} at no items. Runs are born only in that acceptance's transaction, from a
+ * stored file, so the platform cannot mint one to satisfy this check. A source retired before the month's first day is not required, its door being shut; one retired within
+ * or after the month served it and is. Any source's unfinished or repudiated runs are disclosed, never ignored.
  *
  * <p><strong>{@code VALUATION_SET_APPROVED} waits</strong> (`P14-TSK-011`'s review, M-6): a set is captured only after the lock, so it would be {@code FAILED} on every first attempt
  * and {@code AccountingCloseCheckFailed} would fire at every close. So with no approved set the judge answers "not yet", the attempt deferred and re-judged until one stands, taking no
@@ -81,7 +83,7 @@ public final class CloseChecks {
     /** The projection reading could not judge everything - an account in flight. */
     public static final String PROJECTION_INCOMPLETE = "PROJECTION_INCOMPLETE";
 
-    /** An active source has no {@code COMPLETED} {@code BATCH} run of an unrepudiated batch in the month, or the register answered no active source. */
+    /** A source the month requires has no {@code COMPLETED} {@code BATCH} run of an unrepudiated batch in the month, or the month requires no source at all. */
     public static final String MONTH_NOT_RUN = "MONTH_NOT_RUN";
 
     /** The approved set holds no rate. */
@@ -303,9 +305,9 @@ public final class CloseChecks {
     /**
      * The owner's rule over one coverage reading. The evidence is per source, never per day: a month's lines could pass the attempt's bound and fail the check by its size.
      *
-     * @param ran every active source has a run that counts, and at least one source is active
+     * @param ran every source the month requires has a run that counts, and the month requires at least one ({@link ReconciliationRunCoverage.Coverage#required()})
      * @param finished no run of the month stands unfinished or repudiated, whichever source's, and none names a source the register does not hold
-     * @param notRun the active sources with no run that counts, by code; {@link PeriodCloses} re-judges {@code ran} on it, holding the period row
+     * @param notRun the sources the month requires with no run that counts, by code; {@link PeriodCloses} re-judges {@code ran} on it, holding the period row
      */
     record MonthRuns(boolean ran, boolean finished, List<String> notRun, CanonicalJson.Obj evidence) {
 
@@ -313,7 +315,8 @@ public final class CloseChecks {
             CanonicalJson.Arr unrun = CanonicalJson.array();
             List<String> notRun = new ArrayList<>();
             CanonicalJson.Arr sources = CanonicalJson.array();
-            boolean anyActive = false;
+            List<ReconciliationRunCoverage.Source> required = coverage.required();
+            boolean anyRequired = !required.isEmpty();
             boolean allRan = true;
             for (ReconciliationRunCoverage.Source source : coverage.sources()) {
                 List<ReconciliationRunCoverage.Line> own = coverage.lines().stream()
@@ -325,16 +328,15 @@ public final class CloseChecks {
                         .mapToLong(ReconciliationRunCoverage.Line::runs).sum();
                 long repudiated = own.stream().filter(ReconciliationRunCoverage.Line::repudiated)
                         .mapToLong(ReconciliationRunCoverage.Line::runs).sum();
-                sources.add(CanonicalJson.object().put("code", source.code()).put("state", source.state().name())
-                        .put("completedBatchRuns", counting).put("reprocessRuns", reprocess).put("unfinishedRuns", unfinished)
-                        .put("repudiatedRuns", repudiated));
-                if (source.state() == ReconciliationRunCoverage.SourceState.ACTIVE) {
-                    anyActive = true;
-                    if (counting == 0) {
-                        allRan = false;
-                        unrun.add(source.code());
-                        notRun.add(source.code());
-                    }
+                boolean requires = required.contains(source);
+                CanonicalJson.Obj member = CanonicalJson.object().put("code", source.code()).put("state", source.state().name());
+                source.putDays(member);
+                sources.add(member.put("required", requires).put("completedBatchRuns", counting).put("reprocessRuns", reprocess)
+                        .put("unfinishedRuns", unfinished).put("repudiatedRuns", repudiated));
+                if (requires && counting == 0) {
+                    allRan = false;
+                    unrun.add(source.code());
+                    notRun.add(source.code());
                 }
             }
             long unknown = coverage.lines().stream()
@@ -342,7 +344,7 @@ public final class CloseChecks {
                     .mapToLong(ReconciliationRunCoverage.Line::runs).sum();
             boolean finished = unknown == 0 && coverage.lines().stream().allMatch(line ->
                     ReconciliationRunCoverage.Coverage.COMPLETED.equals(line.status()) && !line.repudiated());
-            return new MonthRuns(anyActive && allRan, finished, List.copyOf(notRun), CanonicalJson.object().put("month", coverage.month().toString())
+            return new MonthRuns(anyRequired && allRan, finished, List.copyOf(notRun), CanonicalJson.object().put("month", coverage.month().toString())
                     .put("sources", sources).put("sourcesNotRun", unrun).put("unknownSourceRuns", unknown));
         }
 

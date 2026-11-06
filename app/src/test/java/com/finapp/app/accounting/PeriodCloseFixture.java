@@ -114,7 +114,7 @@ final class PeriodCloseFixture {
             inScope(proposer, uow -> periods().proposeUnlock(uow, period.id(), proposer, "the suite restores the period", correlation()));
         }
         Actor approver = person();
-        inScope(approver, uow -> periods().approveUnlock(uow, period.id(), approver, "the suite restores the period", correlation()));
+        inScope(approver, uow -> periods().approveUnlock(uow, period.id(), periods().pendingUnlock(uow, period.id()).orElseThrow(), approver, "the suite restores the period", correlation()));
     }
 
     /** What has posted against {@code period}, as a reopen's two acts must name it (`P14-TSK-022`), read on the act's own connection. Every revision's, whatever else the suite left behind, so a restore or a case never depends on what ran before it. */
@@ -124,12 +124,12 @@ final class PeriodCloseFixture {
 
     private static void reopen(AccountingPeriodId period) {
         Actor proposer = person();
-        Optional<PeriodCloseStore.ReopenRow> pending = inScope(proposer, uow -> CLOSES.reopenAt(uow, period, rowOf(period).revision()));
+        Optional<PeriodCloseStore.ReopenRow> pending = inScope(proposer, uow -> CLOSES.pendingReopen(uow, period));
         if (pending.isEmpty()) {
             inScope(proposer, uow -> MACHINE.proposeReopen(uow, period, proposer, posted(uow, period), "the suite restores the period", correlation()));
         }
         Actor approver = person();
-        inScope(approver, uow -> MACHINE.approveReopen(uow, period, approver, posted(uow, period), "the suite restores the period", correlation()));
+        inScope(approver, uow -> MACHINE.approveReopen(uow, period, MACHINE.pendingOf(uow, period).reopen().orElseThrow().id(), approver, posted(uow, period), "the suite restores the period", correlation()));
     }
 
     private static AccountingPeriodStore.PeriodRow rowOf(AccountingPeriodId period) {

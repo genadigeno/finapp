@@ -18,7 +18,8 @@ public enum AccountingAuditAction implements AuditableAction {
     SELF_APPROVAL_REFUSED(
             "accounting.SelfApprovalRefused",
             "A proposer tried to approve their own accounting proposal - a GL mapping version's activation (P14-TSK-003),"
-                    + " a period's unlock, close or reopen (P14-TSK-005, -012), a valuation rate set (P14-TSK-014), a"
+                    + " a period's unlock, close or reopen (P14-TSK-005, -012) or the rejection of their own pending unlock or reopen,"
+                    + " which its proposer withdraws instead (P14-TSK-024), a valuation rate set (P14-TSK-014), a"
                     + " break's acknowledgement (P14-TSK-010), a prior-period adjustment (P14-TSK-013) or a regulatory"
                     + " submission's approval (P14-TSK-018) - and was refused 403 accounting.SelfApprovalRefused before"
                     + " anything was written (INV-AUD-04; also held by each four-eyes row's approver <> proposer CHECK)."
@@ -26,6 +27,24 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " person holding both ACCOUNTANT and FINANCIAL_CONTROLLER. Recorded FAILED in a transaction of its"
                     + " own after the act rolled back, so the attempt survives. Its target the proposal; the summary"
                     + " names it and the act - never an amount or an owner reference.",
+            false),
+
+    /** Somebody other than its proposer tried to withdraw a pending unlock or reopen and was refused (`P14-TSK-024`). */
+    NOT_THE_PROPOSER(
+            "accounting.NotTheProposer",
+            "Somebody other than its proposer tried to withdraw a pending unlock or reopen (P14-TSK-024; POST .../periods/{id}/unlock-withdrawal or reopen-withdrawal,"
+                    + " ACCOUNTING_CLOSE_PROPOSE) and was refused 403 accounting.NotTheProposer before anything was written: a withdrawal is its proposer's own retraction, and another"
+                    + " person's end of it is a rejection under ACCOUNTING_CLOSE_APPROVE - an accountant ending a colleague's request is what four eyes stops. Recorded FAILED in a"
+                    + " transaction of its own after the act rolled back, as a self-approval is. Its target the period; the summary its month and the act.",
+            false),
+
+    /** An act named an unlock or a reopen that is not the one pending, and was refused (`P14-TSK-024`). */
+    REQUEST_STALE(
+            "accounting.RequestStale",
+            "An approval, a rejection or a withdrawal named a pending unlock or reopen that is not the one pending - another proposed after the one the person read, the first"
+                    + " having ended (P14-TSK-024; POST .../periods/{id}/unlock-approval, unlock-rejection, unlock-withdrawal, reopen-approval, reopen-rejection, reopen-withdrawal) -"
+                    + " and was refused 409 accounting.RequestStale before anything was written, judged holding the period's row. Recorded FAILED in a transaction of its own after"
+                    + " the act rolled back, so an attempt to decide a request nobody read is kept. Its target the period; the summary its month and the act.",
             false),
 
     /** An accountant read the posting rule register (`P14-TSK-002`, ACCOUNTING_READ) - every serving recorded. */
@@ -101,6 +120,22 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " posting cutoff moved back one period and the pin released, in the same transaction (P14-TSK-005,"
                     + " INV-AUD-04, INV-ACC-08; POST .../periods/{id}/unlock-approval, ACCOUNTING_CLOSE_APPROVE)."
                     + " Reasoned. Its target the period; the summary its month and revision.",
+            true),
+
+    /** A second person rejected a pending unlock (`P14-TSK-024`, ACCOUNTING_CLOSE_APPROVE). */
+    PERIOD_UNLOCK_REJECTED(
+            "accounting.PeriodUnlockRejected",
+            "A person other than its proposer, holding ACCOUNTING_CLOSE_APPROVE, rejected a pending unlock of a LOCKED accounting period: the period stays LOCKED under the same lock and"
+                    + " pin, the ledger's cutoff unmoved, the proposal cleared and the month free for a new one, its end recorded in period_unlock_end REJECTED beside a history row"
+                    + " (P14-TSK-024, INV-AUD-04; POST .../periods/{id}/unlock-rejection). Reasoned. Its target the period; the summary its month and revision. No event.",
+            true),
+
+    /** Its proposer withdrew a pending unlock (`P14-TSK-024`, ACCOUNTING_CLOSE_PROPOSE). */
+    PERIOD_UNLOCK_WITHDRAWN(
+            "accounting.PeriodUnlockWithdrawn",
+            "The accountant who proposed a pending unlock withdrew it: the period stays LOCKED under the same lock and pin, the ledger's cutoff unmoved, the proposal cleared and the month"
+                    + " free for a new one, its end recorded in period_unlock_end WITHDRAWN beside a history row (P14-TSK-024; POST .../periods/{id}/unlock-withdrawal,"
+                    + " ACCOUNTING_CLOSE_PROPOSE). Only the proposer. Reasoned. Its target the period; the summary its month and revision. No event.",
             true),
 
     /** An accountant read the GL - balances, an account's activity or an entry (`P14-TSK-007`, ACCOUNTING_READ). */
@@ -323,12 +358,29 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " Reasoned. Its target the period; the summary its month, the new revision, how many runs were superseded and how many adjustments stand posted against it, which the act named (P14-TSK-022). accounting.AccountingPeriodReopened is published with it.",
             true),
 
+    /** A second person rejected a pending reopen (`P14-TSK-024`, ACCOUNTING_CLOSE_APPROVE). */
+    PERIOD_REOPEN_REJECTED(
+            "accounting.PeriodReopenRejected",
+            "A person other than its proposer, holding ACCOUNTING_CLOSE_APPROVE, rejected a pending reopen: the reopen REJECTED, the period still CLOSED at the same revision, nothing"
+                    + " superseded and the cutoff unmoved, the month free for a new proposal (P14-TSK-024, INV-AUD-04, INV-ACC-10; POST .../periods/{id}/reopen-rejection). Reasoned. Its"
+                    + " target the period; the summary its month, revision and the reopen. No event.",
+            true),
+
+    /** Its proposer withdrew a pending reopen (`P14-TSK-024`, ACCOUNTING_CLOSE_PROPOSE). */
+    PERIOD_REOPEN_WITHDRAWN(
+            "accounting.PeriodReopenWithdrawn",
+            "The accountant who proposed a pending reopen withdrew it: the reopen WITHDRAWN, the period still CLOSED at the same revision, nothing superseded and the cutoff unmoved, the"
+                    + " month free for a new proposal (P14-TSK-024, INV-ACC-10; POST .../periods/{id}/reopen-withdrawal, ACCOUNTING_CLOSE_PROPOSE). Only the proposer. Reasoned. Its target"
+                    + " the period; the summary its month, revision and the reopen. No event.",
+            true),
+
     /** A controller read what it decides (`P14-TSK-012`, ACCOUNTING_CLOSE_APPROVE) - every serving recorded. */
     CLOSE_PROPOSAL_READ(
             "accounting.CloseProposalRead",
-            "A controller read a period's close proposal - the attempts it names with their evidence and the person's reason per DISCLOSED attempt (P14-TSK-012; GET"
-                    + " .../periods/{id}/close-proposal, ACCOUNTING_CLOSE_APPROVE; a controller holds no ACCOUNTING_READ). Recorded SUCCEEDED in a transaction of its own before the answer. Its"
-                    + " target the period; the summary its month, the proposal, its status and whether it still stands - never a reason or a figure.",
+            "A controller read a period's close proposal - the attempts it names with their evidence, when each concluded and the person's reason per DISCLOSED attempt, and on a"
+                    + " pending reopen the returns it would overtake (P14-TSK-012, P14-TSK-024; GET .../periods/{id}/close-proposal, ACCOUNTING_CLOSE_APPROVE; a controller holds no"
+                    + " ACCOUNTING_READ). Recorded SUCCEEDED in a transaction of its own before the answer. Its target the period; the summary its month, the proposal, its status, whether it"
+                    + " still stands, whether a reopen is pending and, when it is, how many returns were listed - never a reason, a return or a figure.",
             false),
 
     /** An accountant proposed a prior-period adjustment (`P14-TSK-013`, ACCOUNTING_ADJUST_PROPOSE). */

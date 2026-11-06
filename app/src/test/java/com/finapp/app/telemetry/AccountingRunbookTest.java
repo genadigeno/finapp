@@ -236,6 +236,24 @@ class AccountingRunbookTest {
     }
 
     @Test
+    @DisplayName("P14-TSK-024: sections 10.3, 10.7 and 10.11 name the doors that end a pending unlock and a pending reopen, by whom; 10.11 sends the approver to the read before deciding and says the receipt can differ; no step still says no door withdraws, to approve and lock again, or to ask the proposer for the list")
+    void theSectionsNameTheEnds() {
+        String runbook = RepositoryPaths.read(RUNBOOK);
+        String three = section(runbook, "10.3");
+        String seven = section(runbook, "10.7");
+        String eleven = section(runbook, "10.11");
+        for (String section : List.of(three, seven)) {
+            assertThat(section).contains("`POST .../periods/{periodId}/unlock-rejection` (`ACCOUNTING_CLOSE_APPROVE`)").contains("`POST .../periods/{periodId}/unlock-withdrawal` (`ACCOUNTING_CLOSE_PROPOSE`)");
+        }
+        assertThat(eleven).contains("`POST .../periods/{periodId}/reopen-rejection` (`ACCOUNTING_CLOSE_APPROVE`)").contains("`POST .../periods/{periodId}/reopen-withdrawal` (`ACCOUNTING_CLOSE_PROPOSE`)")
+                .contains("**The approver reads it before deciding**: `GET .../periods/{periodId}/close-proposal` (`ACCOUNTING_CLOSE_APPROVE`)").contains("differs from what was read before deciding");
+        assertThat(seven).contains("`concludedAt`");
+        for (String section : List.of(three, seven, eleven)) {
+            assertThat(section).doesNotContainIgnoringCase("no door withdraws").doesNotContain("approve it and lock again").doesNotContain("asks the proposer").doesNotContain("still open)");
+        }
+    }
+
+    @Test
     @DisplayName("the guard has teeth: a route, a method and a permission that do not exist are told apart from those that do")
     void theGuardHasTeeth() {
         Set<String> paths = routesAndMethods().keySet();

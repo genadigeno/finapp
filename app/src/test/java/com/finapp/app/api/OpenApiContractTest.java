@@ -564,6 +564,13 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/close-rejection",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/reopen-proposal",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/reopen-approval",
+                        // P14-TSK-024: a pending unlock or reopen ended without its effect, each keyed.
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/unlock-rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/unlock-withdrawal",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/reopen-rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/reopen-withdrawal",
+                        // P14-TSK-024's fix round: what each decision on a pending request names, the controller's read (ACCOUNTING_CLOSE_APPROVE).
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/requests",
                         // P14-TSK-011: the close run - read (ACCOUNTING_READ, audited), a check's re-run
                         // (ACCOUNTING_CLOSE_PROPOSE, keyed).
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/close-run",
