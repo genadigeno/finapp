@@ -473,12 +473,13 @@ class CloseChecksTest {
     }
 
     @Test
-    @DisplayName("a retired or undeclared source is not required - its door is shut, requiring it would wedge - and its unfinished or repudiated run, or a run no source owns, is disclosed, never ignored")
+    @DisplayName("a source retired before the month or undeclared is not required - its door is shut, requiring it would wedge - and its unfinished or repudiated run, or a run no source owns, is disclosed, never ignored")
     void aRetiredSourceIsNotRequiredAndNotIgnored() {
         UUID psp = UUID.nameUUIDFromBytes(new byte[] {1});
         UUID retired = UUID.nameUUIDFromBytes(new byte[] {2});
         List<ReconciliationRunCoverage.Source> sources = List.of(new ReconciliationRunCoverage.Source(psp, "simulated-psp.settlement", ReconciliationRunCoverage.SourceState.ACTIVE),
-                new ReconciliationRunCoverage.Source(retired, "old-psp.settlement", ReconciliationRunCoverage.SourceState.RETIRED),
+                new ReconciliationRunCoverage.Source(retired, "old-psp.settlement", ReconciliationRunCoverage.SourceState.RETIRED, LocalDate.EPOCH,
+                        Optional.of(MARCH.atDay(1).minusDays(1)), Optional.of(LocalDate.EPOCH)),
                 new ReconciliationRunCoverage.Source(UUID.nameUUIDFromBytes(new byte[] {3}), "gone.settlement", ReconciliationRunCoverage.SourceState.UNDECLARED));
         ReconciliationRunCoverage.Line ran = new ReconciliationRunCoverage.Line(psp, "BATCH", "COMPLETED", MARCH.atDay(2), false, 1);
 
@@ -492,6 +493,34 @@ class CloseChecksTest {
                 new ReconciliationRunCoverage.Line(UUID.nameUUIDFromBytes(new byte[] {9}), "BATCH", "COMPLETED", MARCH.atDay(3), false, 1))) {
             coverage = (snapshot, month) -> new ReconciliationRunCoverage.Coverage(month, List.of(ran, disclosed), sources);
             assertThat(judge(CloseCheckCode.RECONCILIATION_DISCLOSURE).orElseThrow().status()).as(disclosed.toString()).isEqualTo(CloseCheckStatus.DISCLOSED);
+        }
+    }
+
+    @Test
+    @DisplayName("P14-TSK-025: what the month requires - a source retired within it served it and is required; one admitted after its last day, with no rule set, or whose rule set stood active only after it is not; the evidence names each source's days and whether it is required")
+    void theMonthRequiresOnlyWhatServedIt() {
+        UUID psp = UUID.nameUUIDFromBytes(new byte[] {1});
+        ReconciliationRunCoverage.Source required = new ReconciliationRunCoverage.Source(psp, "simulated-psp.settlement", ReconciliationRunCoverage.SourceState.ACTIVE);
+        ReconciliationRunCoverage.Line ran = new ReconciliationRunCoverage.Line(psp, "BATCH", "COMPLETED", MARCH.atDay(2), false, 1);
+        ReconciliationRunCoverage.Source retiredWithin = new ReconciliationRunCoverage.Source(UUID.nameUUIDFromBytes(new byte[] {2}), "retired-within.settlement",
+                ReconciliationRunCoverage.SourceState.RETIRED, LocalDate.EPOCH, Optional.of(MARCH.atDay(1)), Optional.of(LocalDate.EPOCH));
+        coverage = (snapshot, month) -> new ReconciliationRunCoverage.Coverage(month, List.of(ran), List.of(required, retiredWithin));
+        CheckVerdict unrun = judge(CloseCheckCode.RECONCILIATION_DISCLOSURE).orElseThrow();
+        assertThat(unrun.failures()).as("retired on the month's first day, it served the month").containsExactly(CloseChecks.MONTH_NOT_RUN);
+        assertThat(unrun.evidence()).contains("\"sourcesNotRun\":[\"retired-within.settlement\"]").contains("\"retiredOn\":\"" + MARCH.atDay(1) + "\"");
+
+        for (ReconciliationRunCoverage.Source excused : List.of(
+                new ReconciliationRunCoverage.Source(UUID.nameUUIDFromBytes(new byte[] {3}), "admitted-after.settlement", ReconciliationRunCoverage.SourceState.ACTIVE,
+                        MARCH_END.plusDays(1), Optional.empty(), Optional.of(LocalDate.EPOCH)),
+                new ReconciliationRunCoverage.Source(UUID.nameUUIDFromBytes(new byte[] {4}), "no-rule-set.settlement", ReconciliationRunCoverage.SourceState.ACTIVE,
+                        LocalDate.EPOCH, Optional.empty(), Optional.empty()),
+                new ReconciliationRunCoverage.Source(UUID.nameUUIDFromBytes(new byte[] {5}), "activated-after.settlement", ReconciliationRunCoverage.SourceState.ACTIVE,
+                        LocalDate.EPOCH, Optional.empty(), Optional.of(MARCH_END.plusDays(1))))) {
+            coverage = (snapshot, month) -> new ReconciliationRunCoverage.Coverage(month, List.of(ran), List.of(required, excused));
+            CheckVerdict verdict = judge(CloseCheckCode.RECONCILIATION_DISCLOSURE).orElseThrow();
+            assertThat(verdict.status()).as(excused.code()).isEqualTo(CloseCheckStatus.PASSED);
+            assertThat(verdict.evidence()).as(excused.code()).contains("\"sourcesNotRun\":[]").contains("\"code\":\"" + excused.code() + "\"")
+                    .contains("\"required\":false").contains("\"admittedOn\":\"" + excused.admittedOn() + "\"");
         }
     }
 

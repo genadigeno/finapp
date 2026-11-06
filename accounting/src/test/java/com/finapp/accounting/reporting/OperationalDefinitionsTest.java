@@ -71,7 +71,7 @@ class OperationalDefinitionsTest {
                         new ReconciliationRunCoverage.Line(SOURCE, "REPROCESS", "OPEN", MONTH.atDay(31), false, 1)),
                         List.of(new ReconciliationRunCoverage.Source(SOURCE, "simulated-psp.settlement", ReconciliationRunCoverage.SourceState.ACTIVE))));
         assertThat(definition.code()).isEqualTo(ReportKind.RECONCILIATION_STATUS.name());
-        assertThat(definition.version()).isEqualTo(2);
+        assertThat(definition.version()).as("P14-TSK-025: each source's days and whether the month requires it").isEqualTo(3);
         assertThat(definition.operational()).isTrue();
         assertThat(definition.takesValuationRateSet()).isFalse();
 
@@ -85,6 +85,11 @@ class OperationalDefinitionsTest {
         assertThat(coverage.members()).as("I-4: a count, and no verdict on the month").doesNotContainKey("noRun");
         assertThat(objects(coverage, "runs")).hasSize(2);
         assertThat(text(objects(coverage, "runs").get(0), "sourceId")).isEqualTo(SOURCE.toString());
+        CanonicalJson.Obj source = objects(coverage, "sources").get(0);
+        assertThat(text(source, "admittedOn")).as("P14-TSK-025: the source's days, beside whether the month requires it").isEqualTo("1970-01-01");
+        assertThat(text(source, "ruleSetActiveOn")).isEqualTo("1970-01-01");
+        assertThat(CanonicalJson.text(source)).contains("\"retiredOn\":null").contains("\"required\":true");
+        assertThat(CanonicalJson.text(definition.statement().asValue())).contains("whether the month requires its run");
 
         assertThat(text(object(body, "disclosure"), "cutoff")).isEqualTo("2097-03-31");
 
