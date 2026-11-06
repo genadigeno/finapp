@@ -257,7 +257,7 @@ final class RiskStormWorld {
                 Answer answer = send(request.build());
                 if (answer.status() >= 500 && down && other != null) {
                     tally.count("a request cut by the restart, retried on the other instance");
-                    return other.send(method, path, body, bearer, key, audience);
+                    return other.resentAfterTheCut(method, path, body, bearer, key, audience);
                 }
                 return keep(answer, path, audience);
             } catch (java.io.IOException refused) {
@@ -267,11 +267,30 @@ final class RiskStormWorld {
                 }
                 if (down && other != null) {
                     tally.count("a request cut by the restart, retried on the other instance");
-                    return other.send(method, path, body, bearer, key, audience);
+                    return other.resentAfterTheCut(method, path, body, bearer, key, audience);
                 }
                 tally.unexplained(template(path) + " failed at the transport: " + refused.getClass().getSimpleName());
                 throw refused;
             }
+        }
+
+        /**
+         * A request the restart cut, sent again here under its own key - as a client does. The killed instance's transaction
+         * may still hold the key while its backend dies, and the door says so honestly: 409 {@code api.IdempotencyInProgress},
+         * "retry it shortly with the same Idempotency-Key" (IdempotentExecutor's bounded claim). So the client retries
+         * shortly under that key until the key answers - the act then judged on that answer, its closed set unchanged. The
+         * P14-DOC-001 database pass met it: a cross-border quote cut at B's kill in round 4, re-sent on A 26 ms later, was
+         * answered 409 while B's backend still held its claim, and the act's closed set rightly does not name a 409.
+         */
+        private Answer resentAfterTheCut(String method, String path, String body, String bearer, String key,
+                Audience audience) throws Exception {
+            Answer answer = send(method, path, body, bearer, key, audience);
+            for (int retry = 0; key != null && retry < 20 && answer.is(409, "api.IdempotencyInProgress"); retry++) {
+                tally.count("a cut request's key still held by the killed instance - retried shortly under it");
+                Thread.sleep(500);
+                answer = send(method, path, body, bearer, key, audience);
+            }
+            return answer;
         }
 
         private Answer keep(Answer answer, String path, Audience audience) {
