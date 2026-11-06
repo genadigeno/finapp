@@ -2,6 +2,7 @@ package com.finapp.accounting.testing;
 
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.AccountingPeriodStore;
+import com.finapp.accounting.PeriodRequestEnd;
 import com.finapp.accounting.PeriodStatus;
 import com.finapp.platform.security.Actor;
 import java.sql.Connection;
@@ -18,15 +19,20 @@ import java.util.concurrent.CopyOnWriteArrayList;
 /**
  * {@link AccountingPeriodStore} in memory (`P14-TSK-005`): the hermetic suites' store, holding the database's ranks the
  * machine relies on - one period per month, contiguous, born {@code OPEN}, the conditional edges, in order, one period in
- * close, the four-eyes {@code CHECK}, the close's and the reopen's edges - so a defect the database would refuse is refused here too, as an
- * {@link IllegalStateException} naming the rank. The real ranks are {@code accounting V003}'s and {@code V008}'s, proven by
- * {@code AccountingPeriodDatabaseTest}, {@code PeriodCloseDatabaseTest} and {@code PeriodReopenDatabaseTest} (owed, C5).
+ * close, the four-eyes {@code CHECK}, the close's and the reopen's edges, and an unlock's end (`P14-TSK-024`: one per request, the four eyes, only the pending
+ * proposal, cleared beside it) - so a defect the database would refuse is refused here too, as an {@link IllegalStateException} naming the rank. The real ranks
+ * are {@code accounting V003}'s, {@code V008}'s and {@code V011}'s, proven by {@code AccountingPeriodDatabaseTest}, {@code PeriodCloseDatabaseTest} and
+ * {@code PeriodReopenDatabaseTest} (owed, C5).
  */
 public final class InMemoryAccountingPeriodStore implements AccountingPeriodStore {
 
     /** Concurrent, so a leg reading the periods never fails on another leg's birth of one (`AccountingCloseScheduleTest#everyLegRunsAtStart`, found by `P14-TSK-012`'s fresh run). */
     private final ConcurrentSkipListMap<YearMonth, PeriodRow> rows = new ConcurrentSkipListMap<>();
     private final List<EventRow> history = new CopyOnWriteArrayList<>();
+    /** Each unlock's end, in order (`P14-TSK-024`). */
+    private final List<UnlockEndRow> ends = new CopyOnWriteArrayList<>();
+    /** Each proposal's and each end's own stamp, as the database's clock_timestamp() would give it: two requests never share an instant. */
+    private long stamps;
     private int rowLocks;
     /** Each lock's own stamp, as the database's clock_timestamp() would give it (`P14-TSK-008`: a lock instance). */
     private long lockInstances;
@@ -40,6 +46,11 @@ public final class InMemoryAccountingPeriodStore implements AccountingPeriodStor
     /** The history, in order. */
     public List<EventRow> history() {
         return List.copyOf(history);
+    }
+
+    /** Every unlock's end, in order (`P14-TSK-024`). */
+    public List<UnlockEndRow> unlockEnds() {
+        return List.copyOf(ends);
     }
 
     /** How many row locks ({@code FOR UPDATE} and {@code FOR SHARE}) were taken. */
@@ -153,9 +164,42 @@ public final class InMemoryAccountingPeriodStore implements AccountingPeriodStor
         }
         PeriodRow row = found.get();
         rows.put(row.month(), new PeriodRow(id, row.month(), PeriodStatus.LOCKED, revision, row.openedAt(),
-                row.lockedAt(), row.pinned(), Optional.of(actor.id()), Optional.of(Instant.EPOCH), Optional.empty(),
+                row.lockedAt(), row.pinned(), Optional.of(actor.id()), Optional.of(stamp()), Optional.empty(),
                 Optional.empty()));
         return true;
+    }
+
+    @Override
+    public boolean endUnlock(Connection unitOfWork, NewUnlockEnd end) {
+        Optional<PeriodRow> found = find(unitOfWork, end.period());
+        if (found.isEmpty() || !found.get().unlockPending() || found.get().revision() != end.revision()
+                || !found.get().unlockProposedBy().orElseThrow().equals(end.proposedBy())) {
+            return false;
+        }
+        PeriodRow row = found.get();
+        boolean own = end.endedBy().id().equals(end.proposedBy());
+        if ((end.outcome() == PeriodRequestEnd.REJECTED) == own) {
+            throw new IllegalStateException("period_unlock_end_four_eyes");
+        }
+        if (ends.stream().anyMatch(other -> other.period().equals(end.period()) && other.lockedAt().equals(row.lockedAt().orElseThrow())
+                && other.proposedAt().equals(row.unlockProposedAt().orElseThrow()))) {
+            throw new IllegalStateException("period_unlock_end_once");
+        }
+        ends.add(new UnlockEndRow(end.id(), end.period(), row.revision(), row.lockedAt().orElseThrow(), end.proposedBy(), row.unlockProposedAt().orElseThrow(), end.outcome(),
+                end.endedBy().id(), stamp()));
+        rows.put(row.month(), new PeriodRow(row.id(), row.month(), PeriodStatus.LOCKED, row.revision(), row.openedAt(), row.lockedAt(), row.pinned(), Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty()));
+        return true;
+    }
+
+    @Override
+    public Optional<UnlockEndRow> latestUnlockEnd(Connection unitOfWork, AccountingPeriodId id) {
+        Optional<Instant> lockedAt = find(unitOfWork, id).flatMap(PeriodRow::lockedAt);
+        return ends.stream().filter(end -> end.period().equals(id) && lockedAt.filter(end.lockedAt()::equals).isPresent()).reduce((earlier, later) -> later);
+    }
+
+    private Instant stamp() {
+        return Instant.EPOCH.plusSeconds(++stamps);
     }
 
     @Override
@@ -226,8 +270,12 @@ public final class InMemoryAccountingPeriodStore implements AccountingPeriodStor
 
     @Override
     public void appendEvent(Connection unitOfWork, EventRow row) {
-        boolean fourEyes = row.act() == Act.UNLOCKED || row.act() == Act.CLOSED || row.act() == Act.REOPENED;
-        if (fourEyes != row.proposedBy().isPresent() || row.proposedBy().filter(row.actor().id()::equals).isPresent()) {
+        boolean fourEyes = row.act() == Act.UNLOCKED || row.act() == Act.CLOSED || row.act() == Act.REOPENED || row.act() == Act.UNLOCK_REJECTED || row.act() == Act.REOPEN_REJECTED;
+        boolean withdrawn = row.act() == Act.UNLOCK_WITHDRAWN || row.act() == Act.REOPEN_WITHDRAWN;
+        boolean holds = fourEyes ? row.proposedBy().filter(proposer -> !proposer.equals(row.actor().id())).isPresent()
+                : withdrawn ? row.proposedBy().filter(row.actor().id()::equals).isPresent()
+                : row.proposedBy().isEmpty();
+        if (!holds) {
             throw new IllegalStateException("period_event_four_eyes");
         }
         history.add(row);

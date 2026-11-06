@@ -25,13 +25,13 @@ class PeriodCloseMigrationTest {
     private static final String RESOURCE = "db/migration/accounting/V008__four_eyes_close_rejection_and_reopen.sql";
 
     @Test
-    @DisplayName("the status lists are the enums; the nine checks are CloseCheckCode's; each act is on its one edge")
+    @DisplayName("the status lists are the enums as V008 built them (V011 widens the reopen's and the acts: PeriodWithdrawalMigrationTest); the nine checks are CloseCheckCode's; each act is on its one edge")
     void theValueListsAreTheEnums() throws IOException {
         String sql = collapsed(RESOURCE);
         assertThat(sql).contains("CHECK (status IN (" + list(PeriodCloseStatus.values()) + "))");
-        assertThat(sql).contains("CHECK (status IN (" + list(PeriodReopenStatus.values()) + "))");
+        assertThat(sql).contains("CHECK (status IN (" + list(new PeriodReopenStatus[] {PeriodReopenStatus.PROPOSED, PeriodReopenStatus.APPROVED}) + "))");
         assertThat(sql).contains("CHECK (check_code IN (" + list(CloseCheckCode.values()) + "))");
-        for (AccountingPeriodStore.Act act : AccountingPeriodStore.Act.values()) {
+        for (AccountingPeriodStore.Act act : java.util.EnumSet.range(AccountingPeriodStore.Act.OPENED, AccountingPeriodStore.Act.REOPENED)) {
             assertThat(sql).as("the act %s is on its edge", act).contains("(act = '" + act.name() + "' AND from_status");
         }
         assertThat(sql).contains("(act = 'CLOSED' AND from_status = 'CLOSE_PROPOSED' AND to_status = 'CLOSED')")

@@ -55,6 +55,8 @@ class PeriodClosesTest {
     private static final Actor CONTROLLER = new Actor("controller-1", ActorType.CUSTOMER);
     private static final Actor OTHER_CONTROLLER = new Actor("controller-2", ActorType.CUSTOMER);
     private static final String REASON = "the books are read and agree";
+    /** An id no reopen has: what an act names when none was ever proposed, refused by name whatever it names. */
+    private static final PeriodReopenId NONE_READ = PeriodReopenId.next(IDS);
     private static final java.util.UUID PSP = java.util.UUID.nameUUIDFromBytes(new byte[] {7});
     private static final String DISCLOSURE = "suspense of two items, aged under a week, explained by the bank's holiday";
 
@@ -62,7 +64,7 @@ class PeriodClosesTest {
     private final InMemoryCloseRunStore runStore = new InMemoryCloseRunStore(periods);
     private final InMemoryAccountingBreakStore breaks = new InMemoryAccountingBreakStore();
     private final InMemoryValuationRateSetStore setStore = new InMemoryValuationRateSetStore().watching(periods);
-    private final InMemoryPeriodCloseStore closes = new InMemoryPeriodCloseStore(periods);
+    private final InMemoryPeriodCloseStore closes = new InMemoryPeriodCloseStore(periods, runStore);
     private final com.finapp.accounting.testing.InMemoryPriorPeriodAdjustmentStore priorPeriod = new com.finapp.accounting.testing.InMemoryPriorPeriodAdjustmentStore(periods);
     private final List<AuditRecord> audit = new ArrayList<>();
     private final List<EventEnvelope> events = new ArrayList<>();
@@ -173,12 +175,15 @@ class PeriodClosesTest {
     }
 
     @Test
-    @DisplayName("an unlock pending refuses the proposal - V003's CHECK could not hold it past LOCKED - and the way on is to approve the unlock and lock again, never a wedge")
+    @DisplayName("an unlock pending refuses the proposal - V003's CHECK could not hold it past LOCKED - and the way on is to decide the unlock, never a wedge: since P14-TSK-024 a rejection or a withdrawal ends it, the same lock and run then proposable")
     void aPendingUnlockRefusesTheProposal() {
         CloseRunId run = readyRun();
         periods.proposeUnlock(UOW, march, period().revision(), ACCOUNTANT, "a mistake was found");
         assertThatThrownBy(() -> machine.propose(UOW, march, run, List.of(), ACCOUNTANT, REASON, correlation()))
-                .isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("unlock");
+                .isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("unlock").hasMessageContaining("rejected or withdrawn");
+        assertThat(periods.endUnlock(UOW, new AccountingPeriodStore.NewUnlockEnd(UUID.randomUUID(), march, period().revision(), ACCOUNTANT.id(), PeriodRequestEnd.REJECTED, CONTROLLER, "not needed",
+                correlation()))).isTrue();
+        assertThat(machine.propose(UOW, march, run, List.of(), ACCOUNTANT, REASON, correlation()).status()).as("the same lock and run, no new run needed").isEqualTo(PeriodStatus.CLOSE_PROPOSED);
     }
 
     // ------------------------------------------------------------------ propose: a person's reason per DISCLOSED attempt
@@ -462,19 +467,22 @@ class PeriodClosesTest {
         assertThat(machine.proposalOf(UOW, march)).isEmpty();
         CloseRunId run = readyRun(CloseCheckCode.RECONCILIATION_DISCLOSURE);
         machine.propose(UOW, march, run, List.of(reasonFor(CloseCheckCode.RECONCILIATION_DISCLOSURE)), ACCOUNTANT, REASON, correlation());
-        closes.attemptEvidenceIs(CloseCheckCode.PROJECTION_VERIFIED, "{\"complete\":true}");
 
         PeriodCloses.ProposalView view = machine.proposalOf(UOW, march).orElseThrow();
         assertThat(view.stillStands()).isTrue();
+        assertThat(view.pendingReopen()).isEmpty();
         assertThat(view.checks()).hasSize(CloseCheckCode.values().length);
-        assertThat(view.checks()).filteredOn(check -> check.check().check() == CloseCheckCode.PROJECTION_VERIFIED).singleElement()
-                .satisfies(check -> assertThat(check.attemptEvidence()).contains("{\"complete\":true}"));
+        assertThat(view.checks()).as("each attempt as it concluded, read from its own row").allSatisfy(check -> {
+            CloseRunStore.AttemptRow attempt = attemptOf(check.check().check());
+            assertThat(check.attempt().evidence()).isEqualTo(attempt.evidence().orElseThrow());
+            assertThat(check.attempt().concludedAt()).isEqualTo(attempt.concludedAt().orElseThrow());
+        });
         assertThat(view.checks()).filteredOn(check -> check.check().check() == CloseCheckCode.RECONCILIATION_DISCLOSURE).singleElement()
                 .satisfies(check -> assertThat(check.check().disclosureReason()).contains(DISCLOSURE));
 
-        machine.recordRead(UOW, view, CONTROLLER, correlation());
+        machine.recordRead(UOW, view, Optional.empty(), CONTROLLER, correlation());
         AuditRecord read = lastAudit(AccountingAuditAction.CLOSE_PROPOSAL_READ);
-        assertThat(read.changeSummary().orElseThrow()).contains("stillStands=true").doesNotContain(DISCLOSURE);
+        assertThat(read.changeSummary().orElseThrow()).contains("stillStands=true").contains("reopenPending=false").doesNotContain("overtakenReturns").doesNotContain(DISCLOSURE);
 
         assertThatThrownBy(() -> machine.proposalOf(UOW, AccountingPeriodId.next(IDS))).isInstanceOf(AccountingPeriods.PeriodNotFound.class);
     }
@@ -530,7 +538,7 @@ class PeriodClosesTest {
         assertThat(read.overdueDays(UOW)).as("nothing unclosed").isZero();
 
         machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "a correction", correlation());
-        machine.approveReopen(UOW, march, CONTROLLER, Set.of(), "agreed", correlation());
+        machine.approveReopen(UOW, march, read(march), CONTROLLER, Set.of(), "agreed", correlation());
         assertThat(read.overdueDays(UOW)).isEqualTo(before);
     }
 
@@ -547,7 +555,7 @@ class PeriodClosesTest {
         assertThat(order).isEmpty();
         assertThat(lastAudit(AccountingAuditAction.PERIOD_REOPEN_PROPOSED).reason()).contains("a correction was found");
 
-        PeriodCloses.Acted acted = machine.approveReopen(UOW, march, CONTROLLER, Set.of(), "agreed", correlation());
+        PeriodCloses.Acted acted = machine.approveReopen(UOW, march, read(march), CONTROLLER, Set.of(), "agreed", correlation());
 
         assertThat(acted.status()).isEqualTo(PeriodStatus.OPEN);
         assertThat(acted.revision()).isEqualTo(2);
@@ -577,7 +585,7 @@ class PeriodClosesTest {
         closeUp(april);
 
         machine.proposeReopen(UOW, april, ACCOUNTANT, Set.of(), "a correction", correlation());
-        machine.approveReopen(UOW, april, CONTROLLER, Set.of(), "agreed", correlation());
+        machine.approveReopen(UOW, april, read(april), CONTROLLER, Set.of(), "agreed", correlation());
         assertThat(closedThrough).contains(MARCH.atEndOfMonth());
     }
 
@@ -588,17 +596,236 @@ class PeriodClosesTest {
         AccountingPeriodId april = AccountingPeriodId.next(IDS);
         periods.insertIfAbsent(UOW, new AccountingPeriodStore.NewPeriod(april, APRIL, correlation()));
 
-        assertThatThrownBy(() -> machine.approveReopen(UOW, march, CONTROLLER, Set.of(), "agreed", correlation())).as("none proposed").isInstanceOf(AccountingPeriods.PeriodStale.class);
+        assertThatThrownBy(() -> machine.approveReopen(UOW, march, read(march), CONTROLLER, Set.of(), "agreed", correlation())).as("none proposed").isInstanceOf(AccountingPeriods.PeriodStale.class);
         assertThatThrownBy(() -> machine.proposeReopen(UOW, april, ACCOUNTANT, Set.of(), "open", correlation())).as("not CLOSED").isInstanceOf(AccountingPeriods.PeriodStale.class);
 
         machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "a correction", correlation());
         lock(april);
-        assertThatThrownBy(() -> machine.approveReopen(UOW, march, CONTROLLER, Set.of(), "agreed", correlation())).as("the next locked since").isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("latest closed");
+        assertThatThrownBy(() -> machine.approveReopen(UOW, march, read(march), CONTROLLER, Set.of(), "agreed", correlation())).as("the next locked since").isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("latest closed");
         assertThat(period().status()).isEqualTo(PeriodStatus.CLOSED);
         assertThat(order).as("nothing moved").isEmpty();
 
         closeUp(april);
         assertThatThrownBy(() -> machine.proposeReopen(UOW, march, new Actor("accountant-2", ActorType.CUSTOMER), Set.of(), "again", correlation())).as("the next closed").isInstanceOf(AccountingPeriods.PeriodStale.class);
+    }
+
+    // ------------------------------------------------------------------ a reopen's end (P14-TSK-024, the owner's acceptance of P14-TSK-012's (d))
+
+    /** The reopen a person read before acting (`P14-TSK-024`): the one pending, else the period's latest - what a repeat names - else none. */
+    private PeriodReopenId read(AccountingPeriodId period) {
+        return machine.pendingOf(UOW, period).reopen().map(PeriodCloseStore.ReopenRow::id)
+                .or(() -> closes.reopens().stream().filter(reopen -> reopen.period().equals(period)).reduce((earlier, later) -> later).map(PeriodCloseStore.ReopenRow::id))
+                .orElse(NONE_READ);
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024's fix round (M-1): each act on a pending reopen names the one read - withdrawn and another proposed, the approval, the rejection and the withdrawal naming the first are each RequestStale, nothing superseded or moved, the second still pending; naming the second, it is approved")
+    void anActNamesTheReopenItRead() {
+        closed();
+        machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "a correction", correlation());
+        PeriodReopenId first = machine.pendingOf(UOW, march).reopen().orElseThrow().id();
+        machine.withdrawReopen(UOW, march, first, ACCOUNTANT, "proposed in error", correlation());
+        Actor dave = new Actor("accountant-2", ActorType.CUSTOMER);
+        machine.proposeReopen(UOW, march, dave, Set.of(), "another correction", correlation());
+        PeriodReopenId second = machine.pendingOf(UOW, march).reopen().orElseThrow().id();
+        int revision = period().revision();
+
+        assertThatThrownBy(() -> machine.approveReopen(UOW, march, first, CONTROLLER, Set.of(), "the one I read", correlation()))
+                .as("Carol's approval, meant for the first, does not approve the second").isInstanceOfSatisfying(AccountingPeriods.RequestStale.class, stale -> {
+                    assertThat(stale).hasMessageContaining("is not the one pending").hasMessageContaining(second.value().toString()).hasMessageContaining("nothing was changed");
+                    assertThat(stale.summary()).isEqualTo("period=" + MARCH + ", act=period:reopen-approval");
+                    assertThat(stale.action()).isEqualTo(AccountingAuditAction.REQUEST_STALE);
+                });
+        assertThatThrownBy(() -> machine.rejectReopen(UOW, march, first, CONTROLLER, "the one I read", correlation()))
+                .isInstanceOfSatisfying(AccountingPeriods.RequestStale.class, stale -> assertThat(stale.summary()).endsWith("act=period:reopen-rejection"));
+        assertThatThrownBy(() -> machine.withdrawReopen(UOW, march, first, dave, "the one I read", correlation()))
+                .isInstanceOfSatisfying(AccountingPeriods.RequestStale.class, stale -> assertThat(stale.summary()).endsWith("act=period:reopen-withdrawal"));
+        assertThat(order).as("nothing superseded, no cutoff moved").isEmpty();
+        assertThat(period().status()).isEqualTo(PeriodStatus.CLOSED);
+        assertThat(period().revision()).isEqualTo(revision);
+        assertThat(machine.pendingOf(UOW, march).reopen()).map(PeriodCloseStore.ReopenRow::id).as("the second still pending").contains(second);
+
+        assertThat(machine.approveReopen(UOW, march, second, CONTROLLER, Set.of(), "the one I read", correlation()).status()).isEqualTo(PeriodStatus.OPEN);
+        assertThat(machine.approveReopen(UOW, march, second, CONTROLLER, Set.of(), "again", correlation()).replayed()).as("the same approver's repeat, naming it, converges").isTrue();
+        assertThatThrownBy(() -> machine.approveReopen(UOW, march, first, CONTROLLER, Set.of(), "again", correlation())).as("naming another is no repeat")
+                .isInstanceOf(AccountingPeriods.PeriodStale.class);
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024's fix round (M-1, M-2): the close's machine records a kept refusal under its own action - another person's withdrawal of a reopen, a request other than the one pending - FAILED, naming the period and the act")
+    void aReopensKeptRefusalIsRecordedAsItself() {
+        closed();
+        machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "a correction", correlation());
+        PeriodReopenId pending = read(march);
+        List<AccountingPeriods.RecordedRefusal> refused = new ArrayList<>();
+        for (Runnable act : List.<Runnable>of(() -> machine.withdrawReopen(UOW, march, pending, CONTROLLER, "theirs", correlation()),
+                () -> machine.rejectReopen(UOW, march, NONE_READ, CONTROLLER, "another", correlation()))) {
+            try {
+                act.run();
+            } catch (AccountingPeriods.RecordedRefusal kept) {
+                refused.add(kept);
+            }
+        }
+        int before = audit.size();
+        refused.forEach(kept -> machine.recordRefusal(UOW, kept, CONTROLLER, correlation()));
+        assertThat(audit.subList(before, audit.size())).extracting(record -> record.operation().code() + " " + record.outcome() + " " + record.changeSummary().orElseThrow())
+                .containsExactly("accounting.NotTheProposer FAILED period=" + MARCH + ", act=period:reopen-withdrawal", "accounting.RequestStale FAILED period=" + MARCH + ", act=period:reopen-rejection");
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024 (d): a second person rejects a pending reopen: REJECTED, the period still CLOSED at its revision, nothing superseded and the cutoff unmoved, nothing published; history names the proposer, the audit record its reason; the month free for a new proposal")
+    void aSecondPersonRejectsAPendingReopen() {
+        closed();
+        int revision = period().revision();
+        Optional<LocalDate> cut = closedThrough;
+        machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "a correction", correlation());
+        int published = events.size();
+
+        PeriodCloses.Acted rejected = machine.rejectReopen(UOW, march, read(march), CONTROLLER, "the correction is a prior-period adjustment", correlation());
+
+        assertThat(rejected.status()).isEqualTo(PeriodStatus.CLOSED);
+        assertThat(rejected.revision()).isEqualTo(revision);
+        assertThat(rejected.replayed()).isFalse();
+        assertThat(period().status()).isEqualTo(PeriodStatus.CLOSED);
+        assertThat(period().revision()).as("no revision moved (INV-ACC-10)").isEqualTo(revision);
+        assertThat(order).as("nothing superseded, no cutoff moved").isEmpty();
+        assertThat(closedThrough).isEqualTo(cut);
+        assertThat(events).as("an end publishes nothing").hasSize(published);
+        assertThat(closes.reopens()).singleElement().satisfies(reopen -> {
+            assertThat(reopen.status()).isEqualTo(PeriodReopenStatus.REJECTED);
+            assertThat(reopen.endedBy()).contains(CONTROLLER.id());
+            assertThat(reopen.approvedBy()).isEmpty();
+        });
+        AccountingPeriodStore.EventRow history = periods.history().get(periods.history().size() - 1);
+        assertThat(history.act()).isEqualTo(AccountingPeriodStore.Act.REOPEN_REJECTED);
+        assertThat(history.from()).contains(PeriodStatus.CLOSED);
+        assertThat(history.to()).isEqualTo(PeriodStatus.CLOSED);
+        assertThat(history.proposedBy()).contains(ACCOUNTANT.id());
+        AuditRecord record = lastAudit(AccountingAuditAction.PERIOD_REOPEN_REJECTED);
+        assertThat(record.actor()).isEqualTo(CONTROLLER);
+        assertThat(record.reason()).contains("the correction is a prior-period adjustment");
+        assertThat(record.changeSummary().orElseThrow()).contains("period=" + MARCH).contains("reopen=" + closes.reopens().get(0).id().value()).doesNotContain("prior-period adjustment");
+
+        machine.proposeReopen(UOW, march, new Actor("accountant-2", ActorType.CUSTOMER), Set.of(), "another correction", correlation());
+        assertThat(machine.approveReopen(UOW, march, read(march), CONTROLLER, Set.of(), "agreed", correlation()).status()).as("free for a new one, which carries its own effect").isEqualTo(PeriodStatus.OPEN);
+        assertThat(closes.reopens()).extracting(PeriodCloseStore.ReopenRow::status).containsExactly(PeriodReopenStatus.REJECTED, PeriodReopenStatus.APPROVED);
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024 (d): four eyes as the acts: the proposer cannot reject their own reopen (SelfApprovalRefused) and withdraws it instead; nobody else withdraws it (NotTheProposer); a person; a reason")
+    void aReopensProposerWithdrawsAndNeverRejects() {
+        closed();
+        machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "a correction", correlation());
+        assertThatThrownBy(() -> machine.rejectReopen(UOW, march, read(march), ACCOUNTANT, "mine", correlation()))
+                .isInstanceOfSatisfying(AccountingPeriods.SelfApprovalRefused.class, self -> assertThat(self.summary()).contains("act=period:reopen-rejection"));
+        assertThatThrownBy(() -> machine.withdrawReopen(UOW, march, read(march), CONTROLLER, "theirs", correlation())).isInstanceOf(AccountingPeriods.NotTheProposer.class);
+        assertThatThrownBy(() -> machine.rejectReopen(UOW, march, read(march), Actor.SYSTEM, "the platform", correlation())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> machine.rejectReopen(UOW, march, read(march), CONTROLLER, "", correlation())).isInstanceOf(AccountingReasons.ReasonRequired.class);
+        assertThat(closes.reopens()).extracting(PeriodCloseStore.ReopenRow::status).containsExactly(PeriodReopenStatus.PROPOSED);
+
+        assertThat(machine.withdrawReopen(UOW, march, read(march), ACCOUNTANT, "proposed in error", correlation()).status()).isEqualTo(PeriodStatus.CLOSED);
+
+        assertThat(closes.reopens()).singleElement().satisfies(reopen -> {
+            assertThat(reopen.status()).isEqualTo(PeriodReopenStatus.WITHDRAWN);
+            assertThat(reopen.endedBy()).contains(ACCOUNTANT.id());
+        });
+        AccountingPeriodStore.EventRow history = periods.history().get(periods.history().size() - 1);
+        assertThat(history.act()).isEqualTo(AccountingPeriodStore.Act.REOPEN_WITHDRAWN);
+        assertThat(history.proposedBy()).as("the proposer named, who is the actor").contains(ACCOUNTANT.id());
+        assertThat(lastAudit(AccountingAuditAction.PERIOD_REOPEN_WITHDRAWN).actor()).isEqualTo(ACCOUNTANT);
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024 (d): the same reopen ended twice converges for its ender and is refused by name to anyone else; the approval after an end is told it was REJECTED, an end after the approval that it was approved - in sequence here, serialised on the period row (the race is PeriodReopenDatabaseTest's)")
+    void aReopensEndAndItsApprovalTellTheLoserByName() {
+        closed();
+        machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "a correction", correlation());
+        machine.rejectReopen(UOW, march, read(march), CONTROLLER, "not needed", correlation());
+
+        assertThat(machine.rejectReopen(UOW, march, read(march), CONTROLLER, "not needed", correlation()).replayed()).as("the same person's repeat converges, writing nothing").isTrue();
+        assertThat(closes.reopens()).hasSize(1);
+        assertThatThrownBy(() -> machine.rejectReopen(UOW, march, read(march), OTHER_CONTROLLER, "me too", correlation())).isInstanceOf(AccountingPeriods.PeriodStale.class)
+                .hasMessageContaining("was REJECTED").hasMessageContaining("nothing was changed");
+        assertThatThrownBy(() -> machine.withdrawReopen(UOW, march, read(march), ACCOUNTANT, "mine", correlation())).isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("was REJECTED");
+        assertThatThrownBy(() -> machine.approveReopen(UOW, march, read(march), OTHER_CONTROLLER, Set.of(), "late", correlation())).as("the approval's loser, told by name")
+                .isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("was REJECTED");
+        assertThat(order).isEmpty();
+
+        machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "after all", correlation());
+        machine.approveReopen(UOW, march, read(march), CONTROLLER, Set.of(), "agreed", correlation());
+        assertThatThrownBy(() -> machine.rejectReopen(UOW, march, read(march), OTHER_CONTROLLER, "too late", correlation())).as("the end's loser, told by name")
+                .isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("the reopen named was approved");
+        assertThatThrownBy(() -> machine.withdrawReopen(UOW, march, read(march), ACCOUNTANT, "too late", correlation())).isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("the reopen named was approved");
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024 (d): a reopen's end takes the period row FOR UPDATE before the reopen's, as the approval does, so the two serialise on the period row: the hermetic half; the race on ten connections is PeriodReopenDatabaseTest#aRejectionRacingTheApprovalOneWins, owed")
+    void aReopensEndTakesThePeriodRow() {
+        closed();
+        machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "a correction", correlation());
+        int before = periods.rowLocks();
+        machine.rejectReopen(UOW, march, read(march), CONTROLLER, "not needed", correlation());
+        assertThat(periods.rowLocks()).as("the period row FOR UPDATE, and no neighbour").isEqualTo(before + 1);
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024 (d): an end needs a pending reopen - a CLOSED month with none proposed, a LOCKED one - refused by name; a reopen stuck behind the next month's lock, which no approval can ever take, is ended, and only that")
+    void aReopenStuckBehindTheNextLockIsEnded() {
+        assertThatThrownBy(() -> machine.rejectReopen(UOW, march, read(march), CONTROLLER, "none", correlation())).isInstanceOf(AccountingPeriods.PeriodStale.class)
+                .hasMessageContaining("only a CLOSED period's pending reopen is ended");
+        closed();
+        assertThatThrownBy(() -> machine.rejectReopen(UOW, march, read(march), CONTROLLER, "none", correlation())).isInstanceOf(AccountingPeriods.PeriodStale.class)
+                .hasMessageContaining("no reopen of the period is pending");
+        AccountingPeriodId april = AccountingPeriodId.next(IDS);
+        periods.insertIfAbsent(UOW, new AccountingPeriodStore.NewPeriod(april, APRIL, correlation()));
+        machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "a correction", correlation());
+        lock(april);
+        assertThatThrownBy(() -> machine.approveReopen(UOW, march, read(march), CONTROLLER, Set.of(), "agreed", correlation())).isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("latest closed");
+
+        assertThat(machine.rejectReopen(UOW, march, read(march), CONTROLLER, "it can never be approved", correlation()).status()).isEqualTo(PeriodStatus.CLOSED);
+        assertThat(closes.pendingReopen(UOW, march)).as("nothing stands for good").isEmpty();
+        assertThat(order).isEmpty();
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024 (-023's a): the approver's read names the reopen pending - none on a CLOSED month before a proposal or after an end - and its record says so and how many returns were listed, never a return")
+    void theApproversReadNamesThePendingReopen() {
+        closed();
+        PeriodCloses.ProposalView before = machine.proposalOf(UOW, march).orElseThrow();
+        assertThat(before.periodStatus()).isEqualTo(PeriodStatus.CLOSED);
+        assertThat(before.pendingReopen()).isEmpty();
+
+        machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "a correction", correlation());
+        PeriodCloses.ProposalView pending = machine.proposalOf(UOW, march).orElseThrow();
+        assertThat(pending.pendingReopen()).map(PeriodCloseStore.ReopenRow::id).contains(closes.reopens().get(0).id());
+        assertThat(pending.stillStands()).as("a CLOSED month's approved proposal stands for nothing more").isFalse();
+        machine.recordRead(UOW, pending, Optional.of(3L), CONTROLLER, correlation());
+        assertThat(lastAudit(AccountingAuditAction.CLOSE_PROPOSAL_READ).changeSummary().orElseThrow()).contains("reopenPending=true").contains("overtakenReturns=3");
+
+        machine.withdrawReopen(UOW, march, read(march), ACCOUNTANT, "proposed in error", correlation());
+        assertThat(machine.proposalOf(UOW, march).orElseThrow().pendingReopen()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024 (-012's j): concludedAt is the frozen attempt's own, never a later one's: a check judged again after a rejection leaves the rejected proposal reading its attempt as of then, and the next proposal its new one")
+    void concludedAtIsTheFrozenAttempts() {
+        CloseRunId run = readyRun();
+        PeriodCloseId first = machine.propose(UOW, march, run, List.of(), ACCOUNTANT, REASON, correlation()).proposal().orElseThrow();
+        java.time.Instant judged = attemptOf(CloseCheckCode.SOURCE_COMPLETENESS).concludedAt().orElseThrow();
+        machine.reject(UOW, march, first, CONTROLLER, "judge it again", correlation());
+        runStore.advance(java.time.Duration.ofHours(6));
+        runs.rerun(UOW, march, CloseCheckCode.SOURCE_COMPLETENESS, ACCOUNTANT, "judge it again", correlation());
+        concludeAll(Map.of());
+        java.time.Instant again = attemptOf(CloseCheckCode.SOURCE_COMPLETENESS).concludedAt().orElseThrow();
+        assertThat(again).as("the suite's clock moved").isAfter(judged);
+
+        PeriodCloses.ProposalView rejected = machine.proposalOf(UOW, march).orElseThrow();
+        assertThat(rejected.checks()).filteredOn(check -> check.check().check() == CloseCheckCode.SOURCE_COMPLETENESS).singleElement()
+                .satisfies(check -> assertThat(check.attempt().concludedAt()).as("as of the attempt the proposal froze").isEqualTo(judged));
+
+        machine.propose(UOW, march, run, List.of(), ACCOUNTANT, REASON, correlation());
+        assertThat(machine.proposalOf(UOW, march).orElseThrow().checks()).filteredOn(check -> check.check().check() == CloseCheckCode.SOURCE_COMPLETENESS).singleElement()
+                .satisfies(check -> assertThat(check.attempt().concludedAt()).isEqualTo(again));
     }
 
     // ------------------------------------------------------------------ what a reopen names (P14-TSK-022, the owner's ruling (m))
@@ -646,17 +873,17 @@ class PeriodClosesTest {
         UUID second = adjustment(true);
         assertThat(machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(first), "a correction", correlation()).replayed()).as("the proposer's repeat converges: it re-judges nothing").isTrue();
 
-        assertThatThrownBy(() -> machine.approveReopen(UOW, march, CONTROLLER, Set.of(first), "agreed", correlation())).isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class).hasMessageContaining("2 stand");
+        assertThatThrownBy(() -> machine.approveReopen(UOW, march, read(march), CONTROLLER, Set.of(first), "agreed", correlation())).isInstanceOf(PriorPeriodAdjustments.AdjustmentStale.class).hasMessageContaining("2 stand");
         assertThat(period().status()).isEqualTo(PeriodStatus.CLOSED);
         assertThat(period().revision()).isEqualTo(1);
         assertThat(order).as("refused before the runs and the cutoff").isEmpty();
 
-        PeriodCloses.Acted reopened = machine.approveReopen(UOW, march, CONTROLLER, Set.of(first, second), "agreed", correlation());
+        PeriodCloses.Acted reopened = machine.approveReopen(UOW, march, read(march), CONTROLLER, Set.of(first, second), "agreed", correlation());
 
         assertThat(reopened.status()).isEqualTo(PeriodStatus.OPEN);
         assertThat(order).containsExactly("supersede", "cutoff");
         assertThat(lastAudit(AccountingAuditAction.PERIOD_REOPENED).changeSummary().orElseThrow()).contains("postedAdjustments=2");
-        assertThat(machine.approveReopen(UOW, march, CONTROLLER, Set.of(), "agreed", correlation()).replayed()).as("the approver's repeat converges").isTrue();
+        assertThat(machine.approveReopen(UOW, march, read(march), CONTROLLER, Set.of(), "agreed", correlation()).replayed()).as("the approver's repeat converges").isTrue();
     }
 
     @Test
@@ -665,7 +892,7 @@ class PeriodClosesTest {
         closed();
         UUID earlier = adjustment(true);
         machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(earlier), "a correction", correlation());
-        machine.approveReopen(UOW, march, CONTROLLER, Set.of(earlier), "agreed", correlation());
+        machine.approveReopen(UOW, march, read(march), CONTROLLER, Set.of(earlier), "agreed", correlation());
         assertThat(period().revision()).isEqualTo(2);
         lock(march);
         CloseRunId second = runs.startMissing(UOW, Actor.SYSTEM).get(0);
@@ -686,7 +913,7 @@ class PeriodClosesTest {
         assertThatThrownBy(() -> machine.proposeReopen(UOW, march, new Actor("accountant-2", ActorType.CUSTOMER), Set.of(), "mine", correlation())).isInstanceOf(AccountingPeriods.PeriodStale.class);
         assertThatThrownBy(() -> machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "another reason", correlation())).isInstanceOf(AccountingPeriods.PeriodStale.class);
 
-        assertThatThrownBy(() -> machine.approveReopen(UOW, march, ACCOUNTANT, Set.of(), "agreed", correlation())).isInstanceOfSatisfying(AccountingPeriods.SelfApprovalRefused.class,
+        assertThatThrownBy(() -> machine.approveReopen(UOW, march, read(march), ACCOUNTANT, Set.of(), "agreed", correlation())).isInstanceOfSatisfying(AccountingPeriods.SelfApprovalRefused.class,
                 refused -> assertThat(refused.summary()).contains("act=period:reopen"));
         assertThat(period().status()).isEqualTo(PeriodStatus.CLOSED);
         assertThat(order).isEmpty();
@@ -698,11 +925,11 @@ class PeriodClosesTest {
     void twoReopenApprovalsOneEdge() {
         closed();
         machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "a correction", correlation());
-        machine.approveReopen(UOW, march, CONTROLLER, Set.of(), "agreed", correlation());
+        machine.approveReopen(UOW, march, read(march), CONTROLLER, Set.of(), "agreed", correlation());
         int published = events.size();
 
-        assertThat(machine.approveReopen(UOW, march, CONTROLLER, Set.of(), "agreed", correlation()).replayed()).isTrue();
-        assertThatThrownBy(() -> machine.approveReopen(UOW, march, OTHER_CONTROLLER, Set.of(), "agreed", correlation())).isInstanceOf(AccountingPeriods.PeriodStale.class);
+        assertThat(machine.approveReopen(UOW, march, read(march), CONTROLLER, Set.of(), "agreed", correlation()).replayed()).isTrue();
+        assertThatThrownBy(() -> machine.approveReopen(UOW, march, read(march), OTHER_CONTROLLER, Set.of(), "agreed", correlation())).isInstanceOf(AccountingPeriods.PeriodStale.class);
         assertThat(events).hasSize(published);
         assertThat(period().revision()).isEqualTo(2);
     }
@@ -713,7 +940,7 @@ class PeriodClosesTest {
         closed();
         machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "a correction", correlation());
         cutoffBusy = true;
-        assertThatThrownBy(() -> machine.approveReopen(UOW, march, CONTROLLER, Set.of(), "agreed", correlation())).isInstanceOf(PostingCutoff.CutoffBusy.class);
+        assertThatThrownBy(() -> machine.approveReopen(UOW, march, read(march), CONTROLLER, Set.of(), "agreed", correlation())).isInstanceOf(PostingCutoff.CutoffBusy.class);
         assertThat(period().status()).isEqualTo(PeriodStatus.CLOSED);
     }
 
@@ -723,7 +950,7 @@ class PeriodClosesTest {
         closed();
         CloseRunId first = runStore.runs().get(0).id();
         machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "a correction", correlation());
-        machine.approveReopen(UOW, march, CONTROLLER, Set.of(), "agreed", correlation());
+        machine.approveReopen(UOW, march, read(march), CONTROLLER, Set.of(), "agreed", correlation());
 
         lock(march);
         assertThat(CloseRuns.readinessOf(runs.view(UOW, march)).run()).as("the old run does not answer the new lock").isEmpty();
@@ -753,7 +980,7 @@ class PeriodClosesTest {
         machine.approve(UOW, march, again, CONTROLLER, REASON, correlation());
         assertThat(runStore.stalledLocks(UOW, Duration.ZERO)).as("CLOSED").isZero();
         machine.proposeReopen(UOW, march, ACCOUNTANT, Set.of(), "a correction", correlation());
-        machine.approveReopen(UOW, march, CONTROLLER, Set.of(), "agreed", correlation());
+        machine.approveReopen(UOW, march, read(march), CONTROLLER, Set.of(), "agreed", correlation());
         assertThat(runStore.stalledLocks(UOW, Duration.ZERO)).as("reopened").isZero();
         lock(march);
         assertThat(runStore.stalledLocks(UOW, Duration.ZERO)).as("the new lock has no run").isEqualTo(1);
@@ -766,7 +993,7 @@ class PeriodClosesTest {
         assertThatThrownBy(() -> machine.approve(UOW, march, PeriodCloseId.next(IDS), Actor.SYSTEM, REASON, correlation())).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> machine.reject(UOW, march, PeriodCloseId.next(IDS), Actor.SYSTEM, REASON, correlation())).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> machine.proposeReopen(UOW, march, Actor.SYSTEM, Set.of(), REASON, correlation())).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> machine.approveReopen(UOW, march, Actor.SYSTEM, Set.of(), REASON, correlation())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> machine.approveReopen(UOW, march, read(march), Actor.SYSTEM, Set.of(), REASON, correlation())).isInstanceOf(IllegalArgumentException.class);
     }
 
     // ------------------------------------------------------------------ plumbing
@@ -835,11 +1062,14 @@ class PeriodClosesTest {
         CloseRunId run = CloseRunId.next(IDS);
         PeriodCloseStore.CloseRow row = new PeriodCloseStore.CloseRow(id, period, MARCH, 1, Instant.EPOCH, run, GlMappingVersionId.next(IDS), ValuationRateSetId.next(IDS), 0, 0, PeriodCloseStatus.PROPOSED, "someone",
                 Instant.EPOCH, reason, Optional.empty(), Optional.empty(), correlation());
-        for (Object record : List.of(new PeriodCloses.Disclosure(CloseCheckCode.RECONCILIATION_DISCLOSURE, 1, reason), disclosed, new PeriodCloses.CheckView(disclosed, Optional.of(evidence)), row,
-                new PeriodCloses.ProposalView(row, PeriodStatus.CLOSE_PROPOSED, List.of(new PeriodCloses.CheckView(disclosed, Optional.of(evidence))), true),
+        PeriodCloseStore.FrozenAttempt frozen = new PeriodCloseStore.FrozenAttempt(evidence, Instant.EPOCH);
+        PeriodCloseStore.ReopenRow reopen = new PeriodCloseStore.ReopenRow(PeriodReopenId.next(IDS), period, 1, PeriodReopenStatus.PROPOSED, "someone", Instant.EPOCH, reason, Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty());
+        for (Object record : List.of(new PeriodCloses.Disclosure(CloseCheckCode.RECONCILIATION_DISCLOSURE, 1, reason), disclosed, new PeriodCloses.CheckView(disclosed, frozen), frozen, row,
+                new PeriodCloses.ProposalView(row, PeriodStatus.CLOSE_PROPOSED, List.of(new PeriodCloses.CheckView(disclosed, frozen)), true, Optional.of(reopen)),
                 new PeriodCloseStore.NewClose(id, period, 1, Instant.EPOCH, run, GlMappingVersionId.next(IDS), ValuationRateSetId.next(IDS), 0, 0, person, reason, correlation()),
-                new PeriodCloseStore.NewReopen(PeriodReopenId.next(IDS), period, 1, person, reason, correlation()),
-                new PeriodCloseStore.ReopenRow(PeriodReopenId.next(IDS), period, 1, PeriodReopenStatus.PROPOSED, "someone", Instant.EPOCH, reason, Optional.empty(), Optional.empty()))) {
+                new PeriodCloseStore.NewReopen(PeriodReopenId.next(IDS), period, 1, person, reason, correlation()), reopen,
+                new AccountingPeriodStore.NewUnlockEnd(UUID.randomUUID(), period, 1, "someone", PeriodRequestEnd.REJECTED, person, reason, correlation()))) {
             assertThat(record.toString()).as(record.getClass().getSimpleName()).doesNotContain(reason).doesNotContain("attempts-evidence");
         }
     }

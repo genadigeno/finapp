@@ -319,7 +319,7 @@ class ValuationRateSetDatabaseTest {
         ExecutorService pool = Executors.newSingleThreadExecutor();
         try (Connection capturing = held(accountant,
                 uow -> sets().capture(uow, january, accountant, null, correlation()))) {
-            Future<?> unlock = pool.submit(() -> inScope(person(), uow -> periods().approveUnlock(uow, january,
+            Future<?> unlock = pool.submit(() -> inScope(person(), uow -> periods().approveUnlock(uow, january, periods().pendingUnlock(uow, january).orElseThrow(),
                     SecurityContext.require(), "agreed", correlation())));
             awaitAWaiter(unlock);
             capturing.commit();
@@ -353,7 +353,7 @@ class ValuationRateSetDatabaseTest {
         Actor approver = person();
         ExecutorService pool = Executors.newSingleThreadExecutor();
         Future<Object> approval;
-        try (Connection unlocking = held(person(), uow -> periods().approveUnlock(uow, january,
+        try (Connection unlocking = held(person(), uow -> periods().approveUnlock(uow, january, periods().pendingUnlock(uow, january).orElseThrow(),
                 SecurityContext.require(), "agreed", correlation()))) {
             approval = pool.submit(() -> {
                 try {

@@ -14,6 +14,7 @@ import com.finapp.sharedkernel.event.EventId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
@@ -49,6 +50,16 @@ import lombok.RequiredArgsConstructor;
  * {@code accounting V003}'s {@code CHECK} for every writer. The period's FINAL report runs are superseded in the same
  * transaction, under the period's row lock and before the cutoff moves (`P14-TSK-008`, {@link ReportRunSupersession};
  * {@code accounting V004} refuses the edge otherwise).
+ *
+ * <p><strong>An unlock ended without its effect</strong> (`P14-TSK-024`, the owner's acceptance of `P14-TSK-012`'s item (d); {@code accounting V011}): a second person rejects a pending unlock
+ * ({@link #rejectUnlock}), or its proposer withdraws it ({@link #withdrawUnlock}) - {@link PeriodRequestEnd}, each its own terminal state, recorded in {@code period_unlock_end} beside a history
+ * row. The period stays {@code LOCKED} under the same lock and pin, and the cutoff does not move: neither touches {@link PostingCutoff}. The proposal is cleared from the row, so the month is free
+ * for a new one. <strong>The approval and an end serialise on the period row</strong>: each takes it {@code FOR UPDATE} first, so the second reads what the first committed and is told by name
+ * what the first did. The proposer never rejects (refused as a self-approval, recorded {@code FAILED}); nobody but the proposer withdraws ({@link NotTheProposer}, recorded {@code FAILED}).
+ *
+ * <p><strong>Every act on a pending unlock names it</strong> (`P14-TSK-024`'s fix round): an end makes a pending request replaceable, so the approval, the rejection and the withdrawal each name
+ * the request read by when it was proposed - an unlock request has no id, and its row's instant, stamped by the database holding the row, is its identity ({@link #pendingUnlock} serves it). Another
+ * pending is {@link RequestStale}, judged holding the row and recorded {@code FAILED}: nobody decides a request they never read.
  *
  * <p>The close, its rejection and the reopen are {@link PeriodCloses}' (`P14-TSK-012`). How a back-dating poster reacts to a locked period is
  * `P14-TSK-006`'s (C3): here the ledger refuses, and nothing else is decided.
@@ -129,19 +140,18 @@ public final class AccountingPeriods {
         }
     }
 
-    /** The proposer tried to approve their own unlock, close or reopen ({@code INV-AUD-04}). */
-    public static final class SelfApprovalRefused extends RuntimeException {
+    /**
+     * A refusal a door keeps (`P14-TSK-024`): recorded {@code FAILED} under {@link #action()} in a transaction of its own after the act rolled back, so the attempt is kept though nothing was
+     * written - a self-approval, another person's withdrawal, an act on a request other than the one pending. It names the period and the act, never a person or a reason.
+     */
+    public abstract static class RecordedRefusal extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
         private final String target;
         private final String summary;
 
-        SelfApprovalRefused(AccountingPeriodId id, YearMonth month) {
-            this(id, month, "period:unlock");
-        }
-
-        SelfApprovalRefused(AccountingPeriodId id, YearMonth month, String act) {
-            super("a period's unlock, close or reopen is approved by someone other than its proposer");
+        RecordedRefusal(AccountingPeriodId id, YearMonth month, String act, String detail) {
+            super(detail);
             this.target = id.value().toString();
             this.summary = "period=" + month + ", act=" + act;
         }
@@ -154,6 +164,71 @@ public final class AccountingPeriods {
         /** What the refusal record names: the period and the act. */
         public String summary() {
             return summary;
+        }
+
+        /** What the refusal is recorded as. */
+        public abstract AccountingAuditAction action();
+    }
+
+    /** The proposer tried to approve their own unlock, close or reopen ({@code INV-AUD-04}). */
+    public static final class SelfApprovalRefused extends RecordedRefusal {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        SelfApprovalRefused(AccountingPeriodId id, YearMonth month) {
+            this(id, month, "period:unlock");
+        }
+
+        SelfApprovalRefused(AccountingPeriodId id, YearMonth month, String act) {
+            this(id, month, act, "a period's unlock, close or reopen is approved by someone other than its proposer");
+        }
+
+        private SelfApprovalRefused(AccountingPeriodId id, YearMonth month, String act, String detail) {
+            super(id, month, act, detail);
+        }
+
+        /** A proposer's rejection of their own unlock or reopen (`P14-TSK-024`): a rejection is a second person's decision; the proposer withdraws. */
+        static SelfApprovalRefused ofRejection(AccountingPeriodId id, YearMonth month, String act) {
+            return new SelfApprovalRefused(id, month, act, "an unlock or a reopen is rejected by someone other than its proposer; its proposer withdraws it");
+        }
+
+        @Override
+        public AccountingAuditAction action() {
+            return AccountingAuditAction.SELF_APPROVAL_REFUSED;
+        }
+    }
+
+    /**
+     * Somebody other than its proposer tried to withdraw a pending unlock or reopen (`P14-TSK-024`): a withdrawal is the proposer's own retraction, and another person's end of it is a
+     * rejection, under the approver's permission. Nothing was changed; the attempt is recorded, as an accountant ending a colleague's request is what four eyes stops.
+     */
+    public static final class NotTheProposer extends RecordedRefusal {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        NotTheProposer(AccountingPeriodId id, YearMonth month, String act, String what) {
+            super(id, month, act, "only its proposer withdraws " + what + "; another person rejects it");
+        }
+
+        @Override
+        public AccountingAuditAction action() {
+            return AccountingAuditAction.NOT_THE_PROPOSER;
+        }
+    }
+
+    /**
+     * The act names an unlock or a reopen that is not the one pending (`P14-TSK-024`): another was proposed after the one the person read, the first having ended. An approval, a rejection
+     * and a withdrawal each name the request they decide, as the close's approval names its proposal, so nobody decides a request they never read. Nothing was changed; the attempt is
+     * recorded.
+     */
+    public static final class RequestStale extends RecordedRefusal {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        RequestStale(AccountingPeriodId id, YearMonth month, String act, String detail) {
+            super(id, month, act, detail);
+        }
+
+        @Override
+        public AccountingAuditAction action() {
+            return AccountingAuditAction.REQUEST_STALE;
         }
     }
 
@@ -299,31 +374,36 @@ public final class AccountingPeriods {
     }
 
     /**
-     * Approves a pending unlock - a different person's act: the cutoff moved back one period, {@code LOCKED -> OPEN},
-     * the pin released (T-unlock). The same approver's repeat converges.
+     * Approves the pending unlock the person read, named by when it was proposed - a different person's act: the cutoff moved back one period, {@code LOCKED -> OPEN}, the pin released
+     * (T-unlock). The same approver's repeat converges.
      *
+     * @param requested when the unlock the approver read was proposed ({@code unlockProposedAt}): an unlock request has no id, and its row's instant, stamped by the database under the row,
+     *     is its identity
      * @throws PeriodNotFound when no period has this id
      * @throws PeriodStale when the period is not {@code LOCKED} with an unlock pending
+     * @throws RequestStale when the unlock pending is not the one named (`P14-TSK-024`)
      * @throws SelfApprovalRefused when the approver proposed it ({@code INV-AUD-04})
      * @throws PostingCutoff.CutoffBusy when postings held the cutoff through the ledger's bounded attempts
      */
     public Acted approveUnlock(
-            Connection unitOfWork, AccountingPeriodId id, Actor actor, String reason, CorrelationId correlation) {
+            Connection unitOfWork, AccountingPeriodId id, Instant requested, Actor actor, String reason, CorrelationId correlation) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(requested, "requested");
         Objects.requireNonNull(correlation, "correlation");
         person(actor);
         String reasoned = AccountingReasons.reasoned(reason);
         Locked locked = lockWithPrevious(unitOfWork, id);
         AccountingPeriodStore.PeriodRow row = locked.period();
-        if (row.status() == PeriodStatus.OPEN && row.unlockApprovedBy().filter(actor.id()::equals).isPresent()) {
+        if (row.status() == PeriodStatus.OPEN && row.unlockApprovedBy().filter(actor.id()::equals).isPresent() && row.unlockProposedAt().filter(requested::equals).isPresent()) {
             return Acted.of(row, true);
         }
         if (!row.unlockPending()) {
             throw new PeriodStale(row.status() == PeriodStatus.LOCKED
-                    ? "no unlock of the period is proposed"
+                    ? noneUnderTheLock(store.latestUnlockEnd(unitOfWork, id), requested)
                     : "the period is " + row.status().name() + "; only a LOCKED period is unlocked");
         }
+        requireTheUnlockRead(row, requested, "period:unlock-approval");
         if (row.unlockProposedBy().filter(actor.id()::equals).isPresent()) {
             throw new SelfApprovalRefused(id, row.month());
         }
@@ -347,15 +427,122 @@ public final class AccountingPeriods {
         return new Acted(id, row.month(), PeriodStatus.OPEN, row.revision(), Optional.empty(), false, false);
     }
 
+    // ------------------------------------------------------------------ an unlock's end
+
     /**
-     * Records a refused self-approval {@code FAILED} ({@link AccountingAuditAction#SELF_APPROVAL_REFUSED}) on
-     * {@code unitOfWork} - the caller's own transaction, after the act rolled back, so the attempt is kept.
+     * Rejects the pending unlock the person read, named by when it was proposed - a second person's decision against it (`P14-TSK-024`): the period stays {@code LOCKED} under the same lock and
+     * pin, the cutoff unmoved, the month free for a new proposal. The same rejecter's repeat converges.
+     *
+     * @param requested when the unlock the person read was proposed ({@code unlockProposedAt})
+     * @throws PeriodNotFound when no period has this id
+     * @throws PeriodStale when no unlock is pending - naming whether the one named was approved, rejected or withdrawn
+     * @throws RequestStale when the unlock pending is not the one named
+     * @throws SelfApprovalRefused when the rejecter proposed it ({@code INV-AUD-04}): its proposer withdraws it
+     * @throws AccountingReasons.ReasonRequired for a missing, unbounded or instrument-bearing reason
      */
-    public void recordRefusal(Connection unitOfWork, SelfApprovalRefused refused, Actor actor, CorrelationId correlation) {
+    public Acted rejectUnlock(Connection unitOfWork, AccountingPeriodId id, Instant requested, Actor actor, String reason, CorrelationId correlation) {
+        return endUnlock(unitOfWork, id, requested, PeriodRequestEnd.REJECTED, actor, reason, correlation);
+    }
+
+    /**
+     * Withdraws the pending unlock the person read, named by when it was proposed - its proposer's own retraction (`P14-TSK-024`): as {@link #rejectUnlock}, by the one person who may. The same
+     * proposer's repeat converges.
+     *
+     * @param requested when the unlock the person read was proposed ({@code unlockProposedAt})
+     * @throws PeriodNotFound when no period has this id
+     * @throws PeriodStale when no unlock is pending - naming whether the one named was approved, rejected or withdrawn
+     * @throws RequestStale when the unlock pending is not the one named
+     * @throws NotTheProposer when someone else asks
+     * @throws AccountingReasons.ReasonRequired for a missing, unbounded or instrument-bearing reason
+     */
+    public Acted withdrawUnlock(Connection unitOfWork, AccountingPeriodId id, Instant requested, Actor actor, String reason, CorrelationId correlation) {
+        return endUnlock(unitOfWork, id, requested, PeriodRequestEnd.WITHDRAWN, actor, reason, correlation);
+    }
+
+    /**
+     * (A1) the period alone {@code FOR UPDATE} - as {@link #proposeUnlock} takes it, and the approval takes it after the previous period's {@code FOR SHARE}, so an end and an approval serialise on
+     * this row and close no cycle. Nothing here touches the cutoff, the pin or a report run.
+     */
+    private Acted endUnlock(Connection unitOfWork, AccountingPeriodId id, Instant requested, PeriodRequestEnd end, Actor actor, String reason, CorrelationId correlation) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(requested, "requested");
+        Objects.requireNonNull(correlation, "correlation");
+        person(actor);
+        String reasoned = AccountingReasons.reasoned(reason);
+        AccountingPeriodStore.PeriodRow row = store.lock(unitOfWork, id).orElseThrow(PeriodNotFound::new);
+        if (!row.unlockPending()) {
+            if (row.status() == PeriodStatus.LOCKED) {
+                Optional<AccountingPeriodStore.UnlockEndRow> last = store.latestUnlockEnd(unitOfWork, id);
+                if (last.filter(ended -> ended.outcome() == end && ended.endedBy().equals(actor.id()) && ended.proposedAt().equals(requested)).isPresent()) {
+                    return Acted.of(row, true);
+                }
+                throw new PeriodStale(noneUnderTheLock(last, requested));
+            }
+            throw new PeriodStale(row.status() == PeriodStatus.OPEN && row.unlockApprovedBy().isPresent() && row.unlockProposedAt().filter(requested::equals).isPresent()
+                    ? "the period is OPEN: the unlock named was approved; nothing was changed"
+                    : "the period is " + row.status().name() + "; only a LOCKED period's pending unlock is ended");
+        }
+        String act = end == PeriodRequestEnd.REJECTED ? "period:unlock-rejection" : "period:unlock-withdrawal";
+        requireTheUnlockRead(row, requested, act);
+        String proposer = row.unlockProposedBy().orElseThrow();
+        boolean own = proposer.equals(actor.id());
+        if (end == PeriodRequestEnd.REJECTED && own) {
+            throw SelfApprovalRefused.ofRejection(id, row.month(), act);
+        }
+        if (end == PeriodRequestEnd.WITHDRAWN && !own) {
+            throw new NotTheProposer(id, row.month(), act, "an unlock");
+        }
+        if (!store.endUnlock(unitOfWork, new AccountingPeriodStore.NewUnlockEnd(ids.next(), id, row.revision(), proposer, end, actor, reasoned, correlation))) {
+            throw new IllegalStateException("the pending unlock moved under its own row lock: the FOR UPDATE protocol was bypassed");
+        }
+        store.appendEvent(unitOfWork, new AccountingPeriodStore.EventRow(ids.next(), id, end.unlockAct(), Optional.of(PeriodStatus.LOCKED), PeriodStatus.LOCKED, row.revision(), actor,
+                Optional.of(proposer), Optional.empty(), Optional.of(reasoned), correlation));
+        audit(unitOfWork, actor, end == PeriodRequestEnd.REJECTED ? AccountingAuditAction.PERIOD_UNLOCK_REJECTED : AccountingAuditAction.PERIOD_UNLOCK_WITHDRAWN, id, Optional.of(reasoned),
+                "period=" + row.month() + ", revision=" + row.revision(), correlation);
+        return new Acted(id, row.month(), PeriodStatus.LOCKED, row.revision(), row.pinned().map(AccountingPeriodStore.Pin::version), false, false);
+    }
+
+    /**
+     * What a {@code LOCKED} period with no unlock pending says to an act on one: what became of the one named, when it is the latest end under the present lock; otherwise that none is
+     * pending.
+     */
+    private static String noneUnderTheLock(Optional<AccountingPeriodStore.UnlockEndRow> last, Instant requested) {
+        return last.filter(ended -> ended.proposedAt().equals(requested))
+                .map(ended -> "the unlock named was " + ended.outcome().name() + "; none is pending, and nothing was changed")
+                .orElse("no unlock of the period is pending; nothing was changed");
+    }
+
+    /** The unlock pending is the one the person read, named by when it was proposed; otherwise {@link RequestStale}, saying when the one pending was. */
+    private static void requireTheUnlockRead(AccountingPeriodStore.PeriodRow row, Instant requested, String act) {
+        Instant pending = row.unlockProposedAt().orElseThrow(() -> new IllegalStateException("a pending unlock was proposed at an instant"));
+        if (!pending.equals(requested)) {
+            throw new RequestStale(row.id(), row.month(), act, "the unlock named, proposed at " + requested + ", is not the one pending, proposed at " + pending
+                    + ": read it and decide again; nothing was changed");
+        }
+    }
+
+    /**
+     * Records a refusal a door keeps {@code FAILED} under its own action ({@link RecordedRefusal#action()}) on {@code unitOfWork} - the caller's own transaction, after the act rolled back, so the
+     * attempt is kept.
+     */
+    public void recordRefusal(Connection unitOfWork, RecordedRefusal refused, Actor actor, CorrelationId correlation) {
         Objects.requireNonNull(refused, "refused");
         audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, clock.instant(),
-                AccountingAuditAction.SELF_APPROVAL_REFUSED, TARGET_TYPE, refused.target(), Optional.empty(),
+                refused.action(), TARGET_TYPE, refused.target(), Optional.empty(),
                 AuditOutcome.FAILED, correlation, Optional.of(refused.summary())));
+    }
+
+    /**
+     * When the period's pending unlock was proposed - its identity, which an approval, a rejection and a withdrawal name (`P14-TSK-024`); empty when none is pending. A plain read: the act
+     * judges it again holding the row.
+     *
+     * @throws PeriodNotFound when no period has this id
+     */
+    public Optional<Instant> pendingUnlock(Connection unitOfWork, AccountingPeriodId id) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        AccountingPeriodStore.PeriodRow row = store.find(unitOfWork, id).orElseThrow(PeriodNotFound::new);
+        return row.unlockPending() ? row.unlockProposedAt() : Optional.empty();
     }
 
     // ------------------------------------------------------------------ reads

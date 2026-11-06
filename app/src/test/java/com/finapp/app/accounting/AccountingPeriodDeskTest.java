@@ -6,16 +6,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.finapp.accounting.AccountingErrorCode;
 import com.finapp.accounting.AccountingPeriods;
 import com.finapp.accounting.LockGrace;
+import com.finapp.accounting.PeriodCloseStore;
 import com.finapp.accounting.PostingCutoff;
 import com.finapp.accounting.testing.InMemoryAccountingPeriodStore;
 import com.finapp.accounting.testing.InMemoryGlMappingStore;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.idempotency.IdempotencyConflictException;
 import com.finapp.platform.idempotency.IdempotencyKey;
 import com.finapp.platform.idempotency.IdempotencyRecord;
 import com.finapp.platform.idempotency.IdempotencyRecordStore;
@@ -119,9 +123,11 @@ class AccountingPeriodDeskTest {
             LockGrace.standard(), (uow, record) -> audited.add(record),
             (uow, envelope, payload, mediaType) -> events.add(envelope.eventType()), IDS, CLOCK,
             (uow, period, actor, correlation) -> 0);
+    /** The reopen the close's machine would say is pending on a period: none, unless a case sets one. */
+    private Optional<PeriodCloseStore.ReopenRow> reopenPending = Optional.empty();
     private final AccountingPeriodDesk desk = new AccountingPeriodDesk(periods,
             new IdempotentExecutor(new Claims(), CLOCK, Duration.ofDays(1), Duration.ofSeconds(30)), unitOfWork,
-            AccountingFlowScope.NONE);
+            AccountingFlowScope.NONE, (uow, row) -> reopenPending.filter(reopen -> reopen.period().equals(row.id())));
 
     @Test
     @DisplayName("a lock is keyed per principal: a replayed key answers the stored receipt and writes nothing; another"
@@ -142,6 +148,10 @@ class AccountingPeriodDeskTest {
             assertThat(view.lockableFrom()).isEqualTo("2026-10-02");
             assertThat(view.endDate()).isEqualTo("2026-09-30");
             assertThat(view.unlockPending()).isFalse();
+            assertThat(view.unlockProposedAt()).isNull();
+            assertThat(view.reopenPending()).isFalse();
+            assertThat(view.reopenId()).as("none pending: null, never read as something").isNull();
+            assertThat(view.reopenProposedAt()).isNull();
         });
     }
 
@@ -182,7 +192,8 @@ class AccountingPeriodDeskTest {
         AccountingPeriodDesk.AccountingPeriodReceipt proposed =
                 as(ACCOUNTANT, () -> desk.proposeUnlock("propose", id, "a missed accrual"));
         assertThat(proposed.unlockPending()).isTrue();
-        refused(() -> as(ACCOUNTANT, () -> desk.approveUnlock("approve-self", id, "mine")),
+        String read = pending(id);
+        refused(() -> as(ACCOUNTANT, () -> desk.approveUnlock("approve-self", id, read, "mine")),
                 AccountingErrorCode.SELF_APPROVAL_REFUSED, 403);
         assertThat(audited).filteredOn(record -> record.outcome() == AuditOutcome.FAILED).singleElement()
                 .satisfies(record -> {
@@ -190,24 +201,29 @@ class AccountingPeriodDeskTest {
                     assertThat(record.targetId()).isEqualTo(id);
                 });
         AccountingPeriodDesk.AccountingPeriodReceipt unlocked =
-                as(CONTROLLER, () -> desk.approveUnlock("approve", id, "reviewed"));
+                as(CONTROLLER, () -> desk.approveUnlock("approve", id, read, "reviewed"));
         assertThat(unlocked.status()).isEqualTo("OPEN");
         assertThat(closedThrough).isEmpty();
     }
 
     @Test
-    @DisplayName("the routes: list ACCOUNTING_READ, lock and unlock proposal ACCOUNTING_CLOSE_PROPOSE, the approval"
-            + " ACCOUNTING_CLOSE_APPROVE; every POST keyed")
+    @DisplayName("the routes: list ACCOUNTING_READ, lock, unlock proposal and withdrawal ACCOUNTING_CLOSE_PROPOSE, the"
+            + " approval and the rejection ACCOUNTING_CLOSE_APPROVE; every POST keyed")
     void theRoutesAreThePartition() {
         Map<String, PermissionName> expected = Map.of(
                 "listAccountingPeriods", PermissionName.ACCOUNTING_READ,
                 "lockAccountingPeriod", PermissionName.ACCOUNTING_CLOSE_PROPOSE,
                 "proposeAccountingPeriodUnlock", PermissionName.ACCOUNTING_CLOSE_PROPOSE,
-                "approveAccountingPeriodUnlock", PermissionName.ACCOUNTING_CLOSE_APPROVE);
+                "approveAccountingPeriodUnlock", PermissionName.ACCOUNTING_CLOSE_APPROVE,
+                "rejectAccountingPeriodUnlock", PermissionName.ACCOUNTING_CLOSE_APPROVE,
+                "withdrawAccountingPeriodUnlock", PermissionName.ACCOUNTING_CLOSE_PROPOSE);
         int doors = 0;
         for (Method method : AccountingPeriodController.class.getDeclaredMethods()) {
             if (method.isAnnotationPresent(RequiresPermission.class)) {
                 doors++;
+                // P14-TSK-024, the owner's acceptance: the approval moves the cutoff and supersedes FINAL runs, so MULTI_FACTOR; nothing else here does.
+                assertThat(Optional.ofNullable(method.getAnnotation(RequiresAssurance.class)).map(RequiresAssurance::value)).as(method.getName())
+                        .isEqualTo(method.getName().equals("approveAccountingPeriodUnlock") ? Optional.of(AssuranceLevel.MULTI_FACTOR) : Optional.empty());
                 assertThat(method.getAnnotation(RequiresPermission.class).value()).as(method.getName())
                         .isEqualTo(expected.get(method.getName()));
                 assertThat(method.isAnnotationPresent(RequiresIdempotencyKey.class)).as(method.getName())
@@ -217,7 +233,125 @@ class AccountingPeriodDeskTest {
         assertThat(doors).isEqualTo(expected.size());
     }
 
+    @Test
+    @DisplayName("P14-TSK-024 (d): an unlock's rejection - a second person's: keyed, the key's replay the stored receipt, another body a conflict; the period LOCKED with none pending, the cutoff unmoved; the proposer's own"
+            + " refused 403 and recorded FAILED in its own transaction; a second rejecter told by name, 409; the month free for a new proposal")
+    void anUnlocksRejection() {
+        String id = lockedWithAnUnlockPending();
+        String read = pending(id);
+        refused(() -> as(ACCOUNTANT, () -> desk.rejectUnlock("reject-self", id, read, "mine")), AccountingErrorCode.SELF_APPROVAL_REFUSED, 403);
+        assertThat(audited).filteredOn(record -> record.outcome() == AuditOutcome.FAILED).singleElement()
+                .satisfies(record -> assertThat(record.changeSummary().orElseThrow()).contains("act=period:unlock-rejection"));
+        assertThat(store.unlockEnds()).isEmpty();
+
+        AccountingPeriodDesk.AccountingPeriodReceipt rejected = as(CONTROLLER, () -> desk.rejectUnlock("reject", id, read, "not needed"));
+
+        assertThat(rejected.status()).isEqualTo("LOCKED");
+        assertThat(rejected.unlockPending()).isFalse();
+        assertThat(closedThrough).contains(LocalDate.of(2026, 9, 30));
+        assertThat(as(CONTROLLER, () -> desk.rejectUnlock("reject", id, read, "not needed"))).as("the key's replay").isEqualTo(rejected);
+        assertThatThrownBy(() -> as(CONTROLLER, () -> desk.rejectUnlock("reject", id, read, "another reason"))).isInstanceOf(IdempotencyConflictException.class);
+        assertThat(as(CONTROLLER, () -> desk.rejectUnlock("reject-again", id, read, "not needed")).status()).as("the same person's repeat converges").isEqualTo("LOCKED");
+        assertThat(store.unlockEnds()).as("ended once").hasSize(1);
+        assertThatThrownBy(() -> as(new Actor("controller-2", ActorType.CUSTOMER), () -> desk.rejectUnlock("reject-2", id, read, "me too")))
+                .isInstanceOfSatisfying(ApiException.class, refused -> {
+                    assertThat(refused.errorCode()).isEqualTo(AccountingErrorCode.PERIOD_STALE);
+                    assertThat(refused.clientDetail().orElseThrow()).contains("was REJECTED").doesNotContain("not needed");
+                });
+        refused(() -> as(CONTROLLER, () -> desk.approveUnlock("approve", id, read, "late")), AccountingErrorCode.PERIOD_STALE, 409);
+        assertThat(as(ACCOUNTANT, () -> desk.proposeUnlock("propose-again", id, "another accrual")).unlockPending()).as("free for a new one").isTrue();
+        assertThat(audited).extracting(record -> record.operation().code()).contains("accounting.PeriodUnlockRejected");
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024 (d): an unlock's withdrawal - its proposer's alone: anyone else 403 accounting.NotTheProposer, recorded FAILED in its own transaction (the fix round's M-2) and nothing kept under its key; the proposer's keyed and reasoned, the period LOCKED; none pending then 409")
+    void anUnlocksWithdrawal() {
+        String id = lockedWithAnUnlockPending();
+        String read = pending(id);
+        refused(() -> as(CONTROLLER, () -> desk.withdrawUnlock("withdraw-other", id, read, "theirs")), AccountingErrorCode.NOT_THE_PROPOSER, 403);
+        assertThat(claims.keySet()).as("a refusal stored nothing under its key").noneMatch(key -> key.key().equals("withdraw-other"));
+        assertThat(audited).filteredOn(record -> record.outcome() == AuditOutcome.FAILED).singleElement().satisfies(record -> {
+            assertThat(record.operation().code()).isEqualTo("accounting.NotTheProposer");
+            assertThat(record.actor()).isEqualTo(CONTROLLER);
+            assertThat(record.targetId()).isEqualTo(id);
+            assertThat(record.changeSummary().orElseThrow()).isEqualTo("period=2026-09, act=period:unlock-withdrawal");
+            assertThat(record.reason()).as("the refused act's reason is never kept").isEmpty();
+        });
+        refused(() -> as(ACCOUNTANT, () -> desk.withdrawUnlock("withdraw-blank", id, read, " ")), AccountingErrorCode.REASON_REQUIRED, 422);
+
+        AccountingPeriodDesk.AccountingPeriodReceipt withdrawn = as(ACCOUNTANT, () -> desk.withdrawUnlock("withdraw", id, read, "the wrong month"));
+
+        assertThat(withdrawn.status()).isEqualTo("LOCKED");
+        assertThat(withdrawn.unlockPending()).isFalse();
+        assertThat(store.unlockEnds()).singleElement().satisfies(end -> assertThat(end.outcome()).isEqualTo(com.finapp.accounting.PeriodRequestEnd.WITHDRAWN));
+        refused(() -> as(CONTROLLER, () -> desk.rejectUnlock("reject-late", id, read, "late")), AccountingErrorCode.PERIOD_STALE, 409);
+        refused(() -> as(ACCOUNTANT, () -> desk.withdrawUnlock("withdraw", UUID.randomUUID().toString(), read, "the wrong month")), AccountingErrorCode.NOT_FOUND, 404);
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024's fix round (M-1): each act on a pending unlock names it as the list serves it - withdrawn and another proposed, the approval naming the first is 409 accounting.RequestStale, recorded FAILED, nothing kept under its key; the same key naming another request is a conflict, never a replay; a value that is no instant names no request; naming the one pending, it is approved")
+    void anActNamesTheUnlockItRead() {
+        String id = lockedWithAnUnlockPending();
+        String first = pending(id);
+        as(ACCOUNTANT, () -> desk.withdrawUnlock("withdraw-first", id, first, "the wrong month"));
+        as(new Actor("accountant-2", ActorType.CUSTOMER), () -> desk.proposeUnlock("propose-second", id, "a missed accrual"));
+        String second = pending(id);
+        assertThat(second).isNotEqualTo(first);
+
+        assertThatThrownBy(() -> as(CONTROLLER, () -> desk.approveUnlock("approve-first", id, first, "the one I read"))).isInstanceOfSatisfying(ApiException.class, refused -> {
+            assertThat(refused.errorCode()).isEqualTo(AccountingErrorCode.REQUEST_STALE);
+            assertThat(refused.errorCode().status()).isEqualTo(409);
+            assertThat(refused.clientDetail().orElseThrow()).contains("is not the one pending").doesNotContain("the one I read");
+        });
+        assertThat(audited).filteredOn(record -> record.outcome() == AuditOutcome.FAILED).singleElement().satisfies(record -> {
+            assertThat(record.operation().code()).isEqualTo("accounting.RequestStale");
+            assertThat(record.changeSummary().orElseThrow()).isEqualTo("period=2026-09, act=period:unlock-approval");
+        });
+        assertThat(claims.keySet()).noneMatch(key -> key.key().equals("approve-first"));
+        assertThat(store.month(SEPTEMBER).orElseThrow().unlockPending()).as("the second still pending").isTrue();
+        refused(() -> as(CONTROLLER, () -> desk.rejectUnlock("reject-first", id, first, "the one I read")), AccountingErrorCode.REQUEST_STALE, 409);
+        refused(() -> as(CONTROLLER, () -> desk.approveUnlock("approve-bad", id, "yesterday", "the one I read")), AccountingErrorCode.REQUEST_STALE, 409);
+
+        AccountingPeriodDesk.AccountingPeriodReceipt unlocked = as(CONTROLLER, () -> desk.approveUnlock("approve-second", id, second, "the one I read"));
+        assertThat(unlocked.status()).isEqualTo("OPEN");
+        assertThat(as(CONTROLLER, () -> desk.approveUnlock("approve-second", id, second, "the one I read"))).as("the key's replay").isEqualTo(unlocked);
+        assertThatThrownBy(() -> as(CONTROLLER, () -> desk.approveUnlock("approve-second", id, first, "the one I read"))).as("the fingerprint covers the request named")
+                .isInstanceOf(IdempotencyConflictException.class);
+    }
+
+    @Test
+    @DisplayName("P14-TSK-024's fix round (M-1): the list names a pending reopen - its id, which its withdrawal names, and when it was proposed - and a pending unlock by when it was proposed; null where none is pending")
+    void theListNamesWhatIsPending() {
+        String id = lockedWithAnUnlockPending();
+        assertThat(desk.list(null)).singleElement().satisfies(view -> {
+            assertThat(view.unlockPending()).isTrue();
+            assertThat(view.unlockProposedAt()).isEqualTo(store.month(SEPTEMBER).orElseThrow().unlockProposedAt().orElseThrow().toString());
+        });
+        com.finapp.accounting.PeriodReopenId reopen = com.finapp.accounting.PeriodReopenId.next(IDS);
+        Instant proposedAt = Instant.parse("2026-10-30T08:00:00.123456Z");
+        reopenPending = Optional.of(new PeriodCloseStore.ReopenRow(reopen, com.finapp.accounting.AccountingPeriodId.of(UUID.fromString(id)), 1, com.finapp.accounting.PeriodReopenStatus.PROPOSED,
+                ACCOUNTANT.id(), proposedAt, "a correction", Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()));
+        assertThat(desk.list(null)).singleElement().satisfies(view -> {
+            assertThat(view.reopenPending()).isTrue();
+            assertThat(view.reopenId()).isEqualTo(reopen.value().toString());
+            assertThat(view.reopenProposedAt()).isEqualTo("2026-10-30T08:00:00.123456Z");
+        });
+    }
+
     // -----------------------------------------------------------------
+
+    /** September locked by the accountant, who then proposed its unlock. */
+    private String lockedWithAnUnlockPending() {
+        String id = september();
+        as(ACCOUNTANT, () -> desk.lock("lock", id, null));
+        as(ACCOUNTANT, () -> desk.proposeUnlock("propose", id, "a missed accrual"));
+        return id;
+    }
+
+    /** When the pending unlock of {@code id} was proposed, as the list serves it - what its acts name. */
+    private String pending(String id) {
+        return desk.list(null).stream().filter(view -> view.id().equals(id)).findFirst().orElseThrow().unlockProposedAt();
+    }
 
     /** September 2026, opened as the first period. */
     private String september() {

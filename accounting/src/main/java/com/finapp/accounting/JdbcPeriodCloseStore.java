@@ -46,8 +46,11 @@ public final class JdbcPeriodCloseStore implements PeriodCloseStore {
     static final String CHECKS_SQL = "SELECT close_id, check_code, close_check_id, attempt, status, judged_by, evidence, disclosure_reason"
             + " FROM accounting.period_close_check WHERE close_id = ?";
 
-    /** The frozen attempts' own evidence - {@code close_check}'s row, never rewritten. */
-    static final String ATTEMPT_EVIDENCE_SQL = "SELECT f.check_code, a.evidence FROM accounting.period_close_check f"
+    /**
+     * The frozen attempts as they concluded - {@code close_check}'s own row, never rewritten: its evidence, and {@code concluded_at} as {@code V007}'s trigger stamped it on the database's clock
+     * (`P14-TSK-024`). A frozen attempt is {@code PASSED} or {@code DISCLOSED} ({@code period_close_check_is_ready}), so both are {@code NOT NULL} ({@code close_check_outcome_coherent}).
+     */
+    static final String FROZEN_ATTEMPTS_SQL = "SELECT f.check_code, a.evidence, a.concluded_at FROM accounting.period_close_check f"
             + " JOIN accounting.close_check a ON a.id = f.close_check_id WHERE f.close_id = ?";
 
     /** The one decision: conditional on {@code PROPOSED}. */
@@ -58,15 +61,26 @@ public final class JdbcPeriodCloseStore implements PeriodCloseStore {
             + " proposed_by_type, proposed_at, proposal_reason, correlation_id) VALUES (?, ?, ?, 'PROPOSED', ?, ?, clock_timestamp(), ?, ?)";
 
     private static final String REOPEN = "SELECT id, period_id, period_revision, status, proposed_by, proposed_at, proposal_reason, approved_by,"
-            + " approved_at FROM accounting.period_reopen WHERE period_id = ? AND period_revision = ?";
+            + " approved_at, ended_by, ended_at FROM accounting.period_reopen";
 
-    static final String REOPEN_AT_SQL = REOPEN;
+    /** The pending one: {@code period_reopen_one_pending} admits at most one per period (`P14-TSK-024`; {@code V008}'s one per revision until then). */
+    static final String PENDING_REOPEN_SQL = REOPEN + " WHERE period_id = ? AND status = 'PROPOSED'";
 
-    static final String LOCK_REOPEN_AT_SQL = REOPEN + " FOR UPDATE";
+    static final String LOCK_PENDING_REOPEN_SQL = PENDING_REOPEN_SQL + " FOR UPDATE";
+
+    /** The approved one of a revision: {@code period_reopen_one_approved}. */
+    static final String APPROVED_REOPEN_AT_SQL = REOPEN + " WHERE period_id = ? AND period_revision = ? AND status = 'APPROVED'";
+
+    /** A revision's latest end, by the database's stamp; the id, a UUIDv7, settles a tie. */
+    static final String LATEST_ENDED_REOPEN_AT_SQL = REOPEN + " WHERE period_id = ? AND period_revision = ? AND status IN ('REJECTED', 'WITHDRAWN') ORDER BY ended_at DESC, id DESC LIMIT 1";
 
     /** The one approval: conditional on {@code PROPOSED}. */
     static final String APPROVE_REOPEN_SQL = "UPDATE accounting.period_reopen SET status = 'APPROVED', approved_by = ?, approved_by_type = ?,"
             + " approved_at = clock_timestamp(), approval_reason = ? WHERE id = ? AND status = 'PROPOSED'";
+
+    /** An end instead (`P14-TSK-024`): conditional on {@code PROPOSED}, so an approval and an end never both move it; {@code V011}'s {@code CHECK} judges the four eyes. */
+    static final String END_REOPEN_SQL = "UPDATE accounting.period_reopen SET status = ?, ended_by = ?, ended_by_type = ?, ended_at = clock_timestamp(), end_reason = ?"
+            + " WHERE id = ? AND status = 'PROPOSED'";
 
     @Override
     public void insert(Connection unitOfWork, NewClose close) {
@@ -148,16 +162,16 @@ public final class JdbcPeriodCloseStore implements PeriodCloseStore {
     }
 
     @Override
-    public java.util.Map<CloseCheckCode, String> attemptEvidence(Connection unitOfWork, PeriodCloseId id) {
-        try (PreparedStatement read = unitOfWork.prepareStatement(ATTEMPT_EVIDENCE_SQL)) {
+    public java.util.Map<CloseCheckCode, FrozenAttempt> frozenAttempts(Connection unitOfWork, PeriodCloseId id) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(FROZEN_ATTEMPTS_SQL)) {
             read.setObject(1, id.value());
-            java.util.Map<CloseCheckCode, String> evidence = new java.util.EnumMap<>(CloseCheckCode.class);
+            java.util.Map<CloseCheckCode, FrozenAttempt> attempts = new java.util.EnumMap<>(CloseCheckCode.class);
             try (ResultSet row = read.executeQuery()) {
                 while (row.next()) {
-                    evidence.put(CloseCheckCode.valueOf(row.getString(1)), row.getString(2));
+                    attempts.put(CloseCheckCode.valueOf(row.getString(1)), new FrozenAttempt(row.getString(2), row.getTimestamp(3).toInstant()));
                 }
             }
-            return evidence;
+            return attempts;
         } catch (SQLException failure) {
             throw failed("reading the attempts a close proposal names", failure);
         }
@@ -194,13 +208,23 @@ public final class JdbcPeriodCloseStore implements PeriodCloseStore {
     }
 
     @Override
-    public Optional<ReopenRow> reopenAt(Connection unitOfWork, AccountingPeriodId period, int revision) {
-        return oneReopen(unitOfWork, REOPEN_AT_SQL, period, revision, "reading a reopen proposal");
+    public Optional<ReopenRow> pendingReopen(Connection unitOfWork, AccountingPeriodId period) {
+        return oneReopen(unitOfWork, PENDING_REOPEN_SQL, period, Optional.empty(), "reading a pending reopen proposal");
     }
 
     @Override
-    public Optional<ReopenRow> lockReopenAt(Connection unitOfWork, AccountingPeriodId period, int revision) {
-        return oneReopen(unitOfWork, LOCK_REOPEN_AT_SQL, period, revision, "locking a reopen proposal");
+    public Optional<ReopenRow> lockPendingReopen(Connection unitOfWork, AccountingPeriodId period) {
+        return oneReopen(unitOfWork, LOCK_PENDING_REOPEN_SQL, period, Optional.empty(), "locking a pending reopen proposal");
+    }
+
+    @Override
+    public Optional<ReopenRow> approvedReopenAt(Connection unitOfWork, AccountingPeriodId period, int revision) {
+        return oneReopen(unitOfWork, APPROVED_REOPEN_AT_SQL, period, Optional.of(revision), "reading an approved reopen");
+    }
+
+    @Override
+    public Optional<ReopenRow> latestEndedReopenAt(Connection unitOfWork, AccountingPeriodId period, int revision) {
+        return oneReopen(unitOfWork, LATEST_ENDED_REOPEN_AT_SQL, period, Optional.of(revision), "reading an ended reopen");
     }
 
     @Override
@@ -213,6 +237,20 @@ public final class JdbcPeriodCloseStore implements PeriodCloseStore {
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw failed("approving a reopen proposal", failure);
+        }
+    }
+
+    @Override
+    public boolean endReopen(Connection unitOfWork, PeriodReopenId id, PeriodRequestEnd end, Actor actor, String reason) {
+        try (PreparedStatement update = unitOfWork.prepareStatement(END_REOPEN_SQL)) {
+            update.setString(1, end.reopenStatus().name());
+            update.setString(2, actor.id());
+            update.setString(3, actor.type().name());
+            update.setString(4, reason);
+            update.setObject(5, id.value());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw failed("ending a reopen proposal", failure);
         }
     }
 
@@ -250,10 +288,13 @@ public final class JdbcPeriodCloseStore implements PeriodCloseStore {
                 CorrelationId.of(row.getString("correlation_id")));
     }
 
-    private static Optional<ReopenRow> oneReopen(Connection unitOfWork, String sql, AccountingPeriodId period, int revision, String operation) {
+    /** One reopen row by the period and, when the statement names one, the revision - each statement's own arbiter admits at most one. */
+    private static Optional<ReopenRow> oneReopen(Connection unitOfWork, String sql, AccountingPeriodId period, Optional<Integer> revision, String operation) {
         try (PreparedStatement read = unitOfWork.prepareStatement(sql)) {
             read.setObject(1, period.value());
-            read.setInt(2, revision);
+            if (revision.isPresent()) {
+                read.setInt(2, revision.get());
+            }
             try (ResultSet row = read.executeQuery()) {
                 return row.next()
                         ? Optional.of(new ReopenRow(
@@ -265,7 +306,9 @@ public final class JdbcPeriodCloseStore implements PeriodCloseStore {
                                 row.getTimestamp("proposed_at").toInstant(),
                                 row.getString("proposal_reason"),
                                 Optional.ofNullable(row.getString("approved_by")),
-                                instant(row.getTimestamp("approved_at"))))
+                                instant(row.getTimestamp("approved_at")),
+                                Optional.ofNullable(row.getString("ended_by")),
+                                instant(row.getTimestamp("ended_at"))))
                         : Optional.empty();
             }
         } catch (SQLException failure) {

@@ -257,7 +257,7 @@ class ValuationRateSetsTest {
         ValuationRateSets.Valued pending = sets().capture(UOW, september, accountant, null, correlation());
         ValuationRateSets.Valued kept = sets().capture(UOW, september, secondAccountant, null, correlation());
         periods("2026-10-30").proposeUnlock(UOW, september, accountant, "a late invoice", correlation());
-        periods("2026-10-30").approveUnlock(UOW, september, controller, "agreed", correlation());
+        periods("2026-10-30").approveUnlock(UOW, september, periods("2026-10-30").pendingUnlock(UOW, september).orElseThrow(), controller, "agreed", correlation());
 
         assertThatThrownBy(() -> sets().approve(UOW, pending.id(), controller, "checked", correlation()))
                 .isInstanceOf(AccountingPeriods.PeriodStale.class).hasMessageContaining("OPEN");
@@ -267,7 +267,7 @@ class ValuationRateSetsTest {
         periods("2026-10-30").lock(UOW, september, accountant, null, correlation());
         sets().approve(UOW, kept.id(), controller, "checked", correlation());
         periods("2026-10-30").proposeUnlock(UOW, september, accountant, "another late invoice", correlation());
-        periods("2026-10-30").approveUnlock(UOW, september, controller, "agreed", correlation());
+        periods("2026-10-30").approveUnlock(UOW, september, periods("2026-10-30").pendingUnlock(UOW, september).orElseThrow(), controller, "agreed", correlation());
         assertThat(sets().approvedFor(UOW, september)).map(ValuationRateSets.Valued::id).contains(kept.id());
     }
 

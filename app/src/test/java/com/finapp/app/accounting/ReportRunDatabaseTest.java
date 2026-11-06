@@ -300,7 +300,7 @@ class ReportRunDatabaseTest {
             try (Connection unlocker = DatabaseRoles.application()) {
                 unlocker.setAutoCommit(false);
                 Actor approver = person();
-                held(approver, () -> periods().approveUnlock(unlocker, january, approver, "racing", correlation()));
+                held(approver, () -> periods().approveUnlock(unlocker, january, periods().pendingUnlock(unlocker, january).orElseThrow(), approver, "racing", correlation()));
                 waiting = pool.submit(() -> TRANSACTIONS.inTransaction(uow -> runs(ReportRuns.Leases.STANDARD)
                         .claim(uow, JOURNAL.code(), january, probe(), person(), correlation())));
                 assertThat(stillWaiting(waiting)).as("the claim waits for the unlock's FOR UPDATE").isTrue();
@@ -345,7 +345,7 @@ class ReportRunDatabaseTest {
             try (Connection unlocker = DatabaseRoles.application()) {
                 unlocker.setAutoCommit(false);
                 Actor approver = person();
-                held(approver, () -> periods().approveUnlock(unlocker, january, approver, "racing", correlation()));
+                held(approver, () -> periods().approveUnlock(unlocker, january, periods().pendingUnlock(unlocker, january).orElseThrow(), approver, "racing", correlation()));
                 completing = pool.submit(() -> TRANSACTIONS.inTransaction(uow -> runs(ReportRuns.Leases.STANDARD)
                         .complete(uow, second.id(), second.attempt(), again, person())));
                 assertThat(stillWaiting(completing)).as("the completion waits for the unlock's FOR UPDATE").isTrue();
@@ -514,7 +514,7 @@ class ReportRunDatabaseTest {
     /** The unlock approved and committed by a second person. */
     private static Object approveUnlock(AccountingPeriodId period) {
         Actor approver = person();
-        return inScope(approver, uow -> periods().approveUnlock(uow, period, approver, "racing", correlation()));
+        return inScope(approver, uow -> periods().approveUnlock(uow, period, periods().pendingUnlock(uow, period).orElseThrow(), approver, "racing", correlation()));
     }
 
     /** {@code work} inside the actor's and a correlation's scopes, its transaction left open for the caller to commit. */

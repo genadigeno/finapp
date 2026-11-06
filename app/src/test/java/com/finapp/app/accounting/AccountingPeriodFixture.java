@@ -96,7 +96,7 @@ final class AccountingPeriodFixture {
                 inScope(person(), uow -> periods().proposeUnlock(uow, row.id(), SecurityContext.require(),
                         "the test restores the period", correlation()));
             }
-            inScope(person(), uow -> periods().approveUnlock(uow, row.id(), SecurityContext.require(),
+            inScope(person(), uow -> periods().approveUnlock(uow, row.id(), periods().pendingUnlock(uow, row.id()).orElseThrow(), SecurityContext.require(),
                     "the test restores the period", correlation()));
         }
     }

@@ -479,7 +479,7 @@ class StatementsDatabaseTest {
         inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, PeriodCloseFixture.posted(uow, january), "a correction was found", correlation()));
         assertThat(readAsAController(stale).periodStatus()).as("only proposed: the statement stands").isEqualTo("CLOSED");
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'accounting.FinalStatementRead' AND target_id = '" + stale + "'")).isEqualTo(2);
-        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, PeriodCloseFixture.posted(uow, january), "agreed", correlation()));
+        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, MACHINE.pendingOf(uow, january).reopen().orElseThrow().id(), CONTROLLER, PeriodCloseFixture.posted(uow, january), "agreed", correlation()));
         refused.add(stale);
 
         for (String id : refused) {
@@ -499,7 +499,7 @@ class StatementsDatabaseTest {
         String firstClose = single("SELECT id::text FROM accounting.period_close WHERE period_id = '" + january.value() + "' AND period_revision = " + firstRevision + " AND status = 'APPROVED'");
 
         inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, PeriodCloseFixture.posted(uow, january), "a correction was found", correlation()));
-        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, PeriodCloseFixture.posted(uow, january), "agreed", correlation()));
+        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, MACHINE.pendingOf(uow, january).reopen().orElseThrow().id(), CONTROLLER, PeriodCloseFixture.posted(uow, january), "agreed", correlation()));
         assertThat(single("SELECT status FROM accounting.report_run WHERE id = '" + first.id().value() + "'")).isEqualTo("SUPERSEDED");
 
         post(LAST_DAY, wallet, operational(AccountPurpose.FEE_REVENUE), 3, EUR);
@@ -532,7 +532,7 @@ class StatementsDatabaseTest {
         ReportGeneration.Generated generated = SNAPSHOTS.read(snapshot -> new ReportGeneration(ReportGeneration.FROM_THE_SNAPSHOT, ReportRuns.Leases.STANDARD.generationTimeout(), NOW).generate(snapshot, INCOME, abandoned.run().inputs()));
 
         inScope(ACCOUNTANT, uow -> MACHINE.proposeReopen(uow, january, ACCOUNTANT, PeriodCloseFixture.posted(uow, january), "a correction was found", correlation()));
-        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, CONTROLLER, PeriodCloseFixture.posted(uow, january), "agreed", correlation()));
+        inScope(CONTROLLER, uow -> MACHINE.approveReopen(uow, january, MACHINE.pendingOf(uow, january).reopen().orElseThrow().id(), CONTROLLER, PeriodCloseFixture.posted(uow, january), "agreed", correlation()));
         assertThat(TRANSACTIONS.inTransaction(uow -> runs().complete(uow, abandoned.run().id(), abandoned.run().attempt(), generated, accountant)).run().failure()).contains(com.finapp.accounting.RunFailure.PERIOD_MOVED);
 
         PeriodCloseFixture.closed(JANUARY);

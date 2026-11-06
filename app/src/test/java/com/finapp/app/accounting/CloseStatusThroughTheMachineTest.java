@@ -68,7 +68,7 @@ class CloseStatusThroughTheMachineTest {
     private final InMemoryCloseRunStore runStore = new InMemoryCloseRunStore(periods);
     private final InMemoryAccountingBreakStore breaks = new InMemoryAccountingBreakStore();
     private final InMemoryValuationRateSetStore setStore = new InMemoryValuationRateSetStore().watching(periods);
-    private final InMemoryPeriodCloseStore closes = new InMemoryPeriodCloseStore(periods);
+    private final InMemoryPeriodCloseStore closes = new InMemoryPeriodCloseStore(periods, runStore);
     private final CloseRuns runs = new CloseRuns(runStore, periods, breaks, CloseRuns.Leases.STANDARD, (uow, record) -> { }, IDS, CLOCK);
     private final ValuationRateSets sets = new ValuationRateSets(setStore, periods, new OneRate(), ValuationStaleness.standard(), (uow, record) -> { }, IDS, CLOCK);
     private final PeriodCloses machine = new PeriodCloses(periods, closes, runs, breaks, setStore, com.finapp.accounting.testing.MonthsThatRan.EVERY_MONTH, new NoCutoff(), (uow, period, actor, correlation) -> 0, new com.finapp.accounting.testing.InMemoryPriorPeriodAdjustmentStore(periods), (uow, record) -> { },
@@ -122,7 +122,7 @@ class CloseStatusThroughTheMachineTest {
         assertThat(closed.get("revision").asInt()).isEqualTo(1);
 
         machine.proposeReopen(UOW, march, ACCOUNTANT, java.util.Set.of(), "a correction", CorrelationId.generate(IDS));
-        machine.approveReopen(UOW, march, CONTROLLER, java.util.Set.of(), "agreed", CorrelationId.generate(IDS));
+        machine.approveReopen(UOW, march, machine.pendingOf(UOW, march).reopen().orElseThrow().id(), CONTROLLER, java.util.Set.of(), "agreed", CorrelationId.generate(IDS));
         JsonNode reopened = read(lockedAt);
         assertThat(reopened.get("status").asText()).isEqualTo("OPEN");
         assertThat(reopened.get("revision").asInt()).isEqualTo(2);
