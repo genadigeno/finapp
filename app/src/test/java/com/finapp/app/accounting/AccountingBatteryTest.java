@@ -461,11 +461,15 @@ class AccountingBatteryTest {
     /** What each judged check concluded, by {@code month CHECK}. */
     private static final Map<String, CheckVerdict> VERDICTS = new TreeMap<>();
 
-    /** Every claimable check of {@code month}'s run concluded: the {@link #JUDGED} by the real judges, the rest by the suite. */
+    /**
+     * Every check of {@code month}'s run concluded: the {@link #JUDGED} by the real judges, the rest by the suite - each taken as the
+     * check leg takes it ({@code PeriodCloseFixture.nextClaim}: a claim answering empty while the database's clock is behind an attempt's
+     * birth is not "nothing left", `P14-DOC-001`).
+     */
     private static void conclude(YearMonth month) {
         CloseChecks judges = judges();
         while (true) {
-            Optional<CloseRuns.ClaimedCheck> held = inScope(Actor.SYSTEM, uow -> PeriodCloseFixture.RUNS.claim(uow, Actor.SYSTEM));
+            Optional<CloseRuns.ClaimedCheck> held = PeriodCloseFixture.nextClaim();
             if (held.isEmpty()) {
                 return;
             }

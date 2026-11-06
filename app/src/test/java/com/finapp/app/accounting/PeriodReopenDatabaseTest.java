@@ -39,6 +39,7 @@ import com.finapp.accounting.RegulatoryObligationId;
 import com.finapp.accounting.RegulatoryObligations;
 import com.finapp.accounting.RegulatoryReportingProvider.Answer;
 import com.finapp.accounting.RegulatorySubmissionId;
+import com.finapp.accounting.RegulatorySubmissionStore;
 import com.finapp.accounting.RegulatorySubmissions;
 import com.finapp.accounting.ReportRunStore;
 import com.finapp.accounting.ReportRuns;
@@ -765,8 +766,9 @@ class PeriodReopenDatabaseTest {
         provider.nextSubmit(() -> Answer.rejected(Optional.empty(), "NOT_ACCEPTED", "{}".getBytes(StandardCharsets.UTF_8)));
         assertThat(driver.submitIfDue(rejected.id())).isTrue();
         RegulatorySubmissions.Acted notReceived = aReturn(january, SubmissionStatus.UNDELIVERED);
-        // Not received, then not received again on the resend the driver permits while the month stands: SUBMITTED, a person's door to come.
-        provider.nextSubmit(() -> Answer.notReceived("{}".getBytes(StandardCharsets.UTF_8))).nextSubmit(() -> Answer.notReceived("{}".getBytes(StandardCharsets.UTF_8)));
+        // The send hears nothing it can read: SUBMITTED, its answer UNKNOWN. A send answered "not received" contradicts itself and is read UNKNOWN (P14-TSK-018,
+        // RegulatoryFormTest#aSendAnsweredNotReceivedIsContradictory): only an inquiry can say nothing arrived, and one does below, once the month has moved (P14-DOC-001).
+        provider.nextSubmit(() -> Answer.unknown(Optional.empty(), "{}".getBytes(StandardCharsets.UTF_8)));
         assertThat(driver.submitIfDue(notReceived.id())).isTrue();
         RegulatorySubmissions.Acted submitted = aReturn(january, SubmissionStatus.SUBMITTED);
         assertThat(rows(acknowledged.id())).isEqualTo(SubmissionStatus.ACKNOWLEDGED);
@@ -794,6 +796,21 @@ class PeriodReopenDatabaseTest {
         assertThat(named(approval)).as("its own read").hasSize(4).startsWith(approved.id().value().toString());
         assertThat(approval.overtakenReturnsTotal()).isEqualTo(4);
         assertThat(as(ACCOUNTANT, () -> desk.proposeReopen("reopen-each-p", period, none, "a correction was found"))).as("the proposal's stored receipt, three, and the month now OPEN").isEqualTo(proposal);
+
+        // The month moved; the permit made due by the migrator, standing in for the inquiry interval (RegulatorySubmissionDatabaseTest's precedent): the driver's inquiry hears
+        // the truth, "not received", and since the month has moved it permits no resend - SUBMITTED, a definite "not received" last, a person's door to come.
+        try (Connection migrator = DatabaseRoles.migrator();
+                java.sql.PreparedStatement due = migrator.prepareStatement("UPDATE accounting.regulatory_submission SET next_inquiry_at = clock_timestamp() - interval '1 minute' WHERE id = ?")) {
+            due.setObject(1, notReceived.id().value());
+            assertThat(due.executeUpdate()).isEqualTo(1);
+        } catch (java.sql.SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
+        assertThat(driver.submitIfDue(notReceived.id())).isTrue();
+        RegulatorySubmissionStore.Row heard = inScope(Actor.SYSTEM, uow -> SUBMISSIONS.find(uow, notReceived.id())).orElseThrow();
+        assertThat(heard.status()).isEqualTo(SubmissionStatus.SUBMITTED);
+        assertThat(heard.lastAnswer()).as("an inquiry's definite not received, and no resend over a moved month").contains("NOT_RECEIVED");
+        assertThat(heard.resends()).isZero();
 
         // A status moved: the month having moved opens the door, and the return it held is UNDELIVERED. The key's replay says what was stored, a repeat under a new key what stands.
         Optional<RegulatorySubmissions.Recorded> asked = driver.askBeforeNonDelivery(inScope(Actor.SYSTEM, uow -> SUBMISSIONS.find(uow, notReceived.id())).orElseThrow(), correlation());

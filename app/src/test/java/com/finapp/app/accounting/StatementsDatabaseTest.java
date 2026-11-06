@@ -330,6 +330,7 @@ class StatementsDatabaseTest {
 
         // The bridge: a version from February moves the loans' purposes to an account of their own and retires the old one, so February's opening restates January's closing.
         secondVersionFromFebruary();
+        journalBehindTheDatabaseClock();
         ReportRunStore.RunRow restated = ask(SHEET, id(FEBRUARY), RunParameters.none());
         assertThat(restated.status()).as("February is open: PROVISIONAL, its door saying its pages are the journal's as it stands").isEqualTo(RunStatus.PROVISIONAL);
         JsonNode restatedBody = bodyOf(restated);
@@ -471,7 +472,8 @@ class StatementsDatabaseTest {
             assertThat(view.periodRevision()).isEqualTo(revision);
             assertThat(view.issuedSha256()).isEqualTo(single("SELECT content_sha256 FROM accounting.report_run WHERE id = '" + run.id().value() + "'"));
             assertThat(view.statement()).doesNotContain("/v1/").doesNotContain("ACCOUNTING_READ").doesNotContain("RECONCILIATION_INVESTIGATE");
-            assertThat(JSON.readTree(view.statement()).get("sections")).as("the figures as issued").isEqualTo(bodyOf(run).get("sections"));
+            // The view is the whole issued content less what names a door (FinalStatementDesk: "nothing else changed"), so its figures are under its body, as the issued bytes' are.
+            assertThat(JSON.readTree(view.statement()).get("body").get("sections")).as("the figures as issued").isNotNull().isEqualTo(bodyOf(run).get("sections"));
             assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'accounting.FinalStatementRead' AND target_id = '" + run.id().value() + "'")).isEqualTo(1);
         }
         String stale = sheet.id().value().toString();
@@ -694,6 +696,22 @@ class StatementsDatabaseTest {
         try (SecurityContext.Scope who = SecurityContext.enter(person());
                 CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(correlation()))) {
             return desk.lines(run.id().value().toString(), account, month.toString(), currency, after, 500);
+        }
+    }
+
+    /**
+     * Waits until the database's clock has passed every journal entry's {@code created_at}, so a PROVISIONAL run claimed next cuts after every line this case posted. ADR-0115 (`-008`'s
+     * review, M-8): a PROVISIONAL run counts entries {@code created_at <= cut_at}, {@code created_at} the posting instance's clock and {@code cut_at} the claim's database clock -
+     * "fuzzy both ways" by design. Docker Desktop's VM clock runs up to ~2 s off the JVM's (`P14-DOC-001`), so a run claimed a second after this case's postings left the January
+     * line out: its opening counted one line and 700.00 where the journal held two and 710.00, and the door's walk of that one line read 10.00. The bridge's claim is over the
+     * journal as asked, so it is asked once the journal is behind the cut - by 3 s, more than the largest backward step measured (~2.4 s), so a step between this read and the claim
+     * cannot put the cut back before a stamp.
+     */
+    private static void journalBehindTheDatabaseClock() throws SQLException, InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (!"true".equals(single("SELECT (clock_timestamp() > (SELECT max(created_at) FROM ledger.journal_entry) + interval '3 seconds')::text"))) {
+            assertThat(System.nanoTime()).as("the database's clock reached the journal's newest stamp within 30 s").isLessThan(deadline);
+            Thread.sleep(50);
         }
     }
 
