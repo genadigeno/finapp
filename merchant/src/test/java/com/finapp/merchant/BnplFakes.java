@@ -174,9 +174,16 @@ final class BnplFakes {
             history.add(previous.map(Object::toString).orElse("none") + "->" + schedule);
         }
 
+        /** The database's discipline (merchant V013): the pin stamped at its insert by the database's clock, read again. */
         @Override
-        public boolean insertPin(Connection unitOfWork, BnplFeePin pin) {
-            return pins.putIfAbsent(pin.purchaseRef(), pin) == null;
+        public Optional<BnplFeePin> insertPin(Connection unitOfWork, BnplFeePin pin) {
+            if (pins.containsKey(pin.purchaseRef())) {
+                return Optional.empty();
+            }
+            BnplFeePin stored = new BnplFeePin(pin.purchaseRef(), pin.merchantId(), pin.product(), pin.versionId(),
+                    pin.gross(), database.instant(), pin.pinnedBy());
+            pins.put(stored.purchaseRef(), stored);
+            return Optional.of(stored);
         }
 
         @Override

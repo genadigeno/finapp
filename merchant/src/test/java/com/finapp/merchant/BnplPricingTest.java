@@ -184,6 +184,26 @@ class BnplPricingTest {
     }
 
     @Test
+    @DisplayName("P14-DOC-001 (merchant V013): the database clock stepped back between the resolution's read and the"
+            + " insert - the pin stands, priced at the read and recorded with the store's own stamp, which the domain"
+            + " never requires to equal its read")
+    void thePinIsRecordedWithTheInsertsOwnStamp() {
+        priced();
+        Instant read = CLOCK.instant();
+        Instant stamped = read.minusSeconds(5);
+        // The database's clock read twice: the resolution's read, then the insert's stamp five seconds behind it.
+        pricingStore.database = new ReadTwice(read, stamped);
+        UUID purchase = UUID.randomUUID();
+
+        FeeAssessment split = pin(purchase, 10_000);
+
+        assertThat(split.fee()).as("priced by the version in force at the read").isEqualTo(Money.ofMinorUnits(299, EUR));
+        assertThat(pricingStore.pins.get(purchase).versionId()).isEqualTo(split.version());
+        assertThat(pricingStore.pins.get(purchase).pinnedAt()).as("the insert's own stamp, not the read")
+                .isEqualTo(stamped);
+    }
+
+    @Test
     @DisplayName("a sale that does not cover its fee is refused before the pin (ADR-0058)")
     void aSaleBelowItsFeeIsRefused() {
         enable();
@@ -280,6 +300,36 @@ class BnplPricingTest {
         pricing.assign(UOW, merchant.id(), MerchantBnplProduct.BNPL_PAY_IN_4, returning.id(), "contract", ANNA,
                 CORRELATION);
         return active;
+    }
+
+    /** A clock answering {@code first}, then {@code then} for every later reading - a step back between two reads. */
+    private static final class ReadTwice extends Clock {
+
+        private final Instant first;
+        private final Instant then;
+        private boolean read;
+
+        ReadTwice(Instant first, Instant then) {
+            this.first = first;
+            this.then = then;
+        }
+
+        @Override
+        public Instant instant() {
+            Instant answer = read ? then : first;
+            read = true;
+            return answer;
+        }
+
+        @Override
+        public ZoneOffset getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(java.time.ZoneId zone) {
+            throw new UnsupportedOperationException("a test clock in UTC");
+        }
     }
 
     private FeeSchedule schedule(String name, RefundFeePolicy policy, String rate, long fixedMinor) {

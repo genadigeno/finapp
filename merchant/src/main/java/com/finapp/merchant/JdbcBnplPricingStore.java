@@ -9,6 +9,7 @@ import java.sql.SQLException;
 import java.sql.Savepoint;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -92,7 +93,7 @@ public final class JdbcBnplPricingStore implements BnplPricingStore<Connection> 
     }
 
     @Override
-    public boolean insertPin(Connection unitOfWork, BnplFeePin pin) {
+    public Optional<BnplFeePin> insertPin(Connection unitOfWork, BnplFeePin pin) {
         Objects.requireNonNull(pin, "pin must not be null");
         Savepoint attempt;
         try {
@@ -102,7 +103,10 @@ public final class JdbcBnplPricingStore implements BnplPricingStore<Connection> 
             throw new MerchantStorageException(DatabaseFailure.describe("preparing a BNPL fee pin", failure));
         }
         try (PreparedStatement insert = unitOfWork.prepareStatement(
-                "INSERT INTO merchant.bnpl_fee_pin (" + PRICED_PURCHASE_COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                "INSERT INTO merchant.bnpl_fee_pin (" + PRICED_PURCHASE_COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                        // The pin's instant is the trigger's (merchant V013, P14-DOC-001: the insert's own stamp on the
+                        // database clock); the resolution's instant bound below is overwritten, and the stamp read back.
+                        + " RETURNING pinned_at")) {
             insert.setObject(1, pin.purchaseRef());
             insert.setObject(2, pin.merchantId().value());
             insert.setString(3, pin.product().name());
@@ -112,9 +116,14 @@ public final class JdbcBnplPricingStore implements BnplPricingStore<Connection> 
             insert.setShort(7, MoneyColumns.scaleOf(pin.gross()));
             insert.setTimestamp(8, Timestamp.from(pin.pinnedAt()));
             insert.setString(9, pin.pinnedBy());
-            insert.executeUpdate();
+            Instant stamped;
+            try (ResultSet row = insert.executeQuery()) {
+                row.next();
+                stamped = row.getObject(1, OffsetDateTime.class).toInstant();
+            }
             unitOfWork.releaseSavepoint(attempt);
-            return true;
+            return Optional.of(new BnplFeePin(pin.purchaseRef(), pin.merchantId(), pin.product(), pin.versionId(),
+                    pin.gross(), stamped, pin.pinnedBy()));
         } catch (SQLException failure) {
             if (UNIQUE_VIOLATION.equals(failure.getSQLState())) {
                 try {
@@ -123,7 +132,7 @@ public final class JdbcBnplPricingStore implements BnplPricingStore<Connection> 
                     throw new MerchantStorageException(
                             DatabaseFailure.describe("abandoning a lost BNPL fee pin race", abandon));
                 }
-                return false;
+                return Optional.empty();
             }
             throw new MerchantStorageException(DatabaseFailure.describe("pinning a BNPL purchase's fee", failure));
         }
@@ -154,11 +163,14 @@ public final class JdbcBnplPricingStore implements BnplPricingStore<Connection> 
 
     @Override
     public Instant databaseNow(Connection unitOfWork) {
-        // clock_timestamp(), not now(): the instant after the locks this transaction waited on, never its start.
-        try (PreparedStatement select = unitOfWork.prepareStatement("SELECT clock_timestamp()");
+        // clock_timestamp(), not now(): the instant after the locks this transaction waited on - and never before its
+        // start (P14-DOC-001): a clock stepped back before this read is held at transaction_timestamp(), the floor of the
+        // pin's own stamp (merchant V013), so the resolution never prices with a version superseded when it began.
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                        "SELECT GREATEST(clock_timestamp(), transaction_timestamp())");
                 ResultSet rows = select.executeQuery()) {
             rows.next();
-            return rows.getObject(1, java.time.OffsetDateTime.class).toInstant();
+            return rows.getObject(1, OffsetDateTime.class).toInstant();
         } catch (SQLException failure) {
             throw new MerchantStorageException(DatabaseFailure.describe("reading the database clock", failure));
         }

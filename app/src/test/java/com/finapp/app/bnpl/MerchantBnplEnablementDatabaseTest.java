@@ -11,10 +11,17 @@ import com.finapp.bnpl.MerchantFeeSplit;
 import com.finapp.merchant.BnplEnablement;
 import com.finapp.merchant.BnplEnablementStatus;
 import com.finapp.merchant.BnplEnablements;
+import com.finapp.merchant.BnplFeePin;
 import com.finapp.merchant.BnplPricing;
+import com.finapp.merchant.BnplPricingStore;
+import com.finapp.merchant.FeeAssessment;
 import com.finapp.merchant.FeeRate;
 import com.finapp.merchant.FeeSchedule;
 import com.finapp.merchant.FeeSchedules;
+import com.finapp.merchant.JdbcBnplEnablementStore;
+import com.finapp.merchant.JdbcBnplPricingStore;
+import com.finapp.merchant.JdbcFeeScheduleStore;
+import com.finapp.merchant.JdbcMerchantStore;
 import com.finapp.merchant.MerchantAdministration;
 import com.finapp.merchant.MerchantBnplProduct;
 import com.finapp.merchant.MerchantId;
@@ -36,7 +43,11 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -400,7 +411,8 @@ class MerchantBnplEnablementDatabaseTest {
     @Test
     @DisplayName("the Phase 12 -> 13 gate's A3-M1: an instance whose JVM clock runs two hours past a version's"
             + " effective_from still pins the version in force on the DATABASE's clock, stamped with the database's"
-            + " instant; and V012 refuses, for every writer, a pin whose instant is outside its own transaction's span")
+            + " instant; and for every writer the pin's instant is its own insert's stamp (V013, P14-DOC-001 - V012"
+            + " refused one outside its transaction's span), so a version not yet in force by it is refused")
     void thePinIsResolvedAndStampedOnTheDatabaseClock() throws Exception {
         MerchantId merchant = enabledMerchant();
         Actor operator = operator();
@@ -432,13 +444,254 @@ class MerchantBnplEnablementDatabaseTest {
                 + " BETWEEN now() - interval '5 minutes' AND now() + interval '5 minutes'", purchase.toString()))
                 .as("stamped with the database's instant, not the skewed instance's").isEqualTo(1);
 
+        // No writer supplies a pin's instant (V013): an hour ahead or an hour behind, the trigger stamps the insert's own
+        // instant over it - within its transaction's span by construction.
         for (String instant : List.of("now() + interval '1 hour'", "now() - interval '1 hour'")) {
-            assertThatThrownBy(() -> rawUpdate(DatabaseRoles.application(), "INSERT INTO merchant.bnpl_fee_pin"
-                    + " (purchase_id, merchant_id, product, fee_schedule_version_id, gross_amount_minor, gross_currency,"
-                    + " gross_scale, pinned_at, pinned_by) VALUES (?, ?, 'BNPL_PAY_IN_4', ?, 10000, 'EUR', 2, " + instant
-                    + ", 'raw')", UUID.randomUUID(), merchant.value(), inForce))
-                    .as(instant).isInstanceOf(SQLException.class)
-                    .hasMessageContaining("its own transaction's on the database clock");
+            assertThat(rawScalar("INSERT INTO merchant.bnpl_fee_pin (purchase_id, merchant_id, product,"
+                    + " fee_schedule_version_id, gross_amount_minor, gross_currency, gross_scale, pinned_at, pinned_by)"
+                    + " VALUES (?, ?, 'BNPL_PAY_IN_4', ?, 10000, 'EUR', 2, " + instant + ", 'raw') RETURNING (pinned_at"
+                    + " >= transaction_timestamp() AND pinned_at <= clock_timestamp())::text", UUID.randomUUID(),
+                    merchant.value(), inForce))
+                    .as(instant).isEqualTo("true");
+        }
+        // And A3-M1 for every writer: version 2, in force an hour from now, refused whatever instant the writer names.
+        UUID notYet = scalarUuid("SELECT id FROM merchant.fee_schedule_version WHERE fee_schedule_id = ? AND version"
+                + " = 2", schedule.id().value());
+        assertThatThrownBy(() -> rawUpdate(DatabaseRoles.application(), "INSERT INTO merchant.bnpl_fee_pin"
+                + " (purchase_id, merchant_id, product, fee_schedule_version_id, gross_amount_minor, gross_currency,"
+                + " gross_scale, pinned_at, pinned_by) VALUES (?, ?, 'BNPL_PAY_IN_4', ?, 10000, 'EUR', 2,"
+                + " now() + interval '2 hours', 'raw')", UUID.randomUUID(), merchant.value(), notYet))
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("names a version in force when it was pinned");
+    }
+
+    @Test
+    @DisplayName("P14-DOC-001 (merchant V013): the database clock stepped back between the pin's resolution and its insert"
+            + " - the pin stands, stamped with its own insert's instant (the transaction's start, the stepped clock behind"
+            + " it) and read back as stored; V012 refused it, and the purchase's acceptance rolled back as a 500")
+    void aClockSteppedBackAfterTheResolutionNeverRefusesThePin() throws Exception {
+        MerchantId merchant = pricedMerchant();
+        UUID purchase = UUID.randomUUID();
+        Actor customer = new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER);
+        SteppedPricingStore stepped = new SteppedPricingStore(false);
+        ShadowClock.install();
+        try {
+            Instant[] start = new Instant[1];
+            FeeAssessment split = ShadowClock.inOneTransaction(uow -> {
+                start[0] = ShadowClock.transactionStart(uow);
+                return pricingOver(stepped).pin(uow, merchant, MerchantBnplProduct.BNPL_PAY_IN_4, purchase,
+                        Money.ofMinorUnits(10_000, EUR), customer);
+            });
+
+            assertThat(split.fee()).isEqualTo(Money.ofMinorUnits(299, EUR));
+            assertThat(stepped.read).as("the resolution read the clock before the step").isAfterOrEqualTo(start[0]);
+            assertThat(pinnedAt(purchase)).as("the insert's own stamp: the stepped clock stood behind the start")
+                    .isEqualTo(start[0]);
+            assertThat(stepped.stored.pinnedAt()).as("the store answers the pin as stored")
+                    .isEqualTo(pinnedAt(purchase));
+            assertThat(stepped.stored.versionId()).isEqualTo(split.version());
+        } finally {
+            ShadowClock.uninstall();
+        }
+    }
+
+    @Test
+    @DisplayName("P14-DOC-001: the database clock stepped back before the pin's resolution - the version is resolved at"
+            + " the transaction's start, never at an instant before it, so a version that took effect before the purchase"
+            + " began prices it; read on the stepped clock it was the superseded one, and V013's stamp admitted it")
+    void aClockSteppedBackBeforeTheResolutionResolvesAtTheTransactionsStart() throws Exception {
+        MerchantId merchant = enabledMerchant();
+        Actor operator = operator();
+        FeeSchedule schedule = act(operator, uow -> feeSchedules.create(uow, "bnpl " + UUID.randomUUID(), EUR));
+        act(operator, uow -> pricing.assign(uow, merchant, MerchantBnplProduct.BNPL_PAY_IN_4, schedule.id(),
+                "contract", operator, correlation()));
+        UUID superseded = IDS.next();
+        UUID current = IDS.next();
+        // Version 1 (2.99 %) in force since an hour ago; version 2 (1.00 %) in force since ten seconds ago - more than any
+        // real step measured (2.8 s) before the purchase begins, less than the planted step behind it.
+        rawUpdate(DatabaseRoles.application(), "INSERT INTO merchant.fee_schedule_version (id, fee_schedule_id, version,"
+                + " rate, fixed_amount_minor, fixed_currency, fixed_scale, rounding_policy, refund_fee_policy,"
+                + " effective_from, created_at, created_by) VALUES"
+                + " (?, ?, 1, 0.0299, 0, 'EUR', 2, 'HALF_EVEN', 'RETURNED', clock_timestamp() - interval '1 hour',"
+                + " clock_timestamp() - interval '2 hours', 'p14-doc-001'),"
+                + " (?, ?, 2, 0.0100, 0, 'EUR', 2, 'HALF_EVEN', 'RETURNED', clock_timestamp() - interval '10 seconds',"
+                + " clock_timestamp() - interval '2 hours', 'p14-doc-001')",
+                superseded, schedule.id().value(), current, schedule.id().value());
+        UUID purchase = UUID.randomUUID();
+        Actor customer = new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER);
+        SteppedPricingStore stepped = new SteppedPricingStore(true);
+        ShadowClock.install();
+        try {
+            Instant[] start = new Instant[1];
+            FeeAssessment split = ShadowClock.inOneTransaction(uow -> {
+                start[0] = ShadowClock.transactionStart(uow);
+                return pricingOver(stepped).pin(uow, merchant, MerchantBnplProduct.BNPL_PAY_IN_4, purchase,
+                        Money.ofMinorUnits(10_000, EUR), customer);
+            });
+
+            assertThat(split.version().value()).as("version 2, in force when the purchase began - never version 1, which"
+                    + " it superseded ten seconds before the purchase's start").isEqualTo(current);
+            assertThat(split.fee()).isEqualTo(Money.ofMinorUnits(100, EUR));
+            assertThat(stepped.read).as("the resolution's instant, held at the transaction's start").isEqualTo(start[0]);
+            assertThat(scalarUuid("SELECT fee_schedule_version_id FROM merchant.bnpl_fee_pin WHERE purchase_id = ?",
+                    purchase)).isEqualTo(current);
+            assertThat(pinnedAt(purchase)).isEqualTo(start[0]);
+        } finally {
+            ShadowClock.uninstall();
+        }
+    }
+
+    /** {@link BnplPricing} as the application wires it, over {@code store}. */
+    private BnplPricing pricingOver(BnplPricingStore<Connection> store) {
+        return new BnplPricing(store, new JdbcBnplEnablementStore(), new JdbcMerchantStore(), new JdbcFeeScheduleStore(),
+                auditWriter, IDS, Clock.systemUTC());
+    }
+
+    private static Instant pinnedAt(UUID purchase) throws SQLException {
+        try (Connection migrator = DatabaseRoles.migrator();
+                PreparedStatement select = migrator.prepareStatement(
+                        "SELECT pinned_at FROM merchant.bnpl_fee_pin WHERE purchase_id = ?")) {
+            select.setObject(1, purchase);
+            try (ResultSet row = select.executeQuery()) {
+                assertThat(row.next()).as("the purchase is pinned").isTrue();
+                return row.getObject(1, OffsetDateTime.class).toInstant();
+            }
+        }
+    }
+
+    /**
+     * {@link JdbcBnplPricingStore}, the database clock stepped back by {@link ShadowClock#STEP} just after the resolution's
+     * read of it ({@code beforeRead} false: the step falls between the read and the pin's insert) or just before it (the
+     * step falls between the transaction's start and the read) - the read and the pin as stored recorded.
+     */
+    private static final class SteppedPricingStore implements BnplPricingStore<Connection> {
+
+        private final JdbcBnplPricingStore store = new JdbcBnplPricingStore();
+        private final boolean beforeRead;
+        private Instant read;
+        private BnplFeePin stored;
+
+        SteppedPricingStore(boolean beforeRead) {
+            this.beforeRead = beforeRead;
+        }
+
+        @Override
+        public Instant databaseNow(Connection unitOfWork) {
+            if (beforeRead) {
+                ShadowClock.stepBack(unitOfWork);
+            }
+            read = store.databaseNow(unitOfWork);
+            if (!beforeRead) {
+                ShadowClock.stepBack(unitOfWork);
+            }
+            return read;
+        }
+
+        @Override
+        public Optional<BnplFeePin> insertPin(Connection unitOfWork, BnplFeePin pin) {
+            Optional<BnplFeePin> answer = store.insertPin(unitOfWork, pin);
+            stored = answer.orElse(null);
+            return answer;
+        }
+
+        @Override
+        public Optional<com.finapp.merchant.FeeScheduleId> findAssignment(Connection unitOfWork, MerchantId merchant,
+                MerchantBnplProduct product) {
+            return store.findAssignment(unitOfWork, merchant, product);
+        }
+
+        @Override
+        public void assign(Connection unitOfWork, MerchantId merchant, MerchantBnplProduct product,
+                Optional<com.finapp.merchant.FeeScheduleId> previous, com.finapp.merchant.FeeScheduleId schedule,
+                String reason, String actorId, String actorType, Instant at) {
+            store.assign(unitOfWork, merchant, product, previous, schedule, reason, actorId, actorType, at);
+        }
+
+        @Override
+        public Optional<BnplFeePin> findPin(Connection unitOfWork, UUID purchaseRef) {
+            return store.findPin(unitOfWork, purchaseRef);
+        }
+    }
+
+    /**
+     * The database clock stepped back on demand, deterministically (`P14-DOC-001`; lending's {@code ClockStep},
+     * `P11-TSK-036`, which this module's tests cannot reach). The container's clock steps back by itself - measured 2.8 s
+     * about every 27 s - and waiting for a step is a flake; this makes one. The clock functions are shadowed in a schema of
+     * the bootstrap superuser's, {@code clockstep}, which a session opts into by putting it before {@code pg_catalog} on
+     * its {@code search_path}: merchant's pin trigger is invoker's rights with no path of its own, and the stores' SQL
+     * names the clock unqualified, so the production code and the production trigger run unchanged on the shadowed
+     * clock. {@code clockstep.back}, {@code SET LOCAL} between two statements, is taken from every LATER
+     * {@code clock_timestamp()} and {@code statement_timestamp()} - never from {@code transaction_timestamp()}, which
+     * PostgreSQL fixed when the transaction began, exactly as a real step leaves it. Only the opted-in session sees it.
+     */
+    private static final class ShadowClock {
+
+        /** The planted step: far larger than any real step measured (2.8 s), so the planted step alone decides. */
+        static final Duration STEP = Duration.ofSeconds(30);
+
+        private ShadowClock() {}
+
+        static void install() throws SQLException {
+            bootstrap("CREATE SCHEMA IF NOT EXISTS clockstep;"
+                    + " GRANT USAGE ON SCHEMA clockstep TO PUBLIC;"
+                    + " CREATE OR REPLACE FUNCTION clockstep.back() RETURNS interval LANGUAGE sql STABLE AS"
+                    + " $$ SELECT coalesce(nullif(pg_catalog.current_setting('clockstep.back', true), ''), '0')::interval $$;"
+                    + " CREATE OR REPLACE FUNCTION clockstep.transaction_timestamp() RETURNS timestamptz LANGUAGE sql STABLE"
+                    + " AS $$ SELECT pg_catalog.transaction_timestamp() $$;"
+                    + " CREATE OR REPLACE FUNCTION clockstep.now() RETURNS timestamptz LANGUAGE sql STABLE AS"
+                    + " $$ SELECT pg_catalog.transaction_timestamp() $$;"
+                    + " CREATE OR REPLACE FUNCTION clockstep.statement_timestamp() RETURNS timestamptz LANGUAGE sql STABLE"
+                    + " AS $$ SELECT pg_catalog.statement_timestamp() - clockstep.back() $$;"
+                    + " CREATE OR REPLACE FUNCTION clockstep.clock_timestamp() RETURNS timestamptz LANGUAGE sql VOLATILE AS"
+                    + " $$ SELECT pg_catalog.clock_timestamp() - clockstep.back() $$;");
+        }
+
+        static void uninstall() throws SQLException {
+            bootstrap("DROP SCHEMA IF EXISTS clockstep CASCADE");
+        }
+
+        /** {@code work} in one transaction of a fresh application-role session reading the shadowed clock. */
+        static <R> R inOneTransaction(Function<Connection, R> work) throws SQLException {
+            try (Connection connection = DatabaseRoles.application()) {
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("SET search_path = clockstep, pg_catalog, \"$user\", public");
+                }
+                connection.setAutoCommit(false);
+                try {
+                    R result = work.apply(connection);
+                    connection.commit();
+                    return result;
+                } catch (RuntimeException failure) {
+                    connection.rollback();
+                    throw failure;
+                }
+            }
+        }
+
+        /** The transaction's start - its first statement. */
+        static Instant transactionStart(Connection connection) {
+            try (Statement statement = connection.createStatement();
+                    ResultSet row = statement.executeQuery("SELECT pg_catalog.transaction_timestamp()")) {
+                row.next();
+                return row.getObject(1, OffsetDateTime.class).toInstant();
+            } catch (SQLException failure) {
+                throw new IllegalStateException(failure);
+            }
+        }
+
+        /** Steps {@code connection}'s clock back by {@link #STEP} for every later statement of its transaction. */
+        static void stepBack(Connection connection) {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("SET LOCAL clockstep.back = '" + STEP.toNanos() / 1_000 + " microseconds'");
+            } catch (SQLException failure) {
+                throw new IllegalStateException(failure);
+            }
+        }
+
+        private static void bootstrap(String sql) throws SQLException {
+            try (Connection owner = DatabaseRoles.bootstrap(); Statement statement = owner.createStatement()) {
+                statement.execute(sql);
+            }
         }
     }
 
@@ -563,6 +816,19 @@ class MerchantBnplEnablementDatabaseTest {
                 statement.setObject(i + 1, arguments[i]);
             }
             return statement.executeUpdate();
+        }
+    }
+
+    /** The one value {@code sql} answers on the application role - an {@code INSERT ... RETURNING}'s. */
+    private static String rawScalar(String sql, Object... arguments) throws SQLException {
+        try (Connection app = DatabaseRoles.application(); PreparedStatement statement = app.prepareStatement(sql)) {
+            for (int i = 0; i < arguments.length; i++) {
+                statement.setObject(i + 1, arguments[i]);
+            }
+            try (ResultSet row = statement.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getString(1);
+            }
         }
     }
 

@@ -50,7 +50,9 @@ import lombok.RequiredArgsConstructor;
  * gross with it, refuses a sale that does not cover its fee (ADR-0058,
  * {@link SaleBelowFeeException}) and records the pin - all before anything else is written, in the purchase's own
  * transaction, so a rollback leaves no pin. The primary key refuses a second pin for the purchase ({@link AlreadyPinned}),
- * never a second version.
+ * never a second version. <em>The pin's instant is its insert's own stamp on that clock, and the read is never before
+ * the transaction's start (`P14-DOC-001`, merchant {@code V013}): the database clock steps back, and {@code V012} refused
+ * a correctly judged pin whose read a step had put after the insert's clock - the whole acceptance rolled back.</em>
  */
 @RequiredArgsConstructor
 public final class BnplPricing {
@@ -214,8 +216,10 @@ public final class BnplPricing {
         if (!assessment.net().isPositive()) {
             throw new SaleBelowFeeException();
         }
-        if (!pricing.insertPin(unitOfWork, new BnplFeePin(purchaseRef, merchantId, product, version.id(), gross,
-                judged.at(), actor.id()))) {
+        // The pin carries the resolution's instant; the database records the insert's own stamp in its place (merchant
+        // V013, P14-DOC-001) and the store answers the pin as stored.
+        if (pricing.insertPin(unitOfWork, new BnplFeePin(purchaseRef, merchantId, product, version.id(), gross,
+                judged.at(), actor.id())).isEmpty()) {
             throw new AlreadyPinned();
         }
         return assessment;
@@ -284,10 +288,11 @@ public final class BnplPricing {
             return new Judged(Standing.NOT_ENABLED, Optional.empty(), clock.instant());
         }
         Optional<FeeScheduleId> schedule = pricing.findAssignment(unitOfWork, merchantId, product);
-        // The instant the version is resolved at and the pin stamped with: the DATABASE's clock_timestamp(), read after
-        // both share locks were granted - never this instance's clock (the Phase 12 -> 13 gate's A3-M1). Ten instances
-        // with ten skewed clocks resolve one version for one instant; `V012`'s pin trigger refuses an instant outside the
-        // pinning transaction's own span on that clock, for every writer.
+        // The instant the version is resolved at: the DATABASE's clock_timestamp(), read after both share locks were
+        // granted and never before the transaction's start - never this instance's clock (the Phase 12 -> 13 gate's
+        // A3-M1). Ten instances with ten skewed clocks resolve one version for one instant. The pin's own instant is its
+        // insert's stamp on that clock (`V013`, P14-DOC-001 - `V012` refused a pin whose read a backward step had put
+        // after the insert's clock), and the pin trigger judges the version in force by it, for every writer.
         Instant at = pricing.databaseNow(unitOfWork);
         Optional<FeeScheduleVersion> version = schedule.flatMap(id -> schedules.findEffectiveVersion(unitOfWork, id, at))
                 .filter(inForce -> inForce.refundFeePolicy() == RefundFeePolicy.RETURNED);
