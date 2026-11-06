@@ -28,7 +28,8 @@ import java.util.concurrent.TimeUnit;
  * defaults, {@link #CHILD_DEFAULTS}, the first line the child writes - but not a dependency on it: that harness is a published
  * test fixture, and a fixture on {@code app}'s test classpath is swept by {@code NoAmbientTimeRulesTest} (its {@code
  * DoNotIncludeTests} option excludes test classes, not fixtures), which a launcher must break to read the process's defaults.
- * The gate found it so.
+ * The gate found it so. Unlike that harness, it hands the child its options and classpath in an argument file ({@link #launch}),
+ * so a deep checkout's classpath cannot stop the child starting on Windows ({@code AccountingBatteryInAnotherJvmTest}).
  */
 final class AccountingBatteryInAnotherJvm {
 
@@ -62,29 +63,87 @@ final class AccountingBatteryInAnotherJvm {
 
     /** A second JVM started on this JVM's classpath with {@link #CHILD_DEFAULTS}, writing to its own file. */
     static Started start(long seed, int entries) throws IOException {
+        return launch(System.getProperty("java.class.path"), AccountingBatteryInAnotherJvm.class,
+                List.of(Long.toString(seed), Integer.toString(entries)));
+    }
+
+    /**
+     * {@code main} started in a JVM with {@link #CHILD_DEFAULTS} on {@code classpath}, its output file its first argument and
+     * {@code arguments} after it. <strong>The JVM's options and the classpath go in an argument file</strong>, read by the
+     * launcher from an {@code @}-prefixed argument (JDK 9+), never on the command line: Windows refuses a command line past
+     * 32,767 characters, and the classpath names the checkout once for each module's build output, so on a deeper checkout
+     * {@code -cp} crossed it and the child never started (the coordinator's merge guard, 2026-11-06). The command's length is
+     * now the same whatever the classpath's; the file is deleted when the child is joined or abandoned.
+     */
+    static Started launch(String classpath, Class<?> main, List<String> arguments) throws IOException {
         Path out = Files.createTempFile("accounting-battery", ".txt");
         Path log = Files.createTempFile("accounting-battery", ".log");
-        String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-        List<String> command = List.of(java, "-Xmx1g", "-Dfile.encoding=UTF-16", "-Duser.language=ar", "-Duser.country=EG",
-                "-Duser.timezone=America/Adak", "-cp", System.getProperty("java.class.path"),
-                AccountingBatteryInAnotherJvm.class.getName(), out.toString(), Long.toString(seed), Integer.toString(entries));
+        Path options = Files.createTempFile("accounting-battery", ".args");
         try {
-            return new Started(new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile()).start(), out, log);
+            Files.writeString(options, argumentFile(classpath), launcherEncoding());
+            List<String> command = command(options, main, out, arguments);
+            Process child = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile()).start();
+            return new Started(child, command, out, log, options);
         } catch (IOException | RuntimeException failed) {
             Files.deleteIfExists(out);
             Files.deleteIfExists(log);
+            Files.deleteIfExists(options);
             throw failed;
         }
     }
 
-    /** A started second JVM: its process, its output file and its log. */
-    record Started(Process child, Path out, Path log) {
+    /** The child's options, one to a line: its heap, {@link #CHILD_DEFAULTS} and the classpath, each {@link #quoted}. */
+    static String argumentFile(String classpath) {
+        StringBuilder file = new StringBuilder();
+        for (String option : List.of("-Xmx1g", "-Dfile.encoding=UTF-16", "-Duser.language=ar", "-Duser.country=EG",
+                "-Duser.timezone=America/Adak", "-cp", classpath)) {
+            file.append(quoted(option)).append('\n');
+        }
+        return file.toString();
+    }
+
+    /**
+     * {@code argument} as an argument file must hold it: in double quotes, so a space ({@code C:\Program Files}) or a {@code #}
+     * is part of it, and each backslash and quote escaped, since inside quotes a backslash escapes the next character - {@code
+     * C:\new} unescaped would read as {@code C:}, a newline and {@code ew}. {@code DecisionReproducibilityBatteryTest}'s rule.
+     */
+    static String quoted(String argument) {
+        return "\"" + argument.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
+
+    /** The command: the launcher, {@code @options}, the main class, its output file and {@code arguments} - no classpath. */
+    static List<String> command(Path options, Class<?> main, Path out, List<String> arguments) {
+        List<String> command = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "@" + options, main.getName(), out.toString()));
+        command.addAll(arguments);
+        return List.copyOf(command);
+    }
+
+    /**
+     * The encoding the launcher reads an argument file in - the platform's ({@code native.encoding}). A character it cannot
+     * carry is refused by {@code Files.writeString}, never read by the child as another.
+     */
+    private static Charset launcherEncoding() {
+        return Charset.forName(System.getProperty("native.encoding", StandardCharsets.UTF_8.name()));
+    }
+
+    /** A started second JVM: its process, the command that started it, its output file, its log and its argument file. */
+    record Started(Process child, List<String> command, Path out, Path log, Path options) {
+
+        Started {
+            command = List.copyOf(command);
+        }
 
         /** For a caller that failed before joining: the child destroyed and its files deleted - nothing left behind. */
         void abandon() throws IOException {
             child.destroyForcibly();
+            delete();
+        }
+
+        private void delete() throws IOException {
             Files.deleteIfExists(out);
             Files.deleteIfExists(log);
+            Files.deleteIfExists(options);
         }
 
         /**
@@ -105,8 +164,7 @@ final class AccountingBatteryInAnotherJvm {
                 assertThat(defaults()).as("and this JVM's differ").isNotEqualTo(lines.get(0));
                 return List.copyOf(lines.subList(1, lines.size()));
             } finally {
-                Files.deleteIfExists(out);
-                Files.deleteIfExists(log);
+                delete();
             }
         }
     }
