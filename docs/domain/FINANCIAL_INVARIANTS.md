@@ -148,6 +148,10 @@ balance exactly.
 **Why:** This is the operational definition of "explainable balance".
 **Enforce:** `DOMAIN`.
 **Verify:** Automated recomputation job; test under sustained concurrent posting.
+*(`P14-TSK-026`, ADR-0119 decision 1: the rebuild ADR-0041 promised, as a person's four-eyes act - `ProjectionRebuildsTest`
+(the lock order, a posting committed while the approval waited is in its sum, one after composes, the approval's own reading
+written, four eyes, `UNCHANGED` writes nothing), `ProjectionRebuildNeverPostsTest` (no journal write on its path);
+`ProjectionRebuildDatabaseTest`'s latched races under concurrent postings and a hold, owed (C5).)*
 **Phase:** 3
 
 ### INV-BAL-03 — Value is neither created nor destroyed
@@ -1462,6 +1466,11 @@ is re-valued and no customer execution rate is read for valuation.
 `TranslatedTrialBalanceRunsTest`, `ValuationRateSetDatabaseTest` (`P14-TSK-014`, `-015`; the database cases owed, C5); the
 battery's oracle.
 *(`P14-TST-002`, as built: every translated figure of the trial balance and both statements over twelve months - per column and currency the original, the translated parts, the difference line and the total, the report-wide figures, each row's figure, the rates - equal to an oracle that divides in `BigInteger`s and rounds half-even by hand, the pound at exactly 0.8000 in odd months so ties are met; the balance sheet balanced through its difference lines; June's dollar rate moved flips exactly June's translated facts the oracle names, a difference line among them and no original figure - `AccountingBatteryHermeticTest#theTranslationIsTheOracles`, `#aRateMovesADifferenceLineAndNotTheBalance`; at real approved sets `AccountingBatteryTest#theStatementsAreTheOracles`, `#theTrialBalanceIsTheOracles` (owed, C5).)*
+*(`P14-TSK-026`, ADR-0119 decision 2: a reference gap beyond the bound is valued at the reference's real last
+observation, provenance kept, flagged and disclosed on every translated content -
+`TranslationTest#aReferenceGapIsDisclosedAndNothingElseMoves`, `TrialBalanceDefinitionTest#aReferenceGapIsDisclosedOnTheFinal`,
+`FinancialStatementsTest#bothStatementsDiscloseAReferenceGap`, `ValuationRateSetsTest`'s gap cases;
+`ValuationReferenceGapDatabaseTest` owed, C5.)*
 **Phase:** 14
 
 ### INV-ACC-12 — Every entry conforms to a registered rule, and every expected entry exists once

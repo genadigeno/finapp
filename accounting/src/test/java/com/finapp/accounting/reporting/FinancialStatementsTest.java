@@ -114,8 +114,14 @@ class FinancialStatementsTest {
         return new TrialBalanceReads.Period(id, month.atDay(1), month.atEndOfMonth(), PeriodStatus.CLOSED, Optional.of(pinned), previous);
     }
 
+    /** The pairs a reference-gap exception admitted beyond the bound (`P14-TSK-026`): none unless a case names one. */
+    private final java.util.Set<String> beyondBound = new java.util.TreeSet<>();
+
     private final ValuationRateReads rates = (snapshot, id) -> Optional.of(new ValuationRateReads.PinnedSet(id, june, JUNE, ValuationRateSetStatus.APPROVED, AS_OF, 96,
-            pinnedRates.entrySet().stream().map(entry -> rate(entry.getKey(), entry.getValue())).toList()));
+            pinnedRates.entrySet().stream().map(entry -> beyondBound.contains(entry.getKey())
+                    ? new ValuationRate(CurrencyCode.of("EUR"), CurrencyCode.of(entry.getKey()), new BigDecimal(entry.getValue()), "reference.test",
+                            UUID.nameUUIDFromBytes(entry.getKey().getBytes(java.nio.charset.StandardCharsets.UTF_8)), AS_OF.minusSeconds(500 * 3_600), AS_OF.minusSeconds(500 * 3_600 - 1), true)
+                    : rate(entry.getKey(), entry.getValue())).toList()));
 
     private static ValuationRate rate(String quote, String value) {
         return new ValuationRate(CurrencyCode.of("EUR"), CurrencyCode.of(quote), new BigDecimal(value), "reference.test", UUID.nameUUIDFromBytes(quote.getBytes(java.nio.charset.StandardCharsets.UTF_8)), AS_OF.minusSeconds(3_600), AS_OF.minusSeconds(3_599));
@@ -874,6 +880,24 @@ class FinancialStatementsTest {
         assertThat(text(object(translation, "rateSet"), "id")).as("the run's one set").isEqualTo(rateSet.toString());
         assertThat(minor(object(rowOf(body, "1000", "USD"), "translated"), "closing")).as("the row's translated figure beside its original").isEqualTo(big(92));
         assertThat(minor(rowOf(body, "1000", "USD"), "closing")).isEqualTo(big(100));
+    }
+
+    @Test
+    @DisplayName("both statements translated at a set holding a reference gap say so in their translation member - the pair, its age and the bound - and a set holding none says nothing new (P14-TSK-026)")
+    void bothStatementsDiscloseAReferenceGap() {
+        awkwardUsd();
+        post(JUNE.atDay(6), "JPY", 0, 1_234_567, CASH, WALLET);
+        post(JUNE.atDay(7), "USD", 2, 333, WALLET, FEES);
+        String plainSheet = CanonicalJson.text(balanceSheet().generate(SNAPSHOT, translatedRun()));
+        String plainIncome = CanonicalJson.text(incomeStatement().generate(SNAPSHOT, translatedRun()));
+        assertThat(plainSheet).doesNotContain("referenceGaps").doesNotContain("beyondBound");
+        assertThat(plainIncome).doesNotContain("referenceGaps").doesNotContain("beyondBound");
+        beyondBound.add("JPY");
+        for (CanonicalJson.Obj body : List.of(balanceSheet().generate(SNAPSHOT, translatedRun()), incomeStatement().generate(SNAPSHOT, translatedRun()))) {
+            CanonicalJson.Obj translation = object(body, "translation");
+            assertThat(CanonicalJson.text(translation)).contains("\"referenceGaps\":[{\"ageHours\":\"500\",\"boundHours\":\"96\"")
+                    .contains("\"pair\":\"EUR/JPY\"").contains("\"beyondBound\":true");
+        }
     }
 
     @Test

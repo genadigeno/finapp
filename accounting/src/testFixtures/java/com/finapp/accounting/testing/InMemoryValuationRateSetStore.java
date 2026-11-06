@@ -83,9 +83,12 @@ public final class InMemoryValuationRateSetStore implements ValuationRateSetStor
         if (periodStatus.apply(set.content().period()).filter(PeriodStatus.LOCKED::equals).isEmpty()) {
             throw new IllegalStateException("valuation_rate_set_permits_only_machine_edges: a LOCKED period");
         }
+        if (set.content().referenceGaps() > 0 && set.reason().isEmpty()) {
+            throw new IllegalStateException("valuation_rate_set_reference_gap_reasoned");
+        }
         rows.put(set.id(), new SetRow(set.id(), set.content().period(), set.content().month(), set.content().asOf(),
                 set.content().staleness().hours(), set.content().rates().size(), ValuationRateSetStatus.PROPOSED,
-                set.capturedBy().id(), Instant.EPOCH, Optional.empty(), Optional.empty()));
+                set.capturedBy().id(), Instant.EPOCH, Optional.empty(), Optional.empty(), set.content().referenceGaps()));
         rates.put(set.id(), List.copyOf(set.content().rates()));
         reasons.put(set.id(), set.reason());
     }
@@ -136,7 +139,7 @@ public final class InMemoryValuationRateSetStore implements ValuationRateSetStor
             }
         }
         rows.put(id, new SetRow(row.id(), row.period(), row.month(), row.asOf(), row.maxAgeHours(), row.rateCount(), to,
-                row.capturedBy(), row.capturedAt(), Optional.of(actor.id()), Optional.of(Instant.EPOCH)));
+                row.capturedBy(), row.capturedAt(), Optional.of(actor.id()), Optional.of(Instant.EPOCH), row.referenceGaps()));
         return true;
     }
 }

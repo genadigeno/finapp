@@ -116,6 +116,41 @@ class ApprovalAssuranceTest {
     }
 
     @Test
+    @DisplayName("P14-TSK-026's two approvals: a projection rebuild's (LEDGER_ADJUST) and a reference gap's (ACCOUNTING_CLOSE_APPROVE) take MULTI_FACTOR through the real interceptor; their proposals, reads and rejections, and the ordinary set approval, do not")
+    void theRebuildAndTheGapApprovalsStepUp() throws Exception {
+        Method rebuild = ProjectionRebuildController.class.getMethod("approveProjectionRebuild", String.class, String.class);
+        Method gap = com.finapp.app.accounting.ValuationRateSetController.class.getMethod("approveValuationRateSetAcrossGap", String.class, String.class,
+                com.finapp.app.accounting.ValuationRateSetController.ValuationRateSetDecisionRequest.class);
+        assertThat(rebuild.getAnnotation(RequiresAssurance.class).value()).isEqualTo(AssuranceLevel.MULTI_FACTOR);
+        assertThat(rebuild.getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.LEDGER_ADJUST);
+        assertThat(gap.getAnnotation(RequiresAssurance.class).value()).isEqualTo(AssuranceLevel.MULTI_FACTOR);
+        assertThat(gap.getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.ACCOUNTING_CLOSE_APPROVE);
+        for (Door door : List.of(new Door(rebuild, Set.of(RoleName.LEDGER_OPERATOR)), new Door(gap, Set.of(RoleName.FINANCIAL_CONTROLLER)))) {
+            assertThatThrownBy(() -> SteppedUpDoor.knock(door.approval(), AssuranceLevel.PASSWORD, door.holder())).as(door.approval().getName())
+                    .isInstanceOfSatisfying(ApiException.class, refused -> assertThat(refused.errorCode()).isEqualTo(IdentityErrorCode.ASSURANCE_REQUIRED));
+            assertThat(SteppedUpDoor.knock(door.approval(), AssuranceLevel.MULTI_FACTOR, door.holder())).isTrue();
+            assertThatThrownBy(() -> SteppedUpDoor.knock(door.approval(), AssuranceLevel.MULTI_FACTOR, Set.of(RoleName.ACCOUNTANT))).as("least privilege: the accountant holds neither approval")
+                    .isInstanceOfSatisfying(ApiException.class, refused -> assertThat(refused.errorCode().status()).isEqualTo(403));
+        }
+        assertThatThrownBy(() -> SteppedUpDoor.knock(rebuild, AssuranceLevel.MULTI_FACTOR, Set.of(RoleName.FINANCIAL_CONTROLLER))).as("a controller closes months and rebuilds no projection")
+                .isInstanceOfSatisfying(ApiException.class, refused -> assertThat(refused.errorCode().status()).isEqualTo(403));
+        assertThatThrownBy(() -> SteppedUpDoor.knock(gap, AssuranceLevel.MULTI_FACTOR, Set.of(RoleName.LEDGER_OPERATOR))).as("a ledger operator approves no valuation")
+                .isInstanceOfSatisfying(ApiException.class, refused -> assertThat(refused.errorCode().status()).isEqualTo(403));
+        for (Method method : ProjectionRebuildController.class.getDeclaredMethods()) {
+            if (method.isAnnotationPresent(RequiresPermission.class) && !method.equals(rebuild)) {
+                assertThat(method.getAnnotation(RequiresAssurance.class)).as(method.getName()).isNull();
+                assertThat(method.getAnnotation(RequiresPermission.class).value()).as(method.getName()).isEqualTo(PermissionName.LEDGER_ADJUST);
+                assertThat(SteppedUpDoor.knock(method, AssuranceLevel.PASSWORD, Set.of(RoleName.LEDGER_OPERATOR))).as(method.getName()).isTrue();
+            }
+        }
+        for (Method method : com.finapp.app.accounting.ValuationRateSetController.class.getDeclaredMethods()) {
+            if (method.isAnnotationPresent(RequiresPermission.class) && !method.equals(gap)) {
+                assertThat(method.getAnnotation(RequiresAssurance.class)).as(method.getName()).isNull();
+            }
+        }
+    }
+
+    @Test
     @DisplayName("P14-TSK-024: a period's three approvals step up - the unlock's, the close's and the reopen's - and nothing else on their controllers does: the proposals, the ends, the close's rejection and the reads stay at a session's assurance")
     void thePeriodApprovalsArePinned() {
         List<String> steppedUp = List.of("approveAccountingPeriodUnlock", "approveAccountingPeriodClose", "approveAccountingPeriodReopen");

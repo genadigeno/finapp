@@ -1,13 +1,18 @@
 package com.finapp.app.accounting;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.util.List;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -53,8 +58,44 @@ public class ValuationRateSetController {
     }
 
     /**
+     * Captures a set across a reference gap (`P14-TSK-026`, ADR-0119 decision 2): for each named pair the reference's real
+     * last observation before the period's end although it is older than the staleness bound - the snapshot named, which
+     * {@code 422 accounting.ValuationRateStale}'s detail gives - flagged and disclosed; every other pair within the bound.
+     * Reasoned. {@code 409 accounting.ReferenceGapRefused} when a named pair is no gap, or its last observation is not the
+     * one named. PROPOSED, approved only at its own door.
+     */
+    @PostMapping(path = "/reference-gap", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
+    @RequiresIdempotencyKey
+    @ResponseStatus(HttpStatus.CREATED)
+    public ValuationRateSetDesk.ValuationRateSetReceipt captureValuationRateSetAcrossGap(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @Valid @RequestBody ValuationRateSetGapCaptureRequest body) {
+        return desk.captureAcrossGap(idempotencyKey, body.periodId(), body.reason(), body.gaps().stream()
+                .map(gap -> new ValuationRateSetDesk.ReferenceGapRequest(gap.pair(), gap.snapshotId())).toList());
+    }
+
+    /**
+     * Approves a pending set holding a reference gap (`P14-TSK-026`) - a person other than its capturer, on a
+     * {@code MULTI_FACTOR} session ({@code 403 identity.AssuranceRequired} below it, before anything is read), while the
+     * period is LOCKED, each excepted pair still the reference's last observation before the end. A reason is required. A
+     * set holding no gap is {@code 409 accounting.ValuationDoorMismatch} here, and one holding a gap the same at the
+     * ordinary approval.
+     */
+    @PostMapping(path = "/{setId}/reference-gap-approval", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
+    @RequiresIdempotencyKey
+    public ValuationRateSetDesk.ValuationRateSetReceipt approveValuationRateSetAcrossGap(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @PathVariable("setId") String setId,
+            @Valid @RequestBody ValuationRateSetDecisionRequest body) {
+        return desk.approveAcrossGap(idempotencyKey, setId, body.reason());
+    }
+
+    /**
      * Approves a pending set - a person other than its capturer, while the period is LOCKED; the period's one approved
-     * set. A reason is required.
+     * set. A reason is required. A set holding a reference gap is approved at its own door.
      */
     @PostMapping(path = "/{setId}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
@@ -94,4 +135,19 @@ public class ValuationRateSetController {
     /** A decision's reason - required, judged by the domain ({@code accounting.ReasonRequired}). */
     @ClosedBody
     public record ValuationRateSetDecisionRequest(@Size(max = 1000) String reason) {}
+
+    /**
+     * The LOCKED period, the reason (required, judged by the domain) and the pairs excepted, each with the snapshot id of
+     * the observation meant ({@code P14-TSK-026}). A {@code null} element is a {@code 422}, never a 500.
+     */
+    @ClosedBody
+    public record ValuationRateSetGapCaptureRequest(
+            @NotBlank @Size(min = 36, max = 36) String periodId,
+            @Size(max = 1000) String reason,
+            @NotEmpty @Size(max = 20) List<@Valid @NotNull ReferenceGapBody> gaps) {}
+
+    /** One excepted pair: {@code EUR/JPY} and the reference snapshot's id. */
+    @ClosedBody
+    public record ReferenceGapBody(
+            @NotBlank @Size(min = 7, max = 7) String pair, @NotBlank @Size(min = 36, max = 36) String snapshotId) {}
 }

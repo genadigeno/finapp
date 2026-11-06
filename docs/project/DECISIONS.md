@@ -1203,7 +1203,7 @@ Planned by the Phase 13 → 14 transition (2026-10-29) in `PHASE_14_PLAN.md`, wi
 as recommended defaults awaiting ratification; nothing of it is built. The phase's tasks are `P14-TSK-001`…`-021`,
 `P14-TST-001` (planned and `POSTPONED`, PI-004), `P14-TST-002` and `P14-DOC-001`, whose review reads each ADR against the
 code. The invariants are `INV-ACC-06`…`-14` (nine new beside `INV-ACC-01`…`-05`; the catalogue 162 → 171). The phase's
-ADRs are ADR-0113…ADR-0118; **the next free number is ADR-0119.** Phase 14 moves no money and creates no competing
+ADRs are ADR-0113…ADR-0119 (ADR-0119 written by `P14-TSK-026`); **the next free number is ADR-0120.** Phase 14 moves no money and creates no competing
 record: every GL figure is a function of the journal.
 
 **One `accounting` module, the GL a versioned mapping over the one journal.** Schema `accounting`, edges to `platform` and
@@ -1234,6 +1234,14 @@ born-once accounting breaks, never corrections; reconciliation's breaks and susp
 is a new break needing its own four-eyes acknowledgement. Every `DISCLOSED` check carries a person's reason in the proposal, `INV-ACC-09` unamended. A month with no
 reconciliation run fails its check. No door discloses a failed must-pass check: the way on is to unlock and correct. The close run stays born by the check leg, not
 in the lock's transaction. `BNPL-F2a`'s month-end shift stays disclosed. → [ADR-0117](../adr/ADR-0117-the-posting-rule-register-gl-reconciliation-and-accounting-breaks.md)
+
+**A projection rebuild, and a reference gap's way on (built by `P14-TSK-026`, 2026-11-06).** A drifting balance projection is
+rebuilt by a person's four-eyes act, never automatically and never by an adjustment: the approval takes the posting's own
+locks in the posting's own order, derives after the grant and writes what it derived, never touching a journal line, the
+figures before and after recorded. A pair the reference was silent for beyond the staleness bound is valued at the
+reference's real last observation before the period's end, named by its snapshot, by a four-eyes exception approved on a
+`MULTI_FACTOR` session, and every translated report pinning it says which pair and how old; a typed rate is never admitted.
+Supersedes ADR-0116 decision 2 in part. → [ADR-0119](../adr/ADR-0119-a-projection-rebuild-door-and-a-reference-gaps-way-on.md)
 
 **A period's approvals step up, and every decision on a pending request names it (the owner's acceptance, 2026-11-06, `P14-TSK-024`'s fix round).** The unlock's, the close's and the reopen's approvals take `MULTI_FACTOR`, as a prior-period adjustment's approval and the regulatory doors do: each moves the ledger's cutoff or freezes and supersedes a month's FINAL runs. The ends, the proposals, the close's rejection and the reads stay at a session's assurance, since none moves anything. Enrolling a factor for each `FINANCIAL_CONTROLLER` is a production step, beside `P14-TSK-022`'s (af). An approval, a rejection and a withdrawal of a pending unlock or reopen name the request read (`unlockProposedAt`, `reopenId`); another pending is `accounting.RequestStale`, recorded. Under version 1, no client existing. -> [ADR-0114](../adr/ADR-0114-accounting-periods-the-ledger-posting-cutoff-and-the-close.md)
 

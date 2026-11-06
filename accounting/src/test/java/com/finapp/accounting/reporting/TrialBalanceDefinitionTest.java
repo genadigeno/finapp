@@ -480,6 +480,32 @@ class TrialBalanceDefinitionTest {
         };
     }
 
+    @Test
+    @DisplayName("a FINAL translated at a set holding a reference gap says so - the pair, its snapshot, its observation, its"
+            + " age and the bound - and regenerates byte-identical; a set holding none writes neither member (P14-TSK-026)")
+    void aReferenceGapIsDisclosedOnTheFinal() {
+        ReportGeneration generation = new ReportGeneration((snapshot, id) -> Optional.of(
+                new ReportGeneration.PeriodState(PeriodStatus.LOCKED, Optional.of(Instant.EPOCH))), Duration.ofMinutes(4),
+                () -> 0L);
+        ValuationRateReads gapped = (snapshot, id) -> Optional.of(new ValuationRateReads.PinnedSet(id, periodId, MONTH,
+                ValuationRateSetStatus.APPROVED, Instant.parse("2097-07-01T00:00:00Z"), 96, List.of(
+                        rate("GBP", "0.7012"), rate("USD", "1.1561"),
+                        new ValuationRate(CurrencyCode.of("EUR"), CurrencyCode.of("JPY"), new BigDecimal("131.25"),
+                                "reference.test", SNAPSHOT_ID, Instant.parse("2097-06-12T16:00:00Z"),
+                                Instant.parse("2097-06-12T16:00:01Z"), true),
+                        rate("BHD", "0.4358123456"))));
+        ReportGeneration.Generated first = generation.generate(SNAPSHOT, new TrialBalanceDefinition(mixedBooks(), gapped),
+                translatedInputs());
+        assertThat(first.content())
+                .contains("\"referenceGaps\":[{\"ageHours\":\"440\",\"boundHours\":\"96\",\"observedAt\":\"2097-06-12T16:00:00Z\","
+                        + "\"pair\":\"EUR/JPY\",\"snapshot\":\"" + SNAPSHOT_ID + "\"}]")
+                .contains("\"basis\":\"PINNED_RATE\",\"beyondBound\":true,\"currency\":\"JPY\"");
+        assertThat(generation.generate(SNAPSHOT, new TrialBalanceDefinition(mixedBooks(), gapped), translatedInputs())
+                .content()).isEqualTo(first.content());
+        assertThat(generation.generate(SNAPSHOT, new TrialBalanceDefinition(mixedBooks(), rates()), translatedInputs())
+                .content()).doesNotContain("referenceGaps").doesNotContain("beyondBound");
+    }
+
     /** The approved set the translated inputs name. */
     private ValuationRateReads rates() {
         return (snapshot, id) -> Optional.of(new ValuationRateReads.PinnedSet(id, periodId, MONTH,

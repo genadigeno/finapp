@@ -107,7 +107,8 @@ class AccountingMigrationTest {
             + " functions (P14-TSK-003's V002), the periods' (P14-TSK-005's V003), the report run's (P14-TSK-008's"
             + " V004), the valuation rate sets' (P14-TSK-014's V005), the breaks' (P14-TSK-010's V006), the close"
             + " run's (P14-TSK-011's V007), the close and reopen proposals' (P14-TSK-012's V008) and the prior-period adjustments'"
-            + " (P14-TSK-013's V009), the regulatory framework's (P14-TSK-018's V010) and an unlock's end (P14-TSK-024's V011), nothing else")
+            + " (P14-TSK-013's V009), the regulatory framework's (P14-TSK-018's V010), an unlock's end (P14-TSK-024's V011) and a"
+            + " reference gap's freeze (P14-TSK-026's V012), nothing else")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An application role that
         // could read or write it could make the schema's provenance disagree with the schema. Each later task rewrites
@@ -147,7 +148,9 @@ class AccountingMigrationTest {
                 "report_run_permits_only_machine_edges",
                 // P14-TSK-014's V005.
                 "valuation_rate_is_born_with_its_set", "valuation_rate_set_commits_whole",
-                "valuation_rate_set_is_never_truncated", "valuation_rate_set_permits_only_machine_edges");
+                "valuation_rate_set_is_never_truncated", "valuation_rate_set_permits_only_machine_edges",
+                // P14-TSK-026's V012 (its two replaced functions keep their V005 names, above).
+                "valuation_rate_set_reference_gaps_are_frozen");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication("SELECT * FROM " + SCHEMA + ".flyway_schema_history"))

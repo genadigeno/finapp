@@ -605,6 +605,10 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/valuation-rate-sets/{setId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/valuation-rate-sets/{setId}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/valuation-rate-sets/{setId}/rejection",
+                        // P14-TSK-026: a reference gap's way on - the capture across it (201, ACCOUNTING_CLOSE_PROPOSE) and
+                        // its own approval (ACCOUNTING_CLOSE_APPROVE, MULTI_FACTOR), each keyed.
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/valuation-rate-sets/reference-gap",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/valuation-rate-sets/{setId}/reference-gap-approval",
                         // P11-TSK-011: the customer's loan offers (the owner's own offer only; the decline keyed,
                         // under the conditional step-up).
                         ApiVersion.CURRENT_PREFIX + "/me/loan-offers/{id}",
@@ -666,6 +670,12 @@ class OpenApiContractTest {
                         // second person's approval, and the rejection/withdrawal.
                         ApiVersion.CURRENT_PREFIX + "/ledger/adjustments/{id}",
                         ApiVersion.CURRENT_PREFIX + "/ledger/adjustments/{id}/approval",
+                        // P14-TSK-026: the ledger's second surface - the four-eyes projection rebuild, behind
+                        // LEDGER_ADJUST, every door keyed, the approval MULTI_FACTOR.
+                        ApiVersion.CURRENT_PREFIX + "/ledger/projection-rebuilds",
+                        ApiVersion.CURRENT_PREFIX + "/ledger/projection-rebuilds/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/ledger/projection-rebuilds/{id}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/ledger/projection-rebuilds/{id}/rejection",
                         // P5-TSK-005: the instrument surface - attach through the
                         // tokenisation exchange (the body carries only the one-time
                         // grant, INV-PAY-02), list, and the ownership-scoped detach.

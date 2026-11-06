@@ -602,6 +602,11 @@ one converges rather than answering `checkout.NotConfirmable`: a double-click is
 | `ledger.AdjustmentOnReconciledPosition` | 422 | A reconciled position cannot be adjusted here; value there moves only through a reconciliation break's resolution. |
 | `ledger.AdjustmentOriginMismatch` | 409 | The proposal belongs to another origin's door and cannot be decided here. |
 | `ledger.PeriodClosed` | 409 | The posting date is in a locked accounting period; post in the open period. |
+| `ledger.ProjectionNotDrifting` | 409 | The account's balance projection agrees with its journal, or was posted to while being read; nothing to rebuild. |
+| `ledger.ProjectionRebuildStanding` | 409 | A rebuild of this account's balance projection already awaits a decision. |
+| `ledger.ProjectionNotRebuildable` | 409 | The account's balance projection cannot be rebuilt here; its history or its row's scale needs the migrator. |
+| `ledger.RebuildSelfApprovalRefused` | 409 | A projection rebuild requires a second approver distinct from its proposer. |
+| `ledger.RebuildNotOpen` | 409 | The projection rebuild is already decided; a later drift is a new proposal. |
 
 The ledger's one public surface is the adjustment (`P3-TSK-017` — plan §9: posting is an
 internal API), so its vocabulary is the adjustment's refusals. **No title or detail ever names
@@ -643,6 +648,21 @@ holds three owners apart: the generic door, the resolution's and the prior-perio
 proposals, approval and rejection alike. `ledger.AdjustmentOnReconciledPosition` (422) binds this origin as it binds `MANUAL`; the
 accounting door's own `accounting.PriorPeriodPurposeClosed` answers first, naming the owning door. `ledger.PeriodClosed` at this
 door is the belt beneath accounting's `accounting.PeriodStale`, and never a floor.
+
+**`P14-TSK-026`** (ADR-0119 decision 1, `INV-BAL-02`, `INV-AUD-04`): the ledger's second public surface, the four-eyes
+projection rebuild at `/v1/ledger/projection-rebuilds`, adds five codes of its own rather than borrowing the adjustment's,
+whose titles name an adjustment. `ledger.ProjectionNotDrifting` (409) at the proposal: the projection reads what the journal
+and the holds derive, or an entry committed mid-reading (read again) - nothing to propose. `ledger.ProjectionRebuildStanding`
+(409): one rebuild of an account stands at a time (V031's partial unique, the backstop for a racing proposer).
+`ledger.ProjectionNotRebuildable` (409): an underivable history, a row at a scale its history does not have, or a row standing
+for no entries - each the migrator's, never this door's. `ledger.RebuildSelfApprovalRefused` and `ledger.RebuildNotOpen` (409)
+are the adjustment's four-eyes pair for this machine: the same approver's retry converges, a repeated rejection converges, and
+neither ever names a figure; a refused self-approval is recorded `FAILED` (`ledger.SelfApprovalRefused`) in a transaction of its
+own before the 409 answers. A proposal's reason the body's `@NotBlank` lets through but the domain refuses - Unicode whitespace
+only, or one holding a card-number or bank-account shape - is `422 api.ValidationFailed`, its detail never repeating the
+reason (the review's fix round, M-3 and M-4). Every door is keyed (`api.IdempotencyKeyRequired`, `api.IdempotencyConflict` as anywhere); an
+unknown or malformed rebuild or account is one `api.NotFound`; the approval below `MULTI_FACTOR` is `403
+identity.AssuranceRequired`, before anything is read. A detail names the account and the rebuild, never an amount.
 
 ### `settlement` — `SettlementErrorCode`
 
@@ -1611,6 +1631,8 @@ stranger-safe: never an amount, a balance, a GL figure or an owner reference.
 | `accounting.RegulatoryObligationInvalid` | 422 | The obligation is not coherent, or names an adapter or definition this build does not hold, a jurisdiction no adapter files with, or a definition that is never a run (`P14-TSK-018`, ADR-0118 decision 1). Nothing was proposed. |
 | `accounting.RegulatoryObligationStale` | 409 | That form and version exist, the version is no longer awaiting a decision, the configuration named is not what stands, or a later form version is in force or retired (`P14-TSK-018`). Nothing was changed. |
 | `accounting.RegulatoryProviderUnavailable` | 503 | The non-delivery door could not ask the provider at the act, or could not keep its answer (`P14-TSK-018`): a return is concluded undelivered only on what the provider says now, so nothing was concluded. The return stands `SUBMITTED` and the key is unspent. Ask again. |
+| `accounting.ReferenceGapRefused` | 409 | A reference-gap exception (`P14-TSK-026`, ADR-0119 decision 2, `INV-ACC-11`) admits only the reference's last observation of a named pair before the period's end, older than the staleness bound and the snapshot the request names: a pair with an observation inside the bound is no gap, a pair never observed before the end has no real observation to admit, and a snapshot that is not the last - at the capture, or again at the approval after a late observation - is not the gap named. Nothing was written; the detail names pairs, instants and snapshot ids, never a rate. `422 accounting.ValuationRateStale`'s detail now names each stale pair's last snapshot, which is what the exception names. |
+| `accounting.ValuationDoorMismatch` | 409 | A valuation rate set holding a reference gap is approved at `POST .../valuation-rate-sets/{setId}/reference-gap-approval`, on a `MULTI_FACTOR` session, and a set holding none at the ordinary approval; judged before the converge, so not even a decided set is answered through the wrong door (`P14-TSK-026`). Nothing was changed. |
 
 ## 3a. Rejection at the boundary
 

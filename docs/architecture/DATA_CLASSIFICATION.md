@@ -415,6 +415,41 @@ never authoritative, and read by no financial decision (`INV-BAL-05`). A derived
 | `account_balance` | `last_entry_seq` | `INTERNAL` | An applied-entry count — activity volume, the `journal_entry.created_at` question at most, and it dates nothing |
 | `account_balance` | `updated_at` | `CONFIDENTIAL` | System time of the last posting still dates financial activity — `journal_entry.created_at`'s reasoning |
 
+### `ledger.projection_rebuild` — *added by `P14-TSK-026`*
+
+A four-eyes rebuild of one account's balance projection (ADR-0119 decision 1, `V031`): what the proposer observed, what the
+approval found under the locks and what it wrote. Its figures are the projection's own, so they carry `account_balance`'s
+ceiling - a rebuild's record is not laundering either. Served only to `LEDGER_ADJUST` (the ledger operator, who reads amounts
+as an adjustment's approver does), never logged, never in an audit summary or an event. The persons `CONFIDENTIAL` as an
+adjustment's are; the reason person-written.
+
+| Table | Column | Level | Why this level |
+|---|---|---|---|
+| `projection_rebuild` | `id` | `INTERNAL` | Generated |
+| `projection_rebuild` | `ledger_account_id` | `INTERNAL` | `journal_line.ledger_account_id`'s reasoning |
+| `projection_rebuild` | `currency` | `INTERNAL` | As `account_balance.currency` |
+| `projection_rebuild` | `scale` | `INTERNAL` | Precision metadata of the figures |
+| `projection_rebuild` | `status` | `INTERNAL` | The machine's state |
+| `projection_rebuild` | `reason` | `RESTRICTED-FINANCIAL` | Person-written prose about an account's books - `adjustment_proposal.reason`'s reasoning; screened before it is stored (no card-number or bank-account shape, `InstrumentShapes` - the review's fix round, M-3), since it is served to the approver and copied into the audit record |
+| `projection_rebuild` | `proposed_by` | `CONFIDENTIAL` | The ledger operator who proposed it |
+| `projection_rebuild` | `proposed_at` | `INTERNAL` | The application's stamp |
+| `projection_rebuild` | `observed_row` | `INTERNAL` | Whether a row existed - a flag |
+| `projection_rebuild` | `observed_posted_minor` | `RESTRICTED-FINANCIAL` | A balance as the row held it - `account_balance.posted_minor`'s reasoning |
+| `projection_rebuild` | `observed_holds_minor` | `RESTRICTED-FINANCIAL` | As `account_balance.holds_minor` |
+| `projection_rebuild` | `observed_seq` | `INTERNAL` | An applied-entry count |
+| `projection_rebuild` | `observed_derived_posted_minor` | `RESTRICTED-FINANCIAL` | The balance the journal derived - a balance |
+| `projection_rebuild` | `observed_derived_holds_minor` | `RESTRICTED-FINANCIAL` | The standing holds derived |
+| `projection_rebuild` | `observed_derived_seq` | `INTERNAL` | An applied-entry count |
+| `projection_rebuild` | `decided_by` | `CONFIDENTIAL` | The approver or rejecter - never the proposer for an approval, by `CHECK` |
+| `projection_rebuild` | `decided_at` | `INTERNAL` | The application's stamp |
+| `projection_rebuild` | `before_row` | `INTERNAL` | Whether the approval found a row - a flag |
+| `projection_rebuild` | `before_posted_minor` | `RESTRICTED-FINANCIAL` | A balance as the row held it under the lock |
+| `projection_rebuild` | `before_holds_minor` | `RESTRICTED-FINANCIAL` | As `account_balance.holds_minor` |
+| `projection_rebuild` | `before_seq` | `INTERNAL` | An applied-entry count |
+| `projection_rebuild` | `after_posted_minor` | `RESTRICTED-FINANCIAL` | The balance written - the journal's |
+| `projection_rebuild` | `after_holds_minor` | `RESTRICTED-FINANCIAL` | The standing holds written |
+| `projection_rebuild` | `after_seq` | `INTERNAL` | An applied-entry count |
+
 ### `ledger.hold` — *added by `P3-TSK-015`*
 
 Reservations against available balance (`INV-BAL-04`). A hold's existence discloses a pending
@@ -4987,6 +5022,8 @@ never served); the persons `CONFIDENTIAL`; identifiers, closed codes, counts, co
 | `valuation_rate` | `snapshot_id` | `INTERNAL` | fx's snapshot identifier, by value - no cross-schema key |
 | `valuation_rate` | `observed_at` | `INTERNAL` | When the source says it observed the rate |
 | `valuation_rate` | `received_at` | `INTERNAL` | When fx's database received it |
+| `valuation_rate_set` | `reference_gaps` | `INTERNAL` | *Added by `P14-TSK-026`'s `V012`*: a count - the rates a reference-gap exception admitted older than the bound (ADR-0119); `0` for an ordinary capture, frozen |
+| `valuation_rate` | `beyond_bound` | `INTERNAL` | *Added by `P14-TSK-026`'s `V012`*: whether a reference-gap exception admitted this real observation older than the set's bound - a flag about market data, disclosed on every translated report pinning the set |
 
 ### The report bodies, by definition - *added by `P14-TSK-017`*
 

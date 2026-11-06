@@ -66,6 +66,11 @@ import java.util.regex.Pattern;
  * JDK's currency table (ADR-0003, `P14-TSK-009`'s review, M-3); the parts' scales are the data's own; everything written
  * is an exact integer, a fixed-scale decimal or a code. A change to anything here is a new definition version.
  *
+ * <p><strong>A reference gap is disclosed</strong> (`P14-TSK-026`, ADR-0119 decision 2): a rate a four-eyes exception admitted
+ * older than the set's bound is marked {@code beyondBound} in {@code rates}, and the section's {@code referenceGaps} names its
+ * pair, snapshot, observation, whole hours at the period end and the bound. Both members are written only for such a set, so
+ * every set holding no gap writes exactly the bytes it always wrote, and no definition version moves.
+ *
  * <p><strong>How a definition asks</strong>: {@link ReportDefinition#takesValuationRateSet()} (or {@code needs...}), then
  * {@link Rates#pinnedBy} on its snapshot, {@link Rates#translate(SortedMap, Set)} over its columns, and {@link #section} for
  * the content's {@code translation} member. Nothing is posted, no journal line or balance changes (C7 A;
@@ -433,7 +438,7 @@ public final class Translation {
         });
         CanonicalJson.Arr untranslatedOut = CanonicalJson.array();
         untranslated.forEach(untranslatedOut::add);
-        return CanonicalJson.object()
+        CanonicalJson.Obj section = CanonicalJson.object()
                 .put("reportingCurrency", REPORTING_CURRENCY)
                 .put("scale", REPORTING_SCALE)
                 .put("rounding", ROUNDING.name())
@@ -447,6 +452,31 @@ public final class Translation {
                 .put("total", totals)
                 .put("complete", untranslated.isEmpty())
                 .put("untranslated", untranslatedOut);
+        CanonicalJson.Arr gaps = referenceGaps(rates);
+        // Only a set holding a reference gap writes the member (`P14-TSK-026`, ADR-0119 decision 2): every set that holds
+        // none writes exactly the bytes it wrote before, so every issued FINAL regenerates byte-identical.
+        return gaps.elements().isEmpty() ? section : section.put("referenceGaps", gaps);
+    }
+
+    /**
+     * The disclosure (`P14-TSK-026`, ADR-0119 decision 2; {@code INV-ACC-11}): each rate a four-eyes reference-gap exception
+     * admitted older than the set's bound - its pair, snapshot, observation instant, its age in whole hours at the period
+     * end and the bound it exceeds - in currency order. Every figure translated at such a rate travels in the content with
+     * this member, wherever the content is served. The age is a function of two frozen instants, so it never moves.
+     */
+    private static CanonicalJson.Arr referenceGaps(Rates rates) {
+        CanonicalJson.Arr out = CanonicalJson.array();
+        rates.pinned().forEach((currency, rate) -> {
+            if (rate.beyondBound()) {
+                out.add(CanonicalJson.object()
+                        .put("pair", rate.pair())
+                        .put("snapshot", rate.snapshotId().toString())
+                        .put("observedAt", rate.observedAt().toString())
+                        .put("ageHours", rate.ageHours(rates.asOf()))
+                        .put("boundHours", rates.maxAgeHours()));
+            }
+        });
+        return out;
     }
 
     /** {@code amount} in the reporting currency, as the content writes every translated figure. */
@@ -464,14 +494,18 @@ public final class Translation {
                 .put("currency", REPORTING_CURRENCY)
                 .put("basis", Basis.IDENTITY.name())
                 .put("rate", IDENTITY_RATE));
-        rates.pinned().forEach((currency, rate) -> sorted.put(currency, CanonicalJson.object()
-                .put("currency", currency)
-                .put("basis", Basis.PINNED_RATE.name())
-                .put("rate", written(rate))
-                .put("pair", rate.pair())
-                .put("source", rate.source())
-                .put("snapshot", rate.snapshotId().toString())
-                .put("observedAt", rate.observedAt().toString())));
+        rates.pinned().forEach((currency, rate) -> {
+            CanonicalJson.Obj entry = CanonicalJson.object()
+                    .put("currency", currency)
+                    .put("basis", Basis.PINNED_RATE.name())
+                    .put("rate", written(rate))
+                    .put("pair", rate.pair())
+                    .put("source", rate.source())
+                    .put("snapshot", rate.snapshotId().toString())
+                    .put("observedAt", rate.observedAt().toString());
+            // A reference gap's rate says so where it is listed (`P14-TSK-026`); every other rate's entry is unchanged.
+            sorted.put(currency, rate.beyondBound() ? entry.put("beyondBound", true) : entry);
+        });
         CanonicalJson.Arr out = CanonicalJson.array();
         sorted.values().forEach(out::add);
         return out;

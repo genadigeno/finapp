@@ -29,7 +29,8 @@ import java.util.UUID;
 public final class JdbcValuationRateSetStore implements ValuationRateSetStore {
 
     private static final String ROW = "SELECT s.id, s.period_id, p.period_start, s.as_of, s.max_age_hours, s.rate_count,"
-            + " s.status, s.captured_by, s.captured_at, s.decided_by, s.decided_at FROM accounting.valuation_rate_set s"
+            + " s.status, s.captured_by, s.captured_at, s.decided_by, s.decided_at, s.reference_gaps"
+            + " FROM accounting.valuation_rate_set s"
             + " JOIN accounting.accounting_period p ON p.id = s.period_id";
 
     /** A period's sets per status - no bound: the database counts them all. */
@@ -41,8 +42,8 @@ public final class JdbcValuationRateSetStore implements ValuationRateSetStore {
         ValuationRateSet content = set.content();
         try (PreparedStatement insert = unitOfWork.prepareStatement("INSERT INTO accounting.valuation_rate_set (id,"
                 + " period_id, functional_currency, as_of, max_age_hours, rate_count, status, captured_by,"
-                + " captured_by_type, captured_at, capture_reason, correlation_id)"
-                + " VALUES (?, ?, ?, ?, ?, ?, 'PROPOSED', ?, ?, clock_timestamp(), ?, ?)")) {
+                + " captured_by_type, captured_at, capture_reason, correlation_id, reference_gaps)"
+                + " VALUES (?, ?, ?, ?, ?, ?, 'PROPOSED', ?, ?, clock_timestamp(), ?, ?, ?)")) {
             insert.setObject(1, set.id().value());
             insert.setObject(2, content.period().value());
             insert.setString(3, ValuationRates.FUNCTIONAL.code());
@@ -53,13 +54,14 @@ public final class JdbcValuationRateSetStore implements ValuationRateSetStore {
             insert.setString(8, set.capturedBy().type().name());
             insert.setString(9, set.reason().orElse(null));
             insert.setString(10, set.correlation().value());
+            insert.setInt(11, content.referenceGaps());
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw failed("capturing a valuation rate set", failure);
         }
         try (PreparedStatement insert = unitOfWork.prepareStatement("INSERT INTO accounting.valuation_rate (set_id,"
-                + " position, base_currency, quote_currency, rate, source, snapshot_id, observed_at, received_at)"
-                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                + " position, base_currency, quote_currency, rate, source, snapshot_id, observed_at, received_at,"
+                + " beyond_bound) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             int position = 0;
             for (ValuationRate rate : content.rates()) {
                 insert.setObject(1, set.id().value());
@@ -71,6 +73,7 @@ public final class JdbcValuationRateSetStore implements ValuationRateSetStore {
                 insert.setObject(7, rate.snapshotId());
                 insert.setTimestamp(8, Timestamp.from(rate.observedAt()));
                 insert.setTimestamp(9, Timestamp.from(rate.receivedAt()));
+                insert.setBoolean(10, rate.beyondBound());
                 insert.executeUpdate();
             }
         } catch (SQLException failure) {
@@ -150,7 +153,7 @@ public final class JdbcValuationRateSetStore implements ValuationRateSetStore {
     @Override
     public List<ValuationRate> rates(Connection unitOfWork, ValuationRateSetId id) {
         try (PreparedStatement read = unitOfWork.prepareStatement("SELECT base_currency, quote_currency, rate, source,"
-                + " snapshot_id, observed_at, received_at FROM accounting.valuation_rate WHERE set_id = ?"
+                + " snapshot_id, observed_at, received_at, beyond_bound FROM accounting.valuation_rate WHERE set_id = ?"
                 + " ORDER BY position")) {
             read.setObject(1, id.value());
             List<ValuationRate> rates = new ArrayList<>();
@@ -163,7 +166,8 @@ public final class JdbcValuationRateSetStore implements ValuationRateSetStore {
                             row.getString("source"),
                             row.getObject("snapshot_id", UUID.class),
                             row.getTimestamp("observed_at").toInstant(),
-                            row.getTimestamp("received_at").toInstant()));
+                            row.getTimestamp("received_at").toInstant(),
+                            row.getBoolean("beyond_bound")));
                 }
             }
             return rates;
@@ -215,7 +219,8 @@ public final class JdbcValuationRateSetStore implements ValuationRateSetStore {
                 row.getString("captured_by"),
                 row.getTimestamp("captured_at").toInstant(),
                 Optional.ofNullable(row.getString("decided_by")),
-                decidedAt == null ? Optional.<Instant>empty() : Optional.of(decidedAt.toInstant()));
+                decidedAt == null ? Optional.<Instant>empty() : Optional.of(decidedAt.toInstant()),
+                row.getInt("reference_gaps"));
     }
 
     private static AccountingStorageException failed(String operation, SQLException failure) {

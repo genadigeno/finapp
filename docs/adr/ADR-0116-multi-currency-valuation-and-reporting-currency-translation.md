@@ -118,10 +118,18 @@ superseded set for the regeneration of a run that pinned it.
 **Ruled by the owner, 2026-11-03.** A FINAL run with a missing rate stays issued, with the gap disclosed, and a statement still refuses it. Indicative translation of an open period is left out. **Still open: the translated
 body's shape**, for the owner to look at before the first translated FINAL, because a later change means a new version.
 
+*(**Superseded in part by ADR-0119**, `P14-TSK-026`, 2026-11-06: decision 2's "one stale or missing pair refuses the whole
+capture" stands for every pair a person does not name. For a pair named in a four-eyes capture exception, the set holds the
+reference's real last observation before the period's end although it is older than the bound - the snapshot named, its
+provenance kept, flagged `beyond_bound` and counted in `reference_gaps` (accounting `V012`) - approved only at its own
+`MULTI_FACTOR` door, which re-reads the reference; every translated report pinning such a set names the pair, its age and the
+bound in `translation.referenceGaps`, and a set holding no gap writes exactly the bytes it always wrote. A pair the reference
+never observed before the end stays refused; a typed rate is never admitted.)*
+
 ## Follow-up
 
 C7 B with qualified review; a reporting currency other than the functional one, if a jurisdiction requires it.
 Superseding an approved valuation rate set (an `APPROVED → SUPERSEDED` edge under four eyes) if a wrong approved set must
-ever be replaced (`P14-TSK-014`'s owner item). *(`P14-TSK-012`, 2026-11-03: with no approved set the check now waits, deferred and re-judged, never `FAILED`, and a close records the set it was proposed on, `period_close.valuation_rate_set_id`; a set stands through a reopen, and a capture refused for a reference gap beyond the staleness bound has no door, an owner item.)* *(`P14-TSK-011`, 2026-11-02: `VALUATION_SET_APPROVED` reads `approvedFor` afresh
+ever be replaced (`P14-TSK-014`'s owner item). *(`P14-TSK-012`, 2026-11-03: with no approved set the check now waits, deferred and re-judged, never `FAILED`, and a close records the set it was proposed on, `period_close.valuation_rate_set_id`; a set stands through a reopen, and a capture refused for a reference gap beyond the staleness bound has no door, an owner item - *given one by `P14-TSK-026`, ADR-0119*.)* *(`P14-TSK-011`, 2026-11-02: `VALUATION_SET_APPROVED` reads `approvedFor` afresh
 per attempt and pins nothing, so either answer fits; it names the period's sets, so a proposal can be found - `ValuationRateSets.ofPeriod`,
 `P14-TSK-014`'s review, M-5.)*

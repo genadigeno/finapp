@@ -241,7 +241,9 @@ class AccountingVocabulariesTest {
                         "accounting.RegulatorySubmissionStale=409", "accounting.RegulatorySubmissionLive=409", "accounting.RegulatorySubmissionInvalid=422", "accounting.RegulatorySourceNotFinal=409",
                         "accounting.RegulatoryFigureUnresolved=422", "accounting.RegulatoryRunBytesDiffer=409", "accounting.RegulatoryObligationInvalid=422", "accounting.RegulatoryObligationStale=409", "accounting.RegulatoryProviderUnavailable=503",
                         // P14-TSK-024: another person withdrawing a pending unlock or reopen; an act naming a request other than the one pending.
-                        "accounting.NotTheProposer=403", "accounting.RequestStale=409");
+                        "accounting.NotTheProposer=403", "accounting.RequestStale=409",
+                        // P14-TSK-026: a reference gap's way on - a gap that is none or not the one named, and the wrong door.
+                        "accounting.ReferenceGapRefused=409", "accounting.ValuationDoorMismatch=409");
         // P14-TSK-002: the posting rule register's audited read - no reason, an operator's read.
         assertThat(AccountingAuditAction.POSTING_RULES_READ.code()).isEqualTo("accounting.PostingRulesRead");
         assertThat(AccountingAuditAction.POSTING_RULES_READ.requiresReason()).isFalse();
@@ -264,7 +266,10 @@ class AccountingVocabulariesTest {
                         "accounting.ReportGenerated=false", "accounting.ReportRegenerated=false",
                         "accounting.ReportRead=false",
                         // P14-TSK-014: the capture unreasoned (the lock's precedent); the two decisions reasoned.
-                        "accounting.ValuationSetCaptured=false", "accounting.ValuationSetApproved=true",
+                        "accounting.ValuationSetCaptured=false",
+                        // P14-TSK-026: the capture across a reference gap and its own approval, both reasoned.
+                        "accounting.ValuationSetCapturedAcrossGap=true", "accounting.ValuationSetApprovedAcrossGap=true",
+                        "accounting.ValuationSetApproved=true",
                         "accounting.ValuationSetRejected=true",
                         // P14-TSK-010: the raise (the run's) unreasoned; the acknowledgement's two acts and the
                         // resolution reasoned.

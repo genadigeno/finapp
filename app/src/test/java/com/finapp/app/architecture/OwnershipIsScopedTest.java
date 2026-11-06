@@ -4574,6 +4574,71 @@ class OwnershipIsScopedTest {
                                         + "selfApprovalIsRefused and"
                                         + " #aSessionWithoutTheRoleIsRefused.")),
                     Map.entry(
+                            "com.finapp.ledger.JdbcProjectionRebuildStore.decide",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-026. The rebuild's conditional decision (status = 'PROPOSED' in the"
+                                        + " statement, the row count the outcome), always under lockById's FOR UPDATE."
+                                        + " JdbcAdjustmentProposalStore.decide's reasoning: the identifier comes from"
+                                        + " /v1/ledger/projection-rebuilds/{id}, and what stands in for an ownership"
+                                        + " predicate is @RequiresPermission(LEDGER_ADJUST) at the boundary and the four"
+                                        + " eyes at the domain and V031's CHECK - a rebuild has no owner to scope by, and"
+                                        + " the proposer must not fence the approver out (INV-AUD-04).")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcProjectionRebuildRows.exists",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-026. The rebuild's reach into the ledger account named by"
+                                        + " /v1/ledger/projection-rebuilds' body (a proposal) or by the rebuild row the"
+                                        + " approval locked: an operator's door under @RequiresPermission(LEDGER_ADJUST),"
+                                        + " four-eyes at the approval. A ledger account has no owner predicate here - a"
+                                        + " wallet's holder lives in accounts' tables - and the door reads and writes only"
+                                        + " the derived projection, never a journal line (ProjectionRebuildNeverPostsTest).")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcProjectionRebuildRows.seqOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-026. The proposal's bracket's watermark read - exists' classification,"
+                                        + " one entry up.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcProjectionRebuildRows.entriesOn",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-026. The applied-entry count - exists' classification.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcProjectionRebuildRows.rowAndHolds",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-026. The row and its ACTIVE holds in one statement - exists'"
+                                        + " classification.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcProjectionRebuildRows.shareAccount",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-026. The approval's account key share - exists' classification.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcProjectionRebuildRows.lockRow",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-026. The approval's projection row lock - exists' classification.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcProjectionRebuildRows.derive",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-026. The approval's derivation under the lock - exists'"
+                                        + " classification.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcProjectionRebuildRows.insertRow",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-026. A missing row inserted from the journal - exists' classification.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcProjectionRebuildRows.writeRow",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P14-TSK-026. The row's four V006 columns written from the approval's own reading -"
+                                        + " exists' classification.")),
+                    Map.entry(
                             "com.finapp.ledger.JdbcJournalEntryStore.reversalLinesOf",
                             new Entry(
                                     Scope.NOT_OWNED,

@@ -460,6 +460,39 @@ class TranslationTest {
         return new Translation.Rates(SET, MONTH, AS_OF, 96, pinned);
     }
 
+    @Test
+    @DisplayName("a reference gap is disclosed beside every figure translated at the set - the pair, its snapshot, its"
+            + " observation, its whole hours at the period end and the bound - and those two members are ALL that differ"
+            + " from the same set holding no gap, whose bytes are what they always were (P14-TSK-026, ADR-0119)")
+    void aReferenceGapIsDisclosedAndNothingElseMoves() {
+        Instant old = AS_OF.minus(java.time.Duration.ofHours(412));
+        TreeMap<String, ValuationRate> plainPinned = new TreeMap<>();
+        TreeMap<String, ValuationRate> gappedPinned = new TreeMap<>();
+        RATES.forEach((quote, value) -> {
+            plainPinned.put(quote, quote.equals("JPY") ? aged(quote, value, old, false) : rate(quote, value));
+            gappedPinned.put(quote, quote.equals("JPY") ? aged(quote, value, old, true) : rate(quote, value));
+        });
+        Translation.Rates plain = new Translation.Rates(SET, MONTH, AS_OF, 96, plainPinned);
+        Translation.Rates gapped = new Translation.Rates(SET, MONTH, AS_OF, 96, gappedPinned);
+        List<Translation.Part> parts = List.of(part("JPY", "13125"), part("USD", "115.61"), part("EUR", "10.00"));
+        String without = CanonicalJson.text(Translation.section(plain, new TreeMap<>(Map.of("closing", plain.translate(parts))),
+                Map.of("JPY", 0, "USD", 2, "EUR", 2)));
+        String with = CanonicalJson.text(Translation.section(gapped, new TreeMap<>(Map.of("closing", gapped.translate(parts))),
+                Map.of("JPY", 0, "USD", 2, "EUR", 2)));
+        String disclosure = ",\"referenceGaps\":[{\"ageHours\":\"412\",\"boundHours\":\"96\",\"observedAt\":\"" + old
+                + "\",\"pair\":\"EUR/JPY\",\"snapshot\":\"" + SNAPSHOT_ID + "\"}]";
+        assertThat(with).contains(disclosure).contains("\"basis\":\"PINNED_RATE\",\"beyondBound\":true,\"currency\":\"JPY\"");
+        assertThat(with.replace(disclosure, "").replace("\"beyondBound\":true,", "")).isEqualTo(without);
+        assertThat(without).doesNotContain("referenceGaps").doesNotContain("beyondBound");
+        assertThat(CanonicalJson.text(Translation.section(rates(), new TreeMap<>(), Map.of())))
+                .doesNotContain("referenceGaps").doesNotContain("beyondBound");
+    }
+
+    private static ValuationRate aged(String quote, String value, Instant observed, boolean beyondBound) {
+        return new ValuationRate(CurrencyCode.of("EUR"), CurrencyCode.of(quote), new BigDecimal(value), "reference.test",
+                SNAPSHOT_ID, observed, observed.plusSeconds(1), beyondBound);
+    }
+
     private static ValuationRate rate(String quote, String value) {
         return new ValuationRate(CurrencyCode.of("EUR"), CurrencyCode.of(quote), new BigDecimal(value), "reference.test",
                 SNAPSHOT_ID, OBSERVED, OBSERVED.plusSeconds(1));
