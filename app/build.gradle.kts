@@ -416,6 +416,10 @@ extra["ownContainerSuites"] =
         "com.finapp.app.reconciliation.BatchRepudiationDatabaseTest",
         "com.finapp.app.reconciliation.JpyAndBhdPostableDatabaseTest",
         "com.finapp.app.reconciliation.ResolutionBatteryDatabaseTest",
+        // P14-DOC-001's database pass: its collision case commits a planted CARD_CAPTURE expectation (12.00 EUR on
+        // SETTLEMENT_CLEARING) with no line behind it - an open remainder the residue judge reads as an unexplained identity;
+        // SettlementAcceptanceDatabaseTest's register rebuild used to delete it in the shared JVM, masking it.
+        "com.finapp.app.reconciliation.SettlementExpectationDatabaseTest",
         "com.finapp.app.reconciliation.SettlementReconciliationStormDatabaseTest",
         "com.finapp.app.reconciliation.UnmatchedConfirmationSuspenseDatabaseTest",
         // P13-TSK-014: it activates EUR CARD_PAYMENT, WALLET_PAYMENT and MONITORING risk versions carrying the abuse

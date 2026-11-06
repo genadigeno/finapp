@@ -96,8 +96,16 @@ import org.junit.jupiter.api.Test;
  * copy — asserted against the ledger, never against the applier's inputs — the coupling
  * rolls back whole, ten appliers open one, the ARN arrives in either order, a collision
  * completes the payment, and a book movement opens nothing.
+ *
+ * <p><strong>Run apart</strong> (P14-DOC-001's database pass). The collision case plants, through the register and
+ * committed, a CARD_CAPTURE expectation no real path writes - 12.00 EUR INBOUND on SETTLEMENT_CLEARING, naming a random
+ * account and entry, no line behind it: an open remainder every whole-database position identity then holds. In the
+ * shared container {@code ReconciledPositionResidueDatabaseTest} judges it ({@code SETTLEMENT_CLEARING EUR} off by
+ * exactly 12.00) - hidden until that pass because {@code SettlementAcceptanceDatabaseTest}'s register rebuild, which ran
+ * after this suite there, deleted it and the backfill could not re-derive it; that suite now runs apart too.
  */
 @Tag("database")
+@Tag("own-container") // its own JVM and database: ownContainerDatabaseTest, the javadoc says why
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 @DisplayName("the expectation register at the card completions (P8-TSK-004)")
 class SettlementExpectationDatabaseTest {
