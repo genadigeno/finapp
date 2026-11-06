@@ -900,8 +900,9 @@ final class BnplStormWorld {
      * Pay-in-N's schedule re-projected from its shifted start: its instalments are months apart and their interest counts
      * the days between them, so a shift by days leaves rows no projection from the new start makes - the replay's
      * SCHEDULE finding. The pinned engine's own projection is written in their place (pay-in-4's 14-day grid shifts whole).
+     * Shared with {@code BnplProofDatabaseTest#toAge}, whose day shift needs the same (P14-DOC-001's database pass).
      */
-    private static void reprojected(Connection owner, String obligation) throws SQLException {
+    static void reprojected(Connection owner, String obligation) throws SQLException {
         String[] row;
         try (PreparedStatement select = owner.prepareStatement("SELECT o.product, o.plan, o.purchase_date::text,"
                 + " a.terms_version_id::text, f.gross_minor, f.scale FROM bnpl.bnpl_obligation o JOIN bnpl.bnpl_agreement a"
