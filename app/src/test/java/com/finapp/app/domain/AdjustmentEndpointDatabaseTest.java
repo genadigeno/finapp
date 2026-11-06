@@ -657,7 +657,9 @@ class AdjustmentEndpointDatabaseTest {
         assertThat(refused.body()).contains("ledger.AdjustmentOnReconciledPosition");
 
         // The database rank, past every domain guard: a legal MANUAL proposal born on the
-        // wallet, its line REPOINTED raw at PROCESSING_COSTS - V016's trigger refuses.
+        // wallet, its line REPOINTED raw at PROCESSING_COSTS - V016's trigger refuses, in the
+        // words ledger V030 (P14-TSK-013) re-stated when the ACCOUNTING origin joined MANUAL:
+        // "closed to free and prior-period adjustments".
         try (Connection app = DatabaseRoles.application()) {
             app.setAutoCommit(false);
             UUID proposal = UUID.fromString(IDS.next().toString());
@@ -688,7 +690,7 @@ class AdjustmentEndpointDatabaseTest {
                                 }
                             })
                     .isInstanceOf(SQLException.class)
-                    .hasMessageContaining("closed to free adjustments");
+                    .hasMessageContaining("closed to free and prior-period adjustments");
             app.rollback();
         }
     }
@@ -718,7 +720,8 @@ class AdjustmentEndpointDatabaseTest {
                     .contains("ledger.AdjustmentOnReconciledPosition")
                     .doesNotContain(account.id().value().toString());
 
-            // The database rank, past every domain guard: V020's re-stated trigger.
+            // The database rank, past every domain guard: V020's re-stated trigger, in the words
+            // ledger V030 (P14-TSK-013) gave it - "closed to free and prior-period adjustments".
             try (Connection app = DatabaseRoles.application()) {
                 app.setAutoCommit(false);
                 UUID proposal = UUID.fromString(IDS.next().toString());
@@ -748,7 +751,7 @@ class AdjustmentEndpointDatabaseTest {
                                 })
                         .as(book.name())
                         .isInstanceOf(SQLException.class)
-                        .hasMessageContaining("closed to free adjustments");
+                        .hasMessageContaining("closed to free and prior-period adjustments");
                 app.rollback();
             }
         }
@@ -779,7 +782,8 @@ class AdjustmentEndpointDatabaseTest {
                 .doesNotContain(cash.id().value().toString());
 
         // The database rank, past every domain guard: V018's re-stated trigger refuses a raw
-        // MANUAL line on the cash account.
+        // MANUAL line on the cash account, in the words ledger V030 (P14-TSK-013) gave it -
+        // "closed to free and prior-period adjustments".
         try (Connection app = DatabaseRoles.application()) {
             app.setAutoCommit(false);
             UUID proposal = UUID.fromString(IDS.next().toString());
@@ -810,7 +814,7 @@ class AdjustmentEndpointDatabaseTest {
                                 }
                             })
                     .isInstanceOf(SQLException.class)
-                    .hasMessageContaining("closed to free adjustments");
+                    .hasMessageContaining("closed to free and prior-period adjustments");
             app.rollback();
         }
     }

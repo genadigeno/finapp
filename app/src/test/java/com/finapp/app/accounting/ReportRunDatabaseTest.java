@@ -439,7 +439,17 @@ class ReportRunDatabaseTest {
                     + " id = '" + run.id().value() + "'", "P0001", "report_run_content_is_frozen");
             refusedBy(owner, "DELETE FROM accounting.report_run WHERE id = '" + run.id().value() + "'", "P0001",
                     "never deleted");
-            refusedBy(owner, "TRUNCATE accounting.report_run", "P0001", "never truncated");
+            // A plain TRUNCATE is refused before any trigger fires: accounting V010's regulatory_submission_source_run_fk
+            // (P14-TSK-018) references this table, and PostgreSQL refuses to truncate a referenced table alone (0A000).
+            refusedBy(owner, "TRUNCATE accounting.report_run", "0A000", "referenced in a foreign key constraint");
+            // With CASCADE the truncation reaches the statement triggers, report_run's own first - in a transaction rolled back.
+            owner.setAutoCommit(false);
+            try {
+                refusedBy(owner, "TRUNCATE accounting.report_run CASCADE", "P0001", "the report runs are never truncated");
+            } finally {
+                owner.rollback();
+                owner.setAutoCommit(true);
+            }
         }
         assertThat(count("SELECT count(*) FROM accounting.report_run WHERE id = '" + run.id().value()
                 + "' AND content_sha256 = '" + run.contentSha256().orElseThrow() + "'")).isEqualTo(1);

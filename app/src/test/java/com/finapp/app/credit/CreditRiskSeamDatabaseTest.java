@@ -58,8 +58,15 @@ import org.junit.jupiter.api.Test;
  * the code, seam version 2 and the profile version, in canonical format 2 - replays {@code IDENTICAL} after the profile
  * moves on, and its sealed text is the same bytes; a decision sealed through Phase 10's seam replays {@code NOT_ASSESSED}
  * at version 1, as before. <strong>Written and owed</strong> (owner decision C5).
+ *
+ * <p><strong>A database of its own</strong> ({@code own-container}, P14-DOC-001's database pass): its world brings the two
+ * credit policy seeds and the {@code RETAIL_SCORECARD} seed into force, activates a new {@code CREDIT_LINE} version and a
+ * {@code MONITORING} risk version - the shared JVM's endpoint suites rely on the seeds still being proposals
+ * ({@code ScorecardAdministrationEndpointDatabaseTest}, {@code CreditPolicyEndpointDatabaseTest}), and a {@code MONITORING}
+ * version judges every profile recompute in the database ({@code MonitoringRulesDatabaseTest}'s reason).
  */
 @Tag("database")
+@Tag("own-container")
 @DisplayName("credit's risk seam, version 2, sealed and replayed (P13-TSK-007)")
 class CreditRiskSeamDatabaseTest {
 

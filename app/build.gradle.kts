@@ -364,6 +364,11 @@ extra["ownContainerSuites"] =
         "com.finapp.app.credit.BureauSelectionDatabaseTest",
         "com.finapp.app.credit.CreditDecisionDatabaseTest",
         "com.finapp.app.credit.CreditDecisionStormDatabaseTest",
+        // P14-DOC-001's database pass: its world brings the credit policy seeds and the RETAIL_SCORECARD seed into force,
+        // activates a CREDIT_LINE version and a MONITORING risk version - the shared JVM's endpoint suites assert the seeds
+        // are still proposals (ScorecardAdministrationEndpointDatabaseTest failed behind it; CreditPolicyEndpointDatabaseTest
+        // passed only by running first), and a MONITORING version judges every profile recompute in the database.
+        "com.finapp.app.credit.CreditRiskSeamDatabaseTest",
         "com.finapp.app.credit.DecisionExplanationDatabaseTest",
         "com.finapp.app.credit.DecisionReplayDatabaseTest",
         "com.finapp.app.credit.DecisionReproducibilityBatteryTest",

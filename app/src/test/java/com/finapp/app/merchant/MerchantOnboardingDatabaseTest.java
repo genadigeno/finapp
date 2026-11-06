@@ -449,6 +449,10 @@ class MerchantOnboardingDatabaseTest {
             java.util.Map.of(
                     "ledger.ledger_account.normal_balance",
                     "the account's side, DEBIT or CREDIT - a classification, not a figure",
+                    "accounting.gl_account.normal_balance",
+                    "a GL account's side, DEBIT or CREDIT, held to its classification by"
+                            + " gl_account_normal_balance_coherent - a classification, not a figure,"
+                            + " born with its mapping version (accounting V002, P14-TSK-003; INSERT-only)",
                     "lending.loan_terms.allowed_days",
                     "allowed, not owed - the terms version's admitted day counts",
                     "bnpl.bnpl_terms.allowed_terms",
