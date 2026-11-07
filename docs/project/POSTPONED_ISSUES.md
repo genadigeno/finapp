@@ -270,10 +270,15 @@ commit and the date; do not delete the entry.
   tier on the final code. Postpone it"). **Due at the next phase's database pass at the latest.**
 - **What:** the Phase 14 exit review ran the phase's one database pass (C5) on the tree as merged: every database tier of
   every module Phase 14 changed - accounting, bnpl, fx, lending, platform, reconciliation, risk, settlement, and `app`'s
-  whole tier, shared and own-container - first run 134 + 320 suites, 3,682 tests, 66 failed. It then landed test repairs and
-  production fixes and re-ran only the suites that had failed and those that test what a fix changed (105 suites, 1,068
-  tests, then lending's tier whole), plus the storms once each on the triage branches. No clean run of every tier on the
-  final tree was made.
+  whole tier, shared and own-container - first run 134 + 320 suites, 3,682 tests, 66 failed in 40 suites. It then landed test
+  repairs and production fixes and re-ran only the suites that had failed and those that test what a fix changed - **on
+  2026-11-06, on `f1427b8d`'s code, with lending `V033` and bnpl `V021` (the terms fix withdrawn afterwards) still in, so not
+  on the final tree**: 105 suites, 1,068 tests, 2 failed - plus the storms once each on the triage branches. **On the final
+  tree** (the review's fix round, 2026-11-07, at `9cb2e51b`) it ran what the withdrawal changed and what ledger `V032` touches
+  that the re-run had not reached: lending's and bnpl's `databaseTest` whole (27 suites 326/0, 20 suites 209/0) and the eight
+  `app` suites writing `journal_line` with no run after `V032` (48/0) - 55 suites, 583 tests, 0 failed. No clean run of every
+  tier on the final tree was made. *(Read "re-ran only the suites that had failed and those that test what a fix changed (105
+  suites, 1,068 tests, then lending's tier whole)" until the fix round.)*
 - **Consequence:** an interaction between the fixes landed during the pass, or between them and suites that passed before
   them, is not proven. The pass's own evidence is named suite by suite in `reviews/PHASE_14_REVIEW.md`.
 - **Fix:** run every module's `databaseTest` (and its own-container sibling) on the tree as it then stands, fresh, once; the
@@ -312,7 +317,10 @@ commit and the date; do not delete the entry.
 ## PI-014 — The database suites still red after Phase 14's pass
 
 - **Status:** `POSTPONED` (owner, 2026-11-06, the same decision as `PI-013`). Due at the next phase's database pass at the latest.
-  None is disabled; each is marked in its source with this entry's number.
+  None is disabled. Items (1) and (2) are marked in their sources with this entry's number; item (3)'s four suites are
+  marked through their shared fixture, `PeriodCloseFixture.proposed`, with `PI-013`, the defect that makes them red; items (4)
+  and (5), unclassified intermittent cases, are not marked. *(Corrected by the fix round, 2026-11-07: read "each is marked in
+  its source with this entry's number" until then.)*
 - **The suites, each with its classification:**
   1. **`LoanTermsDatabaseTest#anOfferMadeDuringAnActivationStandsInsideItsVersion` (lending, shared tier) - a production
      defect.** A retired loan terms version's `effective_to` is `GREATEST(clock_timestamp(), transaction_timestamp(), its start +
@@ -357,8 +365,8 @@ commit and the date; do not delete the entry.
 - **Status:** `POSTPONED` (`P14-DOC-001`, 2026-11-06, under the owner's decision of that day to postpone what the pass did not
   finish - for the owner to confirm at the Phase 14 → 15 transition). Due at the next phase's database pass at the latest.
 - **What:** the exit review walked every hash of `MUTATION_TESTING.md` section 2 against every committed version of every
-  file. Of the 433 rows whose stated hash is older bytes of their file, it performed 103 again on present bytes (all
-  caught) and **struck 330 as evidence of today** - 215 of Phase 14's tasks, 78 of Phase 13's, 19 of Phase 12's, 5 of Phase 11's,
+  file. Of the 433 rows whose stated hash is older bytes of their file, it performed 103 again on present bytes (103 of
+  104 probes caught; the equivalent mutant at row 2808 survived as recorded) and **struck 330 as evidence of today** - 215 of Phase 14's tasks, 78 of Phase 13's, 19 of Phase 12's, 5 of Phase 11's,
   13 naming no task - each marked in place. About a hundred rows name a database half "unproven until the database pass":
   the pass ran their suites, but none of their database probes was performed. 1,713 older-form rows carry no hash and cannot
   be walked; 15 name bytes never committed. *(Added at the gate, 2026-11-07:)* the exit review's own production changes are
@@ -368,7 +376,11 @@ commit and the date; do not delete the entry.
 - **Consequence:** those rows say what was true when they were performed; that each still fails when its property is broken,
   on today's bytes, is not shown. Every `INV-ACC-*` keeps a row standing today; `INV-LED-01` and `INV-LED-05` stand on Phase 3's
   older-form rows only (section 3's Phase 14 block).
-- **Fix:** perform the struck rows again on present bytes (the review's walk script and its brief are the method:
-  `reviews/PHASE_14_REVIEW.md`, the register walk), and each database half against PostgreSQL; record each as performed, or
-  strike it for good with its reason.
+- **Fix:** perform the struck rows again on present bytes, and each database half against PostgreSQL; record each as
+  performed, or strike it for good with its reason. **The method is the prose one** (`reviews/PHASE_14_REVIEW.md`, *The register
+  walk*; `MUTATION_TESTING.md` section 3's Phase 14 block): match every section 2 hash token - the leading and trailing hex
+  characters of a sha256, most often eight and eight - against the sha256 of every committed version of every file (`git rev-list --all --objects`, each
+  blob hashed), classify each row as on present bytes, on older bytes of its file, on no committed bytes, or with no hash, and
+  perform or strike the second class. The review's own walk script was not committed; any script doing that is the method.
+  *(Read "the review's walk script and its brief are the method" until the fix round, 2026-11-07.)*
 - **Owner of the fix:** the next phase's database pass at the latest.

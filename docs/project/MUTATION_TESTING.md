@@ -3813,8 +3813,9 @@ reachable from the review's tree), so a row's stated hash names the file and the
 - **On older bytes: 433 rows.** 81 of them only because this review changed their files (`PeriodCloses`, `PeriodCloseDesk`,
   `AccountingPeriods`, `AdjustmentService`, `accounting.yml`, `ReportingNeverWritesTest`, `PeriodCloseStore`,
   `JdbcPeriodCloseStore`), and 22 on `OPERATIONS_RUNBOOK.md` that three parallel branches left on no merged bytes. **103 rows
-  were performed again** on the review's bytes (104 probes, every one caught by the assertion it aims at, row 2807's second
-  probe the equivalent mutant it already recorded); each row carries its result. **330 rows are struck as evidence of
+  were performed again** on the review's bytes (104 probes, 103 of them caught by the assertion each aims at; the equivalent
+  mutant at row 2808 survived as recorded); each row carries its result. *(Read "104 probes, every one caught …, row 2807's
+  second probe" until the fix round, 2026-11-07.)* **330 rows are struck as evidence of
   today**, each marked in place: their files moved after the probe (215 rows of Phase 14's tasks, 78 of Phase 13's, 19 of
   Phase 12's, 5 of Phase 11's and 13 naming no task), and performing them again on present
   bytes is owed under `POSTPONED_ISSUES.md` `PI-015`. A struck row's procedure stands as recorded, as of its day - section

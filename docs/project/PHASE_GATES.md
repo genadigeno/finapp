@@ -2230,11 +2230,13 @@ form, none does not hold (2.2's namespace built by the review); per area - 23 ho
 read as absent and the month cannot be proposed until a four-eyes unlock and relock - PI-013, a production defect the owner
 postponed), the storm's counts open (PI-004); the ADRs accepted (ADR-0119 with ADR-0113…0118) and C1–C13 ratified.
 **Universal criterion 7** remains the standing C5 deviation, `PARTIAL`: the one owner-authorised database pass ran first, on
-the tree as merged - 454 suites, 3,682 tests, 66 first-run failures (49 test defects or shared-container interferences
-repaired; two of the classification register; four production defects: merchant `V013` fixed, a lending and bnpl terms fix
-tried and withdrawn, the close run and the gauges' refresher postponed - PI-013, PI-014); the targeted re-run 105 suites,
-1,068 tests, 2 failed, both postponed; **no clean run of every tier on the final tree, by the owner's decision (PI-012)**;
-`kafkaTest` not run. **Criteria 6 and 11 `PARTIAL`** on the postponed production defects; the register's moved rows struck
+the tree as merged - 454 suites, 3,682 tests, 66 first-run failures in 40 suites (49 test defects or shared-container
+interferences repaired; two of the classification register; four production defects: merchant `V013` fixed, a lending and
+bnpl terms fix tried and withdrawn, the close run and the gauges' refresher postponed - PI-013, PI-014); the targeted re-run,
+on 2026-11-06 on `f1427b8d`'s code with the withdrawn terms fix still in, 105 suites, 1,068 tests, 2 failed, both postponed;
+on the final tree (2026-11-07) lending's and bnpl's tiers whole and the eight `app` suites writing `journal_line` with no run
+after `V032`, 55 suites, 583 tests, 0 failed; **no clean run of every tier on the final tree, by the owner's decision
+(PI-012)**; `kafkaTest` not run. **Criteria 6 and 11 `PARTIAL`** on the postponed production defects; the register's moved rows struck
 (PI-015). The ten-instance question: **`PASS`** on arbitration - every counted §8.3 row green against PostgreSQL; the
 clock-step defects are not races between instances and are named beside it; the storm's counts open under PI-004.*
 

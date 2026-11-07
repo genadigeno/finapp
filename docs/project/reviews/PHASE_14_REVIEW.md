@@ -14,7 +14,7 @@ rebuild door and a reference-gap way on.
 
 | | Outcome |
 |---|---|
-| The owner-authorised database pass (C5) | **Run first, on the tree as merged** - the accounting battery's database half first and alone, then every database tier of every module Phase 14's production code touched: **454 suites, 3,682 tests on the first run, 66 failures in 32 suites**. Classified one by one: **49 test defects or shared-container interferences** repaired in the tests, **2 failures of the register a test holds** (`DATA_CLASSIFICATION.md`), **four production defects** - one fixed (merchant `V013`), one fix tried and withdrawn, two postponed by the owner (`PI-013`, `PI-014`). **Not re-run whole on the final tree, by the owner's decision** (`PI-012`); the targeted re-run of the failed suites and of every suite a fix touched: **105 suites, 1,068 tests, 2 failures** (both postponed) |
+| The owner-authorised database pass (C5) | **Run first, on the tree as merged** - the accounting battery's database half first and alone, then every database tier of every module Phase 14's production code touched: **454 suites, 3,682 tests on the first run, 66 failures in 40 suites**. Classified one by one: **49 test defects or shared-container interferences** repaired in the tests, **2 failures of the register a test holds** (`DATA_CLASSIFICATION.md`), **four production defects** - one fixed (merchant `V013`), one fix tried and withdrawn, two postponed by the owner (`PI-013`, `PI-014`). **Not re-run whole on the final tree, by the owner's decision** (`PI-012`): a targeted re-run of the failed suites and those a fix touched, on 2026-11-06 on `f1427b8d`'s code - with the terms fix later withdrawn still in, so not the final tree: **105 suites, 1,068 tests, 2 failures** (both postponed); then, **on the final tree** (2026-11-07), lending's and bnpl's tiers whole and the eight `app` suites writing `journal_line` with no run after `V032`: **55 suites, 583 tests, 0 failures** *(the fix round's; this cell called the 2026-11-06 re-run final until then)* |
 | Review areas (8) | **7 `PASS`, Area 4 `PARTIAL`** (two clock-step production defects postponed) - see *What the review found* |
 | Universal criteria (12) | **8 `PASS`; criterion 1 `PASS` with `P14-TST-001` postponed (PI-004); criteria 6, 7 and 11 `PARTIAL`** - each a recorded deviation naming its PI; none passed informally |
 | Financial supplement (F1–F8) | **F1, F2, F3, F4, F5, F7, F8 `Met`; F6 `Met` for the counted ten-way suites, its storm half deferred (PI-004)** |
@@ -129,8 +129,9 @@ entries posted through the real posting service, twelve months closed four-eyes,
 fact the oracle's. This is also `P14-TSK-009`'s owed volume: two whole-history scans per generation over ~22,000 lines inside
 that time.
 
-**First run** (fresh worktree; the battery's fix and the launcher fix only): **454 suites, 3,682 tests, 66 failed in 32
-suites** - modules 134 suites / 1,223 tests / 20 failed (bnpl 6, lending 12, platform 2; accounting, fx, reconciliation, risk,
+**First run** (fresh worktree; the battery's fix and the launcher fix only): **454 suites, 3,682 tests, 66 failed in 40
+suites** (27 `app`, 7 lending, 5 bnpl, 1 platform; *read "32 suites" until the fix round, 2026-11-07, which recounted the
+appendix*) - modules 134 suites / 1,223 tests / 20 failed (bnpl 6, lending 12, platform 2; accounting, fx, reconciliation, risk,
 settlement green); `app` 320 suites / 2,459 tests / 46 failed (shared 240 / 1,730 / 26; own-container 80 / 729 / 20).
 
 | Suites (failures) | Class | Cause | Repair |
@@ -157,10 +158,30 @@ settlement green); `app` 320 suites / 2,459 tests / 46 failed (shared 240 / 1,73
 | `RiskStormTest` | unclassified (load) | C1 counted two unforced `CARD_PAYMENT` `TIMEOUT` fail-safes; a later run met a restart-cut re-send's `409`, repaired in the storm's door | green twice after; recorded in `PI-014` (5) |
 
 **Re-runs.** By the owner's decision there was **no clean run of every tier on the final tree** (`PI-012`). The evidence after
-the repairs is: (a) **the targeted re-run on the final tree** - every suite that failed, every suite a fix touched, and the
-module tiers whose code a fix changed (lending, bnpl, platform whole): **105 suites, 1,068 tests, 2 failed** - `AlertRulesResolveTest`
-(`PI-014` (2)) and the lending terms fix's own regression case, which then failed in lending's tier and was withdrawn with the
-fix (`PI-014` (1)); (b) **each triage engineer's fresh runs on its branch**: lending 326/0 and bnpl 209/0 (with ledger `V032`);
+the repairs is:
+
+(a) **The targeted re-run - not on the final tree.** It ran on 2026-11-06 from 13:28 to 14:25 UTC (its JUnit XML), on the code
+of `f1427b8d`: ledger `V032` and merchant `V013` in, and **lending `V033`, bnpl `V021` and their regression case
+`TermsRetirementClockDatabaseTest` still in**, withdrawn afterwards at `3c50f6ef`. It took every suite that had failed, the
+suites testing what a fix changed, and the lending, bnpl and platform tiers whole: **105 suites, 1,068 tests, 2 failed** -
+`AlertRulesResolveTest` (`PI-014` (2)) and that regression case, which failed and was withdrawn with the fix (`PI-014` (1)). It
+left out the line-writing suites ledger `V032` changes, whose first run predates `V032`. *(This paragraph read "the targeted
+re-run on the final tree - every suite that failed, every suite a fix touched" until the fix round, 2026-11-07, which found the
+withdrawn suite in its appendix column and the line-writing suites absent from it.)*
+
+(b) **The final-tree run** (the fix round, 2026-11-07, at `9cb2e51b` - the code of the final tree, after it only records
+changed; JUnit XML from 12:23 to 12:42 UTC, every file written by this run): what the withdrawal changed and what `V032` touches
+and (a) did not reach - **lending `databaseTest` whole, 27 suites, 326 tests, 0 failed; bnpl `databaseTest` whole, 20 suites,
+209 tests, 0 failed; and the eight `app` suites that write `journal_line` (seven insert lines in raw SQL; `PostingFloorDatabaseTest`
+posts through the service) with no run after `V032`, 48 tests, 0 failed** - `AccountClosingDatabaseTest` 7/0,
+`AdjustmentProposalSchemaDatabaseTest` 9/0, `JournalPostingDatabaseTest` 8/0, `PostingFloorDatabaseTest` 6/0,
+`ProjectionVerificationDatabaseTest` 4/0, `ReconciliationOpeningDatabaseTest` 5/0, `ReversalDatabaseTest` 7/0,
+`TrialBalanceDatabaseTest` 2/0. **55 suites, 583 tests, 0 failed.** The search for raw `journal_line` inserts in `app`'s and
+ledger's tests (ledger keeps its database suites in `app`) found four more - `BalanceDerivationDatabaseTest`, `CloseRunDatabaseTest`,
+`PostingCutoffDatabaseTest`, `StatementsDatabaseTest` - each run in (a), after `V032`, and none added: the lending and bnpl
+migrations (a) also carried change nothing they read.
+
+(c) **Each triage engineer's fresh runs on its branch**: lending 326/0 and bnpl 209/0 (with ledger `V032`);
 the shared tier whole (237 suites, 1,719 tests, the ten remaining failures all in a cluster another engineer then repaired:
 106/0); the thirteen accounting own-container suites together (153 tests, 4 failed - all `PI-013`; every case this review
 added green); `BnplProofDatabaseTest` 12/0 and `CreditDecisionDatabaseTest` 19/0 twice; `RiskStormTest` green twice (~42 min
@@ -234,8 +255,13 @@ were, "by family"); two classification levels inconsistent. **`PASS` after corre
 
 ## Area 6 — Test quality
 
-The register walk (below): **103 rows performed again, every probe caught**; 330 struck as evidence of today (`PI-015`); every
-`INV-ACC-*` keeps a demonstration standing today. The review's own probes are recorded in §2: merchant `V013`'s three; at the
+The register walk (below): **103 rows performed again, 103 of 104 probes caught** (the equivalent mutant at row 2808 survived
+as recorded); 330 struck as evidence of today (`PI-015`); every `INV-ACC-*` keeps a demonstration standing today. **Why it
+holds without `PI-015`** (counted at the fix round, 2026-11-07, over section 2 on the final tree): each of the sixteen
+`Phase: 14` invariants keeps rows on present bytes that are not struck - `INV-ACC-01` 7, `-02` 8, `-03` 5, `-04` 37, `-05` 30,
+`-06` 15, `-07` 2, `-08` 12, `-09` 76, `-10` 25, `-11` 17, `-12` 7, `-13` 129, `-14` 13, `INV-IDEM-02` 2, `INV-AUD-04` 49 - and
+no file a hashed row names changed after the walk but the two test classes the gate added, which no row hashes; `PI-015` owes
+the struck rows' own claims, not any invariant's only demonstration. The review's own probes are recorded in §2: merchant `V013`'s three; at the
 gate, the adjustment door's screen, its refusal record and that record's outcome (three, each caught in the ledger's and the
 `app`'s new suites) and ledger `V032`'s trigger on its text pin (caught; its database probe not performed - `PI-015`). The ends'
 convergence, the two read fields and the namespace carry their tests (hermetic, and database cases green in the re-run) and
@@ -269,10 +295,11 @@ review's own changes, 22 on the runbook three branches left unperformed, and the
 finding across the whole register; `PeriodClosesTest`'s twenty-four were current after `-024`); 15 on bytes never committed;
 1,713 older-form rows with no hash.
 
-- **Performed again: 103 rows, 104 probes, every one caught** by the assertion it aims at - the 35 on `PeriodCloses` and its
-  stores, the 36 on `PeriodCloseDesk`, `AccountingPeriods`, `AdjustmentService` and `ReportingNeverWritesTest`, the 10 on
-  `accounting.yml` and the 22 on the runbook (the routed rows: section 2's "routed to `P14-DOC-001`"). Row 2807's second probe
-  survived again, the equivalent mutant it records. Each row carries its result, its translation to the present code where
+- **Performed again: 103 rows, 104 probes, 103 of 104 caught** by the assertion each aims at; the equivalent mutant at row 2808
+  survived as recorded - the 35 on `PeriodCloses` and its stores, the 36 on `PeriodCloseDesk`, `AccountingPeriods`,
+  `AdjustmentService` and `ReportingNeverWritesTest`, the 10 on `accounting.yml` and the 22 on the runbook (the routed rows:
+  section 2's "routed to `P14-DOC-001`"). *(Corrected by the fix round, 2026-11-07: read "104 probes, every one caught" and
+  "row 2807's second probe" until then.)* Each row carries its result, its translation to the present code where
   the code moved, and its restored sha256.
 - **Struck as evidence of today: 330 rows** (215 of Phase 14's tasks, 78 of Phase 13's, 19 of Phase 12's, 5 of Phase 11's, 13
   naming no task), each marked in place; their procedures stand as of their day; performing them again is `PI-015`.
@@ -305,11 +332,11 @@ storm's counted interleavings at volume, its probes and its gate. The coordinato
 |---|---|---|---|
 | 1 | Required functionality exists | `PASS` - with `P14-TST-001` postponed (PI-004) | 27 tasks and `P14-TST-002` `COMPLETE`; the storm's deferral recorded |
 | 2 | Architectural boundaries respected | `PASS` | isolation tests, `ReportingNeverWritesTest`, `NoCustomerSurfaceReadsAccountingTest`; the fleet architecture tier on the final tree, 294/0 (*Tests*) |
-| 3 | Required invariants tested | `PASS` | every `INV-ACC-*` demonstrated on present bytes or in-suite; 103 rows performed again here; the struck rows owed (`PI-015`) |
+| 3 | Required invariants tested | `PASS` | every `INV-ACC-*` demonstrated on present bytes or in-suite; 103 rows performed again here; the struck rows owed (`PI-015`). Holds without `PI-015`: each of the sixteen `Phase: 14` invariants keeps at least two unstruck rows on present bytes (Area 6 counts them); `MutationDemonstrationTest` armed for Phase 14 green, and the flip red on exactly the invariant withheld |
 | 4 | Failure cases handled | `PASS` | `PHASE_14_PLAN.md` §15 each a test or a rationale (A1, A2); the clock-step defects are criterion 11's |
 | 5 | Security requirements implemented | `PASS` | Area 5; the adjustment door's two gaps closed here |
 | 6 | Observability exists | **`PARTIAL`** | meters, alerts (`promtool`: 136 rules, every file `SUCCESS`), runbook section 10 held to the code; **but the accounting gauges cannot survive a context restart** (`PI-014` (2), `AlertRulesResolveTest` red) |
-| 7 | Integration tests pass | **`PARTIAL`** - the standing C5 deviation | the pass ran on the tree as merged (454 suites); **no clean run of every tier on the final tree, by the owner's decision (`PI-012`)**; four suites still red or intermittent (`PI-013`, `PI-014`); `kafkaTest` not run; the storm postponed |
+| 7 | Integration tests pass | **`PARTIAL`** - the standing C5 deviation | the pass ran on the tree as merged (454 suites); **no clean run of every tier on the final tree, by the owner's decision (`PI-012`)** - the targeted re-run (105 suites) ran on `f1427b8d`'s code, the withdrawn terms fix still in; on the final tree, lending's and bnpl's tiers whole and the eight `app` suites writing `journal_line` with no run after `V032` (55 suites, 583 tests, 0 failed); four suites still red or intermittent (`PI-013`, `PI-014`); `kafkaTest` not run; the storm postponed |
 | 8 | Documentation reflects reality | `PASS` after corrections | Area 7 |
 | 9 | `CURRENT_STATE.md` updated | `PASS` | by this review |
 | 10 | Relevant ADRs exist and are `Accepted` | `PASS` | ADR-0113…0119 `Accepted` after correction |
@@ -472,8 +499,10 @@ Every row is in `CURRENT_STATE.md` §Known Architectural Debt or `POSTPONED_ISSU
 
 ## Tests, every count from a fresh run
 
-The database pass: first run 454 suites, 3,682 tests, 66 failed; targeted re-run 105 suites, 1,068 tests, 2 failed; the
-triage engineers' runs above (appendix). `promtool check rules` (prom/prometheus:v3.14.0, the version `compose.yaml` pins): 7
+The database pass: first run 454 suites, 3,682 tests, 66 failed in 40 suites; targeted re-run (2026-11-06, `f1427b8d`'s code,
+the withdrawn terms fix still in) 105 suites, 1,068 tests, 2 failed; **on the final tree** (2026-11-07, `9cb2e51b`) lending's
+tier 27 suites 326/0, bnpl's 20 suites 209/0 and the eight `app` `journal_line` writers 48/0 - 55 suites, 583 tests, 0 failed;
+the triage engineers' runs above (appendix). `promtool check rules` (prom/prometheus:v3.14.0, the version `compose.yaml` pins): 7
 files, 136 rules, `SUCCESS`. The build check of this review's corrections: ledger 178/0, accounting 725/0, lending 166/0,
 bnpl 602/0, `:app:test` over accounting, ledger, api 549/0, `:app:architectureTest` 237/0.
 
@@ -492,8 +521,8 @@ consent 14, credit 125, creditmath 100, crossborder 19, fx 48, identity 144, kyc
 party 23, paymentmethods 46, payments 306, platform 187, reconciliation 192, risk 570, settlement 236, sharedkernel 225,
 transfers 35); **architecture - 24 modules, 63 classes, 294 tests, 0 failed** (`app` 237). The doc guards over this review's
 corrections (`AdrRegistersAreReconciledTest`, `DomainGlossaryTest`, `ArchitectureRulesAreDocumentedTest`, `TestTaxonomyTest`)
-and `MutationDemonstrationTest`, armed for Phase 14, are among them. The database tiers and `kafkaTest` were not run again
-(`PI-012`).
+and `MutationDemonstrationTest`, armed for Phase 14, are among them. The database tiers were not part of this run - their
+final-tree run (55 suites) is the first paragraph above, the rest owed under `PI-012` - and `kafkaTest` was not run.
 
 **After the fleet run, the gate's two test classes** (2026-11-07; the only code the final tree adds to the tree the fleet
 ran - test code, no production change): `ManualAdjustmentDoorTest` and `LedgerAdjustmentsRefusalTest`, then their four
@@ -524,8 +553,12 @@ phases.
 ## Appendix — the database pass, suite by suite
 
 Every suite with its first run and its targeted re-run (tests/failed), read from each run's own JUnit XML. "-" is a suite not
-in that run. `TermsRetirementClockDatabaseTest` was the withdrawn fix's regression case (removed with it). The triage
-engineers' further runs are named in *The database pass*.
+in that run. The targeted re-run ran on `f1427b8d`'s code (2026-11-06), not the final tree: `TermsRetirementClockDatabaseTest`
+was the withdrawn fix's regression case (removed with it at `3c50f6ef`). The final-tree run of 2026-11-07 - every lending and
+bnpl row below, and `AccountClosingDatabaseTest`, `AdjustmentProposalSchemaDatabaseTest`, `JournalPostingDatabaseTest`,
+`PostingFloorDatabaseTest`, `ProjectionVerificationDatabaseTest`, `ReconciliationOpeningDatabaseTest`, `ReversalDatabaseTest`
+and `TrialBalanceDatabaseTest`, every one green at the counts in its first-run column - is *The database pass*'s (b). The
+triage engineers' further runs are named there too.
 
 | Module | Tier | Suite | First run (tests/failed) | Targeted re-run (tests/failed) |
 |---|---|---|---|---|
