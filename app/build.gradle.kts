@@ -644,4 +644,19 @@ tasks.withType<Test>().configureEach {
     )
         .withPropertyName("adrRegisters")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // The seventeenth and eighteenth, the first a SET. ThreatModelIsCompleteTest (P15-TSK-001) reads
+    // docs/architecture/THREAT_MODEL.md and resolves every evidence path the register cites, and the evidence is
+    // open-ended: a test, a migration, a CI workflow, a pin list, an ADR or another document. Compiled code is
+    // already an input through the classpath and siblingTestClasses, and *.yml, *.sh and *.sql through
+    // committedConfiguration. The documents and the dependency verification metadata are not, so they are
+    // declared here. Without them, deleting a cited document would leave the task UP-TO-DATE and the register
+    // green over evidence nobody opened. A tree, not the one file, so a document cited later is covered without
+    // anyone remembering. PRODUCTION_READINESS.md sits in the same tree for P15-TSK-034's guard.
+    inputs.files(rootProject.fileTree("docs") { include("**/*.md") })
+        .withPropertyName("documentsTree")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(rootProject.layout.projectDirectory.file("gradle/verification-metadata.xml"))
+        .withPropertyName("dependencyVerificationMetadata")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }

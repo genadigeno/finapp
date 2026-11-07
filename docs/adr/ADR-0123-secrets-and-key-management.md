@@ -12,13 +12,15 @@ Rests on: ADR-0019, ADR-0020, ADR-0023, ADR-0032, ADR-0052, ADR-0083, ADR-0120, 
 ## Context
 
 Secrets come from environment variables. Each one has a marked local default, and the guards confine that default to
-loopback (ADR-0020). The code reads 37 key, secret, password and token properties. Eight AES-256-GCM cipher classes, built as nine
+loopback (ADR-0020). The code reads 37 key, secret, password and token properties *(27 distinct `finapp.*` credential
+properties, each with its own `ConfinedCredential` key class, besides the database's credentials - recounted from the
+code by `P15-TSK-001`, 2026-11-08; 35 with the eight `key-version` companions, which are not secrets)*. Eight AES-256-GCM cipher classes, built as nine
 instances (`EvidenceCipher` twice, `PaymentBeans.java:83` and `:829`) over eight keys (`DocumentCipher` and
 `CounterpartySubjectCipher` share `finapp.doc.key`, `CounterpartyScreeningBeans.java:65-76`), stamp a key version on
 every row, but each holds only one active key. A rotation would therefore make every earlier row
 unreadable, and many of these tables are `INSERT`-only evidence that must never be rewritten. There is no secrets
 manager, no KMS and no rotation or revocation procedure. `SECRET_MANAGEMENT.md` and `SECURITY_ARCHITECTURE.md` still say
-that no keys exist.
+that no keys exist *(corrected by `P15-TSK-001`, 2026-11-08)*.
 
 ## Decision
 

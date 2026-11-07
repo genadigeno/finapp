@@ -27088,6 +27088,7 @@ Phase 14 → 15 transition)
   rows.
 - **Acceptance criteria**: as tested; probes served only on 8081.
 - **Definition of done**: `DOD-KERNEL`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* ADR-0023's decision 5 carries the same lapsed "no Kafka client" claim as `TransportSecurityGuard`'s note; `-001` added a read-note there pointing here and corrected `DECISIONS.md` §Transport and at-rest encryption. `THREAT_MODEL.md` T2 cites this task (the management port).
 
 **P15-TSK-009 — Kubernetes base manifests for the application** — `PLANNED`
 - **Objective**: the application's desired state as reviewed, validated YAML.
@@ -27157,6 +27158,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: runbook §edge; `API_CONVENTIONS.md` notes the two surfaces.
 - **Acceptance criteria**: as tested.
 - **Definition of done**: `DOD-SEC`, `DOD-API`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T40 cites this task: the edge sets the client's address and drops any client-supplied forwarded header, so `-022`'s per-source limits and every record key on an address the client cannot choose. T1, T3, T8, T20, T21 and T31 cite it too.
 
 **P15-TSK-012 — The `kind` deployment: N replicas, the migration Job, smoke, rolling update and rollback rehearsed** —
 `PLANNED`
@@ -27317,6 +27319,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: `SECRET_MANAGEMENT.md` §3 and §5 rewritten for deployed environments.
 - **Acceptance criteria**: as tested.
 - **Definition of done**: `DOD-SEC`. **Risk**: Low. **Cx**: M.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* the scope's "37 properties" is the plan's survey count. Recounted from the code: **27** distinct `finapp.*` credential properties, each confined by its own `ConfinedCredential` key class (35 with the eight `key-version` companions, which are not secrets; 39 names merely contain the words), besides the datasource, migrator and Kafka credentials. `SECRET_MANAGEMENT.md` §3's variable table lists only the database's variables: the inventory replaces it. `THREAT_MODEL.md` T6 and T15 cite this task.
 
 **P15-TSK-019 — Key rings: rotating field-level keys without losing history** — `PLANNED`
 - **Objective**: any of the eight ciphers' keys can be rotated with every earlier row still readable and no evidence
@@ -27347,6 +27350,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: runbook §key rotation, §key compromise.
 - **Acceptance criteria**: as tested in every cipher's module.
 - **Definition of done**: `DOD-SEC`, `DOD-KERNEL`. **Risk**: High (touches evidence encryption). **Cx**: L.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* what the ring replaces, read from the code: each of the nine instances decrypts with its one key whatever version a row carries; only `CounterpartySubjectCipher` refuses a mismatched stamped version, the other seven fail at the tag; `SettlementFileCipher` stamps its version on the file row. The five callback keys (`finapp.kyc.callback.key`, `.payments.webhook.key`, `.payments.instant.webhook.key`, `.fx.webhook.key`, `.corridor.webhook.key`) are each static. `THREAT_MODEL.md` T7, T8 and T34 cite this task.
 
 **P15-TSK-020 — Credential and certificate rotation, rehearsed** — `PLANNED`
 - **Objective**: every rotation in `PHASE_15_PLAN.md` §10 performed on `kind` under a workload with no failed request
@@ -27398,6 +27402,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: `SECURITY_ARCHITECTURE.md` §Who is acting; the review as a document.
 - **Acceptance criteria**: as tested; two debt rows closed.
 - **Definition of done**: `DOD-SEC`, `DOD-ARCH`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `RequiresAssurance`'s note, recounted: **21** handlers declare it, all `MULTI_FACTOR`, all on the method (the plan's "25" counted the annotation's Javadoc and the interceptor's reads). `THREAT_MODEL.md` T3, T7, T10, T18, T38 and T44 cite this task; if the reporting role is cut, this task's gate rewrites T7's and T44's rows as gaps with an owner.
 
 **P15-TSK-022 — Abuse limits: registration and per-source throttling, cluster-safe** — `PLANNED`
 - **Objective**: no single source can create unbounded parties or drive unbounded load, across N replicas.
@@ -27421,6 +27426,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: runbook §abuse.
 - **Acceptance criteria**: exactly the limit admitted across contexts.
 - **Definition of done**: `DOD-SEC`, `DOD-API`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T40: a per-source limit keyed on a client-supplied forwarded header is evaded by setting the header, so the source is the address the edge sets (`-011`), never one the client chooses; a test sending a forged forwarded header proves it.
 
 **P15-TSK-023 — The telemetry pipeline and the end-to-end trace** — `PLANNED`
 - **Objective**: traces and logs leave every replica through one scrubbing collector, and one payment is traceable from
@@ -27516,6 +27522,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: runbook §broker outage, §consumer lag.
 - **Acceptance criteria**: as tested.
 - **Definition of done**: `DOD-EVENT`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `KafkaTransportGuard` refuses only `PLAINTEXT` off loopback today, so **`SASL_PLAINTEXT` (authenticated, unencrypted) is admitted**; the widening refuses every protocol without TLS off loopback, with a case for it. `THREAT_MODEL.md` T9, T17 and T25 cite this task.
 
 **P15-TSK-027 — Event contracts: the schema catalogue and compatibility** — `PLANNED`
 - **Objective**: no release changes an event in a way the previous release's consumers cannot read, and no record is
@@ -27737,6 +27744,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: this review.
 - **Acceptance criteria**: every cell evidenced or a gap with an owner; no "ready" on a started container alone.
 - **Definition of done**: `DOD-DOC`. **Risk**: Low. **Cx**: M.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* the standard is written: [`PRODUCTION_READINESS.md`](../architecture/PRODUCTION_READINESS.md), the twelve dimensions as checkable clauses, a multi-instance row per unit (this entry's), six unit tables and 23 module tables, the open `P14-REM-*` entries named per unit and module. Its evidence grammar is the threat model's, parsed and resolved by `EvidenceCitations` (`com.finapp.app.architecture`), which this task's guard reuses.
 
 **P15-TST-001 — The rolling-deploy storm** — `POSTPONED` (by the owner, `POSTPONED_ISSUES.md` PI-004: every later phase's
 storm runs after the project's phases)
@@ -28333,6 +28341,7 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   design), proven by a test over a row written before the change; the key confinement and needle
   tests unchanged and green. **Risk**: Medium — a mistake makes stored evidence unreadable.
   **Cx**: M. **DoD**: `DOD-SEC`, `DOD-TEST`
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* **`FxEvidenceCipher`** (Phase 9) binds no associated data either, so the item covers five classes: `SecretCipher`, `DocumentCipher`, `EvidenceCipher` (both instances), `PayoutEvidenceCipher` and `FxEvidenceCipher`. `CreditEvidenceCipher`, `CounterpartySubjectCipher` and `SettlementFileCipher` bind from birth. `THREAT_MODEL.md` T35 cites this item.
 
 **X-TSK-011 — Reconcile the posting-date doctrine with the Phase 5–7 practice** — `PLANNED`
 - **Context**: documentation — `DOMAIN_MODEL.md`:116-121 and `LEDGER_MODEL.md`:41-44. Recorded by

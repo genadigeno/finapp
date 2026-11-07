@@ -170,6 +170,10 @@ endpoint. Nothing is encrypted at rest and nothing needs to be yet; the expectat
 owning phases are recorded so the absence is a decision. &rarr;
 [ADR-0023](../adr/ADR-0023-transport-security-confined-to-loopback.md),
 [`SECURITY_ARCHITECTURE.md`](../architecture/SECURITY_ARCHITECTURE.md)
+*(Read-note, `P15-TSK-001`, 2026-11-08: both "nothing is encrypted at rest" and "there is no client" for Kafka describe
+Phase 0. Restricted columns have been encrypted field by field since `P1-TSK-017`: eight cipher classes over eight keys,
+listed in `SECURITY_ARCHITECTURE.md` §Encryption at rest. Kafka has been guarded since `P2-TSK-001`. The threats are
+registered in [`THREAT_MODEL.md`](../architecture/THREAT_MODEL.md).)*
 
 ### Supply chain
 Every artefact the build resolves is checksum-verified (`gradle/verification-metadata.xml`) and
