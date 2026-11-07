@@ -223,6 +223,32 @@ class PostingCutoffDatabaseTest {
     }
 
     @Test
+    @DisplayName("P14-DOC-001: a line is refused too - a balancing pair appended by raw SQL to an entry of the locked month"
+            + " is LDCUT at its first line, the month's lines unchanged; the same pair on an entry of the open month is not the"
+            + " cutoff's to refuse")
+    void aLineAppendedToALockedMonthsEntryIsRefused() throws Exception {
+        LedgerAccount[] pair = pairs(1).get(0);
+        PostingResult january = post(pair, IN_PERIOD); // committed before the lock, as every entry of a closed month was
+        PostingResult february = post(pair, AFTER);
+        lockJanuary();
+        long before = linesOf(january);
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            assertThatThrownBy(() -> rawLine(app, january, pair[0], "DEBIT", 90))
+                    .as("ledger V032: the line's entry is dated on or before the cutoff (INV-ACC-08, raw SQL included)")
+                    .isInstanceOf(SQLException.class)
+                    .extracting(failure -> ((SQLException) failure).getSQLState())
+                    .isEqualTo(PostingCutoffs.PERIOD_CLOSED_SQLSTATE);
+            app.rollback();
+
+            rawLine(app, february, pair[0], "DEBIT", 90);
+            rawLine(app, february, pair[1], "CREDIT", 91);
+            app.rollback(); // admitted at insert - an open month's entry is INV-HIST-01's question, not the cutoff's
+        }
+        assertThat(linesOf(january)).as("the locked month's entry kept its lines").isEqualTo(before).isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("a replay of a posting dated in the locked period is answered from its record - never refused")
     void aReplayIsNeverRefused() throws Exception {
         LedgerAccount[] pair = pairs(1).get(0);
@@ -568,6 +594,31 @@ class PostingCutoffDatabaseTest {
     private static void update(Connection app, String sql) throws SQLException {
         try (PreparedStatement statement = app.prepareStatement(sql)) {
             statement.executeUpdate();
+        }
+    }
+
+    /** One raw line of 7.00 USD appended to {@code entry} at {@code seq}, as the application role may insert one (V004). */
+    private static void rawLine(Connection app, PostingResult entry, LedgerAccount account, String direction, int seq)
+            throws SQLException {
+        try (PreparedStatement insert = app.prepareStatement("INSERT INTO ledger.journal_line (id, entry_id,"
+                + " ledger_account_id, direction, amount_minor, currency, scale, seq) VALUES (?, ?, ?, ?, 700, 'USD', 2, ?)")) {
+            insert.setObject(1, IDS.next());
+            insert.setObject(2, entry.entryId().value());
+            insert.setObject(3, account.id().value());
+            insert.setString(4, direction);
+            insert.setInt(5, seq);
+            insert.executeUpdate();
+        }
+    }
+
+    private static long linesOf(PostingResult entry) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement select = app.prepareStatement("SELECT count(*) FROM ledger.journal_line WHERE entry_id = ?")) {
+            select.setObject(1, entry.entryId().value());
+            try (ResultSet row = select.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
         }
     }
 

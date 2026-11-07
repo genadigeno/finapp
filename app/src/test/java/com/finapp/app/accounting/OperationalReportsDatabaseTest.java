@@ -109,7 +109,8 @@ import org.junit.jupiter.api.Test;
  *
  * <p><strong>The books it uses.</strong> Only the fixture's <strong>January and February 1999</strong>
  * ({@link AccountingPeriodFixture}: `P14-TSK-012`'s close suites close January only in databases of their own, so only January can be locked here); it approves no valuation rate set,
- * reading January's as it finds it (`P14-TSK-014`'s note); every comparison is a relation that holds whatever else those months hold,
+ * reading January's as it finds it (`P14-TSK-014`'s note); it activates the reference GL mapping version from January once ({@code
+ * PeriodCloseFixture.mappingInForce}), since its own database holds none and GL_ACTIVITY's accounts are a pinned version's; every comparison is a relation that holds whatever else those months hold,
  * this suite's own earlier cases included, whose lines stay. Each case returns the periods to {@code OPEN}, superseding its FINAL runs. An
  * adopted parking it opens stays - an item is never deleted - and is dated in January with a raise of today, so it never enters January's
  * frozen read. <strong>Written and owed</strong> (owner decision C5: the database tiers are skipped per task).
@@ -178,6 +179,10 @@ class OperationalReportsDatabaseTest {
     @BeforeEach
     void theBooksHoldEveryReportsPurposes() throws SQLException {
         AccountingPeriodFixture.restore();
+        // P14-DOC-001: in a database of its own no GL mapping version is in force unless the suite activates one - the shared
+        // container's was another suite's - and with none pinned GL_ACTIVITY puts every line in its unmapped rows, so its accounts
+        // and their components were empty and every claim on them held of nothing. The reference version, from January, once.
+        PeriodCloseFixture.mappingInForce();
         cash = operational(AccountPurpose.SETTLEMENT_CLEARING);
         LedgerAccount loan = owned(AccountPurpose.LOAN_PRINCIPAL, AccountType.ASSET);
         LedgerAccount obligation = owned(AccountPurpose.BNPL_PRINCIPAL, AccountType.ASSET);

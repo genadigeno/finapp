@@ -308,7 +308,9 @@ class ReconciliationResolutionDatabaseTest {
                         proposal, position))
                         .as(closed.name())
                         .isInstanceOf(SQLException.class)
-                        .hasMessageContaining("closed to free adjustments");
+                        // The trigger's words were widened by ledger V030 (P14-TSK-013) when the ACCOUNTING
+                        // origin joined MANUAL - the LoanChartDatabaseTest and BnplChartDatabaseTest precedent.
+                        .hasMessageContaining("closed to free and prior-period adjustments");
                 app.rollback();
             }
         }

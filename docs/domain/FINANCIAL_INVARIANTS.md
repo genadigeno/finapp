@@ -1349,7 +1349,7 @@ prior-period adjustment in an open period.
 floored to the first open date, never into the locked period - `PostingFloorTest`, `PostingFloorDatabaseTest`,
 `LoanAccrualCutoffDatabaseTest`; an adjustment refused at approval, `PROPOSED` kept - `AdjustmentApprovalCutoffTest`,
 `PostingFloorDatabaseTest#aManualAdjustmentDatedIntoALockIsRefusedAtApprovalAndStaysProposed`; every rule's reaction
-held to the source - `PostingRuleRegisterTest#theFloorAgreesWithTheSource`.)* *(`P14-TSK-012`: the cutoff stands from the lock through `CLOSE_PROPOSED` and `CLOSED`, moved back only by a reopen's approval, exactly one period - `PeriodClosesTest#theCutoffMovesBackOnePeriod`, `PeriodReopenDatabaseTest#aReopenRefusesNothingOutsideItsPeriod`, owed C5.)*
+held to the source - `PostingRuleRegisterTest#theFloorAgreesWithTheSource`.)* *(`P14-TSK-012`: the cutoff stands from the lock through `CLOSE_PROPOSED` and `CLOSED`, moved back only by a reopen's approval, exactly one period - `PeriodClosesTest#theCutoffMovesBackOnePeriod`, `PeriodReopenDatabaseTest#aReopenRefusesNothingOutsideItsPeriod`, owed C5.)* *(`P14-DOC-001`, the Phase 14 exit review, 2026-11-06, ledger `V032`: a journal line joining an entry dated on or before the cutoff is refused too, for every writer - `PostingCutoffDatabaseTest#aLineAppendedToALockedMonthsEntryIsRefused`, `LineCutoffMigrationTest`; `INV-ACC-08`.)*
 **Phase:** 14
 
 ### INV-ACC-04 — Reports are reproducible
@@ -1388,14 +1388,19 @@ anything stands; a read that fails `FAILED`. Printed in the statements' notes by
 keep their words and gain their enforcement in Phase 14 — `-02` by the GL drill-down door (`P14-TSK-007`), `-03` by the
 ledger's posting cutoff at insert (`P14-TSK-004`, the `DB-CONSTRAINT` half), `-04` by report runs (`P14-TSK-008`), `-05`
 by the close run's disclosure check (`P14-TSK-011`, `-016`). The nine entries below were added by the same transition,
-**planned: nothing of them is built until the task that enforces each lands**; every statement is the decided design,
-corrected by the tasks that build it. The catalogue goes 162 → 171.)*
+**built: each by the task that enforces it, `P14-TSK-001`…`-026`, read against the code by the Phase 14 exit review**;
+every statement is the decided design, corrected by the tasks that built it. The catalogue goes 162 → 171.)*
+*(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "planned: nothing of them is built until the
+task that enforces each lands" - true at the transition; every one is enforced as its entry's notes record.)*
 
 ### INV-ACC-06 — The GL is a function of the journal
 **Statement:** Every GL figure is the sum of journal lines whose account's purpose (and owner kind) maps to that GL
 account under the mapping version the period pins; every journal line maps to exactly one GL account under a version;
 every mapping is classification-compatible with the purpose's ledger type; no accounting table holds a balance or a line
-amount except a report run's frozen output.
+amount except a report run's frozen output and a regulatory submission's content and lines, copied from FINAL runs.
+*(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "except a report run's frozen output" -
+accounting `V010`'s `regulatory_submission.content` and `regulatory_submission_line.minor_units` hold amounts too, each
+copied from the FINAL runs the submission names and frozen with it; ADR-0113 decision 2 corrected the same way.)*
 **Why:** A second store of balances is a second ledger; it drifts, and the drift is silent until a statement is wrong.
 **Enforce:** `STATIC` (`accounting` has no ledger edge; `AccountingModuleIsolationTest`) + `DOMAIN` (activation refuses a
 non-total or incompatible version through `LedgerChart`).
@@ -1409,21 +1414,35 @@ non-total or incompatible version through `LedgerChart`).
 of `ACCOUNTING_MAPPING_APPROVE`; it takes effect from an `OPEN` period only; a period pins exactly one version when it
 locks; every GL figure and report run names the version that produced it.
 **Why:** A mapping applied retroactively changes reports already issued (`INV-ACC-04`).
-**Enforce:** `DB-CONSTRAINT` (content tables `INSERT`-only; `CHECK (approved_by <> proposed_by)`; one `ACTIVE` per
-effective period) + `DOMAIN` (namespace `14` `mapping` serialises activation against a lock's pin).
-**Verify:** `GlMappingDatabaseTest#theProposerCannotApprove`, `#aLockBehindAnActivationPinsOneVersion`,
-`#aClosedPeriodKeepsItsVersion` (`P14-TSK-003`, `-005`).
+**Enforce:** `DB-CONSTRAINT` (content tables `INSERT`-only; `CHECK (decided_by <> proposed_by)` on an `ACTIVE` or
+`RETIRED` version, `gl_mapping_version_four_eyes`; one `ACTIVE` version overall, the partial unique
+`gl_mapping_one_active`) + `DOMAIN` (namespace `14` `mapping` serialises activation against a lock's pin).
+**Verify:** `GlMappingDatabaseTest#theProposerCannotApprove`, `#aLockBehindAnActivationPinsOneVersion`; a locked or
+closed period keeps the version it pinned - `GlPinsTest#aLockedPeriodReadsItsPin`,
+`AccountingPeriodsTest#aLockPinsTheVersionInForce`, `AccountingPeriodMigrationTest#theMappingEdgeFunctionReReadsThePeriods`
+(`P14-TSK-003`, `-005`, `-007`).
+*(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: Enforce read "`CHECK (approved_by <> proposed_by)`;
+one `ACTIVE` per effective period" - accounting `V002` names the column `decided_by` (`V002:61`) and holds one `ACTIVE`
+row in the whole table (`V002:76`); Verify named `GlMappingDatabaseTest#aClosedPeriodKeepsItsVersion`, which was never
+written - the pin is held by the hermetic and migration tests now named.)*
 **Phase:** 14
 
 ### INV-ACC-08 — The posting cutoff and the close never race
 **Statement:** Once a period's lock commits, no journal entry with a posting date in that period commits afterwards: the
 ledger's `BEFORE INSERT` trigger takes namespace `14` shared and refuses `posting_date <= closed_through`; the lock,
-unlock and reopen edges take it exclusive. The cutoff moves only through the ledger's own API, by one period, recorded.
+unlock and reopen edges take it exclusive. No journal line joins an entry so dated either: a `BEFORE INSERT` trigger on
+`journal_line` reads its entry's posting date under the same key and refuses it the same way (`LDCUT`). The cutoff moves
+only through the ledger's own API, by one period, recorded.
+*(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06, ledger `V032`: the statement named the entry alone -
+a raw writer could append a balancing pair of lines to an entry committed long ago in a locked month, the balance
+holding and no entry inserted; the line is now refused for every writer, raw SQL included.)*
 **Why:** A posting that commits after the trial balance was taken makes the closed period's figures wrong without any
 row saying so.
-**Enforce:** `DB-CONSTRAINT` (the trigger and the advisory lock; the cutoff row `UPDATE` only through the conditional edge;
-the event table `INSERT`-only).
-**Verify:** `PostingCutoffDatabaseTest#tenPostersAndALockLeaveNoEntryAfterTheCut`, `#rawSqlIsRefusedToo` (`P14-TSK-004`).
+**Enforce:** `DB-CONSTRAINT` (the entry's and the line's triggers and the advisory lock; the cutoff row `UPDATE` only
+through the conditional edge; the event table `INSERT`-only).
+**Verify:** `PostingCutoffDatabaseTest#tenPostersAndALockLeaveNoEntryAfterTheCut`, `#rawSqlIsRefusedToo` (`P14-TSK-004`);
+`PostingCutoffDatabaseTest#aLineAppendedToALockedMonthsEntryIsRefused`, `LineCutoffMigrationTest` (`P14-DOC-001`, ledger
+`V032`).
 **Phase:** 14
 
 ### INV-ACC-09 — A period closes only from recorded, complete readiness under four eyes
@@ -1431,8 +1450,11 @@ the event table `INSERT`-only).
 `DISCLOSED` with a reason, its FINAL trial balance is zero per currency and equal to the ledger, and a second holder of
 `ACCOUNTING_CLOSE_APPROVE` approved the proposal; periods close in order.
 **Why:** A close without evidence is an assertion; a close by one person is a control nobody checked.
-**Enforce:** `DB-CONSTRAINT` (conditional edges; `CHECK (approved_by <> proposed_by)`) + `DOMAIN` (the proposal refuses
-an incomplete run).
+**Enforce:** `DB-CONSTRAINT` (conditional edges; `CHECK (status <> 'APPROVED' OR decided_by <> proposed_by)`,
+`period_close_four_eyes`) + `DOMAIN` (the proposal refuses an incomplete run).
+*(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "`CHECK (approved_by <> proposed_by)`" -
+accounting `V008:170` names the decider `decided_by` and constrains only an `APPROVED` close; a rejection may be the
+proposer's own act.)*
 **Verify:** `PeriodCloseDatabaseTest#anIncompleteRunCannotBeProposed`, `#twoApprovalsOneClose`,
 `#theProposerCannotApprove` (`P14-TSK-011`, `-012`). *(`P14-TSK-011`, the recorded half: `CloseRunsTest`, `CloseChecksTest`,
 `CloseCheckWorkerTest`, `CloseRunDatabaseTest` - owed, C5; `accounting V007`'s attempts frozen, `DISCLOSED` only where the check admits it. The
@@ -1476,7 +1498,10 @@ observation, provenance kept, flagged and disclosed on every translated content 
 ### INV-ACC-12 — Every entry conforms to a registered rule, and every expected entry exists once
 **Statement:** Every journal entry's posting-key namespace is in the posting rule register and its lines match the
 rule's shape in force at its posting date; every source record a proof expects to post has exactly one entry; every
-discrepancy is an accounting break born once per (period, check, subject), never a silent correction.
+discrepancy is an accounting break born once per (period, check, subject, generation), never a silent correction - a
+finding that differs from the evidence a person decided on is the next generation, the decided one left as it was.
+*(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "born once per (period, check, subject)" -
+`P14-TSK-012`'s accounting `V008:38` took the generation into `accounting_break_born_once`.)*
 **Why:** An unregistered or malformed posting is an economic event nobody can explain.
 **Enforce:** `STATIC` (`PostingRuleRegisterTest`: every key prefix registered) + `DB-CONSTRAINT` (break uniqueness) +
 `DOMAIN` (the close checks).
@@ -1498,7 +1523,7 @@ once per submission id; a correction is a new submission referencing the origina
 **Enforce:** `DB-CONSTRAINT` (lineage `NOT NULL`; four-eyes `CHECK`; `SUBMITTED` frozen) + `DOMAIN`.
 **Verify:** `RegulatorySubmissionDatabaseTest#aRetriedSubmitSubmitsOnce`, `#onlyFinalRunsFeedADraft` (`P14-TSK-018`). *(Built by `P14-TSK-018`, accounting `V010`, the database suite owed, C5. **`CLOSED` round-trips, so every act going forward compares the period's revision and each run's id and hash, its bytes re-proved, under the period row**: `RegulatorySubmissionsTest#aRoundTrippedMonthIsNotTheMonthItWas`, `RegulatorySubmissionDatabaseTest#aRoundTrippedMonthIsNotTheMonthItWas`, `#aSubmitFirstHoldsTheReopenOff`, `#aReopenFirstRefusesTheSubmit` - real races with latches. **A month that moved before the send is never sent**, on a first attempt or a resend: `RegulatorySubmissionsTest#aMonthThatMovedBeforeTheSendIsNeverSent`, `#aResendStopsOnceTheMonthMoves`, `RegulatorySubmissionDriverTest#aMonthMovedBeforeTheFirstAttemptIsNeverSent`, `#aResendAfterAReopenIsRefused`, `RegulatorySubmissionDatabaseTest#aMonthMovedBeforeTheClaimIsNeverSent`. The residual window: a send that began just before a reopen committed cannot be closed without a transaction around the call, so the rule is that the month stood when the send began. Hermetic: `RegulatorySubmissionsTest#onlyFinalRunsFeedADraft`, `#aCorrectionReferencesTheOriginal`, `#theProposerCannotApprove`, `#aRetriedSubmitSubmitsOnce`; `RegulatorySubmissionDriverTest#aRetriedSubmitSubmitsOnce`, `#aCrashBeforeTheCallIsRecovered`, `#aLostAnswerIsAskedFor`; a line no figure explains: `RegulatoryFormTest#aPathThatIsNotOneAmountIsRefused`, `RegulatoryFiguresOnRealBodiesTest`. **At most once per submission id** means one return at the provider: the first attempt sends; a resend only on an inquiry's definite "not received", under the same id, bounded, counted before its call. A return sent and then overtaken by a reopen stands, frozen and flagged until a return of its form is acknowledged at the month's present revision: it is not edited, and a correction is a new submission naming it.)*
 *(`P14-TSK-019`, the first real form: the documented configuration through the real doors and machine, a shortfall reaching `VALIDATED`, every line drilling down, no line naming a door its reader cannot open, an unreadable proof refusing the draft, a holder in debit no cover for anyone else, each flag saying its own figure: `SafeguardingReturnTest`, `SafeguardingPositionDefinitionTest#aWalletInDebtIsNoCover`, `#eachFlagSaysItsOwnFigure`; `SafeguardingReturnDatabaseTest#principalUnrepaidIsSubtracted`, `#everyLineDrillsDown`, `#aShortfallIsReportedInItsOwnCurrency`, `#aWalletAndAPayableInDebtAreNoCover`, owed C5.)*
-*(`P14-TSK-023`, the owner's rulings: the return's subtraction no longer holds `committed`, so an acceptance moves no figure of the position and the worked month reads short on both, `SafeguardingPositionDefinitionTest#anAcceptanceMovesNoFigureOfThePosition`, `#anAcceptanceCannotMaskAShortfall`, `SafeguardingReturnTest#theWorkedMonth`; what loan money that has left can still mask, and the figure that warns, `#loanMoneyThatLeftCanStillMaskAShortfall`, `#theOldTermsAndWordsAreGone`; capital's identity unmoved and the two figures pinned, `SafeguardingFormulaIsTheHeadroomsTest`. A reopen's two receipts list the returns it overtakes, as information: `PeriodCloseDeskTest#aReopensReceiptsListTheReturnsItOvertakes`, `JdbcReturnsAReopenOvertakesTest`; against PostgreSQL `PeriodReopenDatabaseTest#aReopensReceiptsListTheReturnsItOvertakes`, `RegulatorySubmissionDatabaseTest#whatAReceiptReadsAgainstASend`, owed C5.)*
+*(`P14-TSK-023`, the owner's rulings: the return's subtraction no longer holds `committed`, so an acceptance moves no figure of the position and the worked month reads short on both, `SafeguardingPositionDefinitionTest#anAcceptanceMovesNoFigureOfThePosition`, `#anAcceptanceCannotMaskAShortfall`, `SafeguardingReturnTest#theWorkedMonth`; what loan money that has left can still mask, and the figure that warns, `SafeguardingPositionDefinitionTest#loanMoneyThatLeftCanStillMaskAShortfall`, `#theOldTermsAndWordsAreGone` (and `SafeguardingReturnTest#theOldTermsAndWordsAreGone`) *(corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this named `SafeguardingReturnTest#loanMoneyThatLeftCanStillMaskAShortfall`; the method is `SafeguardingPositionDefinitionTest`'s)*; capital's identity unmoved and the two figures pinned, `SafeguardingFormulaIsTheHeadroomsTest`. A reopen's two receipts list the returns it overtakes, as information: `PeriodCloseDeskTest#aReopensReceiptsListTheReturnsItOvertakes`, `JdbcReturnsAReopenOvertakesTest`; against PostgreSQL `PeriodReopenDatabaseTest#aReopensReceiptsListTheReturnsItOvertakes`, `RegulatorySubmissionDatabaseTest#whatAReceiptReadsAgainstASend`, owed C5.)*
 **Phase:** 14
 
 ### INV-ACC-14 — Reporting never writes
@@ -2174,6 +2199,17 @@ empty pin as `WAITING`. `LoanTermsDatabaseTest#aPinBehindAnActivationPinsTheSucc
 `BnplTermsDatabaseTest#aPinBehindAnActivationPinsTheSuccessor`, `LoanOriginationDatabaseTest#anEmptyPinWaits`,
 `BnplOriginationTest#anEmptyPinWaits`; probes, `MUTATION_TESTING.md` §2. And bnpl's terms door admits only the delinquency
 bounds `(1, 30, 60, 90)` its bucket labels name (A7-5, `BnplTermsTest#theBoundsAreTheOnesTheLabelsName`).)*
+
+*(A known limit, recorded by `P14-DOC-001`, the Phase 14 exit review's database pass, 2026-11-06 - the version's
+effective period, lending's and bnpl's: `P11-TSK-005`'s "effective period clamped on a backward clock" holds the
+successor after its predecessor, but a retirement's `effective_to` - `GREATEST(clock_timestamp(),
+transaction_timestamp(), its start + 1us)` (lending `V030:247`, bnpl `V002:343`) - can fall before an offer pinned to the
+retiring version when the database clock steps back between that offer's commit and the retirement, so the offer reads
+as made outside its own version's period (red once in
+`LoanTermsDatabaseTest#anOfferMadeDuringAnActivationStandsInsideItsVersion`). **The defect stands, postponed by the
+owner as `PI-014`.** A fix must end the retired version after every offer pinned to it and also keep the successor
+starting exactly where the predecessor ends (lending `V003`'s `loan_terms_retires_only_beside_its_successor`); the
+review's draft fix met that rule in `LoanTermsDatabaseTest#aBackwardClockIsClamped` and was withdrawn unmerged.)*
 
 ### INV-LND-06 — One decision funds at most one loan or line, and exposure has no gap
 **Statement:** A credit decision is consumed at most once — only while `APPROVED` and before its
@@ -4289,7 +4325,14 @@ fee and its returns are that version applied to the pinned gross, never stored.)
 `clock_timestamp()` read after the standing's share locks, never an instance's clock - and merchant `V012`'s trigger
 refuses a pin whose instant lies outside its own transaction's span. A version created to take effect immediately
 (`effective_from = created_at`) is in force from its commit - "immediately" never waits for the database's clock to reach
-its creating instance's stamp; a scheduled one is judged on the database's clock alone.)*
+its creating instance's stamp; a scheduled one is judged on the database's clock alone.)* *(Corrected by `P14-DOC-001`,
+the Phase 14 exit review, 2026-11-06, merchant `V013`: the note above read the pin "stamped at `clock_timestamp()` read
+after the standing's share locks" and `V012` refusing "a pin whose instant lies outside its own transaction's span" - the
+database clock steps back, and a step between the domain's read and the insert made `V012` refuse a correctly judged pin
+(the acceptance rolled back as a 500). The pin's instant is now its own insert's stamp, `GREATEST(clock_timestamp(),
+transaction_timestamp())`, written by the trigger over whatever the writer supplied and read back by
+`JdbcBnplPricingStore.insertPin`; "in force" is judged against that stamp, and the resolution's read is floored at the
+transaction's start. `MerchantBnplEnablementDatabaseTest`'s shadow clock steps the session back around the read.)*
 **Verify:** Recomputation tests per rounding mode; a schedule-change-mid-flight test
 proving the pinned version priced the capture.
 **Phase:** 6
@@ -4649,7 +4692,7 @@ documents after resolution refused with nothing written or sent.*
 | `INV-REC` | 01–10 | Reconciliation |
 | `INV-FX` | 01–09 | Foreign exchange |
 | `INV-XB` | 01–04 | Cross-border payments |
-| `INV-ACC` | 01–05 | Accounting and reporting |
+| `INV-ACC` | 01–14 | Accounting and reporting |
 | `INV-AUD` | 01–04 | Security and audit |
 | `INV-CRD` | 01–12 | Credit decisioning |
 | `INV-LND` | 01–14 | Lending |
@@ -4663,7 +4706,7 @@ documents after resolution refused with nothing written or sent.*
 | `INV-RAIL` | 01–04 | Payment rails and routing |
 | `INV-DSP` | 01–03 | Disputes and chargebacks |
 
-**162 invariants.** Every one must be enforced and verified before the phase that owns it can
+**171 invariants.** Every one must be enforced and verified before the phase that owns it can
 pass its exit gate. *(The count moved from 110 to 120 at the Phase 8 → 9 transition,
 2026-10-02: `INV-FX-04`…`INV-FX-09` and `INV-XB-01`…`INV-XB-04` catalogued, and thirteen
 entries restated, each with its dated provenance.)* *(The count moved from 120 to 128 at the
@@ -4674,4 +4717,6 @@ catalogued, a new group, and `INV-MER-07` amended — proposed, in force when `P
 *(The count moved from 152 to 162 at the Phase 12 → 13 transition, 2026-10-22: `INV-RSK-01`…`10`
 catalogued, a new group — the decided design, nothing built until `P13-TSK-001` lands.)* *(P13-DOC-001,
 2026-10-27: built by `P13-TSK-001`…`-025`; the count stands at 162 - the exit review corrected statements, catalogued
-none.)*
+none.)* *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "162 invariants", and the index
+`INV-ACC` "01–05" - the Phase 13 → 14 transition catalogued `INV-ACC-06`…`14` (2026-10-29) without moving either;
+built by `P14-TSK-001`…`-026`, the count is 171, as the `### INV-` headings count.)*

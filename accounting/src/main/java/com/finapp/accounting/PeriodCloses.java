@@ -134,12 +134,18 @@ public final class PeriodCloses {
      *
      * @param stillStands readiness read again, every latest attempt the one frozen, the month's break counts and the set as they were - what {@link #approve} will ask
      * @param pendingReopen the reopen pending on the {@code CLOSED} period at its present revision (`P14-TSK-024`) - what a reopen's approver decides; empty when none is
+     * @param referenceGaps how many of the named set's rates a reference-gap exception admitted beyond the staleness bound (`P14-DOC-001`, `P14-TSK-026`'s owner item (c); ADR-0119 decision 2) - the
+     *     set's own {@code referenceGaps}, so the close's approver is told on the close's own read, as the set's read and every translated report tell; 0 for an ordinary capture
      */
-    public record ProposalView(PeriodCloseStore.CloseRow proposal, PeriodStatus periodStatus, List<CheckView> checks, boolean stillStands, Optional<PeriodCloseStore.ReopenRow> pendingReopen) {
+    public record ProposalView(PeriodCloseStore.CloseRow proposal, PeriodStatus periodStatus, List<CheckView> checks, boolean stillStands, Optional<PeriodCloseStore.ReopenRow> pendingReopen,
+            int referenceGaps) {
 
         public ProposalView {
             checks = List.copyOf(checks);
             Objects.requireNonNull(pendingReopen, "pendingReopen");
+            if (referenceGaps < 0) {
+                throw new IllegalArgumentException("a set admits no fewer than no gaps");
+            }
         }
     }
 
@@ -591,14 +597,18 @@ public final class PeriodCloses {
         person(actor);
         String reasoned = AccountingReasons.reasoned(reason);
         AccountingPeriodStore.PeriodRow row = periods.lock(unitOfWork, id).orElseThrow(AccountingPeriods.PeriodNotFound::new);
+        // The request named, looked up itself under the period's row (P14-DOC-001, P14-TSK-024's re-review (a)): ended by this person this way,
+        // a repeat - under any key, whatever was proposed or ended since - converges and writes nothing. Until then this read the revision's
+        // latest end, so a retry after another reopen ended in between was told "none is pending", and one while another was pending RequestStale.
+        Optional<PeriodCloseStore.ReopenRow> named = closes.endedReopen(unitOfWork, id, requested);
+        if (named.filter(ended -> ended.status() == end.reopenStatus() && ended.endedBy().filter(actor.id()::equals).isPresent()).isPresent()) {
+            return new Acted(id, row.month(), row.status(), row.revision(), Optional.empty(), Optional.empty(), true);
+        }
         Optional<PeriodCloseStore.ReopenRow> pending = closes.lockPendingReopen(unitOfWork, id);
         if (pending.isEmpty()) {
             if (row.status() == PeriodStatus.CLOSED) {
-                Optional<PeriodCloseStore.ReopenRow> last = closes.latestEndedReopenAt(unitOfWork, id, row.revision());
-                if (last.filter(ended -> ended.id().equals(requested) && ended.status() == end.reopenStatus() && ended.endedBy().filter(actor.id()::equals).isPresent()).isPresent()) {
-                    return new Acted(id, row.month(), row.status(), row.revision(), Optional.empty(), Optional.empty(), true);
-                }
-                throw new AccountingPeriods.PeriodStale(endedOrNone(last, requested));
+                throw new AccountingPeriods.PeriodStale(named.map(ended -> "the reopen named was " + ended.status().name() + "; none is pending, and nothing was changed")
+                        .orElse("no reopen of the period is pending; nothing was changed"));
             }
             throw new AccountingPeriods.PeriodStale(row.status() == PeriodStatus.OPEN && row.revision() > 1
                     && closes.approvedReopenAt(unitOfWork, id, row.revision() - 1).filter(approved -> approved.id().equals(requested)).isPresent()
@@ -633,13 +643,9 @@ public final class PeriodCloses {
         }
     }
 
-    /** What a {@code CLOSED} period with no reopen pending says to an act on one: what became of the one named, when it is the latest end at the revision; otherwise that none is pending. */
+    /** What a {@code CLOSED} period with no reopen pending says to an act on one: what became of the one named, when it ended (`P14-DOC-001`: looked up by its id); otherwise that none is pending. */
     private String noReopenPending(Connection unitOfWork, AccountingPeriodStore.PeriodRow row, PeriodReopenId requested) {
-        return endedOrNone(closes.latestEndedReopenAt(unitOfWork, row.id(), row.revision()), requested);
-    }
-
-    private static String endedOrNone(Optional<PeriodCloseStore.ReopenRow> last, PeriodReopenId requested) {
-        return last.filter(ended -> ended.id().equals(requested)).map(ended -> "the reopen named was " + ended.status().name() + "; none is pending, and nothing was changed")
+        return closes.endedReopen(unitOfWork, row.id(), requested).map(ended -> "the reopen named was " + ended.status().name() + "; none is pending, and nothing was changed")
                 .orElse("no reopen of the period is pending; nothing was changed");
     }
 
@@ -687,7 +693,10 @@ public final class PeriodCloses {
                     .toList();
             boolean stands = row.status() == PeriodStatus.CLOSE_PROPOSED && proposal.status() == PeriodCloseStatus.PROPOSED
                     && moved(unitOfWork, row, proposal).isEmpty();
-            return new ProposalView(proposal, row.status(), checks, stands, pendingReopenOf(unitOfWork, row));
+            // P14-DOC-001 (P14-TSK-026's (c)): the named set's reference gaps, read by its id - a set is immutable once decided, and the close names an approved one.
+            int gaps = sets.find(unitOfWork, proposal.rateSet()).map(ValuationRateSetStore.SetRow::referenceGaps)
+                    .orElseThrow(() -> new IllegalStateException("a close names a valuation rate set that exists (V008's foreign key)"));
+            return new ProposalView(proposal, row.status(), checks, stands, pendingReopenOf(unitOfWork, row), gaps);
         });
     }
 

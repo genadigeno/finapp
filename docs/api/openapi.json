@@ -17137,6 +17137,10 @@
           },
           "valuationRateSetId": {
             "type": "string"
+          },
+          "valuationRateSetReferenceGaps": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -20615,6 +20619,9 @@
             "type": "integer"
           },
           "mappingVersionId": {
+            "type": "string"
+          },
+          "namespace": {
             "type": "string"
           },
           "period": {

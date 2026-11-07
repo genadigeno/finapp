@@ -628,13 +628,21 @@ class BnplProofDatabaseTest {
         }
     }
 
-    /** The date shift to instalment {@code sequence} being {@code age} days past its due date today (`-019`'s fixture). */
+    /**
+     * The date shift to instalment {@code sequence} being {@code age} days past its due date today (`-019`'s
+     * fixture) - and, in the same transaction, a pay-in-N schedule re-projected from its shifted start by the pinned
+     * engine ({@link BnplStormWorld#reprojected}, the storm's fixture): its instalments are months apart, so a shift by
+     * days that crosses months of different lengths leaves due dates no projection from the new start makes - the
+     * replay's SCHEDULE finding, and a refund's recalculation refused (its next due date off the purchase's day).
+     * Pay-in-4's 14-day grid shifts whole. P14-DOC-001's database pass met it on 2026-11-06, the shift back crossing
+     * from November into October.
+     */
     private static void toAge(Bought bought, int sequence, int age) throws Exception {
         long days = age + BnplApplicationClient.count("SELECT i.due_date - (now() AT TIME ZONE 'UTC')::date FROM"
                 + " bnpl.bnpl_instalment i WHERE i.obligation_id = ?::uuid AND i.sequence = ?",
                 bought.obligation().value().toString(), sequence);
         String o = bought.o();
-        asOwner("UPDATE bnpl.purchase SET business_date = business_date - " + days + " WHERE id ="
+        asOwner(bought, "UPDATE bnpl.purchase SET business_date = business_date - " + days + " WHERE id ="
                 + " (SELECT purchase_id FROM bnpl.bnpl_obligation WHERE id = " + o + ");"
                 + " UPDATE bnpl.bnpl_obligation SET purchase_date = purchase_date - " + days + " WHERE id = " + o
                 + "; UPDATE bnpl.bnpl_schedule SET start_date = start_date - " + days + " WHERE obligation_id = " + o
@@ -648,11 +656,19 @@ class BnplProofDatabaseTest {
     }
 
     private static void asOwner(String sql) {
+        asOwner(null, sql);
+    }
+
+    /** {@code sql} as the owner, triggers suspended - then, {@code shifted} given, its schedule re-projected. */
+    private static void asOwner(Bought shifted, String sql) {
         try (Connection owner = DatabaseRoles.bootstrap()) {
             owner.setAutoCommit(false);
             try (Statement statement = owner.createStatement()) {
                 statement.execute("SET LOCAL session_replication_role = replica");
                 statement.execute(sql);
+            }
+            if (shifted != null) {
+                BnplStormWorld.reprojected(owner, shifted.obligation().value().toString());
             }
             owner.commit();
         } catch (SQLException failure) {

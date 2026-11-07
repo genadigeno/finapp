@@ -50,6 +50,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -68,10 +69,17 @@ import org.springframework.test.context.DynamicPropertySource;
  * sold from the same provider at a fresh firm quote; its entry closes the cover's position legs with one realised
  * line; an UNKNOWN cover waits for knowledge; ten abandoners make one unwind; at rest the FX books prove, the
  * quote's position is zero and the customer's wallet delta is zero.
+ *
+ * <p>Ordered after every default suite (and before the residue judge), as every other suite activating the FX source
+ * is: its FX source v1 is the runbook's act, which {@code FxProviderSourceDatabaseTest} performs itself after proving
+ * its absence. Without the order this suite - in {@code fx}, scanned before {@code settlement} - activated v1 first
+ * in P14-DOC-001's database pass, and that suite found a report ACCEPTED where it must wait PARSED, and its own
+ * activation numbered 2.
  */
 @Tag("database")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Order(Integer.MAX_VALUE - 1)
 @DisplayName("unwinding covers (P9-TSK-021)")
 class UnwindRetryDatabaseTest {
 

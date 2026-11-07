@@ -150,6 +150,8 @@ public final class PeriodCloseDesk {
      * @param overtakenReturns on a pending reopen, the returns it would overtake, newest first, at most {@link ReturnsAReopenOvertakes#NEWEST}: the receipts' statement, read here holding nothing. <strong>Null when no reopen is pending</strong>, since no list was read
      * @param overtakenReturnsTotal how many there are; null as that list
      * @param overtakenReturnsNote what the list says and does not, and that the approval's receipt can differ from it; null as that list
+     * @param valuationRateSetReferenceGaps how many of the named set's rates a reference-gap exception admitted beyond the staleness bound (`P14-DOC-001`, `P14-TSK-026`'s owner item (c)): the
+     *     close's approver told on the close's own read, as the set's read and every translated report tell; 0 for an ordinary capture. Additive under {@code v1} (ADR-0015)
      */
     public record CloseProposalView(
             String proposalId,
@@ -172,7 +174,8 @@ public final class PeriodCloseDesk {
             String reopenProposedAt,
             List<OvertakenReturn> overtakenReturns,
             Long overtakenReturnsTotal,
-            String overtakenReturnsNote) {}
+            String overtakenReturnsNote,
+            int valuationRateSetReferenceGaps) {}
 
     /**
      * A period's pending requests as the controller reads them before deciding one (`P14-TSK-024`'s fix round): what each act names - an unlock by when it was proposed, a reopen by its id - and
@@ -323,7 +326,8 @@ public final class PeriodCloseDesk {
                 view.pendingReopen().map(reopen -> reopen.proposedAt().toString()).orElse(null),
                 overtaken.map(PeriodCloseDesk::listed).orElse(null),
                 overtaken.map(ReturnsAReopenOvertakes.Overtaken::total).orElse(null),
-                overtaken.isPresent() ? PENDING_REOPEN_NOTE : null);
+                overtaken.isPresent() ? PENDING_REOPEN_NOTE : null,
+                view.referenceGaps());
     }
 
     /** A list as the statement read it: an id, a form and a status per return, never more. */

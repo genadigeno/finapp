@@ -265,11 +265,17 @@ class SecondCorridorRailDatabaseTest {
                     + "\"reason\":\"the second corridor rail beside the first (P9-TSK-026)\"}", operator, FxTestClient.key());
             assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
         }
+        // In force as the router judges it (PaymentsCrossBorderExecution.route): the newest version effective on the
+        // DATABASE's clock, which must carry the second rail. P14-DOC-001's database pass: this waited on the host's
+        // clock, while the version - stamped "now" by the host - is resolved on the Docker VM's, which runs behind and
+        // steps (1.2-2.5 s at P13-DOC-001's pass, repaired there the same way - DatabaseClock); the payment 0.56 s after
+        // the version's birth was routed under the version before it, which names no corridor-sim-b: NoEligibleRail.
         long deadline = System.nanoTime() + TimeUnit.MINUTES.toNanos(2);
-        while (count("SELECT count(*) FROM payments.routing_policy_version v JOIN payments.routing_rule r"
-                + " ON r.policy_version_id = v.id JOIN payments.routing_rule_rail rr ON rr.rule_id = r.id"
-                + " WHERE rr.rail = 'corridor-sim-b' AND v.effective_from <= ?", java.sql.Timestamp.from(Instant.now())) == 0) {
-            assertThat(System.nanoTime()).as("the second rail's routing version is not yet in force").isLessThan(deadline);
+        while (count("SELECT count(*) FROM payments.routing_rule r JOIN payments.routing_rule_rail rr ON rr.rule_id = r.id"
+                + " WHERE rr.rail = 'corridor-sim-b' AND r.policy_version_id = (SELECT id FROM payments.routing_policy_version"
+                + " WHERE effective_from <= statement_timestamp() ORDER BY effective_from DESC, version DESC LIMIT 1)") == 0) {
+            assertThat(System.nanoTime()).as("the second rail's routing version is not yet in force on the database's clock")
+                    .isLessThan(deadline);
             Thread.sleep(500);
         }
     }

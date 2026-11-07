@@ -2479,9 +2479,12 @@ external evidence; monitoring judges the platform's own movements). It moves no 
 
 ## 8b. Accounting and financial reporting
 
-*Added by the Phase 13 → 14 transition (2026-10-29; ADR-0113…0118, `Proposed`; `PHASE_14_PLAN.md` §4, §13). Planned:
-nothing of it is built until `P14-TSK-001` and the task named in each entry land; each entry is corrected to the code by
-its task and read against it by `P14-DOC-001`.*
+*Added by the Phase 13 → 14 transition (2026-10-29; ADR-0113…0118, `Proposed`; `PHASE_14_PLAN.md` §4, §13). Built by
+`P14-TSK-001`…`-026` and the task named in each entry; each entry corrected to the code by its task and read against it
+by `P14-DOC-001`, the Phase 14 exit review (2026-11-06), which accepted ADR-0113…0119.*
+*(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "Planned: nothing of it is built until
+`P14-TSK-001` and the task named in each entry land; each entry is corrected to the code by its task and read against it
+by `P14-DOC-001`".)*
 
 ### GL Account
 **Is:** an account of the General Ledger's reference chart — code, name, classification (`ASSET`, `LIABILITY`,
@@ -2516,7 +2519,9 @@ is on or before it is refused at insert (`ledger.PeriodClosed`), the refusal ser
 advisory namespace `14` so no entry dated in a locked period commits after the lock (`INV-ACC-08`, ADR-0114). A
 system back-dating poster may ask to be **floored** past it - posted on the first open date, the day after it, its value
 date and key kept; a person's adjustment dated on or before it is refused at approval and stays proposed (owner decision
-C3, `P14-TSK-006`).
+C3, `P14-TSK-006`). *(`P14-DOC-001`, the Phase 14 exit review, 2026-11-06, ledger `V032`: a journal line joining an
+entry dated on or before it is refused too, under the same key, for every writer - raw SQL could otherwise append a
+balancing pair to a locked month's entry.)*
 **Not:** a report filter or an accounting-side check — it is the ledger's own rule, moved only by the ledger's API, one
 period at a time; nor a business-date clock.
 **Owned by:** `ledger`
@@ -2580,11 +2585,17 @@ never self-corrects; nor a stored balance.
 ### Report Run
 **Is:** one generation of one report definition and version for one period, revision and parameter set, born once,
 generated in a read-only transaction, its content and sha256 frozen at completion, recording its mapping version,
-valuation rate set and journal cut; FINAL for a locked or closed period, PROVISIONAL otherwise; superseded, never deleted,
-on a reopen (`INV-ACC-04`, ADR-0115, `P14-TSK-008`). *(As built, `P14-TSK-008`, accounting `V004`: the revision is the
-run's own - a new one when the latest run no longer answers its question; a FINAL run records the lock it read under and
-is superseded when its period returns to `OPEN` by an unlock as well as a reopen; its content is stored as the issued
-canonical JSON text, the hash recomputed by the database.)*
+valuation rate set and journal cut; FINAL for a period no longer `OPEN` - a financial statement's only for a `CLOSED` one -
+PROVISIONAL otherwise; superseded, never deleted, on a reopen (`INV-ACC-04`, ADR-0115, `P14-TSK-008`). *(As built,
+`P14-TSK-008`, accounting `V004`: the revision is the run's own - a new one when the latest run no longer answers its
+question; a FINAL run records the lock it read under and is superseded when its period returns to `OPEN` by an unlock as
+well as a reopen; its content is stored as the issued canonical JSON text, the hash written by the application and
+verified by the database, which refuses a mismatch.)*
+*(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "FINAL for a locked or closed period" and
+"the hash recomputed by the database" - `V004`'s birth trigger admits a FINAL run for any period not `OPEN`,
+`CLOSE_PROPOSED` included (`V004:195`), while a statement definition is issued FINAL only for a `CLOSED` period
+(`ReportRuns.java:297`, `P14-TSK-016`); the completion edge compares the hash the application wrote with the content's
+own and refuses a mismatch (`V004:250-253`).)*
 **Not:** a source of truth (it is output; the journal is truth), nor an operational report (a live, unissued read).
 **Owned by:** `accounting`
 
@@ -2602,7 +2613,13 @@ ledger's per-account statement).
 *(As built by `P14-TSK-014`, accounting `V005`, 2026-10-31: for a `LOCKED` period, per postable currency but EUR the
 reference's last `EUR/<currency>` observation strictly before the first instant after the period, within the staleness
 bound (96 h by default) - one stale or missing pair refuses the whole capture; `PROPOSED → APPROVED | REJECTED`, approved
-by a person other than its capturer while the period is `LOCKED`, at most one approved per period.)*
+by a person other than its capturer while the period is `LOCKED`, at most one approved per period.)* *(Corrected by
+`P14-DOC-001`, the Phase 14 exit review, 2026-11-06 - the one exception, `P14-TSK-026`, accounting `V012`, ADR-0119
+decision 2: a pair whose reference is silent beyond the bound no longer refuses the capture when a person names it with
+its snapshot id and a capture reason - the reference's real last observation before the period end is admitted, flagged
+`beyond_bound` on the rate and counted in the set's `reference_gaps`, its provenance kept exactly, never a typed rate;
+"the last observation" judged again at the second person's approval, and every translated content discloses the gap. Without that exception a stale or
+missing pair still refuses the whole capture.)*
 **Not:** an Exchange Rate a customer was quoted or a conversion executed at, nor a Reference Rate read live — it is a
 frozen valuation input, never an execution input.
 **Owned by:** `accounting`
@@ -2647,9 +2664,12 @@ unrealised revaluation entry (none is posted, owner decision C7).
 **Owned by:** `accounting`
 
 ### Accounting Break
-**Is:** a GL-side discrepancy born once per (period, check, subject) — `MAPPING_GAP`, `DOUBLE_MAPPING`,
+**Is:** a GL-side discrepancy born once per (period, check, subject, generation) — `MAPPING_GAP`, `DOUBLE_MAPPING`,
 `UNREGISTERED_POSTING`, `SHAPE_MISMATCH`, `UNBALANCED_ENTRY`, `SOURCE_DISCREPANCY`, `SOURCE_DELAYED` — acknowledged with a
-disclosure under four eyes or resolved by reference to a correcting entry (ADR-0117, `P14-TSK-010`).
+disclosure under four eyes or resolved by reference to a correcting entry (ADR-0117, `P14-TSK-010`); a finding that
+differs from the evidence a person decided on is a new Break Generation (`P14-TSK-012`). *(Corrected by `P14-DOC-001`,
+the Phase 14 exit review, 2026-11-06: this read "born once per (period, check, subject)" - accounting `V008:38` took the
+generation into `accounting_break_born_once`.)*
 **Not:** a Reconciliation Break (external evidence against an expectation, with suspense), nor a correction: it posts
 nothing and is never deleted (owner decision C11).
 **Owned by:** `accounting`
@@ -2689,6 +2709,30 @@ lending, bnpl or reconciliation, which is no definition at all.
 validated, approved under four eyes, submitted once through `RegulatoryReportingProvider`, acknowledged or rejected;
 corrected by a new submission referencing it (`INV-ACC-13`, `P14-TSK-018`). *(As built: every line names its run, the run's hash and the figure's path. A **refusal** is a controller's, nothing sent; a **rejection** is the provider's answer to what was sent; **withdrawn** a preparer's; **undelivered** a person's conclusion on a definite "not received". A month reopened after it was sent leaves it frozen, standing, and flagged **month moved**, and **overtaken** until a return of its form is acknowledged at the month's present revision. A month that moved before it was sent keeps it from being sent at all.)*
 **Not:** Phase 13's Regulatory Report (an AML filing from a case, `risk`'s), nor a report run.
+**Owned by:** `accounting`
+
+### Projection Rebuild
+**Is:** the four-eyes rebuild of one ledger account's balance projection (`ledger.account_balance`) from its journal lines
+and its active holds (`P14-TSK-026`, ADR-0119 decision 1, ADR-0041 rule 2; ledger `V031`, `ProjectionRebuilds`): a
+person proposes it, recording the drift they observed; a second person on a `MULTI_FACTOR` session approves, and the
+approval recomputes under the posting's own locks and writes what it computed, never what the proposal saw -
+`PROPOSED → APPLIED | UNCHANGED | REJECTED`, one standing rebuild per account, its record the evidence of what was seen,
+found and written (`/v1/ledger/projection-rebuilds`, `LEDGER_ADJUST`). The way on for `PROJECTION_VERIFIED` failing with
+`PROJECTION_DRIFT` (`INV-BAL-01`, `INV-BAL-02`).
+**Not:** an adjustment or any posting: it never touches a journal line, moves the projection to the journal and never the
+journal to the projection; nor a self-correcting ledger - nothing rebuilds without two people.
+**Owned by:** `ledger`
+
+### Reference Gap
+**Is:** a valued pair of a Valuation Rate Set whose FX reference has no observation within the set's staleness bound
+before the period end, admitted by a four-eyes capture exception at the reference's real last observation before the
+end: named by a person with its snapshot id and a capture reason, flagged `beyond_bound` on the rate and counted in the
+set's `reference_gaps`, its provenance kept exactly, approved through its own door, and disclosed on every translated content
+and to the close's approver, the close-proposal read serving `valuationRateSetReferenceGaps` (`P14-TSK-026`, ADR-0119
+decision 2, accounting `V012`, `INV-ACC-11`; the read `P14-DOC-001`).
+**Not:** a typed, estimated or interpolated rate (there is no column for one), nor a stale rate inside the bound, nor an
+Exchange Rate anything was executed at; nor hidden - a set holding none writes the bytes it always wrote, and one holding a
+gap says so wherever its rates are read.
 **Owned by:** `accounting`
 
 ---

@@ -2221,6 +2221,45 @@ are `PHASE_14_PLAN.md`'s, a bare `-nnn` meaning `P14-TSK-nnn`; scenario numbers 
   (`DISTRIBUTED_EXECUTION.md`, `AUDITABLE_ACTIONS.md`, `ERROR_CONTRACT.md`, `DATA_CLASSIFICATION.md`) written by the
   tasks that land them; the owner decisions C1–C13 ratified or changed.
 
+*Status (the exit review, `P14-DOC-001`, 2026-11-07, [`reviews/PHASE_14_REVIEW.md`](reviews/PHASE_14_REVIEW.md)):
+**Phase 14 `COMPLETE` with recorded deviations, pending the Phase 14 → 15 transition gate - with `P14-TST-001` (the
+storm) `POSTPONED`** (`POSTPONED_ISSUES.md` PI-004). The six made measurable and the per-area blocks were read clause by
+clause (61 sub-clauses, re-read after the database pass and the review's corrections): the six - 19 hold, 8 hold in another
+form, none does not hold (2.2's namespace built by the review); per area - 23 hold, 9 in another form, **Period close
+`PARTIAL`** (its "close only from a complete run": after a backward step of the database's clock a month's complete run can
+read as absent and the month cannot be proposed until a four-eyes unlock and relock - PI-013, a production defect the owner
+postponed), the storm's counts open (PI-004); the ADRs accepted (ADR-0119 with ADR-0113…0118) and C1–C13 ratified.
+**Universal criterion 7** remains the standing C5 deviation, `PARTIAL`: the one owner-authorised database pass ran first, on
+the tree as merged - 454 suites, 3,682 tests, 66 first-run failures in 40 suites (49 test defects or shared-container
+interferences repaired; two of the classification register; four production defects: merchant `V013` fixed, a lending and
+bnpl terms fix tried and withdrawn, the close run and the gauges' refresher postponed - PI-013, PI-014); the targeted re-run,
+on 2026-11-06 on `f1427b8d`'s code with the withdrawn terms fix still in, 105 suites, 1,068 tests, 2 failed, both postponed;
+on the final tree (2026-11-07) lending's and bnpl's tiers whole and the eight `app` suites writing `journal_line` with no run
+after `V032`, 55 suites, 583 tests, 0 failed; **no clean run of every tier on the final tree, by the owner's decision
+(PI-012)**; `kafkaTest` not run. **Criteria 6 and 11 `PARTIAL`** on the postponed production defects; the register's moved rows struck
+(PI-015). The ten-instance question: **`PASS`** on arbitration - every counted §8.3 row green against PostgreSQL; the
+clock-step defects are not races between instances and are named beside it; the storm's counts open under PI-004.*
+
+*Clauses met in a form their words did not anticipate (the exit review, 2026-11-07), recorded rather than re-worded:
+**the six** - 1: "the ledger's own per-currency totals" are accounting's sweep-shaped read over the journal, not the
+gauge's sweep, its hermetic half an in-memory stand-in (`TrialBalanceRunDatabaseTest#equalsTheLedger` green in the pass).
+2: the battery-scale proof folds through `GeneralLedger.activity`, the door's `/lines` proven figure by figure (scenario 12
+the same); a line's entry and - built by the review - the entry's namespace are served, the free-text source reference
+withheld by design (`RESTRICTED-FINANCIAL`); a `/lines` route exists for a GL-account-keyed figure, an equation figure
+routing to its run; a FINAL trial balance's unmapped rows have no route (A1-D3; such a month cannot close). 4: the two JVMs
+compare the fold's 36 content hashes; the door's `IDENTICAL` verdict is judged in one JVM and over 36 FINAL runs against
+PostgreSQL. 6: the regulatory submission's reads run in a writable transaction (A1-D5, an owner item); "only through the
+`ACCOUNTING`-origin door" is true by inspection (only `LedgerPriorPeriodPostings` holds `AdjustmentService`), the guard
+naming five ledger writers. **Per area** - **Rule correctness**: every entry's conformance is judged at each real close; the
+production register is never judged against real postings in a test (A1-D2). **Traceability**: every link is data; the
+door serves entry → namespace, not the reference. **Ledger reconciliation**: `SOURCE_COMPLETENESS` reads a fixed catalogue
+of nine proofs. **Multi-currency**: no journal line or executed rate is altered by construction (read-only); no test asserts
+the executed rates unchanged. **Period close**: "evented" is a history row (`period_event`), not a broker event.
+**Reporting**: `BALANCES` has no definition and `RECONCILIATION_STATUS` and `CLOSE_STATUS` produce no runs (operational
+reads); "no cache or projection a FINAL figure's source" is guarded over a named list of moving ports. **Security**: every
+registered action is emitted (`AuditCompletenessTest`), not every act proven audited. **Testing**: the database pass ran
+as the review's first step, on the tree as merged, not before it; no clean final-tree run (PI-012).*
+
 ### Phase 15 — Production Hardening
 - Threat model complete; identified critical and high risks mitigated or formally accepted.
 - Dependency, container and secret scanning green in CI.

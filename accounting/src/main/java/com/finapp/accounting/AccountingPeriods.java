@@ -400,7 +400,7 @@ public final class AccountingPeriods {
         }
         if (!row.unlockPending()) {
             throw new PeriodStale(row.status() == PeriodStatus.LOCKED
-                    ? noneUnderTheLock(store.latestUnlockEnd(unitOfWork, id), requested)
+                    ? noneUnderTheLock(store.unlockEnd(unitOfWork, id, requested))
                     : "the period is " + row.status().name() + "; only a LOCKED period is unlocked");
         }
         requireTheUnlockRead(row, requested, "period:unlock-approval");
@@ -471,13 +471,16 @@ public final class AccountingPeriods {
         person(actor);
         String reasoned = AccountingReasons.reasoned(reason);
         AccountingPeriodStore.PeriodRow row = store.lock(unitOfWork, id).orElseThrow(PeriodNotFound::new);
+        // The request named, looked up itself under the period's row (P14-DOC-001, P14-TSK-024's re-review (a)): ended under the present lock by this
+        // person this way, a repeat - under any key, whatever was proposed or ended since - converges and writes nothing. Until then this read the lock's
+        // latest end, so a retry after another unlock ended in between was told "no unlock is pending", and one while another was pending RequestStale.
+        Optional<AccountingPeriodStore.UnlockEndRow> named = row.status() == PeriodStatus.LOCKED ? store.unlockEnd(unitOfWork, id, requested) : Optional.empty();
+        if (named.filter(ended -> ended.outcome() == end && ended.endedBy().equals(actor.id())).isPresent()) {
+            return Acted.of(row, true);
+        }
         if (!row.unlockPending()) {
             if (row.status() == PeriodStatus.LOCKED) {
-                Optional<AccountingPeriodStore.UnlockEndRow> last = store.latestUnlockEnd(unitOfWork, id);
-                if (last.filter(ended -> ended.outcome() == end && ended.endedBy().equals(actor.id()) && ended.proposedAt().equals(requested)).isPresent()) {
-                    return Acted.of(row, true);
-                }
-                throw new PeriodStale(noneUnderTheLock(last, requested));
+                throw new PeriodStale(noneUnderTheLock(named));
             }
             throw new PeriodStale(row.status() == PeriodStatus.OPEN && row.unlockApprovedBy().isPresent() && row.unlockProposedAt().filter(requested::equals).isPresent()
                     ? "the period is OPEN: the unlock named was approved; nothing was changed"
@@ -504,12 +507,11 @@ public final class AccountingPeriods {
     }
 
     /**
-     * What a {@code LOCKED} period with no unlock pending says to an act on one: what became of the one named, when it is the latest end under the present lock; otherwise that none is
-     * pending.
+     * What a {@code LOCKED} period says to an act on an unlock that is not pending: what became of the one named, when it ended under the present lock (`P14-DOC-001`: looked up by when it was
+     * proposed); otherwise that none is pending.
      */
-    private static String noneUnderTheLock(Optional<AccountingPeriodStore.UnlockEndRow> last, Instant requested) {
-        return last.filter(ended -> ended.proposedAt().equals(requested))
-                .map(ended -> "the unlock named was " + ended.outcome().name() + "; none is pending, and nothing was changed")
+    private static String noneUnderTheLock(Optional<AccountingPeriodStore.UnlockEndRow> named) {
+        return named.map(ended -> "the unlock named was " + ended.outcome().name() + "; none is pending, and nothing was changed")
                 .orElse("no unlock of the period is pending; nothing was changed");
     }
 

@@ -81,9 +81,13 @@ public final class LedgerJournalReads implements JournalReads {
 
     static final String PAGE = " ORDER BY entry.posting_date, entry.id, line.seq LIMIT ?";
 
-    /** One entry's header - never its reference (free text on a MANUAL adjustment), reason or actor. */
-    static final String ENTRY = "SELECT id, entry_type, posting_date, value_date, reverses_entry_id"
-            + " FROM ledger.journal_entry WHERE id = ?";
+    /**
+     * One entry's header - never its reference (free text on a MANUAL adjustment), reason or actor; its scope and, for an adjustment, its
+     * proposal's origin, from which its namespace is read as the conformance judge reads it ({@code P14-DOC-001}).
+     */
+    static final String ENTRY = "SELECT entry.id, entry.entry_type, entry.posting_date, entry.value_date, entry.reverses_entry_id,"
+            + " entry.idempotency_scope, proposal.origin FROM ledger.journal_entry entry"
+            + " LEFT JOIN ledger.adjustment_proposal proposal ON proposal.journal_entry_id = entry.id WHERE entry.id = ?";
 
     /** One entry's lines, in order. */
     static final String ENTRY_LINES = LINE_COLUMNS + FROM_LINES + " WHERE line.entry_id = ? ORDER BY line.seq";
@@ -173,6 +177,7 @@ public final class LedgerJournalReads implements JournalReads {
             LocalDate posted;
             LocalDate valued;
             Optional<UUID> reverses;
+            Optional<String> namespace;
             try (PreparedStatement read = snapshot.prepareStatement(ENTRY)) {
                 read.setObject(1, entryId);
                 try (ResultSet row = read.executeQuery()) {
@@ -184,6 +189,9 @@ public final class LedgerJournalReads implements JournalReads {
                     posted = row.getDate("posting_date").toLocalDate();
                     valued = row.getDate("value_date").toLocalDate();
                     reverses = Optional.ofNullable(row.getObject("reverses_entry_id", UUID.class));
+                    // P14-DOC-001: the namespace the conformance judge reads the entry under, by its own rule - never the free-text reference.
+                    namespace = LedgerJournalShapes.namespace(com.finapp.accounting.EntryType.valueOf(type), row.getString("idempotency_scope"),
+                            row.getString("origin"));
                 }
             }
             List<Line> lines = new ArrayList<>();
@@ -195,7 +203,7 @@ public final class LedgerJournalReads implements JournalReads {
                     }
                 }
             }
-            return Optional.of(new Entry(id, type, posted, valued, reverses, lines));
+            return Optional.of(new Entry(id, type, posted, valued, reverses, lines, namespace));
         } catch (SQLException failure) {
             throw failed("reading a journal entry's GL view", failure);
         }

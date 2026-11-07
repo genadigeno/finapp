@@ -515,7 +515,7 @@ class LendingProofDatabaseTest {
             + " whose transaction began before a later repayment, and was decided after it, replays after it - the later"
             + " repayment re-derived against the due state it saw, IDENTICAL")
     void aDecisionIsOrderedByTheLockNotByItsTransactionsStart() throws Exception {
-        LoanId loan = aged(3_000_00, 40);
+        LoanId loan = pastItsFirstDueDate(3_000_00);
         topUp(partyOf(loan), 10_000_00);
         serviceUntilCaughtUp(loan);
         long interest = count("SELECT interest_due_minor FROM lending.instalment_billing WHERE loan_id = ?"
@@ -552,7 +552,7 @@ class LendingProofDatabaseTest {
             + " backward step of the clock would stamp them - still replay IDENTICAL: the replay walks recorded_order,"
             + " drawn under the loan's lock, never the wall clock")
     void aClockSteppedBackNeverReordersTheHistory() {
-        LoanId loan = aged(4_000_00, 40);
+        LoanId loan = pastItsFirstDueDate(4_000_00);
         topUp(partyOf(loan), 10_000_00);
         serviceUntilCaughtUp(loan);
         repay(loan, key(), due(loan));
@@ -659,6 +659,29 @@ class LendingProofDatabaseTest {
         int day = Math.toIntExact(count("SELECT repayment_day FROM lending.loan_agreement WHERE loan_id = ? AND version = 1",
                 loan.value()));
         reproject(loan, businessDate(loan).minusDays(daysAgo), day);
+        return loan;
+    }
+
+    /**
+     * A fresh twelve-month loan disbursed by T-dis a month before the latest repayment day strictly before today, its calendar
+     * re-projected on that day ({@code AmendmentDatabaseTest#onItsDay}'s placing): its first instalment fell due before today
+     * on every day of every month, so the catch-up bills it. {@code aged(minor, 40)} did not promise that: its first due date is
+     * the first repayment day at least the terms' shortest first period (15 days) after a start 40 days back, so it has passed
+     * only when a repayment day fell in the 25 days before today - on the 5th to the 9th of a month after a 31-day one none
+     * had, nothing was billed, and a case that reads its first billing read nothing.
+     */
+    static LoanId pastItsFirstDueDate(long minor) {
+        LoanId loan = InterestAccrualDatabaseTest.disbursed(minor, 12);
+        int day = Math.toIntExact(count("SELECT repayment_day FROM lending.loan_agreement WHERE loan_id = ? AND version = 1",
+                loan.value()));
+        LocalDate limit = businessDate(loan).minusDays(1);
+        LocalDate due = limit.withDayOfMonth(Math.min(day, limit.lengthOfMonth()));
+        if (due.isAfter(limit)) {
+            due = due.minusMonths(1);
+        }
+        reproject(loan, due.minusMonths(1), day);
+        assertThat(scalar("SELECT min(due_date)::text FROM lending.loan_instalment WHERE loan_id = ?", loan.value()))
+                .as("the first instalment fell due before today").isEqualTo(due.toString());
         return loan;
     }
 

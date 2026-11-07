@@ -4,10 +4,12 @@ import com.finapp.ledger.AdjustmentCommand;
 import com.finapp.ledger.AdjustmentProposal;
 import com.finapp.ledger.AdjustmentProposalId;
 import com.finapp.ledger.AdjustmentProposalStatus;
+import com.finapp.ledger.AdjustmentReasonRefusedException;
 import com.finapp.ledger.AdjustmentService;
 import com.finapp.ledger.JournalLine;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.PostingResult;
+import com.finapp.ledger.SelfApprovalRefusedException;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.sharedkernel.money.CurrencyCode;
@@ -95,14 +97,24 @@ public final class LedgerAdjustments {
         Objects.requireNonNull(idempotencyKey, "idempotencyKey must not be null");
         // Parse before the transaction opens: a malformed request must not cost a
         // connection (the P1-TSK-026 reasoning, applied to parsing rather than derivation).
-        AdjustmentCommand command =
-                new AdjustmentCommand(
-                        idempotencyKey,
-                        body.postingDate(),
-                        body.valueDate(),
-                        body.reference(),
-                        body.reason(),
-                        parsedLines(body.lines()));
+        AdjustmentCommand command;
+        try {
+            command =
+                    new AdjustmentCommand(
+                            idempotencyKey,
+                            body.postingDate(),
+                            body.valueDate(),
+                            body.reference(),
+                            body.reason(),
+                            parsedLines(body.lines()));
+        } catch (AdjustmentReasonRefusedException refused) {
+            // A blank reason, or an instrument shape in the reason or the reference (P14-DOC-001): the
+            // caller's 422, never the catch-all's 500 - and the detail never repeats the text.
+            throw new ApiException(
+                    PlatformErrorCode.VALIDATION_FAILED,
+                    "An adjustment's reason or reference was refused at the boundary: " + refused.getMessage(),
+                    refused.getMessage() + ".");
+        }
         AdjustmentService.ProposalResult result =
                 inOneTransaction(unitOfWork -> adjustments.propose(unitOfWork, command));
         return new ProposalView(
@@ -119,11 +131,27 @@ public final class LedgerAdjustments {
         return render(proposal);
     }
 
-    /** Approves as the acting person and posts the entry — the journal-write command. */
+    /**
+     * Approves as the acting person and posts the entry — the journal-write command. A refused
+     * self-approval is recorded {@code FAILED} ({@code ledger.SelfApprovalRefused}) in a
+     * transaction of its own after the act rolled back, then refused as before
+     * ({@code P14-DOC-001}; the projection rebuild's shape, {@code LedgerProjectionRebuilds}).
+     */
     public AdjustmentView approve(String rawId) {
         AdjustmentProposalId id = parsedOrAbsent(rawId);
-        PostingResult result =
-                inOneTransaction(unitOfWork -> adjustments.approve(unitOfWork, id));
+        PostingResult result;
+        try {
+            result = inOneTransaction(unitOfWork -> adjustments.approve(unitOfWork, id));
+        } catch (SelfApprovalRefusedException self) {
+            // The act's transaction rolled back with the refusal, as it must; the attempt is kept
+            // in a transaction of its own (INV-AUD-04), and the refusal answers as it always did.
+            inOneTransaction(
+                    unitOfWork -> {
+                        adjustments.recordRefusal(unitOfWork, self);
+                        return null;
+                    });
+            throw self;
+        }
         return new AdjustmentView(result.entryId().value().toString());
     }
 

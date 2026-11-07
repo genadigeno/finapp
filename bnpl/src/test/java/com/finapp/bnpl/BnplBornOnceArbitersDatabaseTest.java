@@ -66,13 +66,19 @@ class BnplBornOnceArbitersDatabaseTest {
             "bnpl_schedule_refund_unique", "bnpl_schedule_version_unique", "bnpl_terms_one_active",
             "bnpl_terms_one_proposed", "bnpl_terms_version_number_unique", "bnpl_terms_version_product_pinned",
             "bnpl_waiver_decision_entry_unique", "bnpl_waiver_decision_once", "bnpl_waiver_proposer_pinned",
+            // bnpl V020 (P14-TSK-021): a write-off decided once, its entry once, one approved per obligation; and the proposal's
+            // (id, obligation, proposer) - the target of the decision's composite foreign key.
+            "bnpl_write_off_decision_entry_unique", "bnpl_write_off_decision_once", "bnpl_write_off_one_approved",
+            "bnpl_write_off_pinned",
             "merchant_financing_journal_entry_unique", "purchase_checkout_session_unique", "purchase_offer_unique");
 
     /** The uniques that bind the whole primary key - composite foreign-key targets the key already implies. */
     private static final Set<String> FOREIGN_KEY_TARGETS = Set.of(
             "bnpl_fee_assessment_of_its_instalment", "bnpl_instalment_identity", "bnpl_offer_product_pinned",
             "bnpl_payoff_quote_of_its_obligation", "bnpl_schedule_identity", "bnpl_terms_version_product_pinned",
-            "bnpl_waiver_proposer_pinned");
+            "bnpl_waiver_proposer_pinned",
+            // bnpl V020: UNIQUE (id, obligation_id, proposed_by), the target bnpl_write_off_decision_write_off_fk pins the proposer by.
+            "bnpl_write_off_pinned");
 
     @Test
     @DisplayName("every unique of every bnpl table, read from the catalogue, refuses a copy of a real row under a fresh key"
@@ -135,5 +141,8 @@ class BnplBornOnceArbitersDatabaseTest {
         new BnplConditionDatabaseTest().currentToEachBucketAndCure();
         new BnplDisputeDatabaseTest().merchantSilenceResolvesAsARefundAtTheDeadline();
         new BnplDisputeDatabaseTest().theHoldSuspendsCollectionDpdAndFees();
+        // P14-TSK-021: a proposal and its APPROVED decision with the entry it posted, by T-wof's real path - the row every V020
+        // unique copies (the decision's three and the proposal's pinned target).
+        new BnplWriteOffDatabaseTest().writtenOffWhole();
     }
 }

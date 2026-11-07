@@ -1,12 +1,15 @@
 # ADR-0119 — A four-eyes projection rebuild, and a reference gap's way on: the real last observation, disclosed
 
-Status: Proposed
+Status: Accepted (2026-11-06, `P14-DOC-001` — read against the code and corrected first)
 Date: 2026-11-06
 Phase: 14
 Context: Ledger (the balance projection) · Accounting (valuation rate sets, translation) · FX (read only)
 Supersedes: in part, ADR-0116 decision 2's capture rule, for a pair whose reference observation is older than the
-staleness bound (decision 2 below); nothing else of ADR-0116. Builds what ADR-0041 rule 2 promised ("the rebuild is a
-first-class operation", safe while postings continue). Rests on the owner's acceptance of `P14-TSK-012`'s item (g)
+staleness bound (decision 2 below); nothing else of ADR-0116. Builds a one-account rebuild of the projection, the part
+of ADR-0041 rule 2's promise ("the rebuild is a first-class operation", safe while postings continue) a drifting
+account needs. *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "Builds what ADR-0041 rule
+2 promised". Rule 2 promised a projection "rebuildable from zero"; decision 1 below rebuilds one account at a time, by a
+person's four-eyes act, and no door rebuilds the whole projection at once.)* Rests on the owner's acceptance of `P14-TSK-012`'s item (g)
 (2026-11-06, `DECISIONS.md` "The close's open questions..."), `INV-BAL-01`, `INV-BAL-02`, `INV-BAL-05`, `INV-LED-03`,
 `INV-LED-04`, `INV-ACC-11`, `INV-AUD-04`.
 
@@ -131,7 +134,7 @@ none is borrowed) and three audit actions, `ledger.ProjectionRebuildProposed` (r
 added a fourth, `ledger.SelfApprovalRefused`: a proposer's refused approval recorded `FAILED` in a transaction of its own
 after the act rolled back, accounting's shape; and screened the proposal's reason as every person-written reason is - blank
 by `isBlank` (Unicode whitespace, which the body's `@NotBlank` passes) and no instrument shape (`InstrumentShapes`) - a
-`422 api.ValidationFailed`, never a `500`. The manual adjustment's door has both gaps still; routed to `P14-DOC-001`.)* **Who**: the ledger operator
+`422 api.ValidationFailed`, never a `500`. The manual adjustment's door has both gaps still; routed to `P14-DOC-001`. *Closed by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: the manual adjustment's door now records a proposer's refused approval `FAILED` (`ledger.SelfApprovalRefused`) in a transaction of its own (`AdjustmentService.recordRefusal`, `LedgerAdjustments`), and refuses a blank reason or an instrument shape in its reason or reference (`AdjustmentCommand.java:48-63`, `InstrumentShapes`) as `AdjustmentReasonRefusedException`, a `422 api.ValidationFailed` (`LedgerAdjustments.java:110-116`).*)* **Who**: the ledger operator
 proposes and a second ledger operator approves; an accountant who sees the drift cannot rebuild and a controller cannot, and
 a ledger operator closes no month (`LEDGER_ADJUST` reused, not a new permission: an owner item). **Decision 2**: accounting
 `V012` (`valuation_rate_set.reference_gaps`, `valuation_rate.beyond_bound`, V005's two functions replaced with every check they
@@ -145,3 +148,14 @@ translate**: the trial balance, the balance sheet and the income statement, each
 what every serving of a translated figure carries (the report run's content, the controller's FINAL statement read), so the
 disclosure is in each. The database cases are written and owed (C5): `ProjectionRebuildDatabaseTest`,
 `ValuationReferenceGapDatabaseTest`. Status stays `Proposed` until the phase's exit review.
+
+*The Phase 14 exit review (`P14-DOC-001`, 2026-11-06), accepting this ADR:* **`P14-TSK-026`'s owner items (a) to (g)
+stand at their recommendations**, by the owner's standing acceptance: (a) `LEDGER_ADJUST` opens the rebuild, no
+permission of its own; (b) a gap's age has no ceiling beyond "strictly before the period's end"; (d) a pair the reference
+never observed before the end keeps no door, a typed rate never admitted; (e) an approved gap set stands for its period;
+(f) a rebuild holds the account's projection row for a full fold of its history, approved at a quiet moment (runbook
+section 10.17); (g) whether a statement's notes add a sentence for a gap is decided with the translated body before the
+first translated FINAL (ADR-0116, its one open point). **(c) is built by this review**: the close's approver is told on
+the close's own read - `GET .../close-proposal` serves `valuationRateSetReferenceGaps`, how many of the named set's rates
+a reference-gap exception admitted beyond the bound (`PeriodCloseDesk.java:153,178`;
+`PeriodClosesTest#theApproversReadNamesTheSetsReferenceGaps`), an additive field under version 1.

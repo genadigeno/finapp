@@ -177,8 +177,8 @@ public final class InMemoryPeriodCloseStore implements PeriodCloseStore {
     }
 
     @Override
-    public Optional<ReopenRow> latestEndedReopenAt(Connection unitOfWork, AccountingPeriodId period, int revision) {
-        return reopens.values().stream().filter(row -> row.period().equals(period) && row.revision() == revision && row.endedBy().isPresent()).reduce((earlier, later) -> later);
+    public Optional<ReopenRow> endedReopen(Connection unitOfWork, AccountingPeriodId period, PeriodReopenId id) {
+        return Optional.ofNullable(reopens.get(id)).filter(row -> row.period().equals(period) && row.endedBy().isPresent());
     }
 
     @Override

@@ -10,6 +10,7 @@ import static com.finapp.app.accounting.AccountingPeriodFixture.periods;
 import static com.finapp.app.accounting.AccountingPeriodFixture.person;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 
 import com.finapp.accounting.AccountingBreakId;
 import com.finapp.accounting.AccountingBreakStore;
@@ -277,7 +278,7 @@ class CloseRunDatabaseTest {
         assertThat(dead).hasSize(8);
         assertThat(claimAll(runs)).as("a live lease").isEmpty();
 
-        LockSupport.parkNanos(Duration.ofMillis(2500).toNanos());
+        awaitTheLeasesPast(dead.toArray(CloseRuns.ClaimedCheck[]::new));
         List<CloseRuns.ClaimedCheck> next = claimAll(runs);
 
         assertThat(next).extracting(CloseRuns.ClaimedCheck::id).containsExactlyInAnyOrderElementsOf(
@@ -313,7 +314,7 @@ class CloseRunDatabaseTest {
             }
         }
         assertThat(renewals).as("renewed past the first lease, then refused at the bound").isGreaterThan(4);
-        LockSupport.parkNanos(leases.lease().plusMillis(300).toNanos());
+        awaitTheLeasesPast(live);
         assertThat(claimAll(runs)).extracting(CloseRuns.ClaimedCheck::id).contains(live.id());
     }
 
@@ -493,7 +494,7 @@ class CloseRunDatabaseTest {
         refusedSaying("UPDATE accounting.close_check SET reclaims = reclaims + 1" + attempt, counted);
         refusedSaying("UPDATE accounting.close_check SET reclaims = reclaims + 2, holder = " + other + attempt, "one claim at a time");
 
-        LockSupport.parkNanos(Duration.ofMillis(2500).toNanos());
+        awaitTheLeasesPast(held);
         refusedSaying("UPDATE accounting.close_check SET holder = " + other + attempt, counted);
         refusedSaying("UPDATE accounting.close_check SET holder = NULL, reclaims = reclaims + 1" + attempt, counted);
         try (Connection app = DatabaseRoles.application();
@@ -518,7 +519,7 @@ class CloseRunDatabaseTest {
                 "claimed only once its lease has passed");
         assertThat(claimAll(runs)).extracting(CloseRuns.ClaimedCheck::id).as("within the wait").doesNotContain(held.id());
 
-        LockSupport.parkNanos(Duration.ofMillis(2500).toNanos());
+        awaitTheLeasesPast(held);
         CloseRuns.ClaimedCheck again = claimAll(runs).stream().filter(claimed -> claimed.id().equals(held.id())).findFirst().orElseThrow();
         assertThat(again.reclaims()).as("a deferral is not a death").isZero();
         assertThat(again.attempt()).isEqualTo(held.attempt());
@@ -847,6 +848,24 @@ class CloseRunDatabaseTest {
         }
         return claimed;
     }
+
+    /**
+     * Until every one of {@code attempts}' leases has passed on the database's own clock - the clock the claim and the trigger
+     * judge by - by {@link #CLOCK_STEP_MARGIN} (P14-DOC-001's database pass). A sleep on this JVM is not the database's time:
+     * the Docker VM's clock behind the shared container ran a tenth fast and was stepped back about 2.72 s (0.35 s, then
+     * 2.37 s) every 27 s, so a 2.5 s park left a 2 s lease live for the trigger, and a lease just past could be live again
+     * for the very next statement. Lapsed is the database's judgement; awaited, never assumed.
+     */
+    private static void awaitTheLeasesPast(CloseRuns.ClaimedCheck... attempts) {
+        String ids = java.util.Arrays.stream(attempts).map(attempt -> "'" + attempt.id().value() + "'")
+                .collect(java.util.stream.Collectors.joining(", "));
+        await().atMost(Duration.ofSeconds(60)).pollInterval(Duration.ofMillis(50)).until(() -> count(
+                "SELECT count(*) FROM accounting.close_check WHERE id IN (" + ids + ") AND lease_until >= clock_timestamp()"
+                        + " - " + CLOCK_STEP_MARGIN.toMillis() + " * interval '1 millisecond'") == 0);
+    }
+
+    /** More than one backward correction of that VM's clock (about 2.72 s), so a lease past by it stays past for the statement that follows. */
+    private static final Duration CLOCK_STEP_MARGIN = Duration.ofSeconds(3);
 
     private static CloseRuns.Rerun rerun(CloseRuns runs, AccountingPeriodId period, CloseCheckCode check, Actor actor) {
         return TRANSACTIONS.inTransaction(uow -> runs.rerun(uow, period, check, actor, "the projection was repaired", correlation()));

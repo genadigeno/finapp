@@ -39,6 +39,7 @@ import com.finapp.accounting.RegulatoryObligationId;
 import com.finapp.accounting.RegulatoryObligations;
 import com.finapp.accounting.RegulatoryReportingProvider.Answer;
 import com.finapp.accounting.RegulatorySubmissionId;
+import com.finapp.accounting.RegulatorySubmissionStore;
 import com.finapp.accounting.RegulatorySubmissions;
 import com.finapp.accounting.ReportRunStore;
 import com.finapp.accounting.ReportRuns;
@@ -90,6 +91,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -116,6 +118,9 @@ import org.junit.jupiter.api.Test;
  * refusal's record as a difference). So the race runs before the receipts' case and leaves no return; the read runs after it, with January holding that case's returns, and reads, beside its own, the same statement at the same moment, so
  * it holds whatever an earlier case left. Each counts its rows as a difference from what stood before it and names its own persons, since an ended reopen is never deleted; each leaves January {@code CLOSED} or {@code OPEN}, which {@link #everyPeriodIsOpen}
  * returns to {@code OPEN} through the machine, a pending reopen approved and none proposed and approved.
+ *
+ * <p><strong>The exit review's two</strong> (`P14-DOC-001`, `P14-TSK-024`'s re-review): {@link #aRepeatUnderANewKeyConvergesWhateverEndedSince} and {@link #anApprovalIsJudgedHoldingThePeriodRow}, wherever the hash order puts them: each closes January afresh, names
+ * persons of its own, counts its rows as a difference, makes no return, and ends its last pending reopen, leaving January {@code CLOSED} with none pending.
  */
 @Tag("database")
 @Tag("own-container") // its own JVM and database: ownContainerDatabaseTest, the javadoc says why
@@ -433,6 +438,84 @@ class PeriodReopenDatabaseTest {
     }
 
     @Test
+    @DisplayName("P14-DOC-001 (P14-TSK-024's re-review (a)): through the real desk, Carol's rejection of the first reopen, retried under a new key after Dave proposed and withdrew a second, converges - the reopen named read by its id - and again while a third is pending; nothing written, the third still pending")
+    void aRepeatUnderANewKeyConvergesWhateverEndedSince() throws Exception {
+        PeriodCloseFixture.closed(JANUARY);
+        AccountingPeriodId january = id(JANUARY);
+        String period = january.value().toString();
+        List<String> none = inScope(Actor.SYSTEM, uow -> PeriodCloseFixture.posted(uow, january)).stream().map(Object::toString).toList();
+        Actor alice = person();
+        as(alice, () -> desk.proposeReopen("conv-p1-" + IDS.next(), period, none, "a correction was found"));
+        String first = pendingReopen(january).value().toString();
+        Actor carol = person();
+        as(carol, () -> desk.rejectReopen("conv-r1-" + IDS.next(), period, first, "not needed"));
+        Actor dave = person();
+        as(dave, () -> desk.proposeReopen("conv-p2-" + IDS.next(), period, none, "another correction"));
+        as(dave, () -> desk.withdrawReopen("conv-w2-" + IDS.next(), period, pendingReopen(january).value().toString(), "proposed in error"));
+        String rejected = "SELECT count(*) FROM platform.audit_record WHERE operation = 'accounting.PeriodReopenRejected' AND target_id = '" + period + "'";
+        String ends = "SELECT count(*) FROM accounting.period_reopen WHERE period_id = '" + period + "' AND status IN ('REJECTED', 'WITHDRAWN')";
+        long records = count(rejected);
+        long ended = count(ends);
+        int revision = row(JANUARY).revision();
+
+        assertThat(as(carol, () -> desk.rejectReopen("conv-r1-again-" + IDS.next(), period, first, "not needed")).status())
+                .as("converged under a new key, not 409 'no reopen of the period is pending'").isEqualTo("CLOSED");
+        as(alice, () -> desk.proposeReopen("conv-p3-" + IDS.next(), period, none, "a third correction"));
+        String third = pendingReopen(january).value().toString();
+        assertThat(as(carol, () -> desk.rejectReopen("conv-r1-third-" + IDS.next(), period, first, "not needed")).status())
+                .as("and while a third is pending: converged, not 409 RequestStale").isEqualTo("CLOSED");
+        assertThat(pendingReopen(january).value().toString()).as("the third still pending").isEqualTo(third);
+        assertThat(count(ends)).as("no end written by a repeat").isEqualTo(ended);
+        assertThat(count(rejected)).as("no record of a repeat").isEqualTo(records);
+        assertThat(row(JANUARY).revision()).isEqualTo(revision);
+        as(dave, () -> desk.rejectReopen("conv-r3-" + IDS.next(), period, third, "not this one either"));
+    }
+
+    @Test
+    @DisplayName("P14-DOC-001 (P14-TSK-024's re-review (b)): judged holding the row - the first withdrawn and a second proposed on a held connection, uncommitted; Carol's approval naming the first reads and then waits on the period row; at the commit it is RequestStale, nothing superseded, the second still pending - a comparison on an unlocked pre-read would have approved what no longer stood")
+    void anApprovalIsJudgedHoldingThePeriodRow() throws Exception {
+        PeriodCloseFixture.closed(JANUARY);
+        AccountingPeriodId january = id(JANUARY);
+        Set<UUID> none = Set.copyOf(inScope(Actor.SYSTEM, uow -> PeriodCloseFixture.posted(uow, january)));
+        Actor alice = person();
+        inScope(alice, uow -> MACHINE.proposeReopen(uow, january, alice, none, "a correction was found", correlation()));
+        PeriodReopenId first = pendingReopen(january);
+        int revision = row(JANUARY).revision();
+        Optional<LocalDate> cut = closedThrough();
+        Actor dave = person();
+        Actor carol = person();
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> approval;
+            try (Connection holder = DatabaseRoles.application()) {
+                holder.setAutoCommit(false);
+                heldBy(alice, () -> MACHINE.withdrawReopen(holder, january, first, alice, "proposed in error", correlation()));
+                heldBy(dave, () -> MACHINE.proposeReopen(holder, january, dave, none, "another correction", correlation()));
+                approval = pool.submit(() -> inScope(carol, uow -> MACHINE.approveReopen(uow, january, first, carol, none, "the one I read", correlation())));
+                Thread.sleep(500);
+                assertThat(approval.isDone()).as("the approval waits on the period row the holder took FOR UPDATE").isFalse();
+                holder.commit();
+            }
+            assertThatThrownBy(() -> approval.get(2, TimeUnit.MINUTES))
+                    .as("judged after the lock: the one read is not the one pending")
+                    .hasCauseInstanceOf(AccountingPeriods.RequestStale.class);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(row(JANUARY).status()).isEqualTo(PeriodStatus.CLOSED);
+        assertThat(row(JANUARY).revision()).isEqualTo(revision);
+        assertThat(closedThrough()).as("no cutoff moved").isEqualTo(cut);
+        PeriodReopenId second = pendingReopen(january);
+        assertThat(second).as("the second still pending").isNotEqualTo(first);
+        inScope(carol, uow -> MACHINE.rejectReopen(uow, january, second, carol, "not this one either", correlation()));
+    }
+
+    /** {@code work} in the actor's and a correlation's scopes on a connection the caller holds open, its transaction left for the caller to commit. */
+    private static <R> R heldBy(Actor actor, Supplier<R> work) {
+        return as(actor, work);
+    }
+
+    @Test
     @DisplayName("P14-TSK-024 (d), the race: five approvers and five rejecters of one pending reopen on ten connections, released together: exactly one commits; every other is refused by name - approved, or REJECTED; the month is the winner's alone: OPEN at revision + 1 with the cutoff back, or CLOSED at its revision with the reopen REJECTED and the cutoff where it stood")
     void aRejectionRacingTheApprovalOneWins() throws Exception {
         PeriodCloseFixture.closed(JANUARY);
@@ -683,8 +766,9 @@ class PeriodReopenDatabaseTest {
         provider.nextSubmit(() -> Answer.rejected(Optional.empty(), "NOT_ACCEPTED", "{}".getBytes(StandardCharsets.UTF_8)));
         assertThat(driver.submitIfDue(rejected.id())).isTrue();
         RegulatorySubmissions.Acted notReceived = aReturn(january, SubmissionStatus.UNDELIVERED);
-        // Not received, then not received again on the resend the driver permits while the month stands: SUBMITTED, a person's door to come.
-        provider.nextSubmit(() -> Answer.notReceived("{}".getBytes(StandardCharsets.UTF_8))).nextSubmit(() -> Answer.notReceived("{}".getBytes(StandardCharsets.UTF_8)));
+        // The send hears nothing it can read: SUBMITTED, its answer UNKNOWN. A send answered "not received" contradicts itself and is read UNKNOWN (P14-TSK-018,
+        // RegulatoryFormTest#aSendAnsweredNotReceivedIsContradictory): only an inquiry can say nothing arrived, and one does below, once the month has moved (P14-DOC-001).
+        provider.nextSubmit(() -> Answer.unknown(Optional.empty(), "{}".getBytes(StandardCharsets.UTF_8)));
         assertThat(driver.submitIfDue(notReceived.id())).isTrue();
         RegulatorySubmissions.Acted submitted = aReturn(january, SubmissionStatus.SUBMITTED);
         assertThat(rows(acknowledged.id())).isEqualTo(SubmissionStatus.ACKNOWLEDGED);
@@ -712,6 +796,21 @@ class PeriodReopenDatabaseTest {
         assertThat(named(approval)).as("its own read").hasSize(4).startsWith(approved.id().value().toString());
         assertThat(approval.overtakenReturnsTotal()).isEqualTo(4);
         assertThat(as(ACCOUNTANT, () -> desk.proposeReopen("reopen-each-p", period, none, "a correction was found"))).as("the proposal's stored receipt, three, and the month now OPEN").isEqualTo(proposal);
+
+        // The month moved; the permit made due by the migrator, standing in for the inquiry interval (RegulatorySubmissionDatabaseTest's precedent): the driver's inquiry hears
+        // the truth, "not received", and since the month has moved it permits no resend - SUBMITTED, a definite "not received" last, a person's door to come.
+        try (Connection migrator = DatabaseRoles.migrator();
+                java.sql.PreparedStatement due = migrator.prepareStatement("UPDATE accounting.regulatory_submission SET next_inquiry_at = clock_timestamp() - interval '1 minute' WHERE id = ?")) {
+            due.setObject(1, notReceived.id().value());
+            assertThat(due.executeUpdate()).isEqualTo(1);
+        } catch (java.sql.SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
+        assertThat(driver.submitIfDue(notReceived.id())).isTrue();
+        RegulatorySubmissionStore.Row heard = inScope(Actor.SYSTEM, uow -> SUBMISSIONS.find(uow, notReceived.id())).orElseThrow();
+        assertThat(heard.status()).isEqualTo(SubmissionStatus.SUBMITTED);
+        assertThat(heard.lastAnswer()).as("an inquiry's definite not received, and no resend over a moved month").contains("NOT_RECEIVED");
+        assertThat(heard.resends()).isZero();
 
         // A status moved: the month having moved opens the door, and the return it held is UNDELIVERED. The key's replay says what was stored, a repeat under a new key what stands.
         Optional<RegulatorySubmissions.Recorded> asked = driver.askBeforeNonDelivery(inScope(Actor.SYSTEM, uow -> SUBMISSIONS.find(uow, notReceived.id())).orElseThrow(), correlation());

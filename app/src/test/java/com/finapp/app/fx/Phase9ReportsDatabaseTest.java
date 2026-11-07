@@ -10,6 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.crossborder.CorridorPolicyV1;
 import com.finapp.app.payments.SimulatedCorridorEngine;
+import com.finapp.app.reconciliation.CorridorRuleSetV1;
 import com.finapp.fx.PricingPolicyAdministration;
 import com.finapp.fx.PricingPolicyStore;
 import com.finapp.identity.Authorization;
@@ -19,6 +20,8 @@ import com.finapp.kyc.CounterpartyScreeningProvider;
 import com.finapp.kyc.CounterpartyScreeningVocabulary.Verdict;
 import com.finapp.ledger.PostingService;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.security.Actor;
+import com.finapp.platform.security.ActorType;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.reconciliation.RuleSetAdministration;
@@ -60,8 +63,16 @@ import org.springframework.test.context.DynamicPropertySource;
  * {@code FX_INVESTIGATE} in one snapshot and audited at every serving; the trace walking a payment's identifier chain;
  * a malformed or unreportable month 422 before any read; a customer and a price-setter refused; the in-transit age
  * gauge reading a real age, never NaN, once a payment is in transit.
+ *
+ * <p><strong>Run apart</strong> (P14-DOC-001's database pass). The FX position lists EVERY open cover leg in the
+ * database, the oldest first, bounded at 100 ({@code Phase9Reports.BOUND}) - so "the new conversion's open cover leg is
+ * listed" holds only while fewer than 100 older legs stand open. A shared container holds hundreds: the value
+ * battery ({@code FxValuePreservationBatteryDatabaseTest}) executes one cover in twenty by design, and the cross-border
+ * suites leave covers UNKNOWN or DISPATCHED once their simulated provider is gone. The report then answered correctly -
+ * the oldest 100 and {@code truncated: true} - and this suite failed for a leg the bound had rightly left out.
  */
 @Tag("database")
+@Tag("own-container") // its own JVM and database: ownContainerDatabaseTest, the javadoc says why
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Order(Integer.MAX_VALUE - 1)
@@ -120,6 +131,7 @@ class Phase9ReportsDatabaseTest {
             activateCorridorPolicy();
         }
         FxCoverFixtures.ensureFxSourceActive(ruleSetAdministration, ruleSets, dataSource);
+        ensureCorridorRuleSetActive();
         awaitRoutingVersionInForce();
     }
 
@@ -234,6 +246,29 @@ class Phase9ReportsDatabaseTest {
                 java.sql.Timestamp.from(Instant.now())) == 0) {
             assertThat(System.nanoTime()).isLessThan(deadline);
             Thread.sleep(500);
+        }
+    }
+
+    /**
+     * corridor-sim-a's source version 1, the runbook's act every cross-border suite performs when absent: a completed
+     * payout opens its CROSSBORDER_PAYOUT expectation under it, and with none ACTIVE the completion is refused
+     * RuleSetMissing. In the shared container another suite had always performed it first; in this suite's own it is
+     * this suite's to perform (P14-DOC-001).
+     */
+    private void ensureCorridorRuleSetActive() throws Exception {
+        if (count("SELECT count(*) FROM reconciliation.rule_set WHERE source_id = ? AND status = 'ACTIVE'",
+                CorridorRuleSetV1.SOURCE) > 0) {
+            return;
+        }
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(FxTestClient.IDS)));
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            UUID ruleSet = ruleSetAdministration.propose(app, CorridorRuleSetV1.proposal("The corridor source's first version"),
+                    new Actor("op-corridor-controller-a", ActorType.EMPLOYEE), Instant.now(),
+                    CorrelationId.generate(FxTestClient.IDS)).ruleSetId();
+            ruleSetAdministration.approve(app, ruleSet, new Actor("op-corridor-controller-b", ActorType.EMPLOYEE),
+                    "Reviewed against O7", Instant.now(), CorrelationId.generate(FxTestClient.IDS));
+            app.commit();
         }
     }
 

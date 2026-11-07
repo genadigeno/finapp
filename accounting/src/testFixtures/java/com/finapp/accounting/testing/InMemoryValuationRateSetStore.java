@@ -98,6 +98,16 @@ public final class InMemoryValuationRateSetStore implements ValuationRateSetStor
         return Optional.ofNullable(rows.get(id));
     }
 
+    /**
+     * The set's row as a reference-gap exception's would read - {@code gaps} of its rates admitted beyond the bound - for a suite that reads what a gap set
+     * tells a later reader (`P14-DOC-001`: the close's approver); the capture and its approval across a gap are {@code ValuationRateSetsTest}'s.
+     */
+    public void readAsAGapSet(ValuationRateSetId id, int gaps) {
+        SetRow row = Optional.ofNullable(rows.get(id)).orElseThrow();
+        rows.put(id, new SetRow(row.id(), row.period(), row.month(), row.asOf(), row.maxAgeHours(), row.rateCount(), row.status(), row.capturedBy(), row.capturedAt(),
+                row.decidedBy(), row.decidedAt(), gaps));
+    }
+
     @Override
     public Optional<SetRow> lock(Connection unitOfWork, ValuationRateSetId id) {
         rowLocks++;

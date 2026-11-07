@@ -1198,32 +1198,52 @@ suspend merchant, block beneficiary, release/deny a held withdrawal, rescreen a 
 reverses a transaction and never writes another domain's row; a reversal is the owning domain's four-eyes act a case
 may only recommend. → [ADR-0112](../adr/ADR-0112-downstream-actions-through-the-owning-domains.md)
 
-### Accounting and financial reporting (Phase 14, `Proposed` at the Phase 13 → 14 transition)
+### Accounting and financial reporting (Phase 14, `Proposed` at the Phase 13 → 14 transition; `Accepted` at the Phase 14 review, `P14-DOC-001`, each read against the code with its corrected passages marked in place)
 Planned by the Phase 13 → 14 transition (2026-10-29) in `PHASE_14_PLAN.md`, with the owner's decisions C1–C13 recorded
-as recommended defaults awaiting ratification; nothing of it is built. The phase's tasks are `P14-TSK-001`…`-021`,
-`P14-TST-001` (planned and `POSTPONED`, PI-004), `P14-TST-002` and `P14-DOC-001`, whose review reads each ADR against the
-code. The invariants are `INV-ACC-06`…`-14` (nine new beside `INV-ACC-01`…`-05`; the catalogue 162 → 171). The phase's
-ADRs are ADR-0113…ADR-0119 (ADR-0119 written by `P14-TSK-026`); **the next free number is ADR-0120.** Phase 14 moves no money and creates no competing
-record: every GL figure is a function of the journal.
+as recommended defaults, all since ratified at those defaults: C3 on 2026-10-30, C6 on 2026-11-04, C1, C2, C4, C5 and
+C7 to C13 on 2026-11-06 (C13 corrected on 2026-11-05: the return subtracts `principalUnrepaid`, `committed` a line
+beside it). Built by `P14-TSK-001`…`-026` and `P14-TST-002`, and read against the code and accepted by the Phase 14
+review (`P14-DOC-001`, 2026-11-06), which corrected every drifted passage in place with a dated note before accepting
+any - 29 items in all, `P14-TST-001` (`POSTPONED`, PI-004) among them. The invariants are `INV-ACC-06`…`-14` (nine new
+beside `INV-ACC-01`…`-05`; the catalogue 162 → 171). The phase's ADRs are ADR-0113…ADR-0119 (ADR-0119 written by
+`P14-TSK-026`), all `Accepted`; **the next free number is ADR-0120.** Phase 14 moves no money and creates no competing
+record: every GL figure is a function of the journal. What still needs a qualified reviewer before production stays so:
+C3, C6, C7 and C8, the write-off notice's wording, counterparties on a statement's face, the income statement's
+period-end rate, and the safeguarding return's regime (`PI-011`). *(Corrected by `P14-DOC-001`, the Phase 14 exit
+review, 2026-11-06: this read "with the owner's decisions C1–C13 recorded as recommended defaults awaiting
+ratification; nothing of it is built. The phase's tasks are `P14-TSK-001`…`-021`, `P14-TST-001` (planned and
+`POSTPONED`, PI-004), `P14-TST-002` and `P14-DOC-001`, whose review reads each ADR against the code".)*
 
 **One `accounting` module, the GL a versioned mapping over the one journal.** Schema `accounting`, edges to `platform` and
 `sharedkernel` only; the journal, the chart, the cutoff and the prior-period door reached through ports `app` implements.
 The mapping is data keyed by ledger purpose (+ owner kind), immutable, four-eyes activated, never retroactive; the
-ledger's `gl_code` stays unwritten. No accounting table holds a balance. → [ADR-0113](../adr/ADR-0113-the-accounting-bounded-context-and-the-gl-as-a-versioned-mapping.md)
+ledger's `gl_code` stays unwritten. No accounting table holds a balance, except as frozen output that is never truth: a
+report run's content and a regulatory submission's content and lines, copied from FINAL runs. *(Corrected by
+`P14-DOC-001`, 2026-11-06: this read "No accounting table holds a balance."; accounting `V010` holds a return's amounts,
+and ADR-0113 decision 2's exception is widened to say so.)* → [ADR-0113](../adr/ADR-0113-the-accounting-bounded-context-and-the-gl-as-a-versioned-mapping.md)
 
 **The close is enforced by the ledger.** `ledger.posting_cutoff` and a `BEFORE INSERT` trigger on `journal_entry` taking
 namespace `14` shared, the lock edge taking it exclusive: once a period locks, no entry dated in it commits. Calendar-month
 periods, locked and closed in order; the close a recorded run of checks, proposed and approved four-eyes; after close,
-prior-period adjustments (origin `ACCOUNTING`) in an open period; a reopen supersedes, never deletes. Lending's
-back-dating accrual floors its posting date at the first open date (C3). → [ADR-0114](../adr/ADR-0114-accounting-periods-the-ledger-posting-cutoff-and-the-close.md)
+prior-period adjustments (origin `ACCOUNTING`) in an open period; a reopen supersedes, never deletes. The seven
+back-dating system rules - lending's accrual, the settlement report and statement, the merchant-payout return,
+reconciliation suspense, `fx-trade` and `fx-cover` - floor their posting date at the first open date and keep their
+value date, and a person's adjustment dated into a locked period is refused at approval (C3). Since this review a
+journal line joining an entry dated on or before the cutoff is refused too (ledger `V032`). *(Corrected by
+`P14-DOC-001`, 2026-11-06: this read "Lending's back-dating accrual floors its posting date at the first open date
+(C3)", the decision before C3's ratification widened it; `P14-TSK-006` built the seven, register version 2.)* → [ADR-0114](../adr/ADR-0114-accounting-periods-the-ledger-posting-cutoff-and-the-close.md)
 
 **Reports are immutable, reproducible runs.** A run born once per definition, version, period, revision and parameters;
-generated read-only; content and sha256 frozen; FINAL only for locked or closed periods, PROVISIONAL otherwise;
-regeneration answers `IDENTICAL | DIVERGED`. → [ADR-0115](../adr/ADR-0115-reporting-as-immutable-reproducible-report-runs.md)
+generated read-only; content and sha256 frozen; FINAL only for a period no longer open (a financial statement only
+for a `CLOSED` one), PROVISIONAL otherwise; regeneration answers `IDENTICAL | DIVERGED`. *(Corrected by `P14-DOC-001`,
+2026-11-06: this read "FINAL only for locked or closed periods"; `V004`'s birth admits `CLOSE_PROPOSED` too, and
+`P14-TSK-016` narrowed the statements to `CLOSED`.)* → [ADR-0115](../adr/ADR-0115-reporting-as-immutable-reproducible-report-runs.md)
 
-**EUR functional and reporting currency; valuation separate from execution.** A valuation rate set captured at lock from
-fx's reference snapshots, four-eyes, pinned; translation at report time with an explicit difference line; nothing
-revalued in the journal (C1, C7). → [ADR-0116](../adr/ADR-0116-multi-currency-valuation-and-reporting-currency-translation.md)
+**EUR functional and reporting currency; valuation separate from execution.** A valuation rate set captured by a person
+while the period is `LOCKED` from fx's reference snapshots, four-eyes, pinned by every translated run; translation at
+report time with an explicit difference line; nothing revalued in the journal (C1, C7). *(Corrected by `P14-DOC-001`,
+2026-11-06: this read "captured at lock" and "pinned"; the capture is an act after the lock, never part of it, and only
+a run naming a set pins one.)* → [ADR-0116](../adr/ADR-0116-multi-currency-valuation-and-reporting-currency-translation.md)
 
 **The posting rule register and accounting breaks.** Every posting namespace registered in code with its rule, version,
 line shape and dating class; GL = ledger, conformance and source completeness checked per period; discrepancies are
@@ -1234,6 +1254,27 @@ born-once accounting breaks, never corrections; reconciliation's breaks and susp
 is a new break needing its own four-eyes acknowledgement. Every `DISCLOSED` check carries a person's reason in the proposal, `INV-ACC-09` unamended. A month with no
 reconciliation run fails its check. No door discloses a failed must-pass check: the way on is to unlock and correct. The close run stays born by the check leg, not
 in the lock's transaction. `BNPL-F2a`'s month-end shift stays disclosed. → [ADR-0117](../adr/ADR-0117-the-posting-rule-register-gl-reconciliation-and-accounting-breaks.md)
+
+**What the exit review found and fixed, and what it postponed (`P14-DOC-001`, 2026-11-06).** The database pass found
+production defects of one kind: a deciding instant read before a write can be stepped past by the database's own clock,
+which can step back (measured under Docker Desktop's VM clock). Fixed: merchant `V013` stamps a BNPL fee pin with its
+own insert's instant (`GREATEST(clock_timestamp(), transaction_timestamp())`) and judges the version in force by that
+stamp. Postponed by the owner: lending's and bnpl's terms retirement (lending `V030:247`, bnpl `V002:343`) can end a
+retired version before an offer pinned to it when the clock steps back between the offer and the retirement (`PI-014`;
+a fix must also keep the successor starting exactly where the predecessor ends - the review's draft, lending `V033` and
+bnpl `V021`, met lending `V003`'s successor rule in its database re-run and was withdrawn unmerged); and `CloseRuns.view`
+names a period's latest close run by `started_at`, which a step can misorder (`PI-013`). The review's financial audit found that the cutoff refused an entry and not a line:
+ledger `V032` refuses a journal line whose entry is dated on or before the cutoff, under namespace `14` key `cutoff`
+shared, so `INV-ACC-08`'s "raw SQL included" now holds for lines too. The manual adjustment's door records a refused
+self-approval `FAILED` (`ledger.SelfApprovalRefused`) in a transaction of its own, and refuses an instrument shape in
+its reason or reference as a `422` - the two gaps `P14-TSK-026` routed here. A repeated end of an unlock or a reopen
+converges by the request it names. The close's approver reads the set's reference gaps on `GET .../close-proposal`
+(`valuationRateSetReferenceGaps`, `P14-TSK-026`'s (c)), and the GL entry read names its `namespace`, both additive under
+version 1. ADR-0113…0119 are `Accepted`. The review ruled the phase `COMPLETE` with recorded deviations: criterion 7
+`PARTIAL` (no clean final-tree run of every database tier, `PI-012`), criteria 6 and 11 `PARTIAL` (the production
+defects above, `PI-013` and `PI-014`), the storm postponed (`PI-004`); the postponed items are `PI-012` to `PI-015`
+(`POSTPONED_ISSUES.md`), the accounting gauges' refresher that cannot restart once stopped in `PI-014`'s list. The
+Phase 14 → 15 transition gate is the owner's to open. → [ADR-0114](../adr/ADR-0114-accounting-periods-the-ledger-posting-cutoff-and-the-close.md), [ADR-0119](../adr/ADR-0119-a-projection-rebuild-door-and-a-reference-gaps-way-on.md)
 
 **A projection rebuild, and a reference gap's way on (built by `P14-TSK-026`, 2026-11-06).** A drifting balance projection is
 rebuilt by a person's four-eyes act, never automatically and never by an adjustment: the approval takes the posting's own
@@ -1351,7 +1392,7 @@ concluded only on `RECALLED`. The batch-rail return-window half stays open.)* |
 | Dispute-fee pass-through to merchants | A merchant commercial-terms phase, after Phase 13 *(re-dated by the Phase 12 → 13 transition, 2026-10-22: Phase 13 judges and monitors merchant abuse (`P13-TSK-014`) but prices nothing — `PHASE_13_PLAN.md` §20)* | The PSP's dispute fee posts to `DISPUTE_COSTS`; charging it on is a commercial term with its own consent and statement consequences (ADR-0061's follow-up; recorded here by the review, with reserves the Known Architectural Debt row in `CURRENT_STATE.md`). *(The Phase 7 → 8 transition adds the counterparties' processing costs to the same deferral: they post to `PROCESSING_COSTS`, and no price varies with the rail (ADR-0072 §6, `Proposed`).)* |
 | A secrets manager (Vault, cloud KMS) | Phase 15 | No deployment, no key material and one local database password. A manager chosen with no real requirement to shape it is the wrong manager; the seam - configuration read from the environment - is established now (ADR-0020) |
 | Changing the verified contact channel | Phase 15, with the notifier | A safe change needs a step-up, a notice to the channel being replaced and a cooling-off - `INV-IDN-06`'s own enforcement - and the notice needs the channel notifier Phase 15 brings. Until then a second verification is refused (`X-TSK-004`, §Recovery channels). Nothing delivers a challenge before that notifier either, so the refusal cannot yet strand a customer. **The flow must spend every pending challenge of the kind**: a refused verification writes nothing, so its challenge stays live until it expires, and a flow that freed the kind without spending them would let a parked challenge verify the moment the verified channel is gone |
-| Revaluation, a functional or reporting currency, unrealised P&L and FX P&L reporting | Phase 14 | Covered positions are zero at rest, and realised results come only from slipped covers and unwinds; revaluing `FX_POSITION` before a reporting currency exists would be a plug, not a fact (D30, ADR-0076; recorded by the Phase 8 → 9 transition) *(Planned by the Phase 13 → 14 transition (2026-10-29): EUR functional and reporting currency (C1), valuation rate sets and report-time translation (`P14-TSK-014`, `-015`), FX gains and losses reported (`-017`); unrealised revaluation not posted (C7 A) - ADR-0116, `Proposed`.)* |
+| Revaluation, a functional or reporting currency, unrealised P&L and FX P&L reporting | Phase 14 | Covered positions are zero at rest, and realised results come only from slipped covers and unwinds; revaluing `FX_POSITION` before a reporting currency exists would be a plug, not a fact (D30, ADR-0076; recorded by the Phase 8 → 9 transition) *(Planned by the Phase 13 → 14 transition (2026-10-29): EUR functional and reporting currency (C1), valuation rate sets and report-time translation (`P14-TSK-014`, `-015`), FX gains and losses reported (`-017`); unrealised revaluation not posted (C7 A) - ADR-0116, `Proposed`.)* *(Built by `P14-TSK-014`, `-015`, `-016` and `-017`; ADR-0116 `Accepted` by the Phase 14 review, `P14-DOC-001`, 2026-11-06. Posting unrealised revaluation (C7 B) stays deferred, a later qualified decision.)* |
 | Hedging, netting of covers, position limits, treasury, liquidity and prefunding | A treasury capability of its own; none scheduled (DELIVERY_PLAN §18) | The platform is principal with one back-to-back cover per accepted quote; netting would make the position unexplainable trade by trade (D1, ADR-0077) |
 | `SHA`/`BEN` charge bearers and correspondent-chain deductions | A corridor whose provider cannot guarantee the delivered amount | `OUR` only: the beneficiary receives the quoted destination amount, so a deduction from principal is an `AMOUNT_MISMATCH` break, never a silent short delivery (O9, ADR-0079) |
 | Merchant multi-currency settlement and cross-currency merchant fees | A merchant multi-currency phase of its own | `merchant.FeeCurrencyMismatch` and `PayoutCurrencyMismatch` stay; the corridor is a customer rail, and the merchant payout stays single-currency on its own provider (ADR-0050 annotated at the Phase 8 → 9 transition; ADR-0079 §9) |

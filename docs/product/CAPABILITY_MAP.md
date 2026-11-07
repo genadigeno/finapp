@@ -312,32 +312,49 @@ risk / Account takeover / AML monitoring / Limits / velocity / Manual review", u
 - Regulatory reporting abstraction
 - Audit
 
-## Accounting and Financial Reporting *(Phase 14, planned at the Phase 13 → 14 transition, 2026-10-29 — `PHASE_14_PLAN.md`)*
-- General ledger — planned: GL accounts and their mapping from the ledger's purposes as versioned data, four-eyes
+## Accounting and Financial Reporting *(Phase 14, delivered 2026-11-06 — `P14-DOC-001`, the Phase 14 exit review; the storm, `P14-TST-001`, postponed by the owner until after the project's phases, PI-004)* *(This heading read "planned at the Phase 13 → 14 transition, 2026-10-29 — `PHASE_14_PLAN.md`" until the review.)*
+- General ledger — built: GL accounts and their mapping from the ledger's purposes as versioned data, four-eyes
   activated, never retroactive; every GL figure computed from the one journal, no second ledger and no stored balance;
   drill-down from any figure to its journal lines
-- Accounting periods and close — planned: calendar-month periods locked and closed in order; the lock moves a posting
-  cutoff the ledger enforces at insert, so nothing dated in a locked period commits after it; a close run of recorded
-  readiness checks (trial balance, GL = ledger, rule conformance, source completeness, accruals, reconciliation
-  disclosure); a four-eyes close; prior-period adjustments in an open period; a four-eyes reopen that supersedes, never
-  deletes
-- Accounting rules — planned: one register of every posting namespace with its source, rule, version, line shape and
+- Accounting periods and close — built: calendar-month periods locked and closed in order; the lock moves a posting
+  cutoff the ledger enforces at insert - every journal entry and, since the review's ledger `V032`, every journal line -
+  so nothing dated in a locked period commits after it; a close run of nine recorded readiness checks (ledger trial
+  balance, GL = ledger, rule conformance, source completeness, accruals complete, projection verified, reconciliation
+  disclosure, valuation set approved, open accounting breaks); a four-eyes close; prior-period adjustments in an open
+  period; a four-eyes reopen that supersedes, never deletes; a four-eyes projection rebuild and a disclosed reference gap
+  as the close's ways on (ADR-0119)
+- Accounting rules — built: one register of every posting namespace with its source, rule, version, line shape and
   dating; every entry checked against it; discrepancies raised once as accounting breaks, never silently corrected
-- Multi-currency reporting — planned: EUR functional and reporting currency; valuation rate sets captured from reference
-  rates with provenance, approved and pinned; originals always shown; translation differences explicit; no revaluation
-  posted
-- Financial reporting — planned: immutable, reproducible report runs — trial balance, GL activity, balance sheet and
+- Multi-currency reporting — built: EUR functional and reporting currency; valuation rate sets captured from reference
+  rates with provenance, approved four-eyes and pinned by every translated run; originals always shown; translation
+  differences explicit; no revaluation posted
+- Financial reporting — built: immutable, reproducible report runs — trial balance, GL activity, balance sheet and
   income statement, fee and interest revenue, receivables and payables, settlement positions, suspense, FX results, loan
-  portfolio, BNPL exposure, reconciliation and close status — FINAL for closed periods, provisional otherwise
-- Regulatory reporting — planned: obligations as configuration, submissions only from final figures, four-eyes, with
+  portfolio, BNPL exposure, the reference safeguarding position — FINAL for a locked or closed period (the statements only
+  for a closed one), provisional otherwise; reconciliation status and close status are operational reports, read live and
+  audited, never a run, never issued
+- Regulatory reporting — built: obligations as configuration, submissions only from final figures, four-eyes, with
   lineage, corrected by resubmission; a simulated reference adapter and a reference safeguarding position return; no
   legal obligation asserted
 - Write-off — built by `P14-TSK-021` (owner decision C6 (A)): loan and BNPL write-off under four eyes on the rules already designed;
   provisioning and effective-interest amortisation deferred for qualified review and disclosed
 
-*(Marked "planned" by the Phase 13 → 14 transition, 2026-10-29 (`PHASE_14_PLAN.md`; ADR-0113…0118 `Proposed`); to be
-marked delivered by the Phase 14 exit review, `P14-DOC-001`. "Accounting GL" under Money and Accounts and "Financial
-reporting" / "Regulatory reporting abstraction" above are this section's capabilities.)*
+*(Marked "planned" by the Phase 13 → 14 transition, 2026-10-29 (`PHASE_14_PLAN.md`; ADR-0113…0118 `Proposed`), and
+marked delivered by the Phase 14 exit review, `P14-DOC-001`, 2026-11-06 - each capability built by `P14-TSK-001`…`-026`
+and evidenced by each task's hermetic proofs, the accounting battery (`P14-TST-002`) and the database suites, run in the
+review's database pass; the review's financial audit found and fixed a journal line's way past the posting cutoff
+(ledger `V032`), and its database pass a BNPL fee pin a backward database clock could refuse (merchant `V013`, fixed);
+ADR-0113…0119 accepted. Postponed by the owner, with the phase ruled complete beside them: a retired terms version that
+can end before an offer pinned to it across a backward clock step (lending and bnpl, `PI-014`), the close run's read
+after such a step (`PI-013`), and a clean final-tree run of every database tier (`PI-012`); the review's postponed items
+are PI-012…PI-015. **Not by the storm**: `P14-TST-001` is postponed by the owner until after the
+project's phases (`POSTPONED_ISSUES.md` PI-004). What needs a qualified reviewer before production stays so: owner
+decisions C3, C6, C7 and C8, the write-off notice's wording, counterparties on a statement's face, the income statement's
+period-end rate, and the safeguarding return's regime (PI-011). This note read "to be marked delivered by the Phase 14 exit
+review, `P14-DOC-001`", and each capability "planned", until then; the section's report list read "… reconciliation and
+close status — FINAL for closed periods, provisional otherwise", and its close run six checks, until the review.
+"Accounting GL" under Money and Accounts and "Financial reporting" / "Regulatory reporting abstraction" above are this
+section's capabilities.)*
 
 ## Platform
 - API gateway

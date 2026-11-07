@@ -278,6 +278,7 @@ class PeriodCloseDeskTest {
         });
         assertThat(view.reopenPending()).isFalse();
         assertThat(view.overtakenReturns()).as("no reopen pending, no list read: none served, never an empty one").isNull();
+        assertThat(view.valuationRateSetReferenceGaps()).as("P14-DOC-001: the named set's reference gaps, an ordinary capture's none").isZero();
         assertThat(view.toString()).doesNotContain(ACCOUNTANT.id()).doesNotContain(REASON);
         AuditRecord read = audited.get(audited.size() - 1);
         assertThat(read.operation().code()).isEqualTo("accounting.CloseProposalRead");

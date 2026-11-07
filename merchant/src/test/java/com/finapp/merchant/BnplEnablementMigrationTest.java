@@ -155,8 +155,42 @@ class BnplEnablementMigrationTest {
                 .contains("CREATE OR REPLACE FUNCTION merchant.bnpl_fee_pin_names_a_returning_version_in_force()");
     }
 
+    @Test
+    @DisplayName("V013 (P14-DOC-001): the pin's instant is its own insert's stamp on the database clock - V012's function"
+            + " statement for statement, but for V012's instant rank, replaced by the stamp; nothing else in the migration")
+    void v013StampsThePinsInstantAtItsOwnInsert() {
+        String v012Rank = "    IF NEW.pinned_at < transaction_timestamp() OR NEW.pinned_at > clock_timestamp() THEN\n"
+                + "        RAISE EXCEPTION 'a BNPL fee pin''s instant is its own transaction''s on the database clock (the"
+                + " Phase 12 -> 13 gate''s A3-M1, INV-MER-03)';\n"
+                + "    END IF;\n";
+        String v013Stamp = "    NEW.pinned_at := GREATEST(clock_timestamp(), transaction_timestamp());\n";
+        String v012 = statements(pinFunction(migration(V012)));
+        String v013 = statements(pinFunction(migration(V013)));
+
+        assertThat(v012).contains(v012Rank);
+        assertThat(v013).as("V012's body with only the instant's rank replaced").isEqualTo(v012.replace(v012Rank, v013Stamp));
+        String rest = statements(migration(V013).replace(pinFunction(migration(V013)), ""));
+        assertThat(rest.strip()).as("beside the function, only the column's comment")
+                .startsWith("COMMENT ON COLUMN merchant.bnpl_fee_pin.pinned_at IS")
+                .doesNotContain("CREATE ", "ALTER ", "GRANT ", "DROP ");
+    }
+
     private static final String V012 =
             "db/migration/merchant/V012__bnpl_reasons_screened_and_the_pin_on_the_database_clock.sql";
+
+    private static final String V013 = "db/migration/merchant/V013__the_bnpl_fee_pin_stamped_by_its_own_insert.sql";
+
+    /** The pin trigger's function, from its CREATE to its closing {@code $$;}. */
+    private static String pinFunction(String sql) {
+        int from = sql.indexOf("CREATE OR REPLACE FUNCTION merchant.bnpl_fee_pin_names_a_returning_version_in_force()");
+        assertThat(from).as("the pin's function is replaced here").isNotNegative();
+        return sql.substring(from, sql.indexOf("$$;", from) + 3);
+    }
+
+    /** {@code sql} without its comment lines. */
+    private static String statements(String sql) {
+        return sql.lines().filter(line -> !line.strip().startsWith("--")).collect(Collectors.joining("\n", "", "\n"));
+    }
 
     private static String migration() {
         return migration(MIGRATION);

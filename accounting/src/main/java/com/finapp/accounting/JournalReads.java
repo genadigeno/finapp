@@ -272,6 +272,11 @@ public interface JournalReads {
      * {@code reference} ({@code RESTRICTED-FINANCIAL}; for a {@code MANUAL} adjustment free text an operator typed, which
      * may name a person), nor its reason or actor ({@code RESTRICTED-PII}) - whether a later task serves the reference,
      * and under what control, is an owner item (`P14-TSK-007`'s review, I-1).
+     *
+     * @param namespace the posting key namespace the entry is judged under - a posting's or reversal's command key's namespace,
+     *     an adjustment's proposal origin, as the rule conformance judge reads it ({@code P14-DOC-001}: the gate's "each line's
+     *     entry, namespace" - a figure's line names its entry, and the entry its namespace and so its rule); empty for a scope
+     *     of another shape, or where the reader does not say
      */
     record Entry(
             UUID id,
@@ -279,7 +284,8 @@ public interface JournalReads {
             LocalDate postingDate,
             LocalDate valueDate,
             Optional<UUID> reverses,
-            List<Line> lines) {
+            List<Line> lines,
+            Optional<String> namespace) {
 
         public Entry {
             Objects.requireNonNull(id, "id");
@@ -287,7 +293,13 @@ public interface JournalReads {
             Objects.requireNonNull(postingDate, "postingDate");
             Objects.requireNonNull(valueDate, "valueDate");
             Objects.requireNonNull(reverses, "reverses");
+            Objects.requireNonNull(namespace, "namespace");
             lines = List.copyOf(lines);
+        }
+
+        /** An entry whose namespace the reader does not say - the in-memory journals' and the oracle's. */
+        public Entry(UUID id, String entryType, LocalDate postingDate, LocalDate valueDate, Optional<UUID> reverses, List<Line> lines) {
+            this(id, entryType, postingDate, valueDate, reverses, lines, Optional.empty());
         }
     }
 

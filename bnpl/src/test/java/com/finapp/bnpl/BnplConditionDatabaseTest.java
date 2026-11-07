@@ -315,8 +315,17 @@ class BnplConditionDatabaseTest {
                     + bought.id() + "'", "P0001", "a BNPL condition change is immutable from insert");
             refused(migrator, "DELETE FROM bnpl.bnpl_condition_event WHERE obligation_id = '" + bought.id() + "'",
                     "P0001", "a BNPL condition change is immutable from insert");
-            refused(migrator, "TRUNCATE bnpl.bnpl_condition_event", "P0001", "are never truncated");
+            // A plain TRUNCATE is refused before any trigger fires: bnpl V020's bnpl_write_off_default_fk references this table,
+            // and PostgreSQL refuses to truncate a referenced table alone (0A000).
+            refused(migrator, "TRUNCATE bnpl.bnpl_condition_event", "0A000", "referenced in a foreign key constraint");
+            // With CASCADE the truncation reaches the statement triggers, which refuse it - in a transaction rolled back.
+            refused(migrator, "TRUNCATE bnpl.bnpl_condition_event CASCADE", "P0001", "are never truncated");
         }
+        // The foreign key must not hide a dropped trigger: the table's OWN statement trigger still stands, enabled, BEFORE TRUNCATE.
+        assertThat(count("SELECT count(*) FROM pg_trigger t WHERE t.tgrelid = 'bnpl.bnpl_condition_event'::regclass"
+                + " AND t.tgname = 'bnpl_condition_event_is_never_truncated' AND NOT t.tgisinternal AND t.tgenabled <> 'D'"
+                + " AND (t.tgtype & 32) <> 0 AND (t.tgtype & 2) <> 0 AND t.tgfoid = 'bnpl.acceptance_rows_are_never_truncated'::regproc"))
+                .as("bnpl_condition_event's own BEFORE TRUNCATE trigger").isEqualTo(1);
     }
 
     // ------------------------------------------------------------------ plumbing

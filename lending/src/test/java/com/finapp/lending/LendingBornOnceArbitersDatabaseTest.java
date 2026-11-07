@@ -71,7 +71,11 @@ class LendingBornOnceArbitersDatabaseTest {
             "repayment_allocation_reversal_allocation_unique", "repayment_entry_unique", "repayment_key_unique",
             "repayment_of_its_loan", "repayment_reversal_entry_unique", "repayment_reversal_one_live",
             "repayment_schedule_agreement_unique", "repayment_schedule_version_unique",
-            "waiver_decision_entry_unique", "waiver_decision_once", "waiver_proposer_pinned");
+            "waiver_decision_entry_unique", "waiver_decision_once", "waiver_proposer_pinned",
+            // lending V032 (P14-TSK-021): a write-off decided once, its entry once, one approved per loan; and the proposal's
+            // (id, loan, proposer) - the target of the decision's composite foreign key.
+            "loan_write_off_decision_entry_unique", "loan_write_off_decision_once", "loan_write_off_one_approved",
+            "loan_write_off_pinned");
 
     /**
      * The uniques that bind the whole primary key - the composite targets of "of its loan" and "proposer pinned" foreign
@@ -81,7 +85,9 @@ class LendingBornOnceArbitersDatabaseTest {
     private static final Set<String> FOREIGN_KEY_TARGETS = Set.of("capital_contribution_proposer_pinned",
             "fee_assessment_of_its_loan", "loan_amendment_of_its_loan", "loan_amendment_proposer_pinned",
             "loan_offer_product_pinned", "loan_terms_version_product_pinned", "repayment_of_its_loan",
-            "waiver_proposer_pinned");
+            "waiver_proposer_pinned",
+            // lending V032: UNIQUE (id, loan_id, proposed_by), the target loan_write_off_decision_write_off_fk pins the proposer by.
+            "loan_write_off_pinned");
 
     /** Tables this module's paths never write: lending capital is contributed only through app's treasury door. */
     private static final Set<String> WRITTEN_ONLY_THROUGH_APP = Set.of("capital_contribution", "capital_contribution_event");
@@ -144,5 +150,8 @@ class LendingBornOnceArbitersDatabaseTest {
         new AmendmentDatabaseTest().arrearsRescheduledConservePrincipal();
         new PrepaymentDatabaseTest().prepaymentShortensTheTermAndConserves();
         new DelinquencyDatabaseTest().defaultAtNinetyClearedAtCure();
+        // P14-TSK-021: a proposal and its APPROVED decision with the entry it posted, by T-wof's real path - the row every V032
+        // unique copies (the decision's three and the proposal's pinned target).
+        new LoanWriteOffDatabaseTest().anEarlierDateDoesNotMove();
     }
 }

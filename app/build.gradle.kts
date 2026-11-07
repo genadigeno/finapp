@@ -364,6 +364,11 @@ extra["ownContainerSuites"] =
         "com.finapp.app.credit.BureauSelectionDatabaseTest",
         "com.finapp.app.credit.CreditDecisionDatabaseTest",
         "com.finapp.app.credit.CreditDecisionStormDatabaseTest",
+        // P14-DOC-001's database pass: its world brings the credit policy seeds and the RETAIL_SCORECARD seed into force,
+        // activates a CREDIT_LINE version and a MONITORING risk version - the shared JVM's endpoint suites assert the seeds
+        // are still proposals (ScorecardAdministrationEndpointDatabaseTest failed behind it; CreditPolicyEndpointDatabaseTest
+        // passed only by running first), and a MONITORING version judges every profile recompute in the database.
+        "com.finapp.app.credit.CreditRiskSeamDatabaseTest",
         "com.finapp.app.credit.DecisionExplanationDatabaseTest",
         "com.finapp.app.credit.DecisionReplayDatabaseTest",
         "com.finapp.app.credit.DecisionReproducibilityBatteryTest",
@@ -377,6 +382,10 @@ extra["ownContainerSuites"] =
         // EUR-JPY-JP ones refused (the suite's high-risk corridor), its non-EUR-leg ones refused by the fail-safe.
         "com.finapp.app.fx.CrossBorderRiskSeamDatabaseTest",
         "com.finapp.app.fx.FxCrossBorderStormDatabaseTest",
+        // P14-DOC-001's database pass: the FX position report lists every open cover leg in the database, oldest first,
+        // bounded at 100 - the suite's new leg is listed only while fewer than 100 older legs stand open, and a shared
+        // container holds hundreds (the value battery executes one cover in twenty by design).
+        "com.finapp.app.fx.Phase9ReportsDatabaseTest",
         "com.finapp.app.lending.BnplCapitalDatabaseTest",
         "com.finapp.app.lending.LendingCapitalDatabaseTest",
         "com.finapp.app.lending.LendingCreditExposureDatabaseTest",
@@ -407,6 +416,10 @@ extra["ownContainerSuites"] =
         "com.finapp.app.reconciliation.BatchRepudiationDatabaseTest",
         "com.finapp.app.reconciliation.JpyAndBhdPostableDatabaseTest",
         "com.finapp.app.reconciliation.ResolutionBatteryDatabaseTest",
+        // P14-DOC-001's database pass: its collision case commits a planted CARD_CAPTURE expectation (12.00 EUR on
+        // SETTLEMENT_CLEARING) with no line behind it - an open remainder the residue judge reads as an unexplained identity;
+        // SettlementAcceptanceDatabaseTest's register rebuild used to delete it in the shared JVM, masking it.
+        "com.finapp.app.reconciliation.SettlementExpectationDatabaseTest",
         "com.finapp.app.reconciliation.SettlementReconciliationStormDatabaseTest",
         "com.finapp.app.reconciliation.UnmatchedConfirmationSuspenseDatabaseTest",
         // P13-TSK-014: it activates EUR CARD_PAYMENT, WALLET_PAYMENT and MONITORING risk versions carrying the abuse
@@ -432,6 +445,10 @@ extra["ownContainerSuites"] =
         "com.finapp.app.settlement.BankStatementCashDatabaseTest",
         "com.finapp.app.settlement.PayoutSettlementCashDatabaseTest",
         "com.finapp.app.settlement.SchemeCycleCashDatabaseTest",
+        // P14-DOC-001's database pass: its rebuild deletes every unheld expectation in the database as the root, commits,
+        // and holds every verdict explained after the backfill - another suite's port-opened expectation over a fixture
+        // entry (FxProviderSourceDatabaseTest's FX_BUY_LEG) is deleted and never re-derived, failing it and the residue.
+        "com.finapp.app.settlement.SettlementAcceptanceDatabaseTest",
         "com.finapp.app.transfers.TransferRiskSeamDatabaseTest",
     )
 

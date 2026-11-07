@@ -46,6 +46,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.YearMonth;
 import java.util.EnumSet;
@@ -158,10 +159,13 @@ final class PeriodCloseFixture {
         return inScope(Actor.SYSTEM, uow -> RUN_STORE.runUnder(uow, period, row.lockedAt().orElseThrow())).orElseThrow().id();
     }
 
-    /** Every claimable attempt concluded {@code PASSED}, those named {@code DISCLOSED}, those failing {@code FAILED}. */
+    /**
+     * Every attempt under a period's present lock concluded {@code PASSED}, those named {@code DISCLOSED}, those failing {@code FAILED} -
+     * each taken as the check leg takes it, by {@link #nextClaim}.
+     */
     static void concludeAll(Set<CloseCheckCode> disclosed, Set<CloseCheckCode> failing) {
         while (true) {
-            Optional<CloseRuns.ClaimedCheck> held = inScope(Actor.SYSTEM, uow -> RUNS.claim(uow, Actor.SYSTEM));
+            Optional<CloseRuns.ClaimedCheck> held = nextClaim();
             if (held.isEmpty()) {
                 return;
             }
@@ -179,6 +183,51 @@ final class PeriodCloseFixture {
         }
     }
 
+    /**
+     * The next attempt the check leg would take, as its next tick would take it. An attempt is claimable once the database's clock
+     * reaches its {@code lease_until}, stamped at its birth on that same clock ({@code JdbcCloseRunStore}'s claim), so when that clock
+     * steps back - Docker Desktop's VM clock does, by ~0.35 s and ~2.4 s about every 25 s (`P14-DOC-001`) - an attempt born a moment
+     * before is not claimable yet, and production's schedule takes it on a later tick. A claim answering empty is therefore not "nothing
+     * left": this answers empty only once no attempt under a period's present lock is pending and nobody's, and until then waits on the
+     * database's own clock - bounded, and failing loudly rather than returning with an attempt unconcluded.
+     */
+    static Optional<CloseRuns.ClaimedCheck> nextClaim() {
+        long deadline = System.nanoTime() + CLOCK_WAIT.toNanos();
+        while (true) {
+            Optional<CloseRuns.ClaimedCheck> held = inScope(Actor.SYSTEM, uow -> RUNS.claim(uow, Actor.SYSTEM));
+            if (held.isPresent()) {
+                return held;
+            }
+            try {
+                if (count(AWAITED) == 0) {
+                    return held;
+                }
+                if (System.nanoTime() > deadline) {
+                    throw new AssertionError("an attempt under a present lock stayed unclaimable for " + CLOCK_WAIT + ": " + count(AWAITED)
+                            + " pending, the database's clock behind their lease_until by at most " + count(AWAITED_FOR) + " ms");
+                }
+                Thread.sleep(50);
+            } catch (SQLException failure) {
+                throw new IllegalStateException(failure);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(interrupted);
+            }
+        }
+    }
+
+    /** How long {@link #nextClaim} waits for the database's clock: far beyond any step measured, short of the two-minute lease. */
+    private static final Duration CLOCK_WAIT = Duration.ofSeconds(30);
+
+    /** The attempts the claim will take once the database's clock reaches them: pending, nobody's, under their period's present lock. */
+    private static final String AWAITED_FROM = " FROM accounting.close_check attempt JOIN accounting.close_run run ON run.id = attempt.close_run_id"
+            + " JOIN accounting.accounting_period period ON period.id = run.period_id"
+            + " WHERE attempt.status = 'PENDING' AND attempt.holder IS NULL AND period.status = 'LOCKED' AND period.locked_at = run.period_locked_at";
+
+    private static final String AWAITED = "SELECT count(*)" + AWAITED_FROM;
+
+    private static final String AWAITED_FOR = "SELECT coalesce(max((EXTRACT(EPOCH FROM (attempt.lease_until - clock_timestamp())) * 1000)::bigint), 0)" + AWAITED_FROM;
+
     /** {@code month} locked, its run ready: every check {@code PASSED}, those named {@code DISCLOSED}. */
     static CloseRunId ready(YearMonth month, CloseCheckCode... disclosed) {
         AccountingPeriodId period = locked(month);
@@ -189,6 +238,7 @@ final class PeriodCloseFixture {
     }
 
     /** {@code month} proposed, by {@link #ACCOUNTANT}, with no check disclosed. */
+    // POSTPONED_ISSUES.md PI-013, P14-DOC-001: the close proposed here can be refused "no close run yet" after a backward database clock step - a production defect, not fixed.
     static PeriodCloses.Acted proposed(YearMonth month) {
         CloseRunId run = ready(month);
         return inScope(ACCOUNTANT, uow -> MACHINE.propose(uow, id(month), run, List.of(), ACCOUNTANT, REASON, correlation()));

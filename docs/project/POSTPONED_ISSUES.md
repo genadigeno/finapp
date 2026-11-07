@@ -21,6 +21,10 @@ commit and the date; do not delete the entry.
 | PI-009 | `POSTPONED` | P14-TSK-018, by the owner (2026-11-05) | accounting — two returns can stand at the regulator after a non-delivery; required before any real regulatory channel |
 | PI-010 | `POSTPONED` | P14-TSK-018, by the owner (2026-11-05) | accounting — `overtaken` cannot clear when no correction is owed; required before any real regulatory channel |
 | PI-011 | `POSTPONED` | P14-TSK-019, by the owner (2026-11-05) | accounting — a safeguarding shortfall alerts nobody, and nothing issues the monthly run; required before any real regime |
+| PI-012 | `POSTPONED` | P14-DOC-001, by the owner (2026-11-06) | every module — no clean run of every database tier on the final Phase 14 tree; due at the next phase's database pass at the latest |
+| PI-013 | `POSTPONED` | P14-DOC-001, by the owner (2026-11-06) | accounting — a production defect: after a backward step of the database clock a month's close can read an earlier lock's run as its own, and cannot be proposed; due at the next phase's database pass at the latest |
+| PI-014 | `POSTPONED` | P14-DOC-001, by the owner (2026-11-06) | lending, bnpl, accounting, app — the database suites still red after the pass, two of them production defects; due at the next phase's database pass at the latest |
+| PI-015 | `POSTPONED` | P14-DOC-001 (2026-11-06) | the mutation register — 330 rows struck on moved bytes and the database halves of about a hundred rows, not performed again; due at the next phase's database pass at the latest |
 
 ---
 
@@ -257,3 +261,126 @@ commit and the date; do not delete the entry.
   never on `position`, which can read over in a short month, with no amount in any tag. Its alert reads `MEMO_CHARGEBACKS`, `MEMO_WALLET_DEBT` and
   `MEMO_FX_POSITION` beside the figure, since once capital is fully lent an ordinary chargeback in flight or a holder's debt reads short (`P14-TSK-023`'s (b), accepted 2026-11-06).
 - **Owner of the fix:** whoever brings the first real regime; the post-phase clean-up at the latest.
+
+---
+
+## PI-012 — No clean run of every database tier on the final Phase 14 tree
+
+- **Status:** `POSTPONED` (owner, 2026-11-06, at `P14-DOC-001`'s database pass: "don't do a full clean re-run of every database
+  tier on the final code. Postpone it"). **Due at the next phase's database pass at the latest.**
+- **What:** the Phase 14 exit review ran the phase's one database pass (C5) on the tree as merged: every database tier of
+  every module Phase 14 changed - accounting, bnpl, fx, lending, platform, reconciliation, risk, settlement, and `app`'s
+  whole tier, shared and own-container - first run 134 + 320 suites, 3,682 tests, 66 failed in 40 suites. It then landed test
+  repairs and production fixes and re-ran only the suites that had failed and those that test what a fix changed - **on
+  2026-11-06, on `f1427b8d`'s code, with lending `V033` and bnpl `V021` (the terms fix withdrawn afterwards) still in, so not
+  on the final tree**: 105 suites, 1,068 tests, 2 failed - plus the storms once each on the triage branches. **On the final
+  tree** (the review's fix round, 2026-11-07, at `9cb2e51b`) it ran what the withdrawal changed and what ledger `V032` touches
+  that the re-run had not reached: lending's and bnpl's `databaseTest` whole (27 suites 326/0, 20 suites 209/0) and the eight
+  `app` suites writing `journal_line` with no run after `V032` (48/0) - 55 suites, 583 tests, 0 failed. No clean run of every
+  tier on the final tree was made. *(Read "re-ran only the suites that had failed and those that test what a fix changed (105
+  suites, 1,068 tests, then lending's tier whole)" until the fix round.)*
+- **Consequence:** an interaction between the fixes landed during the pass, or between them and suites that passed before
+  them, is not proven. The pass's own evidence is named suite by suite in `reviews/PHASE_14_REVIEW.md`.
+- **Fix:** run every module's `databaseTest` (and its own-container sibling) on the tree as it then stands, fresh, once; the
+  `kafkaTest` tier too, which Phase 14 did not reach and the pass did not run.
+- **Owner of the fix:** the next phase's database pass at the latest.
+
+## PI-013 — After a backward step of the database clock, a month's close can read an earlier lock's run as its own
+
+- **Status:** `POSTPONED` (owner, 2026-11-06: "stop the app tier's database triage now, including the close run born after a
+  backward clock step, and postpone what remains"). **A production defect.** Due at the next phase's database pass at the
+  latest.
+- **Found by:** `P14-DOC-001`'s database pass: `PeriodCloseDatabaseTest`, `PeriodReopenDatabaseTest`,
+  `PriorPeriodAdjustmentDatabaseTest` and `StatementsDatabaseTest` failed with `PeriodCloses$CloseNotReady: the period's present
+  lock has no close run yet` on a month whose present lock's run had all nine checks concluded - a different case on each
+  run. Docker Desktop's VM clock, the database's `clock_timestamp()`, was measured stepping back about 0.35 s and 2.4-2.8 s
+  every 25-27 s; a production host's clock can step too.
+- **Where:** `accounting/src/main/java/com/finapp/accounting/JdbcCloseRunStore.java` (~line 225): `latestRun` orders a
+  period's runs by `run.started_at DESC`, and `started_at` is `clock_timestamp()` (accounting `V007`'s trigger). `CloseRuns.view`
+  (`CloseRuns.java` ~397) takes that run as the period's; `holdsTheLock` (~452) then finds it is not the present lock's, so
+  `readinessOf` (~419) reports no run and `PeriodCloses.propose` (~227) refuses. The approval's re-read (`PeriodCloses` ~408),
+  `CloseRunDesk` (~96) and `AccountingCloseStatusReads` (~40) read the same.
+- **What happens:** when the clock steps back between an earlier lock's run and the present lock's, the earlier run reads as
+  the latest. Nothing is written wrongly and no money moves; **the month cannot be proposed for the life of that lock** - only
+  a four-eyes unlock and a new lock get past it. Measured in the pass: a present lock at 13:45:09.444 whose run started at
+  09.485, beside an earlier lock's run stamped 13:45:10.747 when the clock read 10.047.
+- **Reproduction:** a ClockStep-style shadow of `clock_timestamp()` (lending's `ClockStep` is the model) with a frame of -5 s on
+  the session that births the second lock's run: `CloseNotReady: the period's present lock has no close run yet`, the view
+  returning the first run with `current=false`. The review kept the reproduction out of the tree.
+- **Fix:** in `CloseRuns.view`, pick the run by the lock's identity - `close_run_one_per_lock` makes it exact:
+  `period.lockedAt().flatMap(at -> store.runUnder(uow, id, at)).or(() -> store.latestRun(uow, id))` - or order by
+  `(run.period_locked_at = period.locked_at) DESC` first. The same pattern, not seen failing: `JdbcPeriodCloseStore`'s
+  `LATEST_CLOSE_SQL` orders proposals by `proposed_at DESC` (used by `PeriodCloses.repeatedProposal` and `proposalOf`), so a
+  rejected proposal could read as the latest after a step; fix it at the same time. The reproduction as the regression case.
+- **Owner of the fix:** the next phase's database pass at the latest; before a month is closed in production in any case.
+
+## PI-014 — The database suites still red after Phase 14's pass
+
+- **Status:** `POSTPONED` (owner, 2026-11-06, the same decision as `PI-013`). Due at the next phase's database pass at the latest.
+  None is disabled. Items (1) and (2) are marked in their sources with this entry's number; item (3)'s four suites are
+  marked through their shared fixture, `PeriodCloseFixture.proposed`, with `PI-013`, the defect that makes them red; items (4)
+  and (5), unclassified intermittent cases, are not marked. *(Corrected by the fix round, 2026-11-07: read "each is marked in
+  its source with this entry's number" until then.)*
+- **The suites, each with its classification:**
+  1. **`LoanTermsDatabaseTest#anOfferMadeDuringAnActivationStandsInsideItsVersion` (lending, shared tier) - a production
+     defect.** A retired loan terms version's `effective_to` is `GREATEST(clock_timestamp(), transaction_timestamp(), its start +
+     1 µs)` (lending `V030` ~247); an offer's `offered_at` is `GREATEST(statement_timestamp(), transaction_timestamp())`
+     (`V028`). A backward step of the database clock between the offer's commit and the successor's activation ends the
+     version **before** an offer pinned to it, so the offer reads as made outside its own version's period (`INV-LND-05`).
+     Red once in the first run and once in a later lending run; reproduced deterministically with `ClockStep` (the activation's
+     session stepped back 300 ms after the offer commits: `offered_at 17:35:36.208014`, `effective_to 17:35:36.172401`). bnpl
+     `V002` (~343) and risk `V002` (~332) stamp a retirement the same way and were not checked. **A fix was tried and
+     withdrawn:** lending `V033` and bnpl `V021` took the greater of that and the latest pinned `offered_at` + 1 µs; in the
+     lending tier it met `LoanTermsDatabaseTest#aBackwardClockIsClamped` ("loan terms version N retired with no later ACTIVE
+     successor starting where it ends", `V003`'s deferred check), and its own regression case met another suite's
+     future-dated version in the shared container - so it was not a finished, green fix, and the review removed it. **Fix:** a
+     new lending migration (and bnpl's twin) that ends the version after its latest offer **and** starts the successor exactly
+     there, with the `ClockStep` reproduction as its regression case, run in a container of its own or with its own product.
+  2. **`AlertRulesResolveTest#theAccountingRulesResolve` (app, shared tier) - a production defect.** `AccountingGaugeRefresher`
+     cannot be restarted: its single-thread executor is made once in the constructor, `stop()` shuts it down for good, and
+     `start()` only sets `running`. After a context stop and start (Spring's test-context pause and restart; in production any
+     restart within one JVM, or a checkpoint and restore) every accounting gauge reads `NaN` for good - `AccountingGaugeRead`
+     swallows the rejected read - and the unreadable-gauge alerts fire on every instance. Red whenever the suite runs after a
+     paused context; green on a fresh one. **Fix:** make the executor in `start()` (an `AtomicReference`, as
+     `AccountingCloseSchedule` does), shut it in `stop()`, and clear a gauge's in-flight flag for a read dropped at stop; a test:
+     start, stop, start, every gauge a number.
+  3. **`PeriodCloseDatabaseTest`, `PeriodReopenDatabaseTest`, `PriorPeriodAdjustmentDatabaseTest`, `StatementsDatabaseTest`
+     (app, own-container) - red intermittently by `PI-013`'s defect**, a different case on each run ("the period's present lock
+     has no close run yet"). Their test defects were repaired in the pass (the close fixture's claim loop now waits on the
+     database's clock); they cannot be reliably green until `PI-013` is fixed. In the pass's targeted re-run all four were green.
+  4. **`MerchantPayoutDatabaseTest` "a suspension racing a dispatch waits for it" (app, shared tier) - unclassified, most
+     likely a load flake:** once, the provider call outlasted the suite's 0.7 s timeout on a machine running several builds
+     (measured on the JVM's clock); green in every other run.
+  5. **`RiskStormTest` (app, own-container) - unclassified, most likely load.** Its first run in the pass was red on its C1
+     census - two `CARD_PAYMENT` `TIMEOUT` fail-safes no scene had forced (the 250 ms read budget met on a loaded machine:
+     Phase 13's item 77 class); a later run met a restart-cut re-send answered `409 api.IdempotencyInProgress`, which the
+     triage repaired in the storm's door (it retries the key shortly); two further runs were green (about 42 minutes each).
+- **Not run at all:** the `kafkaTest` tier (Phase 14 changed nothing it covers); the storms (`BnplStormDatabaseTest`,
+  `RiskStormTest`, `LendingStormDatabaseTest`, ...) ran only as the triage needed, on triage branches, not on the final tree.
+- **Owner of the fix:** the next phase's database pass at the latest; item 2 before any production restart policy relies on
+  the gauges.
+
+## PI-015 — The mutation register's rows struck on moved bytes, and the database halves not performed
+
+- **Status:** `POSTPONED` (`P14-DOC-001`, 2026-11-06, under the owner's decision of that day to postpone what the pass did not
+  finish - for the owner to confirm at the Phase 14 → 15 transition). Due at the next phase's database pass at the latest.
+- **What:** the exit review walked every hash of `MUTATION_TESTING.md` section 2 against every committed version of every
+  file. Of the 433 rows whose stated hash is older bytes of their file, it performed 103 again on present bytes (103 of
+  104 probes caught; the equivalent mutant at row 2808 survived as recorded) and **struck 330 as evidence of today** - 215 of Phase 14's tasks, 78 of Phase 13's, 19 of Phase 12's, 5 of Phase 11's,
+  13 naming no task - each marked in place. About a hundred rows name a database half "unproven until the database pass":
+  the pass ran their suites, but none of their database probes was performed. 1,713 older-form rows carry no hash and cannot
+  be walked; 15 name bytes never committed. *(Added at the gate, 2026-11-07:)* the exit review's own production changes are
+  probed only in part - the adjustment door's screen, record and outcome (hermetic, caught) and ledger `V032` on its text pin;
+  **not probed**: `V032` against PostgreSQL (`PostingCutoffDatabaseTest#aLineAppendedToALockedMonthsEntryIsRefused`), the
+  unlock's and reopen's ends converging on the request named, `valuationRateSetReferenceGaps`, and the GL entry's `namespace`.
+- **Consequence:** those rows say what was true when they were performed; that each still fails when its property is broken,
+  on today's bytes, is not shown. Every `INV-ACC-*` keeps a row standing today; `INV-LED-01` and `INV-LED-05` stand on Phase 3's
+  older-form rows only (section 3's Phase 14 block).
+- **Fix:** perform the struck rows again on present bytes, and each database half against PostgreSQL; record each as
+  performed, or strike it for good with its reason. **The method is the prose one** (`reviews/PHASE_14_REVIEW.md`, *The register
+  walk*; `MUTATION_TESTING.md` section 3's Phase 14 block): match every section 2 hash token - the leading and trailing hex
+  characters of a sha256, most often eight and eight - against the sha256 of every committed version of every file (`git rev-list --all --objects`, each
+  blob hashed), classify each row as on present bytes, on older bytes of its file, on no committed bytes, or with no hash, and
+  perform or strike the second class. The review's own walk script was not committed; any script doing that is the method.
+  *(Read "the review's walk script and its brief are the method" until the fix round, 2026-11-07.)*
+- **Owner of the fix:** the next phase's database pass at the latest.

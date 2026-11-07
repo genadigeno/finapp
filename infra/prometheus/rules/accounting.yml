@@ -2,8 +2,9 @@
 #
 # Every expression names a series the application publishes, with the labels it filters on: AccountingAlertRulesTest resolves each selector against a real scrape of a freshly started instance, then
 # evaluates every rule over that scrape with one sample broken and proves that alert, and only it, fires, and that none fires on a healthy scrape. The evaluator is RuleEvaluator, written here, not
-# Prometheus: it proves the expression, read as this file means it, and no more. No promtool ran on this file (not installed, and the docker daemon was down); routing and paging are Phase 15's. The
-# expressions keep to the small grammar that test evaluates; a rule outside it fails the test rather than going unchecked. Live resolution with a database is AlertRulesResolveTest#theAccountingRulesResolve (owed, C5).
+# Prometheus: it proves the expression, read as this file means it, and no more. Prometheus's own promtool checked this file at the phase's exit review (P14-DOC-001, prom/prometheus:v3.14.0,
+# `promtool check rules`); routing and paging are Phase 15's. The expressions keep to the small grammar that test evaluates; a rule outside it fails the test rather than going unchecked. Live resolution
+# with a database is AlertRulesResolveTest#theAccountingRulesResolve, first run at that review's database pass.
 #
 # Conventions (credit.yml's):
 # - Gauges read the shared database on its clock, so every instance publishes the same reading: aggregate with max(), never sum().
@@ -62,8 +63,8 @@ groups:
           summary: "Whether a close check has stalled cannot be read"
           description: "finapp.accounting.close.check.stalled has no value. See OPERATIONS_RUNBOOK.md section 10.9."
       - alert: AccountingCloseOverdue
-        # The oldest month not CLOSED, in whole days past the first day it could lock. Seven days hold five business days: a month closed inside a working week never reaches it (AccountingObjectives, an owner
-        # item). The gauge moves once a day, so an hour's wait costs nothing. A reopened month reads its whole age, so a reopen fires this within the hour: that month is unclosed, and the runbook says so.
+        # The oldest month not CLOSED, in whole days past the first day it could lock. Seven days hold five business days: a month closed inside a working week never reaches it (AccountingObjectives; the owner
+        # accepted the seven-day bounds as built, 2026-11-05, P14-TSK-020's (af)). The gauge moves once a day, so an hour's wait costs nothing. A reopened month reads its whole age, so a reopen fires this within the hour: that month is unclosed, and the runbook says so.
         expr: max(finapp_accounting_period_open_age_days) > 7
         for: 1h
         labels:
@@ -171,7 +172,7 @@ groups:
           summary: "A {{ $labels.definition }} report run failed"
           description: "Read the run and accounting.ReportGenerated in the audit record, whose refusal= says why when a definition refused. See OPERATIONS_RUNBOOK.md section 10.5."
       - alert: AccountingClosedMonthLostItsRun
-        # A repudiation after a month closed took its counting run for a source (P14-TSK-012's item 7). The latest closed month alone, the one a reopen can reach; what a person does about it is owner item (l), still open.
+        # A repudiation after a month closed took its counting run for a source (P14-TSK-012's item 7). The latest closed month alone, the one a reopen can reach; the owner ruled P14-TSK-012's (l) on 2026-11-06: a ticket, the way on the reopen (runbook section 10.11).
         expr: max(finapp_accounting_close_month_unrun) > 0
         for: 15m
         labels:
@@ -283,7 +284,7 @@ groups:
           summary: "An accounting gauge cannot be read"
           description: "A gauge read failed or outlived its bound, so the alerts on it cannot fire. See OPERATIONS_RUNBOOK.md section 10.14."
       - alert: AccountingGaugesAbsent
-        # No instance publishes the series at all: the fleet is down, every instance's scrape is being lost (the database gone or the pool exhausted), or a release dropped a meter. Every threshold rule on it is then green for the wrong reason. A ticket guarding rules that page: an owner item.
+        # No instance publishes the series at all: the fleet is down, every instance's scrape is being lost (the database gone or the pool exhausted), or a release dropped a meter. Every threshold rule on it is then green for the wrong reason. A ticket guarding rules that page; paging on a lost fleet (a rule on `up`) the owner deferred to Phase 15 on 2026-11-05 (P14-TSK-020's (am)).
         expr: absent(finapp_accounting_close_run_stalled) or absent(finapp_accounting_close_check_stalled) or absent(finapp_accounting_period_open_age_days) or absent(finapp_accounting_sweeper_enabled) or absent(finapp_accounting_adjustment_standing) or absent(finapp_accounting_gl_unmapped) or absent(finapp_accounting_break_open) or absent(finapp_accounting_break_aged) or absent(finapp_accounting_close_month_unrun) or absent(finapp_accounting_regulatory_attention)
         for: 5m
         labels:

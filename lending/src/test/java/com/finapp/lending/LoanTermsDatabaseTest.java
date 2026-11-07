@@ -394,6 +394,7 @@ class LoanTermsDatabaseTest {
             + " version's effective period: the predecessor's end is stamped after the activation's lock, never at its"
             + " transaction's start - so the version in force at the offering instant is the one the offer pins (the"
             + " Phase 11 gate A2-F3)")
+    // POSTPONED_ISSUES.md PI-014 (1), P14-DOC-001: red when the database clock steps back between the offer and the retirement - a production defect (lending V030), not fixed.
     void anOfferMadeDuringAnActivationStandsInsideItsVersion() throws SQLException {
         DisbursementWorld.ensureActive();
         DisbursementWorld.Approved approved = DisbursementWorld.approved(LOAN, 4_100_00, Optional.of(12),

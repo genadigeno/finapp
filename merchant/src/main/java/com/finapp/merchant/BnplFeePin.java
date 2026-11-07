@@ -20,7 +20,9 @@ import java.util.UUID;
  * @param product the BNPL product it was financed on - its BNPL schedule is per (merchant, product)
  * @param versionId the version that priced it
  * @param gross what was financed - the amount every returned fee is judged against
- * @param pinnedAt when the version was resolved - the application clock, the fee schedules' own time basis (V004)
+ * @param pinnedAt when the pin was recorded - its insert's own stamp on the database clock (merchant V013,
+ *     `P14-DOC-001`; the version it names is in force by it); in a pin handed to {@link BnplPricingStore#insertPin}, the
+ *     resolution's instant, which that stamp replaces
  * @param pinnedBy the acting principal's id
  */
 public record BnplFeePin(

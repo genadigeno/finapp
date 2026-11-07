@@ -221,8 +221,16 @@ diagnosis. The other modules' tiers are not shifted.
 
 ### The database clock steps back — wait for nothing, and order by nothing it stamps
 
-The test database runs in a Docker VM whose clock is corrected in steps, back by up to 1.7 s
-(ADR-0063). So a permit the database stamped "due at once" may not be due to the next statement,
+The test database runs in a Docker VM whose clock is corrected in steps, back by up to 2.8 s
+(ADR-0063). *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "back by up to 1.7 s".
+The phase's database pass measured Docker Desktop's VM clock - the database's `clock_timestamp()`, the clock every
+trigger and lease reads - stepping back about 0.35 s and about 2.4-2.8 s roughly every 25-27 s (lending's container
+0.57 s and 2.15 s about every 25 s), on a VM clock that runs up to about 2 s off the JVM's (`PeriodCloseFixture.nextClaim`,
+`CloseRunDatabaseTest`, `StatementsDatabaseTest`, `MerchantBnplEnablementDatabaseTest`). A production host's clock can
+step too, which is why the pass's production fix - merchant `V013` - is a migration, not a test repair, and why the
+terms retirement's defect it found (`LoanTermsDatabaseTest#anOfferMadeDuringAnActivationStandsInsideItsVersion`, red
+once) is postponed as `PI-014` rather than repaired in its test (`DISTRIBUTED_EXECUTION.md`, "The database clock steps
+back").)* So a permit the database stamped "due at once" may not be due to the next statement,
 `Thread.sleep(20)` past a 1 ms permit races the step, and two rows' `created_at` can stand in the
 reverse of the order they were written. The rules (`X-TSK-013`, `P11-TSK-033`, `P11-TSK-036`):
 
@@ -234,6 +242,11 @@ reverse of the order they were written. The rules (`X-TSK-013`, `P11-TSK-033`, `
   lending's `recorded_order` / `decided_order` - or, where no order is recorded, the writing
   transactions' ids (`xmin`, `PayoffDatabaseTest.assertNoConditionAfterClosure`); compare a stamp only
   with the stamps the same statement wrote (`concluded_at = GREATEST(LEAST(instant, decided_at), created_at)`).
+- **Wait on the database's own clock, never a JVM sleep** (`P14-DOC-001`): a test that needs a lease or a
+  permit to come due polls the database until its clock reaches the stamp - bounded, failing loudly with how far
+  behind it stood (`PeriodCloseFixture.nextClaim`, the close checks' claim) - never sleeps the JVM for a span
+  and assumes the database moved with it; a case asking for a cut behind its own postings waits past the
+  largest backward step measured (`StatementsDatabaseTest`).
 - **Plant a validity on the clock that judges it**: a decision's `validUntil` from
   `DisbursementWorld.databaseNow()`, never `Instant.now()` - the VM's database clock runs up to 650 ms
   ahead of the host.
@@ -242,7 +255,12 @@ reverse of the order they were written. The rules (`X-TSK-013`, `P11-TSK-033`, `
   its own that a session opts into by its `search_path` — the lending triggers are invoker's rights
   with no path of their own, so production code and triggers run unchanged on a clock the case steps
   back between a step's read and its writes (`afterRead` / `beforeRead`), optionally framed just
-  after a midnight (`BackwardClockDatabaseTest`).
+  after a midnight (`BackwardClockDatabaseTest`). *(`P14-DOC-001`: the database pass stepped a clock the same way
+  for the production fix it made - the merchant module's own shadow in `MerchantBnplEnablementDatabaseTest` (`V013`:
+  the session stepped back 30 s after and before the pin's resolution, probed by restoring `V012`'s rank, removing the
+  Java floor and deleting the stamp, each caught). A stepped case shares its container's database with every other
+  suite there, so it must not read rows another suite planted - the review's withdrawn terms-retirement case met
+  another suite's future-dated terms version that way.)*
 
 ### A suite that needs a database of its own
 
@@ -264,6 +282,29 @@ in the same pass for the first two reasons' kind - a suite whose sweep or census
 `MonitoringRulesDatabaseTest` (its `MONITORING` activation and its rule leg over the whole journal from the one
 global watermark), `RiskProofsDatabaseTest` (it commits append-only plants every whole-database census then holds)
 and `MultiRailConservationStormDatabaseTest` (its resolvers sweep every stranded authorization in the database).)*
+*(`P14-DOC-001`, the Phase 14 exit review, 2026-11-06: **the accounting suites**, for the third reason - **a closed
+period or an activated GL mapping is database-wide.** Periods are contiguous and one per month for the whole database,
+a `CLOSED` month refuses every later posting dated in it, and the mapping in force maps every account; and a line
+committed straight onto a reconciled position no expectation names fails
+`ReconciledPositionResidueDatabaseTest#noSuiteLeftAnUnexplainedLine` for good. So `AccountingBatteryTest` (it opens 2001
+as the database's first periods, closes all twelve, activates two mappings and commits some 22,000 lines),
+`PeriodCloseDatabaseTest`, `PeriodReopenDatabaseTest`, `PriorPeriodAdjustmentDatabaseTest`,
+`RegulatorySubmissionDatabaseTest`, `SafeguardingReturnDatabaseTest` and `StatementsDatabaseTest` (each closes months of
+1999 for real), `GlReadModelDatabaseTest`, `OperationalReportsDatabaseTest` and `TrialBalanceRunDatabaseTest` (lines
+straight onto `SETTLEMENT_CLEARING` or `CASH_AT_BANK`, `P14-TSK-017`'s review, I-2), `ValuationRateSetDatabaseTest` and
+`ValuationReferenceGapDatabaseTest` (a period holds one approved valuation rate set for good) and
+`QuietMonthDatabaseTest` (a bank statement chain from sequence 1) each run apart; the Phase 14 product suites
+`LoanWriteOffLedgerDatabaseTest`, `BnplWriteOffLedgerDatabaseTest` (ledger lines committed) and
+`SafeguardingCommittedDatabaseTest` (a read over every loan in the database) likewise. **Four more joined in the
+database pass**, each found failing or masked in the shared JVM: `CreditRiskSeamDatabaseTest` (its world brings the
+credit policy and `RETAIL_SCORECARD` seeds into force and activates a `CREDIT_LINE` and a `MONITORING` version - the
+shared JVM's endpoint suites assert the seeds are still proposals, and `ScorecardAdministrationEndpointDatabaseTest`
+failed behind it; that suite stays in the shared JVM), `Phase9ReportsDatabaseTest` (the FX position report lists the
+database's open cover legs, oldest first, bounded at 100, and a shared container holds hundreds),
+`SettlementExpectationDatabaseTest` (it commits a planted expectation with no line behind it, which
+`SettlementAcceptanceDatabaseTest`'s rebuild used to delete and so mask) and `SettlementAcceptanceDatabaseTest` (its
+rebuild deletes every unheld expectation in the database as the root, another suite's included, never re-derived). Each
+reason is the comment beside its name in `app/build.gradle.kts` or the suite's own javadoc.)*
 Through Phase 8 they said "runs in its own container" in their javadoc and were
 run apart by hand; nothing in the build made it true. Run together, the tier went red in an
 order-dependent way (22 failures on one run of unchanged code, 31 on the next, `X-TSK-016`).

@@ -1,6 +1,6 @@
 # ADR-0114 — Accounting periods, the posting cutoff enforced by the ledger, and the four-eyes close
 
-Status: Proposed
+Status: Accepted (2026-11-06, `P14-DOC-001` — read against the code and corrected first)
 Date: 2026-10-29
 Phase: 14
 Context: Accounting / General Ledger · Ledger · Lending (the back-dating accrual)
@@ -14,8 +14,11 @@ shared/exclusive advisory lock (namespace 13). Rests on `PHASE_14_PLAN.md` §6, 
    modules call `PostingService`; a check in each caller would be skipped by the next one.
 2. Under READ COMMITTED a posting transaction can read "open", a close can commit, and the posting can commit after it —
    an entry in a period whose trial balance was already taken. The guard must serialise with the close, not just read it.
-3. Most posters date "today"; lending's accrual dates the **accrual date** (`LoanServicing.java:432-433`), so a catch-up
+3. Most posters date "today"; lending's accrual dates the **accrual date** (`LoanServicing.java:436-437`), so a catch-up
    after a lock would post into it; BNPL's dates today with the accrual date as value date (`BnplAccruals.java:344`).
+   *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read `LoanServicing.java:432-433`; the
+   file has moved since (`P14-TSK-006`'s floor among the edits), and the posting command's stated date and value date
+   are now lines 436-437.)*
 
 ## Decision
 
@@ -28,9 +31,20 @@ shared/exclusive advisory lock (namespace 13). Rests on `PHASE_14_PLAN.md` §6, 
    the period commits afterwards: every in-flight poster finished first, every later one sees the new cutoff
    (`INV-ACC-08`). Namespace `14` is reserved for accounting (keys `cutoff`, `mapping`).
 3. **Periods** are calendar months of `posting_date` (C9), in `accounting.accounting_period`:
-   `OPEN → LOCKED → CLOSE_PROPOSED → CLOSED`, reject back to `LOCKED`, unlock `LOCKED → OPEN` and reopen
-   `CLOSED → OPEN` (latest only, `revision + 1`) each four-eyes; in order; every edge conditional and evented.
+   `OPEN → LOCKED → CLOSE_PROPOSED → CLOSED`, reject back to `LOCKED`; the close's approval, unlock `LOCKED → OPEN` and
+   reopen `CLOSED → OPEN` (latest only, `revision + 1`) each four-eyes; the lock is one person's act, and a close's
+   rejection may be its proposer's own (only an `APPROVED` close is bound to a second person); in order; every edge
+   conditional and recorded as a `period_event` history row beside its audit record. Integration events are published
+   only for the opened, locked, close-proposed, closed and reopened edges; an unlock (its proposal, approval and ends), a
+   close's rejection and a reopen's proposal and ends are history and audit only.
    `LOCKED` *is* the cutoff: the lock transaction advances the ledger cutoff and pins the mapping version atomically.
+   *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "reject back to `LOCKED`, unlock
+   `LOCKED → OPEN` and reopen `CLOSED → OPEN` (latest only, `revision + 1`) each four-eyes; in order; every edge
+   conditional and evented". The lock has no second person (`AccountingPeriods.lock`, `POST .../{periodId}/lock` under
+   `ACCOUNTING_CLOSE_PROPOSE` alone); a close's rejection may be the proposer's (`period_close_four_eyes`, `V008:170`,
+   binds `APPROVED` only; `PeriodCloses.reject`). "Evented" is the `period_event` row; the outbox carries only
+   `accounting.AccountingPeriodOpened` and `…Locked` (`AccountingPeriods.java:71,74`) and `…CloseProposed`, `…Closed`
+   and `…Reopened` (`PeriodCloses.java:89,92,95`), as `P14-TSK-012`'s As built already said.)*
 4. **The close is evidence, then approval** (`INV-ACC-09`): a close run of recorded checks (§13.5 of the plan), claimed
    leaderlessly; proposal only with every check `PASSED` or explicitly `DISCLOSED`; approval by a second holder,
    approver ≠ proposer by `CHECK`.
@@ -45,7 +59,11 @@ shared/exclusive advisory lock (namespace 13). Rests on `PHASE_14_PLAN.md` §6, 
    in the open period or made a prior-period adjustment; close readiness requires accruals complete through the
    period end. `P14-TSK-002`'s register classifies every poster's dating and names each rule's reaction. *(Read "the
    ledger refuses; lending's accrual floors its posting date at the first open date and keeps the accrual date as
-   value date" until the ratification widened it to the eleven back-dating rules.)*
+   value date" until the ratification widened it to the eleven back-dating rules.)* *(Corrected by `P14-DOC-001`, the
+   Phase 14 exit review, 2026-11-06: the register now holds **twelve** back-dating rules - ten `STORED_ROW` and two
+   `ECONOMIC_DATE` (`PostingRuleCatalogue.java`), since `P14-TSK-013` added `ACC-PRIOR-PERIOD` (catalogue version 3); the
+   eleven above is the count at the ratification. Of the twelve, the seven system rules floor and the five adjustments -
+   `MANUAL`, the resolution's three and the prior-period adjustment - are refused at approval.)*
 
 ## Alternatives Considered
 
@@ -65,8 +83,12 @@ names the date it stated - see As built.)*
 
 Positive: closed periods are immutable by construction, so FINAL reports are reproducible. Negative: the lock briefly
 queues postings behind the longest in-flight posting transaction; lending's accrual rule gains a floor. Operational
-impact: lock under `lock_timeout` with retry; a refused back-dated posting is metered and alerted. Security impact: lock,
-unlock, close and reopen are four-eyes and audited. Financial impact: none on balances.
+impact: lock under `lock_timeout` with retry; a refused back-dated posting is metered and alerted. Security impact:
+unlock, close and reopen are four-eyes, the lock one person's act, and every act audited. Financial impact: none on
+balances. *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "lock, unlock, close and reopen
+are four-eyes and audited". The lock is one accountant's act under `ACCOUNTING_CLOSE_PROPOSE`
+(`AccountingPeriods.lock`; `AccountingPeriodController` `POST .../{periodId}/lock`), as `P14-TSK-005` built it: it
+protects the month and freezes nothing a second person must attest - the close that follows is the four-eyes act.)*
 
 ## Invariants / Constraints
 
@@ -131,11 +153,11 @@ lease, renewed by a heartbeat, bounded by `max-run` on the database's clock; a d
 one past the bound, and `reclaims` past its bound is `FAILED WORKERS_EXHAUSTED`. No path turns an exception, a timeout, an incomplete
 proof or an empty read into a pass. **"Explicitly `DISCLOSED`"** is `close_check_disclosed_only_where_it_may`: the trial balance, GL = ledger,
 the projections and the valuation set are `PASSED` or they block; a raising check is `DISCLOSED` only when acknowledged breaks hold every
-finding as acknowledged (`ACKNOWLEDGED_CHANGED` otherwise, ADR-0117); the accruals when entries of either accruer lie past the cutoff and nothing is behind; the disclosure when read whole and not clean; the open breaks when
+finding as acknowledged (`ACKNOWLEDGED_CHANGED` otherwise, ADR-0117 - *corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: neither `ACKNOWLEDGED_CHANGED` nor `RECURRED` exists since `P14-TSK-012`; a finding a person decided on - an `ACKNOWLEDGED` break by its disclosure, a `RESOLVED` one by its correcting entry - that stands unchanged discloses, and a changed one is `FAILED FINDING_CHANGED` with its next generation raised, `CheckOutcome.java:49`, `CloseChecks.java:29-32`*); the accruals when entries of either accruer lie past the cutoff and nothing is behind; the disclosure when read whole and not clean; the open breaks when
 none is `OPEN` and some acknowledged. `C3`'s "close readiness requires accruals complete": `blocking` and `flooredPast` on one snapshot -
 find and disclose, never `PASSED` on a period short of interest. `BNPL-F2a` has no floor and the same shortfall: it posts today valued the accrual date, so the month's last day
 always posts after the month and a lagging sweep posts older dates there too; the read holds it beside `LND-2`, the last day apart from anything older, so a period with an active
-pay-in-N obligation reads `DISCLOSED` and carving the last day out is the owner's (`P14-TSK-011`'s review, C-1). The grace's minimum raised to two business days (`LockGrace`), so a lock
+pay-in-N obligation reads `DISCLOSED` and carving the last day out is the owner's (`P14-TSK-011`'s review, C-1) *(corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: ruled - the owner decided on 2026-11-02 that `BNPL-F2a`'s month-end shift stays disclosed, nothing carved out, `DECISIONS.md` "What the close accepts")*. The grace's minimum raised to two business days (`LockGrace`), so a lock
 never covers a western servicing zone's today (`P14-TSK-006`'s review, M-1). Proposal and approval are `-012`'s, reading
 `CloseRuns.readiness`.
 
@@ -150,10 +172,12 @@ carries its own reasons; nine `period_close_check` rows name the attempts read, 
 
 *`P14-TSK-022`, 2026-11-04 - the owner's rulings (m), (n) and (r), no migration:* **a reopen names the posted adjustments it read.** `postedAdjustments` in the body of both acts, compared with what is posted against the month <em>at that act</em>, and differing is `PriorPeriodAdjustments.AdjustmentStale`, the same refusal and the same words as an adjustment's own approval. Never the approval's against the proposal's: a pending reopen does not stop an adjustment's approval, so the set moves between the two acts, and an approver attests to what stands when they act. **No inversion, because the new read takes no lock**: a plain statement after the period's row is held, sound because every writer into `POSTED` holds that row `FOR SHARE` for its whole transaction and `POSTED` is terminal. An approval first: the reopen waits on the row, reads it posted, and is refused until it names it. The reopen first: the approval waits, reads `OPEN` at the next revision, and is `PeriodStale`. A proposal holds the row and changes nothing on it, so the approval it delayed proceeds, and the reopen's approval lists it. Nothing about the naming is stored, since what was named is what was posted, on the adjustments' own rows; the stored receipt's format is unchanged, and a body naming none fingerprints as it did. **The approval of a prior-period adjustment and of a `MANUAL` adjustment takes `MULTI_FACTOR`**; neither door's proposal, read or rejection does. **The bound** (its review, M-1): a reopen's body names up to 201, one above an approval's 200, because an approval names those posted and adds itself, so 201 is the most a month holds over its whole life: every revision's count, and nothing else moves a row to `POSTED`. Equal bounds would have left a full month unable to reopen, its last door. Naming proves the person read them: the generic `MANUAL` door dated in a reopened month still knows nothing of them. **What a client could notice, each the owner's ruling under version 1 and not a new version, no client existing (ADR-0015's precedent for a reviewed change):** a reopen's body naming none on a month with adjustments is refused; an approval below `MULTI_FACTOR` is refused; an adjustment's statement line serves no reference, and reads `Account adjustment` where a resolution's read `RECONCILIATION_ATTRIBUTION`. New fields are additive: `postedAdjustments`, `accountingCorrections`, the report's `label`.
 
-*(As built, `P14-TSK-020`, 2026-11-05, no migration: the close's meters. `finapp.accounting.period.open.age` measures from the database's date, `AccountingPeriodStore.today`, and no longer the instance's clock, and publishes as `finapp_accounting_period_open_age_days`. The owner's ruling on `P14-TSK-017`'s I-5 is `finapp.accounting.close.check.stalled`: a present run's attempts claimable past the run's own bound, `JdbcCloseRunStore.STALLED_ATTEMPTS_SQL` holding what `CLAIM_SQL` holds back in one string, **refined beyond the ruling by "and no claim of a present run is live"**, so a small fleet draining a queue past a long judge is no stall. **Its cost**: a hung judge's heartbeat hides one for `finapp.accounting.close.max-run` plus a lease from its last claim, and a judge hanging on every reclaim walks the fleet, firing near N x 2 h 02 on 1 to 4 instances and never on 5 or more, where it ends `WORKERS_EXHAUSTED` at about 8 h 08, a ticket. A repudiation after `CLOSED` is `finapp.accounting.close.month.unrun`, the latest closed month only, what follows it `P14-TSK-012`'s owner item (l), open. `finapp.accounting.cutoff.refused`'s `command` joined `MetricNames.ALLOWED_TAG_KEYS`, which `P14-TSK-004` never did: `MetricConventionTest` stood red until this task's first run of that package.)*
+*(As built, `P14-TSK-020`, 2026-11-05, no migration: the close's meters. `finapp.accounting.period.open.age` measures from the database's date, `AccountingPeriodStore.today`, and no longer the instance's clock, and publishes as `finapp_accounting_period_open_age_days`. The owner's ruling on `P14-TSK-017`'s I-5 is `finapp.accounting.close.check.stalled`: a present run's attempts claimable past the run's own bound, `JdbcCloseRunStore.STALLED_ATTEMPTS_SQL` holding what `CLAIM_SQL` holds back in one string, **refined beyond the ruling by "and no claim of a present run is live"**, so a small fleet draining a queue past a long judge is no stall. **Its cost**: a hung judge's heartbeat hides one for `finapp.accounting.close.max-run` plus a lease from its last claim, and a judge hanging on every reclaim walks the fleet, firing near N x 2 h 02 on 1 to 4 instances and never on 5 or more, where it ends `WORKERS_EXHAUSTED` at about 8 h 08, a ticket. A repudiation after `CLOSED` is `finapp.accounting.close.month.unrun`, the latest closed month only, what follows it `P14-TSK-012`'s owner item (l), open *(corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: ruled by the owner on 2026-11-06 at the recommendation - a repudiation after the approval's read is caught only by a reopen, and `AccountingClosedMonthLostItsRun` stays a ticket, the way on the reopen; `DECISIONS.md` "The close's open questions", `OPERATIONS_RUNBOOK.md` section 10)*. `finapp.accounting.cutoff.refused`'s `command` joined `MetricNames.ALLOWED_TAG_KEYS`, which `P14-TSK-004` never did: `MetricConventionTest` stood red until this task's first run of that package.)*
 
 
 *`P14-TSK-024`, 2026-11-06 - the close's withdrawals and the approver's read (accounting `V011`; the owner's acceptance of `P14-TSK-012`'s (d) and (j) and `P14-TSK-023`'s (a)):* decision 3's four-eyes unlock and reopen gain **an end that is not their effect**, each its own terminal state: `REJECTED`, a second person's decision under `ACCOUNTING_CLOSE_APPROVE`, never the proposer's; `WITHDRAWN`, the proposer's own under `ACCOUNTING_CLOSE_PROPOSE`, nobody else's (`accounting.NotTheProposer`). Four eyes guard an effect; an end moves no cutoff, pin, revision or report run, so a proposer may retract their own, and keeping the two apart keeps `REJECTED` meaning two persons. The unlock's request stays on the period row and its end is a `period_unlock_end` row, copied from that row, the proposal cleared beside it; the reopen's row gains `REJECTED` and `WITHDRAWN`, and one pending per period and one approved per revision replace one per revision, so an ended month is free. An end serialises with the approval on the period row (A1, then the reopen row, A4), the loser `accounting.PeriodStale` naming what happened. No period state, event or meter. Decision 4's approval is told as of when: `GET .../close-proposal` serves each frozen attempt's `concludedAt`, the database's stamp as stored, and, on a pending reopen, the returns it would overtake, read holding nothing and deciding nothing. **Its fix round (2026-11-06; the independent review's M-1 and M-2, and the owner's acceptance of its item (b)):** an end makes a pending request replaceable within seconds, so **every decision on a pending request names it** - the unlock by `unlockProposedAt` (it has no id; its row's instant, stamped by the database under the row, is its identity), the reopen by `reopenId` - the approval, the rejection and the withdrawal alike, as the close's approval and rejection named their proposal from the first. Another pending is `accounting.RequestStale` (409), judged holding the period's row and recorded `FAILED`; the fingerprint covers the name, so the same key naming another request is a conflict. `GET .../periods/{periodId}/requests` (`ACCOUNTING_CLOSE_APPROVE`) serves the controller what it names, the period list the accountant. Another person's withdrawal is recorded `FAILED` as `accounting.NotTheProposer`. **The unlock's, the close's and the reopen's approvals take `MULTI_FACTOR`**, as a prior-period adjustment's does: they move the ledger's cutoff or freeze and supersede FINAL runs; the ends, proposals, the close's rejection and the reads do not. **What a client could notice under version 1, no client existing (ADR-0015's precedent for a reviewed change, as `P14-TSK-022`'s):** the unlock's and the reopen's approval bodies are `UnlockDecisionRequest` and `ReopenApprovalRequest`, each naming the request as a required field, and a session below `MULTI_FACTOR` is refused `403 identity.AssuranceRequired` at the three approvals; the owner confirms it at the exit review. Status stays `Proposed` until the phase's exit review.
+
+*The Phase 14 exit review (`P14-DOC-001`, 2026-11-06):* **decision 2 holds for a line too** (ledger `V032`, the review's financial audit, F1): `V028` refused an entry dated on or before the cutoff, but the application role may insert `journal_line` and `V004`'s balance trigger is deferred, so a raw writer could have appended a balancing pair of lines to an entry committed long ago in a `LOCKED` or `CLOSED` month. A `BEFORE INSERT` trigger on `journal_line` now takes namespace `14` key `cutoff` **shared**, reads its entry's posting date and refuses it as `V028` does (`LDCUT`, a missing cutoff row fail-closed, the cutoff `FOR SHARE` under REPEATABLE READ/SERIALIZABLE). For a line of an entry inserted in the same transaction - every production line - it re-judges what the entry's trigger just judged, the key re-entrant. `PostingCutoffDatabaseTest#aLineAppendedToALockedMonthsEntryIsRefused` and `LineCutoffMigrationTest` hold it. No production path changed. **An end's repeat converges by the request named** (`P14-TSK-024`'s re-review, item (a)). A repeat of a rejection or a withdrawal, under any key, looks up the request it names under the period's row - an unlock's end by `period_unlock_end_once`'s key, the period, the lock instance and `unlockProposedAt` (`JdbcAccountingPeriodStore.unlockEnd`, `V011:46`), a reopen's by its id (`JdbcPeriodCloseStore.endedReopen`) - and, ended that way by that person, converges and writes nothing. Until then it read the lock's latest end, so a retry after another unlock ended in between was told no unlock was pending, and one while another was pending `accounting.RequestStale`. `AccountingPeriodsTest#aRepeatConvergesWhateverEndedSince`, `PeriodClosesTest#aReopensRepeatConvergesWhateverEndedSince`, `PeriodCloseDatabaseTest#aRepeatConvergesWhateverEndedSince` and `PeriodReopenDatabaseTest#aRepeatUnderANewKeyConvergesWhateverEndedSince` hold it. **The contract change under version 1 is confirmed**: the unlock's and the reopen's approval bodies (`UnlockDecisionRequest`, `ReopenApprovalRequest`, naming the request) and `MULTI_FACTOR` at the three approvals stand under version 1 by the owner's standing acceptance (`DECISIONS.md`, 2026-11-06), no client existing (ADR-0015's precedent for a reviewed change).
 
 ## Follow-up
 

@@ -1,6 +1,6 @@
 # ADR-0113 — The `accounting` bounded context: the General Ledger as a versioned mapping over the one journal, no second ledger, no ledger edge
 
-Status: Proposed
+Status: Accepted (2026-11-06, `P14-DOC-001` — read against the code and corrected first)
 Date: 2026-10-29
 Phase: 14
 Context: Accounting / General Ledger · Reporting · Ledger
@@ -30,8 +30,14 @@ domain through ports implemented in `app`). Rests on `PHASE_14_PLAN.md` §1, §3
    (`AccountingModuleIsolationTest`).
 2. **The GL is a function, not a store.** A GL figure = Σ journal lines (posting date in the period, currency) whose
    account's purpose (and owner kind) maps to the GL account under the version pinned by the period. No accounting
-   table holds a balance or a line amount except the frozen content of a report run, which is output, not truth
-   (`INV-ACC-06`).
+   table holds a balance or a line amount except frozen output, never truth: the content of a report run, and a
+   regulatory submission's content and lines, copied from `FINAL` runs and held equal to them (`INV-ACC-06`).
+   *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "except the frozen content of a
+   report run". Accounting `V010` (`P14-TSK-018`) also holds amounts: `regulatory_submission.content` (the attested JSON,
+   amounts as minor units, `V010:205`) and `regulatory_submission_line.minor_units` (`V010:355`), drawn only from `FINAL`
+   runs (`V010:409`) and held equal to the content (`regulatory_submission_lines_agree`). The exception is widened, not
+   the decision: both are a return's record of what it said, never truth. `V001`'s schema comment and
+   `accounting/build.gradle.kts` still say "no table holds a balance or a line amount"; they are left as written.)*
 3. **The mapping is versioned data keyed by ledger purpose (+ owner kind)**; a counterparty is a dimension, not an
    account. `gl_code` stays unwritten; a later ledger change may retire it. A version contains its GL accounts (code,
    name, classification, statement section, normal balance) and its rules; it is immutable from birth, activated under

@@ -621,6 +621,7 @@ class MerchantPayoutDatabaseTest {
         String key = key();
         MerchantPayoutId crashed = crash(merchant, "40.00", key);
         queryAnswers(merchant, crashed, "paid");
+        awaitThePermitPast(crashed);
         resolution(Duration.ZERO).sweep();
         assertThat(stored(merchant, crashed).status()).isEqualTo(MerchantPayoutStatus.COMPLETED);
 
@@ -649,6 +650,7 @@ class MerchantPayoutDatabaseTest {
                 .isZero();
         assertThat(stored(merchant, crashed).status()).isEqualTo(MerchantPayoutStatus.DISPATCHED);
 
+        awaitThePermitPast(crashed);
         resolution(Duration.ZERO).sweep();
         assertThat(stored(merchant, crashed).status()).isEqualTo(MerchantPayoutStatus.FAILED);
         assertThat(stored(merchant, crashed).failureReason())
@@ -1097,6 +1099,7 @@ class MerchantPayoutDatabaseTest {
         // exists to surface: the money is no longer reserved, so posting now would move it twice.
         asOperator(uow -> holds.release(uow, hold));
         queryAnswers(merchant, crashed, "paid");
+        awaitThePermitPast(crashed);
 
         MerchantPayoutResolution.SweepResult swept = resolution(Duration.ZERO).sweep();
 
@@ -1571,6 +1574,30 @@ class MerchantPayoutDatabaseTest {
                 Duration.ZERO,
                 1000);
     }
+
+    /**
+     * The database's clock past the payout's send permit, awaited (X-TSK-013): the birth permit is {@code GREATEST(created_at,
+     * statement_timestamp())} and {@code created_at} is this instance's clock, so on an instance running ahead of the
+     * database - P14-DOC-001's database pass met a Docker VM clock running a tenth fast and stepped back about 2.72 s
+     * (0.35 s, then 2.37 s) every 27 s, so up to 2.4 s behind its host's - a dispatch that crashed a moment ago holds a
+     * permit in the database's future, and the sweep's {@link #DUE_NOW} bound, read on the database's clock, rightly does
+     * not see it yet. A permit is old by the database's judgement, never by this JVM's: awaited, never assumed - and by
+     * {@link #CLOCK_STEP_MARGIN}, so a correction of that clock between this read and the sweep's still leaves it due.
+     */
+    private static void awaitThePermitPast(MerchantPayoutId payout) {
+        await().atMost(Duration.ofSeconds(60))
+                .pollInterval(Duration.ofMillis(50))
+                .until(() -> count(
+                                "SELECT count(*) FROM merchant.merchant_payout WHERE id = ? AND"
+                                        + " last_dispatched_at < statement_timestamp() - ? * interval"
+                                        + " '1 millisecond'",
+                                payout.value(),
+                                CLOCK_STEP_MARGIN.toMillis())
+                        == 1);
+    }
+
+    /** More than one backward correction of that VM's clock (about 2.72 s). */
+    private static final Duration CLOCK_STEP_MARGIN = Duration.ofSeconds(3);
 
     private static PayoutProvider unreachable() throws Exception {
         int closed;

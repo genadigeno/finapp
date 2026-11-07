@@ -267,21 +267,22 @@ class CreditDecisionDatabaseTest {
         java.util.concurrent.atomic.AtomicInteger atTheBoundary = new java.util.concurrent.atomic.AtomicInteger();
         java.util.concurrent.atomic.AtomicInteger refused = new java.util.concurrent.atomic.AtomicInteger();
         try {
-            List<java.util.concurrent.ScheduledFuture<?>> races = new ArrayList<>();
+            List<java.util.concurrent.CompletableFuture<Void>> races = new ArrayList<>();
             int index = 0;
             for (UUID id : ids) {
                 // Each request's two racers fire together at a different offset from ITS expiry - from 200 ms before
                 // it to 100 ms after (a lead of -100..200 ms), so the boundary is met from both sides. The Docker
                 // VM's clock drifts against the host's (X-TSK-017), so the offset is taken from the database a second
-                // before the race, never from a reading a minute old - the first version, timed once at the start,
-                // saw every request land on one side.
+                // and a half at most before the race, never from a reading a minute old - the first version, timed once
+                // at the start, saw every request land on one side; the second, one wait of the whole minute less a
+                // second timed on the JVM from one reading, met most requests after their expiry (approachExpiry).
                 long lead = 10L * (index++ % 31) - 100;
-                long remaining = remainingMillis(id);
-                Runnable racer = () -> {
+                java.util.concurrent.CompletableFuture<Void> raced = new java.util.concurrent.CompletableFuture<>();
+                races.add(raced);
+                approachExpiry(racers, id, raced, close -> {
                     Clock fast = Clock.offset(Clock.system(ZoneOffset.UTC), Duration.ofSeconds(5));
                     Clock slow = Clock.offset(Clock.system(ZoneOffset.UTC), Duration.ofSeconds(-5));
                     try {
-                        long close = remainingMillis(id);
                         if (close > 0) {
                             atTheBoundary.incrementAndGet();
                         }
@@ -291,10 +292,9 @@ class CreditDecisionDatabaseTest {
                     } catch (Exception failure) {
                         throw new IllegalStateException(failure);
                     }
-                };
-                races.add(racers.schedule(racer, Math.max(0, remaining - 1_000), TimeUnit.MILLISECONDS));
+                });
             }
-            for (java.util.concurrent.ScheduledFuture<?> race : races) {
+            for (java.util.concurrent.CompletableFuture<Void> race : races) {
                 race.get(5, TimeUnit.MINUTES);
             }
         } finally {
@@ -320,6 +320,31 @@ class CreditDecisionDatabaseTest {
                 ids.size(), atTheBoundary.get(), decided, ids.size() - decided, refused.get());
         assertThat(decided).as("the boundary met from both sides - some decided before it").isPositive();
         assertThat(ids.size() - decided).as("and some found it passed").isPositive();
+    }
+
+    /**
+     * Waits for {@code id}'s expiry on the DATABASE's clock, then hands {@code racer} the milliseconds left as last
+     * read - at most a second and a half. The Docker VM's clock - the database's - runs fast against the JVM's and is
+     * stepped back by seconds every half minute or so (X-TSK-017; measured again at P14-DOC-001's database pass): one
+     * wait of the 74 seconds a request had left, timed on the JVM from one reading, missed the one-second margin - 60
+     * of 240 requests still before their expiry when their racers woke. So the wait is taken in hops: each re-reads the
+     * time left and waits four fifths of it less a second on the scheduler, which even 20% fast leaves more than a
+     * second; no thread is held between hops. {@code raced} completes when the racer returns, or with its failure.
+     */
+    private static void approachExpiry(java.util.concurrent.ScheduledExecutorService scheduler, UUID id,
+            java.util.concurrent.CompletableFuture<Void> raced, java.util.function.LongConsumer racer) {
+        try {
+            long remaining = remainingMillis(id);
+            if (remaining > 1_500) {
+                scheduler.schedule(() -> approachExpiry(scheduler, id, raced, racer), (remaining - 1_000) * 4 / 5,
+                        TimeUnit.MILLISECONDS);
+                return;
+            }
+            racer.accept(remaining);
+            raced.complete(null);
+        } catch (Throwable failure) {
+            raced.completeExceptionally(failure);
+        }
     }
 
     private static long remainingMillis(UUID id) {

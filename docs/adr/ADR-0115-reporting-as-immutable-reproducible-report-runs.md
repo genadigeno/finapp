@@ -1,6 +1,6 @@
 # ADR-0115 — Financial reporting as immutable, reproducible report runs over a pinned journal cut
 
-Status: Proposed
+Status: Accepted (2026-11-06, `P14-DOC-001` — read against the code and corrected first)
 Date: 2026-10-29
 Phase: 14
 Context: Reporting · Accounting / General Ledger
@@ -21,11 +21,25 @@ same way forever, and a trail from every figure to its journal lines.
 2. A **report run** is a row born once per `(definition, definition_version, period, revision, parameters_hash)`: claimed
    (insert-or-read), generated in a `REPEATABLE READ READ ONLY` transaction, completed by a conditional edge with its
    content (`jsonb`) and `content_sha256`, frozen by trigger. It records its inputs: the period and its revision, the
-   mapping version, the valuation rate set, the journal cut, the definition version.
-3. **FINAL** runs exist only for `LOCKED`/`CLOSED` periods — whose posting-date range is immutable after the cutoff
-   (ADR-0114) — so regeneration reproduces the hash (`INV-ACC-04`); `…/regeneration` answers `IDENTICAL | DIVERGED`, a
-   divergence metered and alerted, never repaired. **PROVISIONAL** runs (open periods) are cut at the journal's settle
-   horizon (the ADR-0111 keyset), labelled, never issued. A reopen marks FINAL runs `SUPERSEDED`; never deleted.
+   mapping version, the valuation rate set when the run names one, the journal cut, the definition version.
+   *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "the valuation rate set" unqualified.
+   A run records a set only when its parameters name one (`RunParameters.of(parameters, rateSet)`, `ReportRunDesk.java:96`;
+   `report_run_rate_set_is_a_parameter`, `V004:100-101`, holds the column to the parameter); a translated run names one,
+   while the close's `TRIAL_BALANCE` (`FinalTrialBalanceReader`) and a regulatory submission's sources
+   (`RegulatorySubmissions.java:929`) are claimed with `RunParameters.none()` and record none.)*
+3. **FINAL** runs exist only for periods no longer `OPEN` — `LOCKED`, `CLOSE_PROPOSED` or `CLOSED`, whose posting-date
+   range is immutable after the cutoff (ADR-0114) — and a financial statement's only for a `CLOSED` one, so regeneration
+   reproduces the hash (`INV-ACC-04`); `…/regeneration` answers `IDENTICAL | DIVERGED`, a divergence metered and
+   alerted, never repaired. **PROVISIONAL** runs (open periods) count only entries created at or before the run's cut
+   (`created_at <= cut_at`, the claim's database clock), labelled, never issued. A reopen marks FINAL runs `SUPERSEDED`;
+   never deleted.
+   *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read "FINAL runs exist only for
+   `LOCKED`/`CLOSED` periods" and "PROVISIONAL runs (open periods) are cut at the journal's settle horizon (the ADR-0111
+   keyset)". `V004`'s birth trigger admits a FINAL run for any period not `OPEN` (`V004:195`), `CLOSE_PROPOSED`
+   included; `P14-TSK-016` narrowed the balance sheet and income statement to `CLOSED`
+   (`ReportDefinition.issuedOnlyWhenClosed`, `409 accounting.ReportAwaitsClose`). The settle-horizon cut was never built:
+   `P14-TSK-009` built `created_at <= cut_at`, a recorded deviation whose alternatives - the cut less the settle horizon,
+   or labelling the run with its snapshot's instant - its As built below records.)*
 4. **Drill-down**: every figure carries its (GL account, currency, period) key; the GL activity door lists the journal
    lines composing it, paged (`INV-ACC-02`).
 5. **Authoritative vs operational**: the existing live reports and gauges stay operational and say so; no cache,
@@ -74,9 +88,15 @@ the conditional `attempt + 1` - never a second run; the dead attempt's completio
 re-spaces, so it would not retain "the originally issued output" (`INV-ACC-04`) and the database could not check the hash.
 The text is `CanonicalJson`'s (sorted keys in UTF-16 order, no whitespace, **no JSON number** - amounts as minor units in
 strings beside currency and scale - ECMAScript escaping; `U+0000` and unpaired surrogates refused), checked a JSON object
-by `CHECK (jsonb_typeof(content::jsonb) = 'object')`, and `content_sha256` is **recomputed by the database** for every
-writer (`encode(sha256(convert_to(content, 'UTF8')), 'hex')` - the risk `V006`/`V007` precedent); queries read
-`content::jsonb`. Fixed test vectors pin the bytes and hashes (`CanonicalJsonTest`). (2) **The unlock supersedes**:
+by the run's machine trigger at the completion edge, and `content_sha256`, written by Java (`ReportGeneration`'s
+`CanonicalJson.sha256`), is **verified by the database** for every writer (`encode(sha256(convert_to(content, 'UTF8')),
+'hex')`, a mismatch refused - the risk `V006`/`V007` precedent); queries read `content::jsonb`. Fixed test vectors pin
+the bytes and hashes (`CanonicalJsonTest`). *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: this read
+"checked a JSON object by `CHECK (jsonb_typeof(content::jsonb) = 'object')`, and `content_sha256` is **recomputed by the
+database**". The independent review's M-2 below moved the content checks from `CHECK`s to the completion edge
+(`V004:240-253`: bounded, `report_run_content_is_a_json_object`, `report_run_content_hashed`), and the database computes
+no hash: `JdbcReportRunStore.COMPLETE_SQL` writes the one `ReportGeneration.java:206` computed, and the edge refuses one
+that is not the content's own.)* (2) **The unlock supersedes**:
 decision 3 superseded FINAL runs only at a reopen, but `P14-TSK-005`'s four-eyes unlock already returns a `LOCKED` period
 to `OPEN` without a new revision - a FINAL run left standing would stop reproducing as postings land. So
 `AccountingPeriods.approveUnlock` supersedes the period's FINAL runs in its own transaction, before the edge (the port
@@ -189,4 +209,7 @@ Retention of runs with Phase 15's data-retention work; export formats beyond JSO
 opening - the previous FINAL trial balance's closing, sound only under one version and a kept `locked_at` - if the
 cumulative fold's cost grows; consolidating `GlSnapshots` and `JdbcReportSnapshots`.)* *(`P14-TSK-017`: a stalled check leg after the run's birth - an
 attempt nobody claims - shows only in `period.open.age` and `close.leg.failed`; a labelled operational run of a locked period, if storing them is ever wanted, is
-a change to `V004`'s trigger.)*
+a change to `V004`'s trigger.)* *(Corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: the stalled leg's half is stale. `P14-TSK-020` built
+`finapp.accounting.close.check.stalled` and its alert `AccountingCloseCheckStalled` for a present run's attempts nobody claims (`CloseCheckStallMetrics`,
+`infra/prometheus/rules/accounting.yml`), beside `-017`'s own `finapp.accounting.close.run.stalled` and `AccountingCloseRunStalled` for a lock with no run;
+the operational run's half stands.)*
