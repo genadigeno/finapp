@@ -94,9 +94,10 @@ class LedgerAdjustmentsRefusalTest {
     }
 
     @Test
-    @DisplayName("a reason the body's @NotBlank lets through - ideographic whitespace only - and a reason or reference"
-            + " holding a card number or an IBAN are the request's 422 VALIDATION_FAILED, the text never echoed, no"
-            + " transaction begun, nothing proposed")
+    @DisplayName("handed the request directly, past the body's validation, the door refuses a reason of ideographic"
+            + " whitespace only, and a reason or reference holding a card number or an IBAN, as the request's 422"
+            + " VALIDATION_FAILED - the text never echoed, no transaction begun, nothing proposed (the body's @NotBlank"
+            + " already refuses the blank one at the controller: Hibernate Validator's isBlank)")
     void aRefusedTextIs422() {
         List<AdjustmentRequest> bodies = List.of(
                 request("ticket-77", "　"),

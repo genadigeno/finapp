@@ -38,7 +38,7 @@ import org.junit.jupiter.api.Test;
  * fix round; {@code INV-AUD-04}, {@code INV-AUD-02}, {@code INV-REV-04}), without a database: <strong>a refused
  * self-approval is recorded</strong> - {@link AdjustmentService#recordRefusal} appends {@code ledger.SelfApprovalRefused}
  * {@code FAILED}, naming the proposal and the act and never an amount, for the caller to write in a transaction of its own
- * after the refused act rolled back (`LedgerAdjustmentsTest` holds that order) - and <strong>a reason or a reference holding
+ * after the refused act rolled back (`LedgerAdjustmentsRefusalTest` holds that order) - and <strong>a reason or a reference holding
  * an instrument shape, or a blank reason, is unconstructible</strong>, typed so the door answers {@code 422}.
  */
 @DisplayName("the manual adjustment door records a refused self-approval and screens its texts (P14-DOC-001)")
