@@ -2065,6 +2065,19 @@ accounting breaks (ADR-0117), valuation rate sets and translation (ADR-0116, C1,
 
 # Phase 15 — Production Hardening
 
+*(The Phase 14 → 15 transition, 2026-11-07: this section is elaborated by [`PHASE_15_PLAN.md`](PHASE_15_PLAN.md) and
+ADR-0120…0125 (`Proposed`), which supersede it where they differ, each difference recorded there: the deployment is the
+modular monolith's own units - one image as N ≥ 3 replicas and a migration Job - never an extraction (§5's extraction
+question stays Phase 16's, by measurement); "schema registry and compatibility enforcement" (§8) is a build-time schema
+catalogue and compatibility test, a runtime registry decided against while no external consumer exists (C11); "retention
+and deletion policy implementation" (§6) builds the operational sweeps and the policy, the purges of financial evidence,
+agreements and regulatory reports re-dated to a real jurisdiction (C12); "chaos experiments against critical flows"
+(§11) stays Phase 16's - Phase 15 rehearses a rolling update, a rollback, a pod kill, rotations and a restore on `kind`
+with the financial census, never load or chaos. Added to the scope by the owner's brief: containerisation, the
+Kubernetes deployment, infrastructure as code verified without an apply, CI/CD with signing and admission, secrets and
+key rings, configuration management and a readiness review per unit. Thirty-seven backlog items, `P15-TSK-001`
+`READY`.)*
+
 ### 1. Objective
 Make the platform operable and defensible: security hardened, observable against SLOs,
 and supported by tested runbooks.
