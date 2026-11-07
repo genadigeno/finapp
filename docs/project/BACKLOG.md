@@ -26876,8 +26876,8 @@ built, evidence purges re-dated to a real jurisdiction; **C13** operator session
 candidate), workforce OIDC deferred; **C14** the standing criterion-7 deviation, one database pass at the exit, the storm
 postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 
-**P15-TSK-001 — The threat model, the trust boundaries and the readiness standard** — `READY` (2026-11-07; marked by the
-Phase 14 → 15 transition)
+**P15-TSK-001 — The threat model, the trust boundaries and the readiness standard** — `COMPLETE` (2026-11-08; marked
+`READY` by the Phase 14 → 15 transition, 2026-11-07; read `READY` until its gate)
 - **Objective**: name every threat to the deployed platform and the control that answers it, with evidence, before any
   control is built; write the bar every deployable unit must meet to be called production-ready.
 - **Affected components**: documents (`docs/architecture/THREAT_MODEL.md` new, `PRODUCTION_READINESS.md` new,
@@ -26903,6 +26903,29 @@ Phase 14 → 15 transition)
 - **Acceptance criteria**: every boundary modelled; every threat dispositioned; the guard green with its probes caught;
   the stale statements corrected.
 - **Definition of done**: `DOD-SEC`, `DOD-ARCH`, `DOD-DOC`. **Risk**: Low. **Cx**: M.
+- **As built** (2026-11-08; branch `P15-TSK-001` from master `9472753b`; documents and one guard, no production code,
+  no migration, no ADR): [`THREAT_MODEL.md`](../architecture/THREAT_MODEL.md) draws the ten boundaries of
+  `PHASE_15_PLAN.md` §9.1 for N replicas and answers STRIDE at each (60 cells: 57 with threats, 3 `N/A` with reasons).
+  It holds 44 threats, T1–T14 carried with their numbers and T15–T44 added, among them the raw writer (T15), the
+  duplicated command (T16) and event (T17), the operator alone (T18), the stepped clock (T13) and version skew (T12).
+  Each is rated by a written rule (inherent likelihood × impact): 16 CRITICAL, 15 HIGH, 12 MEDIUM, 1 LOW. 43 are
+  `CONTROL` and one, T42 (MEDIUM), is a `PROPOSED ACCEPTANCE` awaiting the owner. No risk is recorded as accepted.
+  197 control rows: 88 `EXISTS`, each citing a file or a `Class.java#method` opened and checked against the claim; 97
+  `PLANNED` (Phase 15 tasks); 12 `REMEDIATION` (`P14-REM-*`, `X-TSK-*`). Every CRITICAL and HIGH threat carries a
+  control. Six of them (T4, T21, T27, T28, T29, T32) rest today on planned rows alone, because nothing is deployed.
+  [`PRODUCTION_READINESS.md`](../architecture/PRODUCTION_READINESS.md) writes the bar: the twelve dimensions as checkable
+  clauses plus a multi-instance row (`-034`'s entry), six unit tables and 23 module tables carrying §15's reading, the
+  ruling and evidence columns left for `-034`, the open `P14-REM-*` entries named per unit and module.
+  `SECURITY_ARCHITECTURE.md` §Encryption at rest and `SECRET_MANAGEMENT.md` §7 are corrected from the code (eight
+  classes, nine instances, eight keys, one active key each, three binding associated data), with read-notes on ADR-0023,
+  ADR-0123 and `DECISIONS.md`, and two more stale counts in `SECURITY_ARCHITECTURE.md` corrected (§Secrets 8 → 27
+  confinements; §Signed provider callbacks, five keys). `ThreatModelIsCompleteTest` (`com.finapp.app.architecture`,
+  `architecture` tag) holds the register under 13 rules. **Choice: a row citing a task that is no longer live is red,
+  naming the task.** So each later Phase 15 gate (and each `P14-REM`/`X-TSK` gate the model cites) rewrites its
+  promise as `EXISTS` evidence in the same change that marks the task `COMPLETE`. Recounted from the code and routed:
+  37 → 27 credential properties (`-018`, ADR-0123), 25 → 21 `@RequiresAssurance` handlers (`-021`), 397 routes → 397
+  paths and 430 operations (plan §3 erratum), `SASL_PLAINTEXT` admitted by `KafkaTransportGuard` (`-026`), five ciphers
+  without associated data (`X-TSK-010`), the forwarded-header source address (`-011`, `-022`).
 
 **P15-TSK-002 — The carried items ruled (C15)** — `PLANNED`
 - **Objective**: no debt row, deferral or cross-cutting item names Phase 15 as owner without a ratified disposition.
@@ -27402,7 +27425,7 @@ Phase 14 → 15 transition)
 - **Operational documentation**: `SECURITY_ARCHITECTURE.md` §Who is acting; the review as a document.
 - **Acceptance criteria**: as tested; two debt rows closed.
 - **Definition of done**: `DOD-SEC`, `DOD-ARCH`. **Risk**: Medium. **Cx**: M.
-- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `RequiresAssurance`'s note, recounted: **21** handlers declare it, all `MULTI_FACTOR`, all on the method (the plan's "25" counted the annotation's Javadoc and the interceptor's reads). `THREAT_MODEL.md` T3, T7, T10, T18, T38 and T44 cite this task; if the reporting role is cut, this task's gate rewrites T7's and T44's rows as gaps with an owner.
+- *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `RequiresAssurance`'s note, recounted: **21** handlers declare it, all `MULTI_FACTOR`, all on the method (the plan's "25" is a text count that also matches four mentions in comments and the interceptor's message). `THREAT_MODEL.md` T3, T7, T10, T18, T38 and T44 cite this task; if the reporting role is cut, this task's gate rewrites T7's and T44's rows as gaps with an owner.
 
 **P15-TSK-022 — Abuse limits: registration and per-source throttling, cluster-safe** — `PLANNED`
 - **Objective**: no single source can create unbounded parties or drive unbounded load, across N replicas.

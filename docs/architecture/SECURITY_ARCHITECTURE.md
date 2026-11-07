@@ -160,7 +160,7 @@ boundary and never stored. Raw bank details are held at the provider (ADR-0056).
 | Associated data | Three classes bind it. **Five bind none** (`SecretCipher`, `DocumentCipher`, `EvidenceCipher`, `PayoutEvidenceCipher`, `FxEvidenceCipher`), so a ciphertext moved to another row decrypts cleanly | `X-TSK-010`, which names the first four; the fifth is routed onto it |
 | Every other column | Plaintext in PostgreSQL. Restricted columns outside the table above rely on the database's at-rest protection, which does not yet exist | `P15-TSK-015`: managed volumes encrypted under KMS |
 | Backups | None exist. When they do, they are encrypted under a key separate from the volume's, because a backup is a copy of the ledger | `P15-TSK-015`, `-030` |
-| Object storage | The application uses none. Evidence lives in PostgreSQL, encrypted as above (ADR-0036). Buckets serve infrastructure only | `P15-TSK-015` |
+| Object storage | The application uses none. Evidence lives in PostgreSQL, encrypted as above (ADR-0036). Settlement files moved there by ADR-0066: AES-256-GCM with bound associated data, verified on read, and a person's read of the raw content audited with its reason (`INV-REC-10`); the parse leg's own decryption is recorded by the file's history. That ADR's amendment of this section's old "server-side encryption" row was never applied until this correction. Object storage stays the target only if a trigger fires. Buckets serve infrastructure only | `P15-TSK-015` |
 | Crypto-shredding | Designed as the future purge mechanism (destroy a key version) and not exercised (C12) | A real jurisdiction's retention |
 
 The threats these answer are `THREAT_MODEL.md` T7, T34 and T35.

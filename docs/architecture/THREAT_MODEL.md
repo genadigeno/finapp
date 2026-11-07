@@ -114,6 +114,10 @@ A row in §4 has one of three states, and its evidence column must match its sta
   a task's status becomes `COMPLETE`, its gate must replace the promise with the evidence it built. When a task is
   postponed, its promise has no owner, and its row must become a gap. A row naming two tasks goes red when either one
   finishes, so the gate splits it into an `EXISTS` half and a `PLANNED` remainder;
+- §3's summary line does not count what the register holds;
+- **once Phase 15's status in `CURRENT_STATE.md` is complete**, a CRITICAL or HIGH threat has no `EXISTS` row and is
+  not accepted by the owner. This is `PHASE_GATES.md` §5 Phase 15 criterion 1 as written: at the exit, a control
+  counts only when its evidence exists. Until then, a `PLANNED` row is an honest answer for a control not yet built;
 - it parses fewer boundaries, threats, cells or rows than the minimums it records, so a renamed heading or a broken
   table cannot pass as an empty register.
 
@@ -409,7 +413,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T10 | The operator actor typed, and a refused step-up recorded | PLANNED | `P15-TSK-021` |
 | T10 | The retention policy by data class, and the audit archival design to write-once storage | PLANNED | `P15-TSK-029` |
 | T10 | Write-once (Object Lock) on the audit archive bucket | PLANNED | `P15-TSK-015` |
-| T11 | Startup guards refuse an unsafe configuration on every replica: a pool beyond the connection budget, any configured `sslmode` source weaker than `verify-full`, a settlement pull source in cleartext | EXISTS | `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#scalingOutIsCaught`; `app/src/test/java/com/finapp/app/security/TransportSecurityGuardTest.java#everyConfiguredSourceMustVerify`; `app/src/test/java/com/finapp/app/security/ProviderTransportGuardTest.java#startupConsultsEverySourceUrl` |
+| T11 | Startup guards refuse an unsafe configuration on every replica: a pool beyond the connection budget (the guard wired, so a violation stops the instance), any configured `sslmode` source weaker than `verify-full`, a settlement pull source in cleartext | EXISTS | `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#hikarisDefaultExhaustsPostgresDefault`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingIsConfiguredTest.java#theGuardIsWired`; `app/src/test/java/com/finapp/app/security/TransportSecurityGuardTest.java#everyConfiguredSourceMustVerify`; `app/src/test/java/com/finapp/app/security/ProviderTransportGuardTest.java#startupConsultsEverySourceUrl` |
 | T11 | Infrastructure as pinned, checked code, never applied by hand | PLANNED | `P15-TSK-013` |
 | T11 | GitOps self-heal, and two persons on every production change | PLANNED | `P15-TSK-017` |
 | T11 | The configuration register, and an alert when replicas disagree for longer than a rollout | PLANNED | `P15-TSK-031` |
@@ -428,7 +432,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T13 | PI-013's and PI-014's clock-step defects fixed at their causes, each with a clock-step regression case | PLANNED | `P15-TSK-033` |
 | T13 | The lock's grace and the submissions' orderings judged on the database's clock | REMEDIATION | `P14-REM-009` |
 | T13 | Five stores still comparing a stored bound with a caller's instant | REMEDIATION | `X-TSK-008` |
-| T14 | The connection budget is a startup guard: scaling out past the server's limit is refused, and the reserved connections count | EXISTS | `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#scalingOutIsCaught`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#reservedConnectionsAreLoadBearing` |
+| T14 | The connection budget is a startup guard: a fleet whose pools exceed the server's available connections refuses to start, naming the fix; a fleet scaled out past the limit no longer fits; the reserved connections count; the guard is wired | EXISTS | `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#hikarisDefaultExhaustsPostgresDefault`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#scalingOutIsCaught`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#reservedConnectionsAreLoadBearing`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingIsConfiguredTest.java#theGuardIsWired` |
 | T14 | Requests and limits, and an HPA bounded by the budget counting terminating pods | PLANNED | `P15-TSK-009` |
 | T14 | `ResourceQuota` and `LimitRange` | PLANNED | `P15-TSK-010` |
 | T14 | The budget's peak measured during a rollout and a pod kill | PLANNED | `P15-TSK-012` |
@@ -471,7 +475,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T20 | A session token appears in no column of its stored row | EXISTS | `app/src/test/java/com/finapp/app/domain/SessionLifecycleDatabaseTest.java#theTokenIsNeverStored` |
 | T20 | Revocation is immediate across instances (`INV-IDN-03`) | EXISTS | `app/src/test/java/com/finapp/app/domain/SessionRevocationDatabaseTest.java#revocationIsImmediateAcrossInstances` |
 | T20 | A revoked merchant API key is refused immediately | EXISTS | `app/src/test/java/com/finapp/app/merchant/MerchantApiKeyDatabaseTest.java#aRevokedKeyRefusesImmediately` |
-| T20 | The published contract carries a secret only in a request body, never in a path or a query | EXISTS | `app/src/test/java/com/finapp/app/domain/CredentialReachesNoEmittedSinkTest.java#thePublishedContractCarriesASecretOnlyInARequestBody` |
+| T20 | The published contract carries a secret-named member only in a request body: never in a response, a path, a query or a header | EXISTS | `app/src/test/java/com/finapp/app/domain/CredentialReachesNoEmittedSinkTest.java#thePublishedContractCarriesASecretOnlyInARequestBody` |
 | T20 | TLS with HSTS at the edge | PLANNED | `P15-TSK-011` |
 | T21 | TLS terminated at the edge, with HSTS and the security headers | PLANNED | `P15-TSK-011` |
 | T21 | Ingress certificates renewed ahead of expiry, rehearsed | PLANNED | `P15-TSK-020` |
@@ -567,12 +571,12 @@ the owner.
 - **T28.** GitHub's branch protection and environment rules are repository settings. `P15-TSK-017` writes them down,
   and only the owner can apply them (§1.1). Until they are applied, "two persons on production" holds by convention
   and by `CODEOWNERS`, not by a setting that refuses. **Owner item 4.**
-- **T4, T21, T27, T28, T29.** Today **no runtime control exists** for these threats, because nothing is deployed. Each
-  threat is answered only by its planned tasks.
+- **T4, T21, T27, T28, T29, T32.** Today **no built control exists** for these CRITICAL and HIGH threats, because
+  nothing is deployed. Each is answered only by its planned tasks. Rule 8 and the exit rule (§1.5) hold them to it.
 - **T9.** `KafkaTransportGuard` refuses only `PLAINTEXT` off loopback. **`SASL_PLAINTEXT`, authenticated but
-  unencrypted, is admitted today.** `P15-TSK-026` widens the guard (routed on its entry). Not every consumer is a hint
-  yet: the earliest consumers act on the payload, with the platform as actor (`SECURITY_ARCHITECTURE.md` §Who is
-  acting). Lending's origination consumers are the ones evidenced as hints.
+  unencrypted, is admitted today.** `P15-TSK-026` widens the guard (routed on its entry). Not every consumer is
+  evidenced as a hint: the earliest consumers act on what an event names, with the platform as actor
+  (`SECURITY_ARCHITECTURE.md` §Who is acting). Lending's origination consumers are the ones evidenced as hints here.
 - **T7, T34, T35, the field-level ciphers.** Eight AES-256-GCM classes, built as nine instances over eight keys, stamp
   a key version on every row. **Each instance holds one key.** Only `CounterpartySubjectCipher` refuses a mismatched
   stamped version; the other seven fail at the authentication tag. Changing a key today makes every earlier row
@@ -581,8 +585,8 @@ the owner.
   `DocumentCipher`, `EvidenceCipher`, `PayoutEvidenceCipher` and `FxEvidenceCipher`. `X-TSK-010` names the first four,
   and the fifth is routed onto its entry. Every column outside these ciphers is plaintext in PostgreSQL until volume
   encryption exists (`-015`). `SECURITY_ARCHITECTURE.md` §Encryption at rest has the detail.
-- **T2.** `/actuator/prometheus` and `/actuator/info` are served unauthenticated on the API port today. Two
-  `CURRENT_STATE.md` debt rows record this, and `-008` and `-010` close them.
+- **T2.** `/actuator/health`, `/actuator/info` and `/actuator/prometheus` are served unauthenticated on the API port
+  today. Two `CURRENT_STATE.md` debt rows record this, and `-008` and `-010` close them.
 - **T38.** Today **every session actor is audited as `CUSTOMER`, operators included**, and a refused step-up writes no
   record. Both are debt rows that `-021` closes. The actor's identity is right; only its type is wrong.
 - **T43.** No general bound on the size of a provider's answer exists across the adapters. The regulatory adapter is
@@ -630,7 +634,8 @@ Only the owner can accept a risk. Each item below carries a recommendation. Noth
 As `PHASE_15_PLAN.md` §9.3 decided, and kept here so that the model does not count these as missing controls:
 
 - **mTLS inside the cluster, and a service mesh.** With one deployable there is no service-to-service hop. The hops
-  that leave a pod (B4, B5, B6) each have their own TLS and authentication.
+  that leave a pod (B4, B5, B6) each have, or are given by a Phase 15 task, their own TLS and authentication. Today
+  B4 and B6 require verified TLS off loopback; B5's TLS and SASL are `P15-TSK-026`'s.
 - **An API gateway product.** Authentication and authorisation are the application's (ADR-0030, ADR-0031). A gateway
   would be a second policy point that can disagree with the first. The edge does TLS, allow-lists and coarse limits.
 - **OIDC for customers.** Customer identity is the platform's own product. Workforce federation waits for a workforce

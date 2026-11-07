@@ -172,8 +172,8 @@ the code uses.
 
 *Erratum (`P15-TSK-001`, 2026-11-08, recounted from the code; the rows above are kept as surveyed): **37** `finapp.*`
 credential properties is **27** distinct (each with its own `ConfinedCredential` key class; 35 with the eight `key-version`
-companions); `@RequiresAssurance` is declared on **21** handlers, all `MULTI_FACTOR` (25 counted the annotation's Javadoc and
-interceptor mentions); the 397 "routes" are OpenAPI **paths** - 430 operations, 269 operator paths and 288 operator
+companions); `@RequiresAssurance` is declared on **21** handlers, all `MULTI_FACTOR` (25 is a text count that also matches four
+mentions in comments and the interceptor's message); the 397 "routes" are OpenAPI **paths** - 430 operations, 269 operator paths and 288 operator
 operations - and the code holds five provider callback doors, each present only where its provider is configured, three
 of them in the published contract; 33 schedules are **34** `SmartLifecycle` components (32 schedules, `AccountingGaugeRefresher`, `InboxConsumers`);
 the cipher counts (eight classes, nine instances, eight keys) hold, and **three** of the eight bind associated data, five

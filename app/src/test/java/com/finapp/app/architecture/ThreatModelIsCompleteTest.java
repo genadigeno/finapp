@@ -51,6 +51,9 @@ import org.junit.jupiter.api.Test;
  *       unreadable;
  *   <li>no promise outlives its task: a row citing a task that is no longer live is red, naming the task;
  *   <li>every task id the document names is a backlog entry;
+ *   <li>the register's summary line counts what the register holds;
+ *   <li>once Phase 15 is complete ({@code CURRENT_STATE.md}), every CRITICAL or HIGH threat has an {@code EXISTS}
+ *       row or the owner's acceptance: {@code PHASE_GATES.md} §5 Phase 15 criterion 1 as written;
  *   <li>the register is not vacuous: the counts parsed meet the minimums recorded here.
  * </ol>
  *
@@ -60,7 +63,8 @@ import org.junit.jupiter.api.Test;
  * A postponed task's promise has no owner, so it is refused too. The cost is deliberate: every Phase 15 gate
  * edits the model.
  *
- * <p>Hermetic: it reads files only. It carries the {@code architecture} tag to run with the package's other
+ * <p>Hermetic: it reads files only ({@code THREAT_MODEL.md}, {@code BACKLOG.md}, Phase 15's status line in
+ * {@code CURRENT_STATE.md}, and the evidence the register cites). It carries the {@code architecture} tag to run with the package's other
  * document guards ({@code AdrRegistersAreReconciledTest}), and {@code app/build.gradle.kts} declares the
  * documents and the non-code evidence it reads as test inputs.
  */
@@ -70,6 +74,8 @@ class ThreatModelIsCompleteTest {
 
     private static final String MODEL = "docs/architecture/THREAT_MODEL.md";
     private static final String BACKLOG = "docs/project/BACKLOG.md";
+    private static final String STATE = "docs/project/CURRENT_STATE.md";
+    private static final String PHASE_15_HEADING = "**Phase 15 — Production Hardening**";
 
     /** {@code PHASE_15_PLAN.md} §9.1's ten boundaries, by id and name. A rename is a deliberate edit here. */
     private static final Map<String, String> BOUNDARIES = orderedMap(
@@ -127,6 +133,9 @@ class ThreatModelIsCompleteTest {
             Pattern.compile("^ACCEPTED by (.+?) on (\\d{4}-\\d{2}-\\d{2})(?:, until (\\d{4}-\\d{2}-\\d{2}))?$");
     private static final Pattern RULE_ROW =
             Pattern.compile("^\\| (SEVERE|HIGH|MEDIUM|LOW) \\| (\\w+) \\| (\\w+) \\| (\\w+) \\|\\s*$");
+    private static final Pattern SUMMARY = Pattern.compile(
+            "(?m)^\\*\\*Summary\\.\\*\\* (\\d+) threats: (\\d+) CRITICAL, (\\d+) HIGH, (\\d+) MEDIUM, (\\d+) LOW\\."
+                    + " (\\d+) (?:is|are) `CONTROL`\\.");
     private static final Pattern ANY_TASK_ID =
             Pattern.compile("`((?:P\\d+-(?:TSK|TST|DOC|REM)-\\d{3})|X-TSK-\\d{3})`");
 
@@ -408,6 +417,64 @@ class ThreatModelIsCompleteTest {
             }
         }
         assertThat(problems).as("promises in %s whose task is no longer live", MODEL).isEmpty();
+    }
+
+    @Test
+    @DisplayName("section 3's summary line counts what the register holds")
+    void theSummaryCountsWhatTheRegisterHolds() {
+        // A summary is a second copy of the register, and second copies decay: the "words left behind" class.
+        Matcher summary = SUMMARY.matcher(String.join("\n", section("## 3. ")));
+        assertThat(summary.find())
+                .as("%s section 3 must carry its summary line in the form the guard reads", MODEL)
+                .isTrue();
+        Map<String, Long> byRating = threats.stream()
+                .collect(Collectors.groupingBy(Threat::rating, TreeMap::new, Collectors.counting()));
+        List<Long> counted = List.of(
+                (long) threats.size(),
+                byRating.getOrDefault("CRITICAL", 0L),
+                byRating.getOrDefault("HIGH", 0L),
+                byRating.getOrDefault("MEDIUM", 0L),
+                byRating.getOrDefault("LOW", 0L),
+                threats.stream().filter(threat -> threat.disposition().equals("CONTROL")).count());
+        List<Long> written = IntStream.rangeClosed(1, 6)
+                .mapToObj(group -> Long.parseLong(summary.group(group)))
+                .toList();
+        assertThat(written)
+                .as("the summary's threat, CRITICAL, HIGH, MEDIUM, LOW and CONTROL counts against the register's")
+                .isEqualTo(counted);
+    }
+
+    @Test
+    @DisplayName("once Phase 15 is complete, every CRITICAL or HIGH threat has built evidence or the owner's acceptance")
+    void atThePhaseExitEveryCriticalOrHighThreatHasBuiltEvidence() {
+        // PHASE_GATES.md section 5 Phase 15 criterion 1: "every CRITICAL and HIGH threat names a control whose
+        // evidence (a test, a policy, a file) exists, or an acceptance with an owner and a date". Before the exit a
+        // PLANNED row is an honest answer for a control not yet built; at the exit it is not, and the phase's own
+        // status line says which applies. Rule 8 already turns a finished task's promise red; this catches the one
+        // promise it cannot, a CRITICAL or HIGH threat answered at the exit only by a REMEDIATION row.
+        List<String> state = Arrays.asList(EvidenceCitations.read(root.resolve(STATE)).split("\\R", -1));
+        int heading = state.indexOf(PHASE_15_HEADING);
+        assertThat(heading)
+                .as("%s must still carry '%s', or this rule reads nothing", STATE, PHASE_15_HEADING)
+                .isNotNegative();
+        String status = state.get(heading + 1);
+        assertThat(status).as("the line after Phase 15's heading is its status").startsWith("Status:");
+        if (!status.contains("`COMPLETE`")) {
+            return;
+        }
+        Set<String> built = controls.stream()
+                .filter(row -> row.state().equals("EXISTS"))
+                .map(Control::threat)
+                .collect(Collectors.toSet());
+        Map<String, String> problems = new TreeMap<>();
+        for (Threat threat : threats) {
+            boolean severe = threat.rating().equals("CRITICAL") || threat.rating().equals("HIGH");
+            if (severe && !built.contains(threat.id()) && !ACCEPTED.matcher(threat.disposition()).matches()) {
+                problems.put(threat.id(), "is " + threat.rating() + " at Phase 15's exit with no EXISTS row and no"
+                        + " acceptance by the owner");
+            }
+        }
+        assertThat(problems).as("criterion 1 at the exit").isEmpty();
     }
 
     @Test

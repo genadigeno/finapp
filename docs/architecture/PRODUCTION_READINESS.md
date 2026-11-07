@@ -57,7 +57,7 @@ holds.
 | **Metrics** | (a) registered per the naming contract; (b) every gauge read off the scrape thread; (c) scraped from the management port | `MetricConventionTest`; the off-thread guard (`-024`); the management port and its policy (`-008`, `-010`) |
 | **Tracing** | (a) exported; (b) span attributes an allow-list; (c) one critical flow traced end to end | The exporter and collector allow-list; the end-to-end trace record (`-023`) |
 | **Alerting** | (a) SLO burn-rate alerts and correctness alerts exist for the unit's flows; (b) routed by severity; (c) every alert names its runbook section | `promtool` cases, Alertmanager configuration and the runbook-link test (`-025`) |
-| **Security** | (a) non-root; (b) read-only root filesystem; (c) no capabilities; (d) NetworkPolicy default-deny with its allowed flows; (e) workload identity; (f) secrets from the secret store; (g) scanned; (h) signed | Image assertions (`-003`); pod profile policies (`-009`); NetworkPolicy tests (`-010`); identity modules (`-016`); secret delivery (`-018`); scans (`-006`); signatures (`-007`). The unit's CRITICAL and HIGH threats in `THREAT_MODEL.md` each `CONTROL` with `EXISTS` evidence, or accepted by the owner |
+| **Security** | (a) non-root; (b) read-only root filesystem; (c) no capabilities; (d) NetworkPolicy default-deny with its allowed flows; (e) workload identity; (f) secrets from the secret store; (g) scanned; (h) signed; (i) every CRITICAL and HIGH threat at the unit's boundaries in `THREAT_MODEL.md` has `EXISTS` evidence or the owner's acceptance | Image assertions (`-003`); pod profile policies (`-009`); NetworkPolicy tests (`-010`); identity modules (`-016`); secret delivery (`-018`); scans (`-006`); signatures (`-007`); the threat register's rows (`ThreatModelIsCompleteTest`) |
 | **Resource limits** | (a) requests and limits set; (b) within the namespace quota; (c) the connection budget holds at maximum scale plus surge plus terminating pods (`PHASE_15_PLAN.md` §6.1) | Manifest policies (`-009`, `-010`); the measured peak (`-012`) |
 | **Failure handling** | (a) graceful shutdown with schedules drained and consumers closed; (b) losing a dependency degrades readiness, never liveness; (c) idempotent recovery after a kill | Drain tests (`-008`); health tests; the rehearsal's kill step and census (`-012`) |
 | **Recovery** | (a) restore rehearsed, ending in the financial verification; (b) rollback rehearsed | Restore record (`-030`); rollback record (`-012`) |
@@ -87,7 +87,7 @@ Each table carries **Today**, the survey's reading in `PHASE_15_PLAN.md` §15 (`
 | Resource limits | Missing (the connection budget is a startup guard, not a manifest) | — | — | — |
 | Failure handling | Partial: graceful shutdown unasserted; schedules' `stop()` does not wait; consumers join for 10 s | — | — | — |
 | Recovery | Missing | — | — | — |
-| Ownership | Partial: alert files exist for seven modules' rules (§4) | — | — | — |
+| Ownership | Partial: seven alert files cover eight modules (§4); no owner label on an alert, no person or rota | — | — | — |
 | Runbooks | Partial: `OPERATIONS_RUNBOOK.md` §1–§10 domain sections; §11 (platform) planned | — | — | — |
 | Multi-instance | Leaderless by design; 34 `SmartLifecycle` components (32 schedules, the accounting gauge refresher, the inbox consumers), guarded by `NoSingleInstanceAssumptionRulesTest`; the deployed fleet not yet rehearsed | — | — | — |
 
