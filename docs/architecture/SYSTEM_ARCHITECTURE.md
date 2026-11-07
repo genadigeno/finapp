@@ -44,6 +44,13 @@ API:
 - gRPC where justified
 - signed/idempotent webhooks
 
+*(The Phase 14 → 15 transition, 2026-11-07, read this list against the code (`PHASE_15_PLAN.md` §3): **Spring Security**
+is not used - authentication and authorisation are the platform's own interceptors over server-side sessions and scoped
+merchant keys (ADR-0030, ADR-0031, ADR-0052), with `spring-security-crypto` for Argon2 only; **Redis** runs in
+`compose.yaml` and no code uses it (ADR-0030 chose PostgreSQL for sessions) - it is not deployed (C3); **S3-compatible
+storage** is not used by the application (ADR-0036) and serves infrastructure only; **Docker, Kubernetes and Terraform**
+are Phase 15's (ADR-0120, ADR-0121, `Proposed`); **OpenTelemetry** spans are recorded and not yet exported (ADR-0124).
+`P15-TSK-031` rewrites the list to the stack in use.)*
 ## Pinned Versions
 
 Versions are pinned in `gradle/libs.versions.toml` (the single source of truth) and in
@@ -136,6 +143,19 @@ catalog remains the one place a version is defined.
 **Infrastructure.** The `migrations` job starts PostgreSQL from the project's own
 `compose.yaml` rather than a CI-specific service definition, so CI and a developer's machine
 run the identical pinned image.
+
+## Deployment (planned, Phase 15)
+
+*Planned by the Phase 14 → 15 transition (2026-11-07; ADR-0120…0125, `Proposed`; `PHASE_15_PLAN.md`); nothing of it is
+built.* The modular monolith deploys as the units it has: **`finapp-app`**, one minimal non-root image, a Kubernetes
+Deployment of N ≥ 3 replicas each serving HTTP and running every leaderless schedule and consumer, and
+**`finapp-migrator`**, a Job per release running every module's migrations as `finapp_migrator` before the rollout.
+PostgreSQL and Kafka are managed outside the cluster. A public ingress and an internal operator ingress terminate TLS;
+the actuator moves to a management port no ingress serves. Infrastructure is Terraform, verified with mock providers and
+never applied in Phase 15. Each commit's images are scanned, signed with provenance and promoted by digest through
+GitOps, and every production change needs two persons. The CI table above gains the image, static-analysis, manifest,
+infrastructure, observability-rule and `kind`-rehearsal jobs as `P15-TSK-003`…`-025` land, each a pinned script that also
+runs on a developer's machine.
 
 ## Architectural Principles
 

@@ -30,7 +30,8 @@ Detailed architectural decisions. The human-readable index of *what* was decided
   accepted by the Phase 13 review (`P13-DOC-001`, 2026-10-27) in the same way; ADR-0113…0118 were
   written `Proposed` at the Phase 13 → 14 transition (2026-10-29), and ADR-0119 by `P14-TSK-026`
   (2026-11-06), and all seven were accepted by the Phase 14 review (`P14-DOC-001`, 2026-11-06) in
-  the same way; ADR-0116 stands superseded in part by ADR-0119, its header naming the part.
+  the same way; ADR-0116 stands superseded in part by ADR-0119, its header naming the part. ADR-0120…0125 were written
+  `Proposed` at the Phase 14 → 15 transition (2026-11-07); the Phase 15 review (`P15-DOC-001`) reads each against the code.
   *(The Phase 7 review's acceptance was missing from this line until the Phase 7 → 8
   transition added it with the Phase 8 decisions.)*
 - A decision found in code but absent from this record is architectural debt.
@@ -158,6 +159,12 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0117](ADR-0117-the-posting-rule-register-gl-reconciliation-and-accounting-breaks.md) | The posting rule register, GL to ledger to source reconciliation, and accounting breaks | Accepted | 14 | Accounting / General Ledger · Reconciliation · every posting module |
 | [0118](ADR-0118-regulatory-reporting-behind-jurisdiction-adapters.md) | Regulatory reporting behind jurisdiction adapters: obligations as configuration, submissions from FINAL runs, a simulated reference adapter | Accepted | 14 | Reporting · Accounting / General Ledger · Lending |
 | [0119](ADR-0119-a-projection-rebuild-door-and-a-reference-gaps-way-on.md) | A four-eyes projection rebuild, and a reference gap's way on: the real last observation, disclosed | Accepted | 14 | Ledger · Accounting / General Ledger · FX |
+| [0120](ADR-0120-the-production-deployment-model.md) | The production deployment model: one image, one Deployment of N replicas, a migration Job, managed state, a segmented edge | Proposed | 15 | Platform · Security · every module (operated) |
+| [0121](ADR-0121-infrastructure-as-code.md) | Infrastructure as code: Terraform modules per concern, environments as root modules, verified without an apply | Proposed | 15 | Platform · Security |
+| [0122](ADR-0122-ci-cd-and-the-supply-chain.md) | CI/CD and the supply chain: one signed image per commit, promoted by digest, two-person production changes, every release schema-compatible with the last | Proposed | 15 | Platform · Security · every module (migrations, events) |
+| [0123](ADR-0123-secrets-and-key-management.md) | Secrets and key management: a managed store and KMS per environment, delivered as the environment, field-level keys as versioned key rings | Proposed | 15 | Platform · Security · every cipher-holding module |
+| [0124](ADR-0124-observability-slos-and-error-budgets.md) | Observability, SLOs and error budgets: one telemetry egress, burn-rate alerts, correctness invariants never budgeted | Proposed | 15 | Platform · every module (signals, runbooks) · Security |
+| [0125](ADR-0125-configuration-and-environment-management.md) | Configuration and environment management: environments differ by values, never by code path; every property registered and classed | Proposed | 15 | Platform · every module (properties) · Security |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch
@@ -228,3 +235,8 @@ and translation), ADR-0117 (the posting rule register and accounting breaks) and
 adapters). All six `Proposed`; the next free number is ADR-0119.)* *(`P14-TSK-026`, 2026-11-06, wrote ADR-0119 - a four-eyes
 projection rebuild (ADR-0041 rule 2 built) and a reference gap's way on, superseding ADR-0116 decision 2 in part; the next
 free number is ADR-0120.)*
+
+*(No Phase 15 row was anticipated. The Phase 14 → 15 transition (2026-11-07) wrote ADR-0120 (the production deployment
+model), ADR-0121 (infrastructure as code), ADR-0122 (CI/CD and the supply chain), ADR-0123 (secrets and key management),
+ADR-0124 (observability, SLOs and error budgets) and ADR-0125 (configuration and environment management), all
+`Proposed`, from `PHASE_15_PLAN.md`; the next free number is ADR-0126.)*

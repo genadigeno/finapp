@@ -1,0 +1,88 @@
+# ADR-0123 — Secrets and key management: a managed secret store and KMS per environment, delivered as the environment the application already reads, field-level keys as versioned key rings
+
+Status: Proposed
+Date: 2026-11-07
+Phase: 15
+Context: Platform (secrets) · Security · every module holding a cipher (identity, kyc, payments, merchant, credit, fx,
+settlement)
+Rests on: ADR-0019, ADR-0020, ADR-0023, ADR-0032, ADR-0052, ADR-0083, ADR-0120, ADR-0121; owner decision C6 of
+`PHASE_15_PLAN.md` §2.2 (recommended default awaiting ratification); `SECRET_MANAGEMENT.md` §7; `SECURITY_ARCHITECTURE.md`
+§Encryption at rest.
+
+## Context
+
+Secrets come from environment variables. Each one has a marked local default, and the guards confine that default to
+loopback (ADR-0020). The code reads 37 key, secret, password and token properties. Eight AES-256-GCM cipher classes, built as nine
+instances (`EvidenceCipher` twice, `PaymentBeans.java:83` and `:829`) over eight keys (`DocumentCipher` and
+`CounterpartySubjectCipher` share `finapp.doc.key`, `CounterpartyScreeningBeans.java:65-76`), stamp a key version on
+every row, but each holds only one active key. A rotation would therefore make every earlier row
+unreadable, and many of these tables are `INSERT`-only evidence that must never be rewritten. There is no secrets
+manager, no KMS and no rotation or revocation procedure. `SECRET_MANAGEMENT.md` and `SECURITY_ARCHITECTURE.md` still say
+that no keys exist.
+
+## Decision
+
+1. **Storage.** A managed secret store holds every secret: AWS Secrets Manager in the reference (C1). KMS keys exist
+   per environment and per purpose (etcd, database volume, backups, secrets, field-level key wrapping). Production and
+   non-production use separate accounts and keys.
+2. **Delivery.** External Secrets Operator syncs each secret into a Kubernetes Secret, which etcd envelope-encrypts with
+   KMS. The Secret is injected as the environment variable the application already reads, so **the application's
+   configuration code does not change**. Rotation takes effect through a rolling restart triggered by the secret's
+   version. No committed manifest carries secret data, and a policy refuses one that does.
+3. **Access.** Each workload has its own cloud identity that can read only its own secrets. Humans cannot `get` secrets
+   in production. Break-glass access is time-bound and audited.
+4. **Field-level key rings.** Each key - not each class: two classes share one key, and one class is built twice over
+   its key - holds a ring: one **active** version for encryption and **retained** versions
+   for decryption. A row is always decrypted with the version stamped on it. Rotation adds a version and moves the
+   active pointer. **`INSERT`-only evidence is never re-encrypted.** A version is retired only when no row under it
+   remains. Destroying a version on purpose (crypto-shredding) is the designed mechanism for a future purge. It is not
+   exercised in Phase 15 (C12).
+5. **Rotation without an outage.** Database credentials rotate by alternating users, **each holding exactly the
+   per-table grants made to `finapp_app`** (by membership of a role that carries them; the grants stay in the
+   migrations). Those users are created by the one-time bootstrap step that holds the master credentials, never by the
+   per-release migrator (`finapp_migrator` is `NOCREATEROLE`). Kafka SCRAM credentials are added,
+   rolled, then removed. HMAC callback secrets are verified against both the current and the previous secret during a
+   window. Ingress certificates are renewed by cert-manager, with an alert on days to expiry.
+6. **Revocation and recovery.** A runbook covers each class: database, Kafka, provider, field-level key, signing
+   identity and certificate. It states what to rotate, what to restart, what to revoke (sessions through identity's
+   existing command), and what stays readable. KMS key deletion is protected by a waiting period.
+7. **Local stays local.** ADR-0020's marked default and the loopback guards remain the backstop. A local value can never
+   start a deployed instance.
+8. **JWT/JWKS is not applicable today.** The platform issues opaque sessions (ADR-0030). With workforce OIDC (C13), the
+   identity provider will own the JWKS.
+
+## Alternatives Considered
+
+### HashiCorp Vault
+Pros: dynamic database credentials and a transit engine.
+Cons: it is another stateful, highly available system for the platform to operate and secure. The managed store does the
+same job with less to run.
+
+### Secrets Store CSI driver (files, no Kubernetes Secret)
+Pros: secrets never reach etcd.
+Cons: the application reads environment variables, and a reload would still need a restart. etcd encryption with KMS
+closes the same gap.
+
+### Re-encrypting every row on rotation
+Cons: this rewrites `INSERT`-only evidence (`INV-HIST-01`), and the grants refuse it anyway.
+
+## Consequences
+
+Positive: every secret has an owner, a store, a rotation, a revocation and an audit trail. A key can be rotated without
+losing history.
+Negative: the ciphers change from one key to a ring, which is a code change in eight places behind one `platform`
+abstraction.
+Operational impact: rotations become rolling restarts and runbook steps.
+Security impact: a leaked secret can be revoked without an outage, and a leaked key version is bounded to the rows under
+it.
+Financial impact: none. No financial record is rewritten.
+
+## Invariants / Constraints
+
+There are no production secrets in source control. `INV-HIST-01`: evidence is never re-encrypted in place. Every
+decryption uses the stamped version.
+
+## Follow-up
+
+`P15-TSK-016`, `-018`, `-019` and `-020` build this ADR. `P15-TSK-001` corrects the two stale documents. The purge by
+crypto-shredding waits for a real jurisdiction (C12).

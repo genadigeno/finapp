@@ -1831,3 +1831,27 @@ Every return here is `REFERENCE`, through a simulated adapter (ADR-0118, C4): no
 2. The accountant captures across the gap: `POST /v1/operator/accounting/valuation-rate-sets/reference-gap` with `ACCOUNTING_CLOSE_PROPOSE`, keyed, body `{periodId, reason, gaps: [{pair: "EUR/JPY", snapshotId}]}`. Every pair not named is still judged by the bound. `409 accounting.ReferenceGapRefused`: a named pair has an observation inside the bound (no gap), none before the end, or its last observation is not the snapshot named (a late observation arrived: read the refusal again). The receipt flags the pair `beyondBound` with its `ageHours`.
 3. A controller, a different person, reviews it (`GET /v1/operator/accounting/valuation-rate-sets/{setId}` with `ACCOUNTING_CLOSE_APPROVE`) and approves on a `MULTI_FACTOR` session at `POST /v1/operator/accounting/valuation-rate-sets/{setId}/reference-gap-approval`, reasoned. The approval re-reads the reference: if a newer observation of the pair arrived since the capture, it is `409 accounting.ReferenceGapRefused`. Reject that set and capture again, ordinarily if the new observation is inside the bound. The ordinary approval refuses a set holding a gap, `409 accounting.ValuationDoorMismatch`, and the gap door refuses a set holding none.
 4. An approved set stands for its period: there is no supersession. Approve a gap only when the age is one the month's statements can carry. Every translated trial balance, balance sheet and income statement pinning it states the pair, its snapshot, its observation, its age and the bound in `translation.referenceGaps`, and the rate's own entry says `beyondBound`. The close's approver is told too: `GET .../periods/{periodId}/close-proposal` serves `valuationRateSetReferenceGaps`, how many of the named set's rates a gap admitted (`P14-DOC-001`, `P14-TSK-026`'s owner item (c)); read the set itself before approving a close that names one above zero.
+
+---
+
+## 11. Platform operations (Phase 15) — planned
+
+*(Planned by the Phase 14 → 15 transition, 2026-11-07 — `PHASE_15_PLAN.md` §11, §12, ADR-0120…0125, `Proposed`. Nothing
+below is a procedure yet: each subsection is written by the task named, from the code and manifests it lands, linked from
+its alerts, and **rehearsed on `kind` or compose with the result recorded** (`P15-TSK-032`); §1–§10 are each rehearsed by a counted sample of at least one procedure in the same task (`PHASE_GATES.md` §5 Phase 15, criterion 4). Until then no platform
+procedure exists and no deployed environment exists to apply one to.)*
+
+| Planned subsection | Written by | Rehearsed by |
+|---|---|---|
+| 11.1 Deploy: the bootstrap step when a role is added, the migration Job, then the rolling update; what a stopping pod does; **a release that adds a consumer handler to an existing group**: after the rollout, the audited replay of that event type over the rollout window (an N − 1 replica commits a record it has no handler for), or the new group with recorded starting offsets | `P15-TSK-004`, `-008`, `-012`, `-017`, `-027`, `-028` | `-012` |
+| 11.2 Promote a release by digest; the production approval boundary | `-017` | `-017` |
+| 11.3 Roll back by digest (a schema is never rolled back; never across a contract marker; an added handler's type replayed over the rollback window after the re-roll) | `-005`, `-012`, `-017`, `-027` | `-012` |
+| 11.4 A failed migration (forward fix only) | `-004`, `-005` | `-032` |
+| 11.5 Restore, then verify financially before any money moves | `-030` | `-030` |
+| 11.6 Broker outage, consumer lag, a poison record, dead letters and replay | `-026`, `-028` | `-028`, `-032` |
+| 11.7 Rotation and revocation per secret class; a key compromise | `-018`…`-020` | `-020` |
+| 11.8 Instance down, stale gauges, a burning error budget, an expiring certificate | `-024`, `-025` | `-032` |
+| 11.9 A refused image; a failing scan | `-006`, `-007` | `-007` |
+| 11.10 Edge, abuse and break-glass | `-010`, `-011`, `-022` | `-032` |
+| 11.11 Parked value with no attributable owner: return-to-sender, a closed merchant's returned payout, a closed customer's corridor return (the value stays parked, aged and alerted) | `-032` | `-032` |
+| 11.12 Incident response: severity, roles, communication, post-incident review | `-032` | `-032` |

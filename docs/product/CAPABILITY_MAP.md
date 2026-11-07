@@ -356,8 +356,24 @@ close status — FINAL for closed periods, provisional otherwise", and its close
 "Accounting GL" under Money and Accounts and "Financial reporting" / "Regulatory reporting abstraction" above are this
 section's capabilities.)*
 
+## Production operations *(Phase 15, planned at the Phase 14 → 15 transition, 2026-11-07 — `PHASE_15_PLAN.md`; nothing of it is built)*
+- Deployment — planned: the one deployable as a minimal, non-root, signed image run as N ≥ 3 replicas on Kubernetes, a
+  migration Job per release, rolling updates with no unavailability and rollback by digest; PostgreSQL and Kafka managed
+  outside the cluster
+- Edge and segmentation — planned: public and operator ingresses terminating TLS, operator routes off the internet, the
+  operational endpoints on a port no ingress serves, default-deny network policy
+- Infrastructure as code — planned: Terraform modules per concern for one reference cloud, tested with mock providers,
+  never applied in the phase
+- Delivery — planned: build once, scan, analyse, sign with provenance, admit only signed images, promote by digest, two
+  persons on every production change, every release schema-compatible with the last
+- Secrets and keys — planned: a managed secret store and KMS per environment, every secret inventoried, field-level key
+  rings, every rotation and revocation rehearsed
+- Operability — planned: SLOs per critical flow with burn-rate alerts, correctness invariants paging on first breach,
+  one telemetry egress, one payment traced end to end, platform runbooks rehearsed, a readiness review per unit
+- Not claimed: compliance with, or certification under, any standard; a production environment carrying real funds
+
 ## Platform
-- API gateway
+- API gateway *(none: the edge is an ingress, the application authenticates - Phase 15, C9)*
 - Eventing
 - Notification
 - Observability

@@ -1305,6 +1305,48 @@ by a second gauge in `P14-TSK-020`. A FINAL translated run with a missing rate s
 with lineage, corrected by resubmission; a simulated reference adapter; the reference safeguarding return subtracting
 `lending_funded` (C4, C13) *(corrected by the owner, 2026-11-05: subtracting the principal outstanding and written off, `committed` a line; "What the safeguarding return subtracts" above)*. → [ADR-0118](../adr/ADR-0118-regulatory-reporting-behind-jurisdiction-adapters.md)
 
+### Production hardening (Phase 15, `Proposed` at the Phase 14 → 15 transition)
+Planned by the Phase 14 → 15 transition (2026-11-07) in `PHASE_15_PLAN.md`, with the owner's decisions C1–C15 recorded as
+recommended defaults awaiting ratification; nothing of it is built. The phase's tasks are `P15-TSK-001`…`-034`,
+`P15-TST-001` (planned and `POSTPONED`, PI-004), `P15-TST-002` (the database pass, PI-012…PI-015) and `P15-DOC-001`. No
+new invariant: the phase protects the catalogue's existing ones through deployment, rotation, restart and restore. The
+phase's ADRs are ADR-0120…ADR-0125; **the next free number is ADR-0126.** Phase 15 moves no money, adds no business
+capability and claims no compliance with any standard.
+
+**One image, one Deployment of N replicas, a migration Job, managed state, a segmented edge.** The modular monolith
+deploys as the units it has: `finapp-app` (every replica serving HTTP and running every schedule and consumer, N ≥ 3,
+rolling with no unavailability, the HPA bounded by a connection budget that counts terminating pods
+(`maxReplicas + 2 × maxSurge + 1 ≤ finapp.database.instances`, `minReadySeconds ≥ terminationGracePeriodSeconds`), probes on a management port, graceful shutdown
+stated and tested) and `finapp-migrator` (a Job per release). PostgreSQL and Kafka are managed, outside the cluster;
+Redis is not deployed; public and operator ingresses are separate; no gateway product, no mesh, no CronJob carrying
+financial work; a rollback reverts a digest and never a schema. → [ADR-0120](../adr/ADR-0120-the-production-deployment-model.md)
+
+**Infrastructure as Terraform, verified without an apply.** Modules per concern, root modules per environment, pinned
+and locked, remote state with no secret in it, deletion protection on the financial stores; `fmt`, `validate`, `tflint`,
+`trivy config` and `terraform test` with mock providers on every change; no apply to a real account in Phase 15. →
+[ADR-0121](../adr/ADR-0121-infrastructure-as-code.md)
+
+**Build once, sign, promote by digest, two persons for production, every release compatible with the last.** Image and
+configuration scans, static analysis, SBOM and provenance attestations, admission refusing unsigned images; GitOps
+promotion by digest pull requests; an expand-only migration lint counting tightening DDL as a contract change, a
+schema-version readiness guard, an N − 1 / N rehearsal, no rollback across a contract marker; event payloads and the
+consumer handler set checked at build - a handler added to an existing group replayed over the rollout window or given
+its own group - no runtime registry. →
+[ADR-0122](../adr/ADR-0122-ci-cd-and-the-supply-chain.md)
+
+**Secrets in a managed store, keys in KMS, field-level keys as rings.** Delivered as the environment the application
+already reads; rotation by alternating users, overlapping secrets and rolling restarts; encrypt with the active version,
+decrypt with the stamped one, never re-encrypt `INSERT`-only evidence. → [ADR-0123](../adr/ADR-0123-secrets-and-key-management.md)
+
+**SLOs per critical flow; correctness never budgeted.** One telemetry egress (the OpenTelemetry Collector), burn-rate
+alerts checked by `promtool`, every alert naming its runbook; the continuous trial balance, the proofs, projection drift,
+GL ≠ ledger and dead letters page on the first breach; one flow traced end to end; nothing sensitive in telemetry. →
+[ADR-0124](../adr/ADR-0124-observability-slos-and-error-budgets.md)
+
+**Environments differ by values, never by code path.** No Spring profile decides behaviour; every property registered
+and classed `SECRET`, `FINANCIAL` or `OPERATIONAL`; a `FINANCIAL` change two-person and fingerprinted across the fleet. →
+[ADR-0125](../adr/ADR-0125-configuration-and-environment-management.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state
@@ -1375,7 +1417,7 @@ Recorded so these are not mistaken for oversights.
 | Deferred | Until | Why |
 |----------|-------|-----|
 | Service extraction | Phase 16 | Requires measurement; anticipating it costs atomicity now (ADR-0001) |
-| Kubernetes and Terraform | Phase 15 | Deployment topology should follow a proven architecture, not precede it |
+| Kubernetes and Terraform | Phase 15 | Deployment topology should follow a proven architecture, not precede it *(Planned by the Phase 14 → 15 transition (2026-11-07): ADR-0120, ADR-0121 (`Proposed`), `P15-TSK-009`…`-016`; `PHASE_15_PLAN.md` §6, §7.)* |
 | Real provider connectivity | Never | Adapters plus simulation give the same design pressure without the risk |
 | Jurisdiction-specific compliance | Per phase | Jurisdiction-neutral core; specifics behind policy/configuration/adapters |
 | Machine-learning risk models | Beyond scope | Versioned rules first; models add reproducibility burden without domain insight |
@@ -1390,7 +1432,7 @@ concluded only on `RECALLED`. The batch-rail return-window half stays open.)* |
 | Return-to-sender, and a payout return to a closed merchant | Phase 15 | Residual value with no attributable owner stays in owned suspense, aged and alerted; returning it, or settling a returned payout against a closed merchant, is a new operation with its own consent - Phase 15 writes its operating procedure or schedules it by its own ADR (ADR-0070 §4, ADR-0073; owner named by the Phase 8 review) |
 | Recovering a DEBIT suspense item from a customer or merchant | A later collections context *(re-dated by the Phase 12 → 13 transition, 2026-10-22: Phase 13 opens a collections case on default only (C3, `P13-TSK-025`, cut candidate) and takes up no collection operation — `PHASE_13_PLAN.md` §20)* | A DEBIT item leaves today by late allocation, a correction offset, `OFFSET_SUSPENSE` or `WRITE_OFF`; collecting it from a counterparty is debt collection, beside chargeback debt's reserve and collection (owner named by the Phase 8 review) |
 | Dispute-fee pass-through to merchants | A merchant commercial-terms phase, after Phase 13 *(re-dated by the Phase 12 → 13 transition, 2026-10-22: Phase 13 judges and monitors merchant abuse (`P13-TSK-014`) but prices nothing — `PHASE_13_PLAN.md` §20)* | The PSP's dispute fee posts to `DISPUTE_COSTS`; charging it on is a commercial term with its own consent and statement consequences (ADR-0061's follow-up; recorded here by the review, with reserves the Known Architectural Debt row in `CURRENT_STATE.md`). *(The Phase 7 → 8 transition adds the counterparties' processing costs to the same deferral: they post to `PROCESSING_COSTS`, and no price varies with the rail (ADR-0072 §6, `Proposed`).)* |
-| A secrets manager (Vault, cloud KMS) | Phase 15 | No deployment, no key material and one local database password. A manager chosen with no real requirement to shape it is the wrong manager; the seam - configuration read from the environment - is established now (ADR-0020) |
+| A secrets manager (Vault, cloud KMS) | Phase 15 | No deployment, no key material and one local database password. A manager chosen with no real requirement to shape it is the wrong manager; the seam - configuration read from the environment - is established now (ADR-0020) *(Planned by the Phase 14 → 15 transition (2026-11-07): a managed secret store and KMS per environment, delivered as the environment the application reads, field-level key rings - ADR-0123 (`Proposed`), `P15-TSK-016`, `-018`…`-020`.)* |
 | Changing the verified contact channel | Phase 15, with the notifier | A safe change needs a step-up, a notice to the channel being replaced and a cooling-off - `INV-IDN-06`'s own enforcement - and the notice needs the channel notifier Phase 15 brings. Until then a second verification is refused (`X-TSK-004`, §Recovery channels). Nothing delivers a challenge before that notifier either, so the refusal cannot yet strand a customer. **The flow must spend every pending challenge of the kind**: a refused verification writes nothing, so its challenge stays live until it expires, and a flow that freed the kind without spending them would let a parked challenge verify the moment the verified channel is gone |
 | Revaluation, a functional or reporting currency, unrealised P&L and FX P&L reporting | Phase 14 | Covered positions are zero at rest, and realised results come only from slipped covers and unwinds; revaluing `FX_POSITION` before a reporting currency exists would be a plug, not a fact (D30, ADR-0076; recorded by the Phase 8 → 9 transition) *(Planned by the Phase 13 → 14 transition (2026-10-29): EUR functional and reporting currency (C1), valuation rate sets and report-time translation (`P14-TSK-014`, `-015`), FX gains and losses reported (`-017`); unrealised revaluation not posted (C7 A) - ADR-0116, `Proposed`.)* *(Built by `P14-TSK-014`, `-015`, `-016` and `-017`; ADR-0116 `Accepted` by the Phase 14 review, `P14-DOC-001`, 2026-11-06. Posting unrealised revaluation (C7 B) stays deferred, a later qualified decision.)* |
 | Hedging, netting of covers, position limits, treasury, liquidity and prefunding | A treasury capability of its own; none scheduled (DELIVERY_PLAN §18) | The platform is principal with one back-to-back cover per accepted quote; netting would make the position unexplainable trade by trade (D1, ADR-0077) |
@@ -1413,6 +1455,6 @@ concluded only on `RECALLED`. The batch-rail return-window half stays open.)* |
 | Capital tranches - partitioning the per-currency `LENDING_CAPITAL` row | Phase 16, if a measurement demands it | The capital row is a per-currency hot row, correct under contention (proven by `P11-TST-001`) but its contention not measured - a debt row, `CURRENT_STATE.md` §Known Architectural Debt (ADR-0096; recorded by the Phase 11 review) |
 | The safeguarding proof that subtracts `lending_funded` | Phase 14/15 | `LendingCapitalProof` publishes `lending_funded(c) = Σ principal outstanding + committed`, the term a safeguarding proof comparing customer liabilities with cash will subtract; no such proof exists yet (ADR-0096 §6; recorded by the Phase 11 review) *(Planned by the Phase 13 → 14 transition (2026-10-29), C13: the reference safeguarding position return, `P14-TSK-019`, a cut candidate - ADR-0118, `Proposed`.)* *(**Closed by `P14-TSK-019`, 2026-11-05:** `SAFEGUARDING_POSITION` version 1 subtracts `lending_funded`, the formula read as of each month's cutoff over frozen rows, never from the live proof; the figure's formula widened by `P14-TSK-021`, the owner's item (h). ADR-0118's As built, ADR-0096's Follow-up. Whether `committed` belongs in the subtraction is that task's owner item (a).)* *(**Corrected by the owner, 2026-11-05, built by `P14-TSK-023`:** it does not. `lending_funded` stays capital's figure, and the return subtracts `principalUnrepaid`, principal outstanding and written off; "What the safeguarding return subtracts" above.)* |
 | Production origination - a terms version `ACTIVE` in production, on a real bureau | The phase that answers unresolved questions #13 and #14, Phase 15 at the latest | No production credit decision can be `APPROVED` until a real bureau exists, so production activates no terms and the application door answers `422 lending.ProductNotOffered`; `OPERATIONS_RUNBOOK.md` §7.4 is the activation gate (ADR-0090 §9, L11; recorded by the Phase 11 review) |
-| Every gauge off the scrape thread | Phase 15 | `AccountingGaugeRefresher` holds accounting's nine reads off the scrape thread; about sixty other metric classes still read on it, each waiting up to the pool's 5 s against a 5 s scrape timeout, so a database in trouble loses the whole scrape of that instance and no unreadable rule of any module can hold its `for`. Move the refresher to `platform` and every gauge behind it (`P14-TSK-020`'s (ak)) |
-| A platform rule on `up`, with alert routing | Phase 15 | `AccountingGaugesAbsent` is the one rule that fires when a fleet stops being scraped, it is a ticket guarding rules that page, and nothing reads `up`. A rule per instance at page, with Phase 15's routing (`P14-TSK-020`'s (am)) |
-| `promtool` in CI | Phase 15 | No Prometheus has read the alert rules: every "fires" is `RuleEvaluator`'s. `promtool check rules` runs once at Phase 14's database pass and then in CI (`P14-TSK-020`'s (aj)) |
+| Every gauge off the scrape thread | Phase 15 | `AccountingGaugeRefresher` holds accounting's nine reads off the scrape thread; about sixty other metric classes still read on it, each waiting up to the pool's 5 s against a 5 s scrape timeout, so a database in trouble loses the whole scrape of that instance and no unreadable rule of any module can hold its `for`. Move the refresher to `platform` and every gauge behind it (`P14-TSK-020`'s (ak)) *(Planned by the Phase 14 → 15 transition (2026-11-07): `P15-TSK-024`, with the refresher made restartable (PI-014 item 2).)* |
+| A platform rule on `up`, with alert routing | Phase 15 | `AccountingGaugesAbsent` is the one rule that fires when a fleet stops being scraped, it is a ticket guarding rules that page, and nothing reads `up`. A rule per instance at page, with Phase 15's routing (`P14-TSK-020`'s (am)) *(Planned by the Phase 14 → 15 transition (2026-11-07): `P15-TSK-024` (the rule), `P15-TSK-025` (Alertmanager routing) - ADR-0124 (`Proposed`).)* |
+| `promtool` in CI | Phase 15 | No Prometheus has read the alert rules: every "fires" is `RuleEvaluator`'s. `promtool check rules` runs once at Phase 14's database pass and then in CI (`P14-TSK-020`'s (aj)) *(Planned by the Phase 14 → 15 transition (2026-11-07): `P15-TSK-025`: `promtool check rules` and `promtool test rules` in CI, beside `amtool check-config`.)* |

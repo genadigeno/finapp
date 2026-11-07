@@ -176,6 +176,11 @@ becomes a fail-safe judged by the amount band alone (item 77).)*
 be depended on by everything, which is what `platform` already is.
 *Split trigger:* audit acquiring its own retention, export or regulatory-reporting behaviour
 substantial enough to constitute a domain — plausible around Phase 15.
+*(The Phase 14 → 15 transition, 2026-11-07: the trigger is read and does not fire in Phase 15. Audit retention gains a
+policy and a designed archival to write-once storage, and its purge is re-dated to a real jurisdiction (C12,
+`P15-TSK-029`). That is configuration and a sweep, not a domain, so audit stays in `platform`. No module boundary moves in
+Phase 15: the deployment ships the modular monolith as one image (ADR-0120, `Proposed`), and extraction stays Phase 16's,
+by measurement.)*
 
 **M5 — Reporting lives in `accounting`.** Financial reports are derived read models over the
 same GL mapping, periods and postings that `accounting` owns. A separate module would need

@@ -26803,6 +26803,999 @@ BNPL**
 
 ---
 
+# Phase 15 — Production Hardening
+
+Status: `READY` (2026-11-07 — entry gate passed by the Phase 14 → 15 transition: Phase 14 confirmed by its completion
+gate, `P14-GATE`), initialised as documents only by the same transition and elaborated to task granularity:
+thirty-seven items (`P15-TSK-001`…`-034`, `P15-TST-001`, `P15-TST-002`, `P15-DOC-001`) across eleven milestones, with
+`P15-TSK-001` marked `READY`. The engineering plan is [`PHASE_15_PLAN.md`](PHASE_15_PLAN.md); decisions are
+ADR-0120…ADR-0125 (`Proposed`). The roadmap's title is kept ("Production Hardening"); the owner's brief calls the phase
+"Production Architecture and Hardening", and its twelve areas are the plan's scope. **No new invariant**: the phase
+protects the catalogue's existing ones — `INV-LED-*`, `INV-ACC-01`, `INV-HIST-01`, `INV-IDEM-*`, `INV-EVT-*`,
+`INV-AUD-*` — through deployment, rotation, restart and restore, read from the catalogue at the gate.
+
+**Phase 15 moves no money, adds no business capability and claims no compliance** (`PHASE_15_PLAN.md` §1, §1.1). It is
+a modular monolith deployed as the units it has — `finapp-app`, N ≥ 3 replicas, and `finapp-migrator`, a Job per
+release (§4); every per-service question of the owner's brief is answered for those units. **Every task is verifiable
+inside the repository and CI** (`kind`, `kubeconform`, `terraform test` with mock providers, `promtool`, scanners); a
+real cloud apply, a real registry push, real certificates, a managed restore and real paging are deferred to a real
+environment and never claimed. `DOD-FIN` is carried by the tasks that **guard** financial consistency through operations
+(`-005` schema compatibility, `-030` restore, `-033` the postponed defects); the rehearsals of `-012`, `-020` and `-032`
+end in the financial census (trial balance zero per currency, one effect per idempotency key, the outbox drained, no
+orphaned lease, GL = ledger).
+
+**Every task below states the fields the owner's brief Part 9 lists** — objective, affected components, dependencies,
+scope and exclusions, architecture changes, infrastructure changes, security implications, multi-instance implications,
+failure and rollback behaviour, testing and validation, operational documentation, acceptance criteria and definition of
+done — with a **probe** (the deliberate break the completion gate performs and must see caught, recorded in
+`MUTATION_TESTING.md` §2) and risk and complexity at its end. A task's design may correct its entry and says so. The
+ten-instance question is answered per task; `PASS` only on the counted test or rehearsal named.
+
+**Testing under C14** (`PHASE_15_PLAN.md` §16): per task the hermetic tier of the touched modules, `:app:architectureTest`,
+the task's `app` tests by filter, the guard packages and named guards, and the task's new static checks run fresh; the
+task's database suites written and owed; the fleet `databaseTest`/`kafkaTest` skipped — a criterion-7 deviation recorded
+in every gate. **One database pass at the exit**, `P15-TST-002`: every tier fresh on the final tree including `kafkaTest`
+(PI-012), PI-013 and PI-014 closed with `-033`'s fixes, PI-015's struck rows performed again. Rehearsals on `kind` need
+Docker and are not the storm.
+
+**Milestones** (acceptance in `PHASE_15_PLAN.md` §17): M15.1 Foundations (`-001`, `-002`) · M15.2 Images and supply chain
+(`-003`…`-007`) · M15.3 Kubernetes and the edge (`-008`…`-012`) · M15.4 Infrastructure as code (`-013`…`-016`) · M15.5
+Delivery (`-017`) · M15.6 Secrets and keys (`-018`…`-020`) · M15.7 Application security (`-021`, `-022`) · M15.8
+Observability (`-023`…`-025`) · M15.9 Database and messaging operations (`-026`…`-030`) · M15.10 Configuration (`-031`) ·
+M15.11 Operations and exit (`-032`, `-033`, `P15-TST-002`, `-034`, `P15-TST-001` `POSTPONED`, `P15-DOC-001`).
+
+**Parallel waves** (`PHASE_15_PLAN.md` §19): **A** `-001`; **B** `-002`, `-003`, `-008`, `-013`, `-021`, `-024`, `-026`,
+`-033`; **C** `-004`, `-006`, `-009`, `-014`, `-025`, `-027`, `-028`, `-029`; **D** `-005`, `-010`, `-011`, `-015`, `-018`;
+**E** `-012`, `-016`, `-019`, `-022`, `-031`; **F** `-007`, `-020`, `-023`, `-030`; **G** `-017`; **H** `-032`; **I**
+`P15-TST-002`; **J** `-034`; **K** `P15-DOC-001` (`P15-TST-001` `POSTPONED`, PI-004). **Critical path**: `-001` → `-003` →
+`-004` → `-005` → `-012` → `-007` → `-017` → `-032` → `TST-002` → `-034` → `DOC-001`. *(The transition's review, its M-5,
+added the edge `-012` after `-026`: `kind` is not loopback, so the rehearsal needs `-026`'s authenticated TLS client.
+`-026` is in wave B, so the waves and the critical path are unchanged.)*
+
+**If the phase must shrink**, cut the reporting role of `-021` first, then `-027`'s `X-TSK-014` half, then `-016`'s
+observability module; each deferral recorded with its owner. **Never cut:** `-001`, `-005`, `-008`, `-012`, `-018`, `-019`,
+`-025`, `-030`, `-032`, the database pass.
+
+**What Phase 15 must not implement** (`PHASE_15_PLAN.md` §22): a business capability; a change to a financial rule,
+treatment, lifecycle or invariant beyond `-033`'s stated fixes; a microservice or a module split; a Kubernetes `CronJob`,
+a leader election or any single-instance mechanism; a schema rollback; a transaction-mode pooler; a runtime schema
+registry; Redis; an application use of object storage; a service mesh; an apply to a real account or a push to a real
+registry; a compliance or certification claim; the purge of financial evidence, agreements or regulatory reports;
+Phase 16's load, chaos, multi-region or DR work. A reviewer finding any of it refuses the change.
+
+**The owner decisions** (2026-11-07, C1–C15, `PHASE_15_PLAN.md` §2.2 — **recommended defaults awaiting ratification**;
+the first task depends on none): **C1** AWS as the one reference cloud, modules never applied; **C2** EKS for staging and
+production, `kind` for CI, Kustomize for the app; **C3** PostgreSQL and Kafka managed outside the cluster, Redis not
+deployed; **C4** a multi-stage Dockerfile, distroless Java 21 `nonroot`; **C5** one Deployment, every role per replica,
+N ≥ 3, the HPA bounded by the connection budget, migrations a Job; **C6** a managed secret store and KMS, External
+Secrets Operator, field-level key rings; **C7** ECR, Cosign keyless with provenance, admission verification, Trivy and
+Semgrep; **C8** GitOps by digest, four environments, two persons for production; **C9** public and operator ingresses,
+the management port off every Service, no gateway product, no mesh; **C10** the OpenTelemetry Collector, burn-rate SLOs,
+correctness never budgeted; **C11** event compatibility at build, Kafka `SASL_SSL` with SCRAM; **C12** operational sweeps
+built, evidence purges re-dated to a real jurisdiction; **C13** operator sessions `OPERATOR`, a reporting role (cut
+candidate), workforce OIDC deferred; **C14** the standing criterion-7 deviation, one database pass at the exit, the storm
+postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
+
+**P15-TSK-001 — The threat model, the trust boundaries and the readiness standard** — `READY` (2026-11-07; marked by the
+Phase 14 → 15 transition)
+- **Objective**: name every threat to the deployed platform and the control that answers it, with evidence, before any
+  control is built; write the bar every deployable unit must meet to be called production-ready.
+- **Affected components**: documents (`docs/architecture/THREAT_MODEL.md` new, `PRODUCTION_READINESS.md` new,
+  `SECURITY_ARCHITECTURE.md`, `SECRET_MANAGEMENT.md`); one guard test in `app` (`com.finapp.app.architecture`).
+- **Dependencies**: Phase 14 confirmed by its completion gate (`P14-GATE`).
+- **Scope**: the trust boundaries of `PHASE_15_PLAN.md` §9.1; STRIDE per boundary; each threat's likelihood and impact
+  (CRITICAL/HIGH/MEDIUM/LOW); each mapped to a control with evidence (an existing test, policy or file, or the Phase 15
+  task that will build it) or to an accepted risk with an owner and a date; the readiness standard of §15 as a document
+  with one table per unit and per module left to `-034`; the stale statements of §3 corrected
+  (`SECURITY_ARCHITECTURE.md` §Encryption at rest, `SECRET_MANAGEMENT.md` §7); `ThreatModelIsCompleteTest`.
+- **Exclusions**: building any control; a penetration test; any compliance mapping.
+- **Architecture changes**: none — a register of threats and controls. **Infrastructure changes**: none.
+- **Security implications**: the model is the phase's security baseline; it holds no secret, endpoint or credential and
+  names no vulnerability's exploit path beyond its class.
+- **Multi-instance implications**: the boundaries are drawn for N replicas (no "the server"); `PASS` vacuously, recorded.
+- **Failure and rollback**: a document; reverted by a commit.
+- **Testing and validation**: `ThreatModelIsCompleteTest` — every control row's evidence path or task id exists; every
+  threat has a rating and a disposition; no CRITICAL or HIGH threat without a control or a dated acceptance; the
+  document guards (`DomainGlossaryTest`, `AdrRegistersAreReconciledTest`) green.
+- **Probe**: point one control row at a file that does not exist → the test red; remove one HIGH threat's disposition →
+  red.
+- **Operational documentation**: the two new documents; `SECURITY_ARCHITECTURE.md` pointing at the model.
+- **Acceptance criteria**: every boundary modelled; every threat dispositioned; the guard green with its probes caught;
+  the stale statements corrected.
+- **Definition of done**: `DOD-SEC`, `DOD-ARCH`, `DOD-DOC`. **Risk**: Low. **Cx**: M.
+
+**P15-TSK-002 — The carried items ruled (C15)** — `PLANNED`
+- **Objective**: no debt row, deferral or cross-cutting item names Phase 15 as owner without a ratified disposition.
+- **Affected components**: `CURRENT_STATE.md` §Known Architectural Debt, `DECISIONS.md` §Deliberately Deferred,
+  `BACKLOG.md` (cross-cutting items `X-TSK-008`, `-014`, `-015`), `PHASE_15_PLAN.md` §25.
+- **Dependencies**: `-001`; the owner's ratification of C15.
+- **Scope**: each Phase-15-owned row read; its disposition applied — scheduled into a named Phase 15 task (and that
+  task's entry widened), added as a new Phase 15 item if the owner chooses (`X-TSK-015` recommended), or re-dated with a
+  reason; debt row #61 (posting once-ness's second rank) ruled before `-029` may sweep idempotency records; the Phase 14
+  completion gate's remediation entries named with their horizons and left `PLANNED` outside every Phase 15 milestone -
+  `P14-REM-001` (a break's resolution under `MULTI_FACTOR`), `-002` (step-up on the mapping activation and the
+  acknowledgement approval), `-003` (reason classifications and screens), `-004` (the Phase 14 schema closed to raw
+  writers), `-006` (write-offs and the BNPL fee pin), `-007` (a settlement source's retirement), `-008` (close-check
+  robustness), `-010` (the exit review's accepted owner items) and `-011` (read surfaces), each "before production use"
+  or "before production write-offs and BNPL"; `-005` (regulatory submission hardening), "before any real regulatory
+  channel"; and `-009` (the lock's grace and the submissions' orderings on the database's clock, A4-F1), **"Phase 15 at
+  the latest"** - recommended to the owner for scheduling before `P15-TST-002` so its database cases run in the pass.
+  Scheduling any of them is the owner's; none becomes `READY` here.
+- **Exclusions**: fixing any row (the scheduled task does).
+- **Architecture changes**: none. **Infrastructure changes**: none.
+- **Security implications**: security-class rows may not be re-dated without the owner's stated reason.
+- **Multi-instance implications**: correctness-class rows (instants decided off the database's clock) stay in the phase
+  (`-033`). `PASS` vacuously for the ruling itself.
+- **Failure and rollback**: documents only.
+- **Testing and validation**: a grep recorded in the gate — no row names "Phase 15" without a disposition marker.
+- **Probe**: none applicable (a ruling); the grep is the check.
+- **Operational documentation**: the rows themselves.
+- **Acceptance criteria**: every Phase-15-owned row carries a dated disposition; new items, if any, in this section.
+- **Definition of done**: `DOD-DOC`. **Risk**: Low. **Cx**: S.
+
+**P15-TSK-003 — The application image** — `PLANNED`
+- **Objective**: one minimal, non-root, reproducible image of `app`, built from digest-pinned bases.
+- **Affected components**: `app` packaging; new `Dockerfile` (or `app/Dockerfile`) and `.dockerignore`;
+  `infra/scripts/image-build.sh`; `.github/workflows/ci.yml` (an `image` job, no push).
+- **Dependencies**: `-001`.
+- **Scope**: multi-stage build (C4): JDK 21 builder extracting the layered jar, distroless Java 21 `nonroot` runtime,
+  both pinned by digest in one pins file; layer order dependencies → loader → snapshots → application; JVM options
+  (`MaxRAMPercentage`, exit on out-of-memory); OCI labels (revision, source, version); a recorded size budget; the
+  build run twice and compared; Dependabot's `docker` ecosystem; `check-pinned-images.sh` covering the new pins.
+- **Exclusions**: scanning (`-006`), signing (`-007`), any registry push, Kubernetes.
+- **Architecture changes**: none to the code. **Infrastructure changes**: the image and its build script.
+- **Security implications**: UID 65532, no shell, no package manager, nothing but the jar and the JRE; the image holds
+  no secret and no configuration beyond `application.yaml`'s defaults (which refuse to start off loopback).
+- **Multi-instance implications**: the image holds no instance state; `PASS` by construction, read.
+- **Failure and rollback**: a failed build fails the job; nothing deploys.
+- **Testing and validation**: the image runs against compose's PostgreSQL and Kafka on loopback and reports readiness
+  `UP`; `docker inspect` shows the non-root user and labels; the size budget asserted; two builds compared.
+- **Probe**: switch the runtime base to a root user → the user assertion red.
+- **Operational documentation**: `README.md` §building the image; `SYSTEM_ARCHITECTURE.md` §Continuous Integration row.
+- **Acceptance criteria**: the image builds in CI and locally, runs non-root, starts ready against local dependencies,
+  within budget.
+- **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
+
+**P15-TSK-004 — The migrator image and the migration Job contract** — `PLANNED`
+- **Objective**: run every module's migrations in a deployed environment exactly as the build does, as
+  `finapp_migrator`, safely concurrent and never blocking postings.
+- **Affected components**: a migrator image (Flyway with every module's `db/migration`); its build script; the Job
+  manifest's contract (written here, deployed by `-009`/`-012`); `DATA_MIGRATIONS.md` §2.
+- **Dependencies**: `-003`.
+- **Scope**: the module order pinned and checked against the build's; each schema's settings identical to its
+  `build.gradle.kts` (`cleanDisabled`, `validateOnMigrate`, `outOfOrder=false`, `baselineOnMigrate=false`); a session
+  `lock_timeout` and bounded retries; exit codes; the Job's `backoffLimit` and deadline; and, **as a separate one-time
+  bootstrap step that is never part of this Job**, the roles of `00-roles.sql` for a deployed database (`finapp_migrator`,
+  `finapp_app`), created by the master user, whose credentials only that step holds, with passwords from the secret
+  store - roles are infrastructure, never Flyway (`finapp_migrator` is `NOCREATEROLE`), and the per-table grants stay in
+  the migrations *(the bootstrap read "the role-creation step of `00-roles.sql` … in this image" until the transition's
+  review, its M-4)*.
+- **Exclusions**: the compatibility lint and the readiness guard (`-005`); deployment ordering (`-017`); the alternating
+  application users (`-020`) and `finapp_reporting` (`-021`), which the same bootstrap step creates when those tasks land.
+- **Architecture changes**: migrations gain a runtime runner beside Gradle's (ADR-0011 unchanged: never the
+  application). **Infrastructure changes**: the image.
+- **Security implications**: only this image holds migrator credentials; the application's role cannot create or alter.
+- **Multi-instance implications**: two Jobs at once serialise on Flyway's schema-history lock; the second finds nothing
+  to apply — a counted test (two concurrent runs, one applying, schema history identical).
+- **Failure and rollback**: a failed migration leaves the schema history marking it failed and the rollout blocked;
+  fixed forward, never cleaned.
+- **Testing and validation**: from an empty database the image produces a schema history identical to `flywayMigrate`'s;
+  re-run is a no-op; two concurrent runs serialise; a lock held on a ledger table makes the migration time out rather
+  than queue (owed: a database case, C14).
+- **Probe**: reorder two modules → the order check red.
+- **Operational documentation**: runbook §deploy (migration step), §migration failure (`-032`).
+- **Acceptance criteria**: identical schema to the build's; idempotent; serialised; bounded by `lock_timeout`.
+- **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P15-TSK-005 — Schema compatibility across a rolling deploy: the expand-only lint and the schema-version guard** —
+`PLANNED`
+- **Objective**: release N's schema always serves release N − 1's code, and release N never serves traffic on an
+  older schema.
+- **Affected components**: a migration lint (a test over every module's migrations); `app` (a readiness contributor
+  reading each schema's applied version); `DATA_MIGRATIONS.md` §4.1.
+- **Dependencies**: `-004`.
+- **Scope**: the lint refusing, in any migration added since the last release tag, destructive DDL (`DROP`, `RENAME`, a
+  column type change) and **tightening DDL** - a new `CHECK`, trigger, `UNIQUE` or foreign key, `SET NOT NULL`, `ADD
+  COLUMN … NOT NULL` with no default, a `REVOKE` - each of which can refuse a write release N − 1 still makes, unless
+  the file carries a contract marker naming the first release whose code conforms; the markers read by `-017`'s
+  promotion script, which refuses a rollback across one; the build embedding each schema's latest expected version; a
+  readiness contributor `schemaVersion` reporting `OUT_OF_SERVICE` while any schema is older; liveness untouched.
+  *(Tightening DDL added by the transition's review, 2026-11-07, its M-2.)*
+- **Exclusions**: running N − 1 against N (`-012`).
+- **Architecture changes**: readiness gains a schema-version contributor (ADR-0016 kept: liveness reads nothing).
+- **Infrastructure changes**: none.
+- **Security implications**: none beyond the readiness body's detail (still `never`).
+- **Multi-instance implications**: during a rollout old and new replicas coexist on one schema; the guard makes a new
+  replica wait rather than serve; `PASS` by the rehearsal of `-012`.
+- **Failure and rollback**: a new replica on an old schema stays unready, so the rollout pauses at `maxUnavailable: 0`;
+  rollback is to N − 1 only when no migration since N − 1 carries a contract marker excluding it - past a marker the way
+  back is a forward fix.
+- **Testing and validation**: the lint over planted migrations (each refused class, destructive and tightening; a marked
+  contract accepted); the guard hermetic with a stubbed version read; the database case owed (C14).
+- **Probe**: delete the `DROP` rule → the planted `DROP COLUMN` passes → red.
+- **Operational documentation**: `DATA_MIGRATIONS.md` §4.1 gains the enforcement; runbook §deploy.
+- **Acceptance criteria**: every refused class refused; readiness false on an older schema and true on the expected one.
+- **Definition of done**: `DOD-BUILD`, `DOD-FIN`. **Risk**: Medium. **Cx**: M.
+
+**P15-TSK-006 — Image scanning, SBOMs and static analysis in CI** — `PLANNED`
+- **Objective**: no image or source with a known HIGH or CRITICAL finding reaches an environment unnoticed.
+- **Affected components**: `infra/scripts/` (image scan, image SBOM, SAST), `infra/scanner-pins.sh`, `ci.yml`, vendored
+  Semgrep rules.
+- **Dependencies**: `-003`.
+- **Scope**: Trivy over both images (vulnerabilities, secrets, misconfiguration), HIGH/CRITICAL failing; a CycloneDX SBOM
+  per image; Semgrep OSS pinned by digest with rules vendored (Java security, Spring, secrets) and a baseline of
+  accepted findings each with a reason; a weekly scheduled re-scan of the last built image.
+- **Exclusions**: signing (`-007`).
+- **Architecture changes**: none. **Infrastructure changes**: CI jobs and pins.
+- **Security implications**: the supply chain's detection layer; findings accepted only in the threat model with an
+  expiry.
+- **Multi-instance implications**: none; `PASS` vacuously.
+- **Failure and rollback**: a finding fails the job; nothing deploys.
+- **Testing and validation**: a planted vulnerable base image fails the image job; a planted secret fails it; a planted
+  SQL-concatenation pattern fails SAST.
+- **Probe**: lower the severity threshold to `CRITICAL` only → the planted HIGH passes → recorded as caught by the
+  threshold assertion.
+- **Operational documentation**: `SYSTEM_ARCHITECTURE.md` §Continuous Integration's table; runbook §a failing scan.
+- **Acceptance criteria**: every planted finding fails its job; the final tree green.
+- **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
+
+**P15-TSK-007 — Signing, provenance and admission verification** — `PLANNED`
+- **Objective**: only images CI built from a reviewed commit can run.
+- **Affected components**: CI (sign and attest), a local registry in the job, the `kind` cluster's admission policy,
+  ADR-0122.
+- **Dependencies**: `-006`, `-012`.
+- **Scope**: Cosign signatures and SLSA provenance and SBOM attestations for both images; in CI a local registry and an
+  ephemeral key (no real identity exists); `cosign verify` before any deploy; the Sigstore policy-controller (pinned) on
+  `kind` refusing an unsigned image and one signed by another key; the production identity recorded as the owner's.
+- **Exclusions**: a real registry or the public transparency log under the repository's identity.
+- **Architecture changes**: none. **Infrastructure changes**: CI steps, an admission controller in `kind`.
+- **Security implications**: closes trust on first use for the deployable artefacts (T5).
+- **Multi-instance implications**: admission applies to every replica alike; `PASS` vacuously.
+- **Failure and rollback**: a verification failure stops the deploy; the running digest stays.
+- **Testing and validation**: on `kind`: the signed image admitted; an unsigned image refused; a wrongly signed image
+  refused.
+- **Probe**: set the policy to `warn` → the unsigned image is admitted → red.
+- **Operational documentation**: runbook §a refused image; ADR-0122's follow-up.
+- **Acceptance criteria**: the three admission cases as stated; attestations attached and verifiable.
+- **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P15-TSK-008 — The runtime contract: management port, graceful shutdown, drained schedules** — `PLANNED`
+- **Objective**: an instance can be stopped at any moment without failing an accepted request or leaving work stranded,
+  and its operational endpoints are on a port no ingress serves.
+- **Affected components**: `app` (`application.yaml`, every `*Schedule`, `InboxConsumers`, `AccountingGaugeRefresher`),
+  `SECURITY_ARCHITECTURE.md` §Operational endpoints, `TransportSecurityGuard`'s note.
+- **Dependencies**: `-001`.
+- **Scope**: `management.server.port` (8081), with `management.server.address` bound to loopback by default for every
+  non-Kubernetes run (today `/actuator/prometheus` and `info` are open on `0.0.0.0:8080` - the two debt rows on the
+  operational and scrape endpoints) and set to the pod address only by the Kubernetes overlays, where `-010`'s
+  NetworkPolicy restricts it; `server.shutdown=graceful` and `spring.lifecycle.timeout-per-shutdown-phase`
+  stated and asserted; readiness `REFUSING_TRAFFIC` on shutdown; every schedule's `stop()` stops claiming and awaits
+  its executor within a bound shorter than the phase timeout; consumers commit and close; the pool closed last; the
+  stale note in `TransportSecurityGuard` corrected.
+- **Exclusions**: the `preStop` hook and grace period (`-009`); NetworkPolicy (`-010`).
+- **Architecture changes**: shutdown ordering made explicit (`SmartLifecycle` phases).
+- **Infrastructure changes**: none.
+- **Security implications**: the actuator leaves the API port, closing two debt rows when `-010` restricts it.
+- **Multi-instance implications**: correctness never depends on the drain — an interrupted claim's lease expires and
+  another instance takes it; the drain reduces retries; `PASS` on a counted test: stop during a claimed batch, the
+  batch finished or its lease reclaimed by a second context, one effect per key.
+- **Failure and rollback**: a schedule that does not finish in its bound is interrupted (as today) and its lease
+  expires.
+- **Testing and validation**: hermetic: the shutdown order, the bounded wait, readiness refusing before the server
+  stops; the database case of the counted test owed (C14).
+- **Probe**: restore `shutdownNow()` without the wait → the drain test red.
+- **Operational documentation**: runbook §deploy (what a stopping pod does); `DISTRIBUTED_EXECUTION.md` §3's schedule
+  rows.
+- **Acceptance criteria**: as tested; probes served only on 8081.
+- **Definition of done**: `DOD-KERNEL`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P15-TSK-009 — Kubernetes base manifests for the application** — `PLANNED`
+- **Objective**: the application's desired state as reviewed, validated YAML.
+- **Affected components**: new `deploy/` (Kustomize base and overlays `kind`, `staging`, `production`); policy checks in
+  `infra/scripts/`; `ci.yml` (a `manifests` job).
+- **Dependencies**: `-003`, `-008`.
+- **Scope**: Deployment (N ≥ 3, `maxUnavailable: 0`, `maxSurge: 1`, `minReadySeconds ≥ terminationGracePeriodSeconds`,
+  topology spread, security context, requests and limits, `preStop`, `terminationGracePeriodSeconds`,
+  liveness/readiness/startup probes on 8081), Service (8080 only), hash-named ConfigMap, ServiceAccount (no token),
+  PodDisruptionBudget, HPA (bounded, scale-down one pod per period no shorter than the grace), the migrator Job template; the
+  test-only single-node PostgreSQL and Kafka in the `kind` overlay; `kubeconform` (strict, pinned schemas) and policies:
+  security context, probes, requests and limits, digest-only images, no `CronJob`, no StatefulSet outside `kind`, no
+  `kind: Secret` with data, and the connection budget **counting terminating pods** (`PHASE_15_PLAN.md` §6.1): `maxReplicas
+  + 2 × maxSurge + 1 ≤ finapp.database.instances` with `minReadySeconds ≥ terminationGracePeriodSeconds` - a rollout and a
+  ReplicaSet's replacement do not count terminating pods, each of which holds its pool open through its grace *(read
+  "`maxReplicas + maxSurge ≤ finapp.database.instances`" until the transition's review, its I-1)*.
+- **Exclusions**: RBAC, NetworkPolicy, quotas (`-010`); ingresses (`-011`); a cluster (`-012`).
+- **Architecture changes**: none. **Infrastructure changes**: the manifests.
+- **Security implications**: the restricted pod profile in every overlay.
+- **Multi-instance implications**: the connection-budget policy is the deployment half of `ConnectionPoolSizingGuard`;
+  `PASS` on the policy's planted violation.
+- **Failure and rollback**: a policy failure fails the job.
+- **Testing and validation**: every overlay renders and validates; each policy refuses its planted violation.
+- **Probe**: raise `maxReplicas` past the budget → the budget policy red; drop `minReadySeconds` below the grace → red.
+- **Operational documentation**: `deploy/README` section in `OPERATIONS_RUNBOOK.md` §11 (planned) on overlays.
+- **Acceptance criteria**: rendered, validated, every policy proven by its plant.
+- **Definition of done**: `DOD-BUILD`, `DOD-ARCH`. **Risk**: Low. **Cx**: M.
+
+**P15-TSK-010 — Namespace security: RBAC, NetworkPolicy, Pod Security, quotas** — `PLANNED`
+- **Objective**: a compromised pod reaches only what it must, and no human holds standing write access.
+- **Affected components**: `deploy/` (namespaces, NetworkPolicies, RBAC, quotas, Pod Security labels).
+- **Dependencies**: `-009`.
+- **Scope**: default-deny ingress and egress; the allowed flows of `PHASE_15_PLAN.md` §6; the management port reachable
+  from the kubelet and the monitoring namespace only; Pod Security Admission `restricted`; `ResourceQuota` and
+  `LimitRange`; read-only roles for humans, a time-bound break-glass role; no `get secrets` for humans.
+- **Exclusions**: cloud IAM (`-016`).
+- **Architecture changes**: none. **Infrastructure changes**: the policies.
+- **Security implications**: T2 and T4 answered; two debt rows (the unauthenticated operational and scrape endpoints)
+  closed with `-008`.
+- **Multi-instance implications**: policies select by label, so every replica is covered; `PASS` by the `kind` test.
+- **Failure and rollback**: a too-tight policy shows as an unready pod in the rehearsal; reverted by digest of the
+  manifests.
+- **Testing and validation**: on `kind` (`-012`): a pod in another namespace cannot reach 8081; the app cannot reach an
+  unlisted egress; a pod without requests is refused.
+- **Probe**: remove the default-deny policy → the unreachability test red.
+- **Operational documentation**: runbook §break-glass.
+- **Acceptance criteria**: the three `kind` tests green.
+- **Definition of done**: `DOD-SEC`, `DOD-BUILD`. **Risk**: Medium. **Cx**: M.
+
+**P15-TSK-011 — The edge: public and operator ingresses, TLS, the route allow-list** — `PLANNED`
+- **Objective**: the internet reaches customer, merchant and provider routes only; operators reach theirs only from the
+  internal network; TLS ends at the edge.
+- **Affected components**: `deploy/` (ingress controller install pinned, two Ingresses, cert-manager with a local CA in
+  `kind`); a test in `app` deriving the public allow-list from the route permission register and `openapi.json`.
+- **Dependencies**: `-009`.
+- **Scope**: the public allow-list generated, never hand-kept; every route an operator permission guards on the operator
+  ingress only; HSTS and the security headers at the edge; request-size and coarse per-source limits; no sticky sessions.
+- **Exclusions**: the application's registration and per-source throttles (`-022`); a gateway product.
+- **Architecture changes**: the route register gains the surface each route is served on.
+- **Infrastructure changes**: ingresses, controller, certificates.
+- **Security implications**: T1, T3 and T8 at the edge; the operator surface off the internet.
+- **Multi-instance implications**: no affinity — any replica serves any request (sessions in PostgreSQL); `PASS` read.
+- **Failure and rollback**: an ingress failure fails readiness of nothing in the app; reverted by manifest digest.
+- **Testing and validation**: the allow-list test both ways (no operator route public, every public route listed); on
+  `kind`: an operator route refused on the public host, a customer route served over TLS with HSTS.
+- **Probe**: add `/v1/operator` to the public allow-list → the test red.
+- **Operational documentation**: runbook §edge; `API_CONVENTIONS.md` notes the two surfaces.
+- **Acceptance criteria**: as tested.
+- **Definition of done**: `DOD-SEC`, `DOD-API`. **Risk**: Medium. **Cx**: M.
+
+**P15-TSK-012 — The `kind` deployment: N replicas, the migration Job, smoke, rolling update and rollback rehearsed** —
+`PLANNED`
+- **Objective**: prove on a real Kubernetes API that the platform deploys as three replicas, rolls, rolls back and
+  survives a pod kill with its money unchanged.
+- **Affected components**: `infra/scripts/kind-rehearsal.sh`, a smoke suite (HTTP flows against the ingress with the
+  simulated providers), the census reads, `ci.yml` (a `rehearsal` job on `master`, nightly and on `deploy/` changes).
+- **Dependencies**: `-004`, `-005`, `-010`, `-011`, `-026` (`kind` is not loopback: `TransportSecurityGuard` requires
+  `verify-full` to PostgreSQL and `KafkaTransportGuard` refuses `PLAINTEXT`, so the rehearsal needs `-026`'s
+  authenticated TLS client - added by the transition's review, its M-5).
+- **Scope**: a pinned `kind` node image; the test-only PostgreSQL serving TLS from the local CA (the app at
+  `sslmode=verify-full`) and the test-only Kafka on `SASL_SSL`; images loaded; the migrator Job; three replicas ready;
+  smoke flows (register, authenticate, transfer, a card payment and capture, a merchant payout); a scripted workload
+  during a rolling update from N − 1 to N (N − 1 run on N's schema first); a pod killed mid-workload; a rollback by
+  digest; the financial census after each step. **The connection budget measured** (I-1): run with
+  `finapp.database.instances` set to `PHASE_15_PLAN.md` §6.1's formula exactly and `max_connections = instances × pool +
+  reserved`, record the peak `pg_stat_activity` count for `application_name = 'finapp'` during the rolling update and
+  the pod kill, assert it at most `instances × pool`, and assert an operator connection is admitted at the peak. **A
+  handler added in release N** (I-2): release N registers a handler for an event type the module already produces;
+  that type is produced during the mixed window; the census finds the records an N − 1 replica committed unseen
+  (`UNHANDLED`), and the audited replay of `-028` over the rollout window applies each exactly once (the inbox
+  deduplicates what N already applied) - and the same after a rollback and a re-roll.
+- **Exclusions**: load, chaos, ten instances (the storm, `P15-TST-001`).
+- **Architecture changes**: none. **Infrastructure changes**: the rehearsal harness.
+- **Security implications**: secrets generated per run, never written to the repository.
+- **Multi-instance implications**: the phase's counted rehearsal: zero failed smoke requests across the rollout, one
+  effect per idempotency key, the outbox drained, no orphaned lease, a killed pod's claims taken by another; `PASS` on
+  these counts.
+- **Failure and rollback**: the rehearsal is the rollback's proof.
+- **Testing and validation**: the census green after each step; the peak-connection assertion; the handler-window case;
+  the job's artefacts (logs, census output, the peak) kept.
+- **Probe**: set `maxUnavailable: 1` with three replicas and a slow readiness → failed smoke requests counted → red;
+  set `minReadySeconds: 0` with a long `preStop` → the peak exceeds `instances × pool` → red; skip the replay → the
+  handler-window census red.
+- **Operational documentation**: runbook §deploy, §rollback rehearsal records.
+- **Acceptance criteria**: every step green with its census; timings recorded.
+- **Definition of done**: `DOD-BUILD`, `DOD-TEST`. **Risk**: Medium. **Cx**: L.
+
+**P15-TSK-013 — Terraform foundations: layout, state, conventions, CI checks** — `PLANNED`
+- **Objective**: infrastructure code that is pinned, locked and checked on every change before any module exists.
+- **Affected components**: new `infra/terraform/` (layout, version pins, lock file, backend configuration per
+  environment), `infra/scripts/terraform-check.sh`, `ci.yml` (an `iac` job).
+- **Dependencies**: `-001`.
+- **Scope**: ADR-0121's layout; `fmt`, `validate`, `tflint` and `trivy config` pinned; `terraform test` with mock
+  providers wired; tags and naming conventions; `prevent_destroy` conventions; no backend initialised in CI.
+- **Exclusions**: the modules (`-014`…`-016`); any apply.
+- **Architecture changes**: none. **Infrastructure changes**: the scaffold.
+- **Security implications**: no credential in CI; no secret value in any file or state.
+- **Multi-instance implications**: none; `PASS` vacuously.
+- **Failure and rollback**: a failed check fails the job.
+- **Testing and validation**: a planted unformatted file, a planted public bucket and a planted unpinned provider each
+  fail.
+- **Probe**: drop the provider pin → the pin check red.
+- **Operational documentation**: `infra/terraform` usage in `OPERATIONS_RUNBOOK.md` §11 (planned).
+- **Acceptance criteria**: every plant caught; the scaffold green.
+- **Definition of done**: `DOD-BUILD`. **Risk**: Low. **Cx**: S.
+
+**P15-TSK-014 — Network and cluster modules** — `PLANNED`
+- **Objective**: a private network and a hardened managed cluster as tested code.
+- **Affected components**: `infra/terraform/modules/network`, `modules/kubernetes`, the environment roots.
+- **Dependencies**: `-013`.
+- **Scope**: VPC, private subnets per zone, NAT egress, VPC endpoints, flow logs; EKS with a private endpoint, managed node
+  groups, etcd encryption with a KMS key, workload identity, control-plane audit logs; separate roots for staging and
+  production.
+- **Exclusions**: the data tier (`-015`), keys and secrets (`-016`).
+- **Architecture changes**: none. **Infrastructure changes**: two modules.
+- **Security implications**: no public workload subnet; the API endpoint private; audit logs on.
+- **Multi-instance implications**: nodes across at least three zones so topology spread can hold; `PASS` read by test.
+- **Failure and rollback**: plan-only; nothing applied.
+- **Testing and validation**: `terraform test` with mock providers asserting the properties above.
+- **Probe**: make the cluster endpoint public → the test red.
+- **Operational documentation**: module READMEs referenced from the runbook.
+- **Acceptance criteria**: all checks green; each property asserted.
+- **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
+
+**P15-TSK-015 — Data-tier modules: PostgreSQL, Kafka, object storage** — `PLANNED`
+- **Objective**: the financial record's database and the integration transport provisioned to the bar C3 sets.
+- **Affected components**: `modules/postgres`, `modules/kafka`, `modules/object-storage`; the topic catalogue of `-026`.
+- **Dependencies**: `-014`, `-026`.
+- **Scope**: RDS PostgreSQL 18, Multi-AZ, `rds.force_ssl`, `max_connections` from one variable also declared to the app,
+  backups with point-in-time recovery under a separate KMS key, deletion protection; MSK across three zones, TLS, SCRAM,
+  `min.insync.replicas` 2, unclean election off, auto-create off, topics from the catalogue with their `retention.ms`
+  (each below `finapp.inbox.retention`, as `-026` asserts); state and archive buckets,
+  versioned, encrypted, public access blocked, Object Lock on the audit archive.
+- **Exclusions**: applying; restore rehearsal on a managed service (deferred, §1.1).
+- **Architecture changes**: none. **Infrastructure changes**: three modules.
+- **Security implications**: T7 at rest and in transit; backups under a separate key.
+- **Multi-instance implications**: the `max_connections` single source keeps the budget guard truthful; `PASS` on the
+  equality assertion.
+- **Failure and rollback**: plan-only.
+- **Testing and validation**: mock-provider tests asserting each property and the `max_connections` equality with the
+  production overlay's declaration.
+- **Probe**: set `multi_az = false` in production → red.
+- **Operational documentation**: runbook §restore (managed half, deferred), §broker outage.
+- **Acceptance criteria**: every property asserted; checks green.
+- **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P15-TSK-016 — Security modules: KMS, secrets, workload identities, registry** — `PLANNED`
+- **Objective**: keys, secret entries, workload permissions and the registry as least-privilege code.
+- **Affected components**: `modules/security`, `modules/registry`, `modules/observability`.
+- **Dependencies**: `-014`, `-018`.
+- **Scope**: KMS keys per environment and purpose with rotation enabled and deletion windows; Secrets Manager entries for
+  every inventoried secret, **without values**, with rotation where managed; IAM roles for `finapp-app` and
+  `finapp-migrator` reading only their own secrets; ECR with immutable tags and scan on push; log and trace buckets.
+- **Exclusions**: secret values; signing identity (`-007`).
+- **Architecture changes**: none. **Infrastructure changes**: three modules.
+- **Security implications**: T6 and T7; separation of environments by account and key.
+- **Multi-instance implications**: one identity per workload, shared by its replicas; `PASS` read.
+- **Failure and rollback**: plan-only.
+- **Testing and validation**: mock-provider tests: no wildcard action on a secret, the app's role cannot read the
+  migrator's secret, tags immutable.
+- **Probe**: grant the app's role `secretsmanager:*` → red.
+- **Operational documentation**: runbook §rotation (cloud half).
+- **Acceptance criteria**: every assertion green; the secret entries equal the inventory.
+- **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P15-TSK-017 — GitOps delivery, promotion and the production approval boundary** — `PLANNED`
+- **Objective**: a release moves by digest through reviewed changes, and production changes need two persons.
+- **Affected components**: `deploy/` (Argo CD Applications per environment, the migrator as a pre-sync hook), a promotion
+  script, `CODEOWNERS`, `OPERATIONS_RUNBOOK.md` §11 (planned).
+- **Dependencies**: `-007`, `-012`, `-016`.
+- **Scope**: overlays pinned by digest; the promotion script refusing a tag, a digest without its signature, or one
+  without staging evidence; `CODEOWNERS` on the production overlay; the read-only production smoke; the branch and
+  environment rules written down as the owner's to apply.
+- **Exclusions**: applying GitHub settings; a real cluster.
+- **Architecture changes**: none. **Infrastructure changes**: delivery configuration.
+- **Security implications**: no CI credential reaches production; four eyes on production changes (T11).
+- **Multi-instance implications**: the pre-sync migration then the rolling update — the order `-012` rehearsed; `PASS`
+  on the rehearsal with Argo CD on `kind` (or the same order scripted, recorded).
+- **Failure and rollback**: a failed pre-sync hook stops the sync; a revert pull request rolls back.
+- **Testing and validation**: the promotion script's refusals tested; Argo CD manifests validated against their CRD
+  schemas; the sync order rehearsed on `kind`.
+- **Probe**: let the script accept a tag → the refusal test red.
+- **Operational documentation**: runbook §promote, §rollback.
+- **Acceptance criteria**: as tested; the approval boundary documented.
+- **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P15-TSK-018 — The secret inventory and its delivery** — `PLANNED`
+- **Objective**: every secret the application reads is inventoried, classed and delivered from the secret store — and
+  none is committed.
+- **Affected components**: `SECRET_MANAGEMENT.md` (the inventory), a test in `app` holding it both ways against every
+  `finapp.*` secret, key, password or token property; `deploy/` ExternalSecret manifests; the `kind` rehearsal's secret
+  generation.
+- **Dependencies**: `-009`.
+- **Scope**: the 37 properties and the datasource, migrator and Kafka credentials inventoried with class, owner,
+  rotation method and consumer; an ExternalSecret per secret; the manifest policy refusing a committed `kind: Secret`
+  with data; External Secrets Operator pinned.
+- **Exclusions**: key rings (`-019`), rotation rehearsal (`-020`), the cloud entries (`-016`).
+- **Architecture changes**: none — the application still reads the environment (ADR-0020).
+- **Infrastructure changes**: ExternalSecrets, the operator.
+- **Security implications**: T6.
+- **Multi-instance implications**: every replica reads one Secret; a rotation reaches the fleet by a rolling restart;
+  `PASS` read.
+- **Failure and rollback**: a missing secret fails startup (the existing guards), never readiness after traffic.
+- **Testing and validation**: the inventory test both ways (a new property without a row fails; a row without a property
+  fails); the policy's planted Secret refused.
+- **Probe**: add a `finapp.x.secret` property without an inventory row → red.
+- **Operational documentation**: `SECRET_MANAGEMENT.md` §3 and §5 rewritten for deployed environments.
+- **Acceptance criteria**: as tested.
+- **Definition of done**: `DOD-SEC`. **Risk**: Low. **Cx**: M.
+
+**P15-TSK-019 — Key rings: rotating field-level keys without losing history** — `PLANNED`
+- **Objective**: any of the eight ciphers' keys can be rotated with every earlier row still readable and no evidence
+  rewritten.
+- **Affected components**: `platform` (a key-ring abstraction), the eight cipher classes in `identity`, `kyc`,
+  `payments`, `merchant`, `credit`, `fx`, `settlement` - **nine instances over eight keys**: `EvidenceCipher` is built
+  twice (`PaymentBeans.java:83`, `:829`), and `DocumentCipher` and `CounterpartySubjectCipher` share `finapp.doc.key`
+  (`CounterpartyScreeningBeans.java:65-76`), so a ring belongs to a key, both of its classes rotate together, and both
+  `EvidenceCipher` instances read one ring; their configuration (versioned keys). *(The counts added by the
+  transition's review, its M-9.)*
+- **Dependencies**: `-018`.
+- **Scope**: one active version for encryption, retained versions for decryption, the stamped version always used to
+  decrypt; a version unknown to the ring refused; configuration of a ring as versioned secrets; HMAC callback secrets
+  accepting current and previous during a window; the retirement rule (no retired version while rows under it remain);
+  crypto-shredding documented, not exercised (C12).
+- **Exclusions**: re-encrypting existing rows; purging.
+- **Architecture changes**: the ciphers move from one key to a ring behind one `platform` type (ADR-0123).
+- **Infrastructure changes**: secret entries per version.
+- **Security implications**: a leaked version is bounded to its rows; rotation without an outage.
+- **Multi-instance implications**: during a rolling restart some replicas know version n + 1 and some do not — new
+  rows are encrypted with n + 1 only after every replica holds it (activation is a second step); `PASS` on a test of
+  the two-step activation.
+- **Failure and rollback**: a replica missing a version refuses to start; activation is reversible by moving the
+  pointer back (old rows stay readable).
+- **Testing and validation**: a row under v1 read after rotation to v2; v2 written after activation; a retired version
+  refused for encryption; an unknown stamped version refused; the HMAC window.
+- **Probe**: decrypt with the active version instead of the stamped one → the v1 read test red.
+- **Operational documentation**: runbook §key rotation, §key compromise.
+- **Acceptance criteria**: as tested in every cipher's module.
+- **Definition of done**: `DOD-SEC`, `DOD-KERNEL`. **Risk**: High (touches evidence encryption). **Cx**: L.
+
+**P15-TSK-020 — Credential and certificate rotation, rehearsed** — `PLANNED`
+- **Objective**: every rotation in `PHASE_15_PLAN.md` §10 performed on `kind` under a workload with no failed request
+  beyond retries and no financial effect.
+- **Affected components**: the rehearsal harness, `infra/postgres` (alternating users), cert-manager configuration.
+- **Dependencies**: `-012`, `-019`.
+- **Scope**: the application's database password by alternating users - **each alternating user holding exactly the
+  per-table grants made to `finapp_app`** (by membership of a role carrying them; the grants stay in the migrations;
+  the users created by `-004`'s bootstrap step), a user missing one grant failing the rehearsal; a Kafka SCRAM
+  credential; an HMAC callback secret
+  through its window; a field-level key version; the ingress certificate renewed early; each followed by the census.
+- **Exclusions**: a cloud-managed rotation (deferred).
+- **Architecture changes**: none. **Infrastructure changes**: the alternating-user setup.
+- **Security implications**: proves revocation is possible without an outage.
+- **Multi-instance implications**: a half-rolled fleet works on both credentials; `PASS` on the rehearsal's counts.
+- **Failure and rollback**: each rotation's rollback (restore the previous version) rehearsed once.
+- **Testing and validation**: the rehearsal records; the census after each.
+- **Probe**: drop the previous HMAC secret before the fleet has rolled → refused callbacks counted → red.
+- **Operational documentation**: runbook §rotation per class, with the rehearsal records.
+- **Acceptance criteria**: every rotation rehearsed green and recorded.
+- **Definition of done**: `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+
+**P15-TSK-021 — Privileged access: the operator actor, the refused step-up, the reporting role (C13)** — `PLANNED`
+- **Objective**: an operator's acts are recorded as an operator's, refused privileged attempts are recorded, and report
+  generation holds no write privilege at the database.
+- **Affected components**: `app` (`SessionAuthenticationInterceptor`, the step-up path, `RequiresAssurance`'s note),
+  `identity` (the actor type an operator's session carries), `platform` audit, `finapp_reporting` (cut candidate) -
+  **the role created by `-004`'s one-time bootstrap step holding the master credentials, never by Flyway or the
+  per-release migrator** (`finapp_migrator` is `NOCREATEROLE`), its `SELECT` grants in the migrations - the report-run
+  generator's connection, `AUDITABLE_ACTIONS.md`. *(Read "a database migration creating `finapp_reporting`" until the
+  transition's review, its M-4.)*
+- **Dependencies**: `-001`.
+- **Scope**: an operator session audited with actor type `OPERATOR` (the role decides, read at session establishment);
+  a refused `AssuranceRequired` audited; the privileged access review written (who may hold which role, the
+  propose/approve partition, break-glass); `finapp_reporting` with `SELECT` on the journal and accounting tables only,
+  used by report generation through its own small pool counted in the connection budget.
+- **Exclusions**: workforce OIDC; changing any permission's meaning.
+- **Architecture changes**: the actor type becomes a function of the session's roles; a second datasource for reporting
+  (if not cut).
+- **Infrastructure changes**: the role's grants; its credential in the inventory.
+- **Security implications**: T3 and T7; `INV-ACC-14` enforced at the privilege level.
+- **Multi-instance implications**: actor typing is per request; the reporting pool joins the budget arithmetic (a
+  guard update); `PASS` on the guard's test.
+- **Failure and rollback**: the reporting role unavailable → report generation fails closed (no run), never falls back
+  to the writer role.
+- **Testing and validation**: an operator act's audit row typed `OPERATOR`; a refused step-up's row; a planted write in
+  generation refused by the role (owed database case, C14); `AuditCompletenessTest` green.
+- **Probe**: type every session `CUSTOMER` again → red; generate with the writer role → the planted write commits → red.
+- **Operational documentation**: `SECURITY_ARCHITECTURE.md` §Who is acting; the review as a document.
+- **Acceptance criteria**: as tested; two debt rows closed.
+- **Definition of done**: `DOD-SEC`, `DOD-ARCH`. **Risk**: Medium. **Cx**: M.
+
+**P15-TSK-022 — Abuse limits: registration and per-source throttling, cluster-safe** — `PLANNED`
+- **Objective**: no single source can create unbounded parties or drive unbounded load, across N replicas.
+- **Affected components**: `app` (registration door), `platform` (a database-backed counter by source and window),
+  the edge's coarse limits (`-011`).
+- **Dependencies**: `-011`.
+- **Scope**: a registration throttle per source address and window held in PostgreSQL (one row per key and window,
+  conditional increment), answered `429` with `Retry-After`; per-source limits on the unauthenticated routes; the edge's
+  limits as a first, coarse layer only.
+- **Exclusions**: quotas for merchants (a commercial term); load shedding (Phase 16).
+- **Architecture changes**: a cluster-wide counter primitive (ADR by the task if it generalises).
+- **Infrastructure changes**: none.
+- **Security implications**: T1; two debt rows closed.
+- **Multi-instance implications**: a per-instance counter would multiply the limit by N — refused; the counter is a
+  conditional `UPDATE` arbitrated by PostgreSQL; `PASS` on a counted test (three contexts, one window, exactly the limit
+  admitted).
+- **Failure and rollback**: the counter store unavailable → the door fails closed for registration (unauthenticated) and
+  open for nothing.
+- **Testing and validation**: hermetic window arithmetic; the counted concurrency case owed (C14).
+- **Probe**: count in memory → the counted test admits N × limit → red.
+- **Operational documentation**: runbook §abuse.
+- **Acceptance criteria**: exactly the limit admitted across contexts.
+- **Definition of done**: `DOD-SEC`, `DOD-API`. **Risk**: Medium. **Cx**: M.
+
+**P15-TSK-023 — The telemetry pipeline and the end-to-end trace** — `PLANNED`
+- **Objective**: traces and logs leave every replica through one scrubbing collector, and one payment is traceable from
+  the customer's request to reconciliation.
+- **Affected components**: `app` (an OTLP exporter dependency, the endpoint from configuration), compose and `deploy/`
+  (collector, Tempo, Loki, pinned), the collector configuration (allow-list, tail sampling).
+- **Dependencies**: `-012`.
+- **Scope**: OTLP export; the collector's attribute allow-list, scrubbing and tail policy (errors, slow, money-moving
+  routes kept); log shipping of the ECS console output; retention by class; the end-to-end trace of a card payment, its
+  settlement file and its reconciliation run on `kind`, joined by correlation and causation ids; the needle sweep over
+  exported spans and logs.
+- **Exclusions**: SLOs (`-025`); production backends.
+- **Architecture changes**: an exporter on the classpath (pinned, verified, locked).
+- **Infrastructure changes**: the collector and two backends.
+- **Security implications**: telemetry egress in one place; a second scrubbing net (ADR-0019 stays first).
+- **Multi-instance implications**: spans and logs carry the pod as a resource attribute, never as a metric tag; `PASS`
+  read.
+- **Failure and rollback**: the collector unavailable → export drops (never blocks a request); readiness unaffected.
+- **Testing and validation**: the trace test over the collector's export; the needle sweep; a planted forbidden
+  attribute dropped.
+- **Probe**: remove the scrubbing processor → the planted needle exported → red.
+- **Operational documentation**: runbook §telemetry; `OBSERVABILITY` notes in `SYSTEM_ARCHITECTURE.md`.
+- **Acceptance criteria**: every leg found in one trace; no needle.
+- **Definition of done**: `DOD-OBS`, `DOD-SEC`. **Risk**: Medium. **Cx**: L.
+
+**P15-TSK-024 — Every gauge off the scrape thread, a rule on `up`, the refresher restartable** — `PLANNED`
+- **Objective**: a slow database never loses a whole scrape, and a stopped instance is noticed.
+- **Affected components**: `platform` (the refresher moved from `app`'s accounting package), about sixty metric classes,
+  `infra/prometheus/rules/`, `DISTRIBUTED_EXECUTION.md` §3.
+- **Dependencies**: `-001`.
+- **Scope**: every database-reading gauge served from the refresher's last read with its age; the refresher's executor
+  made in `start()` and shut in `stop()` (PI-014 item 2: start, stop, start, every gauge a number); a rule on `up` per
+  instance at page; a guard test that no gauge reads the database on the scrape thread.
+- **Exclusions**: SLO rules (`-025`).
+- **Architecture changes**: the refresher becomes a `platform` primitive.
+- **Infrastructure changes**: one rule file.
+- **Security implications**: none.
+- **Multi-instance implications**: each instance refreshes its own; aggregate with `max()`; `PASS` read.
+- **Failure and rollback**: a failed read keeps the last value with its age, and the stale-gauge alert fires.
+- **Testing and validation**: the guard test; the restart test; `AlertRulesResolveTest` green on a restarted context
+  (database case owed, C14).
+- **Probe**: read one gauge on the scrape thread → the guard red.
+- **Operational documentation**: runbook §stale gauges, §instance down.
+- **Acceptance criteria**: as tested; two debt rows and PI-014 item 2 closed.
+- **Definition of done**: `DOD-OBS`. **Risk**: Medium. **Cx**: L.
+
+**P15-TSK-025 — SLOs, error budgets, correctness alerts and routing** — `PLANNED`
+- **Objective**: every critical flow has an objective and a burn-rate alert, every correctness signal pages, and every
+  alert reaches a route and a runbook.
+- **Affected components**: a new SLO document under `docs/architecture/`, `infra/prometheus/rules/` (recording, SLO,
+  platform and correctness rules), `promtool` unit tests, Alertmanager configuration (compose and `deploy/`), Grafana
+  SLO dashboard, a runbook-link test, `ci.yml` (`promtool`, `amtool`).
+- **Dependencies**: `-024`.
+- **Scope**: `PHASE_15_PLAN.md` §11.1's SLIs and targets; fast and slow burn-rate pairs; the correctness pages (the
+  continuous trial balance, proofs, projection drift, GL ≠ ledger, dead letters); platform alerts (outbox lag, inbox lag,
+  HTTP 5xx, pool saturation, certificate expiry); alerts for identity, ledger, payments, transfers, checkout, merchant,
+  kyc and consent's critical flows; the error-budget policy; Alertmanager routing by severity with a placeholder
+  receiver.
+- **Exclusions**: a real paging tool; calibration under load (Phase 16).
+- **Architecture changes**: none. **Infrastructure changes**: rules, Alertmanager.
+- **Security implications**: no unbounded tag; no amount.
+- **Multi-instance implications**: every rule aggregates across instances with `max()` or `sum()` as the series demands,
+  stated per rule; `PASS` on `promtool test` cases with two instances.
+- **Failure and rollback**: a rule that cannot evaluate fires its absent-series alert.
+- **Testing and validation**: `promtool check` and `promtool test` (each SLO's burn fires, a healthy series does not);
+  `amtool check-config`; every alert's runbook link resolves; the existing `RuleEvaluator` tests green.
+- **Probe**: remove the trial-balance rule → its `promtool test` case red.
+- **Operational documentation**: the SLO document; runbook sections for every new alert.
+- **Acceptance criteria**: as tested; the trial balance pages on its first non-zero sample.
+- **Definition of done**: `DOD-OBS`. **Risk**: Medium. **Cx**: L.
+
+**P15-TSK-026 — Kafka for production: authenticated TLS, topics as code, rebalance-safe consumers** — `PLANNED`
+- **Objective**: the clients connect over authenticated TLS, every topic is declared, and a rolling update moves
+  partitions without stopping a group.
+- **Affected components**: `platform` (`KafkaEventPublisher`, `KafkaEventReceiver`), `app` (`EventingBeans`,
+  `InboxConsumers`), a topic catalogue (`EVENT_ARCHITECTURE.md`), the `kind` overlay's broker.
+- **Dependencies**: `-001`.
+- **Scope**: `SASL_SSL` with SCRAM-SHA-512 from the secret inventory; the truststore; per-principal ACLs written for the
+  managed broker; the topic catalogue (partitions, replication 3, `min.insync.replicas` 2, retention by class) checked
+  against every produced type, **each topic's `retention.ms` asserted below `finapp.inbox.retention`** (P14D,
+  `EventingBeans.java:87-95`: the dedupe window must outlive what the broker can redeliver; `-015` and `-029` take the
+  same bound); cooperative rebalancing; bounded session and poll timeouts.
+- **Exclusions**: schema compatibility (`-027`); dead letters (`-028`).
+- **Architecture changes**: client configuration only; Kafka stays non-authoritative.
+- **Infrastructure changes**: broker settings in `kind`; the catalogue feeds `-015`.
+- **Security implications**: T9; the existing `KafkaTransportGuard` widened to require SASL off loopback.
+- **Multi-instance implications**: a rebalance redelivers uncommitted records, which the inbox deduplicates; `PASS` on
+  `-012`'s rolling step with the consumer counts (no record applied twice, none lost).
+- **Failure and rollback**: an authentication failure fails readiness of the consumers' health contributor, never
+  liveness.
+- **Testing and validation**: hermetic configuration tests; the catalogue test; the `kafkaTest` cases owed (C14).
+- **Probe**: produce to an undeclared topic → the catalogue test red; set a topic's retention to 15 days → red.
+- **Operational documentation**: runbook §broker outage, §consumer lag.
+- **Acceptance criteria**: as tested.
+- **Definition of done**: `DOD-EVENT`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P15-TSK-027 — Event contracts: the schema catalogue and compatibility** — `PLANNED`
+- **Objective**: no release changes an event in a way the previous release's consumers cannot read, and no record is
+  lost because a release added a handler the previous release lacks.
+- **Affected components**: every module's event payload definitions and inbox handler registrations, two catalogues
+  under `docs/`, their tests, `X-TSK-014` (if ratified into this task).
+- **Dependencies**: `-026`.
+- **Scope**: every event type and version catalogued with its fields; a test comparing the catalogue with the last
+  release's, allowing only additive changes within a major; **the handler-set catalogue** `(group, topic, eventType,
+  consumerName)`, diffed against the last release's by a test - `KafkaEventReceiver` commits the offset of a record no
+  registered handler wants (`UNHANDLED`, `KafkaEventReceiver.java:184-197`), groups are per module and each topic carries
+  every type its module produces, so while N − 1 and N share a group, and after a rollback, a record of a type only N
+  handles is committed unseen; a handler added to an existing group is refused by the test unless the release records
+  either the audited replay of that type over the rollout window and any rollback window (`-028`'s door; the inbox
+  deduplicates) or a new consumer group with recorded starting offsets; `X-TSK-014`'s explicit scale on pre-Phase-9
+  amount events as an additive version (cut candidate). *(The handler set added by the transition's review, its I-2.)*
+- **Exclusions**: a runtime registry (C11).
+- **Architecture changes**: the catalogue becomes a contract (ADR-0122 decision 6).
+- **Infrastructure changes**: none.
+- **Security implications**: none.
+- **Multi-instance implications**: N − 1 and N consumers coexist during a rollout. Payload compatibility does not
+  cover a new handler, so the answer is `PASS` only on three counts together: the compatibility test, the handler-set
+  diff, and `-012`'s handler-window case (none lost, none applied twice). *(Read "`PASS` on the compatibility test"
+  until the transition's review, its I-2.)*
+- **Failure and rollback**: a breaking change, or a handler added with neither a recorded replay nor a new group,
+  fails the build; after a rollback the replay covers the rollback window too.
+- **Testing and validation**: planted removal and type change refused; an added optional field accepted; a planted
+  handler added to an existing group with no recorded replay refused.
+- **Probe**: allow a field removal → red; drop the handler-set diff → the planted handler passes → red.
+- **Operational documentation**: `EVENT_ARCHITECTURE.md` §schema evolution and §adding a handler; runbook §11.1's replay
+  step.
+- **Acceptance criteria**: as tested.
+- **Definition of done**: `DOD-EVENT`. **Risk**: Low. **Cx**: M.
+
+**P15-TSK-028 — Dead letters and replay** — `PLANNED`
+- **Objective**: an abandoned outbox event and a poison inbox record each have an audited door, and a replay can never
+  apply an effect twice.
+- **Affected components**: `platform` (outbox, inbox), `app` (operator routes), `AUDITABLE_ACTIONS.md` (the three
+  platform actions emitted), `EVENT_ARCHITECTURE.md` §Handling an abandoned event.
+- **Dependencies**: `-026`.
+- **Scope**: retry and discard of an abandoned event (discard four-eyes), both audited; an inbox record parked after its
+  bounded retries with the group continuing; parked records counted (`finapp.deadletter.parked`) and alerted; replay from
+  the outbox by an audited command, refused beyond the inbox's dedupe window unless the type is marked naturally
+  idempotent in the catalogue; the replay scoped by event type and a time window, which is how a handler added in a
+  release is served over its rollout and rollback windows (`-027`, `-012`).
+- **Exclusions**: replay at volume (Phase 16).
+- **Architecture changes**: the inbox gains a parked state.
+- **Infrastructure changes**: none.
+- **Security implications**: operator doors under permissions and step-up; no raw `UPDATE` remains in the procedure.
+- **Multi-instance implications**: a retry and a relay racing on one row are arbitrated by the row lock; `PASS` on a
+  counted test owed (C14).
+- **Failure and rollback**: a discarded event is a recorded decision, never a deletion.
+- **Testing and validation**: each door's happy path and refusals; a parked record not blocking its partition's next
+  record; a replay beyond the window refused.
+- **Probe**: let the replay ignore the window → red.
+- **Operational documentation**: runbook §dead letters, §replay.
+- **Acceptance criteria**: as tested; two debt rows closed.
+- **Definition of done**: `DOD-EVENT`, `DOD-SEC`. **Risk**: Medium. **Cx**: L.
+
+**P15-TSK-029 — Retention sweeps and the retention policy (C12)** — `PLANNED`
+- **Objective**: operational tables stop growing without bound, and every data class has a written retention.
+- **Affected components**: `platform` (outbox and inbox sweeps), `app` (their schedules), `DATA_MIGRATIONS.md` §8–9, a
+  retention policy document.
+- **Dependencies**: `-002` (debt row #61's ruling; C12 ratified).
+- **Scope**: leaderless, batched sweeps (`SKIP LOCKED`) of published outbox rows and inbox records past their bound -
+  the inbox's bound never below `finapp.inbox.retention`, which exceeds every topic's retention (`-026`) - never a
+  non-terminal row; the index each predicate needs; the policy by class (operational, financial, evidence,
+  audit, regulatory) with the jurisdiction-dependent periods named as open; audit archival to write-once storage
+  designed; idempotency records swept only if `-002` ruled #61 settled.
+- **Exclusions**: purges of evidence, agreements and regulatory reports (re-dated by C12); any deletion of a financial
+  record (`INV-HIST-01`).
+- **Architecture changes**: two schedules (`LEASE_PROTECTED_SCHEDULERS` or idempotent, stated).
+- **Infrastructure changes**: none.
+- **Security implications**: deletion rights granted to the sweep's path only, by migration.
+- **Multi-instance implications**: ten sweepers delete disjoint batches; `PASS` on a counted test owed (C14).
+- **Failure and rollback**: an interrupted sweep resumes; a wrong predicate is caught by the non-terminal test.
+- **Testing and validation**: hermetic predicates; a non-terminal row never selected; the database cases owed.
+- **Probe**: drop the terminal-state condition → red.
+- **Operational documentation**: runbook §retention; the policy.
+- **Acceptance criteria**: as tested; two debt rows closed; the rest re-dated with reasons.
+- **Definition of done**: `DOD-KERNEL`, `DOD-DOC`. **Risk**: Medium. **Cx**: M.
+
+**P15-TSK-030 — Backup and restore with post-restore financial verification** — `PLANNED`
+- **Objective**: a restored database is proven financially whole before it would serve money.
+- **Affected components**: `infra/scripts/restore-rehearsal.sh`, a verification command or test harness reading the
+  platform's own checks, runbook §restore.
+- **Dependencies**: `-012`.
+- **Scope**: a logical backup of the `kind` rehearsal's database; a restore into a fresh PostgreSQL; then
+  `flywayValidate`, the trial balance per currency, GL = ledger per locked period, the projection check, every product
+  proof, and row counts equal to the source's; a planted corruption failing the verification; the managed point-in-time
+  recovery's configuration referenced (`-015`) and its rehearsal deferred.
+- **Exclusions**: measured RPO/RTO, cross-region (Phase 16).
+- **Architecture changes**: none. **Infrastructure changes**: scripts.
+- **Security implications**: the backup handled as a copy of the ledger — encrypted at rest in the rehearsal, deleted
+  after.
+- **Multi-instance implications**: money movement stays stopped until verification passes (the procedure's first rule);
+  `PASS` read.
+- **Failure and rollback**: a failed verification leaves the restored database unused.
+- **Testing and validation**: the rehearsal green; the planted corruption caught.
+- **Probe**: skip the trial-balance step → the planted imbalance passes → red.
+- **Operational documentation**: runbook §restore, with the rehearsal record.
+- **Acceptance criteria**: as tested (criterion 6).
+- **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+
+**P15-TSK-031 — The configuration register and the environment overlays** — `PLANNED`
+- **Objective**: every property known, classed and sourced per environment; financial configuration identical across
+  the fleet and changed by two persons.
+- **Affected components**: a configuration register document, a test in `app` holding it both ways, `deploy/` overlays,
+  the fingerprint meter, `SYSTEM_ARCHITECTURE.md` §Baseline Stack.
+- **Dependencies**: `-008`, `-018`.
+- **Scope**: every `finapp.*` property and every Spring property an overlay sets, classed `SECRET`, `FINANCIAL` or
+  `OPERATIONAL`, with default and per-environment source; each `FINANCIAL` property stated safe while replicas hold mixed
+  values during a rollout, or moved to versioned database data; `finapp.config.fingerprint` over the effective
+  `FINANCIAL` values; an alert on disagreement whose `for:` is longer than the longest rollout the overlay allows; no
+  Spring profile (a guard); the baseline stack corrected (no Spring Security, no
+  Redis, no S3 in the application).
+- **Exclusions**: moving properties into database-versioned data.
+- **Architecture changes**: the register as a guarded contract (ADR-0125).
+- **Infrastructure changes**: overlays.
+- **Security implications**: no secret in an overlay; no profile relaxing a guard.
+- **Multi-instance implications**: drift between replicas visible within one scrape; `PASS` on the alert's
+  `promtool test`.
+- **Failure and rollback**: an unregistered property fails the build.
+- **Testing and validation**: the register test both ways; the fingerprint stable for equal configuration and changed
+  by a `FINANCIAL` value; a planted `@Profile` refused.
+- **Probe**: add an unregistered property → red.
+- **Operational documentation**: runbook §changing configuration.
+- **Acceptance criteria**: as tested.
+- **Definition of done**: `DOD-ARCH`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
+
+**P15-TSK-032 — Platform runbooks, incident response, and their rehearsal** — `PLANNED`
+- **Objective**: every platform procedure an operator would need is written, linked from its alert, and rehearsed with
+  the result recorded.
+- **Affected components**: `OPERATIONS_RUNBOOK.md` §11 (planned by this transition), an incident response plan, the
+  rehearsal records.
+- **Dependencies**: `-017`, `-020`, `-025`, `-028`, `-030`.
+- **Scope**: deploy, promote, rollback, migration failure, restore, broker outage, database failover (procedure only;
+  the drill is Phase 16's), each rotation and revocation, key compromise, dead letters and replay, instance down, stale
+  gauges, a refused image, break-glass, the operating procedure for parked value with no attributable owner
+  (return-to-sender, a closed merchant, a closed customer's corridor return — §25); the deploy procedure's step for a
+  release that adds a consumer handler (the replay over the rollout window, or the new group - `-027`); the incident
+  response plan (severity, roles, communication, post-incident review); each rehearsed on `kind` or compose; **and every
+  domain section §1–§10 rehearsed by a counted sample of at least one procedure each** (an activation gate, or an alert's
+  response to its planted condition, against the simulated providers), the count reported per section (criterion 4 as
+  written - the transition's review, its M-7).
+- **Exclusions**: a real on-call rota; Phase 16's drills.
+- **Architecture changes**: none. **Infrastructure changes**: none.
+- **Security implications**: break-glass and compromise procedures audited.
+- **Multi-instance implications**: every procedure written for N replicas ("restart the fleet" is a rolling restart);
+  `PASS` read.
+- **Failure and rollback**: each procedure states its own way back.
+- **Testing and validation**: every rehearsal recorded with date, commands, outcome and census; the per-section count
+  covering §1–§11; the runbook-link test (`-025`) green.
+- **Probe**: none applicable; the link test's probe is `-025`'s.
+- **Operational documentation**: this task.
+- **Acceptance criteria**: criterion 4.
+- **Definition of done**: `DOD-DOC`, `DOD-OBS`. **Risk**: Low. **Cx**: L.
+
+**P15-TSK-033 — The postponed production defects: PI-013 and PI-014** — `PLANNED`
+- **Objective**: fix, at their causes, the production defects the owner postponed to this phase's database pass.
+- **Affected components**: `accounting` (`CloseRuns.view`, `JdbcCloseRunStore`, `JdbcPeriodCloseStore`'s latest-close
+  read), `lending` and `bnpl` (a terms version's retirement stamp; a new migration each), `risk` `V002`'s retirement
+  checked; `X-TSK-008`'s stores if `-002` routes them here. The lock's grace (A4-F1) is `P14-REM-009`'s, not this
+  task's *(read "the lock's grace, A4-F1" here until the gate's merge was taken in, 2026-11-07)*.
+- **Dependencies**: `-001`.
+- **Scope**: the close run picked by the lock's identity, the latest close by row order not by a stepped instant
+  (PI-013); the terms retirement ending after its latest offer and the successor starting exactly there (PI-014 item 1);
+  each with its `ClockStep` reproduction as the regression case; `POSTPONED_ISSUES.md` marked `FIXED` with the commit when
+  the pass proves them.
+- **Exclusions**: PI-014 item 2 (`-024`); new behaviour.
+- **Architecture changes**: none — instants taken in the statement that writes the row (`DISTRIBUTED_EXECUTION.md`'s
+  rule).
+- **Infrastructure changes**: lending and bnpl migrations (numbers at the time).
+- **Security implications**: none.
+- **Multi-instance implications**: a stepped database clock is not a race between instances but breaks the same
+  ordering; `PASS` on the regression cases (owed, run in the pass).
+- **Failure and rollback**: forward-fix migrations only.
+- **Testing and validation**: the reproductions as regression cases; hermetic where the logic allows.
+- **Probe**: restore `ORDER BY started_at DESC` → the PI-013 reproduction red.
+- **Operational documentation**: `POSTPONED_ISSUES.md`; `DISTRIBUTED_EXECUTION.md` §3's clock-step paragraph.
+- **Acceptance criteria**: both reproductions green in the pass.
+- **Definition of done**: `DOD-FIN`. **Risk**: Medium. **Cx**: M.
+
+**P15-TST-002 — The Phase 15 database pass: every tier on the final tree (PI-012, PI-014, PI-015)** — `PLANNED`
+- **Objective**: the owed database suites of every Phase 15 task and of PI-012…PI-015 run once, fresh, on the final tree.
+- **Affected components**: every module's `databaseTest`, own-container and `kafkaTest` tiers; `MUTATION_TESTING.md`.
+- **Dependencies**: every item from `-002` to `-033`.
+- **Scope**: every tier run fresh once on the tree as it then stands, including `kafkaTest` (PI-012); PI-013's and
+  PI-014's regression cases; PI-014's unclassified suites classified; PI-015's struck rows performed again on present
+  bytes or struck for good with a reason; counts read from the JUnit XML with their timestamps.
+- **Exclusions**: the storm.
+- **Architecture changes / Infrastructure changes**: none.
+- **Security implications**: none.
+- **Multi-instance implications**: the counted database cases of every task run here; `PASS` on their counts.
+- **Failure and rollback**: a failure is triaged to a test defect (repaired) or a production defect (fixed in a
+  remediation item before the exit review, or postponed by the owner with a new PI entry).
+- **Testing and validation**: this task.
+- **Probe**: none applicable (a run); each task's probes stand.
+- **Operational documentation**: `TESTING.md`; the pass's record in the exit review.
+- **Acceptance criteria**: every tier green or every red classified and owned; PI-012…PI-015 closed or re-postponed by
+  the owner.
+- **Definition of done**: `DOD-TEST`. **Risk**: Medium. **Cx**: L.
+
+**P15-TSK-034 — The production readiness review** — `PLANNED`
+- **Objective**: state, per deployable unit and per module, whether it meets the readiness standard, with evidence.
+- **Affected components**: `PRODUCTION_READINESS.md` (`-001`'s), every task's evidence.
+- **Dependencies**: `-032`, `P15-TST-002`.
+- **Scope**: `PHASE_15_PLAN.md` §15's rows filled for `finapp-app`, `finapp-migrator`, PostgreSQL, Kafka, telemetry and
+  the edge, and per module inside `finapp-app` (ownership, alerts, runbook sections); each gap named with its owner;
+  every Phase 14 remediation entry still open (`P14-REM-001`…`-011`, each `PLANNED` with its horizon) counted as a named
+  gap of the unit it touches - none may be read as met by this review.
+- **Exclusions**: declaring a real environment ready.
+- **Architecture changes / Infrastructure changes**: none.
+- **Security implications**: no compliance wording.
+- **Multi-instance implications**: the multi-instance row of each unit cites its counted evidence; `PASS` read.
+- **Failure and rollback**: a document.
+- **Testing and validation**: every evidence link resolves (the threat-model guard's mechanism reused).
+- **Probe**: a planted evidence link to a missing file → red.
+- **Operational documentation**: this review.
+- **Acceptance criteria**: every cell evidenced or a gap with an owner; no "ready" on a started container alone.
+- **Definition of done**: `DOD-DOC`. **Risk**: Low. **Cx**: M.
+
+**P15-TST-001 — The rolling-deploy storm** — `POSTPONED` (by the owner, `POSTPONED_ISSUES.md` PI-004: every later phase's
+storm runs after the project's phases)
+- **Objective**: ten application replicas under a mixed money workload while rolling updates, pod kills, consumer
+  rebalances, a migration Job, a handler-adding release and a secret rotation happen — the census at every round (trial
+  balance zero, one effect per key, the outbox drained, no orphaned lease, GL = ledger, the connection peak within the
+  budget).
+- **Affected components**: `finapp-app` and `finapp-migrator` on a `kind` cluster sized for ten replicas; the rehearsal
+  harness of `-012`, scaled; every module's money flows through the simulated providers.
+- **Dependencies**: every Phase 15 item but `P15-DOC-001` (the harness of `-012`, the rotations of `-020`, the replay of
+  `-028`); the owner's lifting of PI-004.
+- **Scope**: as `P13-TST-001`'s shape - rounds of workload with faults injected between them, a census per round; planned
+  here so the phase's evidence is named, its evidence deferred and not claimed. **Exclusions**: load characterisation,
+  node loss, database failover, network partition and region loss (Phase 16).
+- **Architecture changes**: none. **Infrastructure changes**: a larger `kind` topology for the run only.
+- **Security implications**: generated secrets per run, never written to the repository.
+- **Multi-instance implications**: this is the ten-instance measurement of `PHASE_15_PLAN.md` §13; its counts stay open
+  under PI-004, and the phase's `PASS` rests on `-012`'s three-replica counts until then.
+- **Failure and rollback**: a red census stops the storm and is triaged to a test or a production defect, as the
+  earlier storms were.
+- **Testing and validation**: the census after every round; the peak connection count; two runs with the same seed
+  giving the same census.
+- **Probe**: a planted duplicate posting across a pod kill → the census red.
+- **Operational documentation**: the storm's record in `TESTING.md`.
+- **Acceptance criteria**: every round's census green across ten replicas. **Definition of done**: `DOD-TEST`.
+  **Risk**: Medium. **Cx**: L.
+
+**P15-DOC-001 — The Phase 15 exit review** — `PLANNED`
+- **Objective**: read every ADR, plan section and register row against the code, configuration and rehearsal records;
+  rule the gate clause by clause; ratify or record C1–C15; accept ADR-0120…0125 or correct them; confirm no document
+  claims compliance.
+- **Affected components**: documents only - `PHASE_15_PLAN.md` (an errata section), ADR-0120…0125, `PHASE_GATES.md` §5
+  Phase 15, the registers (`DISTRIBUTED_EXECUTION.md`, `AUDITABLE_ACTIONS.md`, `ERROR_CONTRACT.md`,
+  `DATA_CLASSIFICATION.md`, the secret inventory, the configuration register, the threat model), `CURRENT_STATE.md`,
+  `BACKLOG.md`, `ROADMAP.md`, a new `reviews/PHASE_15_REVIEW.md`.
+- **Dependencies**: every item but `P15-TST-001`.
+- **Scope**: the gate's seven criteria and twelve per-area blocks ruled clause by clause with evidence; the database
+  pass's record (`P15-TST-002`) read; the readiness review (`-034`) read against the evidence it cites; the stale
+  documents of `PHASE_15_PLAN.md` §3 confirmed corrected; the owner decisions C1–C15 recorded as ratified or changed;
+  the storm's postponement (PI-004) restated and the owner reminded. **Exclusions**: new code or infrastructure beyond
+  corrections a finding requires.
+- **Architecture changes**: none, beyond accepting or correcting the ADRs. **Infrastructure changes**: none.
+- **Security implications**: the compliance-wording check - no document claims compliance with, certification under or
+  attestation to any standard.
+- **Multi-instance implications**: the ten-instance answer ruled `PASS`, `FAIL` or `UNKNOWN` on the counted rehearsals,
+  the storm's counts named as open under PI-004.
+- **Failure and rollback**: a failed clause keeps the phase open; remediation items are added, and the review is re-run
+  after them.
+- **Testing and validation**: the document guards fresh (`DomainGlossaryTest`, `AdrRegistersAreReconciledTest`,
+  `ArchitectureRulesAreDocumentedTest`, `TestTaxonomyTest`, `PlannedMetersExistTest` - Phase 15's planned meters
+  enforced from the `COMPLETE` flip, `MutationDemonstrationTest`, the `com.finapp.app.architecture` package), with their
+  XML timestamps read.
+- **Probe**: none applicable (a review); every task's probes stand.
+- **Operational documentation**: `reviews/PHASE_15_REVIEW.md`.
+- **Acceptance criteria**: every clause holds, holds in another form recorded, or is a recorded deviation the owner
+  accepts. **Definition of done**: `DOD-DOC`. **Risk**: Low. **Cx**: L.
+
+---
+
 # Cross-cutting work
 
 Status: items here belong to no phase. They change no roadmap commitment, displace no phase task,
@@ -27723,11 +28716,16 @@ continuous verification, GL drill-down, prior-period adjustment, financial state
 abstraction and report reproducibility are Phase 14's twenty-four items above, in the section "Phase 14 — Accounting and
 Financial Reporting" — with the posting rule register, the ledger-enforced posting cutoff, valuation rate sets and
 translation, accounting breaks, the safeguarding return and the optional write-off added by the transition's design and
-the owner's decisions C1–C13.)*
+the owner's decisions C1–C13.)* *(The Phase 15 row went the same way at the Phase 14 → 15 transition, 2026-11-07:
+threat modelling, security hardening, secret and key rotation, privileged access review, audit completeness, rate limiting,
+schema compatibility, dead-letter handling, SLOs and alerting, runbooks and rehearsal, incident response and retention are
+Phase 15's thirty-seven items above, in the section "Phase 15 — Production Hardening" — with containerisation, the
+Kubernetes deployment, infrastructure as code, CI/CD and the supply chain, configuration management and the readiness review
+added by the owner's brief and the transition's design (C1–C15).)*
 
 | Phase | Epics |
 |-------|-------|
 | 13 Risk, Fraud, AML | Elaborated to the section "Phase 13 — Risk, Fraud and AML" above by the Phase 12 → 13 transition — initialised 2026-10-22, 28 items (`P13-TSK-001`…`-025`, `P13-TST-001`, `P13-TST-002`, `P13-DOC-001`) across M13.1–M13.9, `P13-TSK-001` marked `READY`; the epic wording (signal ingestion; versioned rules engine; synchronous risk decisioning; fail-safe policy; limits and velocity; device and behavioural signals; account-takeover detection; AML transaction monitoring; alerting; case management; manual override controls) superseded by the task decomposition |
 | 14 Accounting and Reporting | Elaborated to the section "Phase 14 — Accounting and Financial Reporting" above by the Phase 13 → 14 transition — initialised 2026-10-29, 24 items (`P14-TSK-001`…`-021`, `P14-TST-001` (`POSTPONED`, PI-004), `P14-TST-002`, `P14-DOC-001`) across M14.1–M14.10, `P14-TSK-001` marked `READY`; the epic wording (GL account model; versioned GL mapping; accounting periods; period close with approval; trial balance and continuous verification; GL drill-down; prior-period adjustment; financial statement production; regulatory reporting abstraction; report reproducibility) superseded by the task decomposition |
-| 15 Production Hardening | Threat modelling; security hardening; secret and key rotation; privileged access review; audit completeness verification; rate limiting and quotas; schema registry and compatibility; dead-letter handling; SLO definition and alerting; runbooks and rehearsal; incident response; data retention and deletion |
+| 15 Production Hardening | Elaborated to the section "Phase 15 — Production Hardening" above by the Phase 14 → 15 transition — initialised 2026-11-07, 37 items (`P15-TSK-001`…`-034`, `P15-TST-001` (`POSTPONED`, PI-004), `P15-TST-002`, `P15-DOC-001`) across M15.1–M15.11, `P15-TSK-001` marked `READY`; the epic wording (threat modelling; security hardening; secret and key rotation; privileged access review; audit completeness verification; rate limiting and quotas; schema registry and compatibility; dead-letter handling; SLO definition and alerting; runbooks and rehearsal; incident response; data retention and deletion) superseded by the task decomposition - a runtime schema registry decided against (C11) and data purges re-dated to a real jurisdiction (C12) |
 | 16 Scale and DR | Load characterisation; capacity model; performance testing with invariant assertion; table partitioning and archival; read-replica routing policy; backpressure and load shedding; chaos engineering; database failover; backup and restore rehearsal; DR plan and RPO/RTO; post-recovery financial verification; service extraction evaluation |

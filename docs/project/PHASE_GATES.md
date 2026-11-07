@@ -2285,6 +2285,107 @@ as the review's first step, on the tree as merged, not before it; no clean final
 - Distributed tracing covers customer → request → domain → provider → ledger → settlement →
   reconciliation for at least one real flow.
 
+**The seven, made measurable** (written by the Phase 14 → 15 transition, 2026-11-07; each kept as written above; task IDs
+are `PHASE_15_PLAN.md`'s, a bare `-nnn` meaning `P15-TSK-nnn`):
+
+1. *Threat model complete; critical and high risks mitigated or accepted.* `docs/architecture/THREAT_MODEL.md` covers
+   every trust boundary of `PHASE_15_PLAN.md` §9.1 with STRIDE per boundary; every threat has a rating and a disposition;
+   every CRITICAL and HIGH threat names a control whose evidence (a test, a policy, a file) exists, or an acceptance with
+   an owner and a date; the register's guard test is green and its planted probe (a control naming absent evidence) is
+   caught. **Owners**: `-001`, and every task whose control it names.
+2. *Dependency, container and secret scanning green in CI.* On the final tree: the SBOM scan (exists), the image scan of
+   both images, the configuration scans of manifests and Terraform, the static analysis and the history secret scan each
+   report zero HIGH or CRITICAL findings, or each remaining one is an accepted risk in the threat model with an expiry; a
+   planted vulnerable base image and a planted secret each fail their job. **Owners**: `-006`, `-013`.
+3. *SLOs defined for every critical flow with alerting and linked runbooks.* Every flow of `PHASE_15_PLAN.md` §11.1 has an
+   SLI over existing series, a target, fast and slow burn-rate rules; every rule passes `promtool check rules` and a
+   `promtool test rules` case that fires it on a synthetic burn and not on a healthy series; every alert in
+   `infra/prometheus/rules/` names an existing runbook section (a test); the correctness signals (the continuous trial
+   balance, the proofs, projection drift, GL ≠ ledger, dead letters) page on their first sample. **Owners**: `-024`,
+   `-025`.
+4. *Every runbook rehearsed at least once with the result recorded.* **Every runbook section of
+   `OPERATIONS_RUNBOOK.md`** carries a dated rehearsal record on `kind` or compose, naming its commands, its outcome and the
+   financial census where money is involved. For the platform section §11, every subsection is rehearsed (deploy, promote,
+   rollback, migration failure, restore, broker outage, each rotation and revocation, dead letters and replay, incident
+   response). For each domain section §1–§10, a counted sample of at least one procedure (an activation gate, or an
+   alert's response to its planted condition) is rehearsed against the simulated providers, and the rest are read against
+   the code, as their existing runbook tests do. The count is reported per section. **Owners**: `-032` (and `-012`,
+   `-020`, `-028`, `-030` for the rehearsals they own). *(Corrected by the transition's review, 2026-11-07, its M-7:
+   this read "Every platform runbook of `-032` … the domain runbooks' activation gates are read, not rehearsed", a
+   narrowing of the criterion as written that was not recorded. The domain sections are now sampled instead.)*
+5. *Audit trail verified complete against the defined list of auditable actions.* `AuditCompletenessTest` and
+   `AuditableActionRegistryTest` green on the final tree; the three platform outbox actions emitted (`-028`); an operator's
+   act recorded with actor type `OPERATOR` and a refused step-up recorded (`-021`); every route in the permission register
+   whose act is auditable has a test of its record. **Owners**: `-021`, `-028`.
+6. *Backup restore rehearsed with post-restore trial-balance verification passing.* A backup of a database that the
+   `kind` rehearsal populated, restored into a fresh PostgreSQL, then: `flywayValidate` clean, the trial balance zero
+   per currency, GL = ledger for every locked period, the projection check clean, every product proof `HOLDS`, and the
+   restored row counts equal to the source's; a planted corruption (one journal line removed from the dump) failing
+   the verification. Managed point-in-time recovery is configured in Terraform and its rehearsal deferred to a real
+   environment (`PHASE_15_PLAN.md` §1.1). **Owners**: `-015`, `-030`.
+7. *Distributed tracing covers customer → request → domain → provider → ledger → settlement → reconciliation for one
+   real flow.* On `kind`, one card payment with the simulated provider, its settlement file and its reconciliation run
+   export spans whose correlation (and, across the outbox, causation) ids join every leg; a test reads the collector's
+   export and finds each leg; no exported span or log line carries a planted needle. **Owners**: `-023`.
+
+**Per area** (the owner's Phase 15 brief, Part 10 — each measurable):
+- **Containerisation** — both images built from digest-pinned bases by a multi-stage build; run as a non-root UID with a
+  read-only root filesystem and no capabilities; no shell or package manager in the runtime image; size within the
+  recorded budget; two builds of one commit compared and the difference explained or nil. **Owners**: `-003`, `-004`.
+- **Kubernetes deployment** — the overlays render and pass `kubeconform` (strict) and the policies (security context,
+  probes on the management port, requests and limits, digest-only images, no StatefulSet outside the `kind` overlay, no
+  `CronJob`, `maxReplicas + 2 × maxSurge + 1 ≤ finapp.database.instances` with `minReadySeconds ≥
+  terminationGracePeriodSeconds` - terminating pods counted, `PHASE_15_PLAN.md` §6.1); on `kind` three replicas become
+  ready behind the ingress after the migration Job; a rolling update with zero failed smoke requests; a rollback by
+  digest; a pod kill with its leases reclaimed; **the peak count of `pg_stat_activity` rows with `application_name =
+  'finapp'` during the rolling update and the pod kill at most `instances × pool`**, measured with
+  `finapp.database.instances` set to the formula exactly, and an operator connection still admitted at the peak.
+  **Owners**: `-009`…`-012`. *(The budget clause read "`maxReplicas + maxSurge`" until the transition's review, its I-1.)*
+- **Infrastructure as code** — every module and root passes `fmt`, `validate`, `tflint`, `trivy config` and `terraform
+  test` with mock providers asserting encryption, private access, deletion protection, Multi-AZ, forced TLS and the
+  `max_connections` value; no secret value in any Terraform file or state; no apply performed. **Owners**: `-013`…`-016`.
+- **CI/CD** — every new check runs as a pinned script locally and in CI; images signed with provenance and SBOM
+  attestations; `kind` admission refusing an unsigned image; promotion by digest with the production overlay owned by
+  two persons; the expand-only lint refusing a planted `DROP COLUMN` and a planted tightening change (a new `CHECK`, a
+  refusing trigger, `SET NOT NULL`) without a contract marker; the schema-version guard refusing readiness on an older
+  schema; the promotion script refusing a rollback across a contract marker. **Owners**: `-005`…`-007`, `-017`.
+- **Security hardening** — criterion 1; the management port unreachable from the ingresses (a `kind` test); the public
+  ingress serving no route that an operator permission guards (a test over the route register); registration and
+  per-source limits refusing a burst across three replicas; operator sessions audited as `OPERATOR`. **Owners**: `-001`,
+  `-008`, `-010`, `-011`, `-021`, `-022`.
+- **Secrets and key management** — every secret property in the inventory, both ways; no committed `kind: Secret` with
+  data; each class of `PHASE_15_PLAN.md` §10 with a rotation and a revocation procedure; a database password and an HMAC
+  secret rotated on `kind` with no failed request beyond retries; a row encrypted under a key version read after the
+  rotation; a retired version refused for encryption. **Owners**: `-018`…`-020`.
+- **Observability** — criteria 3 and 7; every gauge read off the scrape thread (a guard test); a rule on `up` per
+  instance; Alertmanager's configuration passing `amtool check-config`. **Owners**: `-023`…`-025`.
+- **Operational readiness** — `-034`'s review: every row of `PHASE_15_PLAN.md` §15's standard, per unit and per module,
+  with evidence or a named gap; no unit called ready on a started container alone. **Owners**: `-001`, `-034`.
+- **Database and messaging operations** — the migrator Job proven idempotent and serialised (two at once); Kafka clients
+  over `SASL_SSL` with the guard refusing `PLAINTEXT` off loopback (exists) and the topic catalogue matching every
+  produced topic, every topic's `retention.ms` below `finapp.inbox.retention`; the handler-set catalogue diffed against
+  the last release, and on `kind` a handler added in release N with its type produced during the rollout window: the
+  records an N − 1 replica committed unseen found by the census and applied by the audited replay, none twice; a poison
+  record parked without stopping its group; an abandoned outbox event retried and discarded
+  through audited doors; a replay beyond the dedupe window refused; the outbox and inbox sweeps leaderless and never
+  touching a non-terminal row; criterion 6. **Owners**: `-004`, `-026`…`-030`.
+- **Multi-instance deployment** — `PHASE_15_PLAN.md` §13's table, each row proven by its named test or rehearsal; the
+  rehearsal's census (trial balance zero per currency, one effect per idempotency key, the outbox drained, no orphaned
+  lease, GL = ledger) green after a rolling update and a pod kill; the ten-instance storm's counts open under PI-004
+  (`P15-TST-001` `POSTPONED`). **Owners**: `-008`, `-012`, `-020`, `-028`.
+- **Configuration management** — the configuration register held both ways by its test; no Spring profile in the code;
+  every `FINANCIAL` property's change path through the production overlay's two-person approval, and each one stated
+  safe under mixed values across replicas or moved to versioned data; the fingerprint alert firing on a planted replica
+  disagreement that outlasts a rollout and silent during one (its `for:` longer than the longest rollout). **Owners**:
+  `-031`.
+- **Documentation and runbooks** — criterion 4; ADR-0120…0125 read against the code and accepted or corrected by
+  `P15-DOC-001`; the stale documents of `PHASE_15_PLAN.md` §3 corrected; the owner decisions C1–C15 ratified or changed;
+  no document claiming compliance with, or certification under, any standard. **Owners**: every task, `P15-DOC-001`.
+- **The database pass (exit item)** — `P15-TST-002` on the final tree: every module's `databaseTest`, own-container and
+  `kafkaTest` tiers run fresh once (PI-012); PI-013's and PI-014's regression cases green after `-033`; PI-014's remaining
+  suites classified and green or postponed again by the owner; PI-015's struck rows performed again or struck for good
+  with a reason; counts read from the JUnit XML. **Owners**: `-033`, `P15-TST-002`.
+
 ### Phase 16 — Scale, Resilience and Disaster Recovery
 - Load test at target volume with financial invariants asserted **during** load, not only
   after.
