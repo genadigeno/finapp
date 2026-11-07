@@ -165,7 +165,8 @@ boundary and never stored. Raw bank details are held at the provider (ADR-0056).
 
 The threats these answer are `THREAT_MODEL.md` T7, T34 and T35.
 
-**The local stack is deliberately unencrypted**, and that is recorded rather than left implicit:
+**The local stack's volumes are deliberately unencrypted** (the field-level ciphers above run locally too), and that
+is recorded rather than left implicit:
 volumes are plain Docker volumes on a developer's disk. The boundary is that nothing local is a
 pattern for a deployment — the same statement `compose.yaml` makes about its credentials.
 

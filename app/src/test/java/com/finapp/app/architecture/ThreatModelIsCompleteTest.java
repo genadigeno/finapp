@@ -3,6 +3,8 @@ package com.finapp.app.architecture;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.architecture.EvidenceCitations.Citation;
+import com.finapp.app.architecture.EvidenceCitations.IssueCitation;
+import com.finapp.app.architecture.EvidenceCitations.OwnerItemCitation;
 import com.finapp.app.architecture.EvidenceCitations.PathCitation;
 import com.finapp.app.architecture.EvidenceCitations.TaskCitation;
 import com.finapp.app.architecture.EvidenceCitations.Unreadable;
@@ -39,34 +41,38 @@ import org.junit.jupiter.api.Test;
  * nothing and so found nothing wrong. Each test below closes one of those, so a failure names its defect:
  *
  * <ol>
- *   <li>every line that looks like a row parses as one, so nothing is skipped unseen;
+ *   <li>every line that looks like a row of a register table parses as one, indented or malformed included;
  *   <li>the ten trust boundaries of {@code PHASE_15_PLAN.md} §9.1 are present by id and name;
  *   <li>each boundary answers all six STRIDE categories, with threats or {@code N/A} and a reason;
  *   <li>the boundary matrix and the register agree, triple for triple;
  *   <li>every rating is the cell of the written rule, and the rule is the one this test holds;
- *   <li>every threat has a disposition, and a {@code CONTROL} threat has a row;
- *   <li>no CRITICAL or HIGH threat is left without a control or the owner's dated acceptance;
- *   <li>every {@code EXISTS} row's evidence exists (and every {@code #method} is declared), every
- *       {@code PLANNED} or {@code REMEDIATION} row cites a backlog entry, and nothing in the column is
- *       unreadable;
+ *   <li>every threat has a disposition: a {@code CONTROL} threat has a row that is not a gap, an acceptance
+ *       is the owner's with a real date and is not past its {@code until};
+ *   <li>no CRITICAL or HIGH threat is left without a control or the owner's acceptance;
+ *   <li>every row's evidence is in the form its state requires and resolves: an {@code EXISTS} row's files
+ *       exist, each {@code #member} is a test declared in its file, each content pin holds, and a CRITICAL or
+ *       HIGH threat's {@code EXISTS} row never rests on a bare non-test file without a pin; a {@code GAP} row
+ *       names a postponed issue or an owner item, an owner and a date;
  *   <li>no promise outlives its task: a row citing a task that is no longer live is red, naming the task;
- *   <li>every task id the document names is a backlog entry;
+ *   <li>every task id the document names, a short {@code -NNN} included, is a backlog entry;
  *   <li>the register's summary line counts what the register holds;
- *   <li>once Phase 15 is complete ({@code CURRENT_STATE.md}), every CRITICAL or HIGH threat has an {@code EXISTS}
- *       row or the owner's acceptance: {@code PHASE_GATES.md} §5 Phase 15 criterion 1 as written;
- *   <li>the register is not vacuous: the counts parsed meet the minimums recorded here.
+ *   <li>once Phase 15 is complete ({@code CURRENT_STATE.md}), every CRITICAL or HIGH threat has an
+ *       {@code EXISTS} row or the owner's acceptance ({@code PHASE_GATES.md} §5 Phase 15 criterion 1 as written),
+ *       and no acceptance is still only proposed;
+ *   <li>the register is not vacuous: what it parsed meets structural floors.
  * </ol>
  *
- * <p><strong>The choice in rule 8.</strong> A {@code PLANNED} row is a promise. When its task becomes
+ * <p><strong>The choice in rule 9.</strong> A {@code PLANNED} row is a promise. When its task becomes
  * {@code COMPLETE}, the promise is kept, and the evidence belongs in the row, or it is broken, and the row is a
- * gap. Either way the register is wrong until that task's gate rewrites it, so the flip turns this test red.
- * A postponed task's promise has no owner, so it is refused too. The cost is deliberate: every Phase 15 gate
+ * {@code GAP}. Either way the register is wrong until that task's gate rewrites it, so the flip turns this test
+ * red. A postponed or cut task's promise has no owner, so it is refused too, until it is rewritten as a
+ * {@code GAP} naming the postponed issue or owner item that holds it. The cost is deliberate: every Phase 15 gate
  * edits the model.
  *
- * <p>Hermetic: it reads files only ({@code THREAT_MODEL.md}, {@code BACKLOG.md}, Phase 15's status line in
- * {@code CURRENT_STATE.md}, and the evidence the register cites). It carries the {@code architecture} tag to run with the package's other
- * document guards ({@code AdrRegistersAreReconciledTest}), and {@code app/build.gradle.kts} declares the
- * documents and the non-code evidence it reads as test inputs.
+ * <p>Hermetic: it reads files only ({@code THREAT_MODEL.md}, {@code BACKLOG.md}, {@code POSTPONED_ISSUES.md},
+ * Phase 15's status line in {@code CURRENT_STATE.md}, and the evidence the register cites). It carries the
+ * {@code architecture} tag to run with the package's other document guards ({@code AdrRegistersAreReconciledTest}),
+ * and {@code app/build.gradle.kts} declares the documents and the non-code evidence it reads as test inputs.
  */
 @Tag("architecture")
 @DisplayName("the threat register is complete and its evidence resolves (P15-TSK-001)")
@@ -74,8 +80,12 @@ class ThreatModelIsCompleteTest {
 
     private static final String MODEL = "docs/architecture/THREAT_MODEL.md";
     private static final String BACKLOG = "docs/project/BACKLOG.md";
+    private static final String POSTPONED = "docs/project/POSTPONED_ISSUES.md";
     private static final String STATE = "docs/project/CURRENT_STATE.md";
     private static final String PHASE_15_HEADING = "**Phase 15 — Production Hardening**";
+
+    /** A completed phase's status line, as `CURRENT_STATE.md` writes it: the token itself, not any mention. */
+    private static final Pattern COMPLETED_STATUS = Pattern.compile("^Status:\\s+\\S+\\s+\\*\\*`COMPLETE`\\*\\*");
 
     /** {@code PHASE_15_PLAN.md} §9.1's ten boundaries, by id and name. A rename is a deliberate edit here. */
     private static final Map<String, String> BOUNDARIES = orderedMap(
@@ -102,7 +112,10 @@ class ThreatModelIsCompleteTest {
     private static final List<String> LIKELIHOODS = List.of("HIGH", "MEDIUM", "LOW");
     private static final List<String> IMPACTS = List.of("SEVERE", "HIGH", "MEDIUM", "LOW");
     private static final Set<String> RATINGS = Set.of("CRITICAL", "HIGH", "MEDIUM", "LOW");
-    private static final Set<String> STATES = Set.of("EXISTS", "PLANNED", "REMEDIATION");
+    private static final Set<String> STATES = Set.of("EXISTS", "PLANNED", "REMEDIATION", "GAP");
+
+    /** Who may accept a risk: the model's §1.4 names the owner alone. */
+    private static final Set<String> ACCEPTING_ROLES = Set.of("the owner");
 
     /**
      * The rating rule: impact, then likelihood HIGH, MEDIUM, LOW. {@code THREAT_MODEL.md} §1.3 writes the same
@@ -116,28 +129,31 @@ class ThreatModelIsCompleteTest {
             "LOW", List.of("LOW", "LOW", "LOW"));
 
     /**
-     * The minimums: the counts at writing (2026-11-08). A renamed heading or a broken table parses fewer, and
-     * fails here, rather than leaving every rule above checking an empty register. A count may grow freely. It
-     * falls below these only by a deliberate edit to this file, made with the reason. {@code PLANNED} rows
-     * carry no minimum: they become {@code EXISTS} as the phase delivers.
+     * Structural floors, well below today's counts so an honest demotion or a task's rewrite never forces an edit
+     * here, and well above what a renamed heading or a broken table would leave. Threats are never deleted
+     * (§1.5), so their floor is today's count; the rest are floors, not totals.
      */
-    private static final int MIN_THREATS = 44;
-    private static final int MIN_ANSWERED_CELLS = 57;
-    private static final int MIN_CONTROL_ROWS = 197;
-    private static final int MIN_EXISTS_ROWS = 88;
+    private static final int MIN_THREATS = 47;
+    private static final int MIN_ANSWERED_CELLS = 50;
+    private static final int MIN_CONTROL_ROWS = 100;
+    private static final int MIN_EXISTS_ROWS = 40;
 
     private static final Pattern BOUNDARY_HEADING = Pattern.compile("^### (B\\d+) — (.+)$");
     private static final Pattern THREAT_ID = Pattern.compile("^T\\d+$");
     private static final Pattern WHERE = Pattern.compile("^(B\\d+):([STRIDE])$");
     private static final Pattern ACCEPTED =
             Pattern.compile("^ACCEPTED by (.+?) on (\\d{4}-\\d{2}-\\d{2})(?:, until (\\d{4}-\\d{2}-\\d{2}))?$");
+    private static final Pattern GAP_OWNER = Pattern.compile("owner: ([^,;]+), since (\\d{4}-\\d{2}-\\d{2})");
     private static final Pattern RULE_ROW =
             Pattern.compile("^\\| (SEVERE|HIGH|MEDIUM|LOW) \\| (\\w+) \\| (\\w+) \\| (\\w+) \\|\\s*$");
+    private static final Pattern SEPARATOR = Pattern.compile("^\\|[-:| ]+\\|$");
     private static final Pattern SUMMARY = Pattern.compile(
             "(?m)^\\*\\*Summary\\.\\*\\* (\\d+) threats: (\\d+) CRITICAL, (\\d+) HIGH, (\\d+) MEDIUM, (\\d+) LOW\\."
                     + " (\\d+) (?:is|are) `CONTROL`\\.");
     private static final Pattern ANY_TASK_ID =
             Pattern.compile("`((?:P\\d+-(?:TSK|TST|DOC|REM)-\\d{3})|X-TSK-\\d{3})`");
+    private static final Pattern SHORT_TASK_ID = Pattern.compile("`-(\\d{3})`");
+    private static final Pattern OWNER_ITEMS = Pattern.compile("(?m)^(\\d+)\\. \\*\\*");
 
     private record Cell(String boundary, String category, List<String> threats, String note) {}
 
@@ -149,6 +165,8 @@ class ThreatModelIsCompleteTest {
     private static Path root;
     private static String model;
     private static Map<String, String> statuses;
+    private static Set<String> postponedIssues;
+    private static Set<Integer> ownerItems;
     private static Map<String, String> boundaryNames;
     private static List<String> boundaryOrder;
     private static List<Cell> cells;
@@ -162,11 +180,30 @@ class ThreatModelIsCompleteTest {
         root = EvidenceCitations.repositoryRoot();
         model = EvidenceCitations.read(root.resolve(MODEL));
         statuses = EvidenceCitations.backlogStatuses(root.resolve(BACKLOG));
+        postponedIssues = EvidenceCitations.postponedIssues(root.resolve(POSTPONED));
+        ownerItems = new TreeSet<>();
+        Matcher item = OWNER_ITEMS.matcher(String.join("\n", section("## 6. ")));
+        while (item.find()) {
+            ownerItems.add(Integer.parseInt(item.group(1)));
+        }
         unparseable = new ArrayList<>();
         parseBoundaries(section("## 2. "));
         parseRegister(section("## 3. "));
         parseControls(section("## 4. "));
         parseRule(subsection("### 1.3 "));
+    }
+
+    @Test
+    @DisplayName("every line that looks like a row of the matrix, the register or the controls parses as one")
+    void everyRowParses() {
+        // A row the parser skips is a threat or a control every other test here silently stops checking - the
+        // shape P1-TSK-024 found in the mutation register's parser, closed at design time as
+        // AdrRegistersAreReconciledTest closes it for the ADR index. Any line of a register section whose first
+        // character, spaces aside, is a pipe is a row: indented, missing its spacing or short of a column, it is
+        // red here rather than invisible everywhere else.
+        assertThat(unparseable)
+                .as("lines in %s's matrix, register or controls that look like rows and did not parse", MODEL)
+                .isEmpty();
     }
 
     @Test
@@ -201,17 +238,6 @@ class ThreatModelIsCompleteTest {
             }
         }
         assertThat(problems).as("STRIDE answered per boundary").isEmpty();
-    }
-
-    @Test
-    @DisplayName("every line that looks like a row of the matrix, the register or the controls parses as one")
-    void everyRowParses() {
-        // A row the parser skips is a threat or a control every other test here silently stops checking - the
-        // shape P1-TSK-024 found in the mutation register's parser, closed at design time as
-        // AdrRegistersAreReconciledTest closes it for the ADR index.
-        assertThat(unparseable)
-                .as("lines in %s's matrix, register or controls that look like rows and did not parse", MODEL)
-                .isEmpty();
     }
 
     @Test
@@ -276,30 +302,36 @@ class ThreatModelIsCompleteTest {
     }
 
     @Test
-    @DisplayName("every threat has a disposition, and a CONTROL threat has at least one row")
+    @DisplayName("every threat has a disposition: CONTROL with a row that is not a gap, or the owner's dated acceptance")
     void everyThreatHasADisposition() {
-        Set<String> controlled = controls.stream().map(Control::threat).collect(Collectors.toSet());
+        Set<String> controlled = controls.stream()
+                .filter(row -> !row.state().equals("GAP"))
+                .map(Control::threat)
+                .collect(Collectors.toSet());
+        Set<String> withAnyRow = controls.stream().map(Control::threat).collect(Collectors.toSet());
         LocalDate today = LocalDate.now(Clock.systemUTC());
         Map<String, String> problems = new TreeMap<>();
         for (Threat threat : threats) {
             String disposition = threat.disposition();
             if (disposition.equals("CONTROL")) {
                 if (!controlled.contains(threat.id())) {
-                    problems.put(threat.id(), "is CONTROL with no row in section 4");
+                    problems.put(threat.id(), "is CONTROL with no row in section 4 that is not a GAP");
                 }
             } else if (disposition.equals("PROPOSED ACCEPTANCE")) {
-                continue; // allowed below HIGH; the next test refuses it at HIGH and above
+                if (!withAnyRow.contains(threat.id())) {
+                    problems.put(threat.id(), "is proposed for acceptance with no row saying what stands meanwhile");
+                }
             } else {
                 Matcher accepted = ACCEPTED.matcher(disposition);
                 if (!accepted.matches()) {
                     problems.put(threat.id(), "has no disposition this register defines: '" + disposition + "'"
-                            + " (CONTROL, ACCEPTED by <owner> on <YYYY-MM-DD>[, until <YYYY-MM-DD>], or PROPOSED"
+                            + " (CONTROL, ACCEPTED by the owner on <YYYY-MM-DD>[, until <YYYY-MM-DD>], or PROPOSED"
                             + " ACCEPTANCE)");
                     continue;
                 }
-                Optional<String> invalid = invalidDate(accepted.group(2));
-                if (accepted.group(1).isBlank() || invalid.isPresent()) {
-                    problems.put(threat.id(), "is accepted without a named owner or a real date");
+                if (!ACCEPTING_ROLES.contains(accepted.group(1)) || invalidDate(accepted.group(2)).isPresent()) {
+                    problems.put(threat.id(), "is accepted by '" + accepted.group(1) + "' on '" + accepted.group(2)
+                            + "': only " + ACCEPTING_ROLES + " accepts a risk, on a real date");
                     continue;
                 }
                 if (accepted.group(3) != null) {
@@ -316,12 +348,15 @@ class ThreatModelIsCompleteTest {
     }
 
     @Test
-    @DisplayName("no CRITICAL or HIGH threat is left without a control or the owner's dated acceptance")
+    @DisplayName("no CRITICAL or HIGH threat is left without a control or the owner's acceptance")
     void noCriticalOrHighThreatIsLeftWithoutAControl() {
-        Set<String> controlled = controls.stream().map(Control::threat).collect(Collectors.toSet());
+        Set<String> controlled = controls.stream()
+                .filter(row -> !row.state().equals("GAP"))
+                .map(Control::threat)
+                .collect(Collectors.toSet());
         Map<String, String> problems = new TreeMap<>();
         for (Threat threat : threats) {
-            if (!threat.rating().equals("CRITICAL") && !threat.rating().equals("HIGH")) {
+            if (!severe(threat)) {
                 continue;
             }
             boolean hasControl = threat.disposition().equals("CONTROL") && controlled.contains(threat.id());
@@ -336,14 +371,16 @@ class ThreatModelIsCompleteTest {
     }
 
     @Test
-    @DisplayName("every control row cites evidence that exists, in the form its state requires")
+    @DisplayName("every row's evidence resolves in the form its state requires")
     void everyControlCitesEvidenceThatExists() {
-        Set<String> registered = threats.stream().map(Threat::id).collect(Collectors.toSet());
+        Map<String, Threat> registered = threats.stream()
+                .collect(Collectors.toMap(Threat::id, threat -> threat, (a, b) -> a, TreeMap::new));
         Map<String, String> problems = new LinkedHashMap<>();
         for (int i = 0; i < controls.size(); i++) {
             Control row = controls.get(i);
             String where = "section 4 row " + (i + 1) + " (" + row.threat() + ", '" + abbreviate(row.control()) + "')";
-            if (!registered.contains(row.threat())) {
+            Threat threat = registered.get(row.threat());
+            if (threat == null) {
                 problems.put(where, "names a threat the register does not hold");
             }
             if (!STATES.contains(row.state())) {
@@ -357,31 +394,16 @@ class ThreatModelIsCompleteTest {
             }
             List<String> rowProblems = new ArrayList<>();
             for (Citation citation : citations) {
-                switch (citation) {
-                    case Unreadable unreadable ->
-                            rowProblems.add("`" + unreadable.token() + "` is neither a repository path nor a task id");
-                    case PathCitation path -> {
-                        if (!row.state().equals("EXISTS")) {
-                            rowProblems.add("`" + path.path() + "`: a " + row.state() + " row cites a task id, never"
-                                    + " a file - a built control is an EXISTS row");
-                        } else {
-                            EvidenceCitations.problemWith(root, path).ifPresent(problem -> rowProblems.add(
-                                    "`" + path.path() + path.method().map(m -> "#" + m).orElse("") + "` " + problem));
-                        }
-                    }
-                    case TaskCitation task -> {
-                        if (row.state().equals("EXISTS")) {
-                            rowProblems.add("`" + task.id() + "`: an EXISTS row cites the file that holds the"
-                                    + " control, never a task");
-                        } else if (!statuses.containsKey(task.id())) {
-                            rowProblems.add("`" + task.id() + "` is not an entry header in " + BACKLOG);
-                        } else if (row.state().equals("PLANNED") && !task.id().startsWith("P15-")) {
-                            rowProblems.add("`" + task.id() + "`: a PLANNED row cites a Phase 15 task; an earlier"
-                                    + " remediation entry or a cross-cutting item is a REMEDIATION row");
-                        } else if (row.state().equals("REMEDIATION") && task.id().startsWith("P15-")) {
-                            rowProblems.add("`" + task.id() + "`: a Phase 15 task is a PLANNED row");
-                        }
-                    }
+                rowProblems.addAll(problemsWith(row, threat, citation));
+            }
+            if (row.state().equals("GAP")) {
+                if (citations.stream().noneMatch(c -> c instanceof IssueCitation || c instanceof OwnerItemCitation)) {
+                    rowProblems.add("a GAP row names the postponed issue (`PI-NNN`) or the owner item (`owner item N`)"
+                            + " that holds it");
+                }
+                Matcher owner = GAP_OWNER.matcher(row.evidence());
+                if (!owner.find() || invalidDate(owner.group(2)).isPresent()) {
+                    rowProblems.add("a GAP row states 'owner: <who>, since <YYYY-MM-DD>'");
                 }
             }
             if (!rowProblems.isEmpty()) {
@@ -410,13 +432,40 @@ class ThreatModelIsCompleteTest {
                                     + (status.equals("COMPLETE")
                                             ? "Its gate replaces this promise with the evidence it built (an EXISTS"
                                                     + " row), keeping a " + row.state() + " row only for a remainder"
-                                                    + " another live task owns"
+                                                    + " another live task owns, or a GAP row for a remainder nobody"
+                                                    + " owns"
                                             : "A promise whose task is not live has no owner: name the task that"
-                                                    + " now owns it, or record the gap with the owner"));
+                                                    + " now owns it, or rewrite it as a GAP row naming the postponed"
+                                                    + " issue or the owner item that holds it"));
                 }
             }
         }
         assertThat(problems).as("promises in %s whose task is no longer live", MODEL).isEmpty();
+    }
+
+    @Test
+    @DisplayName("every task id the model names, a short -NNN included, is a backlog entry with a readable status")
+    void everyTaskTheModelNamesIsABacklogEntry() {
+        Map<String, String> problems = new TreeMap<>();
+        Set<String> named = new TreeSet<>();
+        Matcher id = ANY_TASK_ID.matcher(model);
+        while (id.find()) {
+            named.add(id.group(1));
+        }
+        Matcher shortId = SHORT_TASK_ID.matcher(model);
+        while (shortId.find()) {
+            named.add("P15-TSK-" + shortId.group(1));
+        }
+        for (String task : named) {
+            String status = statuses.get(task);
+            if (status == null) {
+                problems.put(task, "is not an entry header in " + BACKLOG);
+            } else if (status.equals("UNREADABLE")) {
+                problems.put(task, "has an entry whose status cannot be read");
+            }
+        }
+        assertThat(named).as("the model's task ids were read, short and long").hasSizeGreaterThan(30);
+        assertThat(problems).as("task ids in %s", MODEL).isEmpty();
     }
 
     @Test
@@ -450,16 +499,9 @@ class ThreatModelIsCompleteTest {
         // PHASE_GATES.md section 5 Phase 15 criterion 1: "every CRITICAL and HIGH threat names a control whose
         // evidence (a test, a policy, a file) exists, or an acceptance with an owner and a date". Before the exit a
         // PLANNED row is an honest answer for a control not yet built; at the exit it is not, and the phase's own
-        // status line says which applies. Rule 8 already turns a finished task's promise red; this catches the one
+        // status line says which applies. Rule 9 already turns a finished task's promise red; this catches the one
         // promise it cannot, a CRITICAL or HIGH threat answered at the exit only by a REMEDIATION row.
-        List<String> state = Arrays.asList(EvidenceCitations.read(root.resolve(STATE)).split("\\R", -1));
-        int heading = state.indexOf(PHASE_15_HEADING);
-        assertThat(heading)
-                .as("%s must still carry '%s', or this rule reads nothing", STATE, PHASE_15_HEADING)
-                .isNotNegative();
-        String status = state.get(heading + 1);
-        assertThat(status).as("the line after Phase 15's heading is its status").startsWith("Status:");
-        if (!status.contains("`COMPLETE`")) {
+        if (!phase15IsComplete()) {
             return;
         }
         Set<String> built = controls.stream()
@@ -468,8 +510,7 @@ class ThreatModelIsCompleteTest {
                 .collect(Collectors.toSet());
         Map<String, String> problems = new TreeMap<>();
         for (Threat threat : threats) {
-            boolean severe = threat.rating().equals("CRITICAL") || threat.rating().equals("HIGH");
-            if (severe && !built.contains(threat.id()) && !ACCEPTED.matcher(threat.disposition()).matches()) {
+            if (severe(threat) && !built.contains(threat.id()) && !ACCEPTED.matcher(threat.disposition()).matches()) {
                 problems.put(threat.id(), "is " + threat.rating() + " at Phase 15's exit with no EXISTS row and no"
                         + " acceptance by the owner");
             }
@@ -478,40 +519,136 @@ class ThreatModelIsCompleteTest {
     }
 
     @Test
-    @DisplayName("every task id the model names anywhere is a backlog entry with a readable status")
-    void everyTaskTheModelNamesIsABacklogEntry() {
-        Map<String, String> problems = new TreeMap<>();
-        Matcher id = ANY_TASK_ID.matcher(model);
-        while (id.find()) {
-            String status = statuses.get(id.group(1));
-            if (status == null) {
-                problems.put(id.group(1), "is not an entry header in " + BACKLOG);
-            } else if (status.equals("UNREADABLE")) {
-                problems.put(id.group(1), "has an entry whose status cannot be read");
-            }
+    @DisplayName("once Phase 15 is complete, no acceptance is still only proposed, at any rating")
+    void atThePhaseExitNoAcceptanceIsStillProposed() {
+        // A proposal is the owner's decision waiting. Allowed below HIGH while the phase runs, it must be decided
+        // by the exit: accepted with a date, or answered by a control.
+        if (!phase15IsComplete()) {
+            return;
         }
-        assertThat(problems).as("task ids in %s", MODEL).isEmpty();
+        assertThat(threats.stream()
+                        .filter(threat -> threat.disposition().equals("PROPOSED ACCEPTANCE"))
+                        .map(Threat::id)
+                        .toList())
+                .as("threats still awaiting the owner's decision at Phase 15's exit")
+                .isEmpty();
     }
 
     @Test
-    @DisplayName("the register is not vacuous: what it parsed meets the recorded minimums")
+    @DisplayName("the register is not vacuous: what it parsed meets structural floors")
     void theRegisterIsNotVacuous() {
         assertThat(boundaryOrder).as("boundaries parsed").hasSize(BOUNDARIES.size());
         assertThat(cells).as("STRIDE cells parsed: six per boundary").hasSize(BOUNDARIES.size() * CATEGORIES.size());
         assertThat(cells.stream().filter(cell -> !cell.threats().isEmpty()).count())
                 .as("cells answered with threats").isGreaterThanOrEqualTo(MIN_ANSWERED_CELLS);
-        assertThat(threats).as("threats parsed").hasSizeGreaterThanOrEqualTo(MIN_THREATS);
+        assertThat(threats).as("threats parsed; a threat is never deleted").hasSizeGreaterThanOrEqualTo(MIN_THREATS);
         assertThat(threats.stream().map(Threat::id).toList())
                 .as("T1-T14 carried forward with the numbers PHASE_15_PLAN.md section 9.2 gave them")
                 .containsAll(IntStream.rangeClosed(1, 14).mapToObj(n -> "T" + n).toList());
         assertThat(controls).as("control rows parsed").hasSizeGreaterThanOrEqualTo(MIN_CONTROL_ROWS);
         assertThat(controls.stream().filter(row -> row.state().equals("EXISTS")).count())
                 .as("EXISTS rows parsed").isGreaterThanOrEqualTo(MIN_EXISTS_ROWS);
+        Set<String> withARow = controls.stream().map(Control::threat).collect(Collectors.toSet());
+        assertThat(threats.stream()
+                        .filter(threat -> !ACCEPTED.matcher(threat.disposition()).matches())
+                        .map(Threat::id)
+                        .filter(id -> !withARow.contains(id))
+                        .toList())
+                .as("every threat not accepted by the owner has at least one row in section 4")
+                .isEmpty();
         assertThat(writtenRule).as("the rating rule's rows parsed").hasSize(RULE.size());
         assertThat(statuses).as("backlog entries parsed").hasSizeGreaterThan(400);
+        assertThat(postponedIssues).as("postponed issues parsed").contains("PI-004");
+        assertThat(ownerItems).as("the model's owner items parsed").isNotEmpty();
+    }
+
+    // ------------------------------------------------------------------ evidence
+
+    /** What is wrong with one citation of one row, given the row's state and its threat's rating. */
+    private static List<String> problemsWith(Control row, Threat threat, Citation citation) {
+        List<String> problems = new ArrayList<>();
+        String state = row.state();
+        switch (citation) {
+            case Unreadable unreadable ->
+                    problems.add("`" + unreadable.token() + "` is no citation this register defines");
+            case PathCitation path -> {
+                if (!state.equals("EXISTS")) {
+                    problems.add("`" + path.path() + "`: only an EXISTS row cites a file");
+                    break;
+                }
+                EvidenceCitations.problemWith(root, path).ifPresent(problem -> problems.add(
+                        "`" + path.path() + path.member().map(m -> "#" + m).orElse("") + "` " + problem));
+                if (threat != null && severe(threat) && !path.isTestSource() && path.pins().isEmpty()) {
+                    problems.add("`" + path.path() + "` is a bare file cited as built evidence for a "
+                            + threat.rating() + " threat: its existence proves nothing, so back it with a test that"
+                            + " asserts the property, or pin the text that holds it (`contains: ...`, `lacks: ...`)");
+                }
+            }
+            case TaskCitation task -> {
+                if (!state.equals("PLANNED") && !state.equals("REMEDIATION")) {
+                    problems.add("`" + task.id() + "`: a task is cited by a PLANNED or REMEDIATION row, never " + state);
+                } else if (!statuses.containsKey(task.id())) {
+                    problems.add("`" + task.id() + "` is not an entry header in " + BACKLOG);
+                } else if (state.equals("PLANNED") && !task.id().startsWith("P15-")) {
+                    problems.add("`" + task.id() + "`: a PLANNED row cites a Phase 15 task; an earlier remediation"
+                            + " entry or a cross-cutting item is a REMEDIATION row");
+                } else if (state.equals("REMEDIATION") && task.id().startsWith("P15-")) {
+                    problems.add("`" + task.id() + "`: a Phase 15 task is a PLANNED row");
+                }
+            }
+            case IssueCitation issue -> {
+                if (!state.equals("GAP")) {
+                    problems.add("`" + issue.id() + "`: a postponed issue is cited by a GAP row");
+                } else if (!postponedIssues.contains(issue.id())) {
+                    problems.add("`" + issue.id() + "` is not a header in " + POSTPONED);
+                }
+            }
+            case OwnerItemCitation item -> {
+                if (!state.equals("GAP")) {
+                    problems.add("`owner item " + item.number() + "`: an owner item is cited by a GAP row");
+                } else if (!ownerItems.contains(item.number())) {
+                    problems.add("`owner item " + item.number() + "` is not a numbered item of section 6");
+                }
+            }
+        }
+        return problems;
+    }
+
+    private static boolean severe(Threat threat) {
+        return threat.rating().equals("CRITICAL") || threat.rating().equals("HIGH");
+    }
+
+    private static boolean phase15IsComplete() {
+        List<String> state = Arrays.asList(EvidenceCitations.read(root.resolve(STATE)).split("\\R", -1));
+        int heading = state.indexOf(PHASE_15_HEADING);
+        assertThat(heading)
+                .as("%s must still carry '%s', or the exit rules read nothing", STATE, PHASE_15_HEADING)
+                .isNotNegative();
+        String status = state.get(heading + 1);
+        assertThat(status).as("the line after Phase 15's heading is its status").startsWith("Status:");
+        return COMPLETED_STATUS.matcher(status).find();
     }
 
     // ------------------------------------------------------------------ parsing
+
+    /**
+     * Whether a line of a register section is meant as a table row: its first character, spaces aside, is a pipe.
+     * A separator or the table's header is skipped; every other such line must parse, and one that is indented
+     * is recorded as unparseable before anything else looks at it.
+     */
+    private static boolean tableLine(String line, String where, String header) {
+        String trimmed = line.trim();
+        if (!trimmed.startsWith("|")) {
+            return false;
+        }
+        if (!line.equals(line.stripLeading()) || !line.startsWith("| ")) {
+            if (!SEPARATOR.matcher(trimmed).matches()) {
+                unparseable.add(where + ": " + line);
+            }
+            return false;
+        }
+        return !SEPARATOR.matcher(trimmed).matches() && !line.startsWith(header);
+    }
 
     private static void parseBoundaries(List<String> lines) {
         boundaryNames = new LinkedHashMap<>();
@@ -526,12 +663,12 @@ class ThreatModelIsCompleteTest {
                 boundaryNames.put(current, heading.group(2).trim());
                 continue;
             }
-            if (current == null || !isRow(line) || line.startsWith("| Category |")) {
+            if (!tableLine(line, current == null ? "matrix" : current, "| Category |")) {
                 continue;
             }
             List<String> columns = columns(line);
-            if (columns.size() != 3 || !CATEGORIES.containsKey(columns.get(0))) {
-                unparseable.add(current + ": " + line);
+            if (current == null || columns.size() != 3 || !CATEGORIES.containsKey(columns.get(0))) {
+                unparseable.add((current == null ? "matrix" : current) + ": " + line);
                 continue;
             }
             String answer = columns.get(1);
@@ -552,7 +689,7 @@ class ThreatModelIsCompleteTest {
     private static void parseRegister(List<String> lines) {
         threats = new ArrayList<>();
         for (String line : lines) {
-            if (!isRow(line) || line.startsWith("| ID |")) {
+            if (!tableLine(line, "register", "| ID |")) {
                 continue;
             }
             List<String> columns = columns(line);
@@ -568,7 +705,7 @@ class ThreatModelIsCompleteTest {
     private static void parseControls(List<String> lines) {
         controls = new ArrayList<>();
         for (String line : lines) {
-            if (!isRow(line) || line.startsWith("| Threat |")) {
+            if (!tableLine(line, "controls", "| Threat |")) {
                 continue;
             }
             List<String> columns = columns(line);
@@ -591,11 +728,6 @@ class ThreatModelIsCompleteTest {
                 writtenRule.put("header", List.of(line)); // a reordered header is a different rule
             }
         }
-    }
-
-    /** A table row other than a separator. */
-    private static boolean isRow(String line) {
-        return line.startsWith("| ") && !line.startsWith("|---");
     }
 
     private static List<String> columns(String line) {

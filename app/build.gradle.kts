@@ -659,4 +659,17 @@ tasks.withType<Test>().configureEach {
     inputs.files(rootProject.layout.projectDirectory.file("gradle/verification-metadata.xml"))
         .withPropertyName("dependencyVerificationMetadata")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // The nineteenth, P15-TSK-001's fix round: the trees later tasks' evidence lives in - infra/ (pins, scripts,
+    // Terraform, policies), deploy/ (manifests, -009 onward), .github/ (the workflow and, with -017, CODEOWNERS) and a
+    // root Dockerfile - whatever their extension, since a Dockerfile or a CODEOWNERS file has none. A deleted or edited
+    // file there re-runs the register's guard and the evidence tests that read it.
+    inputs.files(
+        rootProject.fileTree(rootProject.layout.projectDirectory) {
+            include("infra/**", "deploy/**", ".github/**", "Dockerfile*")
+            exclude("**/build/**", "**/.gradle/**")
+        }
+    )
+        .withPropertyName("infrastructureEvidence")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }

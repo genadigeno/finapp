@@ -28,8 +28,10 @@ Every cell takes exactly one ruling:
 **What counts as evidence.** The forms are the threat model's (`THREAT_MODEL.md` §1.4), so one guard mechanism can read
 both documents (`-034`'s entry: "the threat-model guard's mechanism reused"):
 
-- a **repository path** in backticks, naming a file that exists: a test (`Class.java#method` where the class is broader
-  than the claim), a manifest, a policy, a Terraform module, a rule file, a runbook section's document;
+- a **repository path** in backticks, naming a file that exists: a test (`Class.java#member` where the class is broader
+  than the claim), a manifest, a policy, a Terraform module, a rule file, a runbook section's document. A file that is
+  not a test counts only with a content pin (`` `contains: …` ``, `` `lacks: …` ``) or a test asserting its property:
+  its existence alone proves nothing (`THREAT_MODEL.md` §1.4);
 - a **rehearsal record**: the path of a committed record of a `kind`, compose or CI rehearsal, stating what ran, on
   which commit, and the observed result (`-012`, `-020`, `-023`, `-030`, `-032` write these);
 - a **counted test**, for the multi-instance row: the test or rehearsal whose count answers the ten-instance question.
@@ -41,6 +43,29 @@ not run fresh at the phase's database pass (`P15-TST-002`), cited as if it had.
 **Named gaps that cannot be read as met.** Every open Phase 14 remediation entry (`P14-REM-001`…`-011`, each `PLANNED`
 with its horizon) is a named `GAP` of the unit and module it touches, so this review cannot pass over it (§3.1, §4).
 Each threat in `THREAT_MODEL.md` whose planned control is not yet built is a gap of the dimension that control serves.
+
+**Which threats a unit answers for.** Security clause (i) reads the threats at the boundaries a unit stands on. A
+threat whose `Where` names any of those boundaries is the unit's.
+
+| Unit | Boundaries (`THREAT_MODEL.md` §2) |
+|---|---|
+| `finapp-app` | B2, B3, B4, B5, B6, B7, B8, B9, B10 |
+| `finapp-migrator` | B4, B8, B9, B10 |
+| PostgreSQL | B4, B10 |
+| Kafka | B5, B10 |
+| Telemetry | B10 |
+| Edge | B1, B2, B3, B7 |
+
+**Clause-level `N/A`.** A clause may be `N/A` while its dimension is not, with the reason stated in the cell. Two are
+fixed here, so that `-034` does not decide them unit by unit:
+
+- **PostgreSQL and Kafka, Deployment (a), (b) and (c).** Both are managed services outside the cluster (C3). The
+  platform builds, signs and deploys no image of either, so "built by CI", "signed with provenance" and "deployed by
+  digest through GitOps" do not apply. Their deployment is the Terraform data-tier module (`-015`), whose own checks
+  stand in. Clause (d), "rolled and rolled back on `kind`", applies to the test-only single-node copies of the `kind`
+  overlay (`-012`).
+- **`finapp-migrator`, Health checks and Metrics.** A Job that exits has no probe and no scrape. Its health is its exit
+  status, which Alerting reads.
 
 ---
 
@@ -57,7 +82,7 @@ holds.
 | **Metrics** | (a) registered per the naming contract; (b) every gauge read off the scrape thread; (c) scraped from the management port | `MetricConventionTest`; the off-thread guard (`-024`); the management port and its policy (`-008`, `-010`) |
 | **Tracing** | (a) exported; (b) span attributes an allow-list; (c) one critical flow traced end to end | The exporter and collector allow-list; the end-to-end trace record (`-023`) |
 | **Alerting** | (a) SLO burn-rate alerts and correctness alerts exist for the unit's flows; (b) routed by severity; (c) every alert names its runbook section | `promtool` cases, Alertmanager configuration and the runbook-link test (`-025`) |
-| **Security** | (a) non-root; (b) read-only root filesystem; (c) no capabilities; (d) NetworkPolicy default-deny with its allowed flows; (e) workload identity; (f) secrets from the secret store; (g) scanned; (h) signed; (i) every CRITICAL and HIGH threat at the unit's boundaries in `THREAT_MODEL.md` has `EXISTS` evidence or the owner's acceptance | Image assertions (`-003`); pod profile policies (`-009`); NetworkPolicy tests (`-010`); identity modules (`-016`); secret delivery (`-018`); scans (`-006`); signatures (`-007`); the threat register's rows (`ThreatModelIsCompleteTest`) |
+| **Security** | (a) non-root; (b) read-only root filesystem; (c) no capabilities; (d) NetworkPolicy default-deny with its allowed flows; (e) workload identity; (f) secrets from the secret store; (g) scanned; (h) signed; (i) every CRITICAL and HIGH threat at the unit's boundaries (§1's map) has `EXISTS` evidence in `THREAT_MODEL.md` or the owner's acceptance | Image assertions (`-003`); pod profile policies (`-009`); NetworkPolicy tests (`-010`); identity modules (`-016`); secret delivery (`-018`); scans (`-006`); signatures (`-007`); the threat register's rows (`ThreatModelIsCompleteTest`) |
 | **Resource limits** | (a) requests and limits set; (b) within the namespace quota; (c) the connection budget holds at maximum scale plus surge plus terminating pods (`PHASE_15_PLAN.md` §6.1) | Manifest policies (`-009`, `-010`); the measured peak (`-012`) |
 | **Failure handling** | (a) graceful shutdown with schedules drained and consumers closed; (b) losing a dependency degrades readiness, never liveness; (c) idempotent recovery after a kill | Drain tests (`-008`); health tests; the rehearsal's kill step and census (`-012`) |
 | **Recovery** | (a) restore rehearsed, ending in the financial verification; (b) rollback rehearsed | Restore record (`-030`); rollback record (`-012`) |

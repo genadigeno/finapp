@@ -352,7 +352,8 @@ repository settings, recorded in the runbook as the owner's to apply.
 ### 9.1 The threat model first
 
 *Written: [`THREAT_MODEL.md`](../architecture/THREAT_MODEL.md) (`P15-TSK-001`, 2026-11-08) - the ten boundaries below
-drawn for N replicas, STRIDE at each, 44 threats rated by a written rule, every CRITICAL and HIGH threat controlled;
+drawn for N replicas, STRIDE at each, 47 threats rated by a written rule (read 44 until its fix round), every CRITICAL and HIGH threat
+controlled;
 held by `ThreatModelIsCompleteTest`. Where this section and the model differ, the model is right.*
 
 `P15-TSK-001` writes `docs/architecture/THREAT_MODEL.md`: the trust boundaries (internet → edge; edge → application;
@@ -364,7 +365,7 @@ threat has a disposition, and no CRITICAL or HIGH threat is left without a contr
 
 ### 9.2 Controls mapped to threats
 
-*T1-T14 carried into [`THREAT_MODEL.md`](../architecture/THREAT_MODEL.md) §3 with their numbers, T15-T44 added there;
+*T1-T14 carried into [`THREAT_MODEL.md`](../architecture/THREAT_MODEL.md) §3 with their numbers, T15-T47 added there;
 each control's evidence, or the task that builds it, is the model's §4, not this table.*
 
 | Threat | Controls (existing → Phase 15) | Task |
