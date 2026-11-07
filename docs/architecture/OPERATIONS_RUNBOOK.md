@@ -1838,14 +1838,14 @@ Every return here is `REFERENCE`, through a simulated adapter (ADR-0118, C4): no
 
 *(Planned by the Phase 14 → 15 transition, 2026-11-07 — `PHASE_15_PLAN.md` §11, §12, ADR-0120…0125, `Proposed`. Nothing
 below is a procedure yet: each subsection is written by the task named, from the code and manifests it lands, linked from
-its alerts, and **rehearsed on `kind` or compose with the result recorded** (`P15-TSK-032`). Until then no platform
+its alerts, and **rehearsed on `kind` or compose with the result recorded** (`P15-TSK-032`); §1–§10 are each rehearsed by a counted sample of at least one procedure in the same task (`PHASE_GATES.md` §5 Phase 15, criterion 4). Until then no platform
 procedure exists and no deployed environment exists to apply one to.)*
 
 | Planned subsection | Written by | Rehearsed by |
 |---|---|---|
-| 11.1 Deploy: the migration Job, then the rolling update; what a stopping pod does | `P15-TSK-004`, `-008`, `-012`, `-017` | `-012` |
+| 11.1 Deploy: the bootstrap step when a role is added, the migration Job, then the rolling update; what a stopping pod does; **a release that adds a consumer handler to an existing group**: after the rollout, the audited replay of that event type over the rollout window (an N − 1 replica commits a record it has no handler for), or the new group with recorded starting offsets | `P15-TSK-004`, `-008`, `-012`, `-017`, `-027`, `-028` | `-012` |
 | 11.2 Promote a release by digest; the production approval boundary | `-017` | `-017` |
-| 11.3 Roll back by digest (a schema is never rolled back) | `-012`, `-017` | `-012` |
+| 11.3 Roll back by digest (a schema is never rolled back; never across a contract marker; an added handler's type replayed over the rollback window after the re-roll) | `-005`, `-012`, `-017`, `-027` | `-012` |
 | 11.4 A failed migration (forward fix only) | `-004`, `-005` | `-032` |
 | 11.5 Restore, then verify financially before any money moves | `-030` | `-030` |
 | 11.6 Broker outage, consumer lag, a poison record, dead letters and replay | `-026`, `-028` | `-028`, `-032` |

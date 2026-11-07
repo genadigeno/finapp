@@ -80,7 +80,7 @@ filing channels, real customer funds.
 |---|---|---|
 | One modular monolith, one deployable | ADR-0001, `settings.gradle.kts` (23 modules + `app`), `SYSTEM_ARCHITECTURE.md` §Multi-Instance Execution | The deployment plan is for the units that exist — the `app` image and a migration Job — run as N replicas; no microservice is invented (§4) |
 | Every service runs as N concurrent instances; single-instance assumptions fail the build | ADR-0014, ADR-0024, `NoSingleInstanceAssumptionRulesTest` | N ≥ 3 in every deployed environment; no Kubernetes `CronJob` carries financial work; the leaderless schedules stay |
-| The connection budget is a startup guard | `DISTRIBUTED_EXECUTION.md` §4a, `ConnectionPoolSizingGuard` | Replicas, the HPA maximum and the rolling surge are bounded by `finapp.database.instances`; a manifest rule checks it |
+| The connection budget is a startup guard | `DISTRIBUTED_EXECUTION.md` §4a, `ConnectionPoolSizingGuard` | Replicas, the HPA maximum, the rolling surge **and the pods still terminating** are bounded by `finapp.database.instances` (§6.1); a manifest rule checks it and the `kind` rehearsal measures it |
 | Liveness is the process, readiness includes the database | ADR-0016, `application.yaml` `management.endpoint.health.group` | The probes map one-to-one; liveness never reads a dependency |
 | Forward-only, module-owned migrations, never run by the application | ADR-0011, `DATA_MIGRATIONS.md` §3, §4.1 (expand, migrate, contract) | Migrations run as a separate Job with the migrator's credentials; a rollback never rolls a schema back |
 | Secrets externalised; a marked local default confined to loopback | ADR-0019, ADR-0020, `ConfinedCredential`, `CommittedConfigurationHoldsNoSecretTest` | The secrets manager fills the environment the application already reads; the loopback guards stay the backstop |
@@ -127,7 +127,7 @@ Surveyed at master `7840c716` by reading the build, `compose.yaml`, `infra/`, `.
 |---|---|---|---|
 | Deployable units | Implemented | One Spring Boot application: `app` composes 23 modules (`settings.gradle.kts`: `sharedkernel`, `platform`, 21 business modules); no other runnable | §4: the `app` image and a migration Job; no microservice |
 | "All microservices" | N/A | ADR-0001; `MODULE_ARCHITECTURE.md`; extraction is Phase 16's, by measurement | Every per-service question answered for the real units (§4) |
-| Container image | Missing | No `Dockerfile` or `.dockerignore`; `bootJar` is Spring Boot's default, no layering, Jib or `bootBuildImage` configured (`app/build.gradle.kts`) | `P15-TSK-003`, `-004` |
+| Container image | Missing | No `Dockerfile` or `.dockerignore`; `bootJar` is Spring Boot's default — **layered by default** (`-003` relies on it) — with no Jib or `bootBuildImage` configured (`app/build.gradle.kts`) *(read "no layering" until the transition's review, its M-9)* | `P15-TSK-003`, `-004` |
 | Kubernetes manifests, Helm, Kustomize | Missing | No manifest of any kind in the repository | `-009`…`-012` |
 | Infrastructure as code | Missing | No Terraform; `DECISIONS.md` §Deferred "Kubernetes and Terraform — Phase 15"; `infra/postgres/initdb/00-roles.sql` names Terraform as its deployed owner | `-013`…`-016` |
 | Local stack | Implemented (local only) | `compose.yaml`: PostgreSQL 18.6, Kafka 4.3.1 (KRaft, single node, `PLAINTEXT`, RF 1), Redis 8.10.1, Prometheus v3.14.0, Grafana 12.4.10, all on `127.0.0.1`, tags asserted by `verifyInfrastructureVersions`; the application runs on the host | Kept for development; `kind` added for deployment rehearsal |
@@ -153,7 +153,7 @@ Surveyed at master `7840c716` by reading the build, `compose.yaml`, `infra/`, `.
 | CI | Partial | Jobs `build`, `migrations` (including `databaseTest`, `kafkaTest`), `secret-scan` (gitleaks over history), `dependency-scan` (Trivy over the CycloneDX SBOM), `pinned-images`; actions pinned by SHA; Dependabot; **no image build or scan, static analysis, signing, manifest or Terraform checks, `promtool`, deployment or smoke** | `-006`, `-007`, `-009`, `-012`, `-013`, `-025` |
 | Supply chain | Implemented | Locking and checksum verification (ADR-0025), pins and their freshness (ADR-0026); signature verification off — trust on first use, stated | Signing and admission (`-007`) |
 | Secrets | Partial | Environment placeholders with a marked local default confined to loopback (`ConfinedCredential`, `DatabaseCredentialGuard`); 37 `finapp.*` key, secret, password or token properties; **no secrets manager, KMS, rotation or revocation procedure** | `-018`…`-020` |
-| Encryption at rest | Partial | Eight AES-256-GCM ciphers with a key version on each row (`SecretCipher`, `DocumentCipher`, `CounterpartySubjectCipher`, `EvidenceCipher`, `PayoutEvidenceCipher`, `CreditEvidenceCipher`, `FxEvidenceCipher`, `SettlementFileCipher`), one active key each, **no key ring**; volume and backup encryption absent (infrastructure) | `-019`, `-015` |
+| Encryption at rest | Partial | Eight AES-256-GCM cipher classes, nine instances (`EvidenceCipher` built twice, `PaymentBeans.java:83`, `:829`) and eight keys (`DocumentCipher` and `CounterpartySubjectCipher` share `finapp.doc.key`, `CounterpartyScreeningBeans.java:65-76`), with a key version on each row (`SecretCipher`, `DocumentCipher`, `CounterpartySubjectCipher`, `EvidenceCipher`, `PayoutEvidenceCipher`, `CreditEvidenceCipher`, `FxEvidenceCipher`, `SettlementFileCipher`), one active key each, **no key ring**; volume and backup encryption absent (infrastructure) | `-019`, `-015` |
 | Rate limiting | Partial | Login throttle and lockout (`AuthenticationThrottle`); request size limit; **no per-source or registration limit** (two debt rows) | `-022` |
 | Audit | Partial | Append-only by grant (ADR-0010), `AuditCompletenessTest`, `AuditableActionRegistryTest`; **no retention or archival; operator actor typing wrong** | `-021`, C12 |
 | Data classification | Implemented | `DATA_CLASSIFICATION.md` per-column register (ADR-0022) | Read by the threat model and the log scrubber |
@@ -216,7 +216,7 @@ cluster runs the stateless application, its migration Job, the edge and the tele
 
 | Object | Design | Task |
 |---|---|---|
-| Deployment `finapp-app` | N ≥ 3; `RollingUpdate` with `maxUnavailable: 0`, `maxSurge: 1`; `revisionHistoryLimit` kept for rollback; `topologySpreadConstraints` across zones and nodes (`DoNotSchedule` on zone, `ScheduleAnyway` on node) | `-009` |
+| Deployment `finapp-app` | N ≥ 3; `RollingUpdate` with `maxUnavailable: 0`, `maxSurge: 1`; `minReadySeconds ≥ terminationGracePeriodSeconds` (§6.1); `revisionHistoryLimit` kept for rollback; `topologySpreadConstraints` across zones and nodes (`DoNotSchedule` on zone, `ScheduleAnyway` on node) | `-009` |
 | StatefulSets | **None in staging or production.** The test-only `kind` overlay runs single-node PostgreSQL and Kafka for rehearsal, labelled non-production and refused by a policy in any other overlay | `-009`, `-012` |
 | Job `finapp-migrator` | One per release, `backoffLimit` small, `activeDeadlineSeconds` bounded; run before the rollout (an Argo CD `PreSync` hook, C8); its own ServiceAccount; egress to PostgreSQL only | `-004`, `-017` |
 | Services | `finapp-app` ClusterIP on 8080 (API); no Service exposes the management port — Prometheus scrapes pods directly | `-009` |
@@ -225,14 +225,46 @@ cluster runs the stateless application, its migration Job, the edge and the tele
 | Secrets | Delivered by External Secrets Operator from the secrets manager (C6); never committed; etcd encryption with a KMS provider; in `kind`, generated at runtime by the rehearsal script and never written to the repository | `-018` |
 | ServiceAccounts | `finapp-app` and `finapp-migrator`, each with `automountServiceAccountToken: false` (neither calls the Kubernetes API) and a cloud workload identity limited to its own secrets | `-010`, `-016` |
 | NetworkPolicies | Default deny in and out; app ingress from the public and operator ingress controllers on 8080; management port from the kubelet and Prometheus; egress to PostgreSQL, Kafka, DNS, the collector and the provider egress list; the migrator to PostgreSQL alone | `-010` |
-| HPA | CPU-based, `minReplicas` 3, `maxReplicas` bounded so that `maxReplicas + maxSurge ≤ finapp.database.instances` (`DISTRIBUTED_EXECUTION.md` §4a); scale-down stabilisation of minutes to limit consumer-group churn; targets calibrated in Phase 16 | `-009` |
+| HPA | CPU-based, `minReplicas` 3, `maxReplicas` bounded by §6.1's budget rule; scale-down stabilisation of minutes and a scale-down policy of one pod per period no shorter than `terminationGracePeriodSeconds`, which limits consumer-group churn and keeps terminating pods to one; targets calibrated in Phase 16 | `-009` |
 | PodDisruptionBudget | `maxUnavailable: 1` — a node drain never takes the fleet below N − 1 | `-009` |
 | Affinity | Topology spread as above; no node affinity beyond the node pool | `-009` |
 | Persistent storage | None for the application (no volume but `/tmp`); in `kind`, the test-only stateful copies use ephemeral storage | `-009` |
 | Namespaces, quotas | `finapp` per cluster (one environment per cluster, C8), `finapp-edge`, `finapp-observability`; Pod Security Admission `restricted` on `finapp`; `ResourceQuota` and `LimitRange` so a pod without requests is refused | `-010` |
 | RBAC | No human holds write access in production; the GitOps controller applies; a break-glass role, time-bound and audited, for incident response; CI holds no production credential | `-010`, `-017` |
 | Rolling deployments | `maxUnavailable: 0`; readiness gates traffic; N − 1 and N run together against one schema, which expand/contract and `-005` make safe | `-005`, `-012` |
-| Rollback | Revert the overlay's digest (Argo CD syncs); allowed because the previous release runs on the current schema (`-005`'s rule); **a schema is never rolled back** — a bad migration is fixed forward; the rollback is rehearsed on `kind` | `-012`, `-017`, `-032` |
+| Rollback | Revert the overlay's digest (Argo CD syncs); allowed only to a release no later migration's contract marker excludes (`-005`'s rule, §12), and the promotion script refuses a rollback across a marker; **a schema is never rolled back** — a bad migration is fixed forward; the rollback is rehearsed on `kind` | `-005`, `-012`, `-017`, `-032` |
+
+### 6.1 The connection budget counts terminating pods
+
+*(Corrected by the transition's review, 2026-11-07, its I-1: this read "`maxReplicas + maxSurge ≤
+finapp.database.instances`", which counted only the pods a Deployment counts.)* A Deployment's rolling update and a
+ReplicaSet's replacement **do not count terminating pods** against `replicas + maxSurge` (the motivation of KEP-3973), and
+§5 keeps a terminating pod's full pool open through the `preStop` pause, the drain and, at worst, the whole
+`terminationGracePeriodSeconds`. So a rollout step holds the counted replicas, the surge pods **and** the pods still
+terminating — and `ConnectionPoolSizingGuard` (`DISTRIBUTED_EXECUTION.md` §4a) is only as true as the instance count the
+deployment declares. The rule, checked by `-009`'s manifest policy:
+
+```
+maxReplicas + 2 × maxSurge + 1  ≤  finapp.database.instances
+minReadySeconds                 ≥  terminationGracePeriodSeconds
+```
+
+- **`2 × maxSurge`**: the surge pods, plus at most `maxSurge` terminating from the rollout. `minReadySeconds ≥
+  terminationGracePeriodSeconds` holds the next scale-down until the previous terminating pod's grace has run out, so
+  the rollout never stacks terminating pods.
+- **`+ 1`**: one more terminating pod from outside the rollout — a voluntary eviction, which the PodDisruptionBudget
+  (`maxUnavailable: 1`) allows only one at a time, or an HPA scale-down step, limited to one pod per period no shorter
+  than the grace. An involuntary kill closes the process's connections when the process dies; a lost node's connections
+  linger until the database's TCP keepalive ends them, which the reserved connections absorb (a Phase 16 failover
+  question).
+- **Why not `podReplacementPolicy: TerminationComplete`.** It is the direct fix, but it is alpha behind a feature gate
+  and not enabled on a managed cluster by default. When it is generally available, the policy may drop the `2 ×` term for
+  it, by a dated amendment.
+
+`P15-TSK-012` measures the rule rather than trusting it. It runs with `finapp.database.instances` set to the formula's
+value exactly, and a server `max_connections` equal to `instances × pool + reserved`. During the rolling update and the
+pod kill it records the peak count of `pg_stat_activity` rows with `application_name = 'finapp'` and asserts that count
+is at most `instances × pool`. It also asserts that an operator's `psql` still connects at the peak.
 
 ---
 
@@ -259,9 +291,13 @@ change — a drift check is a scheduled plan in a real environment).
 (the pinned scanner) and **`terraform test` with mock providers** asserting the security properties (encryption on, public
 access off, deletion protection on, Multi-AZ on, `max_connections` equal to the application's declaration). **Never
 `terraform apply`** against a real account in Phase 15; the state backend is configured per environment and not
-initialised by CI. The PostgreSQL roles of `00-roles.sql` move from an `initdb` script to the migrator's first step in a
-deployed database (the master user creates `finapp_migrator` and `finapp_app`; Terraform never holds their passwords —
-the secrets manager generates them).
+initialised by CI. **Roles are infrastructure, never Flyway** (`00-roles.sql`: `finapp_migrator` is `NOCREATEROLE`). In a
+deployed database the roles of `00-roles.sql` (`finapp_migrator`, `finapp_app`), the alternating application users of
+§10 and `finapp_reporting` (C13) are created by a **separate one-time bootstrap step**. Only that step holds the master
+user's credentials, and it runs once per database and again only when a role is added. **It is never part of the
+per-release migrator Job.** The per-table grants stay in each module's migrations, as today. Terraform never holds a
+role's password; the secrets manager generates them. *(Corrected by the transition's review, 2026-11-07, its M-4: this
+read "move from an `initdb` script to the migrator's first step".)*
 
 ---
 
@@ -287,7 +323,8 @@ developer's machine as well as in CI (the `secret-scan.sh` precedent), and every
 | Deployment | GitOps: a digest pull request per environment; Argo CD syncs (C8) | New | `-017` |
 | Smoke tests | `kind`: N replicas, migration Job, flows with simulated providers, rolling update, rollback, financial census; production smoke is **read-only** (health, build identity, the trial-balance gauge) and moves no money | New | `-012`, `-017` |
 | Rollback | Digest revert, rehearsed on `kind` | New | `-012` |
-| Database migration safety | The expand-only lint over migrations added since the last release; the schema-version readiness guard; Flyway validate before migrate; the N − 1 release run against the new schema in the rehearsal | New | `-005`, `-012` |
+| Database migration safety | The expand-only lint over migrations added since the last release, counting tightening DDL as a contract change (§12); the schema-version readiness guard; Flyway validate before migrate; the N − 1 release run against the new schema in the rehearsal; a rollback across a contract marker refused | New | `-005`, `-012`, `-017` |
+| Consumer handler sets | The handler-set catalogue `(group, topic, eventType, consumerName)` diffed against the last release; a handler added to an existing group requires an audited replay over the rollout window or a new group (§12) | New | `-027`, `-028`, `-012` |
 
 **Promotion and approval boundaries** (C8): `ci` (every commit: build, scans, `kind` rehearsal on `master` and nightly)
 → `staging` (a digest pull request; automatic sync; the full smoke and the rehearsals' financial census must pass for that
@@ -358,10 +395,10 @@ The lifecycle per class (C6). **No production secret is stored in source control
 
 | Class | Storage and access | Rotation | Revocation | Recovery | Audit |
 |---|---|---|---|---|---|
-| Database credentials (`finapp_app`, `finapp_migrator`, the master user) | Secrets Manager, generated, per environment; the app's identity reads only its own | Managed rotation, alternating users so the old password stays valid until the fleet has rolled | Rotate immediately; the fleet rolls; sessions on the old user end | Secret versions; the master user recovered through the cloud account | Secrets Manager and KMS access logs |
+| Database credentials (`finapp_app`, `finapp_migrator`, the master user) | Secrets Manager, generated, per environment; the app's identity reads only its own | Managed rotation, alternating users so the old password stays valid until the fleet has rolled; **each alternating user holds exactly the per-table grants made to `finapp_app`** (through membership of a role carrying them, the grants staying in the migrations) — a user missing one grant fails the rehearsal; users created by the bootstrap step (§7) | Rotate immediately; the fleet rolls; sessions on the old user end | Secret versions; the master user recovered through the cloud account | Secrets Manager and KMS access logs |
 | Kafka credentials (SCRAM per principal) | Secrets Manager; ACLs per principal | Add the new credential, roll, remove the old | Remove the principal's credential; ACLs refuse | Re-issue | Broker authentication logs |
 | Provider API credentials and webhook HMAC secrets | Secrets Manager per provider | Two valid secrets during a window (verify against current and previous), then retire the previous | Retire at once; callbacks under it refused | Provider re-issue | Access logs; refused callbacks counted |
-| Field-level encryption keys (eight ciphers) | Data keys in Secrets Manager wrapped by a KMS key per purpose; the application holds a **key ring** | A new active version for new rows; old versions retained for decryption for as long as data under them exists; **no re-encryption of `INSERT`-only evidence** | A compromised version: stop encrypting with it at once, re-key what the domain allows, record what stays under it | KMS key deletion is protected by a waiting period; versions never exported | KMS usage logs |
+| Field-level encryption keys (eight cipher classes, nine instances, eight keys — §3) | Data keys in Secrets Manager wrapped by a KMS key per purpose; the application holds a **key ring** | A new active version for new rows; old versions retained for decryption for as long as data under them exists; **no re-encryption of `INSERT`-only evidence** | A compromised version: stop encrypting with it at once, re-key what the domain allows, record what stays under it | KMS key deletion is protected by a waiting period; versions never exported | KMS usage logs |
 | Signing keys (image signing) | Keyless (short-lived certificates from CI's OIDC identity) in the reference; a KMS key in the alternative | Per signature (keyless) | Revoke the identity's trust in the admission policy | Re-sign from CI | The transparency log |
 | JWT/JWKS keys | **N/A today**: the platform issues opaque sessions (ADR-0030) and validates no JWT; becomes applicable with workforce OIDC (C13), where the identity provider owns the JWKS | — | — | — | — |
 | TLS certificates (ingress, and the CA bundles for PostgreSQL and Kafka) | cert-manager issuing the ingress certificate (a local CA in `kind`, a public issuer in a real environment); the managed services' CA bundles from the provider | cert-manager renews ahead of expiry; an alert on days-to-expiry | Revoke and re-issue | Re-issue | cert-manager events |
@@ -383,7 +420,7 @@ existing guards, so a local value can never start a deployed instance.
 | Alerts | Domain alerts, no routing | Alertmanager: severity `page` and `ticket`, every alert linking its runbook section (a test), a placeholder receiver | `-025` |
 | SLIs, SLOs, error budgets | Latency objectives in code only | §11.1 | `-025` |
 | Business and financial metrics | Per-domain series; amounts never in metrics (ADR-0072) | Unchanged; the financial-correctness signals become paging invariants (§11.1) | `-025` |
-| Operational runbooks | Domain runbooks | Platform runbooks, each rehearsed with its result recorded | `-032` |
+| Operational runbooks | Domain runbooks | Platform runbooks, each rehearsed with its result recorded; every domain section §1–§10 rehearsed by a counted sample of at least one procedure (criterion 4 as written, not narrowed) | `-032` |
 
 ### 11.1 SLOs (reference targets, recalibrated by Phase 16's load model)
 
@@ -423,13 +460,14 @@ rehearsal's exported spans for the planted needles of `DATA_CLASSIFICATION.md`.
 
 | Practice | Design | Task |
 |---|---|---|
-| Database migrations | The migrator Job (§5); expand-only lint over every migration since the last release unless it carries a contract marker naming the release where its readers stopped; the readiness guard refusing a schema older than the build expects; Flyway's schema-history lock serialising two runs; `lock_timeout` on the migrator's session | `-004`, `-005` |
-| Connection pooling | Hikari per instance, `minimum-idle = maximum-pool-size` (exists); **no transaction-mode pooler**: the outbox relay and several schedules take session-level advisory locks, which a transaction pooler would hand to another client — a PgBouncer evaluation is Phase 16's, by measurement | `-009` |
-| Connection limits | One value for `max_connections` in Terraform, declared to the application from the same source; replicas, HPA maximum and surge checked against `finapp.database.instances` by a manifest policy | `-009`, `-015` |
+| Database migrations | The migrator Job (§5); expand-only lint over every migration since the last release unless it carries a contract marker naming the release from which every reader and writer conforms. **Tightening DDL is a contract change too**: a new `CHECK`, trigger, `UNIQUE` or foreign key, `SET NOT NULL`, `ADD COLUMN … NOT NULL` with no default, and a `REVOKE` can each refuse a write release N − 1 still makes — and this repository adds refusing triggers often; the readiness guard refusing a schema older than the build expects; Flyway's schema-history lock serialising two runs; `lock_timeout` on the migrator's session | `-004`, `-005` |
+| Connection pooling | Hikari per instance, `minimum-idle = maximum-pool-size` (exists); **no transaction-mode pooler in Phase 15**. Production takes only transaction-scoped advisory locks (`pg_advisory_xact_lock`, its `_shared` form, `pg_try_advisory_xact_lock`) and transaction-scoped settings (`SET LOCAL`, `set_config(…, true)`), which a transaction pooler preserves. The open question is the driver's **server-side prepared statements** under transaction pooling, to be measured. A PgBouncer evaluation is Phase 16's, by measurement *(read "the outbox relay and several schedules take session-level advisory locks" until the transition's review, its M-1)* | `-009` |
+| Connection limits | One value for `max_connections` in Terraform, declared to the application from the same source; replicas, HPA maximum, surge **and terminating pods** checked against `finapp.database.instances` by a manifest policy (§6.1) and measured on `kind` (peak `pg_stat_activity` for `application_name = 'finapp'`) | `-009`, `-015` |
 | Backup configuration | Managed automated backups with point-in-time recovery, encrypted under a separate key, retention per environment; locally, a logical backup and restore rehearsal ending in the financial verification | `-015`, `-030` |
-| Kafka retention | Per topic class from the catalogue; events are hints and the outbox is the durable source, so retention bounds diagnosis and replay, never truth | `-026` |
+| Kafka retention | Per topic class from the catalogue; events are hints and the outbox is the durable source, so retention bounds diagnosis and replay, never truth. **Every topic's `retention.ms` is below `finapp.inbox.retention`** (P14D, `EventingBeans.java:87-95`): the inbox's dedupe must outlive every record the broker can still redeliver. `-026`'s catalogue test asserts it, `-015`'s topics take their retention from the catalogue, and `-029`'s inbox sweep never deletes a record younger than that bound | `-026`, `-015`, `-029` |
 | Consumer groups | `finapp.<module>` (exists); manual commit after the inbox record (exists); cooperative rebalancing and bounded session timeouts so a rolling update moves partitions without stopping the group; a rebalance proven harmless in the rehearsal | `-026`, `-012` |
 | Schema evolution | A build-time schema catalogue; additive changes only within a major; a new major is a new event type version consumers opt into (C11); `X-TSK-014` (explicit scale on pre-Phase-9 amount events) scheduled here if ratified | `-027` |
+| Consumer handler sets | **Payload compatibility does not cover a new handler.** `KafkaEventReceiver` commits the offset of a record no registered handler wants (`UNHANDLED`, `KafkaEventReceiver.java:184-197`). Groups are per module, and each topic carries every event type its module produces. So while release N − 1 and release N share a group, a record of a type only N handles is committed unseen by an N − 1 replica. After a rollback, every such record is committed unseen. A **handler-set catalogue** of `(group, topic, eventType, consumerName)` is diffed against the last release. Adding a handler to an existing group requires one of two things: an **audited replay of that type over the rollout window** (and over any rollback window) after the rollout completes, through `-028`'s door, where the inbox deduplicates what N already applied; or **a new consumer group** whose starting offsets are chosen and recorded, never `earliest` over the whole retention unless the handler is naturally idempotent | `-027`, `-028`, `-012` |
 | Dead-letter queues | Outbox: an operator door to retry or discard an abandoned event, discard four-eyes, both audited — emitting the three platform actions registered and never emitted; inbox: a poison record parked after its bounded retries, the group continuing, the parked record counted and alerted | `-028` |
 | Message replay | From the outbox by an audited operator command; **bounded by the inbox's dedupe window** (14 days): a replay older than the window is refused unless every consumer of the type is naturally idempotent, which the catalogue records | `-028` |
 | Redis availability | **N/A**: no Redis client exists; Redis is not deployed (C3) | — |
@@ -437,9 +475,13 @@ rehearsal's exported spans for the planted needles of `DATA_CLASSIFICATION.md`.
 | Retention sweeps | Outbox published rows and inbox records past their bound, leaderless and batched (`SKIP LOCKED`), never a non-terminal row; idempotency records **not swept** until debt row #61 is settled (`journal_entry.idempotency_scope` is not unique, and the record is posting once-ness's second rank) | `-029` |
 
 **Migrations and deployments never silently violate financial consistency or create incompatible versions**: the
-schema of release N must serve release N − 1's code (expand/contract), the new code refuses readiness on an older schema,
-and the rehearsal runs N − 1 against N's schema with the financial census before rolling — so two versions can coexist
-for as long as a rollout lasts, and a rollback is always to a version the schema still serves.
+schema of release N must serve release N − 1's code (expand/contract, tightening DDL included); the new code refuses
+readiness on an older schema; the rehearsal runs N − 1 against N's schema with the financial census before rolling; and
+a handler added to an existing consumer group is replayed over the rollout window or given its own group. So two
+versions can coexist for as long as a rollout lasts. **A rollback is safe only to a release no later contract marker
+excludes**: a migration carrying a marker names the first release whose code conforms to it, and the promotion script
+refuses a rollback below that release. Past it, the way back is a forward fix. *(Read "a rollback is always to a
+version the schema still serves" until the transition's review, its M-2 and I-2.)*
 
 ---
 
@@ -460,7 +502,8 @@ construction), no leader election, no sticky session, no in-process cache author
 | Distributed state | Sessions, idempotency, leases, outbox and inbox in PostgreSQL; per-instance caches non-authoritative and bounded | `DISTRIBUTED_EXECUTION.md` §3 |
 | Idempotent recovery | A crash between commit and response is answered by the idempotency record on retry; an unpublished outbox row is re-published by any instance | The phases' tests; the rehearsal's kill step |
 | Service restarts | Startup guards; readiness gated on the database and the schema version; no warm-up state | `-005`, `-008` |
-| Autoscaling | Bounded by the connection budget; scale-down stabilised | `-009` |
+| Autoscaling and rollout capacity | Bounded by the connection budget **counting terminating pods** (§6.1); scale-down one pod per grace period | `-009`; the peak measured by `-012` |
+| New consumer handlers | Replayed over the rollout and any rollback window, or given a new group (§12) | `-027`, `-028`, `-012` |
 | Two migrations at once | Flyway's lock serialises them; the second finds nothing to do | `-004` |
 | Secret rotation | Alternating database users and two valid HMAC secrets during a window, so a fleet half-rolled works | `-020` |
 
@@ -490,8 +533,11 @@ document with its class (`SECRET`, `FINANCIAL`, `OPERATIONAL`), its default, and
 it both ways against the code. **Configuration that affects financial behaviour, limits, pricing, routing or risk policy**
 already lives as versioned, four-eyes data in PostgreSQL wherever it decides money (fee schedules, terms, policies, rule
 sets, mapping versions); a property classed `FINANCIAL` (for example a lock grace, a staleness bound, a fail-safe
-timeout) changes only through the production overlay's two-person approval, is published as a fingerprint
-(`finapp.config.fingerprint`), and an alert fires when replicas disagree.
+timeout) changes only through the production overlay's two-person approval. It **must be safe while replicas hold
+mixed values** — during a rollout one replica judges with the old value and another with the new — and a property for which
+that is not safe belongs in versioned database data, not in a property. It is published as a fingerprint
+(`finapp.config.fingerprint`), and an alert fires when replicas disagree **for longer than a rollout** (its `for:`
+longer than the longest rolling update the overlay allows), so a rollout's expected disagreement never pages.
 
 ---
 
@@ -515,7 +561,8 @@ writes the standard; `P15-TSK-034` fills it per unit and per module from the tas
 | Ownership | A named owning module (and person or rota in a real environment) per alert and runbook section |
 | Runbooks | Written, linked from alerts, rehearsed with the result recorded |
 
-**Where each unit stands today** (the survey's reading; `-034` re-reads it with evidence):
+**Where each unit stands today** (the survey's reading; `-034` re-reads it with evidence, and counts every open
+Phase 14 remediation entry, `P14-REM-001`…`-011`, as a named gap of the unit it touches):
 
 | Unit | Deployment | Health | Logging | Metrics | Tracing | Alerting | Security | Limits | Failure | Recovery | Ownership | Runbooks |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -538,7 +585,8 @@ alert rule** — `-025` gives each critical flow its SLO alerts and the ledger i
   guard packages and named guards; the task's new static checks (`kubeconform`, policies, `terraform test`, `promtool`)
   run fresh; database suites written and owed; no fleet `databaseTest`/`kafkaTest` per task.
 - **Rehearsals** run on `kind` (Docker required): `-012` (rolling update, rollback, kill), `-020` (rotation), `-023` (the
-  trace), `-030` (restore), `-032` (each runbook). Each ends in the financial census where money is involved.
+  trace), `-030` (restore), `-032` (every runbook section of `OPERATIONS_RUNBOOK.md`: the domain sections §1–§10 by a
+  counted sample of at least one procedure each, the platform section §11 whole). Each ends in the financial census where money is involved.
 - **The exit's database pass**, `P15-TST-002`: every module's `databaseTest`, own-container and `kafkaTest` tiers fresh on
   the final tree (PI-012); PI-013's and PI-014's regression cases green (fixed by `-033`); PI-014's unclassified suites
   classified; PI-015's struck rows performed again or struck for good with a reason.
@@ -582,7 +630,7 @@ restore rehearsal (`-030`), the runbooks' rehearsal (`-032`), the database pass.
 | `P15-TSK-009` | Kubernetes base manifests for the application | M15.3 | `-003`, `-008` | `DOD-BUILD`, `DOD-ARCH` |
 | `P15-TSK-010` | Namespace security: RBAC, NetworkPolicy, Pod Security, quotas | M15.3 | `-009` | `DOD-SEC`, `DOD-BUILD` |
 | `P15-TSK-011` | The edge: public and operator ingresses, TLS, the route allow-list | M15.3 | `-009` | `DOD-SEC`, `DOD-API` |
-| `P15-TSK-012` | The `kind` deployment: N replicas, the migration Job, smoke, rolling update and rollback rehearsed | M15.3 | `-004`, `-005`, `-010`, `-011` | `DOD-BUILD`, `DOD-TEST` |
+| `P15-TSK-012` | The `kind` deployment: N replicas, the migration Job, smoke, rolling update and rollback rehearsed | M15.3 | `-004`, `-005`, `-010`, `-011`, `-026` | `DOD-BUILD`, `DOD-TEST` |
 | `P15-TSK-013` | Terraform foundations: layout, state, conventions, CI checks | M15.4 | `-001` | `DOD-BUILD` |
 | `P15-TSK-014` | Network and cluster modules | M15.4 | `-013` | `DOD-BUILD`, `DOD-SEC` |
 | `P15-TSK-015` | Data-tier modules: PostgreSQL, Kafka, object storage | M15.4 | `-014`, `-026` | `DOD-BUILD`, `DOD-SEC` |
@@ -622,7 +670,7 @@ owner's standing rule): **A** `-001`; **B** `-002`, `-003`, `-008`, `-013`, `-02
 
 **Every edge**: `-002`, `-003`, `-008`, `-013`, `-021`, `-024`, `-026`, `-033` after `-001`; `-029` after `-002`;
 `-004` and `-006` after `-003`; `-005` after `-004`; `-009` after `-003` and `-008`; `-010`, `-011` and `-018` after
-`-009`; `-012` after `-004`, `-005`, `-010` and `-011`; `-007` after `-006` and `-012`; `-014` after `-013`; `-015` after
+`-009`; `-012` after `-004`, `-005`, `-010`, `-011` and `-026` (`kind` is not loopback, so `TransportSecurityGuard` needs `verify-full` to PostgreSQL and `KafkaTransportGuard` refuses `PLAINTEXT`: the rehearsal needs `-026`'s authenticated TLS client and a TLS PostgreSQL from the local CA - added by the transition's review, its M-5; the waves and the critical path are unchanged, `-026` being in wave B); `-007` after `-006` and `-012`; `-014` after `-013`; `-015` after
 `-014` and `-026`; `-016` after `-014` and `-018`; `-017` after `-007`, `-012` and `-016`; `-019` after `-018`; `-020`
 after `-012` and `-019`; `-022` after `-011`; `-023` and `-030` after `-012`; `-025` after `-024`; `-027` and `-028`
 after `-026`; `-031` after `-008` and `-018`; `-032` after `-017`, `-020`, `-025`, `-028` and `-030`; `P15-TST-002` after
@@ -651,7 +699,7 @@ role, the dead-letter door) are written by that task, as `P14-TSK-026` wrote ADR
 A business capability of any kind; a change to a financial rule, posting treatment, lifecycle or invariant (other than
 the postponed defects' fixes, `-033`, each at its stated cause); a microservice, a second deployable application or a
 module split; a Kubernetes `CronJob`, a leader election or any single-instance mechanism; a schema rollback; a
-transaction-mode connection pooler; a runtime schema registry; Redis; an application use of object storage; a service
+transaction-mode connection pooler (Phase 16 measures it, for server-side prepared statements); a runtime schema registry; Redis; an application use of object storage; a service
 mesh; an apply to a real cloud account or a push to a real registry; any claim of compliance or certification; the
 purge of financial evidence, agreements or regulatory reports (C12); Phase 16's load, chaos, multi-region or DR work. A
 reviewer finding any of it refuses the change.
@@ -699,7 +747,9 @@ Recommended dispositions, for the owner's ratification (C15); `P15-TSK-002` appl
 | `X-TSK-015` callbacks as hints for the Phase 5 and 7 providers | Scheduled into this phase on ratification, as its own item after `-001` (security, T8) |
 | `X-TSK-014` explicit scale on pre-Phase-9 amount events | `-027` (cut candidate) |
 | PI-012…PI-015 | `-033` (PI-013, PI-014's production defects) and `P15-TST-002` (PI-012, PI-014's suites, PI-015) |
-| Time decided on an instance's clock: the lock's grace (A4-F1); `X-TSK-008`'s five stores | Recommended into `-033` beside PI-013 (the same class: an instant decided outside the database's clock) |
+| Time decided on an instance's clock: the lock's grace (A4-F1) | **`P14-REM-009`'s** (the completion gate's entry, `PLANNED`, "Phase 15 at the latest"): scheduled by the owner inside this phase, recommended before `P15-TST-002` so its database cases run in the pass *(read "recommended into `-033`" until the gate's merge was taken in, 2026-11-07)* |
+| `X-TSK-008`'s five stores (time decided across instances) | Recommended into `-033` beside PI-013 (the same class: an instant decided outside the database's clock) |
+| `P14-REM-001`…`-011` (the Phase 14 completion gate's remediation entries, `BACKLOG.md` §Phase 14 remediation) | Stay `PLANNED` and outside every Phase 15 milestone, as the gate wrote them; horizons "before production use", "before any real regulatory channel", "before production write-offs and BNPL", and `-009` "Phase 15 at the latest". `-002` names each with its horizon, and `-034`'s readiness review counts each still-open entry as a named gap of the unit it touches. Scheduling them is the owner's |
 | The posting once-ness's second rank (debt #61) | Ruled by `-002`: a uniqueness on the posting scope before any idempotency sweep, or the sweep stays excluded |
 | An equity account for a non-zero first bank opening | Re-dated to a real bank's go-live: the reference platform has no real bank opening |
 | Return-to-sender; a payout return to a closed merchant; funds owed to a closed customer by a parked corridor return | `-032` writes the operating procedure (the value stays parked, aged and alerted); the new operation re-dated to a later payments phase |

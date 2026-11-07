@@ -34,8 +34,12 @@ property, its class or its source in each environment. Nothing would notice if t
    A test holds the register both ways against the code.
 4. **Financial configuration is versioned and approved.** Wherever possible, a value that decides money lives as
    versioned four-eyes data in PostgreSQL, as it already does. A property classed `FINANCIAL` changes only through the
-   production overlay's two-person approval (ADR-0122). Each replica publishes the fingerprint of its effective
-   `FINANCIAL` configuration as `finapp.config.fingerprint`, and an alert fires when replicas disagree.
+   production overlay's two-person approval (ADR-0122), and it **must be safe while replicas hold mixed values**. During
+   a rollout, one replica judges with the old value and another with the new one. A property for which that is not safe
+   belongs in versioned database data, not in a property. Each replica publishes the fingerprint of its effective
+   `FINANCIAL` configuration as `finapp.config.fingerprint`. An alert fires when replicas disagree **for longer than a
+   rollout**: its `for:` exceeds the longest rolling update the overlay allows, so a rollout's expected disagreement
+   never pages. *(Widened by the transition's review, 2026-11-07, its M-10.)*
 5. **Startup refuses an unsafe configuration.** The existing guards (transport, credentials, the connection budget,
    providers) stay. The schema-version guard is added (ADR-0122). A missing required value fails startup, never
    readiness after traffic has begun.

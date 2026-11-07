@@ -26,10 +26,26 @@ some to answer the brief would break ADR-0001.
    replica serves HTTP and runs every schedule, consumer and relay, as today. The second is `finapp-migrator`, Flyway
    over every module's migrations with the build's settings. It runs as a Job once per release, before the rollout, as
    `finapp_migrator`.
-2. **Rolling, never surging past the budget.** The rollout uses `maxUnavailable: 0` and `maxSurge: 1`. A
-   PodDisruptionBudget sets `maxUnavailable: 1`. Topology spread covers zones and nodes. The HPA starts at three
-   replicas, and its maximum obeys `maxReplicas + maxSurge ≤ finapp.database.instances`. A manifest policy checks that
-   rule.
+2. **Rolling, never surging past the budget, terminating pods counted.** The rollout uses `maxUnavailable: 0` and
+   `maxSurge: 1`. A PodDisruptionBudget sets `maxUnavailable: 1`. Topology spread covers zones and nodes. The HPA starts
+   at three replicas and scales down by at most one pod per period no shorter than `terminationGracePeriodSeconds`.
+
+   A Deployment's rollout and a ReplicaSet's replacement do not count terminating pods, and a terminating pod keeps its
+   whole pool open until its grace ends (KEP-3973). So the budget rule counts those pods:
+
+   ```
+   maxReplicas + 2 × maxSurge + 1 ≤ finapp.database.instances
+   minReadySeconds ≥ terminationGracePeriodSeconds
+   ```
+
+   - The surge pods are counted once in `2 × maxSurge`.
+   - The rollout's terminating pods are counted again in `2 × maxSurge`. `minReadySeconds` stops them stacking.
+   - The `+ 1` is one more terminating pod, from an eviction the PodDisruptionBudget allows or from an HPA step.
+
+   A manifest policy checks the rule, and the `kind` rehearsal measures the peak of `pg_stat_activity` for
+   `application_name = 'finapp'`. `podReplacementPolicy: TerminationComplete` would remove the second surge term, but
+   it is alpha and not enabled on managed clusters; it is revisited when it is generally available. *(Corrected by the
+   transition's review, 2026-11-07, its I-1: this read "`maxReplicas + maxSurge ≤ finapp.database.instances`".)*
 3. **Probes map to ADR-0016.** The liveness, readiness and startup probes are served on a **management port**. No
    Service or ingress exposes that port. The image has no Docker `HEALTHCHECK`.
 4. **Graceful shutdown is stated and tested.** The sequence is: a `preStop` pause, graceful HTTP, schedules drained

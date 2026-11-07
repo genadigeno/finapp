@@ -26848,7 +26848,9 @@ M15.11 Operations and exit (`-032`, `-033`, `P15-TST-002`, `-034`, `P15-TST-001`
 `-033`; **C** `-004`, `-006`, `-009`, `-014`, `-025`, `-027`, `-028`, `-029`; **D** `-005`, `-010`, `-011`, `-015`, `-018`;
 **E** `-012`, `-016`, `-019`, `-022`, `-031`; **F** `-007`, `-020`, `-023`, `-030`; **G** `-017`; **H** `-032`; **I**
 `P15-TST-002`; **J** `-034`; **K** `P15-DOC-001` (`P15-TST-001` `POSTPONED`, PI-004). **Critical path**: `-001` → `-003` →
-`-004` → `-005` → `-012` → `-007` → `-017` → `-032` → `TST-002` → `-034` → `DOC-001`.
+`-004` → `-005` → `-012` → `-007` → `-017` → `-032` → `TST-002` → `-034` → `DOC-001`. *(The transition's review, its M-5,
+added the edge `-012` after `-026`: `kind` is not loopback, so the rehearsal needs `-026`'s authenticated TLS client.
+`-026` is in wave B, so the waves and the critical path are unchanged.)*
 
 **If the phase must shrink**, cut the reporting role of `-021` first, then `-027`'s `X-TSK-014` half, then `-016`'s
 observability module; each deferral recorded with its owner. **Never cut:** `-001`, `-005`, `-008`, `-012`, `-018`, `-019`,
@@ -26909,7 +26911,16 @@ Phase 14 → 15 transition)
 - **Dependencies**: `-001`; the owner's ratification of C15.
 - **Scope**: each Phase-15-owned row read; its disposition applied — scheduled into a named Phase 15 task (and that
   task's entry widened), added as a new Phase 15 item if the owner chooses (`X-TSK-015` recommended), or re-dated with a
-  reason; debt row #61 (posting once-ness's second rank) ruled before `-029` may sweep idempotency records.
+  reason; debt row #61 (posting once-ness's second rank) ruled before `-029` may sweep idempotency records; the Phase 14
+  completion gate's remediation entries named with their horizons and left `PLANNED` outside every Phase 15 milestone -
+  `P14-REM-001` (a break's resolution under `MULTI_FACTOR`), `-002` (step-up on the mapping activation and the
+  acknowledgement approval), `-003` (reason classifications and screens), `-004` (the Phase 14 schema closed to raw
+  writers), `-006` (write-offs and the BNPL fee pin), `-007` (a settlement source's retirement), `-008` (close-check
+  robustness), `-010` (the exit review's accepted owner items) and `-011` (read surfaces), each "before production use"
+  or "before production write-offs and BNPL"; `-005` (regulatory submission hardening), "before any real regulatory
+  channel"; and `-009` (the lock's grace and the submissions' orderings on the database's clock, A4-F1), **"Phase 15 at
+  the latest"** - recommended to the owner for scheduling before `P15-TST-002` so its database cases run in the pass.
+  Scheduling any of them is the owner's; none becomes `READY` here.
 - **Exclusions**: fixing any row (the scheduled task does).
 - **Architecture changes**: none. **Infrastructure changes**: none.
 - **Security implications**: security-class rows may not be re-dated without the owner's stated reason.
@@ -26953,9 +26964,14 @@ Phase 14 → 15 transition)
 - **Dependencies**: `-003`.
 - **Scope**: the module order pinned and checked against the build's; each schema's settings identical to its
   `build.gradle.kts` (`cleanDisabled`, `validateOnMigrate`, `outOfOrder=false`, `baselineOnMigrate=false`); a session
-  `lock_timeout` and bounded retries; the role-creation step of `00-roles.sql` for a deployed database (run once by the
-  master user, passwords from the secret store); exit codes; the Job's `backoffLimit` and deadline.
-- **Exclusions**: the compatibility lint and the readiness guard (`-005`); deployment ordering (`-017`).
+  `lock_timeout` and bounded retries; exit codes; the Job's `backoffLimit` and deadline; and, **as a separate one-time
+  bootstrap step that is never part of this Job**, the roles of `00-roles.sql` for a deployed database (`finapp_migrator`,
+  `finapp_app`), created by the master user, whose credentials only that step holds, with passwords from the secret
+  store - roles are infrastructure, never Flyway (`finapp_migrator` is `NOCREATEROLE`), and the per-table grants stay in
+  the migrations *(the bootstrap read "the role-creation step of `00-roles.sql` … in this image" until the transition's
+  review, its M-4)*.
+- **Exclusions**: the compatibility lint and the readiness guard (`-005`); deployment ordering (`-017`); the alternating
+  application users (`-020`) and `finapp_reporting` (`-021`), which the same bootstrap step creates when those tasks land.
 - **Architecture changes**: migrations gain a runtime runner beside Gradle's (ADR-0011 unchanged: never the
   application). **Infrastructure changes**: the image.
 - **Security implications**: only this image holds migrator credentials; the application's role cannot create or alter.
@@ -26978,10 +26994,13 @@ Phase 14 → 15 transition)
 - **Affected components**: a migration lint (a test over every module's migrations); `app` (a readiness contributor
   reading each schema's applied version); `DATA_MIGRATIONS.md` §4.1.
 - **Dependencies**: `-004`.
-- **Scope**: the lint refusing, in any migration added since the last release tag, `DROP`, `RENAME`, a column type
-  change and a `NOT NULL` without a default on an existing column, unless the file carries a contract marker naming the
-  release whose readers stopped; the build embedding each schema's latest expected version; a readiness contributor
-  `schemaVersion` reporting `OUT_OF_SERVICE` while any schema is older; liveness untouched.
+- **Scope**: the lint refusing, in any migration added since the last release tag, destructive DDL (`DROP`, `RENAME`, a
+  column type change) and **tightening DDL** - a new `CHECK`, trigger, `UNIQUE` or foreign key, `SET NOT NULL`, `ADD
+  COLUMN … NOT NULL` with no default, a `REVOKE` - each of which can refuse a write release N − 1 still makes, unless
+  the file carries a contract marker naming the first release whose code conforms; the markers read by `-017`'s
+  promotion script, which refuses a rollback across one; the build embedding each schema's latest expected version; a
+  readiness contributor `schemaVersion` reporting `OUT_OF_SERVICE` while any schema is older; liveness untouched.
+  *(Tightening DDL added by the transition's review, 2026-11-07, its M-2.)*
 - **Exclusions**: running N − 1 against N (`-012`).
 - **Architecture changes**: readiness gains a schema-version contributor (ADR-0016 kept: liveness reads nothing).
 - **Infrastructure changes**: none.
@@ -26989,9 +27008,10 @@ Phase 14 → 15 transition)
 - **Multi-instance implications**: during a rollout old and new replicas coexist on one schema; the guard makes a new
   replica wait rather than serve; `PASS` by the rehearsal of `-012`.
 - **Failure and rollback**: a new replica on an old schema stays unready, so the rollout pauses at `maxUnavailable: 0`;
-  rollback is to N − 1, which the lint guarantees the schema still serves.
-- **Testing and validation**: the lint over planted migrations (each refused class, a marked contract accepted); the
-  guard hermetic with a stubbed version read; the database case owed (C14).
+  rollback is to N − 1 only when no migration since N − 1 carries a contract marker excluding it - past a marker the way
+  back is a forward fix.
+- **Testing and validation**: the lint over planted migrations (each refused class, destructive and tightening; a marked
+  contract accepted); the guard hermetic with a stubbed version read; the database case owed (C14).
 - **Probe**: delete the `DROP` rule → the planted `DROP COLUMN` passes → red.
 - **Operational documentation**: `DATA_MIGRATIONS.md` §4.1 gains the enforcement; runbook §deploy.
 - **Acceptance criteria**: every refused class refused; readiness false on an older schema and true on the expected one.
@@ -27045,7 +27065,10 @@ Phase 14 → 15 transition)
 - **Affected components**: `app` (`application.yaml`, every `*Schedule`, `InboxConsumers`, `AccountingGaugeRefresher`),
   `SECURITY_ARCHITECTURE.md` §Operational endpoints, `TransportSecurityGuard`'s note.
 - **Dependencies**: `-001`.
-- **Scope**: `management.server.port` (8081); `server.shutdown=graceful` and `spring.lifecycle.timeout-per-shutdown-phase`
+- **Scope**: `management.server.port` (8081), with `management.server.address` bound to loopback by default for every
+  non-Kubernetes run (today `/actuator/prometheus` and `info` are open on `0.0.0.0:8080` - the two debt rows on the
+  operational and scrape endpoints) and set to the pod address only by the Kubernetes overlays, where `-010`'s
+  NetworkPolicy restricts it; `server.shutdown=graceful` and `spring.lifecycle.timeout-per-shutdown-phase`
   stated and asserted; readiness `REFUSING_TRAFFIC` on shutdown; every schedule's `stop()` stops claiming and awaits
   its executor within a bound shorter than the phase timeout; consumers commit and close; the pool closed last; the
   stale note in `TransportSecurityGuard` corrected.
@@ -27071,12 +27094,16 @@ Phase 14 → 15 transition)
 - **Affected components**: new `deploy/` (Kustomize base and overlays `kind`, `staging`, `production`); policy checks in
   `infra/scripts/`; `ci.yml` (a `manifests` job).
 - **Dependencies**: `-003`, `-008`.
-- **Scope**: Deployment (N ≥ 3, `maxUnavailable: 0`, `maxSurge: 1`, topology spread, security context, requests and
-  limits, `preStop`, `terminationGracePeriodSeconds`, liveness/readiness/startup probes on 8081), Service (8080 only),
-  hash-named ConfigMap, ServiceAccount (no token), PodDisruptionBudget, HPA (bounded), the migrator Job template; the
+- **Scope**: Deployment (N ≥ 3, `maxUnavailable: 0`, `maxSurge: 1`, `minReadySeconds ≥ terminationGracePeriodSeconds`,
+  topology spread, security context, requests and limits, `preStop`, `terminationGracePeriodSeconds`,
+  liveness/readiness/startup probes on 8081), Service (8080 only), hash-named ConfigMap, ServiceAccount (no token),
+  PodDisruptionBudget, HPA (bounded, scale-down one pod per period no shorter than the grace), the migrator Job template; the
   test-only single-node PostgreSQL and Kafka in the `kind` overlay; `kubeconform` (strict, pinned schemas) and policies:
   security context, probes, requests and limits, digest-only images, no `CronJob`, no StatefulSet outside `kind`, no
-  `kind: Secret` with data, `maxReplicas + maxSurge ≤ finapp.database.instances`.
+  `kind: Secret` with data, and the connection budget **counting terminating pods** (`PHASE_15_PLAN.md` §6.1): `maxReplicas
+  + 2 × maxSurge + 1 ≤ finapp.database.instances` with `minReadySeconds ≥ terminationGracePeriodSeconds` - a rollout and a
+  ReplicaSet's replacement do not count terminating pods, each of which holds its pool open through its grace *(read
+  "`maxReplicas + maxSurge ≤ finapp.database.instances`" until the transition's review, its I-1)*.
 - **Exclusions**: RBAC, NetworkPolicy, quotas (`-010`); ingresses (`-011`); a cluster (`-012`).
 - **Architecture changes**: none. **Infrastructure changes**: the manifests.
 - **Security implications**: the restricted pod profile in every overlay.
@@ -27084,7 +27111,7 @@ Phase 14 → 15 transition)
   `PASS` on the policy's planted violation.
 - **Failure and rollback**: a policy failure fails the job.
 - **Testing and validation**: every overlay renders and validates; each policy refuses its planted violation.
-- **Probe**: raise `maxReplicas` past the budget → the budget policy red.
+- **Probe**: raise `maxReplicas` past the budget → the budget policy red; drop `minReadySeconds` below the grace → red.
 - **Operational documentation**: `deploy/README` section in `OPERATIONS_RUNBOOK.md` §11 (planned) on overlays.
 - **Acceptance criteria**: rendered, validated, every policy proven by its plant.
 - **Definition of done**: `DOD-BUILD`, `DOD-ARCH`. **Risk**: Low. **Cx**: M.
@@ -27137,11 +27164,21 @@ Phase 14 → 15 transition)
   survives a pod kill with its money unchanged.
 - **Affected components**: `infra/scripts/kind-rehearsal.sh`, a smoke suite (HTTP flows against the ingress with the
   simulated providers), the census reads, `ci.yml` (a `rehearsal` job on `master`, nightly and on `deploy/` changes).
-- **Dependencies**: `-004`, `-005`, `-010`, `-011`.
-- **Scope**: a pinned `kind` node image; images loaded; the migrator Job; three replicas ready; smoke flows (register,
-  authenticate, transfer, a card payment and capture, a merchant payout); a scripted workload during a rolling update
-  from N − 1 to N (N − 1 run on N's schema first); a pod killed mid-workload; a rollback by digest; the financial census
-  after each step.
+- **Dependencies**: `-004`, `-005`, `-010`, `-011`, `-026` (`kind` is not loopback: `TransportSecurityGuard` requires
+  `verify-full` to PostgreSQL and `KafkaTransportGuard` refuses `PLAINTEXT`, so the rehearsal needs `-026`'s
+  authenticated TLS client - added by the transition's review, its M-5).
+- **Scope**: a pinned `kind` node image; the test-only PostgreSQL serving TLS from the local CA (the app at
+  `sslmode=verify-full`) and the test-only Kafka on `SASL_SSL`; images loaded; the migrator Job; three replicas ready;
+  smoke flows (register, authenticate, transfer, a card payment and capture, a merchant payout); a scripted workload
+  during a rolling update from N − 1 to N (N − 1 run on N's schema first); a pod killed mid-workload; a rollback by
+  digest; the financial census after each step. **The connection budget measured** (I-1): run with
+  `finapp.database.instances` set to `PHASE_15_PLAN.md` §6.1's formula exactly and `max_connections = instances × pool +
+  reserved`, record the peak `pg_stat_activity` count for `application_name = 'finapp'` during the rolling update and
+  the pod kill, assert it at most `instances × pool`, and assert an operator connection is admitted at the peak. **A
+  handler added in release N** (I-2): release N registers a handler for an event type the module already produces;
+  that type is produced during the mixed window; the census finds the records an N − 1 replica committed unseen
+  (`UNHANDLED`), and the audited replay of `-028` over the rollout window applies each exactly once (the inbox
+  deduplicates what N already applied) - and the same after a rollback and a re-roll.
 - **Exclusions**: load, chaos, ten instances (the storm, `P15-TST-001`).
 - **Architecture changes**: none. **Infrastructure changes**: the rehearsal harness.
 - **Security implications**: secrets generated per run, never written to the repository.
@@ -27149,8 +27186,11 @@ Phase 14 → 15 transition)
   effect per idempotency key, the outbox drained, no orphaned lease, a killed pod's claims taken by another; `PASS` on
   these counts.
 - **Failure and rollback**: the rehearsal is the rollback's proof.
-- **Testing and validation**: the census green after each step; the job's artefacts (logs, census output) kept.
-- **Probe**: set `maxUnavailable: 1` with three replicas and a slow readiness → failed smoke requests counted → red.
+- **Testing and validation**: the census green after each step; the peak-connection assertion; the handler-window case;
+  the job's artefacts (logs, census output, the peak) kept.
+- **Probe**: set `maxUnavailable: 1` with three replicas and a slow readiness → failed smoke requests counted → red;
+  set `minReadySeconds: 0` with a long `preStop` → the peak exceeds `instances × pool` → red; skip the replay → the
+  handler-window census red.
 - **Operational documentation**: runbook §deploy, §rollback rehearsal records.
 - **Acceptance criteria**: every step green with its census; timings recorded.
 - **Definition of done**: `DOD-BUILD`, `DOD-TEST`. **Risk**: Medium. **Cx**: L.
@@ -27198,7 +27238,8 @@ Phase 14 → 15 transition)
 - **Dependencies**: `-014`, `-026`.
 - **Scope**: RDS PostgreSQL 18, Multi-AZ, `rds.force_ssl`, `max_connections` from one variable also declared to the app,
   backups with point-in-time recovery under a separate KMS key, deletion protection; MSK across three zones, TLS, SCRAM,
-  `min.insync.replicas` 2, unclean election off, auto-create off, topics from the catalogue; state and archive buckets,
+  `min.insync.replicas` 2, unclean election off, auto-create off, topics from the catalogue with their `retention.ms`
+  (each below `finapp.inbox.retention`, as `-026` asserts); state and archive buckets,
   versioned, encrypted, public access blocked, Object Lock on the audit archive.
 - **Exclusions**: applying; restore rehearsal on a managed service (deferred, §1.1).
 - **Architecture changes**: none. **Infrastructure changes**: three modules.
@@ -27281,7 +27322,11 @@ Phase 14 → 15 transition)
 - **Objective**: any of the eight ciphers' keys can be rotated with every earlier row still readable and no evidence
   rewritten.
 - **Affected components**: `platform` (a key-ring abstraction), the eight cipher classes in `identity`, `kyc`,
-  `payments`, `merchant`, `credit`, `fx`, `settlement`; their configuration (versioned keys).
+  `payments`, `merchant`, `credit`, `fx`, `settlement` - **nine instances over eight keys**: `EvidenceCipher` is built
+  twice (`PaymentBeans.java:83`, `:829`), and `DocumentCipher` and `CounterpartySubjectCipher` share `finapp.doc.key`
+  (`CounterpartyScreeningBeans.java:65-76`), so a ring belongs to a key, both of its classes rotate together, and both
+  `EvidenceCipher` instances read one ring; their configuration (versioned keys). *(The counts added by the
+  transition's review, its M-9.)*
 - **Dependencies**: `-018`.
 - **Scope**: one active version for encryption, retained versions for decryption, the stamped version always used to
   decrypt; a version unknown to the ring refused; configuration of a ring as versioned secrets; HMAC callback secrets
@@ -27308,7 +27353,10 @@ Phase 14 → 15 transition)
   beyond retries and no financial effect.
 - **Affected components**: the rehearsal harness, `infra/postgres` (alternating users), cert-manager configuration.
 - **Dependencies**: `-012`, `-019`.
-- **Scope**: the application's database password by alternating users; a Kafka SCRAM credential; an HMAC callback secret
+- **Scope**: the application's database password by alternating users - **each alternating user holding exactly the
+  per-table grants made to `finapp_app`** (by membership of a role carrying them; the grants stay in the migrations;
+  the users created by `-004`'s bootstrap step), a user missing one grant failing the rehearsal; a Kafka SCRAM
+  credential; an HMAC callback secret
   through its window; a field-level key version; the ingress certificate renewed early; each followed by the census.
 - **Exclusions**: a cloud-managed rotation (deferred).
 - **Architecture changes**: none. **Infrastructure changes**: the alternating-user setup.
@@ -27325,8 +27373,11 @@ Phase 14 → 15 transition)
 - **Objective**: an operator's acts are recorded as an operator's, refused privileged attempts are recorded, and report
   generation holds no write privilege at the database.
 - **Affected components**: `app` (`SessionAuthenticationInterceptor`, the step-up path, `RequiresAssurance`'s note),
-  `identity` (the actor type an operator's session carries), `platform` audit, a database migration creating
-  `finapp_reporting` (cut candidate), the report-run generator's connection, `AUDITABLE_ACTIONS.md`.
+  `identity` (the actor type an operator's session carries), `platform` audit, `finapp_reporting` (cut candidate) -
+  **the role created by `-004`'s one-time bootstrap step holding the master credentials, never by Flyway or the
+  per-release migrator** (`finapp_migrator` is `NOCREATEROLE`), its `SELECT` grants in the migrations - the report-run
+  generator's connection, `AUDITABLE_ACTIONS.md`. *(Read "a database migration creating `finapp_reporting`" until the
+  transition's review, its M-4.)*
 - **Dependencies**: `-001`.
 - **Scope**: an operator session audited with actor type `OPERATOR` (the role decides, read at session establishment);
   a refused `AssuranceRequired` audited; the privileged access review written (who may hold which role, the
@@ -27449,7 +27500,9 @@ Phase 14 → 15 transition)
 - **Dependencies**: `-001`.
 - **Scope**: `SASL_SSL` with SCRAM-SHA-512 from the secret inventory; the truststore; per-principal ACLs written for the
   managed broker; the topic catalogue (partitions, replication 3, `min.insync.replicas` 2, retention by class) checked
-  against every produced type; cooperative rebalancing; bounded session and poll timeouts.
+  against every produced type, **each topic's `retention.ms` asserted below `finapp.inbox.retention`** (P14D,
+  `EventingBeans.java:87-95`: the dedupe window must outlive what the broker can redeliver; `-015` and `-029` take the
+  same bound); cooperative rebalancing; bounded session and poll timeouts.
 - **Exclusions**: schema compatibility (`-027`); dead letters (`-028`).
 - **Architecture changes**: client configuration only; Kafka stays non-authoritative.
 - **Infrastructure changes**: broker settings in `kind`; the catalogue feeds `-015`.
@@ -27459,28 +27512,41 @@ Phase 14 → 15 transition)
 - **Failure and rollback**: an authentication failure fails readiness of the consumers' health contributor, never
   liveness.
 - **Testing and validation**: hermetic configuration tests; the catalogue test; the `kafkaTest` cases owed (C14).
-- **Probe**: produce to an undeclared topic → the catalogue test red.
+- **Probe**: produce to an undeclared topic → the catalogue test red; set a topic's retention to 15 days → red.
 - **Operational documentation**: runbook §broker outage, §consumer lag.
 - **Acceptance criteria**: as tested.
 - **Definition of done**: `DOD-EVENT`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 
 **P15-TSK-027 — Event contracts: the schema catalogue and compatibility** — `PLANNED`
-- **Objective**: no release changes an event in a way the previous release's consumers cannot read.
-- **Affected components**: every module's event payload definitions, a catalogue under `docs/`, a compatibility test,
-  `X-TSK-014` (if ratified into this task).
+- **Objective**: no release changes an event in a way the previous release's consumers cannot read, and no record is
+  lost because a release added a handler the previous release lacks.
+- **Affected components**: every module's event payload definitions and inbox handler registrations, two catalogues
+  under `docs/`, their tests, `X-TSK-014` (if ratified into this task).
 - **Dependencies**: `-026`.
 - **Scope**: every event type and version catalogued with its fields; a test comparing the catalogue with the last
-  release's, allowing only additive changes within a major; `X-TSK-014`'s explicit scale on pre-Phase-9 amount events as
-  an additive version (cut candidate).
+  release's, allowing only additive changes within a major; **the handler-set catalogue** `(group, topic, eventType,
+  consumerName)`, diffed against the last release's by a test - `KafkaEventReceiver` commits the offset of a record no
+  registered handler wants (`UNHANDLED`, `KafkaEventReceiver.java:184-197`), groups are per module and each topic carries
+  every type its module produces, so while N − 1 and N share a group, and after a rollback, a record of a type only N
+  handles is committed unseen; a handler added to an existing group is refused by the test unless the release records
+  either the audited replay of that type over the rollout window and any rollback window (`-028`'s door; the inbox
+  deduplicates) or a new consumer group with recorded starting offsets; `X-TSK-014`'s explicit scale on pre-Phase-9
+  amount events as an additive version (cut candidate). *(The handler set added by the transition's review, its I-2.)*
 - **Exclusions**: a runtime registry (C11).
 - **Architecture changes**: the catalogue becomes a contract (ADR-0122 decision 6).
 - **Infrastructure changes**: none.
 - **Security implications**: none.
-- **Multi-instance implications**: N − 1 and N consumers coexist during a rollout; `PASS` on the compatibility test.
-- **Failure and rollback**: a breaking change fails the build.
-- **Testing and validation**: planted removal and type change refused; an added optional field accepted.
-- **Probe**: allow a field removal → red.
-- **Operational documentation**: `EVENT_ARCHITECTURE.md` §schema evolution.
+- **Multi-instance implications**: N − 1 and N consumers coexist during a rollout. Payload compatibility does not
+  cover a new handler, so the answer is `PASS` only on three counts together: the compatibility test, the handler-set
+  diff, and `-012`'s handler-window case (none lost, none applied twice). *(Read "`PASS` on the compatibility test"
+  until the transition's review, its I-2.)*
+- **Failure and rollback**: a breaking change, or a handler added with neither a recorded replay nor a new group,
+  fails the build; after a rollback the replay covers the rollback window too.
+- **Testing and validation**: planted removal and type change refused; an added optional field accepted; a planted
+  handler added to an existing group with no recorded replay refused.
+- **Probe**: allow a field removal → red; drop the handler-set diff → the planted handler passes → red.
+- **Operational documentation**: `EVENT_ARCHITECTURE.md` §schema evolution and §adding a handler; runbook §11.1's replay
+  step.
 - **Acceptance criteria**: as tested.
 - **Definition of done**: `DOD-EVENT`. **Risk**: Low. **Cx**: M.
 
@@ -27493,7 +27559,8 @@ Phase 14 → 15 transition)
 - **Scope**: retry and discard of an abandoned event (discard four-eyes), both audited; an inbox record parked after its
   bounded retries with the group continuing; parked records counted (`finapp.deadletter.parked`) and alerted; replay from
   the outbox by an audited command, refused beyond the inbox's dedupe window unless the type is marked naturally
-  idempotent in the catalogue.
+  idempotent in the catalogue; the replay scoped by event type and a time window, which is how a handler added in a
+  release is served over its rollout and rollback windows (`-027`, `-012`).
 - **Exclusions**: replay at volume (Phase 16).
 - **Architecture changes**: the inbox gains a parked state.
 - **Infrastructure changes**: none.
@@ -27513,8 +27580,9 @@ Phase 14 → 15 transition)
 - **Affected components**: `platform` (outbox and inbox sweeps), `app` (their schedules), `DATA_MIGRATIONS.md` §8–9, a
   retention policy document.
 - **Dependencies**: `-002` (debt row #61's ruling; C12 ratified).
-- **Scope**: leaderless, batched sweeps (`SKIP LOCKED`) of published outbox rows and inbox records past their bound,
-  never a non-terminal row; the index each predicate needs; the policy by class (operational, financial, evidence,
+- **Scope**: leaderless, batched sweeps (`SKIP LOCKED`) of published outbox rows and inbox records past their bound -
+  the inbox's bound never below `finapp.inbox.retention`, which exceeds every topic's retention (`-026`) - never a
+  non-terminal row; the index each predicate needs; the policy by class (operational, financial, evidence,
   audit, regulatory) with the jurisdiction-dependent periods named as open; audit archival to write-once storage
   designed; idempotency records swept only if `-002` ruled #61 settled.
 - **Exclusions**: purges of evidence, agreements and regulatory reports (re-dated by C12); any deletion of a financial
@@ -27559,8 +27627,10 @@ Phase 14 → 15 transition)
   the fingerprint meter, `SYSTEM_ARCHITECTURE.md` §Baseline Stack.
 - **Dependencies**: `-008`, `-018`.
 - **Scope**: every `finapp.*` property and every Spring property an overlay sets, classed `SECRET`, `FINANCIAL` or
-  `OPERATIONAL`, with default and per-environment source; `finapp.config.fingerprint` over the effective `FINANCIAL`
-  values; an alert on disagreement; no Spring profile (a guard); the baseline stack corrected (no Spring Security, no
+  `OPERATIONAL`, with default and per-environment source; each `FINANCIAL` property stated safe while replicas hold mixed
+  values during a rollout, or moved to versioned database data; `finapp.config.fingerprint` over the effective
+  `FINANCIAL` values; an alert on disagreement whose `for:` is longer than the longest rollout the overlay allows; no
+  Spring profile (a guard); the baseline stack corrected (no Spring Security, no
   Redis, no S3 in the application).
 - **Exclusions**: moving properties into database-versioned data.
 - **Architecture changes**: the register as a guarded contract (ADR-0125).
@@ -27585,16 +27655,20 @@ Phase 14 → 15 transition)
 - **Scope**: deploy, promote, rollback, migration failure, restore, broker outage, database failover (procedure only;
   the drill is Phase 16's), each rotation and revocation, key compromise, dead letters and replay, instance down, stale
   gauges, a refused image, break-glass, the operating procedure for parked value with no attributable owner
-  (return-to-sender, a closed merchant, a closed customer's corridor return — §25); the incident response plan
-  (severity, roles, communication, post-incident review); each rehearsed on `kind` or compose.
+  (return-to-sender, a closed merchant, a closed customer's corridor return — §25); the deploy procedure's step for a
+  release that adds a consumer handler (the replay over the rollout window, or the new group - `-027`); the incident
+  response plan (severity, roles, communication, post-incident review); each rehearsed on `kind` or compose; **and every
+  domain section §1–§10 rehearsed by a counted sample of at least one procedure each** (an activation gate, or an alert's
+  response to its planted condition, against the simulated providers), the count reported per section (criterion 4 as
+  written - the transition's review, its M-7).
 - **Exclusions**: a real on-call rota; Phase 16's drills.
 - **Architecture changes**: none. **Infrastructure changes**: none.
 - **Security implications**: break-glass and compromise procedures audited.
 - **Multi-instance implications**: every procedure written for N replicas ("restart the fleet" is a rolling restart);
   `PASS` read.
 - **Failure and rollback**: each procedure states its own way back.
-- **Testing and validation**: every rehearsal recorded with date, commands, outcome and census; the runbook-link test
-  (`-025`) green.
+- **Testing and validation**: every rehearsal recorded with date, commands, outcome and census; the per-section count
+  covering §1–§11; the runbook-link test (`-025`) green.
 - **Probe**: none applicable; the link test's probe is `-025`'s.
 - **Operational documentation**: this task.
 - **Acceptance criteria**: criterion 4.
@@ -27604,7 +27678,8 @@ Phase 14 → 15 transition)
 - **Objective**: fix, at their causes, the production defects the owner postponed to this phase's database pass.
 - **Affected components**: `accounting` (`CloseRuns.view`, `JdbcCloseRunStore`, `JdbcPeriodCloseStore`'s latest-close
   read), `lending` and `bnpl` (a terms version's retirement stamp; a new migration each), `risk` `V002`'s retirement
-  checked; the clock-decided instants `-002` routes here (the lock's grace, A4-F1; `X-TSK-008`'s stores if ratified).
+  checked; `X-TSK-008`'s stores if `-002` routes them here. The lock's grace (A4-F1) is `P14-REM-009`'s, not this
+  task's *(read "the lock's grace, A4-F1" here until the gate's merge was taken in, 2026-11-07)*.
 - **Dependencies**: `-001`.
 - **Scope**: the close run picked by the lock's identity, the latest close by row order not by a stepped instant
   (PI-013); the terms retirement ending after its latest offer and the successor starting exactly there (PI-014 item 1);
@@ -27649,7 +27724,9 @@ Phase 14 → 15 transition)
 - **Affected components**: `PRODUCTION_READINESS.md` (`-001`'s), every task's evidence.
 - **Dependencies**: `-032`, `P15-TST-002`.
 - **Scope**: `PHASE_15_PLAN.md` §15's rows filled for `finapp-app`, `finapp-migrator`, PostgreSQL, Kafka, telemetry and
-  the edge, and per module inside `finapp-app` (ownership, alerts, runbook sections); each gap named with its owner.
+  the edge, and per module inside `finapp-app` (ownership, alerts, runbook sections); each gap named with its owner;
+  every Phase 14 remediation entry still open (`P14-REM-001`…`-011`, each `PLANNED` with its horizon) counted as a named
+  gap of the unit it touches - none may be read as met by this review.
 - **Exclusions**: declaring a real environment ready.
 - **Architecture changes / Infrastructure changes**: none.
 - **Security implications**: no compliance wording.
@@ -27664,16 +27741,58 @@ Phase 14 → 15 transition)
 **P15-TST-001 — The rolling-deploy storm** — `POSTPONED` (by the owner, `POSTPONED_ISSUES.md` PI-004: every later phase's
 storm runs after the project's phases)
 - **Objective**: ten application replicas under a mixed money workload while rolling updates, pod kills, consumer
-  rebalances, a migration Job and a secret rotation happen — the census at every round (trial balance zero, one effect
-  per key, the outbox drained, no orphaned lease, GL = ledger).
-- **Scope, fields**: as `P13-TST-001`'s shape; planned here so the phase's evidence is named; its evidence deferred, not
-  claimed. **Definition of done**: `DOD-TEST`.
+  rebalances, a migration Job, a handler-adding release and a secret rotation happen — the census at every round (trial
+  balance zero, one effect per key, the outbox drained, no orphaned lease, GL = ledger, the connection peak within the
+  budget).
+- **Affected components**: `finapp-app` and `finapp-migrator` on a `kind` cluster sized for ten replicas; the rehearsal
+  harness of `-012`, scaled; every module's money flows through the simulated providers.
+- **Dependencies**: every Phase 15 item but `P15-DOC-001` (the harness of `-012`, the rotations of `-020`, the replay of
+  `-028`); the owner's lifting of PI-004.
+- **Scope**: as `P13-TST-001`'s shape - rounds of workload with faults injected between them, a census per round; planned
+  here so the phase's evidence is named, its evidence deferred and not claimed. **Exclusions**: load characterisation,
+  node loss, database failover, network partition and region loss (Phase 16).
+- **Architecture changes**: none. **Infrastructure changes**: a larger `kind` topology for the run only.
+- **Security implications**: generated secrets per run, never written to the repository.
+- **Multi-instance implications**: this is the ten-instance measurement of `PHASE_15_PLAN.md` §13; its counts stay open
+  under PI-004, and the phase's `PASS` rests on `-012`'s three-replica counts until then.
+- **Failure and rollback**: a red census stops the storm and is triaged to a test or a production defect, as the
+  earlier storms were.
+- **Testing and validation**: the census after every round; the peak connection count; two runs with the same seed
+  giving the same census.
+- **Probe**: a planted duplicate posting across a pod kill → the census red.
+- **Operational documentation**: the storm's record in `TESTING.md`.
+- **Acceptance criteria**: every round's census green across ten replicas. **Definition of done**: `DOD-TEST`.
+  **Risk**: Medium. **Cx**: L.
 
 **P15-DOC-001 — The Phase 15 exit review** — `PLANNED`
 - **Objective**: read every ADR, plan section and register row against the code, configuration and rehearsal records;
   rule the gate clause by clause; ratify or record C1–C15; accept ADR-0120…0125 or correct them; confirm no document
   claims compliance.
-- **Dependencies**: every item but `P15-TST-001`. **Definition of done**: `DOD-DOC`. **Risk**: Low. **Cx**: L.
+- **Affected components**: documents only - `PHASE_15_PLAN.md` (an errata section), ADR-0120…0125, `PHASE_GATES.md` §5
+  Phase 15, the registers (`DISTRIBUTED_EXECUTION.md`, `AUDITABLE_ACTIONS.md`, `ERROR_CONTRACT.md`,
+  `DATA_CLASSIFICATION.md`, the secret inventory, the configuration register, the threat model), `CURRENT_STATE.md`,
+  `BACKLOG.md`, `ROADMAP.md`, a new `reviews/PHASE_15_REVIEW.md`.
+- **Dependencies**: every item but `P15-TST-001`.
+- **Scope**: the gate's seven criteria and twelve per-area blocks ruled clause by clause with evidence; the database
+  pass's record (`P15-TST-002`) read; the readiness review (`-034`) read against the evidence it cites; the stale
+  documents of `PHASE_15_PLAN.md` §3 confirmed corrected; the owner decisions C1–C15 recorded as ratified or changed;
+  the storm's postponement (PI-004) restated and the owner reminded. **Exclusions**: new code or infrastructure beyond
+  corrections a finding requires.
+- **Architecture changes**: none, beyond accepting or correcting the ADRs. **Infrastructure changes**: none.
+- **Security implications**: the compliance-wording check - no document claims compliance with, certification under or
+  attestation to any standard.
+- **Multi-instance implications**: the ten-instance answer ruled `PASS`, `FAIL` or `UNKNOWN` on the counted rehearsals,
+  the storm's counts named as open under PI-004.
+- **Failure and rollback**: a failed clause keeps the phase open; remediation items are added, and the review is re-run
+  after them.
+- **Testing and validation**: the document guards fresh (`DomainGlossaryTest`, `AdrRegistersAreReconciledTest`,
+  `ArchitectureRulesAreDocumentedTest`, `TestTaxonomyTest`, `PlannedMetersExistTest` - Phase 15's planned meters
+  enforced from the `COMPLETE` flip, `MutationDemonstrationTest`, the `com.finapp.app.architecture` package), with their
+  XML timestamps read.
+- **Probe**: none applicable (a review); every task's probes stand.
+- **Operational documentation**: `reviews/PHASE_15_REVIEW.md`.
+- **Acceptance criteria**: every clause holds, holds in another form recorded, or is a recorded deviation the owner
+  accepts. **Definition of done**: `DOD-DOC`. **Risk**: Low. **Cx**: L.
 
 ---
 

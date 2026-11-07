@@ -1315,7 +1315,8 @@ capability and claims no compliance with any standard.
 
 **One image, one Deployment of N replicas, a migration Job, managed state, a segmented edge.** The modular monolith
 deploys as the units it has: `finapp-app` (every replica serving HTTP and running every schedule and consumer, N ≥ 3,
-rolling with no unavailability, the HPA bounded by the connection budget, probes on a management port, graceful shutdown
+rolling with no unavailability, the HPA bounded by a connection budget that counts terminating pods
+(`maxReplicas + 2 × maxSurge + 1 ≤ finapp.database.instances`, `minReadySeconds ≥ terminationGracePeriodSeconds`), probes on a management port, graceful shutdown
 stated and tested) and `finapp-migrator` (a Job per release). PostgreSQL and Kafka are managed, outside the cluster;
 Redis is not deployed; public and operator ingresses are separate; no gateway product, no mesh, no CronJob carrying
 financial work; a rollback reverts a digest and never a schema. → [ADR-0120](../adr/ADR-0120-the-production-deployment-model.md)
@@ -1327,8 +1328,10 @@ and locked, remote state with no secret in it, deletion protection on the financ
 
 **Build once, sign, promote by digest, two persons for production, every release compatible with the last.** Image and
 configuration scans, static analysis, SBOM and provenance attestations, admission refusing unsigned images; GitOps
-promotion by digest pull requests; an expand-only migration lint, a schema-version readiness guard, an N − 1 / N
-rehearsal; event compatibility checked at build, no runtime registry. →
+promotion by digest pull requests; an expand-only migration lint counting tightening DDL as a contract change, a
+schema-version readiness guard, an N − 1 / N rehearsal, no rollback across a contract marker; event payloads and the
+consumer handler set checked at build - a handler added to an existing group replayed over the rollout window or given
+its own group - no runtime registry. →
 [ADR-0122](../adr/ADR-0122-ci-cd-and-the-supply-chain.md)
 
 **Secrets in a managed store, keys in KMS, field-level keys as rings.** Delivered as the environment the application

@@ -34,13 +34,37 @@ compatibility check between releases.
    overlay) and names the staging evidence for that digest. No CI credential reaches production. The migration Job runs
    as a pre-sync step, before the rollout.
 5. **Migration compatibility is enforced.** An **expand-only lint** checks every migration added since the last release.
-   It refuses `DROP`, `RENAME`, a type change, and a `NOT NULL` without a default on an existing column, unless the
-   migration carries a contract marker that names the release in which its readers stopped. A **schema-version
-   readiness guard** stops the application from becoming ready on a schema older than the one it was built for. The
-   `kind` rehearsal runs release N − 1 against N's schema before it rolls.
-6. **Event compatibility is enforced at build time.** A schema catalogue lists every event type and version. A test
-   compares it with the last release's catalogue and allows only additive changes within a major version. There is no
-   runtime schema registry while no consumer exists outside the monolith.
+   - It refuses destructive DDL: `DROP`, `RENAME` and a type change.
+   - It also refuses **tightening DDL**, because each can refuse a write that release N − 1 still makes:
+     - a new `CHECK`, trigger, `UNIQUE` or foreign key;
+     - `SET NOT NULL`, or `ADD COLUMN … NOT NULL` with no default;
+     - a `REVOKE`.
+
+     This repository adds refusing triggers often.
+   - A refused migration passes only if it carries a **contract marker** naming the first release whose code conforms
+     to it.
+
+   A **schema-version readiness guard** stops the application from becoming ready on a schema older than the one it was
+   built for. The `kind` rehearsal runs release N − 1 against N's schema before it rolls.
+
+   **A rollback is safe only to a release that no later contract marker excludes.** The promotion script refuses a
+   rollback across a marker. Past that point, the way back is a forward fix.
+
+   *(Corrected by the transition's review, 2026-11-07, its M-2: tightening DDL was not counted, and a rollback was read
+   as always safe.)*
+6. **Event compatibility is enforced at build time, for payloads and for handlers.**
+   - A schema catalogue lists every event type and version. A test compares it with the last release's catalogue and
+     allows only additive changes within a major version.
+   - Payload compatibility does not cover a **new handler**. The receiver commits the offset of a record that no
+     registered handler wants (`UNHANDLED`). So while releases N − 1 and N share a module's consumer group, and after a
+     rollback, a record of a type only N handles is committed unseen.
+   - A **handler-set catalogue** of `(group, topic, eventType, consumerName)` is therefore diffed against the last
+     release. A handler added to an existing group requires one of two things. The first is an audited replay of its
+     type over the rollout window and any rollback window; the inbox deduplicates what N already applied. The second is
+     a new consumer group whose starting offsets are chosen and recorded.
+   - There is no runtime schema registry while no consumer exists outside the monolith.
+
+   *(Widened by the transition's review, 2026-11-07, its I-2.)*
 7. **Smoke tests never move production money.** The production smoke is read-only: health, build identity and the
    trial-balance gauge. Money flows are exercised only in `ci` and `staging`, against simulated providers.
 

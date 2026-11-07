@@ -12,8 +12,10 @@ Rests on: ADR-0019, ADR-0020, ADR-0023, ADR-0032, ADR-0052, ADR-0083, ADR-0120, 
 ## Context
 
 Secrets come from environment variables. Each one has a marked local default, and the guards confine that default to
-loopback (ADR-0020). The code reads 37 key, secret, password and token properties. Eight AES-256-GCM ciphers stamp a key
-version on every row, but each cipher holds only one active key. A rotation would therefore make every earlier row
+loopback (ADR-0020). The code reads 37 key, secret, password and token properties. Eight AES-256-GCM cipher classes, built as nine
+instances (`EvidenceCipher` twice, `PaymentBeans.java:83` and `:829`) over eight keys (`DocumentCipher` and
+`CounterpartySubjectCipher` share `finapp.doc.key`, `CounterpartyScreeningBeans.java:65-76`), stamp a key version on
+every row, but each holds only one active key. A rotation would therefore make every earlier row
 unreadable, and many of these tables are `INSERT`-only evidence that must never be rewritten. There is no secrets
 manager, no KMS and no rotation or revocation procedure. `SECRET_MANAGEMENT.md` and `SECURITY_ARCHITECTURE.md` still say
 that no keys exist.
@@ -29,12 +31,16 @@ that no keys exist.
    version. No committed manifest carries secret data, and a policy refuses one that does.
 3. **Access.** Each workload has its own cloud identity that can read only its own secrets. Humans cannot `get` secrets
    in production. Break-glass access is time-bound and audited.
-4. **Field-level key rings.** Each cipher holds a ring: one **active** version for encryption and **retained** versions
+4. **Field-level key rings.** Each key - not each class: two classes share one key, and one class is built twice over
+   its key - holds a ring: one **active** version for encryption and **retained** versions
    for decryption. A row is always decrypted with the version stamped on it. Rotation adds a version and moves the
    active pointer. **`INSERT`-only evidence is never re-encrypted.** A version is retired only when no row under it
    remains. Destroying a version on purpose (crypto-shredding) is the designed mechanism for a future purge. It is not
    exercised in Phase 15 (C12).
-5. **Rotation without an outage.** Database credentials rotate by alternating users. Kafka SCRAM credentials are added,
+5. **Rotation without an outage.** Database credentials rotate by alternating users, **each holding exactly the
+   per-table grants made to `finapp_app`** (by membership of a role that carries them; the grants stay in the
+   migrations). Those users are created by the one-time bootstrap step that holds the master credentials, never by the
+   per-release migrator (`finapp_migrator` is `NOCREATEROLE`). Kafka SCRAM credentials are added,
    rolled, then removed. HMAC callback secrets are verified against both the current and the previous secret during a
    window. Ingress certificates are renewed by cert-manager, with an alert on days to expiry.
 6. **Revocation and recovery.** A runbook covers each class: database, Kafka, provider, field-level key, signing
