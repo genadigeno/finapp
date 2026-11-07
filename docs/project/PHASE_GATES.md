@@ -2240,6 +2240,21 @@ after `V032`, 55 suites, 583 tests, 0 failed; **no clean run of every tier on th
 (PI-015). The ten-instance question: **`PASS`** on arbitration - every counted §8.3 row green against PostgreSQL; the
 clock-step defects are not races between instances and are named beside it; the storm's counts open under PI-004.*
 
+*Status (the Phase 14 completion gate, 2026-11-07 - the Phase 14 → 15 transition, Part A,
+[`reviews/PHASE_14_TO_15_TRANSITION.md`](reviews/PHASE_14_TO_15_TRANSITION.md)): **Phase 14 `COMPLETE`, confirmed with its
+recorded deviations.** By the owner's instruction the gate re-ran no test: it rested on the exit review's database pass
+(its final-tree run 55 suites, 583 tests, 0 failed) and fleet runs and on the coordinator's guard run on master `7840c716`,
+and read the code, migrations and tests itself with three independent read-only audits. It found **no CRITICAL and no
+IMPORTANT** defect and made no repair; two audit ratings of IMPORTANT - a break's one-person resolution (G-1) and a
+regulatory resend unfenced by its lease (G-5) - are ruled `MINOR` with reasons in the record. Twelve `MINOR` findings: eleven
+`PLANNED` remediation entries (`BACKLOG.md` §Phase 14 remediation, `P14-REM-001`…`-011`), none blocking Phase 15, and three
+stale sentences corrected. Each clause above holds as the exit review ruled it; **Period close** stays `PARTIAL` (PI-013,
+re-read: it refuses a month's proposal and never admits a wrong close) and **Security** holds with G-1 and G-2 as
+remediation. The recorded deviations stand as described - criteria 6, 7 and 11 `PARTIAL` (PI-012…PI-015), the storm
+postponed (PI-004) - except that the exit review's owner row A5 omits the break resolution's missing step-up, which its
+Area 5 names. The ten-instance question: **`PASS`** - every deciding instant and arbiter is the database's; the storm's
+counts are not a measurement (PI-004). **Universal criterion 7** remains the standing C5 deviation.*
+
 *Clauses met in a form their words did not anticipate (the exit review, 2026-11-07), recorded rather than re-worded:
 **the six** - 1: "the ledger's own per-currency totals" are accounting's sweep-shaped read over the journal, not the
 gauge's sweep, its hermetic half an in-memory stand-in (`TrialBalanceRunDatabaseTest#equalsTheLedger` green in the pass).

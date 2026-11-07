@@ -25226,7 +25226,7 @@ first policy activation** (runbook §9.1 steps 3 and 5)
 
 # Phase 14 — Accounting and Financial Reporting
 
-Status: `COMPLETE` (2026-11-07, ruled by the exit review [`reviews/PHASE_14_REVIEW.md`](reviews/PHASE_14_REVIEW.md), `P14-DOC-001`; 28 of 29 items complete, **`P14-TST-001` `POSTPONED`** by the owner until after the project's phases (`POSTPONED_ISSUES.md` PI-004), its evidence deferred and not claimed; M14.1–M14.9 closed, M14.10 at 7 of 8 with the storm postponed) — **with recorded deviations, pending the Phase 14 → 15 transition gate**: criterion 7 `PARTIAL` with no clean final-tree run of every database tier (PI-012), criteria 6 and 11 `PARTIAL` on production defects the owner postponed (PI-013, PI-014), the register's moved rows struck (PI-015); ADR-0113…0119 `Accepted`; C1–C13 ratified *(read "`READY`" from the transition until the exit review - no task's gate moved it to `IN_PROGRESS`, the stale-status class)*. Opened 2026-10-29 (entry gate passed by the Phase 13 → 14 transition ([`reviews/PHASE_13_TO_14_TRANSITION.md`](reviews/PHASE_13_TO_14_TRANSITION.md): Phase 13 confirmed `COMPLETE` by `P13-GATE`, merged at `b1aabd2e`), elaborated to task granularity by the same transition: twenty-four items (`P14-TSK-001`…`-021`, `P14-TST-001`, `P14-TST-002`, `P14-DOC-001`) across ten milestones, with `P14-TSK-001` marked `READY`. *(Read "`PLANNED` … the phase reads `READY` … when the coordinator applies the transition" on branch `P14-INIT` until the merge.)* The engineering plan is [`PHASE_14_PLAN.md`](PHASE_14_PLAN.md); decisions are ADR-0113…ADR-0118 (`Proposed`). The
+Status: `COMPLETE` (2026-11-07, ruled by the exit review [`reviews/PHASE_14_REVIEW.md`](reviews/PHASE_14_REVIEW.md), `P14-DOC-001`; 28 of 29 items complete, **`P14-TST-001` `POSTPONED`** by the owner until after the project's phases (`POSTPONED_ISSUES.md` PI-004), its evidence deferred and not claimed; M14.1–M14.9 closed, M14.10 at 7 of 8 with the storm postponed) — **with recorded deviations, confirmed by the Phase 14 completion gate** (2026-11-07, the Phase 14 → 15 transition's Part A, [`reviews/PHASE_14_TO_15_TRANSITION.md`](reviews/PHASE_14_TO_15_TRANSITION.md), branch `P14-GATE` from master `7840c716`: no CRITICAL, no IMPORTANT, no repair; twelve MINOR findings, eleven of them the remediation entries `P14-REM-001`…`-011` `PLANNED` below, none blocking Phase 15; the ten-instance answer `PASS`; no test re-run, by the owner's instruction) *(read "pending the Phase 14 → 15 transition gate" until the gate)*: criterion 7 `PARTIAL` with no clean final-tree run of every database tier (PI-012), criteria 6 and 11 `PARTIAL` on production defects the owner postponed (PI-013, PI-014), the register's moved rows struck (PI-015); ADR-0113…0119 `Accepted`; C1–C13 ratified *(read "`READY`" from the transition until the exit review - no task's gate moved it to `IN_PROGRESS`, the stale-status class)*. Opened 2026-10-29 (entry gate passed by the Phase 13 → 14 transition ([`reviews/PHASE_13_TO_14_TRANSITION.md`](reviews/PHASE_13_TO_14_TRANSITION.md): Phase 13 confirmed `COMPLETE` by `P13-GATE`, merged at `b1aabd2e`), elaborated to task granularity by the same transition: twenty-four items (`P14-TSK-001`…`-021`, `P14-TST-001`, `P14-TST-002`, `P14-DOC-001`) across ten milestones, with `P14-TSK-001` marked `READY`. *(Read "`PLANNED` … the phase reads `READY` … when the coordinator applies the transition" on branch `P14-INIT` until the merge.)* The engineering plan is [`PHASE_14_PLAN.md`](PHASE_14_PLAN.md); decisions are ADR-0113…ADR-0118, with ADR-0119 written by `P14-TSK-026`, all `Accepted` by the exit review *(read "ADR-0113…ADR-0118 (`Proposed`)" until the Phase 14 completion gate, which found it stale)*. The
 in-scope invariants are whatever the catalogue marks `Phase: 14` — **fourteen at planning**, `INV-ACC-01`…`-05` (existing)
 and the transition's `INV-ACC-06`…`-14` (the catalogue 162 → 171) — **read from the catalogue at the gate, never from this
 file**, beside `INV-LED-01`…`-06`, `INV-BAL-02`, `-05`, `INV-HIST-01`, `-04`, `INV-REV-01`…`-04`, `INV-REC-02`, `-05`,
@@ -26661,6 +26661,145 @@ storm runs after the project's phases)
 - *The owner's decisions (2026-11-04), for the review:* before production a qualified reviewer also reads the write-off notice's wording (`P14-TSK-021`'s (d)), counterparties on a statement's face (`P14-TSK-016`'s (x)) and the income statement's period-end rate (its (z)), beside C3, C6, C7 and C8. Record `PI-005`, `PI-006` and `PI-007` as what a production use of write-offs requires.
 - *Routed by `P14-TSK-022` (2026-11-04), status unchanged:* `StatementDerivation.StatementLine.reconciliationAttribution` lost its one production reader when `AccountController` took the one label; the ledger's fact stands and its suites read it, with a subquery on every statement line. Keep it for a reader or drop it: a small clean-up, not a defect. And the owed list this task adds to your database pass is `MUTATION_TESTING.md` section 2's last paragraph, `RulingsDoorsApiTest` included. And for the qualified reviewer beside the owner's (d): both notices first say "Please contact us about repaying it", and no door can take that repayment until `PI-006`: `CURRENT_STATE.md`'s item (ab).
 - *Routed by `P14-TSK-020` (2026-11-05), status unchanged:* **No Prometheus has read `infra/prometheus/rules/accounting.yml`.** Every "fires" is `RuleEvaluator`'s over a real scrape. At the owner-authorised database pass, with docker up, run `promtool check rules` over the file and `AlertRulesResolveTest#theAccountingRulesResolve`, which is also where each new gauge's statement first runs on PostgreSQL. `com.finapp.app.telemetry` joined the per-task list only with this task, so a red test there can have stood since `P14-TSK-004`: read it at the review. Other modules' gauges read on the scrape thread, so a pool exhausted or a database gone loses the whole scrape, and nothing reads `up` (`CURRENT_STATE.md` §Known Architectural Debt, items (ak) and (am)).
+
+## Phase 14 remediation (the Phase 14 completion gate, 2026-11-07)
+
+*Created by the Phase 14 completion gate ([`reviews/PHASE_14_TO_15_TRANSITION.md`](reviews/PHASE_14_TO_15_TRANSITION.md),
+the Phase 14 → 15 transition's Part A) from its findings G-1…G-11 and the exit review's accepted owner items
+([`reviews/PHASE_14_REVIEW.md`](reviews/PHASE_14_REVIEW.md) §Decisions for the owner; the owner's acceptance of every open
+recommendation, 2026-11-06). The gate found **no CRITICAL and no IMPORTANT** defect: every entry below was judged `MINOR` -
+none creates or destroys money, overwrites history or lets one person approve their own money-moving act, and each refines a
+control that already fails closed or is reachable only by a raw writer holding the application role. Each is `PLANNED`,
+outside every milestone, **blocking no Phase 15 work**, with its horizon; each runs the three-command loop
+(`.claude/skills/task-*`) when the owner schedules it, and its design settles what the entry leaves open. The owner's
+postponements PI-004 and PI-012…PI-015 are not repeated here (`POSTPONED_ISSUES.md`).*
+
+**P14-REM-001 — A break's resolution under `MULTI_FACTOR`, and an aggregate subject's unchanged finding not disclosed by
+one person (G-1)** — `PLANNED` — **before production use**
+- Objective: `AccountingBreaks.resolve` is one person's act with no step-up (`AccountingBreakController` `/resolution`), and
+  for a subject that is not one entry (`namespace:`, `key:`, `currency:`, a proof's subject) it accepts any entry posted on
+  or after the month's first day; an unchanged finding behind the `RESOLVED` break then counts as decided, so
+  `RULE_CONFORMANCE` or `SOURCE_COMPLETENESS` reads `DISCLOSED` on one person's word. Require `MULTI_FACTOR` on the
+  resolution, and for an aggregate subject either refuse `OPEN → RESOLVED` without a four-eyes acknowledgement first or
+  re-raise an unchanged finding behind `RESOLVED` at its next generation. Correct the exit review's owner row A5, which
+  omits the resolution.
+- Bounded context: accounting (`AccountingBreaks`, `AccountingChecks`, accounting `V006`/`V008` edges); app's break desk.
+  Dependencies: none. Exclusions: per-entry subjects (`shape:`, `unbalanced:`), whose immutable entry is why a resolution
+  must count as decided (ADR-0117's ruling).
+- Invariants: `INV-ACC-09`, `INV-ACC-12`, `INV-AUD-04`. Multi-instance: under the break row's lock, as today; a migration if
+  the edge rule moves into the trigger. Idempotency: the same person's repeat converges. Failure: a refused resolution
+  recorded `FAILED`. Security/audit: the step-up registered (`ApprovalAssuranceTest`).
+- Testing: hermetic and database cases - a one-person resolution of an aggregate subject cannot make the check `DISCLOSED`;
+  the route refused without the factor; a probe per rule. Acceptance: no disclosable check reads `DISCLOSED` on a single
+  person's decision. DoD: `DOD-SEC`, `DOD-FIN`, `DOD-TEST`, `DOD-DOC`.
+
+**P14-REM-002 — Step-up on the mapping activation and the acknowledgement approval; the register pins assurance (G-2,
+A5)** — `PLANNED` — **before production use**
+- Objective: `MULTI_FACTOR` on `POST /v1/operator/accounting/mapping-versions/{versionId}/activation` and
+  `/v1/operator/accounting/breaks/{breakId}/acknowledgement-approval`
+  (the exit review's A5, accepted); make `RoutePermissionRegisterTest` (or `ApprovalAssuranceTest`) pin each Phase 14 route's
+  assurance level, so a dropped step-up fails a guard.
+- Bounded context: app (`GlMappingController`, `AccountingBreakController`, the guards). Dependencies: none. API: a `403
+  identity.AssuranceRequired` on a password session (contract additive). Multi-instance: none. Security: every four-eyes
+  approval of Phase 14 stepped up, the ordinary valuation approval's absence kept deliberate and pinned.
+- Testing: route cases with and without the factor; the register's new column; a probe (annotation removed → red). DoD:
+  `DOD-SEC`, `DOD-API`, `DOD-TEST`.
+
+**P14-REM-003 — Reason classifications aligned; GL account names and accounting reasons screened in SQL; no reference in a
+`toString` (G-3, A5)** — `PLANNED` — **before production use**
+- Objective: align `ledger.projection_rebuild.reason` and `lending.loan_write_off.proposal_reason` with the adjustment's and
+  bnpl's `RESTRICTED-PII` (`DATA_CLASSIFICATION.md`, the request records' annotations); screen a GL account's name with
+  `InstrumentShapes` (`GlAccount`); add an `accounting.holds_instrument_shape` function and `CHECK`s on accounting's reason
+  and disclosure columns, as lending `V032` and bnpl `V020` have their own; `AdjustmentCommand.toString` prints the id only.
+- Bounded context: accounting, ledger, lending (classification); an accounting migration. Dependencies: none. Persistence:
+  the `CHECK`s validated against existing rows (all screened by the Java door). Security: no instrument shape stored by any
+  writer. Testing: `ColumnClassificationTest`; migration cases refusing a PAN-shaped reason for the application role and the
+  migrator; a probe. DoD: `DOD-SEC`, `DOD-TEST`, `DOD-DOC`.
+
+**P14-REM-004 — The Phase 14 schema closed to raw writers (G-4)** — `PLANNED` — **before production use**
+- Objective: (a) ledger `projection_rebuild` born `PROPOSED` and undecided for every writer - an `INSERT` branch in its
+  trigger (today `BEFORE UPDATE OR DELETE` only), `proposed_at` stamped by the database; (b) a `journal_line` joins only an
+  entry inserted in its own transaction (the open-month half `V032` left to `INV-HIST-01`); (c) the GL mapping content
+  trigger takes its version `FOR SHARE`, and the activation names the content hash it read; (d) the lock's and the
+  activation's triggers take advisory namespace 14 key `mapping` themselves, so a writer that skips the domain cannot pin a
+  version other than the one in force.
+- Bounded context: ledger (`V031`, `V004`'s line), accounting (`V002`, `V003`, `V011`). Dependencies: none. No production
+  path changes behaviour. Invariants: `INV-HIST-01`, `INV-ACC-07`, `INV-AUD-04`. Multi-instance: (b) must not add a lock on
+  the posting hot path beyond a read of the entry's transaction id; (c)/(d) re-use the keys the domain already takes.
+- Testing: migration cases per rule for the application role and the migrator; a probe each. DoD: `DOD-FIN`, `DOD-TEST`.
+
+**P14-REM-005 — Regulatory submission hardening (G-5)** — `PLANNED` — **before any real regulatory channel** (beside
+`PI-008`…`PI-010`)
+- Objective: a resend fenced by the lease (`permitResend` moves `next_inquiry_at` by the lease; the driver refuses an
+  inquiry interval shorter than the lease at start-up; an answer never overwrites `RESENDING`); the `UNDELIVERED` edge's
+  conditions (resends spent, horizon past or month moved) in the trigger as in `UNDELIVER_SQL`; each line's figure re-resolved
+  in `stands()`; an acknowledgement whose provider reference differs from the stored one flagged or refused; a withdrawal
+  only by the return's preparer (or a recorded reason why any preparer may).
+- Bounded context: accounting (`RegulatorySubmissions`, `JdbcRegulatorySubmissionStore`, `V010`), app's driver. Dependencies:
+  none. Multi-instance: the claim stays one statement `SKIP LOCKED`; the fence is the permit row. Idempotency: the provider
+  call keyed by the submission's id, unchanged. Failure: a perpetual `UNKNOWN` keeps its documented way on.
+- Testing: a driver case with the interval below a call (two workers, one send); trigger cases for raw writers; a probe each.
+  DoD: `DOD-FIN`, `DOD-TEST`, `DOD-DOC`.
+
+**P14-REM-006 — Write-offs and the BNPL fee pin, for every writer (G-6)** — `PLANNED` — **before production write-offs and
+BNPL**
+- Objective: "one pending write-off" safe under `REPEATABLE READ` for a raw writer (lending `V032`, bnpl `V020`: lock or raise
+  outside `READ COMMITTED`, the ledger `V028` precedent); bnpl's proposal trigger compares scale as lending's does; the
+  write-off's `proposed_at`/`decided_at` stamped `GREATEST(clock_timestamp(), transaction_timestamp())`; merchant's pin
+  trigger also refuses a version superseded at the stamp; `V013`'s residual refusal given its own SQLSTATE and answered as a
+  retryable `409`, not a `500`.
+- Bounded context: lending, bnpl, merchant (migrations); `JdbcBnplPricingStore`. Dependencies: none. Invariants:
+  `INV-LND-01`, `INV-BNPL-01`, `INV-MER-03`, `INV-AUD-04`. Multi-instance: the domain path (READ COMMITTED, the account or
+  obligation lock) unchanged. Testing: migration cases; a clock-step case for the pin (`ClockStep`); probes. DoD:
+  `DOD-FIN`, `DOD-TEST`.
+
+**P14-REM-007 — A settlement source retired only through a reviewed door; an undeclared source still required (G-7)** —
+`PLANNED` — **before production use**
+- Objective: revoke the application role's `UPDATE (status)` on `settlement.source` (no product door uses it) or route it
+  through an audited four-eyes door; treat a source `ACTIVE` on its row but declared by no build as required (`FAILED`) for
+  the months from its admission until a reviewed migration retires it, so a build cannot excuse a month by dropping a
+  declaration.
+- Bounded context: settlement (a migration), accounting (`ReconciliationRunCoverage`, `ReconciliationMonthReads` in app).
+  Dependencies: none. Multi-instance: two builds in a rolling deploy then judge one month alike. Failure: fails closed, as
+  today. Testing: a grant census case; a coverage case for an undeclared source; a probe. DoD: `DOD-FIN`, `DOD-SEC`,
+  `DOD-TEST`.
+
+**P14-REM-008 — Close-check robustness: duplicate subjects, the register version, the owed races (G-8)** — `PLANNED` —
+**before production use**
+- Objective: a proof answering two discrepancies with one subject (or two subjects colliding at the 300-character cut) makes
+  that proof `UNAVAILABLE`, never drops the second (`AccountingChecks.split`); the close run pins the posting rule register
+  and source-proof catalogue versions it judges by, so a rolling deploy does not churn generations; add A4-F6's racing cases -
+  a source admitted, retired or activated while a month is judged (`P14-TSK-025`) and the reference-gap capture racing a lock
+  (`P14-TSK-026`).
+- Bounded context: accounting, app. Dependencies: none. Multi-instance: the pin read once per run. Testing: hermetic cases for
+  the duplicate and the pin; the two database races. DoD: `DOD-FIN`, `DOD-TEST`.
+
+**P14-REM-009 — The lock's grace and the submissions' orderings on the database's clock (G-9, A4-F1)** — `PLANNED` —
+**Phase 15 at the latest** (as `CURRENT_STATE.md` §Known Architectural Debt records A4-F1)
+- Objective: `AccountingPeriods.lock` and the open leg judge "today" by `store.today` read after the row lock, not the
+  instance's clock; the submissions' keyset paging by `prepared_at` and "newest answers" by `received_at` ordered by an
+  insertion sequence, not a stamp a backward step can reorder.
+- Bounded context: accounting. Dependencies: none. Multi-instance: removes the last instance-clock judgement in the period
+  machine. Testing: `ClockStep` cases; a probe. DoD: `DOD-FIN`, `DOD-TEST`.
+
+**P14-REM-010 — The exit review's accepted owner items, built (G-10)** — `PLANNED` — **before production use**
+- Objective, each as `PHASE_14_REVIEW.md` §Decisions for the owner recommends and the owner accepted: **A1-D2** a shared-tier
+  census judging every committed entry against the production posting rule register (ordered last); **A1-D3** a drill-down
+  route for a FINAL trial balance's unmapped rows; **A1-D5** the regulatory lineage reads in a read-only snapshot; **A3-F4**
+  a `MANUAL` adjustment line dated after a close refused for a closed month's error (the prior-period door instead), or the
+  process control recorded; **A3-F5** an `ACCOUNTING` adjustment's effect on a wallet's availability decided and enforced.
+- Bounded context: accounting, ledger, app. Dependencies: none. DoD: per item - `DOD-FIN` (A3-F4, A3-F5), `DOD-API` (A1-D3),
+  `DOD-TEST` throughout.
+
+**P14-REM-011 — Read surfaces: a FINAL run's close status; the ledger adjustment read by origin (G-11)** — `PLANNED` —
+**before production use**
+- Objective: `ReportRunView` serves its period's status (or a `closed` flag) beside `basis` and `status`, so a FINAL
+  non-statement run of a `LOCKED` month is not read as a closed month's (additive under `v1`); `GET /v1/ledger/adjustments/{id}`
+  serves `MANUAL` proposals only, or records the read, since `ACCOUNTING` and `RECONCILIATION` proposals carry other desks'
+  persons and reasons.
+- Bounded context: app (`ReportRunDesk`, `LedgerAdjustments`), ledger. Dependencies: none. API: additive field; a `404` for
+  another origin's proposal (or an audit record). Testing: API cases; `OpenApiContractTest`. DoD: `DOD-API`, `DOD-SEC`,
+  `DOD-TEST`.
 
 ---
 
