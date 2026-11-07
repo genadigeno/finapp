@@ -5,7 +5,7 @@ Date: 2026-11-07
 Phase: 15
 Context: Platform (observability) · every module (signals and runbooks) · Security (sensitive data in telemetry)
 Rests on: ADR-0010, ADR-0016, ADR-0017, ADR-0018, ADR-0019, ADR-0034, ADR-0072, ADR-0120; owner decision C10 of
-`PHASE_15_PLAN.md` §2.2 (recommended default awaiting ratification).
+`PHASE_15_PLAN.md` §2.2 (ratified at its recommended default by the owner, 2026-11-07; *read "recommended default awaiting ratification" until then*).
 
 ## Context
 

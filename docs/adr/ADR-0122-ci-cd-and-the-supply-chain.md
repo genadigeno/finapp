@@ -5,7 +5,7 @@ Date: 2026-11-07
 Phase: 15
 Context: Platform (build and delivery) · Security (supply chain) · every module (migrations, events)
 Rests on: ADR-0005, ADR-0011, ADR-0025, ADR-0026, ADR-0028, ADR-0120, ADR-0121; owner decisions C4, C7, C8 and C11 of
-`PHASE_15_PLAN.md` §2.2 (recommended defaults awaiting ratification); `DATA_MIGRATIONS.md` §4.1.
+`PHASE_15_PLAN.md` §2.2 (ratified at their recommended defaults by the owner, 2026-11-07; *read "recommended defaults awaiting ratification" until then*); `DATA_MIGRATIONS.md` §4.1.
 
 ## Context
 

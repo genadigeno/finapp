@@ -5,7 +5,7 @@ Date: 2026-11-07
 Phase: 15
 Context: Platform (configuration) · every module (its `finapp.*` properties) · Security
 Rests on: ADR-0016, ADR-0020, ADR-0023, ADR-0120, ADR-0122, ADR-0123; owner decision C8 of `PHASE_15_PLAN.md` §2.2
-(recommended default awaiting ratification).
+(ratified at its recommended default by the owner, 2026-11-07; *read "recommended default awaiting ratification" until then*).
 
 ## Context
 

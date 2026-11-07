@@ -6,7 +6,7 @@ Phase: 15
 Context: Platform (secrets) · Security · every module holding a cipher (identity, kyc, payments, merchant, credit, fx,
 settlement)
 Rests on: ADR-0019, ADR-0020, ADR-0023, ADR-0032, ADR-0052, ADR-0083, ADR-0120, ADR-0121; owner decision C6 of
-`PHASE_15_PLAN.md` §2.2 (recommended default awaiting ratification); `SECRET_MANAGEMENT.md` §7; `SECURITY_ARCHITECTURE.md`
+`PHASE_15_PLAN.md` §2.2 (ratified at its recommended default by the owner, 2026-11-07; *read "recommended default awaiting ratification" until then*); `SECRET_MANAGEMENT.md` §7; `SECURITY_ARCHITECTURE.md`
 §Encryption at rest.
 
 ## Context

@@ -26863,7 +26863,7 @@ registry; Redis; an application use of object storage; a service mesh; an apply 
 registry; a compliance or certification claim; the purge of financial evidence, agreements or regulatory reports;
 Phase 16's load, chaos, multi-region or DR work. A reviewer finding any of it refuses the change.
 
-**The owner decisions** (2026-11-07, C1–C15, `PHASE_15_PLAN.md` §2.2 — **recommended defaults awaiting ratification**;
+**The owner decisions** (2026-11-07, C1–C15, `PHASE_15_PLAN.md` §2.2 — **ratified at their recommended defaults** by the owner, 2026-11-07, "accept recommendations"; *read "recommended defaults awaiting ratification" until then*;
 the first task depends on none): **C1** AWS as the one reference cloud, modules never applied; **C2** EKS for staging and
 production, `kind` for CI, Kustomize for the app; **C3** PostgreSQL and Kafka managed outside the cluster, Redis not
 deployed; **C4** a multi-stage Dockerfile, distroless Java 21 `nonroot`; **C5** one Deployment, every role per replica,

@@ -5,7 +5,7 @@ Date: 2026-11-07
 Phase: 15
 Context: Platform (deployment) · every module (operated, not changed) · Security (edge and network)
 Rests on: ADR-0001, ADR-0011, ADR-0014, ADR-0016, ADR-0023, ADR-0024, ADR-0030, ADR-0031, ADR-0036; owner decisions C2, C3,
-C4, C5 and C9 of `PHASE_15_PLAN.md` §2.2 (recommended defaults awaiting ratification).
+C4, C5 and C9 of `PHASE_15_PLAN.md` §2.2 (ratified at their recommended defaults by the owner, 2026-11-07; *read "recommended defaults awaiting ratification" until then*).
 
 ## Context
 

@@ -1306,8 +1306,8 @@ with lineage, corrected by resubmission; a simulated reference adapter; the refe
 `lending_funded` (C4, C13) *(corrected by the owner, 2026-11-05: subtracting the principal outstanding and written off, `committed` a line; "What the safeguarding return subtracts" above)*. → [ADR-0118](../adr/ADR-0118-regulatory-reporting-behind-jurisdiction-adapters.md)
 
 ### Production hardening (Phase 15, `Proposed` at the Phase 14 → 15 transition)
-Planned by the Phase 14 → 15 transition (2026-11-07) in `PHASE_15_PLAN.md`, with the owner's decisions C1–C15 recorded as
-recommended defaults awaiting ratification; nothing of it is built. The phase's tasks are `P15-TSK-001`…`-034`,
+Planned by the Phase 14 → 15 transition (2026-11-07) in `PHASE_15_PLAN.md`, with the owner's decisions C1–C15 ratified at
+their recommended defaults (the owner, 2026-11-07, "accept recommendations"; *read "recorded as recommended defaults awaiting ratification" until then*); nothing of it is built. The phase's tasks are `P15-TSK-001`…`-034`,
 `P15-TST-001` (planned and `POSTPONED`, PI-004), `P15-TST-002` (the database pass, PI-012…PI-015) and `P15-DOC-001`. No
 new invariant: the phase protects the catalogue's existing ones through deployment, rotation, restart and restore. The
 phase's ADRs are ADR-0120…ADR-0125; **the next free number is ADR-0126.** Phase 15 moves no money, adds no business

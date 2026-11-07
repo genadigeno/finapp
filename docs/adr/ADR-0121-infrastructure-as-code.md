@@ -4,8 +4,7 @@ Status: Proposed
 Date: 2026-11-07
 Phase: 15
 Context: Platform (infrastructure) · Security
-Rests on: ADR-0025, ADR-0026, ADR-0120; owner decisions C1, C3 and C8 of `PHASE_15_PLAN.md` §2.2 (recommended defaults
-awaiting ratification); `DECISIONS.md` §Deliberately Deferred "Kubernetes and Terraform — Phase 15".
+Rests on: ADR-0025, ADR-0026, ADR-0120; owner decisions C1, C3 and C8 of `PHASE_15_PLAN.md` §2.2 (ratified at their recommended defaults by the owner, 2026-11-07; *read "recommended defaults awaiting ratification" until then*); `DECISIONS.md` §Deliberately Deferred "Kubernetes and Terraform — Phase 15".
 
 ## Context
 
