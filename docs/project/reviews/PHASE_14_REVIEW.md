@@ -72,6 +72,10 @@ mutates history. What the review found:
   the rollback (the rebuild's shape); `AdjustmentCommand` refuses an instrument shape in the reason or the reference with a
   typed `AdjustmentReasonRefusedException`, the door's `422`. *(A5 corrected the routed premise: Hibernate Validator 9.1's
   `@NotBlank` already uses `isBlank`, so an ideographic-space reason was a `422`, never a `500`; the unscreened shapes were real.)*
+  *(Corrected at the gate, 2026-11-07: these two fixes had been landed with no test of their own - the gate found it reading
+  this list against the diff. `ManualAdjustmentDoorTest` (ledger) and `LedgerAdjustmentsRefusalTest` (`app`) now hold the
+  record, its own transaction after the rollback, its outcome and its words, and the screen's `422` with nothing echoed;
+  three probes caught, §2.)*
 - **A repeat under a new key, after another request ended, was answered `409`** (`P14-TSK-024`'s re-review (a)): an unlock's
   and a reopen's end now look up the request named - `period_unlock_end_once`'s key, the reopen by id - and a repeat by its
   ender converges; hermetic and database cases (`AccountingPeriodsTest`, `PeriodClosesTest`, `PeriodCloseDatabaseTest`,
@@ -231,9 +235,14 @@ were, "by family"); two classification levels inconsistent. **`PASS` after corre
 ## Area 6 — Test quality
 
 The register walk (below): **103 rows performed again, every probe caught**; 330 struck as evidence of today (`PI-015`); every
-`INV-ACC-*` keeps a demonstration standing today. The review's own probes are recorded (§2's merchant row; this review's
-production changes are hermetically probed by the rows performed again - `PeriodCloses`, `AccountingPeriods`,
-`AdjustmentService`). **`PASS`**, the struck rows owed.
+`INV-ACC-*` keeps a demonstration standing today. The review's own probes are recorded in §2: merchant `V013`'s three; at the
+gate, the adjustment door's screen, its refusal record and that record's outcome (three, each caught in the ledger's and the
+`app`'s new suites) and ledger `V032`'s trigger on its text pin (caught; its database probe not performed - `PI-015`). The ends'
+convergence, the two read fields and the namespace carry their tests (hermetic, and database cases green in the re-run) and
+**no probe of their own** - the rows performed again on `PeriodCloses`, `AccountingPeriods` and `AdjustmentService` show those
+files' older properties still caught on the new bytes, not the new behaviour. *(Read "this review's production changes are
+hermetically probed by the rows performed again" until the gate, which found it overstated.)* **`PASS`**, the struck rows and
+those probes owed.
 
 ## Area 7 — Documentation accuracy
 
@@ -485,6 +494,12 @@ transfers 35); **architecture - 24 modules, 63 classes, 294 tests, 0 failed** (`
 corrections (`AdrRegistersAreReconciledTest`, `DomainGlossaryTest`, `ArchitectureRulesAreDocumentedTest`, `TestTaxonomyTest`)
 and `MutationDemonstrationTest`, armed for Phase 14, are among them. The database tiers and `kafkaTest` were not run again
 (`PI-012`).
+
+**After the fleet run, the gate's two test classes** (2026-11-07; the only code the final tree adds to the tree the fleet
+ran - test code, no production change): `ManualAdjustmentDoorTest` and `LedgerAdjustmentsRefusalTest`, then their four
+probes (§2), then on the restored bytes `:ledger:test` **180/0** (the module whole), `:ledger:architectureTest` 2/0,
+`:app:test` over `com.finapp.app.ledger.*` and `com.finapp.app.architecture.*` **248/0**, `:app:architectureTest` 237/0; and,
+after their register rows were written, `MutationDemonstrationTest` once more, 9/0.
 
 ## What the phase produced
 

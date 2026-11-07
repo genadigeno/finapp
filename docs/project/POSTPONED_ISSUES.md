@@ -361,7 +361,10 @@ commit and the date; do not delete the entry.
   caught) and **struck 330 as evidence of today** - 215 of Phase 14's tasks, 78 of Phase 13's, 19 of Phase 12's, 5 of Phase 11's,
   13 naming no task - each marked in place. About a hundred rows name a database half "unproven until the database pass":
   the pass ran their suites, but none of their database probes was performed. 1,713 older-form rows carry no hash and cannot
-  be walked; 15 name bytes never committed.
+  be walked; 15 name bytes never committed. *(Added at the gate, 2026-11-07:)* the exit review's own production changes are
+  probed only in part - the adjustment door's screen, record and outcome (hermetic, caught) and ledger `V032` on its text pin;
+  **not probed**: `V032` against PostgreSQL (`PostingCutoffDatabaseTest#aLineAppendedToALockedMonthsEntryIsRefused`), the
+  unlock's and reopen's ends converging on the request named, `valuationRateSetReferenceGaps`, and the GL entry's `namespace`.
 - **Consequence:** those rows say what was true when they were performed; that each still fails when its property is broken,
   on today's bytes, is not shown. Every `INV-ACC-*` keeps a row standing today; `INV-LED-01` and `INV-LED-05` stand on Phase 3's
   older-form rows only (section 3's Phase 14 block).
