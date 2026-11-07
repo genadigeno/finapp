@@ -295,7 +295,7 @@ storm's counted interleavings at volume, its probes and its gate. The coordinato
 | # | Criterion | Verdict | Evidence |
 |---|---|---|---|
 | 1 | Required functionality exists | `PASS` - with `P14-TST-001` postponed (PI-004) | 27 tasks and `P14-TST-002` `COMPLETE`; the storm's deferral recorded |
-| 2 | Architectural boundaries respected | `PASS` | isolation tests, `ReportingNeverWritesTest`, `NoCustomerSurfaceReadsAccountingTest`; the fleet architecture tier at the gate |
+| 2 | Architectural boundaries respected | `PASS` | isolation tests, `ReportingNeverWritesTest`, `NoCustomerSurfaceReadsAccountingTest`; the fleet architecture tier on the final tree, 294/0 (*Tests*) |
 | 3 | Required invariants tested | `PASS` | every `INV-ACC-*` demonstrated on present bytes or in-suite; 103 rows performed again here; the struck rows owed (`PI-015`) |
 | 4 | Failure cases handled | `PASS` | `PHASE_14_PLAN.md` §15 each a test or a rationale (A1, A2); the clock-step defects are criterion 11's |
 | 5 | Security requirements implemented | `PASS` | Area 5; the adjustment door's two gaps closed here |
@@ -466,9 +466,25 @@ Every row is in `CURRENT_STATE.md` §Known Architectural Debt or `POSTPONED_ISSU
 The database pass: first run 454 suites, 3,682 tests, 66 failed; targeted re-run 105 suites, 1,068 tests, 2 failed; the
 triage engineers' runs above (appendix). `promtool check rules` (prom/prometheus:v3.14.0, the version `compose.yaml` pins): 7
 files, 136 rules, `SUCCESS`. The build check of this review's corrections: ledger 178/0, accounting 725/0, lending 166/0,
-bnpl 602/0, `:app:test` over accounting, ledger, api 549/0, `:app:architectureTest` 237/0. **The telemetry package and the
-fleet hermetic and architecture tiers once on the final tree:** recorded in *What happens next*'s addendum below, from their
-runs.
+bnpl 602/0, `:app:test` over accounting, ledger, api 549/0, `:app:architectureTest` 237/0.
+
+**The telemetry package once** (`P14-TSK-020`'s (al), 2026-11-07): `:app:test --tests "com.finapp.app.telemetry.*"` - **34
+classes, 199 tests, 0 failed** (32 min 49 s); the package's seven database suites are the pass's (`AlertRulesResolveTest`'s
+accounting case among them, red, `PI-014` (2)). A first attempt, on 2026-11-06, was interrupted when another Gradle run
+started in the same worktree (199 passed before the `NoSuchFileException`); it is not counted.
+
+**The flip** (2026-11-07): `:app:architectureTest --rerun --tests com.finapp.app.architecture.MutationDemonstrationTest`,
+2 of 9 red as intended, then the register restored byte-identical (*The register walk* above).
+
+**The fleet hermetic and architecture tiers once, on the final tree** (2026-11-07, `./gradlew test architectureTest
+--continue`, the gate's records committed at `c1062b18`, 55 min 23 s; every XML written by that run): **hermetic - 24
+modules, 917 classes, 6,247 tests, 0 failed, 0 skipped** (accounting 725, accounts 10, `app` 1,903, bnpl 602, checkout 54,
+consent 14, credit 125, creditmath 100, crossborder 19, fx 48, identity 144, kyc 149, ledger 178, lending 166, merchant 190,
+party 23, paymentmethods 46, payments 306, platform 187, reconciliation 192, risk 570, settlement 236, sharedkernel 225,
+transfers 35); **architecture - 24 modules, 63 classes, 294 tests, 0 failed** (`app` 237). The doc guards over this review's
+corrections (`AdrRegistersAreReconciledTest`, `DomainGlossaryTest`, `ArchitectureRulesAreDocumentedTest`, `TestTaxonomyTest`)
+and `MutationDemonstrationTest`, armed for Phase 14, are among them. The database tiers and `kafkaTest` were not run again
+(`PI-012`).
 
 ## What the phase produced
 
