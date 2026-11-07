@@ -3828,6 +3828,14 @@ reachable from the review's tree), so a row's stated hash names the file and the
   them. The two that do not are Phase 3's `INV-LED-01` and `INV-LED-05`: their Phase 14 rows (a prior-period adjustment's
   sides, the register's attribution) are among the struck, and what stands for them is Phase 3's older-form recorded rows, as
   of their day.
+- **The flip** (2026-11-07, at the gate). Phase 14's status line recorded `COMPLETE` in `CURRENT_STATE.md` arms
+  `MutationDemonstrationTest` for every `Phase: 14` invariant and every `P14-TST-*` item. With **`INV-ACC-07`'s five section
+  2 rows** (the `Phase: 14` invariant with the fewest) **and `P14-TST-001`'s section 4 row withheld** (register sha256
+  `01924d16…0a131180` → `8ae1fda9…744a77db`), `:app:architectureTest --rerun --tests
+  com.finapp.app.architecture.MutationDemonstrationTest` failed **2 of 9**: `everyInvariantOfEveryPhaseReachedHasADemonstration`
+  reporting `(currently 14)` and naming exactly `["INV-ACC-07"]`, and `everyTestItemHasADemonstration` naming exactly
+  `["P14-TST-001"]`; the other seven green. The register was restored **byte-identical** (sha256 `01924d16…0a131180`, verified,
+  and the blob equal to the committed one) before this line was written.
 
 ---
 

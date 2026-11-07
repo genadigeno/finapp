@@ -1,6 +1,6 @@
 # Phase 14 Exit Review — Accounting and Financial Reporting
 
-**Conducted:** 2026-11-06 (`P14-DOC-001`)
+**Conducted:** 2026-11-06 - 2026-11-07 (`P14-DOC-001`; the run was cut off by a usage limit at about 19:09 on 2026-11-06 and resumed on 2026-11-07)
 **Prescribed by:** [`PHASE_GATES.md`](../PHASE_GATES.md) §4 (review areas), §3 (universal exit criteria and the financial
 supplement), §5 (Phase 14-specific criteria — the six originals, the six made measurable and the per-area blocks, read from
 the gate at review time)
@@ -20,7 +20,7 @@ rebuild door and a reference-gap way on.
 | Financial supplement (F1–F8) | **F1, F2, F3, F4, F5, F7, F8 `Met`; F6 `Met` for the counted ten-way suites, its storm half deferred (PI-004)** |
 | Phase 14-specific criteria | **The six originals hold clause by clause after this review's corrections** (one sub-clause made to hold by building the entry door's namespace); the per-area **Period close** block `PARTIAL` (`PI-013`); the rest hold, several in a form their words did not anticipate (recorded) |
 | *"Correct with 10 concurrent instances?"* | **`PASS` on arbitration** - every counted contention row of `PHASE_14_PLAN.md` §8.3 green against PostgreSQL in the pass; the coded lock order matches the documented one with no inversion. **Beside it, not a race between instances:** a backward step of the database's own clock misplaced three deciding instants read apart - one fixed, two postponed (`PI-013`, `PI-014`). **Not counted:** the storm (PI-004) |
-| **Verdict** | **Phase 14 `COMPLETE` (2026-11-06) with recorded deviations, pending the Phase 14 → 15 transition gate**: criterion 7 `PARTIAL` (C5's standing deviation; no clean final-tree run, `PI-012`), criteria 6 and 11 `PARTIAL` (production defects postponed by the owner, `PI-013`, `PI-014`), the register's moved rows struck (`PI-015`), the storm postponed (PI-004). The transition is the owner's to open |
+| **Verdict** | **Phase 14 `COMPLETE` (2026-11-07) with recorded deviations, pending the Phase 14 → 15 transition gate**: criterion 7 `PARTIAL` (C5's standing deviation; no clean final-tree run, `PI-012`), criteria 6 and 11 `PARTIAL` (production defects postponed by the owner, `PI-013`, `PI-014`), the register's moved rows struck (`PI-015`), the storm postponed (PI-004). The transition is the owner's to open |
 
 Conducted in the `P2-DOC-001` order, as `P13-DOC-001` was: the owner-authorised database pass first → assess → land the
 corrections → re-run → rule. Two owner decisions made during the pass shaped its end (both 2026-11-06, through the
@@ -274,6 +274,12 @@ finding across the whole register; `PeriodClosesTest`'s twenty-four were current
 - **`MutationDemonstrationTest`'s §4 rule:** with Phase 14 `COMPLETE`, every `P14-TST-*` item needs a §4 row. `P14-TST-002`
   has its seventeen probes; **`P14-TST-001`'s row records the deferral, not a demonstration** - `P13-TST-001`'s convention,
   which the owner's acceptance of `P13-DOC-001`'s recommendations kept.
+- **The flip** (2026-11-07, at the gate): Phase 14's status line recorded `COMPLETE` arms the guard for every `Phase: 14`
+  invariant and every `P14-TST-*` item. With `INV-ACC-07`'s five §2 rows (the `Phase: 14` invariant with the fewest) and
+  `P14-TST-001`'s §4 row withheld (register sha256 `01924d16…0a131180` → `8ae1fda9…744a77db`), `:app:architectureTest --rerun
+  --tests com.finapp.app.architecture.MutationDemonstrationTest` failed **2 of 9** - the invariant case reporting
+  `(currently 14)` and naming exactly `["INV-ACC-07"]`, the test-item case naming exactly `["P14-TST-001"]`; the register
+  restored byte-identical (sha256 `01924d16…0a131180`, verified; the blob equal to the committed one).
 
 ## The storm — postponed (PI-004)
 
@@ -325,10 +331,16 @@ A recorded deviation, not a pass.
 
 Read clause by clause by A1 (61 sub-clauses) and re-read after this review's corrections and the pass.
 
-| | Sub-clauses | Hold | Hold in another form | Partial | Do not hold |
-|---|---|---|---|---|---|
-| The six, made measurable | 27 | 19 | 8 | 0 | 0 *(2.2 the entry's namespace - built here; the reference withheld by design)* |
-| Per area | 34 | 22 | 9 | 1 *(Period close: `PI-013`)* | 0 *(DOC.1/DOC.3 - this review accepted the ADRs and recorded C1–C13)* |
+| | Sub-clauses | Hold | Hold in another form | Partial | Rest on the storm | Do not hold |
+|---|---|---|---|---|---|---|
+| The six, made measurable | 27 | 19 | 8 | 0 | 0 | 0 *(2.2 the entry's namespace - built here; the reference withheld by design)* |
+| Per area | 34 | 23 | 9 | 1 *(Period close: `PI-013`)* | 1 *(the storm's counts, PI-004)* | 0 *(DOC.1/DOC.3 - this review accepted the ADRs and recorded C1–C13)* |
+
+*(Corrected at the gate, 2026-11-07: the per-area row read "22 / 9 / 1 / 0" with no storm column, which summed to 32 of 34;
+recounted from A1's table after the pass - of the four per-area sub-clauses resting on a database suite, PC.4, MI.1 and MI.2
+hold and TE.2 holds in another form; TE.3 holds with the battery's database half green; DOC.1 and DOC.3 hold; PC.2 is the
+partial; MI.3 rests on the storm. Each clause in another form is named in the note after Phase 14's criteria in
+`PHASE_GATES.md`.)*
 
 1. *Trial balance zero per currency, continuously verified* - **holds**: the gauge (`INV-ACC-01`) and every FINAL trial balance
    zero and equal to the ledger, green in the pass; the planted imbalance case green; the battery's oracle equal over 10,000
