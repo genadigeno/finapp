@@ -65,6 +65,11 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
  * <p>So a type produced to an undeclared topic is red, a declared topic nothing produces is red,
  * and a retention the inbox's dedupe cannot outlive is red - none of it held by a list kept beside
  * the catalogue.
+ *
+ * <p>"Production code" is {@link ProductionModules}' definition, shared with the monitor sweep: the
+ * main outputs, and the modules' test-fixture jars with them. No fixture constructs an envelope
+ * today; one that did would be read as a producer here, by both readers alike, and would need its
+ * topic declared or the fixture moved.
  */
 @Tag("architecture")
 @DisplayName("the topic catalogue matches the code that produces to it (P15-TSK-026)")
@@ -143,10 +148,15 @@ class TopicCatalogueTest {
                         .map(KafkaEventPublisher::topicFor)
                         .collect(Collectors.toCollection(TreeSet::new));
 
-        assertThat(new TreeSet<>(topics().keySet()))
+        Set<String> unproduced = new TreeSet<>(topics().keySet());
+        unproduced.removeAll(produced);
+
+        // One direction only: a produced topic the catalogue lacks is everyProducedTopicIsDeclared's.
+        assertThat(produced).as("the code produces to some topic at all").isNotEmpty();
+        assertThat(unproduced)
                 .as("a declared topic nothing produces to is a catalogue that has drifted from"
                         + " the code")
-                .isEqualTo(produced);
+                .isEmpty();
     }
 
     @Test

@@ -280,8 +280,8 @@ claim's bounded wait (0.5 s) and its handler's own statements, so 12 seconds a r
 the statements. No static membership: a Deployment's pod names change on every rollout. **None of
 this is the correctness argument.** A rebalance, cooperative or not, redelivers whatever was settled
 and not yet committed, and the inbox deduplicates it; the assignor only keeps the other members
-consuming meanwhile. `KafkaRebalanceKafkaTest` (owed to the exit's database pass) shows both on a
-real broker.
+consuming meanwhile. `KafkaRebalanceKafkaTest` is written to show both on a real broker; it has not
+run yet, and is owed to the exit's database pass (`P15-TST-002`).
 
 **A refused consumer fails readiness, never liveness.** When the broker refuses a consumer loop —
 a credential that does not authenticate, a missing topic or group permission — the receiver raises
