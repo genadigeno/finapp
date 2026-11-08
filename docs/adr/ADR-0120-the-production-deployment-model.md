@@ -125,3 +125,11 @@ every boot jar, so the SBOM is now kept out of the jar (an SBOM per image is `P1
 take the commit's time. The image runs as `65532:65532`, set explicitly; the JVM flags are `-XX:MaxRAMPercentage=75.0`
 and `-XX:+ExitOnOutOfMemoryError`; the size budget is 300 MiB of flattened filesystem (260.3 MiB measured).
 `README.md` §5f.
+
+*As built for decision 1's migrator, `P15-TSK-004` (2026-11-08); the decision is unchanged, and so is ADR-0011: the application
+never migrates and Flyway stays off its classpath.* The image is a stage of the same root `Dockerfile`, on one base stage the
+application's stage also names, so each pin still has one definition. Its build gives it its own context root, `migrator/`,
+because BuildKit's `<dockerfile>.dockerignore` would otherwise have replaced the application's allow-list. It runs a small
+program over Flyway's API rather than the command line: distroless has no shell to loop over the schemas, and only a program
+can say which failure a retry can help. `DATA_MIGRATIONS.md` §2.1 is the contract; §2.2 is the separate one-time bootstrap of the
+deployed roles, which holds the master credential alone.

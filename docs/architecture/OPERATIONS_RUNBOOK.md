@@ -1488,13 +1488,15 @@ The proofs write nothing and decide nothing: each reading takes one read-only sn
 
 Risk's signals arrive through the inbox (`risk.signals`' consumer group): a delivery the handler cannot record is thrown,
 rolled back with its dedupe record, and retried - the partition **stalls loudly** behind it, never skips it (`INV-EVT-04`).
+*(Since `P15-TSK-028` the stall is bounded: a record failing for a reason of its own parks after five failures and two minutes,
+kept, counted and alerted, and the partition goes on. A version this build cannot read never parks. §11.6 has the door.)*
 
 - **`RiskCollectionsUnplaced`** (`finapp.risk.collections.unplaced` rising - `P13-TSK-025`): a `LoanDefaulted` or
   `BnplDefaulted` delivery names an agreement whose party cannot be placed (lending's and bnpl's published views), so it is
-  refused before any alert is born and its partition retries it - delivering nothing behind it (every later signal of the
-  partition waits). The fix is upstream: the agreement's party missing from the view (a status filter, a migration) - the
-  owning module restores it, and the retry then records the default, opens its `COLLECTIONS` case and the partition
-  drains. Never acknowledge the delivery by hand: the default would never reach the collections desk.
+  refused before any alert is born and its partition retries it, then parks it (§11.6). The fix is upstream: the agreement's
+  party missing from the view (a status filter, a migration) - the owning module restores it. If the record has parked, release
+  it (§11.6) and the retry records the default and opens its `COLLECTIONS` case. Never acknowledge the delivery by hand: the
+  default would never reach the collections desk.
 - **`InboxConsumptionFailing`** (`finapp.inbox.consumption{outcome="failed"}` in each quarter hour - platform-wide, the
   series carries no module tag, registered eagerly whatever the consumer's flag): some consumer's partition is stalled -
   an event version this build cannot read (deploy the build that knows it), a payload out of bounds, a handler failing.
@@ -1866,6 +1868,8 @@ row.)*
 
 *(Added 2026-11-08 by `P15-TSK-024`: §11.8 below is written too, its instance-down and stale-gauge parts; the paragraph above holds for the rest of that row and every other.)*
 
+*(Added 2026-11-08 by `P15-TSK-004`: §11.1b, the bootstrap step and the migration Job, and §11.4 are written; `-012` and `-032` rehearse them.)*
+
 *(Added 2026-11-08 by `P15-TSK-027`: §11.1.1 below is written, the handler-set steps of rows 11.1 and 11.3; not yet rehearsed.)*
 
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
@@ -1939,11 +1943,66 @@ version is being written.
 4. Review the diff as a contract change, not as generated output. A version the code stopped writing stays in the
    catalogue on purpose.
 
-### 11.6 Broker outage and consumer lag
+### 11.1b Deploy — the bootstrap step and the migration Job (`P15-TSK-004`)
 
-*Written by `P15-TSK-026` (2026-11-08) from the clients it built; **not yet rehearsed** - no deployed broker exists, and
-the rehearsal is `P15-TSK-028`'s and `-032`'s. A poison record, dead letters and replay are `P15-TSK-028`'s part of this
-subsection. The consumption and freshness SLOs, and their alerts, are `P15-TSK-025`'s; the signals below exist today.*
+*(Written by `P15-TSK-004`, 2026-11-08, from the image and its acceptance run; **not yet rehearsed on a cluster** -
+`P15-TSK-012` does that, with this task's Job contract in `DATA_MIGRATIONS.md` §2.1, and `-017` orders it before the rollout.
+The commands here are the image's own; the manifest is `P15-TSK-009`'s.)*
+
+**Before the first release to a database, and again only when a release adds a role**, run the one-time bootstrap step
+(`DATA_MIGRATIONS.md` §2.2): the migrator image with its `command` overridden to `RoleBootstrapMain`, handed the master
+credential and the three roles' passwords from the secret store. It is the only thing that ever holds the master credential.
+Read its output: one line per role saying `created` or `present, unprivileged, unchanged`. Exit `12` naming a role means a role
+already holds a right it must not: stop and find out how. Never give the migration Job the master credential to get past it.
+
+**Then, for every release, the migration Job, and only then the rollout.** It runs the release's `finapp-migrator` by digest,
+with no `command` of its own. One line per schema and a result line:
+
+| The result line | What to do |
+|---|---|
+| `result=APPLIED schemas=21 applied=<n>` | The rollout may start. `applied=0` is normal: no schema changed, or another run got there first |
+| `result=TRANSIENT` (exit `11`) | A table was locked past the bound, or the database was away. The Job retries it (`backoffLimit`). If it fails again, find the long transaction: `SELECT pid, state, now() - xact_start, query FROM pg_stat_activity WHERE xact_start IS NOT NULL ORDER BY xact_start` |
+| `result=FAILED` (exit `10`) | Not retried. §11.4 |
+| `result=REFUSED` (exit `12`) | The configuration or identity is wrong; nothing ran. The line says which. "The TLS connection could not be verified" is the CA bundle, its path or the host, never a lock |
+
+**The rollout does not start until the Job has succeeded.** A Job that is still running is not a green light.
+
+### 11.4 A failed migration (forward fix only) (`P15-TSK-004`; `P15-TSK-005` adds the compatibility half)
+
+*(Written by `P15-TSK-004`, 2026-11-08; **not yet rehearsed** - `P15-TSK-032` rehearses it.)*
+
+A failed migration stops the release before any replica changes. The old release keeps serving on the schema it had: the
+rollout has not started, a release's migrations are expand-only (`P15-TSK-005`'s lint, once built, holds that), and the failed
+one has either not happened at all or, in the second case below, left the schema where a person must read it. **Never `clean`. Never edit an applied migration. Do not run
+`flywayRepair` to make the symptom go away** (`DATA_MIGRATIONS.md` §3.1).
+
+First read `<schema>.flyway_schema_history` for the failing schema, and the Job's log.
+
+**No row for the migration (the usual case).** Every migration in this repository runs in a transaction, and on PostgreSQL a
+failed one is rolled back and leaves no history row. Nothing happened. The next run tries it again. So the question is why it
+failed:
+
+- *The statement is wrong.* It was also wrong in the build and against an empty database, unless it depends on data. A migration
+  that has never succeeded anywhere can be corrected and released again, because no database has applied it.
+- *It depends on data this database has and no other did* (a new `CHECK`, a backfill). If it has already succeeded in another
+  environment, it **must not be edited**: the other environment's checksum would no longer match. Add a new migration with a
+  **lower version than the failed one and higher than the last applied**, which fixes the data, and release that. In the
+  environments that already applied the failed one, `outOfOrder = false` would refuse it, so such a fix is only possible while
+  every environment is behind the failed version; otherwise fix the data by an audited operational procedure and re-run the Job.
+
+**A row with `success = false`.** Only a migration that cannot run in a transaction (`executeInTransaction=false`) writes one, and
+none exists today. Its effect may be partial: for `CREATE INDEX CONCURRENTLY`, an `INVALID` index stays behind and must be dropped
+first. Every later run refuses at validation until the row is dealt with, so this is the one case for `flywayRepair`, with the
+files known good and the reason recorded (`DATA_MIGRATIONS.md` §3.1).
+
+**Whichever it is**, the application release has not started. If a compatibility marker was passed, read `P15-TSK-005`'s part
+before rolling anything back. After a fix, run the Job again; it applies what is pending and nothing else.
+
+### 11.6 Broker outage, consumer lag, a poison record, dead letters and replay
+
+*Written by `P15-TSK-026` and `P15-TSK-028` (2026-11-08) from the code they built; **not yet rehearsed** - no deployed broker
+exists, and the rehearsal is `-032`'s. The consumption and freshness SLOs, and their alerts, are `P15-TSK-025`'s; the signals
+below exist today.*
 
 **What is at stake.** Kafka carries hints, never truth (`INV-EVT-02`). While the broker is away nothing financial is lost
 or wrong: every event waits in the outbox in PostgreSQL, in its aggregate's order, and every consumer's place is its
@@ -2011,9 +2070,10 @@ reason to take the fleet out of service. The alert on the series is `P15-TSK-025
 publish no lag series yet (`P15-TSK-025`); a group's lag in records is the broker's consumer-group view of
 `finapp.<module>`, read with the provider's tooling.
 
-1. **A stalled partition** (a record that fails or is contended): §9.12. The record is retried, never skipped. Fix the
+1. **A stalled partition** (a record that fails or is contended): §9.12. The record is retried, never skipped; if it is
+   failing for a reason of its own it parks after five failures and two minutes, and the partition goes on (below). Fix the
    cause - deploy the build that reads the event's version, restore the upstream data - and the partition drains. Never
-   move the group's offset past it by hand: the effect would never happen.
+   move the group's offset past it by hand: the effect would never happen, and nothing would say so.
 2. **Too slow, not stalled**: a group's parallelism is its partitions (12 per topic) and its members (one per replica).
    Adding replicas adds members, and the cooperative assignor pauses only the partitions that move. Repeated rebalances in
    the logs mean a member is being evicted for exceeding the poll budget (10 records in 120 seconds; a budget, not a
@@ -2022,12 +2082,71 @@ publish no lag series yet (`P15-TSK-025`); a group's lag in records is the broke
    throughput collapses - find the slow statement in the handler. An eviction series of its own is `P15-TSK-025`'s.
 3. **A group stopped for days**: a topic keeps a record for 7 days, so restore consumption before the oldest unconsumed
    record reaches that age. Past it, the deleted records are lost hints: the group resumes at the earliest one retained,
-   and the gap is recovered from the outbox by `P15-TSK-028`'s audited replay, bounded by the inbox's 14-day window. A
+   and the gap is recovered from the outbox by an audited replay (below), bounded by the inbox's 14-day window. A
    group with no members loses its committed offsets after 7 days and restarts from the earliest retained record; every
    such record is inside the dedupe window, so the replay is absorbed.
 
 Never reset a group's offsets to the latest record: it skips facts silently. Resetting to the earliest retained record is
 safe, because the inbox deduplicates everything the topic still holds.
+
+#### A poison record
+
+*Signals*: `finapp.deadletter.parked{group}` above zero, alerted by `P15-TSK-025`'s rule; `finapp.inbox.consumption{outcome="parked"}`;
+an `ERROR`, `Record of <type> parked for consumer ...`, naming the failure's class; `inbox.RecordParked` in the audit trail. A parked
+record is set aside and its partition has already moved on, so this is not an outage and nothing is lost: the record is on
+`platform.inbox_parked_record`, its event still in the outbox.
+
+Only a failure of the record's own counts, against both budgets, on the database's clock: five failures and two minutes
+(`finapp.inbox.park-after-attempts`, `finapp.inbox.park-after-failing-for`). A database that blinked, a pool that ran dry, a
+contended claim, a refused broker credential or a build too old to read a version never counts: the partition stalls until the
+cause is gone, as §9.12 says. **Many parks at once are a bad release, not bad records**: stop, read the failure class, fix forward.
+
+1. **Read the queue**: `GET /v1/operator/events/dead-letters` (`EVENT_OPERATE`). Audited; identifiers and the failure's class,
+   never a payload or the failure's message.
+2. **Fix the cause first.** Releasing a record the handler still cannot take costs it its budget again and parks it again.
+3. **Release it**: `POST /v1/operator/events/parked/{parkId}/release`, with a reason, on a `MULTI_FACTOR` session. It clears the
+   count and republishes the event through the outbox; every other consumer's inbox refuses the duplicate.
+   Refused `deadletter.ReplayOutsideDedupeWindow` past the 14 days, and `deadletter.NotReleasable` for a record that was
+   never an event (a malformed one) or whose event has left the outbox: its only way on is a discard.
+4. **Or discard it**, below. Never `DELETE` a row or move a group's offset to get past it.
+
+#### Dead letters: an abandoned event
+
+*Signals*: `outbox.EventAbandoned` in the audit trail; `finapp.outbox.publication{outcome="deadlettered"}`; an `ERROR`
+naming the event, the aggregate and the attempts; a `WARN` each cycle that the aggregate is blocked behind it;
+`finapp.outbox.oldest` climbing. The row blocks its aggregate, by design: later events of that aggregate wait.
+
+1. **Read the queue**, as above. The failure's class says what to do: a broker or credential class is environmental; a
+   class that speaks of the payload is the event's own.
+2. **Environmental, and the cause is fixed: retry.** `POST /v1/operator/events/abandoned/{eventId}/retry`, with a reason. The
+   relay takes it again in its aggregate's order. `deadletter.RetryOutsideDedupeWindow` means the event occurred 14 days ago or
+   more: an earlier attempt may have reached the broker with its acknowledgement lost, so a consumer may have applied it and lost
+   its record of doing so. Discard it instead, and recover the fact from the owning domain. Any replay waiting behind the event is
+   judged by the same act; one past the window is withdrawn, and the audit record counts them (`replaysWithdrawn`).
+3. **The event can never be published: discard, two people.** `POST /v1/operator/events/discards` (`subjectKind`
+   `OUTBOX_EVENT` or `INBOX_RECORD`, `subjectId`, `reason`), then a **different** `EVENT_OPERATOR`
+   `POST /v1/operator/events/discards/{discardId}/approval`. Consumers will never see that fact: record why, and expect to
+   answer for it at reconciliation. The row stays as the evidence of the gap, and the aggregate goes on. A proposal that
+   should not proceed is rejected, by anyone including its proposer, `.../rejection`; while one stands, a retry is refused.
+
+There is no raw `UPDATE` in this procedure, and none is needed.
+
+#### Replay
+
+*For*: a group stopped past topic retention (above); a handler added to a release, over its rollout and any rollback windows
+(§11.1, §11.3; `P15-TSK-027`'s catalogue says which). *Not for*: reprocessing a parked record, which is a release.
+
+1. **Choose the type and the window** of first publication, `[from, to)`, as instants. One command, one type, at most 1000
+   events, all or nothing. More than that: narrow the window and repeat. Replay at volume is Phase 16's.
+2. **Order it** after the rollout completes: `POST /v1/operator/events/replays` `{eventType, from, to, reason}`, on a
+   `MULTI_FACTOR` session (`outbox.EventReplayOrdered`). The receipt says how many were requeued, not delivered.
+3. **What to expect**: the events return to the outbox, so `finapp.outbox.pending` rises and falls, the age measured from the order;
+   consumers that already applied them count `finapp.inbox.consumption{outcome="duplicate"}`, and only a consumer without a
+   dedupe record runs its handler.
+4. **`deadletter.ReplayOutsideDedupeWindow`**: an event in the window is 14 days old or more, so its dedupe rows may be gone and a
+   replay could apply an effect twice. The whole command is refused. Never work around it: narrow the window to what is
+   inside, and treat what is outside as a gap, recovered from the system of record by the owning domain. Only a type every
+   consumer of which declares itself `naturallyIdempotent` on its handler may go past it, and none does today.
 
 ### 11.8 Instance down, stale gauges - `InstanceDown`, `FinappTargetsAbsent`, `GaugesStale`, `FxGaugesUnreadable`, `ReconciliationGaugesUnreadable`
 

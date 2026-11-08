@@ -474,7 +474,7 @@ class RiskSignalIntakeTest {
                     "aggregate", OBSERVED, "payments", CorrelationId.of("flow"), CausationId.of("cause"),
                     "application/json", refundPayload(intent, "COMPLETED").toBytes());
             assertThatThrownBy(() -> intake(source).handle(null, v2)).as(source.name())
-                    .isInstanceOf(IllegalStateException.class).hasMessageContaining("version 2");
+                    .isInstanceOf(com.finapp.platform.inbox.EventNotYetReadable.class).hasMessageContaining("version 2");
         }
         assertThat(store.inserted).hasSize(2);
     }

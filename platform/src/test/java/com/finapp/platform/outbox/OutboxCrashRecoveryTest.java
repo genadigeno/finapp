@@ -432,7 +432,8 @@ class OutboxCrashRecoveryTest {
                 publisher,
                 new RetryPolicy(Duration.ofMillis(1), Duration.ofMillis(2), 5),
                 8,
-                100);
+                100,
+                OutboxRelay.Abandonments.NOT_RECORDED);
     }
 
     private static boolean factExists(UUID aggregateId) throws SQLException {

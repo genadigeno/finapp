@@ -317,6 +317,14 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/registrations",
                         ApiVersion.CURRENT_PREFIX + "/authentications",
                         ApiVersion.CURRENT_PREFIX + "/sessions",
+                        // P15-TSK-028: the dead-letter doors (EVENT_OPERATE): the read, a retry, a release, a four-eyes discard, a replay.
+                        ApiVersion.CURRENT_PREFIX + "/operator/events/dead-letters",
+                        ApiVersion.CURRENT_PREFIX + "/operator/events/abandoned/{eventId}/retry",
+                        ApiVersion.CURRENT_PREFIX + "/operator/events/parked/{parkId}/release",
+                        ApiVersion.CURRENT_PREFIX + "/operator/events/discards",
+                        ApiVersion.CURRENT_PREFIX + "/operator/events/discards/{discardId}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/events/discards/{discardId}/rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/events/replays",
                         // P11-TSK-004: the lending treasury's doors - capital contributions under four eyes
                         // (LENDING_CAPITAL_ADMINISTER, keyed) and the capital report (LENDING_INVESTIGATE, audited).
                         ApiVersion.CURRENT_PREFIX + "/operator/lending/capital-contributions",

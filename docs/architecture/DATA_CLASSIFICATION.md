@@ -152,6 +152,35 @@ no business data.
 | `outbox_event` | `attempts` | `INTERNAL` | |
 | `outbox_event` | `next_attempt_at` | `INTERNAL` | |
 | `outbox_event` | `dead_lettered_at` | `INTERNAL` | |
+| `outbox_event` | `discarded_at` | `INTERNAL` | `P15-TSK-028`: a four-eyes decision's instant; the decision is `dead_letter_discard`. |
+| `outbox_event` | `first_published_at` | `INTERNAL` | `P15-TSK-028`: kept across replays. |
+| `outbox_event` | `replay_ordered_at` | `INTERNAL` | `P15-TSK-028`: the dedupe window's anchor for a replayed row. |
+| `inbox_parked_record` | `park_id` | `INTERNAL` | `P15-TSK-028`: the door's handle. |
+| `inbox_parked_record` | `consumer` | `INTERNAL` | |
+| `inbox_parked_record` | `dedupe_key` | `CONFIDENTIAL` | As `inbox_message.dedupe_key`: an external system's message identifier for a webhook, an event id otherwise. |
+| `inbox_parked_record` | `consumer_group` | `INTERNAL` | |
+| `inbox_parked_record` | `message_type` | `INTERNAL` | |
+| `inbox_parked_record` | `correlation_id` | `INTERNAL` | |
+| `inbox_parked_record` | `topic` | `INTERNAL` | |
+| `inbox_parked_record` | `partition_number` | `INTERNAL` | |
+| `inbox_parked_record` | `record_offset` | `INTERNAL` | |
+| `inbox_parked_record` | `state` | `INTERNAL` | |
+| `inbox_parked_record` | `attempts` | `INTERNAL` | |
+| `inbox_parked_record` | `last_failure` | `INTERNAL` | The failure's class name, never its message: bounded and set by the receiver. |
+| `inbox_parked_record` | `first_failed_at` | `INTERNAL` | |
+| `inbox_parked_record` | `last_failed_at` | `INTERNAL` | |
+| `inbox_parked_record` | `parked_at` | `INTERNAL` | |
+| `inbox_parked_record` | `settled_at` | `INTERNAL` | |
+| `dead_letter_discard` | `discard_id` | `INTERNAL` | `P15-TSK-028`: the four-eyes decision over an abandoned event or a parked record. Never the payload. |
+| `dead_letter_discard` | `subject_kind` | `INTERNAL` | |
+| `dead_letter_discard` | `subject_id` | `INTERNAL` | |
+| `dead_letter_discard` | `status` | `INTERNAL` | |
+| `dead_letter_discard` | `proposed_by` | `CONFIDENTIAL` | A person's identifier, compared for the four eyes and never served. |
+| `dead_letter_discard` | `proposed_at` | `INTERNAL` | |
+| `dead_letter_discard` | `proposal_reason` | `CONFIDENTIAL` | Free text a person wrote: served to whoever decides it, never logged. |
+| `dead_letter_discard` | `decided_by` | `CONFIDENTIAL` | A person's identifier, never served. |
+| `dead_letter_discard` | `decided_at` | `INTERNAL` | |
+| `dead_letter_discard` | `decision_reason` | `CONFIDENTIAL` | Free text a person wrote; never served or logged. |
 | `outbox_event` | `last_error` | `CONFIDENTIAL` | A broker or adapter error. `V006` already forbids the payload here; an error string can still carry a host or endpoint |
 
 ### `party` and `identity` — *added by `P1-TSK-005`*

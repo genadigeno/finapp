@@ -119,7 +119,7 @@ class ApplicationImageTest {
             + " the built image by image-build.sh)")
     void theRuntimeIsDistrolessNonrootOnTheToolchainsJava() {
         assertThat(stages).as("a builder stage and a runtime stage").hasSizeGreaterThanOrEqualTo(2);
-        Matcher runtime = PINNED.matcher(runtime().reference());
+        Matcher runtime = PINNED.matcher(baseOf(runtime()));
         assertThat(runtime.matches()).as("the runtime base is pinned").isTrue();
         assertThat(runtime.group("repository"))
                 .as("distroless Java %s: a JRE and its certificates, no shell and no package manager", toolchain)
@@ -197,7 +197,13 @@ class ApplicationImageTest {
                         + " the image")
                 .isNotEmpty()
                 .allSatisfy(line -> assertThat(line).matches("!app/build/libs/[^/]+\\.jar"));
+        assertThat(Files.exists(root.resolve("Dockerfile.dockerignore")))
+                .as("BuildKit reads <dockerfile>.dockerignore in preference to .dockerignore, so this would replace the"
+                        + " application's allow-list")
+                .isFalse();
+        // The migrator's stage has a context of its own (P15-TSK-004), and no stage of the application's build reaches it.
         List<String> contextCopies = stages.stream()
+                .filter(stage -> !"migrator".equals(stage.name()))
                 .flatMap(stage -> stage.instructions().stream())
                 .filter(instruction -> instruction.keyword().equals("ADD")
                         || (instruction.keyword().equals("COPY") && !instruction.arguments().startsWith("--from=")))
@@ -267,6 +273,15 @@ class ApplicationImageTest {
 
     private static Stage runtime() {
         return stages.get(stages.size() - 1);
+    }
+
+    /** The image a stage is built on, followed through named stages to the {@code FROM} that holds the pin. */
+    private static String baseOf(Stage stage) {
+        return stages.stream()
+                .filter(earlier -> stage.reference().equals(earlier.name()))
+                .findFirst()
+                .map(ApplicationImageTest::baseOf)
+                .orElse(stage.reference());
     }
 
     private static int indexOf(List<String> lines, String text) {

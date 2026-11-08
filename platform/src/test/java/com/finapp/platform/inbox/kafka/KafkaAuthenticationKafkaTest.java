@@ -156,6 +156,7 @@ class KafkaAuthenticationKafkaTest {
                     throw new SQLException("no record is produced in this suite");
                 },
                 new InboxConsumer<>(new JdbcInboxRecordStore(), Clock.systemUTC(), Duration.ofDays(14)),
+                com.finapp.platform.testing.InboxParkingDoubles.NEVER_PARKS,
                 List.of(new NoHandler(topic)),
                 Duration.ofMillis(500));
     }

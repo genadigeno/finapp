@@ -108,8 +108,8 @@ public final class InboxConsumer<T> {
     }
 
     /**
-     * How long a dedupe record outlives processing: the window the retention sweep's bound reads from here, not from a copy
-     * of the setting (`P15-TSK-029`).
+     * The dedupe window every record is dated with, for what must be judged against it: a replay (`P15-TSK-028`) and the
+     * retention sweep's bound (`P15-TSK-029`), each read from here rather than from a copy of the setting.
      */
     public Duration retention() {
         return retention;

@@ -645,7 +645,11 @@ class MutationDemonstrationTest {
         Map<String, JavaClass> byName = new LinkedHashMap<>();
         Path root = repositoryRoot();
 
-        for (String module : ProductionModules.onClasspathWithProductionClasses()) {
+        // `migrator` is deliberately not on app's classpath (ADR-0011: Flyway stays out of the application), so the derivation
+        // cannot name it; its test classes are compiled and declared like any sibling's (app/build.gradle.kts, siblingModules).
+        Set<String> modules = new TreeSet<>(ProductionModules.onClasspathWithProductionClasses());
+        modules.add("migrator");
+        for (String module : modules) {
             Path testClasses = root.resolve(module).resolve("build/classes/java/test");
             if (!Files.isDirectory(testClasses)) {
                 continue;

@@ -103,6 +103,11 @@ diverge — a divergence that would silently corrupt every downstream projection
   in [`EVENT_ARCHITECTURE.md`](../architecture/EVENT_ARCHITECTURE.md), not as a separate ADR: this
   is this decision's consequence arriving, the way `P0-TSK-037` was ADR-0008's.
 - Phase 15: schema registry and compatibility enforcement; dead-letter handling and replay.
+  *(Dead-letter handling and replay built by `P15-TSK-028`, 2026-11-08, no new decision: an abandoned event is retried or, by two
+  people, discarded, and a discarded row stays; a replay requeues published rows for this relay under their original `event_id`, so
+  the inbox primary key is what makes it safe. The one thing this ADR did not foresee: a replay must keep the dedupe rows alive for
+  as long as the replayed record can arrive, so its order extends them. Recorded in `EVENT_ARCHITECTURE.md` §Handling an abandoned
+  event.)*
 - Phase 16: relay throughput under load; consider CDC only if polling becomes a measured
   bottleneck.
 

@@ -147,7 +147,7 @@ class InboxConsumersStopTest {
         InboxConnectionSource connections = () -> fakeConnection(store);
         return new InboxConsumers(
                 List.of(handler(reaction)),
-                (group, handlers) -> new KafkaEventReceiver(consumer, connections, inbox, handlers, pollTimeout),
+                (group, handlers) -> new KafkaEventReceiver(consumer, group, connections, inbox, com.finapp.platform.testing.InboxParkingDoubles.NEVER_PARKS, handlers, pollTimeout),
                 Duration.ofMillis(50),
                 new SimpleMeterRegistry());
     }

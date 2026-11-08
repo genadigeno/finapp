@@ -8,7 +8,11 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The database clock stepped back on demand, deterministically (`P11-TSK-036`).
@@ -18,8 +22,15 @@ import java.util.function.Function;
  * transaction than in an earlier one, and {@code transaction_timestamp()} can stand after both. Waiting for a step is a
  * flake; this fixture makes one. It shadows the four clock functions in a schema of its own, {@code clockstep}, which a
  * session opts into by putting it before {@code pg_catalog} on its {@code search_path} - PostgreSQL resolves an unqualified
- * {@code statement_timestamp()} through the path, and the lending triggers are invoker's rights with no path of their own,
- * so the production code and the production triggers run unchanged and read the shadowed clock:
+ * {@code statement_timestamp()} through the path, and the production code reads the shadowed clock:
+ *
+ * <p><strong>Since lending {@code V035} the lending functions name {@code pg_catalog} themselves</strong> (`P15-TSK-004`: a role's
+ * path must never change a judgement's clock, and this fixture is exactly that), so a shadow can no longer reach them.
+ * {@link #install} therefore re-opens the hole <em>in this test database only</em>, as the bootstrap superuser: every lending
+ * function reading a qualified clock is replaced by itself with the qualifier removed, and {@link #uninstall} restores the
+ * captured definition byte for byte. The triggers then run their production logic against the stepped clock, which is what
+ * these suites are for; that the production definition is not reachable by a path is held by
+ * {@code LendingClockIgnoresTheSearchPathDatabaseTest}.
  *
  * <ul>
  *   <li><strong>the frame</strong> ({@code clockstep.frame}, set for the session before its transaction begins): an
@@ -44,6 +55,13 @@ final class ClockStep {
     /** Where a frame places a transaction's start after a midnight - so a step of {@link #STEP} crosses it. */
     static final Duration AFTER_MIDNIGHT = Duration.ofMillis(500);
 
+    /** {@code V035}'s form of a clock call. */
+    private static final Pattern QUALIFIED_CLOCK =
+            Pattern.compile("pg_catalog\\.(now|statement_timestamp|clock_timestamp|transaction_timestamp)\\(");
+
+    /** The definitions {@link #install} replaced, as the migrations left them. The database tier is one JVM, one suite at a time. */
+    private static final List<String> REOPENED = new ArrayList<>();
+
     private ClockStep() {}
 
     /** Creates (or replaces) the shadow clock - idempotent. */
@@ -62,11 +80,48 @@ final class ClockStep {
                 + " $$ SELECT pg_catalog.statement_timestamp() + clockstep.frame() - clockstep.back() $$;"
                 + " CREATE OR REPLACE FUNCTION clockstep.clock_timestamp() RETURNS timestamptz LANGUAGE sql VOLATILE AS"
                 + " $$ SELECT pg_catalog.clock_timestamp() + clockstep.frame() - clockstep.back() $$;");
+        reopenLendingsClock();
     }
 
-    /** Drops the shadow clock. */
+    /** Drops the shadow clock, and puts every lending function back exactly as the migrations left it. */
     static void uninstall() {
+        restoreLendingsClock();
         bootstrap("DROP SCHEMA IF EXISTS clockstep CASCADE");
+    }
+
+    /** {@code V035}'s qualification undone, so a shadow on the opted-in session's path reaches lending's triggers again. */
+    private static void reopenLendingsClock() {
+        try (Connection owner = DatabaseRoles.bootstrap(); Statement statement = owner.createStatement()) {
+            List<String> definitions = new ArrayList<>();
+            try (ResultSet rows = statement.executeQuery("SELECT pg_catalog.pg_get_functiondef(p.oid) FROM pg_catalog.pg_proc p"
+                    + " JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'lending' AND p.prokind = 'f'")) {
+                while (rows.next()) {
+                    definitions.add(rows.getString(1));
+                }
+            }
+            for (String definition : definitions) {
+                Matcher qualified = QUALIFIED_CLOCK.matcher(definition);
+                if (qualified.find()) {
+                    if (!REOPENED.contains(definition)) {
+                        REOPENED.add(definition);
+                    }
+                    statement.execute(qualified.replaceAll("$1("));
+                }
+            }
+        } catch (SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
+    }
+
+    private static void restoreLendingsClock() {
+        try (Connection owner = DatabaseRoles.bootstrap(); Statement statement = owner.createStatement()) {
+            for (String definition : REOPENED) {
+                statement.execute(definition);
+            }
+            REOPENED.clear();
+        } catch (SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
     }
 
     /**

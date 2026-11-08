@@ -53,6 +53,21 @@ class TelemetryConfiguration {
     }
 
     /**
+     * The parked records by consumer group (`P15-TSK-028`). Eager per group the handlers name, whether or not this instance consumes:
+     * the groups come from the handler beans by the rule the consumers themselves use.
+     */
+    @Bean
+    DeadLetterMetrics deadLetterMetrics(
+            ObjectProvider<com.finapp.platform.inbox.InboxEventHandler> handlers,
+            com.finapp.platform.deadletter.DeadLetterStore deadLetterStore,
+            DataSource dataSource,
+            Clock clock,
+            MeterRegistry registry) {
+        java.util.List<String> groups = com.finapp.app.eventing.InboxConsumers.groupsOf(handlers.orderedStream().toList());
+        return new DeadLetterMetrics(groups, deadLetterStore, dataSource::getConnection, clock, registry);
+    }
+
+    /**
      * How many sessions are live, as a gauge (`P1-TSK-029`, criterion 6).
      *
      * <p>Reads through the application's own {@code DataSource} for {@code outboxMetrics}' reason:

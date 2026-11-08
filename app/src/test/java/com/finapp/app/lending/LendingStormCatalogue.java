@@ -1150,7 +1150,7 @@ final class LendingStormCatalogue {
 
     private static OutboxRelay relay(EventPublisher publisher) {
         return new OutboxRelay(DatabaseRoles::application, publisher,
-                new RetryPolicy(Duration.ofMillis(1), Duration.ofMillis(2), 50), 10_000, 200);
+                new RetryPolicy(Duration.ofMillis(1), Duration.ofMillis(2), 50), 10_000, 200, OutboxRelay.Abandonments.NOT_RECORDED);
     }
 
     /** A broker that records what reaches it for the watched aggregates - or, killed, dies before acknowledging. */

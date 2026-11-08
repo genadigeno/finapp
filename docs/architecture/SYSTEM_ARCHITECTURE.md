@@ -102,7 +102,7 @@ that breaks. Gradle upgrades must also update `distributionSha256Sum` from
 automated is a gate that will be skipped, so every gate the DoD relies on runs on every
 change in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml), as separate jobs so
 a failure names its own gate *(this read "as four separate jobs" until `P15-TSK-013` added
-`iac` and `P15-TSK-003` added `image`; the weekly `pinned-images` freshness job is scheduled, not a per-change gate, and
+`iac`, `P15-TSK-003` added `image` and `P15-TSK-004` added `migrator-image`; the weekly `pinned-images` freshness job is scheduled, not a per-change gate, and
 `README.md` §7b describes it)*:
 
 | Job | Gate |
@@ -113,6 +113,7 @@ a failure names its own gate *(this read "as four separate jobs" until `P15-TSK-
 | `dependency-scan` | No HIGH or CRITICAL known vulnerability in the resolved runtime dependency set, via a CycloneDX SBOM |
 | `iac` | Every Terraform root and module passes `fmt`, `tflint`, `trivy config` (no HIGH or CRITICAL), `validate` and `terraform test` with mock providers, and each check refuses a planted defect in the same run; no credential, no backend (`P15-TSK-013`, ADR-0121) |
 | `image` | The application image (`P15-TSK-003`, C4): both bases pinned by digest; built twice from one commit, the boot jar each time from source, and the jar's sha256, the image id and every layer digest identical; UID 65532, no `HEALTHCHECK`, no environment of its own, the OCI revision, source and version labels; the pinned distroless base plus the boot jar's entries and nothing else, no shell or package manager; within its 300 MiB budget; then run against compose's PostgreSQL and Kafka on loopback, read-only and with every capability dropped, until readiness reports `UP`. Pushes nothing. `infra/scripts/image-build.sh` and `image-readiness.sh`, the scripts a developer runs (`README.md` §5f) |
+| `migrator-image` | The migrator image built twice from one commit and identical, non-root, nothing in it but the pinned base, its libraries and the repository's migrations; run against a throwaway PostgreSQL with the schema history and schema compared to `flywayMigrate`'s, re-run, run concurrently, and held behind a lock (`P15-TSK-004`, `DATA_MIGRATIONS.md` §2.1) |
 
 **Dependency verification and locking** (`P0-TSK-039`, ADR-0025). Two files, two different
 controls, both enforced on every build:
