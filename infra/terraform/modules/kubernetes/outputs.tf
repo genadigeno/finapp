@@ -1,0 +1,44 @@
+output "cluster_name" {
+  description = "The cluster's name."
+  value       = aws_eks_cluster.this.name
+}
+
+output "endpoint_public_access" {
+  description = "Whether the API endpoint has a public address, read from the planned cluster."
+  value       = aws_eks_cluster.this.vpc_config[0].endpoint_public_access
+}
+
+output "cluster_subnet_ids" {
+  description = "The subnets of the control plane's network interfaces, read from the planned cluster."
+  value       = aws_eks_cluster.this.vpc_config[0].subnet_ids
+}
+
+output "node_group_subnet_ids" {
+  description = "Each zone's node group's subnets, read from the planned node groups."
+  value       = { for zone, group in aws_eks_node_group.workers : zone => group.subnet_ids }
+}
+
+output "etcd_kms_key_arn" {
+  description = "The key encrypting Secrets in etcd, read from the planned cluster."
+  value       = aws_eks_cluster.this.encryption_config[0].provider[0].key_arn
+}
+
+output "control_plane_log_types" {
+  description = "The control-plane log types enabled, read from the planned cluster."
+  value       = aws_eks_cluster.this.enabled_cluster_log_types
+}
+
+output "workload_identity_provider_arn" {
+  description = "The OIDC provider a workload's IAM role trusts."
+  value       = aws_iam_openid_connect_provider.workload_identity.arn
+}
+
+output "workload_identity_issuer" {
+  description = "The cluster's OIDC issuer, whose host and path a workload role's trust conditions name."
+  value       = aws_eks_cluster.this.identity[0].oidc[0].issuer
+}
+
+output "node_role_arn" {
+  description = "The nodes' IAM role."
+  value       = aws_iam_role.node.arn
+}
