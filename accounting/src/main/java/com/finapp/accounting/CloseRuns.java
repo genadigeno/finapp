@@ -388,13 +388,20 @@ public final class CloseRuns {
 
     // ------------------------------------------------------------------ reads
 
-    /** The period's latest run with every check's attempts - empty when the period has none. */
+    /**
+     * The period's run with every check's attempts - empty when the period has none. <strong>The present lock's run is named by the lock's identity</strong>
+     * ({@code close_run_one_per_lock}: one run per {@code (period, locked_at)}), never by which run a stamp says is the latest (`P15-TSK-033`, PI-013): after a
+     * backward step of the database's clock an earlier lock's run can carry the later {@code started_at}, and read as the latest it made a ready month
+     * unproposable for the life of its lock. Only when the present lock has no run yet, or the period is {@code OPEN}, is the store's latest shown - never
+     * {@link RunView#current}, so never ready.
+     */
     public Optional<RunView> view(Connection unitOfWork, AccountingPeriodId id) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         AccountingPeriodStore.PeriodRow period = periods.find(unitOfWork, id).orElseThrow(
                 AccountingPeriods.PeriodNotFound::new);
         YearMonth month = period.month();
-        return store.latestRun(unitOfWork, id).map(run -> {
+        Optional<CloseRunStore.RunRow> answering = period.lockedAt().flatMap(lockedAt -> store.runUnder(unitOfWork, id, lockedAt));
+        return answering.or(() -> store.latestRun(unitOfWork, id)).map(run -> {
             List<CloseRunStore.AttemptRow> attempts = store.attempts(unitOfWork, run.id());
             List<CheckView> checks = Arrays.stream(CloseCheckCode.values())
                     .map(check -> checkView(check, attempts))

@@ -115,14 +115,52 @@ class BackwardClockDatabaseTest {
             + " instant's date: the schedule's illustrative start is the business date of offered_at, never the read's")
     void anOriginationAcrossAMidnightIllustratesTheOfferingDate() {
         DisbursementWorld.Approved approved = approvedLoan();
-        LoanOrigination.Outcome outcome = ClockStep.inOneTransaction(ClockStep.afterTomorrowsMidnight(),
-                uow -> origination(ClockStep.beforeRead(LoanOfferStore.class, OFFER_STORE, ClockStep.STEP))
-                        .originate(uow, approved.application(), SYSTEM));
-        assertThat(outcome.kind()).isEqualTo(LoanOrigination.Outcome.Kind.OFFERED);
-        assertThat(LocalDate.parse(scalar("SELECT lending.business_date(o.offered_at, 'UTC')::text FROM lending.loan_offer o"
-                + " WHERE o.application_id = ?", approved.application().value())))
-                .as("offered at the transaction's start, after the midnight").isEqualTo(realToday().plusDays(1));
-        assertTheOfferIsCoherent(approved);
+        // Asserted inside its transaction and rolled back (P15-TSK-033): committed, an offer stamped tomorrow would end its terms version after it under
+        // lending V033, and the shared suite's later activations of the product would start tomorrow.
+        ClockStep.inOneRolledBackTransaction(ClockStep.afterTomorrowsMidnight(), uow -> {
+            LoanOrigination.Outcome outcome = origination(ClockStep.beforeRead(LoanOfferStore.class, OFFER_STORE, ClockStep.STEP))
+                    .originate(uow, approved.application(), SYSTEM);
+            assertThat(outcome.kind()).isEqualTo(LoanOrigination.Outcome.Kind.OFFERED);
+            try (Statement checks = uow.createStatement()) {
+                checks.execute("SET CONSTRAINTS ALL IMMEDIATE"); // the commit-time checks, run as a commit would run them
+            } catch (SQLException failure) {
+                throw new IllegalStateException(failure);
+            }
+            assertThat(LocalDate.parse(textOn(uow, "SELECT lending.business_date(o.offered_at, 'UTC')::text FROM lending.loan_offer o"
+                    + " WHERE o.application_id = '" + approved.application().value() + "'")))
+                    .as("offered at the transaction's start, after the midnight").isEqualTo(realToday().plusDays(1));
+            assertThat(textOn(uow, coherence(approved))).as("the offer coherent, as assertTheOfferIsCoherent reads it").isEqualTo("true");
+            assertThat(textOn(uow, "SELECT count(*)::text FROM lending.loan_offer_event e JOIN lending.loan_offer o ON o.id = e.offer_id"
+                    + " WHERE o.application_id = '" + approved.application().value() + "' AND e.to_status = 'OFFERED'")).isEqualTo("1");
+            return null;
+        });
+        assertThat(count("SELECT count(*) FROM lending.loan_offer o WHERE o.application_id = ?", approved.application().value()))
+                .as("rolled back: no offer dated tomorrow is left in the shared database").isZero();
+        // And no application left awaiting a decision for a later suite's sweep to offer.
+        DisbursementWorld.inOneTransaction(uow -> APPLICATIONS.transition(uow, approved.application(), LoanApplicationStatus.AWAITING_DECISION,
+                LoanApplicationStatus.WITHDRAWN));
+    }
+
+    /** {@link #assertTheOfferIsCoherent}'s statement, for a reading inside the transaction that made the offer. */
+    private static String coherence(DisbursementWorld.Approved approved) {
+        return "SELECT (o.offered_at >= a.closed_at"
+                + " AND o.expires_at = LEAST(o.decision_valid_until, o.offered_at + make_interval(days => t.offer_validity_days))"
+                + " AND o.next_step_at = o.expires_at"
+                + " AND ot.illustrative_start = lending.business_date(o.offered_at, t.servicing_zone)"
+                + " AND a.status = 'OFFERED')::text"
+                + " FROM lending.loan_offer o JOIN lending.loan_application a ON a.id = o.application_id"
+                + " JOIN lending.loan_terms t ON t.terms_version_id = o.terms_version_id"
+                + " JOIN lending.loan_offer_terms ot ON ot.offer_id = o.id WHERE o.application_id = '" + approved.application().value() + "'";
+    }
+
+    /** One text {@code sql} answers on {@code connection} - inside its transaction. */
+    private static String textOn(Connection connection, String sql) {
+        try (Statement statement = connection.createStatement(); ResultSet row = statement.executeQuery(sql)) {
+            row.next();
+            return row.getString(1);
+        } catch (SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
     }
 
     // ------------------------------------------------------------------ the business dates

@@ -40,8 +40,17 @@ public final class JdbcPeriodCloseStore implements PeriodCloseStore {
 
     static final String LOCK_CLOSE_SQL = CLOSE + " WHERE c.id = ? FOR UPDATE OF c";
 
-    /** The latest by the database's own stamp; the id, a UUIDv7, settles a tie. */
-    static final String LATEST_CLOSE_SQL = CLOSE + " WHERE c.period_id = ? ORDER BY c.proposed_at DESC, c.id DESC LIMIT 1";
+    /**
+     * The period's latest proposal, <strong>ranked by the rows, never by a stamp a stepped clock can reorder</strong> (`P15-TSK-033`, PI-013): the {@code PROPOSED}
+     * one first - {@code period_close_one_pending} admits one, and while it stands every other proposal of the period was decided before it was born (a proposal
+     * needs the period {@code LOCKED}; a {@code PROPOSED} one holds it {@code CLOSE_PROPOSED}); then the higher revision, which moves only at a reopen; then the
+     * revision's {@code APPROVED} one ({@code period_close_one_approved}), its last; and only then {@code proposed_at}, which orders nothing but one revision's
+     * {@code REJECTED} proposals - none of which an act reads ({@link PeriodCloses#approve} and {@link PeriodCloses#reject} name a proposal by its id and lock it,
+     * and {@link PeriodCloses#proposalOf} says a decided one no longer stands). It read {@code ORDER BY c.proposed_at DESC, c.id DESC} until then: after a backward
+     * step a rejected proposal could read as the latest, and a repeated proposal converge on it.
+     */
+    static final String LATEST_CLOSE_SQL = CLOSE + " WHERE c.period_id = ?"
+            + " ORDER BY (c.status = 'PROPOSED') DESC, c.period_revision DESC, (c.status = 'APPROVED') DESC, c.proposed_at DESC, c.id DESC LIMIT 1";
 
     static final String CHECKS_SQL = "SELECT close_id, check_code, close_check_id, attempt, status, judged_by, evidence, disclosure_reason"
             + " FROM accounting.period_close_check WHERE close_id = ?";
