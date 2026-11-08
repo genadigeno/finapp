@@ -74,6 +74,8 @@ Versions are pinned in `gradle/libs.versions.toml` (the single source of truth) 
 | CycloneDX Gradle plugin | 3.4.1 | Produces the SBOM the dependency scan consumes |
 | gitleaks | v8.30.1 | Secret scanning; pinned by image digest in `infra/scripts/secret-scan.sh`, which CI calls |
 | Trivy | 0.74.0 | Dependency vulnerability scanning; pinned by image digest in CI |
+| Image builder base | `eclipse-temurin:21.0.13_9-jdk-noble` | Only extracts the boot jar's layers; pinned by digest in the `Dockerfile`'s `FROM` line, its one definition (`P15-TSK-003`) |
+| Image runtime base | `gcr.io/distroless/java21-debian13:nonroot` | No shell, no package manager, UID 65532; pinned by digest in the `Dockerfile`'s `FROM` line. `nonroot` is a floating tag, so its freshness is a newer build, not a release |
 
 Infrastructure versions appear in both `compose.yaml` and the version catalog. The
 `verifyInfrastructureVersions` build task fails if they drift, because local infrastructure
@@ -95,7 +97,7 @@ that breaks. Gradle upgrades must also update `distributionSha256Sum` from
 
 `CLAUDE.md` and the Definition of Done depend on checks actually running. A gate that is not
 automated is a gate that will be skipped, so every gate the DoD relies on runs on every
-change in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml), as four separate
+change in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml), as separate
 jobs so a failure names its own gate:
 
 | Job | Gate |
@@ -104,6 +106,7 @@ jobs so a failure names its own gate:
 | `migrations` | Migrations apply to an empty database, re-apply idempotently, and still match the repository (`flywayValidate`) |
 | `secret-scan` | No secret anywhere in git history — not just at the tip, because a secret committed and later removed is still disclosed. A **net**, not the control: gitleaks is an entropy-and-pattern detector and does not catch `password: hunter2`. The control for that is a build rule in the `build` job (ADR-0020) |
 | `dependency-scan` | No HIGH or CRITICAL known vulnerability in the resolved runtime dependency set, via a CycloneDX SBOM |
+| `image` | The application image (`P15-TSK-003`, C4): both bases pinned by digest; built twice from one commit, the boot jar the second time from source, and the jar's sha256, the image id and every layer digest identical; UID 65532, no `HEALTHCHECK`, no environment of its own, the OCI revision, source and version labels; the pinned distroless base plus the boot jar's entries and nothing else, no shell or package manager; within its 300 MiB budget; then run against compose's PostgreSQL and Kafka on loopback, read-only and with every capability dropped, until readiness reports `UP`. Pushes nothing. `infra/scripts/image-build.sh` and `image-readiness.sh`, the scripts a developer runs (`README.md` §5f) |
 
 **Dependency verification and locking** (`P0-TSK-039`, ADR-0025). Two files, two different
 controls, both enforced on every build:
@@ -130,7 +133,7 @@ two commands and a diff review, not a regeneration: `--write-verification-metada
 existing entries survive a narrow run — verified — which is what makes a targeted update safe.
 
 **Supply-chain pinning.** Every third-party action is pinned to a commit SHA and every
-scanner to an image digest, never to a mutable tag: a tag can be repointed by whoever
+scanner and base image to an image digest, never to a mutable tag: a tag can be repointed by whoever
 controls the source repository, a SHA cannot. This is the same reasoning that pins the
 Gradle distribution and wrapper jar by SHA-256. The number of third-party actions is
 deliberately kept small, which is why the scanners run as pinned containers rather than as
@@ -147,7 +150,8 @@ run the identical pinned image.
 ## Deployment (planned, Phase 15)
 
 *Planned by the Phase 14 → 15 transition (2026-11-07; ADR-0120…0125, `Proposed`; `PHASE_15_PLAN.md`); nothing of it is
-built.* The modular monolith deploys as the units it has: **`finapp-app`**, one minimal non-root image, a Kubernetes
+built* *(until 2026-11-08: the `finapp-app` image is built and asserted by CI's `image` job, `P15-TSK-003`, and pushed
+nowhere).* The modular monolith deploys as the units it has: **`finapp-app`**, one minimal non-root image, a Kubernetes
 Deployment of N ≥ 3 replicas each serving HTTP and running every leaderless schedule and consumer, and
 **`finapp-migrator`**, a Job per release running every module's migrations as `finapp_migrator` before the rollout.
 PostgreSQL and Kafka are managed outside the cluster. A public ingress and an internal operator ingress terminate TLS;

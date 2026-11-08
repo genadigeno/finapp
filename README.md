@@ -511,9 +511,64 @@ later one. Every subsequent assignment names two parties.
 An operator doing this is a privileged-access event in its own right, and Phase 15 owns the controls
 for that (`CURRENT_STATE.md` §Known Architectural Debt).
 
+---
+
+## 5f. Building the image
+
+The application ships as one container image, `finapp-app` (`P15-TSK-003`, owner decision C4). Build it with the
+script, which is also what CI's `image` job runs:
+
+```bash
+./infra/scripts/image-build.sh
+```
+
+It takes about four minutes, because it builds everything **twice**: the boot jar, the image, then the boot jar again
+from source with every task re-run, and the image again with no cache. It refuses the image unless:
+
+| Assertion | Read from |
+|---|---|
+| Both base images are pinned by digest | the `Dockerfile`'s `FROM` lines (`check-pinned-images.sh --offline`) |
+| The two builds are the same bytes: the jar's sha256, the image id and every layer digest | the jar, `docker image inspect` |
+| It runs as UID/GID `65532:65532`, with no `HEALTHCHECK` and no environment of its own | the built image's configuration |
+| It carries `org.opencontainers.image.revision`, `.source` and `.version` | the built image's labels |
+| Outside `/app` it is exactly the pinned distroless base; `/app` is exactly the boot jar's entries; no shell or package manager anywhere; `java` the only program on the `PATH` | `docker export` of the image and of the base, and the jar |
+| It is within its size budget, **300 MiB** of flattened filesystem (260.3 MiB measured on 2026-11-08: the base 184.7 MiB, the jar 75.6 MiB) | `docker export` |
+
+It leaves the image tagged `finapp-app:<commit>` (`<commit>-dirty` when your tree has uncommitted changes) and prints
+that name last. It pushes nothing.
+
+**Running it** against the local stack, the way CI does:
+
+```bash
+docker compose up -d postgres kafka --wait
+./gradlew flywayMigrate
+./infra/scripts/image-readiness.sh
+```
+
+The container shares the host's network (`--network host`), so the application's loopback-only defaults hold exactly
+as they do on your machine: the local database credential and plaintext Kafka are refused anywhere but loopback. It
+runs with a read-only root filesystem, `/tmp` in memory and every capability dropped, and the script waits for
+`/actuator/health/readiness` to answer `UP` on port 8080, then checks the running process is UID 65532. The actuator's
+port follows `P15-TSK-008`, which moves it to a management port (8081). The script never starts or stops compose, so it
+cannot tear down your own stack; if your PostgreSQL is published on another loopback port, export `FINAPP_DB_URL` and it
+is passed through.
+
+**What is in the image, and why.** A JDK builder stage only runs the Spring Boot jar's own extractor; the jar is built
+by Gradle outside the image, so no build tool and no source enter any stage, and the build context is the boot jar alone
+(`.dockerignore` is an allow-list). The runtime is distroless Java 21 `nonroot`: no shell, no package manager. The jar's
+four layers are copied least-changing first (dependencies, loader, snapshot dependencies, application), so a code change
+ships one layer. The JVM sizes its heap from the container's limit (`-XX:MaxRAMPercentage=75.0`) and exits on an
+out-of-memory error rather than limping on; further flags go in `JDK_JAVA_OPTIONS`. There is no `HEALTHCHECK`:
+Kubernetes probes the actuator, and the image has no shell to run one. The only configuration inside is
+`application.yaml`'s defaults, which refuse to start against anything off loopback.
+
+**Updating a base.** The two `FROM` lines are the bases' only pins, `tag@sha256:digest`. Dependabot proposes the next
+tag and digest weekly; `check-pinned-images.sh` reports a moved tag or a newer release (§7b). Re-resolve a digest with
+`docker buildx imagetools inspect <image>:<tag>`.
+
 ## 6. What CI checks
 
-Four independent jobs, so a failure names its own gate
+Independent jobs, so a failure names its own gate
 ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
 
 | Job | Gate |
@@ -523,6 +578,7 @@ Four independent jobs, so a failure names its own gate
 | `secret-scan` | No secret anywhere in git history — not just at the tip |
 | | *and in `build`:* no credential literal in any committed configuration file |
 | `dependency-scan` | No HIGH or CRITICAL known vulnerability in the resolved dependency set |
+| `image` | The application image built twice and identical, non-root, the base plus the jar and nothing else, within budget, and ready against compose's PostgreSQL and Kafka (§5f) |
 
 The `migrations` job starts PostgreSQL from this same `compose.yaml`, so CI and your machine
 run the identical pinned image.
@@ -543,7 +599,7 @@ misses `password: hunter2`, which is exactly what a human commits. Do **not** co
 here to test the scan — history is scanned, so it would stay red for ever. Use a throwaway clone;
 the procedure is in [`SECRET_MANAGEMENT.md`](docs/architecture/SECRET_MANAGEMENT.md) §6.
 
-**The pipeline runs.** A remote was added on 2026-09-04 (`P0-TSK-042`) and the four jobs execute on
+**The pipeline runs.** A remote was added on 2026-09-04 (`P0-TSK-042`) and the jobs execute on
 every push to `master`. The first run failed, which is the gate working: it found two defects that
 could not be reached from a Windows machine at all — `gradlew` committed without its executable
 bit, and verification metadata that was complete only for a *warm* dependency cache. Both are
@@ -635,10 +691,11 @@ of them reaches all of it (ADR-0026):
 | Four GitHub Actions (commit SHA) | `.github/workflows/ci.yml` | Dependabot, weekly - a pull request |
 | Library versions | `gradle/libs.versions.toml` | Dependabot, weekly - the PR **will fail its build** until you run §7a's regeneration |
 | Two scanner images (digest) | `infra/scanner-pins.sh` | `infra/scripts/check-pinned-images.sh`, weekly in CI |
+| Two base images of the application image (tag and digest) | the `Dockerfile`'s `FROM` lines | Dependabot, weekly - a pull request; and `check-pinned-images.sh`, weekly in CI, which also refuses an unpinned base on every build of the image (§5f) |
 | Infrastructure images | `compose.yaml` + the catalog | `verifyInfrastructureVersions` fails the build on drift |
 | Gradle distribution | `gradle-wrapper.properties` | Manual, with the checksum from `services.gradle.org` |
 
-Check the scanner pins yourself at any time:
+Check the scanner and base pins yourself at any time:
 
 ```bash
 ./infra/scripts/check-pinned-images.sh
@@ -648,7 +705,11 @@ It distinguishes two findings, and the distinction matters:
 
 - **the tag moved** - the digest no longer matches the version it claims. The pin held. Find out
   why the tag changed *before* updating it;
-- **a newer release exists** - ordinary rot.
+- **a newer release exists** - ordinary rot. For distroless's `nonroot`, a floating tag rebuilt on purpose, a new
+  digest behind it is reported as this, a newer build, never as a moved tag.
+
+`--offline` reads only the `Dockerfile`'s pins and refuses one that is not `repository:tag@sha256:digest`; the image
+build runs it first.
 
 To update a scanner: bump `VERSION` in `infra/scanner-pins.sh`, re-resolve the digest with
 `docker buildx imagetools inspect <repository>:<version>`, and re-run the check.
