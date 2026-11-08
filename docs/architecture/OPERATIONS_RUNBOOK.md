@@ -1866,6 +1866,8 @@ row.)*
 
 *(Added 2026-11-08 by `P15-TSK-024`: §11.8 below is written too, its instance-down and stale-gauge parts; the paragraph above holds for the rest of that row and every other.)*
 
+*(Added 2026-11-08 by `P15-TSK-027`: §11.1.1 below is written, the handler-set steps of rows 11.1 and 11.3; not yet rehearsed.)*
+
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
 
 *(Written by `P15-TSK-008`, 2026-11-08, from the code and its tests; **not yet rehearsed** - `P15-TSK-012` rehearses it
@@ -1892,6 +1894,50 @@ its records redeliver into the dedupe. It is a signal that a tick or a batch ran
 own latency metrics explain. Steps 1-6 together take at most 57 s; the grace period covers the `preStop` pause, those
 57 s and step 7 (`P15-TSK-009`). A pod still running when the grace ends is killed - the same as any kill, and as
 correct.
+
+### 11.1.1 A release that changes the handler set, or an event's contract (`P15-TSK-027`)
+
+*(Written by `P15-TSK-027`, 2026-11-08, from the tests; **not yet rehearsed** - `P15-TSK-012` rehearses the handler-window
+case on `kind`. The audited replay it names is `P15-TSK-028`'s door.)*
+
+The build refuses a release whose events a consumer of the last release cannot read, and a release that changes who
+handles what with no recorded way through (`EVENT_ARCHITECTURE.md` §Schema evolution and §Adding a handler). What it
+cannot do is run the step, so a release with an entry in `docs/events/release-record.yaml` has these to perform.
+
+**A handler added to an existing consumer group** (the record's `replay`):
+
+1. Note the instant the rolling update starts.
+2. Let the rollout complete: every replica on N. While it runs, an N − 1 replica acknowledges records of the type unseen.
+3. Note the instant it completes. Those two instants are the rollout window.
+4. Replay that one event type over that window through the audited replay. The inbox deduplicates what N already applied,
+   so nothing is applied twice. The operator's reason names the release.
+5. Check that the replay's audit record names the type and the window.
+
+**A rollback** after step 2 has the same exposure from the other side: every record of the type the rollback window
+carries is acknowledged unseen by N − 1. After the re-roll, replay the type again over the rollback window. A window older
+than the inbox's dedupe window is refused by the replay itself.
+
+**A handler removed** (the record's `replay` over `[rollback]`): nothing to do unless the release is rolled back. If it
+is, after the rollback replay the type over the window the release ran, because N acknowledged those records unseen.
+
+**A handler in a new group** (the record's `newGroup`): set the group's offsets before any replica of the release starts,
+to the choice the record names (`latest`, or the instant). The consumers' `auto.offset.reset` is `earliest`, so a group
+that starts with no committed offset reads the whole retention. Only a handler recorded `naturallyIdempotent: true` may
+do that. Set them with the broker's consumer-group tooling, before the group has any member.
+
+**A new `eventVersion` of a type a handler consumes** (the record's `versions`): the consumer must be running on every
+replica, a release earlier, before the producer ships. Never roll the consumer back past that release while the new
+version is being written.
+
+**At every release, roll the catalogues forward.** After the release is cut:
+
+1. Copy `app/build/event-catalogue/event-catalogue.yaml` and `handler-catalogue.yaml` over the files of the same name in
+   `docs/events/`. `EventCatalogueTest` and `HandlerSetCatalogueTest` leave them there on every run. Never write them by
+   hand: the build's comparison is only as good as this file.
+2. Set each file's `release:` line to the release's identity.
+3. Empty `handlers:`, `versions:` and `retired:` in `docs/events/release-record.yaml`.
+4. Review the diff as a contract change, not as generated output. A version the code stopped writing stays in the
+   catalogue on purpose.
 
 ### 11.6 Broker outage and consumer lag
 
@@ -2109,3 +2155,18 @@ is not deleted costs storage only, so pausing is always safe.
 
 **Never** delete from these tables by hand to relieve space: a dedupe record removed early makes the next redelivery of that
 message a second effect (`INV-IDEM-04`). The application role cannot, and an operator with the migrator's credential must not.
+
+## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
+
+A signed callback no longer concludes anything by itself on the payment, instant, FX or corridor doors. Its evidence and dedupe
+commit, then the door asks the provider, and the delivery is acknowledged after that one inquiry. KYC's callbacks are outside
+this rule. So a callback's outcome now waits on one inquiry, bounded by that provider's timeout.
+
+| You see | It means | Do |
+|---|---|---|
+| A payment stays `*_UNKNOWN` or `AWAITING_PAYER` after its callback arrived | The inquiry failed or had no answer; nothing was adopted | Nothing. The resolution sweep asks again. If it persists, check the provider's inquiry endpoint |
+| `finapp.payments.webhook{outcome="unmappable"}` rising, with WARN lines saying the provider "has denied a signed callback for longer than its bound" | A signed callback the provider's own inquiry still denies, past that kind's `refute-after` bound | Treat as a possible **webhook key compromise** until shown otherwise, then rotate the key under `SECRET_MANAGEMENT.md`. Nothing has moved, and no reversal is needed on this signal alone |
+| The same series rising, with WARN lines saying "we cannot read" | The provider answered and the adapter cannot read it: a wire change. Nothing moves and each question stays open | Fix the adapter. The hints then conclude on their own |
+| WARN "contradicts the row" | The provider's answer disagrees with a concluded payment | A break: the row stands, the answer rests as evidence, and reconciliation will type it from settlement. Investigate with the provider |
+| `payments.callback_hint` rows with `concluded_at IS NULL` growing | Clearing, dispute or parking inquiries are not being answered | Check the provider's inquiry endpoints. The sweep's wait doubles from `finapp.payments.callback-hint.retry-after` (1 min) to `.retry-cap` (6 h). A denial is believed only past `.refute-after` (disputes 2 h, clearing 30 min, executions 15 min) |
+| WARN "never answered within their bound and are abandoned" | A hint passed `finapp.payments.callback-hint.give-up-after` (7 days) | The callback's evidence stands and settlement reconciliation is the backstop; find the notice in `provider_evidence` and reconcile it |

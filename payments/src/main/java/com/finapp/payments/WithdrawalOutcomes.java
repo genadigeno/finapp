@@ -86,7 +86,6 @@ public final class WithdrawalOutcomes {
     static final String RELEASED_EVENT_TYPE = "payments.WithdrawalReleased";
     static final String AGGREGATE_TYPE = "withdrawal";
     static final String PRODUCER = "payments";
-    static final int EVENT_VERSION = 1;
 
     /** The posting key's prefix — the backlog's own spelling. */
     public static final String POSTING_KEY_PREFIX = "wallet-withdrawal:";
@@ -544,7 +543,7 @@ public final class WithdrawalOutcomes {
                 new EventEnvelope(
                         EventId.next(ids),
                         eventType,
-                        EVENT_VERSION,
+                        PaymentEventVersions.of(eventType),
                         EventEnvelope.CURRENT_SCHEMA_VERSION,
                         withdrawal.id(),
                         AGGREGATE_TYPE,

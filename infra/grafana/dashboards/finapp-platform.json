@@ -780,7 +780,7 @@
     {
       "type": "timeseries",
       "title": "Webhook deliveries by outcome",
-      "description": "finapp.payments.webhook (P5-TSK-017): what became of each delivery at the door. processed applied an effect, duplicate was absorbed by the inbox (INV-IDEM-04), refused failed authentication or the evidence bound, unmappable was authentic but named no operation we minted. A rise in refused is somebody probing the door; a rise in unmappable is an integration break.",
+      "description": "finapp.payments.webhook (P5-TSK-017): what became of each delivery at the door. processed was handled and its inquiry asked (P15-TSK-036: only the provider's answer moves anything), duplicate was absorbed by the inbox (INV-IDEM-04), refused failed authentication or the evidence bound, unmappable was authentic but named no operation we minted, could not be read, or was denied or contradicted by the provider's own inquiry. A rise in refused is somebody probing the door; a rise in unmappable is an integration break, or a stolen webhook key.",
       "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
       "gridPos": { "h": 7, "w": 8, "x": 16, "y": 83 },
       "targets": [

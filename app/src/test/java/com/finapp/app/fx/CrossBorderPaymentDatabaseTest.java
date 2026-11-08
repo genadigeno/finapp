@@ -591,7 +591,7 @@ class CrossBorderPaymentDatabaseTest {
         WebhookSignature signature = new WebhookSignature(key, Duration.ofMinutes(5), java.time.Clock.systemUTC());
         com.finapp.app.payments.CorridorCallbackService otherDoor = new com.finapp.app.payments.CorridorCallbackService(
                 signature, "corridor-sim-b", outboundCreditStore, providerEvidenceStore, inboxConsumer,
-                outboundCreditResolution, paymentTransactionRunner, objectMapper, java.time.Clock.systemUTC());
+                outboundCreditResolution::resolve, paymentTransactionRunner, objectMapper, java.time.Clock.systemUTC());
         byte[] body = ("{\"eventId\":\"xcb-other-" + UUID.randomUUID() + "\",\"endToEndRef\":\"" + reference
                 + "\",\"status\":\"accepted\"}").getBytes(StandardCharsets.UTF_8);
         String timestamp = Long.toString(Instant.now().getEpochSecond());
@@ -604,7 +604,7 @@ class CrossBorderPaymentDatabaseTest {
         // The control: the credit's own rail's door, the same shape, files the evidence and hints.
         com.finapp.app.payments.CorridorCallbackService ownDoor = new com.finapp.app.payments.CorridorCallbackService(
                 signature, "corridor-sim-a", outboundCreditStore, providerEvidenceStore, inboxConsumer,
-                outboundCreditResolution, paymentTransactionRunner, objectMapper, java.time.Clock.systemUTC());
+                outboundCreditResolution::resolve, paymentTransactionRunner, objectMapper, java.time.Clock.systemUTC());
         byte[] own = ("{\"eventId\":\"xcb-own-" + UUID.randomUUID() + "\",\"endToEndRef\":\"" + reference
                 + "\",\"status\":\"accepted\"}").getBytes(StandardCharsets.UTF_8);
         assertThat(delivered(ownDoor, own, timestamp, signature))

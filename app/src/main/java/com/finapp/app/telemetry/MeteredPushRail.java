@@ -114,6 +114,16 @@ public final class MeteredPushRail implements PushRail {
         }
     }
 
+    @Override
+    public com.finapp.payments.ExecutionAnswer inquireExecution(com.finapp.payments.ProviderReference schemeReference) {
+        Instant started = Instant.now(clock);
+        try {
+            return delegate.inquireExecution(schemeReference);
+        } finally {
+            record(PaymentMeters.Operation.QUERY, started);
+        }
+    }
+
     private void record(PaymentMeters.Operation operation, Instant started) {
         meters.call(
                 delegate.schemeName(),

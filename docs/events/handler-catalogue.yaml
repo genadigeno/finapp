@@ -1,0 +1,31 @@
+# The handler set of the last release (ADR-0122 decision 6; EVENT_ARCHITECTURE.md, Adding a handler).
+# Generated: HandlerSetCatalogueTest leaves the next one under app/build/event-catalogue/. Never edit by hand.
+release: "the P15-TSK-027 baseline: master 8100cac9, before any release was cut"
+handlers:
+  - {group: "finapp.bnpl", topic: "finapp.checkout", eventType: "checkout.CheckoutSessionExpired", consumerName: "bnpl.originationSessionHint"}
+  - {group: "finapp.bnpl", topic: "finapp.credit", eventType: "credit.CreditDecisionRecorded", consumerName: "bnpl.originationDecisionHint"}
+  - {group: "finapp.bnpl", topic: "finapp.credit", eventType: "credit.CreditDecisionRequestClosed", consumerName: "bnpl.originationClosureHint"}
+  - {group: "finapp.kyc", topic: "finapp.party", eventType: "party.CustomerOpened", consumerName: "kyc.caseOpening"}
+  - {group: "finapp.lending", topic: "finapp.credit", eventType: "credit.CreditDecisionRecorded", consumerName: "lending.originationDecisionHint"}
+  - {group: "finapp.lending", topic: "finapp.credit", eventType: "credit.CreditDecisionRequestClosed", consumerName: "lending.originationClosureHint"}
+  - {group: "finapp.risk", topic: "finapp.accounts", eventType: "accounts.AccountOpened", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.bnpl", eventType: "bnpl.BnplApplicationSubmitted", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.bnpl", eventType: "bnpl.BnplDefaulted", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.bnpl", eventType: "bnpl.BnplDelinquencyChanged", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.crossborder", eventType: "crossborder.BeneficiaryActivated", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.crossborder", eventType: "crossborder.BeneficiaryBlocked", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.crossborder", eventType: "crossborder.BeneficiaryRegistered", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.crossborder", eventType: "crossborder.CrossBorderPaymentDelivered", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.identity", eventType: "identity.CredentialChanged", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.identity", eventType: "identity.IdentitySuspended", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.identity", eventType: "identity.RecoveryCompleted", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.identity", eventType: "identity.RecoveryInitiated", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.lending", eventType: "lending.LoanDefaulted", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.lending", eventType: "lending.LoanDelinquencyChanged", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.merchant", eventType: "merchant.MerchantOnboarded", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.payments", eventType: "payments.ChargebackReceived", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.payments", eventType: "payments.PaymentCaptured", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.payments", eventType: "payments.PaymentExecuted", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.payments", eventType: "payments.RefundCompleted", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.payments", eventType: "payments.WithdrawalCompleted", consumerName: "risk.signals"}
+  - {group: "finapp.risk", topic: "finapp.transfers", eventType: "transfers.TransferCompleted", consumerName: "risk.signals"}

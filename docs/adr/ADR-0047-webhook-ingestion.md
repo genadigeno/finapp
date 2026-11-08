@@ -95,3 +95,9 @@ and dedupe rows — every question is answered by the machines it drives.
 - `P5-TSK-012` implements ingestion; `P5-TSK-013` the conditional transitions and the
   out-of-order/duplicate/before-sync demonstrations; `P5-TSK-002` the credential
   confinement generalisation this consumes.
+
+## Amended (`P15-TSK-036`, 2026-11-08)
+
+The card door's last step is now ADR-0083's: inquire, then apply what the inquiry answers. Steps 1 to 3 (authenticate,
+evidence, dedupe) stand unchanged and now commit alone. Where this ADR describes the webhook applying its mapped edge, or
+effect, evidence and dedupe committing together, read it as what Phase 5 built; the instant door follows the same rule.

@@ -56,7 +56,7 @@ some to answer the brief would break ADR-0001.
    manifest. Decision 3: the actuator answers on 8081 only, bound to loopback unless `FINAPP_MANAGEMENT_ADDRESS` names
    the pod's address. Decision 4, as Spring's own phases run it on a real context (`ShutdownOrderTest`): readiness turns
    `REFUSING_TRAFFIC` before any phase stops; the API port drains (`server.shutdown: graceful`, within
-   `spring.lifecycle.timeout-per-shutdown-phase`, 30 s); the 32 schedules (34 since `P15-TSK-029`, 2026-11-08) stop claiming at once and drain in parallel,
+   `spring.lifecycle.timeout-per-shutdown-phase`, 30 s); the 32 schedules (35 since `P15-TSK-029`, 2026-11-08) stop claiming at once and drain in parallel,
    each within 10 s and an interrupt's 2 s; the consumers take no new batch, acknowledge the one they hold and leave
    their groups, within 10 s and 2 s; the management server closes, then the web server; the gauge refresher
    lets its read end, within 3 s (the accounting gauge reader until `P15-TSK-024` moved every gauge onto `platform`'s

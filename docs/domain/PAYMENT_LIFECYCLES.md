@@ -245,7 +245,7 @@ Three resolvers, all conditional, all idempotent, racing harmlessly:
    converging with any client retry exactly as the surface's own chain does. Phase 5
    resolved refunds by webhook alone and left an authorization resolved by query or webhook
    at `AUTHORIZED`, with nothing to capture it.
-2. **A webhook** — authenticated (`INV-PAY-01`), deduplicated, applied through the same
+2. **A webhook** *(since `P15-TSK-036`, 2026-11-08: a hint - its authenticated inquiry is the resolver, ADR-0083)* — authenticated (`INV-PAY-01`), deduplicated, applied through the same
    conditional edges. A webhook for an already-terminal attempt is evidence, never a
    transition.
 3. **Nothing** — an `UNKNOWN` that stays unresolved is a published, aging, alertable fact
