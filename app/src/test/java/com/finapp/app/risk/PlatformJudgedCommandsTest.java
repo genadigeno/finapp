@@ -58,7 +58,7 @@ class PlatformJudgedCommandsTest {
     }
 
     @Test
-    @DisplayName("an intent's day is its confirmation's: the two statements enter through the confirmation edges V035 indexes, never the intent's own id - so a late-confirmed intent is counted on its confirmation's day (P15-TSK-025)")
+    @DisplayName("an intent's day is its confirmation's: the two statements enter through the confirmation edges V037 indexes, never the intent's own id - so a late-confirmed intent is counted on its confirmation's day (P15-TSK-025)")
     void anIntentIsDatedByItsConfirmation() {
         for (String sql : List.of(PlatformJudgedCommands.CARD_PAYMENTS, PlatformJudgedCommands.WALLET_PAYMENTS)) {
             assertThat(sql).startsWith("SELECT i.id FROM payments.payment_intent_event e")
@@ -67,7 +67,7 @@ class PlatformJudgedCommandsTest {
                     .doesNotContain("i.id >= ?").doesNotContain("i.status IN");
         }
         assertThat(com.finapp.platform.testing.RepositoryPaths.read(
-                        "payments/src/main/resources/db/migration/payments/V035__a_payment_intent_is_readable_by_its_confirmation.sql"))
+                        "payments/src/main/resources/db/migration/payments/V037__a_payment_intent_is_readable_by_its_confirmation.sql"))
                 .as("the index covers exactly the statements' edges")
                 .contains("ON payments.payment_intent_event (occurred_at)")
                 .contains("WHERE from_status = 'REQUIRES_CONFIRMATION' AND to_status IN ('PROCESSING', 'FAILED')");

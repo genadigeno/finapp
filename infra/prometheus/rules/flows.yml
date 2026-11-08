@@ -66,6 +66,16 @@ groups:
         annotations:
           summary: "A payment operation has been unknown too long"
           description: "The oldest unknown payment operation has waited over 15 minutes for an answer. See OPERATIONS_RUNBOOK.md section 11.22."
+      - alert: PaymentWebhookUnmappable
+        # Aggregation: sum() - counters are per instance
+        # An authentic delivery naming no operation we minted, or unreadable (ADR-0047 section 5): an integration break, since the provider is telling us about something we cannot place.
+        expr: sum(increase(finapp_payments_webhook_total{outcome="unmappable"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A provider webhook could not be mapped"
+          description: "An authentic webhook delivery named no operation this platform minted, or could not be read. See OPERATIONS_RUNBOOK.md section 11.22."
       - alert: WithdrawalUnknownAged
         # Aggregation: max() - every instance reads the same table; a NaN instance is ignored
         expr: max(finapp_payments_withdrawal_unknown_age) > 900

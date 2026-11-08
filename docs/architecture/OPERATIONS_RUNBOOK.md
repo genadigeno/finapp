@@ -2078,7 +2078,7 @@ A **fast** alert pages: errors over 1 hour and over 5 minutes exceed 14.4 times 
 
 **`PlatformGaugesUnreadable` (ticket), `PlatformSeriesAbsent` (ticket).** A platform gauge has been NaN on an instance for 15 minutes, or a series the SLO and platform rules read has gone from every instance, so those rules are blind. Read that instance's gauge refresher (`GaugesStale`, §11.8) and the scrape.
 
-### 11.22 The critical flows - `AuthenticationRefusalsSpike`, `AccountLockoutSpike`, `LedgerPostingsRefused`, `CustomerWalletNegative`, `PaymentUnknownAged`, `WithdrawalUnknownAged`, `PaymentWebhookRefusalsSpike`, `TransferFailureSpike`, `TransferKeyConflict`, `CheckoutExpiryRising`, `MerchantPayoutUnknownAged`, `KycReviewQueueBacklog`, `ConsentRoutesFailing`, `FlowGaugesUnreadable`, `FlowSeriesAbsent`
+### 11.22 The critical flows - `AuthenticationRefusalsSpike`, `AccountLockoutSpike`, `LedgerPostingsRefused`, `CustomerWalletNegative`, `PaymentUnknownAged`, `WithdrawalUnknownAged`, `PaymentWebhookRefusalsSpike`, `PaymentWebhookUnmappable`, `TransferFailureSpike`, `TransferKeyConflict`, `CheckoutExpiryRising`, `MerchantPayoutUnknownAged`, `KycReviewQueueBacklog`, `ConsentRoutesFailing`, `FlowGaugesUnreadable`, `FlowSeriesAbsent`
 
 *(Written by `P15-TSK-025`, 2026-11-08, from `infra/prometheus/rules/flows.yml`. **Not yet rehearsed** (`P15-TSK-032`). Thresholds are reference values.)*
 
@@ -2091,6 +2091,7 @@ A **fast** alert pages: errors over 1 hour and over 5 minutes exceed 14.4 times 
 | `PaymentUnknownAged` (page) | An operation unknown for over 15 minutes | The provider has not answered. Its resolution sweep is the path; never decide by hand. If nothing is sweeping (`finapp.payments.sweeper.enabled` false on every instance), restore that first | payments |
 | `WithdrawalUnknownAged` (page) | A withdrawal unanswered for over 15 minutes | As above, by the withdrawal sweep. A person's claw-back is a recorded door, never an edit | payments |
 | `PaymentWebhookRefusalsSpike` (ticket) | Over 50 webhook deliveries refused in 15 minutes | Forged traffic, or a provider rotating its signing secret out of order. Spends no provider-callback budget (`docs/architecture/SLOS.md` section 2) | payments |
+| `PaymentWebhookUnmappable` (ticket) | An authentic delivery named no operation this platform minted, or could not be read | An integration break: nothing was applied and nothing was lost. Read the delivery in the audit trail (ADR-0047 section 5). A rise after a provider release is a change on their side | payments |
 | `TransferFailureSpike` (ticket) | A fifth of judged transfers failed | Each `failed` is a committed refusal and moved nothing. Read the failure reasons | transfers |
 | `TransferKeyConflict` (ticket) | A key reused with a different body (`INV-IDEM-03`) | A security signal: refused and recorded. Look for one client doing it repeatedly in the audit trail | transfers |
 | `CheckoutExpiryRising` (ticket) | Over half of the last hour's sessions expired | A provider slow to capture, or an offer window too short for the traffic. `finapp.checkout.conversion.age` separates them | checkout |

@@ -241,6 +241,44 @@ tests:
         alertname: MerchantPayoutUnknownAged
         exp_alerts: []
 
+  # PaymentWebhookUnmappable: one unmappable delivery on instance b tickets, the sum over the instances.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_webhook_total{job="finapp", instance="a:8081", outcome="unmappable"}'
+        values: '0x30'
+      - series: 'finapp_payments_webhook_total{job="finapp", instance="b:8081", outcome="unmappable"}'
+        values: '0 0 0 1x27'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: PaymentWebhookUnmappable
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: PaymentWebhookUnmappable
+        exp_alerts:
+          - exp_labels:
+              owner: payments
+              severity: ticket
+            exp_annotations:
+              summary: "A provider webhook could not be mapped"
+              description: "An authentic webhook delivery named no operation this platform minted, or could not be read. See OPERATIONS_RUNBOOK.md section 11.22."
+      - eval_time: 25m
+        alertname: PaymentWebhookUnmappable
+        exp_alerts: []
+
+  # PaymentWebhookUnmappable: processed deliveries and forged ones are not it.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_webhook_total{job="finapp", instance="a:8081", outcome="processed"}'
+        values: '0+50x30'
+      - series: 'finapp_payments_webhook_total{job="finapp", instance="b:8081", outcome="refused"}'
+        values: '0+5x30'
+      - series: 'finapp_payments_webhook_total{job="finapp", instance="b:8081", outcome="unmappable"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: PaymentWebhookUnmappable
+        exp_alerts: []
+
   # PaymentWebhookRefusalsSpike: refusals over both instances.
   - interval: 1m
     input_series:

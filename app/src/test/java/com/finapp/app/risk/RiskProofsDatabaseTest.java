@@ -387,7 +387,7 @@ class RiskProofsDatabaseTest {
 
     /** A transfer of {@code party}'s judged and sealed by the composition's T-eval, counted in its windows. */
     @Test
-    @DisplayName("an intent created on D and confirmed on D + 3 is counted on D + 3, never on D - the census by its confirmation, payments V035 (P15-TSK-025, owed C14)")
+    @DisplayName("an intent created on D and confirmed on D + 3 is counted on D + 3, never on D - the census by its confirmation, payments V037 (P15-TSK-025, owed C14)")
     void aLateConfirmedIntentIsCountedOnItsConfirmationsDay() throws Exception {
         java.time.Clock clock = java.time.Clock.systemUTC();
         Instant confirmed = clock.instant();

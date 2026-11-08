@@ -50,7 +50,7 @@ import java.util.UUID;
  * judgement's day. A payment intent is minted at its <em>creation</em> and judged at its <em>confirmation</em>, which may
  * come any number of days later (an intent has no expiry). So {@code CARD_PAYMENT} and {@code WALLET_PAYMENT} enter a day
  * through {@code payment_intent_event}'s confirmation edges - {@code REQUIRES_CONFIRMATION} to {@code PROCESSING}, or to
- * {@code FAILED} when risk refused it - over payments {@code V035}'s partial index on {@code occurred_at}. What that means:
+ * {@code FAILED} when risk refused it - over payments {@code V037}'s partial index on {@code occurred_at}. What that means:
  *
  * <ul>
  *   <li>an intent confirmed on {@code D} without its seal is named {@code missing} by the census of {@code D}, whenever it
@@ -74,7 +74,7 @@ public final class PlatformJudgedCommands implements JudgedCommands {
 
     static final String WITHDRAWALS_RECORDED = "SELECT id FROM payments.withdrawal WHERE id = ANY (?)";
 
-    /** The confirmation edges: what payments {@code V035}'s partial index covers, written out once. */
+    /** The confirmation edges: what payments {@code V037}'s partial index covers, written out once. */
     private static final String CONFIRMED_ON_THE_DAY = "e.occurred_at >= ? AND e.occurred_at < ?"
             + " AND e.from_status = 'REQUIRES_CONFIRMATION' AND e.to_status IN ('PROCESSING', 'FAILED')";
 
