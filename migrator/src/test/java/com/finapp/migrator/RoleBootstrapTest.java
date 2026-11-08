@@ -4,8 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -15,9 +18,9 @@ import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.postgresql.util.PasswordUtil;
 
 /**
  * The one-time bootstrap step gives a deployed database the local script's roles and is never the migration Job
@@ -91,10 +94,11 @@ class RoleBootstrapTest {
     @Test
     @DisplayName("the statement carries the SCRAM verifier and never the password")
     void thePasswordNeverReachesTheServer() {
-        String verifier = PasswordUtil.encodeScramSha256("one-long-throwaway".toCharArray());
-        String statement = RoleBootstrap.createStatement(RoleBootstrap.ROLES.get(0), verifier);
-        assertThat(verifier).startsWith("SCRAM-SHA-256$");
-        assertThat(statement).contains(verifier).doesNotContain("one-long-throwaway").startsWith("CREATE ROLE finapp_migrator LOGIN");
+        String statement = RoleBootstrap.createStatement(RoleBootstrap.ROLES.get(0), "one-long-throwaway");
+        assertThat(statement)
+                .startsWith("CREATE ROLE finapp_migrator LOGIN")
+                .contains("PASSWORD 'SCRAM-SHA-256$4096:")
+                .doesNotContain("one-long-throwaway");
     }
 
     @Test
@@ -129,10 +133,17 @@ class RoleBootstrapTest {
 
     @Test
     @DisplayName("the migrator never reads the master credential, and the image's entrypoint is the migrator")
-    void theBootstrapIsNeverPartOfTheJob() {
-        for (String file : List.of("MigratorMain", "MigratorEnvironment", "MigrationPlan", "MigrationRun", "ConnectedRole")) {
-            assertThat(RepositoryFiles.read("migrator/src/main/java/com/finapp/migrator/" + file + ".java"))
-                    .as("%s must not reach the master user's credential", file)
+    void theBootstrapIsNeverPartOfTheJob() throws IOException {
+        List<Path> sources;
+        try (Stream<Path> files = Files.walk(RepositoryFiles.root().resolve("migrator/src/main/java"))) {
+            sources = files.filter(file -> file.toString().endsWith(".java"))
+                    .filter(file -> !file.getFileName().toString().equals("RoleBootstrapMain.java"))
+                    .toList();
+        }
+        assertThat(sources).as("every source of the module but the step's own entrypoint was read").hasSizeGreaterThanOrEqualTo(8);
+        for (Path source : sources) {
+            assertThat(RepositoryFiles.read(source))
+                    .as("%s must not reach the master user's credential", source.getFileName())
                     .doesNotContain("FINAPP_DB_MASTER");
         }
         assertThat(RepositoryFiles.read("Dockerfile"))

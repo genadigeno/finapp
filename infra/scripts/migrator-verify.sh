@@ -31,6 +31,8 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$ROOT"
 
 RACERS=${MIGRATOR_VERIFY_RACERS:-2}
+# The Job contract's memory limit (DATA_MIGRATIONS.md section 2.1): every run below is under it, so the figure is measured.
+MIGRATOR_MEMORY=512m
 # 5 attempts x (3 s lock_timeout) + 4 x 5 s apart, plus a JVM's start and the catalogue reads, with room for a loaded runner.
 LOCK_BOUND_SECONDS=120
 
@@ -97,8 +99,10 @@ PORT=$(dock port "$PG" 5432/tcp | head -1 | sed 's/.*://' | tr -d '\r')
 sql() {
     db=$1
     shift
-    dock exec --env PGPASSWORD="$POSTGRES_PASSWORD" "$PG" \
-        psql -h 127.0.0.1 -U postgres -d "$db" -v ON_ERROR_STOP=1 -AtX -c "$*" | tr -d '\r'
+    # Through a variable, not a pipe: a pipeline's status is its last command's, and this one's failures must be seen.
+    answer=$(dock exec --env PGPASSWORD="$POSTGRES_PASSWORD" "$PG" \
+        psql -h 127.0.0.1 -U postgres -d "$db" -v ON_ERROR_STOP=1 -AtX -c "$*") || return $?
+    [ -z "$answer" ] || printf '%s\n' "$answer" | tr -d '\r'
 }
 
 waited=0
@@ -128,20 +132,24 @@ migrator() {
     db=$1
     shift
     dock run --rm --network "container:$PG" --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges \
-        --env FINAPP_DB_URL="$(url "$db")" --env FINAPP_DB_MIGRATOR_PASSWORD "$@" "$IMAGE"
+        --memory "$MIGRATOR_MEMORY" --env FINAPP_DB_URL="$(url "$db")" --env FINAPP_DB_MIGRATOR_PASSWORD "$@" "$IMAGE"
 }
 
+# expect_exit <wanted> <got> <what> [log]
 expect_exit() {
     wanted=$1
     got=$2
     what=$3
-    [ "$got" = "$wanted" ] || fail "$what: exit $got, not $wanted"
+    if [ "$got" != "$wanted" ]; then
+        [ "$#" -lt 4 ] || tail -40 "$4" >&2
+        fail "$what: exit $got, not $wanted"
+    fi
 }
 
 echo "== the bootstrap"
 code=0
 bootstrap finapp_build > "$WORK/bootstrap.log" 2>&1 || code=$?
-expect_exit 0 "$code" "the first bootstrap"
+expect_exit 0 "$code" "the first bootstrap" "$WORK/bootstrap.log"
 grep -q 'role=finapp_migrator created' "$WORK/bootstrap.log" || fail "the bootstrap did not create the migrator's role"
 grep -q 'role=finapp_app created' "$WORK/bootstrap.log" || fail "the bootstrap did not create the application's role"
 grep -q 'role=finapp_reporting created' "$WORK/bootstrap.log" || fail "the bootstrap did not create the reporting role"
@@ -158,17 +166,17 @@ grants=$(sql finapp_build "SELECT has_database_privilege('finapp_migrator', curr
 [ "$grants" = "t|t|t|f|f|0" ] || fail "the database's grants are not the local script's: $grants"
 code=0
 bootstrap finapp_build > "$WORK/bootstrap2.log" 2>&1 || code=$?
-expect_exit 0 "$code" "the second bootstrap"
+expect_exit 0 "$code" "the second bootstrap" "$WORK/bootstrap2.log"
 [ "$(grep -c 'present, unprivileged, unchanged' "$WORK/bootstrap2.log")" = 3 ] || fail "the second bootstrap changed something"
 sql postgres 'ALTER ROLE finapp_reporting CREATEDB' >/dev/null
 code=0
 bootstrap finapp_build > "$WORK/bootstrap3.log" 2>&1 || code=$?
-expect_exit 12 "$code" "a bootstrap finding a role with a right it must not hold"
+expect_exit 12 "$code" "a bootstrap finding a role with a right it must not hold" "$WORK/bootstrap3.log"
 sql postgres 'ALTER ROLE finapp_reporting NOCREATEDB' >/dev/null
 for db in finapp_image finapp_race; do
     code=0
     bootstrap "$db" > "$WORK/bootstrap-$db.log" 2>&1 || code=$?
-    expect_exit 0 "$code" "the bootstrap of $db"
+    expect_exit 0 "$code" "the bootstrap of $db" "$WORK/bootstrap-$db.log"
 done
 echo "three roles created with the local script's attributes, SCRAM-hashed, grants as the local script's; idempotent; a wrong role refused"
 
@@ -177,10 +185,24 @@ FINAPP_DB_URL="jdbc:postgresql://127.0.0.1:$PORT/finapp_build" FINAPP_DB_MIGRATO
     ./gradlew --console=plain -q flywayMigrate > "$WORK/gradle.log" 2>&1 || { tail -40 "$WORK/gradle.log" >&2; fail "the build's flywayMigrate failed"; }
 
 echo "== the image into another"
+# The peak of the run's own connections, sampled throughout: the Job contract states the number.
+( peak=0
+  while [ ! -e "$WORK/first.done" ]; do
+      now=$(sql postgres "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'finapp-migrator'" 2>/dev/null || echo 0)
+      [ "$now" -le "$peak" ] || peak=$now
+      sleep 0.2
+  done
+  echo "$peak" > "$WORK/first.peak" ) &
+sampler=$!
+applying_since=$(date +%s)
 code=0
 migrator finapp_image > "$WORK/first.log" 2>&1 || code=$?
-[ "$code" = 0 ] || tail -40 "$WORK/first.log" >&2
-expect_exit 0 "$code" "the image against an empty database"
+: > "$WORK/first.done"
+wait "$sampler"
+applying_took=$(($(date +%s) - applying_since))
+expect_exit 0 "$code" "the image against an empty database" "$WORK/first.log"
+peak=$(cat "$WORK/first.peak")
+[ "$peak" -ge 1 ] && [ "$peak" -le 3 ] || fail "the run held $peak connections at its peak; the Job contract says two and a moment's third"
 
 history_of() {
     for schema in $SCHEMAS; do
@@ -192,8 +214,8 @@ history_of() {
 
 schema_of() {
     # \restrict lines are random per dump (PostgreSQL 18), and name nothing about the schema.
-    dock exec --env PGPASSWORD="$POSTGRES_PASSWORD" "$PG" pg_dump -h 127.0.0.1 -U postgres -d "$1" --schema-only \
-        | tr -d '\r' | grep -Ev '^\\(un)?restrict '
+    dump=$(dock exec --env PGPASSWORD="$POSTGRES_PASSWORD" "$PG" pg_dump -h 127.0.0.1 -U postgres -d "$1" --schema-only) || return $?
+    printf '%s\n' "$dump" | tr -d '\r' | grep -Ev '^\\(un)?restrict '
 }
 
 history_of finapp_build > "$WORK/build.history"
@@ -213,7 +235,7 @@ if ! cmp -s "$WORK/build.schema" "$WORK/image.schema"; then
 fi
 applied=$(sed -n 's/.*result=APPLIED schemas=[0-9]* applied=\([0-9]*\).*/\1/p' "$WORK/first.log")
 [ "$applied" = "$MIGRATIONS" ] || fail "the run says it applied ${applied:-nothing}, the history holds $MIGRATIONS"
-echo "schema history identical to the build's: $MIGRATIONS migrations, $(grep -c '^-- ' "$WORK/build.history") schemas; pg_dump --schema-only identical ($(wc -l < "$WORK/build.schema" | tr -d ' ') lines)"
+echo "schema history identical to the build's: $MIGRATIONS migrations, $(grep -c '^-- ' "$WORK/build.history") schemas; pg_dump --schema-only identical ($(wc -l < "$WORK/build.schema" | tr -d ' ') lines); $applying_took s, peak $peak connections, under a $MIGRATOR_MEMORY limit"
 
 stamps() {
     for schema in $SCHEMAS; do
@@ -225,7 +247,7 @@ echo "== a second run"
 stamps finapp_image > "$WORK/before.stamps"
 code=0
 migrator finapp_image > "$WORK/second.log" 2>&1 || code=$?
-expect_exit 0 "$code" "the second run"
+expect_exit 0 "$code" "the second run" "$WORK/second.log"
 grep -q 'result=APPLIED schemas=[0-9]* applied=0$' "$WORK/second.log" || fail "the second run applied something: $(tail -1 "$WORK/second.log")"
 stamps finapp_image > "$WORK/after.stamps"
 cmp -s "$WORK/before.stamps" "$WORK/after.stamps" || fail "the second run rewrote the schema history"
@@ -290,7 +312,7 @@ code=0
 migrator_with V9001__needs_the_journal.sql "ALTER TABLE ledger.journal_entry ADD COLUMN verify_probe boolean;" || code=$?
 elapsed=$(($(date +%s) - started))
 sql finapp_image "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE '%pg_sleep(300)%' AND pid <> pg_backend_pid()" >/dev/null
-expect_exit 11 "$code" "a migration behind a held lock"
+expect_exit 11 "$code" "a migration behind a held lock" "$WORK/V9001__needs_the_journal.sql.log"
 [ "$elapsed" -le "$LOCK_BOUND_SECONDS" ] || fail "the run took $elapsed s behind the lock, over its $LOCK_BOUND_SECONDS s bound"
 grep -q 'schema=ledger attempts=5 failure=LOCK_CONTENTION' "$WORK/V9001__needs_the_journal.sql.log" || fail "the run did not try five times and stop"
 [ "$(sql finapp_image "SELECT count(*) FROM ledger.flyway_schema_history WHERE version = '9001'")" = 0 ] || fail "the timed-out migration left a history row"
@@ -301,7 +323,7 @@ echo "exit 11 after five attempts, $elapsed s, no row and no column left behind"
 echo "== a statement that fails"
 code=0
 migrator_with V9002__fails.sql "SELECT 1/0;" || code=$?
-expect_exit 10 "$code" "a failing migration"
+expect_exit 10 "$code" "a failing migration" "$WORK/V9002__fails.sql.log"
 grep -q 'schema=ledger attempts=1 failure=DEFINITE' "$WORK/V9002__fails.sql.log" || fail "a definite failure was retried"
 [ "$(sql finapp_image "SELECT count(*) FROM ledger.flyway_schema_history WHERE NOT success")" = 0 ] \
     || fail "a transactional migration's failure left a failed row: the runbook says it does not"
@@ -311,7 +333,7 @@ echo "== the wrong identity"
 code=0
 dock run --rm --network "container:$PG" --env FINAPP_DB_URL="$(url finapp_image)" \
     --env FINAPP_DB_MIGRATOR_USER=postgres --env FINAPP_DB_MIGRATOR_PASSWORD="$POSTGRES_PASSWORD" "$IMAGE" > "$WORK/identity.log" 2>&1 || code=$?
-expect_exit 12 "$code" "the migrator run as the superuser"
+expect_exit 12 "$code" "the migrator run as the superuser" "$WORK/identity.log"
 echo "exit 12: the superuser's credential is refused"
 
 echo "== the debt rows, on the migrated database"

@@ -125,6 +125,7 @@ class OwnerReachOverHistoryIsClosedTest {
     private static final Pattern VERSIONED = Pattern.compile("V(\\d+)__.*\\.sql");
     private static final Pattern CREATE_TRIGGER = Pattern.compile("(?is)^CREATE\\s+(?:CONSTRAINT\\s+)?TRIGGER\\s+(\\w+)\\s+"
             + "(BEFORE|AFTER|INSTEAD\\s+OF)\\s+(.*?)\\s+ON\\s+([a-z_]+\\.\\w+)\\b(.*)$");
+    private static final Pattern EXECUTES = Pattern.compile("(?is)EXECUTE\\s+(?:FUNCTION|PROCEDURE)\\s+([a-z_]+\\.\\w+)");
     private static final Pattern DROP_TRIGGER =
             Pattern.compile("(?is)^DROP\\s+TRIGGER\\s+(?:IF\\s+EXISTS\\s+)?(\\w+)\\s+ON\\s+([a-z_]+\\.\\w+)");
     private static final Pattern CREATE_TABLE = Pattern.compile("(?is)^CREATE\\s+(?:UNLOGGED\\s+)?TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?([a-z_]+\\.\\w+)");
@@ -142,7 +143,7 @@ class OwnerReachOverHistoryIsClosedTest {
     private static final Set<String> TABLES = new TreeSet<>();
     private static int modulesRead;
 
-    record Trigger(String table, String timing, String events) {}
+    record Trigger(String table, String timing, String events, String function) {}
 
     @BeforeAll
     static void readEveryMigrationInChainOrder() throws IOException {
@@ -254,10 +255,13 @@ class OwnerReachOverHistoryIsClosedTest {
         return !clockCalls(FUNCTIONS.get(function)).isEmpty();
     }
 
+    /** A trigger counts as a refusal when it runs BEFORE the operation and its function can raise: naming one proves nothing. */
     private static Set<String> refusing(String operation) {
         Set<String> tables = new TreeSet<>();
         for (Trigger trigger : TRIGGERS.values()) {
-            if (trigger.timing().equals("BEFORE") && List.of(trigger.events().split("\\s+OR\\s+")).contains(operation)) {
+            if (trigger.timing().equals("BEFORE")
+                    && List.of(trigger.events().split("\\s+OR\\s+")).contains(operation)
+                    && FUNCTIONS.getOrDefault(trigger.function(), "").toUpperCase(Locale.ROOT).contains("RAISE EXCEPTION")) {
                 tables.add(trigger.table());
             }
         }
@@ -290,8 +294,12 @@ class OwnerReachOverHistoryIsClosedTest {
                 String table = matcher.group(4).toLowerCase(Locale.ROOT);
                 // Words only, UPDATE's column list dropped, so "UPDATE OF a, b OR DELETE" reads as its two events.
                 String events = matcher.group(3).toUpperCase(Locale.ROOT).replaceAll("UPDATE\\s+OF\\s+[^\\s,]+(\\s*,\\s*[^\\s,]+)*", "UPDATE");
+                Matcher executes = EXECUTES.matcher(matcher.group(5));
+                if (!executes.find()) {
+                    throw new IllegalStateException("A trigger whose function this could not read: " + statement);
+                }
                 TRIGGERS.put(table + "#" + matcher.group(1).toLowerCase(Locale.ROOT),
-                        new Trigger(table, matcher.group(2).toUpperCase(Locale.ROOT), events.trim()));
+                        new Trigger(table, matcher.group(2).toUpperCase(Locale.ROOT), events.trim(), executes.group(1).toLowerCase(Locale.ROOT)));
                 continue;
             }
             matcher = DROP_TABLE.matcher(statement);

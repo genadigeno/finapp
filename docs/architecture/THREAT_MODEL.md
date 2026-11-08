@@ -436,7 +436,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T6 | The application image's build context is the boot jar alone (`.dockerignore` an allow-list) and its runtime stage sets no environment; CI's image job refuses an image whose `/app` is not exactly the jar's entries or whose environment is not the base's, so no local file, `.env` or configuration beyond the jar's reaches it | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theBuildContextIsTheBootJarAlone`; `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theRuntimeStageAddsTheJarsFourLayersAndNothingElse`; `infra/scripts/image-build.sh` `contains: /app is not exactly the boot jar's entries` `contains: the image sets environment of its own` |
 | T6 | Rotation and revocation of every credential class, rehearsed | PLANNED | `P15-TSK-020` |
 | T7 | Locally (compose and the test databases built from the initialisation scripts), every role - the migrator, the application and report generation's - is `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`, and no later statement alters or grants that away | EXISTS | `app/src/test/java/com/finapp/app/architecture/LocalDatabaseRolesAreUnprivilegedTest.java#everyRoleIsUnprivileged` |
-| T7 | In a deployed database, the roles created by the one-time bootstrap step with the same attributes | PLANNED | `P15-TSK-004` |
+| T7 | In a deployed database, the one-time bootstrap step creates the three roles with every attribute the local script gives them, `NOBYPASSRLS NOREPLICATION` besides and the same database rights; it sends a SCRAM verifier computed in the process, never the password; and it stops on a role found holding a right it must not | EXISTS | `migrator/src/test/java/com/finapp/migrator/RoleBootstrapTest.java#everyRoleCarriesTheLocalScriptsAttributes`; `migrator/src/test/java/com/finapp/migrator/RoleBootstrapTest.java#anExistingRoleHoldingARightIsRefused`; `migrator/src/test/java/com/finapp/migrator/RoleBootstrapTest.java#thePasswordNeverReachesTheServer`; `infra/scripts/migrator-verify.sh` `contains: the roles' attributes are not LOGIN NOSUPERUSER` |
 | T7 | The application role cannot become the migrator, create a role, make itself a superuser, run a program on the host or read password hashes | EXISTS | `platform/src/test/java/com/finapp/platform/audit/ApplicationRoleGrantsTest.java#theRoleCannotEscalate` |
 | T7 | The application role holds no DDL and cannot reach the migration history | EXISTS | `platform/src/test/java/com/finapp/platform/audit/ApplicationRoleGrantsTest.java#theRoleIsConfinedToData` |
 | T7 | `sslmode=verify-full` required to a database off loopback, weaker modes refused at startup | EXISTS | `app/src/test/java/com/finapp/app/security/TransportSecurityGuardTest.java#remoteWithoutTlsIsRefused`; `app/src/test/java/com/finapp/app/security/TransportSecurityGuardTest.java#weakerModesAreRefused` |
@@ -479,7 +479,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T11 | The configuration register, and an alert when replicas disagree for longer than a rollout | PLANNED | `P15-TSK-031` |
 | T12 | The build's Flyway tasks are forward-only in every module with migrations (21 today): `clean` disabled, validated before migrating, never out of order. This holds the Gradle and CI path, not the deployed runner | EXISTS | `app/src/test/java/com/finapp/app/architecture/MigrationSettingsAreForwardOnlyTest.java#everyMigratingModuleIsForwardOnly` |
 | T12 | Readiness reports down without the database, while liveness ignores it | EXISTS | `app/src/test/java/com/finapp/app/api/HealthEndpointTest.java#readinessReflectsTheDatabase`; `app/src/test/java/com/finapp/app/api/HealthEndpointTest.java#livenessIgnoresTheDatabase` |
-| T12 | The migrator image and Job carrying the build's Flyway settings, with Flyway's lock serialising two runs | PLANNED | `P15-TSK-004` |
+| T12 | The migrator image applies every module's migrations in the build's order with each schema's build settings and the build's Flyway version; the wait for a lock is bounded below the application pool's so a migration never queues in front of the writers; and its result is compared with the build's on a real database: schema history and schema identical, a second run a no-op, concurrent runs each migration once | EXISTS | `app/src/test/java/com/finapp/app/architecture/MigratorOrderIsTheBuildsTest.java#theOrderIsTheBuilds`; `migrator/src/test/java/com/finapp/migrator/MigratorMatchesTheBuildTest.java#everySchemaHasTheBuildsSettings`; `migrator/src/test/java/com/finapp/migrator/MigratorMatchesTheBuildTest.java#theRunnerUsesTheBuildsFlyway`; `migrator/src/test/java/com/finapp/migrator/MigratorMatchesTheBuildTest.java#theLockBoundEndsBeforeThePoolGivesUp`; `migrator/src/test/java/com/finapp/migrator/MigrationRunTest.java#aLockTimeoutGivesUp`; `migrator/src/test/java/com/finapp/migrator/MigratorImageTest.java#ciBuildsAndVerifiesIt`; `infra/scripts/migrator-verify.sh` `contains: the image's schema history is not the build's` `contains: a migration was applied twice, or not at all` `contains: a migration behind a held lock` |
+| T12 | The migration Job's manifest under the written contract: run before the rollout, its `backoffLimit`, `podFailurePolicy` and deadline | PLANNED | `P15-TSK-012` |
 | T12 | The expand-only lint (tightening DDL counted) and the schema-version readiness guard | PLANNED | `P15-TSK-005` |
 | T12 | `maxUnavailable: 0` and `minReadySeconds` at least the grace period, in the base manifests | PLANNED | `P15-TSK-009` |
 | T12 | Release N − 1 run on N's schema, the rolling update and the rollback rehearsed with the financial census | PLANNED | `P15-TSK-012` |
@@ -494,7 +495,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T13 | PI-013's and PI-014's clock-step regression cases run green on PostgreSQL with the database's clock stepped back on demand (`CloseRunClockStepDatabaseTest`, `LoanTermsDatabaseTest`, `BnplTermsDatabaseTest`, written and owed) | PLANNED | `P15-TST-002` |
 | T13 | The lock's grace and the submissions' orderings judged on the database's clock | REMEDIATION | `P14-REM-009` |
 | T13 | Five stores still comparing a stored bound with a caller's instant (recovery tokens, contact-channel verification, checkout expiry, the card fee version in force, payout-destination cooling-off), each judged and stamped on the database's clock | PLANNED | `P15-TSK-038` |
-| T13 | Lending's trigger functions read the database's clock whatever a role's `search_path` holds | PLANNED | `P15-TSK-004` |
+| T13 | Lending's functions, the helpers its triggers call for the business date included, read the database's clock whatever a role's `search_path` holds: every clock call names `pg_catalog` | EXISTS | `app/src/test/java/com/finapp/app/architecture/OwnerReachOverHistoryIsClosedTest.java#noFunctionReadsTheClockThroughTheSearchPath`; `app/src/test/java/com/finapp/app/architecture/OwnerReachOverHistoryIsClosedTest.java#theRuleReadsCodeNotText`; `infra/scripts/migrator-verify.sh` `contains: a shadowing schema first in the path` |
+| T13 | 108 functions in eleven other schemas (accounting, bnpl, checkout, credit, crossborder, fx, ledger, merchant, payments, risk, settlement) still read a clock through a mutable `search_path`, each named by the same guard | GAP | `owner item 11`; owner: the owner, since 2026-11-08 |
 | T13 | Single-row reads that pick "the latest" by a database stamp outside accounting, lending and bnpl (ten by `grep`, `ORDER BY <stamp> DESC ... LIMIT 1`: risk three, kyc two, payments two, fx, reconciliation and `app`'s lending reports one each) not yet judged for whether the row they pick decides anything; and risk `V002`'s policy retirement, stamped like the terms retirement was, latent because nothing reads a policy version by an instant | PLANNED | `P15-TSK-037` |
 | T14 | The connection budget is a startup guard against the **declared** instance count (`finapp.database.instances`): a fleet whose pools exceed the database's available connections refuses to start, naming the fix; a declared fleet scaled out past the limit no longer fits; reserved connections count; the guard is wired. A replica count that outgrows its declaration (an HPA) is not caught here | EXISTS | `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#hikarisDefaultExhaustsPostgresDefault`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#scalingOutIsCaught`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#reservedConnectionsAreLoadBearing`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingIsConfiguredTest.java#theGuardIsWired` |
 | T14 | Requests and limits, and an HPA bounded by the declared budget counting terminating pods | PLANNED | `P15-TSK-009` |
@@ -594,10 +596,13 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T32 | A restore rehearsed into a fresh database, ending in the financial verification, with the backup handled as a copy of the ledger | PLANNED | `P15-TSK-030` |
 | T33 | Locally (compose and the test databases), the migrator is `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`, and no later statement alters or grants that away | EXISTS | `app/src/test/java/com/finapp/app/architecture/LocalDatabaseRolesAreUnprivilegedTest.java#everyRoleIsUnprivileged` |
 | T33 | The journal's append-only trigger binds the migrator | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theAppendOnlyTriggerBindsTheMigrator` |
-| T33 | Only the migrator image holds the migrator's credentials, under the Job contract; the deployed roles created by the one-time bootstrap step | PLANNED | `P15-TSK-004` |
+| T33 | The migrator image holds no credential (no environment of its own, read from the built image), the application's configuration never reads the migrator's, and the runner refuses an identity holding any administrative right, a session without its lock bound and a URL that could move the host or undo verification | EXISTS | `migrator/src/test/java/com/finapp/migrator/MigratorImageTest.java#onlyTheMigratorHoldsItsCredential`; `migrator/src/test/java/com/finapp/migrator/ConnectedRoleTest.java#anAdministrativeRightIsRefused`; `migrator/src/test/java/com/finapp/migrator/ConnectedRoleTest.java#aSessionWithoutTheBoundIsRefused`; `migrator/src/test/java/com/finapp/migrator/DatabaseUrlTest.java#parametersThatChangeWhatTheUrlMeans`; `infra/scripts/migrator-image-build.sh` `contains: the image sets environment of its own` |
+| T33 | The deployed roles come from a separate one-time step that alone holds the master credential: the migrator's entrypoint cannot reach it and never reads that credential | EXISTS | `migrator/src/test/java/com/finapp/migrator/RoleBootstrapTest.java#theBootstrapIsNeverPartOfTheJob`; `migrator/src/test/java/com/finapp/migrator/RoleBootstrapTest.java#theMasterCredentialIsItsOwn` |
+| T33 | The migrator Job's secret reference and the absence of any `command` of its own, in its manifest | PLANNED | `P15-TSK-012` |
 | T33 | The migrator's egress reaches PostgreSQL alone | PLANNED | `P15-TSK-010` |
 | T33 | The migrator's identity reads only its own secret | PLANNED | `P15-TSK-016` |
-| T33 | Every reconciliation table refuses `TRUNCATE` to every role, the migrator and the owner included, as its row triggers refuse `DELETE` | PLANNED | `P15-TSK-004` |
+| T33 | Every reconciliation and settlement table refuses `TRUNCATE` to every role, the migrator and the owner included, by a statement trigger of its own, as its row triggers refuse `DELETE`; a guard over every module's migrations finds any other table that refuses `DELETE` and not `TRUNCATE` | EXISTS | `app/src/test/java/com/finapp/app/architecture/OwnerReachOverHistoryIsClosedTest.java#everyTableThatRefusesDeleteRefusesTruncate`; `app/src/test/java/com/finapp/app/architecture/OwnerReachOverHistoryIsClosedTest.java#theGuardReadTheChain`; `infra/scripts/migrator-verify.sh` `contains: was not refused by its own trigger` |
+| T33 | 51 tables in eight other schemas that refuse `DELETE` by trigger do not refuse `TRUNCATE`, the journal's two (`ledger.journal_entry`, `ledger.journal_line`) among them, each named by the same guard | GAP | `owner item 11`; owner: the owner, since 2026-11-08 |
 | T34 | The payment-evidence and KYC-document ciphers' tests show the stamped key version on a ciphertext; the other six ciphers stamp it by construction, untested here | EXISTS | `payments/src/test/java/com/finapp/payments/EvidenceCipherTest.java#roundTrips`; `kyc/src/test/java/com/finapp/kyc/DocumentCipherTest.java#roundTrips` |
 | T34 | Another key never decrypts an MFA secret, a KYC document or payment evidence | EXISTS | `identity/src/test/java/com/finapp/identity/SecretCipherTest.java#anotherKeyCannotDecrypt`; `kyc/src/test/java/com/finapp/kyc/DocumentCipherTest.java#wrongKeyIsRefused`; `payments/src/test/java/com/finapp/payments/EvidenceCipherTest.java#tamperingAndWrongKeyRefuse` |
 | T34 | Data keys wrapped by KMS keys with deletion waiting periods | PLANNED | `P15-TSK-016` |
@@ -770,13 +775,17 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   the close's trial-balance check's included; what is not a generation - the operational door, the close checks' own
   judgements and the verdict read back from a stored run, the final statements - reads through the application's role
   in `REPEATABLE READ READ ONLY` snapshots. Startup refuses a reporting user naming the application's role, the
-  migrator or the superuser. In a deployed database the role is created by the one-time bootstrap step
-  (`P15-TSK-004`, routed on its entry) before the migrations that grant to it.
+  migrator or the superuser. In a deployed database the role is created by the one-time bootstrap step before the
+  migrations that grant to it.
 - **T11, the infrastructure.** Its code is pinned, locked and checked on every pull request, and nothing in Phase 15
   applies it. No check reads a real account, so nothing yet holds that an apply comes only from a reviewed plan, and
   nothing reports drift. `prevent_destroy` on the database, its backups and every KMS key is a build rule, and it
   holds over an empty set until the data-tier and security modules (`-015`, `-016`) add the first such resource.
   **Owner item 7**, decided 2026-11-08, holds it until a real account exists.
+- **T13 and T33, the owner's reach outside lending, reconciliation and settlement.** A guard over every module's migrations
+  found the same two holes elsewhere: 51 tables refuse `DELETE` by trigger and not `TRUNCATE`, and 108 functions read a clock
+  through a mutable `search_path`. Nothing has happened to them; they are the migrator's or an owner's reach, not a production
+  role's. Each is named in that guard and held by **owner item 11**.
 - **T13.** Time sync on nodes is a property of the managed cluster. No task asserts it, and the register does not
   claim it. The platform's answer is to decide financial instants on the database's clock. The database's clock steps
   too: a stamp it wrote never decides which of two facts came first, and a stamp follows the facts it must follow.
@@ -791,7 +800,8 @@ accepting each recommendation** ("accept recommendations", after `P15-TSK-001`'s
 its options. *(Read "Each item carries a recommendation, and each is held by a `GAP` row in §4. None blocks Phase 15's
 work; the two proposed acceptances (items 1 and 6) must be decided by the phase's exit (§1.5)." until then.)* **Items 7 to 10 were added on 2026-11-08, and the owner decided them the same day, accepting each recommendation**
 ("accept recommendations", at the end of wave B); each item's decision follows its options. *(This paragraph read
-"Item 7 ... awaits the owner" and "Items 9 and 10 ... are open" until then.)*
+"Item 7 ... awaits the owner" and "Items 9 and 10 ... are open" until then.)* **Item 11 was added on 2026-11-08 and awaits the
+owner.**
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -891,6 +901,20 @@ work; the two proposed acceptances (items 1 and 6) must be decided by the phase'
    Phase 9's approvals, restarts and reversals - and (a), (b) and (d) as **one follow-on M15.7 item** after the privileged
    access task, before the phase's database pass. **Decided 2026-11-08**: as recommended, all four parts in
    `P15-TSK-039`, which also builds (c); T38's row is `PLANNED` on it.
+11. **T33's and T13's remainder: the owner's reach outside reconciliation, settlement and lending** *(added 2026-11-08 by the
+   task that built the migrator; undecided)*. The two debt rows named those three schemas; the guard over every module's
+   migrations that the same task wrote found the same two holes in others. **`TRUNCATE`**: 51 tables refuse `DELETE` by trigger
+   and not `TRUNCATE`, in ledger (4, `journal_entry` and `journal_line` among them), payments (11), fx (19), crossborder (8),
+   merchant (6), checkout (1), kyc (1) and risk (1), so the owner of the journal can still empty it in one statement. **The
+   clock**: 108 functions in accounting (18), bnpl (33), credit (16), risk (19), fx (8), payments (7), merchant (3), and
+   checkout, crossborder, ledger and settlement (1 each) read a clock through a mutable `search_path`. Neither is reachable by a
+   production role's own session today: `finapp_app` holds no `TRUNCATE` and no `CREATE` on any schema. Each was left because a
+   fix needs a migration number in a module this task had none reserved in, and qualifying a schema's clock also needs that
+   schema's clock-stepping test fixture (`BnplClockFrame`, the close's) re-opened as lending's was. The options: (a) one new
+   Phase 15 item before the database pass, one forward migration per schema, the same way, with the guard's lists emptied as it
+   goes; (b) `TRUNCATE` for the ledger alone now, the rest after the phases; (c) accept. *Recommendation*: **(a)**, because the
+   journal is the financial record and the migrator exists now; the remaining clock calls could follow in the same item or a
+   second one, and the guard already names every one of them.
 
 ---
 

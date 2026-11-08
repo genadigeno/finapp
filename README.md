@@ -584,6 +584,30 @@ Kubernetes probes the actuator, and the image has no shell to run one. The only 
 tag and digest weekly; `check-pinned-images.sh` reports a moved tag or a newer release (§7b). Re-resolve a digest with
 `docker buildx imagetools inspect <image>:<tag>`.
 
+## 5g. Building and checking the migrator image
+
+The migrations ship as a second image, `finapp-migrator` (`P15-TSK-004`): a stage of the same `Dockerfile`, on the same base,
+holding a small program over Flyway and every module's scripts. It is what a deployed environment runs in place of
+`./gradlew flywayMigrate`, as a Job per release. The Job's contract and the one-time role bootstrap are in
+[`DATA_MIGRATIONS.md`](docs/architecture/DATA_MIGRATIONS.md) §2.1 and §2.2. Build and check it with the scripts CI's
+`migrator-image` job runs:
+
+```bash
+./infra/scripts/migrator-image-build.sh   # twice from source, compared, and asserted as 5f's is
+./infra/scripts/migrator-verify.sh        # against a throwaway PostgreSQL of its own, on a random port
+```
+
+The build refuses the image unless two builds are the same bytes, it runs as `65532:65532` with no `HEALTHCHECK`, `CMD` or
+environment of its own, and outside `/migrator` it is exactly the pinned base, with every migration byte-identical to the
+repository's and only jars besides. Its size budget is **230 MiB** of flattened filesystem (190.9 MiB measured on 2026-11-08: the
+base 184.7 MiB, the libraries and scripts the rest).
+
+The verification leaves your compose stack alone and generates its own throwaway credentials. It runs the one-time bootstrap;
+applies `./gradlew flywayMigrate` to one empty database and the image to another, and refuses any difference in the schema history
+or the `pg_dump --schema-only`; runs the image again (no change); runs copies at once (`MIGRATOR_VERIFY_RACERS`, default 2),
+each migration applied once; holds a table and watches the run give up in its bound; and checks the refusals. Exit `0`, `1` or
+`2`, as `image-build.sh`.
+
 ## 6. What CI checks
 
 Independent jobs, so a failure names its own gate
@@ -599,6 +623,7 @@ Independent jobs, so a failure names its own gate
 | `dependency-scan` | No HIGH or CRITICAL known vulnerability in the resolved dependency set |
 | `iac` | The Terraform passes `fmt`, `tflint`, `trivy config`, `validate` and `terraform test` with mock providers, and each check refuses a planted defect; no credential, no backend. Run it yourself: `./infra/scripts/terraform-check.sh` (`OPERATIONS_RUNBOOK.md` §11.13) |
 | `image` | The application image built twice and identical, non-root, the base plus the jar and nothing else, within budget, and ready against compose's PostgreSQL and Kafka (§5f) |
+| `migrator-image` | The migrator image built twice and identical, non-root, the base plus its libraries and the repository's migrations and nothing else, within budget; run against a throwaway PostgreSQL: schema history and schema identical to `flywayMigrate`'s, a second run a no-op, concurrent runs each migration once, a held lock a bounded failure, the role bootstrap (§5g) |
 
 The `migrations` job starts PostgreSQL from this same `compose.yaml`, so CI and your machine
 run the identical pinned image.
@@ -711,7 +736,7 @@ of them reaches all of it (ADR-0026):
 | Four GitHub Actions (commit SHA) | `.github/workflows/ci.yml` | Dependabot, weekly - a pull request |
 | Library versions | `gradle/libs.versions.toml` | Dependabot, weekly - the PR **will fail its build** until you run §7a's regeneration |
 | Scanner and tool images (digest): gitleaks, Trivy, and since `P15-TSK-013` Terraform and tflint | `infra/scanner-pins.sh` | `infra/scripts/check-pinned-images.sh`, weekly in CI |
-| Two base images of the application image (tag and digest) | the `Dockerfile`'s `FROM` lines | Dependabot, weekly - a pull request; and `check-pinned-images.sh`, weekly in CI, which also refuses an unpinned base on every build of the image (§5f) |
+| Two base images of the application and migrator images (tag and digest) | the `Dockerfile`'s two pinned `FROM` lines | Dependabot, weekly - a pull request; and `check-pinned-images.sh`, weekly in CI, which also refuses an unpinned base on every build of the image (§5f) |
 | Terraform provider versions and their lock files | `infra/terraform/environments/*/versions.tf`, `.terraform.lock.hcl` | Dependabot (`terraform`), weekly - a PR moving one root and not the other fails `TerraformIsPinnedAndCheckedTest` until both agree; `OPERATIONS_RUNBOOK.md` §11.13 |
 | Infrastructure images | `compose.yaml` + the catalog | `verifyInfrastructureVersions` fails the build on drift |
 | Gradle distribution | `gradle-wrapper.properties` | Manual, with the checksum from `services.gradle.org` |

@@ -2,8 +2,6 @@ package com.finapp.migrator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -11,7 +9,6 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Stream;
 import org.flywaydb.core.api.configuration.FluentConfiguration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,54 +17,17 @@ import org.postgresql.ds.PGSimpleDataSource;
 /**
  * The migrator runs every module's migrations exactly as the build does ({@code P15-TSK-004}; {@code THREAT_MODEL.md} T12).
  *
- * <p>Both sides are the real thing: the order and settings are parsed from {@code settings.gradle.kts} and each module's
- * {@code flyway} block, and compared with the {@link FluentConfiguration} the migrator will actually hand Flyway. That the
- * resulting schema history is the build's, byte for byte, is shown by running the image: {@code migrator-verify.sh}.
+ * <p>Both sides are the real thing: the settings are parsed from each module's {@code flyway} block, and compared with the
+ * {@link FluentConfiguration} the migrator will actually hand Flyway. The order is {@code MigratorOrderIsTheBuildsTest}, in
+ * {@code app}'s architecture tier. That the resulting schema history is the build's, byte for byte, is shown by running the
+ * image: {@code migrator-verify.sh}.
  */
 @DisplayName("the migrator applies every module's migrations with the build's order and settings (P15-TSK-004)")
 class MigratorMatchesTheBuildTest {
 
-    private static final Pattern INCLUDE = Pattern.compile("(?m)^include\\(\"([a-z]+)\"\\)\\s*$");
-    private static final Pattern FLYWAY_PLUGIN = Pattern.compile("(?m)^\\s*alias\\(libs\\.plugins\\.flyway\\)\\s*$");
     private static final Pattern BLOCK = Pattern.compile("(?ms)^flyway \\{\\R(.*?)^}\\s*$");
 
     private static final Path SQL_ROOT = Path.of("/migrator/sql");
-
-    /** The build's schema-owning modules, in project path order: what {@code ./gradlew flywayMigrate} runs, in that order. */
-    private static List<String> buildOrder() {
-        Path root = RepositoryFiles.root();
-        return INCLUDE.matcher(RepositoryFiles.read("settings.gradle.kts")).results()
-                .map(match -> match.group(1))
-                .filter(module -> FLYWAY_PLUGIN.matcher(RepositoryFiles.read(root.resolve(module).resolve("build.gradle.kts"))).find())
-                .sorted()
-                .toList();
-    }
-
-    @Test
-    @DisplayName("the pinned order is the build's: every schema-owning module, in Gradle's project path order")
-    void theOrderIsTheBuilds() {
-        List<String> build = buildOrder();
-        assertThat(build).as("the walk found the build's schema owners").contains("ledger", "platform").hasSizeGreaterThanOrEqualTo(21);
-        assertThat(MigrationPlan.schemasInBuildOrder())
-                .as("a module that owns a schema and is not applied, or two applied in another order than every tested"
-                        + " database was built in")
-                .containsExactlyElementsOf(build);
-    }
-
-    @Test
-    @DisplayName("every directory of migrations in the repository is one the migrator applies")
-    void noMigrationsAreLeftBehind() throws IOException {
-        Path root = RepositoryFiles.root();
-        List<String> found;
-        try (Stream<Path> children = Files.list(root)) {
-            found = children
-                    .filter(module -> Files.isDirectory(module.resolve("src/main/resources/db/migration").resolve(module.getFileName())))
-                    .map(module -> module.getFileName().toString())
-                    .sorted()
-                    .toList();
-        }
-        assertThat(found).isEqualTo(MigrationPlan.schemasInBuildOrder());
-    }
 
     @Test
     @DisplayName("every schema's Flyway is configured as its build.gradle.kts configures it, setting by setting")

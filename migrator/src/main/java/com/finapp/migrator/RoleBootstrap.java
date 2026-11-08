@@ -106,8 +106,9 @@ final class RoleBootstrap {
         return passwords;
     }
 
-    static String createStatement(Role role, String verifier) {
-        return "CREATE ROLE " + role.name() + " " + ATTRIBUTES + " PASSWORD '" + verifier + "'";
+    /** The only way a role is written: the statement holds the verifier, so no path here can put the password in one. */
+    static String createStatement(Role role, String password) {
+        return "CREATE ROLE " + role.name() + " " + ATTRIBUTES + " PASSWORD '" + PasswordUtil.encodeScramSha256(password.toCharArray()) + "'";
     }
 
     /**
@@ -133,7 +134,7 @@ final class RoleBootstrap {
                     }
                     report.add("role=" + role.name() + " present, unprivileged, unchanged");
                 } else {
-                    statement.execute(createStatement(role, PasswordUtil.encodeScramSha256(entry.getValue().toCharArray())));
+                    statement.execute(createStatement(role, entry.getValue()));
                     report.add("role=" + role.name() + " created");
                 }
                 grantOnThisDatabase(statement, "GRANT " + role.databaseRights() + " ON DATABASE %I TO " + role.name());

@@ -2,7 +2,9 @@ package com.finapp.migrator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -10,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -147,6 +150,27 @@ class MigratorImageTest {
     }
 
     @Test
+    @DisplayName("the application reads none of the migrator's credential, and the image's only readers of it are the two mains")
+    void onlyTheMigratorHoldsItsCredential() throws IOException {
+        List<Path> application;
+        try (Stream<Path> files = Files.walk(RepositoryFiles.root().resolve("app/src/main"))) {
+            application = files.filter(file -> file.toString().matches(".*\\.(java|yaml|yml|properties|xml|json)")).toList();
+        }
+        assertThat(application).as("the application's sources and resources were read").hasSizeGreaterThan(100);
+        for (Path file : application) {
+            assertThat(RepositoryFiles.read(file))
+                    .as("%s: the application connects as finapp_app and has no use for the role that owns the schema", file.getFileName())
+                    .doesNotContain("FINAPP_DB_MIGRATOR");
+        }
+        assertThat(RepositoryFiles.read("Dockerfile"))
+                .as("the image holds no credential: every value comes from the Job's environment")
+                .doesNotContain("FINAPP_DB_")
+                .doesNotContain("\nENV ");
+        assertThat(RepositoryFiles.read("migrator/src/main/java/com/finapp/migrator/MigratorEnvironment.java"))
+                .contains("environment.get(\"FINAPP_DB_MIGRATOR_PASSWORD\")");
+    }
+
+    @Test
     @DisplayName("the acceptance script compares the histories and schemas, and proves the bounds, on the real image")
     void theVerificationCoversTheEntry() {
         assertThat(RepositoryFiles.read("infra/scripts/migrator-verify.sh"))
@@ -158,6 +182,19 @@ class MigratorImageTest {
                 .contains("a migration behind a held lock")
                 .contains("the superuser")
                 .contains("was not refused by its own trigger");
+    }
+
+    @Test
+    @DisplayName("the contract the Job is written from states the bounds the code has")
+    void theContractStatesTheRealBounds() {
+        String contract = RepositoryFiles.read("docs/architecture/DATA_MIGRATIONS.md");
+        assertThat(contract)
+                .contains("`lock_timeout` " + MigrationPlan.LOCK_TIMEOUT.toSeconds() + " s")
+                .contains(MigrationPlan.HISTORY_LOCK_RETRIES + " polls")
+                .contains(MigrationPlan.LOCK_BACKOFF.toSeconds() + " s apart");
+        for (ExitCode exit : ExitCode.values()) {
+            assertThat(contract).as(exit.name()).contains("| `" + exit.getCode() + "` |");
+        }
     }
 
     private static int indexOf(List<String> lines, String text) {
