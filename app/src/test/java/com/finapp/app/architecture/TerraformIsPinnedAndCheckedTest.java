@@ -36,7 +36,7 @@ import org.junit.jupiter.api.Test;
  * <p>It reads HCL with a small reader of its own (blocks, attributes, strings, templates, heredocs, comments) that fails
  * on what it cannot read rather than skipping it. {@link #theRulesRefuseTheirPlants} runs every rule over a planted
  * violation, so a rule that reads nothing cannot pass: today no guarded or secret-writing resource exists (the modules
- * of {@code P15-TSK-014} to {@code -016} add the first ones), and those two rules hold over the empty set until then.
+ * of {@code P15-TSK-015} and {@code -016} add the first ones), and those two rules hold over the empty set until then.
  */
 @Tag("architecture")
 @DisplayName("the Terraform is pinned, locked and checked without a credential or a backend (P15-TSK-013)")
@@ -141,6 +141,26 @@ class TerraformIsPinnedAndCheckedTest {
     }
 
     @Test
+    @DisplayName("every child module that requires a provider commits a lock file at the exact version the roots pin")
+    void everyModuleLockFileHoldsTheRootsVersions() {
+        // terraform-check.sh runs every init with -lockfile=readonly, so a module requiring a provider needs a lock
+        // file; held at the roots' version so that its tests run against the provider the roots use.
+        Map<String, String> pinned = requiredProviders(terraformFiles(ENVIRONMENTS + "/" + roots().iterator().next()));
+        List<String> violations = new ArrayList<>();
+        int modules = 0;
+        for (String directory : directories()) {
+            Map<String, String> required = requiredProviders(terraformFiles(directory));
+            if (directory.startsWith(ENVIRONMENTS + "/") || required.isEmpty()) {
+                continue;
+            }
+            modules++;
+            violations.addAll(moduleLockViolations(directory, required, pinned, files.get(directory + "/" + LOCK_FILE)));
+        }
+        assertThat(modules).as("the modules requiring a provider were read").isGreaterThanOrEqualTo(2);
+        assertThat(violations).as("a module tested against another provider than its roots use").isEmpty();
+    }
+
+    @Test
     @DisplayName("every environment keeps its state in its own S3 key, encrypted and locked, and no backend or provider"
             + " block holds a credential")
     void everyEnvironmentKeepsItsStateRemoteLockedAndEncrypted() {
@@ -203,7 +223,14 @@ class TerraformIsPinnedAndCheckedTest {
                 .containsEntry("camel-case", "tflint")
                 .containsEntry("public-bucket", "trivy")
                 .containsEntry("invalid", "terraform")
-                .containsEntry("untagged", "terraform");
+                .containsEntry("untagged", "terraform")
+                .containsEntry("public-endpoint", "terraform")
+                .containsEntry("public-workload-subnet", "terraform")
+                .containsEntry("cluster-on-edge-tier", "terraform")
+                .containsEntry("no-flow-logs", "terraform")
+                .containsEntry("no-audit-log", "terraform")
+                .containsEntry("no-etcd-encryption", "terraform")
+                .containsEntry("two-zones", "terraform");
     }
 
     @Test
@@ -237,7 +264,8 @@ class TerraformIsPinnedAndCheckedTest {
     }
 
     @Test
-    @DisplayName("every environment root takes its name prefix and tags from the conventions module, as itself")
+    @DisplayName("every environment root takes its name prefix and tags from the conventions module, as itself, and its"
+            + " provider applies only to its own account")
     void everyEnvironmentNamesAndTagsThroughTheConventions() {
         List<String> violations = new ArrayList<>();
         for (String environment : roots()) {
@@ -318,6 +346,33 @@ class TerraformIsPinnedAndCheckedTest {
                 }
                 """)).as("a provider locked that no root requires").isNotEmpty();
 
+        Map<String, String> moduleRequires = Map.of("hashicorp/aws", ">= 6.72.0");
+        Map<String, String> rootsPin = Map.of("hashicorp/aws", "6.72.0");
+        assertThat(moduleLockViolations("plant", moduleRequires, rootsPin, null))
+                .as("a module requiring a provider with no lock file")
+                .hasSize(1);
+        assertThat(moduleLockViolations("plant", moduleRequires, rootsPin, """
+                provider "registry.terraform.io/hashicorp/aws" {
+                  version     = "6.71.0"
+                  constraints = ">= 6.72.0"
+                  hashes = ["h1:x=", "zh:y"]
+                }
+                """)).as("a module locked at another version than the roots pin").hasSize(1);
+        assertThat(moduleLockViolations("plant", moduleRequires, rootsPin, """
+                provider "registry.terraform.io/hashicorp/aws" {
+                  version     = "6.72.0"
+                  constraints = ">= 6.72.0"
+                  hashes = ["h1:x=", "zh:y"]
+                }
+                """)).as("a module locked as the roots are").isEmpty();
+        assertThat(moduleLockViolations("plant", Map.of("hashicorp/awscc", ">= 1.0.0"), rootsPin, """
+                provider "registry.terraform.io/hashicorp/awscc" {
+                  version     = "1.0.0"
+                  constraints = ">= 1.0.0"
+                  hashes = ["h1:x=", "zh:y"]
+                }
+                """)).as("a module requiring a provider no root pins").hasSize(1);
+
         assertThat(backendViolations("plant", "staging", Map.of("backend.tf", """
                 terraform {
                   backend "s3" {
@@ -357,7 +412,20 @@ class TerraformIsPinnedAndCheckedTest {
                 provider "aws" {
                   region = var.region
                 }
-                """))).as("production tagged as staging, and a provider without the conventions' tags").hasSize(2);
+                """))).as("production tagged as staging, and a provider neither tagged nor confined to its account")
+                .hasSize(3);
+        assertThat(conventionViolations("plant", "production", Map.of("main.tf", """
+                module "conventions" {
+                  source      = "../../modules/conventions"
+                  environment = "production"
+                }
+                provider "aws" {
+                  allowed_account_ids = [var.account_id]
+                  default_tags {
+                    tags = module.conventions.tags
+                  }
+                }
+                """))).as("a root as every root should be").isEmpty();
 
         assertThat(destroyViolations("plant.tf", """
                 resource "aws_kms_key" "unguarded" {
@@ -490,6 +558,42 @@ class TerraformIsPinnedAndCheckedTest {
         return violations;
     }
 
+    /** A child module's lock file: every provider it requires, at the exact version the roots pin, with its checksums. */
+    static List<String> moduleLockViolations(
+            String directory, Map<String, String> required, Map<String, String> rootsPin, String lock) {
+        List<String> violations = new ArrayList<>();
+        if (lock == null) {
+            violations.add(directory + ": no " + LOCK_FILE + ", so init -lockfile=readonly cannot install " + required);
+            return violations;
+        }
+        Map<String, Map<String, String>> locked = new TreeMap<>();
+        for (Block provider : blocksOfType(lock, "provider")) {
+            locked.put(provider.labels().get(0), attributes(provider.body()));
+        }
+        required.forEach((source, constraint) -> {
+            String pin = rootsPin.get(source);
+            if (pin == null) {
+                violations.add(directory + ": requires " + source + ", which no environment root pins");
+                return;
+            }
+            Map<String, String> entry = locked.get(address(source));
+            if (entry == null) {
+                violations.add(directory + ": the lock file does not hold " + source);
+                return;
+            }
+            String version = EXACT.matcher(pin).replaceAll("$1");
+            if (!version.equals(unquoted(entry.getOrDefault("version", "")))) {
+                violations.add(directory + ": " + source + " is locked at " + entry.get("version")
+                        + ", the roots pin " + version + "; regenerate this module's lock file");
+            }
+            String hashes = entry.getOrDefault("hashes", "");
+            if (!hashes.contains("\"h1:") || !hashes.contains("\"zh:")) {
+                violations.add(directory + ": " + source + " holds no h1: and zh: checksums");
+            }
+        });
+        return violations;
+    }
+
     static List<String> backendViolations(
             String directory, String environment, Map<String, String> tf, Set<String> keys) {
         List<String> violations = new ArrayList<>();
@@ -606,6 +710,10 @@ class TerraformIsPinnedAndCheckedTest {
                 if (!tagged) {
                     violations.add(directory + ": provider " + provider.labels()
                             + " does not take default_tags from module.conventions.tags");
+                }
+                if (!"[var.account_id]".equals(attributes(provider.body()).get("allowed_account_ids"))) {
+                    violations.add(directory + ": provider " + provider.labels()
+                            + " is not confined to its own account (allowed_account_ids = [var.account_id])");
                 }
             }
         }
