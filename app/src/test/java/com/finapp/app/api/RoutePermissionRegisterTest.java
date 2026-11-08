@@ -32,6 +32,13 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
  * <p>Derived from the handler mapping that actually serves requests, so a route added,
  * removed or re-permissioned anywhere fails here until this register says so - and the change
  * is a reviewed line in a diff, not a silent widening.
+ *
+ * <p><strong>And every operator route is guarded</strong> (`P15-TSK-021`; {@code THREAT_MODEL.md} T31). The register
+ * pins the permission of every route that declares one, and {@code EveryEndpointDeclaresARuleTest} refuses a route
+ * that declares nothing - but a route under {@code /v1/operator} declaring only {@code @RequiresSession} passed both,
+ * served to any customer's session and, because the edge's allow-list moves only the routes an operator permission
+ * guards, left on the public ingress. {@link #everyOperatorRouteIsPermissionGuarded} refuses it by prefix, over the
+ * same handler mapping, and {@link #anUnguardedOperatorRouteIsCaught} proves the rule can fail.
  */
 @Tag("slice")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
@@ -650,6 +657,84 @@ class RoutePermissionRegisterTest {
                         PermissionName.CREDIT_INVESTIGATE,
                         PermissionName.CREDIT_UNDERWRITE,
                         PermissionName.RISK_OVERRIDE);
+    }
+
+    /** The path prefix of the operator surface (C9's internal ingress). */
+    static final String OPERATOR_PREFIX = "/v1/operator";
+
+    @Test
+    @DisplayName("every route under /v1/operator declares a permission (THREAT_MODEL.md T31, P15-TSK-021)")
+    void everyOperatorRouteIsPermissionGuarded() {
+        Map<String, HandlerMethod> served = served();
+        assertThat(served.keySet().stream().filter(RoutePermissionRegisterTest::isOperatorRoute).count())
+                .as("the census: the operator surface was read")
+                .isGreaterThan(100);
+        assertThat(unguardedOperatorRoutes(served))
+                .as("a route under %s answers an operator's act: it declares @RequiresPermission, or it is not an"
+                        + " operator route", OPERATOR_PREFIX)
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("the rule can fail: a planted operator route declaring only a session is caught, its guarded and its"
+            + " customer neighbours are not")
+    void anUnguardedOperatorRouteIsCaught() throws NoSuchMethodException {
+        Map<String, HandlerMethod> planted = new TreeMap<>();
+        planted.put("GET /v1/operator/planted", new HandlerMethod(new Planted(), Planted.class.getMethod("sessionOnly")));
+        planted.put("POST /v1/operator", new HandlerMethod(new Planted(), Planted.class.getMethod("sessionOnly")));
+        planted.put("GET /v1/operator/guarded", new HandlerMethod(new Planted(), Planted.class.getMethod("guarded")));
+        planted.put("GET /v1/operators-elsewhere", new HandlerMethod(new Planted(), Planted.class.getMethod("sessionOnly")));
+        planted.put("GET /v1/me/planted", new HandlerMethod(new Planted(), Planted.class.getMethod("sessionOnly")));
+        planted.put("GET /v1/operator/class-guarded",
+                new HandlerMethod(new PlantedGuarded(), PlantedGuarded.class.getMethod("inherits")));
+        assertThat(unguardedOperatorRoutes(planted)).containsExactly("GET /v1/operator/planted", "POST /v1/operator");
+    }
+
+    /** Routes under {@link #OPERATOR_PREFIX} whose handler declares no permission, on the method or its class. */
+    static java.util.List<String> unguardedOperatorRoutes(Map<String, HandlerMethod> routes) {
+        return routes.entrySet().stream()
+                .filter(route -> isOperatorRoute(route.getKey()))
+                .filter(route -> route.getValue().getMethodAnnotation(RequiresPermission.class) == null
+                        && route.getValue().getBeanType().getAnnotation(RequiresPermission.class) == null)
+                .map(Map.Entry::getKey)
+                .sorted()
+                .toList();
+    }
+
+    private static boolean isOperatorRoute(String route) {
+        String path = route.substring(route.indexOf(' ') + 1);
+        return path.equals(OPERATOR_PREFIX) || path.startsWith(OPERATOR_PREFIX + "/");
+    }
+
+    /** Every application route the MVC mapping serves, as {@code METHOD path}. */
+    private Map<String, HandlerMethod> served() {
+        Map<String, HandlerMethod> served = new TreeMap<>();
+        for (Map.Entry<RequestMappingInfo, HandlerMethod> route : mappings.getHandlerMethods().entrySet()) {
+            if (!route.getValue().getBeanType().getName().startsWith("com.finapp.")) {
+                continue;
+            }
+            for (RequestMethod method : route.getKey().getMethodsCondition().getMethods()) {
+                for (String path : route.getKey().getPatternValues()) {
+                    served.put(method.name() + " " + path, route.getValue());
+                }
+            }
+        }
+        return served;
+    }
+
+    /** A planted controller: one handler declaring only a session, one guarded. */
+    static final class Planted {
+        @com.finapp.app.session.RequiresSession
+        public void sessionOnly() {}
+
+        @RequiresPermission(PermissionName.LEDGER_ADJUST)
+        public void guarded() {}
+    }
+
+    /** A planted controller guarded at its class. */
+    @RequiresPermission(PermissionName.LEDGER_ADJUST)
+    static final class PlantedGuarded {
+        public void inherits() {}
     }
 
     private Map<String, PermissionName> declared() {

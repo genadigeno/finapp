@@ -102,7 +102,7 @@ public final class BnplRepaymentDesk {
         Money amount = amount(body);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(REPAYMENT_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(REPAYMENT_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(String.join("|", "bnpl.repayment",
                         id.value().toString(), Long.toString(amount.minorUnits()), Integer.toString(amount.scale()),
                         amount.currency().code())

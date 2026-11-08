@@ -91,7 +91,7 @@ public final class CrossBorderQuoteDesk {
         Objects.requireNonNull(current, "current must not be null");
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         String claimKey = key.scope() + "|" + key.key();
         // The amount's shape before any connection is taken (the Phase 9 to 10 transition gate): an exponent such as
         // 1E+400000000 parses instantly and then costs minutes and gigabytes in the rescale - never inside Tx1.

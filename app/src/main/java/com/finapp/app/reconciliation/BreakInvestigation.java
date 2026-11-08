@@ -370,7 +370,7 @@ public class BreakInvestigation {
         Correlation correlation = resolvedCorrelation();
         IdempotencyKey key =
                 new IdempotencyKey(
-                        NOTE_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+                        NOTE_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(
                         (breakId + "|" + text).getBytes(StandardCharsets.UTF_8));
@@ -417,7 +417,7 @@ public class BreakInvestigation {
         Correlation correlation = resolvedCorrelation();
         IdempotencyKey key =
                 new IdempotencyKey(
-                        LINK_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+                        LINK_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(
                         (breakId + "|" + kind.name() + "|" + ref)

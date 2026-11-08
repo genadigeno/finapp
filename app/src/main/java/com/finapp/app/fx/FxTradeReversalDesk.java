@@ -41,7 +41,7 @@ public final class FxTradeReversalDesk {
         FxTradeId tradeId = FxTradeId.of(id(rawTradeId, FxErrorCode.TRADE_NOT_FOUND));
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(
                 ("fx.trade-reversal|" + tradeId.value() + "|" + reason).getBytes(StandardCharsets.UTF_8));
         IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> transactions.inTransaction(unitOfWork ->

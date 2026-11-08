@@ -158,7 +158,7 @@ public final class DisputeResponses {
         // the command and the owning principal, so two merchants' keys never collide (ADR-0004).
         String scope =
                 IDEMPOTENCY_SCOPE_PREFIX
-                        + requester.type().name().toLowerCase(Locale.ROOT)
+                        + requester.keyedType().name().toLowerCase(Locale.ROOT)
                         + ":"
                         + requester.id();
         IdempotencyKey claimKey = new IdempotencyKey(scope, idempotencyKey);

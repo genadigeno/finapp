@@ -7,7 +7,9 @@ import com.finapp.accounts.IllegalCustomerAccountTransitionException;
 import com.finapp.accounts.AccountsErrorCode;
 import com.finapp.accounts.UnsupportedAccountCurrencyException;
 import com.finapp.consent.ConsentErrorCode;
+import com.finapp.app.session.StepUpRefusals;
 import com.finapp.consent.ConsentNotGrantedException;
+import com.finapp.identity.IdentityErrorCode;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.ErrorCode;
 import com.finapp.platform.api.IdempotencyKeyHeader;
@@ -17,7 +19,9 @@ import com.finapp.platform.idempotency.IdempotencyConflictException;
 import com.finapp.platform.idempotency.IdempotencyInProgressException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -69,10 +73,18 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
  */
 @RestControllerAdvice
 @Slf4j
+@RequiredArgsConstructor
 public class ApiErrorHandler extends ResponseEntityExceptionHandler {
 
     /** RFC 9457's media type. Not {@code application/json}: the shape is a contract of its own. */
     public static final MediaType PROBLEM_JSON = MediaType.valueOf("application/problem+json");
+
+    /**
+     * The recorder of an operation's own refused step-ups (`P15-TSK-021`). A provider, so a context without the session
+     * beans - a slice that renders the contract alone - still builds this advice; the application's context always
+     * holds it.
+     */
+    private final ObjectProvider<StepUpRefusals> stepUpRefusals;
 
     /** Raised deliberately by our own code, carrying the code that says what went wrong. */
     @ExceptionHandler(ApiException.class)
@@ -80,11 +92,43 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
         // Warn, not error: a client error is the API working. The message may name whatever makes
         // it diagnosable, because it goes to the log and not to the wire.
         log.warn("API error {}: {}", exception.errorCode().code(), exception.getMessage(), exception);
+        if (exception.errorCode() == IdentityErrorCode.ASSURANCE_REQUIRED && !stepUpRefusalRecorded(request)) {
+            return render(ProblemDetail.of(PlatformErrorCode.INTERNAL_ERROR, request.getRequestURI()));
+        }
         return render(
                 ProblemDetail.of(
                         exception.errorCode(),
                         request.getRequestURI(),
                         exception.clientDetail().orElse(null)));
+    }
+
+    /**
+     * Records a refused step-up an operation answered itself (`P15-TSK-021`), once per request: the interceptor's own
+     * refusals are recorded and marked before they reach here.
+     *
+     * <p><strong>Fail closed, as the interceptor does</strong> (the review's fix round, 2026-11-08): a {@code 403
+     * identity.AssuranceRequired} is answered only once its record has committed. A record that cannot be written - the
+     * database unreachable - is logged and the request answered {@code 500 api.InternalError}, exactly what the
+     * interceptor's own refusal and a permission denial answer when their records cannot be written. The request is
+     * refused either way and nothing it asked for happened; what the answer promises is that every {@code 403} of this
+     * kind has its record. A context without the recorder (a slice that renders the contract alone) has nothing to
+     * write; the application's context always holds it.
+     *
+     * @return false when the record was due and could not be written
+     */
+    private boolean stepUpRefusalRecorded(HttpServletRequest request) {
+        StepUpRefusals recorder = stepUpRefusals.getIfAvailable();
+        if (recorder == null) {
+            return true;
+        }
+        try {
+            recorder.record(request);
+            return true;
+        } catch (RuntimeException unrecorded) {
+            log.error("A refused step-up on {} could not be recorded; answered as a failure, not a 403",
+                    routeOf(request), unrecorded);
+            return false;
+        }
     }
 
     /**

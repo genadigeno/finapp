@@ -392,7 +392,7 @@ public final class BnplDisputeDesk {
      */
     private <P> BnplDisputeView keyed(String scope, Actor actor, String idempotencyKey, RequestFingerprint fingerprint,
             Function<Connection, P> prelude, Act<P> act) {
-        IdempotencyKey key = new IdempotencyKey(scope + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(scope + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         AtomicReference<BnplDisputes.Acted> acted = new AtomicReference<>();
         IdempotentExecutor.ExecutionOutcome outcome = null;
         for (int round = 0; outcome == null; round++) {

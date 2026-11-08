@@ -40,6 +40,24 @@ public record Actor(String id, ActorType type) {
         }
     }
 
+    /**
+     * The type an idempotency scope or a request fingerprint names this actor by (`P15-TSK-021`): its
+     * {@link #type()}, except that a <strong>person</strong> - {@link ActorType#CUSTOMER} or
+     * {@link ActorType#EMPLOYEE} - is always keyed {@code CUSTOMER}.
+     *
+     * <p>The audit type of a person is decided per request: an operator act is typed {@code EMPLOYEE},
+     * the same identity acting on its own account {@code CUSTOMER}, and before `P15-TSK-021` every
+     * session was typed {@code CUSTOMER}. A scope that named the audit type would name the same person
+     * twice: a request committed under {@code scope:CUSTOMER:<id>} by an instance of the previous
+     * release, its response lost, retried onto an instance of this one under
+     * {@code scope:EMPLOYEE:<id>}, would find no record and act a second time ({@code INV-IDEM-*}).
+     * So the key names the authenticated person once, in the form every scope already persisted;
+     * {@code IdempotencyScopesKeyThePersonTest} refuses an actor's {@code type()} in a scope again.
+     */
+    public ActorType keyedType() {
+        return type == ActorType.EMPLOYEE ? ActorType.CUSTOMER : type;
+    }
+
     @Override
     public String toString() {
         return type + ":" + id;

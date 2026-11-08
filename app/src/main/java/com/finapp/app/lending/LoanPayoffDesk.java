@@ -115,7 +115,7 @@ public final class LoanPayoffDesk {
         Optional<LocalDate> goodThrough = goodThrough(body);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(QUOTE_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(QUOTE_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(String.join("|", "lending.payoff-quote",
                 id.value().toString(), goodThrough.map(LocalDate::toString).orElse("")).getBytes(StandardCharsets.UTF_8));
         Payoffs.QuoteRequest request = new Payoffs.QuoteRequest(idempotencyKey, goodThrough);
@@ -158,7 +158,7 @@ public final class LoanPayoffDesk {
         UUID quoteId = quoteId(body);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(PAYOFF_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(PAYOFF_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(String.join("|", "lending.payoff",
                 id.value().toString(), quoteId.toString()).getBytes(StandardCharsets.UTF_8));
         AtomicBoolean converged = new AtomicBoolean();

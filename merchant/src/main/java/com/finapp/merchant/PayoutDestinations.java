@@ -404,7 +404,7 @@ public final class PayoutDestinations {
         return String.join(
                         "|",
                         PROPOSE_SCOPE,
-                        actor.type().name(),
+                        actor.keyedType().name(),
                         actor.id(),
                         command.merchantId().value().toString(),
                         command.destination().reference().expose(),

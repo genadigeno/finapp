@@ -110,7 +110,7 @@ public final class CreditDecisionRequestDesk {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         DecisionRequests.Terms terms = parse(body);
-        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         IdempotentExecutor.ExecutionOutcome outcome;
         try {
             outcome = transactions.inTransaction(unitOfWork -> {
@@ -173,7 +173,7 @@ public final class CreditDecisionRequestDesk {
         DecisionRequestId id = requestId(rawId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        IdempotencyKey key = new IdempotencyKey(CANCEL_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(CANCEL_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(("credit.decision-cancellation|" + id.value()).getBytes(StandardCharsets.UTF_8));
         IdempotentExecutor.ExecutionOutcome outcome;

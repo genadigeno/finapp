@@ -391,7 +391,7 @@ public final class RegulatorySubmissionDesk {
 
     /** One keyed act in one transaction: a lost response replays the stored id, and a refusal stores nothing. Counted after the commit, only when it did something. */
     private String keyed(Actor actor, String idempotencyKey, String fingerprinted, Function<Connection, RegulatorySubmissions.Acted> act) {
-        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
         RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
         AtomicReference<RegulatorySubmissions.Acted> ran = new AtomicReference<>();
         IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> selfApprovalRecorded(actor, () -> transactions.inTransaction(unitOfWork -> executor.execute(unitOfWork, key, fingerprint, uow -> {

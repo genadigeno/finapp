@@ -74,13 +74,14 @@ class NoProcessLocalSessionStateTest {
      * exactly the claim this rule exists to stop being made informally. Making it formally, in one
      * place, with the reason written down, is the point of the list rather than a way around it.
      *
-     * <p><strong>Two entries, and both are return values.</strong> {@code SessionRotation.Rotated}
+     * <p><strong>Three entries, and all are return values.</strong> {@code SessionRotation.Rotated}
      * and {@code SessionIssue.Issued} are each the result of a single call — the session and the
      * token to hand the client — constructed per call and discarded when the caller is done with
-     * it. Neither can make a revoked session usable, because nothing consults them on a later
+     * it; {@code SessionAuthenticationInterceptor.Established} ({@code P15-TSK-021}) is the session
+     * and the roles one request read, discarded when that request has been typed and admitted. Neither can make a revoked session usable, because nothing consults them on a later
      * request; a cache can, because that is what a cache is for.
      *
-     * <p>They are the <em>same</em> claim arriving twice, which is what a growing exemption list
+     * <p>They are the <em>same</em> claim arriving three times, which is what a growing exemption list
      * should look like when it is healthy: a second entry of a kind already argued, rather than a
      * second kind.
      *
@@ -96,7 +97,12 @@ class NoProcessLocalSessionStateTest {
                     // a record component from a field, which is why this is an entry rather
                     // than a structural exclusion - and an entry is the better outcome,
                     // because it makes somebody state the claim.
-                    "com.finapp.identity.SessionIssue$Issued.session");
+                    "com.finapp.identity.SessionIssue$Issued.session",
+                    // P15-TSK-021, the same claim a third time: the interceptor's per-request
+                    // RETURN VALUE - the session it just read from the database and the roles
+                    // read in the same transaction - used within preHandle and discarded. The
+                    // next request reads both again; nothing consults this one.
+                    "com.finapp.app.session.SessionAuthenticationInterceptor$Established.session");
 
     @Test
     @DisplayName("every exemption still names a field that exists")
