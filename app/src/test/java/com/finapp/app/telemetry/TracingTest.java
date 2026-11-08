@@ -10,6 +10,7 @@ import io.micrometer.tracing.Span;
 import io.micrometer.tracing.Tracer;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -18,6 +19,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -58,29 +60,60 @@ class TracingTest {
 
     @Autowired private Tracer tracer;
 
-    /** Reports the logging context as seen from inside a request. Not production code. */
+    @Autowired private SdkTracerProvider tracerProvider;
+
+    /**
+     * Reports the logging context as seen from inside a request, and reaches for a connection. Not production code.
+     *
+     * <p>The requests here are the API port's: since `P15-TSK-008` the actuator answers on the management port alone,
+     * which serves the orchestrator and the scraper and is neither traced nor correlated - a probe every few seconds is
+     * not a flow anyone asks about. Until then these tests drove liveness and readiness.
+     */
     @com.finapp.app.session.Unauthenticated
     @RestController
     static class MdcProbe {
         static final String PATH = "/probe/log-context";
+        static final String CONNECTION = "/probe/connection";
         static volatile Map<String, String> seen;
+
+        private final javax.sql.DataSource dataSource;
+
+        MdcProbe(javax.sql.DataSource dataSource) {
+            this.dataSource = dataSource;
+        }
 
         @GetMapping(PATH)
         String peek() {
             seen = MDC.getCopyOfContextMap();
             return "ok";
         }
+
+        /** Reaches for a connection, as readiness did: a second span, the database being absent. */
+        @GetMapping(CONNECTION)
+        @SuppressWarnings("try") // The connection is opened for its span, then closed: nothing reads it.
+        String connection() {
+            try (java.sql.Connection ignored = dataSource.getConnection()) {
+                return "connected";
+            } catch (java.sql.SQLException absent) {
+                return "absent";
+            }
+        }
     }
 
     @BeforeEach
     void clearRecordedSpans() {
+        // Flushed first, then cleared. Spring Boot's batch processor exports every span a second time, up to its delay
+        // later than the in-memory processor did, so without the flush a span from before this test lands inside it: the
+        // context's own start reads the database outside any request (CounterpartyChartGuard), and that span - no parent,
+        // no correlation - surfaced in whichever test ran a few seconds in (found by P15-TSK-008, whose requests moved).
+        tracerProvider.forceFlush().join(10, TimeUnit.SECONDS);
         spans.reset();
     }
 
     @Test
     @DisplayName("a request records a span")
     void aRequestRecordsASpan() throws Exception {
-        get("/actuator/health/liveness");
+        get(ApiVersion.CURRENT_PREFIX + MdcProbe.PATH);
 
         assertThat(recorded())
                 .as("an HTTP request must be visible in a trace")
@@ -90,10 +123,10 @@ class TracingTest {
     @Test
     @DisplayName("every recorded span carries the flow's correlation identifier")
     void everySpanCarriesCorrelation() throws Exception {
-        // Readiness rather than liveness, because readiness reaches for a connection and so
-        // produces a second span even though the database is absent. Asserting "every span" over
-        // a set of one - which liveness gives - is a claim that cannot fail for the right reason.
-        HttpResponse<String> response = get("/actuator/health/readiness");
+        // A request that reaches for a connection, and so produces a second span even though the
+        // database is absent. Asserting "every span" over a set of one is a claim that cannot fail
+        // for the right reason. (Readiness did this until P15-TSK-008 moved it off the API port.)
+        HttpResponse<String> response = get(ApiVersion.CURRENT_PREFIX + MdcProbe.CONNECTION);
         String correlationId = response.headers().firstValue(CorrelationFilter.HEADER).orElseThrow();
 
         List<SpanData> recorded = recorded();
@@ -106,7 +139,9 @@ class TracingTest {
         // holding an identifier that matches nothing.
         for (SpanData span : recorded) {
             assertThat(span.getAttributes().get(AttributeKey.stringKey(TraceAttributes.CORRELATION_ID)))
-                    .as("span '%s' must carry the correlation identifier the response returned", span.getName())
+                    .as("span '%s' must carry the correlation identifier the response returned; recorded: %s",
+                            span.getName(), recorded.stream().map(each -> each.getName() + " trace " + each.getTraceId()
+                                    + " parent " + each.getParentSpanId() + " " + each.getAttributes()).toList())
                     .isEqualTo(correlationId);
         }
     }
@@ -126,7 +161,7 @@ class TracingTest {
                         .connectTimeout(Duration.ofSeconds(10))
                         .build()
                         .send(
-                                HttpRequest.newBuilder(uri("/actuator/health/liveness"))
+                                HttpRequest.newBuilder(uri(ApiVersion.CURRENT_PREFIX + MdcProbe.PATH))
                                         .header("traceparent", traceparent)
                                         .GET()
                                         .build(),
@@ -142,13 +177,15 @@ class TracingTest {
     @Test
     @DisplayName("two requests are two traces")
     void separateRequestsAreSeparateTraces() throws Exception {
-        get("/actuator/health/liveness");
-        get("/actuator/info");
+        get(ApiVersion.CURRENT_PREFIX + MdcProbe.PATH);
+        get(ApiVersion.CURRENT_PREFIX + MdcProbe.CONNECTION);
 
         // The negative control for the test above. Without it, a bug that put every span in one
         // trace would satisfy "the caller's trace is continued" perfectly.
         assertThat(recorded().stream().map(SpanData::getTraceId).distinct().count())
-                .as("unrelated requests must not be joined into one trace")
+                .as("unrelated requests must not be joined into one trace; recorded: %s", recorded().stream()
+                        .map(each -> each.getName() + " trace " + each.getTraceId() + " parent " + each.getParentSpanId()
+                                + " " + each.getAttributes()).toList())
                 .isEqualTo(2);
     }
 

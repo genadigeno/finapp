@@ -1,5 +1,7 @@
 package com.finapp.app.bnpl;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.bnpl.BnplApplicationId;
 import com.finapp.bnpl.BnplOfferId;
 import com.finapp.bnpl.BnplOrigination;
@@ -14,7 +16,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * The BNPL origination sweep (`P12-TSK-011`; PHASE_12_PLAN.md sections 7.1 T-off and 7.5, BNPL_LIFECYCLES.md sections 4.2
@@ -30,7 +31,7 @@ import org.springframework.context.SmartLifecycle;
  * the suites drive {@link #sweepOnce()}.
  */
 @Slf4j
-public final class BnplOriginationSchedule implements SmartLifecycle {
+public final class BnplOriginationSchedule implements DrainedSchedule {
 
     private final BnplOrigination origination;
     private final BnplTransactions transactions;
@@ -39,7 +40,7 @@ public final class BnplOriginationSchedule implements SmartLifecycle {
     private final int batch;
     private final Duration permit;
     private final BnplFlowScope flow;
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("bnpl-origination");
 
     public BnplOriginationSchedule(
             BnplOrigination origination,
@@ -115,13 +116,14 @@ public final class BnplOriginationSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "bnpl-origination");
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, drain.name());
             thread.setDaemon(true);
             return thread;
         });
         executor.scheduleWithFixedDelay(this::sweepQuietly, pollInterval.toMillis(), pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -133,14 +135,7 @@ public final class BnplOriginationSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

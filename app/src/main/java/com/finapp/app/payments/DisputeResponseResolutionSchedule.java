@@ -1,5 +1,7 @@
 package com.finapp.app.payments;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.payments.DisputeResponseResolution;
 import java.time.Duration;
 import java.util.Objects;
@@ -7,7 +9,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * Runs {@link DisputeResponseResolution#sweep()} on a fixed delay, on every instance
@@ -16,7 +17,7 @@ import org.springframework.context.SmartLifecycle;
  * costs one bounded query.
  */
 @Slf4j
-public final class DisputeResponseResolutionSchedule implements SmartLifecycle {
+public final class DisputeResponseResolutionSchedule implements DrainedSchedule {
 
     /**
      * The sweep's dispatched bound, as ONE placeholder (`P7-TSK-015`): the resolution sweep and
@@ -29,7 +30,7 @@ public final class DisputeResponseResolutionSchedule implements SmartLifecycle {
     private final DisputeResponseResolution resolution;
     private final Duration pollInterval;
 
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("dispute-response-resolution");
 
     public DisputeResponseResolutionSchedule(
             DisputeResponseResolution resolution, Duration pollInterval) {
@@ -42,10 +43,10 @@ public final class DisputeResponseResolutionSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor =
+        ScheduledExecutorService executor =
                 Executors.newSingleThreadScheduledExecutor(
                         runnable -> {
-                            Thread thread = new Thread(runnable, "dispute-response-resolution");
+                            Thread thread = new Thread(runnable, drain.name());
                             thread.setDaemon(true);
                             return thread;
                         });
@@ -54,6 +55,7 @@ public final class DisputeResponseResolutionSchedule implements SmartLifecycle {
                 pollInterval.toMillis(),
                 pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -74,14 +76,7 @@ public final class DisputeResponseResolutionSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

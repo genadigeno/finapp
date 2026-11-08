@@ -1,5 +1,7 @@
 package com.finapp.app.settlement;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.settlement.BatchAcceptance;
 import com.finapp.settlement.FileParsing;
 import java.time.Duration;
@@ -8,7 +10,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * Runs the intake's two legs on a fixed delay, on every instance — parse (`P8-TSK-008`,
@@ -23,13 +24,13 @@ import org.springframework.context.SmartLifecycle;
  * sweeps directly.
  */
 @Slf4j
-public final class SettlementIntakeSchedule implements SmartLifecycle {
+public final class SettlementIntakeSchedule implements DrainedSchedule {
 
     private final FileParsing parsing;
     private final BatchAcceptance acceptance;
     private final Duration pollInterval;
 
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("settlement-intake");
 
     public SettlementIntakeSchedule(
             FileParsing parsing, BatchAcceptance acceptance, Duration pollInterval) {
@@ -43,10 +44,10 @@ public final class SettlementIntakeSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor =
+        ScheduledExecutorService executor =
                 Executors.newSingleThreadScheduledExecutor(
                         runnable -> {
-                            Thread thread = new Thread(runnable, "settlement-intake");
+                            Thread thread = new Thread(runnable, drain.name());
                             thread.setDaemon(true);
                             return thread;
                         });
@@ -55,6 +56,7 @@ public final class SettlementIntakeSchedule implements SmartLifecycle {
                 pollInterval.toMillis(),
                 pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -93,14 +95,7 @@ public final class SettlementIntakeSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

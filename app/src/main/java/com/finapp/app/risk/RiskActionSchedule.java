@@ -1,12 +1,13 @@
 package com.finapp.app.risk;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * The risk action schedule (`P13-TSK-017`; {@code PHASE_13_PLAN.md} sections 7.1 T-act, 7.5; {@code RISK_LIFECYCLES.md}
@@ -45,14 +46,14 @@ import org.springframework.context.SmartLifecycle;
  * escapes it is counted here and ends only it. Still no new scheduler: {@code LEASE_PROTECTED_SCHEDULERS} is unchanged.
  */
 @Slf4j
-public final class RiskActionSchedule implements SmartLifecycle {
+public final class RiskActionSchedule implements DrainedSchedule {
 
     private final RiskActionDriver driver;
     private final RegulatoryFilingDriver filings;
     private final RescreeningLeg rescreening;
     private final RiskActionMetrics metrics;
     private final Duration pollInterval;
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("risk-actions");
 
     /**
      * The rescreening leg (`P13-TSK-022`) - {@link RescreeningDriver} in production: its step, and where a defect that
@@ -147,13 +148,14 @@ public final class RiskActionSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "risk-actions");
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, drain.name());
             thread.setDaemon(true);
             return thread;
         });
         executor.scheduleWithFixedDelay(this::sweepQuietly, pollInterval.toMillis(), pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -165,14 +167,7 @@ public final class RiskActionSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

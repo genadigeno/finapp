@@ -1,5 +1,7 @@
 package com.finapp.app.kyc;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.kyc.CounterpartyScreeningId;
 import com.finapp.kyc.CounterpartyScreenings;
 import com.finapp.platform.security.SecurityContext;
@@ -12,7 +14,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * The counterparty screening retry (`P9-TSK-016`, ADR-0081 point 5): asks the provider again for every
@@ -24,13 +25,13 @@ import org.springframework.context.SmartLifecycle;
  * drive {@link #sweepOnce()}.
  */
 @Slf4j
-public final class CounterpartyScreeningRetrySchedule implements SmartLifecycle {
+public final class CounterpartyScreeningRetrySchedule implements DrainedSchedule {
 
     private final CounterpartyScreenings screenings;
     private final IdGenerator ids;
     private final Duration pollInterval;
     private final int batch;
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("kyc-counterparty-retry");
 
     public CounterpartyScreeningRetrySchedule(
             CounterpartyScreenings screenings, IdGenerator ids, Duration pollInterval, int batch) {
@@ -69,13 +70,14 @@ public final class CounterpartyScreeningRetrySchedule implements SmartLifecycle 
 
     @Override
     public void start() {
-        executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "kyc-counterparty-retry");
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, drain.name());
             thread.setDaemon(true);
             return thread;
         });
         executor.scheduleWithFixedDelay(this::sweepQuietly, pollInterval.toMillis(), pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -87,14 +89,7 @@ public final class CounterpartyScreeningRetrySchedule implements SmartLifecycle 
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

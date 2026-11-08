@@ -1,5 +1,7 @@
 package com.finapp.app.lending;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.lending.LendingSpans;
 import com.finapp.lending.LoanPayoutStore;
 import com.finapp.lending.LoanPayoutSteps;
@@ -11,7 +13,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * The payout sweep, path X (`P11-TSK-015`; PHASE_11_PLAN.md sections 7.1 T-pyo / T-pyr and 7.5, LENDING_LIFECYCLES.md
@@ -26,7 +27,7 @@ import org.springframework.context.SmartLifecycle;
  * suites drive {@link #sweepOnce()}.
  */
 @Slf4j
-public final class LoanPayoutSchedule implements SmartLifecycle {
+public final class LoanPayoutSchedule implements DrainedSchedule {
 
     private final LoanPayoutSteps steps;
     private final LendingTransactions transactions;
@@ -35,7 +36,7 @@ public final class LoanPayoutSchedule implements SmartLifecycle {
     private final int batch;
     private final Duration permit;
     private final LendingFlowScope flow;
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("lending-payout");
 
     public LoanPayoutSchedule(
             LoanPayoutSteps steps,
@@ -96,13 +97,14 @@ public final class LoanPayoutSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "lending-payout");
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, drain.name());
             thread.setDaemon(true);
             return thread;
         });
         executor.scheduleWithFixedDelay(this::sweepQuietly, pollInterval.toMillis(), pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -114,14 +116,7 @@ public final class LoanPayoutSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

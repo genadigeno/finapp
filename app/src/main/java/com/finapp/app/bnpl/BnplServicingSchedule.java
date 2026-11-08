@@ -1,5 +1,7 @@
 package com.finapp.app.bnpl;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.bnpl.BnplAccruals;
 import com.finapp.bnpl.BnplObligationId;
 import com.finapp.bnpl.BnplServicing;
@@ -13,7 +15,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * The BNPL servicing sweep (`P12-TSK-015`; {@code PHASE_12_PLAN.md} sections 7.1 T-svc and 7.5; lending's
@@ -37,7 +38,7 @@ import org.springframework.context.SmartLifecycle;
  * back alone: its obligation's step is not taken this tick, the claim's cadence retries it, and the page continues.
  */
 @Slf4j
-public final class BnplServicingSchedule implements SmartLifecycle {
+public final class BnplServicingSchedule implements DrainedSchedule {
 
     /** The most T-acc calls before one step: 8 x 92 dates - more than any pay-in-N accrual span. */
     static final int MAX_ACCRUAL_CALLS = 8;
@@ -51,7 +52,7 @@ public final class BnplServicingSchedule implements SmartLifecycle {
     private final int batch;
     private final Duration retryCadence;
     private final BnplFlowScope flow;
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("bnpl-servicing");
 
     public BnplServicingSchedule(
             BnplServicing servicing,
@@ -161,13 +162,14 @@ public final class BnplServicingSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "bnpl-servicing");
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, drain.name());
             thread.setDaemon(true);
             return thread;
         });
         executor.scheduleWithFixedDelay(this::sweepQuietly, pollInterval.toMillis(), pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -179,14 +181,7 @@ public final class BnplServicingSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

@@ -1,5 +1,7 @@
 package com.finapp.app.bnpl;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.bnpl.AllocationAnomaly;
 import com.finapp.bnpl.BnplAccruals;
 import com.finapp.bnpl.BnplDisputeId;
@@ -18,7 +20,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * The BNPL dispute deadline sweep (`P12-TSK-023`; ADR-0106 decisions 4 and 9, OQ-10 - the merchant's silence is
@@ -34,7 +35,7 @@ import org.springframework.context.SmartLifecycle;
  * test contexts ({@code finapp.bnpl.dispute.sweeper.enabled}); the suites drive {@link #sweepOnce()}.
  */
 @Slf4j
-public final class BnplDisputeSchedule implements SmartLifecycle {
+public final class BnplDisputeSchedule implements DrainedSchedule {
 
     /** The most T-acc calls before one step. */
     static final int MAX_ACCRUAL_CALLS = 8;
@@ -49,7 +50,7 @@ public final class BnplDisputeSchedule implements SmartLifecycle {
     private final int batch;
     private final Duration retryCadence;
     private final BnplFlowScope flow;
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("bnpl-dispute-deadline");
 
     public BnplDisputeSchedule(
             BnplDisputes disputes,
@@ -148,13 +149,14 @@ public final class BnplDisputeSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "bnpl-dispute-deadline");
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, drain.name());
             thread.setDaemon(true);
             return thread;
         });
         executor.scheduleWithFixedDelay(this::sweepQuietly, pollInterval.toMillis(), pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -166,14 +168,7 @@ public final class BnplDisputeSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

@@ -1,5 +1,7 @@
 package com.finapp.app.payments;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.payments.PayInResolution;
 import java.time.Duration;
 import java.util.Objects;
@@ -7,7 +9,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * Runs {@link PayInResolution#sweep()} on a fixed delay, on every instance (`P7-TSK-009`)
@@ -16,12 +17,12 @@ import org.springframework.context.SmartLifecycle;
  * costs one bounded query.
  */
 @Slf4j
-public final class PayInResolutionSchedule implements SmartLifecycle {
+public final class PayInResolutionSchedule implements DrainedSchedule {
 
     private final PayInResolution resolution;
     private final Duration pollInterval;
 
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("payin-resolution");
 
     public PayInResolutionSchedule(PayInResolution resolution, Duration pollInterval) {
         this.resolution = Objects.requireNonNull(resolution, "resolution must not be null");
@@ -33,10 +34,10 @@ public final class PayInResolutionSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor =
+        ScheduledExecutorService executor =
                 Executors.newSingleThreadScheduledExecutor(
                         runnable -> {
-                            Thread thread = new Thread(runnable, "payin-resolution");
+                            Thread thread = new Thread(runnable, drain.name());
                             thread.setDaemon(true);
                             return thread;
                         });
@@ -45,6 +46,7 @@ public final class PayInResolutionSchedule implements SmartLifecycle {
                 pollInterval.toMillis(),
                 pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -65,14 +67,7 @@ public final class PayInResolutionSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

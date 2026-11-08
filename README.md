@@ -427,12 +427,17 @@ if a stated value stops matching the code, or if a section is added without a la
 
 ## 5b. Health, readiness and build info
 
-Three endpoints, deliberately unversioned (ADR-0016):
+Three endpoints, deliberately unversioned (ADR-0016), served on the **management port, 8081**,
+bound to loopback (`P15-TSK-008`). The API port, 8080, answers `404` for every `/actuator` path:
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}
-' http://localhost:8080/actuator/health/readiness
+' http://127.0.0.1:8081/actuator/health/readiness
 ```
+
+`FINAPP_MANAGEMENT_ADDRESS` moves the management port off loopback; only the Kubernetes overlays set
+it, to the pod's address. Do not set it to `0.0.0.0` on a developer's machine: the endpoints are
+unauthenticated.
 
 | Endpoint | Answers | Depends on |
 |---|---|---|
@@ -459,7 +464,7 @@ never as the superuser `compose.yaml`'s `FINAPP_DB_USER` names.
 
 ## 5d. Metrics and the dashboard
 
-The application publishes Prometheus metrics at `/actuator/prometheus`. Names follow
+The application publishes Prometheus metrics at `/actuator/prometheus` on the management port, 8081. Names follow
 `finapp.<module>.<noun>` and the build fails if one does not (ADR-0018).
 
 To see the dashboard:
@@ -473,7 +478,10 @@ provisioned from `infra/grafana/` - the datasource and the dashboard are files i
 in a volume, so `allowUiUpdates` is off: edit the JSON, not the UI.
 
 Prometheus scrapes the application on the **host**, not in a container, because that is where a
-developer runs it.
+developer runs it: `host.docker.internal:8081`, which Docker Desktop forwards to the host's loopback.
+On a Linux Docker engine `host.docker.internal` is the bridge's address and a loopback listener does
+not answer it: start the application with `FINAPP_MANAGEMENT_ADDRESS` set to that bridge address
+(`infra/prometheus/prometheus.yml` says how to find it). That case is not measured here.
 
 **A metric never carries a correlation identifier, an account, or anything else a request can
 influence.** That is both a cardinality rule and a security rule - a tag value from a request

@@ -1,12 +1,13 @@
 package com.finapp.app.settlement;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * Runs {@link SettlementPullSweep#sweep()} on a fixed delay, on every instance (`P8-TSK-021`,
@@ -18,12 +19,12 @@ import org.springframework.context.SmartLifecycle;
  * sweep and the pull directly.
  */
 @Slf4j
-public final class SettlementPullSchedule implements SmartLifecycle {
+public final class SettlementPullSchedule implements DrainedSchedule {
 
     private final SettlementPullSweep sweep;
     private final Duration pollInterval;
 
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("settlement-pull");
 
     public SettlementPullSchedule(SettlementPullSweep sweep, Duration pollInterval) {
         this.sweep = Objects.requireNonNull(sweep, "sweep must not be null");
@@ -35,10 +36,10 @@ public final class SettlementPullSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor =
+        ScheduledExecutorService executor =
                 Executors.newSingleThreadScheduledExecutor(
                         runnable -> {
-                            Thread thread = new Thread(runnable, "settlement-pull");
+                            Thread thread = new Thread(runnable, drain.name());
                             thread.setDaemon(true);
                             return thread;
                         });
@@ -47,6 +48,7 @@ public final class SettlementPullSchedule implements SmartLifecycle {
                 pollInterval.toMillis(),
                 pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -67,14 +69,7 @@ public final class SettlementPullSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

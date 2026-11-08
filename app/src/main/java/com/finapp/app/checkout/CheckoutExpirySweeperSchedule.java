@@ -1,5 +1,7 @@
 package com.finapp.app.checkout;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.app.telemetry.CheckoutMeters;
 import com.finapp.checkout.CheckoutExpirySweeper;
 import java.time.Duration;
@@ -8,7 +10,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * Runs {@link CheckoutExpirySweeper#sweep()} on a fixed delay, on every instance
@@ -46,13 +47,13 @@ import org.springframework.context.SmartLifecycle;
  * anti-stall machinery.
  */
 @Slf4j
-public final class CheckoutExpirySweeperSchedule implements SmartLifecycle {
+public final class CheckoutExpirySweeperSchedule implements DrainedSchedule {
 
     private final CheckoutExpirySweeper sweeper;
     private final CheckoutMeters meters;
     private final Duration pollInterval;
 
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("checkout-expiry-sweeper");
 
     public CheckoutExpirySweeperSchedule(
             CheckoutExpirySweeper sweeper, CheckoutMeters meters, Duration pollInterval) {
@@ -66,10 +67,10 @@ public final class CheckoutExpirySweeperSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor =
+        ScheduledExecutorService executor =
                 Executors.newSingleThreadScheduledExecutor(
                         runnable -> {
-                            Thread thread = new Thread(runnable, "checkout-expiry-sweeper");
+                            Thread thread = new Thread(runnable, drain.name());
                             thread.setDaemon(true);
                             return thread;
                         });
@@ -78,6 +79,7 @@ public final class CheckoutExpirySweeperSchedule implements SmartLifecycle {
                 pollInterval.toMillis(),
                 pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -102,14 +104,7 @@ public final class CheckoutExpirySweeperSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

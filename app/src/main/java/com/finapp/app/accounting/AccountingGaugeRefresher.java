@@ -1,5 +1,7 @@
 package com.finapp.app.accounting;
 
+import com.finapp.app.lifecycle.BoundedStop;
+import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -7,6 +9,8 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
 
 /**
@@ -22,10 +26,14 @@ import org.springframework.context.SmartLifecycle;
  *
  * <p><strong>What this does not fix.</strong> About sixty other modules' metric classes still read on the scrape thread, so a pool with no free connection, or a database gone, still loses the whole scrape on every instance it touches: {@code CURRENT_STATE.md} section Known Architectural Debt.
  */
-public final class AccountingGaugeRefresher implements SmartLifecycle {
+@Slf4j
+public final class AccountingGaugeRefresher implements SmartLifecycle, BoundedStop {
 
     /** The thread's name: what a thread dump shows inside a read. */
     public static final String THREAD = "accounting-gauges";
+
+    /** How long a stop waits for the read in flight: above its two-second statement timeout. */
+    public static final Duration STOP_BOUND = Duration.ofSeconds(3);
 
     private final Executor executor;
     private final ExecutorService owned;
@@ -77,12 +85,30 @@ public final class AccountingGaugeRefresher implements SmartLifecycle {
         }
     }
 
+    /**
+     * Drops the queued reads, interrupts a wait for a connection, and lets the read in flight end within {@link #STOP_BOUND}
+     * (`P15-TSK-008`): a read is bounded by its statement timeout, so the pool, closed after every lifecycle stop, does not
+     * close under it. A read still running past the bound is abandoned on its daemon thread and fails with the pool.
+     */
     @Override
     public void stop() {
         running = false;
         if (owned != null) {
             owned.shutdownNow();
+            try {
+                if (!owned.awaitTermination(STOP_BOUND.toMillis(), TimeUnit.MILLISECONDS)) {
+                    log.warn("The accounting gauges' read did not end within {}; abandoned to the pool's close", STOP_BOUND);
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
         }
+        log.debug("The accounting gauges' reader stopped");
+    }
+
+    @Override
+    public Duration stopBound() {
+        return STOP_BOUND;
     }
 
     @Override

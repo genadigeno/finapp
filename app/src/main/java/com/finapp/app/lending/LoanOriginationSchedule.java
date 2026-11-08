@@ -1,5 +1,7 @@
 package com.finapp.app.lending;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.lending.LendingSpans;
 import com.finapp.lending.LoanApplicationId;
 import com.finapp.lending.LoanOfferId;
@@ -14,7 +16,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * The origination sweep (`P11-TSK-011`; PHASE_11_PLAN.md sections 7.1 T-off and 7.5, LENDING_LIFECYCLES.md sections 4.3
@@ -29,7 +30,7 @@ import org.springframework.context.SmartLifecycle;
  * drive {@link #sweepOnce()}.
  */
 @Slf4j
-public final class LoanOriginationSchedule implements SmartLifecycle {
+public final class LoanOriginationSchedule implements DrainedSchedule {
 
     private final LoanOrigination origination;
     private final LendingTransactions transactions;
@@ -38,7 +39,7 @@ public final class LoanOriginationSchedule implements SmartLifecycle {
     private final int batch;
     private final Duration permit;
     private final LendingFlowScope flow;
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("lending-origination");
 
     public LoanOriginationSchedule(
             LoanOrigination origination,
@@ -113,13 +114,14 @@ public final class LoanOriginationSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "lending-origination");
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, drain.name());
             thread.setDaemon(true);
             return thread;
         });
         executor.scheduleWithFixedDelay(this::sweepQuietly, pollInterval.toMillis(), pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -131,14 +133,7 @@ public final class LoanOriginationSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

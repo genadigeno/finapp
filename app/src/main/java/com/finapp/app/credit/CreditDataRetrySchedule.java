@@ -1,5 +1,7 @@
 package com.finapp.app.credit;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.credit.CreditDataCollection;
 import com.finapp.credit.CreditDataRequestId;
 import com.finapp.platform.security.SecurityContext;
@@ -12,7 +14,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * The credit data retry (`P10-TSK-006`; ADR-0085 point 5): re-asks every data request still {@code REQUESTED} past
@@ -24,14 +25,14 @@ import org.springframework.context.SmartLifecycle;
  * ({@code finapp.credit.data.retry.sweeper.enabled}); the suites drive {@link #sweepOnce()}.
  */
 @Slf4j
-public final class CreditDataRetrySchedule implements SmartLifecycle {
+public final class CreditDataRetrySchedule implements DrainedSchedule {
 
     private final CreditDataCollection collection;
     private final CreditFlowScope flows;
     private final IdGenerator ids;
     private final Duration pollInterval;
     private final int batch;
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("credit-data-retry");
 
     public CreditDataRetrySchedule(
             CreditDataCollection collection, CreditFlowScope flows, IdGenerator ids, Duration pollInterval, int batch) {
@@ -74,13 +75,14 @@ public final class CreditDataRetrySchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "credit-data-retry");
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, drain.name());
             thread.setDaemon(true);
             return thread;
         });
         executor.scheduleWithFixedDelay(this::sweepQuietly, pollInterval.toMillis(), pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -92,14 +94,7 @@ public final class CreditDataRetrySchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

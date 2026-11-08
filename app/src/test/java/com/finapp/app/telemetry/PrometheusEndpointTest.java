@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
 /**
@@ -19,6 +20,9 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * <p>This endpoint is a deliberate widening of an unauthenticated surface that {@code P0-TSK-027}
  * had narrowed to two. What makes it acceptable is that the CONTENT is controlled - which is a
  * claim, and this is where it is checked over real HTTP rather than against the registry.
+ *
+ * <p>The scrape is the management port's since `P15-TSK-008`; the API port answers it `404`
+ * ({@code ManagementPortTest}).
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -26,7 +30,9 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @Tag("slice")
 class PrometheusEndpointTest {
 
-    @LocalServerPort private int port;
+    @LocalServerPort private int apiPort;
+
+    @LocalManagementPort private int port;
 
     @Test
     @DisplayName("the scrape endpoint serves the platform's own series")
@@ -63,10 +69,19 @@ class PrometheusEndpointTest {
     @Test
     @DisplayName("the scrape carries no value a request could have influenced")
     void theScrapeLeaksNothingRequestScoped() throws Exception {
-        // Drive a request first, so anything that would capture per-request detail has had the
+        // Drive requests first, so anything that would capture per-request detail has had the
         // chance to. A correlation identifier or a request path as a label would be both a
-        // cardinality explosion and an INV-AUD-02 disclosure with months of retention.
+        // cardinality explosion and an INV-AUD-02 disclosure with months of retention. One on
+        // each port: the API port's is the one its request metrics record.
         get("/actuator/health/liveness");
+        HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .build()
+                .send(
+                        HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + apiPort + "/v1/no-such-route"))
+                                .GET()
+                                .build(),
+                        HttpResponse.BodyHandlers.ofString());
         String body = get("/actuator/prometheus").body();
 
         for (String forbidden : new String[] {"correlation", "traceid", "trace_id", "jdbc:", "127.0.0.1"}) {

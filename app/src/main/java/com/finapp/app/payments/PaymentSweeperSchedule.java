@@ -1,5 +1,7 @@
 package com.finapp.app.payments;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.payments.HeldPayments;
 import com.finapp.payments.PaymentSweeper;
 import java.time.Duration;
@@ -9,7 +11,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * Runs {@link PaymentSweeper#sweep()} on a fixed delay, on every instance (`P5-TSK-014`) —
@@ -42,7 +43,7 @@ import org.springframework.context.SmartLifecycle;
  * after the row's own transaction commits.
  */
 @Slf4j
-public final class PaymentSweeperSchedule implements SmartLifecycle {
+public final class PaymentSweeperSchedule implements DrainedSchedule {
 
     /**
      * The sweep's dispatched bound, as ONE placeholder (the Phase 6 → 7 transition, the payout's
@@ -64,7 +65,7 @@ public final class PaymentSweeperSchedule implements SmartLifecycle {
 
     private final Duration pollInterval;
 
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("payment-sweeper");
 
     public PaymentSweeperSchedule(
             PaymentSweeper sweeper, Supplier<HeldPayments.ExpiryTally> expiry, Duration pollInterval) {
@@ -78,10 +79,10 @@ public final class PaymentSweeperSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor =
+        ScheduledExecutorService executor =
                 Executors.newSingleThreadScheduledExecutor(
                         runnable -> {
-                            Thread thread = new Thread(runnable, "payment-sweeper");
+                            Thread thread = new Thread(runnable, drain.name());
                             thread.setDaemon(true);
                             return thread;
                         });
@@ -90,6 +91,7 @@ public final class PaymentSweeperSchedule implements SmartLifecycle {
                 pollInterval.toMillis(),
                 pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -124,14 +126,7 @@ public final class PaymentSweeperSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

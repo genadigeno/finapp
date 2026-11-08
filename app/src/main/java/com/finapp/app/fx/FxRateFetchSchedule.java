@@ -1,5 +1,7 @@
 package com.finapp.app.fx;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.fx.ReferenceRateFetch;
 import java.time.Duration;
 import java.util.Objects;
@@ -7,7 +9,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * The reference-rate fetch's schedule (`P9-TSK-005`, ADR-0075 §1) - <strong>leaderless on every
@@ -18,12 +19,12 @@ import org.springframework.context.SmartLifecycle;
  * argument, and in {@code DISTRIBUTED_EXECUTION.md} section 3.
  */
 @Slf4j
-public final class FxRateFetchSchedule implements SmartLifecycle {
+public final class FxRateFetchSchedule implements DrainedSchedule {
 
     private final ReferenceRateFetch fetch;
     private final FxRateMetrics metrics;
     private final Duration pollInterval;
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("fx-rate-fetch");
 
     public FxRateFetchSchedule(
             ReferenceRateFetch fetch, FxRateMetrics metrics, Duration pollInterval) {
@@ -37,10 +38,10 @@ public final class FxRateFetchSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor =
+        ScheduledExecutorService executor =
                 Executors.newSingleThreadScheduledExecutor(
                         runnable -> {
-                            Thread thread = new Thread(runnable, "fx-rate-fetch");
+                            Thread thread = new Thread(runnable, drain.name());
                             thread.setDaemon(true);
                             return thread;
                         });
@@ -49,6 +50,7 @@ public final class FxRateFetchSchedule implements SmartLifecycle {
                 pollInterval.toMillis(),
                 pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void fetchQuietly() {
@@ -67,14 +69,7 @@ public final class FxRateFetchSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

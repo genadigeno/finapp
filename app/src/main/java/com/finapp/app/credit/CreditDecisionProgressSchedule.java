@@ -1,5 +1,7 @@
 package com.finapp.app.credit;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.credit.DecisionProgress;
 import com.finapp.credit.DecisionRequestId;
 import com.finapp.platform.security.SecurityContext;
@@ -12,7 +14,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * The decision request's progress (`P10-TSK-015`; CREDIT_DECISIONING_LIFECYCLES.md section 3.1): drives every open
@@ -23,7 +24,7 @@ import org.springframework.context.SmartLifecycle;
  * test contexts ({@code finapp.credit.progress.sweeper.enabled}); the suites drive {@link #sweepOnce()}.
  */
 @Slf4j
-public final class CreditDecisionProgressSchedule implements SmartLifecycle {
+public final class CreditDecisionProgressSchedule implements DrainedSchedule {
 
     private final DecisionProgress progress;
     private final CreditFlowScope flows;
@@ -31,7 +32,7 @@ public final class CreditDecisionProgressSchedule implements SmartLifecycle {
     private final Duration pollInterval;
     private final int batch;
     private final Duration permit;
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("credit-decision-progress");
 
     public CreditDecisionProgressSchedule(DecisionProgress progress, CreditFlowScope flows, IdGenerator ids,
             Duration pollInterval, int batch, Duration permit) {
@@ -74,13 +75,14 @@ public final class CreditDecisionProgressSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "credit-decision-progress");
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, drain.name());
             thread.setDaemon(true);
             return thread;
         });
         executor.scheduleWithFixedDelay(this::sweepQuietly, pollInterval.toMillis(), pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -92,14 +94,7 @@ public final class CreditDecisionProgressSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

@@ -1,5 +1,7 @@
 package com.finapp.app.reconciliation;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.reconciliation.ReconciliationSweep;
 import java.time.Duration;
 import java.util.Objects;
@@ -7,7 +9,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * Runs time's observers on a fixed delay, on every instance (`P8-TSK-013`,
@@ -22,12 +23,12 @@ import org.springframework.context.SmartLifecycle;
  * directly.
  */
 @Slf4j
-public final class ReconciliationSweepSchedule implements SmartLifecycle {
+public final class ReconciliationSweepSchedule implements DrainedSchedule {
 
     private final ReconciliationSweep sweep;
     private final Duration pollInterval;
 
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("reconciliation-sweep");
 
     public ReconciliationSweepSchedule(ReconciliationSweep sweep, Duration pollInterval) {
         this.sweep = Objects.requireNonNull(sweep, "sweep must not be null");
@@ -39,10 +40,10 @@ public final class ReconciliationSweepSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor =
+        ScheduledExecutorService executor =
                 Executors.newSingleThreadScheduledExecutor(
                         runnable -> {
-                            Thread thread = new Thread(runnable, "reconciliation-sweep");
+                            Thread thread = new Thread(runnable, drain.name());
                             thread.setDaemon(true);
                             return thread;
                         });
@@ -51,6 +52,7 @@ public final class ReconciliationSweepSchedule implements SmartLifecycle {
                 pollInterval.toMillis(),
                 pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -74,14 +76,7 @@ public final class ReconciliationSweepSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

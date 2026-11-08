@@ -56,8 +56,17 @@ mistaken for the control.
 
 ## Operational endpoints
 
-The actuator is an allow-list, not a default (`P0-TSK-027`, ADR-0016). Only `health` and `info`
-are served. The rest exist as beans whether or not they are reachable, and each is one property
+**The actuator has a port of its own** (`P15-TSK-008`, ADR-0120 decision 3, `THREAT_MODEL.md` T2): it answers on the
+management port, 8081, and the API port answers `404` for every `/actuator` path, so no ingress that routes the API
+can route it. The management port binds loopback unless `FINAPP_MANAGEMENT_ADDRESS` says otherwise, and only the
+Kubernetes overlays say otherwise, with the pod's address (`P15-TSK-009`), where `P15-TSK-010`'s NetworkPolicy admits
+the kubelet and Prometheus alone. Moving the endpoints is not authenticating them: until that policy exists they are
+reachable, unauthenticated, by anything that can reach the pod's address - the two debt rows in `CURRENT_STATE.md`.
+Held by `ManagementPortTest`.
+
+The actuator is an allow-list, not a default (`P0-TSK-027`, ADR-0016). Only `health`, `info` and `prometheus` are served
+*(read "Only `health` and `info`" until `P15-TSK-008`: the scrape endpoint joined the allow-list in Phase 0 with its own
+debt row)*. The rest exist as beans whether or not they are reachable, and each is one property
 away from being exposed:
 
 | Endpoint | What it would give an unauthenticated caller |

@@ -33,30 +33,42 @@ import org.springframework.context.annotation.Import;
  * recorded against the tasks that bring them rather than faked here. What is real is real: a live
  * PostgreSQL, a real HTTP request, and the spans the SDK actually exported.
  *
- * <p><strong>Why readiness is the request under test.</strong> It is the only endpoint in Phase 0
- * that touches the database, and it touches it the way the application will: through the pool,
+ * <p><strong>Why readiness was the request under test.</strong> It was the only endpoint in Phase 0
+ * that touched the database, and it touched it the way the application will: through the pool,
  * which is what {@code ADR-0016} insists on. A test that opened its own connection would prove
  * something about JDBC rather than about this platform's request path.
+ *
+ * <p><strong>Since `P15-TSK-008`</strong> readiness answers on the management port, which is neither
+ * traced nor correlated - it serves the orchestrator, not a flow. The request under test is
+ * {@code TracingTest.MdcProbe}'s connection route on the API port: an API request reaching for a
+ * connection through the same pool.
  */
 @Tag("database")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(RecordedSpans.class)
+@Import({RecordedSpans.class, TracingTest.MdcProbe.class})
 class TraceAcrossDatabaseTest {
+
+    private static final String PROBE =
+            com.finapp.platform.api.ApiVersion.CURRENT_PREFIX + TracingTest.MdcProbe.CONNECTION;
 
     @LocalServerPort private int port;
 
     @Autowired private InMemorySpanExporter spans;
 
+    @Autowired private io.opentelemetry.sdk.trace.SdkTracerProvider tracerProvider;
+
     @BeforeEach
     void clearRecordedSpans() {
+        // Flushed first, for TracingTest's reason: Spring Boot's batch processor exports every span again, later.
+        tracerProvider.forceFlush().join(10, java.util.concurrent.TimeUnit.SECONDS);
         spans.reset();
     }
 
     @Test
     @DisplayName("a request that reaches PostgreSQL produces one connected trace")
     void httpAndDatabaseShareOneTrace() throws Exception {
-        HttpResponse<String> response = get("/actuator/health/readiness");
-        assertThat(response.statusCode()).as("the database must actually be reachable").isEqualTo(200);
+        HttpResponse<String> response = get(PROBE);
+        assertThat(response.body()).as("the database must actually be reachable").isEqualTo("connected");
 
         List<SpanData> recorded = spans.getFinishedSpanItems();
         assertThat(recorded).isNotEmpty();
@@ -74,7 +86,7 @@ class TraceAcrossDatabaseTest {
     @Test
     @DisplayName("the database span is a child of the request, not a root of its own")
     void theDatabaseSpanIsInsideTheRequest() throws Exception {
-        get("/actuator/health/readiness");
+        get(PROBE);
 
         SpanData database =
                 spans.getFinishedSpanItems().stream()
@@ -93,7 +105,7 @@ class TraceAcrossDatabaseTest {
     @Test
     @DisplayName("every span in the trace carries the correlation the client was given")
     void correlationReachesEverySpanInTheTrace() throws Exception {
-        HttpResponse<String> response = get("/actuator/health/readiness");
+        HttpResponse<String> response = get(PROBE);
         String correlationId = response.headers().firstValue(CorrelationFilter.HEADER).orElseThrow();
 
         // The fourth correlation sink, and the last clause of P0-TSK-014's acceptance criterion -

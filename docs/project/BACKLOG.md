@@ -27182,6 +27182,14 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: `deploy/README` section in `OPERATIONS_RUNBOOK.md` §11 (planned) on overlays.
 - **Acceptance criteria**: rendered, validated, every policy proven by its plant.
 - **Definition of done**: `DOD-BUILD`, `DOD-ARCH`. **Risk**: Low. **Cx**: M.
+- *Routed by `P15-TSK-008` (2026-11-08), status unchanged:* the management port is 8081 and binds loopback unless
+  `FINAPP_MANAGEMENT_ADDRESS` is set - the overlays set it to the pod's address (the downward API's `status.podIP`),
+  never `0.0.0.0`; the probes are `/actuator/health/liveness` and `/actuator/health/readiness` on 8081, and the API
+  port answers `404` for them. **The grace's arithmetic** (`ShutdownOrder`, `OPERATIONS_RUNBOOK.md` §11.1): after
+  the `preStop` pause the lifecycle takes at most 30 s (HTTP, the phase timeout) + 12 s (schedules) + 12 s (consumers)
+  + 3 s (the gauge reader) = 57 s, then the producer's close (`finapp.kafka.ack-timeout`, 10 s) and the pool's; so
+  `terminationGracePeriodSeconds` ≥ preStop + 67 s with a margin, and §6.1's `minReadySeconds ≥
+  terminationGracePeriodSeconds` makes it the rollout's step time as well.
 
 **P15-TSK-010 — Namespace security: RBAC, NetworkPolicy, Pod Security, quotas** — `PLANNED`
 - **Objective**: a compromised pod reaches only what it must, and no human holds standing write access.
@@ -27203,6 +27211,10 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §break-glass.
 - **Acceptance criteria**: the three `kind` tests green.
 - **Definition of done**: `DOD-SEC`, `DOD-BUILD`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-008` (2026-11-08), status unchanged:* the endpoints are moved, not restricted - 8081, loopback
+  outside Kubernetes, the API port `404` for `/actuator` (`ManagementPortTest`). The two debt rows now say they close
+  with this task's policy, and `THREAT_MODEL.md` T2's NetworkPolicy row is this task's; each is closed by this task's
+  gate, not before.
 
 **P15-TSK-011 — The edge: public and operator ingresses, TLS, the route allow-list** — `PLANNED`
 - **Objective**: the internet reaches customer, merchant and provider routes only; operators reach theirs only from the

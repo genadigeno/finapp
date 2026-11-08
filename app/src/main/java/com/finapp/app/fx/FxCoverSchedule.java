@@ -1,5 +1,7 @@
 package com.finapp.app.fx;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.fx.FxCoverDispatch;
 import com.finapp.platform.security.SecurityContext;
 import java.time.Duration;
@@ -8,7 +10,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * The cover's sweep (`P9-TSK-012`; ADR-0077 sections 3-4, PHASE_9_PLAN.md section 8): send,
@@ -20,11 +21,11 @@ import org.springframework.context.SmartLifecycle;
  * ({@code finapp.fx.cover.sweeper.enabled}); the suites drive {@link #sweepOnce()}.
  */
 @Slf4j
-public final class FxCoverSchedule implements SmartLifecycle {
+public final class FxCoverSchedule implements DrainedSchedule {
 
     private final FxCoverDispatch dispatch;
     private final Duration pollInterval;
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("fx-cover-sweep");
 
     public FxCoverSchedule(FxCoverDispatch dispatch, Duration pollInterval) {
         this.dispatch = Objects.requireNonNull(dispatch, "dispatch must not be null");
@@ -48,13 +49,14 @@ public final class FxCoverSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "fx-cover-sweep");
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, drain.name());
             thread.setDaemon(true);
             return thread;
         });
         executor.scheduleWithFixedDelay(this::sweepQuietly, pollInterval.toMillis(), pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -67,14 +69,7 @@ public final class FxCoverSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

@@ -1,5 +1,7 @@
 package com.finapp.app.merchant;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.app.telemetry.MerchantMeters;
 import com.finapp.merchant.MerchantPayoutResolution;
 import java.time.Duration;
@@ -8,7 +10,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * Runs {@link MerchantPayoutResolution#sweep()} on a fixed delay, on every instance
@@ -35,12 +36,12 @@ import org.springframework.context.SmartLifecycle;
  * failures inside a successful tick are the sweep's own anti-stall machinery.
  */
 @Slf4j
-public final class MerchantPayoutResolutionSchedule implements SmartLifecycle {
+public final class MerchantPayoutResolutionSchedule implements DrainedSchedule {
 
     private final MerchantPayoutResolution resolution;
     private final MerchantMeters meters;
     private final Duration pollInterval;
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("merchant-payout-resolution");
 
     public MerchantPayoutResolutionSchedule(
             MerchantPayoutResolution resolution, MerchantMeters meters, Duration pollInterval) {
@@ -54,10 +55,10 @@ public final class MerchantPayoutResolutionSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor =
+        ScheduledExecutorService executor =
                 Executors.newSingleThreadScheduledExecutor(
                         runnable -> {
-                            Thread thread = new Thread(runnable, "merchant-payout-resolution");
+                            Thread thread = new Thread(runnable, drain.name());
                             thread.setDaemon(true);
                             return thread;
                         });
@@ -66,6 +67,7 @@ public final class MerchantPayoutResolutionSchedule implements SmartLifecycle {
                 pollInterval.toMillis(),
                 pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -92,14 +94,7 @@ public final class MerchantPayoutResolutionSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

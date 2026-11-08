@@ -3,6 +3,8 @@ package com.finapp.app.accounting;
 import com.finapp.accounting.AccountingPeriods;
 import com.finapp.accounting.CloseChecks;
 import com.finapp.accounting.CloseRuns;
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -18,7 +20,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.IntSupplier;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * Accounting's one leaderless schedule (`P14-TSK-011`; {@code PHASE_14_PLAN.md} section 8.4; {@code INV-ACC-09}): every
@@ -44,7 +45,7 @@ import org.springframework.context.SmartLifecycle;
  * Off in test contexts ({@code finapp.accounting.sweeper.enabled}); the suites drive the legs directly.
  */
 @Slf4j
-public final class AccountingCloseSchedule implements SmartLifecycle {
+public final class AccountingCloseSchedule implements DrainedSchedule {
 
     static final String OPEN_LEG = "open";
     static final String CHECKS_LEG = "checks";
@@ -109,6 +110,7 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
     private final IdGenerator ids;
     private final Cadence cadence;
     private final AtomicReference<ScheduledExecutorService> executor = new AtomicReference<>();
+    private final ScheduleDrain drain = new ScheduleDrain("accounting-close");
 
     public AccountingCloseSchedule(AccountingPeriods periods, CloseRuns runs, CloseChecks checks,
             Orphans orphans, AccountingTransactions transactions, CloseRunMetrics metrics,
@@ -221,7 +223,7 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
     @Override
     public void start() {
         ScheduledExecutorService started = Executors.newScheduledThreadPool(THREADS, runnable -> {
-            Thread thread = new Thread(runnable, "accounting-close");
+            Thread thread = new Thread(runnable, drain.name());
             thread.setDaemon(true);
             return thread;
         });
@@ -231,21 +233,18 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
             // At once, not after a poll: an hour's open leg would otherwise never run on a fleet restarted within the hour.
             started.scheduleWithFixedDelay(leg.work()::getAsInt, 0, leg.poll().toMillis(), TimeUnit.MILLISECONDS);
         }
+        drain.started(started);
     }
 
     private record Leg(Duration poll, IntSupplier work) {}
 
+    /**
+     * Its stop drains (`P15-TSK-008`): no leg starts after it, and a leg in flight finishes within the bound. The
+     * heartbeat, a periodic task on this executor, stops with it, so a check still running is no longer renewed: one that
+     * outlives its lease is fenced by holder and reclaimed by another instance, as a dead worker's is.
+     */
     @Override
-    public void stop() {
-        ScheduledExecutorService running = executor.get();
-        if (running != null) {
-            running.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        ScheduledExecutorService running = executor.get();
-        return running != null && !running.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

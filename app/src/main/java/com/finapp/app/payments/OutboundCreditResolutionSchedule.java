@@ -1,5 +1,7 @@
 package com.finapp.app.payments;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.payments.OutboundCreditResolution;
 import java.time.Duration;
 import java.util.Objects;
@@ -7,7 +9,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * Runs {@link OutboundCreditResolution#sweep()} on a fixed delay, on every instance (`P9-TSK-020`) - the
@@ -15,7 +16,7 @@ import org.springframework.context.SmartLifecycle;
  * claim's primary key and the posting key arbitrate, and a tick that finds nothing costs one bounded query.
  */
 @Slf4j
-public final class OutboundCreditResolutionSchedule implements SmartLifecycle {
+public final class OutboundCreditResolutionSchedule implements DrainedSchedule {
 
     /**
      * The sweep's dispatched bound, as ONE placeholder: the sweep asks nothing about a younger dispatch - a live
@@ -26,7 +27,7 @@ public final class OutboundCreditResolutionSchedule implements SmartLifecycle {
     private final OutboundCreditResolution resolution;
     private final Duration pollInterval;
 
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("outbound-credit-resolution");
 
     public OutboundCreditResolutionSchedule(OutboundCreditResolution resolution, Duration pollInterval) {
         this.resolution = Objects.requireNonNull(resolution, "resolution must not be null");
@@ -38,13 +39,14 @@ public final class OutboundCreditResolutionSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "outbound-credit-resolution");
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, drain.name());
             thread.setDaemon(true);
             return thread;
         });
         executor.scheduleWithFixedDelay(this::sweepQuietly, pollInterval.toMillis(), pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -62,14 +64,7 @@ public final class OutboundCreditResolutionSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

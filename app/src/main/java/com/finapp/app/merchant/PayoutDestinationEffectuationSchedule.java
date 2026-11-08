@@ -1,5 +1,7 @@
 package com.finapp.app.merchant;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.merchant.PayoutDestinationEffectuation;
 import java.time.Duration;
 import java.util.Objects;
@@ -7,7 +9,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * Runs {@link PayoutDestinationEffectuation#sweep()} on a fixed delay, on every instance
@@ -34,11 +35,11 @@ import org.springframework.context.SmartLifecycle;
  * failures inside a successful tick are the sweep's own anti-stall machinery.
  */
 @Slf4j
-public final class PayoutDestinationEffectuationSchedule implements SmartLifecycle {
+public final class PayoutDestinationEffectuationSchedule implements DrainedSchedule {
 
     private final PayoutDestinationEffectuation effectuation;
     private final Duration pollInterval;
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("payout-destination-effectuation");
 
     public PayoutDestinationEffectuationSchedule(
             PayoutDestinationEffectuation effectuation, Duration pollInterval) {
@@ -51,10 +52,10 @@ public final class PayoutDestinationEffectuationSchedule implements SmartLifecyc
 
     @Override
     public void start() {
-        executor =
+        ScheduledExecutorService executor =
                 Executors.newSingleThreadScheduledExecutor(
                         runnable -> {
-                            Thread thread = new Thread(runnable, "payout-destination-effectuation");
+                            Thread thread = new Thread(runnable, drain.name());
                             thread.setDaemon(true);
                             return thread;
                         });
@@ -63,6 +64,7 @@ public final class PayoutDestinationEffectuationSchedule implements SmartLifecyc
                 pollInterval.toMillis(),
                 pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -87,14 +89,7 @@ public final class PayoutDestinationEffectuationSchedule implements SmartLifecyc
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

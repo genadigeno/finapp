@@ -1,5 +1,7 @@
 package com.finapp.app.fx;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.fx.QuoteLifecycle;
 import com.finapp.fx.QuoteStore;
 import com.finapp.fx.TransactionRunner;
@@ -15,7 +17,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * Quote expiry as an event (`P9-TSK-008`; ADR-0075 section 5). Every instance runs it with no
@@ -26,7 +27,7 @@ import org.springframework.context.SmartLifecycle;
  * ({@code finapp.fx.quote.expiry.sweeper.enabled}); the suites drive {@link #sweepOnce()}.
  */
 @Slf4j
-public final class FxQuoteExpirySchedule implements SmartLifecycle {
+public final class FxQuoteExpirySchedule implements DrainedSchedule {
 
     /** The pages one tick may take before yielding to the next tick. */
     static final int MAX_PAGES = 20;
@@ -37,7 +38,7 @@ public final class FxQuoteExpirySchedule implements SmartLifecycle {
     private final Clock clock;
     private final Duration pollInterval;
     private final int pageSize;
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("fx-quote-expiry");
 
     public FxQuoteExpirySchedule(
             QuoteLifecycle lifecycle,
@@ -89,13 +90,14 @@ public final class FxQuoteExpirySchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "fx-quote-expiry");
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, drain.name());
             thread.setDaemon(true);
             return thread;
         });
         executor.scheduleWithFixedDelay(this::sweepQuietly, pollInterval.toMillis(), pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -108,14 +110,7 @@ public final class FxQuoteExpirySchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

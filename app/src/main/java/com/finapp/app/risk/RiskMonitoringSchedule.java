@@ -1,5 +1,7 @@
 package com.finapp.app.risk;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.risk.MonitoringIntake;
 import com.finapp.risk.MonitoringWatermark;
@@ -14,7 +16,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * The risk monitoring sweep (`P13-TSK-019`; {@code PHASE_13_PLAN.md} sections 7.1 T-mon, 7.5, 12.7;
@@ -58,7 +59,7 @@ import org.springframework.context.SmartLifecycle;
  * leaderless schedule - drives it, so a slow owner's door no longer holds a tick of the monitoring sweep.
  */
 @Slf4j
-public final class RiskMonitoringSchedule implements SmartLifecycle {
+public final class RiskMonitoringSchedule implements DrainedSchedule {
 
     /** The profile leg's steps - {@link ProfileRecompute}'s, in production. */
     public interface ProfileLeg {
@@ -120,7 +121,7 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
     private final RiskFlowScope flow;
     private final Duration pollInterval;
     private final int batchesPerTick;
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("risk-monitoring");
 
     /**
      * @param pollInterval the tick
@@ -273,13 +274,14 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "risk-monitoring");
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, drain.name());
             thread.setDaemon(true);
             return thread;
         });
         executor.scheduleWithFixedDelay(this::sweepQuietly, pollInterval.toMillis(), pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -291,14 +293,7 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

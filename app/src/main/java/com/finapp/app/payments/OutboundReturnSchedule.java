@@ -1,12 +1,13 @@
 package com.finapp.app.payments;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * Runs {@link OutboundReturnWorker#sweep()} on a fixed delay, on every instance (`P9-TSK-023`) - the
@@ -14,12 +15,12 @@ import org.springframework.context.SmartLifecycle;
  * unique and the posting key arbitrate, and a tick that finds nothing costs one bounded query.
  */
 @Slf4j
-public final class OutboundReturnSchedule implements SmartLifecycle {
+public final class OutboundReturnSchedule implements DrainedSchedule {
 
     private final OutboundReturnWorker worker;
     private final Duration pollInterval;
 
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("outbound-return");
 
     public OutboundReturnSchedule(OutboundReturnWorker worker, Duration pollInterval) {
         this.worker = Objects.requireNonNull(worker, "worker must not be null");
@@ -31,13 +32,14 @@ public final class OutboundReturnSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "outbound-return");
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, drain.name());
             thread.setDaemon(true);
             return thread;
         });
         executor.scheduleWithFixedDelay(this::sweepQuietly, pollInterval.toMillis(), pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     private void sweepQuietly() {
@@ -54,14 +56,7 @@ public final class OutboundReturnSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }

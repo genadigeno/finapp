@@ -1,5 +1,7 @@
 package com.finapp.app.payments;
 
+import com.finapp.app.lifecycle.DrainedSchedule;
+import com.finapp.app.lifecycle.ScheduleDrain;
 import com.finapp.payments.WithdrawalResolution;
 import java.time.Duration;
 import java.util.Objects;
@@ -7,7 +9,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.SmartLifecycle;
 
 /**
  * Runs {@link WithdrawalResolution#sweep()} on a fixed delay, on every instance
@@ -22,7 +23,7 @@ import org.springframework.context.SmartLifecycle;
  * one failing never starves the other.
  */
 @Slf4j
-public final class WithdrawalResolutionSchedule implements SmartLifecycle {
+public final class WithdrawalResolutionSchedule implements DrainedSchedule {
 
     /**
      * The sweep's dispatched bound, as ONE placeholder (`P7-TSK-015`, the
@@ -36,7 +37,7 @@ public final class WithdrawalResolutionSchedule implements SmartLifecycle {
     private final WithdrawalResolution resolution;
     private final Duration pollInterval;
 
-    private ScheduledExecutorService executor;
+    private final ScheduleDrain drain = new ScheduleDrain("withdrawal-resolution");
 
     public WithdrawalResolutionSchedule(WithdrawalResolution resolution, Duration pollInterval) {
         this.resolution = Objects.requireNonNull(resolution, "resolution must not be null");
@@ -48,10 +49,10 @@ public final class WithdrawalResolutionSchedule implements SmartLifecycle {
 
     @Override
     public void start() {
-        executor =
+        ScheduledExecutorService executor =
                 Executors.newSingleThreadScheduledExecutor(
                         runnable -> {
-                            Thread thread = new Thread(runnable, "withdrawal-resolution");
+                            Thread thread = new Thread(runnable, drain.name());
                             thread.setDaemon(true);
                             return thread;
                         });
@@ -60,6 +61,7 @@ public final class WithdrawalResolutionSchedule implements SmartLifecycle {
                 pollInterval.toMillis(),
                 pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
+        drain.started(executor);
     }
 
     /** One tick: both legs, each contained. Package-visible for the schedule's own suite. */
@@ -101,14 +103,7 @@ public final class WithdrawalResolutionSchedule implements SmartLifecycle {
     }
 
     @Override
-    public void stop() {
-        if (executor != null) {
-            executor.shutdownNow();
-        }
-    }
-
-    @Override
-    public boolean isRunning() {
-        return executor != null && !executor.isShutdown();
+    public ScheduleDrain drain() {
+        return drain;
     }
 }
