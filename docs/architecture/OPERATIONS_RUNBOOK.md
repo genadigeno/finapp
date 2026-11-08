@@ -2039,7 +2039,7 @@ There is no raw `UPDATE` in this procedure, and none is needed.
 4. **`deadletter.ReplayOutsideDedupeWindow`**: an event in the window is 14 days old or more, so its dedupe rows may be gone and a
    replay could apply an effect twice. The whole command is refused. Never work around it: narrow the window to what is
    inside, and treat what is outside as a gap, recovered from the system of record by the owning domain. Only a type every
-   consumer of which is marked `naturallyIdempotent` in the handler catalogue may go past it, and none is today.
+   consumer of which declares itself `naturallyIdempotent` on its handler may go past it, and none does today.
 
 ### 11.8 Instance down, stale gauges - `InstanceDown`, `FinappTargetsAbsent`, `GaugesStale`, `FxGaugesUnreadable`, `ReconciliationGaugesUnreadable`
 

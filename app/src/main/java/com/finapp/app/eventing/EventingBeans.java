@@ -190,8 +190,8 @@ public class EventingBeans {
     }
 
     /**
-     * Whether every handler of a type carries {@link InboxEventHandler#naturallyIdempotent()}: the handler set is the catalogue this
-     * reads. False for a type no handler consumes, because nobody has claimed anything for it.
+     * Whether every handler of a type carries {@link InboxEventHandler#naturallyIdempotent()}, the door's own declaration. False for a
+     * type no handler consumes, because nobody has claimed anything for it.
      */
     static Predicate<String> everyConsumerIsMarked(List<InboxEventHandler> handlers) {
         return eventType -> {

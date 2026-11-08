@@ -55,10 +55,11 @@ public interface InboxEventHandler {
     void handle(Connection unitOfWork, ReceivedEvent event);
 
     /**
-     * The handler-set catalogue's mark (`P15-TSK-028`): applying this event twice is harmless by the nature of the effect, with no
-     * dedupe record, for example an idempotent upsert of the same fact. A replay older than the inbox's dedupe window is refused
-     * unless <em>every</em> consumer of the type carries this mark. Off by default, and an override is a reviewed claim about the
-     * handler, because the inbox cannot protect it past the window.
+     * The replay door's own declaration (`P15-TSK-028`), kept on the handler rather than in a list that could drift from it: applying
+     * this event twice is harmless by the nature of the effect, with no dedupe record, for example an idempotent upsert of the same
+     * fact. A replay older than the inbox's dedupe window is refused unless <em>every</em> consumer of the type carries this mark.
+     * Off by default, carried by no handler today, so a replay is always bounded by the window; an override is a reviewed claim
+     * about the handler ({@code DeadLetterWiringTest}), because the inbox cannot protect it past the window.
      */
     default boolean naturallyIdempotent() {
         return false;
