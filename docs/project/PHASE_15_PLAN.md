@@ -140,7 +140,7 @@ Surveyed at master `7840c716` by reading the build, `compose.yaml`, `infra/`, `.
 | Redis | N/A | In `compose.yaml` only; no client library in the code (`TransportSecurityGuard`'s note; ADR-0030 chose PostgreSQL for sessions); `SYSTEM_ARCHITECTURE.md` §Baseline Stack still lists it | Not deployed (C3); the stack list corrected by `-031` |
 | Object storage | N/A (application) / Missing (infrastructure) | ADR-0036 keeps evidence in PostgreSQL; `SettlementFileStore` names object storage a future adapter | Buckets for Terraform state and archives only (`-015`) |
 | API gateway / edge | Missing | No gateway or ingress; the application authenticates (sessions, merchant keys) and bounds request size (`RequestSizeLimitFilter`); 397 routes, 269 under `/v1/operator` (`docs/api/openapi.json`) | Ingress, not a gateway product (C9, `-011`) |
-| External provider integrations | Implemented (simulated) | Adapters behind ports; `ProviderTransportGuard` refuses plain `http` off loopback; real connectivity a programme non-goal | Egress allow-list (`-010`); callbacks as hints (`X-TSK-015`, §25) |
+| External provider integrations | Implemented (simulated) | Adapters behind ports; `ProviderTransportGuard` refuses plain `http` off loopback; real connectivity a programme non-goal | Egress allow-list (`-010`); callbacks as hints (`-036`, §25 - `X-TSK-015` until `P15-TSK-002` moved it into the phase, 2026-11-08) |
 | Identity and authentication | Partial | Server-side opaque sessions (ADR-0030), Argon2 credentials (ADR-0032), TOTP MFA, `@RequiresAssurance` on 25 handlers, `@RequiresPermission` (ADR-0031), scoped merchant keys (ADR-0052); **no OAuth2/OIDC and no Spring Security** although `SYSTEM_ARCHITECTURE.md` lists it; **every session actor audited as `CUSTOMER`** | C13, `-021` |
 | Service identity, mTLS | N/A in Phase 15 | One deployable; no service-to-service hop; `SECRET_MANAGEMENT.md` §7 defers per-service identity to Phase 16 | Workload identity for the cloud APIs only (`-016`) |
 | Financial modules | Implemented | Phases 3–14 | Unchanged; their correctness is the rehearsals' assertion |
@@ -378,7 +378,7 @@ each control's evidence, or the task that builds it, is the model's §4, not thi
 | T5 Supply chain (dependency, base image, action, tool) | Locking, checksums, SHA and digest pins (exist) → image scan, SBOM per image, static analysis, signing with provenance, admission refusing unsigned images, Dependabot for base images | `-006`, `-007` |
 | T6 Secret disclosure (repository, logs, environment dumps, heap dumps) | gitleaks, default-deny redaction, unloggable secrets, actuator allow-list (exist) → secrets manager, etcd encryption, `get secrets` denied to humans, rotation and revocation runbooks | `-018`…`-020` |
 | T7 Database compromise or exfiltration | Two roles, per-table grants, `verify-full`, field-level encryption (exist) → private subnets, KMS-encrypted volumes and backups under separate keys, a `SELECT`-only reporting role, key rings | `-015`, `-019`, `-021` |
-| T8 Forged or replayed provider callbacks | HMAC verification, callbacks as hints for Phase 9 flows (exist) → per-route public allow-list; `X-TSK-015` extends callbacks-as-hints to Phase 5 and 7 providers (§25) | `-011`, §25 |
+| T8 Forged or replayed provider callbacks | HMAC verification, callbacks as hints for Phase 9 flows (exist) → per-route public allow-list; `-036` extends callbacks-as-hints to Phase 5 and 7 providers (§25; `X-TSK-015` until `P15-TSK-002` moved it into the phase, 2026-11-08) | `-011`, `-036` |
 | T9 Message tampering or injection on Kafka | Events are hints, inbox dedupe (exist) → `SASL_SSL`, SCRAM per principal, ACLs per topic | `-026` |
 | T10 Audit tampering or loss | Append-only grants (exist) → archival to write-once storage (designed, C12), audit gaps closed (`-021`) | `-021`, `-029` |
 | T11 Configuration drift and manual change | Infrastructure and manifests as code, GitOps self-heal, two-person production changes, the configuration register | `-013`, `-017`, `-031` |
@@ -487,7 +487,7 @@ rehearsal's exported spans for the planted needles of `DATA_CLASSIFICATION.md`.
 | Backup configuration | Managed automated backups with point-in-time recovery, encrypted under a separate key, retention per environment; locally, a logical backup and restore rehearsal ending in the financial verification | `-015`, `-030` |
 | Kafka retention | Per topic class from the catalogue; events are hints and the outbox is the durable source, so retention bounds diagnosis and replay, never truth. **Every topic's `retention.ms` is below `finapp.inbox.retention`** (P14D, `EventingBeans.java:87-95`): the inbox's dedupe must outlive every record the broker can still redeliver. `-026`'s catalogue test asserts it, `-015`'s topics take their retention from the catalogue, and `-029`'s inbox sweep never deletes a record younger than that bound | `-026`, `-015`, `-029` |
 | Consumer groups | `finapp.<module>` (exists); manual commit after the inbox record (exists); cooperative rebalancing and bounded session timeouts so a rolling update moves partitions without stopping the group; a rebalance proven harmless in the rehearsal | `-026`, `-012` |
-| Schema evolution | A build-time schema catalogue; additive changes only within a major; a new major is a new event type version consumers opt into (C11); `X-TSK-014` (explicit scale on pre-Phase-9 amount events) scheduled here if ratified | `-027` |
+| Schema evolution | A build-time schema catalogue; additive changes only within a major; a new major is a new event type version consumers opt into (C11); `X-TSK-014` (explicit scale on pre-Phase-9 amount events) scheduled here if ratified (ratified by C15; applied by `P15-TSK-002`, 2026-11-08) | `-027` |
 | Consumer handler sets | **Payload compatibility does not cover a new handler.** `KafkaEventReceiver` commits the offset of a record no registered handler wants (`UNHANDLED`, `KafkaEventReceiver.java:184-197`). Groups are per module, and each topic carries every event type its module produces. So while release N − 1 and release N share a group, a record of a type only N handles is committed unseen by an N − 1 replica. After a rollback, every such record is committed unseen. A **handler-set catalogue** of `(group, topic, eventType, consumerName)` is diffed against the last release. Adding a handler to an existing group requires one of two things: an **audited replay of that type over the rollout window** (and over any rollback window) after the rollout completes, through `-028`'s door, where the inbox deduplicates what N already applied; or **a new consumer group** whose starting offsets are chosen and recorded, never `earliest` over the whole retention unless the handler is naturally idempotent | `-027`, `-028`, `-012` |
 | Dead-letter queues | Outbox: an operator door to retry or discard an abandoned event, discard four-eyes, both audited — emitting the three platform actions registered and never emitted; inbox: a poison record parked after its bounded retries, the group continuing, the parked record counted and alerted | `-028` |
 | Message replay | From the outbox by an audited operator command; **bounded by the inbox's dedupe window** (14 days): a replay older than the window is refused unless every consumer of the type is naturally idempotent, which the catalogue records | `-028` |
@@ -629,7 +629,7 @@ alert rule** — `-025` gives each critical flow its SLO alerts and the ledger i
 | **M15.4 Infrastructure as code** | Terraform foundations and modules, tested with mock providers, never applied | `-013`…`-016` |
 | **M15.5 Delivery** | GitOps promotion by digest with the two-person production boundary | `-017` |
 | **M15.6 Secrets and keys** | every secret inventoried and delivered; key rings; rotation rehearsed | `-018`…`-020` |
-| **M15.7 Application security** | privileged access and abuse limits | `-021`, `-022` |
+| **M15.7 Application security** | privileged access and abuse limits; callbacks as hints on every rail | `-021`, `-022`, `-036` *(added by `P15-TSK-002`, 2026-11-08, applying C15)* |
 | **M15.8 Observability** | telemetry pipeline and the end-to-end trace; gauges off the scrape thread; SLOs and routing; the source-join census | `-023`…`-025`, `-035` *(added by the owner, 2026-11-08)* |
 | **M15.9 Database and messaging operations** | Kafka for production; event contracts; dead letters and replay; retention sweeps; restore rehearsed | `-026`…`-030` |
 | **M15.10 Configuration** | the configuration register and overlays | `-031` |
@@ -678,7 +678,8 @@ restore rehearsal (`-030`), the runbooks' rehearsal (`-032`), the database pass.
 | `P15-TSK-032` | Platform runbooks, incident response, and their rehearsal | M15.11 | `-017`, `-020`, `-025`, `-028`, `-030` | `DOD-DOC`, `DOD-OBS` |
 | `P15-TSK-033` | The postponed production defects: PI-013 and PI-014 | M15.11 | `-001` | `DOD-FIN` |
 | `P15-TSK-035` | The source-join census: every journal entry tied to the domain record that caused it *(added by the owner, 2026-11-08, `THREAT_MODEL.md` §6 item 2)* | M15.8 | `-025` | `DOD-FIN`, `DOD-OBS` |
-| `P15-TST-002` | The Phase 15 database pass: every tier on the final tree (PI-012, PI-014, PI-015) | M15.11 | `-002`…`-033`, `-035` | `DOD-TEST` |
+| `P15-TSK-036` | Callbacks as hints for the payment (Phase 5) and instant (Phase 7) providers *(added by `P15-TSK-002`, 2026-11-08, applying C15: `X-TSK-015` moved into the phase, §25)* | M15.7 | `-001`, `-002` | `DOD-SEC`, `DOD-FIN` |
+| `P15-TST-002` | The Phase 15 database pass: every tier on the final tree (PI-012, PI-014, PI-015) | M15.11 | `-002`…`-033`, `-035`, `-036` | `DOD-TEST` |
 | `P15-TSK-034` | The production readiness review | M15.11 | `-032`, `P15-TST-002` | `DOD-DOC` |
 | `P15-TST-001` | The rolling-deploy storm — `POSTPONED` (PI-004) | M15.11 | all | `DOD-TEST` |
 | `P15-DOC-001` | The Phase 15 exit review | M15.11 | all but `TST-001` | `DOD-DOC` |
@@ -687,7 +688,7 @@ restore rehearsal (`-030`), the runbooks' rehearsal (`-032`), the database pass.
 
 **Waves** (each wave's items depend only on earlier waves; every dependency-free item of a wave may run in parallel, the
 owner's standing rule): **A** `-001`; **B** `-002`, `-003`, `-008`, `-013`, `-021`, `-024`, `-026`, `-033`; **C** `-004`,
-`-006`, `-009`, `-014`, `-025`, `-027`, `-028`, `-029`; **D** `-005`, `-010`, `-011`, `-015`, `-018`, `-035`; **E** `-012`,
+`-006`, `-009`, `-014`, `-025`, `-027`, `-028`, `-029`, `-036`; **D** `-005`, `-010`, `-011`, `-015`, `-018`, `-035`; **E** `-012`,
 `-016`, `-019`, `-022`, `-031`; **F** `-007`, `-020`, `-023`, `-030`; **G** `-017`; **H** `-032`; **I** `P15-TST-002`;
 **J** `-034`; **K** `P15-DOC-001` (`P15-TST-001` `POSTPONED`, PI-004).
 
@@ -699,8 +700,8 @@ owner's standing rule): **A** `-001`; **B** `-002`, `-003`, `-008`, `-013`, `-02
 `-009`; `-012` after `-004`, `-005`, `-010`, `-011` and `-026` (`kind` is not loopback, so `TransportSecurityGuard` needs `verify-full` to PostgreSQL and `KafkaTransportGuard` refuses `PLAINTEXT`: the rehearsal needs `-026`'s authenticated TLS client and a TLS PostgreSQL from the local CA - added by the transition's review, its M-5; the waves and the critical path are unchanged, `-026` being in wave B); `-007` after `-006` and `-012`; `-014` after `-013`; `-015` after
 `-014` and `-026`; `-016` after `-014` and `-018`; `-017` after `-007`, `-012` and `-016`; `-019` after `-018`; `-020`
 after `-012` and `-019`; `-022` after `-011`; `-023` and `-030` after `-012`; `-025` after `-024`; `-027` and `-028`
-after `-026`; `-031` after `-008` and `-018`; `-035` after `-025` (added by the owner, 2026-11-08); `-032` after `-017`, `-020`, `-025`, `-028` and `-030`; `P15-TST-002` after
-every item from `-002` to `-033` and `-035`, so that it runs on the final tree; `-034` after `-032` and `P15-TST-002`; `P15-DOC-001` after every item but
+after `-026`; `-031` after `-008` and `-018`; `-035` after `-025` (added by the owner, 2026-11-08); `-036` after `-001` and `-002`, whose ruling created it (added by `-002`, 2026-11-08, applying C15; wave C, off the critical path); `-032` after `-017`, `-020`, `-025`, `-028` and `-030`; `P15-TST-002` after
+every item from `-002` to `-033`, `-035` and `-036`, so that it runs on the final tree; `-034` after `-032` and `P15-TST-002`; `P15-DOC-001` after every item but
 `P15-TST-001`.
 
 ## 20. Exit criteria (summary — the gate is `PHASE_GATES.md` §5 Phase 15)
@@ -784,3 +785,21 @@ Recommended dispositions, for the owner's ratification (C15); `P15-TSK-002` appl
 | Production origination on a real bureau; a real FIU, screening-list and device provider | Re-dated to the choice of real providers (a programme non-goal) |
 | The reconciliation, settlement, Phase 7, 9 and 10 residues, the risk census rows, the BNPL sweep meter, the lending privacy and trigger residues, the reconciliation `TRUNCATE` | Ruled one by one by `-002`: security- and correctness-class rows scheduled as Phase 15 items, the others re-dated with a reason |
 | The stale documents of §3 | Corrected by `-001` (security statements), `-008` (the guard's note), `-021` (`RequiresAssurance`'s note), `-031` (the baseline stack) |
+
+**Applied by `P15-TSK-002` (2026-11-08), as ratified (C15).** Each row now carries its dated disposition in place,
+marked **C15** (`P15-TSK-002`, 2026-11-08): 58 rows of `CURRENT_STATE.md` §Known Architectural Debt, 14 of
+`DECISIONS.md` §Deliberately Deferred, and `X-TSK-008`, `-014` and `-015` in `BACKLOG.md`. Each task a row is scheduled
+into has its entry widened (scope, testing, acceptance, probe): `-004`, `-019` (a note only), `-021`, `-023`, `-025`,
+`-027`, `-029`, `-032`, `-033`. `X-TSK-015` is the new item **`P15-TSK-036`** (M15.7, wave C), and `X-TSK-015` is
+`CANCELLED` (moved, not dropped). Debt row #61 is ruled **not settled**, so `-029` sweeps no idempotency record. How the
+last row of the table was read: **security-class** rows went into the task that fits them. **Correctness-class** rows,
+the entry's instants decided off the database's clock, stayed in the phase: `X-TSK-008`'s five stores went to `-033`
+*(returned untaken by `-033`'s gate the same day, to `X-TSK-008` and the owner: the ruling reached it after its gate)*,
+and A4-F1 stays `P14-REM-009`'s. **Others** were re-dated with a reason: scale, latency and contention to Phase 16;
+functional gaps that need a financial treatment §22 forbids to their own triggers; purges and providers as above. Four
+rows are owner items rather than rulings: `P14-REM-009`'s scheduling; `X-TSK-008`'s remainder (the ordering `CHECK`s
+and two session leftovers, which no Phase 15 task can take whole); a raw writer closing a reconciliation break with
+another break's resolution; and a transfer pre-empting an in-flight instant execution, a money defect whose fix is a
+lifecycle change. **Two readings beyond the table's letter**: an instance-clock judgement that decides no financial
+instant (the screening retry's pacing, the callback doors' freshness window) is not counted in the correctness class;
+and `X-TSK-008`'s remainder is the clock class but not one of §25's five stores, so it went to the owner.

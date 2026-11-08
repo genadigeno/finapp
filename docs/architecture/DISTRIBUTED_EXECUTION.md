@@ -820,7 +820,11 @@ row no longer had.
 predicates that compare a stored bound with a caller's instant: recovery tokens, contact-channel
 verification, checkout expiry, the fee schedule in force and payout-destination cooling-off. The
 second is `CHECK`s that order two business timestamps written by different instances; these refuse a
-legitimate operation under skew. The routing-policy instance is `X-TSK-005`.
+legitimate operation under skew. The routing-policy instance is `X-TSK-005`. *(2026-11-08, the carried items' ruling,
+C15: the first family's five stores are routed to `P15-TSK-033`, the card fee version among them; the `CHECK` family
+and the two session leftovers stay `X-TSK-008`'s, their horizon the owner's.)* *(Same day: the ruling reached
+`P15-TSK-033` after its gate, and that task returned the five to `X-TSK-008` and the owner untaken - a task of their own
+across identity, checkout and merchant; `BACKLOG.md` `X-TSK-008`.)*
 
 ---
 
