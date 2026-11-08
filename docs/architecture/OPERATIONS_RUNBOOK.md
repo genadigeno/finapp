@@ -2062,7 +2062,7 @@ inspect <repository>:<version>`. A Trivy bump also moves the checks `trivy confi
 `./infra/scripts/terraform-check.sh` with it. Run both scan scripts: a plant that stopped being refused by name is
 what a new scanner version breaking a check looks like.
 
-**What this does not cover.** Signing and admission (`-007`, the refused image, above). A vulnerability nobody has
+**What this does not cover.** Signing and admission (`-007`, the refused image, above). A secret inside a jar: Trivy reads the image's loose files, which include the boot jar's exploded classes and `application.yaml`, and does not unpack the libraries' jars. A vulnerability nobody has
 published yet. A statement built from a constant that another file declares and only its name vouches for
 (`THREAT_MODEL.md` T45's residual).
 

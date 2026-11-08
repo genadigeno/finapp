@@ -88,12 +88,11 @@ mkdir -p "$ROOT/build" "$ROOT/$SBOMS"
 WORK=$(mktemp -d "$ROOT/build/image-scan.XXXXXX")
 # One volume per run, so two runs on one Docker host never share a database. The process id alone can repeat across
 # containers sharing a host's Docker, so a random suffix goes with it.
-VOLUME="finapp-image-scan-$$-$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')"
-PLANTS=""
+RUN="$$-$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')"
+VOLUME="finapp-image-scan-$RUN"
 cleanup() {
-    for image in $PLANTS; do
-        dock image rm -f "$image" >/dev/null 2>&1 || true
-    done
+    dock image ls --format '{{.Repository}}:{{.Tag}}' --filter "reference=finapp-scan-plant-$RUN-*" \
+        | while read -r image; do dock image rm -f "$image" >/dev/null 2>&1 || true; done
     dock volume rm -f "$VOLUME" >/dev/null 2>&1 || true
     rm -rf "$WORK"
 }
@@ -239,9 +238,9 @@ refuses() {
 
 # plant <label>: builds $WORK/plants/<label> (a Dockerfile and its context), echoes the image.
 plant() {
-    tag="finapp-scan-plant-$1:$$"
-    PLANTS="$PLANTS $tag"
-    dock buildx build --quiet --provenance=false --sbom=false --load -t "$tag" "$WORK/plants/$1" >/dev/null \
+    tag="finapp-scan-plant-$RUN-$1:latest"
+    # Built from inside the context, so no path crosses Docker's path handling on Windows.
+    (cd "$WORK/plants/$1" && dock buildx build --quiet --provenance=false --sbom=false --load -t "$tag" .) >/dev/null \
         || cannot "could not build the plant $1"
     printf '%s' "$tag"
 }
