@@ -141,6 +141,8 @@ class GaugeRefresherTest {
             scrapes.shutdownNow();
         }
         awaitValue(reading, 7.0);
+        assertThat(refresher.refresh(what -> false, WAIT)).as("whatever was queued has run").isTrue();
+        assertThat(calls).as("ten looks while one read stood in flight queued no second read").hasValue(1);
     }
 
     @Test

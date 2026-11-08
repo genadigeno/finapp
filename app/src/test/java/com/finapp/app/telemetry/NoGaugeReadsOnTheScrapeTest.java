@@ -8,8 +8,6 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.Measurement;
 import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.MeterRegistry;
-import java.sql.Connection;
-import java.sql.SQLException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Set;
@@ -147,11 +145,8 @@ class NoGaugeReadsOnTheScrapeTest {
         return List.copyOf(SOURCE.askedOnTheScrape());
     }
 
+    /** A gauge that reads the database: through the context's own (wrapped) data source. */
     private static double read() {
-        try (Connection connection = SOURCE.dataSource().getConnection()) {
-            return connection.isValid(1) ? 1 : 0;
-        } catch (SQLException refused) {
-            return Double.NaN;
-        }
+        return SOURCE.plantedRead();
     }
 }

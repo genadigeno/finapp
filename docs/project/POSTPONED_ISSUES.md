@@ -345,7 +345,13 @@ commit and the date; do not delete the entry.
      swallows the rejected read - and the unreadable-gauge alerts fire on every instance. Red whenever the suite runs after a
      paused context; green on a fresh one. **Fix:** make the executor in `start()` (an `AtomicReference`, as
      `AccountingCloseSchedule` does), shut it in `stop()`, and clear a gauge's in-flight flag for a read dropped at stop; a test:
-     start, stop, start, every gauge a number.
+     start, stop, start, every gauge a number. *(Fixed by `P15-TSK-024`, 2026-11-08, as written here, the refresher moved to
+     `platform` as `GaugeRefresher` behind every gauge: the executor made in `start()` through an `AtomicReference`, shut in
+     `stop()`, and every read dropped at the stop putting its reading's flag down. Proven hermetically, with the probe that
+     makes the executor in the constructor again turning the first red:
+     `GaugeRefresherTest#startStopStartLeavesEveryReadingANumber`, `GaugeRefresherTest#aReadDroppedAtTheStopDoesNotWedgeItsReading`
+     and, on a real context stopped and started, `NoGaugeReadsOnTheScrapeTest#theRefresherRestartsWithTheContext`. The
+     suite above, on a restarted context, is owed to `P15-TST-002`'s pass, which marks this item `FIXED`.)*
   3. **`PeriodCloseDatabaseTest`, `PeriodReopenDatabaseTest`, `PriorPeriodAdjustmentDatabaseTest`, `StatementsDatabaseTest`
      (app, own-container) - red intermittently by `PI-013`'s defect**, a different case on each run ("the period's present lock
      has no close run yet"). Their test defects were repaired in the pass (the close fixture's claim loop now waits on the

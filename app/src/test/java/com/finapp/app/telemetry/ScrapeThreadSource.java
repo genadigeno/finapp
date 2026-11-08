@@ -71,9 +71,13 @@ final class ScrapeThreadSource {
         return askedOnTheRefresher;
     }
 
-    /** The wrapped data source, as the context's beans see it: what a planted gauge reads through. */
-    DataSource dataSource() {
-        return watched;
+    /** A planted gauge's read: one connection asked of the wrapped data source, as a gauge reading the database would. */
+    double plantedRead() {
+        try (java.sql.Connection connection = watched.getConnection()) {
+            return connection.isValid(1) ? 1 : 0;
+        } catch (SQLException refused) {
+            return Double.NaN;
+        }
     }
 
     void clear() {
