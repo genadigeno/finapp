@@ -763,7 +763,7 @@ Recommended dispositions, for the owner's ratification (C15); `P15-TSK-002` appl
 | Kubernetes and Terraform; a secrets manager; key rotation, KMS, envelope encryption; inbound TLS at the edge; database volume and backup encryption | This phase: §5–§10 |
 | The operational endpoints and the scrape endpoint unauthenticated (two rows) | `-008`, `-010`: management port and NetworkPolicy |
 | No per-source rate limiting; `POST /v1/registrations` unthrottled | `-022` |
-| Every session actor audited as `CUSTOMER`; a refused step-up not audited; refused Phase 7 acts without an audit outcome | `-021` *(2026-11-08: the first two closed there; the refused acts returned to the owner at its gate, `THREAT_MODEL.md` §6 owner item 8)* |
+| Every session actor audited as `CUSTOMER`; a refused step-up not audited; refused Phase 7 acts without an audit outcome | `-021` *(2026-11-08: the first two closed there; the refused acts returned to the owner at its gate, `THREAT_MODEL.md` §6 owner item 9)* |
 | A separate database role for reporting (Phase 14 C10) | `-021`, C13 (cut candidate) |
 | Dead-letter tooling; the three platform actions never emitted | `-028` |
 | Outbox retention; inbox retention sweep | `-029` (C12) |

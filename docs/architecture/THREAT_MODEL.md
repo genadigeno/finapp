@@ -511,7 +511,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T18 | A break's resolution under `MULTI_FACTOR`, and never one person's word for an aggregate subject | REMEDIATION | `P14-REM-001` |
 | T18 | Step-up on the mapping activation and the acknowledgement approval | REMEDIATION | `P14-REM-002` |
 | T18 | The privileged access review names, for each of the six propose/approve pairs, the two roles no identity holds together, and its partition is the code's | EXISTS | `app/src/test/java/com/finapp/app/architecture/PrivilegedAccessReviewTest.java#thePartitionIsTheCodes` |
-| T18 | Role assignment refusing an identity both roles of a propose/approve pair (today an administrator can grant it, audited; each act still refuses its proposer by identity) | GAP | `owner item 7`; owner: the owner, since 2026-11-08 |
+| T18 | Role assignment refusing an identity both roles of a propose/approve pair (today an administrator can grant it, audited; each act still refuses its proposer by identity) | GAP | `owner item 8`; owner: the owner, since 2026-11-08 |
 | T19 | An owner-scoped statement carries the owner predicate, and each owner-scoped operation has a named negative test | EXISTS | `app/src/test/java/com/finapp/app/architecture/OwnershipIsScopedTest.java#ownerScopedStatementsCarryThePredicate`; `app/src/test/java/com/finapp/app/architecture/OwnershipIsScopedTest.java#ownerScopedOperationsHaveNegativeTests` |
 | T19 | A session-derived endpoint takes no identifier | EXISTS | `app/src/test/java/com/finapp/app/architecture/OwnershipIsScopedTest.java#sessionDerivedEndpointsTakeNoIdentifier` |
 | T19 | Every merchant route the application serves is in the battery's derived table, each addressed route carrying a cross-tenant probe (in the battery or a named delegate); the battery's own probes answer another tenant's resource exactly as an unknown one (`INV-MER-01`) | EXISTS | `app/src/test/java/com/finapp/app/merchant/MerchantTenancyBatteryDatabaseTest.java#theTableIsEveryMerchantRoute`; `app/src/test/java/com/finapp/app/merchant/MerchantTenancyBatteryDatabaseTest.java#everyAddressedRouteAnswersAnotherTenantsResourceAsUnknown` |
@@ -581,7 +581,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T38 | A permission denial is audited | EXISTS | `app/src/test/java/com/finapp/app/domain/DenyByDefaultDatabaseTest.java#aDenialIsAudited` |
 | T38 | An operator act is recorded `EMPLOYEE`, decided per request from the server's record of roles and never from the client; a customer refused at an operator route `CUSTOMER` | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#anOperatorActIsTypedEmployee`; `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusalIsTypedByWhoTried`; `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRoleHolderOnACustomerRouteIsACustomer` |
 | T38 | A refused step-up is recorded once per refused request, committed on its own, naming the route pattern and no session, code or factor | EXISTS | `app/src/test/java/com/finapp/app/session/OperatorActorTypingTest.java#aRefusedStepUpIsRecorded`; `app/src/test/java/com/finapp/app/session/StepUpRefusalsTest.java#anOperationsRefusalIsRecordedOnce` |
-| T38 | Refused and failed Phase 7 and Phase 8 acts (the refused four-eyes attempts among them) and failed or not-found Phase 9 and 10 operator reads recorded with their outcome, and a merchant's dispute act naming its API key (returned to the owner, 2026-11-08) | GAP | `owner item 8`; owner: the owner, since 2026-11-08 |
+| T38 | Refused and failed Phase 7 and Phase 8 acts (the refused four-eyes attempts among them) and failed or not-found Phase 9 and 10 operator reads recorded with their outcome, and a merchant's dispute act naming its API key (returned to the owner, 2026-11-08) | GAP | `owner item 9`; owner: the owner, since 2026-11-08 |
 | T39 | An audited operator door to retry or discard an abandoned event (discard four-eyes), emitting the three platform actions | PLANNED | `P15-TSK-028` |
 | T40 | The edge sets the client address, and only the edge's is trusted | PLANNED | `P15-TSK-011` |
 | T40 | Per-source limits keyed on the address the edge sets | PLANNED | `P15-TSK-022` |
@@ -711,7 +711,7 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   and failed Phase 7 and 8 acts and failed or not-found Phase 9 and 10 operator reads leave no audit outcome;
   the privileged-access task records every refused step-up and every denial, and returned this wider class to
   the owner with the access review's two step-up questions and the conditional step-up's extraction
-  (owner item 8), held by a `GAP` row.
+  (owner item 9), held by a `GAP` row.
 - **T43.** No general bound on the size of a provider's answer exists across the adapters. The regulatory adapter is
   the one evidenced. The adapters call simulated providers in this programme. **Owner item 5, decided 2026-11-08**:
   `-006`'s static analysis flags an unbounded read of a provider's answer in an adapter.
@@ -738,7 +738,7 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
 
 Only the owner can accept a risk or choose between the options below. **The owner decided items 1 to 6 on 2026-11-08,
 accepting each recommendation** ("accept recommendations", after `P15-TSK-001`'s merge); each item's decision follows
-its options. Items 7 and 8 were added on 2026-11-08 by the privileged access review (`PRIVILEGED_ACCESS_REVIEW.md`)
+its options. Items 8 and 9 were added on 2026-11-08 by the privileged access review (`PRIVILEGED_ACCESS_REVIEW.md`)
 and are open. *(Read "Each item carries a recommendation, and each is held by a `GAP` row in §4. None blocks Phase 15's
 work; the two proposed acceptances (items 1 and 6) must be decided by the phase's exit (§1.5)." until then.)*
 
@@ -788,7 +788,7 @@ work; the two proposed acceptances (items 1 and 6) must be decided by the phase'
    to registration (verify-then-tell, by a channel the identifier's owner controls), which Phase 15 does not make.
    *Recommendation*: accept it, bounded by `-022`'s throttle, and record the alternative for the first real customer
    launch. **Decided 2026-11-08**: `ACCEPTED by the owner on 2026-11-08`; the alternative is `PI-017`.
-7. **T18's residual: one identity may hold both roles of a propose/approve pair** *(added 2026-11-08 by the privileged
+8. **T18's residual: one identity may hold both roles of a propose/approve pair** *(added 2026-11-08 by the privileged
    access review; open)*. `PRIVILEGED_ACCESS_REVIEW.md` §4 names the pairs of roles no identity should hold together
    (`ACCOUNTANT` and `FINANCIAL_CONTROLLER`, `REGULATORY_REPORTER` and `FINANCIAL_CONTROLLER`, `LOAN_SERVICING_AGENT` and
    `LENDING_OFFICER`, `BNPL_SERVICING_AGENT` and `BNPL_OFFICER`). Role assignment does not refuse such a holding: an
@@ -798,7 +798,7 @@ work; the two proposed acceptances (items 1 and 6) must be decided by the phase'
    /v1/identities/{id}/roles`, its answer in the contract, and a check of the holdings that already exist); (b) leave it
    to the review of `PRIVILEGED_ACCESS_REVIEW.md` §5, which finds it. *Recommendation*: (a), as a remediation entry before
    production use, so the rule does not rest on a human review alone; meanwhile (b). Held by a `GAP` row in §4.
-8. **T38's wider class, and two step-up questions, returned to the owner** *(added 2026-11-08 by the privileged access
+9. **T38's wider class, and two step-up questions, returned to the owner** *(added 2026-11-08 by the privileged access
    review's task at its gate, the carried items' ruling (C15) having routed them to it while it ran; open)*. Four parts,
    one item: (a) every refused and failed Phase 7 and Phase 8 act - the refused four-eyes attempts (a self-approval, a
    stale echo, a refused kind) among them - audited with its outcome, a merchant's dispute act naming its API key, and the

@@ -96,7 +96,7 @@ Where the vocabulary names an act's proposal (or preparation) and its approval a
 holds when someone holds both is the act's own four-eyes: every approval refuses its proposer by identity, at the
 domain and at the database (`INV-AUD-04`; `THREAT_MODEL.md` T18's rows), so one person still cannot propose and
 approve the same act - holding both roles narrows the population, it does not open a door. Refusing the holding at
-assignment is `THREAT_MODEL.md` §6 owner item 7. Four-eyes inside one role (`LOAN_SERVICE` / `LOAN_SERVICE_APPROVE`,
+assignment is `THREAT_MODEL.md` §6 owner item 8. Four-eyes inside one role (`LOAN_SERVICE` / `LOAN_SERVICE_APPROVE`,
 `BNPL_SERVICE` / `BNPL_SERVICE_APPROVE`, `RISK_INVESTIGATE` / `RISK_CASE_APPROVE`) is two holders of one desk, refused
 by identity at the act.
 
@@ -132,7 +132,7 @@ answered, naming the actor, the identity and the operation's route pattern, neve
 (`OperatorActorTypingTest`, `StepUpRefusalsTest`; `DenyByDefaultDatabaseTest#aRefusedStepUpIsRecorded`, owed).
 
 **Two questions this review rules** (routed by the carried items' ruling, C15, 2026-11-08). Each is a recommendation;
-neither is built, and both are `THREAT_MODEL.md` §6 owner item 8, held by a `GAP` row (T38):
+neither is built, and both are `THREAT_MODEL.md` §6 owner item 9, held by a `GAP` row (T38):
 
 1. **May a role that can redirect a merchant's money be held without an enrolled factor?** *No.* Proposing a payout
    destination (`MERCHANT_ADMINISTER`), approving one (`PAYOUT_DESTINATION_APPROVE`) and paying out
@@ -145,7 +145,7 @@ neither is built, and both are `THREAT_MODEL.md` §6 owner item 8, held by a `GA
    posted trade, the class every Phase 13 and 14 approval already steps up for.
 
 The wider audit class routed with them - refused and failed Phase 7 and 8 acts, failed or not-found Phase 9 and 10
-operator reads - and the extraction of the conditional step-up's 17 copies return to the owner with them (owner item 8):
+operator reads - and the extraction of the conditional step-up's 17 copies return to the owner with them (owner item 9):
 every refused step-up is already recorded, the copies' included, without touching a copy.
 
 ## 7. Break-glass
@@ -175,6 +175,6 @@ initialisation script creates it, and in a deployed database the one-time bootst
 
 ## 9. What this review does not claim
 
-It does not claim that the holding rule of §4 is enforced (owner item 7), that §6's two rulings are built (owner item 8), that the review of §5 has been performed (a
+It does not claim that the holding rule of §4 is enforced (owner item 8), that §6's two rulings are built (owner item 9), that the review of §5 has been performed (a
 human procedure, first performed by `P15-TSK-032`), that operator routes are off the public edge (`P15-TSK-011`), or
 any conformity with a standard.
