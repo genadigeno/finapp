@@ -51,10 +51,29 @@ class RetentionSweepMigrationTest {
 
     private static final String BY_BOUND = " < now() - (retain_for_ms * INTERVAL '1 millisecond')";
 
+    private static final String NO_STANDING_PARK =
+            "NOT EXISTS ( SELECT 1 FROM platform.inbox_parked_record p WHERE p.dedupe_key = o.event_id::text"
+                    + " AND p.state NOT IN ('HANDLED', 'DISCARDED') )";
+
     @Test
-    @DisplayName("the outbox's selection is exactly: published, and published before the bound")
+    @DisplayName("the outbox's selection is exactly: published, published before the bound, and named by no standing parked record")
     void theOutboxSelectsOnPublication() {
-        assertThat(conjuncts(OUTBOX)).containsExactlyInAnyOrder("o.published_at IS NOT NULL", "o.published_at" + BY_BOUND);
+        assertThat(conjuncts(OUTBOX))
+                .containsExactlyInAnyOrder("o.published_at IS NOT NULL", "o.published_at" + BY_BOUND, NO_STANDING_PARK);
+    }
+
+    @Test
+    @DisplayName("an outbox row a standing parked record names is never selected: a release republishes it, and an unknown state stands")
+    void anOutboxRowAStandingParkedRecordNamesIsNeverSelected() {
+        List<String> selection = conjuncts(OUTBOX);
+        Map<String, Instant> old = row("published_at", NOW.minus(BOUND).minusMillis(1));
+
+        assertThat(selected(selection, old, "FAILING")).as("still being retried").isFalse();
+        assertThat(selected(selection, old, "PARKED")).as("waiting on a release or a discard").isFalse();
+        assertThat(selected(selection, old, "A_STATE_ADDED_LATER")).as("a state this sweep was never told about").isFalse();
+        assertThat(selected(selection, old, "HANDLED")).as("settled").isTrue();
+        assertThat(selected(selection, old, "DISCARDED")).as("settled").isTrue();
+        assertThat(selected(selection, old, null)).as("named by no parked record").isTrue();
     }
 
     @Test
@@ -88,7 +107,7 @@ class RetentionSweepMigrationTest {
                 .as("expired on the retention it was written with, but the retention has since been raised")
                 .isFalse();
         assertThat(selected(selection, inbox(pastTheBound, NOW.plusMillis(1))))
-                .as("old enough for today's retention, but written under a longer one")
+                .as("old enough for today's retention, but written under a longer one or extended by a replay order")
                 .isFalse();
         assertThat(selected(selection, inbox(NOW.minus(BOUND), expired))).as("exactly at the bound").isFalse();
         assertThat(selected(selection, row("expires_at", expired))).as("no processing instant").isFalse();
@@ -166,13 +185,23 @@ class RetentionSweepMigrationTest {
 
     /** True when every conjunct holds for {@code row}; a form the interpreter does not know fails the test. */
     private static boolean selected(List<String> conjuncts, Map<String, Instant> row) {
+        return selected(conjuncts, row, null);
+    }
+
+    /** {@code parkedState} is the state of the parked record naming the row, or {@code null} when none does. */
+    private static boolean selected(List<String> conjuncts, Map<String, Instant> row, String parkedState) {
         Pattern notNull = Pattern.compile("\\w+\\.(\\w+) IS NOT NULL");
         Pattern beforeNow = Pattern.compile("\\w+\\.(\\w+) < now\\(\\)");
         Pattern beforeBound = Pattern.compile("\\w+\\.(\\w+)" + Pattern.quote(BY_BOUND));
+        Pattern noStandingPark = Pattern.compile(
+                "NOT EXISTS \\( SELECT 1 FROM platform\\.inbox_parked_record p WHERE p\\.dedupe_key = o\\.event_id::text"
+                        + " AND p\\.state NOT IN \\(([^)]*)\\) \\)");
         for (String conjunct : conjuncts) {
             Matcher matched;
             boolean holds;
-            if ((matched = notNull.matcher(conjunct)).matches()) {
+            if ((matched = noStandingPark.matcher(conjunct)).matches()) {
+                holds = parkedState == null || Arrays.asList(matched.group(1).replace("'", "").split(",\\s*")).contains(parkedState);
+            } else if ((matched = notNull.matcher(conjunct)).matches()) {
                 holds = row.get(matched.group(1)) != null;
             } else if ((matched = beforeNow.matcher(conjunct)).matches()) {
                 Instant value = row.get(matched.group(1));

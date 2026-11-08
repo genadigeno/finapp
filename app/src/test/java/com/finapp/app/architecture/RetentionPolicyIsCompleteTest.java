@@ -42,7 +42,8 @@ class RetentionPolicyIsCompleteTest {
         assertThat(rows("Audit")).as("audit").hasSize(1);
         assertThat(rows("Regulatory")).as("regulatory").hasSize(1);
 
-        assertInClass("Operational", "platform.outbox_event", "platform.inbox_message", "platform.idempotency_record", "identity.session");
+        assertInClass("Operational", "platform.outbox_event", "platform.inbox_message", "platform.idempotency_record", "identity.session",
+                "platform.inbox_parked_record", "platform.dead_letter_discard", "payments.callback_hint");
         assertInClass("Financial", "Journal entries");
         assertInClass("Evidence", "credit.credit_evidence", "lending.loan_agreement", "lending.loan_acceptance",
                 "bnpl.bnpl_agreement", "bnpl.bnpl_acceptance");
@@ -91,6 +92,8 @@ class RetentionPolicyIsCompleteTest {
         assertThat(row("platform.inbox_message")[PERIOD]).contains("`finapp.inbox.retention`");
         assertThat(row("platform.idempotency_record")[PERIOD]).contains("not swept");
         assertThat(row("identity.session")[PERIOD]).contains("not swept");
+        assertThat(row("platform.inbox_parked_record")[PERIOD]).contains("never swept");
+        assertThat(row("payments.callback_hint")[PERIOD]).contains("not swept");
     }
 
     @Test

@@ -47,6 +47,7 @@ class RetentionSweepDatabaseTest {
         try (Connection migrator = DatabaseRoles.migrator(); Statement statement = migrator.createStatement()) {
             statement.executeUpdate("DELETE FROM platform.outbox_event WHERE producer = '" + PROBE + "'");
             statement.executeUpdate("DELETE FROM platform.inbox_message WHERE consumer = '" + PROBE + "'");
+            statement.executeUpdate("DELETE FROM platform.inbox_parked_record WHERE consumer = '" + PROBE + "'");
         }
     }
 
@@ -61,6 +62,21 @@ class RetentionSweepDatabaseTest {
         drainOutbox(Duration.ofDays(30));
 
         assertThat(remainingOutbox()).containsExactlyInAnyOrder("pending", "abandoned", "young");
+    }
+
+    @Test
+    @DisplayName("a published row a standing parked record names stays, however old, and goes once that record has settled")
+    void anOutboxRowAStandingParkedRecordNamesIsKept() throws SQLException {
+        UUID named = outbox("named", "now() - INTERVAL '40 days'", "NULL");
+        park(named, "PARKED");
+
+        drainOutbox(Duration.ofDays(30));
+        assertThat(remainingOutbox()).as("a release still needs this row").containsExactly("named");
+
+        settle(named, "HANDLED");
+
+        drainOutbox(Duration.ofDays(30));
+        assertThat(remainingOutbox()).isEmpty();
     }
 
     @Test
@@ -210,6 +226,31 @@ class RetentionSweepDatabaseTest {
             insert.executeUpdate();
         }
         return id;
+    }
+
+    private static void park(UUID event, String state) throws SQLException {
+        try (Connection migrator = DatabaseRoles.migrator();
+                PreparedStatement insert = migrator.prepareStatement(
+                        "INSERT INTO platform.inbox_parked_record (park_id, consumer, dedupe_key, consumer_group, message_type,"
+                                + " correlation_id, topic, partition_number, record_offset, state, attempts, last_failure,"
+                                + " first_failed_at, last_failed_at, parked_at)"
+                                + " VALUES (gen_random_uuid(), '" + PROBE + "', ?, 'g', 'probe', 'c', 't', 0, 0, ?, 1, 'Probe',"
+                                + " now(), now(), now())")) {
+            insert.setString(1, event.toString());
+            insert.setString(2, state);
+            insert.executeUpdate();
+        }
+    }
+
+    private static void settle(UUID event, String state) throws SQLException {
+        try (Connection migrator = DatabaseRoles.migrator();
+                PreparedStatement update = migrator.prepareStatement(
+                        "UPDATE platform.inbox_parked_record SET state = ?, settled_at = now() WHERE consumer = '" + PROBE
+                                + "' AND dedupe_key = ?")) {
+            update.setString(1, state);
+            update.setString(2, event.toString());
+            update.executeUpdate();
+        }
     }
 
     private static void plantDueOutboxRows(int rows) throws SQLException {

@@ -20,10 +20,12 @@ A purge built against an invented period is a defect waiting for one (C12).
 
 | Class | Data | Period | What decides it | How it ends | State |
 |---|---|---|---|---|---|
-| **Operational** | Published outbox rows, `platform.outbox_event` | `finapp.outbox.retention`, default 30 days from publication, refused at start below the inbox's dedupe window | Diagnosis, and an audited replay reading across that window | The sweep, past the bound, published rows only | Built |
+| **Operational** | Published outbox rows, `platform.outbox_event` | `finapp.outbox.retention`, default 30 days from publication, refused at start below the inbox's dedupe window. Longer for a row a standing parked record names | Diagnosis, an audited replay reading across that window, and a release republishing a parked record's event | The sweep, past the bound, published rows only | Built |
 | **Operational** | Dedupe records, `platform.inbox_message` | `finapp.inbox.retention`, default 14 days from processing, and never less than the record's own written expiry | Every redelivery window (`DATA_MIGRATIONS.md` §9); it must exceed every topic's retention | The sweep, past both bounds | Built |
 | **Operational** | Idempotency records, `platform.idempotency_record` | Kept: not swept | Debt row #61, ruled not settled: `journal_entry.idempotency_scope` is not `UNIQUE`, so the record is posting once-ness's second rank | A later sweep lands that uniqueness first; both Phase 16 | Not swept |
 | **Operational** | Session rows, `identity.session` | Kept: not swept | ADR-0030 named a sweep, with the caution that an early expiry logs a user out; no real volume exists to size it | A sweep, Phase 16 | Not swept |
+| **Operational** | Parked records and discard decisions, `platform.inbox_parked_record` and `platform.dead_letter_discard` | Kept: never swept | A parked record is a message nobody has handled, and a discard is a recorded four-eyes decision | Nothing ends them | Kept for ever |
+| **Operational** | Callback hints, `payments.callback_hint` | Kept: not swept | Operational state, never financial truth. A concluded row is safe to delete, and no volume yet asks for it | A sweep of concluded rows, when volume does | Not swept |
 | **Operational** | Kafka topics | The catalogue's `retention.ms` (`infra/kafka/topics.yaml`) | Bounds diagnosis and replay, never truth; every topic stays below the inbox's dedupe window | The broker | Built |
 | **Operational** | Logs, traces, metrics | Set per environment by the observability stack | Operations | The backend | Per environment |
 | **Financial** | Journal entries and lines, financial transactions, every domain record a balance is explained from (payments, transfers, settlement, loans, BNPL, FX) | Never deleted | `INV-HIST-01`: a correction is a reversal, an adjustment or a compensating entry | Nothing ends it. Any duty beyond this is `OPEN` | Kept for ever |
@@ -45,11 +47,13 @@ throttle's counters, are that process's state, and retention is not what bounds 
 ## 2. The rules every sweep obeys
 
 - **An allow-list of terminal states**, never "anything not in these states". The outbox selects `published_at IS NOT NULL`, so
-  a pending row, an abandoned row and any state a later task adds stay. The inbox has no state column: every row is a handling
+  a pending row, an abandoned row and any state a later task adds stay. So does a published row that a parked record still names,
+  unless that record has reached a state the sweep lists as finished. The inbox has no state column: every row is a handling
   that committed, and its sweep lists the columns it was reviewed against, so a new column stops it until a migration says
   which of its values are terminal. **An unknown state is never selected.**
 - **A dedupe record is kept at least as long as a redelivery could match it.** The inbox's bound is the retention the consumer
-  writes with, read from the consumer, and it has no setting of its own.
+  writes with, read from the consumer, and it has no setting of its own. It also waits for the row's `expires_at`, which a replay
+  order extends, so a row a replay depends on stays.
 - **Deletion has one path.** The application role holds no `DELETE` on either table. Two `SECURITY DEFINER` functions (platform
   `V012`) are the only way, and each deletes only what its predicate selects.
 - **Batched and leaderless.** `FOR UPDATE SKIP LOCKED` in one short transaction per batch, so N instances delete disjoint

@@ -414,8 +414,10 @@ raising the setting also protects rows already written. The sweep's bound is rea
 `InboxConsumer` bean and has no setting of its own, so it cannot be configured below the window. The
 application role has no `DELETE` on this table: platform `V012`'s `SECURITY DEFINER` function is the
 one path, `FOR UPDATE SKIP LOCKED` in a materialised CTE, so N sweepers delete disjoint batches.
-Published outbox rows go the same way, past `finapp.outbox.retention` (default 30 days, refused
-below this window, across which an audited replay reads the outbox). `V012` adds a plain btree on
+A replay order extends `expires_at` (platform `V011`), so a row a replay depends on stays. Published
+outbox rows go the same way, past `finapp.outbox.retention` (default 30 days, refused below this
+window, across which an audited replay reads the outbox), unless a parked record not yet settled still
+names the row, because a release republishes it. `V012` adds a plain btree on
 `expires_at`: the query orders by it and stops at the batch, which a BRIN cannot serve.
 
 **Every record is terminal, and the sweep does not take that on trust.** Unlike §8, there is no state

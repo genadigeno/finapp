@@ -2078,8 +2078,10 @@ Phase 15 does not have (`THREAT_MODEL.md` §6 item 7).
 No lease and no leader: `FOR UPDATE SKIP LOCKED` means instances delete disjoint batches. The counters are per table,
 tagged `type="outbox_event"` or `type="inbox_message"`.
 
-**What is never deleted.** A pending or an abandoned outbox row. An inbox record younger than either bound.
-`platform.idempotency_record`, sessions and audit records are not swept at all. They grow, by ruling, until Phase 16.
+**What is never deleted.** A pending or an abandoned outbox row, and a published one that a parked record not yet settled still
+names. An inbox record younger than either bound, or one a replay order has extended.
+`platform.idempotency_record`, sessions and audit records are not swept at all. They grow, by ruling, until Phase 16. Nor are
+parked records, discard decisions or callback hints (`DATA_RETENTION.md`).
 
 **`finapp.retention.sweep.failed` rising.** Read the instance's `Retention sweep of <table> failed` line for its SQLState.
 

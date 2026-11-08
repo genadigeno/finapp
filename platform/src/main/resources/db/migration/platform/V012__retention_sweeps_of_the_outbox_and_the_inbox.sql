@@ -7,8 +7,12 @@
 --
 -- WHAT IS NEVER SWEPT
 --   A row is selected on an ALLOW-LIST, never on "anything not in these states".
---     * The outbox: published_at IS NOT NULL. Pending and abandoned rows have it NULL, and any state a later migration adds
---       that is not "published" has it NULL too, so it stays.
+--     * The outbox: published_at IS NOT NULL. Pending, abandoned and discarded rows have it NULL, so does a replayed row not
+--       yet republished, and any state a later migration adds that is not "published" has it NULL too, so it stays.
+--       A published row that a parked record still names stays as well: a release republishes that row, and once it is gone
+--       the only way on is a discard (V011). The check lists that ledger's finished states, so any state it does not list,
+--       one added later included, keeps the row. It cannot race a park: a record parks only while the broker can still
+--       deliver it, which is days inside this bound, and a replay first puts the row back to pending.
 --     * The inbox has no state column: every row is a handling that committed (V007). A state added to this table would
 --       live in a column this predicate cannot see, so the function carries the list of columns it was reviewed against, and
 --       a column outside the list stops the sweep. It deletes nothing, it raises, and the schedule counts a failure, until a
@@ -18,7 +22,8 @@
 --   Nothing financial is in either table (INV-EVT-02, V005, V007), so INV-HIST-01 is not touched.
 --
 -- THE INBOX'S BOUND IS TWO CONJUNCTS, AND BOTH ARE FLOORS
---   expires_at < now(): the instant the server computed at write, on the one clock every instance shares (ADR-0014).
+--   expires_at < now(): the instant the server computed at write, on the one clock every instance shares (ADR-0014), and the
+--   column a replay order extends (V011), so a row a replay depends on stays.
 --   processed_at < now() - retain_for_ms: the retention in force NOW, finapp.inbox.retention as the caller read it. Raising
 --   that setting keeps rows written under the old value; without this conjunct they would go at their old expiry and a
 --   redelivery inside the new window would be a second effect (INV-IDEM-04). A row must pass both, so the conjunct only ever
@@ -74,6 +79,12 @@ BEGIN
           FROM platform.outbox_event o
          WHERE o.published_at IS NOT NULL
            AND o.published_at < now() - (retain_for_ms * INTERVAL '1 millisecond')
+           AND NOT EXISTS (
+                   SELECT 1
+                     FROM platform.inbox_parked_record p
+                    WHERE p.dedupe_key = o.event_id::text
+                      AND p.state NOT IN ('HANDLED', 'DISCARDED')
+               )
          ORDER BY o.published_at
          LIMIT batch_size
            FOR UPDATE OF o SKIP LOCKED
@@ -89,7 +100,7 @@ $$;
 
 COMMENT ON FUNCTION platform.sweep_published_outbox_events(bigint, integer) IS
     'The only path to deleting from outbox_event (P15-TSK-029): one batch of published rows older than the bound, on the '
-    'database clock, rows another sweeper holds skipped. SECURITY DEFINER as the migrator, search_path pinned; EXECUTE to '
+    'database clock, rows another sweeper holds skipped and rows a standing parked record names kept. SECURITY DEFINER as the migrator, search_path pinned; EXECUTE to '
     'the application role only.';
 
 CREATE FUNCTION platform.sweep_expired_inbox_messages(retain_for_ms bigint, batch_size integer)
