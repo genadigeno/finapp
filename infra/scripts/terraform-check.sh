@@ -21,6 +21,17 @@
 #   untagged           the ManagedBy tag dropped from the  terraform test (the conventions' tags)
 #                      conventions module
 #
+# And one plant per security property of the network and cluster modules, each refused by the message
+# of the terraform test assertion that holds it:
+#
+#   public-endpoint         the cluster's API endpoint made public      the kubernetes module's test
+#   public-workload-subnet  a workload subnet given public addresses    the network module's test
+#   cluster-on-edge-tier    staging's cluster given the edge subnets    staging's test
+#   no-flow-logs            the flow log narrowed to rejected traffic   the network module's test
+#   no-audit-log            the control plane's audit log turned off    the kubernetes module's test
+#   no-etcd-encryption      the cluster's encryption block removed      the kubernetes module's test
+#   two-zones               the three-zone rule relaxed to two          the network module's test
+#
 # WHAT IT NEVER DOES. It initialises no backend (every init is -backend=false) and holds no credential:
 # no container is given a variable or a file from the host beyond the infra directory, mounted
 # read-only, and a scratch volume of its own, removed at exit. terraform test keeps its state in
@@ -73,6 +84,7 @@ plant_all() {
     plant camel-case
     sed -i 's/^module "conventions"/module "namingConventions"/' /scratch/plants/camel-case/environments/staging/main.tf
     sed -i 's/module\.conventions\./module.namingConventions./g' \
+        /scratch/plants/camel-case/environments/staging/main.tf \
         /scratch/plants/camel-case/environments/staging/providers.tf \
         /scratch/plants/camel-case/environments/staging/outputs.tf
     planted camel-case environments/staging/main.tf
@@ -101,6 +113,39 @@ HCL
     plant untagged
     sed -i '/ManagedBy/d' /scratch/plants/untagged/modules/conventions/main.tf
     planted untagged modules/conventions/main.tf
+
+    plant public-endpoint
+    sed -i 's/endpoint_public_access  = false/endpoint_public_access  = true/' \
+        /scratch/plants/public-endpoint/modules/kubernetes/main.tf
+    planted public-endpoint modules/kubernetes/main.tf
+
+    plant public-workload-subnet
+    sed -i '/^resource "aws_subnet" "private"/,/^}/ s/map_public_ip_on_launch = false/map_public_ip_on_launch = true/' \
+        /scratch/plants/public-workload-subnet/modules/network/main.tf
+    planted public-workload-subnet modules/network/main.tf
+
+    plant cluster-on-edge-tier
+    sed -i 's/module\.network\.private_subnet_ids_by_zone/module.network.public_subnet_ids_by_zone/' \
+        /scratch/plants/cluster-on-edge-tier/environments/staging/main.tf
+    planted cluster-on-edge-tier environments/staging/main.tf
+
+    plant no-flow-logs
+    sed -i 's/traffic_type             = "ALL"/traffic_type             = "REJECT"/' \
+        /scratch/plants/no-flow-logs/modules/network/main.tf
+    planted no-flow-logs modules/network/main.tf
+
+    plant no-audit-log
+    sed -i 's/\["api", "audit", /["api", /' /scratch/plants/no-audit-log/modules/kubernetes/main.tf
+    planted no-audit-log modules/kubernetes/main.tf
+
+    plant no-etcd-encryption
+    sed -i '/^  encryption_config {/,/^  }/d' /scratch/plants/no-etcd-encryption/modules/kubernetes/main.tf
+    planted no-etcd-encryption modules/kubernetes/main.tf
+
+    plant two-zones
+    sed -i 's/length(distinct(var\.availability_zones)) >= 3/length(distinct(var.availability_zones)) >= 2/' \
+        /scratch/plants/two-zones/modules/network/variables.tf
+    planted two-zones modules/network/variables.tf
 }
 
 # Every directory holding a .tf file, found rather than listed, so a module added later is checked
@@ -252,6 +297,13 @@ refuses camel-case "terraform_naming_convention" tflint_on "$PLANTS/camel-case"
 refuses public-bucket "AWS-0086" trivy_on "$PLANTS/public-bucket"
 refuses invalid "Reference to undeclared local value" terraform_on "$PLANTS/invalid" environments/staging
 refuses untagged "convention's tags" terraform_on "$PLANTS/untagged" modules/conventions
+refuses public-endpoint "The API endpoint has a public address" terraform_on "$PLANTS/public-endpoint" modules/kubernetes
+refuses public-workload-subnet "A workload subnet assigns a public address" terraform_on "$PLANTS/public-workload-subnet" modules/network
+refuses cluster-on-edge-tier "not on exactly the workload subnets" terraform_on "$PLANTS/cluster-on-edge-tier" environments/staging
+refuses no-flow-logs "flow log does not cover every flow" terraform_on "$PLANTS/no-flow-logs" modules/network
+refuses no-audit-log "audit log is off" terraform_on "$PLANTS/no-audit-log" modules/kubernetes
+refuses no-etcd-encryption "Kubernetes Secrets are not encrypted in etcd" terraform_on "$PLANTS/no-etcd-encryption" modules/kubernetes
+refuses two-zones "var.availability_zones, was expected to report" terraform_on "$PLANTS/two-zones" modules/network
 
 if [ "$status" -eq 0 ]; then
     echo "ok   every check green, every plant refused for its reason"

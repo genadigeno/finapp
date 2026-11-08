@@ -221,7 +221,7 @@ run "the_cloud_apis_are_reached_through_vpc_endpoints" {
   }
 }
 
-run "every_flow_in_the_vpc_is_logged" {
+run "the_vpc_flow_log_covers_all_traffic" {
   command = plan
 
   assert {
@@ -261,6 +261,29 @@ run "names_start_with_the_conventions_prefix" {
   assert {
     condition     = alltrue([for subnet in concat(values(aws_subnet.private), values(aws_subnet.public)) : startswith(subnet.tags["Name"], "finapp-staging-")])
     error_message = "A subnet's name does not start with the conventions' prefix."
+  }
+}
+
+run "four_zones_are_four_of_everything_and_still_do_not_overlap" {
+  command = plan
+
+  variables {
+    availability_zones = ["eu-central-1a", "eu-central-1b", "eu-central-1c", "eu-central-1d"]
+  }
+
+  assert {
+    condition     = length(aws_subnet.private) == 4 && length(aws_subnet.public) == 4 && length(aws_nat_gateway.this) == 4 && length(aws_route.private_egress) == 4
+    error_message = "A fourth zone does not get its own subnets, NAT gateway and route."
+  }
+
+  assert {
+    condition     = alltrue([for subnet in aws_subnet.private : subnet.map_public_ip_on_launch == false]) && alltrue([for route in aws_route.private_egress : route.gateway_id == null])
+    error_message = "A fourth zone's workload subnet is public."
+  }
+
+  assert {
+    condition     = length(distinct([for subnet in concat(values(aws_subnet.private), values(aws_subnet.public)) : subnet.cidr_block])) == 8
+    error_message = "A fourth zone's addresses collide with another subnet's."
   }
 }
 

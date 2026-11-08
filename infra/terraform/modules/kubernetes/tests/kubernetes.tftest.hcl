@@ -143,7 +143,7 @@ run "every_zone_has_its_own_node_group_with_a_node" {
   }
 }
 
-run "a_pod_cannot_reach_its_nodes_credentials_and_no_node_accepts_ssh" {
+run "the_node_template_keeps_pods_off_instance_metadata_and_sets_no_ssh_key" {
   command = plan
 
   assert {
@@ -191,7 +191,7 @@ run "workload_identity_is_the_clusters_oidc_issuer" {
   }
 }
 
-run "network_policy_is_enforced" {
+run "the_network_policy_agent_is_turned_on" {
   command = plan
 
   assert {
@@ -230,6 +230,24 @@ run "names_start_with_the_conventions_prefix" {
   assert {
     condition     = alltrue([for zone, group in aws_eks_node_group.workers : group.node_group_name == "finapp-staging-${zone}"])
     error_message = "A node group's name does not start with the conventions' prefix."
+  }
+}
+
+run "four_zones_are_four_node_groups" {
+  command = plan
+
+  variables {
+    private_subnet_ids_by_zone = {
+      "eu-central-1a" = "subnet-private-a"
+      "eu-central-1b" = "subnet-private-b"
+      "eu-central-1c" = "subnet-private-c"
+      "eu-central-1d" = "subnet-private-d"
+    }
+  }
+
+  assert {
+    condition     = length(aws_eks_node_group.workers) == 4 && alltrue([for zone, group in aws_eks_node_group.workers : group.subnet_ids == toset(["subnet-private-${substr(zone, -1, 1)}"]) && group.scaling_config[0].min_size >= 1])
+    error_message = "A fourth zone does not get its own node group with a node."
   }
 }
 

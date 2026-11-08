@@ -20,7 +20,7 @@ output "node_group_subnet_ids" {
 
 output "etcd_kms_key_arn" {
   description = "The key encrypting Secrets in etcd, read from the planned cluster."
-  value       = aws_eks_cluster.this.encryption_config[0].provider[0].key_arn
+  value       = try(aws_eks_cluster.this.encryption_config[0].provider[0].key_arn, null)
 }
 
 output "control_plane_log_types" {
