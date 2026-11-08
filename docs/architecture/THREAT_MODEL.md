@@ -37,6 +37,8 @@ duplicate commands and events (T16, T17), and a client address read from a heade
 
 **Today and target.** Phase 15 has built nothing yet. "Today" means the repository at this commit: the application,
 its guards and tests, the local stack, CI. There is no image, manifest, edge, cloud account or deployed instance.
+*(Since 2026-11-08 the application image exists: built, compared and asserted locally and in CI's image job, pushed
+nowhere. The rest of that list still holds.)*
 The edge and network threats are therefore answered by the Phase 15 tasks that will build those things, and the
 register says so row by row. Where evidence holds only the local stack or CI, the row says so, and the deployed
 equivalent is its own planned row.
@@ -265,7 +267,7 @@ any delivery.
 ### B8 — CI → registry
 
 CI builds the application and migrator images from a reviewed commit and pushes them to the registry (C7). Today CI
-builds, tests and scans, and pushes nothing.
+builds, tests and scans, builds the application image (since 2026-11-08), and pushes nothing.
 
 | Category | Threats | Note |
 |---|---|---|
@@ -400,7 +402,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T3 | Operator routes served only on the internal ingress | PLANNED | `P15-TSK-011` |
 | T3 | Operator sessions audited as `OPERATOR`, refused step-ups audited, the privileged access review of role holdings | PLANNED | `P15-TSK-021` |
 | T3 | Break-glass and compromise procedures, audited and rehearsed | PLANNED | `P15-TSK-032` |
-| T4 | A minimal image: non-root, no shell, no package manager | PLANNED | `P15-TSK-003` |
+| T4 | The application image's runtime stage is distroless's `nonroot` Java pinned by digest, declares `USER 65532:65532` explicitly and numerically, and adds the boot jar's four layers and nothing else: no `RUN`, `ADD`, `ENV`, `HEALTHCHECK` or `--chown` | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theRuntimeIsDistrolessNonrootOnTheToolchainsJava`; `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theRuntimeStageRunsAsUid65532`; `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theRuntimeStageAddsTheJarsFourLayersAndNothingElse` |
+| T4 | On the built image, CI's image job refuses a user other than `65532:65532`, a file named for a shell or a package manager anywhere, a program on the `PATH` other than `java`, and an entry that is neither the pinned base's nor the boot jar's; run with a read-only root and every capability dropped, the image must report ready with every process at UID 65532 | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theImageIsBuiltComparedAndRunInCiAndItsBasesProposedWeekly`; `infra/scripts/image-build.sh` `contains: [ "$user" = "$RUNTIME_USER" ]` `contains: the image holds a shell or a package manager` `contains: [ "$programs" = "usr/bin/java " ]` `contains: outside /app the image differs from the pinned runtime base`; `infra/scripts/image-readiness.sh` `contains: --read-only --tmpfs /tmp --cap-drop ALL` `contains: [ "$uids" = "$RUNTIME_UID " ]` |
 | T4 | The restricted pod profile: read-only root, no capabilities, no privilege escalation, a seccomp profile, no service-account token | PLANNED | `P15-TSK-009` |
 | T4 | Default-deny NetworkPolicy with an egress allow-list; Pod Security Admission `restricted`; no Kubernetes RBAC for the workload | PLANNED | `P15-TSK-010` |
 | T4 | A workload identity that reads only its own secrets | PLANNED | `P15-TSK-016` |
@@ -408,7 +411,9 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T5 | Every action in CI's one workflow pinned to a full commit SHA, with weekly update proposals for the pins | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#everyActionIsPinnedToACommit` |
 | T5 | Every scanner image pinned by a full sha256 digest, and the pins' freshness checked by a scheduled job | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#everyScannerImageIsPinnedByDigest` |
 | T5 | The build's CycloneDX SBOM generated and scanned for known vulnerabilities in CI | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#theSbomIsScanned` |
-| T5 | Base images pinned by digest in a minimal multi-stage build | PLANNED | `P15-TSK-003` |
+| T5 | The application image's two base images pinned as `tag@sha256` in the `Dockerfile`'s `FROM` lines, their one definition, in a two-stage build whose runtime stage holds no build tool; an unpinned base in any root Dockerfile fails the build, and the image job refuses one before building | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#everyBaseIsPinnedByDigest`; `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theRuntimeStageAddsTheJarsFourLayersAndNothingElse`; `infra/scripts/check-pinned-images.sh` `contains: is not pinned as repository:tag@sha256:<digest>`; `infra/scripts/image-build.sh` `contains: check-pinned-images.sh" --offline` |
+| T5 | Dependabot proposes the base images' next tag and digest weekly, and the scheduled pin check reports a base whose tag moved or that has a newer release | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theImageIsBuiltComparedAndRunInCiAndItsBasesProposedWeekly`; `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#everyScannerImageIsPinnedByDigest`; `infra/scripts/check-pinned-images.sh` `contains: check "base $repository"` |
+| T5 | Two builds of one commit compared in CI's image job: the boot jar, built from source both times (every task re-run), must have the same sha256, and the two images the same image id and the same layer digests, one by one | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theImageIsBuiltComparedAndRunInCiAndItsBasesProposedWeekly`; `infra/scripts/image-build.sh` `contains: --rerun-tasks :app:bootJar` `contains: the boot jar is not reproducible` `contains: the two builds of $REVISION differ` |
 | T5 | Image scans, an SBOM per image and static analysis in CI, HIGH and CRITICAL failing | PLANNED | `P15-TSK-006` |
 | T5 | Signatures and provenance, with admission refusing an unsigned image | PLANNED | `P15-TSK-007` |
 | T6 | No credential literal in committed configuration except the one marked local default | EXISTS | `app/src/test/java/com/finapp/app/security/CommittedConfigurationHoldsNoSecretTest.java#noCommittedConfigurationHoldsACredentialLiteral` |
@@ -422,6 +427,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T6 | Each workload's identity reads only its own secrets, under KMS keys per environment and purpose | PLANNED | `P15-TSK-016` |
 | T6 | Humans denied `get secrets` | PLANNED | `P15-TSK-010` |
 | T6 | Images scanned for secrets | PLANNED | `P15-TSK-006` |
+| T6 | The application image's build context is the boot jar alone (`.dockerignore` an allow-list) and its runtime stage sets no environment; CI's image job refuses an image whose `/app` is not exactly the jar's entries or whose environment is not the base's, so no local file, `.env` or configuration beyond the jar's reaches it | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theBuildContextIsTheBootJarAlone`; `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theRuntimeStageAddsTheJarsFourLayersAndNothingElse`; `infra/scripts/image-build.sh` `contains: /app is not exactly the boot jar's entries` `contains: the image sets environment of its own` |
 | T6 | Rotation and revocation of every credential class, rehearsed | PLANNED | `P15-TSK-020` |
 | T7 | Locally (compose and the test databases built from the initialisation scripts), both roles are `NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`, and no later statement alters or grants that away | EXISTS | `app/src/test/java/com/finapp/app/architecture/LocalDatabaseRolesAreUnprivilegedTest.java#everyRoleIsUnprivileged` |
 | T7 | In a deployed database, the roles created by the one-time bootstrap step with the same attributes | PLANNED | `P15-TSK-004` |
@@ -541,7 +547,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T26 | In a customer's own account flows (the sweep's), every audit record names that customer as actor, carries operation, target and outcome, and joins to its request by correlation | EXISTS | `app/src/test/java/com/finapp/app/domain/AuditNamesTheActorDatabaseTest.java#authenticatedRequestsNameThePerson`; `app/src/test/java/com/finapp/app/domain/AuditNamesTheActorDatabaseTest.java#everyRecordCarriesTheAuditFields` |
 | T26 | The auditable action registry and its catalogue agree | EXISTS | `app/src/test/java/com/finapp/app/audit/AuditableActionRegistryTest.java#theRegistryAndTheCatalogueAgree` |
 | T26 | Audit retention and its archival design | PLANNED | `P15-TSK-029` |
-| T27 | OCI revision labels, and build identity asserted after deploy | PLANNED | `P15-TSK-003` |
+| T27 | The application image carries the OCI `revision` (the commit, marked `-dirty` from a changed tree), `source` and `version` labels, passed by the build script and read back from the built image by CI's image job | EXISTS | `app/src/test/java/com/finapp/app/architecture/ApplicationImageTest.java#theImageCarriesItsRevisionSourceAndVersion`; `infra/scripts/image-build.sh` `contains: label org.opencontainers.image.$key is` |
+| T27 | Build identity asserted after deploy, against the promoted image's revision | PLANNED | `P15-TSK-017` |
 | T27 | Signatures with provenance and SBOM attestations, verified at admission | PLANNED | `P15-TSK-007` |
 | T27 | A registry with immutable tags and scan on push | PLANNED | `P15-TSK-016` |
 | T27 | Deploy by digest, with promotion refusing a tag or an unsigned digest | PLANNED | `P15-TSK-017` |
