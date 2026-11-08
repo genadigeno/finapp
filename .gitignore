@@ -45,6 +45,18 @@ out/
 .project
 .classpath
 
+# --- Terraform (P15-TSK-013) -----------------------------------------------
+# A root's working directory and any local state. infra/scripts/terraform-check.sh writes none of
+# these into the tree (TF_DATA_DIR is its own volume), but a hand-run `terraform init` does, and
+# state can hold what a resource returns: it lives in the remote backend, never in git.
+# .terraform.lock.hcl IS committed, deliberately: it is the provider pin's checksum (ADR-0121).
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
 # --- OS --------------------------------------------------------------------
 .DS_Store
 Thumbs.db

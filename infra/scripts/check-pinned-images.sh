@@ -204,8 +204,12 @@ check() {
     echo "ok $name: $version, digest matches, no newer release"
 }
 
-check gitleaks "$GITLEAKS_REPOSITORY" "$GITLEAKS_VERSION" "$GITLEAKS_DIGEST" list_tags_ghcr
-check trivy    "$TRIVY_REPOSITORY"    "$TRIVY_VERSION"    "$TRIVY_DIGEST"    list_tags_dockerhub
+check gitleaks  "$GITLEAKS_REPOSITORY"  "$GITLEAKS_VERSION"  "$GITLEAKS_DIGEST"  list_tags_ghcr
+check trivy     "$TRIVY_REPOSITORY"     "$TRIVY_VERSION"     "$TRIVY_DIGEST"     list_tags_dockerhub
+# The infrastructure-code tools (P15-TSK-013). A newer Terraform is also a change to every root's
+# required_version, which TerraformIsPinnedAndCheckedTest holds equal to TERRAFORM_VERSION.
+check terraform "$TERRAFORM_REPOSITORY" "$TERRAFORM_VERSION" "$TERRAFORM_DIGEST" list_tags_dockerhub
+check tflint    "$TFLINT_REPOSITORY"    "$TFLINT_VERSION"    "$TFLINT_DIGEST"    list_tags_ghcr
 
 while read -r repository tag digest; do
     [ -n "$repository" ] || continue

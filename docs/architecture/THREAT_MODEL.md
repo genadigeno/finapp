@@ -444,7 +444,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T8 | The instant-rail door: a wrong signature, a missing header and a stale timestamp are one uniform `401`, with nothing written | EXISTS | `app/src/test/java/com/finapp/app/payments/PayByBankDatabaseTest.java#anUnsignedCallbackDiesAtTheDoor` |
 | T8 | A delivery repeated three times lands one dedupe record, and every copy is retained as evidence | EXISTS | `app/src/test/java/com/finapp/app/payments/PaymentWebhookDatabaseTest.java#aTripleDeliveryLandsOneDedupeRecordAndThreeEvidenceRows` |
 | T8 | FX and corridor callbacks are hints: a signed but forged callback is acknowledged and moves nothing the inquiry does not confirm (both rails), and is retained as evidence (asserted for FX); an unsigned or stale one is `401` and moves nothing (both rails) | EXISTS | `app/src/test/java/com/finapp/app/fx/FxCallbackDuplicateDatabaseTest.java#aForgedSignedCallbackMovesNothing`; `app/src/test/java/com/finapp/app/fx/FxCallbackDuplicateDatabaseTest.java#unsignedOrStaleMovesNothing`; `app/src/test/java/com/finapp/app/fx/OutboundCreditResolutionDatabaseTest.java#callbacksAreHints` |
-| T8 | Callbacks as hints for the payment (Phase 5) and instant (Phase 7) providers, which still adopt a callback's own outcome | REMEDIATION | `X-TSK-015` |
+| T8 | Callbacks as hints for the payment (Phase 5) and instant (Phase 7) providers, which still adopt a callback's own outcome: each adopted kind applied only from an authenticated inquiry, a forged-but-signed callback moving nothing on either rail | PLANNED | `P15-TSK-036` |
 | T8 | Provider callback routes served only by name on the public allow-list | PLANNED | `P15-TSK-011` |
 | T8 | Callback secrets verified against the current and the previous secret during a rotation window | PLANNED | `P15-TSK-019` |
 | T8 | A callback secret's rotation rehearsed | PLANNED | `P15-TSK-020` |
@@ -458,7 +458,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T10 | The retention policy by data class, and the audit archival design to write-once storage | PLANNED | `P15-TSK-029` |
 | T10 | Write-once (Object Lock) on the audit archive bucket | PLANNED | `P15-TSK-015` |
 | T11 | Startup guards refuse an unsafe configuration on every replica: a fleet whose pools exceed the database's connections (the guard wired, so a violation stops the instance), any configured `sslmode` source weaker than `verify-full`, a settlement pull source in cleartext | EXISTS | `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#hikarisDefaultExhaustsPostgresDefault`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingIsConfiguredTest.java#theGuardIsWired`; `app/src/test/java/com/finapp/app/security/TransportSecurityGuardTest.java#everyConfiguredSourceMustVerify`; `app/src/test/java/com/finapp/app/security/ProviderTransportGuardTest.java#startupConsultsEverySourceUrl` |
-| T11 | Infrastructure as pinned, checked code, never applied by hand | PLANNED | `P15-TSK-013` |
+| T11 | Infrastructure code pinned: every environment root requires Terraform at exactly the version of the image that checks it and every provider at one exact version, the same in both roots, and each root's lock file holds exactly those providers at those versions. It is checked on every pull request: CI's `iac` job, ungated, runs a script that runs `fmt`, `tflint`, `trivy config`, `validate` and `terraform test` over the whole tree, then runs each check again over a planted defect it must refuse | EXISTS | `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#everyRootPinsTerraformAndEveryProviderExactly`; `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#everyLockFileHoldsThePinnedVersions`; `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#ciRunsEveryCheckOverTheTreeAndItsPlants` |
+| T11 | Infrastructure applied only from a reviewed plan, and a scheduled plan reporting drift. Both need a real account, which Phase 15 does not have (ADR-0121 decision 6), so nothing yet holds either | GAP | `owner item 7`; owner: the owner, since 2026-11-08 |
 | T11 | GitOps self-heal, and two persons on every production change | PLANNED | `P15-TSK-017` |
 | T11 | The configuration register, and an alert when replicas disagree for longer than a rollout | PLANNED | `P15-TSK-031` |
 | T12 | The build's Flyway tasks are forward-only in every module with migrations (21 today): `clean` disabled, validated before migrating, never out of order. This holds the Gradle and CI path, not the deployed runner | EXISTS | `app/src/test/java/com/finapp/app/architecture/MigrationSettingsAreForwardOnlyTest.java#everyMigratingModuleIsForwardOnly` |
@@ -475,7 +476,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T13 | No production class reads ambient time (the build rule) | EXISTS | `app/src/test/java/com/finapp/app/architecture/NoAmbientTimeRulesTest.java#noAmbientTimeIsRead` |
 | T13 | PI-013's and PI-014's clock-step defects fixed at their causes, each with a clock-step regression case | PLANNED | `P15-TSK-033` |
 | T13 | The lock's grace and the submissions' orderings judged on the database's clock | REMEDIATION | `P14-REM-009` |
-| T13 | Five stores still comparing a stored bound with a caller's instant | REMEDIATION | `X-TSK-008` |
+| T13 | Five stores still comparing a stored bound with a caller's instant (recovery tokens, contact-channel verification, checkout expiry, the card fee version in force, payout-destination cooling-off), each judged and stamped on the database's clock | PLANNED | `P15-TSK-033` |
+| T13 | Lending's trigger functions read the database's clock whatever a role's `search_path` holds | PLANNED | `P15-TSK-004` |
 | T14 | The connection budget is a startup guard against the **declared** instance count (`finapp.database.instances`): a fleet whose pools exceed the database's available connections refuses to start, naming the fix; a declared fleet scaled out past the limit no longer fits; reserved connections count; the guard is wired. A replica count that outgrows its declaration (an HPA) is not caught here | EXISTS | `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#hikarisDefaultExhaustsPostgresDefault`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#scalingOutIsCaught`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#reservedConnectionsAreLoadBearing`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingIsConfiguredTest.java#theGuardIsWired` |
 | T14 | Requests and limits, and an HPA bounded by the declared budget counting terminating pods | PLANNED | `P15-TSK-009` |
 | T14 | `ResourceQuota` and `LimitRange` | PLANNED | `P15-TSK-010` |
@@ -498,7 +500,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T16 | A key reused with a different request is refused as a distinct conflict, never replayed (`INV-IDEM-03`) | EXISTS | `platform/src/test/java/com/finapp/platform/idempotency/IdempotentExecutorTest.java#differingFingerprintIsRejected` |
 | T16 | A merchant's payout key is that merchant's own: two merchants, one key value, two payouts | EXISTS | `app/src/test/java/com/finapp/app/merchant/MerchantPayoutEndpointDatabaseTest.java#aClientKeyIsEachMerchantsOwn` |
 | T16 | Every idempotency claim scoped to its principal, each money-moving scope moved behind a tested transition path | REMEDIATION | `X-TSK-003` |
-| T16 | No idempotency record swept until posting once-ness's second rank (debt row #61) is ruled | PLANNED | `P15-TSK-029` |
+| T16 | No idempotency record swept: posting once-ness's second rank (debt row #61) ruled not settled on 2026-11-08, so the retention sweeps leave the idempotency record alone until a uniqueness on the posting scope exists | PLANNED | `P15-TSK-029` |
 | T17 | A redelivered message produces no second effect, and its dedupe record commits with its effect (`INV-IDEM-04`) | EXISTS | `platform/src/test/java/com/finapp/platform/inbox/InboxConsumerTest.java#redeliveryProducesNoSecondEffect`; `platform/src/test/java/com/finapp/platform/inbox/InboxConsumerTest.java#theRecordAndTheEffectCommitTogether` |
 | T17 | Reordering and duplication together leave the right answer under an ordering key (`INV-EVT-04`) | EXISTS | `platform/src/test/java/com/finapp/platform/inbox/InboxDeliveryOrderTest.java#reorderingAndDuplicationTogether` |
 | T17 | Every topic's retention below the inbox's dedupe window, and cooperative rebalancing | PLANNED | `P15-TSK-026` |
@@ -557,7 +559,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T29 | A human IAM baseline for the cloud account: MFA required by policy, no long-lived human access keys, permission boundaries, asserted by `terraform test` with mock providers | PLANNED | `P15-TSK-016` |
 | T30 | CI's token is read-only in every permissions entry, no job references a secret, and the workflow is the repository's only one, with no local action | EXISTS | `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#theTokenIsReadOnly`; `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#noJobReferencesASecret`; `app/src/test/java/com/finapp/app/architecture/CiWorkflowIsLockedDownTest.java#thereIsOneWorkflow` |
 | T30 | Pull-based GitOps: no CI credential reaches production | PLANNED | `P15-TSK-017` |
-| T30 | No cloud credential in CI, and no state backend initialised by it | PLANNED | `P15-TSK-013` |
+| T30 | No cloud credential and no state backend in CI's infrastructure checks. The `iac` job declares no environment, permission or secret of its own. Its script initialises only with `-backend=false`, runs no command that touches a backend, a state or an account, gives no container a host variable, and mounts the tree read-only. Every `terraform test` file mocks every provider its directory requires and configures no real one. No backend or provider block holds a credential argument | EXISTS | `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#ciHoldsNoCredentialAndInitialisesNoBackend`; `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#everyTestMocksEveryProvider`; `app/src/test/java/com/finapp/app/architecture/TerraformIsPinnedAndCheckedTest.java#everyEnvironmentKeepsItsStateRemoteLockedAndEncrypted` |
 | T30 | Keyless signing from CI's identity, its trust narrowed at admission | PLANNED | `P15-TSK-007` |
 | T31 | No handler is served without a declared rule, and every permission-guarded route requires exactly the permission the register names | EXISTS | `app/src/test/java/com/finapp/app/api/RoutePermissionRegisterTest.java#everyGuardedRouteRequiresItsRegisteredPermission`; `app/src/test/java/com/finapp/app/api/EveryEndpointDeclaresARuleTest.java#everyHandlerDeclaresSomething` |
 | T31 | The public allow-list generated from the permission register, with an operator route refused on the public host | PLANNED | `P15-TSK-011` |
@@ -569,6 +571,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T33 | Only the migrator image holds the migrator's credentials, under the Job contract; the deployed roles created by the one-time bootstrap step | PLANNED | `P15-TSK-004` |
 | T33 | The migrator's egress reaches PostgreSQL alone | PLANNED | `P15-TSK-010` |
 | T33 | The migrator's identity reads only its own secret | PLANNED | `P15-TSK-016` |
+| T33 | Every reconciliation table refuses `TRUNCATE` to every role, the migrator and the owner included, as its row triggers refuse `DELETE` | PLANNED | `P15-TSK-004` |
 | T34 | The payment-evidence and KYC-document ciphers' tests show the stamped key version on a ciphertext; the other six ciphers stamp it by construction, untested here | EXISTS | `payments/src/test/java/com/finapp/payments/EvidenceCipherTest.java#roundTrips`; `kyc/src/test/java/com/finapp/kyc/DocumentCipherTest.java#roundTrips` |
 | T34 | Another key never decrypts an MFA secret, a KYC document or payment evidence | EXISTS | `identity/src/test/java/com/finapp/identity/SecretCipherTest.java#anotherKeyCannotDecrypt`; `kyc/src/test/java/com/finapp/kyc/DocumentCipherTest.java#wrongKeyIsRefused`; `payments/src/test/java/com/finapp/payments/EvidenceCipherTest.java#tamperingAndWrongKeyRefuse` |
 | T34 | Data keys wrapped by KMS keys with deletion waiting periods | PLANNED | `P15-TSK-016` |
@@ -582,6 +585,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T37 | Outbox and inbox retention sweeps, leaderless and batched, never a non-terminal row | PLANNED | `P15-TSK-029` |
 | T38 | A permission denial is audited (a refused step-up is not: the gap this threat names) | EXISTS | `app/src/test/java/com/finapp/app/domain/DenyByDefaultDatabaseTest.java#aDenialIsAudited` |
 | T38 | Operator sessions typed `OPERATOR`, and a refused step-up recorded | PLANNED | `P15-TSK-021` |
+| T38 | Refused and failed Phase 7 and Phase 8 acts (the refused four-eyes attempts among them) and failed or not-found Phase 9 and 10 operator reads recorded with their outcome, and a merchant's dispute act naming its API key | PLANNED | `P15-TSK-021` |
 | T39 | An audited operator door to retry or discard an abandoned event (discard four-eyes), emitting the three platform actions | PLANNED | `P15-TSK-028` |
 | T40 | The edge sets the client address, and only the edge's is trusted | PLANNED | `P15-TSK-011` |
 | T40 | Per-source limits keyed on the address the edge sets | PLANNED | `P15-TSK-022` |
@@ -701,7 +705,10 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   declaration to the replicas actually running, which `-009`'s manifest policy and `-012`'s measured peak do. Today an
   unauthenticated scrape runs about sixty gauges' queries on the scrape thread (`-024`).
 - **T38.** Today **every session actor is audited as `CUSTOMER`, operators included**, and a refused step-up writes no
-  record. Both are debt rows that `-021` closes. The actor's identity is right; only its type is wrong.
+  record. Both are debt rows that `-021` closes. The actor's identity is right; only its type is wrong. *(Added
+  2026-11-08 by the carried items' ruling, C15:)* refused and failed Phase 7 and 8 acts and failed or not-found Phase 9
+  and 10 operator reads leave no audit outcome either; those debt rows are routed to `-021` too, and its gate rewrites
+  that row to evidence or to a `GAP` with an owner item.
 - **T43.** No general bound on the size of a provider's answer exists across the adapters. The regulatory adapter is
   the one evidenced. The adapters call simulated providers in this programme. **Owner item 5, decided 2026-11-08**:
   `-006`'s static analysis flags an unbounded read of a provider's answer in an adapter.
@@ -716,6 +723,11 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   16, where registry availability, image pre-pulling and disaster recovery belong.
 - **T44.** The reporting role is C13's first cut candidate. If it is cut, `-021`'s gate rewrites T7's and T44's
   planned rows as `GAP` rows with an owner.
+- **T11, the infrastructure.** Its code is pinned, locked and checked on every pull request, and nothing in Phase 15
+  applies it. No check reads a real account, so nothing yet holds that an apply comes only from a reviewed plan, and
+  nothing reports drift. `prevent_destroy` on the database, its backups and every KMS key is a build rule, and it
+  holds over an empty set until the data-tier and security modules (`-015`, `-016`) add the first such resource.
+  **Owner item 7**, added 2026-11-08, awaits the owner.
 - **T13.** Time sync on nodes is a property of the managed cluster. No task asserts it, and the register does not
   claim it. The platform's answer is to decide financial instants on the database's clock.
 
@@ -723,10 +735,13 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
 
 ## 6. Owner items
 
-Only the owner can accept a risk or choose between the options below. **The owner decided all six on 2026-11-08,
+Only the owner can accept a risk or choose between the options below. **The owner decided items 1 to 6 on 2026-11-08,
 accepting each recommendation** ("accept recommendations", after `P15-TSK-001`'s merge); each item's decision follows
 its options. *(Read "Each item carries a recommendation, and each is held by a `GAP` row in §4. None blocks Phase 15's
-work; the two proposed acceptances (items 1 and 6) must be decided by the phase's exit (§1.5)." until then.)*
+work; the two proposed acceptances (items 1 and 6) must be decided by the phase's exit (§1.5)." until then.)* **Item 7
+was added on 2026-11-08, when the Terraform foundations were built, and awaits the owner.** It carries a
+recommendation, a `GAP` row in §4 holds it, and it blocks none of the phase's work. *(This paragraph read "decided all
+six" until then.)*
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -774,6 +789,15 @@ work; the two proposed acceptances (items 1 and 6) must be decided by the phase'
    to registration (verify-then-tell, by a channel the identifier's owner controls), which Phase 15 does not make.
    *Recommendation*: accept it, bounded by `-022`'s throttle, and record the alternative for the first real customer
    launch. **Decided 2026-11-08**: `ACCEPTED by the owner on 2026-11-08`; the alternative is `PI-017`.
+7. **T11's residual: infrastructure applied only from a reviewed plan, and drift reported.** The infrastructure code
+   is pinned, locked and checked on every change, and Phase 15 applies none of it (ADR-0121 decision 6). In a real
+   account nothing yet stops a person changing a resource by hand or applying a plan nobody reviewed, and nothing
+   reports the drift. Both need an account, and none exists (`PHASE_15_PLAN.md` §1.1). *Recommendation*: record it as
+   a real-environment item under §1.1, beside the apply it belongs to. When an account exists, applies run only from a
+   pipeline role on the plan a pull request showed, humans hold read-only access to the account (`-016`'s human
+   baseline adds the boundaries), and a scheduled plan reports drift. Separately, widen `-017`'s `CODEOWNERS` to the
+   production root (`infra/terraform/environments/production/`), so that a change to production's infrastructure code
+   needs the same second person as a change to its overlay. **Awaiting the owner.**
 
 ---
 
