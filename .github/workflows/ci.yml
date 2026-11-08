@@ -292,3 +292,26 @@ jobs:
 
       - name: Check the pinned scanner images
         run: ./infra/scripts/check-pinned-images.sh
+
+  # ---------------------------------------------------------------------------
+  # Infrastructure as code (P15-TSK-013, ADR-0121): every root and module under
+  # infra/terraform passes fmt, tflint, trivy config, validate and terraform
+  # test with mock providers, and each check refuses a planted defect in the
+  # same run - so a check that cannot fail fails the job.
+  #
+  # No credential and no backend, by construction rather than by care: no env,
+  # no secret, no permission beyond the workflow's contents: read; every init is
+  # -backend=false and every test plans against mock providers. Nothing here can
+  # reach a cloud account (THREAT_MODEL.md T30; TerraformIsPinnedAndCheckedTest).
+  # ---------------------------------------------------------------------------
+  iac:
+    name: Infrastructure as code
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check the Terraform, and that every check refuses its plant
+        # The same script a developer runs; the tool pins live in infra/scanner-pins.sh.
+        run: ./infra/scripts/terraform-check.sh
