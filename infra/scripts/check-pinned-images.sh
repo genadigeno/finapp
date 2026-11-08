@@ -141,6 +141,12 @@ list_tags_dockerhub() {
         | tr ',' '\n' | sed -n 's/.*"name":"\(v\{0,1\}[0-9][0-9.]*\)".*/\1/p'
 }
 
+# registry.k8s.io serves its tag list anonymously, behind a redirect (P15-TSK-009, for Kustomize).
+list_tags_registry_k8s() {
+    curl -fsSL "https://registry.k8s.io/v2/${1#registry.k8s.io/}/tags/list" \
+        | tr ',' '\n' | sed -n 's/.*"\(v\{0,1\}[0-9][0-9.]*\)".*/\1/p'
+}
+
 # A base's newer releases: Docker Hub tags of the same shape as the pinned one - its first number (the Java major)
 # kept, every later number free, its suffix (-jdk-noble) kept. eclipse-temurin:21.0.13_9-jdk-noble is compared with
 # 21.0.<n>_<n>-jdk-noble and never with 25.<...>: a new Java major is a decision, not rot.
@@ -210,6 +216,11 @@ check trivy     "$TRIVY_REPOSITORY"     "$TRIVY_VERSION"     "$TRIVY_DIGEST"    
 # required_version, which TerraformIsPinnedAndCheckedTest holds equal to TERRAFORM_VERSION.
 check terraform "$TERRAFORM_REPOSITORY" "$TERRAFORM_VERSION" "$TERRAFORM_DIGEST" list_tags_dockerhub
 check tflint    "$TFLINT_REPOSITORY"    "$TFLINT_VERSION"    "$TFLINT_DIGEST"    list_tags_ghcr
+# The Kubernetes manifest tools (P15-TSK-009). The schemas kubeconform reads are pinned by commit in
+# scanner-pins.sh, a git hash being its own digest, and have no release to fall behind.
+check kustomize   "$KUSTOMIZE_REPOSITORY"   "$KUSTOMIZE_VERSION"   "$KUSTOMIZE_DIGEST"   list_tags_registry_k8s
+check kubeconform "$KUBECONFORM_REPOSITORY" "$KUBECONFORM_VERSION" "$KUBECONFORM_DIGEST" list_tags_ghcr
+check conftest    "$CONFTEST_REPOSITORY"    "$CONFTEST_VERSION"    "$CONFTEST_DIGEST"    list_tags_dockerhub
 
 while read -r repository tag digest; do
     [ -n "$repository" ] || continue

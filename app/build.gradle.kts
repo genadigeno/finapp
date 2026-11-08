@@ -607,6 +607,12 @@ tasks.withType<Test>().configureEach {
         .withPropertyName("committedConfiguration")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
+    // KubernetesManifestsTest holds every rule id in the policy file against the check's plants
+    // (P15-TSK-009). The manifests and the script are in the set above; the policy file is not.
+    inputs.files(rootProject.layout.projectDirectory.file("infra/scripts/manifest-policy/finapp.rego"))
+        .withPropertyName("manifestPolicy")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
     // The fourteenth and fifteenth. DomainGlossaryTest holds the glossary to DOMAIN_MODEL.md's
     // canonical term list and to CLAUDE.md's §Domain Distinctions. CLAUDE.md and
     // MODULE_ARCHITECTURE.md are already declared above, so only these two are new.

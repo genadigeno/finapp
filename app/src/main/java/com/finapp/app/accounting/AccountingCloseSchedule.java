@@ -154,7 +154,7 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
         return leg(CHECKS_LEG, () -> inSystemScope(system -> {
             transactions.inTransaction(uow -> runs.startMissing(uow, system));
             int taken = 0;
-            while (taken < cadence.checksBatch() && worker.workOne(system)) {
+            while (taken < cadence.checksBatch() && !drain.stopping() && worker.workOne(system)) {
                 taken++;
             }
             return taken;
@@ -169,7 +169,7 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
     public int orphansOnce() {
         return leg(ORPHANS_LEG, () -> inSystemScope(system -> {
             int reclaimed = 0;
-            while (reclaimed < cadence.orphansBatch() && orphans.complete(ONE_RUN, system) > 0) {
+            while (reclaimed < cadence.orphansBatch() && !drain.stopping() && orphans.complete(ONE_RUN, system) > 0) {
                 reclaimed++;
             }
             return reclaimed;
@@ -245,8 +245,8 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
     }
 
     /**
-     * Stops claiming, then lets the leg in flight finish within its bound ({@link ScheduleDrain}; `P15-TSK-008`): no leg
-     * starts after it. The heartbeat, a periodic task on this executor, stops with it, so a check still running is no
+     * No new leg starts, a leg in a claim loop ends before its next claim, and the leg in flight finishes within its bound
+     * ({@link ScheduleDrain}; `P15-TSK-008`, `P15-TSK-009`). The heartbeat, a periodic task on this executor, stops with it, so a check still running is no
      * longer renewed: one that outlives its lease is fenced by holder and reclaimed by another instance, as a dead
      * worker's is.
      */
@@ -255,7 +255,7 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
         drain.stop();
     }
 
-    /** Spring's form: stops claiming at once and calls back once the tick has drained, so a phase drains in parallel. */
+    /** Spring's form: no new tick starts, and it calls back once the tick in flight has drained, so a phase drains in parallel. */
     @Override
     public void stop(Runnable callback) {
         drain.stop(callback);

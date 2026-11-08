@@ -1858,12 +1858,15 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.11 Parked value with no attributable owner: return-to-sender, a closed merchant's returned payout, a closed customer's corridor return (the value stays parked, aged and alerted) | `-032` | `-032` |
 | 11.12 Incident response: severity, roles, communication, post-incident review | `-032` | `-032` |
 | 11.13 Infrastructure code: running the Terraform checks, and changing a pin *(written 2026-11-08, below)* | `-013` | `-013` (the checks run on Docker, each plant refused) |
+| 11.14 `deploy/`: the overlays, running the manifest check, and changing a number the budget reads *(written 2026-11-08, below)* | `-009` | `-009` (the check runs on Docker, each plant refused) |
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
 procedure over the repository, not over a deployed environment, so the paragraph above still holds for every other
 row.)*
 
 *(Added 2026-11-08 by `P15-TSK-024`: §11.8 below is written too, its instance-down and stale-gauge parts; the paragraph above holds for the rest of that row and every other.)*
+
+*(Added 2026-11-08 by `P15-TSK-009`: §11.14 below is written too, a developer's and a reviewer's procedure over the repository, like §11.13.)*
 
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
 
@@ -1880,17 +1883,18 @@ the `preStop` pause, the application does this, in this order:
 |---|---|---|---|
 | 1 | Readiness turns `REFUSING_TRAFFIC`: `/actuator/health/readiness` on 8081 answers `503` `{"status":"OUT_OF_SERVICE"}`; liveness still `200` | — | — |
 | 2 | The API port, 8080, stops accepting; requests it accepted finish | 30 s (`spring.lifecycle.timeout-per-shutdown-phase`); a request still running then is no longer waited for, and is cut off when the web server stops (step 5) | `Commencing graceful shutdown…`, then `Graceful shutdown complete` (or `…aborted with one or more requests still active`) |
-| 3 | Every schedule stops claiming at once; the tick each is running finishes; all 32 in parallel | 10 s, then the tick is interrupted and awaited 2 s more | `Schedule <name> drained` (DEBUG); `Schedule <name> did not drain within PT10S; its tick is interrupted` (WARN); `… abandoned to the process's exit` (WARN) |
+| 3 | No new tick starts; the tick each schedule is running finishes, one that claims in a loop of its own ending before its next claim; all 32 in parallel | 10 s, then the tick is interrupted and awaited 2 s more | `Schedule <name> drained` (DEBUG); `Schedule <name> did not drain within PT10S; its tick is interrupted` (WARN); `… abandoned to the process's exit` (WARN) |
 | 4 | Every consumer loop takes no new batch, acknowledges the one it holds and leaves its group | 10 s, then interrupted, 2 s more | `Inbox consumers stopping: <n> loops`, `Inbox consumers stopped`; WARN past the bound |
-| 5 | The management port, 8081, closes; then the API's web server stops | immediate | — |
+| 5 | The management port, 8081, closes at once, a scrape in flight holding nothing; then the API's web server stops | Tomcat's 2 s unload for each | — |
 | 6 | The gauge refresher (`gauge-refresher`, every gauge's one thread since `P15-TSK-024`; the accounting gauges' reader until then) drops its queued reads; the one in flight ends | 3 s | `The gauge refresher stopped` (DEBUG); WARN past the bound |
-| 7 | The Kafka producer closes, then the connection pool; report generation's one-connection pool (`P15-TSK-021`) closes with it, at the context's close | the producer's `finapp.kafka.ack-timeout` (10 s), then HikariCP's own close | HikariCP's shutdown lines |
+| 7 | The Kafka producer closes, then the connection pool; report generation's one-connection pool (`P15-TSK-021`) closes with it, at the context's close | the producer's `finapp.kafka.ack-timeout` (10 s), then HikariCP's own close (at most 10 s each, while something still holds a connection) | HikariCP's shutdown lines |
 
 **Reading it.** A WARN in step 3 or 4 is not an incident: the interrupted work's claim lapses to another instance and
 its records redeliver into the dedupe. It is a signal that a tick or a batch ran longer than 10 s, which the schedule's
-own latency metrics explain. Steps 1-6 together take at most 57 s; the grace period covers the `preStop` pause, those
-57 s and step 7 (`P15-TSK-009`). A pod still running when the grace ends is killed - the same as any kill, and as
-correct.
+own latency metrics explain. Steps 1-6 together take at most 61 s (read "57 s" until `P15-TSK-009` counted Tomcat's two
+stops, and removed the 30 s a scrape in flight could hold step 5 for). `terminationGracePeriodSeconds` is 105: the 10 s
+`preStop` pause, those 61 s, step 7's 30 s and 4 s for the JVM's exit (§11.14). A pod still running when the grace ends
+is killed - the same as any kill, and as correct.
 
 ### 11.6 Broker outage and consumer lag
 
@@ -2056,3 +2060,58 @@ and not the other fails `TerraformIsPinnedAndCheckedTest` until both roots agree
 
 **What this does not cover.** An apply, a plan against an account, and a drift check. Each needs a real account, which
 Phase 15 does not have (`THREAT_MODEL.md` §6 item 7).
+
+### 11.14 `deploy/`: the overlays, running the manifest check, and changing a number the budget reads
+
+**When.** Before pushing any change under `deploy/` or `infra/scripts/manifest-policy/`, and when
+`check-pinned-images.sh` reports a newer Kustomize, kubeconform or conftest. **Why.** No cluster runs these files yet
+(`P15-TSK-012` is the first), so this check is the only thing that holds them. CI's `manifests` job runs the same script.
+
+**The layout.** `deploy/base` is the application's desired state and is never rendered alone: only an overlay names an
+image digest. One Deployment, one Service (8080 only), a hash-named ConfigMap, two ServiceAccounts with no token, a
+PodDisruptionBudget, a HorizontalPodAutoscaler that alone owns the replica count (the Deployment states none), and the
+migrator Job.
+
+| Overlay | For | `maxReplicas` | `FINAPP_DB_INSTANCES` | Difference from the base |
+|---|---|---|---|---|
+| `kind` | The rehearsal, test-only | 3 | 6, the formula exactly | Single-node PostgreSQL and Kafka, ephemeral, labelled `finapp/test-only`; 1 GiB; the zone spread relaxed, since `kind`'s nodes carry no zone label |
+| `staging` | Reference values | 4 | 7 | The maximum, and its budget |
+| `production` | Reference values | 7 | 10 | Its own statement of the same numbers |
+
+**Nothing real is committed.** No secret, no hostname, no endpoint. An image is `finapp-app@sha256:` and sixty-four
+zeros until a promotion replaces it, which no registry serves, so an unpromoted overlay cannot start a pod, and with
+`maxUnavailable: 0` it replaces nothing. Endpoints and credentials arrive through the `finapp-app-secrets` and
+`finapp-migrator-secrets` Secrets: absent, the pod does not start.
+
+**Run the check** (Docker required, no cluster and no credential):
+
+```bash
+./infra/scripts/manifest-check.sh
+```
+
+It renders every overlay, validates each with `kubeconform -strict` against the schemas in `infra/scanner-pins.sh`, runs
+every policy of `infra/scripts/manifest-policy/finapp.rego` over each, and then copies `deploy/`, plants one defect per
+copy and requires the same check to refuse each by name. **Verify**: the last line reads `ok   every check green, every
+plant refused for its reason`, and the exit status is 0. A line starting `!!` reads as in §11.13. On a machine whose TLS
+is intercepted, kubeconform cannot read the schemas: build a local image `FROM` the pinned digest with that machine's root
+certificate added, and set `KUBECONFORM_IMAGE` to it for the run. CI never sets it.
+
+**Change a number the budget reads.** The policy refuses each of these if it is done alone.
+
+- **More replicas**: `FINAPP_DB_INSTANCES` must reach `maxReplicas + 2 × maxSurge + 1`, and
+  `FINAPP_DB_INSTANCES × (7 + 1)` must fit `FINAPP_DB_SERVER_MAX_CONNECTIONS` less `FINAPP_DB_RESERVED_CONNECTIONS`. The
+  pool sizes are read from `application.yaml`; an overlay does not set them.
+- **A stop bound in the code**: `KubernetesManifestsTest` goes red until `manifest-policy/shutdown-budget.yaml` agrees. Then
+  raise `terminationGracePeriodSeconds`, `minReadySeconds` with it, and the autoscaler's scale-down `periodSeconds` if the
+  grace passes it.
+- **The pool's `connection-timeout`**: the readiness probe's `timeoutSeconds` must outlast it, or a lost database reads as a
+  probe timeout rather than a `503`.
+
+**What a rollout costs.** `minReadySeconds` is the grace, 105 s, so each step takes a new pod's startup plus 105 s: about
+seven minutes for three replicas, longer at the maximum. That is the price of never stacking terminating pods.
+
+**Kubernetes 1.30 or later.** The `preStop` is a `sleep` action, because the image has no shell. The schemas checked are
+`KUBERNETES_VERSION` in `infra/scanner-pins.sh`.
+
+**What this does not cover.** A cluster's own refusal (Pod Security Admission, NetworkPolicy, quotas: `-010`), a real
+rollout and the measured connection peak (`-012`), and delivery (`-017`).

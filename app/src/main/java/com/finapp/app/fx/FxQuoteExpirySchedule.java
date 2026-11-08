@@ -71,7 +71,7 @@ public final class FxQuoteExpirySchedule implements SmartLifecycle {
     public int sweepOnce() {
         int total = 0;
         try (SecurityContext.Scope actor = SecurityContext.enterSystem()) {
-            for (int page = 0; page < MAX_PAGES; page++) {
+            for (int page = 0; page < MAX_PAGES && !drain.stopping(); page++) {
                 Instant now = Instant.now(clock);
                 List<QuoteStore.ExpiredRow> expired =
                         transactions.inTransaction(unitOfWork -> lifecycle.expirePage(unitOfWork, pageSize, now, SecurityContext.require()));
@@ -115,13 +115,13 @@ public final class FxQuoteExpirySchedule implements SmartLifecycle {
         return drain;
     }
 
-    /** Stops claiming, then lets the tick in flight finish within its bound ({@link ScheduleDrain}). */
+    /** No new tick starts, and the tick in flight finishes within its bound ({@link ScheduleDrain}). */
     @Override
     public void stop() {
         drain.stop();
     }
 
-    /** Spring's form: stops claiming at once and calls back once the tick has drained, so a phase drains in parallel. */
+    /** Spring's form: no new tick starts, and it calls back once the tick in flight has drained, so a phase drains in parallel. */
     @Override
     public void stop(Runnable callback) {
         drain.stop(callback);

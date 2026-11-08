@@ -14,8 +14,9 @@
 #   DIGEST      what is actually pulled. A tag can be moved by whoever controls the source
 #               repository; a digest cannot
 #
-# Sourced by infra/scripts/secret-scan.sh, infra/scripts/dependency-scan.sh and (since P15-TSK-013)
-# infra/scripts/terraform-check.sh, which CI calls, so a developer and CI run the identical image -
+# Sourced by infra/scripts/secret-scan.sh, infra/scripts/dependency-scan.sh, (since P15-TSK-013)
+# infra/scripts/terraform-check.sh and (since P15-TSK-009) infra/scripts/manifest-check.sh, which CI
+# calls, so a developer and CI run the identical image -
 # the single-definition property P0-TSK-031 established and this file preserves rather than replaces.
 #
 # UPDATING: infra/scripts/check-pinned-images.sh reports both a moved tag and a newer release.
@@ -41,3 +42,22 @@ TERRAFORM_DIGEST=sha256:a5d5a5a892c98f60fcbfa81eac2a40fc19e7b3fa7719bccae10ff611
 TFLINT_REPOSITORY=ghcr.io/terraform-linters/tflint
 TFLINT_VERSION=v0.65.0
 TFLINT_DIGEST=sha256:2788f4d4fc663c0e953b011b01bf443fe5bfce7587ee916e588e6057b85d6359
+
+# The Kubernetes manifest tools (P15-TSK-009, ADR-0120): sourced by infra/scripts/manifest-check.sh.
+KUSTOMIZE_REPOSITORY=registry.k8s.io/kustomize/kustomize
+KUSTOMIZE_VERSION=v5.8.3
+KUSTOMIZE_DIGEST=sha256:429eda4a1c76a7de458d0c4ca3ded9b5d764899ff6bdaeccc1d98b1b6ee873e4
+
+KUBECONFORM_REPOSITORY=ghcr.io/yannh/kubeconform
+KUBECONFORM_VERSION=v0.8.0
+KUBECONFORM_DIGEST=sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e
+
+CONFTEST_REPOSITORY=openpolicyagent/conftest
+CONFTEST_VERSION=v0.71.1
+CONFTEST_DIGEST=sha256:0e77cdf7c1fcde035f3c579e4aaa6664ee2a8be5777eaa9af9f520cdd02280c0
+
+# The schemas kubeconform reads, at one commit of yannh/kubernetes-json-schema, for one Kubernetes version. Not an
+# image, so not a _REPOSITORY/_DIGEST pin: a git commit is its own digest, and the raw URL is built from it. The
+# preStop sleep action needs Kubernetes 1.30 or later.
+KUBERNETES_VERSION=1.36.3
+KUBERNETES_SCHEMAS_COMMIT=c416d7b0da0751bd8ebe5be4fa4c8e8274e3bbe2

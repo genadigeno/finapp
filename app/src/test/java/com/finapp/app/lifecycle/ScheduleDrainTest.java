@@ -21,7 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * A stopping schedule's drain (`P15-TSK-008`): it stops claiming at once, lets the tick in flight finish within its bound,
+ * A stopping schedule's drain (`P15-TSK-008`): no new tick starts, the tick in flight finishes within its bound,
  * interrupts it past the bound, returns within the bound and the interrupt's grace whatever the tick does, and - in the
  * form Spring calls - waits on a thread of its own, so a phase of schedules costs one bound. The last case is the hermetic
  * half of the entry's counted test: two instances over one leased claim table, the first stopped inside a claimed batch,
@@ -100,7 +100,7 @@ class ScheduleDrainTest {
     }
 
     @Test
-    @DisplayName("Spring's form stops claiming on the caller's thread at once, and calls back from another once the tick ends")
+    @DisplayName("Spring's form ends the ticks on the caller's thread at once, and calls back from another once the tick ends")
     void theCallbackFormStopsClaimingAtOnceAndCallsBackAfterTheDrain() throws Exception {
         Ticking ticking = new Ticking(new ScheduleDrain("probe", Duration.ofSeconds(10), GRACE));
         ticking.start(Duration.ofMillis(20));
@@ -109,7 +109,7 @@ class ScheduleDrainTest {
 
         ticking.drain.stop(() -> calledBack.complete(Thread.currentThread()));
 
-        assertThat(ticking.drain.isRunning()).as("no longer claiming when the call returns").isFalse();
+        assertThat(ticking.drain.isRunning()).as("no new tick once the call returns").isFalse();
         Thread.sleep(200);
         assertThat(calledBack).as("the phase waits while the tick runs").isNotDone();
         ticking.release.countDown();
@@ -144,6 +144,28 @@ class ScheduleDrainTest {
         assertThat(stopping).as("Spring's loop over the phase returns at once").isLessThan(Duration.ofSeconds(1));
         assertThat(whole).as("one tick's 400 ms, not thirty-two of them").isLessThan(Duration.ofSeconds(3));
         assertThat(phase).allSatisfy(ticking -> assertThat(ticking.interrupted).isFalse());
+    }
+
+    @Test
+    @DisplayName("stopping is true only from the moment a started schedule's stop begins, while its tick is still running (P15-TSK-009)")
+    void stoppingIsTrueFromTheStopOn() throws Exception {
+        ScheduleDrain never = new ScheduleDrain("probe");
+        assertThat(never.stopping()).as("never started: a suite driving a tick directly").isFalse();
+        never.stop();
+        assertThat(never.stopping()).as("a stop before any start stops nothing").isFalse();
+
+        Ticking ticking = new Ticking(new ScheduleDrain("probe", Duration.ofSeconds(10), GRACE));
+        ticking.start(Duration.ofMillis(20));
+        assertThat(ticking.entered.await(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(ticking.drain.stopping()).as("started and running").isFalse();
+
+        CompletableFuture<Void> stopping = CompletableFuture.runAsync(ticking.drain::stop);
+        awaitStopping(ticking.drain);
+        assertThat(ticking.drain.stopping()).as("the tick is still running, and can ask").isTrue();
+        assertThat(stopping).isNotDone();
+        ticking.release.countDown();
+        stopping.get(10, TimeUnit.SECONDS);
+        assertThat(ticking.drain.stopping()).as("and stays so").isTrue();
     }
 
     @Test

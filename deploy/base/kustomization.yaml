@@ -1,0 +1,24 @@
+# The application's desired state (P15-TSK-009, ADR-0120). Render an overlay, never this directory:
+# only an overlay names an image digest, and infra/scripts/manifest-check.sh refuses anything else.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - serviceaccount.yaml
+  - deployment.yaml
+  - service.yaml
+  - poddisruptionbudget.yaml
+  - horizontalpodautoscaler.yaml
+  - migrator-job.yaml
+
+# Non-secret values only, named with a content hash so that a change rolls the Deployment. The three
+# numbers below are ConnectionPoolSizingGuard's declaration, and the manifest policy holds them
+# against the HPA: maxReplicas + 2 x maxSurge + 1 <= FINAPP_DB_INSTANCES, because a rollout does not
+# count terminating pods and each one keeps its whole pool open through its grace (PHASE_15_PLAN.md
+# section 6.1). Endpoints and credentials never come here: they arrive with the secret store's values.
+configMapGenerator:
+  - name: finapp-app-config
+    literals:
+      - FINAPP_DB_INSTANCES=10
+      - FINAPP_DB_SERVER_MAX_CONNECTIONS=100
+      - FINAPP_DB_RESERVED_CONNECTIONS=12

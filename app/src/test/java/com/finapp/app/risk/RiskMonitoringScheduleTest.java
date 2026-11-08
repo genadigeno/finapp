@@ -31,6 +31,8 @@ import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Function;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -122,6 +124,63 @@ class RiskMonitoringScheduleTest {
                 .tag("rule", "STRUCTURING").counter().count()).isEqualTo(1.0);
         assertThat(world.registry.find(RiskEvaluationMetrics.RULE_HIT).tag("operation", "MONITORING")
                 .tag("rule", "AMOUNT_BAND").counter()).as("a judged-only kind has no MONITORING series").isNull();
+    }
+
+    /** Counts what each leg was asked for: batches judged, profiles asked for, case legs driven. */
+    private static final class Legs {
+        final int[] count = {0, 0, 0};
+        final RiskMonitoringSchedule.ProfileLeg profiles = new RiskMonitoringSchedule.ProfileLeg() {
+            @Override
+            public Optional<ProfileRecompute.Outcome> recomputeNextDue(Connection unitOfWork) {
+                count[1]++;
+                return Optional.empty();
+            }
+
+            @Override
+            public void defer(Connection unitOfWork, UUID partyId) {
+                throw new AssertionError("nothing was claimed");
+            }
+        };
+
+        RiskMonitoringSchedule schedule(World world, MonitoringIntake.BatchLeg rules) {
+            return new RiskMonitoringSchedule(world.intake(2), rules, profiles, 3, () -> {
+                count[2]++;
+                return 0;
+            }, world.transactions.real, world.metrics, RiskFlowScope.NONE, Duration.ofSeconds(5), 10);
+        }
+    }
+
+    @Test
+    @DisplayName("a stop begun during a batch ends the tick there: the batch in flight, of ten permitted (P15-TSK-009)")
+    void aStopEndsTheTickBetweenBatches() {
+        World world = new World(7);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Legs legs = new Legs();
+        RiskMonitoringSchedule schedule = legs.schedule(world, (unitOfWork, rows) -> {
+            legs.count[0]++;
+            executor.shutdown();
+        });
+        schedule.drain().started(executor);
+
+        assertThat(schedule.sweepOnce()).isEqualTo(2);
+        assertThat(world.transactions.began).isEqualTo(1);
+        assertThat(legs.count[0]).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("once the stop has begun neither later leg claims: no profile, no case leg (P15-TSK-009)")
+    void aStopTakesNeitherLaterLeg() {
+        World world = new World(0);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        executor.shutdown();
+        Legs legs = new Legs();
+        RiskMonitoringSchedule schedule = legs.schedule(world, (unitOfWork, rows) -> legs.count[0]++);
+        schedule.drain().started(executor);
+
+        schedule.sweepOnce();
+
+        assertThat(legs.count[1]).as("profiles asked for").isZero();
+        assertThat(legs.count[2]).as("case legs driven").isZero();
     }
 
     @Test

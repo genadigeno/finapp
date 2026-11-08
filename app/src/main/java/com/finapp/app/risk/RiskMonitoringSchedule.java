@@ -197,7 +197,7 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
     public int sweepOnce() {
         try (SecurityContext.Scope actor = SecurityContext.enterSystem()) {
             int born = 0;
-            for (int taken = 0; taken < batchesPerTick; taken++) {
+            for (int taken = 0; taken < batchesPerTick && !drain.stopping(); taken++) {
                 MonitoringIntake.Batch batch;
                 try {
                     batch = flow.sweep(RiskSpans.MONITORING_INTAKE, () -> transactions.inTransaction(
@@ -225,6 +225,9 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
 
     /** The case leg, inside {@link #sweepOnce}'s system scope: the drain and the prohibitions, each act its own tx. */
     private void driveCaseLeg() {
+        if (drain.stopping()) {
+            return;
+        }
         try {
             int done = cases.driveDue();
             if (done > 0) {
@@ -238,7 +241,7 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
 
     /** The profile leg, inside {@link #sweepOnce}'s system scope: due profiles recomputed, one per transaction. */
     private void recomputeDueProfiles() {
-        for (int taken = 0; taken < profileClaimsPerTick; taken++) {
+        for (int taken = 0; taken < profileClaimsPerTick && !drain.stopping(); taken++) {
             Optional<ProfileRecompute.Outcome> outcome;
             try {
                 outcome = flow.sweep(RiskSpans.PROFILE_RECOMPUTE,
@@ -298,13 +301,13 @@ public final class RiskMonitoringSchedule implements SmartLifecycle {
         return drain;
     }
 
-    /** Stops claiming, then lets the tick in flight finish within its bound ({@link ScheduleDrain}). */
+    /** No new tick starts, and the tick in flight finishes within its bound ({@link ScheduleDrain}). */
     @Override
     public void stop() {
         drain.stop();
     }
 
-    /** Spring's form: stops claiming at once and calls back once the tick has drained, so a phase drains in parallel. */
+    /** Spring's form: no new tick starts, and it calls back once the tick in flight has drained, so a phase drains in parallel. */
     @Override
     public void stop(Runnable callback) {
         drain.stop(callback);

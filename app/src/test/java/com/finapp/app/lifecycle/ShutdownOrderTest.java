@@ -41,6 +41,8 @@ import org.springframework.boot.availability.ApplicationAvailability;
 import org.springframework.boot.availability.AvailabilityChangeEvent;
 import org.springframework.boot.availability.ReadinessState;
 import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.boot.health.contributor.Health;
+import org.springframework.boot.health.contributor.HealthIndicator;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.SmartLifecycle;
@@ -85,7 +87,7 @@ class ShutdownOrderTest {
     void theRealOrder() throws Exception {
         HeldRequest held = new HeldRequest();
         List<Moment> moments = Collections.synchronizedList(new ArrayList<>());
-        ConfigurableApplicationContext context = start(held, moments);
+        ConfigurableApplicationContext context = start(held, moments, new HeldRequest());
         try {
             observeTheStop(context, held, moments);
         } finally {
@@ -136,9 +138,9 @@ class ShutdownOrderTest {
 
         List<Moment> order = List.copyOf(moments);
         Moment refusing = only(order, "readiness REFUSING_TRAFFIC");
-        // The API server's: the first of each. The management server, closing later in its own child context, logs its own.
-        Moment commencing = first(order, "Commencing graceful shutdown");
-        Moment complete = first(order, "Graceful shutdown complete");
+        // The API server's alone: the management server closes at once (ManagementServerClose), so it logs neither.
+        Moment commencing = only(order, "Commencing graceful shutdown");
+        Moment complete = only(order, "Graceful shutdown complete");
         List<Moment> drained = all(order, moment -> moment.what.startsWith("Schedule ") && moment.what.endsWith(" drained"));
         Moment consumersStopping = only(order, "Inbox consumers stopping");
         Moment consumersStopped = only(order, "Inbox consumers stopped");
@@ -178,9 +180,33 @@ class ShutdownOrderTest {
     }
 
     @Test
+    @DisplayName("a scrape still running on the management port does not hold the close: the management server closes at once")
+    void aScrapeInFlightDoesNotHoldTheClose() throws Exception {
+        HeldRequest scrape = new HeldRequest();
+        ConfigurableApplicationContext context = start(new HeldRequest(), Collections.synchronizedList(new ArrayList<>()), scrape);
+        try {
+            Snapshotter snapshot = new Snapshotter(context);
+            HTTP.sendAsync(
+                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + snapshot.managementPort + "/actuator/health")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(scrape.entered.await(30, TimeUnit.SECONDS)).as("a scrape running inside the management server").isTrue();
+
+            long started = System.nanoTime();
+            context.close();
+            Duration closed = Duration.ofNanos(System.nanoTime() - started);
+
+            assertThat(closed).as("the scrape, held for a minute, cost none of the phase timeout a graceful server would wait out")
+                    .isLessThan(snapshot.timeout);
+        } finally {
+            scrape.release.countDown();
+            context.close();
+        }
+    }
+
+    @Test
     @DisplayName("every lifecycle component's stop returns within a bound shorter than production's phase timeout")
     void everyStopIsBoundedBelowThePhaseTimeout() throws Exception {
-        ConfigurableApplicationContext context = start(new HeldRequest(), Collections.synchronizedList(new ArrayList<>()));
+        ConfigurableApplicationContext context = start(new HeldRequest(), Collections.synchronizedList(new ArrayList<>()), new HeldRequest());
         try {
             Snapshotter snapshot = new Snapshotter(context);
             assertThat(snapshot.components).hasSize(COMPONENTS);
@@ -199,7 +225,7 @@ class ShutdownOrderTest {
 
     // ------------------------------------------------------------------------------------------------------------------
 
-    private static ConfigurableApplicationContext start(HeldRequest held, List<Moment> moments) {
+    private static ConfigurableApplicationContext start(HeldRequest held, List<Moment> moments, HeldRequest scrape) {
         // Arguments, never builder "properties": those are DEFAULT properties, below production's file, which would then
         // bind its fixed 8081 and dial the database production's file names (both found so, in this class's first run).
         String[] arguments = {
@@ -227,6 +253,17 @@ class ShutdownOrderTest {
                 .initializers(initializer -> {
                     GenericApplicationContext generic = (GenericApplicationContext) initializer;
                     generic.registerBean("drainProbe", DrainProbe.class, () -> new DrainProbe(held));
+                    generic.registerBean("heldScrape", HealthIndicator.class, () -> () -> {
+                        scrape.entered.countDown();
+                        try {
+                            if (!scrape.release.await(60, TimeUnit.SECONDS)) {
+                                throw new IllegalStateException("never released");
+                            }
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                        }
+                        return Health.up().build();
+                    });
                     generic.addApplicationListener(event -> {
                         // This context's own: the management server's child context publishes its own when it closes,
                         // and a child's events reach the parent's listeners.

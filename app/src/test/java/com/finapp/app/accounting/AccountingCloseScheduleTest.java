@@ -47,6 +47,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -264,6 +266,38 @@ class AccountingCloseScheduleTest {
         cadence = new AccountingCloseSchedule.Cadence(Duration.ofHours(1), Duration.ofSeconds(30), Duration.ofMinutes(1), 18, 2);
         orphans = (limit, actor) -> limit;
         assertThat(schedule().orphansOnce()).as("bounded by its batch").isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("a stopping schedule's orphan leg takes no further run after the call in flight (P15-TSK-009)")
+    void aStoppingScheduleReclaimsNoFurtherOrphan() {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        int[] calls = {0};
+        orphans = (limit, actor) -> {
+            if (++calls[0] == 2) {
+                executor.shutdown();
+            }
+            return limit;
+        };
+        AccountingCloseSchedule schedule = schedule();
+        schedule.drain().started(executor);
+
+        assertThat(schedule.orphansOnce()).as("the second call stopped it, of a batch of ten").isEqualTo(2);
+        assertThat(calls[0]).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("a stopping schedule's check leg claims no attempt once the stop has begun; the run stays for any instance (P15-TSK-009)")
+    void aStoppingScheduleClaimsNoFurtherCheck() {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        executor.shutdown();
+        lockedMarch();
+        AccountingCloseSchedule schedule = schedule();
+        schedule.drain().started(executor);
+
+        assertThat(schedule.checksOnce()).as("no attempt claimed").isZero();
+        CloseRunStore.RunRow run = store.runs().get(0);
+        assertThat(store.all(run.id())).allSatisfy(attempt -> assertThat(attempt.status()).isEqualTo(CloseCheckStatus.PENDING));
     }
 
     @Test

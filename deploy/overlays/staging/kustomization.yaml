@@ -1,0 +1,32 @@
+# Staging's values. Nothing real is committed here: see the production overlay on the placeholder digest.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: finapp
+
+resources:
+  - ../../base
+
+images:
+  - name: finapp-app
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  - name: finapp-migrator
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+# A smaller fleet, with the budget to match: 4 + 2 x 1 + 1 = 7.
+configMapGenerator:
+  - name: finapp-app-config
+    behavior: merge
+    literals:
+      - FINAPP_DB_INSTANCES=7
+      - FINAPP_DB_SERVER_MAX_CONNECTIONS=100
+      - FINAPP_DB_RESERVED_CONNECTIONS=12
+
+patches:
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: finapp-app
+    patch: |-
+      - op: replace
+        path: /spec/maxReplicas
+        value: 4

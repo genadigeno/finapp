@@ -15,11 +15,12 @@ import org.springframework.boot.web.server.context.WebServerApplicationContext;
  *       phase stops;
  *   <li>{@link WebServerApplicationContext#GRACEFUL_SHUTDOWN_PHASE} (Boot's): the API port stops accepting and the requests
  *       it accepted finish ({@code server.shutdown: graceful});
- *   <li>{@link #SCHEDULES}: every schedule stops claiming at once and its tick in flight finishes within its bound
- *       ({@link ScheduleDrain}), all of them in parallel;
+ *   <li>{@link #SCHEDULES}: no new tick starts and each tick in flight finishes within its bound ({@link ScheduleDrain}),
+ *       all of them in parallel;
  *   <li>{@link #CONSUMERS}: every consumer loop takes no new batch, acknowledges the one it holds and leaves its group;
- *   <li>{@code GRACEFUL_SHUTDOWN_PHASE - 512} (Boot's): the management server closes. The probes are answered through every
- *       step above, which is why both of ours sit above it;
+ *   <li>{@code GRACEFUL_SHUTDOWN_PHASE - 512} (Boot's): the management server closes, at once rather than gracefully
+ *       ({@link ManagementServerClose}). The probes are answered through every step above, which is why both of ours sit
+ *       above it;
  *   <li>{@link WebServerApplicationContext#START_STOP_LIFECYCLE_PHASE} (Boot's): the API's web server stops, already drained;
  *   <li>phase {@code 0}: the gauge refresher ({@code platform}'s {@code GaugeRefresher}, in the context through
  *       {@code GaugeRefresherBeans}' lifecycle; {@code AccountingGaugeRefresher} until `P15-TSK-024` moved every gauge onto

@@ -1,0 +1,149 @@
+# One Deployment of the one image (C5, ADR-0120): every replica serves HTTP and runs every schedule,
+# consumer and relay. Correctness is leaderless, arbitrated in PostgreSQL; nothing here assigns a role.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finapp-app
+spec:
+  # NO `replicas`, on purpose. The HorizontalPodAutoscaler owns the count: a manifest that states one
+  # resets it at every apply, and a reset from seven to three is four terminating pods at once, past
+  # the one the connection budget allows. N >= 3 is the HPA's minReplicas, which the controller
+  # enforces with or without metrics.
+
+  # A rollout's step time, and not by accident: it holds the next scale-down until the pod just told
+  # to stop has used up its grace, so terminating pods never stack (PHASE_15_PLAN.md section 6.1).
+  minReadySeconds: 105
+  # Longer than one step can take: 180 s of startup budget and minReadySeconds.
+  progressDeadlineSeconds: 600
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: finapp-app
+        app.kubernetes.io/part-of: finapp
+    spec:
+      serviceAccountName: finapp-app
+      automountServiceAccountToken: false
+      # THE GRACE'S ARITHMETIC, worst cases together, each read from what it names and held equal to
+      # the code by KubernetesManifestsTest (infra/scripts/manifest-policy/shutdown-budget.yaml):
+      #   preStop sleep                                                10
+      #   HTTP drain (spring.lifecycle.timeout-per-shutdown-phase)     30
+      #   schedules (10 + 2)                                           12
+      #   consumers (10 + 2)                                           12
+      #   management server, closing at once (Tomcat's unload)          2
+      #   API web server's stop (Tomcat's unload)                       2
+      #   gauge refresher                                               3
+      #   Kafka producer (finapp.kafka.ack-timeout)                    10
+      #   writer pool's abort loop, reporting pool's (HikariCP)        10 + 10
+      #                                                        sum    101
+      # plus 4 s for the JVM's exit. A pod still running at the end is killed, which is as correct as
+      # any kill: the drain only reduces retries.
+      terminationGracePeriodSeconds: 105
+      securityContext:
+        # The image is 65532:65532, numeric, so this verifies without reading the image.
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-app
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-app
+      containers:
+        - name: app
+          # No digest and no registry here: each overlay names the digest (a placeholder until a release
+          # is promoted), and a Deployment rendered without one is refused.
+          image: finapp-app
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 8081
+          env:
+            # The pod's own address, from the downward API: the kubelet and the scrape reach it there.
+            # Never 0.0.0.0, and never empty: ManagementAddressGuard refuses both at startup.
+            - name: FINAPP_MANAGEMENT_ADDRESS
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          envFrom:
+            - configMapRef:
+                name: finapp-app-config
+            # Endpoints and credentials, delivered by the secret store. Absent, the pod does not start.
+            - secretRef:
+                name: finapp-app-secrets
+          # Memory request = limit: no overcommit of the JVM heap. The image's -XX:MaxRAMPercentage=75.0
+          # makes the heap 1.5 GiB of this. CPU limit at a multiple of the request, for startup.
+          # Reference figures, calibrated in Phase 16.
+          resources:
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          lifecycle:
+            # So endpoints leave the Service before the JVM stops accepting. A sleep action, not `exec`:
+            # the image has no shell and no sleep binary.
+            preStop:
+              sleep:
+                seconds: 10
+          # 180 s for the startup guards before liveness may judge the process.
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 36
+          # The process alone, never a dependency (ADR-0016).
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Holds the database. With it gone the indicator waits on the pool's 5 s connection-timeout, so
+          # 7 s lets the probe read the 503 rather than time out: either is not ready, and the kubelet's
+          # event then says what the application said. The 10 s period keeps two probes from overlapping.
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: management
+            periodSeconds: 10
+            timeoutSeconds: 7
+            failureThreshold: 3
+          volumeMounts:
+            # Tomcat's work directory, and the only writable path on the read-only root.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
