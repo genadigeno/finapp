@@ -1,0 +1,50 @@
+# The kind rehearsal's values, test-only (PHASE_15_PLAN.md section 14). No endpoint or credential here either: the
+# rehearsal generates its Secrets per run. Three replicas, with the budget set to section 6.1's formula exactly, so
+# the rehearsal measures the rule rather than a margin: 3 + 2 x 1 + 1 = 6, and 6 x (7 + 1) + 12 = 60.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: finapp
+
+resources:
+  - ../../base
+  - postgres.yaml
+  - kafka.yaml
+
+images:
+  - name: finapp-app
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  - name: finapp-migrator
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+configMapGenerator:
+  - name: finapp-app-config
+    behavior: merge
+    literals:
+      - FINAPP_DB_INSTANCES=6
+      - FINAPP_DB_SERVER_MAX_CONNECTIONS=60
+      - FINAPP_DB_RESERVED_CONNECTIONS=12
+
+patches:
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: finapp-app
+    patch: |-
+      - op: replace
+        path: /spec/maxReplicas
+        value: 3
+  # kind's nodes carry no zone label, and DoNotSchedule on a missing label schedules nothing.
+  # A CI runner's memory, not production's; the heap is still 75% of the limit.
+  - target:
+      kind: Deployment
+      name: finapp-app
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/topologySpreadConstraints/0/whenUnsatisfiable
+        value: ScheduleAnyway
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 1Gi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 1Gi

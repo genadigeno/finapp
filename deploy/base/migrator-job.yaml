@@ -1,0 +1,65 @@
+# The migrator Job's template, one per release, run before the rollout (ADR-0120 decision 1), from the Job
+# contract in DATA_MIGRATIONS.md section 2.1. Its own image, its own ServiceAccount and its own credentials: only
+# this Job holds finapp_migrator's. Flyway's own lock serialises two runs. A failed migration blocks the rollout and
+# is fixed forward. No command or args: the entrypoint is the migrator, and a manifest setting either does something else.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: finapp-migrator
+spec:
+  # Three tries for a transient failure; never for one a retry cannot help (exit 10, a migration or a validation
+  # failed; exit 12, the configuration, identity or credential was refused).
+  backoffLimit: 2
+  podFailurePolicy:
+    rules:
+      - action: FailJob
+        onExitCodes:
+          containerName: migrator
+          operator: In
+          values:
+            - 10
+            - 12
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: finapp-migrator
+        app.kubernetes.io/part-of: finapp
+    spec:
+      restartPolicy: Never
+      serviceAccountName: finapp-migrator
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrator
+          image: finapp-migrator
+          envFrom:
+            - secretRef:
+                name: finapp-migrator-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

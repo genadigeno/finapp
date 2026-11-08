@@ -1,0 +1,15 @@
+# The API port and nothing else. No Service exposes 8081: Prometheus and the kubelet reach pods
+# directly, so nothing that routes to a Service can route to the actuator.
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-app
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: finapp-app
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

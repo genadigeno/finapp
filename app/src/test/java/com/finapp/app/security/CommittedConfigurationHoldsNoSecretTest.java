@@ -275,7 +275,9 @@ class CommittedConfigurationHoldsNoSecretTest {
                 "p.env | KAFKA_OPTS=-Djava.security.auth.login.config=x password=\"hunter2\"",
                 // The review fix round: JAAS reads an unquoted word as a value too.
                 "p.properties | sasl.jaas.config=ScramLoginModule required username=finapp password=hunter2;",
-                "p.yaml | sasl.jaas.config: ScramLoginModule required username=finapp password=hunter2;"
+                "p.yaml | sasl.jaas.config: ScramLoginModule required username=finapp password=hunter2;",
+                // P15-TSK-009: the Kubernetes switch below is exempt for its two values and nothing else.
+                "p.yaml | automountServiceAccountToken: hunter2"
             })
     void credentialShapesAreRejected(String fileName, String content) {
         assertThat(offencesIn(content, fileName.endsWith(".kts")))
@@ -302,6 +304,8 @@ class CommittedConfigurationHoldsNoSecretTest {
                 "p.yaml | passwordless: true",
                 "p.yaml | tokenizer: standard",
                 "p.yaml | idempotencyKey: abc123",
+                // P15-TSK-009: Kubernetes' field names a token and holds a boolean.
+                "p.yaml | automountServiceAccountToken: false",
                 // P15-TSK-026: the JAAS line with its credential externalised, and the username,
                 // which is not a credential.
                 "p.properties | sasl.jaas.config=ScramLoginModule required username=\"finapp\" password=\"${FINAPP_KAFKA_SASL_PASSWORD}\";",
@@ -378,7 +382,8 @@ class CommittedConfigurationHoldsNoSecretTest {
                         continue;
                     }
                     for (String literal : literalsIn(assignment.group(2), buildScript)) {
-                        if (!literal.equals(DatabaseCredentialGuard.MARKED_LOCAL_DEFAULT)) {
+                        if (!literal.equals(DatabaseCredentialGuard.MARKED_LOCAL_DEFAULT)
+                                && !isKubernetesTokenSwitch(key, literal)) {
                             offences.add(
                                     "key '"
                                             + key
@@ -390,6 +395,14 @@ class CommittedConfigurationHoldsNoSecretTest {
             }
         }
         return offences;
+    }
+
+    /**
+     * Kubernetes' own field names a token and holds a boolean: whether one is mounted. Exactly this key with exactly these
+     * values (`P15-TSK-009`), so a real token under the same name is still reported.
+     */
+    private static boolean isKubernetesTokenSwitch(String key, String literal) {
+        return key.equals("automountServiceAccountToken") && (literal.equals("true") || literal.equals("false"));
     }
 
     /**

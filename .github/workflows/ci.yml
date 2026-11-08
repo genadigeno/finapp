@@ -324,6 +324,27 @@ jobs:
         run: ./infra/scripts/terraform-check.sh
 
   # ---------------------------------------------------------------------------
+  # The Kubernetes manifests (P15-TSK-009, ADR-0120): every overlay under deploy/
+  # renders, passes kubeconform -strict against pinned schemas and every policy, and
+  # each policy refuses a planted violation in the same run - so a policy that cannot
+  # fail fails the job.
+  #
+  # No credential and no cluster: it renders and reads, so it needs no permission
+  # beyond the workflow's contents: read and no secret (THREAT_MODEL.md T30).
+  # ---------------------------------------------------------------------------
+  manifests:
+    name: Kubernetes manifests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Render and validate every overlay, and prove every policy refuses its plant
+        # The same script a developer runs; the tool pins live in infra/scanner-pins.sh.
+        run: ./infra/scripts/manifest-check.sh
+
+  # ---------------------------------------------------------------------------
   # The alert rules and routing (P15-TSK-025, ADR-0124): promtool checks every
   # rule and runs every infra/prometheus/tests/*.test.yml, amtool checks the
   # routing and that a page and a ticket reach their receivers, and each kind of

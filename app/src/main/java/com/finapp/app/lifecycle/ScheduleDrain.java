@@ -10,8 +10,11 @@ import lombok.extern.slf4j.Slf4j;
  * How one schedule lets go of its executor when its instance stops (`P15-TSK-008`, ADR-0120 decision 4).
  *
  * <ol>
- *   <li><strong>It stops claiming at once.</strong> {@code shutdown()} on the caller's thread: a scheduled executor cancels
- *       its periodic ticks, so no tick starts after the call, on this instance.
+ *   <li><strong>No new tick starts.</strong> {@code shutdown()} on the caller's thread: a scheduled executor cancels its
+ *       periodic ticks, so no tick starts after the call, on this instance. A tick that claims in a loop of its own asks
+ *       {@link #stopping()} before each further claim and ends there (`P15-TSK-009`). A tick that claims once finishes what
+ *       it claimed. A sweep paging inside a module, which cannot see this class, runs on to its end or to the bound: safe,
+ *       each of its claims is leased or a transaction of its own.
  *   <li><strong>The tick in flight finishes, within {@link #BOUND}.</strong> A tick's batch is its unit of work - the rows it
  *       claimed under a lease, a lock or {@code SKIP LOCKED} - and letting it end is what spares the other instances a
  *       retry once that claim lapses.
@@ -23,7 +26,7 @@ import lombok.extern.slf4j.Slf4j;
  * instance once its lease lapses or its transaction rolls back - the same path a killed process takes. The drain only
  * reduces retries.
  *
- * <p>{@link #stop(Runnable)} is the form Spring calls: it stops claiming on Spring's thread and waits on a thread of its own,
+ * <p>{@link #stop(Runnable)} is the form Spring calls: it ends the ticks on Spring's thread and waits on a thread of its own,
  * so the schedules of one phase drain in parallel and the phase costs one bound, not one per schedule. Process-local
  * mechanics, like the executor itself: losing them costs this instance's ticks and nothing else.
  */
@@ -87,12 +90,24 @@ public final class ScheduleDrain {
         return running != null && !running.isShutdown();
     }
 
+    /**
+     * Whether this schedule's stop has begun. A tick between two claims asks this and takes no further one, so the rest wait
+     * for the next claim on any instance, as a failed step's do. It decides nothing else: every claim stays arbitrated in
+     * PostgreSQL, and a schedule that {@link #started} was never told of is never stopping - the suites drive one directly.
+     *
+     * @return whether the schedule was started and its stop has begun
+     */
+    public boolean stopping() {
+        ExecutorService running = executor;
+        return running != null && running.isShutdown();
+    }
+
     /** @return the longest {@link #stop()} takes: the bound, then the interrupt's grace */
     public Duration stopBound() {
         return bound.plus(grace);
     }
 
-    /** Stops claiming, then waits for the tick in flight - see the class's three steps. */
+    /** No new tick starts, then this waits for the tick in flight - see the class's three steps. */
     public void stop() {
         ExecutorService running = executor;
         if (running == null) {
@@ -103,7 +118,7 @@ public final class ScheduleDrain {
     }
 
     /**
-     * Stops claiming on the caller's thread, then waits for the tick in flight on a thread of its own and calls back.
+     * Ends the ticks on the caller's thread, then waits for the tick in flight on a thread of its own and calls back.
      *
      * @param callback Spring's: the phase waits for it
      */

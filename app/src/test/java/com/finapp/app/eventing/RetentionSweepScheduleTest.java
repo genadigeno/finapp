@@ -13,6 +13,8 @@ import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -122,6 +124,19 @@ class RetentionSweepScheduleTest {
 
         schedule.sweepOnce();
         assertThat(database.batches()).hasSize(RetentionSweepSchedule.MAX_BATCHES + 1);
+    }
+
+    @Test
+    @DisplayName("a stopping schedule takes no further batch: the rows wait for the next tick, on any instance (P15-TSK-009)")
+    void aStoppingScheduleTakesNoFurtherBatch() {
+        ScriptedSweepConnections database = new ScriptedSweepConnections().deleting(BATCH, BATCH, 3);
+        RetentionSweepSchedule schedule = schedule(database);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        executor.shutdown();
+        schedule.drain().started(executor);
+
+        assertThat(schedule.sweepOnce()).isZero();
+        assertThat(database.batches()).isEmpty();
     }
 
     @Test

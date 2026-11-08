@@ -56,8 +56,8 @@ some to answer the brief would break ADR-0001.
    manifest. Decision 3: the actuator answers on 8081 only, bound to loopback unless `FINAPP_MANAGEMENT_ADDRESS` names
    the pod's address. Decision 4, as Spring's own phases run it on a real context (`ShutdownOrderTest`): readiness turns
    `REFUSING_TRAFFIC` before any phase stops; the API port drains (`server.shutdown: graceful`, within
-   `spring.lifecycle.timeout-per-shutdown-phase`, 30 s); the 32 schedules (35 since `P15-TSK-029`, 2026-11-08) stop claiming at once and drain in parallel,
-   each within 10 s and an interrupt's 2 s; the consumers take no new batch, acknowledge the one they hold and leave
+   `spring.lifecycle.timeout-per-shutdown-phase`, 30 s); no new schedule tick starts and the 32 (35 since `P15-TSK-029`, 2026-11-08) drain in parallel,
+   each within 10 s and an interrupt's 2 s (*read "the 32 schedules stop claiming at once" until `P15-TSK-009`*); the consumers take no new batch, acknowledge the one they hold and leave
    their groups, within 10 s and 2 s; the management server closes, then the web server; the gauge refresher
    lets its read end, within 3 s (the accounting gauge reader until `P15-TSK-024` moved every gauge onto `platform`'s
    `GaugeRefresher`, its bounded stop carried over); the beans are destroyed, the pool after every stop has returned. Every component's
@@ -114,6 +114,22 @@ surge. `INV-HIST-01`: no rollback rewrites history. A schema is only ever moved 
 
 Phase 16 covers the role split, PgBouncer, an in-cluster database operator and multi-AZ/region topology, each by
 measurement. `P15-TSK-003`, `-004`, `-008`…`-012` build this ADR. `P15-DOC-001` reads it against them.
+
+*As built for decisions 2 to 5's manifests, `P15-TSK-009` (2026-11-08); no decision changes.* `deploy/`, a Kustomize base and
+the overlays `kind`, `staging`, `production`. The HorizontalPodAutoscaler alone owns the replica count: the Deployment
+states no `replicas`, because a manifest that does resets the HPA at every apply, and a reset from seven to three is four
+terminating pods at once, past the rule's `+ 1`; N ≥ 3 is `minReplicas`. The `preStop` is a `sleep` action (Kubernetes
+1.30 or later), the image having no shell. **The grace**, `terminationGracePeriodSeconds: 115`: the 10 s pause, HTTP 30, schedules 12,
+consumers 12, the management server 2 and its worker pool 5, the API server 2 and its worker pool 5, the gauge refresher 3, the producer 10, each pool's abort loop 10,
+and 4 for the JVM's exit; `minReadySeconds` equals it. The lifecycle's 57 s above was low: a scrape in flight held the management
+server's graceful close for that child context's own phase timeout, Spring's default 10 s, the property binding only the parent's
+processor (measured; `P15-TSK-008`'s review had said 30 s). That server now closes at once (`ManagementServerClose`), and the 57
+is 71 with Tomcat's two stops and their worker pools counted. **The readiness probe** times out at 7 s, outlasting the pool's 5 s `connection-timeout`, so a
+lost database reads as the `503` it is. `infra/scripts/manifest-check.sh` renders every overlay and runs `kubeconform -strict`
+and the policies, and each policy refuses a planted violation in the same run; the policies read `application.yaml` itself
+for the pools. An empty or any-local `FINAPP_MANAGEMENT_ADDRESS`, and a management port that is not its own, refuse startup
+(`ManagementAddressGuard`). Secrets and endpoints arrive from the secret store; the Job and the test-only copies carry the
+restricted profile too.
 
 *As built for decision 1's image, `P15-TSK-003` (2026-11-08); the decision is unchanged.* The two bases' one
 definition is the root `Dockerfile`'s `FROM` lines (`tag@sha256`): Dependabot's docker ecosystem reads `FROM` lines and

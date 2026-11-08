@@ -1,0 +1,24 @@
+# Production's values. Nothing real is committed here: the digest below is the placeholder a promotion
+# replaces, sixty-four zeros, which no registry serves, so an unpromoted overlay cannot start a pod.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: finapp
+
+resources:
+  - ../../base
+
+images:
+  - name: finapp-app
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  - name: finapp-migrator
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+# A real deployment states its own connection arithmetic (ConnectionPoolSizingGuard).
+configMapGenerator:
+  - name: finapp-app-config
+    behavior: merge
+    literals:
+      - FINAPP_DB_INSTANCES=10
+      - FINAPP_DB_SERVER_MAX_CONNECTIONS=100
+      - FINAPP_DB_RESERVED_CONNECTIONS=12

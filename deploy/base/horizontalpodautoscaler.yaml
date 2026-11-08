@@ -1,0 +1,37 @@
+# The sole owner of the replica count. Targets are reference figures, calibrated in Phase 16.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: finapp-app
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: finapp-app
+  minReplicas: 3
+  # Bounded by the budget: 7 + 2 x maxSurge + 1 = 10 = FINAPP_DB_INSTANCES.
+  maxReplicas: 7
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    # One pod per period no shorter than the grace, so a step's pod is gone before the next is told to
+    # stop: the budget's single extra terminating pod. Slow on purpose, every step is a consumer rebalance.
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      selectPolicy: Max
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      selectPolicy: Max
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

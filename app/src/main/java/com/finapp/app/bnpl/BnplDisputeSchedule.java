@@ -110,6 +110,9 @@ public final class BnplDisputeSchedule implements SmartLifecycle {
             Actor system = SecurityContext.require();
             List<BnplDisputeId> due = transactions.inTransaction(uow -> disputes.claim(uow, batch, retryCadence));
             for (BnplDisputeId dispute : due) {
+                if (drain.stopping()) {
+                    break; // The rest keep the claim's cadence and a later tick steps them, as a failed step's do.
+                }
                 CorrelationId correlation = CorrelationId.generate(ids);
                 try {
                     Optional<BnplDisputes.Acted> lapsed = flow.forDispute(BnplSpans.DISPUTE_LAPSE, dispute,
@@ -175,13 +178,13 @@ public final class BnplDisputeSchedule implements SmartLifecycle {
         return drain;
     }
 
-    /** Stops claiming, then lets the tick in flight finish within its bound ({@link ScheduleDrain}). */
+    /** No new tick starts, and the tick in flight finishes within its bound ({@link ScheduleDrain}). */
     @Override
     public void stop() {
         drain.stop();
     }
 
-    /** Spring's form: stops claiming at once and calls back once the tick has drained, so a phase drains in parallel. */
+    /** Spring's form: no new tick starts, and it calls back once the tick in flight has drained, so a phase drains in parallel. */
     @Override
     public void stop(Runnable callback) {
         drain.stop(callback);

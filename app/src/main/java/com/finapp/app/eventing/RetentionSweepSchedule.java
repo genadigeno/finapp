@@ -64,7 +64,7 @@ public final class RetentionSweepSchedule implements SmartLifecycle {
      */
     public int sweepOnce() {
         int total = 0;
-        for (int batch = 0; batch < MAX_BATCHES; batch++) {
+        for (int batch = 0; batch < MAX_BATCHES && !drain.stopping(); batch++) {
             int deleted = sweep.sweepBatch();
             swept.increment(deleted);
             total += deleted;
@@ -110,13 +110,13 @@ public final class RetentionSweepSchedule implements SmartLifecycle {
         return drain;
     }
 
-    /** Stops claiming, then lets the tick in flight finish within its bound ({@link ScheduleDrain}). */
+    /** No new tick starts, and the tick in flight finishes within its bound ({@link ScheduleDrain}). */
     @Override
     public void stop() {
         drain.stop();
     }
 
-    /** Spring's form: stops claiming at once and calls back once the tick has drained, so a phase drains in parallel. */
+    /** Spring's form: no new tick starts, and it calls back once the tick in flight has drained, so a phase drains in parallel. */
     @Override
     public void stop(Runnable callback) {
         drain.stop(callback);

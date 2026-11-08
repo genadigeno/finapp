@@ -59,11 +59,12 @@ mistaken for the control.
 **The actuator has a port of its own** (`P15-TSK-008`, ADR-0120 decision 3, `THREAT_MODEL.md` T2): it answers on the
 management port, 8081, and the API port answers `404` for every `/actuator` path, so no ingress that routes the API
 can route it. The management port binds loopback unless `FINAPP_MANAGEMENT_ADDRESS` says otherwise; only the
-Kubernetes overlays are to say otherwise, with the pod's address (`P15-TSK-009`, not yet built), where `P15-TSK-010`'s
-NetworkPolicy is to admit the kubelet and Prometheus alone. Moving the endpoints is not authenticating them: until that
-policy exists they are reachable, unauthenticated, by anything that can reach the address they bind - the two debt rows
-in `CURRENT_STATE.md`.
-Held by `ManagementPortTest`.
+Kubernetes overlays say otherwise, with the pod's own address from the downward API (`P15-TSK-009`), where
+`P15-TSK-010`'s NetworkPolicy is to admit the kubelet and Prometheus alone. Moving the endpoints is not authenticating them:
+until that policy exists they are reachable, unauthenticated, by anything that can reach the address they bind - the two
+debt rows in `CURRENT_STATE.md`. An address of none (the variable set but empty) or of every interface, and an actuator
+without a port of its own, refuse startup (`ManagementAddressGuard`).
+Held by `ManagementPortTest` and `ManagementAddressGuardTest`.
 
 The actuator is an allow-list, not a default (`P0-TSK-027`, ADR-0016). Only `health`, `info` and `prometheus` are served
 *(read "Only `health` and `info`" until `P15-TSK-008`: the scrape endpoint joined the allow-list in Phase 0 with its own

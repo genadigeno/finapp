@@ -1,0 +1,28 @@
+# What a stopping pod may take after its preStop pause, in seconds, every worst case together
+# (P15-TSK-009; ShutdownOrder, OPERATIONS_RUNBOOK.md section 11.1). The manifest policy holds every
+# overlay's terminationGracePeriodSeconds to the sum. It cannot read Java, so these are stated here and
+# KubernetesManifestsTest holds each to what it names: a bound changed in the code turns that test red
+# until this file, and the grace with it, are changed too.
+shutdownBudget:
+  # spring.lifecycle.timeout-per-shutdown-phase
+  httpDrain: 30
+  # ScheduleDrain.BOUND + INTERRUPT_GRACE
+  schedules: 12
+  # InboxConsumers.SETTLE_BOUND + INTERRUPT_GRACE
+  consumers: 12
+  # Tomcat's StandardWrapper unload delay. A library's own number, with no configuration to read.
+  managementServerStop: 2
+  # The connector's worker pool: shutdownNow, then up to AbstractEndpoint's executorTerminationTimeoutMillis for a
+  # thread that ignores its interrupt, as one blocked on a stalled database's socket does.
+  managementServerExecutor: 5
+  # The same two, for the API's web server, once its drain has ended.
+  apiServerStop: 2
+  apiServerExecutor: 5
+  # GaugeRefresher.STOP_BOUND
+  gaugeRefresher: 3
+  # finapp.kafka.ack-timeout
+  kafkaProducerClose: 10
+  # HikariPool.shutdown's abort loop, per pool, while something still holds a connection. A library's own
+  # number; ten seconds each for the writer's pool and report generation's.
+  writerPoolClose: 10
+  reportingPoolClose: 10
