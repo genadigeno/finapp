@@ -26846,12 +26846,12 @@ Docker and are not the storm.
 **Milestones** (acceptance in `PHASE_15_PLAN.md` §17): M15.1 Foundations (`-001`, `-002`) · M15.2 Images and supply chain
 (`-003`…`-007`) · M15.3 Kubernetes and the edge (`-008`…`-012`) · M15.4 Infrastructure as code (`-013`…`-016`) · M15.5
 Delivery (`-017`) · M15.6 Secrets and keys (`-018`…`-020`) · M15.7 Application security (`-021`, `-022`, `-036` *(added by `-002`, 2026-11-08)*) · M15.8
-Observability (`-023`…`-025`) · M15.9 Database and messaging operations (`-026`…`-030`) · M15.10 Configuration (`-031`) ·
+Observability (`-023`…`-025`, `-035` *(added by the owner, 2026-11-08)*) · M15.9 Database and messaging operations (`-026`…`-030`) · M15.10 Configuration (`-031`) ·
 M15.11 Operations and exit (`-032`, `-033`, `P15-TST-002`, `-034`, `P15-TST-001` `POSTPONED`, `P15-DOC-001`).
 
 **Parallel waves** (`PHASE_15_PLAN.md` §19): **A** `-001`; **B** `-002`, `-003`, `-008`, `-013`, `-021`, `-024`, `-026`,
 `-033`; **C** `-004`, `-006`, `-009`, `-014`, `-025`, `-027`, `-028`, `-029`, `-036` *(after `-001` and `-002`, added by `-002`,
-2026-11-08)*; **D** `-005`, `-010`, `-011`, `-015`, `-018`;
+2026-11-08)*; **D** `-005`, `-010`, `-011`, `-015`, `-018`, `-035` *(after `-025`, added by the owner, 2026-11-08)*;
 **E** `-012`, `-016`, `-019`, `-022`, `-031`; **F** `-007`, `-020`, `-023`, `-030`; **G** `-017`; **H** `-032`; **I**
 `P15-TST-002`; **J** `-034`; **K** `P15-DOC-001` (`P15-TST-001` `POSTPONED`, PI-004). **Critical path**: `-001` → `-003` →
 `-004` → `-005` → `-012` → `-007` → `-017` → `-032` → `TST-002` → `-034` → `DOC-001`. *(The transition's review, its M-5,
@@ -27780,7 +27780,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: as tested; two debt rows closed.
 - **Definition of done**: `DOD-EVENT`, `DOD-SEC`. **Risk**: Medium. **Cx**: L.
 
-**P15-TSK-029 — Retention sweeps and the retention policy (C12)** — `PLANNED`
+**P15-TSK-029 — Retention sweeps and the retention policy (C12)** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-002`'s merge, master `53d442b1`; every dependency `COMPLETE`)
 - **Objective**: operational tables stop growing without bound, and every data class has a written retention.
 - **Affected components**: `platform` (outbox and inbox sweeps), `app` (their schedules), `DATA_MIGRATIONS.md` §8–9, a
   retention policy document.
@@ -27987,7 +27987,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - *Added by the owner (2026-11-08), accepting `THREAT_MODEL.md` section 6 item 2's recommendation (a) after
   `P15-TSK-001`'s merge; milestone M15.8, wave D.*
 
-**P15-TSK-036 — Callbacks as hints for the payment (Phase 5) and instant (Phase 7) providers** — `PLANNED`
+**P15-TSK-036 — Callbacks as hints for the payment (Phase 5) and instant (Phase 7) providers** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-002`'s merge, master `53d442b1`; every dependency `COMPLETE`)
 - **Objective**: a forged-but-signed callback moves no money on any rail. The PSP and instant-rail doors adopt an outcome
   only from an authenticated inquiry, as ADR-0083 made the Phase 9 doors do, so one doctrine holds platform-wide and a
   stolen webhook key can hasten what the platform learns and nothing else (`THREAT_MODEL.md` T8).
