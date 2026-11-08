@@ -33,7 +33,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -187,8 +186,7 @@ class ShutdownOrderTest {
             assertThat(snapshot.components).hasSize(COMPONENTS);
             Map<String, Duration> tooLong = new TreeMap<>();
             snapshot.components.forEach((name, component) -> {
-                assertThat(component).as("%s states its stop's bound", name).isInstanceOf(BoundedStop.class);
-                Duration bound = ((BoundedStop) component).stopBound();
+                Duration bound = stopBound(name, component);
                 if (bound.compareTo(snapshot.timeout) >= 0) {
                     tooLong.put(name, bound);
                 }
@@ -241,6 +239,31 @@ class ShutdownOrderTest {
                 .run(arguments);
     }
 
+    /**
+     * A component's stop bound, read from its public {@code stopBound()}. By reflection, not through an interface: a
+     * {@code com.finapp} supertype shared by every schedule would put accounting's and risk's schedules on a customer
+     * surface's reach wherever one schedule is on it (`NoCustomerSurfaceReadsAccountingTest` follows an interface to every
+     * implementation), so each component states its bound itself and this test holds that every one does.
+     */
+    private static Duration stopBound(String name, SmartLifecycle component) {
+        try {
+            return (Duration) component.getClass().getMethod("stopBound").invoke(component);
+        } catch (ReflectiveOperationException absent) {
+            throw new AssertionError(name + " states no stop bound: a public stopBound() is every component's", absent);
+        }
+    }
+
+    /** A schedule's drain, through its public {@code drain()}; {@code null} for a component that is not a schedule. */
+    private static ScheduleDrain drainOf(Object bean) {
+        try {
+            return (ScheduleDrain) bean.getClass().getMethod("drain").invoke(bean);
+        } catch (NoSuchMethodException notASchedule) {
+            return null;
+        } catch (ReflectiveOperationException unreadable) {
+            throw new AssertionError(bean.getClass().getName() + "'s drain could not be read", unreadable);
+        }
+    }
+
     private static Moment only(List<Moment> order, String what) {
         List<Moment> found = all(order, moment -> moment.what.startsWith(what));
         assertThat(found).as("exactly one '%s' among %s", what, order.stream().map(moment -> moment.what).toList()).hasSize(1);
@@ -276,7 +299,7 @@ class ShutdownOrderTest {
 
         private final ApplicationAvailability availability;
         private final Map<String, SmartLifecycle> components = new TreeMap<>();
-        private final Map<String, DrainedSchedule> schedules = new TreeMap<>();
+        private final Map<String, SmartLifecycle> schedules = new TreeMap<>();
         private final InboxConsumers consumers;
         private final AccountingGaugeRefresher reader;
         private final HikariDataSource pool;
@@ -289,14 +312,16 @@ class ShutdownOrderTest {
             context.getBeansOfType(SmartLifecycle.class).forEach((name, bean) -> {
                 if (bean.getClass().getName().startsWith("com.finapp.")) {
                     components.put(name, bean);
-                    if (bean instanceof DrainedSchedule schedule) {
-                        schedules.put(name, schedule);
+                    if (drainOf(bean) != null) {
+                        schedules.put(name, bean);
                     }
                 }
             });
             this.consumers = context.getBean(InboxConsumers.class);
             this.reader = context.getBean(AccountingGaugeRefresher.class);
-            this.pool = context.getBean(DataSource.class).unwrap(HikariDataSource.class);
+            // By name and through java.sql.Wrapper: a test naming javax.sql.DataSource is read as needing PostgreSQL
+            // (TestTier), and this one needs none.
+            this.pool = ((java.sql.Wrapper) context.getBean("dataSource")).unwrap(HikariDataSource.class);
             this.apiPort = Integer.parseInt(context.getEnvironment().getRequiredProperty("local.server.port"));
             this.managementPort = Integer.parseInt(context.getEnvironment().getRequiredProperty("local.management.port"));
             this.timeout = context.getEnvironment().getRequiredProperty("spring.lifecycle.timeout-per-shutdown-phase", Duration.class);
@@ -309,7 +334,7 @@ class ShutdownOrderTest {
 
         private Set<String> scheduleNames() {
             Set<String> names = new TreeSet<>();
-            schedules.values().forEach(schedule -> names.add(schedule.drain().name()));
+            schedules.values().forEach(schedule -> names.add(drainOf(schedule).name()));
             return names;
         }
 

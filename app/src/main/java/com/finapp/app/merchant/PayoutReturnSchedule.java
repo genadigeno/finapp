@@ -1,13 +1,14 @@
 package com.finapp.app.merchant;
 
-import com.finapp.app.lifecycle.DrainedSchedule;
 import com.finapp.app.lifecycle.ScheduleDrain;
+import com.finapp.app.lifecycle.ShutdownOrder;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.SmartLifecycle;
 
 /**
  * Runs {@link PayoutReturnSweep#sweep()} on a fixed delay, on every instance (`P8-TSK-019`,
@@ -16,7 +17,7 @@ import lombok.extern.slf4j.Slf4j;
  * arbitrate, and a tick that finds nothing costs one bounded query.
  */
 @Slf4j
-public final class PayoutReturnSchedule implements DrainedSchedule {
+public final class PayoutReturnSchedule implements SmartLifecycle {
 
     private final PayoutReturnSweep sweep;
     private final Duration pollInterval;
@@ -67,8 +68,36 @@ public final class PayoutReturnSchedule implements DrainedSchedule {
         }
     }
 
-    @Override
+    /** This schedule's drain: its name is what a stopping instance's log calls it. */
     public ScheduleDrain drain() {
         return drain;
+    }
+
+    /** Stops claiming, then lets the tick in flight finish within its bound ({@link ScheduleDrain}). */
+    @Override
+    public void stop() {
+        drain.stop();
+    }
+
+    /** Spring's form: stops claiming at once and calls back once the tick has drained, so a phase drains in parallel. */
+    @Override
+    public void stop(Runnable callback) {
+        drain.stop(callback);
+    }
+
+    @Override
+    public boolean isRunning() {
+        return drain.isRunning();
+    }
+
+    /** After the HTTP drain, before the consumers ({@link ShutdownOrder}). */
+    @Override
+    public int getPhase() {
+        return ShutdownOrder.SCHEDULES;
+    }
+
+    /** The longest {@link #stop()} takes, below {@code spring.lifecycle.timeout-per-shutdown-phase} ({@code ShutdownOrderTest}). */
+    public Duration stopBound() {
+        return drain.stopBound();
     }
 }

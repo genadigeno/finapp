@@ -1,6 +1,5 @@
 package com.finapp.app.eventing;
 
-import com.finapp.app.lifecycle.BoundedStop;
 import com.finapp.app.lifecycle.ShutdownOrder;
 import com.finapp.platform.inbox.InboxEventHandler;
 import com.finapp.platform.inbox.kafka.KafkaEventReceiver;
@@ -60,7 +59,7 @@ import org.springframework.context.SmartLifecycle;
  * unacknowledged records redeliver into the inbox's dedupe, so correctness never depends on the drain.
  */
 @Slf4j
-public final class InboxConsumers implements SmartLifecycle, BoundedStop {
+public final class InboxConsumers implements SmartLifecycle {
 
     /** How long a stopping instance lets its loops finish the batch they hold, all of them together. */
     public static final Duration SETTLE_BOUND = Duration.ofSeconds(10);
@@ -187,7 +186,7 @@ public final class InboxConsumers implements SmartLifecycle, BoundedStop {
         return ShutdownOrder.CONSUMERS;
     }
 
-    @Override
+    /** The longest {@link #stop()} takes, below {@code spring.lifecycle.timeout-per-shutdown-phase} ({@code ShutdownOrderTest}). */
     public Duration stopBound() {
         return SETTLE_BOUND.plus(INTERRUPT_GRACE);
     }

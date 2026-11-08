@@ -690,8 +690,8 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   and the fifth is routed onto its entry. Every column outside these ciphers is plaintext in PostgreSQL until volume
   encryption exists (`-015`). `SECURITY_ARCHITECTURE.md` §Encryption at rest has the detail.
 - **T2.** `/actuator/health`, `/actuator/info` and `/actuator/prometheus` are still served unauthenticated, now on
-  the management port alone: loopback outside Kubernetes, the pod's address inside it, where anything that reaches the
-  pod reaches them until a policy restricts it. Two `CURRENT_STATE.md` debt rows record this, and `-010`'s NetworkPolicy
+  the management port alone: loopback outside Kubernetes, and the pod's address once `-009`'s overlays set it, where
+  anything that reaches the pod reaches them until a policy restricts it. Two `CURRENT_STATE.md` debt rows record this, and `-010`'s NetworkPolicy
   closes them. *(Read "served unauthenticated on the API port today" until 2026-11-08, when the port moved.)*
 - **T14.** The connection budget guard checks the instance count the configuration declares. Nothing ties that
   declaration to the replicas actually running, which `-009`'s manifest policy and `-012`'s measured peak do. Today an

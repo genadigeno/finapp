@@ -58,10 +58,11 @@ mistaken for the control.
 
 **The actuator has a port of its own** (`P15-TSK-008`, ADR-0120 decision 3, `THREAT_MODEL.md` T2): it answers on the
 management port, 8081, and the API port answers `404` for every `/actuator` path, so no ingress that routes the API
-can route it. The management port binds loopback unless `FINAPP_MANAGEMENT_ADDRESS` says otherwise, and only the
-Kubernetes overlays say otherwise, with the pod's address (`P15-TSK-009`), where `P15-TSK-010`'s NetworkPolicy admits
-the kubelet and Prometheus alone. Moving the endpoints is not authenticating them: until that policy exists they are
-reachable, unauthenticated, by anything that can reach the pod's address - the two debt rows in `CURRENT_STATE.md`.
+can route it. The management port binds loopback unless `FINAPP_MANAGEMENT_ADDRESS` says otherwise; only the
+Kubernetes overlays are to say otherwise, with the pod's address (`P15-TSK-009`, not yet built), where `P15-TSK-010`'s
+NetworkPolicy is to admit the kubelet and Prometheus alone. Moving the endpoints is not authenticating them: until that
+policy exists they are reachable, unauthenticated, by anything that can reach the address they bind - the two debt rows
+in `CURRENT_STATE.md`.
 Held by `ManagementPortTest`.
 
 The actuator is an allow-list, not a default (`P0-TSK-027`, ADR-0016). Only `health`, `info` and `prometheus` are served

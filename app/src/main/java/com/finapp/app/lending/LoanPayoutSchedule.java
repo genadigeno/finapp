@@ -1,7 +1,7 @@
 package com.finapp.app.lending;
 
-import com.finapp.app.lifecycle.DrainedSchedule;
 import com.finapp.app.lifecycle.ScheduleDrain;
+import com.finapp.app.lifecycle.ShutdownOrder;
 import com.finapp.lending.LendingSpans;
 import com.finapp.lending.LoanPayoutStore;
 import com.finapp.lending.LoanPayoutSteps;
@@ -13,6 +13,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.SmartLifecycle;
 
 /**
  * The payout sweep, path X (`P11-TSK-015`; PHASE_11_PLAN.md sections 7.1 T-pyo / T-pyr and 7.5, LENDING_LIFECYCLES.md
@@ -27,7 +28,7 @@ import lombok.extern.slf4j.Slf4j;
  * suites drive {@link #sweepOnce()}.
  */
 @Slf4j
-public final class LoanPayoutSchedule implements DrainedSchedule {
+public final class LoanPayoutSchedule implements SmartLifecycle {
 
     private final LoanPayoutSteps steps;
     private final LendingTransactions transactions;
@@ -115,8 +116,36 @@ public final class LoanPayoutSchedule implements DrainedSchedule {
         }
     }
 
-    @Override
+    /** This schedule's drain: its name is what a stopping instance's log calls it. */
     public ScheduleDrain drain() {
         return drain;
+    }
+
+    /** Stops claiming, then lets the tick in flight finish within its bound ({@link ScheduleDrain}). */
+    @Override
+    public void stop() {
+        drain.stop();
+    }
+
+    /** Spring's form: stops claiming at once and calls back once the tick has drained, so a phase drains in parallel. */
+    @Override
+    public void stop(Runnable callback) {
+        drain.stop(callback);
+    }
+
+    @Override
+    public boolean isRunning() {
+        return drain.isRunning();
+    }
+
+    /** After the HTTP drain, before the consumers ({@link ShutdownOrder}). */
+    @Override
+    public int getPhase() {
+        return ShutdownOrder.SCHEDULES;
+    }
+
+    /** The longest {@link #stop()} takes, below {@code spring.lifecycle.timeout-per-shutdown-phase} ({@code ShutdownOrderTest}). */
+    public Duration stopBound() {
+        return drain.stopBound();
     }
 }

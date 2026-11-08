@@ -27125,7 +27125,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T30's built row holds `ci.yml`'s token scope through `CiWorkflowIsLockedDownTest`. Keyless signing needs `id-token: write` on the signing job: grant it at that job only, rewrite T30's row (and the test's read-only assertion, to name that one exception) in this task's gate.
 
-**P15-TSK-008 — The runtime contract: management port, graceful shutdown, drained schedules** — `IN_PROGRESS` (2026-11-08; branch `P15-TSK-008` from master `c1d07726`; designed, implementing) *(read "`READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)" until its start)*
+**P15-TSK-008 — The runtime contract: management port, graceful shutdown, drained schedules** — `COMPLETE` (2026-11-08, at its completion gate; branch `P15-TSK-008` from master `c1d07726`; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`) *(read "`IN_PROGRESS`" from its design until its gate, and "`READY`" until its start)*
 - **Objective**: an instance can be stopped at any moment without failing an accepted request or leaving work stranded,
   and its operational endpoints are on a port no ingress serves.
 - **Affected components**: `app` (`application.yaml`, every `*Schedule`, `InboxConsumers`, `AccountingGaugeRefresher`),
@@ -27155,6 +27155,47 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: as tested; probes served only on 8081.
 - **Definition of done**: `DOD-KERNEL`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* ADR-0023's decision 5 carries the same lapsed "no Kafka client" claim as `TransportSecurityGuard`'s note; `-001` added a read-note there pointing here and corrected `DECISIONS.md` §Transport and at-rest encryption. `THREAT_MODEL.md` T2 cites this task (the management port).
+- **As built** (2026-11-08; branch `P15-TSK-008` from master `c1d07726`; no migration, no ADR - dated notes on ADR-0120,
+  ADR-0023 and ADR-0016). **The management port**: `management.server.port: 8081`, `management.server.address:
+  ${FINAPP_MANAGEMENT_ADDRESS:127.0.0.1}` - loopback for every run outside Kubernetes, the pod's address only where an
+  overlay sets it (`-009`, routed); the API port answers `404` for every `/actuator` path (`ManagementPortTest`, on
+  production's own file: Spring Boot's test support replaces a management port only when it differs from the server's,
+  so the class fails if production's file puts the actuator back on the API port; the management connector is bound to
+  loopback and refused on this host's other address while the API port accepts there). Every test context uses `0`: the
+  overlay states `management.server.port=0`; the production-file suites take Boot's own replacement or `--...=0`.
+  Management-port requests are neither traced nor correlated (the API's filters are the main context's), so
+  `TracingTest` and `TraceAcrossDatabaseTest` drive API-port probe routes instead of the actuator. The local scrape
+  targets `host.docker.internal:8081`: measured, Docker Desktop forwards it to the host's loopback (a container with
+  compose's `host-gateway` reached a `127.0.0.1` listener); a Linux engine needs `FINAPP_MANAGEMENT_ADDRESS` set to the
+  bridge's address (recorded in `prometheus.yml` and the README, unmeasured). **Graceful shutdown**: `server.shutdown:
+  graceful` and `spring.lifecycle.timeout-per-shutdown-phase: 30s` stated and pinned; the order is `ShutdownOrder`'s
+  phases, held on a real context with all 34 lifecycle components running (`ShutdownOrderTest`): readiness
+  `REFUSING_TRAFFIC` before any phase, while the API port still accepts; the held request answered `200` after the port
+  closed, with readiness `503 OUT_OF_SERVICE` and liveness `200` on 8081 and all 32 schedules still running; every
+  schedule drained after the HTTP drain ended and before the consumers stopped; the management port answering until the
+  consumers had stopped and closed before the gauge reader stops; the pool open at every stop and closed after. **The
+  schedules** (32): each holds a `ScheduleDrain` (composition) and delegates its lifecycle to it - no shared supertype, which
+  `NoCustomerSurfaceReadsAccountingTest` would follow from one schedule to all of them; `stop()` stops claiming
+  at once - no tick starts after it - and awaits the tick in flight 10 s, then interrupts it (as before) and awaits 2 s;
+  Spring's `stop(Runnable)` waits on a thread of its own, so the phase drains in parallel (one bound, not 32). A tick's
+  own loop is not cut mid-tick: its batch is its unit of work, bounded per tick. `AccountingCloseSchedule`'s heartbeat
+  stops with its executor. **The consumers**: woken at once (no new batch), a batch in hand finished and acknowledged -
+  `KafkaEventReceiver` retries the commit a stop's wakeup interrupted - then closed (leaving the group), all loops
+  against one 10 s bound and a 2 s interrupt grace (the replaced join was sequential, 10 s per loop). **The gauge
+  reader**: queued reads dropped, the read in flight awaited 3 s. **The bound**: every component's `stopBound()` below the
+  phase timeout, asserted on the real context; the lifecycle's worst case 30 + 12 + 12 + 3 = 57 s before the producer's
+  close (10 s) and the pool's, routed to `-009` for the grace. **The counted case**: hermetic `ScheduleDrainTest` (two
+  instances over a leased claim table: drained - the owner finishes its batch, the second takes none of it; interrupted -
+  the leases lapse to the second; one effect per key either way), against PostgreSQL `ScheduleDrainDatabaseTest` (two
+  `OutboxRelaySchedule`s, own container; written, owed to `P15-TST-002`, walked by hand). `TransportSecurityGuard`'s note
+  corrected. `THREAT_MODEL.md` T2's management-port row now `EXISTS`; the two debt rows say moved, not closed, and close
+  with `-010`. Build: `kafka-clients` on `app`'s test compile classpath for `MockConsumer` (lock state widened, no new
+  artefact); `ScheduleDrainDatabaseTest` in `app`'s own-container list. `TracingTest` and `TraceAcrossDatabaseTest` flush
+  Spring Boot's batch span processor before each reset: a startup read's span landed in a later test otherwise.
+  **Deviations**: an in-flight tick is not cut mid-tick (a claimed batch is the unit of work); `FxCoverNudge`'s executor and
+  the risk gauges' virtual-thread readers are not drained (a hint and a reading); the counted database case uses the relay's
+  advisory-lock claim, the timed lease's reclaim staying `CloseRunDatabaseTest`'s; "two contexts" are two schedule instances
+  over one database, each with its own executor and connections.
 
 **P15-TSK-009 — Kubernetes base manifests for the application** — `PLANNED`
 - **Objective**: the application's desired state as reviewed, validated YAML.

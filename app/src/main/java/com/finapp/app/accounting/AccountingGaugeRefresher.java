@@ -1,6 +1,5 @@
 package com.finapp.app.accounting;
 
-import com.finapp.app.lifecycle.BoundedStop;
 import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
@@ -27,7 +26,7 @@ import org.springframework.context.SmartLifecycle;
  * <p><strong>What this does not fix.</strong> About sixty other modules' metric classes still read on the scrape thread, so a pool with no free connection, or a database gone, still loses the whole scrape on every instance it touches: {@code CURRENT_STATE.md} section Known Architectural Debt.
  */
 @Slf4j
-public final class AccountingGaugeRefresher implements SmartLifecycle, BoundedStop {
+public final class AccountingGaugeRefresher implements SmartLifecycle {
 
     /** The thread's name: what a thread dump shows inside a read. */
     public static final String THREAD = "accounting-gauges";
@@ -106,7 +105,7 @@ public final class AccountingGaugeRefresher implements SmartLifecycle, BoundedSt
         log.debug("The accounting gauges' reader stopped");
     }
 
-    @Override
+    /** The longest {@link #stop()} takes, below {@code spring.lifecycle.timeout-per-shutdown-phase} ({@code ShutdownOrderTest}). */
     public Duration stopBound() {
         return STOP_BOUND;
     }

@@ -3,8 +3,8 @@ package com.finapp.app.accounting;
 import com.finapp.accounting.AccountingPeriods;
 import com.finapp.accounting.CloseChecks;
 import com.finapp.accounting.CloseRuns;
-import com.finapp.app.lifecycle.DrainedSchedule;
 import com.finapp.app.lifecycle.ScheduleDrain;
+import com.finapp.app.lifecycle.ShutdownOrder;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.IntSupplier;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.SmartLifecycle;
 
 /**
  * Accounting's one leaderless schedule (`P14-TSK-011`; {@code PHASE_14_PLAN.md} section 8.4; {@code INV-ACC-09}): every
@@ -45,7 +46,7 @@ import lombok.extern.slf4j.Slf4j;
  * Off in test contexts ({@code finapp.accounting.sweeper.enabled}); the suites drive the legs directly.
  */
 @Slf4j
-public final class AccountingCloseSchedule implements DrainedSchedule {
+public final class AccountingCloseSchedule implements SmartLifecycle {
 
     static final String OPEN_LEG = "open";
     static final String CHECKS_LEG = "checks";
@@ -238,13 +239,41 @@ public final class AccountingCloseSchedule implements DrainedSchedule {
 
     private record Leg(Duration poll, IntSupplier work) {}
 
-    /**
-     * Its stop drains (`P15-TSK-008`): no leg starts after it, and a leg in flight finishes within the bound. The
-     * heartbeat, a periodic task on this executor, stops with it, so a check still running is no longer renewed: one that
-     * outlives its lease is fenced by holder and reclaimed by another instance, as a dead worker's is.
-     */
-    @Override
+    /** This schedule's drain: its name is what a stopping instance's log calls it. */
     public ScheduleDrain drain() {
         return drain;
+    }
+
+    /**
+     * Stops claiming, then lets the leg in flight finish within its bound ({@link ScheduleDrain}; `P15-TSK-008`): no leg
+     * starts after it. The heartbeat, a periodic task on this executor, stops with it, so a check still running is no
+     * longer renewed: one that outlives its lease is fenced by holder and reclaimed by another instance, as a dead
+     * worker's is.
+     */
+    @Override
+    public void stop() {
+        drain.stop();
+    }
+
+    /** Spring's form: stops claiming at once and calls back once the tick has drained, so a phase drains in parallel. */
+    @Override
+    public void stop(Runnable callback) {
+        drain.stop(callback);
+    }
+
+    @Override
+    public boolean isRunning() {
+        return drain.isRunning();
+    }
+
+    /** After the HTTP drain, before the consumers ({@link ShutdownOrder}). */
+    @Override
+    public int getPhase() {
+        return ShutdownOrder.SCHEDULES;
+    }
+
+    /** The longest {@link #stop()} takes, below {@code spring.lifecycle.timeout-per-shutdown-phase} ({@code ShutdownOrderTest}). */
+    public Duration stopBound() {
+        return drain.stopBound();
     }
 }

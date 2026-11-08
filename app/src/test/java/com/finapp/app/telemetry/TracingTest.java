@@ -76,10 +76,12 @@ class TracingTest {
         static final String CONNECTION = "/probe/connection";
         static volatile Map<String, String> seen;
 
-        private final javax.sql.DataSource dataSource;
+        // The template, not the DataSource: a test naming javax.sql.DataSource is read as needing PostgreSQL
+        // (TestTier), and this one needs none - the connection it reaches for is refused, which is the point.
+        private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
-        MdcProbe(javax.sql.DataSource dataSource) {
-            this.dataSource = dataSource;
+        MdcProbe(org.springframework.jdbc.core.JdbcTemplate jdbc) {
+            this.jdbc = jdbc;
         }
 
         @GetMapping(PATH)
@@ -90,11 +92,10 @@ class TracingTest {
 
         /** Reaches for a connection, as readiness did: a second span, the database being absent. */
         @GetMapping(CONNECTION)
-        @SuppressWarnings("try") // The connection is opened for its span, then closed: nothing reads it.
         String connection() {
-            try (java.sql.Connection ignored = dataSource.getConnection()) {
-                return "connected";
-            } catch (java.sql.SQLException absent) {
+            try {
+                return jdbc.execute((org.springframework.jdbc.core.ConnectionCallback<String>) connection -> "connected");
+            } catch (org.springframework.dao.DataAccessException absent) {
                 return "absent";
             }
         }
