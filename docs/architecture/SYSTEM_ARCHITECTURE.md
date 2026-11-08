@@ -157,11 +157,12 @@ run the identical pinned image.
 
 *Planned by the Phase 14 → 15 transition (2026-11-07; ADR-0120…0125, `Proposed`; `PHASE_15_PLAN.md`); nothing of it is
 built* *(until 2026-11-08: the `finapp-app` image is built and asserted by CI's `image` job, `P15-TSK-003`, and pushed
-nowhere).* The modular monolith deploys as the units it has: **`finapp-app`**, one minimal non-root image, a Kubernetes
+nowhere; `P15-TSK-008` built the management port and the shutdown order, noted below).* The modular monolith deploys as the units it has: **`finapp-app`**, one minimal non-root image, a Kubernetes
 Deployment of N ≥ 3 replicas each serving HTTP and running every leaderless schedule and consumer, and
 **`finapp-migrator`**, a Job per release running every module's migrations as `finapp_migrator` before the rollout.
 PostgreSQL and Kafka are managed outside the cluster. A public ingress and an internal operator ingress terminate TLS;
-the actuator moves to a management port no ingress serves. Infrastructure is Terraform, verified with mock providers and
+the actuator moves to a management port no ingress serves *(built by `P15-TSK-008`, 2026-11-08: 8081, loopback outside
+Kubernetes, with the graceful shutdown order of ADR-0120 decision 4; the ingresses and their policy are still planned)*. Infrastructure is Terraform, verified with mock providers and
 never applied in Phase 15. Each commit's images are scanned, signed with provenance and promoted by digest through
 GitOps, and every production change needs two persons. The CI table above gains the image, static-analysis, manifest,
 infrastructure, observability-rule and `kind`-rehearsal jobs as `P15-TSK-003`…`-025` land, each a pinned script that also

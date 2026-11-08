@@ -12,7 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.test.web.server.LocalManagementPort;
 
 /**
  * The operational endpoints, with PostgreSQL unreachable.
@@ -42,6 +42,9 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  *   <li><strong>Readiness goes DOWN.</strong> An instance that cannot reach the transactional
  *       source of truth can serve nothing financial and must stop being sent traffic.
  * </ol>
+ *
+ * <p><strong>On the management port</strong> (`P15-TSK-008`): every request here goes to it. That the API port answers none
+ * of these is {@code ManagementPortTest}'s, on production's own configuration.
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -51,7 +54,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @Tag("slice")
 class HealthEndpointTest {
 
-    @LocalServerPort private int port;
+    @LocalManagementPort private int port;
 
     // -----------------------------------------------------------------
     // Liveness and readiness answer different questions

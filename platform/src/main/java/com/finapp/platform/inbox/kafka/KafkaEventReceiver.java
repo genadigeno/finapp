@@ -315,7 +315,14 @@ public final class KafkaEventReceiver implements AutoCloseable {
             }
         }
         if (!acknowledged.isEmpty()) {
-            consumer.commitSync(acknowledged);
+            try {
+                consumer.commitSync(acknowledged);
+            } catch (WakeupException stopping) {
+                // A stop woke this consumer while it settled (`P15-TSK-008`): the wakeup was meant for a poll, and is
+                // spent by this throw. The records above are settled - their effects committed - so their acknowledgement
+                // is still theirs to send, or the partition's next owner redelivers the whole batch into the dedupe.
+                consumer.commitSync(acknowledged);
+            }
         }
         return new ReceiverPollResult(processed, duplicates, contended, failed);
     }

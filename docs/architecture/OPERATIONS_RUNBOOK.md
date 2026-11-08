@@ -1861,6 +1861,33 @@ procedure exists and no deployed environment exists to apply one to.)*
 procedure over the repository, not over a deployed environment, so the paragraph above still holds for every other
 row.)*
 
+### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
+
+*(Written by `P15-TSK-008`, 2026-11-08, from the code and its tests; **not yet rehearsed** - `P15-TSK-012` rehearses it
+on `kind`. The `preStop` pause and the grace period are `P15-TSK-009`'s manifest; the rest of §11.1 is the other tasks'
+the table names.)*
+
+A pod is stopped by every rollout step, scale-down, eviction and node drain. **Nothing an operator does is needed for
+a stop to be correct**: a pod killed outright at any moment leaves its claims to lapse and another instance takes them
+(`DISTRIBUTED_EXECUTION.md` §3, "Shutdown and drain"). What a graceful stop adds is fewer retries. On `SIGTERM`, after
+the `preStop` pause, the application does this, in this order:
+
+| Step | What happens | Bound | What the log says |
+|---|---|---|---|
+| 1 | Readiness turns `REFUSING_TRAFFIC`: `/actuator/health/readiness` on 8081 answers `503` `{"status":"OUT_OF_SERVICE"}`; liveness still `200` | — | — |
+| 2 | The API port, 8080, stops accepting; requests it accepted finish | 30 s (`spring.lifecycle.timeout-per-shutdown-phase`); a request still running then is no longer waited for, and is cut off when the web server stops (step 5) | `Commencing graceful shutdown…`, then `Graceful shutdown complete` (or `…aborted with one or more requests still active`) |
+| 3 | Every schedule stops claiming at once; the tick each is running finishes; all 32 in parallel | 10 s, then the tick is interrupted and awaited 2 s more | `Schedule <name> drained` (DEBUG); `Schedule <name> did not drain within PT10S; its tick is interrupted` (WARN); `… abandoned to the process's exit` (WARN) |
+| 4 | Every consumer loop takes no new batch, acknowledges the one it holds and leaves its group | 10 s, then interrupted, 2 s more | `Inbox consumers stopping: <n> loops`, `Inbox consumers stopped`; WARN past the bound |
+| 5 | The management port, 8081, closes; then the API's web server stops | immediate | — |
+| 6 | The accounting gauges' reader drops its queued reads; the one in flight ends | 3 s | `The accounting gauges' reader stopped` (DEBUG); WARN past the bound |
+| 7 | The Kafka producer closes, then the connection pool; report generation's one-connection pool (`P15-TSK-021`) closes with it, at the context's close | the producer's `finapp.kafka.ack-timeout` (10 s), then HikariCP's own close | HikariCP's shutdown lines |
+
+**Reading it.** A WARN in step 3 or 4 is not an incident: the interrupted work's claim lapses to another instance and
+its records redeliver into the dedupe. It is a signal that a tick or a batch ran longer than 10 s, which the schedule's
+own latency metrics explain. Steps 1-6 together take at most 57 s; the grace period covers the `preStop` pause, those
+57 s and step 7 (`P15-TSK-009`). A pod still running when the grace ends is killed - the same as any kill, and as
+correct.
+
 ### 11.6 Broker outage and consumer lag
 
 *Written by `P15-TSK-026` (2026-11-08) from the clients it built; **not yet rehearsed** - no deployed broker exists, and

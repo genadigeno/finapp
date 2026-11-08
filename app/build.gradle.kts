@@ -194,6 +194,11 @@ dependencies {
     // which is exactly what this task removes.
     testImplementation(testFixtures(project(":platform")))
     testImplementation(testFixtures(project(":identity")))
+    // The broker client's MockConsumer (P15-TSK-008): InboxConsumersTest drives a stopping instance's consumer loops over
+    // the real KafkaEventReceiver without a broker. Test scope only - the artefact is already on app's runtime classpath
+    // through platform, so this adds no library, only the test compile's view of it; production code in app still
+    // touches no Kafka type (NoDirectBrokerPublicationRulesTest). Version from the Spring Boot BOM.
+    testImplementation(libs.kafka.clients)
     // The refund allocator's reference merchant fee arithmetic, proven equal here to merchant's FeeCalculation
     // (BnplFeeArithmeticAgreesWithMerchantTest, P12-TSK-009) - app is the one module that sees both.
     testImplementation(testFixtures(project(":bnpl")))
@@ -411,6 +416,9 @@ extra["ownContainerSuites"] =
         "com.finapp.app.credit.Phase10ReportsDatabaseTest",
         "com.finapp.app.credit.Phase10SpansDatabaseTest",
         "com.finapp.app.credit.UnderwritingCaseDatabaseTest",
+        // P15-TSK-008: two outbox relays over one database, the counted drain case; the relay reads the whole outbox, so on
+        // a shared container it would publish - and so mark published - every other suite's pending rows.
+        "com.finapp.app.eventing.ScheduleDrainDatabaseTest",
         // P13-TSK-011: it activates a EUR CROSS_BORDER risk version, after which every cross-border payment in the
         // database is judged by it - a shared container's EUR 600 payments would be stepped up at the door, its
         // EUR-JPY-JP ones refused (the suite's high-risk corridor), its non-EUR-leg ones refused by the fail-safe.

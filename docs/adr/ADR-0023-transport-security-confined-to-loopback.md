@@ -73,7 +73,8 @@ From `P1-TSK-017` on, columns that carry restricted data are encrypted field by 
 built as nine instances over eight keys, each stamp a key version on every row. `SECURITY_ARCHITECTURE.md` §Encryption at
 rest holds the current position, and `THREAT_MODEL.md` T7, T34 and T35 the threats. Decision 5's "no Kafka client" lapsed
 with `P2-TSK-001`, which added `KafkaTransportGuard`. The same stale claim in `TransportSecurityGuard`'s Javadoc is
-`P15-TSK-008`'s to correct.)*
+`P15-TSK-008`'s to correct.)* *(Corrected by `P15-TSK-008`, 2026-11-08: the Javadoc now names `KafkaTransportGuard` as
+the Kafka hop's guard and keeps "no client" for Redis alone.)*
 
 *(Read-note, `P15-TSK-026`, 2026-11-08: the Kafka guard's bar, "not `PLAINTEXT` off loopback", admitted
 `SASL_PLAINTEXT` and any protocol string but `PLAINTEXT`. Under owner decision C11 it is now this ADR's database rule
