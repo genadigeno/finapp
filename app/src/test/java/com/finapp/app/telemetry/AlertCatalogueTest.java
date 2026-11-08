@@ -136,6 +136,21 @@ class AlertCatalogueTest {
     }
 
     @Test
+    @DisplayName("every SLI recording rule aggregates across the instances: a sum or max over the fleet, or a window over a rule that already did")
+    void everySliRecordingRuleAggregatesAcrossTheInstances() {
+        int checked = 0;
+        for (Object node : (List<?>) yamlAt(rulesDirectory().resolve("slo-recording.yml")).get("groups")) {
+            for (Object rule : (List<?>) map(node).get("rules")) {
+                Map<String, Object> entry = map(rule);
+                assertThat(String.valueOf(entry.get("expr"))).as("%s", entry.get("record"))
+                        .containsPattern("^\\(?\\s*(1 - \\()?\\(?sum(\\(| by)|^max\\(|^avg_over_time\\(finapp:slo_");
+                checked++;
+            }
+        }
+        assertThat(checked).as("not vacuous").isEqualTo(42);
+    }
+
+    @Test
     @DisplayName("every alert this task wrote, and every rule the routed notes asked for, is named by a promtool case")
     void everyNewAlertHasAPromtoolCase() throws IOException {
         String cases = allTestFiles();
