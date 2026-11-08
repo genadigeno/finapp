@@ -27105,7 +27105,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: identical schema to the build's; idempotent; serialised; bounded by `lock_timeout`.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 - *Routed by `P15-TSK-021` (2026-11-08), status unchanged:* `finapp_reporting` exists and the migrations grant to it
-  (accounting `V013`, ledger `V033`, reconciliation `V023`, lending `V033`), so **the one-time bootstrap step creates it
+  (accounting `V013`, ledger `V033`, reconciliation `V023`, lending `V034`), so **the one-time bootstrap step creates it
   before the first migrator run that includes them** - `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`, `CONNECT`
   on the database, its password from the secret store - exactly as `infra/postgres/initdb/00-roles.sql` does locally;
   a migrator run against a database without it fails those migrations (`role "finapp_reporting" does not exist`),
@@ -27621,11 +27621,11 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   - **The operator population is `EMPLOYEE`, the plan's "`OPERATOR`".** `ActorType` has no `OPERATOR`; `platform.audit_record`'s `CHECK` and the modules' person `CHECK`s list `'CUSTOMER', 'EMPLOYEE'` (65 times in 23 migrations of five modules, counted), and `EMPLOYEE`'s own definition is the operator population, so no migration and no domain check changed. **The role decides, per request**: `SessionAuthenticationInterceptor` reads the identity's live roles once, in the session's own transaction, on an operator act (a handler declaring `@RequiresPermission`); any live role types it `EMPLOYEE`, and the same read decides the permission (`Authorization.Standing`, identity). A customer route reads no roles and stays `CUSTOMER`, a role holder on their own account included - two `CHECK`s (`lending V004`, `bnpl V003`) require a customer to submit their own application, and the risk judgements read a customer's identity. A role granted or revoked mid-session is honoured on the next request.
   - **Idempotency scopes key a person once.** 79 scopes (62 files), a merchant-key fingerprint and the dispute-response scope named `actor.type()`; typing operator acts `EMPLOYEE` would have split one person's retries across `CUSTOMER:<id>` and `EMPLOYEE:<id>` - a retry crossing the deploy or a role change acting twice. `Actor.keyedType()` (platform) names a person `CUSTOMER` in every scope; persisted scopes are byte-identical; `IdempotencyScopesKeyThePersonTest` refuses `type()` in a scope or fingerprint (all modules' sources, planted cases). Four-eyes compares ids everywhere (re-verified).
   - **A refused step-up is recorded everywhere it happens.** `identity.StepUpRefused` (identity), committed in its own `REQUIRES_NEW` transaction before the `403`: by the interceptor at a declared `@RequiresAssurance` (21 handlers, recounted, all `MULTI_FACTOR`, all on the method), and by the error contract (`ApiErrorHandler` → `StepUpRefusals`) at the ~34 operations' own step-ups, once per request (the interceptor marks its own). Summary: the route pattern only.
-  - **The reporting role reads 23 tables, not "the journal and accounting tables only".** Recounted from the code across the 14 definitions: accounting 10, ledger 5, reconciliation 3, lending 5 (+ `lending.business_date`). Grants: accounting `V013`, ledger `V033`, reconciliation `V023`, lending `V033` (USAGE + SELECT, no default privileges); `ReportingRoleIsSelectOnlyTest` pins the register. Only `ReportRunGenerator`'s snapshots (generation, regeneration) use `ReportingPool` (`app.database`, not a `DataSource` bean, lazy, fixed-size, `application_name = finapp`); the operational door, close checks and final statements keep the writer's read-only snapshots. **Not cut.**
+  - **The reporting role reads 23 tables, not "the journal and accounting tables only".** Recounted from the code across the 14 definitions: accounting 10, ledger 5, reconciliation 3, lending 5 (+ `lending.business_date`). Grants: accounting `V013`, ledger `V033`, reconciliation `V023`, lending `V034` (USAGE + SELECT, no default privileges); `ReportingRoleIsSelectOnlyTest` pins the register. Only `ReportRunGenerator`'s snapshots (generation, regeneration) use `ReportingPool` (`app.database`, not a `DataSource` bean, lazy, fixed-size, `application_name = finapp`); the operational door, close checks and final statements keep the writer's read-only snapshots. **Not cut.**
   - **Built**: `finapp_reporting` in `00-roles.sql` (CONNECT; `LocalDatabaseRolesAreUnprivilegedTest` holds three roles); the pool's credential guarded (`DatabaseCredentialGuard`, `FINAPP_DB_REPORTING_PASSWORD`); the budget `instances × (writer + reporting)`, the writer pool 8 → 7 with reporting 1 so the fleet demand stays 80 of 88; `DatabaseUnderTest` publishes the role; T31's rule in `RoutePermissionRegisterTest` with a planted route; `PRIVILEGED_ACCESS_REVIEW.md` (roles, the propose/approve partition of holdings, the review, break-glass) held by `PrivilegedAccessReviewTest`; ADR-0113 and ADR-0031 dated notes, no new ADR.
   - **Owed (C14)**: `ReportingRoleDatabaseTest` (a planted write refused by the role outside `READ ONLY`, every register table readable, restricted tables refused, the catalogue exact); `DenyByDefaultDatabaseTest#theOperatorActorIsTyped` and `#aRefusedStepUpIsRecorded`; the definition suites (trial balance, statements, safeguarding, operational) now generate as `DatabaseRoles::reporting`; the three schema-ACL migration tests widened. Walked by hand, not run.
-  - **Owner items**: `THREAT_MODEL.md` §6 item 8 - refuse, at role assignment, one identity holding both roles of a propose/approve pair (recommended as a remediation before production use; the review finds it meanwhile); item 9 - `P15-TSK-002`'s routed parts (a)-(d), below, not taken at this gate (recommended: (c) as the review's §6 rules it, (a), (b) and (d) one follow-on M15.7 item).
-  - **Merged master `2a3d6f93`** (`P15-TSK-002`'s ruling) before the final run; its T38 planned row became a `GAP` held by owner item 9. **Then master `19db300f`** (`P15-TSK-003`, `P15-TSK-013`) after it: `-013`'s own owner item 7 (T11) had landed first, so this task's items, written as 7 and 8, are 8 and 9; nothing routed to this task; the conflicts were records only, and the guards reading them were run again.
+  - **Owner items**: `THREAT_MODEL.md` §6 item 9 - refuse, at role assignment, one identity holding both roles of a propose/approve pair (recommended as a remediation before production use; the review finds it meanwhile); item 10 - `P15-TSK-002`'s routed parts (a)-(d), below, not taken at this gate (recommended: (c) as the review's §6 rules it, (a), (b) and (d) one follow-on M15.7 item).
+  - **Merged master `2a3d6f93`** (`P15-TSK-002`'s ruling) before the final run; its T38 planned row became a `GAP` held by owner item 10. **Then master `19db300f`** (`P15-TSK-003`, `P15-TSK-013`) after it: `-013`'s own owner item 7 (T11) had landed first, so this task's items, written as 7 and 8, became 8 and 9 (and 9 and 10 at master `24385913`, whose `-033` owns item 8); nothing routed to this task; the conflicts were records only, and the guards reading them were run again.
   - **Found at the final run, fixed before it was run again**: `NoProcessLocalSessionStateTest` named the interceptor's per-request `Established` record (the session and the roles one request read) - the rule's third exemption of the kind it already argues, a return value discarded within the request; `DatabaseCredentialGuardStartupTest`'s two remote-database contexts lacked the reporting credential, so its guard refused first; and, found reading that failure, the reporting pool took the writer's URL and none of its driver settings, so an `sslmode` set as a driver property satisfied the transport guard for the writer while the reporting pool reached the same database under the driver's default - it now carries the writer's driver settings (`ReportingPoolTransportTest`, a probe caught).
   - **Skipped under the owner's 2026-11-08 rule** ("if we dont change business logic in java, we dont need its unit tests"): `:accounting:test`, `:ledger:test`, `:reconciliation:test`, `:lending:test` - their changes on this branch are grant migrations, no production Java. Kept: `:app:test` over the guard set and the touched desks, `:app:architectureTest`, `:identity:test`, `:platform:test`, `:merchant:test`, `:payments:test` (production Java changed in each) - Fresh on the branch: `:app:test` over the guard set and the touched desks 742/0 (121 classes), `:app:architectureTest` 266/0 (46 classes), `:identity:test` 149/0, `:platform:test` 189/0, `:merchant:test` 190/0, `:payments:test` 306/0, after the fixes above.
 - *Routed by `P15-TSK-002` (**C15**, 2026-11-08), status unchanged - for the coordinator to forward; taken if this task's
@@ -27651,7 +27651,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   `THREAT_MODEL.md` with an owner item; T38's planned row for (a) and (b) rewritten to evidence. **If this task's gate
   cannot take (a)-(d)**, it says so and they return to the owner as one item (recommended: a follow-on M15.7 item after
   this task).
-  *(Not taken at `-021`'s gate, returned to the owner, 2026-11-08 - `THREAT_MODEL.md` §6 owner item 9, the T38 row a `GAP` held by it:)* (a) and (b) are new audit records across Phase 7-10 doors, each a door's change with its own database case; (c) is ruled in `PRIVILEGED_ACCESS_REVIEW.md` §6 as a recommendation and built by none of this task's changes; (d)'s reason is met without touching a copy - every refused step-up, the 17 copies' included, is recorded at the error contract (`StepUpRefusals`) - so only the extraction itself returns. Recommended: one follow-on M15.7 item.
+  *(Not taken at `-021`'s gate, returned to the owner, 2026-11-08 - `THREAT_MODEL.md` §6 owner item 10, the T38 row a `GAP` held by it:)* (a) and (b) are new audit records across Phase 7-10 doors, each a door's change with its own database case; (c) is ruled in `PRIVILEGED_ACCESS_REVIEW.md` §6 as a recommendation and built by none of this task's changes; (d)'s reason is met without touching a copy - every refused step-up, the 17 copies' included, is recorded at the error contract (`StepUpRefusals`) - so only the extraction itself returns. Recommended: one follow-on M15.7 item.
 
 **P15-TSK-022 — Abuse limits: registration and per-source throttling, cluster-safe** — `PLANNED`
 - **Objective**: no single source can create unbounded parties or drive unbounded load, across N replicas.
@@ -27993,7 +27993,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   condition and counted in its section. **Probe**: none applicable, as this entry's (procedures; the planted condition
   is the rehearsal's). **Acceptance**: the three debt rows' procedure halves closed.
 
-**P15-TSK-033 — The postponed production defects: PI-013 and PI-014** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
+**P15-TSK-033 — The postponed production defects: PI-013 and PI-014** — `COMPLETE` (2026-11-08; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; built on branch `P15-TSK-033` from master `c1d07726`; lending `V033`, bnpl `V021`; marks no task `READY` - the coordinator does; PI-013 and PI-014 (1) stay open until `P15-TST-002` runs their regression cases green)
 - **Objective**: fix, at their causes, the production defects the owner postponed to this phase's database pass.
 - **Affected components**: `accounting` (`CloseRuns.view`, `JdbcCloseRunStore`, `JdbcPeriodCloseStore`'s latest-close
   read), `lending` and `bnpl` (a terms version's retirement stamp; a new migration each), `risk` `V002`'s retirement
@@ -28033,6 +28033,45 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   **Acceptance**: the five on the database's clock, the rule green, PI-002 marked `FIXED` when the pass proves it, and
   `THREAT_MODEL.md` T13's planned row for the five stores rewritten to evidence. Not this task's: `X-TSK-008`'s ordering
   `CHECK`s and session leftovers.
+  *(**Not taken, returned**, by this task's gate, 2026-11-08: the ruling reached master (`53d442b1`) after this task was
+  built, implemented, probed and gated; the five are production changes in three more modules (identity, checkout,
+  merchant), PI-002's needing a merchant migration with a trigger rank - a task of their own, not a widening of a
+  finished one. They are `X-TSK-008`'s again, its entry noting the return, `THREAT_MODEL.md` T13's row for them
+  `REMEDIATION` `X-TSK-008` again, and their scheduling an owner item (`CURRENT_STATE.md` §Next Task).)*
+- **As built** (2026-11-08, branch `P15-TSK-033` from master `c1d07726`; implementation commit `f672145e`; lending `V033`, bnpl
+  `V021`; no accounting migration, no ADR - a dated note on ADR-0063 and ADR-0092). **PI-013**: `CloseRuns.view` names the
+  present lock's run by the lock's identity (`store.runUnder(period, locked_at)`, exact by `close_run_one_per_lock`); only an
+  `OPEN` period or a lock with no run yet shows the store's latest, never current, so never ready. `JdbcCloseRunStore
+  .LATEST_RUN_SQL` ranks by the rows - the present lock's run, then the higher revision - and `started_at` last;
+  `JdbcPeriodCloseStore.LATEST_CLOSE_SQL` the same way - the `PROPOSED` proposal, the higher revision, its `APPROVED` one -
+  `proposed_at` last, ordering only one revision's rejected proposals, which no act reads. **The census** of every accounting
+  reader ordering or comparing by a stamp (the design's table): three fixed (the run's latest, the view and its five callers,
+  the latest close); the rest safe - the claim's order and the leases (fenced by `holder`), the duration timer, the identity
+  reads, the revision-ordered report runs, the freshness and stall gauges, the `LIMIT ?` pages; PROVISIONAL cuts by
+  `created_at` a different class (an as-of cut; FINAL runs read a frozen month). **PI-014 (1)**: lending `V033` and bnpl `V021`
+  end a retired version never before one microsecond after the latest offer pinned to it (read after the activation's lock,
+  an index each on `(terms_version_id, offered_at)`), start the successor exactly there - its predecessor chosen by version
+  number, never `max(effective_to)` over the product, the term the withdrawn draft kept - and floor the offering instant at
+  its pinned version's start. **No backfill**: a retired end is frozen history; `POSTPONED_ISSUES.md` gives the census query.
+  Risk `V002` checked: the same stamp, latent (nothing reads a policy version by an instant) - `THREAT_MODEL.md` owner item 8.
+  **Tests**: hermetic - `CloseRunsTest#theRunIsTheLocksWhateverAStampSays` (the view over a store whose latest is the earlier
+  lock's run), `CloseRunStatementsTest#theLatestRunIsRankedByTheRows`, `PeriodCloseStatementsTest#theLatestCloseIsRankedByTheRows`
+  (`#theDecisionsAreConditional` loses its old pin), `LoanTermsClockMigrationTest` and `BnplTermsClockMigrationTest` (four text
+  pins each); database, written and owed to `P15-TST-002` (C14) - `CloseRunClockStepDatabaseTest` (own container, listed in
+  `app/build.gradle.kts`; its own `closeclock` shadow), `LoanTermsDatabaseTest` and `BnplTermsDatabaseTest` two clock-step cases
+  each, `LoanOriginationDatabaseTest#theOfferingInstantIsTheDatabasesForEveryWriter` adjusted to the floor,
+  `BackwardClockDatabaseTest#anOriginationAcrossAMidnightIllustratesTheOfferingDate` asserting inside its transaction and rolling
+  back (its offer dated tomorrow would otherwise push the shared tier's PERSONAL_LOAN chain a day ahead under `V033`), with
+  `ClockStep.inOneRolledBackTransaction`; `BnplApplicationStoreDatabaseTest`'s `born`/`offered` helpers shared. **Deviations**:
+  the offering floor, beyond the entry's words (without it the pushed end moves the violation onto the successor's first offer);
+  criterion 7 as C14 sets it; the reproductions green in the pass, not here. **Probes** (`MUTATION_TESTING.md` §2, each on
+  the branch's bytes, caught, restored byte-identical): nine of this task's - the entry's (`ORDER BY run.started_at DESC`
+  restored), the view by the store's latest alone, the latest close's old order, and each of `V033`'s and `V021`'s three
+  stamps restored - their database halves owed and unproven; and nineteen existing rows on the files it changed performed
+  again: eight on `JdbcCloseRunStore.java`, one each on `JdbcPeriodCloseStore.java` and `PeriodCloseStore.java`, and the nine
+  struck on `CloseRuns.java` (PI-015 down to 321).
+  **`X-TSK-008`'s five stores**, routed by `P15-TSK-002`'s ruling, which reached master after this task's gate: not taken,
+  returned to `X-TSK-008` and the owner (the routed note above; `THREAT_MODEL.md` T13's row for them `REMEDIATION` again).
 
 **P15-TSK-035 — The source-join census: every journal entry tied to the domain record that caused it** — `PLANNED`
 - **Objective**: a journal entry with no domain record behind it, or whose domain record's amounts differ from its lines,
@@ -28134,6 +28173,15 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Scope**: every tier run fresh once on the tree as it then stands, including `kafkaTest` (PI-012); PI-013's and
   PI-014's regression cases; PI-014's unclassified suites classified; PI-015's struck rows performed again on present
   bytes or struck for good with a reason; counts read from the JUnit XML with their timestamps.
+  *(Routed by `P15-TSK-033`'s gate, 2026-11-08, status unchanged: PI-013's and PI-014 (1)'s regression cases are
+  `CloseRunClockStepDatabaseTest` (`app`, own container), `LoanTermsDatabaseTest#anOfferBeforeABackwardStepStandsInsideItsVersion`
+  and `#anOfferAfterAnActivationOnAStepBackIsInsideItsVersion` (lending) and their twins in `BnplTermsDatabaseTest` (bnpl);
+  `LoanOriginationDatabaseTest#theOfferingInstantIsTheDatabasesForEveryWriter` and `BackwardClockDatabaseTest
+  #anOriginationAcrossAMidnightIllustratesTheOfferingDate` were adjusted to lending `V033` and run here too. Green, this
+  item marks PI-013 and PI-014 (1) `FIXED` in `POSTPONED_ISSUES.md` with `-033`'s commit; `THREAT_MODEL.md` T13's
+  `PLANNED` row names this item for that proof; the database halves of `-033`'s probes, listed unproven in
+  `MUTATION_TESTING.md` §2, are performed here. A LINE origination whose credit decision lapses within seconds can be
+  refused "born expired" right after an activation that followed a step - a flake to classify, not a defect.)*
 - **Exclusions**: the storm.
 - **Architecture changes / Infrastructure changes**: none.
 - **Security implications**: none.
@@ -28676,6 +28724,11 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   (owner item 2 of the ruling; recommended: before production use, counted by `P15-TSK-034` as a named gap, the `touch`
   leftover into `P15-TSK-031`'s rollout-safety question). If `-033` closes before this split reaches it, the five stores
   return here and to the owner.
+  *(**Returned here and to the owner**, 2026-11-08, by `P15-TSK-033`'s gate - option (b) of the coordinator's two: the split
+  reached that task after it was built and gated, and the five are a task of their own (three modules, PI-002's merchant
+  migration). Status unchanged, `PLANNED`; `THREAT_MODEL.md` T13's row for the five is `REMEDIATION` naming this entry;
+  the owner schedules them - recommended as their own Phase 15 item before `P15-TST-002`, so their skew cases run in the
+  pass.)*
 
 **X-TSK-009 — Provider receipt after a timeout, proved deterministically** — `IN_PROGRESS`
 *(implemented and demonstrated 2026-09-27; awaiting the completion gate)*

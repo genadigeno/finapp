@@ -126,7 +126,7 @@ built.** Report generation (`ReportRunGenerator`: a run's generation and a FINAL
 own pool as `finapp_reporting`, which holds `SELECT` on the 23 tables a report run reads - recounted from the code: 10
 accounting, 5 ledger, 3 reconciliation, 5 lending; wider than the plan's "the journal and accounting tables", because
 the suspense definition, the statements' notes and the safeguarding return read reconciliation and lending - and
-nothing else, granted by accounting `V013`, ledger `V033`, reconciliation `V023` and lending `V033`, pinned by
+nothing else, granted by accounting `V013`, ledger `V033`, reconciliation `V023` and lending `V034`, pinned by
 `ReportingRoleIsSelectOnlyTest`. So decision 5 (`INV-ACC-14`, reporting never writes) now holds at the privilege level
 too: a report path that lost its `READ ONLY` transaction still cannot write. The pool is counted in the connection
 budget (the writer's pool gave it one of its eight connections), is not on the readiness path, and never falls back to

@@ -256,7 +256,7 @@ rather than being applied later by hand.
 |------|----|-------|
 | `finapp_migrator` | The owner of the `platform` schema and every object in it. Flyway connects as this | DDL on its own schema. **Not** a superuser |
 | `finapp_app` | What the application connects as | Per-table DML, granted by the migration that creates the table. No DDL, no access to the migration history |
-| `finapp_reporting` | What report generation reads as (`P15-TSK-021`, C13) | `SELECT` on the tables a report run reads, granted by a migration of each owning module (accounting `V013`, ledger `V033`, reconciliation `V023`, lending `V033`) and pinned by `ReportingRoleIsSelectOnlyTest`. Nothing else. It must exist before those migrations run: the local role script creates it, and in a deployed database the one-time bootstrap step (`P15-TSK-004`) |
+| `finapp_reporting` | What report generation reads as (`P15-TSK-021`, C13) | `SELECT` on the tables a report run reads, granted by a migration of each owning module (accounting `V013`, ledger `V033`, reconciliation `V023`, lending `V034`) and pinned by `ReportingRoleIsSelectOnlyTest`. Nothing else. It must exist before those migrations run: the local role script creates it, and in a deployed database the one-time bootstrap step (`P15-TSK-004`) |
 
 **Roles are provisioned by infrastructure, not by a migration.** A role is a cluster-level
 object shared by every database in the cluster, while a migration belongs to one schema in one
