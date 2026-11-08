@@ -12,8 +12,12 @@ shutdownBudget:
   consumers: 12
   # Tomcat's StandardWrapper unload delay. A library's own number, with no configuration to read.
   managementServerStop: 2
-  # The same, for the API's web server, once its drain has ended.
+  # The connector's worker pool: shutdownNow, then up to AbstractEndpoint's executorTerminationTimeoutMillis for a
+  # thread that ignores its interrupt, as one blocked on a stalled database's socket does.
+  managementServerExecutor: 5
+  # The same two, for the API's web server, once its drain has ended.
   apiServerStop: 2
+  apiServerExecutor: 5
   # GaugeRefresher.STOP_BOUND
   gaugeRefresher: 3
   # finapp.kafka.ack-timeout

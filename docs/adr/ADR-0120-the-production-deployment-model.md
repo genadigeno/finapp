@@ -119,12 +119,12 @@ measurement. `P15-TSK-003`, `-004`, `-008`…`-012` build this ADR. `P15-DOC-001
 the overlays `kind`, `staging`, `production`. The HorizontalPodAutoscaler alone owns the replica count: the Deployment
 states no `replicas`, because a manifest that does resets the HPA at every apply, and a reset from seven to three is four
 terminating pods at once, past the rule's `+ 1`; N ≥ 3 is `minReplicas`. The `preStop` is a `sleep` action (Kubernetes
-1.30 or later), the image having no shell. **The grace**, `terminationGracePeriodSeconds: 105`: the 10 s pause, HTTP 30, schedules 12,
-consumers 12, the management server 2, the API server 2, the gauge refresher 3, the producer 10, each pool's abort loop 10,
+1.30 or later), the image having no shell. **The grace**, `terminationGracePeriodSeconds: 115`: the 10 s pause, HTTP 30, schedules 12,
+consumers 12, the management server 2 and its worker pool 5, the API server 2 and its worker pool 5, the gauge refresher 3, the producer 10, each pool's abort loop 10,
 and 4 for the JVM's exit; `minReadySeconds` equals it. The lifecycle's 57 s above was low: a scrape in flight held the management
 server's graceful close for that child context's own phase timeout, Spring's default 10 s, the property binding only the parent's
 processor (measured; `P15-TSK-008`'s review had said 30 s). That server now closes at once (`ManagementServerClose`), and the 57
-is 61 with Tomcat's two stops counted. **The readiness probe** times out at 7 s, outlasting the pool's 5 s `connection-timeout`, so a
+is 71 with Tomcat's two stops and their worker pools counted. **The readiness probe** times out at 7 s, outlasting the pool's 5 s `connection-timeout`, so a
 lost database reads as the `503` it is. `infra/scripts/manifest-check.sh` renders every overlay and runs `kubeconform -strict`
 and the policies, and each policy refuses a planted violation in the same run; the policies read `application.yaml` itself
 for the pools. An empty or any-local `FINAPP_MANAGEMENT_ADDRESS`, and a management port that is not its own, refuse startup

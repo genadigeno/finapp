@@ -15,6 +15,12 @@
 # compiler moves f(x) outside the negation and the whole body is undefined, so the rule passes on the very absence it
 # was written to refuse (found by this file's plants: an exec preStop and a null label both passed). A rule that asks
 # "is this stated?" negates a helper rule, whose body may be undefined safely.
+#
+# A KEY STATED WITH NO VALUE IS NULL, AND A TYPE ERROR IS UNDEFINED. `securityContext:` with its children deleted reads as
+# null; object.get(null, ...) and array.concat(x, null) are type errors, the body is undefined and the rule passes with
+# the hardening gone (the independent review's F1, confirmed by a plant). Nothing here walks into a value it has not
+# checked: section(obj, key) answers {} unless the value is an object, list_of(obj, key) answers [] unless it is an array,
+# and stated(obj, key) is false for a null. manifest-check.sh plants a null for each of those keys.
 package main
 
 import rego.v1
@@ -59,8 +65,26 @@ workloads contains [doc, doc.spec.jobTemplate.spec.template.spec] if {
 	doc.kind == "CronJob"
 }
 
+section(obj, key) := obj[key] if {
+	is_object(obj)
+	is_object(obj[key])
+} else := {}
+
+list_of(obj, key) := obj[key] if {
+	is_object(obj)
+	is_array(obj[key])
+} else := []
+
+stated(obj, key) if {
+	is_object(obj)
+	obj[key] != null
+}
+
 # All three container lists: an init container is as able to escalate as the main one.
-containers(spec) := array.concat(array.concat(object.get(spec, "containers", []), object.get(spec, "initContainers", [])), object.get(spec, "ephemeralContainers", []))
+containers(spec) := [container |
+	some list in ["containers", "initContainers", "ephemeralContainers"]
+	some container in list_of(spec, list)
+]
 
 all_containers contains [doc, spec, container] if {
 	some [doc, spec] in workloads
@@ -107,15 +131,9 @@ deny contains "[stream-overlay] the script named no overlay" if {
 
 # ------------------------------------------------------------------------------------- the restricted profile
 
-pod_or_container(spec, container, key) := container.securityContext[key]
-
-pod_or_container(spec, container, key) := spec.securityContext[key] if {
-	not has_key(object.get(container, "securityContext", {}), key)
-}
-
-has_key(obj, key) if {
-	_ = obj[key]
-}
+pod_or_container(spec, container, key) := section(container, "securityContext")[key] if {
+	stated(section(container, "securityContext"), key)
+} else := section(spec, "securityContext")[key]
 
 runs_as_non_root(spec, container) if {
 	pod_or_container(spec, container, "runAsNonRoot") == true
@@ -137,47 +155,43 @@ deny contains msg if {
 	msg := sprintf("[security-non-root-uid] %s container %s has no non-zero numeric runAsUser", [label(doc), container.name])
 }
 
-deny contains msg if {
-	some [doc, spec, container] in all_containers
-	seccomp := pod_or_container(spec, container, "seccompProfile")
-	not seccomp.type in {"RuntimeDefault", "Localhost"}
-	msg := sprintf("[security-seccomp] %s container %s has seccomp %v", [label(doc), container.name, seccomp])
+seccomp_is_confined(spec, container) if {
+	pod_or_container(spec, container, "seccompProfile").type in {"RuntimeDefault", "Localhost"}
 }
 
 deny contains msg if {
 	some [doc, spec, container] in all_containers
-	not has_key(object.get(container, "securityContext", {}), "seccompProfile")
-	not has_key(object.get(spec, "securityContext", {}), "seccompProfile")
-	msg := sprintf("[security-seccomp] %s container %s states no seccomp profile", [label(doc), container.name])
+	not seccomp_is_confined(spec, container)
+	msg := sprintf("[security-seccomp] %s container %s states no RuntimeDefault or Localhost seccomp profile", [label(doc), container.name])
 }
 
 deny contains msg if {
 	some [doc, _, container] in all_containers
-	not object.get(object.get(container, "securityContext", {}), "allowPrivilegeEscalation", true) == false
+	not object.get(section(container, "securityContext"), "allowPrivilegeEscalation", true) == false
 	msg := sprintf("[security-escalation] %s container %s may escalate privileges", [label(doc), container.name])
 }
 
 deny contains msg if {
 	some [doc, _, container] in all_containers
-	not object.get(object.get(container, "securityContext", {}), "readOnlyRootFilesystem", false) == true
+	not object.get(section(container, "securityContext"), "readOnlyRootFilesystem", false) == true
 	msg := sprintf("[security-read-only] %s container %s has a writable root filesystem", [label(doc), container.name])
 }
 
 deny contains msg if {
 	some [doc, _, container] in all_containers
-	not "ALL" in object.get(object.get(object.get(container, "securityContext", {}), "capabilities", {}), "drop", [])
+	not "ALL" in list_of(section(section(container, "securityContext"), "capabilities"), "drop")
 	msg := sprintf("[security-capabilities] %s container %s does not drop ALL capabilities", [label(doc), container.name])
 }
 
 deny contains msg if {
 	some [doc, _, container] in all_containers
-	count(object.get(object.get(object.get(container, "securityContext", {}), "capabilities", {}), "add", [])) > 0
+	count(list_of(section(section(container, "securityContext"), "capabilities"), "add")) > 0
 	msg := sprintf("[security-capabilities] %s container %s adds a capability", [label(doc), container.name])
 }
 
 deny contains msg if {
 	some [doc, _, container] in all_containers
-	object.get(object.get(container, "securityContext", {}), "privileged", false) != false
+	object.get(section(container, "securityContext"), "privileged", false) != false
 	msg := sprintf("[security-privileged] %s container %s is privileged", [label(doc), container.name])
 }
 
@@ -190,8 +204,8 @@ deny contains msg if {
 
 deny contains msg if {
 	some [doc, spec] in workloads
-	some volume in object.get(spec, "volumes", [])
-	has_key(volume, "hostPath")
+	some volume in list_of(spec, "volumes")
+	stated(volume, "hostPath")
 	msg := sprintf("[security-host] %s mounts a hostPath volume %s", [label(doc), volume.name])
 }
 
@@ -213,14 +227,28 @@ deny contains msg if {
 	msg := sprintf("[security-service-account] %s runs as the namespace's default ServiceAccount", [label(doc)])
 }
 
+# A name is not an account: a workload whose ServiceAccount is not rendered does not start, or takes whatever is there.
+deny contains msg if {
+	some [doc, spec] in workloads
+	name := object.get(spec, "serviceAccountName", "default")
+	name != "default"
+	not service_account_rendered(name)
+	msg := sprintf("[security-service-account] %s names ServiceAccount %v, which this overlay does not render", [label(doc), name])
+}
+
+service_account_rendered(name) if {
+	some doc in of_kind("ServiceAccount")
+	doc.metadata.name == name
+}
+
 # ------------------------------------------------------------------------------------- probes
 
 deny contains msg if {
 	some [doc, spec] in workloads
 	doc.kind in long_running_kinds
-	some container in spec.containers
+	some container in list_of(spec, "containers")
 	some probe in {"startupProbe", "livenessProbe", "readinessProbe"}
-	not has_key(container, probe)
+	not stated(container, probe)
 	msg := sprintf("[probes-present] %s container %s has no %s", [label(doc), container.name, probe])
 }
 
@@ -250,28 +278,28 @@ app_probe_is(probe, path) if {
 	get.path == path
 	management_port(get.port)
 	object.get(get, "scheme", "HTTP") == "HTTP"
-	not has_key(get, "host")
+	not stated(get, "host")
 }
 
 # The pool's own wait, read from application.yaml, in whole seconds rounded up.
 pool_wait_seconds := ceil(data.spring.datasource.hikari["connection-timeout"] / 1000)
 
 deny contains msg if {
-	timeout := object.get(app_container.readinessProbe, "timeoutSeconds", 1)
+	timeout := object.get(section(app_container, "readinessProbe"), "timeoutSeconds", 1)
 	timeout <= pool_wait_seconds
 	msg := sprintf("[probes-readiness-timeout] readiness timeoutSeconds %d does not outlast the pool's %d s wait: with the database gone the probe would read a timeout rather than the 503", [timeout, pool_wait_seconds])
 }
 
 deny contains msg if {
-	period := object.get(app_container.readinessProbe, "periodSeconds", 10)
-	timeout := object.get(app_container.readinessProbe, "timeoutSeconds", 1)
+	period := object.get(section(app_container, "readinessProbe"), "periodSeconds", 10)
+	timeout := object.get(section(app_container, "readinessProbe"), "timeoutSeconds", 1)
 	period <= timeout
 	msg := sprintf("[probes-readiness-timeout] readiness periodSeconds %d is not longer than its timeoutSeconds %d: probes would overlap", [period, timeout])
 }
 
 # Liveness is the process alone (ADR-0016): it never waits on the pool.
 deny contains msg if {
-	timeout := object.get(app_container.livenessProbe, "timeoutSeconds", 1)
+	timeout := object.get(section(app_container, "livenessProbe"), "timeoutSeconds", 1)
 	timeout >= pool_wait_seconds
 	msg := sprintf("[probes-liveness-timeout] liveness timeoutSeconds %d is as long as the pool's wait: a process check has no reason to be that patient", [timeout])
 }
@@ -280,10 +308,10 @@ deny contains msg if {
 
 deny contains msg if {
 	some [doc, _, container] in all_containers
-	some section in {"requests", "limits"}
+	some bound in {"requests", "limits"}
 	some resource in {"cpu", "memory"}
-	not has_key(object.get(object.get(container, "resources", {}), section, {}), resource)
-	msg := sprintf("[resources-present] %s container %s states no %s %s", [label(doc), container.name, resource, section])
+	not stated(section(section(container, "resources"), bound), resource)
+	msg := sprintf("[resources-present] %s container %s states no %s %s", [label(doc), container.name, resource, bound])
 }
 
 deny contains msg if {
@@ -342,7 +370,7 @@ deny contains msg if {
 deny contains msg if {
 	some doc in of_kind("Secret")
 	some field in {"data", "stringData"}
-	count(object.get(doc, field, {})) > 0
+	count(section(doc, field)) > 0
 	msg := sprintf("[no-secret-data] %s carries %s: a secret is never committed", [label(doc), field])
 }
 
@@ -351,9 +379,9 @@ credential_name := `(?i)(password|passwd|secret|token|credential|api[-_]?key|pri
 
 deny contains msg if {
 	some [doc, _, container] in all_containers
-	some env in object.get(container, "env", [])
+	some env in list_of(container, "env")
 	regex.match(credential_name, env.name)
-	has_key(env, "value")
+	stated(env, "value")
 	msg := sprintf("[no-secret-literal] %s container %s writes %s inline", [label(doc), container.name, env.name])
 }
 
@@ -387,10 +415,10 @@ is_endpoint(_, value) if {
 # ------------------------------------------------------------------------------------- the rollout
 
 # Always defined while the Deployment is: a missing field reads as "absent", which equals no number.
-rolling_field(name) := object.get(object.get(object.get(app.spec, "strategy", {}), "rollingUpdate", {}), name, "absent")
+rolling_field(name) := object.get(section(section(app.spec, "strategy"), "rollingUpdate"), name, "absent")
 
 deny contains msg if {
-	object.get(object.get(app.spec, "strategy", {}), "type", "absent") != "RollingUpdate"
+	object.get(section(app.spec, "strategy"), "type", "absent") != "RollingUpdate"
 	msg := "[rollout-strategy] finapp-app is not a RollingUpdate"
 }
 
@@ -410,16 +438,16 @@ deny contains msg if {
 }
 
 deny contains msg if {
-	not has_key(app_spec, "terminationGracePeriodSeconds")
+	not stated(app_spec, "terminationGracePeriodSeconds")
 	msg := "[rollout-grace] terminationGracePeriodSeconds is not stated: the default 30 s cannot cover the drain"
 }
 
 deny contains msg if {
-	has_key(app.spec, "replicas")
+	stated(app.spec, "replicas")
 	msg := "[rollout-replicas] spec.replicas is stated: each apply would reset the HorizontalPodAutoscaler"
 }
 
-startup_budget := object.get(app_container.startupProbe, "periodSeconds", 10) * object.get(app_container.startupProbe, "failureThreshold", 3)
+startup_budget := object.get(section(app_container, "startupProbe"), "periodSeconds", 10) * object.get(section(app_container, "startupProbe"), "failureThreshold", 3)
 
 deny contains msg if {
 	object.get(app.spec, "progressDeadlineSeconds", 600) <= startup_budget + object.get(app.spec, "minReadySeconds", 0)
@@ -453,7 +481,7 @@ deny contains msg if {
 }
 
 node_spread if {
-	some constraint in object.get(app_spec, "topologySpreadConstraints", [])
+	some constraint in list_of(app_spec, "topologySpreadConstraints")
 	constraint.topologyKey == "kubernetes.io/hostname"
 }
 
@@ -463,7 +491,7 @@ deny contains msg if {
 }
 
 zone_spread if {
-	some constraint in object.get(app_spec, "topologySpreadConstraints", [])
+	some constraint in list_of(app_spec, "topologySpreadConstraints")
 	constraint.topologyKey == "topology.kubernetes.io/zone"
 	zone_rule_holds(constraint)
 }
@@ -486,7 +514,7 @@ app_management_address_from_pod if {
 	found := [env | some env in app_container.env; env.name == "FINAPP_MANAGEMENT_ADDRESS"]
 	count(found) == 1
 	found[0].valueFrom.fieldRef.fieldPath == "status.podIP"
-	not has_key(found[0], "value")
+	not stated(found[0], "value")
 }
 
 # ------------------------------------------------------------------------------------- the connection budget
@@ -501,20 +529,32 @@ writer_pool := to_number(data.spring.datasource.hikari["maximum-pool-size"])
 reporting_pool := to_number(config.data.FINAPP_DB_REPORTING_POOL_SIZE)
 
 reporting_pool := placeholder_default(data.finapp.database.reporting["pool-size"]) if {
-	not has_key(config.data, "FINAPP_DB_REPORTING_POOL_SIZE")
+	not stated(config.data, "FINAPP_DB_REPORTING_POOL_SIZE")
 }
 
 # The arithmetic has one source for each number: an overlay does not get to move the pool behind the budget's back.
+# Every spelling Spring's relaxed binding reads as the pool or the budget's own numbers, the canonical
+# SPRING_DATASOURCE_HIKARI_MAXIMUMPOOLSIZE and finapp.database.* among them.
+budget_override := `(?i)^(SPRING_DATASOURCE_HIKARI_(MAXIMUM_?POOL_?SIZE|MINIMUM_?IDLE)|SPRING_APPLICATION_JSON|FINAPP_DATABASE_[A-Z0-9_]+)$`
+
+sets_the_budget(name) if {
+	name in {"FINAPP_DB_INSTANCES", "FINAPP_DB_SERVER_MAX_CONNECTIONS", "FINAPP_DB_RESERVED_CONNECTIONS", "FINAPP_DB_REPORTING_POOL_SIZE"}
+}
+
+sets_the_budget(name) if {
+	regex.match(budget_override, name)
+}
+
 deny contains msg if {
 	some [doc, _, container] in all_containers
-	some env in object.get(container, "env", [])
-	env.name in {"FINAPP_DB_INSTANCES", "FINAPP_DB_SERVER_MAX_CONNECTIONS", "FINAPP_DB_RESERVED_CONNECTIONS", "FINAPP_DB_REPORTING_POOL_SIZE", "SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE", "SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE", "SPRING_APPLICATION_JSON"}
+	some env in list_of(container, "env")
+	sets_the_budget(env.name)
 	msg := sprintf("[budget-one-source] %s container %s sets %s itself: the budget reads the ConfigMap", [label(doc), container.name, env.name])
 }
 
 deny contains msg if {
-	some key in {"SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE", "SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE", "SPRING_APPLICATION_JSON"}
-	has_key(config.data, key)
+	some key, _ in section(config, "data")
+	regex.match(budget_override, key)
 	msg := sprintf("[budget-one-source] the ConfigMap sets %s: the pool's size is application.yaml's, read by this budget", [key])
 }
 
@@ -534,7 +574,7 @@ deny contains msg if {
 }
 
 deny contains msg if {
-	surge := object.get(object.get(object.get(app.spec, "strategy", {}), "rollingUpdate", {}), "maxSurge", 0)
+	surge := object.get(section(section(app.spec, "strategy"), "rollingUpdate"), "maxSurge", 0)
 	is_number(surge)
 	peak := autoscaler.spec.maxReplicas + (2 * surge) + 1
 	peak > declared("FINAPP_DB_INSTANCES")
@@ -569,16 +609,16 @@ deny contains msg if {
 	msg := sprintf("[hpa-min] minReplicas %d is below three: N is never 1, and a rollout or a drain must leave more than one", [object.get(autoscaler.spec, "minReplicas", 1)])
 }
 
-scale_down := object.get(object.get(autoscaler.spec, "behavior", {}), "scaleDown", {})
+scale_down := section(section(autoscaler.spec, "behavior"), "scaleDown")
 
 deny contains msg if {
 	autoscaler
-	count(object.get(scale_down, "policies", [])) == 0
+	count(list_of(scale_down, "policies")) == 0
 	msg := "[hpa-scale-down] no scale-down policy: the default takes every pod above the target at once"
 }
 
 deny contains msg if {
-	some policy in object.get(scale_down, "policies", [])
+	some policy in list_of(scale_down, "policies")
 	not hpa_policy_holds(policy)
 	msg := sprintf("[hpa-scale-down] scale-down policy %v must be one Pod per period of at least the grace", [policy])
 }
@@ -611,10 +651,24 @@ pdb_holds if {
 
 deny contains msg if {
 	some doc in of_kind("Service")
-	object.get(object.get(doc, "spec", {}), "selector", {})["app.kubernetes.io/name"] == "finapp-app"
+	section(section(doc, "spec"), "selector")["app.kubernetes.io/name"] == "finapp-app"
 	some port in doc.spec.ports
 	not service_port_is_the_api(port)
 	msg := sprintf("[service-api-only] %s exposes %v: only 8080, and never the management port", [label(doc), port])
+}
+
+# What a rule over Services cannot see: no Service at all.
+deny contains msg if {
+	app
+	not api_service_rendered
+	msg := "[service-present] no Service selects finapp-app on the API port: nothing could route to it"
+}
+
+api_service_rendered if {
+	some doc in of_kind("Service")
+	section(section(doc, "spec"), "selector")["app.kubernetes.io/name"] == "finapp-app"
+	some port in list_of(doc.spec, "ports")
+	service_port_is_the_api(port)
 }
 
 service_port_is_the_api(port) if {
@@ -681,7 +735,7 @@ deny contains msg if {
 	doc.metadata.name == "finapp-migrator"
 	some container in doc.spec.template.spec.containers
 	some field in {"command", "args"}
-	has_key(container, field)
+	stated(container, field)
 	msg := sprintf("[job-entrypoint] finapp-migrator sets %s: the image's entrypoint is the migrator, and takes no arguments", [field])
 }
 

@@ -1885,15 +1885,15 @@ the `preStop` pause, the application does this, in this order:
 | 2 | The API port, 8080, stops accepting; requests it accepted finish | 30 s (`spring.lifecycle.timeout-per-shutdown-phase`); a request still running then is no longer waited for, and is cut off when the web server stops (step 5) | `Commencing graceful shutdown…`, then `Graceful shutdown complete` (or `…aborted with one or more requests still active`) |
 | 3 | No new tick starts; the tick each schedule is running finishes, one that claims in a loop of its own ending before its next claim; all 32 in parallel | 10 s, then the tick is interrupted and awaited 2 s more | `Schedule <name> drained` (DEBUG); `Schedule <name> did not drain within PT10S; its tick is interrupted` (WARN); `… abandoned to the process's exit` (WARN) |
 | 4 | Every consumer loop takes no new batch, acknowledges the one it holds and leaves its group | 10 s, then interrupted, 2 s more | `Inbox consumers stopping: <n> loops`, `Inbox consumers stopped`; WARN past the bound |
-| 5 | The management port, 8081, closes at once, a scrape in flight holding nothing; then the API's web server stops | Tomcat's 2 s unload for each | — |
+| 5 | The management port, 8081, closes at once, a scrape in flight holding nothing; then the API's web server stops | For each, Tomcat's 2 s unload, and up to 5 s for a worker thread deaf to its interrupt | — |
 | 6 | The gauge refresher (`gauge-refresher`, every gauge's one thread since `P15-TSK-024`; the accounting gauges' reader until then) drops its queued reads; the one in flight ends | 3 s | `The gauge refresher stopped` (DEBUG); WARN past the bound |
 | 7 | The Kafka producer closes, then the connection pool; report generation's one-connection pool (`P15-TSK-021`) closes with it, at the context's close | the producer's `finapp.kafka.ack-timeout` (10 s), then HikariCP's own close (at most 10 s each, while something still holds a connection) | HikariCP's shutdown lines |
 
 **Reading it.** A WARN in step 3 or 4 is not an incident: the interrupted work's claim lapses to another instance and
 its records redeliver into the dedupe. It is a signal that a tick or a batch ran longer than 10 s, which the schedule's
-own latency metrics explain. Steps 1-6 together take at most 61 s (read "57 s" until `P15-TSK-009` counted Tomcat's two
-stops, and removed the 10 s a scrape in flight could hold step 5 for, the child context's own phase timeout). `terminationGracePeriodSeconds` is 105: the 10 s
-`preStop` pause, those 61 s, step 7's 30 s and 4 s for the JVM's exit (§11.14). A pod still running when the grace ends
+own latency metrics explain. Steps 1-6 together take at most 71 s (read "57 s" until `P15-TSK-009` counted Tomcat's two
+stops and their worker pools, and removed the 10 s a scrape in flight could hold step 5 for, the child context's own phase timeout). `terminationGracePeriodSeconds` is 115: the 10 s
+`preStop` pause, those 71 s, step 7's 30 s and 4 s for the JVM's exit (§11.14). A pod still running when the grace ends
 is killed - the same as any kill, and as correct.
 
 ### 11.6 Broker outage and consumer lag
@@ -2115,8 +2115,8 @@ certificate added, and set `KUBECONFORM_IMAGE` to it for the run. CI never sets 
 - **The pool's `connection-timeout`**: the readiness probe's `timeoutSeconds` must outlast it, or a lost database reads as a
   probe timeout rather than a `503`.
 
-**What a rollout costs.** `minReadySeconds` is the grace, 105 s, so each step takes a new pod's startup plus 105 s: about
-seven minutes for three replicas, longer at the maximum. That is the price of never stacking terminating pods.
+**What a rollout costs.** `minReadySeconds` is the grace, 115 s, so each step takes a new pod's startup plus 115 s: about
+eight minutes for three replicas, longer at the maximum. That is the price of never stacking terminating pods.
 
 **Kubernetes 1.30 or later.** The `preStop` is a `sleep` action, because the image has no shell. The schemas checked are
 `KUBERNETES_VERSION` in `infra/scanner-pins.sh`, whose minor `KubernetesManifestsTest` holds equal to each environment's

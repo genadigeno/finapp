@@ -62,6 +62,11 @@ plant_on() {
     mutate "$1" "$2" "$3"
 }
 
+# after_render <plant> <sed program>: a plant of the rendered stream itself, for a value Kustomize would normalise away.
+after_render() {
+    printf '%s\n' "$2" > "$PLANTS/$1/after-render.sed"
+}
+
 # add_resource <plant> <file name>: stdin becomes a new resource of the plant's overlay.
 add_resource() {
     overlay=$(cat "$PLANTS/$1/overlay")
@@ -101,6 +106,18 @@ plant_all() {
     plant_on automount-on-pod "$DEPLOYMENT" "s/^      $SWITCH: false\$/      $SWITCH: true/"
     plant_on automount-on-account base/serviceaccount.yaml "1,/$SWITCH: false/s/$SWITCH: false/$SWITCH: true/"
     plant_on default-account "$DEPLOYMENT" '/serviceAccountName: finapp-app/d'
+
+    # A key stated with no value reads as null, and a rule that walks into it passes with the hardening gone.
+    plant_on null-security-context "$DEPLOYMENT" '/^          securityContext:$/,/^                - ALL$/{/^          securityContext:$/!d}'
+    plant_on null-pod-security-context "$DEPLOYMENT" '/^      securityContext:$/,/^          type: RuntimeDefault$/{/^      securityContext:$/!d}'
+    plant_on null-seccomp "$DEPLOYMENT" '/type: RuntimeDefault/d'
+    plant_on null-resources "$DEPLOYMENT" '/^            requests:$/,/^              memory: 2Gi$/d;/^            limits:$/,/^              memory: 2Gi$/d'
+    plant_on null-rolling-update "$DEPLOYMENT" '/^      maxUnavailable: 0$/d;/^      maxSurge: 1$/d'
+    plant_on null-probe-test-only overlays/kind/postgres.yaml '/^          readinessProbe:$/,/^            timeoutSeconds: 3$/{/^          readinessProbe:$/!d}' kind
+    # Kustomize renders a bare initContainers as an empty list, so the null is planted in the stream. Under it the main
+    # container's root is writable: a list that stops the whole container walk would hide exactly that.
+    plant_on null-init-containers "$DEPLOYMENT" 's/^      containers:$/      initContainers:\n      containers:/;s/readOnlyRootFilesystem: true/readOnlyRootFilesystem: false/'
+    after_render null-init-containers 's/^      initContainers: \[\]$/      initContainers: null/'
 
     # The same, on what a rule written for the application's container would miss: an init container, the migrator
     # Job, the test-only copies.
@@ -182,9 +199,9 @@ YAML
     plant_on rollout-recreate "$DEPLOYMENT" 's/type: RollingUpdate/type: Recreate/;/rollingUpdate:/,/maxSurge: 1/d'
     plant_on rollout-strategy-absent "$DEPLOYMENT" '/^  strategy:$/,/^      maxSurge: 1$/d'
     plant_on rollout-surge-absent "$DEPLOYMENT" '/^      maxSurge: 1$/d'
-    plant_on rollout-min-ready "$DEPLOYMENT" 's/minReadySeconds: 105/minReadySeconds: 104/'
-    plant_on rollout-grace-short "$DEPLOYMENT" 's/terminationGracePeriodSeconds: 105/terminationGracePeriodSeconds: 100/'
-    plant_on rollout-grace-absent "$DEPLOYMENT" '/^      terminationGracePeriodSeconds: 105$/d'
+    plant_on rollout-min-ready "$DEPLOYMENT" 's/minReadySeconds: 115/minReadySeconds: 114/'
+    plant_on rollout-grace-short "$DEPLOYMENT" 's/terminationGracePeriodSeconds: 115/terminationGracePeriodSeconds: 110/'
+    plant_on rollout-grace-absent "$DEPLOYMENT" '/^      terminationGracePeriodSeconds: 115$/d'
     plant_on rollout-replicas "$DEPLOYMENT" 's/^spec:$/spec:\n  replicas: 3/'
     plant_on rollout-deadline "$DEPLOYMENT" 's/progressDeadlineSeconds: 600/progressDeadlineSeconds: 200/'
     plant_on rollout-prestop-exec "$DEPLOYMENT" 's/^              sleep:$/              exec:/;s/^                seconds: 10$/                command: ["sleep", "10"]/'
@@ -207,11 +224,14 @@ YAML
     plant_on budget-fleet "$PRODUCTION" 's/FINAPP_DB_SERVER_MAX_CONNECTIONS=100/FINAPP_DB_SERVER_MAX_CONNECTIONS=90/'
     plant_on budget-one-source-env "$DEPLOYMENT" 's/^          env:$/          env:\n            - name: FINAPP_DB_INSTANCES\n              value: "99"/'
     plant_on budget-one-source-pool "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=20/'
+    plant_on budget-one-source-canonical "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - SPRING_DATASOURCE_HIKARI_MAXIMUMPOOLSIZE=20/'
+    plant_on budget-one-source-idle "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - SPRING_DATASOURCE_HIKARI_MINIMUMIDLE=2/'
+    plant_on budget-one-source-relaxed "$DEPLOYMENT" 's/^          env:$/          env:\n            - name: FINAPP_DATABASE_INSTANCES\n              value: "99"/'
     plant_on budget-server-max overlays/kind/postgres.yaml 's/max_connections=60/max_connections=100/' kind
 
     # The autoscaler.
     plant_on hpa-min "$HPA" 's/minReplicas: 3/minReplicas: 2/'
-    plant_on hpa-scale-down-period "$HPA" 's/periodSeconds: 120/periodSeconds: 104/'
+    plant_on hpa-scale-down-period "$HPA" 's/periodSeconds: 120/periodSeconds: 114/'
     plant_on hpa-scale-down-two "$HPA" '1,/value: 1/s/value: 1/value: 2/'
     plant_on hpa-scale-down-percent "$HPA" '1,/type: Pods/s/type: Pods/type: Percent/'
     plant_on hpa-no-behaviour "$HPA" '/^  behavior:$/,$d'
@@ -224,6 +244,10 @@ YAML
     plant_on service-management base/service.yaml 's/^      targetPort: http$/      targetPort: management/'
     plant_on service-extra-port base/service.yaml 's/^      protocol: TCP$/      protocol: TCP\n    - name: management\n      port: 8081\n      targetPort: 8081/'
     plant_on service-load-balancer base/service.yaml 's/type: ClusterIP/type: LoadBalancer/'
+    plant no-service
+    mutate no-service base/kustomization.yaml '/^  - service\.yaml$/d'
+    plant no-service-accounts
+    mutate no-service-accounts base/kustomization.yaml '/^  - serviceaccount\.yaml$/d'
     plant_on config-no-hash base/kustomization.yaml 's/^configMapGenerator:$/generatorOptions:\n  disableNameSuffixHash: true\nconfigMapGenerator:/'
     plant_on config-not-read "$DEPLOYMENT" '/configMapRef:/,/name: finapp-app-config/d;/- secretRef:/d'
     plant_on job-unbounded base/migrator-job.yaml '/activeDeadlineSeconds: 900/d'
@@ -262,6 +286,14 @@ in_container() {
                     || printf 'failed\n' > "$directory/render.failed"
                 [ -s "$directory/rendered.yaml" ] || [ -f "$directory/render.failed" ] \
                     || { echo "!!   plant $name rendered nothing" >&2; exit 1; }
+                if [ -f "$directory/after-render.sed" ]; then
+                    cp "$directory/rendered.yaml" "$directory/rendered.before"
+                    sed -i -f "$directory/after-render.sed" "$directory/rendered.yaml"
+                    if cmp -s "$directory/rendered.before" "$directory/rendered.yaml"; then
+                        echo "!!   plant $name was not planted: its rendered stream is unchanged" >&2
+                        exit 1
+                    fi
+                fi
             done
             ;;
         *)
@@ -385,6 +417,17 @@ refused stream-empty stream-empty
 refused stream-no-container stream-empty
 refused stream-overlay stream-overlay
 
+refused null-security-context security-escalation
+refused null-security-context security-read-only
+refused null-security-context security-capabilities
+refused null-pod-security-context security-non-root
+refused null-pod-security-context security-seccomp
+refused null-seccomp security-seccomp
+refused null-resources resources-present
+refused null-rolling-update rollout-strategy
+refused null-probe-test-only probes-present
+refused null-init-containers security-read-only
+
 refused non-root security-non-root
 refused non-root-absent security-non-root
 refused non-root-uid security-non-root-uid
@@ -459,6 +502,9 @@ refused no-autoscaler budget-declared
 refused budget-fleet budget-fleet
 refused budget-one-source-env budget-one-source
 refused budget-one-source-pool budget-one-source
+refused budget-one-source-canonical budget-one-source
+refused budget-one-source-idle budget-one-source
+refused budget-one-source-relaxed budget-one-source
 refused budget-server-max budget-server-max
 
 refused hpa-min hpa-min
@@ -473,6 +519,8 @@ refused no-pdb pdb
 refused service-management service-api-only
 refused service-extra-port service-api-only
 refused service-load-balancer service-api-only
+refused no-service service-present
+refused no-service-accounts security-service-account
 refused config-no-hash config-hash
 refused config-not-read config-hash
 refused job-unbounded job-bounds

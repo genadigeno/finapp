@@ -19,6 +19,7 @@ import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.apache.catalina.core.StandardContext;
+import org.apache.tomcat.util.net.NioEndpoint;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -79,8 +80,8 @@ class KubernetesManifestsTest {
     @DisplayName("the shutdown budget the policy sums is the code's own numbers, each read from where it is decided")
     void theShutdownBudgetIsTheCodes() {
         Map<String, Object> budget = map(document(BUDGET), "shutdownBudget");
-        assertThat(budget).containsOnlyKeys("httpDrain", "schedules", "consumers", "managementServerStop", "apiServerStop",
-                "gaugeRefresher", "kafkaProducerClose", "writerPoolClose", "reportingPoolClose");
+        assertThat(budget).containsOnlyKeys("httpDrain", "schedules", "consumers", "managementServerStop", "managementServerExecutor",
+                "apiServerStop", "apiServerExecutor", "gaugeRefresher", "kafkaProducerClose", "writerPoolClose", "reportingPoolClose");
 
         assertThat(seconds(budget, "httpDrain")).as("spring.lifecycle.timeout-per-shutdown-phase")
                 .isEqualTo(DurationStyle.detectAndParse(String.valueOf(value(application, "spring", "lifecycle", "timeout-per-shutdown-phase"))));
@@ -92,6 +93,9 @@ class KubernetesManifestsTest {
         Duration tomcatUnload = Duration.ofMillis(new StandardContext().getUnloadDelay());
         assertThat(seconds(budget, "managementServerStop")).as("Tomcat's unload delay").isEqualTo(tomcatUnload);
         assertThat(seconds(budget, "apiServerStop")).as("Tomcat's unload delay").isEqualTo(tomcatUnload);
+        Duration workerPool = Duration.ofMillis(new NioEndpoint().getExecutorTerminationTimeoutMillis());
+        assertThat(seconds(budget, "managementServerExecutor")).as("Tomcat's wait for its worker pool").isEqualTo(workerPool);
+        assertThat(seconds(budget, "apiServerExecutor")).as("Tomcat's wait for its worker pool").isEqualTo(workerPool);
         // HikariPool.shutdown's loop of ten seconds is a literal inside the library, with nothing to read it from.
         assertThat(seconds(budget, "writerPoolClose")).isEqualTo(Duration.ofSeconds(10));
         assertThat(seconds(budget, "reportingPoolClose")).isEqualTo(Duration.ofSeconds(10));

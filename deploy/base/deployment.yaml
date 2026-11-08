@@ -12,7 +12,7 @@ spec:
 
   # A rollout's step time, and not by accident: it holds the next scale-down until the pod just told
   # to stop has used up its grace, so terminating pods never stack (PHASE_15_PLAN.md section 6.1).
-  minReadySeconds: 105
+  minReadySeconds: 115
   # Longer than one step can take: 180 s of startup budget and minReadySeconds.
   progressDeadlineSeconds: 600
   revisionHistoryLimit: 10
@@ -39,14 +39,16 @@ spec:
       #   schedules (10 + 2)                                           12
       #   consumers (10 + 2)                                           12
       #   management server, closing at once (Tomcat's unload)          2
+      #   its worker pool, a thread deaf to its interrupt (Tomcat)      5
       #   API web server's stop (Tomcat's unload)                       2
+      #   its worker pool (Tomcat)                                      5
       #   gauge refresher                                               3
       #   Kafka producer (finapp.kafka.ack-timeout)                    10
       #   writer pool's abort loop, reporting pool's (HikariCP)        10 + 10
-      #                                                        sum    101
+      #                                                        sum    111
       # plus 4 s for the JVM's exit. A pod still running at the end is killed, which is as correct as
       # any kill: the drain only reduces retries.
-      terminationGracePeriodSeconds: 105
+      terminationGracePeriodSeconds: 115
       securityContext:
         # The image is 65532:65532, numeric, so this verifies without reading the image.
         runAsNonRoot: true

@@ -613,6 +613,14 @@ tasks.withType<Test>().configureEach {
         .withPropertyName("manifestPolicy")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
+    // ... and it holds the schemas' Kubernetes minor to each cluster's kubernetes_version, which no set above reads.
+    inputs.files(
+        rootProject.layout.projectDirectory.file("infra/terraform/environments/staging/main.tf"),
+        rootProject.layout.projectDirectory.file("infra/terraform/environments/production/main.tf")
+    )
+        .withPropertyName("clusterKubernetesVersions")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
     // The fourteenth and fifteenth. DomainGlossaryTest holds the glossary to DOMAIN_MODEL.md's
     // canonical term list and to CLAUDE.md's §Domain Distinctions. CLAUDE.md and
     // MODULE_ARCHITECTURE.md are already declared above, so only these two are new.
