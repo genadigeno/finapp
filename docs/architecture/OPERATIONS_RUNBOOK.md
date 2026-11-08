@@ -2017,7 +2017,7 @@ It runs `terraform fmt -check`, `tflint`, `trivy config` (HIGH and CRITICAL fail
 holds a `.tf` file, `terraform init -backend=false -lockfile=readonly`, `terraform validate` and `terraform test`.
 Each test only plans; the roots' tests and the concern modules' tests plan against a mock AWS provider, and the
 conventions module uses no provider. It then plants thirteen defects in copies of the tree (six over the checks
-themselves, seven over the network and cluster modules' security properties) and requires each check to refuse its
+themselves, seven over the network and cluster modules' named properties) and requires each check to refuse its
 plant by name. **Verify**: the last line reads `ok   every check green, every plant refused for its
 reason`, and the exit status is 0. A line starting `!!` names what failed:
 

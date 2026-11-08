@@ -27464,7 +27464,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   pushed. This laptop's antivirus intercepts TLS, so the local runs used the pinned Terraform image plus that machine's
   root certificate, through the script's `TERRAFORM_IMAGE` override, which CI never sets.
 
-**P15-TSK-014 — Network and cluster modules** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-013`'s merge, master `fcae1309`; every dependency `COMPLETE`)
+**P15-TSK-014 — Network and cluster modules** — `COMPLETE` (2026-11-08; marked `READY` by the coordinator at `P15-TSK-013`'s merge, master `fcae1309`; every dependency `COMPLETE`; read `READY` until its gate)
 - **Objective**: a private network and a hardened managed cluster as tested code.
 - **Affected components**: `infra/terraform/modules/network`, `modules/kubernetes`, the environment roots.
 - **Dependencies**: `-013`.
@@ -27487,6 +27487,39 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   root's AWS provider `default_tags`. `infra/scripts/terraform-check.sh` finds a new directory by itself.
   `TerraformIsPinnedAndCheckedTest` requires every test file in it to mock every provider the directory requires. A new
   provider is pinned exactly in both roots and locked in each (`OPERATIONS_RUNBOOK.md` §11.13).
+- **As built** (2026-11-08; branch `P15-TSK-014` from master `8100cac9`; infrastructure code, one guard and documents, no
+  production Java, no migration, no new ADR - a dated note on ADR-0121): **`modules/network`**: a VPC; a workload tier of
+  one `/20` per zone, assigning no public address, with no internet-gateway route and a default route through its own
+  zone's NAT gateway; an edge tier of one `/24` per zone holding the NAT gateways and, for `-011`, the public load
+  balancer, the only table with an internet route; one NAT gateway per zone in both environments; interface endpoints for
+  `ec2`, `ecr.api`, `ecr.dkr`, `kms`, `logs`, `secretsmanager` and `sts` and a gateway endpoint for `s3`; flow logs of all
+  traffic into a log group with deletion protection, through a role scoped to it. **`modules/kubernetes`**: EKS whose API
+  endpoint has no public address; `secrets` envelope-encrypted under `etcd_kms_key_arn`, an input (no KMS key is created
+  here), which refuses an alias, and at each root another account's or region's key, the cluster role able to use that
+  key alone; all five control-plane log types, `audit` among them, into the group EKS writes to, created first; one managed
+  node group per zone, each confined to its zone's workload subnet with a minimum of one node, so three zones means nodes
+  in three zones; a launch template requiring IMDSv2 at a hop limit of one, encrypting the root volume and setting no SSH
+  key; a workload identity OIDC provider; the VPC CNI's network policy agent on, which EKS leaves off; `API`-only
+  access with no standing access for the creator; deletion protection. The security properties are literals, not
+  variables. Three additions beyond the entry's list, each because the entry's property would otherwise be hollow: the
+  IMDS hop limit (workload identity means little if a pod can borrow the node's role), the network policy agent (a
+  policy on EKS is otherwise enforced by nothing) and `API` access mode. **Both roots** call the modules, zones and the
+  key as required variables, each validated. **Tests**: `terraform test` over a mock provider, 50 runs (network 12,
+  kubernetes 15, each root 10, conventions 3), every property asserted over the plan and every validation refused. Each
+  root's runs assert its own wiring, with the two subnet tiers told apart. **The frame**: `terraform-check.sh`'s
+  `-lockfile=readonly` means a module requiring a provider needs a lock file, which `-013`'s provider-less module never
+  showed, so each module commits one at the roots' exact version, held by a new guard member; the camel-case plant had
+  to rename `module.conventions.` in `main.tf` too; seven plants added, thirteen in all, each named property refused by
+  its assertion's own message on every CI run; `iac`'s timeout raised from 20 to 40 minutes (the script takes about nine
+  here, and CI's runner is smaller; CI's own timing unverified, nothing is pushed). `TerraformIsPinnedAndCheckedTest` also
+  now refuses a root whose provider is not confined to its own account. **Trivy**: 0 findings at HIGH and CRITICAL, no
+  ignore; the probes showed it reading these resources (AWS-0040, AWS-0041, AWS-0039), and also that it cannot see a
+  public workload subnet, since the subnets `for_each` over an input it cannot resolve, so the test holds that one
+  alone. **Threat model**: T6, T7 and T29's rows rewritten `EXISTS`, two `EXISTS` rows added to T4, the T29 residual
+  and the "no built control" list rewritten, a residual added for what a mock cannot show. **Runbook**: §11.13
+  references the two READMEs. **Not verified**: anything AWS would do with this configuration (no account exists, and
+  the Kubernetes minor and node sizes are reference values); CI's own run of the `iac` job. The local runs used the
+  pinned Terraform image plus this laptop's root certificate, through `TERRAFORM_IMAGE`, which CI never sets.
 
 **P15-TSK-015 — Data-tier modules: PostgreSQL, Kafka, object storage** — `PLANNED`
 - **Objective**: the financial record's database and the integration transport provisioned to the bar C3 sets.

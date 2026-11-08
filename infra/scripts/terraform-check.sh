@@ -21,7 +21,7 @@
 #   untagged           the ManagedBy tag dropped from the  terraform test (the conventions' tags)
 #                      conventions module
 #
-# And one plant per security property of the network and cluster modules, each refused by the message
+# And one plant per named property of the network and cluster modules, each refused by the message
 # of the terraform test assertion that holds it:
 #
 #   public-endpoint         the cluster's API endpoint made public      the kubernetes module's test
