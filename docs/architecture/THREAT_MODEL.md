@@ -480,10 +480,13 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T13 | Session liveness judged on the database's clock, never against a caller's instant | EXISTS | `app/src/test/java/com/finapp/app/architecture/SessionTimeIsTheDatabasesTest.java#noBoundIsComparedWithACallersInstant` |
 | T13 | The five outbound stores stamp every send permit with the database's `statement_timestamp()` and bind no caller's instant | EXISTS | `app/src/test/java/com/finapp/app/architecture/SendPermitsAreTheDatabasesTest.java#everyPermitAssignmentIsTheDatabases` |
 | T13 | No production class reads ambient time (the build rule) | EXISTS | `app/src/test/java/com/finapp/app/architecture/NoAmbientTimeRulesTest.java#noAmbientTimeIsRead` |
-| T13 | PI-013's and PI-014's clock-step defects fixed at their causes, each with a clock-step regression case | PLANNED | `P15-TSK-033` |
+| T13 | PI-013: a month's close run is named by its lock's identity, so the view reads the present lock's run even over a store whose latest is an earlier lock's run (what a stepped clock made of `started_at`); the latest-run and latest-proposal statements rank by the rows - present lock, `PROPOSED`, revision - before any stamp, pinned as text | EXISTS | `accounting/src/test/java/com/finapp/accounting/CloseRunsTest.java#theRunIsTheLocksWhateverAStampSays`; `accounting/src/test/java/com/finapp/accounting/CloseRunStatementsTest.java#theLatestRunIsRankedByTheRows`; `accounting/src/test/java/com/finapp/accounting/PeriodCloseStatementsTest.java#theLatestCloseIsRankedByTheRows` |
+| T13 | PI-014 item 1: lending `V033` and bnpl `V021` end a retired terms version after its latest offer, start its successor exactly there by version number, and floor an offering instant at its version's start - pinned as text | EXISTS | `lending/src/test/java/com/finapp/lending/LoanTermsClockMigrationTest.java#theRetirementEndsAfterTheLatestOffer`; `lending/src/test/java/com/finapp/lending/LoanTermsClockMigrationTest.java#theSuccessorStartsExactlyThere`; `lending/src/test/java/com/finapp/lending/LoanTermsClockMigrationTest.java#theOfferIsNeverBeforeItsVersion`; `bnpl/src/test/java/com/finapp/bnpl/BnplTermsClockMigrationTest.java#theRetirementEndsAfterTheLatestOffer`; `bnpl/src/test/java/com/finapp/bnpl/BnplTermsClockMigrationTest.java#theSuccessorStartsExactlyThere`; `bnpl/src/test/java/com/finapp/bnpl/BnplTermsClockMigrationTest.java#theOfferIsNeverBeforeItsVersion` |
+| T13 | PI-013's and PI-014's clock-step regression cases run green on PostgreSQL with the database's clock stepped back on demand (`CloseRunClockStepDatabaseTest`, `LoanTermsDatabaseTest`, `BnplTermsDatabaseTest`, written and owed) | PLANNED | `P15-TST-002` |
 | T13 | The lock's grace and the submissions' orderings judged on the database's clock | REMEDIATION | `P14-REM-009` |
-| T13 | Five stores still comparing a stored bound with a caller's instant (recovery tokens, contact-channel verification, checkout expiry, the card fee version in force, payout-destination cooling-off), each judged and stamped on the database's clock | PLANNED | `P15-TSK-033` |
+| T13 | Five stores still comparing a stored bound with a caller's instant (recovery tokens, contact-channel verification, checkout expiry, the card fee version in force, payout-destination cooling-off), each judged and stamped on the database's clock | REMEDIATION | `X-TSK-008` |
 | T13 | Lending's trigger functions read the database's clock whatever a role's `search_path` holds | PLANNED | `P15-TSK-004` |
+| T13 | Single-row reads that pick "the latest" by a database stamp outside accounting, lending and bnpl (ten by `grep`, `ORDER BY <stamp> DESC ... LIMIT 1`: risk three, kyc two, payments two, fx, reconciliation and `app`'s lending reports one each) not yet judged for whether the row they pick decides anything; and risk `V002`'s policy retirement, stamped like the terms retirement was, latent because nothing reads a policy version by an instant | GAP | `owner item 8`; owner: the owner, since 2026-11-08 |
 | T14 | The connection budget is a startup guard against the **declared** instance count (`finapp.database.instances`): a fleet whose pools exceed the database's available connections refuses to start, naming the fix; a declared fleet scaled out past the limit no longer fits; reserved connections count; the guard is wired. A replica count that outgrows its declaration (an HPA) is not caught here | EXISTS | `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#hikarisDefaultExhaustsPostgresDefault`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#scalingOutIsCaught`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingGuardTest.java#reservedConnectionsAreLoadBearing`; `app/src/test/java/com/finapp/app/database/ConnectionPoolSizingIsConfiguredTest.java#theGuardIsWired` |
 | T14 | Requests and limits, and an HPA bounded by the declared budget counting terminating pods | PLANNED | `P15-TSK-009` |
 | T14 | `ResourceQuota` and `LimitRange` | PLANNED | `P15-TSK-010` |
@@ -743,7 +746,9 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   holds over an empty set until the data-tier and security modules (`-015`, `-016`) add the first such resource.
   **Owner item 7**, added 2026-11-08, awaits the owner.
 - **T13.** Time sync on nodes is a property of the managed cluster. No task asserts it, and the register does not
-  claim it. The platform's answer is to decide financial instants on the database's clock.
+  claim it. The platform's answer is to decide financial instants on the database's clock. The database's clock steps
+  too: a stamp it wrote never decides which of two facts came first, and a stamp follows the facts it must follow.
+  Where that is not yet judged outside the close and the terms, owner item 8 holds it.
 
 ---
 
@@ -812,6 +817,18 @@ six" until then.)*
    baseline adds the boundaries), and a scheduled plan reports drift. Separately, widen `-017`'s `CODEOWNERS` to the
    production root (`infra/terraform/environments/production/`), so that a change to production's infrastructure code
    needs the same second person as a change to its overlay. **Awaiting the owner.**
+8. **T13's residual: "the latest" chosen by a stamp elsewhere** *(added 2026-11-08, after the six above were decided;
+   awaiting the owner)*. A backward step of the database's clock made the close read an earlier lock's run as the latest
+   (PI-013) and ended a terms version before its offer (PI-014). Both are fixed at their causes, and the close's and the
+   terms' readers were censused. Outside them, `grep` finds ten single-row reads ordering by a stamp, `ORDER BY <stamp> DESC ...
+   LIMIT 1` (risk three, kyc two, payments two, fx, reconciliation and `app`'s lending reports one each; twenty-four
+   stamp-descending orderings in all, the rest pages), none judged yet for whether the row it picks decides anything. Risk `V002`'s policy retirement is stamped as the terms retirement was, and its
+   comment makes the same claim about assessments; nothing reads a risk policy version by an instant, so it is latent.
+   The options: (a) a census item inside Phase 15, before the database pass: each read classified as deciding or
+   displaying, every deciding one ranked by the rows or named by identity, with a clock-step case, and risk `V002`
+   given the terms' rule; (b) postpone it, required before production use; (c) accept the residual. *Recommendation*:
+   **(a)**, sized like `P15-TSK-035`, after `P15-TST-002`'s dependencies are settled, so its database cases run in the
+   pass; if Phase 15 must shrink, (b), never (c), since PI-013 shows one such read can stop a month's close.
 
 ---
 

@@ -230,7 +230,11 @@ trigger and lease reads - stepping back about 0.35 s and about 2.4-2.8 s roughly
 step too, which is why the pass's production fix - merchant `V013` - is a migration, not a test repair, and why the
 terms retirement's defect it found (`LoanTermsDatabaseTest#anOfferMadeDuringAnActivationStandsInsideItsVersion`, red
 once) is postponed as `PI-014` rather than repaired in its test (`DISTRIBUTED_EXECUTION.md`, "The database clock steps
-back").)* So a permit the database stamped "due at once" may not be due to the next statement,
+back").)* *(`P15-TSK-033`, 2026-11-08: fixed in lending `V033` and bnpl `V021`, PI-013's close run beside it, each with a
+clock-step regression case owed to `P15-TST-002`. One more rule came with it: **a case that frames a transaction into the
+future asserts inside it and rolls back** (`ClockStep.inOneRolledBackTransaction`) - a terms version now ends after its
+latest offer, so an offer committed with tomorrow's stamp in a shared tier would start every later version of its product
+tomorrow; `BackwardClockDatabaseTest#anOriginationAcrossAMidnightIllustratesTheOfferingDate` does so.)* So a permit the database stamped "due at once" may not be due to the next statement,
 `Thread.sleep(20)` past a 1 ms permit races the step, and two rows' `created_at` can stand in the
 reverse of the order they were written. The rules (`X-TSK-013`, `P11-TSK-033`, `P11-TSK-036`):
 

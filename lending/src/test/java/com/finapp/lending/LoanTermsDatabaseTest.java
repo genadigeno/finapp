@@ -18,6 +18,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -42,7 +43,8 @@ import org.junit.jupiter.api.Test;
  * ten proposers, ten approvers; four eyes, immutability, one active version per product and only implemented conventions
  * held for every writer by raw SQL; the version in force at any past instant answered from the rows over a history; an
  * activation waiting for the offer that pinned its predecessor; the effective periods clamped on a database clock that
- * stepped back.
+ * stepped back, and every offer inside its version's period on one stepped back on demand ({@link ClockStep}; `P15-TSK-033`,
+ * lending {@code V033}, PI-014 (1)).
  *
  * <p>The two products are shared rows in the suite's database, so every case first brings a product to the state it
  * needs through the domain itself - rejecting a pending proposal, proposing and activating its own versions - and never
@@ -394,7 +396,8 @@ class LoanTermsDatabaseTest {
             + " version's effective period: the predecessor's end is stamped after the activation's lock, never at its"
             + " transaction's start - so the version in force at the offering instant is the one the offer pins (the"
             + " Phase 11 gate A2-F3)")
-    // POSTPONED_ISSUES.md PI-014 (1), P14-DOC-001: red when the database clock steps back between the offer and the retirement - a production defect (lending V030), not fixed.
+    // POSTPONED_ISSUES.md PI-014 (1), P14-DOC-001: was red when the database clock stepped back between the offer and the retirement - a production defect (lending V030),
+    // fixed by P15-TSK-033 (lending V033; anOfferBeforeABackwardStepStandsInsideItsVersion makes the step) and proven by P15-TST-002's database pass, not before.
     void anOfferMadeDuringAnActivationStandsInsideItsVersion() throws SQLException {
         DisbursementWorld.ensureActive();
         DisbursementWorld.Approved approved = DisbursementWorld.approved(LOAN, 4_100_00, Optional.of(12),
@@ -427,6 +430,111 @@ class LoanTermsDatabaseTest {
                 .as("the version in force at the offering instant is the pinned one")
                 .contains(DisbursementWorld.scalar("SELECT terms_version_id::text FROM lending.loan_offer"
                         + " WHERE application_id = ?", approved.application().value()));
+    }
+
+    /** The planted step: far beyond any real step measured (2.8 s) and the few milliseconds between the offer and the retirement. */
+    private static final Duration STEP_BACK = Duration.ofSeconds(5);
+
+    @Test
+    @DisplayName("PI-014's reproduction (P15-TSK-033, lending V033): the activation's database clock stepped back after an offer pinned to the version"
+            + " commits - the retired version still ends after the offer, the successor starts exactly where it ends, and the version in force at the"
+            + " offering instant is the one the offer pins; lending V030 ended the version before the offer")
+    void anOfferBeforeABackwardStepStandsInsideItsVersion() throws Exception {
+        LoanTermsVersionId pinned = activate(LOAN, "0.0715");
+        awaitTheClockPastTheStartOf(pinned);
+        DisbursementWorld.Approved approved = DisbursementWorld.approved(LOAN, 4_100_00, Optional.of(12), PayoutPreference.WALLET, 10);
+        LoanTermsAdministration.Proposed successor = propose(LOAN, "0.0716", employee());
+        ClockStep.install();
+        try {
+            ClockStep.inOneTransaction(Duration.ZERO, activation -> {
+                // The activation's transaction begins - its start fixed - before the offer is made and committed.
+                Instant start = instantOn(activation, "SELECT pg_catalog.transaction_timestamp()");
+                assertThat(DisbursementWorld.inOneTransaction(uow -> DisbursementWorld.ORIGINATION.originate(uow, approved.application(),
+                        DisbursementWorld.SYSTEM)).kind()).isEqualTo(LoanOrigination.Outcome.Kind.OFFERED);
+                ClockStep.stepBack(activation, STEP_BACK);
+                Instant offered = offeredAt(approved);
+                assertThat(start).as("the precondition: the activation began before the offer").isBefore(offered);
+                assertThat(instantOn(activation, "SELECT clock_timestamp()")).as("the precondition: its clock now reads before the offer - the step is real")
+                        .isBefore(offered);
+                assertThat(effectiveOrFail(pinned, "effective_from").plusNanos(1_000)).as("the precondition: the offer stamped by the clock, after its version's"
+                        + " start, so only the offer can carry the end past it").isBefore(offered);
+                ADMINISTRATION.approve(activation, successor.id(), employee(), "PI-014's reproduction", correlation());
+                return null;
+            });
+        } finally {
+            ClockStep.uninstall();
+        }
+        Instant offered = offeredAt(approved);
+        assertThat(DisbursementWorld.scalar("SELECT (o.offered_at >= v.effective_from AND o.offered_at < v.effective_to)::text"
+                + " FROM lending.loan_offer o JOIN lending.loan_terms_version v ON v.id = o.terms_version_id"
+                + " WHERE o.application_id = ?", approved.application().value()))
+                .as("the offer inside its pinned version's period (INV-LND-05) - lending V030 ended the version before it").isEqualTo("true");
+        assertThat(effective(successor.id(), "effective_from")).as("the successor starts exactly where the retired version ends")
+                .isEqualTo(effective(pinned, "effective_to"));
+        assertThat(activeAt(LOAN, offered)).as("the version in force at the offering instant is the pinned one").contains(pinned);
+    }
+
+    @Test
+    @DisplayName("the other half of the interval (P15-TSK-033, lending V033): an offer made just after an activation, on a database clock stepped back"
+            + " behind the new version's start, is stamped at that start - never before its version began - and the version in force at it is the pinned one")
+    void anOfferAfterAnActivationOnAStepBackIsInsideItsVersion() throws Exception {
+        DisbursementWorld.Approved approved = DisbursementWorld.approved(LOAN, 4_200_00, Optional.of(12), PayoutPreference.WALLET, 10);
+        LoanTermsVersionId pinned = activate(LOAN, "0.0717");
+        ClockStep.install();
+        try {
+            ClockStep.inOneTransaction(STEP_BACK.negated().multipliedBy(2), origination -> {
+                assertThat(instantOn(origination, "SELECT clock_timestamp()")).as("the precondition: this clock reads before the version began - the"
+                        + " step is real").isBefore(effectiveOrFail(pinned, "effective_from"));
+                assertThat(DisbursementWorld.ORIGINATION.originate(origination, approved.application(), DisbursementWorld.SYSTEM).kind())
+                        .isEqualTo(LoanOrigination.Outcome.Kind.OFFERED);
+                return null;
+            });
+        } finally {
+            ClockStep.uninstall();
+        }
+        assertThat(DisbursementWorld.scalar("SELECT terms_version_id::text FROM lending.loan_offer WHERE application_id = ?",
+                approved.application().value())).as("pinned to the version just activated").isEqualTo(pinned.value().toString());
+        Instant offered = offeredAt(approved);
+        assertThat(offered).as("floored at its version's start (V033) - V028 alone stamped it before the version began")
+                .isEqualTo(effective(pinned, "effective_from"));
+        assertThat(activeAt(LOAN, offered)).as("the version in force at the offering instant is the pinned one").contains(pinned);
+    }
+
+    /** Waits until the database's clock is past {@code version}'s start, so an offer made now is stamped by the clock, not floored at that start. */
+    private static void awaitTheClockPastTheStartOf(LoanTermsVersionId version) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (!"true".equals(DisbursementWorld.scalar("SELECT (clock_timestamp() > effective_from + interval '50 milliseconds')::text"
+                + " FROM lending.loan_terms_version WHERE id = ?", version.value()))) {
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("the database's clock did not pass the version's start within 30 s");
+            }
+            Thread.sleep(50);
+        }
+    }
+
+    /** The offer's offering instant, read on a connection of its own. */
+    private static Instant offeredAt(DisbursementWorld.Approved approved) {
+        return Instant.parse(DisbursementWorld.scalar("SELECT to_char(o.offered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')"
+                + " FROM lending.loan_offer o WHERE o.application_id = ?", approved.application().value()));
+    }
+
+    /** One instant {@code sql} answers on {@code connection} - inside its transaction, on its clock. */
+    private static Instant instantOn(Connection connection, String sql) {
+        try (Statement statement = connection.createStatement(); ResultSet row = statement.executeQuery(sql)) {
+            row.next();
+            return row.getTimestamp(1).toInstant();
+        } catch (SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
+    }
+
+    /** {@link #effective}, for a lambda. */
+    private static Instant effectiveOrFail(LoanTermsVersionId id, String column) {
+        try {
+            return effective(id, column);
+        } catch (SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
     }
 
     // ------------------------------------------------------------------ the conventions
