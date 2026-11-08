@@ -52,7 +52,12 @@ public interface CloseRunStore {
     /** The run answering this lock instance, unlocked. */
     Optional<RunRow> runUnder(Connection unitOfWork, AccountingPeriodId period, Instant lockedAt);
 
-    /** The period's latest run, unlocked - the present lock's, or the last one before an unlock. */
+    /**
+     * The period's latest run, unlocked - the present lock's, or the last one before an unlock - ranked by the rows, never by a stamp a stepped clock can
+     * reorder (`P15-TSK-033`, PI-013): the present lock's run first, then the higher revision; {@code started_at} orders only one revision's earlier locks, which
+     * only a reader's display of an {@code OPEN} period or of a lock with no run yet ever shows. A caller deciding anything names the run by its lock
+     * ({@link #runUnder}), as {@link CloseRuns#view} does.
+     */
     Optional<RunRow> latestRun(Connection unitOfWork, AccountingPeriodId period);
 
     /** The run {@code FOR UPDATE} - serialises a run's conclusions and re-runs. */

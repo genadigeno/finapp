@@ -23,13 +23,22 @@ class PeriodCloseStatementsTest {
     }
 
     @Test
-    @DisplayName("a decision is conditional on PROPOSED; a proposal and a reopen are taken FOR UPDATE of their own rows; the latest proposal by the database's stamp")
+    @DisplayName("a decision is conditional on PROPOSED; a proposal and a reopen are taken FOR UPDATE of their own rows")
     void theDecisionsAreConditional() {
         assertThat(JdbcPeriodCloseStore.DECIDE_SQL).endsWith("WHERE id = ? AND status = 'PROPOSED'");
         assertThat(JdbcPeriodCloseStore.APPROVE_REOPEN_SQL).endsWith("WHERE id = ? AND status = 'PROPOSED'");
         assertThat(JdbcPeriodCloseStore.LOCK_CLOSE_SQL).endsWith("WHERE c.id = ? FOR UPDATE OF c");
         assertThat(JdbcPeriodCloseStore.LOCK_PENDING_REOPEN_SQL).as("P14-TSK-024: the pending one, which the partial unique keeps single").endsWith("WHERE period_id = ? AND status = 'PROPOSED' FOR UPDATE");
-        assertThat(JdbcPeriodCloseStore.LATEST_CLOSE_SQL).endsWith("WHERE c.period_id = ? ORDER BY c.proposed_at DESC, c.id DESC LIMIT 1");
+    }
+
+    @Test
+    @DisplayName("PI-013 (P15-TSK-033): the latest proposal is ranked by the rows - the standing PROPOSED one, then the higher revision, then the revision's"
+            + " APPROVED one - and proposed_at only after all three, so a backward step cannot put a rejected proposal before the one that stands")
+    void theLatestCloseIsRankedByTheRows() {
+        assertThat(JdbcPeriodCloseStore.LATEST_CLOSE_SQL)
+                .contains(" WHERE c.period_id = ? ORDER BY (c.status = 'PROPOSED') DESC, c.period_revision DESC, (c.status = 'APPROVED') DESC,")
+                .endsWith(" c.proposed_at DESC, c.id DESC LIMIT 1")
+                .doesNotContain("ORDER BY c.proposed_at");
     }
 
     @Test

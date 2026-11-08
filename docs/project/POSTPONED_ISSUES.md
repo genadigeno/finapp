@@ -22,8 +22,8 @@ commit and the date; do not delete the entry.
 | PI-010 | `POSTPONED` | P14-TSK-018, by the owner (2026-11-05) | accounting — `overtaken` cannot clear when no correction is owed; required before any real regulatory channel |
 | PI-011 | `POSTPONED` | P14-TSK-019, by the owner (2026-11-05) | accounting — a safeguarding shortfall alerts nobody, and nothing issues the monthly run; required before any real regime |
 | PI-012 | `POSTPONED` | P14-DOC-001, by the owner (2026-11-06) | every module — no clean run of every database tier on the final Phase 14 tree; due at the next phase's database pass at the latest |
-| PI-013 | `POSTPONED` | P14-DOC-001, by the owner (2026-11-06) | accounting — a production defect: after a backward step of the database clock a month's close can read an earlier lock's run as its own, and cannot be proposed; due at the next phase's database pass at the latest |
-| PI-014 | `POSTPONED` | P14-DOC-001, by the owner (2026-11-06) | lending, bnpl, accounting, app — the database suites still red after the pass, two of them production defects; due at the next phase's database pass at the latest |
+| PI-013 | `POSTPONED` | P14-DOC-001, by the owner (2026-11-06) | accounting — a production defect: after a backward step of the database clock a month's close can read an earlier lock's run as its own, and cannot be proposed; due at the next phase's database pass at the latest; fix landed by P15-TSK-033 (2026-11-08), `FIXED` when P15-TST-002 runs its regression case green |
+| PI-014 | `POSTPONED` | P14-DOC-001, by the owner (2026-11-06) | lending, bnpl, accounting, app — the database suites still red after the pass, two of them production defects; due at the next phase's database pass at the latest; item (1)'s fix landed by P15-TSK-033 (2026-11-08), proven when P15-TST-002 runs its regression cases green |
 | PI-015 | `POSTPONED` | P14-DOC-001 (2026-11-06) | the mutation register — 330 rows struck on moved bytes and the database halves of about a hundred rows, not performed again; due at the next phase's database pass at the latest |
 | PI-016 | `POSTPONED` | P15-TSK-001, by the owner (2026-11-08) | ledger, every posting module - a balanced journal entry written with the application's database credential outside the ledger's doors is not refused; required before production use |
 | PI-017 | `POSTPONED` | P15-TSK-001, by the owner (2026-11-08) | identity - registration tells a caller that a login identifier is taken; required before the first real customer launch |
@@ -79,7 +79,9 @@ commit and the date; do not delete the entry.
   the latest). *(2026-11-08: the owner did. C15, ratified 2026-11-07 and applied by `P15-TSK-002`, routes
   `X-TSK-008`'s five stores to `P15-TSK-033`, and this site, `JdbcFeeScheduleStore.findEffectiveVersionFor` behind
   `FeeSchedules`, is one of them. The fix above is that task's, and this entry is struck when its gate proves it. If
-  `-033` closes before the ruling reaches it, the post-phase clean-up stays the owner.)*
+  `-033` closes before the ruling reaches it, the post-phase clean-up stays the owner.)* *(Same day: the ruling reached
+  `P15-TSK-033` after its gate, which returned the five stores untaken to `X-TSK-008` and the owner; this fix is theirs
+  to schedule again - recommended as its own Phase 15 item before `P15-TST-002`.)*
 
 ## PI-003 — Phase 6 merchant reason columns are not screened for card or account numbers
 
@@ -318,6 +320,17 @@ commit and the date; do not delete the entry.
   `LATEST_CLOSE_SQL` orders proposals by `proposed_at DESC` (used by `PeriodCloses.repeatedProposal` and `proposalOf`), so a
   rejected proposal could read as the latest after a step; fix it at the same time. The reproduction as the regression case.
 - **Owner of the fix:** the next phase's database pass at the latest; before a month is closed in production in any case.
+- **Fix landed, not yet proven** (`P15-TSK-033`, 2026-11-08, commit `f672145e`): `CloseRuns.view` names the present lock's run
+  by the lock's identity (`store.runUnder(period, locked_at)`, exact by `close_run_one_per_lock`), falling back to the store's
+  latest only for an `OPEN` period or a lock with no run yet - never current, so never ready; `JdbcCloseRunStore.LATEST_RUN_SQL`
+  ranks by the rows (the present lock's run, then the higher revision, `started_at` last) and `JdbcPeriodCloseStore
+  .LATEST_CLOSE_SQL` the same way (the `PROPOSED` proposal, the higher revision, its `APPROVED` one, `proposed_at` last, which
+  orders only one revision's rejected proposals, never read by an act). Hermetic: `CloseRunsTest#theRunIsTheLocksWhateverAStampSays`,
+  `CloseRunStatementsTest#theLatestRunIsRankedByTheRows`, `PeriodCloseStatementsTest#theLatestCloseIsRankedByTheRows`. **The
+  regression case is `CloseRunClockStepDatabaseTest`** (`app`, own container): the reproduction above - the present lock's run
+  born on a session whose database clock reads ten minutes behind an earlier lock's run - and a proposal made behind a rejected
+  one. Written and owed to `P15-TST-002` (C14); **`FIXED` only when that pass runs it green**. PI-014 (3)'s four suites are red
+  by this defect alone, so the same pass is their proof.
 
 ## PI-014 — The database suites still red after Phase 14's pass
 
@@ -370,6 +383,23 @@ commit and the date; do not delete the entry.
   `RiskStormTest`, `LendingStormDatabaseTest`, ...) ran only as the triage needed, on triage branches, not on the final tree.
 - **Owner of the fix:** the next phase's database pass at the latest; item 2 before any production restart policy relies on
   the gauges.
+- **Item (1)'s fix landed, not yet proven** (`P15-TSK-033`, 2026-11-08, commit `f672145e`): lending `V033` and bnpl `V021` end
+  a retired version never before one microsecond after the latest offer pinned to it (read after the activation's lock), start
+  the successor exactly there - its predecessor chosen by version number, never `max(effective_to)` over the product, the term
+  the withdrawn draft kept - and floor an offering instant at its pinned version's start, without which the pushed end would
+  leave the successor's first offer before its version began. `BackwardClockDatabaseTest
+  #anOriginationAcrossAMidnightIllustratesTheOfferingDate` now asserts inside its transaction and rolls back, so no offer dated
+  tomorrow is left in lending's shared tier for a later activation to follow (the "future-dated version" the draft's regression
+  case met). Hermetic: `LoanTermsClockMigrationTest`, `BnplTermsClockMigrationTest` (text pins). **The regression cases are
+  `LoanTermsDatabaseTest#anOfferBeforeABackwardStepStandsInsideItsVersion`** (the reproduction, the activation's session stepped
+  back 5 s after the offer commits) **and `#anOfferAfterAnActivationOnAStepBackIsInsideItsVersion`**, with their twins in
+  `BnplTermsDatabaseTest`; written and owed to `P15-TST-002` (C14); **`FIXED` only when that pass runs them green**. No stored end
+  is moved (a retired version is frozen history); a past step's offer left outside its version stays visible, found by
+  `SELECT o.id FROM lending.loan_offer o JOIN lending.loan_terms_version v ON v.id = o.terms_version_id WHERE o.offered_at <
+  v.effective_from OR o.offered_at >= v.effective_to` (and bnpl's twin over `bnpl.bnpl_offer`). Risk `V002` stamps a policy
+  version's retirement the same way and its comment makes the same claim about assessments; nothing reads a risk policy
+  version by an instant, so it is latent - reported to the owner, not changed. Items (2)-(5) are not this task's: (2) is
+  `P15-TSK-024`'s, (3) is PI-013's proof above, (4) and (5) are `P15-TST-002`'s to classify.
 
 ## PI-015 — The mutation register's rows struck on moved bytes, and the database halves not performed
 
@@ -395,6 +425,9 @@ commit and the date; do not delete the entry.
   perform or strike the second class. The review's own walk script was not committed; any script doing that is the method.
   *(Read "the review's walk script and its brief are the method" until the fix round, 2026-11-07.)*
 - **Owner of the fix:** the next phase's database pass at the latest.
+- *(`P15-TSK-033`, 2026-11-08: the nine struck rows on `CloseRuns.java` - eight `CloseRunsTest` probes and
+  `BreaksNeverPostTest`'s planted field - performed again on its branch's bytes of that file, each caught and restored
+  byte-identical, their rows marked in place; 321 struck rows remain for the pass.)*
 
 ---
 

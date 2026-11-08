@@ -211,3 +211,13 @@ Financial impact:
   retirement and an amendment's decision are stamped `clock_timestamp()` after the lock they waited on, never the
   transaction's start (V025's precedent for the waiver's and the reversal's decisions), so an offer made under a version
   while its successor's activation waited stands inside the version's effective period. No instance clock.
+- *2026-11-08, `P15-TSK-033` (PI-013, PI-014 item 1; its proof owed to `P15-TST-002`'s database pass)*: decision 1 and
+  decision 2 applied twice more, both found by Phase 14's database pass on a Docker VM clock stepping back 0.35 s and
+  2.4-2.8 s every ~25 s. **Which row counts is decided by the rows, never by a stamp**: a month's close run is named by
+  its lock's identity (`close_run_one_per_lock`), and "the latest" close run and close proposal are ranked by what the
+  rows say - the present lock's run, the `PROPOSED` proposal, the revision - so a stamp orders only rows no act reads.
+  **A stamp follows the facts it must follow**: lending `V033` and bnpl `V021` end a retired terms version never before
+  one microsecond after the latest offer pinned to it (the sentence above, "so an offer made under a version ... stands
+  inside the version's effective period", held only on a clock that never stepped back), start its successor exactly
+  there - the predecessor chosen by version number - and floor an offering instant at its version's start, as V028
+  floors it at the transaction's start. No instance clock, no domain change.

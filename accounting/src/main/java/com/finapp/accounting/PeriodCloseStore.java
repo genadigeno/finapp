@@ -28,7 +28,10 @@ public interface PeriodCloseStore {
     /** The proposal {@code FOR UPDATE}. */
     Optional<CloseRow> lock(Connection unitOfWork, PeriodCloseId id);
 
-    /** The period's latest proposal, whatever its status, unlocked. */
+    /**
+     * The period's latest proposal, whatever its status, unlocked - ranked by the rows, never by a stamp a stepped clock can reorder (`P15-TSK-033`, PI-013): the
+     * {@code PROPOSED} one when one stands, else the highest revision's, its {@code APPROVED} one first; a stamp orders only one revision's rejected proposals.
+     */
     Optional<CloseRow> latest(Connection unitOfWork, AccountingPeriodId period);
 
     /** The proposal's checks, in the checks' order. */
