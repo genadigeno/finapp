@@ -1324,7 +1324,7 @@ class PaymentRefundDatabaseTest {
         PaymentRefund.RefundResult first =
                 refundCommand().refund(captured.intent(), amount, "the first", key);
         assertThat(first.status()).isEqualTo(RefundStatus.COMPLETED);
-        // The claim's retention sweeps it - Phase 15's job, done by hand.
+        // The claim's retention sweeps it - Phase 16's job at the earliest (debt row #61), done by hand.
         try (Connection root = DatabaseRoles.bootstrap()) {
             execute(
                     root,

@@ -29,9 +29,9 @@ import java.time.Duration;
  * <h2>Cost</h2>
  *
  * <p>Both figures come from one statement over the partial index on unpublished rows
- * ({@code V005}), so the scan is proportional to the backlog rather than to the table — which
- * matters because the table only grows: published rows are never deleted, and their retention
- * sweep is recorded debt owned by Phase 15.
+ * ({@code V005}), so the scan is proportional to the backlog rather than to the table: a
+ * published row leaves that index when it is published, and the table itself by the retention
+ * sweep ({@code P15-TSK-029}) once past its bound.
  */
 public final class OutboxBacklog {
 

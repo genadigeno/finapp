@@ -108,6 +108,14 @@ public final class InboxConsumer<T> {
     }
 
     /**
+     * How long a dedupe record outlives processing: the window the retention sweep's bound reads from here, not from a copy
+     * of the setting (`P15-TSK-029`).
+     */
+    public Duration retention() {
+        return retention;
+    }
+
+    /**
      * Handles {@code key} exactly once for its consumer.
      *
      * @param unitOfWork the caller's transaction; the handler's effect and the dedupe record

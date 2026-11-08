@@ -105,3 +105,11 @@ diverge — a divergence that would silently corrupt every downstream projection
 - Phase 15: schema registry and compatibility enforcement; dead-letter handling and replay.
 - Phase 16: relay throughput under load; consider CDC only if polling becomes a measured
   bottleneck.
+
+## Read-note: the outbox and inbox retained, and swept (2026-11-08)
+
+`P15-TSK-029` built what this record left to retention: a leaderless, batched sweep of **published** outbox rows and of inbox
+records past their dedupe window (platform `V012`; the policy is [`DATA_RETENTION.md`](../architecture/DATA_RETENTION.md)).
+A pending or abandoned row is never selected, so an unpublished fact keeps its publication record, and the application role
+deletes from either table only through the sweep's two `SECURITY DEFINER` functions. This record's decision and status are
+unchanged.

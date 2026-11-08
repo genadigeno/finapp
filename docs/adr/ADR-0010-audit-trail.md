@@ -113,3 +113,7 @@ how a posting, an adjustment or a break resolution is defended months later.
 ## Read-note: the carried items' ruling (2026-11-08)
 
 C15 (`PHASE_15_PLAN.md` §25), applied by `P15-TSK-002`, places this record's Phase 15 follow-ups. Completeness verification against the registry belongs to Phase 15's audit-completeness criterion, owned by `P15-TSK-021` and `P15-TSK-028`. The retention policy and the archival design to write-once storage belong to `P15-TSK-029`, and the archive bucket's write-once lock to `P15-TSK-015`. **Building** the archival is re-dated to Phase 16's partitioning and archival of high-volume tables, so read "archival is a Phase 15 deliverable" as its design only. No audit record is ever deleted (`CURRENT_STATE.md` §Known Architectural Debt, "Audit retention and archival"). The rows carry the disposition, marked **C15** (`P15-TSK-002`, 2026-11-08); this record's decision and status are unchanged.
+
+## Read-note: the archival design (2026-11-08)
+
+`P15-TSK-029` wrote the retention policy and the archival design this record's follow-up asked for, in [`DATA_RETENTION.md`](../architecture/DATA_RETENTION.md) §3: archival is a verified **copy** to write-once storage, never a deletion, so the operational table keeps every row and queryability survives. Nothing of it is built, and the archive's retention stays open until a real jurisdiction is chosen. This record's decision and status are unchanged.

@@ -64,12 +64,12 @@ class ApplicationRoleGrantsTest {
                 .containsExactly("DELETE", "INSERT", "SELECT", "UPDATE");
 
         assertThat(privilegesOn("outbox_event"))
-                .as("a row is written, marked published or failed by the relay, and swept")
-                .containsExactly("DELETE", "INSERT", "SELECT", "UPDATE");
+                .as("a row is written and marked published or failed by the relay; deleted only through the sweep's function (V012)")
+                .containsExactly("INSERT", "SELECT", "UPDATE");
 
         assertThat(privilegesOn("inbox_message"))
-                .as("no UPDATE: an inbox record has no state to advance (V007)")
-                .containsExactly("DELETE", "INSERT", "SELECT");
+                .as("no UPDATE: an inbox record has no state to advance (V007); deleted only through the sweep's function (V012)")
+                .containsExactly("INSERT", "SELECT");
 
         assertThat(privilegesOn("audit_record"))
                 .as("INV-HIST-03: append and read, and nothing else, ever")

@@ -3,6 +3,7 @@ package com.finapp.app.telemetry;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.platform.outbox.OutboxBacklog;
+import com.finapp.platform.testing.database.DatabaseRoles;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -51,7 +52,8 @@ class OutboxMetricsDatabaseTest {
 
     @AfterEach
     void removeProbeRows() throws SQLException {
-        try (Connection connection = connect();
+        // The migrator: since platform V012 the application role deletes from the outbox only through the sweep's function.
+        try (Connection connection = DatabaseRoles.migrator();
                 Statement statement = connection.createStatement()) {
             statement.executeUpdate(
                     "DELETE FROM platform.outbox_event WHERE aggregate_type = '" + AGGREGATE_TYPE + "'");

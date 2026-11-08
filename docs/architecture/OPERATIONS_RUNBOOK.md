@@ -1858,6 +1858,7 @@ procedure exists and no deployed environment exists to apply one to.)*
 | 11.11 Parked value with no attributable owner: return-to-sender, a closed merchant's returned payout, a closed customer's corridor return (the value stays parked, aged and alerted) | `-032` | `-032` |
 | 11.12 Incident response: severity, roles, communication, post-incident review | `-032` | `-032` |
 | 11.13 Infrastructure code: running the Terraform checks, and changing a pin *(written 2026-11-08, below)* | `-013` | `-013` (the checks run on Docker, each plant refused) |
+| 11.15 Retention sweeps: what they delete, a failing sweep, pausing them, moving a bound *(written 2026-11-08, below)* | `-029` | `-032` |
 
 *(Added 2026-11-08 by `P15-TSK-013`: §11.13 below is the first written subsection. It is a developer's and a reviewer's
 procedure over the repository, not over a deployed environment, so the paragraph above still holds for every other
@@ -2056,3 +2057,44 @@ and not the other fails `TerraformIsPinnedAndCheckedTest` until both roots agree
 
 **What this does not cover.** An apply, a plan against an account, and a drift check. Each needs a real account, which
 Phase 15 does not have (`THREAT_MODEL.md` §6 item 7).
+
+### 11.15 Retention sweeps - `finapp.retention.swept`, `finapp.retention.sweep.failed`
+
+*(Written by `P15-TSK-029`, 2026-11-08, from the code it landed. Not rehearsed: `-032` rehearses it. The policy is
+[`DATA_RETENTION.md`](DATA_RETENTION.md).)*
+
+**What runs.** Two schedules on every instance, `outbox-retention-sweep` and `inbox-retention-sweep`, each every
+`finapp.retention.sweep.interval` (default five minutes) and each deleting up to 20 batches of
+`finapp.retention.sweep.batch-size` (default 500, at most 1,000) per tick. Published outbox rows go past
+`finapp.outbox.retention` (default 30 days). Inbox records go past both their written expiry and `finapp.inbox.retention`.
+No lease and no leader: `FOR UPDATE SKIP LOCKED` means instances delete disjoint batches. The counters are per table,
+tagged `type="outbox_event"` or `type="inbox_message"`.
+
+**What is never deleted.** A pending or an abandoned outbox row. An inbox record younger than either bound.
+`platform.idempotency_record`, sessions and audit records are not swept at all. They grow, by ruling, until Phase 16.
+
+**`finapp.retention.sweep.failed` rising.** Read the instance's `Retention sweep of <table> failed` line for its SQLState.
+
+| SQLState | Means | Do |
+|---|---|---|
+| `55000` | `platform.inbox_message` has a column the sweep was not reviewed against, so the inbox's sweep stops and deletes nothing. It may carry a state | Nothing is at risk: a kept record only costs storage. Ship a migration that reviews the column, adds a positive condition for its terminal values and lists it. **Never** add the column to the function's list by hand |
+| `08*`, `null`, or an exception class instead of a SQLState | The database was unreachable or the pool was exhausted | The next tick retries. Treat it as the database's or the pool's incident |
+| `42501` | The role cannot execute the function | The migration did not apply: read the schema version before anything else |
+
+**A table still growing.** Compare `finapp.retention.swept` with the table's arrival rate. An outbox that keeps
+growing with a healthy sweep is usually a backlog (pending rows, which are never swept): §11.6. If the sweep is merely behind,
+raise `finapp.retention.sweep.batch-size` up to its limit, or shorten the interval, on a rolling restart.
+
+**Pause the sweeps.** Set `finapp.retention.sweep.enabled=false` and restart. Correctness does not depend on them: a row that
+is not deleted costs storage only, so pausing is always safe.
+
+**Move a bound.**
+
+- `finapp.inbox.retention`: raise it freely, and the sweep honours the new value at once for rows already written. Lowering it
+  takes effect only for new records and for rows past their written expiry, and it must stay above every topic's retention
+  plus one segment and the broker's check (`TopicCatalogueTest`).
+- `finapp.outbox.retention`: an instance refuses to start with it below `finapp.inbox.retention`, because an audited replay
+  reads the outbox across that window. Lowering it deletes only what is then past it.
+
+**Never** delete from these tables by hand to relieve space: a dedupe record removed early makes the next redelivery of that
+message a second effect (`INV-IDEM-04`). The application role cannot, and an operator with the migrator's credential must not.

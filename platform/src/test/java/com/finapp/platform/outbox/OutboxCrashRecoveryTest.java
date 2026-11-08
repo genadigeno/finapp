@@ -107,8 +107,12 @@ class OutboxCrashRecoveryTest {
 
     @BeforeEach
     void clean() throws SQLException {
-        try (Statement statement = business.createStatement()) {
+        // The migrator for the outbox: since platform V012 the application role deletes from it only through the sweep's function.
+        try (Connection migrator = DatabaseRoles.migrator();
+                Statement statement = migrator.createStatement()) {
             statement.executeUpdate("DELETE FROM " + OUTBOX);
+        }
+        try (Statement statement = business.createStatement()) {
             statement.executeUpdate("DELETE FROM " + FACTS);
         }
         business.commit();
