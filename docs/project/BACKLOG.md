@@ -29119,7 +29119,7 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   skewed by ±5 s, provider instruction counts 1; the existing counted tests green. **Risk**: Medium.
   **Cx**: M. **DoD**: `DOD-FIN`, `DOD-TEST`
 
-**X-TSK-014 — Explicit scale on pre-Phase-9 amount events** — `PLANNED`
+**X-TSK-014 — Explicit scale on pre-Phase-9 amount events** — `COMPLETE` (2026-11-08; closed with `P15-TSK-027`'s gate, master `56219cb8`, as `P15-TSK-002`'s ruling said; *read "`PLANNED`" until the coordinator flipped it at that merge*)
 - **Context**: every amount-bearing event before Phase 9 (`EventPayload` minor-unit strings with a
   currency, no scale). Recorded by the Phase 8 → 9 transition (`PHASE_9_PLAN.md` §12.2's wire formats).
 - **Description**: Phase 9's events carry `<x>Scale` beside `<x>Minor` and `<x>Currency`; earlier
