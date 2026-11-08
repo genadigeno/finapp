@@ -768,7 +768,7 @@ class OutboxRelayTest {
 
     private static OutboxRelay relay(EventPublisher publisher, RetryPolicy policy) {
         // A fresh connection per call, so simulated instances share nothing.
-        return new OutboxRelay(DatabaseRoles::bootstrap, publisher, policy, 8, 100);
+        return new OutboxRelay(DatabaseRoles::bootstrap, publisher, policy, 8, 100, OutboxRelay.Abandonments.NOT_RECORDED);
     }
 
     private static EventId writeEvent(UUID aggregateId) {

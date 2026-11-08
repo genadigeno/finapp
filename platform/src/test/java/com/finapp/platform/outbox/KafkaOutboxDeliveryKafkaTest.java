@@ -207,7 +207,7 @@ class KafkaOutboxDeliveryKafkaTest {
     }
 
     private static OutboxRelay relay(EventPublisher publisher) {
-        return new OutboxRelay(DatabaseRoles::application, publisher);
+        return new OutboxRelay(DatabaseRoles::application, publisher, OutboxRelay.Abandonments.NOT_RECORDED);
     }
 
     private static KafkaEventPublisher realPublisher() {

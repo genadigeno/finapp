@@ -8,16 +8,15 @@ import lombok.RequiredArgsConstructor;
  * <p>Deliberately short. A registry populated to look substantial is worse than a small one: the
  * Phase 15 gate verifies that everything declared here is actually audited, so every entry is a
  * commitment. The platform has almost no privileged actions of its own — it holds correctness
- * primitives, not business capability — and the three below are the ones that genuinely decide
+ * primitives, not business capability — and those below are the ones that genuinely decide
  * whether a fact reaches the systems that depend on it.
  *
- * <p><strong>These are declared but not yet emitted.</strong> Two of them describe the manual
- * procedure in {@code EVENT_ARCHITECTURE.md} §Handling an abandoned event, which is performed
- * today with raw SQL and no audit record at all; the third is a relay decision currently visible
- * only as a log line, and ADR-0010 is explicit that logs are not an audit trail. Declaring them
- * is the point of a completeness registry — it is the list Phase 15 checks reality against, so
- * an action that must be audited belongs here whether or not the code emitting it exists yet.
- * The gap is recorded in {@code CURRENT_STATE.md}.
+ * <p><strong>Emitted since `P15-TSK-028`.</strong> For most of the platform's life the three outbox
+ * actions were declared and not emitted: an abandonment was a log line and its two resolutions were
+ * manual {@code UPDATE}s with no record at all. The relay now records the first in the transaction
+ * that abandons the row, and the operator doors of {@code EVENT_ARCHITECTURE.md} §Handling an
+ * abandoned event record the others in the transaction of the act. The dead-letter doors add the
+ * rest of this list.
  */
 @RequiredArgsConstructor
 public enum PlatformAuditAction implements AuditableAction {
@@ -59,6 +58,79 @@ public enum PlatformAuditAction implements AuditableAction {
             "outbox.EventDiscarded",
             "An operator accepted that an event will never be published, leaving a permanent gap "
                     + "in what consumers received.",
+            true),
+
+    /**
+     * An operator ordered published events republished, over one event type and a time window.
+     *
+     * <p>A reason is required: the operator is deciding that consumers should see these again. The
+     * inbox refuses what a consumer has already handled; the order is the record of who asked for it.
+     */
+    OUTBOX_EVENT_REPLAY_ORDERED(
+            "outbox.EventReplayOrdered",
+            "An operator ordered published events of one type republished over a time window; consumers' "
+                    + "dedupe records absorb what they have already handled.",
+            true),
+
+    /**
+     * An operator read the abandoned events and parked records, ids and failure classes only.
+     *
+     * <p>No reason: reading the queue is how the job begins.
+     */
+    DEAD_LETTERS_READ(
+            "deadletter.Read",
+            "An operator read the abandoned events and parked records awaiting a decision: identifiers, "
+                    + "types and failure classes, never a payload.",
+            false),
+
+    /** One person proposed that an abandoned event or a parked record will never be delivered. */
+    DEAD_LETTER_DISCARD_PROPOSED(
+            "deadletter.DiscardProposed",
+            "An operator proposed discarding an abandoned event or a parked record; nothing changes until "
+                    + "a different person approves.",
+            true),
+
+    /** A proposed discard was turned down, by anyone including its proposer; nothing was discarded. */
+    DEAD_LETTER_DISCARD_REJECTED(
+            "deadletter.DiscardRejected",
+            "A proposed discard of an abandoned event or a parked record was rejected; nothing was "
+                    + "discarded.",
+            true),
+
+    /**
+     * A dead-letter door refused an act: not abandoned, past the dedupe window, one's own proposal.
+     *
+     * <p>Its own action, with no reason demanded, because a refusal may be of a request that gave
+     * none, and "did anyone try" must be answerable for those too ({@code AuditOutcome}).
+     */
+    DEAD_LETTER_ACT_REFUSED(
+            "deadletter.ActRefused",
+            "A dead-letter door refused an act; the summary names the act and the refusal's code.",
+            false),
+
+    /**
+     * A consumer's record used up its bounded retries for a reason of its own and was set aside.
+     *
+     * <p>No reason: no human chose it, the budget did, and the failure's class is on the row.
+     */
+    INBOX_RECORD_PARKED(
+            "inbox.RecordParked",
+            "A consumer's record failed its bounded retries for a reason of its own and was parked, so "
+                    + "its consumer group continued.",
+            false),
+
+    /** An operator returned a parked record to its consumer, its event republished from the outbox. */
+    INBOX_PARKED_RECORD_RELEASED(
+            "inbox.ParkedRecordReleased",
+            "An operator released a parked record: its failure count cleared and its event republished "
+                    + "from the outbox.",
+            true),
+
+    /** Two people accepted that a consumer will never apply a record; it stays, as the evidence. */
+    INBOX_PARKED_RECORD_DISCARDED(
+            "inbox.ParkedRecordDiscarded",
+            "A second operator approved discarding a parked record: the consumer will never apply it, and "
+                    + "the row is kept.",
             true);
 
     private final String code;

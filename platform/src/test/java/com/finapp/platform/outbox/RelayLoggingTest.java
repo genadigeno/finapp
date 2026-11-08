@@ -201,7 +201,8 @@ class RelayLoggingTest {
                 publisher,
                 new RetryPolicy(Duration.ofMillis(1), Duration.ofMillis(2), 3),
                 8,
-                100);
+                100,
+                OutboxRelay.Abandonments.NOT_RECORDED);
     }
 
     private static EventId writeEvent(UUID aggregateId) {

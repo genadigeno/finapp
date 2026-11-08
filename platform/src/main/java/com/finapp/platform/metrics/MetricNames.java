@@ -70,6 +70,10 @@ public final class MetricNames {
      */
     public static final Set<String> ALLOWED_TAG_KEYS =
             Set.of(
+                    // Which consumer group (P15-TSK-028, PHASE_15_PLAN.md section 11.2's "gauge by consumer group"). Bounded by
+                    // the CODE: finapp.<module>, one per consuming module the handler beans name, written at registration and
+                    // never from a request or a record. An operator's question is which module stopped applying events.
+                    "group",
                     // Which of a fixed set of outcomes. Bounded by an enum, always.
                     "outcome",
                     // Which module owns the meter, where one meter serves several.

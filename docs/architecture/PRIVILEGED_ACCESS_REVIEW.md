@@ -67,6 +67,7 @@ Every role is an operator role: a customer holds none. Each permission is held b
 | `ACCOUNTANT` | `ACCOUNTING_READ`, `ACCOUNTING_MAPPING_PROPOSE`, `ACCOUNTING_CLOSE_PROPOSE`, `ACCOUNTING_ADJUST_PROPOSE`, `ACCOUNTING_REPORT_GENERATE` |
 | `FINANCIAL_CONTROLLER` | `ACCOUNTING_MAPPING_APPROVE`, `ACCOUNTING_CLOSE_APPROVE`, `ACCOUNTING_ADJUST_APPROVE`, `REGULATORY_REPORT_APPROVE` |
 | `REGULATORY_REPORTER` | `REGULATORY_REPORT_PREPARE`, `REGULATORY_REPORT_SUBMIT` |
+| `EVENT_OPERATOR` | `EVENT_OPERATE` |
 
 Which route requires which permission is `RoutePermissionRegisterTest`'s register. **Every route under `/v1/operator`
 declares a permission** (`RoutePermissionRegisterTest#everyOperatorRouteIsPermissionGuarded`, T31): a route there

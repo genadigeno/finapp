@@ -249,7 +249,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Metrics | — | — | — | — |
 | Alerting | No rule on the outbox, the inbox or a dead letter (§15; `-025`) | — | — | — |
 | Ownership | — | — | — | — |
-| Runbooks | No platform section; dead letters resolved by a manual change (`-028`, `-032`) | — | — | — |
+| Runbooks | Dead letters, a poison record and replay have doors and a written section (`OPERATIONS_RUNBOOK.md` §11.6); no raw `UPDATE` remains; rehearsal is `-032`'s | — | — | — |
 
 ### 4.3 `party`
 
