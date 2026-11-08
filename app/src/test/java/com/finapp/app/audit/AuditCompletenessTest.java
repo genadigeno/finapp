@@ -64,21 +64,13 @@ class AuditCompletenessTest {
      * the list working in the direction it is usually not exercised in: an entry is a claim
      * about the future, and the future arriving is what removes it.
      *
-     * What remains is the three outbox actions, which are recorded Phase 15 debt rather than
-     * unbuilt endpoints. ledger.JournalEntryPosted left this map at P3-TSK-006 and
-     * ledger.AdjustmentPosted at P3-TSK-017, each when the command that emits it was built -
-     * the list working in its rarely-exercised direction again.
+     * Nothing remains. The three outbox actions left this map at P15-TSK-028, when the relay
+     * and the dead-letter doors began to emit them. ledger.JournalEntryPosted left it at
+     * P3-TSK-006 and ledger.AdjustmentPosted at P3-TSK-017, each when the command that emits it
+     * was built - the list working in its rarely-exercised direction again. An empty map still
+     * does its job: an action that stops being emitted fails the build until it is named here.
      */
-    private static final Map<String, String> NOT_YET_EMITTED =
-            Map.of(
-                    "outbox.EventAbandoned",
-                    "Recorded debt: the relay logs the decision and writes no record. Phase 15"
-                        + " (dead-letter handling), per CURRENT_STATE.md.",
-                    "outbox.EventRetryAuthorised",
-                    "Recorded debt: performed today as a manual UPDATE with no tooling. Phase 15.",
-                    "outbox.EventDiscarded",
-                    "Recorded debt: a relay decision visible only as a log line, which ADR-0010 is"
-                        + " explicit does not count as an audit trail. Phase 15.");
+    private static final Map<String, String> NOT_YET_EMITTED = Map.of();
     // The risk role split's two refusals, declared with the roles (P13-TSK-001) so the catalogue named them from the
     // first day, each left this map with the door that first raised it: risk.SelfApprovalRefused at P13-TSK-002 (the
     // policy activation door), risk.SelfDealingRefused at P13-TSK-007 (the customer risk profile read). The accounting

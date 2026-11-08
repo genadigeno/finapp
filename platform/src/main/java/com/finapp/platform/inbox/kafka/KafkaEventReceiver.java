@@ -4,7 +4,9 @@ import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.inbox.InboxConnectionSource;
 import com.finapp.platform.inbox.InboxConsumer;
 import com.finapp.platform.inbox.InboxEventHandler;
+import com.finapp.platform.inbox.InboxFailures;
 import com.finapp.platform.inbox.InboxKey;
+import com.finapp.platform.inbox.InboxParking;
 import com.finapp.platform.inbox.ReceivedEvent;
 import com.finapp.platform.outbox.BrokerConnection;
 import com.finapp.sharedkernel.correlation.CausationId;
@@ -20,6 +22,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
@@ -58,15 +61,23 @@ import org.apache.kafka.common.header.Header;
  * redelivery into the dedupe, which is the safe direction. The reverse ordering would lose
  * records, silently.
  *
- * <h2>A record that cannot be handled stalls its partition, loudly</h2>
+ * <h2>A record that cannot be handled stalls its partition, loudly, and then not for ever</h2>
  *
  * <p>A failing or contended record is <em>seeked back to</em>, not skipped: acknowledging past
  * it would be an undetectable gap in the stream — the outbox relay's block-don't-skip reasoning
  * ({@code P0-TSK-020}), on the consuming side. Other partitions in the same poll continue; the
  * stalled one retries on the next poll, and the loop above this backs off so a poison record
- * costs a bounded retry rate rather than a hot loop. Dead-letter tooling remains the recorded
- * Phase 15 debt. Failure logs carry the failure's <em>class</em> and the event's identifiers,
- * never payload or header content ({@code INV-AUD-02}).
+ * costs a bounded retry rate rather than a hot loop. Failure logs carry the failure's
+ * <em>class</em> and the event's identifiers, never payload or header content ({@code INV-AUD-02}).
+ *
+ * <p><strong>A record that fails for a reason of its own is parked</strong> once its budget is spent
+ * (`P15-TSK-028`; {@link InboxParking}), the count durable in PostgreSQL. The gap is not silent: the
+ * record is kept, counted ({@code finapp.deadletter.parked}), audited and alerted, and its partition
+ * goes on. The failure is recorded on the same connection after the rollback, so it costs no second
+ * wait for the pool; the offset moves only after that commit. A failure that says nothing about the
+ * record ({@link InboxFailures}: a database that blinked, a contended claim, a build too old to read
+ * a version) is never counted. A refused credential never reaches this path at all: it leaves
+ * {@link #pollOnce()} as {@link BrokerAccessRefusedException}.
  *
  * <h2>Running as N instances (ADR-0014)</h2>
  *
@@ -82,9 +93,14 @@ public final class KafkaEventReceiver implements AutoCloseable {
 
     static final String HEADER_PREFIX = "finapp.";
 
+    /** The message type of a parked record whose headers could not be read: there is no type to name. */
+    static final String UNREADABLE = "(unreadable)";
+
     private final Consumer<String, byte[]> consumer;
+    private final String groupId;
     private final InboxConnectionSource connections;
     private final InboxConsumer<Connection> inbox;
+    private final InboxParking parking;
     private final List<InboxEventHandler> handlers;
     private final Duration pollTimeout;
 
@@ -109,12 +125,13 @@ public final class KafkaEventReceiver implements AutoCloseable {
             String groupId,
             InboxConnectionSource connections,
             InboxConsumer<Connection> inbox,
+            InboxParking parking,
             List<InboxEventHandler> handlers,
             Duration pollTimeout) {
         KafkaConsumer<String, byte[]> kafka =
                 new KafkaConsumer<>(consumerProperties(connection, groupId));
         KafkaEventReceiver receiver =
-                new KafkaEventReceiver(kafka, connections, inbox, handlers, pollTimeout);
+                new KafkaEventReceiver(kafka, groupId, connections, inbox, parking, handlers, pollTimeout);
         kafka.subscribe(handlers.stream().map(InboxEventHandler::topic).distinct().toList());
         return receiver;
     }
@@ -229,13 +246,17 @@ public final class KafkaEventReceiver implements AutoCloseable {
      */
     public KafkaEventReceiver(
             Consumer<String, byte[]> consumer,
+            String groupId,
             InboxConnectionSource connections,
             InboxConsumer<Connection> inbox,
+            InboxParking parking,
             List<InboxEventHandler> handlers,
             Duration pollTimeout) {
         this.consumer = Objects.requireNonNull(consumer, "consumer must not be null");
+        this.groupId = Objects.requireNonNull(groupId, "groupId must not be null");
         this.connections = Objects.requireNonNull(connections, "connections must not be null");
         this.inbox = Objects.requireNonNull(inbox, "inbox must not be null");
+        this.parking = Objects.requireNonNull(parking, "parking must not be null");
         this.handlers = List.copyOf(Objects.requireNonNull(handlers, "handlers must not be null"));
         if (this.handlers.isEmpty()) {
             // A receiver with no handlers would consume records to no purpose and commit
@@ -291,6 +312,7 @@ public final class KafkaEventReceiver implements AutoCloseable {
         int duplicates = 0;
         int contended = 0;
         int failed = 0;
+        int parked = 0;
         Map<TopicPartition, OffsetAndMetadata> acknowledged = new HashMap<>();
         for (TopicPartition partition : records.partitions()) {
             for (ConsumerRecord<String, byte[]> record : records.records(partition)) {
@@ -304,6 +326,7 @@ public final class KafkaEventReceiver implements AutoCloseable {
                     }
                     case CONTENDED -> contended++;
                     case FAILED -> failed++;
+                    case PARKED -> parked++;
                 }
                 if (outcome == Delivery.CONTENDED || outcome == Delivery.FAILED) {
                     // Seek back and stall THIS partition; the ones already settled in this
@@ -324,7 +347,7 @@ public final class KafkaEventReceiver implements AutoCloseable {
                 consumer.commitSync(acknowledged);
             }
         }
-        return new ReceiverPollResult(processed, duplicates, contended, failed);
+        return new ReceiverPollResult(processed, duplicates, contended, failed, parked);
     }
 
     private Delivery deliver(ConsumerRecord<String, byte[]> record) {
@@ -334,13 +357,14 @@ public final class KafkaEventReceiver implements AutoCloseable {
         } catch (RuntimeException malformed) {
             // We produce every one of these headers (P2-TSK-001), so a malformed record is a
             // producer defect - and skipping it would be a silent gap in the stream, which is
-            // the failure the seek-back exists to prevent. The partition stalls loudly instead.
+            // the failure the seek-back exists to prevent. The partition stalls loudly until its
+            // budget is spent, and then the record is parked: kept, counted and alerted.
             log.error(
                     "Refusing a malformed record on {} at offset {}: {}",
                     record.topic(),
                     record.offset(),
                     malformed.getClass().getSimpleName());
-            return Delivery.FAILED;
+            return parkUnreadable(record, malformed);
         }
 
         List<InboxEventHandler> interested =
@@ -362,26 +386,39 @@ public final class KafkaEventReceiver implements AutoCloseable {
                         CausationId.of(event.eventId().value().toString()));
 
         boolean processedAny = false;
+        boolean parkedAny = false;
         for (InboxEventHandler handler : interested) {
-            Delivery one = handleOne(handler, event, correlation);
+            Delivery one = handleOne(handler, event, correlation, record);
             if (one == Delivery.CONTENDED || one == Delivery.FAILED) {
                 // One consumer's failure must not let the others' acknowledgement skip the
                 // record: the redelivery retries only the unfinished handlers, because the
-                // finished ones' dedupe records are already committed.
+                // finished ones' dedupe records are already committed and a parked one's
+                // standing is settled.
                 return one;
             }
             processedAny |= one == Delivery.PROCESSED;
+            parkedAny |= one == Delivery.PARKED;
+        }
+        if (parkedAny) {
+            return Delivery.PARKED;
         }
         return processedAny ? Delivery.PROCESSED : Delivery.DUPLICATE;
     }
 
     @SuppressWarnings("try") // the correlation Scope is used for its close side effect
     private Delivery handleOne(
-            InboxEventHandler handler, ReceivedEvent event, Correlation correlation) {
+            InboxEventHandler handler, ReceivedEvent event, Correlation correlation, ConsumerRecord<String, byte[]> record) {
         InboxKey key = new InboxKey(handler.consumerName(), event.eventId().value().toString());
         try (Connection unitOfWork = connections.open()) {
             unitOfWork.setAutoCommit(false);
             try (CorrelationContext.Scope scope = CorrelationContext.enter(correlation)) {
+                InboxParking.Standing standing = parking.standing(unitOfWork, key);
+                if (standing.settled()) {
+                    // Decided already: a redelivery of what is parked or discarded is acknowledged
+                    // and goes no further. Releasing a parked record is an operator's act.
+                    unitOfWork.rollback();
+                    return Delivery.DUPLICATE;
+                }
                 InboxConsumer.Outcome outcome =
                         inbox.consume(
                                 unitOfWork,
@@ -390,6 +427,10 @@ public final class KafkaEventReceiver implements AutoCloseable {
                                 connection -> handler.handle(connection, event));
                 switch (outcome) {
                     case PROCESSED -> {
+                        if (standing == InboxParking.Standing.FAILING) {
+                            // With the effect, so a row says HANDLED only if the handler did.
+                            parking.handled(unitOfWork, key);
+                        }
                         unitOfWork.commit();
                         return Delivery.PROCESSED;
                     }
@@ -412,7 +453,21 @@ public final class KafkaEventReceiver implements AutoCloseable {
                         event.eventType(),
                         event.eventId().value(),
                         handlerFailed.getClass().getSimpleName());
-                return Delivery.FAILED;
+                if (InboxFailures.isTransient(handlerFailed) || Thread.currentThread().isInterrupted()) {
+                    // Says nothing about the record: never counted, however often it happens.
+                    return Delivery.FAILED;
+                }
+                return count(
+                        unitOfWork,
+                        new InboxParking.Failure(
+                                key,
+                                groupId,
+                                event.eventType(),
+                                Optional.of(event.correlationId()),
+                                record.topic(),
+                                record.partition(),
+                                record.offset()),
+                        handlerFailed);
             }
         } catch (SQLException storage) {
             // Could not open, commit or roll back a unit of work. The class only: a JDBC
@@ -421,6 +476,58 @@ public final class KafkaEventReceiver implements AutoCloseable {
                     "No unit of work for handler {} ({}): {}",
                     handler.consumerName(),
                     event.eventId().value(),
+                    storage.getClass().getSimpleName());
+            return Delivery.FAILED;
+        }
+    }
+
+    /** A record no handler could even be chosen for: counted against its group, by where it sits. */
+    private Delivery parkUnreadable(ConsumerRecord<String, byte[]> record, RuntimeException malformed) {
+        InboxKey key = new InboxKey(groupId, "malformed:" + record.topic() + ":" + record.partition() + ":" + record.offset());
+        try (Connection unitOfWork = connections.open()) {
+            unitOfWork.setAutoCommit(false);
+            if (parking.standing(unitOfWork, key).settled()) {
+                unitOfWork.rollback();
+                return Delivery.DUPLICATE;
+            }
+            return count(
+                    unitOfWork,
+                    new InboxParking.Failure(key, groupId, UNREADABLE, Optional.empty(), record.topic(), record.partition(), record.offset()),
+                    malformed);
+        } catch (SQLException | RuntimeException storage) {
+            // Not counted, so the record stands where it was and is retried: never acknowledged on a park that did not happen.
+            log.warn("Could not count a malformed record on {}: {}", record.topic(), storage.getClass().getSimpleName());
+            return Delivery.FAILED;
+        }
+    }
+
+    /**
+     * Counts one failure of the record's own, in a transaction of its own on the connection already held: the park is durable
+     * before the caller acknowledges anything. If it cannot be recorded the record stays unacknowledged, the safe direction.
+     */
+    private Delivery count(Connection unitOfWork, InboxParking.Failure failure, RuntimeException cause) {
+        try {
+            InboxParking.Verdict verdict = parking.recordFailure(unitOfWork, failure, cause.getClass().getName());
+            unitOfWork.commit();
+            return switch (verdict) {
+                case RETRY -> Delivery.FAILED;
+                case PARKED -> {
+                    log.error(
+                            "Record of {} parked for consumer {} on {} partition {} offset {}: {}",
+                            failure.messageType(),
+                            failure.key().consumer(),
+                            failure.topic(),
+                            failure.partition(),
+                            failure.offset(),
+                            cause.getClass().getSimpleName());
+                    yield Delivery.PARKED;
+                }
+                case ALREADY_SETTLED -> Delivery.DUPLICATE;
+            };
+        } catch (SQLException | RuntimeException storage) {
+            log.warn(
+                    "Could not count a failure for consumer {}: {} - not acknowledged",
+                    failure.key().consumer(),
                     storage.getClass().getSimpleName());
             return Delivery.FAILED;
         }
@@ -470,6 +577,7 @@ public final class KafkaEventReceiver implements AutoCloseable {
         DUPLICATE,
         UNHANDLED,
         CONTENDED,
-        FAILED
+        FAILED,
+        PARKED
     }
 }

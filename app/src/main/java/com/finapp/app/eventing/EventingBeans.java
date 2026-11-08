@@ -2,25 +2,42 @@ package com.finapp.app.eventing;
 
 import com.finapp.app.security.ConfinedCredential;
 import com.finapp.app.security.KafkaTransportGuard;
+import com.finapp.platform.audit.AuditWriter;
+import com.finapp.platform.deadletter.DeadLetterOperations;
+import com.finapp.platform.deadletter.DeadLetterStore;
+import com.finapp.platform.deadletter.JdbcDeadLetterStore;
+import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.inbox.InboxConsumer;
 import com.finapp.platform.inbox.InboxEventHandler;
+import com.finapp.platform.inbox.InboxParking;
+import com.finapp.platform.inbox.JdbcInboxParking;
 import com.finapp.platform.inbox.JdbcInboxRecordStore;
+import com.finapp.platform.inbox.ParkingPolicy;
 import com.finapp.platform.inbox.kafka.KafkaEventReceiver;
+import com.finapp.platform.outbox.AuditedAbandonments;
 import com.finapp.platform.outbox.BrokerConnection;
 import com.finapp.platform.outbox.EventPublisher;
 import com.finapp.platform.outbox.KafkaEventPublisher;
 import com.finapp.platform.outbox.OutboxRelay;
+import com.finapp.platform.telemetry.Spans;
+import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.security.Sensitive;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.List;
 import java.util.Locale;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.jdbc.datasource.DataSourceUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Wires the outbox to the broker (`P2-TSK-001`).
@@ -92,10 +109,10 @@ public class EventingBeans {
     }
 
     @Bean
-    OutboxRelay outboxRelay(DataSource dataSource, EventPublisher publisher) {
+    OutboxRelay outboxRelay(DataSource dataSource, EventPublisher publisher, AuditWriter<Connection> auditWriter, IdGenerator idGenerator, Clock clock) {
         // The relay opens its own connections OUTSIDE any Spring transaction: each poll is its
         // own unit of work, committed by the relay (P0-TSK-020). Default batch bounds.
-        return new OutboxRelay(dataSource::getConnection, publisher);
+        return new OutboxRelay(dataSource::getConnection, publisher, new AuditedAbandonments(auditWriter, idGenerator, clock));
     }
 
     // matchIfMissing=true: a DEPLOYED instance polls without configuration. The app test suite
@@ -137,6 +154,80 @@ public class EventingBeans {
     }
 
     /**
+     * How long a record may fail for a reason of its own before it is parked (`P15-TSK-028`; {@link ParkingPolicy}): five failures
+     * and two minutes, both, on the database's clock. Two minutes outlasts a failover and a rolling step, which are what a valid
+     * record most plausibly fails through; a truly poison record costs its partition that long.
+     */
+    @Bean
+    InboxParking inboxParking(
+            @Value("${finapp.inbox.park-after-attempts:5}") int attempts,
+            @Value("${finapp.inbox.park-after-failing-for:PT2M}") Duration failingFor,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new JdbcInboxParking(new ParkingPolicy(attempts, failingFor), auditWriter, idGenerator, clock);
+    }
+
+    @Bean
+    DeadLetterStore deadLetterStore() {
+        return new JdbcDeadLetterStore();
+    }
+
+    /**
+     * The replay's window is {@link InboxConsumer#retention()}, read from the one bean that dated every dedupe row, so there is one
+     * {@code finapp.inbox.retention} in this application and not a second default to drift from it (`P15-TSK-028`).
+     */
+    @Bean
+    DeadLetterOperations deadLetterOperations(
+            DeadLetterStore deadLetterStore,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            InboxConsumer<Connection> inboxConsumer,
+            ObjectProvider<InboxEventHandler> handlers) {
+        return new DeadLetterOperations(
+                deadLetterStore, auditWriter, idGenerator, clock, inboxConsumer.retention(), everyConsumerIsMarked(handlers.orderedStream().toList()));
+    }
+
+    /**
+     * Whether every handler of a type carries {@link InboxEventHandler#naturallyIdempotent()}: the handler set is the catalogue this
+     * reads. False for a type no handler consumes, because nobody has claimed anything for it.
+     */
+    static Predicate<String> everyConsumerIsMarked(List<InboxEventHandler> handlers) {
+        return eventType -> {
+            List<InboxEventHandler> consumers = handlers.stream().filter(handler -> handler.eventType().equals(eventType)).toList();
+            return !consumers.isEmpty() && consumers.stream().allMatch(InboxEventHandler::naturallyIdempotent);
+        };
+    }
+
+    @Bean
+    DeadLetterTransactions deadLetterTransactions(PlatformTransactionManager transactionManager, DataSource dataSource) {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        return new DeadLetterTransactions() {
+            @Override
+            public <R> R inTransaction(Function<Connection, R> work) {
+                return template.execute(status -> {
+                    Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
+                    try {
+                        return work.apply(unitOfWork);
+                    } finally {
+                        DataSourceUtils.releaseConnection(unitOfWork, dataSource);
+                    }
+                });
+            }
+        };
+    }
+
+    @Bean
+    DeadLetterDesk deadLetterDesk(
+            DeadLetterOperations deadLetterOperations,
+            IdempotentExecutor idempotentExecutor,
+            DeadLetterTransactions deadLetterTransactions,
+            Spans domainSpans) {
+        return new DeadLetterDesk(deadLetterOperations, idempotentExecutor, deadLetterTransactions, domainSpans);
+    }
+
+    /**
      * {@code finapp.inbox.consumption{outcome}} eager either way (`P13-TSK-024`): the consumer's counters exist on an
      * instance whose consumer is off, so the stalled-partition alert evaluates a series everywhere it is scraped.
      */
@@ -158,6 +249,7 @@ public class EventingBeans {
             ObjectProvider<InboxEventHandler> handlers,
             DataSource dataSource,
             InboxConsumer<Connection> inboxConsumer,
+            InboxParking inboxParking,
             MeterRegistry registry,
             // Built after the transport guard ruled on it (see brokerConnection): the consumer
             // dials the same bootstrap, so it must not exist before the guard has ruled.
@@ -172,6 +264,7 @@ public class EventingBeans {
                                 groupId,
                                 dataSource::getConnection,
                                 inboxConsumer,
+                                inboxParking,
                                 groupHandlers,
                                 pollTimeout),
                 failureBackoff,

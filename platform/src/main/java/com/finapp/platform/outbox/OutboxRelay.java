@@ -121,7 +121,7 @@ public final class OutboxRelay {
                     + "  SELECT DISTINCT ON (aggregate_id) aggregate_id, event_id, "
                     + "         next_attempt_at, dead_lettered_at"
                     + "  FROM " + TABLE
-                    + "  WHERE published_at IS NULL"
+                    + "  WHERE published_at IS NULL AND discarded_at IS NULL"
                     + "  ORDER BY aggregate_id, event_id"
                     + ") head "
                     + "WHERE head.dead_lettered_at IS NULL AND head.next_attempt_at <= now() "
@@ -132,7 +132,10 @@ public final class OutboxRelay {
      *
      * <p>Abandoned and not-yet-due rows are selected rather than filtered out, because the relay
      * must <em>stop</em> at them. A query that hid them would hand back the events behind a
-     * blocked one and the relay would publish them out of order without ever knowing.
+     * blocked one and the relay would publish them out of order without ever knowing. A
+     * <em>discarded</em> row is the exception (`P15-TSK-028`): two people decided consumers will
+     * never see it, so the aggregate goes on past it. It keeps {@code dead_lettered_at}, so a
+     * relay of the previous release still stops there.
      *
      * <p>{@code due} is computed by the server: whether a row is eligible is a comparison
      * against the clock every instance shares, never against the caller's (ADR-0014).
@@ -144,6 +147,7 @@ public final class OutboxRelay {
                     + "dead_lettered_at IS NOT NULL AS abandoned, "
                     + "next_attempt_at <= now() AS due "
                     + "FROM " + TABLE + " WHERE aggregate_id = ? AND published_at IS NULL "
+                    + "AND discarded_at IS NULL "
                     + "ORDER BY event_id LIMIT ?";
 
     /**
@@ -176,10 +180,27 @@ public final class OutboxRelay {
     private final RetryPolicy retryPolicy;
     private final int aggregatesPerPoll;
     private final int eventsPerAggregate;
+    private final Abandonments abandonments;
+
+    /**
+     * What the relay records when it gives up on an event (`P15-TSK-028`).
+     *
+     * <p>In the transaction that marks the row, on the caller's connection: an abandonment committed without its audit record is
+     * undetectable afterwards ({@code AuditWriter}). A failure here rolls the mark back, the attempt goes uncounted, and the next
+     * cycle does it again, the safe direction.
+     */
+    @FunctionalInterface
+    public interface Abandonments {
+
+        /** For a suite that is not about this; production passes the audited one. */
+        Abandonments NOT_RECORDED = (connection, event, attempts) -> {};
+
+        void recordAbandoned(Connection connection, PendingEvent event, int attempts);
+    }
 
     /** Uses {@link RetryPolicy#DEFAULT} and modest batch sizes. */
-    public OutboxRelay(OutboxConnectionSource connections, EventPublisher publisher) {
-        this(connections, publisher, RetryPolicy.DEFAULT, 8, 100);
+    public OutboxRelay(OutboxConnectionSource connections, EventPublisher publisher, Abandonments abandonments) {
+        this(connections, publisher, RetryPolicy.DEFAULT, 8, 100, abandonments);
     }
 
     /**
@@ -193,11 +214,13 @@ public final class OutboxRelay {
             EventPublisher publisher,
             RetryPolicy retryPolicy,
             int aggregatesPerPoll,
-            int eventsPerAggregate) {
+            int eventsPerAggregate,
+            Abandonments abandonments) {
 
         this.connections = Objects.requireNonNull(connections, "connections must not be null");
         this.publisher = Objects.requireNonNull(publisher, "publisher must not be null");
         this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy must not be null");
+        this.abandonments = Objects.requireNonNull(abandonments, "abandonments must not be null");
         if (aggregatesPerPoll < 1) {
             throw new IllegalArgumentException(
                     "aggregatesPerPoll must be at least 1 but was " + aggregatesPerPoll);
@@ -429,6 +452,7 @@ public final class OutboxRelay {
         }
 
         if (exhausted) {
+            abandonments.recordAbandoned(connection, event, attemptsAfter);
             log.error(
                     "Outbox event {} ({}) abandoned after {} attempts; aggregate {} is now blocked",
                     event.eventId().value(),

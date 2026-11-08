@@ -48,6 +48,19 @@ public interface InboxEventHandler {
      * does. Throwing is the correct way to fail: the transaction rolls back — dedupe record
      * included — the record is not acknowledged, and the redelivery retries. A handler that
      * swallows its own failure records the message as processed and drops it.
+     *
+     * <p>A record that keeps failing for a reason of its own is parked after its bounded retries
+     * (`P15-TSK-028`), so its partition goes on; {@link InboxFailures} says what does not count.
      */
     void handle(Connection unitOfWork, ReceivedEvent event);
+
+    /**
+     * The handler-set catalogue's mark (`P15-TSK-028`): applying this event twice is harmless by the nature of the effect, with no
+     * dedupe record, for example an idempotent upsert of the same fact. A replay older than the inbox's dedupe window is refused
+     * unless <em>every</em> consumer of the type carries this mark. Off by default, and an override is a reviewed claim about the
+     * handler, because the inbox cannot protect it past the window.
+     */
+    default boolean naturallyIdempotent() {
+        return false;
+    }
 }

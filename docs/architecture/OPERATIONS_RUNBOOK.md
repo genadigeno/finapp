@@ -1892,11 +1892,11 @@ own latency metrics explain. Steps 1-6 together take at most 57 s; the grace per
 57 s and step 7 (`P15-TSK-009`). A pod still running when the grace ends is killed - the same as any kill, and as
 correct.
 
-### 11.6 Broker outage and consumer lag
+### 11.6 Broker outage, consumer lag, a poison record, dead letters and replay
 
-*Written by `P15-TSK-026` (2026-11-08) from the clients it built; **not yet rehearsed** - no deployed broker exists, and
-the rehearsal is `P15-TSK-028`'s and `-032`'s. A poison record, dead letters and replay are `P15-TSK-028`'s part of this
-subsection. The consumption and freshness SLOs, and their alerts, are `P15-TSK-025`'s; the signals below exist today.*
+*Written by `P15-TSK-026` and `P15-TSK-028` (2026-11-08) from the code they built; **not yet rehearsed** - no deployed broker
+exists, and the rehearsal is `-032`'s. The consumption and freshness SLOs, and their alerts, are `P15-TSK-025`'s; the signals
+below exist today.*
 
 **What is at stake.** Kafka carries hints, never truth (`INV-EVT-02`). While the broker is away nothing financial is lost
 or wrong: every event waits in the outbox in PostgreSQL, in its aggregate's order, and every consumer's place is its
@@ -1964,9 +1964,10 @@ reason to take the fleet out of service. The alert on the series is `P15-TSK-025
 publish no lag series yet (`P15-TSK-025`); a group's lag in records is the broker's consumer-group view of
 `finapp.<module>`, read with the provider's tooling.
 
-1. **A stalled partition** (a record that fails or is contended): §9.12. The record is retried, never skipped. Fix the
+1. **A stalled partition** (a record that fails or is contended): §9.12. The record is retried, never skipped; if it is
+   failing for a reason of its own it parks after five failures and two minutes, and the partition goes on (below). Fix the
    cause - deploy the build that reads the event's version, restore the upstream data - and the partition drains. Never
-   move the group's offset past it by hand: the effect would never happen.
+   move the group's offset past it by hand: the effect would never happen, and nothing would say so.
 2. **Too slow, not stalled**: a group's parallelism is its partitions (12 per topic) and its members (one per replica).
    Adding replicas adds members, and the cooperative assignor pauses only the partitions that move. Repeated rebalances in
    the logs mean a member is being evicted for exceeding the poll budget (10 records in 120 seconds; a budget, not a
@@ -1975,12 +1976,68 @@ publish no lag series yet (`P15-TSK-025`); a group's lag in records is the broke
    throughput collapses - find the slow statement in the handler. An eviction series of its own is `P15-TSK-025`'s.
 3. **A group stopped for days**: a topic keeps a record for 7 days, so restore consumption before the oldest unconsumed
    record reaches that age. Past it, the deleted records are lost hints: the group resumes at the earliest one retained,
-   and the gap is recovered from the outbox by `P15-TSK-028`'s audited replay, bounded by the inbox's 14-day window. A
+   and the gap is recovered from the outbox by an audited replay (below), bounded by the inbox's 14-day window. A
    group with no members loses its committed offsets after 7 days and restarts from the earliest retained record; every
    such record is inside the dedupe window, so the replay is absorbed.
 
 Never reset a group's offsets to the latest record: it skips facts silently. Resetting to the earliest retained record is
 safe, because the inbox deduplicates everything the topic still holds.
+
+#### A poison record
+
+*Signals*: `finapp.deadletter.parked{group}` above zero, alerted by `P15-TSK-025`'s rule; `finapp.inbox.consumption{outcome="parked"}`;
+an `ERROR`, `Record of <type> parked for consumer ...`, naming the failure's class; `inbox.RecordParked` in the audit trail. A parked
+record is set aside and its partition has already moved on, so this is not an outage and nothing is lost: the record is on
+`platform.inbox_parked_record`, its event still in the outbox.
+
+Only a failure of the record's own counts, against both budgets, on the database's clock: five failures and two minutes
+(`finapp.inbox.park-after-attempts`, `finapp.inbox.park-after-failing-for`). A database that blinked, a pool that ran dry, a
+contended claim, a refused broker credential or a build too old to read a version never counts: the partition stalls until the
+cause is gone, as §9.12 says. **Many parks at once are a bad release, not bad records**: stop, read the failure class, fix forward.
+
+1. **Read the queue**: `GET /v1/operator/events/dead-letters` (`EVENT_OPERATE`). Audited; identifiers and the failure's class,
+   never a payload or the failure's message.
+2. **Fix the cause first.** Releasing a record the handler still cannot take costs it its budget again and parks it again.
+3. **Release it**: `POST /v1/operator/events/parked/{parkId}/release`, with a reason, on a `MULTI_FACTOR` session. It clears the
+   count and republishes the event through the outbox; every other consumer's inbox refuses the duplicate.
+   Refused `deadletter.ReplayOutsideDedupeWindow` past the 14 days, and `deadletter.NotReleasable` for a record that was
+   never an event (a malformed one) or whose event has left the outbox: its only way on is a discard.
+4. **Or discard it**, below. Never `DELETE` a row or move a group's offset to get past it.
+
+#### Dead letters: an abandoned event
+
+*Signals*: `outbox.EventAbandoned` in the audit trail; `finapp.outbox.publication{outcome="deadlettered"}`; an `ERROR`
+naming the event, the aggregate and the attempts; a `WARN` each cycle that the aggregate is blocked behind it;
+`finapp.outbox.oldest` climbing. The row blocks its aggregate, by design: later events of that aggregate wait.
+
+1. **Read the queue**, as above. The failure's class says what to do: a broker or credential class is environmental; a
+   class that speaks of the payload is the event's own.
+2. **Environmental, and the cause is fixed: retry.** `POST /v1/operator/events/abandoned/{eventId}/retry`, with a reason. The
+   relay takes it again in its aggregate's order.
+3. **The event can never be published: discard, two people.** `POST /v1/operator/events/discards` (`subjectKind`
+   `OUTBOX_EVENT` or `INBOX_RECORD`, `subjectId`, `reason`), then a **different** `EVENT_OPERATOR`
+   `POST /v1/operator/events/discards/{discardId}/approval`. Consumers will never see that fact: record why, and expect to
+   answer for it at reconciliation. The row stays as the evidence of the gap, and the aggregate goes on. A proposal that
+   should not proceed is rejected, by anyone including its proposer, `.../rejection`; while one stands, a retry is refused.
+
+There is no raw `UPDATE` in this procedure, and none is needed.
+
+#### Replay
+
+*For*: a group stopped past topic retention (above); a handler added to a release, over its rollout and any rollback windows
+(§11.1, §11.3; `P15-TSK-027`'s catalogue says which). *Not for*: reprocessing a parked record, which is a release.
+
+1. **Choose the type and the window** of first publication, `[from, to)`, as instants. One command, one type, at most 1000
+   events, all or nothing. More than that: narrow the window and repeat. Replay at volume is Phase 16's.
+2. **Order it** after the rollout completes: `POST /v1/operator/events/replays` `{eventType, from, to, reason}`, on a
+   `MULTI_FACTOR` session (`outbox.EventReplayOrdered`). The receipt says how many were requeued, not delivered.
+3. **What to expect**: the events return to the outbox, so `finapp.outbox.pending` rises and falls, the age measured from the order;
+   consumers that already applied them count `finapp.inbox.consumption{outcome="duplicate"}`, and only a consumer without a
+   dedupe record runs its handler.
+4. **`deadletter.ReplayOutsideDedupeWindow`**: an event in the window is 14 days old or more, so its dedupe rows may be gone and a
+   replay could apply an effect twice. The whole command is refused. Never work around it: narrow the window to what is
+   inside, and treat what is outside as a gap, recovered from the system of record by the owning domain. Only a type every
+   consumer of which is marked `naturallyIdempotent` in the handler catalogue may go past it, and none is today.
 
 ### 11.8 Instance down, stale gauges - `InstanceDown`, `FinappTargetsAbsent`, `GaugesStale`, `FxGaugesUnreadable`, `ReconciliationGaugesUnreadable`
 

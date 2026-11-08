@@ -1,5 +1,6 @@
 package com.finapp.app.risk;
 
+import com.finapp.platform.inbox.EventNotYetReadable;
 import com.finapp.platform.inbox.InboxEventHandler;
 import com.finapp.platform.inbox.ReceivedEvent;
 import com.finapp.platform.security.SecurityContext;
@@ -37,8 +38,9 @@ import lombok.extern.slf4j.Slf4j;
  * ({@code finapp.inbox.consumption{outcome=failed}} rises; the loop's backoff bounds the retry rate). A hint may be
  * acknowledged and lost, because the sweep converges without it; a signal is evidence, and a signal silently dropped
  * is an undetectable gap in it - the block-don't-skip rule on the consuming side ({@code EVENT_ARCHITECTURE.md}
- * section Consumption). The backlog's "parking" is not a mechanism the platform has; the stall is. Nothing is ever
- * truncated to fit.
+ * section Consumption). An unknown version is {@link EventNotYetReadable}, so it stalls until
+ * a build that reads it arrives and never parks; a payload this build cannot read parks after its bounded retries
+ * (`P15-TSK-028`), kept and counted rather than dropped, and released by an operator. Nothing is ever truncated to fit.
  *
  * <p><strong>The completions record no signal.</strong> {@code transfers}', {@code payments}' and {@code crossborder}'s
  * completions are hints to the monitoring sweep: each is handed to {@link MonitoringHints}, which `-019` implements
@@ -221,7 +223,7 @@ public final class RiskSignalIntake implements InboxEventHandler {
         if (event.eventVersion() < 1 || event.eventVersion() > Source.NEWEST_VERSION) {
             // Refused, not acknowledged: a signal of a contract this build cannot read is evidence it would otherwise
             // drop without a trace. The shell rolls back and stalls the partition loudly.
-            throw new IllegalStateException(
+            throw new EventNotYetReadable(
                     "A " + source.eventType + " event of version " + event.eventVersion()
                             + " cannot be read as a risk signal by this build (newest known: "
                             + Source.NEWEST_VERSION + "); refused for redelivery after a deploy that knows it");
