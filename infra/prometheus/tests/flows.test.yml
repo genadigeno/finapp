@@ -1,0 +1,609 @@
+# promtool unit tests for infra/prometheus/rules/flows.yml (P15-TSK-025): each critical flow's alert fires on its planted series and is silent when healthy, over two instances.
+# Generated once and reviewed as written; CI runs every file here through promtool (infra/scripts/alert-rules-check.sh, P15-TSK-025).
+# Two instances wherever instances can differ: the multi-instance case is the rule's aggregation.
+
+rule_files:
+  - ../rules/flows.yml
+
+evaluation_interval: 1m
+
+tests:
+  # AuthenticationRefusalsSpike: refusals spread over both instances; only the sum crosses 50 and the ratio.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_identity_authentication_total{job="finapp", instance="a:8081", outcome="refused"}'
+        values: '0+5x30'
+      - series: 'finapp_identity_authentication_total{job="finapp", instance="b:8081", outcome="refused"}'
+        values: '0+5x30'
+      - series: 'finapp_identity_authentication_total{job="finapp", instance="a:8081", outcome="authenticated"}'
+        values: '0+1x30'
+      - series: 'finapp_identity_authentication_total{job="finapp", instance="b:8081", outcome="authenticated"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: AuthenticationRefusalsSpike
+        exp_alerts:
+          - exp_labels:
+              owner: identity
+              severity: ticket
+            exp_annotations:
+              summary: "Most authentications are being refused"
+              description: "Over half of the authentications of the last 15 minutes were refused, at least 50 of them. See OPERATIONS_RUNBOOK.md section 11.22."
+
+  # AuthenticationRefusalsSpike: many refusals among many successes: healthy.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_identity_authentication_total{job="finapp", instance="a:8081", outcome="refused"}'
+        values: '0+5x30'
+      - series: 'finapp_identity_authentication_total{job="finapp", instance="b:8081", outcome="refused"}'
+        values: '0+5x30'
+      - series: 'finapp_identity_authentication_total{job="finapp", instance="a:8081", outcome="authenticated"}'
+        values: '0+100x30'
+      - series: 'finapp_identity_authentication_total{job="finapp", instance="b:8081", outcome="authenticated"}'
+        values: '0+100x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: AuthenticationRefusalsSpike
+        exp_alerts: []
+
+  # AccountLockoutSpike: locks over both instances cross 20 only in sum.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_identity_lockout_total{job="finapp", instance="a:8081"}'
+        values: '0+1x30'
+      - series: 'finapp_identity_lockout_total{job="finapp", instance="b:8081"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: AccountLockoutSpike
+        exp_alerts: []
+      - eval_time: 14m
+        alertname: AccountLockoutSpike
+        exp_alerts:
+          - exp_labels:
+              owner: identity
+              severity: page
+            exp_annotations:
+              summary: "Accounts are being locked at a campaign's rate"
+              description: "More than 20 accounts were locked in 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."
+
+  # AccountLockoutSpike: a trickle: healthy.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_identity_lockout_total{job="finapp", instance="a:8081"}'
+        values: '0x30'
+      - series: 'finapp_identity_lockout_total{job="finapp", instance="b:8081"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: AccountLockoutSpike
+        exp_alerts: []
+
+  # LedgerPostingsRefused: refusals over both instances.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_ledger_posting_total{job="finapp", instance="a:8081", outcome="refused"}'
+        values: '0+5x30'
+      - series: 'finapp_ledger_posting_total{job="finapp", instance="b:8081", outcome="refused"}'
+        values: '0+5x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: LedgerPostingsRefused
+        exp_alerts:
+          - exp_labels:
+              owner: ledger
+              severity: ticket
+            exp_annotations:
+              summary: "The ledger is refusing postings"
+              description: "More than 50 journal writes were refused in 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."
+
+  # LedgerPostingsRefused: postings are no refusals.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_ledger_posting_total{job="finapp", instance="a:8081", outcome="posted"}'
+        values: '0+50x30'
+      - series: 'finapp_ledger_posting_total{job="finapp", instance="b:8081", outcome="refused"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: LedgerPostingsRefused
+        exp_alerts: []
+
+  # CustomerWalletNegative: instance b NaN, a reading one wallet below zero: fires after the hour.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_ledger_negative_positions{job="finapp", instance="a:8081", purpose="CUSTOMER_WALLET"}'
+        values: '1x90'
+      - series: 'finapp_ledger_negative_positions{job="finapp", instance="b:8081", purpose="CUSTOMER_WALLET"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: CustomerWalletNegative
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: CustomerWalletNegative
+        exp_alerts:
+          - exp_labels:
+              owner: ledger
+              severity: ticket
+            exp_annotations:
+              summary: "A customer wallet stands below zero"
+              description: "1 customer wallets stand below zero after a chargeback. See OPERATIONS_RUNBOOK.md section 11.22."
+
+  # CustomerWalletNegative: a merchant payable below zero is not this alert.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_ledger_negative_positions{job="finapp", instance="a:8081", purpose="MERCHANT_PAYABLE"}'
+        values: '1x90'
+      - series: 'finapp_ledger_negative_positions{job="finapp", instance="a:8081", purpose="CUSTOMER_WALLET"}'
+        values: '0x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: CustomerWalletNegative
+        exp_alerts: []
+
+  # PaymentUnknownAged: instance b NaN, a over 15 minutes: fires.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_unknown_age{job="finapp", instance="a:8081"}'
+        values: '1000x12'
+      - series: 'finapp_payments_unknown_age{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PaymentUnknownAged
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: PaymentUnknownAged
+        exp_alerts:
+          - exp_labels:
+              owner: payments
+              severity: page
+            exp_annotations:
+              summary: "A payment operation has been unknown too long"
+              description: "The oldest unknown payment operation has waited over 15 minutes for an answer. See OPERATIONS_RUNBOOK.md section 11.22."
+
+  # PaymentUnknownAged: healthy.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_unknown_age{job="finapp", instance="a:8081"}'
+        values: '10x12'
+      - series: 'finapp_payments_unknown_age{job="finapp", instance="b:8081"}'
+        values: '10x12'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: PaymentUnknownAged
+        exp_alerts: []
+
+  # WithdrawalUnknownAged: instance b NaN, a over 15 minutes: fires.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_withdrawal_unknown_age{job="finapp", instance="a:8081"}'
+        values: '1000x12'
+      - series: 'finapp_payments_withdrawal_unknown_age{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: WithdrawalUnknownAged
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: WithdrawalUnknownAged
+        exp_alerts:
+          - exp_labels:
+              owner: payments
+              severity: page
+            exp_annotations:
+              summary: "A withdrawal has been unknown too long"
+              description: "The oldest unanswered withdrawal has waited over 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."
+
+  # WithdrawalUnknownAged: healthy.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_withdrawal_unknown_age{job="finapp", instance="a:8081"}'
+        values: '10x12'
+      - series: 'finapp_payments_withdrawal_unknown_age{job="finapp", instance="b:8081"}'
+        values: '10x12'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: WithdrawalUnknownAged
+        exp_alerts: []
+
+  # MerchantPayoutUnknownAged: instance b NaN, a over 15 minutes: fires.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_merchant_payout_unknown_age{job="finapp", instance="a:8081"}'
+        values: '1000x12'
+      - series: 'finapp_merchant_payout_unknown_age{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: MerchantPayoutUnknownAged
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: MerchantPayoutUnknownAged
+        exp_alerts:
+          - exp_labels:
+              owner: merchant
+              severity: page
+            exp_annotations:
+              summary: "A merchant payout has been unanswered too long"
+              description: "The oldest unanswered payout has waited over 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."
+
+  # MerchantPayoutUnknownAged: healthy.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_merchant_payout_unknown_age{job="finapp", instance="a:8081"}'
+        values: '10x12'
+      - series: 'finapp_merchant_payout_unknown_age{job="finapp", instance="b:8081"}'
+        values: '10x12'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: MerchantPayoutUnknownAged
+        exp_alerts: []
+
+  # PaymentWebhookRefusalsSpike: refusals over both instances.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_webhook_total{job="finapp", instance="a:8081", outcome="refused"}'
+        values: '0+5x30'
+      - series: 'finapp_payments_webhook_total{job="finapp", instance="b:8081", outcome="refused"}'
+        values: '0+5x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: PaymentWebhookRefusalsSpike
+        exp_alerts:
+          - exp_labels:
+              owner: payments
+              severity: ticket
+            exp_annotations:
+              summary: "Provider webhooks are being refused"
+              description: "More than 50 webhook deliveries were refused in 15 minutes: a rotated secret or forged traffic. See OPERATIONS_RUNBOOK.md section 11.22."
+
+  # PaymentWebhookRefusalsSpike: processed deliveries are no refusals.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_webhook_total{job="finapp", instance="a:8081", outcome="processed"}'
+        values: '0+50x30'
+      - series: 'finapp_payments_webhook_total{job="finapp", instance="b:8081", outcome="refused"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: PaymentWebhookRefusalsSpike
+        exp_alerts: []
+
+  # PaymentSweeperOff: off on instance b alone: only b fires, per instance.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_sweeper_enabled{job="finapp", instance="a:8081"}'
+        values: '1x10'
+      - series: 'finapp_payments_sweeper_enabled{job="finapp", instance="b:8081"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: PaymentSweeperOff
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: PaymentSweeperOff
+        exp_alerts:
+          - exp_labels:
+              instance: b:8081
+              job: finapp
+              owner: payments
+              severity: ticket
+            exp_annotations:
+              summary: "The payment sweep is off on b:8081"
+              description: "finapp.payments.sweeper.enabled is false there, so its unknown payments are not resolved by it. See OPERATIONS_RUNBOOK.md section 11.22."
+
+  # PaymentSweeperOff: on everywhere: silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_sweeper_enabled{job="finapp", instance="a:8081"}'
+        values: '1x10'
+      - series: 'finapp_payments_sweeper_enabled{job="finapp", instance="b:8081"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: PaymentSweeperOff
+        exp_alerts: []
+
+  # CheckoutSweeperOff: off on instance b alone: only b fires, per instance.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_checkout_sweeper_enabled{job="finapp", instance="a:8081"}'
+        values: '1x10'
+      - series: 'finapp_checkout_sweeper_enabled{job="finapp", instance="b:8081"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: CheckoutSweeperOff
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: CheckoutSweeperOff
+        exp_alerts:
+          - exp_labels:
+              instance: b:8081
+              job: finapp
+              owner: checkout
+              severity: ticket
+            exp_annotations:
+              summary: "The checkout expiry sweep is off on b:8081"
+              description: "finapp.checkout.sweeper.enabled is false there. See OPERATIONS_RUNBOOK.md section 11.22."
+
+  # CheckoutSweeperOff: on everywhere: silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_checkout_sweeper_enabled{job="finapp", instance="a:8081"}'
+        values: '1x10'
+      - series: 'finapp_checkout_sweeper_enabled{job="finapp", instance="b:8081"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: CheckoutSweeperOff
+        exp_alerts: []
+
+  # MerchantPayoutSweeperOff: off on instance b alone: only b fires, per instance.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_merchant_payout_sweeper_enabled{job="finapp", instance="a:8081"}'
+        values: '1x10'
+      - series: 'finapp_merchant_payout_sweeper_enabled{job="finapp", instance="b:8081"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: MerchantPayoutSweeperOff
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: MerchantPayoutSweeperOff
+        exp_alerts:
+          - exp_labels:
+              instance: b:8081
+              job: finapp
+              owner: merchant
+              severity: ticket
+            exp_annotations:
+              summary: "The merchant payout sweep is off on b:8081"
+              description: "finapp.merchant.payout.sweeper.enabled is false there. See OPERATIONS_RUNBOOK.md section 11.22."
+
+  # MerchantPayoutSweeperOff: on everywhere: silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_merchant_payout_sweeper_enabled{job="finapp", instance="a:8081"}'
+        values: '1x10'
+      - series: 'finapp_merchant_payout_sweeper_enabled{job="finapp", instance="b:8081"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: MerchantPayoutSweeperOff
+        exp_alerts: []
+
+  # TransferFailureSpike: failures over both instances, a fifth of the judged.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_transfers_transfer_total{job="finapp", instance="a:8081", outcome="failed"}'
+        values: '0+2x30'
+      - series: 'finapp_transfers_transfer_total{job="finapp", instance="b:8081", outcome="failed"}'
+        values: '0+2x30'
+      - series: 'finapp_transfers_transfer_total{job="finapp", instance="a:8081", outcome="completed"}'
+        values: '0+4x30'
+      - series: 'finapp_transfers_transfer_total{job="finapp", instance="b:8081", outcome="completed"}'
+        values: '0+4x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: TransferFailureSpike
+        exp_alerts:
+          - exp_labels:
+              owner: transfers
+              severity: ticket
+            exp_annotations:
+              summary: "A fifth of transfers are failing"
+              description: "Over a fifth of the transfers judged in the last 15 minutes failed, at least 20 of them. See OPERATIONS_RUNBOOK.md section 11.22."
+
+  # TransferFailureSpike: refusals and replays are not failures.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_transfers_transfer_total{job="finapp", instance="a:8081", outcome="refused"}'
+        values: '0+5x30'
+      - series: 'finapp_transfers_transfer_total{job="finapp", instance="b:8081", outcome="replayed"}'
+        values: '0+5x30'
+      - series: 'finapp_transfers_transfer_total{job="finapp", instance="a:8081", outcome="completed"}'
+        values: '0+10x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: TransferFailureSpike
+        exp_alerts: []
+
+  # TransferKeyConflict: one conflict on instance b.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_transfers_conflict_total{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_transfers_conflict_total{job="finapp", instance="b:8081"}'
+        values: '0 0 1x18'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: TransferKeyConflict
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: TransferKeyConflict
+        exp_alerts:
+          - exp_labels:
+              owner: transfers
+              severity: ticket
+            exp_annotations:
+              summary: "A transfer idempotency key was reused with a different request"
+              description: "A key reused with a different body was refused (INV-IDEM-03). See OPERATIONS_RUNBOOK.md section 11.22."
+
+  # CheckoutExpiryRising: most sessions expired, over both instances.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_checkout_session_total{job="finapp", instance="a:8081", outcome="expired"}'
+        values: '0+1x90'
+      - series: 'finapp_checkout_session_total{job="finapp", instance="b:8081", outcome="expired"}'
+        values: '0+1x90'
+      - series: 'finapp_checkout_session_total{job="finapp", instance="a:8081", outcome="completed"}'
+        values: '0x90'
+      - series: 'finapp_checkout_session_total{job="finapp", instance="b:8081", outcome="completed"}'
+        values: '0x90'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: CheckoutExpiryRising
+        exp_alerts:
+          - exp_labels:
+              owner: checkout
+              severity: ticket
+            exp_annotations:
+              summary: "Most checkout offers are expiring"
+              description: "Over half of the last hour's checkout sessions expired, at least 20 of them. See OPERATIONS_RUNBOOK.md section 11.22."
+
+  # CheckoutExpiryRising: most completed: healthy.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_checkout_session_total{job="finapp", instance="a:8081", outcome="expired"}'
+        values: '0+1x90'
+      - series: 'finapp_checkout_session_total{job="finapp", instance="a:8081", outcome="completed"}'
+        values: '0+10x90'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: CheckoutExpiryRising
+        exp_alerts: []
+
+  # KycReviewQueueBacklog: instance b NaN, a over 100.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_kyc_review_queue{job="finapp", instance="a:8081"}'
+        values: '150x90'
+      - series: 'finapp_kyc_review_queue{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: KycReviewQueueBacklog
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: KycReviewQueueBacklog
+        exp_alerts:
+          - exp_labels:
+              owner: kyc
+              severity: ticket
+            exp_annotations:
+              summary: "The KYC review queue is backing up"
+              description: "150 KYC reviews are waiting for a person. See OPERATIONS_RUNBOOK.md section 11.22."
+
+  # KycReviewQueueBacklog: healthy.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_kyc_review_queue{job="finapp", instance="a:8081"}'
+        values: '10x90'
+      - series: 'finapp_kyc_review_queue{job="finapp", instance="b:8081"}'
+        values: '10x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: KycReviewQueueBacklog
+        exp_alerts: []
+
+  # ConsentRoutesFailing: withdrawal answering 500 on instance b alone, sustained.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="DELETE", status="200", uri="/v1/me/consents/{purpose}"}'
+        values: '0+10x40'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="DELETE", status="500", uri="/v1/me/consents/{purpose}"}'
+        values: '0+1x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ConsentRoutesFailing
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: ConsentRoutesFailing
+        exp_alerts:
+          - exp_labels:
+              owner: consent
+              severity: page
+            exp_annotations:
+              summary: "The consent routes are failing"
+              description: "The consent routes have answered 5xx for 15 minutes, so a person may be unable to withdraw consent. See OPERATIONS_RUNBOOK.md section 11.22."
+
+  # ConsentRoutesFailing: a refusal is not a failure.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="DELETE", status="404", uri="/v1/me/consents/{purpose}"}'
+        values: '0+1x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: ConsentRoutesFailing
+        exp_alerts: []
+
+  # FlowGaugesUnreadable: every gauge NaN on instance b: one alert per gauge, on b alone.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_payments_unknown_age{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_payments_withdrawal_unknown_age{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_merchant_payout_unknown_age{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_kyc_review_queue{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_ledger_negative_positions{job="finapp", instance="a:8081", purpose="CUSTOMER_WALLET"}'
+        values: '0x20'
+      - series: 'finapp_payments_unknown_age{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_payments_withdrawal_unknown_age{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_merchant_payout_unknown_age{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_kyc_review_queue{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_ledger_negative_positions{job="finapp", instance="b:8081", purpose="CUSTOMER_WALLET"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: FlowGaugesUnreadable
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: FlowGaugesUnreadable
+        exp_alerts:
+          - exp_labels:
+              gauge: finapp_kyc_review_queue
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A critical flow's gauge cannot be read on b:8081"
+              description: "finapp_kyc_review_queue is NaN on b:8081 for 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."
+          - exp_labels:
+              gauge: finapp_ledger_negative_positions
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A critical flow's gauge cannot be read on b:8081"
+              description: "finapp_ledger_negative_positions is NaN on b:8081 for 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."
+          - exp_labels:
+              gauge: finapp_merchant_payout_unknown_age
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A critical flow's gauge cannot be read on b:8081"
+              description: "finapp_merchant_payout_unknown_age is NaN on b:8081 for 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."
+          - exp_labels:
+              gauge: finapp_payments_unknown_age
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A critical flow's gauge cannot be read on b:8081"
+              description: "finapp_payments_unknown_age is NaN on b:8081 for 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."
+          - exp_labels:
+              gauge: finapp_payments_withdrawal_unknown_age
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A critical flow's gauge cannot be read on b:8081"
+              description: "finapp_payments_withdrawal_unknown_age is NaN on b:8081 for 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."
+

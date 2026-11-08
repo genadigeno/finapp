@@ -319,6 +319,25 @@ jobs:
         run: ./infra/scripts/terraform-check.sh
 
   # ---------------------------------------------------------------------------
+  # The alert rules and routing (P15-TSK-025, ADR-0124): promtool checks every
+  # rule and runs every infra/prometheus/tests/*.test.yml, amtool checks the
+  # routing and that a page and a ticket reach their receivers, and each kind of
+  # check refuses a planted defect in the same run. The same script a developer
+  # runs; its images are pinned in infra/scanner-pins.sh. No credential: the
+  # receivers are placeholders (THREAT_MODEL.md T30).
+  # ---------------------------------------------------------------------------
+  alerts:
+    name: Alert rules and routing
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check the rules and the routing, and that each check refuses its plant
+        run: ./infra/scripts/alert-rules-check.sh
+
+  # ---------------------------------------------------------------------------
   # The application image (P15-TSK-003, owner decision C4).
   #
   # Built twice from this commit - the boot jar each time from source, every task re-run - and

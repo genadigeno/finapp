@@ -1,0 +1,455 @@
+# promtool unit tests for infra/prometheus/rules/correctness.yml (P15-TSK-025): each correctness signal pages on its first breaching sample, never budgeted.
+# Generated once and reviewed as written; CI runs every file here through promtool (infra/scripts/alert-rules-check.sh, P15-TSK-025).
+# Two instances wherever instances can differ: the multi-instance case is the rule's aggregation.
+
+rule_files:
+  - ../rules/correctness.yml
+
+evaluation_interval: 15s
+
+tests:
+  # LedgerTrialBalanceNonZero: instance b NaN, instance a breaching from its 4th sample: it fires at that first sample, and the NaN neither hides nor delays it.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_ledger_trial_balance{job="finapp", instance="a:8081", currency="USD"}'
+        values: '0 0 0 1 1 1 1 1 1'
+      - series: 'finapp_ledger_trial_balance{job="finapp", instance="b:8081", currency="USD"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LedgerTrialBalanceNonZero
+        exp_alerts: []
+      - eval_time: 45s
+        alertname: LedgerTrialBalanceNonZero
+        exp_alerts:
+          - exp_labels:
+              currency: USD
+              owner: ledger
+              severity: page
+            exp_annotations:
+              summary: "The trial balance for USD is not zero"
+              description: "Total debits differ from total credits in USD (INV-ACC-01). Never correct it from here. See OPERATIONS_RUNBOOK.md section 11.20."
+
+  # LedgerTrialBalanceNonZero: instance a healthy, instance b breaching: max() still fires.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_ledger_trial_balance{job="finapp", instance="a:8081", currency="USD"}'
+        values: '0x8'
+      - series: 'finapp_ledger_trial_balance{job="finapp", instance="b:8081", currency="USD"}'
+        values: '1x8'
+    alert_rule_test:
+      - eval_time: 15s
+        alertname: LedgerTrialBalanceNonZero
+        exp_alerts:
+          - exp_labels:
+              currency: USD
+              owner: ledger
+              severity: page
+            exp_annotations:
+              summary: "The trial balance for USD is not zero"
+              description: "Total debits differ from total credits in USD (INV-ACC-01). Never correct it from here. See OPERATIONS_RUNBOOK.md section 11.20."
+
+  # LedgerTrialBalanceNonZero: one instance NaN, the other healthy: a NaN is no breach.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_ledger_trial_balance{job="finapp", instance="a:8081", currency="USD"}'
+        values: '0x8'
+      - series: 'finapp_ledger_trial_balance{job="finapp", instance="b:8081", currency="USD"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LedgerTrialBalanceNonZero
+        exp_alerts: []
+
+  # LedgerTrialBalanceNonZero: every instance NaN: no breach claimed.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_ledger_trial_balance{job="finapp", instance="a:8081", currency="USD"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_ledger_trial_balance{job="finapp", instance="b:8081", currency="USD"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LedgerTrialBalanceNonZero
+        exp_alerts: []
+
+  # LedgerProjectionDrift: instance b NaN, instance a breaching from its 4th sample: it fires at that first sample, and the NaN neither hides nor delays it.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="a:8081"}'
+        values: '0 0 0 2 2 2 2 2 2'
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: LedgerProjectionDrift
+        exp_alerts: []
+      - eval_time: 45s
+        alertname: LedgerProjectionDrift
+        exp_alerts:
+          - exp_labels:
+              owner: ledger
+              severity: page
+            exp_annotations:
+              summary: "A balance projection disagrees with the journal"
+              description: "2 accounts have a projection that differs from the journal (INV-BAL-02). The journal is the truth. See OPERATIONS_RUNBOOK.md section 11.20."
+
+  # LedgerProjectionDrift: instance a healthy, instance b breaching: max() still fires.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="a:8081"}'
+        values: '0x8'
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="b:8081"}'
+        values: '2x8'
+    alert_rule_test:
+      - eval_time: 15s
+        alertname: LedgerProjectionDrift
+        exp_alerts:
+          - exp_labels:
+              owner: ledger
+              severity: page
+            exp_annotations:
+              summary: "A balance projection disagrees with the journal"
+              description: "2 accounts have a projection that differs from the journal (INV-BAL-02). The journal is the truth. See OPERATIONS_RUNBOOK.md section 11.20."
+
+  # LedgerProjectionDrift: one instance NaN, the other healthy: a NaN is no breach.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="a:8081"}'
+        values: '0x8'
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LedgerProjectionDrift
+        exp_alerts: []
+
+  # LedgerProjectionDrift: every instance NaN: no breach claimed.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="a:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: LedgerProjectionDrift
+        exp_alerts: []
+
+  # OutboxDeadLetter: instance b NaN, instance a breaching from its 4th sample: it fires at that first sample, and the NaN neither hides nor delays it.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="a:8081"}'
+        values: '0 0 0 1 1 1 1 1 1'
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: OutboxDeadLetter
+        exp_alerts: []
+      - eval_time: 45s
+        alertname: OutboxDeadLetter
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: page
+            exp_annotations:
+              summary: "An outbox event is dead-lettered"
+              description: "1 outbox events were abandoned and still block their aggregates. See OPERATIONS_RUNBOOK.md section 11.20."
+
+  # OutboxDeadLetter: instance a healthy, instance b breaching: max() still fires.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="a:8081"}'
+        values: '0x8'
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="b:8081"}'
+        values: '1x8'
+    alert_rule_test:
+      - eval_time: 15s
+        alertname: OutboxDeadLetter
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: page
+            exp_annotations:
+              summary: "An outbox event is dead-lettered"
+              description: "1 outbox events were abandoned and still block their aggregates. See OPERATIONS_RUNBOOK.md section 11.20."
+
+  # OutboxDeadLetter: one instance NaN, the other healthy: a NaN is no breach.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="a:8081"}'
+        values: '0x8'
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: OutboxDeadLetter
+        exp_alerts: []
+
+  # OutboxDeadLetter: every instance NaN: no breach claimed.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="a:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: OutboxDeadLetter
+        exp_alerts: []
+
+  # InboxDeadLetterParked: instance b NaN, instance a breaching from its 4th sample: it fires at that first sample, and the NaN neither hides nor delays it.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_deadletter_parked{job="finapp", instance="a:8081"}'
+        values: '0 0 0 3 3 3 3 3 3'
+      - series: 'finapp_deadletter_parked{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: InboxDeadLetterParked
+        exp_alerts: []
+      - eval_time: 45s
+        alertname: InboxDeadLetterParked
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: page
+            exp_annotations:
+              summary: "An inbox record is parked"
+              description: "3 inbox records are parked and were never applied. See OPERATIONS_RUNBOOK.md section 11.20."
+
+  # InboxDeadLetterParked: instance a healthy, instance b breaching: max() still fires.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_deadletter_parked{job="finapp", instance="a:8081"}'
+        values: '0x8'
+      - series: 'finapp_deadletter_parked{job="finapp", instance="b:8081"}'
+        values: '3x8'
+    alert_rule_test:
+      - eval_time: 15s
+        alertname: InboxDeadLetterParked
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: page
+            exp_annotations:
+              summary: "An inbox record is parked"
+              description: "3 inbox records are parked and were never applied. See OPERATIONS_RUNBOOK.md section 11.20."
+
+  # InboxDeadLetterParked: one instance NaN, the other healthy: a NaN is no breach.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_deadletter_parked{job="finapp", instance="a:8081"}'
+        values: '0x8'
+      - series: 'finapp_deadletter_parked{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: InboxDeadLetterParked
+        exp_alerts: []
+
+  # InboxDeadLetterParked: every instance NaN: no breach claimed.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_deadletter_parked{job="finapp", instance="a:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_deadletter_parked{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: InboxDeadLetterParked
+        exp_alerts: []
+
+  # GlNotEqualLedger: one failed judgement on instance b fires at the first sample after it.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_accounting_close_check_total{job="finapp", instance="a:8081", check="GL_EQUALS_LEDGER", outcome="failed"}'
+        values: '0x8'
+      - series: 'finapp_accounting_close_check_total{job="finapp", instance="b:8081", check="GL_EQUALS_LEDGER", outcome="failed"}'
+        values: '0 0 0 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: GlNotEqualLedger
+        exp_alerts: []
+      - eval_time: 45s
+        alertname: GlNotEqualLedger
+        exp_alerts:
+          - exp_labels:
+              owner: accounting
+              severity: page
+            exp_annotations:
+              summary: "GL = ledger failed"
+              description: "The close check GL_EQUALS_LEDGER failed in the last hour (INV-ACC-06): a month cannot close on it. See OPERATIONS_RUNBOOK.md section 11.20."
+
+  # GlNotEqualLedger: another check failing, and this check passing, do not fire.
+  - interval: 15s
+    input_series:
+      - series: 'finapp_accounting_close_check_total{job="finapp", instance="a:8081", check="RULE_CONFORMANCE", outcome="failed"}'
+        values: '0 0 1 1 1 1 1 1 1'
+      - series: 'finapp_accounting_close_check_total{job="finapp", instance="b:8081", check="GL_EQUALS_LEDGER", outcome="passed"}'
+        values: '0+1x8'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: GlNotEqualLedger
+        exp_alerts: []
+
+  # CorrectnessGaugesUnreadable: every gauge NaN on instance b for its 15 minutes: one alert per gauge, on b alone.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_ledger_trial_balance{job="finapp", instance="a:8081", currency="USD"}'
+        values: '0x20'
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_deadletter_parked{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_ledger_trial_balance{job="finapp", instance="b:8081", currency="USD"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_deadletter_parked{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: CorrectnessGaugesUnreadable
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: CorrectnessGaugesUnreadable
+        exp_alerts:
+          - exp_labels:
+              gauge: finapp_deadletter_parked
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A correctness gauge cannot be read on b:8081"
+              description: "finapp_deadletter_parked is NaN on b:8081 for 15 minutes: its read is failing or the instance's gauge refresher is behind. See OPERATIONS_RUNBOOK.md section 11.20."
+          - exp_labels:
+              gauge: finapp_ledger_projection_drift
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A correctness gauge cannot be read on b:8081"
+              description: "finapp_ledger_projection_drift is NaN on b:8081 for 15 minutes: its read is failing or the instance's gauge refresher is behind. See OPERATIONS_RUNBOOK.md section 11.20."
+          - exp_labels:
+              gauge: finapp_ledger_trial_balance
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A correctness gauge cannot be read on b:8081"
+              description: "finapp_ledger_trial_balance is NaN on b:8081 for 15 minutes: its read is failing or the instance's gauge refresher is behind. See OPERATIONS_RUNBOOK.md section 11.20."
+          - exp_labels:
+              gauge: finapp_outbox_deadlettered
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A correctness gauge cannot be read on b:8081"
+              description: "finapp_outbox_deadlettered is NaN on b:8081 for 15 minutes: its read is failing or the instance's gauge refresher is behind. See OPERATIONS_RUNBOOK.md section 11.20."
+
+  # CorrectnessGaugesUnreadable: numbers everywhere: silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_ledger_trial_balance{job="finapp", instance="a:8081", currency="USD"}'
+        values: '0x20'
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_deadletter_parked{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_ledger_trial_balance{job="finapp", instance="b:8081", currency="USD"}'
+        values: '0x20'
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="b:8081"}'
+        values: '0x20'
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="b:8081"}'
+        values: '0x20'
+      - series: 'finapp_deadletter_parked{job="finapp", instance="b:8081"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: CorrectnessGaugesUnreadable
+        exp_alerts: []
+
+  # CorrectnessUnverifiable: no instance holds a number for the trial balance: it fires, since every rule on it is silent for the wrong reason.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_ledger_trial_balance{job="finapp", instance="a:8081", currency="USD"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_ledger_trial_balance{job="finapp", instance="b:8081", currency="USD"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="b:8081"}'
+        values: '0x20'
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="b:8081"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: CorrectnessUnverifiable
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: CorrectnessUnverifiable
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "No instance can verify the books"
+              description: "No instance has published a number for a correctness gauge for 15 minutes, so the correctness pages are silent for the wrong reason. See OPERATIONS_RUNBOOK.md section 11.20."
+
+  # CorrectnessUnverifiable: one instance NaN, one reading: the books are still verified.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_ledger_trial_balance{job="finapp", instance="a:8081", currency="USD"}'
+        values: '0x20'
+      - series: 'finapp_ledger_trial_balance{job="finapp", instance="b:8081", currency="USD"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="b:8081"}'
+        values: '0x20'
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="b:8081"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: CorrectnessUnverifiable
+        exp_alerts: []
+
+  # CorrectnessUnverifiable: the series is gone altogether: absent() fires.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_ledger_projection_drift{job="finapp", instance="b:8081"}'
+        values: '0x20'
+      - series: 'finapp_outbox_deadlettered{job="finapp", instance="b:8081"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: CorrectnessUnverifiable
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "No instance can verify the books"
+              description: "No instance has published a number for a correctness gauge for 15 minutes, so the correctness pages are silent for the wrong reason. See OPERATIONS_RUNBOOK.md section 11.20."
+

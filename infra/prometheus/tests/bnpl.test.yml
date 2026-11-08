@@ -1,0 +1,44 @@
+# promtool unit tests for BnplSweepClaimFailing in infra/prometheus/rules/bnpl.yml (P15-TSK-025; the debt row "The BNPL schedules log a claim-level sweep failure but never meter it").
+# Generated once and reviewed as written; CI runs every file here through promtool (infra/scripts/alert-rules-check.sh, P15-TSK-025).
+# Two instances wherever instances can differ: the multi-instance case is the rule's aggregation.
+
+rule_files:
+  - ../rules/bnpl.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Claims failing on instance b alone: the sum by kind fires once it has been sustained.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_bnpl_sweeper_claim_failed_total{job="finapp", instance="a:8081", kind="servicing"}'
+        values: '0x35'
+      - series: 'finapp_bnpl_sweeper_claim_failed_total{job="finapp", instance="b:8081", kind="servicing"}'
+        values: '0+1x35'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: BnplSweepClaimFailing
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: BnplSweepClaimFailing
+        exp_alerts:
+          - exp_labels:
+              kind: servicing
+              owner: bnpl
+              severity: ticket
+            exp_annotations:
+              summary: "The BNPL servicing sweep's claims keep failing"
+              description: "Claims of the BNPL servicing sweep have failed for 15 minutes, so nothing is being swept and the step alerts stay silent. See OPERATIONS_RUNBOOK.md section 8.6."
+
+  # No claim failing: silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_bnpl_sweeper_claim_failed_total{job="finapp", instance="a:8081", kind="servicing"}'
+        values: '0x35'
+      - series: 'finapp_bnpl_sweeper_claim_failed_total{job="finapp", instance="b:8081", kind="origination"}'
+        values: '0x35'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BnplSweepClaimFailing
+        exp_alerts: []
+

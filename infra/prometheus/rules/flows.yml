@@ -1,0 +1,204 @@
+# Alerts for the critical flows that had dashboard panels and no rule (P15-TSK-025; ADR-0124's Context): identity, ledger, payments, transfers,
+# checkout, merchant, kyc and consent. Their availability is slo.yml's; these read each flow's own domain signal. Thresholds are
+# reference values that Phase 16 calibrates. Each group's owner label is the module that owns the flow, and OPERATIONS_RUNBOOK.md
+# section 11.22 names every alert.
+#
+# No amount, no party, no identifier anywhere: counts, ages and outcomes only (ADR-0072, INV-AUD-02).
+
+groups:
+  - name: identity
+    labels:
+      owner: identity
+    rules:
+      - alert: AuthenticationRefusalsSpike
+        # Aggregation: sum() - counters are per instance, and a campaign spreads across them
+        expr: sum(increase(finapp_identity_authentication_total{outcome="refused"}[15m])) > 50 and sum(increase(finapp_identity_authentication_total{outcome="refused"}[15m])) / clamp_min(sum(increase(finapp_identity_authentication_total[15m])), 1) > 0.5
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Most authentications are being refused"
+          description: "Over half of the authentications of the last 15 minutes were refused, at least 50 of them. See OPERATIONS_RUNBOOK.md section 11.22."
+      - alert: AccountLockoutSpike
+        # Aggregation: sum() - counters are per instance, and a campaign spreads across them
+        # A lock is rarer than a refusal, and a spike of them is a credential-stuffing campaign (finapp.identity.lockout).
+        expr: sum(increase(finapp_identity_lockout_total[15m])) > 20
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "Accounts are being locked at a campaign's rate"
+          description: "More than 20 accounts were locked in 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."
+  - name: ledger
+    labels:
+      owner: ledger
+    rules:
+      - alert: LedgerPostingsRefused
+        # Aggregation: sum() - counters are per instance, and refusals are a fleet-wide rate
+        expr: sum(increase(finapp_ledger_posting_total{outcome="refused"}[15m])) > 50
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The ledger is refusing postings"
+          description: "More than 50 journal writes were refused in 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."
+      - alert: CustomerWalletNegative
+        # Aggregation: max() - every instance reads the same positions; a NaN instance is ignored
+        # Legal after a chargeback (ADR-0061 section 5) and a receivable from the customer, so a ticket: MerchantPayableNegative is its merchant counterpart.
+        expr: max(finapp_ledger_negative_positions{purpose="CUSTOMER_WALLET"}) > 0
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A customer wallet stands below zero"
+          description: "{{ $value }} customer wallets stand below zero after a chargeback. See OPERATIONS_RUNBOOK.md section 11.22."
+  - name: payments
+    labels:
+      owner: payments
+    rules:
+      - alert: PaymentUnknownAged
+        # Aggregation: max() - every instance reads the same table; a NaN instance is ignored
+        # INV-LIFE-03: an unknown operation is honest until it stays unknown.
+        expr: max(finapp_payments_unknown_age) > 900
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "A payment operation has been unknown too long"
+          description: "The oldest unknown payment operation has waited over 15 minutes for an answer. See OPERATIONS_RUNBOOK.md section 11.22."
+      - alert: WithdrawalUnknownAged
+        # Aggregation: max() - every instance reads the same table; a NaN instance is ignored
+        expr: max(finapp_payments_withdrawal_unknown_age) > 900
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "A withdrawal has been unknown too long"
+          description: "The oldest unanswered withdrawal has waited over 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."
+      - alert: PaymentWebhookRefusalsSpike
+        # Aggregation: sum() - counters are per instance
+        # Unauthenticated or unfresh deliveries, which spend no provider-callback budget: that is why this is its own signal.
+        expr: sum(increase(finapp_payments_webhook_total{outcome="refused"}[15m])) > 50
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Provider webhooks are being refused"
+          description: "More than 50 webhook deliveries were refused in 15 minutes: a rotated secret or forged traffic. See OPERATIONS_RUNBOOK.md section 11.22."
+      - alert: PaymentSweeperOff
+        # Aggregation: per instance - the sweep's switch is that instance's own configuration, and one instance off is the finding
+        expr: finapp_payments_sweeper_enabled == 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The payment sweep is off on {{ $labels.instance }}"
+          description: "finapp.payments.sweeper.enabled is false there, so its unknown payments are not resolved by it. See OPERATIONS_RUNBOOK.md section 11.22."
+  - name: transfers
+    labels:
+      owner: transfers
+    rules:
+      - alert: TransferFailureSpike
+        # Aggregation: sum() - counters are per instance
+        expr: sum(increase(finapp_transfers_transfer_total{outcome="failed"}[15m])) > 20 and sum(increase(finapp_transfers_transfer_total{outcome="failed"}[15m])) / clamp_min(sum(increase(finapp_transfers_transfer_total{outcome=~"completed|failed"}[15m])), 1) > 0.2
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A fifth of transfers are failing"
+          description: "Over a fifth of the transfers judged in the last 15 minutes failed, at least 20 of them. See OPERATIONS_RUNBOOK.md section 11.22."
+      - alert: TransferKeyConflict
+        # Aggregation: sum() - counters are per instance
+        # INV-IDEM-03: a key reused with a different request. A security signal, not an outcome.
+        expr: sum(increase(finapp_transfers_conflict_total[15m])) > 0
+        for: 0s
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A transfer idempotency key was reused with a different request"
+          description: "A key reused with a different body was refused (INV-IDEM-03). See OPERATIONS_RUNBOOK.md section 11.22."
+  - name: checkout
+    labels:
+      owner: checkout
+    rules:
+      - alert: CheckoutExpiryRising
+        # Aggregation: sum() - counters are per instance
+        expr: sum(increase(finapp_checkout_session_total{outcome="expired"}[1h])) > 20 and sum(increase(finapp_checkout_session_total{outcome="expired"}[1h])) / clamp_min(sum(increase(finapp_checkout_session_total[1h])), 1) > 0.5
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Most checkout offers are expiring"
+          description: "Over half of the last hour's checkout sessions expired, at least 20 of them. See OPERATIONS_RUNBOOK.md section 11.22."
+      - alert: CheckoutSweeperOff
+        # Aggregation: per instance - the sweep's switch is that instance's own configuration, and one instance off is the finding
+        expr: finapp_checkout_sweeper_enabled == 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The checkout expiry sweep is off on {{ $labels.instance }}"
+          description: "finapp.checkout.sweeper.enabled is false there. See OPERATIONS_RUNBOOK.md section 11.22."
+  - name: merchant
+    labels:
+      owner: merchant
+    rules:
+      - alert: MerchantPayoutUnknownAged
+        # Aggregation: max() - every instance reads the same table; a NaN instance is ignored
+        expr: max(finapp_merchant_payout_unknown_age) > 900
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "A merchant payout has been unanswered too long"
+          description: "The oldest unanswered payout has waited over 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."
+      - alert: MerchantPayoutSweeperOff
+        # Aggregation: per instance - the sweep's switch is that instance's own configuration, and one instance off is the finding
+        expr: finapp_merchant_payout_sweeper_enabled == 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The merchant payout sweep is off on {{ $labels.instance }}"
+          description: "finapp.merchant.payout.sweeper.enabled is false there. See OPERATIONS_RUNBOOK.md section 11.22."
+  - name: kyc
+    labels:
+      owner: kyc
+    rules:
+      - alert: KycReviewQueueBacklog
+        # Aggregation: max() - every instance reads the same queue; a NaN instance is ignored
+        expr: max(finapp_kyc_review_queue) > 100
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The KYC review queue is backing up"
+          description: "{{ $value }} KYC reviews are waiting for a person. See OPERATIONS_RUNBOOK.md section 11.22."
+  - name: consent
+    labels:
+      owner: consent
+    rules:
+      - alert: ConsentRoutesFailing
+        # Aggregation: sum() - counters are per instance
+        # A person must be able to withdraw consent. This reads the routes themselves, because the consent counters only move on success.
+        expr: sum(rate(http_server_requests_seconds_count{uri=~"/v1/me/consents(/.*)?",status=~"5.."}[15m])) > 0
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: "The consent routes are failing"
+          description: "The consent routes have answered 5xx for 15 minutes, so a person may be unable to withdraw consent. See OPERATIONS_RUNBOOK.md section 11.22."
+  - name: flow-gauges
+    labels:
+      owner: platform
+    rules:
+      - alert: FlowGaugesUnreadable
+        # Aggregation: per instance by (job, instance) - x != x holds for NaN alone, and one instance unable to read is that instance's fault
+        # While one of these is NaN its alert above cannot fire; max() still reads the other instances.
+        expr: label_replace(max by (job, instance) (finapp_payments_unknown_age != finapp_payments_unknown_age), "gauge", "finapp_payments_unknown_age", "", "") or label_replace(max by (job, instance) (finapp_payments_withdrawal_unknown_age != finapp_payments_withdrawal_unknown_age), "gauge", "finapp_payments_withdrawal_unknown_age", "", "") or label_replace(max by (job, instance) (finapp_merchant_payout_unknown_age != finapp_merchant_payout_unknown_age), "gauge", "finapp_merchant_payout_unknown_age", "", "") or label_replace(max by (job, instance) (finapp_kyc_review_queue != finapp_kyc_review_queue), "gauge", "finapp_kyc_review_queue", "", "") or label_replace(max by (job, instance) (finapp_ledger_negative_positions != finapp_ledger_negative_positions), "gauge", "finapp_ledger_negative_positions", "", "")
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A critical flow's gauge cannot be read on {{ $labels.instance }}"
+          description: "{{ $labels.gauge }} is NaN on {{ $labels.instance }} for 15 minutes. See OPERATIONS_RUNBOOK.md section 11.22."

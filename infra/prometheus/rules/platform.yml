@@ -3,7 +3,7 @@
 #
 # Unit-tested by promtool: infra/prometheus/tests/platform.test.yml, `promtool test rules`, from prom/prometheus v3.14.0 (the
 # version compose pins), run by its digest; the test file sits outside rules/, which compose loads by glob. `promtool` in CI,
-# routing, and the SLO, correctness and other platform rules are P15-TSK-025's. Local development only: no Alertmanager is wired.
+# routing is infra/alertmanager/alertmanager.yml (P15-TSK-025), to a placeholder receiver until an on-call tool exists.
 #
 # Conventions:
 # - `up` is Prometheus's own series, one per scraped target: 1 when the last scrape completed, 0 when it failed or timed
@@ -21,6 +21,8 @@
 
 groups:
   - name: platform
+    labels:
+      owner: platform
     rules:
       - alert: InstanceDown
         # Two minutes of failed scrapes on one target: a crashed or stopped JVM, a pod that cannot be reached, a scrape that
@@ -61,3 +63,146 @@ groups:
         annotations:
           summary: "The gauges of {{ $labels.instance }} are stale"
           description: "Its gauge refresher left asks unanswered past their bound for over 90 s of the last 30 minutes, so its finapp gauges have been going NaN. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # The rest of the platform rules (P15-TSK-025; PHASE_15_PLAN.md section 11): the outbox, the inbox, HTTP errors, the pool, the clock
+  # and certificates. A second group so the first stays what PlatformAlertRulesTest holds it to.
+  - name: platform-saturation
+    labels:
+      owner: platform
+    rules:
+      - alert: OutboxPublicationStalled
+        # Aggregation: max() - every instance reads the same outbox; a NaN instance is ignored
+        # The relay is not draining: the oldest publishable row is over five minutes old. A lone dead letter does not read as this; it pages on its own.
+        expr: max(finapp_outbox_oldest_publishable_seconds) > 300
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "The outbox is not draining"
+          description: "The oldest publishable event is over 5 minutes old. Nothing financial is lost: it waits in the database. See OPERATIONS_RUNBOOK.md section 11.21."
+      - alert: InboxLagHigh
+        # Aggregation: sum by (module) - a group's lag is the sum of its members', and a NaN member is filtered first because sum() is poisoned by it
+        expr: sum by (module) (finapp_inbox_lag == finapp_inbox_lag) > 1000
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The consumer group of {{ $labels.module }} is behind"
+          description: "More than 1000 records are awaiting the group finapp.{{ $labels.module }}. See OPERATIONS_RUNBOOK.md section 11.6."
+      - alert: InboxPollFailing
+        # Aggregation: sum() - counters are per instance, and a broker-side fault meets every replica at once
+        # A failed TLS handshake (an expired or rotated broker certificate) deliberately fails no readiness, and a thrown poll updates no lag, so nothing else can see this.
+        expr: sum(increase(finapp_inbox_poll_failures_total{outcome="failed"}[15m])) > 0
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: "Consumer polls keep failing"
+          description: "Inbox polls have thrown for 15 minutes on end. See OPERATIONS_RUNBOOK.md section 11.6."
+      - alert: InboxPollRefused
+        # Aggregation: sum() - counters are per instance
+        # The broker refused a credential or a permission. Readiness fails beside it (the kafkaConsumers contributor), but nothing pages on readiness.
+        expr: sum(increase(finapp_inbox_poll_failures_total{outcome="refused"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "The broker is refusing the consumers"
+          description: "The broker refused a consumer poll for 5 minutes: a credential or a permission. See OPERATIONS_RUNBOOK.md section 11.6."
+      - alert: InboxConsumerEvicted
+        # Aggregation: sum() - counters are per instance
+        # A member evicted past its poll budget: the batch redelivers into the dedupe, so nothing is wrong, but throughput collapses while it repeats.
+        expr: sum(increase(finapp_inbox_consumer_evictions_total[30m])) > 0
+        for: 0s
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A consumer was evicted from its group"
+          description: "A consumer overran its poll budget and was evicted in the last 30 minutes. See OPERATIONS_RUNBOOK.md section 11.6."
+      - alert: HttpServerErrorsHigh
+        # Aggregation: sum() - counters are per instance, and the ratio is the fleet's
+        # Every route, including the ones no objective names. The objectives burn per flow; this is the floor under them.
+        expr: sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) / sum(rate(http_server_requests_seconds_count[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "More than 5% of requests are failing"
+          description: "Over 5% of all requests answered 5xx for 5 minutes. See OPERATIONS_RUNBOOK.md section 11.21."
+      - alert: ConnectionPoolSaturated
+        # Aggregation: per instance - a pool is that instance's, and max() over the fleet would hide one behind its neighbours
+        # Excluding report generation's one-connection pool, which is full whenever a report runs.
+        expr: hikaricp_connections_active{pool!="finapp-reporting"} / hikaricp_connections_max{pool!="finapp-reporting"} > 0.9
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The connection pool of {{ $labels.instance }} is nearly full"
+          description: "Over 90% of the pool on {{ $labels.instance }} has been in use for 5 minutes. See OPERATIONS_RUNBOOK.md section 11.21."
+      - alert: ConnectionPoolStarved
+        # Aggregation: per instance - a pool is that instance's, and max() over the fleet would hide one behind its neighbours
+        expr: hikaricp_connections_pending{pool!="finapp-reporting"} > 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Threads are waiting on the connection pool of {{ $labels.instance }}"
+          description: "Requests on {{ $labels.instance }} have been waiting for a connection for 2 minutes. See OPERATIONS_RUNBOOK.md section 11.21."
+      - alert: InstanceClockOffset
+        # Aggregation: per instance - a clock is that instance's own, and aggregating would hide the one that stepped
+        # ADR-0063: the clamp hides skew from the writes, so this shows it. Coordination reads only the database's clock (ADR-0014), so a ticket.
+        expr: abs(finapp_platform_clock_offset_seconds) > 1
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The clock of {{ $labels.instance }} is off"
+          description: "The clock of {{ $labels.instance }} differs from the database by over a second. See OPERATIONS_RUNBOOK.md section 11.21."
+      - alert: PlatformGaugesUnreadable
+        # Aggregation: per instance by (job, instance) - x != x holds for NaN alone, and one instance unable to read is that instance's fault
+        expr: label_replace(max by (job, instance) (finapp_outbox_pending != finapp_outbox_pending), "gauge", "finapp_outbox_pending", "", "") or label_replace(max by (job, instance) (finapp_outbox_oldest_seconds != finapp_outbox_oldest_seconds), "gauge", "finapp_outbox_oldest_seconds", "", "") or label_replace(max by (job, instance) (finapp_outbox_oldest_publishable_seconds != finapp_outbox_oldest_publishable_seconds), "gauge", "finapp_outbox_oldest_publishable_seconds", "", "") or label_replace(max by (job, instance) (finapp_inbox_lag != finapp_inbox_lag), "gauge", "finapp_inbox_lag", "", "") or label_replace(max by (job, instance) (finapp_inbox_consumer_enabled != finapp_inbox_consumer_enabled), "gauge", "finapp_inbox_consumer_enabled", "", "") or label_replace(max by (job, instance) (finapp_platform_clock_offset_seconds != finapp_platform_clock_offset_seconds), "gauge", "finapp_platform_clock_offset_seconds", "", "")
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A platform gauge cannot be read on {{ $labels.instance }}"
+          description: "{{ $labels.gauge }} is NaN on {{ $labels.instance }} for 15 minutes. See OPERATIONS_RUNBOOK.md section 11.21."
+      - alert: PlatformSeriesAbsent
+        # Aggregation: none - absent() asks whether any instance publishes the series at all
+        # A rule that cannot evaluate fires this: the SLO and platform rules are silent if these series are gone. The lag is asked only where a consumer runs.
+        expr: absent(finapp_outbox_oldest_publishable_seconds) or absent(http_server_requests_seconds_count) or absent(hikaricp_connections_active) or (absent(finapp_inbox_lag) and on() (max(finapp_inbox_consumer_enabled) == 1))
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A series the platform alerts read is gone"
+          description: "A series the SLO or platform rules read has not been published for 5 minutes, so those rules are blind. See OPERATIONS_RUNBOOK.md section 11.21."
+      - alert: CertificateExpiringSoon
+        # Aggregation: min by (namespace, name) - every cert-manager replica publishes the same certificate, and the earliest is the deadline
+        # cert-manager renews at two-thirds of a lifetime, so 21 days left means a 90-day certificate's renewal has been failing for over a week.
+        expr: min by (namespace, name) (certmanager_certificate_expiration_timestamp_seconds) - time() < 21 * 86400
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The certificate {{ $labels.name }} is not renewing"
+          description: "The certificate {{ $labels.namespace }}/{{ $labels.name }} expires within 21 days. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: CertificateExpiring
+        # Aggregation: min by (namespace, name) - every cert-manager replica publishes the same certificate, and the earliest is the deadline
+        expr: min by (namespace, name) (certmanager_certificate_expiration_timestamp_seconds) - time() < 7 * 86400
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: "The certificate {{ $labels.name }} expires within a week"
+          description: "The certificate {{ $labels.namespace }}/{{ $labels.name }} expires within 7 days. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: CertificateExpirySeriesAbsent
+        # Aggregation: none - absent() asks whether cert-manager publishes the series at all, gated to a deployed environment
+        # Compose runs no cert-manager, so only where a finapp target is not labelled env="local".
+        expr: absent(certmanager_certificate_expiration_timestamp_seconds) and on() (count(up{job="finapp", env!="local"}) > 0)
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: "No certificate expiry series is published"
+          description: "cert-manager publishes no expiry series here, so an expiring certificate cannot be seen. See OPERATIONS_RUNBOOK.md section 11.8."

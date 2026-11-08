@@ -195,6 +195,24 @@ services:
       timeout: 3s
       retries: 10
 
+  # Routes the alerts Prometheus raises (P15-TSK-025). Its receivers are placeholders that send
+  # nothing: see infra/alertmanager/alertmanager.yml. Local development only.
+  alertmanager:
+    image: prom/alertmanager:v0.34.2
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./infra/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
   grafana:
     image: grafana/grafana:12.4.10
     environment:
@@ -226,6 +244,7 @@ services:
 
 volumes:
   prometheus-data:
+  alertmanager-data:
   grafana-data:
   # Named rather than anonymous, so `docker compose down` keeps data and
   # `docker compose down -v` is the explicit, deliberate way to discard it.

@@ -210,6 +210,9 @@ check trivy     "$TRIVY_REPOSITORY"     "$TRIVY_VERSION"     "$TRIVY_DIGEST"    
 # required_version, which TerraformIsPinnedAndCheckedTest holds equal to TERRAFORM_VERSION.
 check terraform "$TERRAFORM_REPOSITORY" "$TERRAFORM_VERSION" "$TERRAFORM_DIGEST" list_tags_dockerhub
 check tflint    "$TFLINT_REPOSITORY"    "$TFLINT_VERSION"    "$TFLINT_DIGEST"    list_tags_ghcr
+# The alert-rule tools (P15-TSK-025): the versions compose.yaml runs.
+check prometheus "$PROMETHEUS_REPOSITORY" "$PROMETHEUS_VERSION" "$PROMETHEUS_DIGEST" list_tags_dockerhub
+check alertmanager "$ALERTMANAGER_REPOSITORY" "$ALERTMANAGER_VERSION" "$ALERTMANAGER_DIGEST" list_tags_dockerhub
 
 while read -r repository tag digest; do
     [ -n "$repository" ] || continue

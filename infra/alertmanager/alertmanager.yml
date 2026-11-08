@@ -1,0 +1,38 @@
+# Alert routing (P15-TSK-025; ADR-0124 decision 5; PHASE_15_PLAN.md section 11).
+#
+# Two severities, and nothing else routes: `severity: page` wakes someone, `severity: ticket` raises work. Every rule in
+# infra/prometheus/rules carries one, and AlertCatalogueTest holds it.
+#
+# THE RECEIVERS ARE PLACEHOLDERS. No on-call tool exists for this repository (PHASE_15_PLAN.md section 1.1), so a receiver here
+# has no integration and sends nothing, deliberately: a webhook pointed at nothing real would read as paging. An alert reaches
+# its route and stops. Wiring a real one means adding its integration to placeholder-page, with its secret from the secret
+# store and never in this file; infra/scripts/alert-rules-check.sh and the two route tests keep passing.
+#
+# N instances: Alertmanager deduplicates by labels and group across every Prometheus replica that sends it the same alert.
+# Grouped by alert and owner, so one alert's many series (a gauge per instance) arrive as one notification.
+#
+# Copied byte for byte to deploy/observability/alertmanager/alertmanager.yml, which AlertCatalogueTest holds equal.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  # An alert with no route still arrives somewhere: never dropped silently.
+  receiver: placeholder-ticket
+  group_by: [alertname, owner]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  routes:
+    - matchers: ['severity="page"']
+      receiver: placeholder-page
+      # Sooner and more often: a page is someone's night.
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 1h
+    - matchers: ['severity="ticket"']
+      receiver: placeholder-ticket
+
+receivers:
+  - name: placeholder-page
+  - name: placeholder-ticket
