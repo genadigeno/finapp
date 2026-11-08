@@ -1426,7 +1426,7 @@ events:
       producer: "reconciliation"
       fields:
         "breakId": {kind: "uuid", required: true}
-        "journalEntryId": {kind: "uuid", required: true}
+        "journalEntryId": {kind: "uuid", required: false}
         "kind": {kind: "enum(com.finapp.reconciliation.ResolutionKind)", required: true}
         "reasonCode": {kind: "enum(com.finapp.reconciliation.ResolutionReasonCode)", required: true}
         "resolutionId": {kind: "uuid", required: true}
@@ -1437,7 +1437,7 @@ events:
         "breakId": {kind: "uuid", required: true}
         "cause": {kind: "enum(com.finapp.reconciliation.BreakCause)", required: true}
         "decisionId": {kind: "uuid", required: false}
-        "expectationId": {kind: "uuid", required: true}
+        "expectationId": {kind: "uuid", required: false}
         "externalItemId": {kind: "uuid", required: false}
         "runId": {kind: "uuid", required: false}
         "severity": {kind: "enum(com.finapp.reconciliation.Severity)", required: true}
@@ -1577,7 +1577,7 @@ events:
       fields:
         "batchId": {kind: "uuid", required: true}
         "fileId": {kind: "uuid", required: true}
-        "journalEntryId": {kind: "uuid", required: true}
+        "journalEntryId": {kind: "uuid", required: false}
         "lineCount": {kind: "integer", required: true}
         "sourceId": {kind: "uuid", required: true}
         "sourceSequence": {kind: "integer", required: true}
@@ -1588,7 +1588,7 @@ events:
         "batchId": {kind: "uuid", required: true}
         "fileId": {kind: "uuid", required: true}
         "resolutionId": {kind: "uuid", required: true}
-        "reversalEntryId": {kind: "uuid", required: true}
+        "reversalEntryId": {kind: "uuid", required: false}
         "sourceId": {kind: "uuid", required: true}
   "settlement.SettlementFileRejected":
     1:

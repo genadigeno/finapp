@@ -86,6 +86,12 @@ public final class EventFlowFixtures {
         return payload.with("minor", Long.toString(minor));
     }
 
+    public void inIfPresent(java.util.Optional<String> maybe) {
+        EventPayload payload = EventPayload.of().with("first", "ONE");
+        maybe.ifPresent(value -> payload.with("inLambda", "THERE"));
+        outbox.write(null, envelope("probe.IfPresent", 1), payload.toBytes(), "x");
+    }
+
     public void lambdaCaller() {
         inLambda("probe.Lambda");
     }

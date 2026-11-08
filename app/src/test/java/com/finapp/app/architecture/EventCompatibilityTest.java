@@ -199,6 +199,11 @@ class EventCompatibilityTest {
         assertThat(rolled.events().get("probe.Event").get(1).fields().get("scale").required())
                 .as("the records written before it do not carry it")
                 .isFalse();
+        assertThat(
+                        rolled.rolled(EventCatalogue.parse(addedInPlace), Set.of(), "the one after")
+                                .events().get("probe.Event").get(1).fields().get("scale").required())
+                .as("and they still do not at the second roll, whatever the writer does now")
+                .isFalse();
 
         EventCatalogue successor = released().rolled(EventCatalogue.parse(current("    1:\n", "    2:\n")), Set.of(), "next");
 

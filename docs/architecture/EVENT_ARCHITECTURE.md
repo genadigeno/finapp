@@ -354,7 +354,8 @@ caller, a ternary or a loop, so a value that depends on a parameter is followed 
 write to the outbox closes as producer, type, version and fields. A field records its name, whether every path to the
 write sets it, and a kind read from how its value was made: `uuid`, `integer`, `decimal`, `boolean`, `date`, `currency`,
 `enum(<class>)`, `literal(<a|b>)`, or `identifier` for any other string. A loop's numbered field (`"reasonCode" + (i + 1)`)
-is `reasonCode#`, never required. **What the reader cannot read fails the build**: a guess would be a wrong contract and
+is `reasonCode#`, never required, and a field set inside a lambda (`Optional.ifPresent`) is not required either: the
+lambda runs when something chooses to run it. **What the reader cannot read fails the build**: a guess would be a wrong contract and
 silence would be a hole. `EventCatalogueTest` cross-checks it against `EnvelopeProducers`, a separate simulation of the
 same construction sites.
 
@@ -387,6 +388,12 @@ handler, with the old type retired through the release record. A version the cod
 its records are on the wire until retention passes them, and a replay or a rollback must parse them. `RiskSignalsReadTheCatalogueTest` runs the one
 consumer that reads a payload, `SignalMappings`, over the released shape and the current shape of everything it reads,
 each with a field it has never seen.
+
+**`required` is per event type, and that has a limit.** A shared helper that writes a field on some paths makes it
+`required: false` for every type it serves, even a type that never takes the other path. `SignalMappings` needs four such
+fields: `from` on `crossborder.BeneficiaryActivated` and `BeneficiaryBlocked`, and `previousBucket` on
+`lending.LoanDelinquencyChanged` and `bnpl.BnplDelinquencyChanged`. The catalogue cannot say those types always carry
+them. The test pins exactly that set, so a consumer newly leaning on an optional field has to be argued for.
 
 **Amounts.** Every `<name>Minor` field is an integer of minor units, beside an explicit currency and scale
 (`DOD-EVENT`), and no field anywhere is written from a floating-point or decimal value. The rule rests on the naming

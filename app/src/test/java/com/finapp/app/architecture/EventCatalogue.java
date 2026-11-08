@@ -326,7 +326,8 @@ public final class EventCatalogue {
      *
      * <p>A version the code stopped writing is kept, because its records are still on the wire. A
      * field added under a version that already existed is not required, because the records written
-     * before it do not carry it.
+     * before it do not carry it, and it stays not required at every later roll: those records are
+     * still that version's.
      */
     public EventCatalogue rolled(EventCatalogue current, Set<String> retired, String label) {
         SortedMap<String, SortedMap<Integer, Version>> next = new TreeMap<>();
@@ -352,8 +353,10 @@ public final class EventCatalogue {
         SortedMap<String, Field> fields = new TreeMap<>();
         current.fields()
                 .forEach(
-                        (name, field) ->
-                                fields.put(name, basis.fields().containsKey(name) ? field : new Field(field.kind(), false)));
+                        (name, field) -> {
+                            Field was = basis.fields().get(name);
+                            fields.put(name, new Field(field.kind(), was != null && was.required() && field.required()));
+                        });
         basis.fields().forEach(fields::putIfAbsent);
         return new Version(current.producer(), fields);
     }

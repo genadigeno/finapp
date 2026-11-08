@@ -18,7 +18,11 @@ import org.junit.jupiter.api.Test;
 class EventFlowsTest {
 
     private static final EventFlows.Result READ =
-            EventFlows.in((type, eventType) -> 7, List.of(TopicCatalogueTest.bytesOf(EventFlowFixtures.class)));
+            EventFlows.in(
+                    (type, eventType) -> 7,
+                    List.of(
+                            TopicCatalogueTest.bytesOf(EventFlowFixtures.class),
+                            TopicCatalogueTest.bytesOf(EventFlowFixtures.Enrichment.class)));
 
     private static final Map<String, Flow> FLOWS =
             READ.flows().stream().collect(Collectors.toMap(Flow::eventType, flow -> flow, (a, b) -> a));
@@ -86,6 +90,17 @@ class EventFlowsTest {
     @DisplayName("a write inside a lambda takes its type from what the lambda captured")
     void aLambdaIsFollowed() {
         assertThat(FLOWS).containsKey("probe.Lambda");
+    }
+
+    @Test
+    @DisplayName("a field set inside Optional.ifPresent is not required, and the field set before it is")
+    void aFieldInALambdaIsOptional() {
+        Map<String, EventFlows.Field> fields = FLOWS.get("probe.IfPresent").fields();
+
+        assertThat(fields.get("first").required()).isTrue();
+        assertThat(fields.get("inLambda").required())
+                .as("the lambda runs when the Optional holds a value, and the first capture in a method is no exception")
+                .isFalse();
     }
 
     @Test

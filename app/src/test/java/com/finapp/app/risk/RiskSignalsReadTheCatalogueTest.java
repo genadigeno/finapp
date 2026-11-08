@@ -18,6 +18,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -39,6 +42,12 @@ class RiskSignalsReadTheCatalogueTest {
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-11-08T12:00:00Z"), ZoneOffset.UTC);
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
     private static final UUID SAME = UUID.fromString("0199b3c1-0000-7000-8000-000000000001");
+    private static final String[] LEANED_ON = {
+        "bnpl.BnplDelinquencyChanged.previousBucket",
+        "crossborder.BeneficiaryActivated.from",
+        "crossborder.BeneficiaryBlocked.from",
+        "lending.LoanDelinquencyChanged.previousBucket"
+    };
 
     @Test
     @DisplayName("each mapped event parses at its released shape and at its current shape, with a field it has never seen")
@@ -69,6 +78,44 @@ class RiskSignalsReadTheCatalogueTest {
         }
 
         assertThat(checked).as("both catalogues, every source that reads a payload").isGreaterThanOrEqualTo(26);
+    }
+
+    /**
+     * Where the consumer reads what the catalogue says is not always written. The catalogue is per type
+     * and a shared helper writes these fields on some paths: {@code from} is absent only at a
+     * beneficiary's birth, and {@code previousBucket} only where a condition has no earlier bucket.
+     * Whether the types read here are ever written without them is not something the catalogue can
+     * say, and a mapping that needs one refuses the record. So the set is pinned: a new entry is a
+     * consumer newly leaning on an optional field, and has to be argued for.
+     */
+    @Test
+    @DisplayName("the optional fields the mapping cannot do without are exactly the known ones")
+    void theOptionalFieldsTheMappingNeedsArePinned() {
+        EventCatalogue current = EventCatalogue.fromProductionCode();
+        Set<String> leanedOn = new TreeSet<>();
+
+        for (RiskSignalIntake.Source source : RiskSignalIntake.Source.values()) {
+            if (source.isHint()) {
+                continue;
+            }
+            SignalKind kind = source.kind().orElseThrow();
+            var versions = current.events().get(source.eventType());
+            versions.forEach(
+                    (number, version) ->
+                            version.fields().forEach(
+                                    (name, field) -> {
+                                        if (field.required()) {
+                                            return;
+                                        }
+                                        Map<String, EventCatalogue.Field> without = new TreeMap<>(version.fields());
+                                        without.remove(name);
+                                        if (!parsesInSomeForm(kind, source.eventType(), number, without)) {
+                                            leanedOn.add(source.eventType() + "." + name);
+                                        }
+                                    }));
+        }
+
+        assertThat(leanedOn).containsExactly(LEANED_ON);
     }
 
     /** An attributed event is read for one specific value of its one enumerated field, so each is tried. */

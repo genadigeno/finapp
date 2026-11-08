@@ -186,7 +186,12 @@ final class EventFlows {
 
     private record Envelope(Val type, Val version, Val producer) {}
 
-    private record Call(int id, MethodKey callee, List<Val> arguments, Facts caller, int position) {}
+    /**
+     * One call. {@code deferred} marks a lambda's body: what it captures is handed over now, and the
+     * body runs when something chooses to run it ({@code Optional.ifPresent} for one), so a field it
+     * sets is not written on every path.
+     */
+    private record Call(int id, MethodKey callee, List<Val> arguments, Facts caller, int position, boolean deferred) {}
 
     private record Use(Val value, int position) {}
 
@@ -202,6 +207,9 @@ final class EventFlows {
         int nextAllocation;
         Val returned;
         boolean rebindsAConstantInALoop;
+
+        /** False for an abstract or interface method: what it does to a payload is not in the class files read. */
+        boolean hasBody;
 
         Facts(String module, MethodKey key) {
             this.module = module;
@@ -332,6 +340,11 @@ final class EventFlows {
         }
 
         private record State(List<Val> stack, Map<Integer, Val> locals) {}
+
+        @Override
+        public void visitCode() {
+            method.hasBody = true;
+        }
 
         private int step() {
             int at = position++;
@@ -668,7 +681,7 @@ final class EventFlows {
             if (kind != null) {
                 return Val.of(new Kind(kind));
             }
-            Call call = new Call(method.calls.size(), new MethodKey(owner, name, descriptor), arguments, method, at);
+            Call call = new Call(method.calls.size(), new MethodKey(owner, name, descriptor), arguments, method, at, false);
             method.calls.add(call);
             callers.computeIfAbsent(call.callee(), ignored -> new ArrayList<>()).add(call);
             arguments.forEach(argument -> method.uses.add(new Use(argument, at)));
@@ -720,7 +733,7 @@ final class EventFlows {
                             ? capturedValues.subList(1, capturedValues.size())
                             : capturedValues;
             MethodKey callee = new MethodKey(implementation.getOwner(), implementation.getName(), implementation.getDesc());
-            Call call = new Call(method.calls.size(), callee, List.copyOf(nonNull(arguments)), method, at);
+            Call call = new Call(method.calls.size(), callee, List.copyOf(nonNull(arguments)), method, at, true);
             method.calls.add(call);
             callers.computeIfAbsent(callee, ignored -> new ArrayList<>()).add(call);
             arguments.forEach(argument -> method.uses.add(new Use(argument, at)));
@@ -1282,7 +1295,7 @@ final class EventFlows {
                         continue;
                     }
                     Facts callee = target(call.callee());
-                    if (callee == null) {
+                    if (callee == null || !callee.hasBody) {
                         if (call.callee().owner().startsWith("com/finapp/")) {
                             unreadable.add(frame.facts.where() + ": a payload handed to a method this reader cannot follow");
                             read = false;
@@ -1291,7 +1304,7 @@ final class EventFlows {
                     }
                     Set<Integer> others = new HashSet<>(consumed);
                     others.remove(call.position());
-                    boolean optional = conditional || frame.facts.avoidable(call.position(), others);
+                    boolean optional = conditional || call.deferred() || frame.facts.avoidable(call.position(), others);
                     read &= collectLocalOnly(new Param(i), new Frame(callee, frame, call), optional);
                 }
             }
