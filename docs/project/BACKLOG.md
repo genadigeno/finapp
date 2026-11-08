@@ -26966,7 +26966,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   inputs take every `Dockerfile` and module build script; rule 9 reads every task id in the model, the
   register's own excepted. Counts unchanged (47 threats, 216 rows, 14 rules).
 
-**P15-TSK-002 — The carried items ruled (C15)** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-001`'s merge, master `060c6b2a`; every dependency `COMPLETE`)
+**P15-TSK-002 — The carried items ruled (C15)** — `IN_PROGRESS` (2026-11-08; design done on branch `P15-TSK-002` from master `c1d07726`; marked `READY` by the coordinator at `P15-TSK-001`'s merge, master `060c6b2a`; every dependency `COMPLETE`)
 - **Objective**: no debt row, deferral or cross-cutting item names Phase 15 as owner without a ratified disposition.
 - **Affected components**: `CURRENT_STATE.md` §Known Architectural Debt, `DECISIONS.md` §Deliberately Deferred,
   `BACKLOG.md` (cross-cutting items `X-TSK-008`, `-014`, `-015`), `PHASE_15_PLAN.md` §25.
