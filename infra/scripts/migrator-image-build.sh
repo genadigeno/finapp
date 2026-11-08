@@ -176,7 +176,8 @@ fi
 # Every migration of the repository, byte for byte, and no other. Read from the exported filesystem, not from the context.
 mkdir "$WORK/exported"
 tar -xf "$WORK/image.tar" -C "$WORK/exported" migrator
-( cd "$WORK/exported/migrator/sql" && find . -type f | sort | xargs sha256sum ) > "$WORK/image.sums"
+# sed: sha256sum marks a binary read with '*' on Windows, and the comparison is of digests and names, not of that mark.
+( cd "$WORK/exported/migrator/sql" && find . -type f | sort | xargs sha256sum ) | sed 's/ \*/  /' > "$WORK/image.sums"
 schemas=$(grep -v '^#' migrator/src/main/resources/com/finapp/migrator/schema-order.txt | sed '/^$/d' | tr -d '\r')
 : > "$WORK/repository.sums"
 scripts=0
