@@ -1867,6 +1867,8 @@ row.)*
 
 *(Added 2026-11-08 by `P15-TSK-024`: §11.8 below is written too, its instance-down and stale-gauge parts; the paragraph above holds for the rest of that row and every other.)*
 
+*(Added 2026-11-08 by `P15-TSK-004`: §11.1b, the bootstrap step and the migration Job, and §11.4 are written; `-012` and `-032` rehearse them.)*
+
 *(Added 2026-11-08 by `P15-TSK-027`: §11.1.1 below is written, the handler-set steps of rows 11.1 and 11.3; not yet rehearsed.)*
 
 ### 11.1 Deploy — what a stopping pod does (`P15-TSK-008`)
@@ -1939,6 +1941,61 @@ version is being written.
 3. Empty `handlers:`, `versions:` and `retired:` in `docs/events/release-record.yaml`.
 4. Review the diff as a contract change, not as generated output. A version the code stopped writing stays in the
    catalogue on purpose.
+
+### 11.1b Deploy — the bootstrap step and the migration Job (`P15-TSK-004`)
+
+*(Written by `P15-TSK-004`, 2026-11-08, from the image and its acceptance run; **not yet rehearsed on a cluster** -
+`P15-TSK-012` does that, with this task's Job contract in `DATA_MIGRATIONS.md` §2.1, and `-017` orders it before the rollout.
+The commands here are the image's own; the manifest is `P15-TSK-009`'s.)*
+
+**Before the first release to a database, and again only when a release adds a role**, run the one-time bootstrap step
+(`DATA_MIGRATIONS.md` §2.2): the migrator image with its `command` overridden to `RoleBootstrapMain`, handed the master
+credential and the three roles' passwords from the secret store. It is the only thing that ever holds the master credential.
+Read its output: one line per role saying `created` or `present, unprivileged, unchanged`. Exit `12` naming a role means a role
+already holds a right it must not: stop and find out how. Never give the migration Job the master credential to get past it.
+
+**Then, for every release, the migration Job, and only then the rollout.** It runs the release's `finapp-migrator` by digest,
+with no `command` of its own. One line per schema and a result line:
+
+| The result line | What to do |
+|---|---|
+| `result=APPLIED schemas=21 applied=<n>` | The rollout may start. `applied=0` is normal: no schema changed, or another run got there first |
+| `result=TRANSIENT` (exit `11`) | A table was locked past the bound, or the database was away. The Job retries it (`backoffLimit`). If it fails again, find the long transaction: `SELECT pid, state, now() - xact_start, query FROM pg_stat_activity WHERE xact_start IS NOT NULL ORDER BY xact_start` |
+| `result=FAILED` (exit `10`) | Not retried. §11.4 |
+| `result=REFUSED` (exit `12`) | The configuration or identity is wrong; nothing ran. The line says which. "The TLS connection could not be verified" is the CA bundle, its path or the host, never a lock |
+
+**The rollout does not start until the Job has succeeded.** A Job that is still running is not a green light.
+
+### 11.4 A failed migration (forward fix only) (`P15-TSK-004`; `P15-TSK-005` adds the compatibility half)
+
+*(Written by `P15-TSK-004`, 2026-11-08; **not yet rehearsed** - `P15-TSK-032` rehearses it.)*
+
+A failed migration stops the release before any replica changes. The old release keeps serving on the schema it had: the
+rollout has not started, a release's migrations are expand-only (`P15-TSK-005`'s lint, once built, holds that), and the failed
+one has either not happened at all or, in the second case below, left the schema where a person must read it. **Never `clean`. Never edit an applied migration. Do not run
+`flywayRepair` to make the symptom go away** (`DATA_MIGRATIONS.md` §3.1).
+
+First read `<schema>.flyway_schema_history` for the failing schema, and the Job's log.
+
+**No row for the migration (the usual case).** Every migration in this repository runs in a transaction, and on PostgreSQL a
+failed one is rolled back and leaves no history row. Nothing happened. The next run tries it again. So the question is why it
+failed:
+
+- *The statement is wrong.* It was also wrong in the build and against an empty database, unless it depends on data. A migration
+  that has never succeeded anywhere can be corrected and released again, because no database has applied it.
+- *It depends on data this database has and no other did* (a new `CHECK`, a backfill). If it has already succeeded in another
+  environment, it **must not be edited**: the other environment's checksum would no longer match. Add a new migration with a
+  **lower version than the failed one and higher than the last applied**, which fixes the data, and release that. In the
+  environments that already applied the failed one, `outOfOrder = false` would refuse it, so such a fix is only possible while
+  every environment is behind the failed version; otherwise fix the data by an audited operational procedure and re-run the Job.
+
+**A row with `success = false`.** Only a migration that cannot run in a transaction (`executeInTransaction=false`) writes one, and
+none exists today. Its effect may be partial: for `CREATE INDEX CONCURRENTLY`, an `INVALID` index stays behind and must be dropped
+first. Every later run refuses at validation until the row is dealt with, so this is the one case for `flywayRepair`, with the
+files known good and the reason recorded (`DATA_MIGRATIONS.md` §3.1).
+
+**Whichever it is**, the application release has not started. If a compatibility marker was passed, read `P15-TSK-005`'s part
+before rolling anything back. After a fix, run the Job again; it applies what is pending and nothing else.
 
 ### 11.6 Broker outage, consumer lag, a poison record, dead letters and replay
 

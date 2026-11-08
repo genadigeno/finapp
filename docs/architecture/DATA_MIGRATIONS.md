@@ -62,7 +62,7 @@ platform/src/main/resources/db/migration/platform/V001__initialise_platform_sche
 migrations; `flywayValidate` fails if the repository and the database disagree.
 
 Migrations are **never** run automatically on application startup (ADR-0011). They are a
-deliberate step.
+deliberate step: these tasks in a build, the Job of §2.1 in a deployed environment.
 
 Connection details default to the local Compose stack and are overridden by `FINAPP_DB_URL`,
 `FINAPP_DB_MIGRATOR_USER` and `FINAPP_DB_MIGRATOR_PASSWORD` — Flyway connects as the migrator
@@ -71,6 +71,106 @@ container's superuser, until the Phase 6 → 7 transition; no Flyway task reads 
 
 `flywayClean` is permanently disabled. To reset local state, discard the container volume
 with `docker compose down -v`.
+
+### 2.1 In a deployed environment: the migrator image and its Job
+
+*(Added by `P15-TSK-004`, 2026-11-08. The Job's manifest is `P15-TSK-009`'s and `-012`'s, from this contract.)* Gradle is not
+in a deployed environment, so Flyway runs from the second deployable, `finapp-migrator`: a stage of the root `Dockerfile` on
+the application's distroless `nonroot` base, built by `infra/scripts/migrator-image-build.sh`. It holds a small program over
+Flyway's API (module `migrator`), the same Flyway version the build's plugin uses, and every module's scripts at
+`/migrator/sql/<schema>/`. It holds no credential and no configuration: everything comes from the Job.
+
+**The same migrations, the same way.** One schema after another, in the build's order (`migrator/src/main/resources/com/finapp/migrator/schema-order.txt`,
+which `MigratorOrderIsTheBuildsTest` holds equal to `settings.gradle.kts` and the build scripts), with each schema's
+`build.gradle.kts` settings: `schemas`, `defaultSchema`, `cleanDisabled = true`, `validateOnMigrate = true`, `outOfOrder = false`,
+`baselineOnMigrate = false` (`MigratorMatchesTheBuildTest`, against the configuration the runner really builds). It adds two
+things only a deployed runner needs: a missing directory is a failure rather than "no migrations", and the wait for another
+run's lock is bounded (below). `infra/scripts/migrator-verify.sh` runs the built image and `flywayMigrate` into two empty
+databases and refuses any difference in the schema history (rank, version, description, type, script, checksum, installed by,
+success) or in `pg_dump --schema-only`. CI's `migrator-image` job runs it.
+
+| Variable | Meaning |
+|---|---|
+| `FINAPP_DB_URL` | Required, no default. Read by the driver's own parser: one host, and only `sslmode`, `sslrootcert`, `connectTimeout`, `socketTimeout`, `loginTimeout`, `tcpKeepAlive` as parameters. `sslmode=verify-full` off loopback |
+| `FINAPP_DB_MIGRATOR_PASSWORD` | Required, no default; the marked local value is refused off loopback |
+| `FINAPP_DB_MIGRATOR_USER` | `finapp_migrator` unless set, as in the build |
+
+**It refuses to run as anything but the migrator.** Before the first migration it reads the catalogue, and a role holding
+`SUPERUSER`, `CREATEROLE`, `CREATEDB`, `BYPASSRLS` or `REPLICATION` is refused: that is how the master user's credential, handed
+to the Job by mistake, stops it (a managed database's master user is no superuser, but it holds `CREATEROLE`), and so is one
+holding any role membership (`rds_superuser` and `pg_write_all_data` are memberships). It takes no arguments, so nothing can ask
+it to clean. Flyway's `FLYWAY_*` variables and configuration files are not read. The server's error detail stays out of its
+exceptions (`logServerErrorDetail=false`): `Key (...)=(...)` and `Failing row contains (...)` are row data, and a failed migration's
+exception goes to the Job's log.
+
+**A migration never queues in front of the writers.** PostgreSQL grants locks in arrival order, so a DDL statement waiting for
+`ACCESS EXCLUSIVE` behind one long transaction makes every later reader and writer of that table wait behind *it*, each holding
+a pooled connection. Every session therefore starts with `lock_timeout` 3 s, below the application pool's
+`connection-timeout` (5 s, read by a test), set in the connection's startup packet, so it is in force before the first statement,
+survives `RESET` and outranks `ALTER ROLE ... SET`. The run reads the setting back and refuses if it did not take. A migration
+that cannot get a lock (`55P03`), or a deadlock's victim (`40P01`), is tried again five times in all, 5 s apart; each attempt
+is its own transaction and leaves nothing behind.
+
+**Two Jobs at once.** Flyway takes a PostgreSQL advisory lock on the schema's history table around each migration (not around
+the run), so concurrent runs interleave safely: each migration is applied exactly once, by whichever run holds the lock, and the
+others find it applied. The wait for another run's lock is bounded (300 polls, one a second). The acceptance script counts it:
+the applied counts of the concurrent runs sum to the number of migrations, and the history equals the build's.
+
+| Exit | Meaning | The Job |
+|---|---|---|
+| `0` | Every schema is at the latest migration: applied now, or nothing to apply | Succeeds; the rollout may start |
+| `10` | A migration or a validation failed. It would fail the same way again | `FailJob`: no retry; §11.4 of the runbook |
+| `11` | A lock was not granted within the bound, or the database was unavailable | Retried, up to `backoffLimit` |
+| `12` | The configuration or identity was refused; a credential the server refused; a database that is not there; a TLS connection that cannot be verified (the CA bundle, its path, the host). Nothing ran | `FailJob` |
+| others | The JVM's own (`1` uncaught, `3` out of memory) or a killed container's (`137`, `143`) | Retried, up to `backoffLimit` |
+
+**The Job contract** (`P15-TSK-009` writes it, `-012` rehearses it, `-017` orders it before the rollout):
+
+| Field | Value | Why |
+|---|---|---|
+| Image | `finapp-migrator` by digest, the release's | Never a tag |
+| `command`, `args` | Not set | The entrypoint is the migrator and takes no arguments; a manifest setting either is doing something else |
+| `restartPolicy` | `Never` | A retry is the Job's, counted by `backoffLimit`, on a fresh pod |
+| `backoffLimit` | `2` | Three tries for a transient failure |
+| `podFailurePolicy` | `FailJob` on exit codes `10` and `12` | A failure a retry cannot help must not be retried |
+| `activeDeadlineSeconds` | `900` | The outer bound on everything above, on every pod of the Job; the whole chain of 316 migrations on an empty database took 77 s on a loaded development machine (2026-11-08) |
+| `ttlSecondsAfterFinished` | `86400` | Keeps the logs of a failed run for a working day |
+| Environment | The three variables above, the password from a secret only this Job reads | The master credential is never in this Job |
+| Security context | `runAsNonRoot`, UID and GID 65532, `readOnlyRootFilesystem: true`, no capability, `allowPrivilegeEscalation: false`, seccomp `RuntimeDefault`; `/tmp` an `emptyDir` | As the application's; `migrator-verify.sh` runs it this way |
+| Memory | `512Mi`, request equal to limit | `migrator-verify.sh` runs every apply under this limit; `-XX:MaxRAMPercentage=75.0` sizes the heap from it |
+| Connections | Two per run at most (`migrator-verify.sh` measures the peak) | Inside `finapp.database.reserved-connections`; two Jobs at once are four |
+
+**When a migration fails.** Flyway runs each migration in a transaction, and on PostgreSQL a failed one is rolled back and
+**leaves no row in the schema history**: it is simply still pending, and the Job's failure is what blocks the rollout. Only a
+migration that cannot run in a transaction (`executeInTransaction=false`, for `CREATE INDEX CONCURRENTLY`; none exists today)
+leaves a failed row, and then `validateOnMigrate` refuses every later run until it is dealt with. Either way the way out is
+forward, never `clean`: runbook §11.4.
+
+### 2.2 The one-time bootstrap step: the deployed roles
+
+*(Added by `P15-TSK-004`, 2026-11-08.)* Roles are infrastructure, never Flyway (§6): the migrator is `NOCREATEROLE`, and the
+per-table grants stay in the migrations. So a deployed database gets its roles from a separate step, what
+`infra/postgres/initdb/00-roles.sql` does for a laptop, **run once per database, before the first migration Job, and again only
+when a release adds a role**. Never part of the Job: it is the migrator image with its `command` overridden, in a Job or a
+session of its own:
+
+```
+/usr/bin/java -cp /migrator/lib/* com.finapp.migrator.RoleBootstrapMain
+```
+
+| Variable | Meaning |
+|---|---|
+| `FINAPP_DB_URL` | As above |
+| `FINAPP_DB_MASTER_USER`, `FINAPP_DB_MASTER_PASSWORD` | The database's master user. **Only this step holds them.** It may not be one of the roles it creates |
+| `FINAPP_DB_MIGRATOR_PASSWORD`, `FINAPP_DB_APP_PASSWORD`, `FINAPP_DB_REPORTING_PASSWORD` | From the secret store. Refused when blank, reused between roles, or the marked local value |
+
+It creates `finapp_migrator`, `finapp_app` and `finapp_reporting` with `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT
+NOBYPASSRLS NOREPLICATION`, gives each its database rights (`CREATE, CONNECT` for the migrator, `CONNECT` for the others) and
+revokes `PUBLIC`'s, in one transaction under an advisory lock. It sends the SCRAM verifier, computed in the process, never the
+password, so the server, its log and `pg_stat_statements` never hold it in clear. A role that already exists is checked and left
+alone, password included (rotation is a procedure of its own); one holding a right it must not hold stops the step (exit `12`),
+because how it got that right is something a person has to look at. It must run before a migration that grants to a role it
+creates, or that migration fails with `role "..." does not exist`, never silently. The same exit codes apply.
 
 ---
 
@@ -266,7 +366,9 @@ verify migrations apply to an empty one), and would require the migrator to hold
 the ability to invent roles, which is precisely what a role confined to DDL on one schema should
 not have. Locally that provisioning is
 [`infra/postgres/initdb/00-roles.sql`](../../infra/postgres/initdb/00-roles.sql); in a deployed
-environment it is Terraform or a managed-database operator.
+environment it is the one-time bootstrap step of §2.2 *(read "Terraform or a managed-database
+operator" until `P15-TSK-004` built the step: neither was going to know the passwords' secret
+store or the roles' exact attributes)*.
 
 **Both roles are `NOSUPERUSER`, and that is the load-bearing part.** A superuser ignores every
 permission check. Running the application as one does not merely weaken these invariants — it
