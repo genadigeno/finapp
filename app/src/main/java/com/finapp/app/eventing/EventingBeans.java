@@ -176,8 +176,9 @@ public class EventingBeans {
     }
 
     /**
-     * Expired inbox records. The bound is the retention the consumer writes with, from the consumer: this sweep has no setting
-     * that could be set below {@code finapp.inbox.retention}, so a redelivery can always still find its record.
+     * Expired inbox records. The bound is the retention the consumer writes with, from the consumer, so this sweep has no setting
+     * of its own. {@link RetentionSweep} refuses that retention at or below the oldest record the broker can redeliver, so an
+     * instance whose {@code finapp.inbox.retention} would admit a second effect does not start.
      */
     @Bean
     @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(

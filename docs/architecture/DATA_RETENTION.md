@@ -52,10 +52,13 @@ throttle's counters, are that process's state, and retention is not what bounds 
   that committed, and its sweep lists the columns it was reviewed against, so a new column stops it until a migration says
   which of its values are terminal. **An unknown state is never selected.**
 - **A dedupe record is kept at least as long as a redelivery could match it.** The inbox's bound is the retention the consumer
-  writes with, read from the consumer, and it has no setting of its own. It also waits for the row's `expires_at`, which a replay
-  order extends, so a row a replay depends on stays.
+  writes with, read from the consumer, and it has no setting of its own. An instance refuses to start with that retention at or
+  below the oldest record the broker can redeliver (8 days and 5 minutes today), and the sweep's function refuses such a bound
+  too. The sweep also waits for the row's `expires_at`, which a replay order extends, so a row a replay depends on stays.
 - **Deletion has one path.** The application role holds no `DELETE` on either table. Two `SECURITY DEFINER` functions (platform
-  `V012`) are the only way, and each deletes only what its predicate selects.
+  `V012`) are the only way, and each deletes only what its predicate selects. A holder of the application's credential still holds
+  `UPDATE` on the outbox, so it can back-date `published_at` and reach a published row. It cannot change an inbox record's
+  `processed_at`, so a dedupe record younger than the floor stays out of its reach.
 - **Batched and leaderless.** `FOR UPDATE SKIP LOCKED` in one short transaction per batch, so N instances delete disjoint
   batches and an interrupted sweep simply resumes (`DISTRIBUTED_EXECUTION.md` §3).
 - **Nothing financial is ever selected** (`INV-HIST-01`). A sweep of any further class is a reviewed change to this document and

@@ -411,7 +411,9 @@ past and have its own dedupe record swept minutes later.
 batched sweep deletes a record only past **both** of its bounds: the written `expires_at`, on the
 server's clock, and `finapp.inbox.retention` as it stands now, compared with `processed_at`, so that
 raising the setting also protects rows already written. The sweep's bound is read from the
-`InboxConsumer` bean and has no setting of its own, so it cannot be configured below the window. The
+`InboxConsumer` bean and has no setting of its own, and that retention is refused at start at or below
+the oldest record the broker can redeliver (`RetentionSweep.BROKER_REDELIVERY_HORIZON`, held equal to the
+catalogue by `TopicCatalogueTest`; the function refuses such a bound too, `22023`). The
 application role has no `DELETE` on this table: platform `V012`'s `SECURITY DEFINER` function is the
 one path, `FOR UPDATE SKIP LOCKED` in a materialised CTE, so N sweepers delete disjoint batches.
 A replay order extends `expires_at` (platform `V011`), so a row a replay depends on stays. Published

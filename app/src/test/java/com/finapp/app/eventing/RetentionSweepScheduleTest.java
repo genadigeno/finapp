@@ -55,7 +55,7 @@ class RetentionSweepScheduleTest {
     @Test
     @DisplayName("the inbox's bound is the retention the consumer writes with, whatever it is set to: nothing else can set it")
     void theInboxBoundIsTheConsumersRetention() {
-        for (Duration retention : List.of(Duration.ofDays(14), Duration.ofDays(21), Duration.ofDays(3))) {
+        for (Duration retention : List.of(Duration.ofDays(14), Duration.ofDays(21), RetentionSweep.BROKER_REDELIVERY_HORIZON.plusMillis(1))) {
             ScriptedSweepConnections database = new ScriptedSweepConnections().deleting(0);
 
             RetentionSweepSchedule schedule =
@@ -67,6 +67,20 @@ class RetentionSweepScheduleTest {
                     .as("the bound the database compares with")
                     .isEqualTo(retention.toMillis());
         }
+    }
+
+    @Test
+    @DisplayName("a finapp.inbox.retention inside the broker's redelivery horizon stops both sweeps' beans, so the instance does not start")
+    void aRetentionInsideTheBrokersHorizonRefusesToStart() {
+        ScriptedSweepConnections database = new ScriptedSweepConnections();
+        InboxConsumer<Connection> threeDays = inbox(Duration.ofDays(3));
+
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> beans.inboxRetentionSweepSchedule(database::open, threeDays, INTERVAL, BATCH, meters))
+                .withMessageContaining("oldest record the broker can redeliver");
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> beans.outboxRetentionSweepSchedule(database::open, threeDays, Duration.ofDays(30), INTERVAL, BATCH, meters))
+                .withMessageContaining("oldest record the broker can redeliver");
     }
 
     @Test

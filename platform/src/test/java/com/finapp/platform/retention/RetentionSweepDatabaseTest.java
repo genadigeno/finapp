@@ -178,6 +178,25 @@ class RetentionSweepDatabaseTest {
     }
 
     @Test
+    @DisplayName("each function refuses a bound at the broker's redelivery horizon, so a chosen expiry cannot reach a young dedupe record")
+    void aBoundInsideTheBrokersHorizonIsRefused() throws SQLException {
+        inbox("expiry-moved-early", "now() - INTERVAL '2 days'", "now() - INTERVAL '1 day'");
+        long horizon = RetentionSweep.BROKER_REDELIVERY_HORIZON.toMillis();
+
+        try (Connection application = DatabaseRoles.application(); Statement statement = application.createStatement()) {
+            for (String function : List.of("platform.sweep_expired_inbox_messages", "platform.sweep_published_outbox_events")) {
+                assertThatExceptionOfType(SQLException.class)
+                        .isThrownBy(() -> statement.executeQuery("SELECT " + function + "(" + horizon + ", 10)"))
+                        .matches(e -> "22023".equals(e.getSQLState()), "invalid_parameter_value");
+            }
+        }
+        assertThat(remainingInbox()).containsExactly("expiry-moved-early");
+
+        drainInbox(RetentionSweep.BROKER_REDELIVERY_HORIZON.plusMillis(1));
+        assertThat(remainingInbox()).as("processed two days ago: inside the floor, whatever its expiry says").containsExactly("expiry-moved-early");
+    }
+
+    @Test
     @DisplayName("an unreviewed column stops the inbox's sweep: it raises and deletes nothing")
     void anUnknownColumnStopsTheSweep() throws SQLException {
         inbox("kept", "now() - INTERVAL '20 days'", "now() - INTERVAL '1 hour'");
@@ -187,7 +206,7 @@ class RetentionSweepDatabaseTest {
             try (Statement statement = migrator.createStatement()) {
                 statement.execute("ALTER TABLE platform.inbox_message ADD COLUMN probe_state TEXT");
                 assertThatExceptionOfType(SQLException.class)
-                        .isThrownBy(() -> statement.executeQuery("SELECT platform.sweep_expired_inbox_messages(1, 10)"))
+                        .isThrownBy(() -> statement.executeQuery("SELECT platform.sweep_expired_inbox_messages(" + WINDOW.toMillis() + ", 10)"))
                         .matches(e -> "55000".equals(e.getSQLState()), "object_not_in_prerequisite_state");
             }
             migrator.rollback();

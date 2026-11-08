@@ -16,9 +16,9 @@ import java.util.Objects;
  * class supplies the bound and the batch size, and owns the transaction.
  *
  * <p><strong>Two bounds, and which is a floor.</strong> The inbox's bound <em>is</em> the dedupe window the
- * {@code InboxConsumer} was built with, so it cannot be configured below it: deleting a record a redelivery could still
- * match is a second effect ({@code INV-IDEM-04}). The outbox's bound is its own setting, for diagnosis, and is refused below
- * that same window, because an audited replay reads the outbox across it.
+ * {@code InboxConsumer} was built with, and that window is refused at or below {@link #BROKER_REDELIVERY_HORIZON}: deleting a
+ * record a redelivery could still match is a second effect ({@code INV-IDEM-04}). The outbox's bound is its own setting, for
+ * diagnosis, and is refused below that same window, because an audited replay reads the outbox across it.
  *
  * <p><strong>Running as N instances (ADR-0014).</strong> The batch is {@code FOR UPDATE SKIP LOCKED}, so N sweepers delete
  * disjoint batches and a held row is passed over. One call borrows one connection, for one statement and its commit, and
@@ -28,6 +28,14 @@ public final class RetentionSweep {
 
     /** The largest batch the functions accept: a transaction stays short and its row locks few. */
     public static final int MAX_BATCH_SIZE = 1000;
+
+    /**
+     * The oldest record the broker can still hand a consumer: a topic's retention, one segment and one retention check. A
+     * dedupe window must exceed this, so a window at or below it stops the instance at start and {@code V012}'s functions
+     * refuse it too. {@code TopicCatalogueTest} holds this equal to the catalogue, and {@code RetentionSweepMigrationTest} to
+     * the functions.
+     */
+    public static final Duration BROKER_REDELIVERY_HORIZON = Duration.ofDays(8).plusMinutes(5);
 
     private static final String SWEEP_OUTBOX_SQL = "SELECT platform.sweep_published_outbox_events(?, ?)";
 
@@ -61,7 +69,7 @@ public final class RetentionSweep {
     public static RetentionSweep ofPublishedOutboxEvents(
             RetentionConnectionSource connections, Duration bound, Duration dedupeWindow, int batchSize) {
         positive(bound, "bound");
-        positive(dedupeWindow, "dedupeWindow");
+        requireBeyondRedelivery(dedupeWindow);
         if (bound.compareTo(dedupeWindow) < 0) {
             throw new IllegalArgumentException(
                     "the outbox's retention " + bound + " is below the inbox's dedupe window " + dedupeWindow
@@ -77,7 +85,17 @@ public final class RetentionSweep {
      */
     public static RetentionSweep ofExpiredInboxMessages(
             RetentionConnectionSource connections, Duration dedupeWindow, int batchSize) {
+        requireBeyondRedelivery(dedupeWindow);
         return new RetentionSweep(connections, "inbox_message", SWEEP_INBOX_SQL, dedupeWindow, batchSize);
+    }
+
+    private static void requireBeyondRedelivery(Duration dedupeWindow) {
+        positive(dedupeWindow, "dedupeWindow");
+        if (dedupeWindow.compareTo(BROKER_REDELIVERY_HORIZON) <= 0) {
+            throw new IllegalArgumentException(
+                    "the inbox's dedupe window " + dedupeWindow + " does not exceed " + BROKER_REDELIVERY_HORIZON
+                            + ", the oldest record the broker can redeliver: sweeping at that age makes a redelivery a second effect");
+        }
     }
 
     private static Duration positive(Duration duration, String what) {

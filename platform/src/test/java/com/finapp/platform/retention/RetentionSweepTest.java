@@ -87,6 +87,27 @@ class RetentionSweepTest {
     }
 
     @Test
+    @DisplayName("a dedupe window at or below the oldest record the broker can redeliver is refused by both sweeps, and just past it accepted")
+    void aWindowInsideTheBrokersHorizonIsRefused() {
+        ScriptedSweepConnections database = new ScriptedSweepConnections();
+        Duration horizon = RetentionSweep.BROKER_REDELIVERY_HORIZON;
+        Duration month = Duration.ofDays(30);
+
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> RetentionSweep.ofExpiredInboxMessages(database::open, horizon, 5))
+                .withMessageContaining("oldest record the broker can redeliver");
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> RetentionSweep.ofExpiredInboxMessages(database::open, Duration.ofDays(3), 5));
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> RetentionSweep.ofPublishedOutboxEvents(database::open, month, horizon, 5))
+                .withMessageContaining("oldest record the broker can redeliver");
+
+        Duration justPast = horizon.plusMillis(1);
+        assertThat(RetentionSweep.ofExpiredInboxMessages(database::open, justPast, 5).bound()).isEqualTo(justPast);
+        assertThat(RetentionSweep.ofPublishedOutboxEvents(database::open, month, justPast, 5).bound()).isEqualTo(month);
+    }
+
+    @Test
     @DisplayName("a batch outside 1 to the maximum and a bound that is not positive are refused at construction")
     void invalidSettingsAreRefused() {
         ScriptedSweepConnections database = new ScriptedSweepConnections();

@@ -2100,9 +2100,10 @@ is not deleted costs storage only, so pausing is always safe.
 
 **Move a bound.**
 
-- `finapp.inbox.retention`: raise it freely, and the sweep honours the new value at once for rows already written. Lowering it
-  takes effect only for new records and for rows past their written expiry, and it must stay above every topic's retention
-  plus one segment and the broker's check (`TopicCatalogueTest`).
+- `finapp.inbox.retention`: raising it protects rows already written, at once. **Raise `finapp.outbox.retention` first** if the new
+  value would pass it (30 days by default): every instance refuses to start with the inbox's above the outbox's. Lowering it takes
+  effect only for new records and for rows past their written expiry. An instance refuses to start with it at or below 8 days and
+  5 minutes, the oldest record the broker can redeliver.
 - `finapp.outbox.retention`: an instance refuses to start with it below `finapp.inbox.retention`, because an audited replay
   reads the outbox across that window. Lowering it deletes only what is then past it.
 

@@ -149,6 +149,23 @@ class RetentionSweepMigrationTest {
     }
 
     @Test
+    @DisplayName("each function refuses a bound at or below the broker's redelivery horizon, the code's figure, before it selects anything")
+    void theFunctionsRefuseABoundInsideTheBrokersHorizon() {
+        Pattern floor = Pattern.compile("IF retain_for_ms IS NULL OR retain_for_ms <= (\\d+) OR batch_size IS NULL");
+        for (String function : List.of(OUTBOX, INBOX)) {
+            String body = body(function);
+            Matcher matched = floor.matcher(flat(body));
+            assertThat(matched.find()).as("%s judges its bound against a floor", function).isTrue();
+            assertThat(Long.parseLong(matched.group(1)))
+                    .as("%s's floor is the one the code enforces at start", function)
+                    .isEqualTo(RetentionSweep.BROKER_REDELIVERY_HORIZON.toMillis());
+            int raised = body.indexOf("USING ERRCODE = 'invalid_parameter_value'");
+            assertThat(raised).as("%s raises 22023", function).isPositive();
+            assertThat(raised).as("%s refuses before it selects", function).isLessThan(body.indexOf("WITH doomed AS"));
+        }
+    }
+
+    @Test
     @DisplayName("the batch cap in the database is the one the code enforces")
     void theCapsAgree() {
         assertThat(body(OUTBOX)).contains("BETWEEN 1 AND " + RetentionSweep.MAX_BATCH_SIZE);
@@ -159,8 +176,8 @@ class RetentionSweepMigrationTest {
     @DisplayName("each predicate has the index it needs: the ordering column, and the outbox's partial on the terminal condition")
     void theIndexesServeThePredicates() {
         assertThat(flat(SQL))
-                .contains("CREATE INDEX outbox_event_sweepable ON platform.outbox_event (published_at) WHERE published_at IS NOT NULL;")
-                .contains("CREATE INDEX inbox_message_sweepable ON platform.inbox_message (expires_at);");
+                .contains("CREATE INDEX IF NOT EXISTS outbox_event_sweepable ON platform.outbox_event (published_at) WHERE published_at IS NOT NULL;")
+                .contains("CREATE INDEX IF NOT EXISTS inbox_message_sweepable ON platform.inbox_message (expires_at);");
         assertThat(cte(OUTBOX)).contains("ORDER BY o.published_at");
         assertThat(cte(INBOX)).contains("ORDER BY m.expires_at");
     }
@@ -258,8 +275,8 @@ class RetentionSweepMigrationTest {
 
     /** The {@code doomed} common table expression, on one line. */
     private static String cte(String function) {
-        Matcher cte = Pattern.compile("WITH doomed AS \\((.*?)\\)\\s*DELETE", Pattern.DOTALL).matcher(body(function));
-        assertThat(cte.find()).as("%s selects through the doomed CTE", function).isTrue();
+        Matcher cte = Pattern.compile("WITH doomed AS MATERIALIZED \\((.*?)\\)\\s*DELETE", Pattern.DOTALL).matcher(body(function));
+        assertThat(cte.find()).as("%s selects through the doomed CTE, written AS MATERIALIZED: the LIMIT rests on it", function).isTrue();
         return flat(cte.group(1));
     }
 
