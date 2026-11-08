@@ -27328,7 +27328,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   terminationGracePeriodSeconds` makes it the rollout's step time as well.
 - *Routed by `P15-TSK-004` (2026-11-08), status unchanged:* the migrator Job template's contract is `DATA_MIGRATIONS.md` §2.1, written from the running image: no `command` or `args` of its own; `restartPolicy: Never`; `backoffLimit: 2`; `podFailurePolicy` `FailJob` on exit codes `10` and `12`; `activeDeadlineSeconds: 900`; `ttlSecondsAfterFinished: 86400`; the three environment variables, the password from a secret only this Job reads; the same security context as the application with `/tmp` an `emptyDir`; memory `512Mi`, request equal to limit (`migrator-verify.sh` runs every apply under it). The one-time role bootstrap (§2.2) is the same image with `command` overridden to `RoleBootstrapMain` and the master credential, in a Job of its own, never this one: a policy that the migration Job sets no `command` is the check. `THREAT_MODEL.md` T12's and T33's manifest rows name `P15-TSK-012`, which rehearses the Job, so this task's completion leaves them standing.
 
-**P15-TSK-010 — Namespace security: RBAC, NetworkPolicy, Pod Security, quotas** — `PLANNED`
+**P15-TSK-010 — Namespace security: RBAC, NetworkPolicy, Pod Security, quotas** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-009`'s merge, master `50d5bfe8`; every dependency `COMPLETE`)
 - **Objective**: a compromised pod reaches only what it must, and no human holds standing write access.
 - **Affected components**: `deploy/` (namespaces, NetworkPolicies, RBAC, quotas, Pod Security labels).
 - **Dependencies**: `-009`.
@@ -27355,7 +27355,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - *Routed by `P15-TSK-009` (2026-11-08), status unchanged:* the pods carry `app.kubernetes.io/name` `finapp-app` and `finapp-migrator`; the container ports are named `http` (8080) and `management` (8081), the management port bound to the pod's own address and on no Service. Every committed workload, the `kind` overlay's test-only copies included, already meets Pod Security `restricted`. A new manifest policy goes in `infra/scripts/manifest-policy/finapp.rego` with a plant in `infra/scripts/manifest-check.sh` (`KubernetesManifestsTest#everyPolicyIsRefusedByAPlant` holds the two equal), and the file's header says why a rule never negates an expression whose parts can be undefined.
 - *Routed by `P15-TSK-014`'s gate (2026-11-08), status unchanged, for information:* on EKS a NetworkPolicy is enforced only because `modules/kubernetes` turns the VPC CNI's network policy agent on (off by default). What this task's `kind` tests prove is `kind`'s CNI enforcing the policies, not EKS's.
 
-**P15-TSK-011 — The edge: public and operator ingresses, TLS, the route allow-list** — `PLANNED`
+**P15-TSK-011 — The edge: public and operator ingresses, TLS, the route allow-list** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-009`'s merge, master `50d5bfe8`; every dependency `COMPLETE`)
 - **Objective**: the internet reaches customer, merchant and provider routes only; operators reach theirs only from the
   internal network; TLS ends at the edge.
 - **Affected components**: `deploy/` (ingress controller install pinned, two Ingresses, cert-manager with a local CA in
@@ -27620,7 +27620,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - *Routed by `P15-TSK-009` (2026-11-08), status unchanged:* `deploy/overlays/{staging,production}` name each image by a sixty-four-zero digest and no registry, and `KubernetesManifestsTest#nothingRealIsCommitted` holds that while no registry exists: a promotion replaces the digest, so that guard's placeholder half changes in the same pull request, its "digest only, no secret, no endpoint" half never. The Deployment states no `replicas`, so a sync does not fight the HPA; the migrator Job's `PreSync` hook annotations are this task's.
 - *Routed by `P15-TSK-004` (2026-11-08), status unchanged:* the pre-sync hook is the migrator Job of `DATA_MIGRATIONS.md` §2.1; the rollout starts only on its exit `0`. The one-time role bootstrap (§2.2) is not part of a release and is not a hook.
 
-**P15-TSK-018 — The secret inventory and its delivery** — `PLANNED`
+**P15-TSK-018 — The secret inventory and its delivery** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-009`'s merge, master `50d5bfe8`; every dependency `COMPLETE`)
 - **Objective**: every secret the application reads is inventoried, classed and delivered from the secret store — and
   none is committed.
 - **Affected components**: `SECRET_MANAGEMENT.md` (the inventory), a test in `app` holding it both ways against every
