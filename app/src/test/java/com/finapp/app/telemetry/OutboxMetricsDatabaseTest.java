@@ -136,6 +136,32 @@ class OutboxMetricsDatabaseTest {
         assertThat(oldest.value()).isNotNaN().isGreaterThanOrEqualTo(120.0);
     }
 
+    @Test
+    @DisplayName("a dead-lettered event is counted, and is no part of the publishable age (P15-TSK-025, owed C14)")
+    void aDeadLetterIsCountedApart() throws SQLException {
+        OutboxBacklog.Reading before = backlog.read();
+        insertPendingEvent(Duration.ofHours(2));
+        try (Connection connection = connect();
+                Statement statement = connection.createStatement()) {
+            statement.executeUpdate(
+                    "UPDATE platform.outbox_event SET dead_lettered_at = now(), attempts = 1 "
+                            + "WHERE aggregate_type = '" + AGGREGATE_TYPE + "'");
+        }
+        try {
+            OutboxBacklog.Reading after = backlog.read();
+            assertThat(after.deadLettered()).isEqualTo(before.deadLettered() + 1);
+            assertThat(after.oldest()).as("the old gauge still counts it").isGreaterThanOrEqualTo(Duration.ofHours(1));
+            assertThat(after.oldestPublishable()).as("the freshness SLI's reading does not").isLessThan(Duration.ofHours(1));
+        } finally {
+            try (Connection connection = connect();
+                    Statement statement = connection.createStatement()) {
+                statement.executeUpdate(
+                        "UPDATE platform.outbox_event SET dead_lettered_at = NULL "
+                                + "WHERE aggregate_type = '" + AGGREGATE_TYPE + "'");
+            }
+        }
+    }
+
     // -----------------------------------------------------------------
 
     private void insertPendingEvent(Duration age) throws SQLException {

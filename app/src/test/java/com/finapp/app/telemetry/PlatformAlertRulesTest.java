@@ -26,7 +26,7 @@ import org.springframework.core.io.FileSystemResource;
  * The platform rules (`P15-TSK-024`): a rule on {@code up} per instance at page, the fleet gone from the scrape, and the
  * gauge refresher's canary - as written, linked to their runbook section and loaded by the committed configuration.
  * <strong>Whether they fire is {@code promtool}'s</strong>: {@code infra/prometheus/tests/platform.test.yml}, run through
- * the digest-pinned Prometheus image (not yet in CI: `P15-TSK-025`). This suite holds what a build can hold without one:
+ * the digest-pinned Prometheus image (CI's {@code alerts} job, since `P15-TSK-025`). This suite holds what a build can hold without one:
  * the rule removed, made fleet-wide, demoted or unlinked is red here. And, over every rule file, that every gauge an alert
  * reads has an unreadable rule, since every gauge can now be NaN (the fix round's guard).
  */

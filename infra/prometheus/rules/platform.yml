@@ -25,6 +25,7 @@ groups:
       owner: platform
     rules:
       - alert: InstanceDown
+        # Aggregation: per instance - one instance down is an incident on that instance, and max() or sum() would hide it
         # Two minutes of failed scrapes on one target: a crashed or stopped JVM, a pod that cannot be reached, a scrape that
         # cannot answer. A page: whatever that instance was running - requests, schedules, consumers - another must be
         # taking, and if every instance is down nothing is.
@@ -36,6 +37,7 @@ groups:
           summary: "A finapp instance cannot be scraped: {{ $labels.instance }}"
           description: "Its last scrapes failed for 2 minutes. See OPERATIONS_RUNBOOK.md section 11.8."
       - alert: FinappTargetsAbsent
+        # Aggregation: none - absent() asks whether any target exists at all
         # No finapp target is scraped at all: the fleet is gone from the service discovery (scaled to zero, every pod
         # deleted), or the scrape configuration lost the job. Every rule on a finapp series is then green for the wrong reason.
         expr: absent(up{job="finapp"})
@@ -46,6 +48,7 @@ groups:
           summary: "No finapp instance is being scraped"
           description: "No target of the finapp job exists for 5 minutes, so every finapp alert is blind. See OPERATIONS_RUNBOOK.md section 11.8."
       - alert: GaugesStale
+        # Aggregation: per instance - each instance's refresher is its own
         # The instance answers its scrapes, but its canary was stale at more than 6 of the last 30 minutes' 120 evaluations
         # (over 90 s): a read holding the one thread (a socket the network black-holed - only a restart frees it), or a thread
         # behind its asks, its reads slow or each waiting out the pool on a database in trouble. Counted, never held: a
@@ -122,7 +125,7 @@ groups:
       - alert: HttpServerErrorsHigh
         # Aggregation: sum() - counters are per instance, and the ratio is the fleet's
         # Every route, including the ones no objective names. The objectives burn per flow; this is the floor under them.
-        expr: sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) / sum(rate(http_server_requests_seconds_count[5m])) > 0.05
+        expr: sum(rate(http_server_requests_seconds_count{uri!~"/actuator/.*",status=~"5.."}[5m])) / sum(rate(http_server_requests_seconds_count{uri!~"/actuator/.*"}[5m])) > 0.05
         for: 5m
         labels:
           severity: page

@@ -253,6 +253,37 @@ class KafkaEventReceiverTest {
         assertThat(committedOffset()).as("its next owner does not redeliver it").isEqualTo(1L);
     }
 
+    @Test
+    @DisplayName("a commit the group refused because it evicted this member is translated: the effect stands, naming the class and nothing else (P15-TSK-025)")
+    void anEvictionIsTranslated() {
+        EvictedOnCommitConsumer evicted = new EvictedOnCommitConsumer();
+        evicted.assign(List.of(PARTITION));
+        evicted.updateBeginningOffsets(Map.of(PARTITION, 0L));
+        consumer = evicted;
+        AtomicInteger effects = new AtomicInteger();
+        KafkaEventReceiver receiver = receiver(counting("probe.consumer", effects));
+        consumer.addRecord(record(0, EventId.next(IDS), "probe.SomethingHappened", "x"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(receiver::pollOnce)
+                .isInstanceOf(ConsumerEvictedException.class)
+                .hasMessageContaining("CommitFailedException")
+                .hasMessageNotContaining("group.id")
+                .hasMessageNotContaining("member-");
+        assertThat(effects).as("the effect committed before the acknowledgement, so the redelivery lands in the dedupe").hasValue(1);
+    }
+
+    @Test
+    @DisplayName("the lag is unknown before a poll, then the client's own figure for the partitions held (P15-TSK-025)")
+    void theLagIsTheClientsFigureForThePartitionsHeld() {
+        KafkaEventReceiver receiver = receiver(counting("probe.consumer", new AtomicInteger()));
+        assertThat(receiver.lag()).as("no poll has read it").isEmpty();
+        consumer.updateEndOffsets(Map.of(PARTITION, 7L));
+
+        receiver.pollOnce();
+
+        assertThat(receiver.lag()).as("seven records past the position").hasValue(7L);
+    }
+
     // -----------------------------------------------------------------
 
     private KafkaEventReceiver receiver(InboxEventHandler... handlers) {
@@ -361,6 +392,18 @@ class KafkaEventReceiverTest {
         public void commitSync(Map<TopicPartition, OffsetAndMetadata> offsets) {
             journal.add("offsets-acknowledged");
             super.commitSync(offsets);
+        }
+    }
+
+    /** The commit a group refuses once it has evicted the member (`P15-TSK-025`). */
+    private static final class EvictedOnCommitConsumer extends MockConsumer<String, byte[]> {
+        private EvictedOnCommitConsumer() {
+            super("earliest");
+        }
+
+        @Override
+        public void commitSync(Map<TopicPartition, OffsetAndMetadata> offsets) {
+            throw new org.apache.kafka.clients.consumer.CommitFailedException();
         }
     }
 

@@ -442,7 +442,7 @@ existing guards, so a local value can never start a deployed instance.
 | Metrics | Prometheus registry, naming contract, 136 domain alerts | Every gauge off the scrape thread; platform alerts (trial balance, outbox, inbox, HTTP, pool, certificate expiry, `up` per instance) | `-024`, `-025` |
 | Distributed tracing | Spans recorded and dropped | OTLP export to the collector; tail policy keeping errors, slow spans and money-moving routes; span attributes an allow-list; one end-to-end trace proven | `-023` |
 | Dashboards | One baseline | An SLO dashboard per critical flow, provisioned read-only | `-025` |
-| Alerts | Domain alerts, no routing | Alertmanager: severity `page` and `ticket`, every alert linking its runbook section (a test), a placeholder receiver | `-025` |
+| Alerts | Domain alerts, no routing | Alertmanager: severity `page` and `ticket`, every alert linking its runbook section (a test), a placeholder receiver *(built by `-025`, 2026-11-08: `docs/architecture/SLOS.md`)* | `-025` |
 | SLIs, SLOs, error budgets | Latency objectives in code only | §11.1 | `-025` |
 | Business and financial metrics | Per-domain series; amounts never in metrics (ADR-0072) | Unchanged; the financial-correctness signals become paging invariants (§11.1) | `-025` |
 | Operational runbooks | Domain runbooks | Platform runbooks, each rehearsed with its result recorded; every domain section §1–§10 rehearsed by a counted sample of at least one procedure (criterion 4 as written, not narrowed) | `-032` |
@@ -478,6 +478,15 @@ rehearsal's exported spans for the planted needles of `DATA_CLASSIFICATION.md`.
 | `finapp.retention.swept` | counter by bounded table name | `-029` |
 | `finapp.deadletter.parked` | gauge by consumer group | `-028` |
 | `finapp.config.fingerprint` | info gauge, value 1, the effective financial configuration's hash as its one tag | `-031` |
+| `finapp.outbox.deadlettered` | gauge: abandoned events still standing | `-025` |
+| `finapp.outbox.oldest.publishable` | gauge in seconds: the oldest row the relay may still publish, the event-freshness SLI | `-025` |
+| `finapp.inbox.poll.failures` | counter by outcome (`refused`, `failed`): thrown consumer polls, registered by `-026`, alerted by `-025` | `-026`, `-025` |
+| `finapp.inbox.consumer.evictions` | counter: commits a group refused because it had evicted the member | `-025` |
+| `finapp.bnpl.sweeper.claim.failed` | counter by sweep (`origination`, `servicing`, `dispute`): a failed claim, the page read | `-025` |
+| `finapp.credit.scorecard.awaited` | gauge: requests admitted and waiting because no `RETAIL_SCORECARD` is `ACTIVE` | `-025` |
+| `finapp.platform.clock.offset` | gauge in seconds, per instance: this instance's clock minus the database's (ADR-0063's Follow-up) | `-025` |
+
+*`finapp.inbox.lag` (`-025`, by module, the consumption SLI) is not a row here: it exists only on an instance whose consumers run, and `InboxConsumersTest` holds its registration; `finapp.deadletter.parked` above is read by `correctness.yml`'s `InboxDeadLetterParked`, which is silent until `-028`'s meter exists.*
 
 ---
 

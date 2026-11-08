@@ -107,12 +107,12 @@ Each table carries **Today**, the survey's reading in `PHASE_15_PLAN.md` §15 (`
 | Logging | Partial: ECS JSON with correlation and trace ids, default-deny redaction; no shipping, retention or central search | — | — | — |
 | Metrics | Partial: the naming contract enforced; every gauge read off the scrape thread on one gauge thread per instance, restartable (`P15-TSK-024`, 2026-11-08; read "about sixty gauge classes read on the scrape thread" until then); scraped from the management port *(`P15-TSK-008`, 2026-11-08; read "from the API port" until then)*, its policy not yet built | — | — | — |
 | Tracing | Partial: spans recorded and dropped, no exporter | — | — | — |
-| Alerting | Partial: 136 rules in seven files (counted), none on the continuous trial balance, the outbox or HTTP; no routing; `promtool` never run. Since 2026-11-08 (`P15-TSK-024`): 141 rules in eight files, `platform.yml` adding a rule on `up` per instance, the fleet absent and the gauges stale, and its fix round `FxGaugesUnreadable` and `ReconciliationGaugesUnreadable`, every gauge an alert reads now seen unreadable; their own `promtool test` cases run by hand | — | — | — |
+| Alerting | Partial: 136 rules in seven files (counted), none on the continuous trial balance, the outbox or HTTP; no routing; `promtool` never run. Since 2026-11-08 (`P15-TSK-024`): 141 rules in eight files, `platform.yml` adding a rule on `up` per instance, the fleet absent and the gauges stale, and its fix round `FxGaugesUnreadable` and `ReconciliationGaugesUnreadable`, every gauge an alert reads now seen unreadable; their own `promtool test` cases run by hand. Since 2026-11-08 (`P15-TSK-025`): 201 alerts in twelve files, with objectives and burn-rate pairs (`slo.yml`), correctness pages (`correctness.yml`), each critical flow (`flows.yml`), routing by severity to a placeholder receiver (`infra/alertmanager/`), `promtool` and `amtool` in CI's `alerts` job, and every alert's runbook section checked by `AlertCatalogueTest`. Not rehearsed (`-032`); no real on-call receiver | — | — | — |
 | Security | Partial: transport guards off loopback, secrets externalised and confined; an operator's acts recorded as the operator population and every refused step-up recorded, report generation reading as a `SELECT`-only role (`P15-TSK-021`); no image, pod profile, NetworkPolicy, workload identity or secret store *(2026-11-08, `P15-TSK-003`: the image runs as UID 65532 with no shell or package manager, asserted on the built image; still no pod profile, NetworkPolicy, workload identity, secret store, scan or signature)* | — | — | — |
 | Resource limits | Missing (the connection budget is a startup guard, not a manifest) | — | — | — |
 | Failure handling | Partial: graceful shutdown stated and held on a real context (`ShutdownOrderTest`): readiness refuses, HTTP drains, 32 schedules drain within 10 s + 2 s, consumers acknowledge and leave within 10 s + 2 s, the pool closes last *(`P15-TSK-008`, 2026-11-08; read "graceful shutdown unasserted; schedules' `stop()` does not wait; consumers join for 10 s" until then)*; no `preStop` or grace yet (`-009`); recovery after a kill not rehearsed (`-012`) | — | — | — |
 | Recovery | Missing | — | — | — |
-| Ownership | Partial: seven alert files cover eight modules (§4); no owner label on an alert, no person or rota | — | — | — |
+| Ownership | Partial: an `owner` label naming the owning module on every alert (`P15-TSK-025`, on the rule or its group; `AlertCatalogueTest`); no person or rota, which needs a real environment | — | — | — |
 | Runbooks | Partial: `OPERATIONS_RUNBOOK.md` §1–§10 domain sections; §11 (platform) planned | — | — | — |
 | Multi-instance | Leaderless by design; 34 `SmartLifecycle` components (32 schedules, the gauge refresher - accounting's until `P15-TSK-024` made it every gauge's, 2026-11-08 - the inbox consumers), guarded by `NoSingleInstanceAssumptionRulesTest`; the deployed fleet not yet rehearsed | — | — | — |
 
@@ -191,7 +191,7 @@ gaps of the module they touch (§4).
 | Logging | — | — | — | — |
 | Metrics | Local only | — | — | — |
 | Tracing | Missing: no collector or back end | — | — | — |
-| Alerting | Missing: no Alertmanager | — | — | — |
+| Alerting | Partial: Alertmanager configured in compose and `deploy/observability/alertmanager/` (`P15-TSK-025`), its receivers placeholders; the telemetry stack's own alerts are not built | — | — | — |
 | Security | Missing | — | — | — |
 | Resource limits | Missing | — | — | — |
 | Failure handling | — | — | — | — |
@@ -247,7 +247,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | — | — | — | — |
-| Alerting | No rule on the outbox, the inbox or a dead letter (§15; `-025`) | — | — | — |
+| Alerting | Partial: `OutboxPublicationStalled`, `OutboxDeadLetter`, `InboxLagHigh`, `InboxPollFailing`, `InboxPollRefused` and `InboxConsumerEvicted` (`P15-TSK-025`, 2026-11-08); parked inbox records alert once their meter exists | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | No platform section; dead letters resolved by a manual change (`-028`, `-032`) | — | — | — |
 
@@ -265,7 +265,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | Dashboard panels (§15) | — | — | — |
-| Alerting | No alert rule (§15) | — | — | — |
+| Alerting | Partial: its rules in `flows.yml` and, where one exists, its objective in `slo.yml` (`P15-TSK-025`) | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | No section | — | — | — |
 
@@ -274,7 +274,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | Dashboard panels (§15) | — | — | — |
-| Alerting | No alert rule (§15) | — | — | — |
+| Alerting | Partial: its rules in `flows.yml` and, where one exists, its objective in `slo.yml` (`P15-TSK-025`) | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | No section | — | — | — |
 
@@ -283,7 +283,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | Dashboard panels (§15) | — | — | — |
-| Alerting | No alert rule (§15) | — | — | — |
+| Alerting | Partial: its rules in `flows.yml` and, where one exists, its objective in `slo.yml` (`P15-TSK-025`) | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | No section | — | — | — |
 
@@ -292,7 +292,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | Dashboard panels (§15) | — | — | — |
-| Alerting | No alert rule, the continuous trial balance included (§15, §11.1) | — | — | — |
+| Alerting | Partial: `LedgerTrialBalanceNonZero` and `LedgerProjectionDrift` page on their first sample, and `flows.yml`'s ledger rules (`P15-TSK-025`) | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | No section | — | — | — |
 
@@ -313,7 +313,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | Dashboard panels (§15) | — | — | — |
-| Alerting | No alert rule (§15) | — | — | — |
+| Alerting | Partial: its rules in `flows.yml` and, where one exists, its objective in `slo.yml` (`P15-TSK-025`) | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | No section | — | — | — |
 
@@ -331,7 +331,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | Dashboard panels (§15) | — | — | — |
-| Alerting | No alert rule (§15) | — | — | — |
+| Alerting | Partial: its rules in `flows.yml` and, where one exists, its objective in `slo.yml` (`P15-TSK-025`) | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | No section | — | — | — |
 
@@ -340,7 +340,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | Dashboard panels (§15) | — | — | — |
-| Alerting | No alert rule (§15) | — | — | — |
+| Alerting | Partial: its rules in `flows.yml` and, where one exists, its objective in `slo.yml` (`P15-TSK-025`) | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | No section | — | — | — |
 
@@ -349,7 +349,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
 | Metrics | Dashboard panels (§15) | — | — | — |
-| Alerting | No alert rule of its own (§15); `MerchantPayableNegative` is in the BNPL rules | — | — | — |
+| Alerting | Partial: `flows.yml`'s merchant rules and the `merchant_api` objective (`P15-TSK-025`); `MerchantPayableNegative` is in the BNPL rules | — | — | — |
 | Ownership | — | — | — | — |
 | Runbooks | §8.5 (a negative payable from a BNPL refund) | — | — | — |
 

@@ -32,7 +32,7 @@ class PlatformJudgedCommandsTest {
     @DisplayName("every judged statement enters a day through its owner's primary key; every recorded probe through the"
             + " primary key or crossborder's quote unique")
     void throughTheOwnersKeys() {
-        for (String sql : JUDGED) {
+        for (String sql : List.of(PlatformJudgedCommands.TRANSFERS, PlatformJudgedCommands.WITHDRAWALS, PlatformJudgedCommands.CROSS_BORDER)) {
             assertThat(sql).containsPattern("\\b(i\\.)?id >= \\? AND (i\\.)?id < \\?").startsWith("SELECT ");
         }
         assertThat(PlatformJudgedCommands.TRANSFERS_RECORDED).contains("WHERE id = ANY (?)");
@@ -52,9 +52,55 @@ class PlatformJudgedCommandsTest {
                 .doesNotContain("INSUFFICIENT_FUNDS");
         assertThat(PlatformJudgedCommands.WITHDRAWALS).contains("instruction_reference IS NULL");
         assertThat(PlatformJudgedCommands.CARD_PAYMENTS).contains("m.kind = 'CARD_TOKEN'")
-                .contains("a.purpose = 'MERCHANT_PAYABLE'").contains("i.status IN ('PROCESSING', 'SUCCEEDED', 'FAILED')");
+                .contains("a.purpose = 'MERCHANT_PAYABLE'");
         assertThat(PlatformJudgedCommands.WALLET_PAYMENTS).contains("i.debit_account_id IS NOT NULL")
-                .contains("a.purpose = 'MERCHANT_PAYABLE'").contains("i.status IN ('PROCESSING', 'SUCCEEDED', 'FAILED')");
+                .contains("a.purpose = 'MERCHANT_PAYABLE'");
+    }
+
+    @Test
+    @DisplayName("an intent's day is its confirmation's: the two statements enter through the confirmation edges V035 indexes, never the intent's own id - so a late-confirmed intent is counted on its confirmation's day (P15-TSK-025)")
+    void anIntentIsDatedByItsConfirmation() {
+        for (String sql : List.of(PlatformJudgedCommands.CARD_PAYMENTS, PlatformJudgedCommands.WALLET_PAYMENTS)) {
+            assertThat(sql).startsWith("SELECT i.id FROM payments.payment_intent_event e")
+                    .contains("e.occurred_at >= ? AND e.occurred_at < ?")
+                    .contains("e.from_status = 'REQUIRES_CONFIRMATION' AND e.to_status IN ('PROCESSING', 'FAILED')")
+                    .doesNotContain("i.id >= ?").doesNotContain("i.status IN");
+        }
+        assertThat(com.finapp.platform.testing.RepositoryPaths.read(
+                        "payments/src/main/resources/db/migration/payments/V035__a_payment_intent_is_readable_by_its_confirmation.sql"))
+                .as("the index covers exactly the statements' edges")
+                .contains("ON payments.payment_intent_event (occurred_at)")
+                .contains("WHERE from_status = 'REQUIRES_CONFIRMATION' AND to_status IN ('PROCESSING', 'FAILED')");
+    }
+
+    @Test
+    @DisplayName("a day's bounds reach the statement as instants for an intent and as identifiers for the commands minted by their judgement (P15-TSK-025)")
+    void theBoundsMatchTheStatement() {
+        RiskDay day = RiskDay.of(LocalDate.of(2026, 10, 23));
+        List<Object> bound = new java.util.ArrayList<>();
+        Connection recording = (Connection) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] {Connection.class},
+                (self, method, args) -> method.getName().equals("prepareStatement")
+                        ? Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] {java.sql.PreparedStatement.class},
+                                (statement, call, values) -> {
+                                    switch (call.getName()) {
+                                        case "setObject" -> bound.add(values[1]);
+                                        case "executeQuery" -> {
+                                            return Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] {java.sql.ResultSet.class},
+                                                    (rows, next, none) -> next.getName().equals("next") ? Boolean.FALSE : null);
+                                        }
+                                        default -> { }
+                                    }
+                                    return null;
+                                })
+                        : null);
+        PlatformJudgedCommands owners = new PlatformJudgedCommands();
+
+        owners.judged(recording, RiskOperation.CARD_PAYMENT, day);
+        assertThat(bound).containsExactly(day.start().atOffset(java.time.ZoneOffset.UTC), day.end().atOffset(java.time.ZoneOffset.UTC));
+
+        bound.clear();
+        owners.judged(recording, RiskOperation.TRANSFER, day);
+        assertThat(bound).containsExactly(day.fromId(), day.toId());
     }
 
     @Test

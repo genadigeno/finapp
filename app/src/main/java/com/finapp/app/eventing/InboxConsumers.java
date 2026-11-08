@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -165,6 +166,11 @@ public final class InboxConsumers implements SmartLifecycle {
                         + " instances that can answer")
                 .strongReference(true)
                 .register(registry));
+    }
+
+    /** A loop's last known lag, or unknown (`P15-TSK-025`): the seam the lag test drives without a broker. */
+    void observeLag(String module, OptionalLong lag) {
+        lag.ifPresentOrElse(known -> lags.put(module, known), () -> lags.remove(module));
     }
 
     private static double lagOf(Map<String, Long> known, String module) {
@@ -399,10 +405,10 @@ public final class InboxConsumers implements SmartLifecycle {
         private void tick() {
             ReceiverPollResult result = settle(module, receiver::pollOnce);
             if (result == null) {
-                lags.remove(module); // a thrown poll knows no lag: NaN, never its last number
+                observeLag(module, OptionalLong.empty()); // a thrown poll knows no lag: NaN, never its last number
                 return; // logged and backed off by settle
             }
-            receiver.lag().ifPresentOrElse(lag -> lags.put(module, lag), () -> lags.remove(module));
+            observeLag(module, receiver.lag());
             processed.increment(result.processed());
             duplicates.increment(result.duplicates());
             contended.increment(result.contended());
