@@ -59,7 +59,8 @@ public final class InstantCallbackInquiry implements HintedInquiry {
         Objects.requireNonNull(reference, "reference must not be null");
         PushInquiryAnswer answer = rail.inquireInitiation(reference);
         Correlation correlation = PaymentCreation.resolvedCorrelation();
-        if (!usable(answer)) {
+        boolean noAmount = answer.verdict() == PushInquiryAnswer.Verdict.ACCEPTED && answer.executed().isEmpty();
+        if (!usable(answer) || noAmount) {
             answer.evidence().ifPresent(bytes -> transactions.inTransaction(uow -> {
                 retainForAttempt(uow, attemptId, bytes);
                 return null;

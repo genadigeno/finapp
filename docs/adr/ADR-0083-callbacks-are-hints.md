@@ -205,3 +205,38 @@ it: **read `X-TSK-015` as `P15-TSK-036` throughout this record**. The work and i
 `X-TSK-015` is `CANCELLED` (moved, not dropped). `P15-TSK-036` also carries the corridor door's evidence for a
 callback naming no credit (the amendment above). Its gate records decision 4 as built here, and writes a new ADR only
 if a Phase 5 or Phase 7 callback kind has no inquiry. The decision itself is unchanged; this ADR's status is unchanged.
+
+## As built: decision 4 (`P15-TSK-036`, 2026-11-08)
+
+Decision 4 is built, so one doctrine holds platform-wide. Every kind the card and instant doors adopted was enumerated from
+their code and made a hint; none is left without an inquiry, so this needed no new ADR.
+
+| Door | Statement | The inquiry | What applies it |
+|---|---|---|---|
+| card | authorization, capture, void | `PaymentProvider.query` (our reference) | `applyAuthorization`, `applyCapture`, `applyVoid` |
+| card | refund | `PaymentProvider.query` | `applyRefund` |
+| card | clearing | `PaymentProvider.queryClearing` (new) | `PaymentClearing.record` |
+| card | dispute | `PaymentProvider.queryDispute` (new; names the operation it contests) | `DisputeNotifications.apply` |
+| instant | execution or rejection on a waiting pay-in | `PushRail.inquireInitiation` | `applyExecution` |
+| instant | execution on a concluded pay-in | `PushRail.inquireInitiation` | `applyExecution`'s concluded branch |
+| instant | execution naming nothing of ours | `PushRail.inquireExecution` (new; by the scheme's reference) | `UnmatchedConfirmations.park` |
+| instant | a return's reference | `PushRail.inquireReturn` | `applyRefund` |
+| instant | a withdrawal's reference | `PushRail.inquire` | `WithdrawalOutcomes.applyInquiryAnswer` |
+
+Three things the decision did not say, which the building had to:
+
+- **A hint is narrower than a sweep.** The inquiry's `UNRECOGNISED` and `INDETERMINATE` adopt nothing and write no state, and
+  a hint re-sends nothing. A sweep may read "never saw it" as a failure because its bounds say the request cannot still be
+  in flight. A callback carries no such bound, so a forged one aimed at a just-dispatched capture must not be able to fail
+  it while the PSP is still performing it.
+- **Some kinds have no row to sweep.** A failed inquiry about a capture leaves the row `CAPTURE_*`. A failed inquiry about a
+  clearing, a dispute, or an execution on a concluded or unknown row leaves nothing, and the inbox has already recorded the
+  delivery. Those four kinds write a `payments.callback_hint` row (payments `V036`) in the delivery's transaction, and
+  `CallbackHintResolution` is both the door's immediate inquiry and the leaderless sweep over what it could not finish.
+- **Attribution comes from the inquiry too.** A dispute inquiry names the operation it contests, so a forged notice naming a
+  genuine dispute on another payment moves nothing. An execution inquiry names what the execution carried, so a scheme
+  reference of our own withdrawal can never park as inbound value.
+
+The corridor door's Phase 9 note above ("retains none") is superseded: an authenticated corridor callback naming no credit
+now rests as evidence with no subject, which `V005` always admitted. The two-doctrine state in Consequences has ended, and
+the `X-TSK-015` lines in the Follow-up and in decision 4 are history (moved to `P15-TSK-036`, `CANCELLED`, by C15).

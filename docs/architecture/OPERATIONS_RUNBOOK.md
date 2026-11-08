@@ -2056,3 +2056,17 @@ and not the other fails `TerraformIsPinnedAndCheckedTest` until both roots agree
 
 **What this does not cover.** An apply, a plan against an account, and a drift check. Each needs a real account, which
 Phase 15 does not have (`THREAT_MODEL.md` §6 item 7).
+
+## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
+
+A signed callback no longer concludes anything by itself on the payment, instant, FX or corridor doors. Its evidence and dedupe
+commit, then the door asks the provider, and the delivery is acknowledged after that one inquiry. KYC's callbacks are outside
+this rule. So a callback's outcome now waits on one inquiry, bounded by that provider's timeout.
+
+| You see | It means | Do |
+|---|---|---|
+| A payment stays `*_UNKNOWN` or `AWAITING_PAYER` after its callback arrived | The inquiry failed or had no answer; nothing was adopted | Nothing. The resolution sweep asks again. If it persists, check the provider's inquiry endpoint |
+| `finapp.payments.webhook{outcome="unmappable"}` rising with no integration change | A signed callback the provider's own inquiry denied or contradicted, or one nobody can read | Treat as a possible **webhook key compromise** until shown otherwise: read the WARN lines, then rotate the key under `SECRET_MANAGEMENT.md`. Nothing has moved, and no reversal is needed on this signal alone |
+| WARN "contradicts the row" | The provider's answer disagrees with a concluded payment | A break: the row stands, the answer rests as evidence, and reconciliation will type it from settlement. Investigate with the provider |
+| `payments.callback_hint` rows with `concluded_at IS NULL` growing | Clearing, dispute or parking inquiries are not being answered | Check the provider's inquiry endpoints. The sweep re-asks every `finapp.payments.callback-hint.retry-after` (1 min) |
+| WARN "never answered within their bound and are abandoned" | A hint passed `finapp.payments.callback-hint.give-up-after` (7 days) | The callback's evidence stands and settlement reconciliation is the backstop; find the notice in `provider_evidence` and reconcile it |

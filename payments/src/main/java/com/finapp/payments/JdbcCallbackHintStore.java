@@ -41,7 +41,7 @@ public final class JdbcCallbackHintStore implements CallbackHintStore<Connection
             insert.setString(2, kind.name());
             insert.setObject(3, attempt.map(PaymentAttemptId::value).orElse(null));
             insert.setString(4, askedAbout);
-            insert.setDouble(5, seconds(firstAsk));
+            insert.setLong(5, firstAsk.toSeconds());
             try (ResultSet row = insert.executeQuery()) {
                 row.next();
                 return new CallbackHint(id, kind, attempt, askedAbout, row.getTimestamp(1).toInstant());
@@ -84,7 +84,7 @@ public final class JdbcCallbackHintStore implements CallbackHintStore<Connection
                         "UPDATE payments.callback_hint"
                                 + " SET next_inquiry_at = statement_timestamp() + make_interval(secs => ?)"
                                 + " WHERE id = ? AND concluded_at IS NULL AND next_inquiry_at = ?")) {
-            update.setDouble(1, seconds(retryAfter));
+            update.setLong(1, retryAfter.toSeconds());
             update.setObject(2, hint.id());
             update.setTimestamp(3, Timestamp.from(hint.nextInquiryAt()));
             return update.executeUpdate() == 1;
@@ -121,15 +121,11 @@ public final class JdbcCallbackHintStore implements CallbackHintStore<Connection
                                 + " AND received_at <= statement_timestamp() - make_interval(secs => ?)"
                                 + " ORDER BY received_at LIMIT ? FOR UPDATE SKIP LOCKED)")) {
             update.setString(1, HintedOutcome.EXPIRED.name());
-            update.setDouble(2, seconds(giveUpAfter));
+            update.setLong(2, giveUpAfter.toSeconds());
             update.setInt(3, batchSize);
             return update.executeUpdate();
         } catch (SQLException failure) {
             throw new PaymentsStorageException(DatabaseFailure.describe("expiring callback hints", failure));
         }
-    }
-
-    private static double seconds(Duration duration) {
-        return duration.toMillis() / 1000d;
     }
 }

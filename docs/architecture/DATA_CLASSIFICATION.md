@@ -5416,3 +5416,11 @@ deny-list.
 | Per-level retention periods | Retention is a correctness bound for the idempotency, inbox and outbox tables (`DATA_MIGRATIONS.md` §8-9) and a regulatory one for audit and financial history. Those are different questions with different owners, and folding them into a classification level would answer both wrongly | Phase 15 |
 | Access control per level | There is no authority to authorise against. The database role split (`P0-TSK-022`) is the only access control that exists | `P0-EPIC-10` onward |
 | Classification of Kafka topics, Redis keys, object storage | None exist yet. The register covers the one store that holds data | Phase 3 onward |
+
+### `payments.callback_hint` (`P15-TSK-036`, payments `V036`)
+
+A callback still to be asked about, for the kinds with no payment row a sweep could find. Operational state, never
+financial truth. `asked_about` holds one opaque reference: ours, the PSP's dispute reference or the scheme's transaction
+reference, each shape-checked by its type, the same class as those columns elsewhere in `payments`. No amount, no personal
+data, and nothing the callback claimed: the claim rests encrypted in `provider_evidence`. Concluded rows are operational
+history with no retention sweep yet; `P15-TSK-029`'s policy covers operational tables by class.

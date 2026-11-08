@@ -130,7 +130,7 @@ public final class UnmatchedConfirmations {
      * Whether a statement on {@code rail} in {@code currency} can park at all (the Phase 7 -&gt; 8
      * transition): the rail declares a clearing position and the chart holds it and the
      * suspense account in that currency. A door asks first, so a statement it cannot park is
-     * refused as unmappable with its evidence kept — never an exception inside the delivery
+     * refused as unmappable with its evidence kept — never an exception inside the transaction
      * that rolls the evidence back and has the scheme redeliver for ever.
      */
     public boolean canPark(Connection uow, RailId rail, com.finapp.sharedkernel.money.CurrencyCode currency) {

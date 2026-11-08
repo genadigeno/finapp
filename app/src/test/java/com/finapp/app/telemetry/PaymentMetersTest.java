@@ -288,16 +288,6 @@ class PaymentMetersTest {
                     }
 
                     @Override
-                    public com.finapp.payments.ClearingAnswer queryClearing(com.finapp.payments.ProviderIdempotencyReference reference) {
-                        return com.finapp.payments.ClearingAnswer.indeterminate();
-                    }
-
-                    @Override
-                    public com.finapp.payments.DisputeAnswer queryDispute(com.finapp.payments.ProviderReference reference) {
-                        return com.finapp.payments.DisputeAnswer.indeterminate();
-                    }
-
-                    @Override
                     public QueryAnswer query(ProviderIdempotencyReference ourReference) {
                         throw new IllegalStateException("the PSP is down");
                     }

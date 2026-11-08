@@ -380,9 +380,18 @@ then **each callback door has its own key**: five doors, five keys (`finapp.kyc.
 `finapp.payments.webhook.key`, `finapp.payments.instant.webhook.key`, `finapp.fx.webhook.key`,
 `finapp.corridor.webhook.key`). The payment webhooks' signature also covers a timestamp, checked within a freshness
 window. **Each key is still static, with no rotation.** The window that accepts the current and the previous secret is
-`P15-TSK-019`'s, and its rehearsal `-020`'s. Callbacks as hints, for the providers that still adopt a callback's own
-outcome, are `P15-TSK-036`'s (`THREAT_MODEL.md` T8; `X-TSK-015`'s until the carried items' ruling moved it into Phase
-15, 2026-11-08).)*
+`P15-TSK-019`'s, and its rehearsal `-020`'s.)*
+
+**A callback is a hint, on every rail with a money path** (`P15-TSK-036`, 2026-11-08; ADR-0083). The signature proves who
+holds a webhook key, not that the claim is true, and the key sits on infrastructure the platform does not run. So after a
+callback's evidence and dedupe commit, the door asks the provider over the **provider credential**, holding no database
+connection, and only the answer moves anything: on the card door an authorization, capture, void, refund, clearing or
+dispute; on the instant door an execution, a rejection, a return, a withdrawal, or value parked in suspense. The webhook keys
+are no longer money-moving credentials: a stolen one can hasten what the platform learns and nothing else. A hint is
+deliberately narrower than a sweep: an answer of "never saw it" or no answer at all adopts nothing and writes no state, and
+a hint re-sends nothing. A signed callback the provider's own inquiry denies is counted on `finapp.payments.webhook`'s
+`unmappable` series, because that is what a stolen webhook key looks like. KYC's callbacks are outside this rule: no money
+rail, and T8's KYC rows stand.
 
 ## Secrets
 

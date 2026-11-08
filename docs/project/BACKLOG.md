@@ -27904,6 +27904,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - *Routed by `P15-TSK-026` (2026-11-08), status unchanged:* the Kafka clients publish **no consumer-lag series** (no client metrics are bound to the registry); `OPERATIONS_RUNBOOK.md` §11.6's consumer-lag part reads lag today from `finapp.inbox.consumption{outcome}` against `finapp.outbox.publication{outcome}` and the broker's group view, and names this task for the consumption and freshness SLOs. A refused consumer is visible as readiness `DOWN` through the `kafkaConsumers` contributor, which an alert on readiness would see; whether that pages is this task's routing.
 - *Routed by `P15-TSK-026`'s review fix round (2026-11-08), status unchanged:* two consumer signals with no alert. **(a)** `finapp.inbox.poll.failures{outcome}` (`refused`, `failed`) now counts every thrown consumer poll, registered eagerly on every instance (`InboxConsumptionMeters`): a failed TLS handshake with the broker - an expired or rotated broker certificate, which reaches every replica at once and deliberately fails no readiness - is visible there and in the warn line naming `SslAuthenticationException`, and nowhere that pages; an alert on `sum(increase(...{outcome="failed"}[15m])) > 0` sustained, and on `refused` beside readiness, is this task's routing. **(b)** A consumer evicted past its poll budget (`max.poll.interval.ms` 120 s; a budget, not a bound, because handler statements have no timeout and the offset commit can wait 60 s) shows today only as a failed commit counted in `outcome="failed"` and as rebalances in the logs; an eviction or commit-failure series of its own - the receiver translating the client's commit failure into a platform outcome, as it translates a refusal - with its alert. **Testing**: a hermetic meter test per series; `promtool test` per rule (fires on its planted series, silent when healthy). **Acceptance**: both series in `PHASE_15_PLAN.md` §11.2 and `OPERATIONS_RUNBOOK.md` §11.6, which names them today.
 - *Routed by the owner (2026-11-08, an ADR promise with no register row), status unchanged:* ADR-0063's instance clock-offset signal: a series and an alert, or a dated reason why not.
+- *Routed by `P15-TSK-036` (2026-11-08), status unchanged:* a rise in `finapp.payments.webhook{outcome="unmappable"}` now also means a signed callback the provider's own inquiry denied, which is what a stolen webhook key looks like, and no rule alerts on that series today. Recommended: one alert, routed like the other correctness alerts. `OPERATIONS_RUNBOOK.md` §Provider callbacks are hints says what to do when it fires.
 
 **P15-TSK-026 — Kafka for production: authenticated TLS, topics as code, rebalance-safe consumers** — `COMPLETE` (2026-11-08; built on branch `P15-TSK-026` from master `c1d07726`; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
 - **Objective**: the clients connect over authenticated TLS, every topic is declared, and a rolling update moves
@@ -28040,6 +28041,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   acceptance evidence - each period open until a real jurisdiction is chosen (C12), the purges re-dated there.
   `THREAT_MODEL.md` T16's planned row says the same.
 - *Routed by the owner (2026-11-08, an ADR promise with no register row), status unchanged:* the policy names session rows as a data class (ADR-0030 promised a retention sweep and recorded no debt); the sweep itself is re-dated to Phase 16 (`CURRENT_STATE.md` §Known Architectural Debt).
+- *Routed by `P15-TSK-036` (2026-11-08), status unchanged:* `payments.callback_hint` (payments `V036`) is operational state with no retention sweep; a concluded row is safe to delete and is never financial truth. It belongs in the policy's operational class. If this task has closed, it goes to the next change to that policy.
 
 **P15-TSK-030 — Backup and restore with post-restore financial verification** — `PLANNED`
 - **Objective**: a restored database is proven financially whole before it would serve money.
@@ -28255,7 +28257,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - *Added by the owner (2026-11-08), accepting `THREAT_MODEL.md` section 6 item 2's recommendation (a) after
   `P15-TSK-001`'s merge; milestone M15.8, wave D.*
 
-**P15-TSK-036 — Callbacks as hints for the payment (Phase 5) and instant (Phase 7) providers** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-002`'s merge, master `53d442b1`; every dependency `COMPLETE`)
+**P15-TSK-036 — Callbacks as hints for the payment (Phase 5) and instant (Phase 7) providers** — `COMPLETE` (2026-11-08; built on branch `P15-TSK-036` from master `8100cac9`; marked `READY` by the coordinator at `P15-TSK-002`'s merge, master `53d442b1`)
 - **Objective**: a forged-but-signed callback moves no money on any rail. The PSP and instant-rail doors adopt an outcome
   only from an authenticated inquiry, as ADR-0083 made the Phase 9 doors do, so one doctrine holds platform-wide and a
   stolen webhook key can hasten what the platform learns and nothing else (`THREAT_MODEL.md` T8).
@@ -28306,6 +28308,22 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - *Added by `P15-TSK-002` (**C15**, 2026-11-08), applying `PHASE_15_PLAN.md` §25 as the owner ratified it ("scheduled
   into this phase on ratification, as its own item after `-001` (security, T8)"); `X-TSK-015` moved here whole and is
   `CANCELLED`, moved, not dropped. Milestone M15.7, wave C.*
+- *As built (2026-11-08):* every kind the two doors adopted was enumerated from their code and made a hint; none is left
+  without an inquiry, so no new ADR (a dated as-built section on ADR-0083 and a note on ADR-0047). **The doors** retain the
+  evidence and dedupe in one transaction, then ask holding no connection, then apply on the row locked and re-read through
+  the sweeps' own appliers. **Three inquiries are new**: `PaymentProvider.queryClearing`, `queryDispute` (which names the
+  operation the dispute contests) and `PushRail.inquireExecution` (by the scheme's reference, for value naming nothing of
+  ours). **A hint is narrower than a sweep**: `UNRECOGNISED` and `INDETERMINATE` adopt nothing and write no state, and a
+  hint re-sends nothing. **One migration, payments `V036`** (`payments.callback_hint`), expand-only, because a clearing, a
+  dispute and an execution on a concluded or unknown row leave nothing a sweep could find once the inbox has the delivery;
+  `CallbackHintResolution` is the door's immediate inquiry and the leaderless sweep. A void's notice was never attributed
+  before; it is now. **The three residues are closed**: the card door's contradiction flagged on `finapp.payments.webhook`'s
+  `unmappable` series with the answer retained; the refund attribution scoped to its rail on both doors; the corridor door
+  retains an authenticated callback naming no credit. `CardDisputeVocabulary` moved into `payments`, beside the wire that
+  now reads it. **Tests**: `PaymentWebhookHintsTest` and `InstantCallbackHintsTest` carry the planted forged callback per
+  kind, the provider double failing any call made inside a transaction. **Owed to `P15-TST-002` (C14)**: every database
+  case, among them `PaymentWebhookTransitionDatabaseTest#tenContextsAndASweepApplyOneOutcome`, the entry's counted case,
+  and the existing suites whose delivery helpers now also stub the agreeing inquiry.
 
 **P15-TSK-037 — "The latest" by a stamp, outside the close and the terms: a census** — `PLANNED`
 - **Objective**: no single-row read decides anything by ordering on a stamp a stepped clock can reorder, outside the close and the terms (`-033`'s), and a new such read cannot arrive unjudged.

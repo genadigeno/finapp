@@ -276,7 +276,8 @@ final class CallbackHintWorld implements AutoCloseable {
     }
 
     private static ProviderIdempotencyReference ours() {
-        return new ProviderIdempotencyReference("ours-" + IDS.next());
+        // Thirty-two characters: a return carries this as its end-to-end reference too (35 at most).
+        return new ProviderIdempotencyReference(IDS.next().toString().replace("-", ""));
     }
 
     PaymentAttempt authDispatched() {
