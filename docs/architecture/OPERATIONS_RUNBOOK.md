@@ -2079,7 +2079,7 @@ tagged `type="outbox_event"` or `type="inbox_message"`.
 |---|---|---|
 | `55000` | `platform.inbox_message` has a column the sweep was not reviewed against, so the inbox's sweep stops and deletes nothing. It may carry a state | Nothing is at risk: a kept record only costs storage. Ship a migration that reviews the column, adds a positive condition for its terminal values and lists it. **Never** add the column to the function's list by hand |
 | `08*`, `null`, or an exception class instead of a SQLState | The database was unreachable or the pool was exhausted | The next tick retries. Treat it as the database's or the pool's incident |
-| `42501` | The role cannot execute the function | The migration did not apply: read the schema version before anything else |
+| `42883` or `42501` | The function does not exist, or the role cannot execute it | Platform `V012` did not apply as it should: read the schema version before anything else |
 
 **A table still growing.** Compare `finapp.retention.swept` with the table's arrival rate. An outbox that keeps
 growing with a healthy sweep is usually a backlog (pending rows, which are never swept): §11.6. If the sweep is merely behind,

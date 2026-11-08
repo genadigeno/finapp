@@ -92,8 +92,9 @@ must be built with the read path; the partition interval, by measurement.
 
 Personal data inside evidence, agreement and regulatory records ends by **crypto-shredding by key version** (C12): a field
 encrypted under a retired key version becomes unreadable when that version is destroyed, without touching an `INSERT`-only row
-or its history. The key rings exist (ADR-0123); destroying a version is an audited act that waits on a period above, on a legal
-hold that does not yet exist, and on an answer to what a decision that cited the evidence then explains.
+or its history. This is a design only. The versioned key rings are `P15-TSK-019`'s, not built yet (ADR-0123 decision 4, `Proposed`).
+Destroying a version would be an audited act that waits on a period above, on a legal hold that does not yet exist, and on an
+answer to what a decision that cited the evidence then explains.
 
 ---
 
