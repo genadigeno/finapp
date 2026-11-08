@@ -26846,12 +26846,12 @@ Docker and are not the storm.
 **Milestones** (acceptance in `PHASE_15_PLAN.md` §17): M15.1 Foundations (`-001`, `-002`) · M15.2 Images and supply chain
 (`-003`…`-007`) · M15.3 Kubernetes and the edge (`-008`…`-012`) · M15.4 Infrastructure as code (`-013`…`-016`) · M15.5
 Delivery (`-017`) · M15.6 Secrets and keys (`-018`…`-020`) · M15.7 Application security (`-021`, `-022`, `-036` *(added by `-002`, 2026-11-08)*) · M15.8
-Observability (`-023`…`-025`) · M15.9 Database and messaging operations (`-026`…`-030`) · M15.10 Configuration (`-031`) ·
+Observability (`-023`…`-025`, `-035` *(added by the owner, 2026-11-08)*) · M15.9 Database and messaging operations (`-026`…`-030`) · M15.10 Configuration (`-031`) ·
 M15.11 Operations and exit (`-032`, `-033`, `P15-TST-002`, `-034`, `P15-TST-001` `POSTPONED`, `P15-DOC-001`).
 
 **Parallel waves** (`PHASE_15_PLAN.md` §19): **A** `-001`; **B** `-002`, `-003`, `-008`, `-013`, `-021`, `-024`, `-026`,
 `-033`; **C** `-004`, `-006`, `-009`, `-014`, `-025`, `-027`, `-028`, `-029`, `-036` *(after `-001` and `-002`, added by `-002`,
-2026-11-08)*; **D** `-005`, `-010`, `-011`, `-015`, `-018`;
+2026-11-08)*; **D** `-005`, `-010`, `-011`, `-015`, `-018`, `-035` *(after `-025`, added by the owner, 2026-11-08)*;
 **E** `-012`, `-016`, `-019`, `-022`, `-031`; **F** `-007`, `-020`, `-023`, `-030`; **G** `-017`; **H** `-032`; **I**
 `P15-TST-002`; **J** `-034`; **K** `P15-DOC-001` (`P15-TST-001` `POSTPONED`, PI-004). **Critical path**: `-001` → `-003` →
 `-004` → `-005` → `-012` → `-007` → `-017` → `-032` → `TST-002` → `-034` → `DOC-001`. *(The transition's review, its M-5,
@@ -27169,6 +27169,10 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: `SYSTEM_ARCHITECTURE.md` §Continuous Integration's table; runbook §a failing scan.
 - **Acceptance criteria**: every planted finding fails its job; the final tree green.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
+- *Routed by `P15-TSK-013`'s gate (2026-11-08), status unchanged:* on 2026-11-08 `infra/scripts/check-pinned-images.sh`
+  reported Trivy 0.76.2 released beside the pinned 0.74.0. `-013` observed this and did not change the pin. This task
+  pins Trivy for the image scans. A bump also moves the checks embedded in the binary, which `trivy config` runs over
+  the Terraform (`--skip-check-update`), so re-run `infra/scripts/terraform-check.sh` with it.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T45 (injection through hand-written JDBC, CRITICAL) has this task's static analysis as its only control: include a vendored rule refusing a statement whose SQL text is built from anything but constants (not only a concatenation pattern), with the planted case of this entry's testing. Findings accepted here are accepted in the threat model with an `until` date (the model's §1.4). T30's built row holds `ci.yml`'s token scope through `CiWorkflowIsLockedDownTest`: a job that widens it rewrites that row in this task's gate.
 - *Widened by the owner (2026-11-08, `THREAT_MODEL.md` section 6 item 5), status unchanged:* the static analysis also flags an unbounded read of a provider's answer in an adapter (a body read with no size bound), with a planted case among this entry's tests; this task's gate rewrites T43's planned row with the evidence.
 
@@ -27331,7 +27335,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: every step green with its census; timings recorded.
 - **Definition of done**: `DOD-BUILD`, `DOD-TEST`. **Risk**: Medium. **Cx**: L.
 
-**P15-TSK-013 — Terraform foundations: layout, state, conventions, CI checks** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
+**P15-TSK-013 — Terraform foundations: layout, state, conventions, CI checks** — `COMPLETE` (2026-11-08; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`; read `READY` until its gate)
 - **Objective**: infrastructure code that is pinned, locked and checked on every change before any module exists.
 - **Affected components**: new `infra/terraform/` (layout, version pins, lock file, backend configuration per
   environment), `infra/scripts/terraform-check.sh`, `ci.yml` (an `iac` job).
@@ -27349,8 +27353,44 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: `infra/terraform` usage in `OPERATIONS_RUNBOOK.md` §11 (planned).
 - **Acceptance criteria**: every plant caught; the scaffold green.
 - **Definition of done**: `DOD-BUILD`. **Risk**: Low. **Cx**: S.
+- **As built** (2026-11-08; branch `P15-TSK-013` from master `c1d07726`; infrastructure code, one guard and documents,
+  no production code, no migration, no ADR): **ADR-0121's layout**: `infra/terraform/environments/{staging,production}`
+  (root modules) and `infra/terraform/modules/conventions`, a ninth module beside decision 1's eight. It holds the name
+  prefix and the tags once; this is a deviation, recorded in ADR-0121's as-built note. The eight concern modules arrive
+  with `-014`…`-016`. **Pinned and locked**: Terraform `1.17.1` (`required_version` equal to `TERRAFORM_VERSION` in
+  `infra/scanner-pins.sh`, the image that checks it) and the AWS provider `6.72.0`, exactly and the same in both roots.
+  Each root's `.terraform.lock.hcl` was generated by the pinned binary from HashiCorp-signed packages. Terraform
+  (`hashicorp/terraform`) and tflint (`v0.65.0`) are pinned by digest, Trivy as before, and `check-pinned-images.sh`
+  checks them; Dependabot's `terraform` ecosystem proposes provider updates. **State**: a partial `s3` backend per root,
+  with its own key, `encrypt = true` and `use_lockfile = true`; the bucket and region are given at `init` in a real
+  environment. **No backend initialised in CI**: every `init` is `-backend=false -lockfile=readonly`, and the tests keep
+  state in memory. **Checks**: `infra/scripts/terraform-check.sh` runs `fmt`, `tflint` (the bundled ruleset, every
+  rule), `trivy config` (HIGH and CRITICAL fail, the binary's embedded checks), and then `validate` and `test` (seven
+  runs, each only a plan; the roots' against a mock AWS provider) in every directory holding a `.tf` file. It then runs each check over a planted defect, which
+  the check must refuse by name. Those are the entry's three plants (unformatted, public bucket, unpinned provider) and
+  three more: a camel-case identifier, an undeclared reference and a dropped tag. CI's `iac` job runs the script on every
+  change with no env, permission or secret. **Conventions**, each enforced: snake_case identifiers and the standard file
+  layout (`tflint`); the name prefix and tag set (`terraform test`); every root's provider tagged through the
+  conventions and every root calling them as itself; `prevent_destroy` on the guarded types (the database, its backups,
+  every KMS key); no secret written into state; every test mocking every provider (`TerraformIsPinnedAndCheckedTest`).
+  That each future resource uses the prefix is documentation only, a review point until `-014`…`-016`.
+  **`TerraformIsPinnedAndCheckedTest`** (ten members, `com.finapp.app.architecture`, tag `architecture`) holds the
+  pins, the lock files, the backend, the CI wiring, the absence of credentials and the conventions. Its last member
+  runs every rule over a planted violation, because two rules hold over an empty set today. **The entry's probe and
+  plants**: performed on the real tree and recorded in `MUTATION_TESTING.md` §2. The pin dropped turns the pin members
+  red, and `tflint` and `fmt` red; an unformatted file turns `fmt` red; a public bucket turns `trivy config` red; the
+  `ManagedBy` tag dropped turns `terraform test` red; a camel-case module and an untyped module variable turn `tflint`
+  red; a KMS key without `prevent_destroy` turns the guard red. The five `ci.yml` rows of
+  `CiWorkflowIsLockedDownTest` were performed again on this branch's bytes. **Threat model**: T11 and T30 are
+  `EXISTS`; T11's remainder (an apply only from a reviewed plan, drift reported) is a `GAP` held by owner item 7.
+  **Runbook**: `OPERATIONS_RUNBOOK.md` §11.13. **Tests** (the owner's rule of 2026-11-08: no production Java changed):
+  the new guard, the guards reading a changed file, and the check script, fresh. `:app:architectureTest`, the module
+  unit tests and the brief's package filters were skipped under that rule. `SafeguardingReturnDatabaseTest` (it reads
+  the runbook) is owed to `P15-TST-002`. **Not verified**: CI's own run of the `iac` job, because nothing is
+  pushed. This laptop's antivirus intercepts TLS, so the local runs used the pinned Terraform image plus that machine's
+  root certificate, through the script's `TERRAFORM_IMAGE` override, which CI never sets.
 
-**P15-TSK-014 — Network and cluster modules** — `PLANNED`
+**P15-TSK-014 — Network and cluster modules** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-013`'s merge, master `fcae1309`; every dependency `COMPLETE`)
 - **Objective**: a private network and a hardened managed cluster as tested code.
 - **Affected components**: `infra/terraform/modules/network`, `modules/kubernetes`, the environment roots.
 - **Dependencies**: `-013`.
@@ -27367,6 +27407,12 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: module READMEs referenced from the runbook.
 - **Acceptance criteria**: all checks green; each property asserted.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Low. **Cx**: M.
+- *Routed by `P15-TSK-013`'s gate (2026-11-08), status unchanged:* the modules land in the frame `-013` built. Call
+  them from both roots (`infra/terraform/environments/{staging,production}/main.tf`). Name resources from
+  `module.conventions.name_prefix`; that use is a review point, because no check reads it. The tags arrive through each
+  root's AWS provider `default_tags`. `infra/scripts/terraform-check.sh` finds a new directory by itself.
+  `TerraformIsPinnedAndCheckedTest` requires every test file in it to mock every provider the directory requires. A new
+  provider is pinned exactly in both roots and locked in each (`OPERATIONS_RUNBOOK.md` §11.13).
 
 **P15-TSK-015 — Data-tier modules: PostgreSQL, Kafka, object storage** — `PLANNED`
 - **Objective**: the financial record's database and the integration transport provisioned to the bar C3 sets.
@@ -27389,6 +27435,11 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §restore (managed half, deferred), §broker outage.
 - **Acceptance criteria**: every property asserted; checks green.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-013`'s gate (2026-11-08), status unchanged:* `TerraformIsPinnedAndCheckedTest` refuses a guarded
+  type without `lifecycle { prevent_destroy = true }`. The guarded types this task adds are `aws_db_instance`,
+  `aws_rds_cluster`, the database snapshots and `aws_backup_vault`. The test also refuses a database given `password`
+  or `master_password`, so use `manage_master_user_password`. The state buckets built here are the ones each root's
+  partial `s3` backend names at `init` (`OPERATIONS_RUNBOOK.md` §11.13).
 
 **P15-TSK-016 — Security modules: KMS, secrets, workload identities, registry** — `PLANNED`
 - **Objective**: keys, secret entries, workload permissions and the registry as least-privilege code.
@@ -27408,6 +27459,11 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Operational documentation**: runbook §rotation (cloud half).
 - **Acceptance criteria**: every assertion green; the secret entries equal the inventory.
 - **Definition of done**: `DOD-BUILD`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+- *Routed by `P15-TSK-013`'s gate (2026-11-08), status unchanged:* every `aws_kms_key`, `aws_kms_replica_key` and
+  `aws_kms_external_key` needs `lifecycle { prevent_destroy = true }`. `TerraformIsPinnedAndCheckedTest` refuses one
+  without it. The same test refuses `aws_secretsmanager_secret_version` (resource or data source), `random_password`,
+  `tls_private_key`, `aws_iam_access_key`, `aws_iam_user_login_profile`, `aws_kms_ciphertext` and the data source
+  `aws_kms_secrets`, so the secret entries stay without values in state as well as in the files.
 - *Widened by the owner (2026-11-08, `THREAT_MODEL.md` section 6 item 3), status unchanged:* a **human IAM baseline** in `modules/security`: MFA required by policy for every human principal, no long-lived human access keys, permission boundaries on human roles; asserted by `terraform test` with mock providers (a human user with an access key, a policy without the MFA condition, a human role without its boundary: each red), with its probe (drop the MFA condition → red). Workforce federation waits for a workforce identity provider (C13). This task's gate rewrites T29's planned row with the evidence.
 
 **P15-TSK-017 — GitOps delivery, promotion and the production approval boundary** — `PLANNED`
@@ -27780,7 +27836,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: as tested; two debt rows closed.
 - **Definition of done**: `DOD-EVENT`, `DOD-SEC`. **Risk**: Medium. **Cx**: L.
 
-**P15-TSK-029 — Retention sweeps and the retention policy (C12)** — `PLANNED`
+**P15-TSK-029 — Retention sweeps and the retention policy (C12)** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-002`'s merge, master `53d442b1`; every dependency `COMPLETE`)
 - **Objective**: operational tables stop growing without bound, and every data class has a written retention.
 - **Affected components**: `platform` (outbox and inbox sweeps), `app` (their schedules), `DATA_MIGRATIONS.md` §8–9, a
   retention policy document.
@@ -27966,7 +28022,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   an index each on `(terms_version_id, offered_at)`), start the successor exactly there - its predecessor chosen by version
   number, never `max(effective_to)` over the product, the term the withdrawn draft kept - and floor the offering instant at
   its pinned version's start. **No backfill**: a retired end is frozen history; `POSTPONED_ISSUES.md` gives the census query.
-  Risk `V002` checked: the same stamp, latent (nothing reads a policy version by an instant) - `THREAT_MODEL.md` owner item 7.
+  Risk `V002` checked: the same stamp, latent (nothing reads a policy version by an instant) - `THREAT_MODEL.md` owner item 8.
   **Tests**: hermetic - `CloseRunsTest#theRunIsTheLocksWhateverAStampSays` (the view over a store whose latest is the earlier
   lock's run), `CloseRunStatementsTest#theLatestRunIsRankedByTheRows`, `PeriodCloseStatementsTest#theLatestCloseIsRankedByTheRows`
   (`#theDecisionsAreConditional` loses its old pin), `LoanTermsClockMigrationTest` and `BnplTermsClockMigrationTest` (four text
@@ -28026,7 +28082,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - *Added by the owner (2026-11-08), accepting `THREAT_MODEL.md` section 6 item 2's recommendation (a) after
   `P15-TSK-001`'s merge; milestone M15.8, wave D.*
 
-**P15-TSK-036 — Callbacks as hints for the payment (Phase 5) and instant (Phase 7) providers** — `PLANNED`
+**P15-TSK-036 — Callbacks as hints for the payment (Phase 5) and instant (Phase 7) providers** — `READY` (2026-11-08; marked by the coordinator at `P15-TSK-002`'s merge, master `53d442b1`; every dependency `COMPLETE`)
 - **Objective**: a forged-but-signed callback moves no money on any rail. The PSP and instant-rail doors adopt an outcome
   only from an authenticated inquiry, as ADR-0083 made the Phase 9 doors do, so one doctrine holds platform-wide and a
   stolen webhook key can hasten what the platform learns and nothing else (`THREAT_MODEL.md` T8).
