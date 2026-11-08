@@ -41,8 +41,9 @@ import java.util.Objects;
 public final class ConfinedCredential {
 
     /**
-     * The one sanctioned local-development fallback — now the repository's <strong>single</strong>
-     * Java literal of it.
+     * The one sanctioned local-development fallback — now the application's <strong>single</strong>
+     * Java literal of it (the migrator, a separate program with no dependency on this module, refuses
+     * it with one of its own, and the test harness's fixture carries another).
      *
      * <p>Until this task the literal lived twice in Java ({@code DatabaseCredentialGuard} and
      * {@code MfaKey}), with {@code DocumentKey} and {@code CallbackKey} referencing the second;
