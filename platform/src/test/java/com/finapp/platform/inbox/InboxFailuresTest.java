@@ -31,6 +31,32 @@ class InboxFailuresTest {
         assertThat(InboxFailures.isTransient(wrapped)).isTrue();
     }
 
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {
+        "kyc case could not be read (SQLState 08006)",
+        "risk storage failed insert: SQLSTATE 40P01",
+        "bnpl storage failed read: SQLSTATE 57P01"
+    })
+    @DisplayName("a store's failure is read from its message, the only place a store keeps the state")
+    void aStoreNamesItsStateInText(String message) {
+        assertThat(InboxFailures.isTransient(new IllegalStateException(message))).isTrue();
+        assertThat(InboxFailures.isTransient(new RuntimeException("wrapped", new IllegalStateException(message))))
+                .as("and down the chain").isTrue();
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {
+        "kyc case could not be written (SQLState 23514)",
+        "risk storage failed insert: SQLSTATE 23505",
+        "bnpl storage failed read: SQLSTATE null",
+        "a case could not be read (SQLState unknown)",
+        "nothing about a state here"
+    })
+    @DisplayName("a state of the record's own, or none at all, counts")
+    void aStoreNamingNoTransientStateCounts(String message) {
+        assertThat(InboxFailures.isTransient(new IllegalStateException(message))).isFalse();
+    }
+
     @Test
     @DisplayName("a pool that ran dry, a timeout, a dead socket and a refused broker credential are transient")
     void theNamedKindsAreTransient() {

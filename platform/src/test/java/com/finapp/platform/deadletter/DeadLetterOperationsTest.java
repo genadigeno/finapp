@@ -99,24 +99,95 @@ class DeadLetterOperationsTest {
         InMemoryDeadLetterStore.Event event = store.abandoned(stale);
         event.replayed = true;
         event.anchorAge = RETENTION;
-        assertRefused(() -> operations.retry(UOW, stale, FIRST, "why", FLOW), DeadLetterErrorCode.REPLAY_OUTSIDE_DEDUPE_WINDOW);
+        assertRefused(() -> operations.retry(UOW, stale, FIRST, "why", FLOW), DeadLetterErrorCode.RETRY_OUTSIDE_DEDUPE_WINDOW);
         assertThat(event.abandoned).isTrue();
 
         event.anchorAge = RETENTION.minusHours(1);
         operations.retry(UOW, stale, FIRST, "why", FLOW);
-        assertThat(store.extended).as("it publishes now, so the dedupe rows are kept from now").containsExactly(List.of(stale));
+        assertThat(store.extended).as("it publishes now, so the dedupe rows are kept from now").contains(List.of(stale));
     }
 
     @Test
-    @DisplayName("an event never published has nothing to deduplicate, so a retry is not judged against the window")
-    void aFirstPublicationIsNotJudged() {
+    @DisplayName("a retry at or past the window is refused too, replayed or not: nothing proves an earlier attempt never reached the broker")
+    void aRetryPastTheWindowIsRefused() {
+        UUID atTheLimit = UUID.randomUUID();
+        store.abandoned(atTheLimit).anchorAge = RETENTION;
+        assertRefused(() -> operations.retry(UOW, atTheLimit, FIRST, "why", FLOW), DeadLetterErrorCode.RETRY_OUTSIDE_DEDUPE_WINDOW);
+        assertThat(store.event(atTheLimit).abandoned).isTrue();
+        assertThat(store.extended).isEmpty();
+
+        store.event(atTheLimit).anchorAge = RETENTION.minusMillis(1);
+        operations.retry(UOW, atTheLimit, FIRST, "why", FLOW);
+        assertThat(store.event(atTheLimit).abandoned).as("a moment under the window, it goes").isFalse();
+        assertThat(store.extended).as("whatever an earlier attempt delivered is kept for a full retention").containsExactly(List.of(atTheLimit));
+    }
+
+    @Test
+    @DisplayName("past the window a retry goes only when every consumer of the type is naturally idempotent")
+    void aRetryOfANaturallyIdempotentTypePasses() {
         UUID id = UUID.randomUUID();
         store.abandoned(id).anchorAge = RETENTION.plusDays(100);
+        naturallyIdempotent = true;
 
         operations.retry(UOW, id, FIRST, "why", FLOW);
 
         assertThat(store.event(id).abandoned).isFalse();
-        assertThat(store.extended).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a retry judges the replayed rows waiting behind it: inside the window kept and extended, past it withdrawn, not published")
+    void aRetrySettlesTheReplaysBehindIt() {
+        UUID aggregate = UUID.randomUUID();
+        UUID front = UUID.randomUUID();
+        store.abandoned(front).aggregate = aggregate;
+        UUID fresh = pendingReplay(aggregate, Duration.ofDays(2));
+        UUID stale = pendingReplay(aggregate, RETENTION);
+
+        operations.retry(UOW, front, FIRST, "why", FLOW);
+
+        assertThat(store.extended).as("the row retried, then what stays behind it").containsExactly(List.of(front), List.of(fresh));
+        assertThat(store.event(fresh).withdrawals).isZero();
+        assertThat(store.event(stale).withdrawals).as("it could apply twice now, and refusing would leave no door").isEqualTo(1);
+        assertThat(store.event(stale).published).as("back to its first publication, not sent again").isTrue();
+        assertThat(onlyRecord().changeSummary().orElseThrow()).contains("replaysWithdrawn=1");
+    }
+
+    @Test
+    @DisplayName("a discard judges the replayed rows it frees, however late that is")
+    void aDiscardSettlesTheReplaysBehindIt() {
+        UUID aggregate = UUID.randomUUID();
+        UUID front = UUID.randomUUID();
+        store.abandoned(front).aggregate = aggregate;
+        UUID stale = pendingReplay(aggregate, RETENTION.plusDays(30));
+        UUID discard = operations.proposeDiscard(UOW, DeadLetterStore.SubjectKind.OUTBOX_EVENT, front, FIRST, "why", FLOW);
+
+        operations.approveDiscard(UOW, discard, SECOND, "agreed", FLOW);
+
+        assertThat(store.event(stale).withdrawals).isEqualTo(1);
+        assertThat(audited.getLast().changeSummary().orElseThrow()).contains("replaysWithdrawn=1");
+    }
+
+    @Test
+    @DisplayName("a replayed row of a naturally idempotent type stays behind, however old")
+    void aNaturallyIdempotentReplayIsKept() {
+        UUID aggregate = UUID.randomUUID();
+        UUID front = UUID.randomUUID();
+        store.abandoned(front).aggregate = aggregate;
+        UUID old = pendingReplay(aggregate, RETENTION.plusDays(30));
+        naturallyIdempotent = true;
+
+        operations.retry(UOW, front, FIRST, "why", FLOW);
+
+        assertThat(store.event(old).withdrawals).isZero();
+    }
+
+    private UUID pendingReplay(UUID aggregate, Duration anchorAge) {
+        UUID id = UUID.randomUUID();
+        InMemoryDeadLetterStore.Event event = store.published(id, TYPE, anchorAge, INSIDE);
+        event.aggregate = aggregate;
+        event.published = false;
+        event.replayed = true;
+        return id;
     }
 
     @Test
@@ -361,7 +432,7 @@ class DeadLetterOperationsTest {
     @Test
     @DisplayName("a refusal is recorded DENIED, naming the act and the code, even when no reason was given")
     void aRefusalIsRecorded() {
-        operations.recordRefusal(UOW, "retry", UUID.randomUUID().toString(), "deadletter.NotAbandoned", Optional.empty(), FIRST, FLOW);
+        operations.recordRefusal(UOW, "retry", UUID.randomUUID().toString(), "deadletter.NotAbandoned", Optional.empty(), Optional.empty(), FIRST, FLOW);
 
         AuditRecord record = onlyRecord();
         assertThat(record.operation()).isEqualTo(PlatformAuditAction.DEAD_LETTER_ACT_REFUSED);

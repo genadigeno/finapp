@@ -8,8 +8,11 @@ import java.sql.SQLRecoverableException;
 import java.sql.SQLTransientException;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.TimeoutException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Whether a failed delivery says anything about the record (`P15-TSK-028`).
@@ -32,10 +35,18 @@ import java.util.concurrent.TimeoutException;
  *
  * <p>Not {@code 25P02}, "current transaction is aborted": that is a statement after a failure the handler swallowed, whose cause is
  * lost, and it repeats for ever if the handler always does it, so it stays bounded rather than stalling the partition without end.
+ *
+ * <p><strong>The SQLState is read from the message too, because the stores keep it nowhere else</strong> (the fix round's F1). A
+ * constraint violation's message carries the row, so a store deliberately drops the driver's exception and keeps only its
+ * SQLState in text: {@code DatabaseFailure#describe}'s {@code (SQLState 08006)}, and the module stores' {@code : SQLSTATE 08006}.
+ * Walking the cause chain alone saw nothing of a store's failure, so a brownout counted against every valid record it touched.
  */
 public final class InboxFailures {
 
     private static final Set<String> TRANSIENT_SQLSTATE_CLASSES = Set.of("08", "40", "53", "55", "57", "58", "XX");
+
+    /** Either spelling a store writes; five characters, so {@code SQLState unknown} and {@code SQLSTATE null} do not match. */
+    private static final Pattern SQLSTATE_IN_MESSAGE = Pattern.compile("\\bSQL ?STATE ([0-9A-Z]{5})\\b", Pattern.CASE_INSENSITIVE);
 
     private InboxFailures() {}
 
@@ -62,8 +73,17 @@ public final class InboxFailures {
             return true;
         }
         if (failure instanceof SQLException sql && sql.getSQLState() != null && sql.getSQLState().length() >= 2) {
-            return TRANSIENT_SQLSTATE_CLASSES.contains(sql.getSQLState().substring(0, 2));
+            return isTransientState(sql.getSQLState());
+        }
+        String message = failure.getMessage();
+        if (message != null) {
+            Matcher named = SQLSTATE_IN_MESSAGE.matcher(message);
+            return named.find() && isTransientState(named.group(1));
         }
         return false;
+    }
+
+    private static boolean isTransientState(String sqlState) {
+        return TRANSIENT_SQLSTATE_CLASSES.contains(sqlState.substring(0, 2).toUpperCase(Locale.ROOT));
     }
 }

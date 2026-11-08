@@ -52,6 +52,16 @@ class SystemActorCallSitesAreEnumeratedTest {
     private static final Map<String, String> ENUMERATED_SITES =
             Map.ofEntries(
                     Map.entry(
+                            "com.finapp.platform.inbox.JdbcInboxParking.recordTheParking",
+                    "P15-TSK-028. A consumer's record parked by its budget: no person chose it and no"
+                        + " request carries it - the attempt count did, in the consumer's own poll"
+                        + " loop, on a thread with no session. The failure's class is on the row."),
+                    Map.entry(
+                            "com.finapp.platform.outbox.AuditedAbandonments.recordAbandoned",
+                    "P15-TSK-028. The outbox relay giving up on an event after its bounded attempts:"
+                        + " no person chose it and no request carries it - the attempt limit did, on"
+                        + " the relay's schedule thread. Registered no-reason for that reason."),
+                    Map.entry(
                             "com.finapp.app.registration.RegistrationService.register",
                     "POST /v1/registrations is UNAUTHENTICATED, so there is no proven actor."
                         + " Attributing the action to the Party it creates was considered and"

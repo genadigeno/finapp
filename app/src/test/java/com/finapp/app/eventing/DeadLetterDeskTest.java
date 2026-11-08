@@ -198,6 +198,21 @@ class DeadLetterDeskTest {
     }
 
     @Test
+    @DisplayName("a refused replay records what it asked for, the type and the window, and writes nothing that is not one")
+    void aRefusedReplayNamesItsScope() {
+        store.published(UUID.randomUUID(), "probe.Type", Duration.ofDays(20), Instant.parse("2026-11-07T01:00:00Z"));
+        try (var ignored = as(OPERATOR); var flow = flow()) {
+            assertRefused(() -> desk.replay("r-3", "probe.Type", "2026-11-07T00:00:00Z", "2026-11-07T02:00:00Z", "why"),
+                    DeadLetterErrorCode.REPLAY_OUTSIDE_DEDUPE_WINDOW);
+            assertThat(audited.getLast().changeSummary().orElseThrow())
+                    .contains("act=replay", "type=probe.Type", "from=2026-11-07T00:00:00Z", "to=2026-11-07T02:00:00Z");
+
+            assertRefused(() -> desk.replay("r-4", "<script>", "yesterday", "2026-11-07T02:00:00Z", "why"), DeadLetterErrorCode.REPLAY_INVALID);
+            assertThat(audited.getLast().changeSummary().orElseThrow()).doesNotContain("script", "yesterday").contains("type=unreadable-identifier");
+        }
+    }
+
+    @Test
     @DisplayName("the read names no payload, and serves the proposal's reason to whoever decides it")
     void theReadIsBounded() {
         store.abandoned(UUID.randomUUID());

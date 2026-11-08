@@ -14,6 +14,7 @@ import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -101,17 +102,36 @@ public final class DeadLetterOperations {
         if (store.hasStandingDiscard(uow, DeadLetterStore.SubjectKind.OUTBOX_EVENT, eventId)) {
             throw refused(DeadLetterErrorCode.DISCARD_STANDING);
         }
-        if (row.replayed()) {
-            // A replay that was abandoned on its way out: it publishes now, not when it was ordered, so it answers to the replay's
-            // rule again. An event that never reached the broker has nothing for a consumer to have deduplicated.
-            if (!row.withinDedupeWindow() && !everyConsumerNaturallyIdempotent.test(row.eventType())) {
-                throw refused(DeadLetterErrorCode.REPLAY_OUTSIDE_DEDUPE_WINDOW);
-            }
-            store.extendDedupe(uow, List.of(eventId), retention);
+        // Judged whether or not it was ever replayed: an earlier attempt whose acknowledgement was lost reached the broker and left no
+        // mark, so nothing can prove a consumer never applied this event. Fail-closed at the window (THREAT_MODEL.md section 6, item 17).
+        if (!row.withinDedupeWindow() && !everyConsumerNaturallyIdempotent.test(row.eventType())) {
+            throw refused(DeadLetterErrorCode.RETRY_OUTSIDE_DEDUPE_WINDOW);
         }
+        store.extendDedupe(uow, List.of(eventId), retention);
+        int withdrawn = settleReplaysBehind(uow, eventId);
         store.returnToRelay(uow, eventId);
         record(uow, PlatformAuditAction.OUTBOX_EVENT_RETRY_AUTHORISED, TARGET_EVENT, eventId.toString(), Optional.of(given), actor, correlation,
-                "type=" + row.eventType(), AuditOutcome.SUCCEEDED);
+                "type=" + row.eventType() + ", replaysWithdrawn=" + withdrawn, AuditOutcome.SUCCEEDED);
+    }
+
+    /**
+     * What this act sets moving: the aggregate's other pending replayed rows, which publish when the row blocking them goes, however
+     * long after they were ordered. Each answers to the replay's rule again. Inside the window its dedupe rows are extended; past it,
+     * it is withdrawn rather than refused, because refusing would leave the aggregate with no door at all: such a row is not abandoned,
+     * so it cannot be discarded, and it would hold the retry or the discard of the row in front of it for ever.
+     *
+     * @return how many replays were withdrawn, for the act's record
+     */
+    private int settleReplaysBehind(Connection uow, UUID eventId) {
+        List<DeadLetterStore.PendingReplay> pending = store.lockPendingReplays(uow, eventId, retention);
+        List<UUID> keep = new ArrayList<>();
+        List<UUID> withdraw = new ArrayList<>();
+        for (DeadLetterStore.PendingReplay replay : pending) {
+            (replay.withinDedupeWindow() || everyConsumerNaturallyIdempotent.test(replay.eventType()) ? keep : withdraw).add(replay.eventId());
+        }
+        store.extendDedupe(uow, keep, retention);
+        store.withdrawReplays(uow, withdraw);
+        return withdraw.size();
     }
 
     /**
@@ -168,8 +188,10 @@ public final class DeadLetterOperations {
         requireDiscardable(uow, proposal.kind(), proposal.subjectId(), DeadLetterErrorCode.DISCARD_NOT_STANDING, DeadLetterErrorCode.DISCARD_NOT_STANDING);
         AuditableAction action;
         String target;
+        int withdrawn = 0;
         if (proposal.kind() == DeadLetterStore.SubjectKind.OUTBOX_EVENT) {
             store.discardEvent(uow, proposal.subjectId());
+            withdrawn = settleReplaysBehind(uow, proposal.subjectId());
             action = PlatformAuditAction.OUTBOX_EVENT_DISCARDED;
             target = TARGET_EVENT;
         } else {
@@ -178,7 +200,8 @@ public final class DeadLetterOperations {
             target = TARGET_PARKED;
         }
         store.decide(uow, discardId, "APPROVED", actor.id(), given);
-        record(uow, action, target, proposal.subjectId().toString(), Optional.of(given), actor, correlation, "discard=" + discardId, AuditOutcome.SUCCEEDED);
+        record(uow, action, target, proposal.subjectId().toString(), Optional.of(given), actor, correlation,
+                "discard=" + discardId + ", replaysWithdrawn=" + withdrawn, AuditOutcome.SUCCEEDED);
     }
 
     /** A proposal turned down, by anyone, its proposer included: nothing is discarded. */
@@ -222,9 +245,11 @@ public final class DeadLetterOperations {
      * Records a refused act, in a transaction of its own after the act's rolled back: a refusal leaves nothing else behind, and "did
      * anyone try" must still be answerable.
      */
-    public void recordRefusal(Connection uow, String act, String target, String code, Optional<String> reason, Actor actor, CorrelationId correlation) {
+    public void recordRefusal(
+            Connection uow, String act, String target, String code, Optional<String> detail, Optional<String> reason, Actor actor, CorrelationId correlation) {
         record(uow, PlatformAuditAction.DEAD_LETTER_ACT_REFUSED, "deadletter.act", target,
-                reason.filter(given -> !given.isBlank()).map(DeadLetterOperations::bounded), actor, correlation, "act=" + act + ", refusal=" + code, AuditOutcome.DENIED);
+                reason.filter(given -> !given.isBlank()).map(DeadLetterOperations::bounded), actor, correlation,
+                "act=" + act + ", refusal=" + code + detail.map(what -> ", " + what).orElse(""), AuditOutcome.DENIED);
     }
 
     private DeadLetterStore.Proposal standing(Connection uow, UUID discardId) {

@@ -87,6 +87,7 @@ The refusals of the operator doors over an abandoned event, a parked record and 
 | `deadletter.DiscardNotStanding` | 409 | The proposed discard has been decided, or its subject has moved on. |
 | `deadletter.SelfApprovalRefused` | 403 | One's own proposal: a discard needs a second person. |
 | `deadletter.ReplayOutsideDedupeWindow` | 409 | An event in this replay is older than the inbox's dedupe window, and not every consumer of its type is marked naturally idempotent. |
+| `deadletter.RetryOutsideDedupeWindow` | 409 | The abandoned event is older than the inbox's dedupe window. An earlier attempt may have reached the broker with its acknowledgement lost, so a consumer may have applied it and lost its record. |
 | `deadletter.ReplayTooLarge` | 422 | The replay selects more events than one command may requeue (1000). Narrow its window. |
 | `deadletter.ReplayInvalid` | 422 | The replay's event type or time window is not valid. |
 | `deadletter.NotReleasable` | 409 | The parked record cannot be republished from the outbox: it never had an outbox event, or that event is no longer published there. |

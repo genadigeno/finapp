@@ -2015,7 +2015,10 @@ naming the event, the aggregate and the attempts; a `WARN` each cycle that the a
 1. **Read the queue**, as above. The failure's class says what to do: a broker or credential class is environmental; a
    class that speaks of the payload is the event's own.
 2. **Environmental, and the cause is fixed: retry.** `POST /v1/operator/events/abandoned/{eventId}/retry`, with a reason. The
-   relay takes it again in its aggregate's order.
+   relay takes it again in its aggregate's order. `deadletter.RetryOutsideDedupeWindow` means the event occurred 14 days ago or
+   more: an earlier attempt may have reached the broker with its acknowledgement lost, so a consumer may have applied it and lost
+   its record of doing so. Discard it instead, and recover the fact from the owning domain. Any replay waiting behind the event is
+   judged by the same act; one past the window is withdrawn, and the audit record counts them (`replaysWithdrawn`).
 3. **The event can never be published: discard, two people.** `POST /v1/operator/events/discards` (`subjectKind`
    `OUTBOX_EVENT` or `INBOX_RECORD`, `subjectId`, `reason`), then a **different** `EVENT_OPERATOR`
    `POST /v1/operator/events/discards/{discardId}/approval`. Consumers will never see that fact: record why, and expect to

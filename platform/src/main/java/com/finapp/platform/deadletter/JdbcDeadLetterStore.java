@@ -19,9 +19,11 @@ import java.util.UUID;
 /**
  * {@link DeadLetterStore} in explicit SQL (`P15-TSK-028`). Every instant comes from {@code now()}, the clock N instances share.
  *
- * <p>The window is judged here on each row: {@code COALESCE(replay_ordered_at, published_at) > now() - retention}. A consumer's dedupe
- * row was written at or after the event's publication (the relay's {@code now()} is its transaction's start, before the broker has
- * the record), or was extended when a replay was last ordered, so for an event passing this test every such row still exists.
+ * <p>The window is judged here on each row: {@code COALESCE(replay_ordered_at, occurred_at) > now() - retention}. Never from
+ * {@code published_at} (the fix round's F4): a publication whose acknowledgement was lost reached the broker and left no mark, so a
+ * later success can postdate a delivery by days. {@code occurred_at} precedes every attempt, and a replay's order extended every
+ * dedupe row from itself, so for an event passing this test every such row still exists. The instant is the writing instance's
+ * clock; a few seconds' skew is small beside a window of days.
  */
 public final class JdbcDeadLetterStore implements DeadLetterStore {
 
@@ -32,7 +34,7 @@ public final class JdbcDeadLetterStore implements DeadLetterStore {
 
     /** Rows of the anchor against the retention, in milliseconds so no floating point judges a boundary. */
     private static final String WITHIN_WINDOW =
-            "COALESCE(replay_ordered_at, published_at) > now() - (? * INTERVAL '1 millisecond') AS within_window";
+            "COALESCE(replay_ordered_at, occurred_at) > now() - (? * INTERVAL '1 millisecond') AS within_window";
 
     static final String ABANDONED_SQL =
             "SELECT event_id, aggregate_id, event_type, attempts, dead_lettered_at, last_error FROM " + EVENTS
@@ -105,6 +107,18 @@ public final class JdbcDeadLetterStore implements DeadLetterStore {
                     + " SELECT (SELECT min(consumer) FROM " + DEDUPE + " WHERE consumer > name) FROM consumers WHERE name IS NOT NULL)"
                     + " UPDATE " + DEDUPE + " AS dedupe SET expires_at = GREATEST(dedupe.expires_at, now() + (? * INTERVAL '1 millisecond'))"
                     + " FROM consumers WHERE consumers.name IS NOT NULL AND dedupe.consumer = consumers.name AND dedupe.dedupe_key = ANY (?)";
+
+    /** The other pending replayed rows of an event's aggregate: what a retry or a discard of it sets moving. */
+    static final String PENDING_REPLAYS_SQL =
+            "SELECT event_id, event_type, " + WITHIN_WINDOW + " FROM " + EVENTS
+                    + " WHERE aggregate_id = (SELECT aggregate_id FROM " + EVENTS + " WHERE event_id = ?) AND event_id <> ?"
+                    + " AND published_at IS NULL AND discarded_at IS NULL AND replay_ordered_at IS NOT NULL"
+                    + " ORDER BY event_id FOR UPDATE";
+
+    /** Back to where the replay found it: its first publication stands, and only the replay is withdrawn. */
+    static final String WITHDRAW_REPLAYS_SQL =
+            "UPDATE " + EVENTS + " SET published_at = first_published_at, attempts = GREATEST(attempts, 1), last_error = NULL"
+                    + " WHERE event_id = ANY (?) AND published_at IS NULL AND replay_ordered_at IS NOT NULL AND first_published_at IS NOT NULL";
 
     static final String REQUEUE_SQL =
             "UPDATE " + EVENTS + " SET first_published_at = COALESCE(first_published_at, published_at), replay_ordered_at = now(),"
@@ -310,6 +324,37 @@ public final class JdbcDeadLetterStore implements DeadLetterStore {
                 update.setLong(1, retention.toMillis());
                 Array keys = unitOfWork.createArrayOf("text", eventIds.stream().map(UUID::toString).toArray());
                 update.setArray(2, keys);
+                update.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public List<PendingReplay> lockPendingReplays(Connection unitOfWork, UUID eventId, Duration retention) {
+        return read(() -> {
+            try (PreparedStatement select = unitOfWork.prepareStatement(PENDING_REPLAYS_SQL)) {
+                select.setLong(1, retention.toMillis());
+                select.setObject(2, eventId);
+                select.setObject(3, eventId);
+                try (ResultSet rows = select.executeQuery()) {
+                    List<PendingReplay> out = new ArrayList<>();
+                    while (rows.next()) {
+                        out.add(new PendingReplay(rows.getObject("event_id", UUID.class), rows.getString("event_type"), rows.getBoolean("within_window")));
+                    }
+                    return out;
+                }
+            }
+        });
+    }
+
+    @Override
+    public void withdrawReplays(Connection unitOfWork, List<UUID> eventIds) {
+        if (eventIds.isEmpty()) {
+            return;
+        }
+        run(() -> {
+            try (PreparedStatement update = unitOfWork.prepareStatement(WITHDRAW_REPLAYS_SQL)) {
+                update.setArray(1, unitOfWork.createArrayOf("uuid", eventIds.toArray()));
                 update.executeUpdate();
             }
         });

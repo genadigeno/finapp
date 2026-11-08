@@ -24,21 +24,27 @@ ALTER TABLE platform.outbox_event
     -- and a replay's time window must not move under the operator's feet.
     ADD COLUMN first_published_at TIMESTAMPTZ,
 
-    -- When a replay of this row was last ordered: the instant every consumer's dedupe row was last extended from.
+    -- When a replay of this row was last ordered: the instant every consumer's dedupe row was last extended from, and so the
+    -- dedupe window's anchor once there has been one (occurred_at before that, never published_at: an attempt whose
+    -- acknowledgement was lost reached the broker and left no mark).
     ADD COLUMN replay_ordered_at  TIMESTAMPTZ;
 
+-- NOT VALID, because a validating ADD CONSTRAINT scans this table under ACCESS EXCLUSIVE and every money-moving writer inserts
+-- here. Nothing is lost: every existing row holds NULL in the columns just added, so no row can violate them, and a NOT VALID
+-- constraint is enforced on every INSERT and UPDATE from now on. VALIDATE would only set a catalogue flag nothing reads; the next
+-- platform migration that wants it may run it, under the SHARE UPDATE EXCLUSIVE lock that does not stop a writer.
 ALTER TABLE platform.outbox_event
     -- Only an abandoned event can be discarded, and a retry cannot resurrect one: clearing dead_lettered_at on a discarded
     -- row violates this.
     ADD CONSTRAINT outbox_event_discarded_implies_abandoned
-        CHECK (discarded_at IS NULL OR dead_lettered_at IS NOT NULL),
+        CHECK (discarded_at IS NULL OR dead_lettered_at IS NOT NULL) NOT VALID,
 
     -- A row consumers will never see cannot also have been published.
     ADD CONSTRAINT outbox_event_not_both_published_and_discarded
-        CHECK (discarded_at IS NULL OR published_at IS NULL),
+        CHECK (discarded_at IS NULL OR published_at IS NULL) NOT VALID,
 
     ADD CONSTRAINT outbox_event_first_published_implies_replayed
-        CHECK (first_published_at IS NULL OR replay_ordered_at IS NOT NULL);
+        CHECK (first_published_at IS NULL OR replay_ordered_at IS NOT NULL) NOT VALID;
 
 COMMENT ON COLUMN platform.outbox_event.discarded_at IS
     'Set by a four-eyes decision that this event will never be published. The row is kept: it is the evidence of the gap.';
@@ -173,6 +179,37 @@ COMMENT ON TABLE platform.dead_letter_discard IS
 CREATE UNIQUE INDEX dead_letter_discard_one_standing
     ON platform.dead_letter_discard (subject_kind, subject_id)
     WHERE status IN ('PROPOSED', 'APPROVED');
+
+-- The application holds UPDATE on this table, so the machine is the database's, for every writer (the platform V003 and ledger
+-- V010 convention): PROPOSED goes to a decision once, a decision is final, and what was proposed is never rewritten.
+CREATE FUNCTION platform.dead_letter_discard_permits_only_decision()
+    RETURNS trigger
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF TG_OP = 'TRUNCATE' THEN
+        RAISE EXCEPTION 'a discard decision is never truncated (P15-TSK-028, INV-AUD-04)';
+    END IF;
+    IF OLD.status <> 'PROPOSED' OR NEW.status NOT IN ('APPROVED', 'REJECTED') THEN
+        RAISE EXCEPTION 'a discard''s only edges are PROPOSED -> APPROVED and PROPOSED -> REJECTED (P15-TSK-028, INV-AUD-04)';
+    END IF;
+    IF NEW.discard_id <> OLD.discard_id OR NEW.subject_kind <> OLD.subject_kind OR NEW.subject_id <> OLD.subject_id
+            OR NEW.proposed_by <> OLD.proposed_by OR NEW.proposed_at <> OLD.proposed_at OR NEW.proposal_reason <> OLD.proposal_reason THEN
+        RAISE EXCEPTION 'what was proposed is never rewritten (P15-TSK-028, INV-AUD-04)';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER dead_letter_discard_permits_only_decision
+    BEFORE UPDATE ON platform.dead_letter_discard
+    FOR EACH ROW
+    EXECUTE FUNCTION platform.dead_letter_discard_permits_only_decision();
+
+CREATE TRIGGER dead_letter_discard_is_never_truncated
+    BEFORE TRUNCATE ON platform.dead_letter_discard
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION platform.dead_letter_discard_permits_only_decision();
 
 -- The grants: no DELETE on either table, because neither is ever deleted from.
 GRANT SELECT, INSERT, UPDATE ON platform.inbox_parked_record TO finapp_app;

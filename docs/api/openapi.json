@@ -5617,6 +5617,41 @@
           }
         }
       },
+      "deadletter.RetryOutsideDedupeWindow": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "deadletter.RetryOutsideDedupeWindow"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/deadletter.RetryOutsideDedupeWindow"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The abandoned event is older than the inbox's dedupe window.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "deadletter.SelfApprovalRefused": {
         "content": {
           "application/problem+json": {

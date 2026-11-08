@@ -32,6 +32,13 @@ public enum DeadLetterErrorCode implements ErrorCode {
     REPLAY_OUTSIDE_DEDUPE_WINDOW("deadletter.ReplayOutsideDedupeWindow", 409,
             "An event in this replay is older than the inbox's dedupe window."),
 
+    /**
+     * The abandoned event is at or past the inbox's dedupe window. An earlier attempt whose acknowledgement was lost may have reached
+     * the broker, so a consumer may have applied it and lost its record of having done so.
+     */
+    RETRY_OUTSIDE_DEDUPE_WINDOW("deadletter.RetryOutsideDedupeWindow", 409,
+            "The abandoned event is older than the inbox's dedupe window."),
+
     /** More events match than one command may requeue. */
     REPLAY_TOO_LARGE("deadletter.ReplayTooLarge", 422, "The replay selects too many events; narrow its window."),
 

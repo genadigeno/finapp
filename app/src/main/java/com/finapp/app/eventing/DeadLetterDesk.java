@@ -25,6 +25,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
@@ -51,6 +52,9 @@ public final class DeadLetterDesk {
 
     /** What a refusal names when the identifier given was not one: never the caller's text. */
     private static final String UNREADABLE_TARGET = "unreadable-identifier";
+
+    /** An event type as the outbox holds one: {@code module.EventName}, bounded by the request. */
+    private static final Pattern READABLE_EVENT_TYPE = Pattern.compile("[A-Za-z0-9._-]{1,200}");
 
     @NonNull private final DeadLetterOperations operations;
     @NonNull private final IdempotentExecutor executor;
@@ -124,7 +128,7 @@ public final class DeadLetterDesk {
     public ActReceipt proposeDiscard(String idempotencyKey, String rawKind, String rawSubject, String reason) {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        return spans.within("deadletter." + ACT_PROPOSE, Map.of(), () -> refusalRecorded(ACT_PROPOSE, rawSubject, reason, actor, correlation, () -> {
+        return spans.within("deadletter." + ACT_PROPOSE, Map.of(), () -> refusalRecorded(ACT_PROPOSE, rawSubject, Optional.empty(), reason, actor, correlation, () -> {
             DeadLetterStore.SubjectKind kind = kindOf(rawKind);
             UUID subject = identifier(rawSubject);
             return receipt(keyed(actor, idempotencyKey, ACT_PROPOSE + "|" + kind + "|" + subject + "|" + reason,
@@ -149,7 +153,8 @@ public final class DeadLetterDesk {
     public ReplayReceipt replay(String idempotencyKey, String eventType, String rawFrom, String rawTo, String reason) {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        return spans.within("deadletter." + ACT_REPLAY, Map.of(), () -> refusalRecorded(ACT_REPLAY, null, reason, actor, correlation, () -> {
+        Optional<String> detail = Optional.of(replayDetail(eventType, rawFrom, rawTo));
+        return spans.within("deadletter." + ACT_REPLAY, Map.of(), () -> refusalRecorded(ACT_REPLAY, null, detail, reason, actor, correlation, () -> {
             Instant from = instant(rawFrom);
             Instant to = instant(rawTo);
             String stored = keyed(actor, idempotencyKey, ACT_REPLAY + "|" + eventType + "|" + from + "|" + to + "|" + reason, uow -> {
@@ -171,7 +176,7 @@ public final class DeadLetterDesk {
     private ActReceipt acted(String act, String idempotencyKey, String rawId, String reason, Function<UUID, String> fingerprinted, Act work) {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        return spans.within("deadletter." + act, Map.of(), () -> refusalRecorded(act, rawId, reason, actor, correlation, () -> {
+        return spans.within("deadletter." + act, Map.of(), () -> refusalRecorded(act, rawId, Optional.empty(), reason, actor, correlation, () -> {
             UUID id = identifier(rawId);
             return receipt(keyed(actor, idempotencyKey, fingerprinted.apply(id), uow -> work.on(uow, id, actor, correlation)));
         }));
@@ -187,17 +192,31 @@ public final class DeadLetterDesk {
         return new String(outcome.body().orElseThrow(() -> new IllegalStateException("a dead-letter act stores its receipt")), StandardCharsets.UTF_8);
     }
 
-    private <R> R refusalRecorded(String act, String rawTarget, String reason, Actor actor, CorrelationId correlation, Supplier<R> work) {
+    private <R> R refusalRecorded(String act, String rawTarget, Optional<String> detail, String reason, Actor actor, CorrelationId correlation, Supplier<R> work) {
         try {
             return work.get();
         } catch (ApiException refused) {
             if (refused.errorCode() instanceof DeadLetterErrorCode code) {
                 transactions.inTransaction(uow -> {
-                    operations.recordRefusal(uow, act, targetOf(rawTarget), code.code(), Optional.ofNullable(reason), actor, correlation);
+                    operations.recordRefusal(uow, act, targetOf(rawTarget), code.code(), detail, Optional.ofNullable(reason), actor, correlation);
                     return null;
                 });
             }
             throw refused;
+        }
+    }
+
+    /** What a refused replay asked for: its type and window, each only if it is what it claims to be, so no caller's text is written. */
+    private static String replayDetail(String eventType, String rawFrom, String rawTo) {
+        boolean readableType = eventType != null && READABLE_EVENT_TYPE.matcher(eventType).matches();
+        return "type=" + (readableType ? eventType : UNREADABLE_TARGET) + ", from=" + readableInstant(rawFrom) + ", to=" + readableInstant(rawTo);
+    }
+
+    private static String readableInstant(String raw) {
+        try {
+            return Instant.parse(raw).toString();
+        } catch (DateTimeParseException | NullPointerException unreadable) {
+            return UNREADABLE_TARGET;
         }
     }
 

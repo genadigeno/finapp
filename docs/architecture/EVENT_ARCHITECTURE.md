@@ -164,7 +164,10 @@ Two resolutions, and the choice is a judgement about the event, never a default:
 - **Retry it** — the cause was environmental (a broker misconfiguration, an expired credential,
   a topic that did not exist) and the event is still correct to publish:
   `POST /v1/operator/events/abandoned/{eventId}/retry`, with a reason. The relay takes it again in
-  its aggregate's order. Refused while a discard stands.
+  its aggregate's order. Refused while a discard stands, and at or past the dedupe window unless every
+  consumer of the type is naturally idempotent (`deadletter.RetryOutsideDedupeWindow`): an earlier attempt
+  whose acknowledgement was lost reached the broker and left no mark, so nothing can prove a consumer never
+  applied it. That default is the owner's to confirm (`THREAT_MODEL.md` §6 item 17).
 - **Abandon it permanently** — the event is genuinely unpublishable. This is a decision that
   consumers will never see a fact that happened, so it needs the same scrutiny as a manual
   adjustment: `POST /v1/operator/events/discards` proposes it with a reason, and a **different
@@ -208,7 +211,9 @@ while its row exists.** So:
 
 - **Refused past the dedupe window.** An event at or older than `finapp.inbox.retention` (14 days)
   may have lost its row to the sweep, and the whole command is refused. The window is the value the
-  dedupe rows were dated with (`InboxConsumer#retention`), not a copy.
+  dedupe rows were dated with (`InboxConsumer#retention`), not a copy, and an event's age is counted from when
+  it occurred, or from the last replay ordered of it, never from a publication: a publication whose
+  acknowledgement was lost reached the broker and left no mark.
 - **The dedupe rows are extended in the same transaction.** Inside the window is not enough: an event
   a moment younger than the limit could have its row swept before a lagging consumer reads the
   replayed record. So the order keeps every consumer's row, found from the table itself, for a full
@@ -216,8 +221,11 @@ while its row exists.** So:
 - **Unless every consumer of the type is naturally idempotent**, by the mark on the handler
   (`InboxEventHandler#naturallyIdempotent`, off by default). No handler carries it today.
 
-A replay is requeued for the relay, so it inherits per-aggregate order, backoff and abandonment. A
-parked record is not revived by a replay: releasing one is its own act. Replay at volume is
+A replay is requeued for the relay, so it inherits per-aggregate order, backoff and abandonment. A row
+behind an abandoned one waits for it, so a retry or a discard of that row judges the replays it sets
+moving: one still inside the window is extended, and one past it is withdrawn, back to its first publication
+and not sent again (a refusal would leave the aggregate with no door, because a row that is merely waiting
+cannot be discarded). A parked record is not revived by a replay: releasing one is its own act. Replay at volume is
 Phase 16's: one command requeues at most 1000 events.
 
 **The transport adapters exist since Phase 2, one per direction.** `KafkaEventPublisher`

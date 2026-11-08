@@ -26,10 +26,23 @@ class DeadLetterStatementsTest {
     }
 
     @Test
-    @DisplayName("the window is judged on the server's clock, from a replay's order when there was one")
+    @DisplayName("the window is judged on the server's clock, from a replay's order or when the event occurred, never from a publication")
     void theWindowIsTheServers() {
-        assertThat(JdbcDeadLetterStore.LOCK_EVENT_SQL).contains("COALESCE(replay_ordered_at, published_at) > now() - (? * INTERVAL '1 millisecond')");
-        assertThat(JdbcDeadLetterStore.REPLAY_SQL).contains("COALESCE(replay_ordered_at, published_at) > now() - (? * INTERVAL '1 millisecond')");
+        // Never published_at: an attempt whose acknowledgement was lost reached the broker and left no mark, so a later success can
+        // postdate a delivery by days.
+        assertThat(JdbcDeadLetterStore.LOCK_EVENT_SQL).contains("COALESCE(replay_ordered_at, occurred_at) > now() - (? * INTERVAL '1 millisecond')");
+        assertThat(JdbcDeadLetterStore.REPLAY_SQL).contains("COALESCE(replay_ordered_at, occurred_at) > now() - (? * INTERVAL '1 millisecond')");
+        assertThat(JdbcDeadLetterStore.PENDING_REPLAYS_SQL).contains("COALESCE(replay_ordered_at, occurred_at) > now() - (? * INTERVAL '1 millisecond')");
+    }
+
+    @Test
+    @DisplayName("a withdrawn replay returns to its first publication and is judged, locked, only among the aggregate's replayed rows")
+    void aReplayIsWithdrawnToItsFirstPublication() {
+        assertThat(JdbcDeadLetterStore.PENDING_REPLAYS_SQL)
+                .contains("event_id <> ?", "published_at IS NULL", "discarded_at IS NULL", "replay_ordered_at IS NOT NULL")
+                .endsWith("FOR UPDATE");
+        assertThat(JdbcDeadLetterStore.WITHDRAW_REPLAYS_SQL)
+                .contains("published_at = first_published_at", "GREATEST(attempts, 1)", "AND published_at IS NULL", "AND first_published_at IS NOT NULL");
     }
 
     @Test

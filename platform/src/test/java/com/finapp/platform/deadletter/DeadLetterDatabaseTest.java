@@ -167,6 +167,28 @@ class DeadLetterDatabaseTest {
     }
 
     @Test
+    @DisplayName("a decided discard is final at the database, what was proposed is never rewritten, and the table is never truncated")
+    void aDecisionIsFinalForEveryWriter() throws Exception {
+        UUID event = seedAbandoned();
+        UUID discard;
+        try (Connection connection = application()) {
+            connection.setAutoCommit(false);
+            discard = operations.proposeDiscard(connection, DeadLetterStore.SubjectKind.OUTBOX_EVENT, event, FIRST, "why", FLOW);
+            operations.approveDiscard(connection, discard, SECOND, "agreed", FLOW);
+            connection.commit();
+        }
+        try (Connection connection = application(); Statement statement = connection.createStatement()) {
+            assertThatThrownBy(() -> statement.executeUpdate("UPDATE platform.dead_letter_discard SET status = 'REJECTED' WHERE discard_id = '" + discard + "'"))
+                    .as("an approved discard cannot become rejected").isInstanceOf(SQLException.class);
+            assertThatThrownBy(() -> statement.executeUpdate("UPDATE platform.dead_letter_discard SET proposed_by = 'someone-else' WHERE discard_id = '" + discard + "'"))
+                    .as("nor can who proposed it change").isInstanceOf(SQLException.class);
+        }
+        try (Statement statement = admin.createStatement()) {
+            assertThatThrownBy(() -> statement.executeUpdate("TRUNCATE platform.dead_letter_discard")).as("never truncated, by any role").isInstanceOf(SQLException.class);
+        }
+    }
+
+    @Test
     @DisplayName("a retry and a standing proposal cannot both happen: the one that waits sees the other")
     void aRetryCannotOutrunAProposal() throws Exception {
         UUID event = seedAbandoned();
@@ -321,6 +343,10 @@ class DeadLetterDatabaseTest {
     private static UUID seedPublished(Duration age) throws SQLException {
         UUID id = IDS.next();
         seed(id, "attempts, published_at", "1, now() - " + age.toSeconds() + " * interval '1 second'");
+        // The window is judged from when the event occurred, so the row must be that old.
+        try (Statement statement = admin.createStatement()) {
+            statement.executeUpdate("UPDATE platform.outbox_event SET occurred_at = now() - " + age.toSeconds() + " * interval '1 second' WHERE event_id = '" + id + "'");
+        }
         return id;
     }
 

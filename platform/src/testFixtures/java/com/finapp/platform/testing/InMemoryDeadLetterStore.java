@@ -30,10 +30,13 @@ public final class InMemoryDeadLetterStore implements DeadLetterStore {
         public Duration anchorAge;
         public Instant firstPublished;
         public int requeues;
+        public int withdrawals;
+        public UUID aggregate;
 
         Event(UUID id, String type) {
             this.id = id;
             this.type = type;
+            this.aggregate = id;
         }
     }
 
@@ -200,6 +203,9 @@ public final class InMemoryDeadLetterStore implements DeadLetterStore {
 
     @Override
     public void extendDedupe(Connection unitOfWork, List<UUID> eventIds, Duration retention) {
+        if (eventIds.isEmpty()) {
+            return; // As the statement: nothing to extend, nothing run.
+        }
         extended.add(List.copyOf(eventIds));
         extendedFor.add(retention);
     }
@@ -209,7 +215,27 @@ public final class InMemoryDeadLetterStore implements DeadLetterStore {
         eventIds.forEach(id -> {
             Event event = events.get(id);
             event.published = false;
+            event.replayed = true;
             event.requeues++;
+        });
+    }
+
+    @Override
+    public List<PendingReplay> lockPendingReplays(Connection unitOfWork, UUID eventId, Duration retention) {
+        UUID aggregate = events.get(eventId).aggregate;
+        return events.values().stream()
+                .filter(event -> event.aggregate.equals(aggregate) && !event.id.equals(eventId))
+                .filter(event -> event.replayed && !event.published && !event.discarded)
+                .map(event -> new PendingReplay(event.id, event.type, event.anchorAge.compareTo(retention) < 0))
+                .toList();
+    }
+
+    @Override
+    public void withdrawReplays(Connection unitOfWork, List<UUID> eventIds) {
+        eventIds.forEach(id -> {
+            Event event = events.get(id);
+            event.published = true;
+            event.withdrawals++;
         });
     }
 }

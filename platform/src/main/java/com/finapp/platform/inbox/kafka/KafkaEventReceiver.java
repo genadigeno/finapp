@@ -444,7 +444,10 @@ public final class KafkaEventReceiver implements AutoCloseable {
                     }
                 }
                 throw new IllegalStateException("unreachable: " + outcome);
-            } catch (RuntimeException handlerFailed) {
+            } catch (RuntimeException | SQLException handlerFailed) {
+                // SQLException too: only commit raises one here, and a commit can fail for the record's own reason - a deferred
+                // constraint trigger fires there (risk's risk_case_has_its_history, reached by a default's signal). Left to the
+                // outer catch it stalled the partition without bound and was never counted.
                 unitOfWork.rollback();
                 log.warn(
                         "Handler {} failed for {} ({}): {} - rolled back, dedupe record"
@@ -505,7 +508,7 @@ public final class KafkaEventReceiver implements AutoCloseable {
      * Counts one failure of the record's own, in a transaction of its own on the connection already held: the park is durable
      * before the caller acknowledges anything. If it cannot be recorded the record stays unacknowledged, the safe direction.
      */
-    private Delivery count(Connection unitOfWork, InboxParking.Failure failure, RuntimeException cause) {
+    private Delivery count(Connection unitOfWork, InboxParking.Failure failure, Exception cause) {
         try {
             InboxParking.Verdict verdict = parking.recordFailure(unitOfWork, failure, cause.getClass().getName());
             unitOfWork.commit();

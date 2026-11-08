@@ -50,6 +50,9 @@ public interface DeadLetterStore {
     /** One event a replay selected. */
     record ReplayCandidate(UUID eventId, boolean withinDedupeWindow) {}
 
+    /** A replayed row still waiting to be published. */
+    record PendingReplay(UUID eventId, String eventType, boolean withinDedupeWindow) {}
+
     List<AbandonedEvent> abandoned(Connection unitOfWork, int limit);
 
     List<ParkedRecord> parked(Connection unitOfWork, int limit);
@@ -93,4 +96,10 @@ public interface DeadLetterStore {
 
     /** Returns published events to the relay, keeping their first publication. */
     void requeue(Connection unitOfWork, List<UUID> eventIds);
+
+    /** The other pending replayed rows of an event's aggregate, locked and judged: what acting on that event sets moving. */
+    List<PendingReplay> lockPendingReplays(Connection unitOfWork, UUID eventId, Duration retention);
+
+    /** Withdraws replays that can no longer be delivered safely: each row returns to its first publication, and is not republished. */
+    void withdrawReplays(Connection unitOfWork, List<UUID> eventIds);
 }

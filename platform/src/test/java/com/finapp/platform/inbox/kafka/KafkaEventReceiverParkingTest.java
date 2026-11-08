@@ -11,6 +11,7 @@ import com.finapp.platform.inbox.InboxKey;
 import com.finapp.platform.inbox.InboxParking;
 import com.finapp.platform.inbox.InboxRecordStore;
 import com.finapp.platform.inbox.ReceivedEvent;
+import com.finapp.platform.persistence.DatabaseFailure;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.event.EventId;
 import com.finapp.sharedkernel.id.IdGenerator;
@@ -61,6 +62,7 @@ class KafkaEventReceiverParkingTest {
     private final FakeParking parking = new FakeParking(2);
     private MockConsumer<String, byte[]> consumer;
     private SQLException commitFailure;
+    private final List<SQLException> commitFailuresOnce = new ArrayList<>();
 
     @BeforeEach
     void freshConsumer() {
@@ -136,6 +138,48 @@ class KafkaEventReceiverParkingTest {
         assertThat(parking.counted).as("nothing counted").isEmpty();
         assertThat(parking.standingOf("probe.consumer", event)).isEqualTo(InboxParking.Standing.NONE);
         assertThat(consumer.position(PARTITION)).isZero();
+    }
+
+    @Test
+    @DisplayName("a store's failure, which names its SQLState only in text, is never counted when it is transient")
+    void aStoresTransientFailureNeverParks() {
+        KafkaEventReceiver receiver = receiver(failing(new IllegalStateException(
+                DatabaseFailure.describe("a signal could not be recorded", new SQLException("ERROR: Failing row contains (secret)", "08006")))));
+        EventId event = EventId.next(IDS);
+
+        for (int attempt = 0; attempt < 5; attempt++) {
+            consumer.addRecord(record(0, event));
+            consumer.seek(PARTITION, 0L);
+            assertThat(receiver.pollOnce().failed()).isEqualTo(1);
+        }
+
+        assertThat(parking.counted).as("a brownout says nothing about the record").isEmpty();
+    }
+
+    @Test
+    @DisplayName("a commit refused for the record's own reason counts: a deferred trigger fires there")
+    void aFailureAtCommitCounts() {
+        EventId event = EventId.next(IDS);
+        commitFailuresOnce.add(new SQLException("a case has its history", "P0001"));
+        KafkaEventReceiver receiver = receiver(handler("probe.consumer", (connection, seen) -> {}));
+        consumer.addRecord(record(0, event));
+
+        ReceiverPollResult result = receiver.pollOnce();
+
+        assertThat(result.failed()).isEqualTo(1);
+        assertThat(parking.counted).as("it would otherwise stall without bound, never counted").hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a connection lost at commit is never counted")
+    void aConnectionLostAtCommitNeverCounts() {
+        EventId event = EventId.next(IDS);
+        commitFailuresOnce.add(new SQLException("connection lost", "08006"));
+        KafkaEventReceiver receiver = receiver(handler("probe.consumer", (connection, seen) -> {}));
+        consumer.addRecord(record(0, event));
+
+        assertThat(receiver.pollOnce().failed()).isEqualTo(1);
+        assertThat(parking.counted).isEmpty();
     }
 
     @Test
@@ -336,6 +380,9 @@ class KafkaEventReceiverParkingTest {
                     case "commit" -> {
                         if (commitFailure != null) {
                             throw commitFailure;
+                        }
+                        if (!commitFailuresOnce.isEmpty()) {
+                            throw commitFailuresOnce.remove(0);
                         }
                         journal.add("committed");
                         store.committed.addAll(store.pending);
