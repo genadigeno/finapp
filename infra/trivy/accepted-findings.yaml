@@ -11,7 +11,7 @@
 #   - A FINDING IS REMOVED HERE WHEN ITS FIX ARRIVES. Keep this file to what is actually carried: a fixed finding's
 #     row stays harmlessly silent, so check it at each base-image or dependency bump.
 #
-# As found on 2026-11-08 by Trivy 0.76.2 on the application image of commit 29c7ddb8: 18 HIGH, 0 CRITICAL, no secret,
+# As found on 2026-11-08 by Trivy 0.76.2 on the application image built from this change: 18 HIGH, 0 CRITICAL, no secret,
 # no misconfiguration.
 vulnerabilities:
   # The Debian 13 packages of the pinned distroless runtime base, whose digest is the current digest of its tag
