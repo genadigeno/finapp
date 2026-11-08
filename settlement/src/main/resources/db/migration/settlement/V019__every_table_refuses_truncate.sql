@@ -6,7 +6,7 @@
 --   trigger does not fire on TRUNCATE, so the one role that holds TRUNCATE on them, their owner finapp_migrator, could
 --   empty financial evidence in a single statement. A statement-level BEFORE TRUNCATE trigger refuses it, the owner
 --   included, as accounting, bnpl, credit, lending and risk already do. The list is the migrations' own, recounted when
---   this was written (13).
+--   this was written (13, read from the chain; the same hole as reconciliation's, found by that debt row's widening).
 --
 -- WHAT IT DOES NOT CLAIM
 --   A trigger is an object its owner can drop or disable. So this closes the unreviewed path, a TRUNCATE that happens
