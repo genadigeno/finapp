@@ -37,8 +37,8 @@ duplicate commands and events (T16, T17), and a client address read from a heade
 
 **Today and target.** "Today" means the repository at this commit: the application, its guards and tests, the local
 stack, CI. There is no manifest, edge, cloud account or deployed instance. Phase 15's merged tasks have built what the
-repository can hold - the application image (built, compared and asserted locally and in CI's image job, pushed
-nowhere), and controls in code and configuration - each on its own row below. *(Read "Phase 15 has built nothing yet
+repository can hold - the application image and the migrator image (built, compared and asserted locally and in CI's
+image jobs, pushed nowhere), and controls in code and configuration - each on its own row below. *(Read "Phase 15 has built nothing yet
 ... There is no image, manifest, edge, cloud account or deployed instance" until 2026-11-08, when a review found the
 opening sentence stale beside the image note that followed it.)*
 The edge and network threats are therefore answered by the Phase 15 tasks that will build those things, and the

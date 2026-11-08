@@ -790,6 +790,13 @@ transition.)*
 - **Invariants:** `INV-ACC-01`…`-14`.
 - **Hard rule:** **no write access to ledger tables** — no ledger edge (`AccountingModuleIsolationTest`, built by `P14-TSK-001`), report code reaching no writer (`ReportingNeverWritesTest`, armed by `P14-TSK-001` over the empty `com.finapp.accounting.reporting`, its first report code the GL fold of `P14-TSK-007`) and report reads in read-only transactions (`P14-TSK-008`; the GL doors' by `P14-TSK-007`), the journal written only through the ledger's own `ACCOUNTING`-origin adjustment door; a separate read-only database role is Phase 15's (owner decision C10).
 
+### `migrator` — Phase 15 — *not a business module*
+- **Responsibility:** applying every module's migrations in a deployed environment, as the build does, and creating the deployed roles by a separate one-time step (`P15-TSK-004`; `DATA_MIGRATIONS.md` §2.1, §2.2). The second deployable of ADR-0120.
+- **Owns:** nothing. The scripts stay each module's (ADR-0006, ADR-0011); it reads them as files staged into its image.
+- **Dependencies:** none in this build. No `project(...)` edge in either direction: it cannot compile against a module's code, and it is absent from `app`'s classpath, so Flyway stays absent from the application (ADR-0011).
+- **Transaction:** Flyway's, one per migration; the bootstrap's one. No atomicity is claimed across schemas: a stopped run resumes at the first pending migration.
+- **Failure:** exit codes a Job can act on; a lock not granted within its bound retries, then fails rather than queues.
+
 ### `notification` — Phase 1 onward
 - **Responsibility:** telling people things. Never part of a money-moving decision.
 - **Owns:** notification records and delivery state.

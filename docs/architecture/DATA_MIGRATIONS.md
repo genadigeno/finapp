@@ -130,12 +130,12 @@ the applied counts of the concurrent runs sum to the number of migrations, and t
 | `restartPolicy` | `Never` | A retry is the Job's, counted by `backoffLimit`, on a fresh pod |
 | `backoffLimit` | `2` | Three tries for a transient failure |
 | `podFailurePolicy` | `FailJob` on exit codes `10` and `12` | A failure a retry cannot help must not be retried |
-| `activeDeadlineSeconds` | `900` | The outer bound on everything above, on every pod of the Job; the whole chain on an empty database took about a minute and a half on a loaded development machine |
+| `activeDeadlineSeconds` | `900` | The outer bound on everything above, on every pod of the Job; the whole chain of 316 migrations on an empty database took 77 s on a loaded development machine (2026-11-08) |
 | `ttlSecondsAfterFinished` | `86400` | Keeps the logs of a failed run for a working day |
 | Environment | The three variables above, the password from a secret only this Job reads | The master credential is never in this Job |
 | Security context | `runAsNonRoot`, UID and GID 65532, `readOnlyRootFilesystem: true`, no capability, `allowPrivilegeEscalation: false`, seccomp `RuntimeDefault`; `/tmp` an `emptyDir` | As the application's; `migrator-verify.sh` runs it this way |
 | Memory | `512Mi`, request equal to limit | `migrator-verify.sh` runs every apply under this limit; `-XX:MaxRAMPercentage=75.0` sizes the heap from it |
-| Connections | Two per run while it applies, one more for a moment before | Inside `finapp.database.reserved-connections`; two Jobs at once are four |
+| Connections | Two per run at most (`migrator-verify.sh` measures the peak) | Inside `finapp.database.reserved-connections`; two Jobs at once are four |
 
 **When a migration fails.** Flyway runs each migration in a transaction, and on PostgreSQL a failed one is rolled back and
 **leaves no row in the schema history**: it is simply still pending, and the Job's failure is what blocks the rollout. Only a

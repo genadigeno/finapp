@@ -202,7 +202,7 @@ wait "$sampler"
 applying_took=$(($(date +%s) - applying_since))
 expect_exit 0 "$code" "the image against an empty database" "$WORK/first.log"
 peak=$(cat "$WORK/first.peak")
-[ "$peak" -ge 1 ] && [ "$peak" -le 3 ] || fail "the run held $peak connections at its peak; the Job contract says two and a moment's third"
+[ "$peak" -ge 1 ] && [ "$peak" -le 2 ] || fail "the run held $peak connections at its peak; the Job contract says two at most"
 
 history_of() {
     for schema in $SCHEMAS; do

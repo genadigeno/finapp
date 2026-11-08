@@ -1922,9 +1922,9 @@ with no `command` of its own. One line per schema and a result line:
 
 *(Written by `P15-TSK-004`, 2026-11-08; **not yet rehearsed** - `P15-TSK-032` rehearses it.)*
 
-A failed migration stops the release before any replica changes. The old release keeps serving on the schema it had, because
-a migration is expand-only (`P15-TSK-005` holds that) and the failed one has either not happened at all or, in the second case
-below, left the schema where a person must read it. **Never `clean`. Never edit an applied migration. Do not run
+A failed migration stops the release before any replica changes. The old release keeps serving on the schema it had: the
+rollout has not started, a release's migrations are expand-only (`P15-TSK-005`'s lint, once built, holds that), and the failed
+one has either not happened at all or, in the second case below, left the schema where a person must read it. **Never `clean`. Never edit an applied migration. Do not run
 `flywayRepair` to make the symptom go away** (`DATA_MIGRATIONS.md` §3.1).
 
 First read `<schema>.flyway_schema_history` for the failing schema, and the Job's log.
