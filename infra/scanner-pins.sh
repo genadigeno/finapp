@@ -58,6 +58,7 @@ CONFTEST_DIGEST=sha256:0e77cdf7c1fcde035f3c579e4aaa6664ee2a8be5777eaa9af9f520cdd
 
 # The schemas kubeconform reads, at one commit of yannh/kubernetes-json-schema, for one Kubernetes version. Not an
 # image, so not a _REPOSITORY/_DIGEST pin: a git commit is its own digest, and the raw URL is built from it. The
-# preStop sleep action needs Kubernetes 1.30 or later.
-KUBERNETES_VERSION=1.36.3
+# preStop sleep action needs Kubernetes 1.30 or later. Its minor is the clusters': KubernetesManifestsTest holds it
+# equal to kubernetes_version in infra/terraform/environments/*/main.tf.
+KUBERNETES_VERSION=1.34.12
 KUBERNETES_SCHEMAS_COMMIT=c416d7b0da0751bd8ebe5be4fa4c8e8274e3bbe2

@@ -352,6 +352,19 @@ class KubernetesManifestsTest {
         assertThat(EvidenceCitations.read(root.resolve(SCRIPT))).contains("${KUBERNETES_SCHEMAS_COMMIT}").doesNotContain("kubernetes-json-schema/master");
     }
 
+    @Test
+    @DisplayName("the schemas the manifests are checked against are the clusters' own minor, and that minor has the preStop sleep action")
+    void theSchemasAreTheClustersMinor() {
+        Matcher pinned = Pattern.compile("(?m)^KUBERNETES_VERSION=(1\\.([0-9]+))\\.[0-9]+$").matcher(EvidenceCitations.read(root.resolve(PINS)));
+        assertThat(pinned.find()).as("the pin was read").isTrue();
+        assertThat(Integer.parseInt(pinned.group(2))).as("sleep is a lifecycle action from Kubernetes 1.30").isGreaterThanOrEqualTo(30);
+        for (String environment : List.of("staging", "production")) {
+            String main = EvidenceCitations.read(root.resolve("infra/terraform/environments/" + environment + "/main.tf"));
+            assertThat(main).as("%s's cluster", environment)
+                    .containsPattern("(?m)^\\s*kubernetes_version\\s*=\\s*\"" + Pattern.quote(pinned.group(1)) + "\"\\s*$");
+        }
+    }
+
     // ---------------------------------------------------------------------------------------------- reading
 
     private static void assertRestricted(Map<String, Object> pod, Map<String, Object> main) {
