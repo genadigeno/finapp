@@ -464,6 +464,7 @@ class PaymentRefundEndpointDatabaseTest {
     }
 
     private void deliverWebhook(String body) throws Exception {
+        com.finapp.app.payments.ProviderInquiryStubs.cardAgrees(provider, body);
         String timestamp =
                 Long.toString(java.time.Instant.now(CLOCK).getEpochSecond());
         HttpRequest request =

@@ -1,0 +1,1616 @@
+# The event catalogue of the last release (ADR-0122 decision 6; EVENT_ARCHITECTURE.md, Schema evolution).
+# Generated: EventCatalogueTest leaves the next one under app/build/event-catalogue/. Never edit by hand.
+release: "the P15-TSK-027 baseline: master 8100cac9, before any release was cut"
+events:
+  "accounting.AccountingBreakRaised":
+    1:
+      producer: "accounting"
+      fields:
+        "breakId": {kind: "uuid", required: true}
+        "check": {kind: "enum(com.finapp.accounting.CloseCheckCode)", required: true}
+        "generation": {kind: "integer", required: true}
+        "period": {kind: "identifier", required: true}
+        "register": {kind: "identifier", required: true}
+        "registerVersion": {kind: "identifier", required: true}
+        "type": {kind: "enum(com.finapp.accounting.BreakType)", required: true}
+  "accounting.AccountingPeriodCloseProposed":
+    1:
+      producer: "accounting"
+      fields:
+        "closeRun": {kind: "uuid", required: true}
+        "mappingVersion": {kind: "integer", required: true}
+        "period": {kind: "identifier", required: true}
+        "proposal": {kind: "uuid", required: true}
+        "revision": {kind: "integer", required: true}
+        "valuationRateSet": {kind: "uuid", required: true}
+  "accounting.AccountingPeriodClosed":
+    1:
+      producer: "accounting"
+      fields:
+        "closeRun": {kind: "uuid", required: true}
+        "period": {kind: "identifier", required: true}
+        "proposal": {kind: "uuid", required: true}
+        "revision": {kind: "integer", required: true}
+        "valuationRateSet": {kind: "uuid", required: true}
+  "accounting.AccountingPeriodLocked":
+    1:
+      producer: "accounting"
+      fields:
+        "closedThrough": {kind: "date", required: true}
+        "mappingVersion": {kind: "integer", required: false}
+        "period": {kind: "identifier", required: true}
+        "revision": {kind: "integer", required: true}
+  "accounting.AccountingPeriodOpened":
+    1:
+      producer: "accounting"
+      fields:
+        "endDate": {kind: "date", required: true}
+        "period": {kind: "identifier", required: true}
+        "revision": {kind: "literal(1)", required: true}
+        "startDate": {kind: "date", required: true}
+  "accounting.AccountingPeriodReopened":
+    1:
+      producer: "accounting"
+      fields:
+        "closedThrough": {kind: "date", required: false}
+        "period": {kind: "identifier", required: true}
+        "revision": {kind: "integer", required: true}
+        "supersededRuns": {kind: "integer", required: true}
+  "accounting.GlMappingVersionActivated":
+    1:
+      producer: "accounting"
+      fields:
+        "effectiveFromPeriod": {kind: "identifier", required: true}
+        "retiredVersion": {kind: "integer", required: false}
+        "version": {kind: "integer", required: true}
+  "accounting.PriorPeriodAdjustmentPosted":
+    1:
+      producer: "accounting"
+      fields:
+        "adjustmentProposal": {kind: "uuid", required: true}
+        "correctedPeriod": {kind: "identifier", required: true}
+        "correctedRevision": {kind: "integer", required: true}
+        "journalEntry": {kind: "uuid", required: true}
+        "postingDate": {kind: "date", required: true}
+        "targetPeriod": {kind: "identifier", required: true}
+  "accounting.RegulatorySubmissionAcknowledged":
+    1:
+      producer: "accounting"
+      fields:
+        "form": {kind: "identifier", required: true}
+        "formVersion": {kind: "integer", required: true}
+        "jurisdiction": {kind: "identifier", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "period": {kind: "identifier", required: true}
+        "periodRevision": {kind: "integer", required: true}
+        "standing": {kind: "literal(REFERENCE)", required: true}
+  "accounting.RegulatorySubmissionRefused":
+    1:
+      producer: "accounting"
+      fields:
+        "form": {kind: "identifier", required: true}
+        "formVersion": {kind: "integer", required: true}
+        "jurisdiction": {kind: "identifier", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "period": {kind: "identifier", required: true}
+        "periodRevision": {kind: "integer", required: true}
+        "standing": {kind: "literal(REFERENCE)", required: true}
+  "accounting.RegulatorySubmissionRejected":
+    1:
+      producer: "accounting"
+      fields:
+        "form": {kind: "identifier", required: true}
+        "formVersion": {kind: "integer", required: true}
+        "jurisdiction": {kind: "identifier", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "period": {kind: "identifier", required: true}
+        "periodRevision": {kind: "integer", required: true}
+        "rejectionCode": {kind: "identifier", required: true}
+        "standing": {kind: "literal(REFERENCE)", required: true}
+  "accounting.RegulatorySubmissionSubmitted":
+    1:
+      producer: "accounting"
+      fields:
+        "contentSha256": {kind: "identifier", required: true}
+        "form": {kind: "identifier", required: true}
+        "formVersion": {kind: "integer", required: true}
+        "jurisdiction": {kind: "identifier", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "period": {kind: "identifier", required: true}
+        "periodRevision": {kind: "integer", required: true}
+        "standing": {kind: "literal(REFERENCE)", required: true}
+  "accounting.RegulatorySubmissionUndelivered":
+    1:
+      producer: "accounting"
+      fields:
+        "form": {kind: "identifier", required: true}
+        "formVersion": {kind: "integer", required: true}
+        "jurisdiction": {kind: "identifier", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "period": {kind: "identifier", required: true}
+        "periodRevision": {kind: "integer", required: true}
+        "standing": {kind: "literal(REFERENCE)", required: true}
+  "accounting.RegulatorySubmissionWithdrawn":
+    1:
+      producer: "accounting"
+      fields:
+        "form": {kind: "identifier", required: true}
+        "formVersion": {kind: "integer", required: true}
+        "jurisdiction": {kind: "identifier", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "period": {kind: "identifier", required: true}
+        "periodRevision": {kind: "integer", required: true}
+        "standing": {kind: "literal(REFERENCE)", required: true}
+  "accounting.ReportRunCompleted":
+    1:
+      producer: "accounting"
+      fields:
+        "contentSha256": {kind: "identifier", required: true}
+        "definition": {kind: "identifier", required: true}
+        "definitionVersion": {kind: "integer", required: true}
+        "mappingVersion": {kind: "integer", required: false}
+        "period": {kind: "identifier", required: true}
+        "periodRevision": {kind: "integer", required: true}
+        "revision": {kind: "integer", required: true}
+        "status": {kind: "enum(com.finapp.accounting.RunStatus)", required: true}
+        "translationComplete": {kind: "boolean", required: true}
+        "untranslated": {kind: "identifier", required: false}
+        "untranslatedCount": {kind: "integer", required: true}
+        "valuationRateSet": {kind: "uuid", required: false}
+  "accounts.AccountClosed":
+    1:
+      producer: "accounts"
+      fields:
+        "productType": {kind: "enum(com.finapp.accounts.ProductType)", required: true}
+  "accounts.AccountOpened":
+    1:
+      producer: "accounts"
+      fields:
+        "productType": {kind: "enum(com.finapp.accounts.ProductType)", required: true}
+  "accounts.WalletCurrencyAdded":
+    1:
+      producer: "accounts"
+      fields:
+        "currency": {kind: "currency", required: true}
+        "ledgerAccountId": {kind: "uuid", required: true}
+  "bnpl.BnplAgreementClosed":
+    1:
+      producer: "bnpl"
+      fields:
+        "agreementId": {kind: "uuid", required: true}
+        "closureId": {kind: "uuid", required: true}
+        "currency": {kind: "currency", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "reason": {kind: "enum(com.finapp.bnpl.BnplClosureReason)", required: true}
+        "refundJournalEntryId": {kind: "uuid", required: false}
+        "refundMinor": {kind: "integer", required: true}
+        "repaymentId": {kind: "uuid", required: false}
+        "scale": {kind: "integer", required: true}
+  "bnpl.BnplAgreementCreated":
+    1:
+      producer: "bnpl"
+      fields:
+        "agreementId": {kind: "uuid", required: true}
+        "agreementVersion": {kind: "integer", required: true}
+        "checkoutSessionId": {kind: "uuid", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "orderId": {kind: "uuid", required: true}
+        "plan": {kind: "enum(com.finapp.bnpl.BnplPlan)", required: true}
+        "product": {kind: "enum(com.finapp.bnpl.BnplProduct)", required: true}
+        "purchaseId": {kind: "uuid", required: true}
+        "termsSha256": {kind: "identifier", required: true}
+  "bnpl.BnplApplicationClosed":
+    1:
+      producer: "bnpl"
+      fields:
+        "applicationId": {kind: "uuid", required: true}
+        "checkoutSessionId": {kind: "uuid", required: true}
+        "decisionRequestId": {kind: "uuid", required: true}
+        "product": {kind: "enum(com.finapp.bnpl.BnplProduct)", required: true}
+        "reason": {kind: "identifier", required: true}
+        "status": {kind: "enum(com.finapp.bnpl.BnplApplicationStatus)", required: true}
+  "bnpl.BnplApplicationSubmitted":
+    1:
+      producer: "bnpl"
+      fields:
+        "applicationId": {kind: "uuid", required: true}
+        "checkoutSessionId": {kind: "uuid", required: true}
+        "decisionRequestId": {kind: "uuid", required: true}
+        "partyId": {kind: "uuid", required: true}
+        "plan": {kind: "enum(com.finapp.bnpl.BnplPlan)", required: true}
+        "product": {kind: "enum(com.finapp.bnpl.BnplProduct)", required: true}
+        "termsVersion": {kind: "integer", required: true}
+        "termsVersionId": {kind: "uuid", required: true}
+  "bnpl.BnplCollectionFailed":
+    1:
+      producer: "bnpl"
+      fields:
+        "attemptDate": {kind: "date", required: true}
+        "attemptId": {kind: "uuid", required: true}
+        "currency": {kind: "currency", required: true}
+        "dueMinor": {kind: "integer", required: true}
+        "instalmentId": {kind: "uuid", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "outcome": {kind: "enum(com.finapp.bnpl.CollectionOutcome)", required: true}
+        "scale": {kind: "integer", required: true}
+  "bnpl.BnplDefaultCleared":
+    1:
+      producer: "bnpl"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "bucket": {kind: "identifier", required: true}
+        "businessDate": {kind: "date", required: true}
+        "daysPastDue": {kind: "integer", required: true}
+        "defaulted": {kind: "boolean", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "previousBucket": {kind: "identifier", required: false}
+        "product": {kind: "enum(com.finapp.bnpl.BnplProduct)", required: true}
+  "bnpl.BnplDefaulted":
+    1:
+      producer: "bnpl"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "bucket": {kind: "identifier", required: true}
+        "businessDate": {kind: "date", required: true}
+        "daysPastDue": {kind: "integer", required: true}
+        "defaulted": {kind: "boolean", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "previousBucket": {kind: "identifier", required: false}
+        "product": {kind: "enum(com.finapp.bnpl.BnplProduct)", required: true}
+  "bnpl.BnplDelinquencyChanged":
+    1:
+      producer: "bnpl"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "bucket": {kind: "identifier", required: true}
+        "businessDate": {kind: "date", required: true}
+        "daysPastDue": {kind: "integer", required: true}
+        "defaulted": {kind: "boolean", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "previousBucket": {kind: "identifier", required: false}
+        "product": {kind: "enum(com.finapp.bnpl.BnplProduct)", required: true}
+  "bnpl.BnplDisputeContested":
+    1:
+      producer: "bnpl"
+      fields:
+        "category": {kind: "enum(com.finapp.bnpl.BnplDisputeReason)", required: true}
+        "disputeId": {kind: "uuid", required: true}
+        "heldInstalments": {kind: "identifier", required: false}
+        "obligationId": {kind: "uuid", required: true}
+        "purchaseId": {kind: "uuid", required: true}
+        "refundId": {kind: "uuid", required: false}
+        "responseDeadlineEpochMilli": {kind: "integer", required: false}
+        "status": {kind: "enum(com.finapp.bnpl.BnplDisputeStatus)", required: true}
+  "bnpl.BnplDisputeOpened":
+    1:
+      producer: "bnpl"
+      fields:
+        "category": {kind: "enum(com.finapp.bnpl.BnplDisputeReason)", required: true}
+        "disputeId": {kind: "uuid", required: true}
+        "heldInstalments": {kind: "identifier", required: false}
+        "obligationId": {kind: "uuid", required: true}
+        "purchaseId": {kind: "uuid", required: true}
+        "refundId": {kind: "uuid", required: false}
+        "responseDeadlineEpochMilli": {kind: "integer", required: false}
+        "status": {kind: "enum(com.finapp.bnpl.BnplDisputeStatus)", required: true}
+  "bnpl.BnplDisputeResolved":
+    1:
+      producer: "bnpl"
+      fields:
+        "category": {kind: "enum(com.finapp.bnpl.BnplDisputeReason)", required: true}
+        "disputeId": {kind: "uuid", required: true}
+        "heldInstalments": {kind: "identifier", required: false}
+        "obligationId": {kind: "uuid", required: true}
+        "purchaseId": {kind: "uuid", required: true}
+        "refundId": {kind: "uuid", required: false}
+        "responseDeadlineEpochMilli": {kind: "integer", required: false}
+        "status": {kind: "enum(com.finapp.bnpl.BnplDisputeStatus)", required: true}
+  "bnpl.BnplEligibilityAssessed":
+    1:
+      producer: "bnpl"
+      fields:
+        "checkoutSessionId": {kind: "uuid", required: true}
+        "outcome": {kind: "enum(com.finapp.bnpl.BnplOrigination$Eligibility)", required: true}
+  "bnpl.BnplFeeWaived":
+    1:
+      producer: "bnpl"
+      fields:
+        "agreementId": {kind: "uuid", required: true}
+        "agreementVersion": {kind: "integer", required: true}
+        "amountMinor": {kind: "integer", required: true}
+        "assessmentId": {kind: "uuid", required: true}
+        "component": {kind: "enum(com.finapp.creditmath.AllocationComponent)", required: true}
+        "currency": {kind: "currency", required: true}
+        "instalmentId": {kind: "uuid", required: true}
+        "journalEntryId": {kind: "uuid", required: true}
+        "kind": {kind: "enum(com.finapp.bnpl.BnplWaiverKind)", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "scale": {kind: "integer", required: true}
+        "valueDate": {kind: "date", required: true}
+        "waiverId": {kind: "uuid", required: true}
+  "bnpl.BnplLateFeeAssessed":
+    1:
+      producer: "bnpl"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "amountMinor": {kind: "integer", required: true}
+        "assessmentId": {kind: "uuid", required: true}
+        "businessDate": {kind: "date", required: true}
+        "currency": {kind: "currency", required: true}
+        "dueDate": {kind: "date", required: true}
+        "instalmentId": {kind: "uuid", required: true}
+        "journalEntryId": {kind: "uuid", required: true}
+        "kind": {kind: "enum(com.finapp.bnpl.BnplFeeKind)", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "scale": {kind: "integer", required: true}
+  "bnpl.BnplOfferClosed":
+    1:
+      producer: "bnpl"
+      fields:
+        "applicationId": {kind: "uuid", required: true}
+        "checkoutSessionId": {kind: "uuid", required: true}
+        "offerId": {kind: "uuid", required: true}
+        "plan": {kind: "enum(com.finapp.bnpl.BnplPlan)", required: true}
+        "product": {kind: "enum(com.finapp.bnpl.BnplProduct)", required: true}
+        "reason": {kind: "identifier", required: true}
+        "status": {kind: "enum(com.finapp.bnpl.BnplOfferStatus)", required: true}
+  "bnpl.BnplOffered":
+    1:
+      producer: "bnpl"
+      fields:
+        "applicationId": {kind: "uuid", required: true}
+        "checkoutSessionId": {kind: "uuid", required: true}
+        "decisionId": {kind: "uuid", required: true}
+        "expiresAtEpochMilli": {kind: "integer", required: true}
+        "offerId": {kind: "uuid", required: true}
+        "plan": {kind: "enum(com.finapp.bnpl.BnplPlan)", required: true}
+        "product": {kind: "enum(com.finapp.bnpl.BnplProduct)", required: true}
+        "termsSha256": {kind: "identifier", required: true}
+        "termsVersion": {kind: "integer", required: true}
+        "termsVersionId": {kind: "uuid", required: true}
+  "bnpl.BnplRefundApplied":
+    1:
+      producer: "bnpl"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "allocationEngine": {kind: "enum(com.finapp.bnpl.BnplEngine)", required: true}
+        "amountMinor": {kind: "integer", required: true}
+        "cancelledBilledMinor": {kind: "integer", required: true}
+        "cancelledUnbilledMinor": {kind: "integer", required: true}
+        "currency": {kind: "currency", required: true}
+        "door": {kind: "enum(com.finapp.bnpl.BnplRefund$Door)", required: true}
+        "excessMinor": {kind: "integer", required: true}
+        "excessTo": {kind: "enum(com.finapp.bnpl.BnplRefund$ExcessTo)", required: true}
+        "feeReturnedMinor": {kind: "integer", required: true}
+        "instalmentsCancelled": {kind: "identifier", required: false}
+        "interestReleasedMinor": {kind: "integer", required: true}
+        "journalEntryId": {kind: "uuid", required: true}
+        "lateFeeReleasedMinor": {kind: "integer", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "payableDebitMinor": {kind: "integer", required: true}
+        "purchaseId": {kind: "uuid", required: true}
+        "refundId": {kind: "uuid", required: true}
+        "scale": {kind: "integer", required: true}
+  "bnpl.BnplRepaymentReversed":
+    1:
+      producer: "bnpl"
+      fields:
+        "agreementId": {kind: "uuid", required: true}
+        "agreementVersion": {kind: "integer", required: true}
+        "amountMinor": {kind: "integer", required: true}
+        "creditReversedMinor": {kind: "integer", required: true}
+        "currency": {kind: "currency", required: true}
+        "feesReopenedMinor": {kind: "integer", required: true}
+        "interestReopenedMinor": {kind: "integer", required: true}
+        "journalEntryId": {kind: "uuid", required: true}
+        "lateFeeReleasedMinor": {kind: "integer", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "principalReopenedMinor": {kind: "integer", required: true}
+        "repaymentId": {kind: "uuid", required: true}
+        "repaymentKind": {kind: "identifier", required: true}
+        "reversalId": {kind: "uuid", required: true}
+        "reversedJournalEntryId": {kind: "uuid", required: true}
+        "scale": {kind: "integer", required: true}
+        "valueDate": {kind: "date", required: true}
+  "bnpl.BnplTermsVersionActivated":
+    1:
+      producer: "bnpl"
+      fields:
+        "effectiveFromEpochMilli": {kind: "integer", required: true}
+        "predecessorId": {kind: "identifier", required: true}
+        "product": {kind: "enum(com.finapp.bnpl.BnplProduct)", required: true}
+        "version": {kind: "integer", required: true}
+  "bnpl.BnplWrittenOff":
+    1:
+      producer: "bnpl"
+      fields:
+        "agreementId": {kind: "uuid", required: true}
+        "agreementVersion": {kind: "integer", required: true}
+        "journalEntryId": {kind: "uuid", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "product": {kind: "enum(com.finapp.bnpl.BnplProduct)", required: true}
+        "valueDate": {kind: "date", required: true}
+        "writeOffId": {kind: "uuid", required: true}
+  "bnpl.InstalmentDue":
+    1:
+      producer: "bnpl"
+      fields:
+        "currency": {kind: "currency", required: true}
+        "dueDate": {kind: "date", required: true}
+        "instalmentId": {kind: "uuid", required: true}
+        "interestMinor": {kind: "integer", required: true}
+        "journalEntryId": {kind: "uuid", required: false}
+        "obligationId": {kind: "uuid", required: true}
+        "principalMinor": {kind: "integer", required: true}
+        "scale": {kind: "integer", required: true}
+        "sequence": {kind: "integer", required: true}
+  "bnpl.InstalmentPaid":
+    1:
+      producer: "bnpl"
+      fields:
+        "amountMinor": {kind: "integer", required: true}
+        "currency": {kind: "currency", required: true}
+        "feesMinor": {kind: "integer", required: false}
+        "instalmentId": {kind: "uuid", required: true}
+        "interestMinor": {kind: "integer", required: false}
+        "journalEntryId": {kind: "uuid", required: true}
+        "obligationId": {kind: "uuid", required: true}
+        "principalMinor": {kind: "integer", required: false}
+        "repaymentId": {kind: "uuid", required: true}
+        "scale": {kind: "integer", required: true}
+        "sequence": {kind: "integer", required: true}
+  "bnpl.MerchantFinanced":
+    1:
+      producer: "bnpl"
+      fields:
+        "currency": {kind: "currency", required: true}
+        "feeMinor": {kind: "integer", required: true}
+        "grossMinor": {kind: "integer", required: true}
+        "journalEntryId": {kind: "uuid", required: true}
+        "merchantId": {kind: "uuid", required: true}
+        "netMinor": {kind: "integer", required: true}
+        "purchaseId": {kind: "uuid", required: true}
+        "scale": {kind: "integer", required: true}
+  "checkout.CheckoutSessionExpired":
+    1:
+      producer: "checkout"
+      fields:
+        "checkoutId": {kind: "uuid", required: true}
+        "expiredFrom": {kind: "enum(com.finapp.checkout.CheckoutSessionStatus)", required: true}
+        "merchantId": {kind: "uuid", required: true}
+  "checkout.OrderPaid":
+    1:
+      producer: "checkout"
+      fields:
+        "capturedEntryId": {kind: "uuid", required: true}
+        "checkoutId": {kind: "uuid", required: true}
+        "completedAs": {kind: "identifier", required: true}
+        "merchantId": {kind: "uuid", required: true}
+  "credit.CreditAssessmentCreated":
+    1:
+      producer: "credit"
+      fields:
+        "decisionRequestId": {kind: "uuid", required: true}
+        "modelVersionId": {kind: "uuid", required: true}
+        "snapshotSha256": {kind: "identifier", required: true}
+  "credit.CreditDataCollected":
+    1:
+      producer: "credit"
+      fields:
+        "dataRequest": {kind: "uuid", required: true}
+        "decisionRequest": {kind: "uuid", required: true}
+        "provider": {kind: "identifier", required: true}
+        "retrievedAtEpochMilli": {kind: "integer", required: true}
+        "sourceKind": {kind: "enum(com.finapp.credit.CreditSourceKind)", required: true}
+  "credit.CreditDataUnavailable":
+    1:
+      producer: "credit"
+      fields:
+        "attempts": {kind: "integer", required: true}
+        "dataRequest": {kind: "uuid", required: true}
+        "provider": {kind: "identifier", required: true}
+        "sourceKind": {kind: "enum(com.finapp.credit.CreditSourceKind)", required: true}
+  "credit.CreditDecisionRecorded":
+    2:
+      producer: "credit"
+      fields:
+        "approvedMinor": {kind: "integer", required: false}
+        "currency": {kind: "currency", required: true}
+        "decisionId": {kind: "uuid", required: true}
+        "decisionRequestId": {kind: "uuid", required: true}
+        "engineVersion": {kind: "integer", required: true}
+        "modelVersionId": {kind: "uuid", required: true}
+        "outcome": {kind: "enum(com.finapp.credit.DecisionOutcome)", required: true}
+        "policyVersionId": {kind: "uuid", required: true}
+        "reasonCode#": {kind: "identifier", required: false}
+        "reasonCodeCount": {kind: "integer", required: true}
+        "snapshotSha256": {kind: "identifier", required: true}
+        "termMonths": {kind: "integer", required: false}
+        "validUntilEpochMilli": {kind: "integer", required: true}
+  "credit.CreditDecisionRequestClosed":
+    1:
+      producer: "credit"
+      fields:
+        "closureReason": {kind: "enum(com.finapp.credit.ClosureReason)", required: false}
+        "decisionRequestId": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.credit.DecisionRequestStatus)", required: true}
+  "credit.CreditDecisionRequested":
+    1:
+      producer: "credit"
+      fields:
+        "currency": {kind: "currency", required: true}
+        "decisionRequestId": {kind: "uuid", required: true}
+        "expiresAtEpochMilli": {kind: "integer", required: true}
+        "partyId": {kind: "uuid", required: true}
+        "product": {kind: "enum(com.finapp.credit.CreditProduct)", required: true}
+        "requestedMinor": {kind: "integer", required: true}
+        "termMonths": {kind: "integer", required: false}
+  "credit.CreditPolicyVersionActivated":
+    1:
+      producer: "credit"
+      fields:
+        "effectiveFromEpochMilli": {kind: "integer", required: true}
+        "predecessorId": {kind: "identifier", required: true}
+        "product": {kind: "enum(com.finapp.credit.CreditProduct)", required: true}
+        "version": {kind: "integer", required: true}
+  "credit.ManualReviewRequired":
+    1:
+      producer: "credit"
+      fields:
+        "caseId": {kind: "uuid", required: true}
+        "decisionRequestId": {kind: "uuid", required: true}
+        "referralReasonCode#": {kind: "identifier", required: false}
+        "referralReasonCount": {kind: "integer", required: true}
+  "credit.ScorecardModelVersionActivated":
+    1:
+      producer: "credit"
+      fields:
+        "effectiveFromEpochMilli": {kind: "integer", required: true}
+        "family": {kind: "enum(com.finapp.credit.ScorecardFamily)", required: true}
+        "predecessorId": {kind: "identifier", required: true}
+        "version": {kind: "integer", required: true}
+  "crossborder.BeneficiaryActivated":
+    1:
+      producer: "crossborder"
+      fields:
+        "beneficiary": {kind: "uuid", required: true}
+        "country": {kind: "identifier", required: true}
+        "currency": {kind: "currency", required: true}
+        "from": {kind: "enum(com.finapp.crossborder.BeneficiaryStatus)", required: false}
+  "crossborder.BeneficiaryBlocked":
+    1:
+      producer: "crossborder"
+      fields:
+        "beneficiary": {kind: "uuid", required: true}
+        "country": {kind: "identifier", required: true}
+        "currency": {kind: "currency", required: true}
+        "from": {kind: "enum(com.finapp.crossborder.BeneficiaryStatus)", required: false}
+  "crossborder.BeneficiaryRegistered":
+    1:
+      producer: "crossborder"
+      fields:
+        "beneficiary": {kind: "uuid", required: true}
+        "country": {kind: "identifier", required: true}
+        "currency": {kind: "currency", required: true}
+        "from": {kind: "enum(com.finapp.crossborder.BeneficiaryStatus)", required: false}
+  "crossborder.BeneficiaryRevoked":
+    1:
+      producer: "crossborder"
+      fields:
+        "beneficiary": {kind: "uuid", required: true}
+        "country": {kind: "identifier", required: true}
+        "currency": {kind: "currency", required: true}
+        "from": {kind: "enum(com.finapp.crossborder.BeneficiaryStatus)", required: false}
+  "crossborder.CorridorAvailabilityChanged":
+    1:
+      producer: "crossborder"
+      fields:
+        "available": {kind: "boolean", required: true}
+        "corridor": {kind: "identifier", required: true}
+  "crossborder.CorridorPolicyActivated":
+    1:
+      producer: "crossborder"
+      fields:
+        "retiredPolicyId": {kind: "identifier", required: true}
+        "version": {kind: "integer", required: true}
+  "crossborder.CrossBorderCancellationRequested":
+    1:
+      producer: "crossborder"
+      fields:
+        "payment": {kind: "uuid", required: true}
+  "crossborder.CrossBorderPaymentDelivered":
+    1:
+      producer: "crossborder"
+      fields:
+        "payment": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.crossborder.PaymentStore$Status)", required: true}
+  "crossborder.CrossBorderPaymentFailed":
+    1:
+      producer: "crossborder"
+      fields:
+        "failureReason": {kind: "identifier", required: true}
+        "payment": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.crossborder.PaymentStore$Status)", required: true}
+  "crossborder.CrossBorderPaymentInTransit":
+    1:
+      producer: "crossborder"
+      fields:
+        "payment": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.crossborder.PaymentStore$Status)", required: true}
+        "trade": {kind: "identifier", required: true}
+  "crossborder.CrossBorderPaymentInitiated":
+    1:
+      producer: "crossborder"
+      fields:
+        "beneficiary": {kind: "uuid", required: true}
+        "corridor": {kind: "identifier", required: true}
+        "destinationCurrency": {kind: "currency", required: true}
+        "destinationMinor": {kind: "integer", required: true}
+        "destinationScale": {kind: "integer", required: true}
+        "payment": {kind: "uuid", required: true}
+        "quote": {kind: "uuid", required: true}
+        "totalDebitCurrency": {kind: "currency", required: true}
+        "totalDebitMinor": {kind: "integer", required: true}
+        "totalDebitScale": {kind: "integer", required: true}
+  "crossborder.CrossBorderPaymentReturned":
+    1:
+      producer: "crossborder"
+      fields:
+        "basis": {kind: "identifier", required: true}
+        "payment": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.crossborder.PaymentStore$Status)", required: true}
+  "fx.FxAvailabilityChanged":
+    1:
+      producer: "fx"
+      fields:
+        "available": {kind: "boolean", required: true}
+        "subject": {kind: "identifier", required: true}
+        "subjectKind": {kind: "enum(com.finapp.fx.AvailabilitySubject$Kind)", required: true}
+  "fx.FxCoverExecuted":
+    1:
+      producer: "fx"
+      fields:
+        "attempt": {kind: "integer", required: true}
+        "computedDeviation": {kind: "boolean", required: true}
+        "deliveredCurrencyCode": {kind: "currency", required: true}
+        "deliveredMinor": {kind: "integer", required: true}
+        "deliveredResult": {kind: "literal(GAIN|LOSS|NONE)", required: true}
+        "deliveredScale": {kind: "integer", required: true}
+        "executedOffPlan": {kind: "boolean", required: true}
+        "executedRateCoherent": {kind: "boolean", required: true}
+        "kind": {kind: "enum(com.finapp.fx.CoverKind)", required: true}
+        "postingReference": {kind: "identifier", required: true}
+        "providerCode": {kind: "identifier", required: true}
+        "receivedCurrencyCode": {kind: "currency", required: true}
+        "receivedMinor": {kind: "integer", required: true}
+        "receivedResult": {kind: "literal(GAIN|LOSS|NONE)", required: true}
+        "receivedScale": {kind: "integer", required: true}
+  "fx.FxCoverRejected":
+    1:
+      producer: "fx"
+      fields:
+        "attempt": {kind: "integer", required: true}
+        "kind": {kind: "enum(com.finapp.fx.CoverKind)", required: true}
+        "providerCode": {kind: "identifier", required: true}
+        "reason": {kind: "enum(com.finapp.fx.FxProvider$RejectReason)", required: true}
+  "fx.FxCoverRequoted":
+    1:
+      producer: "fx"
+      fields:
+        "attempt": {kind: "integer", required: true}
+        "kind": {kind: "enum(com.finapp.fx.CoverKind)", required: true}
+        "providerCode": {kind: "identifier", required: true}
+  "fx.FxQuoteAbandoned":
+    1:
+      producer: "fx"
+      fields:
+        "reason": {kind: "identifier", required: true}
+  "fx.FxQuoteAccepted":
+    1:
+      producer: "fx"
+      fields:
+        "subjectId": {kind: "uuid", required: true}
+        "subjectKind": {kind: "literal(CONVERSION|CROSS_BORDER_PAYMENT)", required: true}
+  "fx.FxQuoteCancelled":
+    1:
+      producer: "fx"
+      fields:
+        "reason": {kind: "literal(CUSTOMER)", required: true}
+  "fx.FxQuoteExpired":
+    1:
+      producer: "fx"
+      fields:
+        "detectedBy": {kind: "literal(ACCEPTANCE|SWEEP)", required: true}
+  "fx.FxQuoteIssued":
+    1:
+      producer: "fx"
+      fields:
+        "destinationCurrency": {kind: "currency", required: true}
+        "destinationMinor": {kind: "integer", required: true}
+        "destinationScale": {kind: "integer", required: true}
+        "expiresAtEpochMicros": {kind: "integer", required: true}
+        "fixedSide": {kind: "enum(com.finapp.fx.FixedSide)", required: true}
+        "pricingPolicyVersionId": {kind: "uuid", required: true}
+        "purpose": {kind: "enum(com.finapp.fx.PricingPurpose)", required: true}
+        "sourceCurrency": {kind: "currency", required: true}
+        "sourceMinor": {kind: "integer", required: true}
+        "sourceScale": {kind: "integer", required: true}
+  "fx.FxTradeExecuted":
+    1:
+      producer: "fx"
+      fields:
+        "destinationCurrency": {kind: "currency", required: true}
+        "destinationMinor": {kind: "integer", required: true}
+        "destinationScale": {kind: "integer", required: true}
+        "postingReference": {kind: "identifier", required: true}
+        "purpose": {kind: "enum(com.finapp.fx.PricingPurpose)", required: true}
+        "sourceCurrency": {kind: "currency", required: true}
+        "sourceMinor": {kind: "integer", required: true}
+        "sourceScale": {kind: "integer", required: true}
+  "fx.FxTradeReversed":
+    1:
+      producer: "fx"
+      fields:
+        "cover": {kind: "enum(com.finapp.fx.CoverUnwinds$Effect)", required: true}
+        "reversal": {kind: "uuid", required: true}
+        "reversalEntry": {kind: "uuid", required: true}
+  "fx.PricingPolicyActivated":
+    1:
+      producer: "fx"
+      fields:
+        "retiredPolicyId": {kind: "identifier", required: true}
+        "version": {kind: "integer", required: true}
+  "identity.AuthenticationFailed":
+    1:
+      producer: "identity"
+      fields:
+        "factor": {kind: "enum(com.finapp.identity.CredentialType)", required: true}
+  "identity.AuthenticationSucceeded":
+    1:
+      producer: "identity"
+      fields:
+        "assurance": {kind: "enum(com.finapp.identity.AssuranceLevel)", required: true}
+        "factor": {kind: "enum(com.finapp.identity.CredentialType)", required: true}
+        "identityId": {kind: "uuid", required: true}
+        "sessionId": {kind: "uuid", required: true}
+  "identity.CredentialChanged":
+    1:
+      producer: "identity"
+      fields:
+        "identityId": {kind: "uuid", required: true}
+  "identity.IdentityCreated":
+    1:
+      producer: "identity"
+      fields:
+        "credentialId": {kind: "uuid", required: true}
+        "identityId": {kind: "uuid", required: true}
+        "partyId": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.identity.IdentityStatus)", required: true}
+  "identity.IdentityReinstated":
+    1:
+      producer: "identity"
+      fields:
+        "identityId": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.identity.IdentityStatus)", required: true}
+  "identity.IdentitySuspended":
+    1:
+      producer: "identity"
+      fields:
+        "identityId": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.identity.IdentityStatus)", required: true}
+  "identity.MfaEnrolled":
+    1:
+      producer: "identity"
+      fields:
+        "factorType": {kind: "enum(com.finapp.identity.MfaFactorType)", required: true}
+        "identityId": {kind: "uuid", required: true}
+  "identity.RecoveryCompleted":
+    1:
+      producer: "identity"
+      fields:
+        "channelId": {kind: "uuid", required: true}
+        "identityId": {kind: "uuid", required: true}
+        "recoveryRequestId": {kind: "uuid", required: true}
+  "identity.RecoveryInitiated":
+    1:
+      producer: "identity"
+      fields:
+        "channelId": {kind: "uuid", required: true}
+        "identityId": {kind: "uuid", required: true}
+        "recoveryRequestId": {kind: "uuid", required: true}
+  "kyc.CounterpartyScreeningDecided":
+    1:
+      producer: "kyc"
+      fields:
+        "basis": {kind: "enum(com.finapp.kyc.DecisionBasis)", required: true}
+        "request": {kind: "identifier", required: true}
+        "screening": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.kyc.CounterpartyScreeningStatus)", required: true}
+  "kyc.KycCaseOpened":
+    1:
+      producer: "kyc"
+      fields:
+        "caseId": {kind: "uuid", required: true}
+        "customerId": {kind: "uuid", required: true}
+        "policyVersion": {kind: "identifier", required: true}
+  "ledger.HoldPlaced":
+    1:
+      producer: "ledger"
+      fields:
+        "ledgerAccountId": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.ledger.HoldStatus)", required: true}
+  "ledger.HoldReleased":
+    1:
+      producer: "ledger"
+      fields:
+        "ledgerAccountId": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.ledger.HoldStatus)", required: true}
+  "ledger.JournalEntryPosted":
+    1:
+      producer: "ledger"
+      fields:
+        "entryType": {kind: "enum(com.finapp.ledger.JournalEntryType)", required: true}
+  "lending.CollectionFailed":
+    1:
+      producer: "lending"
+      fields:
+        "attemptDate": {kind: "date", required: true}
+        "attemptId": {kind: "uuid", required: true}
+        "currency": {kind: "currency", required: true}
+        "dueItemId": {kind: "uuid", required: true}
+        "dueMinor": {kind: "integer", required: true}
+        "loanId": {kind: "uuid", required: true}
+        "outcome": {kind: "enum(com.finapp.lending.CollectionOutcome)", required: true}
+        "scale": {kind: "integer", required: true}
+  "lending.CreditLineDrawn":
+    1:
+      producer: "lending"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "amountMinor": {kind: "integer", required: true}
+        "currency": {kind: "currency", required: true}
+        "drawId": {kind: "uuid", required: true}
+        "journalEntryId": {kind: "uuid", required: true}
+        "loanId": {kind: "uuid", required: true}
+        "scale": {kind: "integer", required: true}
+        "valueDate": {kind: "date", required: true}
+  "lending.CreditLineStatementIssued":
+    1:
+      producer: "lending"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "creditAppliedMinor": {kind: "integer", required: true}
+        "currency": {kind: "currency", required: true}
+        "cycleEnd": {kind: "date", required: true}
+        "cycleStart": {kind: "date", required: true}
+        "dueDate": {kind: "date", required: true}
+        "feesDueMinor": {kind: "integer", required: true}
+        "interestDueMinor": {kind: "integer", required: true}
+        "journalEntryId": {kind: "uuid", required: false}
+        "loanId": {kind: "uuid", required: true}
+        "minimumPaymentMinor": {kind: "integer", required: true}
+        "principalDueMinor": {kind: "integer", required: true}
+        "scale": {kind: "integer", required: true}
+        "statementEngineVersion": {kind: "integer", required: true}
+        "statementId": {kind: "uuid", required: true}
+  "lending.InstalmentBilled":
+    1:
+      producer: "lending"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "billingId": {kind: "uuid", required: true}
+        "creditAppliedMinor": {kind: "integer", required: true}
+        "currency": {kind: "currency", required: true}
+        "dueDate": {kind: "date", required: true}
+        "feesDueMinor": {kind: "literal(0)", required: true}
+        "interestDueMinor": {kind: "integer", required: true}
+        "journalEntryId": {kind: "uuid", required: false}
+        "kind": {kind: "enum(com.finapp.lending.BillingKind)", required: true}
+        "loanId": {kind: "uuid", required: true}
+        "principalDueMinor": {kind: "integer", required: true}
+        "scale": {kind: "integer", required: true}
+        "scheduleVersion": {kind: "integer", required: true}
+        "sequence": {kind: "integer", required: true}
+  "lending.LineClosureRequested":
+    1:
+      producer: "lending"
+      fields:
+        "loanId": {kind: "uuid", required: true}
+        "outcome": {kind: "enum(com.finapp.lending.LineClosureOutcome)", required: true}
+        "requestId": {kind: "uuid", required: true}
+  "lending.LoanAccepted":
+    1:
+      producer: "lending"
+      fields:
+        "agreementId": {kind: "uuid", required: true}
+        "agreementVersion": {kind: "integer", required: true}
+        "decisionId": {kind: "uuid", required: true}
+        "kind": {kind: "enum(com.finapp.lending.LoanKind)", required: true}
+        "loanId": {kind: "uuid", required: true}
+        "offerId": {kind: "uuid", required: true}
+        "product": {kind: "enum(com.finapp.lending.LoanProduct)", required: true}
+        "status": {kind: "enum(com.finapp.lending.LoanStatus)", required: true}
+        "termsSha256": {kind: "identifier", required: true}
+  "lending.LoanAmended":
+    1:
+      producer: "lending"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "amendmentId": {kind: "uuid", required: false}
+        "amendsVersion": {kind: "integer", required: true}
+        "arrearsRescheduledMinor": {kind: "integer", required: false}
+        "currency": {kind: "currency", required: false}
+        "effectiveDate": {kind: "date", required: true}
+        "journalEntryId": {kind: "uuid", required: false}
+        "loanId": {kind: "uuid", required: true}
+        "origin": {kind: "literal(AMENDMENT|PREPAYMENT)", required: true}
+        "prepaymentId": {kind: "uuid", required: false}
+        "remainingInstalments": {kind: "integer", required: true}
+        "scale": {kind: "integer", required: false}
+        "scheduleVersion": {kind: "integer", required: true}
+        "termsSha256": {kind: "identifier", required: true}
+  "lending.LoanApplicationClosed":
+    1:
+      producer: "lending"
+      fields:
+        "applicationId": {kind: "uuid", required: true}
+        "decisionRequestId": {kind: "uuid", required: true}
+        "product": {kind: "enum(com.finapp.lending.LoanProduct)", required: true}
+        "reason": {kind: "identifier", required: true}
+        "status": {kind: "enum(com.finapp.lending.LoanApplicationStatus)", required: true}
+  "lending.LoanApplicationSubmitted":
+    1:
+      producer: "lending"
+      fields:
+        "applicationId": {kind: "uuid", required: true}
+        "decisionRequestId": {kind: "uuid", required: true}
+        "partyId": {kind: "uuid", required: true}
+        "product": {kind: "enum(com.finapp.lending.LoanProduct)", required: true}
+        "termsVersion": {kind: "integer", required: true}
+        "termsVersionId": {kind: "uuid", required: true}
+  "lending.LoanCancelled":
+    1:
+      producer: "lending"
+      fields:
+        "loanId": {kind: "uuid", required: true}
+        "product": {kind: "enum(com.finapp.lending.LoanProduct)", required: true}
+        "reason": {kind: "enum(com.finapp.lending.CancellationReason)", required: true}
+        "status": {kind: "enum(com.finapp.lending.LoanStatus)", required: true}
+  "lending.LoanClosed":
+    1:
+      producer: "lending"
+      fields:
+        "closureId": {kind: "uuid", required: true}
+        "currency": {kind: "currency", required: true}
+        "loanId": {kind: "uuid", required: true}
+        "reason": {kind: "enum(com.finapp.lending.ClosureReason)", required: true}
+        "refundJournalEntryId": {kind: "uuid", required: false}
+        "refundMinor": {kind: "integer", required: true}
+        "repaymentId": {kind: "uuid", required: false}
+        "scale": {kind: "integer", required: true}
+  "lending.LoanDefaultCleared":
+    1:
+      producer: "lending"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "bucket": {kind: "identifier", required: true}
+        "businessDate": {kind: "date", required: true}
+        "daysPastDue": {kind: "integer", required: true}
+        "defaulted": {kind: "boolean", required: true}
+        "loanId": {kind: "uuid", required: true}
+        "previousBucket": {kind: "identifier", required: false}
+        "product": {kind: "enum(com.finapp.lending.LoanProduct)", required: true}
+  "lending.LoanDefaulted":
+    1:
+      producer: "lending"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "bucket": {kind: "identifier", required: true}
+        "businessDate": {kind: "date", required: true}
+        "daysPastDue": {kind: "integer", required: true}
+        "defaulted": {kind: "boolean", required: true}
+        "loanId": {kind: "uuid", required: true}
+        "previousBucket": {kind: "identifier", required: false}
+        "product": {kind: "enum(com.finapp.lending.LoanProduct)", required: true}
+  "lending.LoanDelinquencyChanged":
+    1:
+      producer: "lending"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "bucket": {kind: "identifier", required: true}
+        "businessDate": {kind: "date", required: true}
+        "daysPastDue": {kind: "integer", required: true}
+        "defaulted": {kind: "boolean", required: true}
+        "loanId": {kind: "uuid", required: true}
+        "previousBucket": {kind: "identifier", required: false}
+        "product": {kind: "enum(com.finapp.lending.LoanProduct)", required: true}
+  "lending.LoanDisbursed":
+    1:
+      producer: "lending"
+      fields:
+        "currency": {kind: "currency", required: true}
+        "journalEntryId": {kind: "uuid", required: true}
+        "loanId": {kind: "uuid", required: true}
+        "path": {kind: "enum(com.finapp.lending.PayoutPreference)", required: true}
+        "principalMinor": {kind: "integer", required: true}
+        "product": {kind: "enum(com.finapp.lending.LoanProduct)", required: true}
+        "scale": {kind: "integer", required: true}
+        "valueDate": {kind: "date", required: true}
+  "lending.LoanFeeAssessed":
+    1:
+      producer: "lending"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "amountMinor": {kind: "integer", required: true}
+        "assessmentId": {kind: "uuid", required: true}
+        "businessDate": {kind: "date", required: true}
+        "currency": {kind: "currency", required: true}
+        "dueDate": {kind: "date", required: true}
+        "dueItemId": {kind: "uuid", required: true}
+        "journalEntryId": {kind: "uuid", required: true}
+        "kind": {kind: "enum(com.finapp.lending.FeeKind)", required: true}
+        "loanId": {kind: "uuid", required: true}
+        "scale": {kind: "integer", required: true}
+  "lending.LoanFeeWaived":
+    1:
+      producer: "lending"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "amountMinor": {kind: "integer", required: true}
+        "assessmentId": {kind: "uuid", required: false}
+        "currency": {kind: "currency", required: true}
+        "dueItemId": {kind: "uuid", required: true}
+        "journalEntryId": {kind: "uuid", required: true}
+        "kind": {kind: "enum(com.finapp.lending.WaiverKind)", required: true}
+        "loanId": {kind: "uuid", required: true}
+        "scale": {kind: "integer", required: true}
+        "valueDate": {kind: "date", required: true}
+        "waiverId": {kind: "uuid", required: true}
+  "lending.LoanInterestWaived":
+    1:
+      producer: "lending"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "amountMinor": {kind: "integer", required: true}
+        "assessmentId": {kind: "uuid", required: false}
+        "currency": {kind: "currency", required: true}
+        "dueItemId": {kind: "uuid", required: true}
+        "journalEntryId": {kind: "uuid", required: true}
+        "kind": {kind: "enum(com.finapp.lending.WaiverKind)", required: true}
+        "loanId": {kind: "uuid", required: true}
+        "scale": {kind: "integer", required: true}
+        "valueDate": {kind: "date", required: true}
+        "waiverId": {kind: "uuid", required: true}
+  "lending.LoanOfferClosed":
+    1:
+      producer: "lending"
+      fields:
+        "applicationId": {kind: "uuid", required: true}
+        "decisionId": {kind: "uuid", required: true}
+        "offerId": {kind: "uuid", required: true}
+        "product": {kind: "enum(com.finapp.lending.LoanProduct)", required: true}
+        "reason": {kind: "identifier", required: true}
+        "status": {kind: "enum(com.finapp.lending.LoanOfferStatus)", required: true}
+  "lending.LoanOffered":
+    1:
+      producer: "lending"
+      fields:
+        "amountMinor": {kind: "integer", required: true}
+        "applicationId": {kind: "uuid", required: true}
+        "currency": {kind: "currency", required: true}
+        "decisionId": {kind: "uuid", required: true}
+        "expiresAtEpochMilli": {kind: "integer", required: true}
+        "nominalAnnualRateE8": {kind: "integer", required: true}
+        "offerId": {kind: "uuid", required: true}
+        "product": {kind: "enum(com.finapp.lending.LoanProduct)", required: true}
+        "termMonths": {kind: "integer", required: false}
+        "termsSha256": {kind: "identifier", required: true}
+        "termsVersion": {kind: "integer", required: true}
+        "termsVersionId": {kind: "uuid", required: true}
+  "lending.LoanPayoutConcluded":
+    1:
+      producer: "lending"
+      fields:
+        "accrualStart": {kind: "date", required: true}
+        "loanId": {kind: "uuid", required: true}
+        "outcome": {kind: "enum(com.finapp.lending.PayoutStatus)", required: true}
+        "product": {kind: "enum(com.finapp.lending.LoanProduct)", required: true}
+        "reason": {kind: "enum(com.finapp.lending.NotDispatchedReason)", required: false}
+        "withdrawalId": {kind: "uuid", required: false}
+  "lending.LoanTermsVersionActivated":
+    1:
+      producer: "lending"
+      fields:
+        "effectiveFromEpochMilli": {kind: "integer", required: true}
+        "predecessorId": {kind: "identifier", required: true}
+        "product": {kind: "enum(com.finapp.lending.LoanProduct)", required: true}
+        "version": {kind: "integer", required: true}
+  "lending.LoanWrittenOff":
+    1:
+      producer: "lending"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "journalEntryId": {kind: "uuid", required: true}
+        "loanId": {kind: "uuid", required: true}
+        "product": {kind: "enum(com.finapp.lending.LoanProduct)", required: true}
+        "valueDate": {kind: "date", required: true}
+        "writeOffId": {kind: "uuid", required: true}
+  "lending.RepaymentReceived":
+    1:
+      producer: "lending"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "amountMinor": {kind: "integer", required: true}
+        "closed": {kind: "boolean", required: true}
+        "creditHeldMinor": {kind: "integer", required: true}
+        "currency": {kind: "currency", required: true}
+        "feesPaidMinor": {kind: "integer", required: true}
+        "interestPaidMinor": {kind: "integer", required: true}
+        "journalEntryId": {kind: "uuid", required: true}
+        "kind": {kind: "enum(com.finapp.lending.RepaymentKind)", required: true}
+        "loanId": {kind: "uuid", required: true}
+        "principalPaidDownMinor": {kind: "integer", required: true}
+        "principalPaidMinor": {kind: "integer", required: true}
+        "repaymentId": {kind: "uuid", required: true}
+        "scale": {kind: "integer", required: true}
+        "valueDate": {kind: "date", required: true}
+  "lending.RepaymentReversed":
+    1:
+      producer: "lending"
+      fields:
+        "agreementVersion": {kind: "integer", required: true}
+        "amountMinor": {kind: "integer", required: true}
+        "creditReversedMinor": {kind: "integer", required: true}
+        "currency": {kind: "currency", required: true}
+        "feesReopenedMinor": {kind: "integer", required: true}
+        "interestReopenedMinor": {kind: "integer", required: true}
+        "journalEntryId": {kind: "uuid", required: true}
+        "loanId": {kind: "uuid", required: true}
+        "principalReinstatedMinor": {kind: "integer", required: true}
+        "principalReopenedMinor": {kind: "integer", required: true}
+        "repaymentId": {kind: "uuid", required: true}
+        "repaymentKind": {kind: "enum(com.finapp.lending.RepaymentKind)", required: true}
+        "reversalId": {kind: "uuid", required: true}
+        "reversedJournalEntryId": {kind: "uuid", required: true}
+        "scale": {kind: "integer", required: true}
+        "valueDate": {kind: "date", required: true}
+  "merchant.FeeAssessed":
+    1:
+      producer: "merchant"
+      fields:
+        "currency": {kind: "currency", required: true}
+        "feeMinor": {kind: "integer", required: true}
+        "feeScheduleVersionId": {kind: "uuid", required: true}
+        "grossMinor": {kind: "integer", required: true}
+        "netMinor": {kind: "integer", required: true}
+        "paymentIntentId": {kind: "uuid", required: true}
+  "merchant.FeeReturned":
+    1:
+      producer: "merchant"
+      fields:
+        "currency": {kind: "currency", required: true}
+        "feeReturnedMinor": {kind: "integer", required: true}
+        "feeScheduleVersionId": {kind: "uuid", required: true}
+        "paymentIntentId": {kind: "uuid", required: true}
+        "refundedMinor": {kind: "integer", required: true}
+  "merchant.MerchantOnboarded":
+    1:
+      producer: "merchant"
+      fields:
+        "settlementCurrency": {kind: "currency", required: true}
+  "merchant.MerchantPayoutCompleted":
+    1:
+      producer: "merchant"
+      fields:
+        "destinationId": {kind: "uuid", required: true}
+        "failureReason": {kind: "enum(com.finapp.merchant.PayoutFailureReason)", required: false}
+        "merchantId": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.merchant.MerchantPayoutStatus)", required: true}
+  "merchant.MerchantPayoutFailed":
+    1:
+      producer: "merchant"
+      fields:
+        "destinationId": {kind: "uuid", required: true}
+        "failureReason": {kind: "enum(com.finapp.merchant.PayoutFailureReason)", required: false}
+        "merchantId": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.merchant.MerchantPayoutStatus)", required: true}
+  "merchant.MerchantPayoutInitiated":
+    1:
+      producer: "merchant"
+      fields:
+        "destinationId": {kind: "uuid", required: true}
+        "failureReason": {kind: "enum(com.finapp.merchant.PayoutFailureReason)", required: false}
+        "merchantId": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.merchant.MerchantPayoutStatus)", required: true}
+  "merchant.MerchantPayoutReturned":
+    1:
+      producer: "merchant"
+      fields:
+        "journalEntryId": {kind: "uuid", required: true}
+        "merchantId": {kind: "uuid", required: true}
+        "payoutId": {kind: "uuid", required: true}
+  "party.CustomerOpened":
+    1:
+      producer: "party"
+      fields:
+        "customerId": {kind: "uuid", required: true}
+        "partyId": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.party.CustomerStatus)", required: true}
+  "party.PartyRegistered":
+    1:
+      producer: "party"
+      fields:
+        "kind": {kind: "enum(com.finapp.party.PartyKind)", required: true}
+        "partyId": {kind: "uuid", required: true}
+  "paymentmethods.PaymentMethodAttached":
+    1:
+      producer: "paymentmethods"
+      fields:
+        "kind": {kind: "enum(com.finapp.paymentmethods.PaymentMethodKind)", required: true}
+        "status": {kind: "enum(com.finapp.paymentmethods.PaymentMethodStatus)", required: true}
+  "paymentmethods.PaymentMethodDetached":
+    1:
+      producer: "paymentmethods"
+      fields:
+        "status": {kind: "enum(com.finapp.paymentmethods.PaymentMethodStatus)", required: true}
+  "payments.AuthorizationVoided":
+    1:
+      producer: "payments"
+      fields:
+        "failureReason": {kind: "enum(com.finapp.payments.PaymentFailureReason)", required: false}
+        "status": {kind: "literal(VOIDED)", required: true}
+  "payments.ChargebackReceived":
+    1:
+      producer: "payments"
+      fields:
+        "attemptId": {kind: "uuid", required: true}
+        "counterpartyAccountId": {kind: "uuid", required: false}
+        "disputeId": {kind: "uuid", required: true}
+        "intentId": {kind: "uuid", required: true}
+        "recoverableAccountId": {kind: "uuid", required: false}
+        "stage": {kind: "enum(com.finapp.payments.DisputeStage)", required: true}
+  "payments.DisputeOpened":
+    1:
+      producer: "payments"
+      fields:
+        "attemptId": {kind: "uuid", required: true}
+        "disputeId": {kind: "uuid", required: true}
+        "intentId": {kind: "uuid", required: true}
+        "rail": {kind: "identifier", required: true}
+        "reason": {kind: "enum(com.finapp.payments.DisputeReason)", required: true}
+        "stage": {kind: "enum(com.finapp.payments.DisputeStage)", required: true}
+  "payments.DisputeResolved":
+    1:
+      producer: "payments"
+      fields:
+        "attemptId": {kind: "uuid", required: true}
+        "counterpartyAccountId": {kind: "uuid", required: false}
+        "disputeId": {kind: "uuid", required: true}
+        "intentId": {kind: "uuid", required: true}
+        "outcome": {kind: "enum(com.finapp.payments.DisputeStage)", required: true}
+        "recoverableAccountId": {kind: "uuid", required: false}
+  "payments.DisputeResponseSubmitted":
+    1:
+      producer: "payments"
+      fields:
+        "attemptId": {kind: "uuid", required: true}
+        "disputeId": {kind: "uuid", required: true}
+        "intentId": {kind: "uuid", required: true}
+        "kind": {kind: "enum(com.finapp.payments.DisputeResponseKind)", required: true}
+        "responseId": {kind: "uuid", required: true}
+  "payments.PaymentAuthorized":
+    1:
+      producer: "payments"
+      fields:
+        "failureReason": {kind: "enum(com.finapp.payments.PaymentFailureReason)", required: false}
+        "status": {kind: "literal(AUTHORIZED)", required: true}
+  "payments.PaymentCaptureDeferred":
+    1:
+      producer: "payments"
+      fields:
+        "attemptId": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.payments.PaymentIntentStatus)", required: true}
+  "payments.PaymentCaptured":
+    1:
+      producer: "payments"
+      fields:
+        "failureReason": {kind: "enum(com.finapp.payments.PaymentFailureReason)", required: false}
+        "status": {kind: "literal(CAPTURED)", required: true}
+  "payments.PaymentClearedOnRail":
+    1:
+      producer: "payments"
+      fields:
+        "attemptId": {kind: "uuid", required: true}
+        "rail": {kind: "identifier", required: true}
+        "status": {kind: "literal(CLEARED)", required: true}
+  "payments.PaymentExecuted":
+    1:
+      producer: "payments"
+      fields:
+        "failureReason": {kind: "enum(com.finapp.payments.PaymentFailureReason)", required: false}
+        "status": {kind: "literal(EXECUTED)", required: true}
+  "payments.PaymentFailed":
+    1:
+      producer: "payments"
+      fields:
+        "failureReason": {kind: "enum(com.finapp.payments.PaymentFailureReason)", required: false}
+        "status": {kind: "enum(com.finapp.payments.PaymentIntentStatus)", required: true}
+  "payments.PaymentIntentCreated":
+    1:
+      producer: "payments"
+      fields:
+        "status": {kind: "enum(com.finapp.payments.PaymentIntentStatus)", required: true}
+  "payments.PaymentStateUnknown":
+    1:
+      producer: "payments"
+      fields:
+        "failureReason": {kind: "enum(com.finapp.payments.PaymentFailureReason)", required: false}
+        "status": {kind: "literal(AUTH_UNKNOWN|CAPTURE_UNKNOWN|VOID_UNKNOWN)", required: true}
+  "payments.RailSelected":
+    1:
+      producer: "payments"
+      fields:
+        "attemptId": {kind: "uuid", required: true}
+        "decisionId": {kind: "uuid", required: true}
+        "policyVersion": {kind: "integer", required: true}
+        "rail": {kind: "identifier", required: true}
+  "payments.RefundCompleted":
+    1:
+      producer: "payments"
+      fields:
+        "attemptId": {kind: "uuid", required: true}
+        "intentId": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.payments.RefundStatus)", required: true}
+  "payments.RefundFailed":
+    1:
+      producer: "payments"
+      fields:
+        "attemptId": {kind: "uuid", required: true}
+        "intentId": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.payments.RefundStatus)", required: true}
+  "payments.RefundInitiated":
+    1:
+      producer: "payments"
+      fields:
+        "attemptId": {kind: "uuid", required: true}
+        "intentId": {kind: "uuid", required: true}
+        "status": {kind: "enum(com.finapp.payments.RefundStatus)", required: true}
+  "payments.WithdrawalCompleted":
+    1:
+      producer: "payments"
+      fields:
+        "failureDetail": {kind: "enum(com.finapp.payments.WithdrawalFailureDetail)", required: false}
+        "failureReason": {kind: "enum(com.finapp.payments.WithdrawalFailureReason)", required: false}
+        "rail": {kind: "identifier", required: true}
+        "status": {kind: "enum(com.finapp.payments.WithdrawalStatus)", required: true}
+  "payments.WithdrawalFailed":
+    1:
+      producer: "payments"
+      fields:
+        "failureDetail": {kind: "enum(com.finapp.payments.WithdrawalFailureDetail)", required: false}
+        "failureReason": {kind: "enum(com.finapp.payments.WithdrawalFailureReason)", required: false}
+        "rail": {kind: "identifier", required: true}
+        "status": {kind: "enum(com.finapp.payments.WithdrawalStatus)", required: true}
+  "payments.WithdrawalHeld":
+    1:
+      producer: "payments"
+      fields:
+        "failureDetail": {kind: "enum(com.finapp.payments.WithdrawalFailureDetail)", required: false}
+        "failureReason": {kind: "enum(com.finapp.payments.WithdrawalFailureReason)", required: false}
+        "rail": {kind: "identifier", required: true}
+        "status": {kind: "enum(com.finapp.payments.WithdrawalStatus)", required: true}
+  "payments.WithdrawalInitiated":
+    1:
+      producer: "payments"
+      fields:
+        "failureDetail": {kind: "enum(com.finapp.payments.WithdrawalFailureDetail)", required: false}
+        "failureReason": {kind: "enum(com.finapp.payments.WithdrawalFailureReason)", required: false}
+        "rail": {kind: "identifier", required: true}
+        "status": {kind: "enum(com.finapp.payments.WithdrawalStatus)", required: true}
+  "payments.WithdrawalReleased":
+    1:
+      producer: "payments"
+      fields:
+        "failureDetail": {kind: "enum(com.finapp.payments.WithdrawalFailureDetail)", required: false}
+        "failureReason": {kind: "enum(com.finapp.payments.WithdrawalFailureReason)", required: false}
+        "rail": {kind: "identifier", required: true}
+        "status": {kind: "enum(com.finapp.payments.WithdrawalStatus)", required: true}
+  "reconciliation.BreakInvestigationStarted":
+    1:
+      producer: "reconciliation"
+      fields:
+        "assigneeId": {kind: "identifier", required: true}
+        "breakId": {kind: "uuid", required: true}
+  "reconciliation.BreakResolved":
+    1:
+      producer: "reconciliation"
+      fields:
+        "breakId": {kind: "uuid", required: true}
+        "journalEntryId": {kind: "uuid", required: false}
+        "kind": {kind: "enum(com.finapp.reconciliation.ResolutionKind)", required: true}
+        "reasonCode": {kind: "enum(com.finapp.reconciliation.ResolutionReasonCode)", required: true}
+        "resolutionId": {kind: "uuid", required: true}
+  "reconciliation.ReconciliationBreakRaised":
+    1:
+      producer: "reconciliation"
+      fields:
+        "breakId": {kind: "uuid", required: true}
+        "cause": {kind: "enum(com.finapp.reconciliation.BreakCause)", required: true}
+        "decisionId": {kind: "uuid", required: false}
+        "expectationId": {kind: "uuid", required: false}
+        "externalItemId": {kind: "uuid", required: false}
+        "runId": {kind: "uuid", required: false}
+        "severity": {kind: "enum(com.finapp.reconciliation.Severity)", required: true}
+        "sourceId": {kind: "uuid", required: true}
+        "suspenseItemId": {kind: "uuid", required: false}
+        "type": {kind: "enum(com.finapp.reconciliation.BreakType)", required: true}
+  "reconciliation.ReconciliationRunCompleted":
+    1:
+      producer: "reconciliation"
+      fields:
+        "batchId": {kind: "uuid", required: false}
+        "count#": {kind: "identifier", required: false}
+        "runId": {kind: "uuid", required: true}
+        "sourceId": {kind: "uuid", required: true}
+  "reconciliation.SettlementExpectationOverdue":
+    2:
+      producer: "reconciliation"
+      fields:
+        "breakId": {kind: "uuid", required: true}
+        "expectationId": {kind: "uuid", required: true}
+        "expectedBy": {kind: "date", required: true}
+        "kind": {kind: "enum(com.finapp.reconciliation.ExpectationKind)", required: true}
+  "reconciliation.SettlementExpectationSettled":
+    2:
+      producer: "reconciliation"
+      fields:
+        "expectationId": {kind: "uuid", required: true}
+        "kind": {kind: "enum(com.finapp.reconciliation.ExpectationKind)", required: true}
+        "sourceId": {kind: "uuid", required: true}
+  "risk.AlertRaised":
+    1:
+      producer: "risk"
+      fields:
+        "alertId": {kind: "uuid", required: true}
+        "kind": {kind: "enum(com.finapp.risk.AlertKind)", required: true}
+        "severity": {kind: "enum(com.finapp.risk.AlertSeverity)", required: true}
+        "subjectKind": {kind: "enum(com.finapp.risk.SubjectKind)", required: true}
+        "subjectRef": {kind: "identifier", required: true}
+  "risk.CaseDisposed":
+    1:
+      producer: "risk"
+      fields:
+        "caseId": {kind: "uuid", required: true}
+        "disposition": {kind: "enum(com.finapp.risk.Disposition)", required: false}
+        "kind": {kind: "enum(com.finapp.risk.CaseKind)", required: true}
+        "status": {kind: "enum(com.finapp.risk.CaseStatus)", required: true}
+  "risk.CaseEscalated":
+    1:
+      producer: "risk"
+      fields:
+        "caseId": {kind: "uuid", required: true}
+        "disposition": {kind: "enum(com.finapp.risk.Disposition)", required: false}
+        "kind": {kind: "enum(com.finapp.risk.CaseKind)", required: true}
+        "status": {kind: "enum(com.finapp.risk.CaseStatus)", required: true}
+  "risk.CaseOpened":
+    1:
+      producer: "risk"
+      fields:
+        "caseId": {kind: "uuid", required: true}
+        "disposition": {kind: "enum(com.finapp.risk.Disposition)", required: false}
+        "kind": {kind: "enum(com.finapp.risk.CaseKind)", required: true}
+        "status": {kind: "enum(com.finapp.risk.CaseStatus)", required: true}
+  "risk.CustomerRiskRatingChanged":
+    1:
+      producer: "risk"
+      fields:
+        "party": {kind: "uuid", required: true}
+        "rating": {kind: "enum(com.finapp.risk.RiskRating)", required: true}
+        "version": {kind: "integer", required: true}
+  "risk.LimitBreached":
+    1:
+      producer: "risk"
+      fields:
+        "assessmentId": {kind: "uuid", required: true}
+        "operation": {kind: "enum(com.finapp.risk.RiskOperation)", required: true}
+        "ruleCode": {kind: "enum(com.finapp.risk.ReasonCode)", required: true}
+        "ruleOrdinal": {kind: "integer", required: true}
+  "risk.RegulatoryReportFiled":
+    1:
+      producer: "risk"
+      fields:
+        "jurisdiction": {kind: "identifier", required: true}
+        "reportId": {kind: "uuid", required: true}
+  "risk.RiskActionCompleted":
+    1:
+      producer: "risk"
+      fields:
+        "actionId": {kind: "uuid", required: true}
+        "caseId": {kind: "uuid", required: false}
+        "kind": {kind: "enum(com.finapp.risk.ActionKind)", required: true}
+        "outcome": {kind: "enum(com.finapp.risk.ActionOutcome)", required: false}
+        "overrideId": {kind: "uuid", required: false}
+        "source": {kind: "enum(com.finapp.risk.ActionSource)", required: true}
+        "status": {kind: "enum(com.finapp.risk.ActionStatus)", required: false}
+        "targetId": {kind: "uuid", required: true}
+        "targetKind": {kind: "enum(com.finapp.risk.ActionTarget)", required: true}
+  "risk.RiskActionRequested":
+    1:
+      producer: "risk"
+      fields:
+        "actionId": {kind: "uuid", required: true}
+        "caseId": {kind: "uuid", required: false}
+        "kind": {kind: "enum(com.finapp.risk.ActionKind)", required: true}
+        "outcome": {kind: "enum(com.finapp.risk.ActionOutcome)", required: false}
+        "overrideId": {kind: "uuid", required: false}
+        "source": {kind: "enum(com.finapp.risk.ActionSource)", required: true}
+        "status": {kind: "enum(com.finapp.risk.ActionStatus)", required: false}
+        "targetId": {kind: "uuid", required: true}
+        "targetKind": {kind: "enum(com.finapp.risk.ActionTarget)", required: true}
+  "risk.RiskDecisionMade":
+    1:
+      producer: "risk"
+      fields:
+        "assessmentId": {kind: "uuid", required: true}
+        "commandRef": {kind: "identifier", required: true}
+        "decision": {kind: "enum(com.finapp.risk.RiskDecision)", required: true}
+        "operation": {kind: "enum(com.finapp.risk.RiskOperation)", required: true}
+        "reason#": {kind: "enum(com.finapp.risk.ReasonCode)", required: false}
+        "reasonCount": {kind: "integer", required: true}
+  "risk.RiskPolicyActivated":
+    1:
+      producer: "risk"
+      fields:
+        "operation": {kind: "enum(com.finapp.risk.RiskOperation)", required: true}
+        "version": {kind: "integer", required: true}
+  "risk.RiskSignalRecorded":
+    1:
+      producer: "risk"
+      fields:
+        "kind": {kind: "enum(com.finapp.risk.SignalKind)", required: true}
+        "signalId": {kind: "uuid", required: true}
+        "subjectKind": {kind: "enum(com.finapp.risk.SubjectKind)", required: true}
+        "subjectRef": {kind: "identifier", required: true}
+  "settlement.SettlementBatchAccepted":
+    1:
+      producer: "settlement"
+      fields:
+        "batchId": {kind: "uuid", required: true}
+        "fileId": {kind: "uuid", required: true}
+        "journalEntryId": {kind: "uuid", required: false}
+        "lineCount": {kind: "integer", required: true}
+        "sourceId": {kind: "uuid", required: true}
+        "sourceSequence": {kind: "integer", required: true}
+  "settlement.SettlementBatchRepudiated":
+    1:
+      producer: "settlement"
+      fields:
+        "batchId": {kind: "uuid", required: true}
+        "fileId": {kind: "uuid", required: true}
+        "resolutionId": {kind: "uuid", required: true}
+        "reversalEntryId": {kind: "uuid", required: false}
+        "sourceId": {kind: "uuid", required: true}
+  "settlement.SettlementFileRejected":
+    1:
+      producer: "settlement"
+      fields:
+        "fileId": {kind: "uuid", required: true}
+        "rejectionCode": {kind: "enum(com.finapp.settlement.RejectionCode)", required: true}
+        "sourceId": {kind: "uuid", required: true}
+  "transfers.TransferCompleted":
+    1:
+      producer: "transfers"
+      fields:
+        "failureReason": {kind: "enum(com.finapp.transfers.FailureReason)", required: false}
+        "status": {kind: "enum(com.finapp.transfers.TransferStatus)", required: true}
+  "transfers.TransferFailed":
+    1:
+      producer: "transfers"
+      fields:
+        "failureReason": {kind: "enum(com.finapp.transfers.FailureReason)", required: false}
+        "status": {kind: "enum(com.finapp.transfers.TransferStatus)", required: true}
+  "transfers.TransferReversed":
+    1:
+      producer: "transfers"
+      fields:
+        "status": {kind: "enum(com.finapp.transfers.TransferStatus)", required: true}

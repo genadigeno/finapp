@@ -4037,6 +4037,15 @@ class OwnershipIsScopedTest {
                                     "As JdbcPaymentAttemptStore.capture - the honest-ambiguity"
                                         + " edge, nothing posted (INV-LIFE-03).")),
                     Map.entry(
+                            "com.finapp.payments.JdbcCallbackHintStore.insert",
+                            new Entry(
+                                    Scope.SIGNED_CALLBACK,
+                                    "P15-TSK-036. The durable hint a card or instant callback leaves. The attempt id"
+                                        + " is the one the delivery attributed through findByOperationReference or"
+                                        + " findByEndToEndReference over a reference we minted (INV-PAY-04 inbound), the"
+                                        + " HMAC verified before that read. The row records what to ask, and nothing it"
+                                        + " holds moves anything but the provider's own answer.")),
+                    Map.entry(
                             "com.finapp.payments.JdbcClearingRecordStore.findForAttempt",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

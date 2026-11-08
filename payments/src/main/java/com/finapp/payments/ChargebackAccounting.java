@@ -168,7 +168,7 @@ public final class ChargebackAccounting {
 
     /**
      * The postings for the stage {@code dispute} just entered — once per stage applied, inside
-     * the delivery's transaction, after its conditional transition won. {@code INQUIRY},
+     * the inquiry's transaction, after its conditional transition won. {@code INQUIRY},
      * {@code REPRESENTED} and {@code CLOSED} move no money (ADR-0061 §2).
      */
     public void entered(

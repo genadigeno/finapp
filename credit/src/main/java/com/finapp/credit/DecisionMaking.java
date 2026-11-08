@@ -329,7 +329,8 @@ public final class DecisionMaking implements Decider {
                 .with("engineVersion", Integer.toString(decision.versions().engineVersion()))
                 .with("snapshotSha256", decision.snapshotSha256Hex());
         if (decision.approved().isPresent()) {
-            payload = payload.with("approvedMinor", Long.toString(decision.approved().get().minorUnits()));
+            payload = payload.with("approvedMinor", Long.toString(decision.approved().get().minorUnits()))
+                    .with("scale", Integer.toString(decision.approved().get().scale()));
         }
         if (decision.termMonths().isPresent()) {
             payload = payload.with("termMonths", decision.termMonths().get().toString());

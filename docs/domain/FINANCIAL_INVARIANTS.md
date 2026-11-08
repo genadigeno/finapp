@@ -4141,7 +4141,9 @@ anyone can compute, or a replayable one, is an open door to payment-outcome forg
 path; per-provider keys under the externalised-secret regime.
 **Verify:** Negative tests per cause (missing, wrong, stale signature), each asserting
 nothing was written; the signature scheme proven against the provider's own test vectors
-where published.
+where published. *(Since `P15-TSK-036`, 2026-11-08: on every rail with a money path, the authenticated message only
+schedules the question, and the outcome is adopted from an authenticated inquiry over the provider credential, ADR-0083.
+`PaymentWebhookHintsTest` and `InstantCallbackHintsTest` hold a forged-but-signed callback per kind moving nothing.)*
 **Phase:** 5
 
 ### INV-PAY-02 — Raw card data never enters the platform

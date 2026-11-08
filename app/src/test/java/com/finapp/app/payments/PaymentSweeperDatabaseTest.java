@@ -585,6 +585,16 @@ class PaymentSweeperDatabaseTest {
                     }
 
                     @Override
+                    public com.finapp.payments.ClearingAnswer queryClearing(com.finapp.payments.ProviderIdempotencyReference reference) {
+                        return com.finapp.payments.ClearingAnswer.indeterminate();
+                    }
+
+                    @Override
+                    public com.finapp.payments.DisputeAnswer queryDispute(com.finapp.payments.ProviderReference reference) {
+                        return com.finapp.payments.DisputeAnswer.indeterminate();
+                    }
+
+                    @Override
                     public QueryAnswer query(ProviderIdempotencyReference ourReference) {
                         if (ourReference.equals(poisoned.authorizationReference())) {
                             throw new IllegalStateException("poisoned row");
@@ -1022,7 +1032,7 @@ class PaymentSweeperDatabaseTest {
                         new org.springframework.jdbc.support.JdbcTransactionManager(dataSource));
         template.setPropagationBehavior(
                 org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-        return new PaymentWebhookService(
+        return CallbackDoors.card(
                 new WebhookSignature(WEBHOOK_KEY, Duration.ofMinutes(5), CLOCK),
                 evidence,
                 attempts,
@@ -1077,10 +1087,13 @@ class PaymentSweeperDatabaseTest {
                                 com.finapp.payments.PaymentRails.of(
                                         java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                                 IDS,
-                                CLOCK)));
+                                CLOCK)),
+                adapter(),
+                IDS);
     }
 
     private void deliverWebhook(PaymentWebhookService webhooks, String body) {
+        com.finapp.app.payments.ProviderInquiryStubs.cardAgrees(psp, body);
         String timestamp = Long.toString(Instant.now(CLOCK).getEpochSecond());
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         webhooks.deliver(bytes, timestamp, hmacHex(timestamp + "." + body));

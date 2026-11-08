@@ -132,8 +132,8 @@ public final class CrossBorderCompletion implements OutboundCreditComposition<Co
     }
 
     @Override
-    public void returned(Connection unitOfWork, UUID subject, String basis, Instant at) {
-        progress.returned(unitOfWork, subject, basis, at, correlation());
+    public void returned(Connection unitOfWork, UUID subject, String basis, com.finapp.sharedkernel.money.Money returned, Instant at) {
+        progress.returned(unitOfWork, subject, basis, returned, at, correlation());
         String corridor = progress.lock(unitOfWork, subject).payment().corridor().code();
         crossBorderMetrics.payment(corridor, "returned");
         crossBorderMetrics.returned(corridor, "applied");

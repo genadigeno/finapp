@@ -71,6 +71,9 @@ final class PspWireClient {
     private static final Pattern STATUS_FIELD = Pattern.compile("\"status\"\\s*:\\s*\"([^\"]*)\"");
     private static final Pattern REFERENCE_FIELD =
             Pattern.compile("\"reference\"\\s*:\\s*\"([^\"]*)\"");
+    private static final Pattern ARN_FIELD = Pattern.compile("\"arn\"\\s*:\\s*\"([^\"]*)\"");
+    private static final Pattern NETWORK_FIELD =
+            Pattern.compile("\"networkTransactionId\"\\s*:\\s*\"([^\"]*)\"");
 
     private final HttpClient http;
     private final URI baseUrl;
@@ -141,31 +144,12 @@ final class PspWireClient {
 
     /** GETs the provider's view of the operation our reference names; same totality. */
     QueryAnswer query(String path) {
-        HttpRequest request =
-                HttpRequest.newBuilder(baseUrl.resolve(path))
-                        .timeout(timeout)
-                        .header("Authorization", "Bearer " + Base64.getEncoder().encodeToString(key))
-                        .GET()
-                        .build();
-
-        HttpResponse<byte[]> response;
-        try {
-            response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
-        } catch (IOException nothingUsable) {
-            // No NOTHING_SENT for a query: a query that never reached the provider changes
-            // nothing and is simply asked again; the distinction only pays where a caller acts
-            // on it.
-            return QueryAnswer.indeterminate();
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
+        Fetched fetched = fetch(path);
+        if (fetched.bytes() == null) {
             return QueryAnswer.indeterminate();
         }
-
-        byte[] received = response.body();
-        if (received.length == 0 || received.length > MAX_EVIDENCE_BYTES) {
-            return QueryAnswer.indeterminate();
-        }
-        if (response.statusCode() != 200) {
+        byte[] received = fetched.bytes();
+        if (fetched.status() != 200) {
             // A 404 included, deliberately: a status code is not an answer, and a misrouted
             // load balancer's 404 must not resolve a live operation to FAILED.
             return QueryAnswer.indeterminate(received);
@@ -182,6 +166,99 @@ final class PspWireClient {
             case "unrecognised" -> QueryAnswer.unrecognised(received);
             default -> QueryAnswer.indeterminate(received);
         };
+    }
+
+    /**
+     * GETs whether the capture our reference names has cleared (`P15-TSK-036`); {@link #query}'s totality. A
+     * 200 we cannot read, a {@code cleared} answer missing either network reference included, is {@code UNREADABLE}.
+     */
+    ClearingAnswer queryClearing(String path) {
+        Fetched fetched = fetch(path);
+        if (fetched.bytes() == null) {
+            return ClearingAnswer.indeterminate();
+        }
+        byte[] received = fetched.bytes();
+        if (fetched.status() != 200) {
+            return ClearingAnswer.indeterminate(received);
+        }
+        String text = new String(received, StandardCharsets.UTF_8);
+        return switch (statusOf(text)) {
+            case "cleared" -> {
+                Optional<ProviderReference> acquirer = field(text, ARN_FIELD).flatMap(PspWireClient::storable);
+                Optional<ProviderReference> network = field(text, NETWORK_FIELD).flatMap(PspWireClient::storable);
+                yield acquirer.isPresent() && network.isPresent()
+                        ? ClearingAnswer.cleared(acquirer.get(), network.get(), received)
+                        : ClearingAnswer.unreadable(received);
+            }
+            case "not_cleared" -> ClearingAnswer.notCleared(received);
+            case "unrecognised" -> ClearingAnswer.unrecognised(received);
+            default -> ClearingAnswer.unreadable(received);
+        };
+    }
+
+    /**
+     * GETs the PSP's own statement of a dispute (`P15-TSK-036`); {@link #query}'s totality. Any field the statement needs
+     * and this cannot read makes the whole answer {@code UNREADABLE}, never half a statement.
+     */
+    DisputeAnswer queryDispute(String path, String providerName, ProviderReference asked) {
+        Fetched fetched = fetch(path);
+        if (fetched.bytes() == null) {
+            return DisputeAnswer.indeterminate();
+        }
+        byte[] received = fetched.bytes();
+        if (fetched.status() != 200) {
+            return DisputeAnswer.indeterminate(received);
+        }
+        String text = new String(received, StandardCharsets.UTF_8);
+        return switch (statusOf(text)) {
+            case "disputed" -> CardDisputeStatement.answerOf(text, providerName, asked, received);
+            case "unrecognised" -> DisputeAnswer.unrecognised(received);
+            default -> DisputeAnswer.unreadable(received);
+        };
+    }
+
+    /** One GET's usable body and status; {@code null} bytes when nothing usable arrived at all. */
+    private record Fetched(byte[] bytes, int status) {}
+
+    private Fetched fetch(String path) {
+        HttpRequest request =
+                HttpRequest.newBuilder(baseUrl.resolve(path))
+                        .timeout(timeout)
+                        .header("Authorization", "Bearer " + Base64.getEncoder().encodeToString(key))
+                        .GET()
+                        .build();
+
+        HttpResponse<byte[]> response;
+        try {
+            response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        } catch (IOException nothingUsable) {
+            // No NOTHING_SENT for a query: a query that never reached the provider changes
+            // nothing and is simply asked again; the distinction only pays where a caller acts
+            // on it.
+            return new Fetched(null, 0);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return new Fetched(null, 0);
+        }
+
+        byte[] received = response.body();
+        if (received.length == 0 || received.length > MAX_EVIDENCE_BYTES) {
+            return new Fetched(null, response.statusCode());
+        }
+        return new Fetched(received, response.statusCode());
+    }
+
+    private static Optional<String> field(String text, Pattern pattern) {
+        Matcher matcher = pattern.matcher(text);
+        return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
+    }
+
+    private static Optional<ProviderReference> storable(String value) {
+        try {
+            return Optional.of(new ProviderReference(value));
+        } catch (IllegalArgumentException unusable) {
+            return Optional.empty();
+        }
     }
 
     private static String statusOf(String text) {

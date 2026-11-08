@@ -416,6 +416,7 @@ final class StormTraffic {
                     + "\",\"status\":\"executed\",\"schemeReference\":\"" + schemeRef
                     + "\",\"settlementCycle\":\"" + cycle + "\",\"amount\":\"" + amount
                     + "\",\"currency\":\"EUR\"}";
+            com.finapp.app.payments.ProviderInquiryStubs.instantAgrees(provider, body);
             int status =
                     provider.deliverTimestampSignedCallback(
                             URI.create("http://localhost:" + port

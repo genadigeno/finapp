@@ -191,6 +191,16 @@ class PaymentMetersTest {
                     }
 
                     @Override
+                    public com.finapp.payments.ClearingAnswer queryClearing(com.finapp.payments.ProviderIdempotencyReference reference) {
+                        return com.finapp.payments.ClearingAnswer.indeterminate();
+                    }
+
+                    @Override
+                    public com.finapp.payments.DisputeAnswer queryDispute(com.finapp.payments.ProviderReference reference) {
+                        return com.finapp.payments.DisputeAnswer.indeterminate();
+                    }
+
+                    @Override
                     public QueryAnswer query(ProviderIdempotencyReference ourReference) {
                         throw new UnsupportedOperationException("not exercised here");
                     }
@@ -426,6 +436,11 @@ class PaymentMetersTest {
         @Override
         public PushAnswer sendReturn(ReturnPayment request) {
             throw new IllegalStateException("the scheme is down");
+        }
+
+        @Override
+        public com.finapp.payments.ExecutionAnswer inquireExecution(com.finapp.payments.ProviderReference reference) {
+            return com.finapp.payments.ExecutionAnswer.indeterminate();
         }
 
         @Override

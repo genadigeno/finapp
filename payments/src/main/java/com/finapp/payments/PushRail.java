@@ -62,6 +62,12 @@ public interface PushRail {
     PushInquiryAnswer inquireReturn(EndToEndReference ourReference);
 
     /**
+     * The scheme's record of one execution, by ITS transaction reference (`P15-TSK-036`, ADR-0083): what a statement of
+     * value naming nothing we minted triggers, which no inquiry by our own reference could answer.
+     */
+    ExecutionAnswer inquireExecution(ProviderReference schemeReference);
+
+    /**
      * The grant exchange's ask. The grant is an opaque, single-use value minted by the rail
      * provider; it is never logged, never stored, and spent on this one call.
      */

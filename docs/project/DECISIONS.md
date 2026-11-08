@@ -846,7 +846,7 @@ retain evidence, dedupe through the inbox — then adopt the outcome only from a
 authenticated inquiry over the outbound credential. It is the doctrine going forward, and
 `X-TSK-015` (owner Phase 15, with an earlier trigger on a suspected key compromise) aligns the
 Phase 5 and Phase 7 providers *(moved into Phase 15 as `P15-TSK-036` by the carried items' ruling, C15, 2026-11-08;
-`X-TSK-015` is `CANCELLED`, moved, not dropped)*. It costs one provider call per callback, and buys immunity to a
+`X-TSK-015` is `CANCELLED`, moved, not dropped; built by `P15-TSK-036`, 2026-11-08)*. It costs one provider call per callback, and buys immunity to a
 stolen webhook key (D25, O5). →
 [ADR-0083](../adr/ADR-0083-callbacks-are-hints.md)
 
