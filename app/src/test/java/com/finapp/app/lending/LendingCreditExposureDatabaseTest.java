@@ -384,6 +384,8 @@ class LendingCreditExposureDatabaseTest {
         ExposureCensus.Report after = census.readNow();
         assertThat(after.failingParties()).contains(beyond.party()).doesNotContain(within.party());
         assertThat(after.failing()).isPositive();
+        // P15-TSK-024: the gauge answers the refresher's last read, so ask it to read now.
+        com.finapp.app.telemetry.RefreshedGauges.settle(meterRegistry, ExposureCensusMetrics.CENSUS);
         assertThat(meterRegistry.find(ExposureCensusMetrics.CENSUS).tag("verdict", "FAILS").gauge().value())
                 .isEqualTo(after.failing());
         assertThat(meterRegistry.find(ExposureCensusMetrics.CENSUS).tag("verdict", "HOLDS").gauge().value())

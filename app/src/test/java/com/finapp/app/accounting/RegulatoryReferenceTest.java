@@ -176,7 +176,7 @@ class RegulatoryReferenceTest {
                 throw new SQLException("unreachable");
             }
             return new SnapshotSession().connection();
-        }, java.time.Duration.ofSeconds(2)), new AccountingGaugeRefresher(Runnable::run), clock, registry);
+        }, java.time.Duration.ofSeconds(2)), clock, registry);
 
         assertThat(registry.get(RegulatoryAttentionMetrics.ATTENTION).meters()).extracting(Meter::getId).extracting(meterId -> meterId.getTag("kind")).containsExactlyInAnyOrderElementsOf(RegulatoryAttentionMetrics.KINDS);
         assertThat(registry.get(RegulatoryAttentionMetrics.ATTENTION).tag("kind", "overdue").gauge().value()).isZero();

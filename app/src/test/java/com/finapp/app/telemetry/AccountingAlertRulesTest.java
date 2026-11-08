@@ -50,7 +50,7 @@ import org.springframework.core.io.FileSystemResource;
  * {@link RuleEvaluator}, a small evaluator written in this repository, and {@link RuleTimeline} for a rule's {@code for}: neither is Prometheus, and no {@code promtool} has run on this file. So a rule that passes here has an expression that holds on its break and
  * nowhere else as this evaluator reads PromQL, over series that exist. Whether Prometheus reads it the same is unproven until a Prometheus reads it; the grammar is kept closed and small so the gap stays small.
  *
- * <p><strong>And what a scrape that completes cannot say.</strong> This calls the registry's {@code scrape()} with no time limit. In production a scrape past Prometheus's timeout stores nothing: with the database gone or the pool exhausted the other modules' classes still read on the scrape thread, so the samples these cases read may never reach a rule. {@code CURRENT_STATE.md} section Known Architectural Debt.
+ * <p><strong>And what the scrape is.</strong> This calls the registry's {@code scrape()}, after asking the gauge refresher to read every accounting gauge and waiting for it: every gauge reads on that thread, never on the scrape (`P15-TSK-024`), so with the database gone or the pool exhausted a production scrape completes too and these samples reach the rules. <em>(Until `P15-TSK-024` the other modules' classes read on the scrape thread, and such a scrape outlived Prometheus's timeout and stored nothing.)</em>
  *
  * <p>So this is red when a series is renamed without its rule (each selector, labels and all, is found in the scrape), when a counter a rule reads is not there at zero on a fresh instance, when a gauge fails to anything but NaN, when a threshold drifts from
  * {@link AccountingObjectives}, when one break wakes a second alert, and when a rule is added with no case here. The live resolution with a database is {@code AlertRulesResolveTest#theAccountingRulesResolve} (owed, C5). The runbook's half is {@link AccountingRunbookTest}.
@@ -170,7 +170,7 @@ class AccountingAlertRulesTest {
     // ------------------------------------------------------------------ the unreadable path, for real
 
     @Test
-    @DisplayName("the database gone, in a scrape that completes: every read gauge publishes NaN and none 0, and over those samples the unreadable rules alone fire - no threshold rule reads NaN. It holds no time limit: with the database gone a real scrape takes far past Prometheus's timeout, and these samples are then never stored")
+    @DisplayName("the database gone, in a scrape that completes: every read gauge publishes NaN and none 0, and over those samples the unreadable rules alone fire - no threshold rule reads NaN. Every read met the absent database for real, on the gauge refresher, before the scrape: a NaN here is a failed read, never one that did not run")
     void aCompletedScrapeWithTheDatabaseGoneHoldsNoNumber() {
         List<RuleEvaluator.Sample> raw = fresh();
         List<RuleEvaluator.Sample> gauges = raw.stream().filter(sample -> isReadGauge(sample.name())).toList();
@@ -542,6 +542,10 @@ class AccountingAlertRulesTest {
                     : (PrometheusMeterRegistry) ((io.micrometer.core.instrument.composite.CompositeMeterRegistry) registry)
                             .getRegistries().stream().filter(PrometheusMeterRegistry.class::isInstance).findFirst()
                             .orElseThrow(() -> new AssertionError("no Prometheus registry"));
+            // P15-TSK-024: every gauge reads on the gauge refresher, and a look answers its last read - NaN before the first.
+            // So the accounting reads are asked for now and awaited: each meets the absent database for real (the pool's
+            // 5 s, then no value), and a gauge that failed to anything but NaN shows here, not hidden behind "not read yet".
+            RefreshedGauges.settle(registry, "finapp.accounting.");
             scraped = prometheus.scrape();
         }
         return scraped;

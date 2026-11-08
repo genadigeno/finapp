@@ -7,7 +7,9 @@
 # - Gauges read the shared database, so every instance publishes the same reading: aggregate with
 #   max(), never sum(). Counters are per instance: sum(increase(...)).
 # - A gauge that cannot be read, or a pair never fetched, is NaN, never zero; x != x holds only for
-#   NaN, so the threshold rule cannot see it and the never-fetched rule can.
+#   NaN, so the threshold rule cannot see it and the never-fetched rule can, and FxGaugesUnreadable
+#   for every other gauge read here (P15-TSK-024's fix round: since that task a gauge is also NaN
+#   while its instance's gauge refresher is behind).
 # - Never a rate anywhere: labels and annotations name pairs and outcomes only (ADR-0072, D32).
 # - Local development only: no Alertmanager is wired; routing and paging are Phase 15's.
 
@@ -147,3 +149,27 @@ groups:
         annotations:
           summary: "Cross-border cancellations exceed a fifth of submitted payments"
           description: "The cancellation rate over the last hour is {{ $value | humanizePercentage }} - customers may be using recalls as a free option against the rate."
+
+      - alert: FxGaugesUnreadable
+        # P15-TSK-024's fix round (2026-11-08): every gauge a threshold rule above compares, NaN on an instance - its read
+        # failed there, or that instance's gauge refresher is behind (platform.yml's GaugesStale says which). A threshold
+        # never compares a NaN, so while one is NaN its alert cannot fire there: an unknown cover, an unexplained book or a
+        # stuck credit is unknown, not fine. Every one reads NaN only when unread, 0 when nothing is aged (the reference age,
+        # whose NaN also means never fetched, keeps ReferenceRateNeverFetched). Per instance, each leg naming its series in
+        # a `gauge` label, because an alert drops the metric name (MustBeZeroGaugeUnreadable's pattern). x != x holds only for NaN.
+        expr: >-
+          label_replace(max by (job, instance) (finapp_fx_cover_unknown_age_seconds != finapp_fx_cover_unknown_age_seconds), "gauge", "finapp_fx_cover_unknown_age_seconds", "", "")
+          or label_replace(max by (job, instance) (finapp_fx_cover_open_age_seconds != finapp_fx_cover_open_age_seconds), "gauge", "finapp_fx_cover_open_age_seconds", "", "")
+          or label_replace(max by (job, instance) (finapp_fx_proof != finapp_fx_proof), "gauge", "finapp_fx_proof", "", "")
+          or label_replace(max by (job, instance) (finapp_fx_plan_verdict != finapp_fx_plan_verdict), "gauge", "finapp_fx_plan_verdict", "", "")
+          or label_replace(max by (job, instance) (finapp_payments_outbound_unknown_age != finapp_payments_outbound_unknown_age), "gauge", "finapp_payments_outbound_unknown_age", "", "")
+          or label_replace(max by (job, instance) (finapp_payments_outbound_received_age != finapp_payments_outbound_received_age), "gauge", "finapp_payments_outbound_received_age", "", "")
+          or label_replace(max by (job, instance) (finapp_crossborder_payment_in_transit_age != finapp_crossborder_payment_in_transit_age), "gauge", "finapp_crossborder_payment_in_transit_age", "", "")
+          or label_replace(max by (job, instance) (finapp_kyc_counterparty_review_age_seconds != finapp_kyc_counterparty_review_age_seconds), "gauge", "finapp_kyc_counterparty_review_age_seconds", "", "")
+          or label_replace(max by (job, instance) (finapp_reconciliation_rule_set_missing != finapp_reconciliation_rule_set_missing), "gauge", "finapp_reconciliation_rule_set_missing", "", "")
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "An FX or cross-border gauge has no value: {{ $labels.gauge }}"
+          description: "{{ $labels.gauge }} on {{ $labels.instance }} reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."

@@ -27765,7 +27765,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   through a lending flow and finds neither in an exported span or log. **Probe**: restore one record's unredacted
   `toString` and log it → the needle sweep red. **Acceptance**: the debt row closed.
 
-**P15-TSK-024 — Every gauge off the scrape thread, a rule on `up`, the refresher restartable** — `READY` (2026-11-08; marked by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`)
+**P15-TSK-024 — Every gauge off the scrape thread, a rule on `up`, the refresher restartable** — `COMPLETE` (2026-11-08; marked `READY` by the coordinator at the owner's start of wave B, "accept recommendations", from master `d2325e8d`; every dependency `COMPLETE`; read `READY` until its gate)
 - **Objective**: a slow database never loses a whole scrape, and a stopped instance is noticed.
 - **Affected components**: `platform` (the refresher moved from `app`'s accounting package), about sixty metric classes,
   `infra/prometheus/rules/`, `DISTRIBUTED_EXECUTION.md` §3.
@@ -27786,6 +27786,69 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: as tested; two debt rows and PI-014 item 2 closed.
 - **Definition of done**: `DOD-OBS`. **Risk**: Medium. **Cx**: L.
 - *Routed by `P15-TSK-001` (2026-11-08), status unchanged:* `THREAT_MODEL.md` T14 cites this task: an unauthenticated scrape today runs about sixty gauges' database reads on the scrape thread, so taking every gauge off it also removes a cheap way to load the pool.
+- **As built** (2026-11-08; branch `P15-TSK-024` from master `c1d07726`; no migration, no new ADR - a dated as-built note on
+  ADR-0124 decision 7). **Counted first**: `Gauge.builder` at 122 sites in 78 classes of `app` (no other module registers a
+  meter): 60 classes read the database - 47 on the scrape thread, accounting's nine on `AccountingGaugeRefresher`, risk's four
+  on virtual threads of their own - and 18 `*Beans` register 24 configuration gauges; no class answered 0 for a failed or an
+  unread read; every read goes through the one `DataSource` bean. **The refresher**, moved to `platform` and framework-free:
+  `GaugeRefresher` (one daemon thread, `gauge-refresher`; its executor made in `start()` through an `AtomicReference` and shut
+  in `stop()`, every queued read dropped at the stop putting its flag down, a bounded wait) and `RefreshedReading` (one
+  meter's last value: no value before its first read, the read's own answer after it, the last value while an ask is
+  answered, no value once an ask has waited `finapp.gauges.stale-after` - 2 minutes - single flight, a stepped-back clock
+  read as "not within"). **Applied at the registry, not per class**: `app`'s `OffScrapeMeterRegistry` (the application's
+  Prometheus registry, `GaugeRefresherBeans`) hands the function of every `finapp.` gauge (time gauges with them), function
+  counter and custom meter to the refresher; a `finapp.` function timer is refused (its count could not be NaN); names, tags,
+  units and help untouched; weak references kept weak. Accounting's `AccountingGaugeRead` keeps its snapshot, timeout, floor
+  and NaN and reads in line on that thread; `AccountingGaugeRefresher` is gone; `finapp.accounting.gauges.read-at-start` is
+  now `finapp.gauges.read-at-start`. The canary `finapp.gauges.refreshed`. **The guard**, `NoGaugeReadsOnTheScrapeTest`:
+  the real context, one scrape of every meter and every meter's measurements read again on the scrape thread over a
+  recording `DataSource` - no connection asked for there; every `finapp.` gauge and function counter served off the scrape;
+  the refresher's asks at least one per database-reading class; a planted non-`finapp` gauge reading the database on the
+  scrape caught, a planted `finapp.` one moved off; the context stopped and started, every configuration gauge and the
+  canary a number. **The rules**: `infra/prometheus/rules/platform.yml` - `InstanceDown` (`up{job="finapp"} == 0`, per
+  instance, 2 m, page), `FinappTargetsAbsent` (`absent(up)`, 5 m, page), `GaugesStale` (the canary NaN, 5 m, ticket) -
+  with `promtool test` cases over two instances in `infra/prometheus/tests/platform.test.yml` (run through the locally
+  present `prom/prometheus` v3.14.0 by digest: `SUCCESS`; `promtool check rules`: 3 rules) and `PlatformAlertRulesTest`.
+  **Tests that read a context gauge's value** settle the refresher first (`RefreshedGauges`, no in-line mode), the
+  hermetic ones that prove an unreadable gauge's NaN (`AccountingAlertRulesTest`, `PrometheusEndpointTest`) included, so a
+  NaN there is a failed read and never one that did not run. **Documents**: runbook §10.14 corrected and §11.8's instance-down
+  and stale-gauge parts written; `DISTRIBUTED_EXECUTION.md` §3's row rewritten; `THREAT_MODEL.md` T14's row `EXISTS` and its
+  residual rewritten; `PRODUCTION_READINESS.md`'s readings; the debt row on the scrape thread paid, the database-pass and
+  lending-proof rows annotated; `DECISIONS.md` §Deferred's two rows settled (routing stays `-025`'s); PI-014 item 2 fixed
+  and owed its database case. **Owed to `P15-TST-002`** (C14): `AlertRulesResolveTest#theAccountingRulesResolve` on a
+  restarted context and every database suite that now settles before a value. Routed onto `-025`'s entry: the rule file,
+  the `promtool` cases for its CI step, the job name and the severities. **Probes** (`MUTATION_TESTING.md` §2, every one
+  performed, none re-hashed): five new rows - a gauge read on the scrape thread, a reading serving 0 before its first
+  read, the executor made in the constructor again, a dropped read's flag left up, the rule on `up` removed (its
+  `promtool` half on copies of the file) - each red; six accounting rows moved with the refresher to the tests that now
+  hold them; and every row whose file this task changed performed again (the accounting rule file 9, the runbook 6, the
+  stall metrics 2, the overlay, the production file, the threat register 18 after merging master). One look-in-line
+  probe first passed the guard's main case, because a planted case's scrape had filled every cache: the main case is now
+  ordered first on cold caches and asserts it, and the probe is red. A runbook probe on a route written across a line break
+  survived: a reach of `AccountingRunbookTest` recorded, not changed. **Tests, fresh on the merged tree (master
+  `24385913`, after its fourth merge)**: `:platform:test` 198/0; `:app:test` with the whole `com.finapp.app.telemetry` and `com.finapp.app.accounting`
+  packages and the brief's guard filters, 1138/0 in 173 classes (`ThreatModelIsCompleteTest` 14/0 among them);
+  `:app:architectureTest` 278/0; `promtool test rules` `SUCCESS` and `promtool check rules` `SUCCESS` over all eight files
+  (139 rules). The owner's rule of 2026-11-08 (no unit tests where no business Java changes) skips nothing here: this
+  branch changes production Java in `platform` and `app`.
+- **Fix round** (2026-11-08, before the merge; the independent review's FIX FIRST, one IMPORTANT and four MINOR, the code
+  found correct). (I-1) `GaugesStale` waited for its canary to hold NaN for 5 m, which a thread behind but not stuck never
+  gives (NaN for about C - 120 s of every pass C): it now counts, `sum_over_time((finapp_gauges_refreshed != bool
+  finapp_gauges_refreshed)[30m:15s]) > 6` for 5 m, with `promtool` cases for a stuck thread, a 300 s pass, a pass a step
+  past the bound, and a slow start plus a burst that must not fire. (M-2) Fifteen gauges an alert reads had no unreadable
+  rule, six of them read by seven paging rules: `FxGaugesUnreadable` (nine) and `ReconciliationGaugesUnreadable` (five)
+  added with `promtool` cases, `BnplGaugesUnreadable` widened to the negative merchant payables, and the guard
+  `PlatformAlertRulesTest#everyGaugeAnAlertReadsCanBeSeenUnreadable` over every rule file (the sweeps' configuration
+  switches alone excepted) - nothing left to route. (M-3) The lending and BNPL storms settle their sweep switches (owed to
+  `P15-TST-002`, with `AlertRulesResolveTest`'s two edits: the break-age thresholds skip the unreadable rule, `job` is a
+  label). (M-4) `GaugeRefresherTest#aClockSteppedBackAsksAgain` asserts its outstanding ask's no-value. (M-5) The test
+  overlay's comment corrected. Runbook §8.8, §10.14 and §11.8. No production Java changed, so no module unit or
+  architecture suite re-ran (the owner's rule). Tests fresh after the last change: `GaugeRefresherTest` 11/0 (`:platform:test`); `:app:test` over the changed suites and every guard on a changed file - `PlatformAlertRulesTest`, `BnplAlertRulesTest`, `AccountingRunbookTest`, `RiskAlertRulesTest`, `SafeguardingReturnTest`, the three BNPL schedule suites, `TracingTest`, `NoGaugeReadsOnTheScrapeTest`, `AccountingGaugeWiringTest`, `ThreatModelIsCompleteTest`, `MutationDemonstrationTest` and `PlannedMetersExistTest`, the ArchUnit suites with them - 136/0 in 22 classes; `promtool test rules` `SUCCESS` over the three test files and `promtool check rules` `SUCCESS` over all eight rule files (141 rules). Probes: seven new rows in `MUTATION_TESTING.md` §2 - `GaugesStale` holding NaN again, on a coarse share and at no tolerance, an unreadable leg removed from each of the three rules, and a stale number kept under a stepped clock (which survived the test as it was) - each red, their `promtool` halves on copies `FAILED` (nine, the unmutated files `SUCCESS`); and 29 rows performed again on the present bytes, none re-hashed, because their files changed: the platform rule file's, the BNPL rule file's two, the overlay's, the runbook's 23 (its six `P14-TSK-020` rows and seventeen others the first round had left unperformed when it changed sections 10.14 and 11.8), and the fx and settlement rule files' two against the new hermetic guard, their database catcher owed to `P15-TST-002`.
+- **Merge of master `40b253ad`** (2026-11-08; `-008`, `-021`): `-008`'s bounded stop for the deleted
+  `AccountingGaugeRefresher` carried onto `GaugeRefresher` (3 s, `stopBound()`, phase 0 through its lifecycle, now
+  public) and its two cases into `GaugeRefresherTest`; `ShutdownOrderTest` holds the refresher in that class's place;
+  no rule file changed (the scrape target is the management port, the job still `finapp`); the records keep both sides.
+  Tests after the merge: named classes only, by the owner's rule of 2026-11-08 ("avoid long running tests"): `GaugeRefresherTest` 13/0 (`platform`); in `app`, `ShutdownOrderTest`, `ManagementPortTest`, `PrometheusEndpointTest`, `NoGaugeReadsOnTheScrapeTest`, `AccountingGaugeWiringTest`, `PlatformAlertRulesTest`, `ThreatModelIsCompleteTest`, `MutationDemonstrationTest`, `PlannedMetersExistTest`, `AdrRegistersAreReconciledTest`, `AccountingRunbookTest`, `SafeguardingReturnTest`, `BnplAlertRulesTest`, `TracingTest` and the three BNPL schedule suites, with the ArchUnit suites that ride along, 136/0 in 25 classes. Before the rule arrived, `:platform:test` ran whole and green and `:app:architectureTest` ran 284 tests in 48 classes with one failure, `ThreatModelIsCompleteTest#noPromiseOutlivesItsTask`, the finished-task citations above, since fixed. Owed to `P15-TST-002`: `RiskAlertRulesTest` (it reads the changed runbook; a scrape-based suite, skipped as slow), every other suite of the touched packages, and the database tiers; no rule file changed, so `promtool` did not re-run. Probes: 51 performed on the merged bytes, every one red, none re-hashed (`MUTATION_TESTING.md` section 2; the threat register's 18 a third time, on its final bytes, after `ThreatModelIsCompleteTest#noPromiseOutlivesItsTask` refused two citations of a finished task in section 5 - T14's residual, this merge's, and T2's coordinator note, red on master `40b253ad` itself - and both ids came out): every row whose last note of this task recorded a file the merge or its resolution changed - the threat register's 18, the runbook's 23, the platform refresher's 3 and its beans' 2, production's file and the test overlay; `-008`'s stop row carried onto `GaugeRefresherTest` and performed there (the await skipped); and two new `ShutdownOrderTest` rows, the refresher's lifecycle stopped first and its bound past the phase timeout.
 
 **P15-TSK-025 — SLOs, error budgets, correctness alerts and routing** — `PLANNED`
 - **Objective**: every critical flow has an objective and a burn-rate alert, every correctness signal pages, and every
@@ -27812,6 +27875,7 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
 - **Acceptance criteria**: as tested; the trial balance pages on its first non-zero sample.
 - **Definition of done**: `DOD-OBS`. **Risk**: Medium. **Cx**: L.
 - *The owner's decision (2026-11-08), status unchanged:* `P15-TSK-035` (the source-join census) follows this task and pages through its correctness routing.
+- *Routed by `P15-TSK-024` (2026-11-08), status unchanged:* (1) `infra/prometheus/rules/platform.yml` (`InstanceDown`, `FinappTargetsAbsent`, `GaugesStale`) and its `promtool test` cases, `infra/prometheus/tests/platform.test.yml`, run by hand through the pinned Prometheus image until this task's `promtool` CI step runs every `infra/prometheus/tests/*.test.yml`; this task's platform rules join that file. (2) The platform rules select `up{job="finapp"}`: the deployed scrape configuration keeps the job name `finapp`, or this task changes the selectors with it. (3) Routing: `InstanceDown` and `FinappTargetsAbsent` carry `severity: page`, `GaugesStale` `ticket`, each naming `OPERATIONS_RUNBOOK.md` section 11.8. (4) Every gauge now reads on one gauge thread per instance and a scrape answers its last read (NaN before the first): a rule that reads a gauge sees the read of the previous scrape, and a new gauge reads no value until its first read. *(Added by `-024`'s fix round, 2026-11-08:)* (5) `GaugesStale` counts its canary's stale evaluations (`sum_over_time((finapp_gauges_refreshed != bool finapp_gauges_refreshed)[30m:15s]) > 6`) and two more `promtool` files join the CI step, `infra/prometheus/tests/fx.test.yml` and `settlement-reconciliation.test.yml` (`FxGaugesUnreadable`, `ReconciliationGaugesUnreadable`, tickets). (6) `PlatformAlertRulesTest#everyGaugeAnAlertReadsCanBeSeenUnreadable` holds every rule file: a new SLO or correctness rule that reads a gauge needs an `x != x` rule beside it. (7) For the routing: every `finapp` instance's `GaugesStale` firing at once blinds every fleet-wide paging rule on a gauge (`CURRENT_STATE.md`, `-024`'s owner item (b)); whether that pages is this task's to propose and the owner's to rule.
 - *Routed by `P15-TSK-002` (**C15**, 2026-11-08), status unchanged:* three debt rows whose signal is missing or blind.
   **(a) "The assessment census dates a payment intent by its creation"**: the risk proofs' assessment census dates a
   payment intent by its confirmation, so a late-confirmed intent's missing seal reaches the gauge on its confirmation's

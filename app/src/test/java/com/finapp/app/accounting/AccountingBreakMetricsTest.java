@@ -47,7 +47,7 @@ class AccountingBreakMetricsTest {
     @Test
     @DisplayName("every type at 0 from the start; a raised break counted under its type, behind the 15 s floor")
     void openBreaksPerType() {
-        new AccountingBreakMetrics(breaks, new GlSnapshots(this::open, Duration.ofSeconds(2)), new AccountingGaugeRefresher(Runnable::run), clock, registry);
+        new AccountingBreakMetrics(breaks, new GlSnapshots(this::open, Duration.ofSeconds(2)), clock, registry);
         for (BreakType type : BreakType.values()) {
             assertThat(gauge(type)).as("%s registered at 0", type).isZero();
         }
@@ -63,7 +63,7 @@ class AccountingBreakMetricsTest {
     @DisplayName("unreadable is no value, never zero")
     void unreadableIsNoValue() {
         unreadable = true;
-        new AccountingBreakMetrics(breaks, new GlSnapshots(this::open, Duration.ofSeconds(2)), new AccountingGaugeRefresher(Runnable::run), clock, registry);
+        new AccountingBreakMetrics(breaks, new GlSnapshots(this::open, Duration.ofSeconds(2)), clock, registry);
         assertThat(gauge(BreakType.SOURCE_DISCREPANCY)).isNaN();
     }
 

@@ -58,8 +58,9 @@ some to answer the brief would break ADR-0001.
    `REFUSING_TRAFFIC` before any phase stops; the API port drains (`server.shutdown: graceful`, within
    `spring.lifecycle.timeout-per-shutdown-phase`, 30 s); the 32 schedules stop claiming at once and drain in parallel,
    each within 10 s and an interrupt's 2 s; the consumers take no new batch, acknowledge the one they hold and leave
-   their groups, within 10 s and 2 s; the management server closes, then the web server; the accounting gauge reader
-   lets its read end, within 3 s; the beans are destroyed, the pool after every stop has returned. Every component's
+   their groups, within 10 s and 2 s; the management server closes, then the web server; the gauge refresher
+   lets its read end, within 3 s (the accounting gauge reader until `P15-TSK-024` moved every gauge onto `platform`'s
+   `GaugeRefresher`, its bounded stop carried over); the beans are destroyed, the pool after every stop has returned. Every component's
    stop bound is below the phase timeout, and the lifecycle's worst case is 30 + 12 + 12 + 3 = 57 s before the
    producer's close (`finapp.kafka.ack-timeout`, 10 s) and the pool's. The phases are `ShutdownOrder`'s. This note
    changes no decision; the ADR stays `Proposed` until the phase's exit review.)*

@@ -10,9 +10,9 @@
 # - Gauges read the shared database on its clock, so every instance publishes the same reading: aggregate with max(), never sum().
 # - A counter is per instance: sum() of increase(). A restart is a counter reset, which increase() reads as no event. Every outcome read here is registered at zero from startup, on every instance: increase()
 #   cannot see the first event of a series born at that event. An event in the one scrape interval between an instance's start and its first scrape is still unseen; nothing here closes that.
-# - A gauge that cannot be read is NaN, never zero and never its last value; x != x holds only for NaN, so a threshold rule cannot see it and the unreadable rule can. Accounting's gauges read on their own thread, never on the scrape, so
-#   that holds in any scrape that completes. It does not hold when the scrape is lost: the other modules' gauges still read on the scrape thread, so with the pool exhausted or the database gone nothing is stored at all, an unreadable rule cannot
-#   hold its for, and one instance in that state fires nothing here. absent() is the other half: no instance publishes the series at all, so every threshold rule on it is green for the wrong reason. Nothing in the repository reads up. OPERATIONS_RUNBOOK.md section 10.14.
+# - A gauge that cannot be read is NaN, never zero and never its last value; x != x holds only for NaN, so a threshold rule cannot see it and the unreadable rule can. Every gauge reads on the instance's gauge refresher, never on the scrape
+#   (P15-TSK-024; accounting's alone until then), so with the pool exhausted or the database gone a scrape still completes and the unreadable rule holds its for. absent() is the other half: no instance publishes the series at all, so every
+#   threshold rule on it is green for the wrong reason. An instance that cannot be scraped is platform.yml's InstanceDown, and one whose refresher stops answering its GaugesStale. OPERATIONS_RUNBOOK.md sections 10.14 and 11.8.
 # - A level that can hold for good with no door out alerts on its growth (delta), or it fires for good and gets muted: overtaken (the owner's ruling, PI-010) and overdue (an UNKNOWN for good, PI-008). A level
 #   a person's act clears stays a level.
 # - increase() extrapolates, so one event can read just above 1: a rule meaning "more than one" says > 1.5.
@@ -275,7 +275,7 @@ groups:
           summary: "What stands on the regulatory returns cannot be read"
           description: "finapp.accounting.regulatory.attention has no value. See OPERATIONS_RUNBOOK.md section 10.6, and section 10.14 for the read."
       - alert: AccountingGaugesUnreadable
-        # NaN in scrapes that complete: a read failed. Each gauge with no unreadable rule of its own. With the database gone or the pool exhausted the scrape itself is lost and this cannot hold its for: OPERATIONS_RUNBOOK.md section 10.14.
+        # NaN in scrapes that complete: a read failed, or the instance's gauge refresher has not answered (GaugesStale says which). Each gauge with no unreadable rule of its own. With the database gone or the pool exhausted the scrape still completes (P15-TSK-024), so this holds its for: OPERATIONS_RUNBOOK.md section 10.14.
         expr: max(finapp_accounting_period_open_age_days != finapp_accounting_period_open_age_days) or max(finapp_accounting_gl_unmapped != finapp_accounting_gl_unmapped) or max(finapp_accounting_break_open != finapp_accounting_break_open) or max(finapp_accounting_break_aged != finapp_accounting_break_aged) or max(finapp_accounting_adjustment_standing != finapp_accounting_adjustment_standing) or max(finapp_accounting_close_month_unrun != finapp_accounting_close_month_unrun)
         for: 15m
         labels:
@@ -284,7 +284,7 @@ groups:
           summary: "An accounting gauge cannot be read"
           description: "A gauge read failed or outlived its bound, so the alerts on it cannot fire. See OPERATIONS_RUNBOOK.md section 10.14."
       - alert: AccountingGaugesAbsent
-        # No instance publishes the series at all: the fleet is down, every instance's scrape is being lost (the database gone or the pool exhausted), or a release dropped a meter. Every threshold rule on it is then green for the wrong reason. A ticket guarding rules that page; paging on a lost fleet (a rule on `up`) the owner deferred to Phase 15 on 2026-11-05 (P14-TSK-020's (am)).
+        # No instance publishes the series at all: the fleet is down or unscraped, every instance's scrape is being lost, or a release dropped a meter. Every threshold rule on it is then green for the wrong reason. A ticket guarding rules that page; a lost fleet pages on up, platform.yml's InstanceDown and FinappTargetsAbsent (P15-TSK-024; the owner deferred them to Phase 15 on 2026-11-05, P14-TSK-020's (am)).
         expr: absent(finapp_accounting_close_run_stalled) or absent(finapp_accounting_close_check_stalled) or absent(finapp_accounting_period_open_age_days) or absent(finapp_accounting_sweeper_enabled) or absent(finapp_accounting_adjustment_standing) or absent(finapp_accounting_gl_unmapped) or absent(finapp_accounting_break_open) or absent(finapp_accounting_break_aged) or absent(finapp_accounting_close_month_unrun) or absent(finapp_accounting_regulatory_attention)
         for: 5m
         labels:

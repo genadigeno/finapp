@@ -7,8 +7,8 @@ import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.AppenderBase;
 import com.finapp.app.FinappApplication;
-import com.finapp.app.accounting.AccountingGaugeRefresher;
 import com.finapp.app.eventing.InboxConsumers;
+import com.finapp.platform.metrics.GaugeRefresher;
 import com.zaxxer.hikari.HikariDataSource;
 import jakarta.servlet.Filter;
 import jakarta.servlet.http.HttpServletResponse;
@@ -54,7 +54,7 @@ import org.springframework.core.Ordered;
  *
  * <p><strong>How the order is observed.</strong> Each step is caught at the moment it happens, on the thread doing it: the
  * readiness event; Tomcat's own "Commencing graceful shutdown" and "Graceful shutdown complete"; each schedule's "drained"
- * line; the consumers' "stopping" and "stopped"; the gauge reader's "stopped". At each, the state of everything else is
+ * line; the consumers' "stopping" and "stopped"; the gauge refresher's "stopped" (`platform`'s `GaugeRefresher`, behind every gauge since `P15-TSK-024`; the accounting gauges' own reader until then). At each, the state of everything else is
  * read there and then: readiness, how many schedules still claim, the consumers, the reader, whether the API port accepts
  * a connection, whether the management port answers, whether the pool is closed. A request accepted before the stop is held
  * across it, so the HTTP drain has something to drain.
@@ -71,7 +71,7 @@ class ShutdownOrderTest {
 
     private static final String PROBE_PATH = "/__drain-probe";
 
-    /** The platform's lifecycle components: thirty-two schedules, the inbox consumers, the accounting gauge reader. */
+    /** The platform's lifecycle components: thirty-two schedules, the inbox consumers, the gauge refresher's lifecycle (`P15-TSK-024`). */
     private static final int COMPONENTS = 34;
 
     private static final int SCHEDULES = 32;
@@ -142,7 +142,7 @@ class ShutdownOrderTest {
         List<Moment> drained = all(order, moment -> moment.what.startsWith("Schedule ") && moment.what.endsWith(" drained"));
         Moment consumersStopping = only(order, "Inbox consumers stopping");
         Moment consumersStopped = only(order, "Inbox consumers stopped");
-        Moment readerStopped = only(order, "The accounting gauges' reader stopped");
+        Moment readerStopped = only(order, "The gauge refresher stopped");
 
         assertThat(order.indexOf(refusing)).as("readiness refuses before anything stops").isZero();
         assertThat(refusing.state.apiAccepts).as("readiness refused while the API port still accepted").isTrue();
@@ -221,7 +221,7 @@ class ShutdownOrderTest {
             "--management.health.db.enabled=false",
             "--management.endpoint.health.validate-group-membership=false",
             "--logging.level.com.finapp.app.lifecycle=DEBUG",
-            "--logging.level.com.finapp.app.accounting.AccountingGaugeRefresher=DEBUG"
+            "--logging.level.com.finapp.platform.metrics.GaugeRefresher=DEBUG"
         };
         return new SpringApplicationBuilder(FinappApplication.class)
                 .initializers(initializer -> {
@@ -301,7 +301,7 @@ class ShutdownOrderTest {
         private final Map<String, SmartLifecycle> components = new TreeMap<>();
         private final Map<String, SmartLifecycle> schedules = new TreeMap<>();
         private final InboxConsumers consumers;
-        private final AccountingGaugeRefresher reader;
+        private final GaugeRefresher reader;
         private final HikariDataSource pool;
         private final int apiPort;
         private final int managementPort;
@@ -318,7 +318,7 @@ class ShutdownOrderTest {
                 }
             });
             this.consumers = context.getBean(InboxConsumers.class);
-            this.reader = context.getBean(AccountingGaugeRefresher.class);
+            this.reader = context.getBean(GaugeRefresher.class);
             // By name and through java.sql.Wrapper: a test naming javax.sql.DataSource is read as needing PostgreSQL
             // (TestTier), and this one needs none.
             this.pool = ((java.sql.Wrapper) context.getBean("dataSource")).unwrap(HikariDataSource.class);
@@ -385,7 +385,7 @@ class ShutdownOrderTest {
                 "org.springframework.boot.tomcat.GracefulShutdown",
                 ScheduleDrain.class.getName(),
                 InboxConsumers.class.getName(),
-                AccountingGaugeRefresher.class.getName());
+                GaugeRefresher.class.getName());
 
         private final Snapshotter snapshot;
         private final List<Moment> moments;

@@ -447,7 +447,15 @@ class NoFloatingPointMoneyRulesTest {
                     // which verdict a census reached, never an amount: the proofs' figures stay
                     // longs in the risk module and reach no meter.
                     "com.finapp.app.risk.RiskProofMetrics",
-                    "com.finapp.app.risk.RiskProofMetrics$Cached");
+                    "com.finapp.app.risk.RiskProofMetrics$Cached",
+                    // P15-TSK-024. The SAME case one layer down: every gauge above now reads on the platform's
+                    // gauge refresher, and its last value waits there for the scrape. The value is whatever the
+                    // gauge's own ToDoubleFunction answered - a count, an age, a 0 or 1 verdict, NaN - carried
+                    // as the double Micrometer's Gauge imposes, from the meter's function to the meter, and
+                    // nowhere else: no amount is ever a gauge's value (ADR-0072), and these hold no Money.
+                    "com.finapp.platform.metrics.RefreshedReading",
+                    "com.finapp.platform.metrics.RefreshedReading$Held",
+                    "com.finapp.app.telemetry.OffScrapeMeterRegistry");
 
     // ---------------------------------------------------------------------
     // Guard: the rules must actually see the code they claim to protect.

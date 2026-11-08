@@ -34,6 +34,8 @@ class PrometheusEndpointTest {
 
     @LocalManagementPort private int port;
 
+    @org.springframework.beans.factory.annotation.Autowired private io.micrometer.core.instrument.MeterRegistry registry;
+
     @Test
     @DisplayName("the scrape endpoint serves the platform's own series")
     void theScrapeEndpointServesOurSeries() throws Exception {
@@ -59,6 +61,10 @@ class PrometheusEndpointTest {
         // would say "the outbox is empty and all is well" at the moment nothing can be known, and
         // an alert written on `== 0` would stay silent through the outage. Prometheus renders NaN
         // for a gauge with no value, and NaN is alertable.
+        // P15-TSK-024: every gauge reads on the gauge refresher and a scrape answers its last read, NaN before the first -
+        // which an always-NaN gauge satisfies perfectly. So the backlog's read is asked for and awaited first: this NaN is
+        // a read that met the absent database, not one that never ran.
+        RefreshedGauges.settle(registry, "finapp.outbox.");
         String body = get("/actuator/prometheus").body();
 
         String pending = seriesLine(body, "finapp_outbox_pending");

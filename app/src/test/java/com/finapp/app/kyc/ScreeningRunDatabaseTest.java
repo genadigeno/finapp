@@ -127,6 +127,8 @@ class ScreeningRunDatabaseTest {
 
         // The plan-named gauge, on the queue it measures: the review depth is now visible
         // fleet-wide (PHASE_2_PLAN.md §10 - the queue nobody watches is the queue that ages).
+        // P15-TSK-024: the gauge answers the refresher's last read, so ask it to read now.
+        com.finapp.app.telemetry.RefreshedGauges.settle(meterRegistry, "finapp.kyc.review.queue");
         assertThat(meterRegistry.get("finapp.kyc.review.queue").gauge().value())
                 .isGreaterThanOrEqualTo(1.0d);
     }

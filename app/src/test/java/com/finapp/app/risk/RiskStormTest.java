@@ -831,6 +831,8 @@ class RiskStormTest {
             RiskProofMetrics metrics = on.beans().getBean(RiskProofMetrics.class);
             metrics.readNow();
             MeterRegistry registry = on.meters();
+            // P15-TSK-024: the gauges answer the gauge refresher's last read, so ask it to read the fresh reading now.
+            com.finapp.app.telemetry.RefreshedGauges.settle(registry, "finapp.risk.");
             registry.find(RiskProofMetrics.CENSUS).tag("verdict", "DIVERGED").gauges().forEach(gauge -> softly
                     .assertThat(gauge.value()).as("%s: %s census gauge %s on %s", when, RiskProofMetrics.CENSUS,
                             gauge.getId().getTag("kind"), on.name()).isZero());

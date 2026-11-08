@@ -1,0 +1,133 @@
+# promtool unit tests for ReconciliationGaugesUnreadable in infra/prometheus/rules/settlement-reconciliation.yml (P15-TSK-024's fix round,
+# 2026-11-08). Run from the repository root, as platform.test.yml says:
+#   ... --entrypoint promtool prom/prometheus@sha256:<the v3.14.0 digest> test rules settlement-reconciliation.test.yml
+# Two instances: every gauge the rule names NaN on b (its read failing, or its refresher behind), numbers on a. One
+# alert per gauge, on b alone, its series named in `gauge` - each leg present, every label of a series folded into it.
+
+rule_files:
+  - ../rules/settlement-reconciliation.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'finapp_reconciliation_run_age_seconds{job="finapp", instance="a:8081", source="PSP_SIM"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_run_age_seconds{job="finapp", instance="b:8081", source="PSP_SIM"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_settlement_file_age{job="finapp", instance="a:8081", source="PSP_SIM"}'
+        values: '0x16'
+      - series: 'finapp_settlement_file_age{job="finapp", instance="b:8081", source="PSP_SIM"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_reconciliation_expectation_overdue{job="finapp", instance="a:8081", source="PSP_SIM"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_expectation_overdue{job="finapp", instance="b:8081", source="PSP_SIM"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_reconciliation_suspense_age_seconds{job="finapp", instance="a:8081"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_suspense_age_seconds{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_reconciliation_break_age{job="finapp", instance="a:8081", severity="critical"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_break_age{job="finapp", instance="b:8081", severity="critical"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_reconciliation_break_age{job="finapp", instance="a:8081", severity="high"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_break_age{job="finapp", instance="b:8081", severity="high"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_reconciliation_break_age{job="finapp", instance="a:8081", severity="medium"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_break_age{job="finapp", instance="b:8081", severity="medium"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_reconciliation_break_age{job="finapp", instance="a:8081", severity="low"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_break_age{job="finapp", instance="b:8081", severity="low"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: ReconciliationGaugesUnreadable
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: ReconciliationGaugesUnreadable
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+              gauge: finapp_reconciliation_run_age_seconds
+            exp_annotations:
+              summary: "A settlement or reconciliation gauge has no value: finapp_reconciliation_run_age_seconds"
+              description: "finapp_reconciliation_run_age_seconds on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+              gauge: finapp_settlement_file_age
+            exp_annotations:
+              summary: "A settlement or reconciliation gauge has no value: finapp_settlement_file_age"
+              description: "finapp_settlement_file_age on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+              gauge: finapp_reconciliation_expectation_overdue
+            exp_annotations:
+              summary: "A settlement or reconciliation gauge has no value: finapp_reconciliation_expectation_overdue"
+              description: "finapp_reconciliation_expectation_overdue on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+              gauge: finapp_reconciliation_suspense_age_seconds
+            exp_annotations:
+              summary: "A settlement or reconciliation gauge has no value: finapp_reconciliation_suspense_age_seconds"
+              description: "finapp_reconciliation_suspense_age_seconds on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
+          - exp_labels:
+              severity: ticket
+              job: finapp
+              instance: b:8081
+              gauge: finapp_reconciliation_break_age
+            exp_annotations:
+              summary: "A settlement or reconciliation gauge has no value: finapp_reconciliation_break_age"
+              description: "finapp_reconciliation_break_age on b:8081 reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."
+
+  # Every gauge a number on both instances: nothing.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_reconciliation_run_age_seconds{job="finapp", instance="a:8081", source="PSP_SIM"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_run_age_seconds{job="finapp", instance="b:8081", source="PSP_SIM"}'
+        values: '0x16'
+      - series: 'finapp_settlement_file_age{job="finapp", instance="a:8081", source="PSP_SIM"}'
+        values: '0x16'
+      - series: 'finapp_settlement_file_age{job="finapp", instance="b:8081", source="PSP_SIM"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_expectation_overdue{job="finapp", instance="a:8081", source="PSP_SIM"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_expectation_overdue{job="finapp", instance="b:8081", source="PSP_SIM"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_suspense_age_seconds{job="finapp", instance="a:8081"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_suspense_age_seconds{job="finapp", instance="b:8081"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_break_age{job="finapp", instance="a:8081", severity="critical"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_break_age{job="finapp", instance="b:8081", severity="critical"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_break_age{job="finapp", instance="a:8081", severity="high"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_break_age{job="finapp", instance="b:8081", severity="high"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_break_age{job="finapp", instance="a:8081", severity="medium"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_break_age{job="finapp", instance="b:8081", severity="medium"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_break_age{job="finapp", instance="a:8081", severity="low"}'
+        values: '0x16'
+      - series: 'finapp_reconciliation_break_age{job="finapp", instance="b:8081", severity="low"}'
+        values: '0x16'
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: ReconciliationGaugesUnreadable
+        exp_alerts: []

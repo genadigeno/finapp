@@ -1,0 +1,63 @@
+# Platform alerts (P15-TSK-024; PHASE_15_PLAN.md section 11; ADR-0124 decision 7): an instance that is down or cannot be scraped,
+# a fleet gone from the scrape, and an instance whose gauge refresher has stopped answering or fallen behind. Each alert's procedure is OPERATIONS_RUNBOOK.md section 11.8.
+#
+# Unit-tested by promtool: infra/prometheus/tests/platform.test.yml, `promtool test rules`, from prom/prometheus v3.14.0 (the
+# version compose pins), run by its digest; the test file sits outside rules/, which compose loads by glob. `promtool` in CI,
+# routing, and the SLO, correctness and other platform rules are P15-TSK-025's. Local development only: no Alertmanager is wired.
+#
+# Conventions:
+# - `up` is Prometheus's own series, one per scraped target: 1 when the last scrape completed, 0 when it failed or timed
+#   out. Every finapp gauge now reads off the scrape thread (P15-TSK-024), so a slow or absent database no longer costs a
+#   scrape: `up` 0 means the instance is down, unreachable, or unable to answer at all, never a gauge waiting on the pool.
+# - Per instance, never aggregated: one instance down is an incident on that instance, and max() or sum() over the fleet
+#   would hide it behind its healthy neighbours.
+# - A target that leaves the service discovery leaves no `up` series at all, so `up == 0` cannot see a fleet that is
+#   gone; absent() is the other half, as the domain files' *Absent rules are for their series.
+# - The job is `finapp` (infra/prometheus/prometheus.yml); a deployment's scrape configuration keeps that job name.
+# - finapp_gauges_refreshed is the gauge refresher's canary: a constant 1 read through the same path as every finapp gauge,
+#   so it is NaN before its first read and whenever that instance's refresher has left its ask unanswered past
+#   finapp.gauges.stale-after (2 minutes); every finapp gauge of the instance is stale with it then. x != bool x is 1
+#   exactly for NaN and 0 for a number, so summed over a subquery it counts the stale evaluations.
+
+groups:
+  - name: platform
+    rules:
+      - alert: InstanceDown
+        # Two minutes of failed scrapes on one target: a crashed or stopped JVM, a pod that cannot be reached, a scrape that
+        # cannot answer. A page: whatever that instance was running - requests, schedules, consumers - another must be
+        # taking, and if every instance is down nothing is.
+        expr: up{job="finapp"} == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "A finapp instance cannot be scraped: {{ $labels.instance }}"
+          description: "Its last scrapes failed for 2 minutes. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: FinappTargetsAbsent
+        # No finapp target is scraped at all: the fleet is gone from the service discovery (scaled to zero, every pod
+        # deleted), or the scrape configuration lost the job. Every rule on a finapp series is then green for the wrong reason.
+        expr: absent(up{job="finapp"})
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "No finapp instance is being scraped"
+          description: "No target of the finapp job exists for 5 minutes, so every finapp alert is blind. See OPERATIONS_RUNBOOK.md section 11.8."
+      - alert: GaugesStale
+        # The instance answers its scrapes, but its canary was stale at more than 6 of the last 30 minutes' 120 evaluations
+        # (over 90 s): a read holding the one thread (a socket the network black-holed - only a restart frees it), or a thread
+        # behind its asks, its reads slow or each waiting out the pool on a database in trouble. Counted, never held: a
+        # thread behind but not stuck answers each ask about one pass (C) after it, so the canary - and every gauge of the
+        # instance whose read succeeds - is NaN for about C - 120 s of every C and a number between. A rule waiting for NaN
+        # to hold 5m fires only once C passes seven minutes, and a threshold rule's for restarts at every NaN; a count sees
+        # the stuck thread (every evaluation) and one behind by a step past the bound (a NaN each pass). Six spare a start
+        # whose first reads take a minute and one short burst. A ticket: an instance still serves, a fleet-wide max() still
+        # reads the instances whose thread answers, and a gauge whose read fails outright is NaN at every scrape, which its
+        # domain unreadable rule holds.
+        expr: sum_over_time((finapp_gauges_refreshed != bool finapp_gauges_refreshed)[30m:15s]) > 6
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The gauges of {{ $labels.instance }} are stale"
+          description: "Its gauge refresher left asks unanswered past their bound for over 90 s of the last 30 minutes, so its finapp gauges have been going NaN. See OPERATIONS_RUNBOOK.md section 11.8."

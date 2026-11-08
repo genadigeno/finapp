@@ -21,7 +21,9 @@ import org.springframework.boot.web.server.context.WebServerApplicationContext;
  *   <li>{@code GRACEFUL_SHUTDOWN_PHASE - 512} (Boot's): the management server closes. The probes are answered through every
  *       step above, which is why both of ours sit above it;
  *   <li>{@link WebServerApplicationContext#START_STOP_LIFECYCLE_PHASE} (Boot's): the API's web server stops, already drained;
- *   <li>phase {@code 0}: {@code AccountingGaugeRefresher} drops its queued reads and lets the one in flight end;
+ *   <li>phase {@code 0}: the gauge refresher ({@code platform}'s {@code GaugeRefresher}, in the context through
+ *       {@code GaugeRefresherBeans}' lifecycle; {@code AccountingGaugeRefresher} until `P15-TSK-024` moved every gauge onto
+ *       it) drops its queued reads and lets the one in flight end within its bound;
  *   <li>the beans are destroyed - the Kafka producer, and the connection pool after every stop above has returned.
  * </ol>
  *

@@ -9,7 +9,9 @@
 # - Gauges read the shared database, so every instance publishes the same reading: aggregate with
 #   max(), never sum(). Counters are per instance: sum(increase(...)).
 # - A gauge that cannot be read is NaN, never zero, and a comparison with NaN is false - so the
-#   threshold alerts below cannot see an unreadable gauge. MustBeZeroGaugeUnreadable can.
+#   threshold alerts below cannot see an unreadable gauge. MustBeZeroGaugeUnreadable can, and
+#   ReconciliationGaugesUnreadable for the ages and the overdue count (P15-TSK-024's fix round: since
+#   that task a gauge is also NaN while its instance's gauge refresher is behind).
 # - No amount anywhere: labels and annotations name sources, purposes, currencies and severities,
 #   and the follow-up is the audited operator report or route that answers the amount.
 # - `severity` is the ALERT's kind (page or ticket). The break-age rules carry the break's own
@@ -201,3 +203,25 @@ groups:
         annotations:
           summary: "A LOW reconciliation break open for over fifteen days"
           description: "The oldest open LOW break has stood {{ $value | humanizeDuration }}. Follow up with GET /v1/operator/reconciliation/breaks."
+
+      # ---------------------------------------------------------------- the other gauges, unreadable
+
+      - alert: ReconciliationGaugesUnreadable
+        # P15-TSK-024's fix round (2026-11-08): every gauge a threshold rule here compares that MustBeZeroGaugeUnreadable does
+        # not - the run, file, expectation, suspense and break ages - NaN on an instance: its read failed there, or that
+        # instance's gauge refresher is behind (platform.yml's GaugesStale says which). While one is NaN its alert cannot
+        # fire there; a CRITICAL break is unknown, not absent. Each reads 0 when nothing is open, NaN only when unread. Per
+        # instance, each leg naming its series in a `gauge` label; max by (job, instance) also drops the break age's own
+        # `severity`, which the rule's label would override into four alerts of one label set.
+        expr: >-
+          label_replace(max by (job, instance) (finapp_reconciliation_run_age_seconds != finapp_reconciliation_run_age_seconds), "gauge", "finapp_reconciliation_run_age_seconds", "", "")
+          or label_replace(max by (job, instance) (finapp_settlement_file_age != finapp_settlement_file_age), "gauge", "finapp_settlement_file_age", "", "")
+          or label_replace(max by (job, instance) (finapp_reconciliation_expectation_overdue != finapp_reconciliation_expectation_overdue), "gauge", "finapp_reconciliation_expectation_overdue", "", "")
+          or label_replace(max by (job, instance) (finapp_reconciliation_suspense_age_seconds != finapp_reconciliation_suspense_age_seconds), "gauge", "finapp_reconciliation_suspense_age_seconds", "", "")
+          or label_replace(max by (job, instance) (finapp_reconciliation_break_age != finapp_reconciliation_break_age), "gauge", "finapp_reconciliation_break_age", "", "")
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A settlement or reconciliation gauge has no value: {{ $labels.gauge }}"
+          description: "{{ $labels.gauge }} on {{ $labels.instance }} reads NaN - its read is failing there, or that instance's gauge refresher is behind - so its threshold alert cannot fire there. See OPERATIONS_RUNBOOK.md section 11.8."

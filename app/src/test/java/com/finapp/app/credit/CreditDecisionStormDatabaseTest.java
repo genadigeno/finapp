@@ -1596,6 +1596,8 @@ class CreditDecisionStormDatabaseTest {
                 assertThat(value).as("%s on %s at rest", gauge, instance.name()).isZero();
             }
         }
+        // P15-TSK-024: the gauge answers the refresher's last read, so ask it to read now.
+        com.finapp.app.telemetry.RefreshedGauges.settle(a.meters(), CreditReplayMetrics.REPLAY);
         assertThat(a.meters().find(CreditReplayMetrics.REPLAY).tag("verdict", "DIVERGED").gauge().value())
                 .as("the replay gauge's DIVERGED at rest").isZero();
     }

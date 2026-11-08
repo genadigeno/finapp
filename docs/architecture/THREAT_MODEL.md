@@ -489,7 +489,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T14 | Requests and limits, and an HPA bounded by the declared budget counting terminating pods | PLANNED | `P15-TSK-009` |
 | T14 | `ResourceQuota` and `LimitRange` | PLANNED | `P15-TSK-010` |
 | T14 | The budget's peak measured during a rollout and a pod kill | PLANNED | `P15-TSK-012` |
-| T14 | Every gauge read off the scrape thread, so a scrape (today unauthenticated) costs no database work and a slow database never loses the whole scrape | PLANNED | `P15-TSK-024` |
+| T14 | Every gauge read off the scrape thread: one scrape of every meter of the real context, each meter's measurements read again on the same thread, asks the database for nothing there (a planted gauge reading it on the scrape is caught), and the reads run on the instance's one gauge thread, where ten concurrent looks at a blocked read start one read. A scrape, still unauthenticated, therefore holds no connection of its own, and a slow database never loses the whole scrape | EXISTS | `app/src/test/java/com/finapp/app/telemetry/NoGaugeReadsOnTheScrapeTest.java#noGaugeReadsTheDatabaseOnTheScrapeThread`; `app/src/test/java/com/finapp/app/telemetry/NoGaugeReadsOnTheScrapeTest.java#aPlantedReadOnTheScrapeIsCaught`; `platform/src/test/java/com/finapp/platform/metrics/GaugeRefresherTest.java#aBlockedReadNeverBlocksALookAndFliesOnce` |
 | T15 | An unbalanced journal entry is refused at commit, whoever writes it, raw SQL included (`INV-LED-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#aDirectUnbalancedInsertIsRefusedAtCommit` |
 | T15 | The application role holds no `UPDATE`, `DELETE` or `TRUNCATE` on the journal | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theColumnSweep` |
 | T15 | The journal's append-only trigger binds even the migrator (`INV-HIST-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theAppendOnlyTriggerBindsTheMigrator` |
@@ -709,13 +709,16 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   `DocumentCipher`, `EvidenceCipher`, `PayoutEvidenceCipher` and `FxEvidenceCipher`. `X-TSK-010` names the first four,
   and the fifth is routed onto its entry. Every column outside these ciphers is plaintext in PostgreSQL until volume
   encryption exists (`-015`). `SECURITY_ARCHITECTURE.md` §Encryption at rest has the detail.
-- **T2.** `/actuator/health`, `/actuator/info` and `/actuator/prometheus` are still served unauthenticated, now on *(The coordinator at `P15-TSK-008`'s merge, 2026-11-08: an empty, not unset, `FINAPP_MANAGEMENT_ADDRESS` binds the management port to every interface, so "loopback unless a deployment names an address" holds only while the variable is unset or names one; the fail-closed guard is routed to `P15-TSK-009`.)*
+- **T2.** `/actuator/health`, `/actuator/info` and `/actuator/prometheus` are still served unauthenticated, now on *(The coordinator at the management port's merge, 2026-11-08: an empty, not unset, `FINAPP_MANAGEMENT_ADDRESS` binds the management port to every interface, so "loopback unless a deployment names an address" holds only while the variable is unset or names one; the fail-closed guard is routed to `P15-TSK-009`.)*
   the management port alone: loopback outside Kubernetes, and the pod's address once `-009`'s overlays set it, where
   anything that reaches the pod reaches them until a policy restricts it. Two `CURRENT_STATE.md` debt rows record this, and `-010`'s NetworkPolicy
   closes them. *(Read "served unauthenticated on the API port today" until 2026-11-08, when the port moved.)*
 - **T14.** The connection budget guard checks the instance count the configuration declares. Nothing ties that
-  declaration to the replicas actually running, which `-009`'s manifest policy and `-012`'s measured peak do. Today an
-  unauthenticated scrape runs about sixty gauges' queries on the scrape thread (`-024`).
+  declaration to the replicas actually running, which `-009`'s manifest policy and `-012`'s measured peak do. No gauge
+  reads on the scrape thread any more (2026-11-08), but a scrape still *asks* for reads: a scraper that reaches the
+  management port can keep each instance's one gauge thread, and so one of its pool's connections, busy at the floors'
+  rate (each gauge at most once per 5 s, each class's own floor beyond that), until a NetworkPolicy restricts that port
+  (`-010`). Since 2026-11-08 the port is apart from the API port, loopback outside Kubernetes.
 - **T38.** *(Rewritten 2026-11-08: this read "every session actor is audited as `CUSTOMER`, operators included, and a
   refused step-up writes no record".)* An operator act is now recorded `EMPLOYEE` and every refused step-up is recorded.
   **Operator acts recorded before 2026-11-08 read `CUSTOMER` and stay so**: the audit record is append-only and the

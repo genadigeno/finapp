@@ -403,6 +403,8 @@ class PayoutDestinationDatabaseTest {
         // did not - and a plan-named meter that is not registered is the P1-TSK-029 defect.
         io.micrometer.core.instrument.Gauge gauge =
                 meterRegistry.get("finapp.merchant.destination.pending").gauge();
+        // P15-TSK-024: the gauge answers the refresher's last read, so ask it to read now.
+        com.finapp.app.telemetry.RefreshedGauges.settle(meterRegistry, "finapp.merchant.destination.pending");
         assertThat(gauge.value()).isNotNaN().isGreaterThanOrEqualTo(0.0);
     }
 

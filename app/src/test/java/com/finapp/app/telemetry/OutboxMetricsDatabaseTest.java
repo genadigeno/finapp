@@ -126,6 +126,8 @@ class OutboxMetricsDatabaseTest {
         Gauge oldest = registry.find(OutboxMetrics.OLDEST).gauge();
         assertThat(pending).as("the meter must be registered").isNotNull();
         assertThat(oldest).isNotNull();
+        // P15-TSK-024: the gauges answer the refresher's last read, so ask it to read now.
+        RefreshedGauges.settle(registry, "finapp.outbox.");
 
         assertThat(pending.value())
                 .as("a readable backlog must report a number, never NaN")
