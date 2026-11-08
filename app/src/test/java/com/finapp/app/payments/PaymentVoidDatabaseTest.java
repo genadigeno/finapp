@@ -930,6 +930,16 @@ class PaymentVoidDatabaseTest {
             }
 
             @Override
+            public com.finapp.payments.ClearingAnswer queryClearing(com.finapp.payments.ProviderIdempotencyReference reference) {
+                return com.finapp.payments.ClearingAnswer.indeterminate();
+            }
+
+            @Override
+            public com.finapp.payments.DisputeAnswer queryDispute(com.finapp.payments.ProviderReference reference) {
+                return com.finapp.payments.DisputeAnswer.indeterminate();
+            }
+
+            @Override
             public QueryAnswer query(ProviderIdempotencyReference reference) {
                 return delegate.query(reference);
             }
@@ -974,6 +984,16 @@ class PaymentVoidDatabaseTest {
                             "swept".getBytes());
                 }
                 return ProviderAnswer.nothingSent();
+            }
+
+            @Override
+            public com.finapp.payments.ClearingAnswer queryClearing(com.finapp.payments.ProviderIdempotencyReference reference) {
+                return com.finapp.payments.ClearingAnswer.indeterminate();
+            }
+
+            @Override
+            public com.finapp.payments.DisputeAnswer queryDispute(com.finapp.payments.ProviderReference reference) {
+                return com.finapp.payments.DisputeAnswer.indeterminate();
             }
 
             @Override

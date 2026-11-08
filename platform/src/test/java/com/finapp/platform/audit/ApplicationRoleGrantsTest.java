@@ -68,7 +68,8 @@ class ApplicationRoleGrantsTest {
                 .containsExactly("DELETE", "INSERT", "SELECT", "UPDATE");
 
         assertThat(privilegesOn("inbox_message"))
-                .as("no UPDATE: an inbox record has no state to advance (V007)")
+                .as("no table-wide UPDATE: an inbox record has no state to advance (V007); its one"
+                        + " column-level grant, expires_at, is held below (V011, P15-TSK-028)")
                 .containsExactly("DELETE", "INSERT", "SELECT");
 
         assertThat(privilegesOn("audit_record"))
@@ -85,9 +86,10 @@ class ApplicationRoleGrantsTest {
         // still reads INSERT, SELECT and passes.
         //
         // Checked for every table rather than only the audit trail. The audit table is where it
-        // violates an invariant, but the inbox's lack of UPDATE is a deliberate design property
-        // too, and a hole that was invisible in one place is invisible in all of them.
-        for (String table : List.of("idempotency_record", "outbox_event", "inbox_message", "audit_record")) {
+        // violates an invariant, but the inbox's narrow UPDATE is a deliberate design property
+        // too, and a hole that was invisible in one place is invisible in all of them. The inbox
+        // has its own case below: one column-level grant, exactly (V011).
+        for (String table : List.of("idempotency_record", "outbox_event", "audit_record")) {
             List<String> columnPrivileges = columnPrivilegesOn(table);
 
             // isSubsetOf over an empty set is trivially true, so a query that saw nothing - a
@@ -105,10 +107,14 @@ class ApplicationRoleGrantsTest {
     }
 
     @Test
-    @DisplayName("the inbox cannot be updated, which distinguishes its grant from the outbox's")
+    @DisplayName("the inbox's one column-level UPDATE is expires_at, and nothing else of it can be updated")
     void theInboxIsNotUpdatable() throws SQLException {
-        // The narrow grant V007 promised, proven rather than described. Without this the
-        // difference between inbox_message and outbox_event is a sentence in a comment.
+        // The narrow grant V007 promised, proven rather than described; since V011 (P15-TSK-028) a replay
+        // may extend how long a dedupe row lives, and that is all. Without this the difference between
+        // inbox_message and outbox_event is a sentence in a comment.
+        assertThat(updatableColumnsOf("inbox_message"))
+                .as("exactly the replay's extension of a dedupe row")
+                .containsExactly("expires_at");
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(
                         () -> execute("UPDATE platform.inbox_message SET message_type = 'tampered'"))
@@ -184,6 +190,24 @@ class ApplicationRoleGrantsTest {
     }
 
     /** Distinct privileges granted at COLUMN level, which table_privileges cannot show. */
+    /** The columns of a table the application may UPDATE: where a column-level grant shows and a table-level view does not. */
+    private static List<String> updatableColumnsOf(String table) throws SQLException {
+        try (Statement statement = application.createStatement();
+                ResultSet rows =
+                        statement.executeQuery(
+                                "SELECT column_name FROM information_schema.column_privileges "
+                                        + "WHERE table_schema = 'platform' AND table_name = '" + table
+                                        + "' AND grantee = current_user AND privilege_type = 'UPDATE' ORDER BY column_name")) {
+            List<String> columns = new ArrayList<>();
+            while (rows.next()) {
+                columns.add(rows.getString(1));
+            }
+            return columns;
+        } finally {
+            application.commit();
+        }
+    }
+
     private static List<String> columnPrivilegesOn(String table) throws SQLException {
         try (Statement statement = application.createStatement();
                 ResultSet rows =

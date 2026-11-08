@@ -13,9 +13,9 @@
 --   So: role EXISTENCE is infrastructure, role PRIVILEGES on our tables are schema. Grants live
 --   in the migration that creates the table, exactly as DATA_MIGRATIONS.md §6 requires.
 --
---   In a deployed environment this file's job belongs to Terraform or a managed-database
---   operator. It is here because a laptop has no such thing, and because the roles must exist
---   before the first migration runs.
+--   In a deployed environment this file's job belongs to the one-time bootstrap step
+--   (RoleBootstrapMain, DATA_MIGRATIONS.md section 2.2). It is here because a laptop has no such
+--   thing, and because the roles must exist before the first migration runs.
 --
 -- WHY TWO ROLES AND NOT ONE (and a third, finapp_reporting, for report generation: below)
 --   Three invariants are enforced at the privilege level and nowhere else:

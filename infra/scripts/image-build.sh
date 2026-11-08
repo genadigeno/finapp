@@ -81,9 +81,10 @@ trap cleanup EXIT
 # 1. No unpinned base reaches a build.
 "$ROOT/infra/scripts/check-pinned-images.sh" --offline || fail "a base image is not pinned by digest (above)"
 
-# The runtime base is the Dockerfile's last FROM: the image must be built on exactly that.
+# The runtime base is the Dockerfile's last PINNED FROM: the application's stage and the migrator's both name it through
+# the stage that holds the pin (P15-TSK-004), and the image must be built on exactly that.
 RUNTIME_BASE=$(sed -n 's/^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]\{1,\}\(--[^[:space:]]*[[:space:]]\{1,\}\)*\([^[:space:]]*\).*/\2/p' \
-    Dockerfile | tail -1)
+    Dockerfile | grep '@sha256:' | tail -1)
 [ -n "$RUNTIME_BASE" ] || cannot "no FROM line in Dockerfile"
 
 # What the labels say: the commit (marked -dirty when the tree differs from it), where it came from, the version the

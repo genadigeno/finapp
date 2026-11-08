@@ -31,8 +31,9 @@ import org.junit.jupiter.api.Test;
  *
  * <p>Read from {@code app}'s production code with comments and string literals stripped: a {@code new BigDecimal(}
  * appears only in {@code DecimalText} itself and in the named adapters that parse a provider's own answers, already
- * shape-checked (the reference rate source's pattern, the FX adapter's {@code requireDecimal}, the signed instant
- * callback's amount) and the chargeback report's own computed ratio. A planted violation proves the rule bites.
+ * shape-checked (the reference rate source's pattern, the FX adapter's {@code requireDecimal})
+ * and the chargeback report's own computed ratio. A planted violation proves the rule bites. *(The instant callback left this
+ * list with `P15-TSK-036`: the door no longer reads an amount at all.)*
  */
 @Tag("architecture")
 @DisplayName("no request decimal is parsed unbounded (the Phase 9 to 10 transition)")
@@ -45,7 +46,6 @@ class RequestDecimalsAreBoundedTest {
             "com/finapp/app/api/DecimalText.java",
             "com/finapp/app/fx/HttpReferenceRateSource.java",
             "com/finapp/app/fx/SimulatedFxProviderAdapter.java",
-            "com/finapp/app/payments/InstantCallbackService.java",
             // The chargeback report's ratio: a decimal string the report computed itself, never request text.
             "com/finapp/app/payments/DisputeOperations.java");
 

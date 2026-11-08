@@ -1380,6 +1380,7 @@ class DisputeResponseDatabaseTest {
     }
 
     private HttpResponse<String> deliver(String body) throws Exception {
+        com.finapp.app.payments.ProviderInquiryStubs.cardAgrees(provider, body);
         String timestamp = Long.toString(Instant.now(CLOCK).getEpochSecond());
         return send(
                 HttpRequest.newBuilder(

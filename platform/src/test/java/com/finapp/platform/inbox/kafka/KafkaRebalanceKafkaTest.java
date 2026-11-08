@@ -202,8 +202,10 @@ class KafkaRebalanceKafkaTest {
             this.receiver =
                     new KafkaEventReceiver(
                             committingNothing ? committingNothing(consumer) : consumer,
+                            topic,
                             DatabaseRoles::bootstrap,
                             new InboxConsumer<>(new JdbcInboxRecordStore(), Clock.systemUTC(), Duration.ofDays(14)),
+                            com.finapp.platform.testing.InboxParkingDoubles.NEVER_PARKS,
                             List.of(counting(topic)),
                             Duration.ofMillis(500));
         }
@@ -308,7 +310,7 @@ class KafkaRebalanceKafkaTest {
     private void relayEverything() {
         try (KafkaEventPublisher publisher =
                 KafkaEventPublisher.connect(BrokerConnection.plaintext(bootstrap()), Duration.ofSeconds(10))) {
-            OutboxRelay relay = new OutboxRelay(DatabaseRoles::application, publisher);
+            OutboxRelay relay = new OutboxRelay(DatabaseRoles::application, publisher, OutboxRelay.Abandonments.NOT_RECORDED);
             Instant deadline = Instant.now().plusSeconds(60);
             while (relay.pollOnce().published() > 0 && Instant.now().isBefore(deadline)) {
                 // Each poll publishes a bounded batch; drain until a poll publishes nothing.

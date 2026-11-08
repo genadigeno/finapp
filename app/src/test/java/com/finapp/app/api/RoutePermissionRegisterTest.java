@@ -49,6 +49,16 @@ class RoutePermissionRegisterTest {
     private static final Map<String, PermissionName> REGISTER =
             new TreeMap<>(
                     Map.ofEntries(
+                    // Dead letters and replay (P15-TSK-028): one permission, EVENT_OPERATE; every act MULTI_FACTOR; the
+                    // discard's second person is a domain refusal and platform V011's CHECK; the negatives are
+                    // DeadLetterDeskTest's route declarations.
+                    entry("GET /v1/operator/events/dead-letters", PermissionName.EVENT_OPERATE),
+                    entry("POST /v1/operator/events/abandoned/{eventId}/retry", PermissionName.EVENT_OPERATE),
+                    entry("POST /v1/operator/events/parked/{parkId}/release", PermissionName.EVENT_OPERATE),
+                    entry("POST /v1/operator/events/discards", PermissionName.EVENT_OPERATE),
+                    entry("POST /v1/operator/events/discards/{discardId}/approval", PermissionName.EVENT_OPERATE),
+                    entry("POST /v1/operator/events/discards/{discardId}/rejection", PermissionName.EVENT_OPERATE),
+                    entry("POST /v1/operator/events/replays", PermissionName.EVENT_OPERATE),
                     // Identity administration (Phase 1)
                     entry("DELETE /v1/identities/{id}/suspension", PermissionName.IDENTITY_SUSPEND),
                     entry("POST /v1/identities/{id}/suspension", PermissionName.IDENTITY_SUSPEND),

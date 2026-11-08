@@ -129,19 +129,19 @@ entry's status when it rules: an entry still open is a `GAP` of the dimension it
 
 | Dimension | Today | Ruling | Evidence | Gap and owner |
 |---|---|---|---|---|
-| Deployment | Missing: migrations run by Gradle and CI's `migrations` job; no image, no Job | — | — | — |
+| Deployment | Partial: migrations run by Gradle and CI's `migrations` job; *(2026-11-08, `P15-TSK-004`)* the migrator image is built by CI from the commit, twice and compared, and pushed nowhere; unsigned; its Job contract is written and its manifest is `P15-TSK-009`'s | — | — | — |
 | Health checks | N/A: a Job that exits | — | — | — |
-| Logging | Missing | — | — | — |
+| Logging | Partial *(2026-11-08, `P15-TSK-004`)*: one line per schema and a result line on the Job's stdout; no structured log | — | — | — |
 | Metrics | N/A: a Job that exits | — | — | — |
 | Tracing | N/A: a Job that exits | — | — | — |
 | Alerting | Missing (a failed or stalled Job alerts nobody) | — | — | — |
-| Security | Partial: `finapp_migrator` is `NOSUPERUSER NOCREATEDB NOCREATEROLE`; every one of the 21 migrating modules' builds disables `clean`, validates and refuses out-of-order (counted) | — | — | — |
-| Resource limits | Missing | — | — | — |
-| Failure handling | Partial: Flyway's schema-history lock serialises two runs; no `lock_timeout` | — | — | — |
-| Recovery | Missing: forward-only by design; the fix-forward procedure unwritten | — | — | — |
+| Security | Partial: `finapp_migrator` is `NOSUPERUSER NOCREATEDB NOCREATEROLE`; every one of the 21 migrating modules' builds disables `clean`, validates and refuses out-of-order (counted); *(2026-11-08, `P15-TSK-004`)* the image holds no credential, runs as UID 65532, refuses an administrative identity and an unverified connection off loopback; the deployed roles from a separate bootstrap step | — | — | — |
+| Resource limits | Partial *(2026-11-08, `P15-TSK-004`)*: a 512 MiB limit in the Job contract, every acceptance run under it; no manifest | — | — | — |
+| Failure handling | Partial: Flyway's schema-history lock serialises two runs; *(2026-11-08, `P15-TSK-004`)* `lock_timeout`, bounded retries and exit codes the Job can act on, proven on the image against a real database | — | — | — |
+| Recovery | Partial *(2026-11-08, `P15-TSK-004`)*: forward-only by design; the fix-forward procedure written (runbook §11.4), not rehearsed | — | — | — |
 | Ownership | Missing | — | — | — |
-| Runbooks | Missing (migration failure is a planned platform section) | — | — | — |
-| Multi-instance | Two Jobs at once serialised by Flyway's lock (unproven on a deployed database) | — | — | — |
+| Runbooks | Partial *(2026-11-08, `P15-TSK-004`)*: deploy's migration step and a failed migration written (§11.1b, §11.4), not rehearsed | — | — | — |
+| Multi-instance | Concurrent runs of the image: each migration applied exactly once, the history the build's (`migrator-verify.sh`, a throwaway PostgreSQL; unproven on a deployed database) | — | — | — |
 
 **Named gaps of `finapp-migrator`**: `P14-REM-004` and `P14-REM-006` are migrations it will apply; their schemas are
 gaps of the module they touch (§4).
@@ -249,7 +249,7 @@ The outbox relay, inbox consumers, idempotency, audit and the provider harness.
 | Metrics | — | — | — | — |
 | Alerting | No rule on the outbox, the inbox or a dead letter (§15; `-025`) | — | — | — |
 | Ownership | — | — | — | — |
-| Runbooks | No platform section; dead letters resolved by a manual change (`-028`, `-032`) | — | — | — |
+| Runbooks | Dead letters, a poison record and replay have doors and a written section (`OPERATIONS_RUNBOOK.md` §11.6); no raw `UPDATE` remains; rehearsal is `-032`'s | — | — | — |
 
 ### 4.3 `party`
 

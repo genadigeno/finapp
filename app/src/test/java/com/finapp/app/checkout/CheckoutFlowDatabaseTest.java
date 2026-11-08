@@ -3267,6 +3267,7 @@ class CheckoutFlowDatabaseTest {
     }
 
     private int instantCallback(String body) {
+        com.finapp.app.payments.ProviderInquiryStubs.instantAgrees(provider, body);
         return provider.deliverTimestampSignedCallback(
                 URI.create("http://localhost:" + port
                         + "/v1/providers/payments/instant/webhooks"),

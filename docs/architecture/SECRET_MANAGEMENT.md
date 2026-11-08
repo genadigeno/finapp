@@ -74,7 +74,8 @@ The variables, and the four files that read them:
 |---|---|
 | `FINAPP_DB_NAME`, `FINAPP_DB_URL` | `compose.yaml`, `application.yaml`, `platform/build.gradle.kts` |
 | `FINAPP_DB_USER`, `FINAPP_DB_PASSWORD` | `compose.yaml`, `platform/build.gradle.kts` (bootstrap superuser) |
-| `FINAPP_DB_MIGRATOR_USER`, `FINAPP_DB_MIGRATOR_PASSWORD` | `platform/build.gradle.kts` (Flyway) |
+| `FINAPP_DB_MIGRATOR_USER`, `FINAPP_DB_MIGRATOR_PASSWORD` | `platform/build.gradle.kts` (Flyway); the migrator image's Job (`P15-TSK-004`, `DATA_MIGRATIONS.md` §2.1), and never the application |
+| `FINAPP_DB_MASTER_USER`, `FINAPP_DB_MASTER_PASSWORD` | The one-time bootstrap step alone (`RoleBootstrapMain`, `DATA_MIGRATIONS.md` §2.2), which also reads the three roles' passwords to create them |
 | `FINAPP_DB_APP_USER`, `FINAPP_DB_APP_PASSWORD` | `application.yaml`, `platform/build.gradle.kts` |
 | `FINAPP_DB_REPORTING_USER`, `FINAPP_DB_REPORTING_PASSWORD` | `application.yaml` (report generation's pool, `P15-TSK-021`) |
 

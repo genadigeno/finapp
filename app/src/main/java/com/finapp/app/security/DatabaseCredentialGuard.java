@@ -49,7 +49,7 @@ public class DatabaseCredentialGuard {
 
     /**
      * The one sanctioned local-development fallback — since `P5-TSK-002` a reference to the
-     * repository's single Java literal of it ({@link ConfinedCredential#MARKED_LOCAL_DEFAULT});
+     * application's single Java literal of it ({@link ConfinedCredential#MARKED_LOCAL_DEFAULT});
      * until then this constant and {@code MfaKey}'s were two literals of the same value, which is
      * exactly the copies-drift shape the generalisation exists to close. Kept as a public
      * constant here because the guard's tests and callers have referenced it by this name since

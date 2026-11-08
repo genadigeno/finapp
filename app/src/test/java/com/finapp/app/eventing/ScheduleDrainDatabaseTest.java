@@ -141,7 +141,7 @@ class ScheduleDrainDatabaseTest {
     // ------------------------------------------------------------------------------------------------------------------
 
     private OutboxRelaySchedule schedule(EventPublisher publisher) {
-        return new OutboxRelaySchedule(new OutboxRelay(DatabaseRoles::application, publisher, IMPATIENT, 8, 100), POLL,
+        return new OutboxRelaySchedule(new OutboxRelay(DatabaseRoles::application, publisher, IMPATIENT, 8, 100, OutboxRelay.Abandonments.NOT_RECORDED), POLL,
                 new SimpleMeterRegistry());
     }
 

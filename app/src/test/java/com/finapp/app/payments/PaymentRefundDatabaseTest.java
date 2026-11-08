@@ -922,6 +922,16 @@ class PaymentRefundDatabaseTest {
                     }
 
                     @Override
+                    public com.finapp.payments.ClearingAnswer queryClearing(com.finapp.payments.ProviderIdempotencyReference reference) {
+                        return com.finapp.payments.ClearingAnswer.indeterminate();
+                    }
+
+                    @Override
+                    public com.finapp.payments.DisputeAnswer queryDispute(com.finapp.payments.ProviderReference reference) {
+                        return com.finapp.payments.DisputeAnswer.indeterminate();
+                    }
+
+                    @Override
                     public com.finapp.payments.QueryAnswer query(
                             com.finapp.payments.ProviderIdempotencyReference ourReference) {
                         throw new UnsupportedOperationException();
@@ -1166,6 +1176,16 @@ class PaymentRefundDatabaseTest {
                     }
 
                     @Override
+                    public com.finapp.payments.ClearingAnswer queryClearing(com.finapp.payments.ProviderIdempotencyReference reference) {
+                        return com.finapp.payments.ClearingAnswer.indeterminate();
+                    }
+
+                    @Override
+                    public com.finapp.payments.DisputeAnswer queryDispute(com.finapp.payments.ProviderReference reference) {
+                        return com.finapp.payments.DisputeAnswer.indeterminate();
+                    }
+
+                    @Override
                     public com.finapp.payments.QueryAnswer query(
                             com.finapp.payments.ProviderIdempotencyReference ourReference) {
                         throw new UnsupportedOperationException();
@@ -1251,6 +1271,16 @@ class PaymentRefundDatabaseTest {
                     public com.finapp.payments.ProviderAnswer voidAuthorization(
                             VoidRequest request) {
                         throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public com.finapp.payments.ClearingAnswer queryClearing(com.finapp.payments.ProviderIdempotencyReference reference) {
+                        return com.finapp.payments.ClearingAnswer.indeterminate();
+                    }
+
+                    @Override
+                    public com.finapp.payments.DisputeAnswer queryDispute(com.finapp.payments.ProviderReference reference) {
+                        return com.finapp.payments.DisputeAnswer.indeterminate();
                     }
 
                     @Override
@@ -1642,6 +1672,16 @@ class PaymentRefundDatabaseTest {
                     @Override
                     public com.finapp.payments.ProviderAnswer voidAuthorization(VoidRequest request) {
                         return wire.voidAuthorization(request);
+                    }
+
+                    @Override
+                    public com.finapp.payments.ClearingAnswer queryClearing(com.finapp.payments.ProviderIdempotencyReference reference) {
+                        return com.finapp.payments.ClearingAnswer.indeterminate();
+                    }
+
+                    @Override
+                    public com.finapp.payments.DisputeAnswer queryDispute(com.finapp.payments.ProviderReference reference) {
+                        return com.finapp.payments.DisputeAnswer.indeterminate();
                     }
 
                     @Override
@@ -2227,7 +2267,7 @@ class PaymentRefundDatabaseTest {
                         new org.springframework.jdbc.support.JdbcTransactionManager(dataSource));
         template.setPropagationBehavior(
                 org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-        return new PaymentWebhookService(
+        return CallbackDoors.card(
                 new com.finapp.payments.WebhookSignature(
                         WEBHOOK_KEY, Duration.ofMinutes(5), CLOCK),
                 evidence,
@@ -2280,10 +2320,13 @@ class PaymentRefundDatabaseTest {
                                 com.finapp.payments.PaymentRails.of(
                                         java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                                 IDS,
-                                CLOCK)));
+                                CLOCK)),
+                adapter(),
+                IDS);
     }
 
     private static void deliverWebhook(PaymentWebhookService webhooks, String body) {
+        com.finapp.app.payments.ProviderInquiryStubs.cardAgrees(psp, body);
         String timestamp = Long.toString(Instant.now(CLOCK).getEpochSecond());
         webhooks.deliver(
                 body.getBytes(java.nio.charset.StandardCharsets.UTF_8),

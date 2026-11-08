@@ -15,7 +15,8 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Records a capture's clearing evidence (`P7-TSK-005`, ADR-0059 §4): the network's own
- * references, once per attempt, in the delivering webhook's own transaction.
+ * references, once per attempt, in the hinted inquiry's own transaction (`P15-TSK-036`, ADR-0083: the
+ * references are the PSP's answer, and the webhook's evidence and dedupe have already committed).
  *
  * <h2>Evidence, not effect</h2>
  *
@@ -82,8 +83,8 @@ public final class PaymentClearing {
     }
 
     /**
-     * Records the clearing of {@code attempt}, once. Runs inside the delivery's transaction:
-     * the record, the event and the delivery's dedupe commit together or not at all.
+     * Records the clearing of {@code attempt}, once. Runs inside the caller's transaction:
+     * the record and the event commit together or not at all.
      */
     public Outcome record(
             Connection unitOfWork,
