@@ -27517,7 +27517,9 @@ postponed; **C15** the carried items' dispositions (`PHASE_15_PLAN.md` §25).
   public workload subnet, since the subnets `for_each` over an input it cannot resolve, so the test holds that one
   alone. **Threat model**: T6, T7 and T29's rows rewritten `EXISTS`, two `EXISTS` rows added to T4, the T29 residual
   and the "no built control" list rewritten, a residual added for what a mock cannot show. **Runbook**: §11.13
-  references the two READMEs. **Not verified**: anything AWS would do with this configuration (no account exists, and
+  references the two READMEs. **Tests** (the owner's rule of 2026-11-08: no production Java changed): the check script
+  and the ten guard classes reading a changed file, fresh. Owed to `P15-TST-002`: `RiskAlertRulesTest`, `BnplAlertRulesTest`
+  and `SafeguardingReturnDatabaseTest`, which read the runbook, and every other tier. **Not verified**: anything AWS would do with this configuration (no account exists, and
   the Kubernetes minor and node sizes are reference values); CI's own run of the `iac` job. The local runs used the
   pinned Terraform image plus this laptop's root certificate, through `TERRAFORM_IMAGE`, which CI never sets.
 
